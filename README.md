@@ -55,7 +55,7 @@ Outcome mapping: `completed` → execution `Completed`, task `Completed`;
 GOFLAGS=-p=2 go build ./... && GOFLAGS=-p=2 go test -cover ./...
 ```
 
-Every package is above 80% coverage. The AXLR adapter is tested against a
+Every package has at least 80% coverage. The AXLR adapter is tested against a
 helper process that imitates `axlr-tui`; one test runs the real binary only
 when `AXLR_LIVE=1` is set:
 
