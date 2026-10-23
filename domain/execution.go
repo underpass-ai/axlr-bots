@@ -1,0 +1,159 @@
+package domain
+
+import "time"
+
+// Execution is one attempt at a task: when it ran, how it ended and what
+// it produced. The control plane reads its outcome and result from the
+// runtime contract; the trace file is evidence, not the result.
+type Execution struct {
+	id            ExecutionID
+	taskID        TaskID
+	botID         BotID
+	startedAt     time.Time
+	endedAt       time.Time
+	outcome       ExecutionOutcome
+	result        Result
+	usage         Usage
+	failureReason string
+	tracePath     string
+}
+
+// NewExecution starts an attempt at the task.
+func NewExecution(id ExecutionID, task TaskID, bot BotID, startedAt time.Time) (Execution, error) {
+	if startedAt.IsZero() {
+		return Execution{}, invalid("started at", "must not be zero")
+	}
+	return Execution{id: id, taskID: task, botID: bot, startedAt: startedAt, outcome: ExecutionRunning}, nil
+}
+
+// ID is the execution's identifier.
+func (e Execution) ID() ExecutionID { return e.id }
+
+// TaskID is the task this attempt belongs to.
+func (e Execution) TaskID() TaskID { return e.taskID }
+
+// BotID is the bot that ran.
+func (e Execution) BotID() BotID { return e.botID }
+
+// StartedAt is when the attempt began.
+func (e Execution) StartedAt() time.Time { return e.startedAt }
+
+// EndedAt is when the attempt ended; zero while running.
+func (e Execution) EndedAt() time.Time { return e.endedAt }
+
+// Outcome is how the attempt ended, or Running.
+func (e Execution) Outcome() ExecutionOutcome { return e.outcome }
+
+// Result is what the attempt produced.
+func (e Execution) Result() Result { return e.result }
+
+// Usage is what the attempt consumed.
+func (e Execution) Usage() Usage { return e.usage }
+
+// FailureReason says why the attempt failed, when it did.
+func (e Execution) FailureReason() string { return e.failureReason }
+
+// TracePath is where the raw runtime events were kept, if anywhere.
+func (e Execution) TracePath() string { return e.tracePath }
+
+// Complete ends a running attempt with an answer.
+func (e *Execution) Complete(result Result, usage Usage, tracePath string, endedAt time.Time) error {
+	return e.end(ExecutionCompleted, result, usage, "", tracePath, endedAt)
+}
+
+// Fail ends a running attempt with a reason; a partial result may be kept.
+func (e *Execution) Fail(reason string, result Result, usage Usage, tracePath string, endedAt time.Time) error {
+	if reason == "" {
+		return invalid("failure reason", "must not be empty")
+	}
+	return e.end(ExecutionFailed, result, usage, reason, tracePath, endedAt)
+}
+
+// RequireDecision ends a running attempt on a tool call a person must decide.
+func (e *Execution) RequireDecision(result Result, usage Usage, tracePath string, endedAt time.Time) error {
+	if result.PendingDecision == nil {
+		return invalid("pending decision", "is required when a decision is required")
+	}
+	return e.end(ExecutionDecisionRequired, result, usage, "", tracePath, endedAt)
+}
+
+func (e *Execution) end(outcome ExecutionOutcome, result Result, usage Usage, reason, tracePath string, endedAt time.Time) error {
+	if e.outcome != ExecutionRunning {
+		return StateError{Subject: "execution " + e.id.String(), Current: e.outcome.String(), Attempted: "end as " + outcome.String()}
+	}
+	if endedAt.Before(e.startedAt) {
+		return invalid("ended at", "must not be before started at")
+	}
+	if err := usage.Validate(); err != nil {
+		return err
+	}
+	e.outcome = outcome
+	e.result = result
+	e.usage = usage
+	e.failureReason = reason
+	e.tracePath = tracePath
+	e.endedAt = endedAt
+	return nil
+}
+
+// Snapshot returns the execution as plain data.
+func (e Execution) Snapshot() ExecutionSnapshot {
+	s := ExecutionSnapshot{
+		ID:            e.id.String(),
+		TaskID:        e.taskID.String(),
+		BotID:         e.botID.String(),
+		StartedAt:     e.startedAt,
+		Outcome:       e.outcome.String(),
+		Result:        e.result,
+		Usage:         e.usage,
+		FailureReason: e.failureReason,
+		TracePath:     e.tracePath,
+	}
+	if !e.endedAt.IsZero() {
+		ended := e.endedAt
+		s.EndedAt = &ended
+	}
+	return s
+}
+
+// RestoreExecution rebuilds an execution from a snapshot.
+func RestoreExecution(s ExecutionSnapshot) (Execution, error) {
+	id, err := NewExecutionID(s.ID)
+	if err != nil {
+		return Execution{}, err
+	}
+	task, err := NewTaskID(s.TaskID)
+	if err != nil {
+		return Execution{}, err
+	}
+	bot, err := NewBotID(s.BotID)
+	if err != nil {
+		return Execution{}, err
+	}
+	outcome, err := ParseExecutionOutcome(s.Outcome)
+	if err != nil {
+		return Execution{}, err
+	}
+	execution, err := NewExecution(id, task, bot, s.StartedAt)
+	if err != nil {
+		return Execution{}, err
+	}
+	if !outcome.IsFinal() {
+		return execution, nil
+	}
+	if s.EndedAt == nil {
+		return Execution{}, invalid("ended at", "is required by a finished execution")
+	}
+	switch outcome {
+	case ExecutionCompleted:
+		err = execution.Complete(s.Result, s.Usage, s.TracePath, *s.EndedAt)
+	case ExecutionFailed:
+		err = execution.Fail(s.FailureReason, s.Result, s.Usage, s.TracePath, *s.EndedAt)
+	default:
+		err = execution.RequireDecision(s.Result, s.Usage, s.TracePath, *s.EndedAt)
+	}
+	if err != nil {
+		return Execution{}, err
+	}
+	return execution, nil
+}
