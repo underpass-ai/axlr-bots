@@ -160,7 +160,7 @@ func TestExecutionRepositoryRoundTrip(t *testing.T) {
 	if err != nil || running.Outcome() != domain.ExecutionRunning {
 		t.Errorf("running: %v", err)
 	}
-	_ = e.Complete(domain.Result{Answer: "answer", SessionID: "s", ToolCalls: []domain.ToolCall{{Name: "local_read", CallID: "c", Completed: true}}}, domain.Usage{ToolCalls: 1}, "/trace", t0.Add(time.Second))
+	_ = e.Complete(domain.Result{Answer: "answer", SessionID: "s", ToolCalls: []domain.ToolCall{{Name: "local_read", CallID: "c", Status: "completed"}}}, domain.Usage{ToolCalls: 1}, "/trace", t0.Add(time.Second))
 	if err := repo.Save(ctx, e); err != nil {
 		t.Fatal(err)
 	}

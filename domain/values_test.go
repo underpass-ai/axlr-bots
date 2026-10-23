@@ -247,7 +247,7 @@ func TestUsageValidate(t *testing.T) {
 	if err := (Usage{Requests: 1, PromptTokens: 2, CompletionTokens: 3, ToolCalls: 4, CostUSD: 0.5}).Validate(); err != nil {
 		t.Error(err)
 	}
-	for _, u := range []Usage{{Requests: -1}, {PromptTokens: -1}, {CompletionTokens: -1}, {ToolCalls: -1}, {CostUSD: -0.1}} {
+	for _, u := range []Usage{{Requests: -1}, {PromptTokens: -1}, {CachedTokens: -1}, {CompletionTokens: -1}, {ReasoningTokens: -1}, {ToolCalls: -1}, {CostUSD: -0.1}} {
 		if err := u.Validate(); err == nil {
 			t.Errorf("accepted %+v", u)
 		}

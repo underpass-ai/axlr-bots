@@ -238,7 +238,7 @@ func TestExecutionLifecycle(t *testing.T) {
 	if _, err := NewExecution("e", "t", "b", time.Time{}); err == nil {
 		t.Error("zero start accepted")
 	}
-	result := Result{Answer: "The spike came from pod api-3", SessionID: "sess-1", ToolCalls: []ToolCall{{Name: "local_read", CallID: "c1", Decision: "approved", Completed: true}}}
+	result := Result{Answer: "The spike came from pod api-3", SessionID: "sess-1", ToolCalls: []ToolCall{{Name: "local_read", CallID: "c1", Decision: "approve", Status: "completed"}}}
 	usage := Usage{ToolCalls: 1}
 	t1 := t0.Add(2 * time.Second)
 	if err := e.Complete(result, usage, "/traces/exec-1.jsonl", t0.Add(-time.Second)); err == nil {
