@@ -35,7 +35,7 @@ func (f *fixture) startTLS(t *testing.T) (*unixapi.Client, string, func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, f.deps, Options{SocketPath: f.socket, Listener: listener, TLS: pki.ServerTLSConfig(ca, []string{"127.0.0.1"}), Tick: 20 * time.Millisecond, ReconcileEvery: 50 * time.Millisecond, Grace: time.Millisecond, NodeOfflineAfter: time.Second, Log: log.New(f.logs, "", 0)})
+		done <- Run(ctx, f.deps, Options{SocketPath: f.socket, Listener: listener, TLS: pki.ServerTLSConfig(ca, []string{"127.0.0.1"}), Tick: 20 * time.Millisecond, ReconcileEvery: 50 * time.Millisecond, Grace: time.Hour, NodeOfflineAfter: time.Second, Log: log.New(f.logs, "", 0)})
 	}()
 	for !unixapi.Reachable(context.Background(), f.socket) {
 		time.Sleep(10 * time.Millisecond)

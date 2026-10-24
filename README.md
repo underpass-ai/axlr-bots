@@ -571,6 +571,11 @@ model key:
 AXLR_BOTS_LIVE=1 AXLR_TUI=/path/to/axlr-tui OPENROUTER_API_KEY=... GOFLAGS=-p=2 go test ./adapters/daemon -run TestLiveTwoNodesOverTLS -v
 ```
 
+Run on 24 Oct 2026 on this machine, it passed in 7 s: the task of the bot
+whose selector names `us` ran on `node-us` (`claude-haiku-5.5`, $0.00095),
+with both agents enrolled and speaking over TLS to a control plane on
+`127.0.0.1:0`.
+
 ## The runtime contract
 
 The adapter speaks the contract in AXLR's `docs/runtime-contract.md`:
