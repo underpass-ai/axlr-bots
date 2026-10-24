@@ -325,64 +325,78 @@ underpass-demo-broken.service failed, as intended (exit 1)
 
 ## 3. the task the alert created (the same alert again names the same task)
   "created": false,
-    "id": "task-9b6621bbe0d2191460ea8ad5",
+    "id": "task-cc1471b3872fb250304b1c67",
     "status": "Running",
-    "idempotencyKey": "alert:underpass-demo-broken.service:2026-10-24T01:20:00Z",
+    "idempotencyKey": "alert:underpass-demo-broken.service:2026-10-24T01:30:00Z",
+what the OnFailure alert unit logged:
+  "created": true,
+Finished underpass-bots-alert@underpass-demo-broken.service - Underpass Bots: tell the SRE bot that underpass-demo-broken failed.
 
 ## 4. the service runs it through AXLR (policy: observe = read-only host commands)
-task task-9b6621bbe0d2191460ea8ad5 is Completed after about 42s
+task task-cc1471b3872fb250304b1c67 is Completed after about 44s
   "outcome": "Completed",
-    "requests": 3,
+    "requests": 4,
     "toolCalls": 14,
-    "costUsd": 0.00808493
+    "costUsd": 0.008523235
     "runtimeLevel": "act-within-policy",
     "enforced": true,
-commands the bot ran (from the execution's tool calls):
-      7  status: completed   name: local_exec
-      3  status: failed      name: local_exec
-      3  status: forbidden   name: local_exec
-report file: /home/gx10a/.local/state/underpass-bots/artifacts/task-9b6621bbe0d2191460ea8ad5/report.md
+tool calls by status (completed = ran, failed = ran and exited non-zero, forbidden = refused by the policy outside the model):
+      7 completed
+      1 denied
+      3 failed
+      3 forbidden
+report file: /home/gx10a/.local/state/underpass-bots/artifacts/task-cc1471b3872fb250304b1c67/report.md
 
 ## 5. the report
-# Diagnosis: underpass-demo-broken.service (host gx10-ff95)
+# Diagnosis: underpass-demo-broken.service on gx10-ff95
 
-No changes were made. Every command was read-only. Four commands were refused by the execution policy and are noted below.
+**Summary:** The unit exits with status 1 on start because `demo-app` cannot open `/etc/demo/app.conf`
+("No such file or directory"). The journal shows two failed starts. I did not change anything on the host.
 
-## 1. Timeline
-- **03:25:02**: `systemd[2559]` starts `underpass-demo-broken.service` …
-- **03:25:02**: `sh[2874465]: demo-app: cannot open /etc/demo/app.conf: No such file or directory`
-- **03:25:02**: `sh[2874465]: demo-app: refusing to start without a configuration`
-- **03:25:02**: `systemd[2559]: underpass-demo-broken.service: Main process exited, code=exited, status=1/FAILURE`
-- **03:25:02**: `systemd[2559]: underpass-demo-broken.service: Triggering OnFailure= dependencies.`
+## 1. Timeline (UTC, oldest first)
+- **2026-10-24 01:25:02Z (03:25:02 local):** first logged start of `underpass-demo-broken.service` under the user
+  manager (PID 2559). `sh[2874465]` prints `demo-app: cannot open /etc/demo/app.conf: No such file or directory`,
+  then `demo-app: refusing to start without a configuration`. systemd logs `Main process exited, code=exited,
+  status=1/FAILURE`, `Failed with result 'exit-code'`, and `Triggering OnFailure= dependencies`.
+- **2026-10-24 01:38:14Z (03:38:14 local): the alert.** The same sequence repeats in `sh[2887825]` …
+
+## 2. Services involved
+- **`underpass-demo-broken.service`** (user manager, supervised by `systemd[2559]`): the failed unit. …
+- **`/etc/demo/app.conf`** (file dependency, host-local): reported missing at both runs.
+- **No remote hosts or network services** appear in the unit's journal.
 
 ## 3. Commands run
-1. `systemctl --user status underpass-demo-broken.service --no-pager`: exit 1, `Failed to connect to bus: No medium found`. …
-2. `journalctl --user -u underpass-demo-broken.service --no-pager -n 200`: 7 lines, the full failure sequence shown in section 1.
-4. `uptime`: `03:25:11 up 8 days, 9:42, 1 user, load average: 0.66, 0.89, 1.06`. Load is low.
-5. `free -h`: 121Gi total, 32Gi used, 89Gi available. … Memory is not the cause.
-6. `df -h`: `/` is 916G, 620G used, 249G available (72%). Disk is not the cause.
-10. `dmesg --nopager`: refused by the kernel: `dmesg: read kernel buffer failed: Operation not permitted`.
-11. `env XDG_RUNTIME_DIR=/run/user/1000 systemctl --user status …`: **refused by execution policy** …
-14. `ls -la /etc/demo`: **refused by execution policy**. I could not check whether the directory exists …
+1. `journalctl --user -u underpass-demo-broken.service --no-pager -n 200`: 14 lines, two failed starts …
+2. `systemctl --user status underpass-demo-broken.service --no-pager`: no status shown. Output: `Failed to connect
+   to bus: No medium found`. … so I relied on `journalctl --user` as instructed.
+3. `uptime`: `03:38:22 up 8 days, 9:55, 1 user, load average: 1.04, 0.98, 1.00`.
+4. `free -h`: 121Gi total, 32Gi used, 88Gi available; swap 10Gi of 15Gi used.
+5. `df -h`: root `/` at 72% (249G free) …
+9. `dmesg --nopager`: refused with `dmesg: read kernel buffer failed: Operation not permitted`. …
+10. `timedatectl show --property=Timezone --value`: **refused by policy**. …
+12. `ls -la /etc/demo ~/.config/systemd/user`: **refused by policy** (`local_exec` denied).
+13. `local_read` of `/home/gx10a/.config/systemd/user/underpass-demo-broken.service`: rejected, because paths must
+    be inside the workspace. The unit file is unreadable.
 
 ## 4. Hypotheses, ordered by evidence
-**H1 (strongest): the configuration file /etc/demo/app.conf is missing, so demo-app exits with status 1 at startup.**
-- For: the log names the exact path and error … The failure is in the first second of the run …
-**H3: a host-level problem (memory, disk, load or kernel fault) caused the failure.**
-- Against: 89Gi memory available, 249G disk free, load under 1. No OOM, I/O or kernel warning …
+1. **The configuration file `/etc/demo/app.conf` is missing on this host (strongest).**
+   - For: both runs log `cannot open /etc/demo/app.conf: No such file or directory`, which is a "not found" error
+     and not a permission error. … The failure is identical at 03:25 and 03:38, so it is consistent and reproducible.
+   - Against: I could not list `/etc/demo` or read the unit file, so I cannot confirm the path the unit expects …
+4. **Host resource exhaustion or kernel-level failure (weak; not supported).**
+   - Against: 88Gi is available, root has 249G free, load is about 1.0, and the demo errors are file-not-found …
 
-## 5. Proposed next steps
-These are for an operator to do. I did not do them.
-2. Confirm the state of `/etc/demo/app.conf` directly …
-4. If it is not intentional, restore the configuration file from its source, then restart the unit yourself.
+## 5. Proposed next steps (for an operator; not done by me)
+1. Confirm the missing file as the operator: `ls -la /etc/demo` and `ls -la /etc/demo/app.conf`. …
+3. Decide the fix: either deploy the missing `app.conf` … or correct the unit's path. …
 
 ## 6. restart the control plane: the bot and the task are still there
   "id": "sre-host-bot",
   "status": "Enabled",
-  "id": "task-9b6621bbe0d2191460ea8ad5",
+  "id": "task-cc1471b3872fb250304b1c67",
   "status": "Completed",
 Started underpass-bots.service - Underpass Bots control plane (SRE host bot).
-2026/10/24 03:25:47 daemon: serving on /home/gx10a/.local/state/underpass-bots/underpass-bots.sock, tick 2s
+2026/10/24 03:39:00 daemon: serving on /home/gx10a/.local/state/underpass-bots/underpass-bots.sock, tick 2s
 
 ## cleanup
   "mode": "user",
@@ -390,13 +404,18 @@ kept the state (/home/gx10a/.local/state/underpass-bots) and the env file …; r
 ```
 
 What the run shows against the vision's criteria: the trigger was the
-failed unit (§14.2), the repeated alert named the same task (§14.7), the
-three forbidden calls (`env …`, `date`, `ls /etc/demo`) were refused by
-AXLR outside the model and the run went on to its answer (§14.5), the bot
-changed nothing (§14.12), the bot and the task survived the restart
-(§14.1), and the cost and the tool calls are in the execution (§12.3). A
-second run of the same script finds the bot already registered and the
-state kept.
+failed unit and the alert unit created the task (§14.2); the operator's
+repeated alert found it with `"created": false` (§14.7); three calls
+(`timedatectl`, `date`, `ls -la /etc/demo …`) were refused by the policy
+outside the model, one `local_read` outside the workspace was refused by
+AXLR's workspace rule, and the run still went on to its answer (§14.5);
+the bot changed nothing (§14.12); the bot and the task survived the restart
+(§14.1); the cost, the tool calls and the trace are in the execution
+(§12.3). Three commands ran and exited non-zero on the host, among them
+`systemctl --user status` (no bus) and `dmesg` (not permitted), and the
+report says so instead of guessing. It was the second run of the script
+on this machine: the journal already held the first failure, and the
+report's timeline shows both.
 
 Two limits seen in the run, both in user mode: `systemctl --user` cannot
 reach the user manager from inside an execution because AXLR hands a
