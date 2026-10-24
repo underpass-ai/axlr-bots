@@ -152,6 +152,15 @@ func (p *turnParser) fromResult(r *resultObject) application.ExecutionReport {
 	case "interrupted":
 		report.Outcome = domain.ExecutionFailed
 		report.FailureReason = "interrupted: " + orElse(r.Error, "the turn stopped before its end")
+	case "budget_exceeded":
+		// A limit of the execution's budget ended the run before the next
+		// request or call; the error names the limit. A call the limit
+		// refused is kept as the pending decision for the record.
+		report.Outcome = domain.ExecutionFailed
+		report.FailureReason = "budget exceeded: " + orElse(r.Error, "a limit of the execution's budget was reached")
+		if r.Pending != nil {
+			report.Result.PendingDecision = &domain.PendingDecision{Tool: r.Pending.Tool, CallID: r.Pending.CallID, SessionID: result.SessionID, Arguments: compactJSON(r.Pending.Arguments)}
+		}
 	default:
 		report.Outcome = domain.ExecutionFailed
 		report.FailureReason = fmt.Sprintf("runtime result has unknown status %q", r.Status)

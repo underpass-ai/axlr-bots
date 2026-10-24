@@ -86,6 +86,9 @@ func TestHelperProcess(t *testing.T) {
 	case "result-interrupted-no-error":
 		say(`{"type":"result","result":{"schema":"axlr.execution-result/v1","status":"interrupted","session_id":"sess-1"}}`)
 		os.Exit(1)
+	case "result-budget-exceeded":
+		say(session, reqd2, `{"type":"result","session":"sess-1","result":{"schema":"axlr.execution-result/v1","status":"budget_exceeded","session_id":"sess-1","sessions":["sess-1"],"error":"budget: tool_calls 1 reached","pending":{"call_id":"c2","tool":"local_exec","arguments":{"program":"touch"}},"tool_calls":[{"call_id":"c2","tool":"local_exec","status":"pending"}],"usage":{"requests":2},"artifacts":[]}}`)
+		os.Exit(1)
 	case "result-unknown-status":
 		say(session, `{"type":"result","session":"sess-1","result":{"schema":"axlr.execution-result/v1","status":"meh","session_id":"sess-1"}}`)
 		os.Exit(0)

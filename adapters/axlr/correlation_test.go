@@ -131,3 +131,14 @@ func TestCorrelationFileErrors(t *testing.T) {
 		t.Errorf("blocked bundle dir: %v", err)
 	}
 }
+
+func TestBudgetExceededEndsTheRunFailedWithTheLimit(t *testing.T) {
+	e, _ := fake(t, "result-budget-exceeded")
+	report, err := e.Execute(context.Background(), correlatedRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Outcome != domain.ExecutionFailed || report.FailureReason != "budget exceeded: budget: tool_calls 1 reached" || report.Result.PendingDecision == nil || report.Result.PendingDecision.CallID != "c2" || report.Usage.Requests != 2 {
+		t.Errorf("report = %+v", report)
+	}
+}
