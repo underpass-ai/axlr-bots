@@ -18,7 +18,7 @@ operator ──CLI──▶ control plane (this repo) ──RuntimeExecutor─�
 | Package | Role |
 |---|---|
 | `domain` | Bot, Task, Execution aggregates; value objects validated in constructors; events (vision §11.2) under a schema version; audit entries. One file per type. |
-| `application` | Ports (`BotRepository`, `TaskRepository`, `ExecutionRepository`, `EventPublisher`, `AuditSink`, `RuntimeExecutor`) and use cases (`RegisterBot`, `EnableBot`, `SubmitTask`, `RunTask`, `GetTask`, `GetExecution`, …). |
+| `application` | Ports (`BotRepository`, `TaskRepository`, `ExecutionRepository`, `EventPublisher`, `AuditSink`, `RuntimeExecutor`, `TraceLocator`) and use cases (`RegisterBot`, `EnableBot`, `SubmitTask`, `RunTask`, `ReconcileTasks`, `GetTask`, `GetExecution`, …). |
 | `adapters/filestore` | One JSON file per aggregate under the state directory, written atomically (temp file, fsync, rename). |
 | `adapters/jsonl` | Append-only `events.jsonl` and `audit.jsonl`. |
 | `adapters/axlr` | Runs `axlr-tui --exec --json --approve none` as a subprocess and reads the execution result object; keeps the raw lines as the trace. |
@@ -120,6 +120,31 @@ State directory layout:
   workspaces/<bot-id>/        (the --root AXLR runs in)
 ```
 
+## Recovery
+
+`task run` writes the task and its execution as `Running` *before* it calls
+the runtime, on purpose: if the process dies (kill, OOM, power loss), the
+state directory shows a `Running` task with a `Running` execution and no
+`endedAt`, instead of hiding the loss. Nothing else ends them, so the vision's
+§14.6 rule, no task left `Running` forever, is kept by an explicit command:
+
+```bash
+$ub task reconcile                # {"failed": ["task-…"], "skipped": []}
+$ub task reconcile --grace 30s    # a shorter grace for a known-dead process
+```
+
+It reads every `Running` task and fails those whose execution started more
+than a grace period ago, by default the bot's task timeout plus one minute:
+the execution ends `Failed` with the reason `reconciled: the control plane
+found it Running after <age>; the process that ran it is gone` (its trace
+under `traces/` is kept when the file exists), the task moves to `Failed`
+with the same reason, a `bot.task.failed` event with `"reason": "reconciled"`
+is published and a `task.reconcile` audit entry is recorded. Younger tasks
+may still be running in another process and are reported as `skipped`.
+Running it again is harmless. A task whose execution had already ended when
+the process died (between the two saves) is failed too, with a reason that
+names the execution's outcome.
+
 ## Command reference
 
 ```text
@@ -132,6 +157,7 @@ underpass-bots [--state <dir>] [--axlr-bin <path>] [--actor <name>] <command>
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>]
   task run <task-id>
   task get <task-id>
+  task reconcile [--grace <duration>]
   execution get <execution-id>
 ```
 
@@ -141,8 +167,8 @@ then `~/.local/state/underpass-bots`. `--axlr-bin` defaults to
 
 ## What Phase 0 leaves out
 
-Scheduler and triggers, the approval use case over `Decide`, reconciling a
-task left `Running` by a crash, tool allow-list enforcement (needs the
+Scheduler and triggers (reconciliation is a command, not a loop), the
+approval use case over `Decide`, tool allow-list enforcement (needs the
 contract's `policy`), budgets enforced by the runtime, `axlr-serve` as a
 second `RuntimeExecutor`, and a real store. The vision's §13 and §14 name
 them for Phase 1 and 2.

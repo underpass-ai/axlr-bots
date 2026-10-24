@@ -2,11 +2,16 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/underpass-ai/underpass-bots/adapters/filestore"
+	"github.com/underpass-ai/underpass-bots/domain"
 )
 
 // fakeAXLR writes a shell stand-in for axlr-tui that prints the lines of
@@ -179,6 +184,9 @@ func TestUsageAndErrors(t *testing.T) {
 		{[]string{"task", "get"}, exitUsage, "exactly one"},
 		{[]string{"task", "get", "Bad Id"}, exitError, "task id"},
 		{[]string{"task", "get", "ghost"}, exitError, "not found"},
+		{[]string{"task", "reconcile", "extra"}, exitUsage, "takes no arguments"},
+		{[]string{"task", "reconcile", "--grace", "soon"}, exitUsage, "invalid value"},
+		{[]string{"task", "reconcile", "--bogus"}, exitUsage, "flag provided but not defined"},
 		{[]string{"execution", "get"}, exitUsage, "exactly one"},
 		{[]string{"execution", "get", "Bad Id"}, exitError, "execution id"},
 		{[]string{"execution", "get", "ghost"}, exitError, "not found"},
@@ -265,5 +273,102 @@ func TestDefaults(t *testing.T) {
 	printJSON(&out, make(chan int))
 	if strings.TrimSpace(out.String()) != "{}" {
 		t.Errorf("printJSON fallback = %q", out.String())
+	}
+}
+
+// crashed stands for a process that died mid-run: it writes the task and
+// its execution as Running through the real repositories, as RunTask does
+// before calling the runtime, and nothing ends them.
+func crashed(t *testing.T, state, taskID string, startedAt time.Time) {
+	t.Helper()
+	ctx := context.Background()
+	task, err := domain.NewTask(domain.TaskID(taskID), "server-incident-investigator", "Investigate", domain.IdempotencyKey("key-"+taskID), "trace-abc", startedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executionID := domain.ExecutionID("exec-" + taskID)
+	if err := task.Start(executionID, startedAt); err != nil {
+		t.Fatal(err)
+	}
+	execution, err := domain.NewExecution(executionID, task.ID(), task.BotID(), startedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := filestore.NewExecutionRepository(state).Save(ctx, execution); err != nil {
+		t.Fatal(err)
+	}
+	if err := filestore.NewTaskRepository(state).Save(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTaskReconcileFailsWhatACrashLeftRunning(t *testing.T) {
+	state := t.TempDir()
+	c := cli{t: t, state: state, axlr: fakeAXLR(t, "completed")}
+	_, _ = c.json("bot", "register", "--file", definitionFile(t))
+	_, _ = c.json("bot", "enable", "server-incident-investigator")
+	// The example bot's timeout is 900s: the default grace is 16 minutes.
+	crashed(t, state, "task-old", time.Now().Add(-time.Hour))
+	crashed(t, state, "task-young", time.Now().Add(-time.Minute))
+	tracePath := filepath.Join(state, "traces", "exec-task-old.jsonl")
+	_ = os.MkdirAll(filepath.Dir(tracePath), 0o755)
+	_ = os.WriteFile(tracePath, []byte(`{"type":"session","session":"sess-1"}`+"\n"), 0o644)
+
+	code, out := c.json("task", "reconcile")
+	if code != exitOK {
+		t.Fatalf("reconcile: %d %v", code, out)
+	}
+	if failed, _ := json.Marshal(out["failed"]); string(failed) != `["task-old"]` {
+		t.Errorf("failed = %s", failed)
+	}
+	if skipped, _ := json.Marshal(out["skipped"]); string(skipped) != `["task-young"]` {
+		t.Errorf("skipped = %s", skipped)
+	}
+	code, task := c.json("task", "get", "task-old")
+	reason, _ := task["failureReason"].(string)
+	if code != exitOK || task["status"] != "Failed" || !strings.HasPrefix(reason, "reconciled: the control plane found it Running after 1h0m0s; the process that ran it is gone") {
+		t.Errorf("old task: %d %v", code, task)
+	}
+	code, execution := c.json("execution", "get", "exec-task-old")
+	if code != exitOK || execution["outcome"] != "Failed" || execution["failureReason"] != reason || execution["tracePath"] != tracePath || execution["endedAt"] == nil {
+		t.Errorf("old execution: %d %v", code, execution)
+	}
+	code, task = c.json("task", "get", "task-young")
+	if code != exitOK || task["status"] != "Running" {
+		t.Errorf("young task: %d %v", code, task)
+	}
+	code, execution = c.json("execution", "get", "exec-task-young")
+	if code != exitOK || execution["outcome"] != "Running" {
+		t.Errorf("young execution: %d %v", code, execution)
+	}
+	events, _ := os.ReadFile(filepath.Join(state, "events.jsonl"))
+	if !strings.Contains(string(events), `"reason":"reconciled"`) || strings.Count(string(events), "bot.task.failed") != 1 {
+		t.Errorf("events: %s", events)
+	}
+	audit, _ := os.ReadFile(filepath.Join(state, "audit.jsonl"))
+	if !strings.Contains(string(audit), `"action":"task.reconcile"`) {
+		t.Errorf("audit: %s", audit)
+	}
+
+	// Nothing left to do: the failed task is no longer Running, the young
+	// one is still within its grace. A shorter grace fails the young one too.
+	code, out = c.json("task", "reconcile")
+	if failed, _ := json.Marshal(out["failed"]); code != exitOK || string(failed) != `[]` {
+		t.Errorf("second reconcile: %d %v", code, out)
+	}
+	code, out = c.json("task", "reconcile", "--grace", "30s")
+	if failed, _ := json.Marshal(out["failed"]); code != exitOK || string(failed) != `["task-young"]` {
+		t.Errorf("short grace: %d %v", code, out)
+	}
+	code, execution = c.json("execution", "get", "exec-task-young")
+	if code != exitOK || execution["outcome"] != "Failed" || execution["tracePath"] != nil {
+		t.Errorf("young execution after a short grace: %d %v", code, execution)
+	}
+
+	// A Running task whose bot is gone is an error, not silence.
+	crashed(t, state, "task-orphan", time.Now().Add(-time.Hour))
+	_ = os.Remove(filepath.Join(state, "bots", "server-incident-investigator.json"))
+	if code, _, errText := c.run("task", "reconcile"); code != exitError || !strings.Contains(errText, "reconcile task task-orphan") {
+		t.Errorf("orphan: %d %s", code, errText)
 	}
 }

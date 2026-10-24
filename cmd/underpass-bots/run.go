@@ -53,6 +53,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		code = taskRun(ctx, app, rest, stdout, stderr)
 	case "task get":
 		code = taskGet(ctx, app, rest, stdout, stderr)
+	case "task reconcile":
+		code = taskReconcile(ctx, app, rest, stdout, stderr)
 	case "execution get":
 		code = executionGet(ctx, app, rest, stdout, stderr)
 	default:
@@ -103,6 +105,9 @@ func printUsage(w io.Writer) {
   task run <task-id>                  run a pending task once through AXLR
                                       (exit 0 completed, 3 decision required, 1 failed)
   task get <task-id>                  show one task
+  task reconcile [--grace <duration>] fail the tasks a crashed run left Running
+                                      longer than the grace (default: the bot's
+                                      task timeout plus 1m); prints failed/skipped
   execution get <execution-id>        show one execution: outcome, answer, usage
 
 State lives under --state (default $UNDERPASS_STATE, $XDG_STATE_HOME/underpass-bots

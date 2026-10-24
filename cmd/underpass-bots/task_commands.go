@@ -77,3 +77,31 @@ func taskGet(ctx context.Context, app application.Dependencies, args []string, s
 	printJSON(stdout, task.Snapshot())
 	return exitOK
 }
+
+func taskReconcile(ctx context.Context, app application.Dependencies, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("task reconcile", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	grace := flags.Duration("grace", 0, "fail Running tasks older than this (default: the bot's task timeout plus 1m)")
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "underpass-bots: task reconcile takes no arguments, only --grace")
+		return exitUsage
+	}
+	result, err := application.NewReconcileTasks(app).Execute(ctx, *grace)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	printJSON(stdout, reconcileOutput{Failed: taskIDStrings(result.Failed), Skipped: taskIDStrings(result.Skipped)})
+	return exitOK
+}
+
+// taskIDStrings renders ids for JSON; an empty list prints as [] not null.
+func taskIDStrings(ids []domain.TaskID) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, id.String())
+	}
+	return out
+}
