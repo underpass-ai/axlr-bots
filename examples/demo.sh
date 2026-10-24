@@ -151,9 +151,11 @@ $ub bot update bot --file "$patch" | grep -E '"type"|"name"|"every"|"secret"|"ob
 echo "(the secret is generated per run and shown redacted; the timer is armed and fires at once)"
 webhook() { curl -sS --cacert "$state/ca/ca.crt" -H "X-Axlr-Secret: $secret" -H "Idempotency-Key: deploy-$stamp" -H 'Content-Type: application/json' -d '{"type": "deploy", "service": "web"}' "https://$api/v1/triggers/bot/deploy"; }
 echo "curl --cacert $state/ca/ca.crt -H 'X-Axlr-Secret: <secret>' -H 'Idempotency-Key: deploy-$stamp' -d '{\"type\": \"deploy\", \"service\": \"web\"}' https://$api/v1/triggers/bot/deploy"
-webhook | tr ',' '\n' | grep -E '"created"|"id"|"objective"|"idempotencyKey"|"trigger"' | head -5
-webhook_task=$(webhook | task_id)
-echo "the same delivery again: $(webhook | tr ',' '\n' | grep -E '"created"' | head -1 | tr -d ' {'), same task $webhook_task"
+first=$(webhook)
+printf '%s\n' "$first" | tr ',' '\n' | grep -E '"created"|"id"|"idempotencyKey"|"trigger"' | head -4
+webhook_task=$(printf '%s\n' "$first" | task_id)
+again=$(webhook)
+echo "the same delivery again: $(printf '%s\n' "$again" | tr ',' '\n' | grep -E '"created"' | head -1 | tr -d ' {'), task $(printf '%s\n' "$again" | task_id) (the same)"
 curl -sS -o /dev/null -w 'without the secret: HTTP %{http_code}\n' --cacert "$state/ca/ca.crt" -d '{"type": "deploy", "service": "web"}' "https://$api/v1/triggers/bot/deploy"
 curl -sS -o /dev/null -w 'operator route without the token: HTTP %{http_code}\n' --cacert "$state/ca/ca.crt" "https://$api/v1/bots"
 curl -sS -o /dev/null -w 'operator route with the token: HTTP %{http_code}\n' --cacert "$state/ca/ca.crt" -H "Authorization: Bearer $(cat "$state/api.token")" "https://$api/v1/bots"
@@ -179,9 +181,9 @@ $ctl restart axlr-bots.service axlr-node.service
 wait_for_socket
 wait_for_node
 sleep 3
-echo "timer tasks of the bot: $(grep -l '"idempotencyKey": "timer:clock:' "$state"/tasks/*.json | wc -l) (one slot, one task)"
-echo "tasks for delivery deploy-$stamp: $(grep -l "\"id\": \"$webhook_task\"" "$state"/tasks/*.json | wc -l)"
-echo "trigger fires in the bot's events: $($ub bot events bot --limit 40 | tr -d '\n' | sed 's/}, *{/}\n{/g' | grep -c '"bot.trigger.fired"') (three: the webhook, its redelivery, the timer)"
+slot=$(sed -n 's/.*"lastScheduledAt": "\([^"]*\)".*/\1/p' "$state/timers/bot~clock.json")
+echo "timer tasks for the slot $slot: $(grep -l "\"idempotencyKey\": \"timer:clock:" "$state"/tasks/*.json | xargs grep -l "\"id\": \"$timer_task\"" | wc -l); timer tasks in all: $(grep -l '"idempotencyKey": "timer:clock:' "$state"/tasks/*.json | wc -l) (one per slot)"
+echo "fires of the delivery deploy-$stamp in the events: $($ub bot events bot --limit 60 | tr -d '\n' | sed 's/}, *{/}\n{/g' | grep '"bot.trigger.fired"' | grep -c "deploy-$stamp") (two: the delivery and its redelivery); tasks for it: $(grep -l "\"idempotencyKey\": \"$(printf '%s\n' "$first" | sed -n 's/.*"idempotencyKey":"\([^"]*\)".*/\1/p')\"" "$state"/tasks/*.json | wc -l)"
 journalctl --user -u axlr-bots.service -n 4 --no-pager -o cat | grep -E 'serving|timer|token' || true
 
 say "installed and running"
