@@ -400,3 +400,64 @@ func TestEnrollmentRepositoryAndDenylist(t *testing.T) {
 		t.Error("a denylist under a file read")
 	}
 }
+
+func TestTimerRepository(t *testing.T) {
+	ctx := context.Background()
+	repo := NewTimerRepository(t.TempDir())
+	var _ application.TimerRepository = repo
+	timer, _ := domain.NewTimer("bot", "tick", "every 10m0s", t0)
+	if err := repo.Save(ctx, timer); err != nil {
+		t.Fatal(err)
+	}
+	_ = timer.Fired("task-1", t0.Add(time.Second), t0.Add(10*time.Minute))
+	if err := repo.Save(ctx, timer); err != nil {
+		t.Fatal(err)
+	}
+	other, _ := domain.NewTimer("bot", "nightly", "cron 0 3 * * *", t0.Add(time.Hour))
+	_ = repo.Save(ctx, other)
+	got, err := repo.Get(ctx, domain.TimerKey("bot", "tick"))
+	if err != nil || !got.NextFireAt().Equal(t0.Add(10*time.Minute)) || got.LastTaskID() != "task-1" || !got.LastScheduledAt().Equal(t0) {
+		t.Errorf("reloaded timer: %v %+v", err, got.Snapshot())
+	}
+	if _, err := repo.Get(ctx, "bot~missing"); !domain.IsNotFound(err) {
+		t.Error("missing timer:", err)
+	}
+	list, err := repo.List(ctx)
+	if err != nil || len(list) != 2 || list[0].Trigger() != "nightly" || list[1].Trigger() != "tick" {
+		t.Errorf("list = %v %v", list, err)
+	}
+	if err := repo.Delete(ctx, domain.TimerKey("bot", "nightly")); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Delete(ctx, domain.TimerKey("bot", "nightly")); err != nil {
+		t.Error("deleting a missing timer failed:", err)
+	}
+	if list, _ := repo.List(ctx); len(list) != 1 {
+		t.Errorf("after delete: %d timers", len(list))
+	}
+	if empty, err := NewTimerRepository(t.TempDir()).List(ctx); err != nil || len(empty) != 0 {
+		t.Error("an empty directory should list nothing")
+	}
+	_ = os.WriteFile(filepath.Join(repo.files.dir, "bad~one.json"), []byte(`{"botId": "Bad"}`), 0o600)
+	if _, err := repo.List(ctx); err == nil {
+		t.Error("a bad timer file listed")
+	}
+}
+
+func TestTaskRepositoryKeepsTheTriggerAndInput(t *testing.T) {
+	ctx := context.Background()
+	repo := NewTaskRepository(t.TempDir())
+	task, _ := domain.NewTask("task-w", "bot-1", "Handle deploy", "webhook:deploy:abc", "trace-1", t0)
+	_ = task.Attribute(domain.TriggerRef{Type: domain.TriggerWebhook, Name: "deploy"}, []byte(`{"type":"deploy"}`))
+	if err := repo.Save(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.Get(ctx, "task-w")
+	if err != nil || got.Trigger().Name != "deploy" || string(got.Input()) != `{"type":"deploy"}` {
+		t.Errorf("reloaded: %v %+v", err, got.Snapshot())
+	}
+	found, ok, err := repo.FindByIdempotencyKey(ctx, "bot-1", "webhook:deploy:abc")
+	if err != nil || !ok || found.ID() != "task-w" {
+		t.Error("lookup by the fire key failed")
+	}
+}

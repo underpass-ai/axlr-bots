@@ -26,15 +26,18 @@ func Dependencies(stateDir, axlrBin, actor string) (application.Dependencies, er
 		return application.Dependencies{}, fmt.Errorf("state directory: %w", err)
 	}
 	executor := axlr.NewExecutor(axlrBin, stateDir)
+	events := jsonl.NewEventLog(stateDir)
 	deps := application.Dependencies{
 		Bots:        filestore.NewBotRepository(stateDir),
 		Tasks:       filestore.NewTaskRepository(stateDir),
 		Executions:  filestore.NewExecutionRepository(stateDir),
+		Timers:      filestore.NewTimerRepository(stateDir),
 		Nodes:       filestore.NewNodeRepository(stateDir),
 		Enrollments: filestore.NewEnrollmentRepository(stateDir),
 		Certifier:   pki.NewCertifier(stateDir),
 		Denylist:    filestore.NewCertificateDenylist(stateDir),
-		Events:      jsonl.NewEventLog(stateDir),
+		Events:      events,
+		EventReader: events,
 		Audit:       jsonl.NewAuditLog(stateDir),
 		Runtime:     executor,
 		Decisions:   executor,
