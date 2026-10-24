@@ -27,4 +27,9 @@ type Service interface {
 	GetExecution(ctx context.Context, id string) (domain.ExecutionSnapshot, error)
 	ListNodes(ctx context.Context) ([]domain.NodeSnapshot, error)
 	GetNode(ctx context.Context, id string) (domain.NodeSnapshot, error)
+	// CreateEnrollmentToken mints a one-time token for a node to come;
+	// the token is in the answer and nowhere else.
+	CreateEnrollmentToken(ctx context.Context, request EnrollTokenRequest) (EnrollTokenResponse, error)
+	// RevokeNode cuts a node off and fails what it was running.
+	RevokeNode(ctx context.Context, id string) (RevokeResponse, error)
 }

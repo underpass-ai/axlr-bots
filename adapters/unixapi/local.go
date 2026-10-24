@@ -2,9 +2,11 @@ package unixapi
 
 import (
 	"context"
+	"time"
 
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
+	"github.com/underpass-ai/axlr-bots/nodeproto"
 )
 
 // Local is the Service over the use cases, in process. Runs and
@@ -166,6 +168,39 @@ func (l *Local) GetNode(ctx context.Context, id string) (domain.NodeSnapshot, er
 		return domain.NodeSnapshot{}, err
 	}
 	return node.Snapshot(), nil
+}
+
+func (l *Local) CreateEnrollmentToken(ctx context.Context, request EnrollTokenRequest) (EnrollTokenResponse, error) {
+	var ttl time.Duration
+	if request.TTL != "" {
+		parsed, err := time.ParseDuration(request.TTL)
+		if err != nil {
+			return EnrollTokenResponse{}, domain.ValidationError{Field: "ttl", Reason: "must be a duration such as 1h"}
+		}
+		ttl = parsed
+	}
+	token, err := application.NewCreateEnrollmentToken(l.deps).Execute(ctx, request.NodeID, request.Labels, ttl)
+	if err != nil {
+		return EnrollTokenResponse{}, err
+	}
+	encoded := nodeproto.EnrollToken{ID: token.ID.String(), Secret: token.Secret, NodeID: token.NodeID.String(), CAPEM: string(token.CAPEM)}.Encode()
+	return EnrollTokenResponse{Token: encoded, ID: token.ID.String(), NodeID: token.NodeID.String(), Labels: token.Labels, ExpiresAt: token.ExpiresAt}, nil
+}
+
+func (l *Local) RevokeNode(ctx context.Context, id string) (RevokeResponse, error) {
+	nodeID, err := domain.NewNodeID(id)
+	if err != nil {
+		return RevokeResponse{}, err
+	}
+	result, err := l.runner.RevokeNode(ctx, nodeID)
+	if err != nil {
+		return RevokeResponse{}, err
+	}
+	failed := make([]string, 0, len(result.FailedTasks))
+	for _, task := range result.FailedTasks {
+		failed = append(failed, task.String())
+	}
+	return RevokeResponse{Node: result.Node.Snapshot(), FailedTasks: failed}, nil
 }
 
 // Dependencies are the use cases' dependencies, for the node routes.

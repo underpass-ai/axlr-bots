@@ -3,8 +3,6 @@ package unixapi
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -210,6 +208,7 @@ func TestErrorsRoundTrip(t *testing.T) {
 		{domain.ValidationError{Field: "f", Reason: "r"}, http.StatusBadRequest, KindValidation},
 		{domain.StateError{Subject: "s", Current: "c", Attempted: "a"}, http.StatusConflict, KindState},
 		{domain.ConflictError{Kind: "bot", ID: "b"}, http.StatusConflict, KindConflict},
+		{domain.ForbiddenError{Reason: "no"}, http.StatusForbidden, KindForbidden},
 		{context.Canceled, http.StatusInternalServerError, KindInternal},
 	}
 	for _, tc := range cases {
@@ -220,6 +219,9 @@ func TestErrorsRoundTrip(t *testing.T) {
 		back := fromWire(status, response)
 		if tc.kind == KindNotFound && !domain.IsNotFound(back) {
 			t.Errorf("not found did not come back: %v", back)
+		}
+		if tc.kind == KindForbidden && !domain.IsForbidden(back) {
+			t.Errorf("forbidden did not come back: %v", back)
 		}
 		if back.Error() != tc.err.Error() {
 			t.Errorf("message changed: %v", back)
@@ -426,30 +428,10 @@ func TestNodeProtocolOverTheSocket(t *testing.T) {
 	}
 }
 
-func TestServeTCPAndNextAssignmentValidation(t *testing.T) {
+func TestNextAssignmentValidation(t *testing.T) {
 	deps, _ := compose.Dependencies(t.TempDir(), "axlr-tui", "test")
 	server := NewServer(NewLocal(deps))
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	address := listener.Addr().String()
-	_ = listener.Close()
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- server.ServeTCP(ctx, address) }()
-	client := NewClient("http://" + address)
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if _, err := client.ListNodes(context.Background()); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("tcp server not reachable")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if _, err := client.Register(context.Background(), application.NodeRegistration{ID: "web-1", HostName: "h"}); err != nil {
+	if _, err := application.NewRegisterNode(deps).Execute(context.Background(), application.NodeRegistration{ID: "web-1", HostName: "h"}); err != nil {
 		t.Fatal(err)
 	}
 	handler := server.Handler()
@@ -471,15 +453,10 @@ func TestServeTCPAndNextAssignmentValidation(t *testing.T) {
 	// A poll whose request is cancelled answers 204 at once.
 	pollCtx, cancelPoll := context.WithCancel(context.Background())
 	go func() { time.Sleep(50 * time.Millisecond); cancelPoll() }()
-	if _, found, err := client.NextAssignment(pollCtx, "web-1", 10*time.Second); found || (err != nil && !errors.Is(err, context.Canceled)) {
-		t.Logf("cancelled poll: %v %v", err, found)
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Error(err)
-	}
-	if err := server.ServeTCP(context.Background(), "256.256.256.256:1"); err == nil {
-		t.Error("bad address served")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/nodes/web-1/assignments/next?wait=10s", nil).WithContext(pollCtx))
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("cancelled poll = %d", rec.Code)
 	}
 	if NewClient("unix:///tmp/nothing.sock").address != "/tmp/nothing.sock" {
 		t.Error("unix:// prefix not stripped")

@@ -3,6 +3,7 @@ package unixapi
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,8 +19,9 @@ import (
 )
 
 // Client is the Service, and the node protocol's transport, over the
-// control plane's API: a Unix socket (a path, or unix:///path) or an
-// http:// address on the loopback or the network.
+// control plane's API: a Unix socket (a path, or unix:///path), or an
+// https:// address with the TLS configuration of an enrolled node
+// (NewTLSClient).
 type Client struct {
 	http    *http.Client
 	base    string
@@ -28,7 +30,8 @@ type Client struct {
 
 // NewClient talks to the control plane at the address. Runs can take as
 // long as a task, so the client sets no overall timeout; the caller's
-// context bounds a call.
+// context bounds a call. An http(s):// address gets the default
+// transport: for the node's certificate use NewTLSClient.
 func NewClient(address string) *Client {
 	if strings.HasPrefix(address, "http://") || strings.HasPrefix(address, "https://") {
 		return &Client{http: &http.Client{}, base: strings.TrimRight(address, "/"), address: address}
@@ -41,6 +44,15 @@ func NewClient(address string) *Client {
 		},
 	}
 	return &Client{http: &http.Client{Transport: transport}, base: "http://axlr-bots", address: socketPath}
+}
+
+// NewTLSClient talks to the control plane at an https:// address with
+// the TLS configuration: the node's certificate and the fleet CA
+// (pki.Credentials.ClientTLSConfig), or the CA alone to enroll
+// (pki.EnrollTLSConfig).
+func NewTLSClient(address string, config *tls.Config) *Client {
+	transport := &http.Transport{TLSClientConfig: config, ForceAttemptHTTP2: true}
+	return &Client{http: &http.Client{Transport: transport}, base: strings.TrimRight(address, "/"), address: address}
 }
 
 // Reachable reports whether a daemon answers on the socket.
@@ -109,6 +121,23 @@ func (c *Client) ListNodes(ctx context.Context) ([]domain.NodeSnapshot, error) {
 func (c *Client) GetNode(ctx context.Context, id string) (domain.NodeSnapshot, error) {
 	var node domain.NodeSnapshot
 	return node, c.call(ctx, http.MethodGet, "/v1/nodes/"+url.PathEscape(id), nil, &node)
+}
+
+func (c *Client) CreateEnrollmentToken(ctx context.Context, request EnrollTokenRequest) (EnrollTokenResponse, error) {
+	var response EnrollTokenResponse
+	return response, c.call(ctx, http.MethodPost, "/v1/enrollments", request, &response)
+}
+
+func (c *Client) RevokeNode(ctx context.Context, id string) (RevokeResponse, error) {
+	var response RevokeResponse
+	return response, c.call(ctx, http.MethodPost, "/v1/nodes/"+url.PathEscape(id)+"/revoke", nil, &response)
+}
+
+// Enroll presents a token and a signing request and receives the node's
+// certificate: the one call a node makes before it has one.
+func (c *Client) Enroll(ctx context.Context, request nodeproto.EnrollRequest) (nodeproto.EnrollResponse, error) {
+	var response nodeproto.EnrollResponse
+	return response, c.call(ctx, http.MethodPost, "/v1/enroll", request, &response)
 }
 
 // Register is the node protocol's registration (application.NodeTransport).

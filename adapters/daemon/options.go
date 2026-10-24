@@ -1,8 +1,10 @@
 package daemon
 
 import (
+	"crypto/tls"
 	"io"
 	"log"
+	"net"
 	"time"
 )
 
@@ -16,9 +18,17 @@ const (
 type Options struct {
 	// SocketPath is where the local API listens.
 	SocketPath string
-	// ListenAddr is an optional TCP address for nodes on other hosts
-	// (127.0.0.1:7878 on one host); empty listens on the socket only.
+	// ListenAddr is an optional TLS address for nodes on other hosts
+	// (127.0.0.1:7878 on one host, 0.0.0.0:7878 for a fleet); empty
+	// listens on the socket only. TLS must be set with it.
 	ListenAddr string
+	// Listener is an already bound listener for the TLS address, in
+	// place of ListenAddr (a test that asked for port 0).
+	Listener net.Listener
+	// TLS is the configuration of the TLS address: the server
+	// certificate issued by the fleet CA and client certificates verified
+	// against it (pki.ServerTLSConfig).
+	TLS *tls.Config
 	// Tick is how often the worker looks for Pending tasks.
 	Tick time.Duration
 	// ReconcileEvery is how often tasks a dead run left Running are failed.

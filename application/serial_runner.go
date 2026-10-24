@@ -56,3 +56,11 @@ func (r *SerialRunner) Report(ctx context.Context, node domain.NodeID, execution
 	defer r.mu.Unlock()
 	return NewReportExecution(r.deps).Execute(ctx, node, execution, report)
 }
+
+// RevokeNode revokes a node under the same lock as the assignments, so
+// an execution is never handed to a node as it is being revoked.
+func (r *SerialRunner) RevokeNode(ctx context.Context, node domain.NodeID) (RevokeNodeResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return NewRevokeNode(r.deps).Execute(ctx, node)
+}

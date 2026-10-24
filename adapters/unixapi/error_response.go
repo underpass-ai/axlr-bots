@@ -17,5 +17,6 @@ const (
 	KindValidation = "validation"
 	KindState      = "state"
 	KindConflict   = "conflict"
+	KindForbidden  = "forbidden"
 	KindInternal   = "internal"
 )

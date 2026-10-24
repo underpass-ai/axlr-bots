@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -25,10 +26,13 @@ func toWire(err error) (int, ErrorResponse) {
 		validation domain.ValidationError
 		state      domain.StateError
 		conflict   domain.ConflictError
+		forbidden  domain.ForbiddenError
 	)
 	switch {
 	case errors.As(err, &notFound):
 		return http.StatusNotFound, ErrorResponse{Kind: KindNotFound, Message: err.Error(), Resource: notFound.Kind, ID: notFound.ID}
+	case errors.As(err, &forbidden):
+		return http.StatusForbidden, ErrorResponse{Kind: KindForbidden, Message: err.Error()}
 	case errors.As(err, &validation):
 		return http.StatusBadRequest, ErrorResponse{Kind: KindValidation, Message: err.Error()}
 	case errors.As(err, &state):
@@ -40,10 +44,15 @@ func toWire(err error) (int, ErrorResponse) {
 }
 
 // fromWire rebuilds the error the daemon reported. A not-found error
-// comes back as a domain.NotFoundError so IsNotFound keeps working.
+// comes back as a domain.NotFoundError so IsNotFound keeps working, and
+// a forbidden one as a domain.ForbiddenError so a node knows it was
+// refused rather than unreachable.
 func fromWire(status int, response ErrorResponse) error {
 	if response.Message == "" {
 		response.Message = fmt.Sprintf("the control plane answered HTTP %d", status)
+	}
+	if response.Kind == KindForbidden {
+		return domain.ForbiddenError{Reason: strings.TrimPrefix(response.Message, "forbidden: ")}
 	}
 	if response.Kind == KindNotFound {
 		if response.Resource == "" {

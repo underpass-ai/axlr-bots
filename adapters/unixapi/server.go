@@ -2,10 +2,12 @@ package unixapi
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -22,9 +24,10 @@ import (
 const maxBodyBytes = 1 << 20
 
 // Server serves the operator's Service and the node protocol over HTTP:
-// on a Unix socket (the same host), on a loopback or network address
-// (nodes on other hosts; TLS with client certificates goes in front of
-// it without changing the messages).
+// everything on a Unix socket (the same host), and the node protocol
+// alone on a TLS address (nodes on other hosts), where a client
+// certificate issued by the fleet CA names the node and an enrollment
+// token is the one way in without one.
 type Server struct {
 	service *Local
 }
@@ -40,12 +43,10 @@ const pollInterval = 250 * time.Millisecond
 // maxPollWait bounds a long poll.
 const maxPollWait = 30 * time.Second
 
-// Handler is the API's routes.
+// Handler is the API's routes, all of them: what the socket serves.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-	})
+	s.nodeRoutes(mux)
 	mux.HandleFunc("POST /v1/bots", s.registerBot)
 	mux.HandleFunc("GET /v1/bots", s.listBots)
 	mux.HandleFunc("GET /v1/bots/{id}", s.getBot)
@@ -58,22 +59,49 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/executions/{id}", s.getExecution)
 	mux.HandleFunc("GET /v1/nodes", s.listNodes)
 	mux.HandleFunc("GET /v1/nodes/{id}", s.getNode)
-	mux.HandleFunc("POST /v1/nodes", s.registerNode)
-	mux.HandleFunc("POST /v1/nodes/{id}/heartbeat", s.heartbeat)
-	mux.HandleFunc("GET /v1/nodes/{id}/assignments/next", s.nextAssignment)
-	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/lease", s.renewLease)
-	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/report", s.report)
+	mux.HandleFunc("POST /v1/enrollments", s.createEnrollmentToken)
+	mux.HandleFunc("POST /v1/nodes/{id}/revoke", s.revokeNode)
 	return mux
 }
 
-// ServeTCP listens on a TCP address (127.0.0.1:7878 for a node on this
-// host, 0.0.0.0:7878 for nodes on others) until ctx ends.
-func (s *Server) ServeTCP(ctx context.Context, address string) error {
+// NodeHandler is the node protocol alone: what the TLS address serves.
+// A node certificate opens no operator route.
+func (s *Server) NodeHandler() http.Handler {
+	mux := http.NewServeMux()
+	s.nodeRoutes(mux)
+	return mux
+}
+
+// nodeRoutes are the routes a node uses. Enrollment is the one route a
+// node reaches without a certificate; the others carry the node's
+// identity in the certificate over TLS, or in the path over the socket.
+func (s *Server) nodeRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+	mux.HandleFunc("POST /v1/enroll", s.enroll)
+	mux.HandleFunc("POST /v1/nodes", s.authenticated(s.registerNode))
+	mux.HandleFunc("POST /v1/nodes/{id}/heartbeat", s.authenticated(s.heartbeat))
+	mux.HandleFunc("GET /v1/nodes/{id}/assignments/next", s.authenticated(s.nextAssignment))
+	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/lease", s.authenticated(s.renewLease))
+	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/report", s.authenticated(s.report))
+}
+
+// ServeTLS serves the node protocol on the listener with the TLS
+// configuration (pki.ServerTLSConfig) until ctx ends. The caller binds
+// the listener, so it knows the address when it asked for port 0.
+func (s *Server) ServeTLS(ctx context.Context, listener net.Listener, config *tls.Config) error {
+	server := &http.Server{Handler: s.NodeHandler(), TLSConfig: config, ReadHeaderTimeout: 10 * time.Second, ErrorLog: log.New(io.Discard, "", 0)}
+	return s.run(ctx, server, func() error { return server.ServeTLS(listener, "", "") }, func() {})
+}
+
+// Listen binds a TCP address for ServeTLS.
+func Listen(address string) (net.Listener, error) {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
-		return fmt.Errorf("unixapi: %w", err)
+		return nil, fmt.Errorf("unixapi: %w", err)
 	}
-	return s.serve(ctx, listener, func() {})
+	return listener, nil
 }
 
 // Serve listens on the socket until ctx ends. A socket file left by a
@@ -101,8 +129,13 @@ func (s *Server) Serve(ctx context.Context, socketPath string) error {
 // cleans up.
 func (s *Server) serve(ctx context.Context, listener net.Listener, cleanup func()) error {
 	server := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	return s.run(ctx, server, func() error { return server.Serve(listener) }, cleanup)
+}
+
+// run drives one server until ctx ends or it stops on its own.
+func (s *Server) run(ctx context.Context, server *http.Server, start func() error, cleanup func()) error {
 	done := make(chan error, 1)
-	go func() { done <- server.Serve(listener) }()
+	go func() { done <- start() }()
 	select {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -196,6 +229,15 @@ func (s *Server) registerNode(w http.ResponseWriter, r *http.Request) {
 	var request nodeproto.RegisterRequest
 	if !readJSON(w, r, &request) {
 		return
+	}
+	if identity, ok := identityOf(r); ok {
+		if request.ID == "" {
+			request.ID = identity.ID.String()
+		}
+		if request.ID != identity.ID.String() {
+			respond(w, 0, nil, domain.ForbiddenError{Reason: "the certificate is for node " + identity.ID.String() + ", the registration names " + request.ID})
+			return
+		}
 	}
 	node, err := application.NewRegisterNode(s.service.Dependencies()).Execute(r.Context(), application.NodeRegistration{ID: request.ID, HostName: request.HostName, Labels: request.Labels, Capabilities: request.Capabilities})
 	if err != nil {
@@ -305,6 +347,35 @@ func (s *Server) report(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusOK, nodeproto.ReportAck{Accepted: result.Accepted, Outcome: result.Execution.Outcome().String()}, nil)
+}
+
+// enroll takes a node's token and signing request and answers with its
+// certificate: the one node route with no certificate behind it.
+func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
+	var request nodeproto.EnrollRequest
+	if !readJSON(w, r, &request) {
+		return
+	}
+	result, err := application.NewEnrollNode(s.service.Dependencies()).Execute(r.Context(), application.EnrollmentRequest{TokenID: request.TokenID, Secret: request.Secret, HostName: request.HostName, CSRPEM: []byte(request.CSR)})
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	respond(w, http.StatusCreated, nodeproto.EnrollResponse{Node: result.Node.Snapshot(), Certificate: string(result.CertificatePEM), CA: string(result.CAPEM), Serial: result.Serial, NotAfter: result.NotAfter}, nil)
+}
+
+func (s *Server) createEnrollmentToken(w http.ResponseWriter, r *http.Request) {
+	var request EnrollTokenRequest
+	if !readJSON(w, r, &request) {
+		return
+	}
+	value, err := s.service.CreateEnrollmentToken(r.Context(), request)
+	respond(w, http.StatusCreated, value, err)
+}
+
+func (s *Server) revokeNode(w http.ResponseWriter, r *http.Request) {
+	value, err := s.service.RevokeNode(r.Context(), r.PathValue("id"))
+	respond(w, http.StatusOK, value, err)
 }
 
 func createdStatus(created bool) int {

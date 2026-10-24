@@ -1,6 +1,6 @@
 // Package daemon is the control plane as a long-running service: it
-// serves the API on a Unix socket (and a TCP address for nodes on other
-// hosts), hands executions to the nodes that poll for them, runs in
+// serves the API on a Unix socket (and the node protocol on a TLS
+// address for nodes on other hosts), hands executions to the nodes that poll for them, runs in
 // process the Pending tasks no Online node may run (the single-process
 // mode), marks silent nodes Offline and reconciles the tasks a dead run
 // left Running. The state directory is the spool: a task file that
@@ -33,8 +33,20 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	served := make(chan error, 2)
 	server := unixapi.NewServer(local)
 	go func() { served <- server.Serve(ctx, options.SocketPath) }()
-	if options.ListenAddr != "" {
-		go func() { served <- server.ServeTCP(ctx, options.ListenAddr) }()
+	listening := options.SocketPath
+	if options.ListenAddr != "" || options.Listener != nil {
+		if options.TLS == nil {
+			return errors.New("daemon: the TLS address needs a TLS configuration (the fleet CA)")
+		}
+		listener := options.Listener
+		if listener == nil {
+			var err error
+			if listener, err = unixapi.Listen(options.ListenAddr); err != nil {
+				return err
+			}
+		}
+		listening += " and https://" + listener.Addr().String()
+		go func() { served <- server.ServeTLS(ctx, listener, options.TLS) }()
 	}
 
 	reconcile(ctx, deps, options, logger)
@@ -42,10 +54,6 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	defer ticker.Stop()
 	reconciler := time.NewTicker(options.reconcileEvery())
 	defer reconciler.Stop()
-	listening := options.SocketPath
-	if options.ListenAddr != "" {
-		listening += " and " + options.ListenAddr
-	}
 	logger.Printf("daemon: serving on %s, tick %s", listening, options.tick())
 	for {
 		drain(ctx, runner, logger)
