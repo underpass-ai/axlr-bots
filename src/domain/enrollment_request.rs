@@ -27,9 +27,9 @@ impl EnrollmentRequest {
         };
         let mut parsed = BTreeMap::new();
         for pair in labels.split(',').map(str::trim).filter(|p| !p.is_empty()) {
-            let (key, value) = pair.split_once('=').ok_or_else(|| {
-                DomainError::new("labels", "must be key=value, separated by commas")
-            })?;
+            let (key, value) = pair
+                .split_once('=')
+                .ok_or_else(|| DomainError::new("labels", "must be key=value, separated by commas"))?;
             let key = super::identifier::validate_identifier("label key", key)?;
             let value = value.trim();
             if value.is_empty() {
@@ -76,13 +76,9 @@ mod tests {
 
     #[test]
     fn reads_the_form() {
-        let request =
-            EnrollmentRequest::parse(" web-2 ", "zone=eu, gpu = rtx3090", "2h30m").unwrap();
+        let request = EnrollmentRequest::parse(" web-2 ", "zone=eu, gpu = rtx3090", "2h30m").unwrap();
         assert_eq!(request.node_id.unwrap().as_str(), "web-2");
-        assert_eq!(
-            request.labels.get("gpu").map(String::as_str),
-            Some("rtx3090")
-        );
+        assert_eq!(request.labels.get("gpu").map(String::as_str), Some("rtx3090"));
         assert_eq!(request.ttl.as_deref(), Some("2h30m"));
         let empty = EnrollmentRequest::parse("", "", "").unwrap();
         assert_eq!(empty, EnrollmentRequest::default());

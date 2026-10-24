@@ -16,11 +16,7 @@ impl ToolRule {
         if self.arguments.is_empty() {
             return self.tool.clone();
         }
-        let args: Vec<String> = self
-            .arguments
-            .iter()
-            .map(|(k, v)| format!("{k}={v}"))
-            .collect();
+        let args: Vec<String> = self.arguments.iter().map(|(k, v)| format!("{k}={v}")).collect();
         format!("{}({})", self.tool, args.join(", "))
     }
 }

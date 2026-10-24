@@ -23,10 +23,7 @@ mod tests {
 
     #[test]
     fn serializes_as_the_control_plane_word() {
-        assert_eq!(
-            serde_json::to_string(&Decision::Approve).unwrap(),
-            "\"approve\""
-        );
+        assert_eq!(serde_json::to_string(&Decision::Approve).unwrap(), "\"approve\"");
         assert_eq!(Decision::Deny.name(), "deny");
     }
 }

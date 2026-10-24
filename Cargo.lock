@@ -398,6 +398,7 @@ dependencies = [
  "axum",
  "axum-server",
  "chrono",
+ "futures",
  "iced",
  "iced_test",
  "rcgen",

@@ -20,10 +20,7 @@ pub struct BotPatch {
 
 impl BotPatch {
     pub fn is_empty(&self) -> bool {
-        self.mission.is_none()
-            && self.level.is_none()
-            && self.allowed_tools.is_none()
-            && self.placement.is_none()
+        self.mission.is_none() && self.level.is_none() && self.allowed_tools.is_none() && self.placement.is_none()
     }
 
     /// A patch must name a field, and a new mission must be valid.

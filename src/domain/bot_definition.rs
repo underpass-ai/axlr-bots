@@ -1,9 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::identifier::{validate_identifier, validate_text};
-use super::{
-    AutonomyLevel, Budgets, DomainError, ModelPolicy, NodeId, Placement, ToolRules, Trigger,
-};
+use super::{AutonomyLevel, Budgets, DomainError, ModelPolicy, NodeId, Placement, ToolRules, Trigger};
 
 /// A bot to register, as a definition file writes it. The panel checks
 /// what it can before the control plane checks the rest.
@@ -46,8 +44,8 @@ pub struct BotForm {
 impl BotDefinition {
     /// Reads a definition file's JSON and checks it.
     pub fn from_json(text: &str) -> Result<Self, DomainError> {
-        let definition: Self = serde_json::from_str(text)
-            .map_err(|e| DomainError::new("definition", format!("is not valid: {e}")))?;
+        let definition: Self =
+            serde_json::from_str(text).map_err(|e| DomainError::new("definition", format!("is not valid: {e}")))?;
         definition.validate()?;
         Ok(definition)
     }
@@ -111,10 +109,7 @@ impl BotDefinition {
         validate_text("mission", &self.mission, 2000)?;
         for tool in &self.allowed_tools {
             if tool.trim().is_empty() || tool.contains(char::is_whitespace) {
-                return Err(DomainError::new(
-                    "allowed tools",
-                    "must be names without spaces",
-                ));
+                return Err(DomainError::new("allowed tools", "must be names without spaces"));
             }
         }
         Ok(())
@@ -149,22 +144,13 @@ mod tests {
         assert!(BotDefinition::from_json("{").is_err());
         assert!(BotDefinition::from_json(&EXAMPLE.replace("\"owner\"", "\"ownerx\"")).is_err());
         assert!(
-            BotDefinition::from_json(
-                &EXAMPLE.replace("\"tenant\": \"default\"", "\"tenant\": \"Bad Tenant\"")
-            )
-            .is_err()
+            BotDefinition::from_json(&EXAMPLE.replace("\"tenant\": \"default\"", "\"tenant\": \"Bad Tenant\""))
+                .is_err()
         );
+        assert!(BotDefinition::from_json(&EXAMPLE.replace("Do what each task asks.", " ")).is_err());
+        assert!(BotDefinition::from_json(&EXAMPLE.replace("\"local_read\"", "\"local read\"")).is_err());
         assert!(
-            BotDefinition::from_json(&EXAMPLE.replace("Do what each task asks.", " ")).is_err()
-        );
-        assert!(
-            BotDefinition::from_json(&EXAMPLE.replace("\"local_read\"", "\"local read\"")).is_err()
-        );
-        assert!(
-            BotDefinition::from_json(
-                &EXAMPLE.replace("\"id\": \"bot-act-with-approval\"", "\"id\": \"Bad\"")
-            )
-            .is_err()
+            BotDefinition::from_json(&EXAMPLE.replace("\"id\": \"bot-act-with-approval\"", "\"id\": \"Bad\"")).is_err()
         );
         let mut long = BotDefinition::from_json(EXAMPLE).unwrap();
         long.owner = "o".repeat(121);

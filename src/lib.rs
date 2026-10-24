@@ -5,4 +5,6 @@
 //! and the ports they need, `adapters` the ports' implementations, and
 //! `ui` the Iced interface over the use cases.
 
+pub mod adapters;
+pub mod application;
 pub mod domain;

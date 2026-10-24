@@ -21,10 +21,7 @@ mod tests {
 
     #[test]
     fn validates_the_text() {
-        assert_eq!(
-            Objective::new("  List the files ").unwrap().as_str(),
-            "List the files"
-        );
+        assert_eq!(Objective::new("  List the files ").unwrap().as_str(), "List the files");
         assert!(Objective::new("   ").is_err());
         assert!(Objective::new(&"x".repeat(8001)).is_err());
     }

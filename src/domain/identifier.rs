@@ -13,8 +13,7 @@ pub(crate) fn validate_identifier(field: &'static str, raw: &str) -> Result<Stri
     if value.len() > MAX_IDENTIFIER_LENGTH {
         return Err(DomainError::new(field, "must be at most 64 characters"));
     }
-    let allowed =
-        |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-');
+    let allowed = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-');
     if !value.chars().all(allowed) {
         return Err(DomainError::new(
             field,
@@ -26,11 +25,7 @@ pub(crate) fn validate_identifier(field: &'static str, raw: &str) -> Result<Stri
 
 /// Checks a free text as the control plane does: trimmed, not empty, at
 /// most `max` bytes, no control character but newlines and tabs.
-pub(crate) fn validate_text(
-    field: &'static str,
-    raw: &str,
-    max: usize,
-) -> Result<String, DomainError> {
+pub(crate) fn validate_text(field: &'static str, raw: &str, max: usize) -> Result<String, DomainError> {
     let value = raw.trim();
     if value.is_empty() {
         return Err(DomainError::new(field, "must not be empty"));
@@ -38,14 +33,8 @@ pub(crate) fn validate_text(
     if value.len() > max {
         return Err(DomainError::new(field, "is too long"));
     }
-    if value
-        .chars()
-        .any(|c| c.is_control() && c != '\n' && c != '\t')
-    {
-        return Err(DomainError::new(
-            field,
-            "must not contain control characters",
-        ));
+    if value.chars().any(|c| c.is_control() && c != '\n' && c != '\t') {
+        return Err(DomainError::new(field, "must not contain control characters"));
     }
     Ok(value.to_string())
 }
@@ -56,10 +45,7 @@ mod tests {
 
     #[test]
     fn identifiers_follow_the_control_plane_rules() {
-        assert_eq!(
-            validate_identifier("id", "  bot-1.a_b ").unwrap(),
-            "bot-1.a_b"
-        );
+        assert_eq!(validate_identifier("id", "  bot-1.a_b ").unwrap(), "bot-1.a_b");
         assert!(validate_identifier("id", "").is_err());
         assert!(validate_identifier("id", "Bot").is_err());
         assert!(validate_identifier("id", "a b").is_err());
@@ -69,10 +55,7 @@ mod tests {
 
     #[test]
     fn texts_are_trimmed_bounded_and_printable() {
-        assert_eq!(
-            validate_text("t", " hello\nworld ", 20).unwrap(),
-            "hello\nworld"
-        );
+        assert_eq!(validate_text("t", " hello\nworld ", 20).unwrap(), "hello\nworld");
         assert!(validate_text("t", "   ", 20).is_err());
         assert!(validate_text("t", "abc", 2).is_err());
         assert!(validate_text("t", "a\u{7}b", 20).is_err());

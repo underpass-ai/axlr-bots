@@ -12,10 +12,7 @@ impl IdempotencyKey {
             return Err(DomainError::new("idempotency key", "must not be empty"));
         }
         if value.len() > 128 {
-            return Err(DomainError::new(
-                "idempotency key",
-                "must be at most 128 characters",
-            ));
+            return Err(DomainError::new("idempotency key", "must be at most 128 characters"));
         }
         if value.chars().any(|c| (c as u32) < 0x20 || c == '\u{7f}') {
             return Err(DomainError::new(
@@ -37,10 +34,7 @@ mod tests {
 
     #[test]
     fn validates_the_key() {
-        assert_eq!(
-            IdempotencyKey::new(" panel-1 ").unwrap().as_str(),
-            "panel-1"
-        );
+        assert_eq!(IdempotencyKey::new(" panel-1 ").unwrap().as_str(), "panel-1");
         assert!(IdempotencyKey::new("").is_err());
         assert!(IdempotencyKey::new(&"k".repeat(129)).is_err());
         assert!(IdempotencyKey::new("a\u{1}b").is_err());

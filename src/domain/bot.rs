@@ -37,11 +37,7 @@ pub struct Bot {
 impl Bot {
     /// The trigger types, `manual · timer · webhook`.
     pub fn trigger_summary(&self) -> String {
-        let names: Vec<&str> = self
-            .triggers
-            .iter()
-            .map(|t| t.trigger_type.name())
-            .collect();
+        let names: Vec<&str> = self.triggers.iter().map(|t| t.trigger_type.name()).collect();
         if names.is_empty() {
             "none".to_string()
         } else {

@@ -33,8 +33,7 @@ mod tests {
     #[test]
     fn describes_where_tasks_run() {
         assert_eq!(Placement::default().describe(), "any node");
-        let placement: Placement =
-            serde_json::from_str(r#"{"nodes":["wrx80"],"selector":{"zone":"eu"}}"#).unwrap();
+        let placement: Placement = serde_json::from_str(r#"{"nodes":["wrx80"],"selector":{"zone":"eu"}}"#).unwrap();
         assert_eq!(placement.describe(), "wrx80, zone=eu");
         assert_eq!(serde_json::to_string(&Placement::default()).unwrap(), "{}");
     }

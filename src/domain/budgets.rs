@@ -17,10 +17,7 @@ pub struct Budgets {
 impl Budgets {
     /// The timeout as minutes and seconds, `5m`, `1m30s`, `45s`.
     pub fn timeout_label(&self) -> String {
-        let (minutes, seconds) = (
-            self.task_timeout_seconds / 60,
-            self.task_timeout_seconds % 60,
-        );
+        let (minutes, seconds) = (self.task_timeout_seconds / 60, self.task_timeout_seconds % 60);
         match (minutes, seconds) {
             (0, s) => format!("{s}s"),
             (m, 0) => format!("{m}m"),

@@ -87,10 +87,7 @@ mod tests {
     fn parses_the_control_plane_words() {
         for level in AutonomyLevel::ALL {
             assert_eq!(AutonomyLevel::parse(level.name()), Some(level));
-            assert_eq!(
-                serde_json::to_string(&level).unwrap(),
-                format!("\"{}\"", level.name())
-            );
+            assert_eq!(serde_json::to_string(&level).unwrap(), format!("\"{}\"", level.name()));
         }
         assert_eq!(AutonomyLevel::parse(""), Some(AutonomyLevel::Observe));
         assert!(serde_json::from_str::<AutonomyLevel>("\"yolo\"").is_err());

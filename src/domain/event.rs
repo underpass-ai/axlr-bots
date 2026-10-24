@@ -72,12 +72,8 @@ impl Event {
 
     pub fn tone(&self) -> EventTone {
         match self.event_type.as_str() {
-            "bot.task.completed" | "bot.enabled" | "node.registered" | "node.enrolled" => {
-                EventTone::Good
-            }
-            "bot.task.failed" | "node.offline" | "node.revoked" | "bot.task.cancelled" => {
-                EventTone::Bad
-            }
+            "bot.task.completed" | "bot.enabled" | "node.registered" | "node.enrolled" => EventTone::Good,
+            "bot.task.failed" | "node.offline" | "node.revoked" | "bot.task.cancelled" => EventTone::Bad,
             "bot.task.waiting_approval" | "bot.paused" => EventTone::Waiting,
             "bot.task.decided" => match self.payload_text("decision").as_deref() {
                 Some("deny") => EventTone::Bad,
@@ -125,19 +121,13 @@ mod tests {
     fn labels_and_tones() {
         assert_eq!(event("bot.task.completed", "{}").label(), "Done");
         assert_eq!(event("bot.task.completed", "{}").tone(), EventTone::Good);
-        assert_eq!(
-            event("bot.task.failed", r#"{"reason":"timeout"}"#).detail(),
-            "timeout"
-        );
+        assert_eq!(event("bot.task.failed", r#"{"reason":"timeout"}"#).detail(), "timeout");
         assert_eq!(event("bot.task.failed", "{}").tone(), EventTone::Bad);
         assert_eq!(
             event("bot.task.waiting_approval", r#"{"tool":"local_write"}"#).tone(),
             EventTone::Waiting
         );
-        let approved = event(
-            "bot.task.decided",
-            r#"{"decision":"approve","nodeId":"gx10-ff95"}"#,
-        );
+        let approved = event("bot.task.decided", r#"{"decision":"approve","nodeId":"gx10-ff95"}"#);
         assert_eq!(approved.label(), "Approved");
         assert_eq!(approved.tone(), EventTone::Good);
         assert_eq!(approved.detail(), "gx10-ff95");
@@ -153,10 +143,7 @@ mod tests {
                 .as_deref(),
             Some("3")
         );
-        assert_eq!(
-            event("bot.task.started", r#"{"x":null}"#).payload_text("x"),
-            None
-        );
+        assert_eq!(event("bot.task.started", r#"{"x":null}"#).payload_text("x"), None);
         assert_eq!(event("bot.task.started", "{}").detail(), "");
         for kind in [
             "bot.registered",

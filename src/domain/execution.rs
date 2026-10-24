@@ -2,8 +2,8 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    BotId, Correlation, ExecutionId, ExecutionKind, ExecutionOutcome, ExecutionResult, NodeId,
-    PolicyRecord, TaskId, Usage,
+    BotId, Correlation, ExecutionId, ExecutionKind, ExecutionOutcome, ExecutionResult, NodeId, PolicyRecord, TaskId,
+    Usage,
 };
 
 /// One run of a task, or of a decision on it, on a node.
@@ -47,10 +47,7 @@ impl Execution {
 
     /// Where it ran: the node, or the control plane itself.
     pub fn place(&self) -> &str {
-        self.node_id
-            .as_ref()
-            .map(NodeId::as_str)
-            .unwrap_or("control plane")
+        self.node_id.as_ref().map(NodeId::as_str).unwrap_or("control plane")
     }
 }
 
@@ -71,10 +68,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(execution.outcome, ExecutionOutcome::DecisionRequired);
-        assert_eq!(
-            execution.result.pending_decision.as_ref().unwrap().tool,
-            "local_write"
-        );
+        assert_eq!(execution.result.pending_decision.as_ref().unwrap().tool, "local_write");
         assert_eq!(execution.place(), "gx10-ff95");
         let now: DateTime<Utc> = "2026-10-24T17:00:00Z".parse().unwrap();
         assert_eq!(execution.duration(now).num_seconds(), 9);

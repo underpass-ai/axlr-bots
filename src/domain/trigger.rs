@@ -56,12 +56,10 @@ mod tests {
 
     #[test]
     fn names_and_schedules() {
-        let timer: Trigger =
-            serde_json::from_str(r#"{"type":"timer","name":"clock","every":"10m"}"#).unwrap();
+        let timer: Trigger = serde_json::from_str(r#"{"type":"timer","name":"clock","every":"10m"}"#).unwrap();
         assert_eq!(timer.display_name(), "clock");
         assert_eq!(timer.schedule(), "every 10m");
-        let nightly: Trigger =
-            serde_json::from_str(r#"{"type":"timer","cron":"0 3 * * *"}"#).unwrap();
+        let nightly: Trigger = serde_json::from_str(r#"{"type":"timer","cron":"0 3 * * *"}"#).unwrap();
         assert_eq!(nightly.display_name(), "timer");
         assert_eq!(nightly.schedule(), "cron 0 3 * * *");
         assert_eq!(Trigger::manual().schedule(), "");

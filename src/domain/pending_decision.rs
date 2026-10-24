@@ -55,8 +55,7 @@ mod tests {
         );
         let bare: PendingDecision = serde_json::from_str(r#"{"tool":"t"}"#).unwrap();
         assert!(bare.argument_lines().is_empty());
-        let list: PendingDecision =
-            serde_json::from_str(r#"{"tool":"t","arguments":[1,2]}"#).unwrap();
+        let list: PendingDecision = serde_json::from_str(r#"{"tool":"t","arguments":[1,2]}"#).unwrap();
         assert_eq!(
             list.argument_lines(),
             vec![("arguments".to_string(), "[1,2]".to_string())]

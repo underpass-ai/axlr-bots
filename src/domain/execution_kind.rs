@@ -25,10 +25,7 @@ impl TryFrom<String> for ExecutionKind {
         match raw.as_str() {
             "" | "run" => Ok(Self::Run),
             "decide" => Ok(Self::Decide),
-            _ => Err(super::DomainError::new(
-                "execution kind",
-                "must be run or decide",
-            )),
+            _ => Err(super::DomainError::new("execution kind", "must be run or decide")),
         }
     }
 }
@@ -54,9 +51,6 @@ mod tests {
             ExecutionKind::Decide
         );
         assert!(serde_json::from_str::<ExecutionKind>("\"other\"").is_err());
-        assert_eq!(
-            serde_json::to_string(&ExecutionKind::Decide).unwrap(),
-            "\"decide\""
-        );
+        assert_eq!(serde_json::to_string(&ExecutionKind::Decide).unwrap(), "\"decide\"");
     }
 }

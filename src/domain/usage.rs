@@ -33,10 +33,9 @@ mod tests {
 
     #[test]
     fn adds_the_tokens() {
-        let usage: Usage = serde_json::from_str(
-            r#"{"requests":5,"promptTokens":37774,"completionTokens":565,"costUsd":0.0016}"#,
-        )
-        .unwrap();
+        let usage: Usage =
+            serde_json::from_str(r#"{"requests":5,"promptTokens":37774,"completionTokens":565,"costUsd":0.0016}"#)
+                .unwrap();
         assert_eq!(usage.total_tokens(), 38339);
         assert_eq!(usage.requests, 5);
         assert_eq!(usage.cached_tokens, 0);

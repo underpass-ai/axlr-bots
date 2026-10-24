@@ -62,10 +62,7 @@ impl Node {
 
     /// The labels as `key=value`, in key order.
     pub fn label_pairs(&self) -> Vec<String> {
-        self.labels
-            .iter()
-            .map(|(k, v)| format!("{k}={v}"))
-            .collect()
+        self.labels.iter().map(|(k, v)| format!("{k}={v}")).collect()
     }
 }
 
