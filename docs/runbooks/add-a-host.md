@@ -34,7 +34,7 @@ Check: `enroll` prints the node id, the certificate's serial and its expiry; the
 ## Back on the control plane
 
 ```bash
-axlr-bots node list                         # web-2 Online, certificateSerial set, labels {"zone": "eu", "host": "web-2"}
+axlr-bots node list                         # web-2 Online, certificateSerial and certificateNotAfter set, labels {"zone": "eu", "host": "web-2"}
 axlr-bots bot register --file bot-eu.json   # "placement": {"selector": {"zone": "eu"}} runs on web-2 only
 ```
 
@@ -42,7 +42,7 @@ Check: a task of a bot placed on `web-2` (`"placement": {"nodes": ["web-2"]}` or
 
 ## Rotate a node's certificate
 
-Mint a fresh token for the same node id and run `axlr-node enroll` again on the host, then restart `axlr-node.service`. The previous certificate goes on the denylist and stops being accepted at the next request. Check: `node list` shows the new serial.
+Mint a fresh token for the same node id and run `axlr-node enroll` again on the host, then restart `axlr-node.service`. The previous certificate goes on the denylist and stops being accepted at the next request. Check: `node list` shows the new serial and its expiry in `certificateNotAfter`.
 
 ## Retire or revoke a host
 

@@ -21,20 +21,42 @@ Every CLI command tries the socket first (`--socket`, `AXLR_BOTS_SOCKET`, defaul
 | `POST /v1/bots` | register a bot from its definition | per id: a repeat is `409 conflict` |
 | `GET /v1/bots`, `GET /v1/bots/{id}` | list, show (credentials redacted) | |
 | `PATCH /v1/bots/{id}` | replace the fields the patch names | the patch is the whole value of each field |
-| `POST /v1/bots/{id}/enable` | let the bot accept tasks | |
+| `POST /v1/bots/{id}/enable` | let the bot accept tasks (a Registered or Paused bot) | |
+| `POST /v1/bots/{id}/pause` | put an Enabled bot on hold: it accepts no task, by hand or from a trigger, until it is enabled again; publishes `bot.paused` | another pause is `409 state` |
 | `POST /v1/bots/{id}/tasks` `{objective, correlationId?}` | submit a task; `Idempotency-Key` header (or `idempotencyKey` in the body; the header wins) | same bot and key: same task, `200` instead of `201` |
 | `GET /v1/bots/{id}/events?limit=100` | the bot's newest events, oldest first (at most 1000) | |
 | `POST /v1/triggers/{bot}/{trigger}` | fire a webhook with the body as the event; `Idempotency-Key` is the delivery id ([triggers](../runbooks/triggers.md)) | same delivery (or same body): same task, `200` |
+| `GET /v1/tasks?bot=&status=&since=&limit=100` | the tasks across bots, newest created first; each parameter optional: `bot` one bot (an unknown bot is `404`), `status` one status, `since` created at or after an RFC 3339 time, `limit` at most 1000 | |
 | `GET /v1/tasks/{id}` | show a task: status, trigger, input, trace id, executions | |
+| `GET /v1/tasks/{id}/events?limit=100` | the task's timeline: its newest events, oldest first (at most 1000) | |
 | `GET /v1/tasks/{id}/executions` | the task's executions with their correlation, policy, usage and result | |
 | `POST /v1/tasks/{id}/cancel` | stop a task: Pending never runs, Running ends `Cancelled` (the in-process run is interrupted, a node's run stops at its next lease renewal, the late report is dropped), WaitingApproval never gets its decision | a Cancelled task answers `200` with `changed: false`; Completed or Failed is `409` |
 | `POST /v1/tasks` `{botId, objective, idempotencyKey?}` | the older form of submit, with the same header | as above |
 | `POST /v1/tasks/{id}/run`, `POST /v1/tasks/{id}/decide`, `GET /v1/tasks/{id}/report`, `GET /v1/executions/{id}` | the CLI's run, approve/deny, report and execution routes | |
-| `GET /v1/nodes`, `GET /v1/nodes/{id}`, `POST /v1/enrollments`, `POST /v1/nodes/{id}/revoke` | the nodes: list, show, mint a token, revoke | |
+| `GET /v1/overview?since=` | the dashboard's counts ([below](#the-overview)) | |
+| `GET /v1/nodes`, `GET /v1/nodes/{id}`, `POST /v1/enrollments`, `POST /v1/nodes/{id}/revoke` | the nodes: list, show, mint a token, revoke; a node shows `certificateNotAfter`, its certificate's expiry, once the control plane has seen it (at enrollment, or on the node's next call over mutual TLS) | |
 
 ## The idempotency key
 
 A manual submission carries the caller's key (`task submit --key`, the `Idempotency-Key` header). The same bot and key always name the same task: the second call answers `200` with the task the first created and nothing runs twice. A webhook fire derives its key from the trigger and the delivery id (or the body), a timer from the trigger and its slot, so a redelivery or a restarted scheduler finds the task it already created ([triggers](../runbooks/triggers.md)). A task also keeps a trace id (`correlationId`, minted as `trace-…` unless the caller passes one) that every execution and event repeats ([runtime contract](../architecture/runtime-contract.md#correlation)).
+
+## The overview
+
+`GET /v1/overview` answers what the control plane holds now and what happened since a moment: `since` (RFC 3339; absent, the start of today on the control plane's clock), and every status at zero when nothing is in it.
+
+```json
+{
+  "since": "2026-10-25T00:00:00+02:00",
+  "nodes": {"Registered": 0, "Online": 2, "Offline": 0, "Revoked": 0},
+  "bots": {"Draft": 0, "Registered": 0, "Enabled": 3, "Paused": 1},
+  "tasks": {"Pending": 0, "Running": 1, "WaitingApproval": 1, "Completed": 58, "Failed": 2, "Cancelled": 1},
+  "tasksSince": {"Pending": 0, "Running": 1, "WaitingApproval": 1, "Completed": 4, "Failed": 0, "Cancelled": 0},
+  "executionsSince": 6,
+  "costUsdSince": 0.0123
+}
+```
+
+`tasks` counts every task by its status now; `tasksSince` the tasks created since the moment; `executionsSince` and `costUsdSince` the executions started since then and the cost they reported. The `axlr-bots overview` command prints the same.
 
 ## Errors
 
