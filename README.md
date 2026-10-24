@@ -8,7 +8,7 @@ AXLR Bots is Underpass's control plane for bots that live as infrastructure: one
 
 ## Install
 
-User-level, no root, two systemd user services. You need Go 1.26, an `axlr-tui` built from AXLR's `main` (it has `--exec`) and a model key.
+User-level, no root, two systemd user services. You need Go 1.26, an `axlr-tui` from AXLR v0.14.0 or later (it has `--exec`) and a model key.
 
 ```bash
 go build -o bin/ ./cmd/...
