@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
@@ -30,23 +31,41 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	served := make(chan error, 2)
-	server := unixapi.NewServer(local)
-	go func() { served <- server.Serve(ctx, options.SocketPath) }()
+	// The TLS listener is bound before anything serves, so a bad option
+	// returns before the socket exists and no server is left behind.
+	var tlsListener net.Listener
 	listening := options.SocketPath
 	if options.ListenAddr != "" || options.Listener != nil {
 		if options.TLS == nil {
 			return errors.New("daemon: the TLS address needs a TLS configuration (the fleet CA)")
 		}
-		listener := options.Listener
-		if listener == nil {
+		tlsListener = options.Listener
+		if tlsListener == nil {
 			var err error
-			if listener, err = unixapi.Listen(options.ListenAddr); err != nil {
+			if tlsListener, err = unixapi.Listen(options.ListenAddr); err != nil {
 				return err
 			}
 		}
-		listening += " and https://" + listener.Addr().String()
-		go func() { served <- server.ServeTLS(ctx, listener, options.TLS) }()
+		listening += " and https://" + tlsListener.Addr().String()
+	}
+	servers := 1
+	served := make(chan error, 2)
+	server := unixapi.NewServer(local)
+	go func() { served <- server.Serve(ctx, options.SocketPath) }()
+	if tlsListener != nil {
+		servers++
+		go func() { served <- server.ServeTLS(ctx, tlsListener, options.TLS) }()
+	}
+	// stopped waits for every server to end; the socket's cleanup must
+	// have run before Run returns, or a daemon started next on the same
+	// path would lose its socket to it.
+	stopped := func(first error) error {
+		for range servers - 1 {
+			if err := <-served; first == nil {
+				first = err
+			}
+		}
+		return first
 	}
 
 	reconcile(ctx, deps, options, logger)
@@ -59,14 +78,15 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 		drain(ctx, runner, logger)
 		select {
 		case <-ctx.Done():
-			err := <-served
+			err := stopped(<-served)
 			logger.Printf("daemon: stopped")
 			return err
 		case err := <-served:
 			if err == nil {
 				err = errors.New("daemon: the API server stopped")
 			}
-			return err
+			cancel()
+			return stopped(err)
 		case <-ticker.C:
 		case <-reconciler.C:
 			reconcile(ctx, deps, options, logger)
