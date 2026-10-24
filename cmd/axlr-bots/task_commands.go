@@ -143,3 +143,31 @@ func taskIDStrings(ids []domain.TaskID) []string {
 	}
 	return out
 }
+
+// taskCancel stops a task that has not finished.
+func taskCancel(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, "axlr-bots: task cancel needs exactly one <task-id>")
+		return exitUsage
+	}
+	result, err := service.CancelTask(ctx, args[0])
+	if err != nil {
+		return fail(stderr, err)
+	}
+	printJSON(stdout, result)
+	return exitOK
+}
+
+// taskExecutions lists a task's executions, oldest first.
+func taskExecutions(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, "axlr-bots: task executions needs exactly one <task-id>")
+		return exitUsage
+	}
+	executions, err := service.ListExecutions(ctx, args[0])
+	if err != nil {
+		return fail(stderr, err)
+	}
+	printJSON(stdout, executions)
+	return exitOK
+}

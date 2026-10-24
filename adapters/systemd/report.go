@@ -12,6 +12,7 @@ type Report struct {
 	Socket       string   `json:"socket,omitempty"`
 	Control      string   `json:"control,omitempty"`
 	Listen       string   `json:"listen,omitempty"`
+	APIListen    string   `json:"apiListen,omitempty"`
 	Commands     []string `json:"commands"`
 	NextSteps    []string `json:"nextSteps"`
 }

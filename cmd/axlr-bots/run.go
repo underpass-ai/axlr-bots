@@ -78,8 +78,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return botList(ctx, service, rest, stdout, stderr)
 	case "bot get":
 		return botGet(ctx, service, rest, stdout, stderr)
+	case "bot update":
+		return botUpdate(ctx, service, rest, stdout, stderr)
+	case "bot events":
+		return botEvents(ctx, service, rest, stdout, stderr)
 	case "task submit":
 		return taskSubmit(ctx, service, rest, stdout, stderr)
+	case "task cancel":
+		return taskCancel(ctx, service, rest, stdout, stderr)
+	case "task executions":
+		return taskExecutions(ctx, service, rest, stdout, stderr)
+	case "trigger fire":
+		return triggerFire(ctx, service, rest, stdout, stderr)
 	case "task run":
 		return taskRun(ctx, service, rest, stdout, stderr)
 	case "task decide":
@@ -156,11 +166,14 @@ func defaultActor() string {
 func printUsage(w io.Writer) {
 	fmt.Fprint(w, `usage: axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>] <command>
 
-  serve [--listen <addr>] [--server-names a,b] [--tick 2s] [--reconcile-every 1m]
-                                      run the control plane: the API on the socket (and the
-                                      node protocol over TLS on --listen, for nodes on other
-                                      hosts), executions handed to the nodes, in-process
-                                      runs when no node is online
+  serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--api-token-file <path>]
+        [--tick 2s] [--reconcile-every 1m]
+                                      run the control plane: the API on the socket, the node
+                                      protocol over TLS on --listen (nodes on other hosts), the
+                                      operator API over TLS on --api-listen behind a bearer
+                                      token (<state>/api.token), executions handed to the
+                                      nodes, in-process runs when no node is online, and the
+                                      timer triggers
   ca init                             create the fleet CA under <state>/ca (once per fleet)
   ca show                             print the CA certificate and its fingerprint
   node list                           list the nodes (hosts running axlr-node)
@@ -172,8 +185,14 @@ func printUsage(w io.Writer) {
   bot enable <bot-id>                 let the bot accept tasks
   bot list                            list bots
   bot get <bot-id>                    show one bot
+  bot update <bot-id> --file <patch.json>
+                                      replace the fields the patch names (mission, level,
+                                      allowedTools, toolRules, triggers, placement, model, budgets)
+  bot events <bot-id> [--limit 100]   the bot's newest events, oldest first
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>]
                                       accept a task; the same key names the same task
+  trigger fire <bot-id> <trigger> --body '<json>' | --file <event.json> [--delivery <id>]
+                                      fire a webhook trigger with an event (over the socket)
   task run <task-id>                  run a pending task now, in process
                                       (exit 0 completed, 3 decision required, 1 failed)
   task approve <task-id>              approve the call a WaitingApproval task stopped on
@@ -181,6 +200,8 @@ func printUsage(w io.Writer) {
                                       new execution (same exit codes as task run)
   task decide <task-id> approve|deny  the same, with the decision as a word
   task get <task-id>                  show one task
+  task executions <task-id>           the task's executions, oldest first
+  task cancel <task-id>               stop a task that has not finished
   task report <task-id> [--path]      print the task's report (or only where it is)
   task reconcile [--grace <duration>] fail the tasks a crashed run left Running
                                       longer than the grace (default: the bot's

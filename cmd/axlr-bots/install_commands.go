@@ -25,6 +25,7 @@ func installFlags(name string, args []string, stderr io.Writer) (*flag.FlagSet, 
 	nodeBinary := flags.String("node-binary", "", "the axlr-node binary to install (default: next to this binary)")
 	listen := flags.String("listen", "", "the TLS address the control plane serves nodes on, such as 127.0.0.1:7878 or 0.0.0.0:7878 (default: the socket only)")
 	serverNames := flags.String("server-names", "", "names and addresses nodes dial the control plane by, comma-separated, for its certificate")
+	apiListen := flags.String("api-listen", "", "the TLS address the control plane serves operators and webhook senders on, such as 127.0.0.1:7879 (default: the socket only)")
 	control := flags.String("control", "", "the control plane the node agent talks to, https://host:7878 (default: the socket on this host)")
 	nodeOnly := flags.Bool("node-only", false, "install the node agent alone, for a host that joins a control plane elsewhere (needs --control)")
 	destDir := flags.String("destdir", "", "put every path under this directory on disk (packaging, tests)")
@@ -52,6 +53,7 @@ func installFlags(name string, args []string, stderr io.Writer) (*flag.FlagSet, 
 	layout.AXLRBin = *axlrBin
 	layout.Listen = *listen
 	layout.ServerNames = *serverNames
+	layout.APIListen = *apiListen
 	layout.Control = *control
 	layout.NodeOnly = *nodeOnly
 	layout.DestDir = *destDir

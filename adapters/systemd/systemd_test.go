@@ -114,6 +114,11 @@ func TestRenderUserUnits(t *testing.T) {
 	if s := RenderService(fleet); !strings.Contains(s, " serve --listen 0.0.0.0:7878 --server-names cp.example\n") {
 		t.Errorf("listening service:\n%s", s)
 	}
+	withAPI := fleet
+	withAPI.APIListen = "127.0.0.1:7879"
+	if s := RenderService(withAPI); !strings.Contains(s, " serve --listen 0.0.0.0:7878 --server-names cp.example --api-listen 127.0.0.1:7879\n") {
+		t.Errorf("service with the operator address:\n%s", s)
+	}
 	if n := RenderNodeUnit(fleet); !strings.Contains(n, "Environment=AXLR_NODE_CONTROL=https://cp.example:7878\n") || !strings.Contains(n, "After=axlr-bots.service") {
 		t.Errorf("node unit with a control URL:\n%s", n)
 	}

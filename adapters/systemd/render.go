@@ -31,6 +31,9 @@ func RenderService(l Layout) string {
 	if l.ServerNames != "" {
 		exec += " --server-names " + l.ServerNames
 	}
+	if l.APIListen != "" {
+		exec += " --api-listen " + l.APIListen
+	}
 	b.WriteString("ExecStart=" + exec + "\n")
 	renderRestart(&b)
 	renderSandbox(&b, l, l.StateDir, l.StateDir == "/var/lib/axlr-bots", "axlr-bots")

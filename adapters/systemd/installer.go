@@ -36,7 +36,7 @@ type Installer struct {
 // state alone: the host joins the control plane the layout names.
 func (i Installer) Install() (Report, error) {
 	l := i.Layout
-	report := Report{Mode: mode(l), Binary: l.BinaryPath(), NodeBinary: l.NodeBinaryPath(), EnvFile: l.EnvFile, StateDir: l.StateDir, NodeStateDir: l.NodeStateDir, Socket: l.SocketPath(), Control: l.NodeControl(), Listen: l.Listen}
+	report := Report{Mode: mode(l), Binary: l.BinaryPath(), NodeBinary: l.NodeBinaryPath(), EnvFile: l.EnvFile, StateDir: l.StateDir, NodeStateDir: l.NodeStateDir, Socket: l.SocketPath(), Control: l.NodeControl(), Listen: l.Listen, APIListen: l.APIListen}
 	if l.NodeOnly {
 		report.Binary, report.StateDir, report.Socket = "", "", ""
 		if l.Control == "" {
@@ -109,8 +109,11 @@ func (i Installer) Install() (Report, error) {
 			ctl+" enable --now "+NodeUnitName,
 		)
 	default:
-		if l.Listen != "" {
+		if l.Listen != "" || l.APIListen != "" {
 			report.NextSteps = append(report.NextSteps, l.BinaryPath()+" --state "+l.StateDir+" ca init  # once per fleet, before the service starts")
+		}
+		if l.APIListen != "" {
+			report.NextSteps = append(report.NextSteps, "the operator bearer token is written to "+l.StateDir+"/api.token at the first start")
 		}
 		report.NextSteps = append(report.NextSteps,
 			ctl+" enable --now "+ServiceName+" "+NodeUnitName,
