@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +23,7 @@ func TestServeRunsWhatTheCommandsSendOverTheSocket(t *testing.T) {
 	state := t.TempDir()
 	socket := filepath.Join(t.TempDir(), "cp.sock")
 	fake := fakeAXLR(t, "completed")
-	var serveOut, serveErr bytes.Buffer
+	var serveOut, serveErr syncBuffer
 	done := make(chan int, 1)
 	go func() {
 		done <- run([]string{"--state", state, "--axlr-bin", fake, "--socket", socket, "serve", "--tick", "20ms", "--reconcile-every", "50ms"}, &serveOut, &serveErr)

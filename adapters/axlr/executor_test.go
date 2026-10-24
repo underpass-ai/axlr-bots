@@ -211,10 +211,19 @@ func TestExecuteUsesTheDefaultTimeout(t *testing.T) {
 }
 
 func TestExecuteCancelled(t *testing.T) {
-	e, _ := fake(t, "hang")
+	e, argsFile := fake(t, "hang")
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		time.Sleep(200 * time.Millisecond)
+		// Cancel once the process runs: the helper writes its arguments
+		// before it says anything, so a fixed delay (too short under
+		// -race) would cancel before the start and yield an error instead.
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			if _, err := os.Stat(argsFile); err == nil || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
 		cancel()
 	}()
 	report, err := e.Execute(ctx, request(time.Minute))

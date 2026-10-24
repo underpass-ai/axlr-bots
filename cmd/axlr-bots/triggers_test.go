@@ -145,7 +145,7 @@ func TestServeWithTheOperatorAddressFiresWebhooksAndTimers(t *testing.T) {
 		t.Fatal("enable failed")
 	}
 	port := freePort(t)
-	var serveOut, serveErr bytes.Buffer
+	var serveOut, serveErr syncBuffer
 	done := make(chan int, 1)
 	go func() {
 		done <- run([]string{"--state", state, "--axlr-bin", c.axlr, "--socket", socket, "serve", "--api-listen", "127.0.0.1:" + port, "--tick", "20ms"}, &serveOut, &serveErr)

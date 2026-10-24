@@ -51,7 +51,7 @@ func TestCAInitAndServeOverTLS(t *testing.T) {
 		t.Fatalf("enroll-token: %d %v", code, minted)
 	}
 	port := freePort(t)
-	var serveOut, serveErr bytes.Buffer
+	var serveOut, serveErr syncBuffer
 	done := make(chan int, 1)
 	go func() {
 		done <- run([]string{"--state", state, "--axlr-bin", c.axlr, "--socket", socket, "serve", "--listen", "127.0.0.1:" + port, "--server-names", "cp.example", "--tick", "20ms"}, &serveOut, &serveErr)
