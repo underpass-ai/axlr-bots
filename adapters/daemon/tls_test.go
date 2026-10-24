@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net"
 	"os"
@@ -198,6 +199,49 @@ func TestDaemonTLSOptions(t *testing.T) {
 		t.Error(err)
 	}
 	if !strings.Contains(f.logs.String(), "and https://127.0.0.1:") {
+		t.Errorf("logs = %s", f.logs.String())
+	}
+}
+
+func TestDaemonOperatorAddressOptions(t *testing.T) {
+	f := newFixture(t, "completed")
+	if err := Run(context.Background(), f.deps, Options{SocketPath: f.socket, APIListenAddr: "127.0.0.1:0", APIToken: "t"}); err == nil || !strings.Contains(err.Error(), "TLS configuration") {
+		t.Errorf("operator address without TLS: %v", err)
+	}
+	ca, _ := pki.Generate(filepath.Join(f.state, pki.CADirName))
+	tlsConfig := pki.ServerTLSConfig(ca, []string{"127.0.0.1"})
+	if err := Run(context.Background(), f.deps, Options{SocketPath: f.socket, APIListenAddr: "127.0.0.1:0", TLS: tlsConfig}); err == nil || !strings.Contains(err.Error(), "bearer token") {
+		t.Errorf("operator address without a token: %v", err)
+	}
+	if err := Run(context.Background(), f.deps, Options{SocketPath: f.socket, ListenAddr: "127.0.0.1:0", APIListenAddr: "300.0.0.1:0", APIToken: "t", TLS: tlsConfig}); err == nil {
+		t.Error("a bad operator address listened")
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, f.deps, Options{SocketPath: f.socket, APIListener: listener, APIToken: "operator-token", TLS: tlsConfig, Tick: 20 * time.Millisecond, Log: log.New(f.logs, "", 0)})
+	}()
+	for !unixapi.Reachable(context.Background(), f.socket) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	clientConfig, _ := pki.EnrollTLSConfig(ca.CertificatePEM())
+	url := "https://" + listener.Addr().String()
+	if bots, err := unixapi.NewTLSClient(url, clientConfig.Clone()).WithToken("operator-token").ListBots(context.Background()); err != nil || len(bots) != 0 {
+		t.Errorf("operator address with the token: %v", err)
+	}
+	var unauthorized unixapi.UnauthorizedError
+	if _, err := unixapi.NewTLSClient(url, clientConfig.Clone()).ListBots(context.Background()); !errors.As(err, &unauthorized) {
+		t.Errorf("operator address without the token: %v", err)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Error(err)
+	}
+	if !strings.Contains(f.logs.String(), "(operators, bearer token)") {
 		t.Errorf("logs = %s", f.logs.String())
 	}
 }

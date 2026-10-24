@@ -1,11 +1,14 @@
 // Package daemon is the control plane as a long-running service: it
-// serves the API on a Unix socket (and the node protocol on a TLS
-// address for nodes on other hosts), hands executions to the nodes that poll for them, runs in
-// process the Pending tasks no Online node may run (the single-process
-// mode), marks silent nodes Offline and reconciles the tasks a dead run
-// left Running. The state directory is the spool: a task file that
+// serves the API on a Unix socket (the node protocol on a TLS address
+// for nodes on other hosts, and the operator routes on another TLS
+// address behind a bearer token), hands executions to the nodes that
+// poll for them, runs in process the Pending tasks no Online node may
+// run (the single-process mode), fires the timer triggers whose slot
+// has come, marks silent nodes Offline and reconciles the tasks a dead
+// run left Running. The state directory is the spool: a task file that
 // appears there, through the socket or written by a command while the
-// daemon was down, is picked up on the next tick, and a restart of the
+// daemon was down, is picked up on the next tick, a timer whose slot
+// passed while the daemon was down fires once, and a restart of the
 // daemon loses nothing that was saved.
 package daemon
 
@@ -31,9 +34,9 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// The TLS listener is bound before anything serves, so a bad option
+	// The TLS listeners are bound before anything serves, so a bad option
 	// returns before the socket exists and no server is left behind.
-	var tlsListener net.Listener
+	var tlsListener, apiListener net.Listener
 	listening := options.SocketPath
 	if options.ListenAddr != "" || options.Listener != nil {
 		if options.TLS == nil {
@@ -46,15 +49,38 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 				return err
 			}
 		}
-		listening += " and https://" + tlsListener.Addr().String()
+		listening += " and https://" + tlsListener.Addr().String() + " (nodes)"
+	}
+	if options.APIListenAddr != "" || options.APIListener != nil {
+		if options.TLS == nil {
+			closeListener(tlsListener)
+			return errors.New("daemon: the operator address needs a TLS configuration (the fleet CA)")
+		}
+		if options.APIToken == "" {
+			closeListener(tlsListener)
+			return errors.New("daemon: the operator address needs a bearer token")
+		}
+		apiListener = options.APIListener
+		if apiListener == nil {
+			var err error
+			if apiListener, err = unixapi.Listen(options.APIListenAddr); err != nil {
+				closeListener(tlsListener)
+				return err
+			}
+		}
+		listening += " and https://" + apiListener.Addr().String() + " (operators, bearer token)"
 	}
 	servers := 1
-	served := make(chan error, 2)
+	served := make(chan error, 3)
 	server := unixapi.NewServer(local)
 	go func() { served <- server.Serve(ctx, options.SocketPath) }()
 	if tlsListener != nil {
 		servers++
 		go func() { served <- server.ServeTLS(ctx, tlsListener, options.TLS) }()
+	}
+	if apiListener != nil {
+		servers++
+		go func() { served <- server.ServeAPI(ctx, apiListener, options.TLS, options.APIToken) }()
 	}
 	// stopped waits for every server to end; the socket's cleanup must
 	// have run before Run returns, or a daemon started next on the same
@@ -75,6 +101,7 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	defer reconciler.Stop()
 	logger.Printf("daemon: serving on %s, tick %s", listening, options.tick())
 	for {
+		fireTimers(ctx, deps, logger)
 		drain(ctx, runner, logger)
 		select {
 		case <-ctx.Done():
@@ -82,6 +109,12 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 			logger.Printf("daemon: stopped")
 			return err
 		case err := <-served:
+			if ctx.Err() != nil {
+				// The stop was asked for; the server ended because of it.
+				err = stopped(err)
+				logger.Printf("daemon: stopped")
+				return err
+			}
 			if err == nil {
 				err = errors.New("daemon: the API server stopped")
 			}
@@ -91,6 +124,36 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 		case <-reconciler.C:
 			reconcile(ctx, deps, options, logger)
 		}
+	}
+}
+
+// closeListener closes a listener bound before an option was refused.
+func closeListener(listener net.Listener) {
+	if listener != nil {
+		_ = listener.Close()
+	}
+}
+
+// fireTimers runs the scheduler's pass: every timer whose slot has come
+// fires once (TickTimers), and the pass is logged.
+func fireTimers(ctx context.Context, deps application.Dependencies, logger interface{ Printf(string, ...any) }) {
+	if ctx.Err() != nil {
+		return
+	}
+	result, err := application.NewTickTimers(deps).Execute(ctx)
+	if err != nil {
+		logger.Printf("daemon: timers: %v", err)
+		return
+	}
+	for _, fire := range result.Fired {
+		verb := "created"
+		if !fire.Created {
+			verb = "found"
+		}
+		logger.Printf("daemon: timer %s/%s fired for %s, %s task %s", fire.BotID, fire.Trigger, fire.ScheduledAt.UTC().Format(time.RFC3339), verb, fire.TaskID)
+	}
+	for _, failure := range result.Errors {
+		logger.Printf("daemon: timer %s/%s: %v", failure.BotID, failure.Trigger, failure.Err)
 	}
 }
 

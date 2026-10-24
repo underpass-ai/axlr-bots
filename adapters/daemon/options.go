@@ -29,6 +29,16 @@ type Options struct {
 	// certificate issued by the fleet CA and client certificates verified
 	// against it (pki.ServerTLSConfig).
 	TLS *tls.Config
+	// APIListenAddr is an optional TLS address for operators and webhook
+	// senders (127.0.0.1:7879): the operator routes alone, behind
+	// APIToken; empty serves operators on the socket only. TLS must be
+	// set with it.
+	APIListenAddr string
+	// APIListener is an already bound listener for the operator address,
+	// in place of APIListenAddr.
+	APIListener net.Listener
+	// APIToken is the bearer token the operator address requires.
+	APIToken string
 	// Tick is how often the worker looks for Pending tasks.
 	Tick time.Duration
 	// ReconcileEvery is how often tasks a dead run left Running are failed.

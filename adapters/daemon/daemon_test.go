@@ -282,3 +282,107 @@ func TestDaemonLeavesNodeBackedTasksToTheNodeAndMarksItOffline(t *testing.T) {
 	waitFor(t, client, next.Task.ID, "Completed")
 	_ = assignment
 }
+
+// timerDefinition is a bot with a timer every ten minutes.
+func timerDefinition(name string) application.BotDefinition {
+	return application.BotDefinition{
+		Tenant: "ops", Name: name, Owner: "operator", Mission: "do what each task asks, within the policy",
+		AllowedTools: []string{"local_read"},
+		Triggers:     []domain.TriggerSnapshot{{Type: "manual"}, {Type: "timer", Name: "tick", Objective: "say the time at {{.scheduledAt}}", Every: "10m"}},
+		Model:        application.ModelPolicyDefinition{Model: "anthropic/claude-haiku-5.5"},
+		Budgets:      application.BudgetsDefinition{TaskTimeoutSeconds: 60},
+	}
+}
+
+func TestDaemonFiresTimersAndCatchesUpOnceAfterARestart(t *testing.T) {
+	f := newFixture(t, "completed")
+	ctx := context.Background()
+	local := unixapi.NewLocal(f.deps)
+	if _, err := local.RegisterBot(ctx, timerDefinition("ticker")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.EnableBot(ctx, "ticker"); err != nil {
+		t.Fatal(err)
+	}
+	// First start: the interval timer is armed and fires at once; the
+	// task runs in process and completes.
+	client, stop := f.start(t)
+	deadline := time.Now().Add(5 * time.Second)
+	var first []domain.Event
+	for {
+		events, _ := client.ListEvents(ctx, "ticker", 0)
+		first = eventsOf(events, domain.EventTriggerFired)
+		if len(first) == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the timer did not fire: %s", f.logs.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	taskID := first[0].Payload["taskId"].(string)
+	waitFor(t, client, taskID, "Completed")
+	task, _ := client.GetTask(ctx, taskID)
+	if task.Trigger.Type != "timer" || task.Trigger.Name != "tick" || !strings.HasPrefix(task.IdempotencyKey, "timer:tick:") || !strings.HasPrefix(task.Objective, "say the time at 20") {
+		t.Errorf("timer task = %+v", task)
+	}
+	timer, err := f.deps.Timers.Get(ctx, domain.TimerKey("ticker", "tick"))
+	if err != nil || timer.LastTaskID().String() != taskID || time.Until(timer.NextFireAt()) < 9*time.Minute {
+		t.Errorf("timer = %v %+v", err, timer.Snapshot())
+	}
+	stop()
+	if !strings.Contains(f.logs.String(), "daemon: timer ticker/tick fired") {
+		t.Errorf("logs = %s", f.logs.String())
+	}
+
+	// The daemon is down past several slots: on restart it fires once for
+	// the persisted slot and arms the next one after now.
+	past := timer
+	if err := past.Rearm(past.ScheduleKey(), time.Now().Add(-35*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.deps.Timers.Save(ctx, past); err != nil {
+		t.Fatal(err)
+	}
+	client, stop = f.start(t)
+	defer stop()
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		events, _ := client.ListEvents(ctx, "ticker", 0)
+		if fired := eventsOf(events, domain.EventTriggerFired); len(fired) >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no catch-up fire: %s", f.logs.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// A few more ticks change nothing.
+	time.Sleep(150 * time.Millisecond)
+	events, _ := client.ListEvents(ctx, "ticker", 0)
+	fired := eventsOf(events, domain.EventTriggerFired)
+	if len(fired) != 2 || fired[1].Payload["taskId"] == taskID || fired[1].Payload["created"] != true {
+		t.Errorf("fired events = %+v", fired)
+	}
+	after, _ := f.deps.Timers.Get(ctx, domain.TimerKey("ticker", "tick"))
+	if time.Until(after.NextFireAt()) < 9*time.Minute {
+		t.Errorf("next fire not after now: %s", after.NextFireAt())
+	}
+	// The same persisted slot fired again (a crash before the save) finds the same task.
+	tasks, _ := f.deps.Tasks.ListByStatus(ctx, domain.TaskCompleted)
+	pending, _ := f.deps.Tasks.ListByStatus(ctx, domain.TaskPending)
+	running, _ := f.deps.Tasks.ListByStatus(ctx, domain.TaskRunning)
+	if total := len(tasks) + len(pending) + len(running); total != 2 {
+		t.Errorf("%d tasks, want 2", total)
+	}
+}
+
+func eventsOf(events []domain.Event, kind domain.EventType) []domain.Event {
+	var out []domain.Event
+	for _, e := range events {
+		if e.Type == kind {
+			out = append(out, e)
+		}
+	}
+	return out
+}
