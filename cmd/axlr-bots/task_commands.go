@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
@@ -169,5 +170,92 @@ func taskExecutions(ctx context.Context, service unixapi.Service, args []string,
 		return fail(stderr, err)
 	}
 	printJSON(stdout, executions)
+	return exitOK
+}
+
+// taskList lists the tasks across bots, newest first.
+func taskList(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("task list", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	bot := flags.String("bot", "", "only this bot's tasks")
+	status := flags.String("status", "", "only tasks in this status (Pending, Running, WaitingApproval, Completed, Failed, Cancelled)")
+	since := flags.String("since", "", "only tasks created at or after this RFC 3339 time")
+	limit := flags.Int("limit", 0, "how many of the newest tasks (default 100, at most 1000)")
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "axlr-bots: task list takes flags only")
+		return exitUsage
+	}
+	query := application.TaskQuery{BotID: *bot, Status: *status, Limit: *limit}
+	if *since != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, *since)
+		if err != nil {
+			fmt.Fprintln(stderr, "axlr-bots: --since must be an RFC 3339 time")
+			return exitUsage
+		}
+		query.Since = parsed
+	}
+	tasks, err := service.ListTasks(ctx, query)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	printJSON(stdout, tasks)
+	return exitOK
+}
+
+// taskEvents prints the task's timeline, oldest first.
+func taskEvents(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+	if len(args) < 1 || args[0] == "" || args[0][0] == '-' {
+		fmt.Fprintln(stderr, "axlr-bots: task events needs <task-id> first")
+		return exitUsage
+	}
+	taskID, rest := args[0], args[1:]
+	flags := flag.NewFlagSet("task events", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	limit := flags.Int("limit", 0, "how many of the newest events (default 100, at most 1000)")
+	if err := flags.Parse(rest); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "axlr-bots: task events takes --limit only")
+		return exitUsage
+	}
+	events, err := service.ListTaskEvents(ctx, taskID, *limit)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	printJSON(stdout, events)
+	return exitOK
+}
+
+// overview prints the dashboard's counts: nodes, bots and tasks by
+// status, and the tasks, executions and cost since a moment.
+func overview(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("overview", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	since := flags.String("since", "", "count from this RFC 3339 time (default: the start of today)")
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "axlr-bots: overview takes --since only")
+		return exitUsage
+	}
+	var from time.Time
+	if *since != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, *since)
+		if err != nil {
+			fmt.Fprintln(stderr, "axlr-bots: --since must be an RFC 3339 time")
+			return exitUsage
+		}
+		from = parsed
+	}
+	value, err := service.GetOverview(ctx, from)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	printJSON(stdout, value)
 	return exitOK
 }

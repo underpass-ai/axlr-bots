@@ -158,6 +158,102 @@ func TestOperatorRoutesOverTheSocket(t *testing.T) {
 	}
 }
 
+func TestPanelRoutesOverTheSocket(t *testing.T) {
+	client, _, _ := serve(t, "complete")
+	ctx := context.Background()
+	if _, err := client.RegisterBot(ctx, definition("bot-p", "observe")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.EnableBot(ctx, "bot-p"); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := client.SubmitTask(ctx, SubmitRequest{BotID: "bot-p", Objective: "first", IdempotencyKey: "p-1"})
+	if _, err := client.RunTask(ctx, first.Task.ID); err != nil {
+		t.Fatal(err)
+	}
+	second, _ := client.SubmitTask(ctx, SubmitRequest{BotID: "bot-p", Objective: "second", IdempotencyKey: "p-2"})
+
+	tasks, err := client.ListTasks(ctx, application.TaskQuery{})
+	if err != nil || len(tasks) != 2 || tasks[0].ID != second.Task.ID {
+		t.Errorf("tasks: %v %+v", err, tasks)
+	}
+	completed, err := client.ListTasks(ctx, application.TaskQuery{BotID: "bot-p", Status: "Completed", Since: time.Now().Add(-time.Hour), Limit: 5})
+	if err != nil || len(completed) != 1 || completed[0].ID != first.Task.ID {
+		t.Errorf("completed: %v %+v", err, completed)
+	}
+	if later, err := client.ListTasks(ctx, application.TaskQuery{Since: time.Now().Add(time.Hour)}); err != nil || len(later) != 0 {
+		t.Errorf("later: %v %+v", err, later)
+	}
+	var remote RemoteError
+	if _, err := client.ListTasks(ctx, application.TaskQuery{Status: "Sleeping"}); !errorsAs(err, &remote) || remote.Kind != KindValidation {
+		t.Errorf("bad status: %v", err)
+	}
+	if _, err := client.ListTasks(ctx, application.TaskQuery{BotID: "nobody"}); !domain.IsNotFound(err) {
+		t.Errorf("unknown bot: %v", err)
+	}
+
+	timeline, err := client.ListTaskEvents(ctx, first.Task.ID, 0)
+	if err != nil || len(timeline) != 3 || timeline[0].Type != domain.EventTaskSubmitted || timeline[2].Type != domain.EventTaskCompleted {
+		t.Errorf("timeline: %v %+v", err, timeline)
+	}
+	if last, err := client.ListTaskEvents(ctx, first.Task.ID, 1); err != nil || len(last) != 1 {
+		t.Errorf("last event: %v %+v", err, last)
+	}
+	if _, err := client.ListTaskEvents(ctx, "task-none", 0); !domain.IsNotFound(err) {
+		t.Errorf("unknown task: %v", err)
+	}
+	if _, err := client.ListTaskEvents(ctx, "bad id", 0); !errorsAs(err, &remote) || remote.Kind != KindValidation {
+		t.Errorf("bad task id: %v", err)
+	}
+
+	overview, err := client.GetOverview(ctx, time.Time{})
+	if err != nil || overview.Bots["Enabled"] != 1 || overview.Tasks["Completed"] != 1 || overview.Tasks["Pending"] != 1 || overview.TasksSince["Pending"] != 1 || overview.ExecutionsSince != 1 {
+		t.Errorf("overview: %v %+v", err, overview)
+	}
+	if later, err := client.GetOverview(ctx, time.Now().Add(time.Hour)); err != nil || later.ExecutionsSince != 0 || later.Tasks["Completed"] != 1 || later.TasksSince["Completed"] != 0 {
+		t.Errorf("overview later: %v %+v", err, later)
+	}
+
+	paused, err := client.PauseBot(ctx, "bot-p")
+	if err != nil || paused.Status != "Paused" {
+		t.Errorf("pause: %v %+v", err, paused)
+	}
+	if _, err := client.SubmitTask(ctx, SubmitRequest{BotID: "bot-p", Objective: "third", IdempotencyKey: "p-3"}); !errorsAs(err, &remote) || remote.Kind != KindState {
+		t.Errorf("a paused bot accepted a task: %v", err)
+	}
+	if _, err := client.PauseBot(ctx, "bot-p"); !errorsAs(err, &remote) || remote.Kind != KindState {
+		t.Errorf("pause twice: %v", err)
+	}
+	if _, err := client.PauseBot(ctx, "Bad Id"); !errorsAs(err, &remote) || remote.Kind != KindValidation {
+		t.Errorf("pause bad id: %v", err)
+	}
+	if enabled, err := client.EnableBot(ctx, "bot-p"); err != nil || enabled.Status != "Enabled" {
+		t.Errorf("enable after pause: %v %+v", err, enabled)
+	}
+}
+
+func TestPanelRoutesRefuseBadQueries(t *testing.T) {
+	_, _, dir := serve(t, "complete")
+	socket := filepath.Join(dir, "cp.sock")
+	httpClient := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		var dialer net.Dialer
+		return dialer.DialContext(ctx, "unix", socket)
+	}}}
+	for _, path := range []string{
+		"/v1/tasks?limit=x", "/v1/tasks?limit=-1", "/v1/tasks?since=yesterday",
+		"/v1/overview?since=yesterday", "/v1/tasks/task-1/events?limit=x", "/v1/bots/bot-1/events?limit=x",
+	} {
+		response, err := httpClient.Get("http://axlr-bots" + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s = %d, want 400", path, response.StatusCode)
+		}
+	}
+}
+
 func TestTaskRoutesTakeTheKeyFromTheHeaderOrTheBody(t *testing.T) {
 	_, local, dir := serve(t, "completed")
 	ctx := context.Background()

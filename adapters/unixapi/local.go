@@ -48,6 +48,18 @@ func (l *Local) EnableBot(ctx context.Context, id string) (domain.BotSnapshot, e
 	return bot.Snapshot().Redacted(), nil
 }
 
+func (l *Local) PauseBot(ctx context.Context, id string) (domain.BotSnapshot, error) {
+	botID, err := domain.NewBotID(id)
+	if err != nil {
+		return domain.BotSnapshot{}, err
+	}
+	bot, err := application.NewPauseBot(l.deps).Execute(ctx, botID)
+	if err != nil {
+		return domain.BotSnapshot{}, err
+	}
+	return bot.Snapshot().Redacted(), nil
+}
+
 func (l *Local) UpdateBot(ctx context.Context, id string, patch application.BotPatch) (domain.BotSnapshot, error) {
 	botID, err := domain.NewBotID(id)
 	if err != nil {
@@ -188,6 +200,33 @@ func (l *Local) GetTask(ctx context.Context, id string) (domain.TaskSnapshot, er
 		return domain.TaskSnapshot{}, err
 	}
 	return task.Snapshot(), nil
+}
+
+// ListTasks answers the tasks the query selects, newest first.
+func (l *Local) ListTasks(ctx context.Context, query application.TaskQuery) ([]domain.TaskSnapshot, error) {
+	tasks, err := application.NewListTasks(l.deps).Execute(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	snapshots := make([]domain.TaskSnapshot, 0, len(tasks))
+	for _, t := range tasks {
+		snapshots = append(snapshots, t.Snapshot())
+	}
+	return snapshots, nil
+}
+
+// ListTaskEvents answers the task's timeline, oldest first.
+func (l *Local) ListTaskEvents(ctx context.Context, id string, limit int) ([]domain.Event, error) {
+	taskID, err := domain.NewTaskID(id)
+	if err != nil {
+		return nil, err
+	}
+	return application.NewListTaskEvents(l.deps).Execute(ctx, taskID, limit)
+}
+
+// GetOverview answers the counts of the operator's dashboard.
+func (l *Local) GetOverview(ctx context.Context, since time.Time) (application.Overview, error) {
+	return application.NewGetOverview(l.deps).Execute(ctx, since)
 }
 
 func (l *Local) GetReport(ctx context.Context, id string) (ReportResponse, error) {

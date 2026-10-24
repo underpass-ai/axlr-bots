@@ -84,6 +84,11 @@ func (c *Client) EnableBot(ctx context.Context, id string) (domain.BotSnapshot, 
 	return bot, c.call(ctx, http.MethodPost, "/v1/bots/"+url.PathEscape(id)+"/enable", nil, &bot)
 }
 
+func (c *Client) PauseBot(ctx context.Context, id string) (domain.BotSnapshot, error) {
+	var bot domain.BotSnapshot
+	return bot, c.call(ctx, http.MethodPost, "/v1/bots/"+url.PathEscape(id)+"/pause", nil, &bot)
+}
+
 func (c *Client) UpdateBot(ctx context.Context, id string, patch application.BotPatch) (domain.BotSnapshot, error) {
 	var bot domain.BotSnapshot
 	return bot, c.call(ctx, http.MethodPatch, "/v1/bots/"+url.PathEscape(id), patch, &bot)
@@ -154,6 +159,50 @@ func (c *Client) DecideTask(ctx context.Context, id, decision string) (RunRespon
 func (c *Client) GetTask(ctx context.Context, id string) (domain.TaskSnapshot, error) {
 	var task domain.TaskSnapshot
 	return task, c.call(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(id), nil, &task)
+}
+
+// ListTasks asks for the tasks the query selects, newest first.
+func (c *Client) ListTasks(ctx context.Context, query application.TaskQuery) ([]domain.TaskSnapshot, error) {
+	tasks := []domain.TaskSnapshot{}
+	values := url.Values{}
+	if query.BotID != "" {
+		values.Set("bot", query.BotID)
+	}
+	if query.Status != "" {
+		values.Set("status", query.Status)
+	}
+	if !query.Since.IsZero() {
+		values.Set("since", query.Since.Format(time.RFC3339Nano))
+	}
+	if query.Limit != 0 {
+		values.Set("limit", strconv.Itoa(query.Limit))
+	}
+	path := "/v1/tasks"
+	if len(values) > 0 {
+		path += "?" + values.Encode()
+	}
+	return tasks, c.call(ctx, http.MethodGet, path, nil, &tasks)
+}
+
+// ListTaskEvents asks for the task's timeline, oldest first.
+func (c *Client) ListTaskEvents(ctx context.Context, id string, limit int) ([]domain.Event, error) {
+	events := []domain.Event{}
+	path := "/v1/tasks/" + url.PathEscape(id) + "/events"
+	if limit > 0 {
+		path += "?limit=" + strconv.Itoa(limit)
+	}
+	return events, c.call(ctx, http.MethodGet, path, nil, &events)
+}
+
+// GetOverview asks for the dashboard's counts since the moment (the
+// start of the control plane's day when it is zero).
+func (c *Client) GetOverview(ctx context.Context, since time.Time) (application.Overview, error) {
+	var overview application.Overview
+	path := "/v1/overview"
+	if !since.IsZero() {
+		path += "?since=" + url.QueryEscape(since.Format(time.RFC3339Nano))
+	}
+	return overview, c.call(ctx, http.MethodGet, path, nil, &overview)
 }
 
 func (c *Client) GetReport(ctx context.Context, id string) (ReportResponse, error) {
