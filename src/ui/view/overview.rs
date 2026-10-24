@@ -38,7 +38,11 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             Icon::Play,
             o.tasks_in(TaskStatus::Running).to_string(),
             "running",
-            Tone::Busy,
+            if o.tasks_in(TaskStatus::Running) > 0 {
+                Tone::Busy
+            } else {
+                Tone::Idle
+            },
             Some(Message::FilterStatus(Some(TaskStatus::Running))),
             tokens
         ),

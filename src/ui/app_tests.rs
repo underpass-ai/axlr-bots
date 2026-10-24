@@ -123,6 +123,8 @@ fn banners_go_away_and_can_be_closed() {
     assert!(app.banner.is_none());
     app.apply(Message::ToggleTheme);
     assert_eq!(app.mode, ThemeMode::Dark);
+    app.apply(Message::SetTheme(ThemeMode::Light));
+    assert_eq!(app.mode, ThemeMode::Light);
 }
 
 #[test]

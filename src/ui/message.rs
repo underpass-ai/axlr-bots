@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 
-use super::{BotChoice, BotView, Connection, NodeChoice, Screen};
+use super::{BotChoice, BotView, Connection, NodeChoice, Screen, ThemeMode};
 use crate::application::{Fleet, PanelError, TaskDetail};
 use crate::domain::{
     AutonomyLevel, Bot, BotId, CancelledTask, DecidedTask, EnrollmentToken, NodeId, RevokedNode, SubmittedTask, TaskId,
@@ -16,6 +16,7 @@ pub enum Message {
     Tick(DateTime<Utc>),
     Go(Screen),
     ToggleTheme,
+    SetTheme(ThemeMode),
     DismissBanner,
     Copy(String),
 

@@ -109,6 +109,10 @@ impl App {
                 self.mode = self.mode.toggled();
                 Vec::new()
             }
+            Message::SetTheme(mode) => {
+                self.mode = mode;
+                Vec::new()
+            }
             Message::DismissBanner => {
                 self.banner = None;
                 Vec::new()
