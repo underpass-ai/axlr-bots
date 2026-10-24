@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -75,6 +77,20 @@ func (m *memoryTasks) Get(_ context.Context, id domain.TaskID) (domain.Task, err
 		return domain.Task{}, domain.NotFoundError{Kind: "task", ID: id.String()}
 	}
 	return task, nil
+}
+
+func (m *memoryTasks) ListByStatus(_ context.Context, status domain.TaskStatus) ([]domain.Task, error) {
+	if m.fail != nil {
+		return nil, m.fail
+	}
+	var out []domain.Task
+	for _, t := range m.tasks {
+		if t.Status() == status {
+			out = append(out, t)
+		}
+	}
+	slices.SortFunc(out, func(a, b domain.Task) int { return strings.Compare(a.ID().String(), b.ID().String()) })
+	return out, nil
 }
 
 func (m *memoryTasks) FindByIdempotencyKey(_ context.Context, bot domain.BotID, key domain.IdempotencyKey) (domain.Task, bool, error) {

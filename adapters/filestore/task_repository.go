@@ -50,3 +50,22 @@ func (r TaskRepository) FindByIdempotencyKey(ctx context.Context, bot domain.Bot
 	}
 	return domain.Task{}, false, nil
 }
+
+// ListByStatus scans every task and keeps those in the status, in id order.
+func (r TaskRepository) ListByStatus(ctx context.Context, status domain.TaskStatus) ([]domain.Task, error) {
+	ids, err := r.files.ids()
+	if err != nil {
+		return nil, err
+	}
+	tasks := make([]domain.Task, 0, len(ids))
+	for _, id := range ids {
+		task, err := r.Get(ctx, domain.TaskID(id))
+		if err != nil {
+			return nil, err
+		}
+		if task.Status() == status {
+			tasks = append(tasks, task)
+		}
+	}
+	return tasks, nil
+}

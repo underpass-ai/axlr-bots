@@ -196,3 +196,37 @@ func TestCollectionWriteRejectsUnmarshalable(t *testing.T) {
 		t.Error("channel marshalled")
 	}
 }
+
+func TestTaskRepositoryListsByStatus(t *testing.T) {
+	ctx := context.Background()
+	repo := NewTaskRepository(t.TempDir())
+	if list, err := repo.ListByStatus(ctx, domain.TaskRunning); err != nil || len(list) != 0 {
+		t.Errorf("empty store: %v %d", err, len(list))
+	}
+	pending, _ := domain.NewTask("task-c", "bot-1", "Investigate", "k1", "", t0)
+	runningB, _ := domain.NewTask("task-b", "bot-1", "Investigate", "k2", "", t0)
+	_ = runningB.Start("exec-b", t0)
+	runningA, _ := domain.NewTask("task-a", "bot-2", "Investigate", "k3", "", t0)
+	_ = runningA.Start("exec-a", t0)
+	for _, task := range []domain.Task{pending, runningB, runningA} {
+		if err := repo.Save(ctx, task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	running, err := repo.ListByStatus(ctx, domain.TaskRunning)
+	if err != nil || len(running) != 2 || running[0].ID() != "task-a" || running[1].ID() != "task-b" {
+		t.Errorf("running: %v %d", err, len(running))
+	}
+	if list, err := repo.ListByStatus(ctx, domain.TaskFailed); err != nil || len(list) != 0 {
+		t.Errorf("failed: %v %d", err, len(list))
+	}
+	_ = os.WriteFile(filepath.Join(repo.files.dir, "bad.json"), []byte("{"), 0o644)
+	if _, err := repo.ListByStatus(ctx, domain.TaskRunning); err == nil {
+		t.Error("corrupt task ignored by the scan")
+	}
+	broken := NewTaskRepository(filepath.Join(t.TempDir(), "f"))
+	_ = os.WriteFile(filepath.Dir(broken.files.dir), []byte("x"), 0o644)
+	if _, err := broken.ListByStatus(ctx, domain.TaskRunning); err == nil {
+		t.Error("scan over an unreadable directory succeeded")
+	}
+}

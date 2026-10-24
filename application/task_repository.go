@@ -6,7 +6,8 @@ import (
 	"github.com/underpass-ai/underpass-bots/domain"
 )
 
-// TaskRepository stores tasks durably and finds them by idempotency key.
+// TaskRepository stores tasks durably and finds them by idempotency key
+// or by status.
 type TaskRepository interface {
 	Save(ctx context.Context, task domain.Task) error
 	// Get returns a domain.NotFoundError when no task has the id.
@@ -14,4 +15,6 @@ type TaskRepository interface {
 	// FindByIdempotencyKey returns the bot's task submitted under the key,
 	// and false when none was.
 	FindByIdempotencyKey(ctx context.Context, bot domain.BotID, key domain.IdempotencyKey) (domain.Task, bool, error)
+	// ListByStatus returns every task in the status, in id order.
+	ListByStatus(ctx context.Context, status domain.TaskStatus) ([]domain.Task, error)
 }
