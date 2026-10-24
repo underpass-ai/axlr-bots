@@ -53,15 +53,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitError
 	}
 	if rest[0] == "serve" {
-		return serve(ctx, app, socketPath, rest[1:], stdout, stderr)
+		return serve(ctx, app, *stateDir, socketPath, rest[1:], stdout, stderr)
 	}
 	if len(rest) < 2 {
 		printUsage(stderr)
 		return exitUsage
 	}
 	group, verb, rest := rest[0], rest[1], rest[2:]
-	if group+" "+verb == "task reconcile" {
+	switch group + " " + verb {
+	case "task reconcile":
 		return taskReconcile(ctx, app, rest, stdout, stderr)
+	case "ca init":
+		return caInit(*stateDir, rest, stdout, stderr)
+	case "ca show":
+		return caShow(*stateDir, rest, stdout, stderr)
 	}
 	service := newService(ctx, app, socketPath, nil)
 	switch group + " " + verb {
@@ -93,6 +98,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return nodeList(ctx, service, rest, stdout, stderr)
 	case "node get":
 		return nodeGet(ctx, service, rest, stdout, stderr)
+	case "node enroll-token":
+		return nodeEnrollToken(ctx, service, rest, stdout, stderr)
+	case "node revoke":
+		return nodeRevoke(ctx, service, rest, stdout, stderr)
 	}
 	fmt.Fprintf(stderr, "axlr-bots: unknown command %q %q\n", group, verb)
 	printUsage(stderr)
@@ -147,12 +156,18 @@ func defaultActor() string {
 func printUsage(w io.Writer) {
 	fmt.Fprint(w, `usage: axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>] <command>
 
-  serve [--listen <addr>] [--tick 2s] [--reconcile-every 1m]
-                                      run the control plane: the API on the socket (and
-                                      a TCP address for nodes elsewhere), executions handed
-                                      to the nodes, in-process runs when no node is online
+  serve [--listen <addr>] [--server-names a,b] [--tick 2s] [--reconcile-every 1m]
+                                      run the control plane: the API on the socket (and the
+                                      node protocol over TLS on --listen, for nodes on other
+                                      hosts), executions handed to the nodes, in-process
+                                      runs when no node is online
+  ca init                             create the fleet CA under <state>/ca (once per fleet)
+  ca show                             print the CA certificate and its fingerprint
   node list                           list the nodes (hosts running axlr-node)
   node get <node-id>                  show one node
+  node enroll-token [--node-id <id>] [--labels k=v,k=v] [--ttl 1h]
+                                      print a one-time token a new host enrolls with
+  node revoke <node-id>               refuse the node's certificate and fail what it ran
   bot register --file <bot.json>      register a bot from its definition
   bot enable <bot-id>                 let the bot accept tasks
   bot list                            list bots

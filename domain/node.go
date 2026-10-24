@@ -68,8 +68,9 @@ func (n Node) CertificateSerial() string { return n.certificateSerial }
 func (n Node) RevokedAt() time.Time { return n.revokedAt }
 
 // Describe takes a node's registration again: a restarted agent reports
-// its host, labels and capabilities anew and comes Online. A revoked
-// node is refused.
+// its host, labels and capabilities anew and comes Online. A
+// registration without labels keeps the ones the node has (an enrolled
+// node's labels are the operator's). A revoked node is refused.
 func (n *Node) Describe(hostName string, labels NodeLabels, capabilities NodeCapabilities, now time.Time) error {
 	if n.IsRevoked() {
 		return n.refuse("register")
@@ -79,7 +80,9 @@ func (n *Node) Describe(hostName string, labels NodeLabels, capabilities NodeCap
 		return err
 	}
 	n.hostName = host
-	n.labels = labels
+	if len(labels) > 0 {
+		n.labels = labels
+	}
 	n.capabilities = capabilities
 	n.status = NodeOnline
 	n.lastSeenAt = now

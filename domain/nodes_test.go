@@ -322,6 +322,9 @@ func TestNodeCertificateAndRevocation(t *testing.T) {
 	if err := node.Heartbeat(t0.Add(4 * time.Minute)); err != nil || !node.IsOnline() {
 		t.Errorf("heartbeat after readmission: %v", err)
 	}
+	if err := node.Describe("host", nil, NodeCapabilities{}, t0.Add(5*time.Minute)); err != nil || node.Labels()["zone"] != "eu" {
+		t.Errorf("a registration without labels dropped them: %v %v", err, node.Labels())
+	}
 	if _, err := ParseNodeStatus("Revoked"); err != nil {
 		t.Error(err)
 	}
