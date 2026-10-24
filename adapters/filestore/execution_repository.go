@@ -49,3 +49,20 @@ func (r ExecutionRepository) ListRunning(ctx context.Context) ([]domain.Executio
 	}
 	return running, nil
 }
+
+// List reads every execution, in the directory's order.
+func (r ExecutionRepository) List(ctx context.Context) ([]domain.Execution, error) {
+	ids, err := r.files.ids()
+	if err != nil {
+		return nil, err
+	}
+	executions := make([]domain.Execution, 0, len(ids))
+	for _, id := range ids {
+		execution, err := r.Get(ctx, domain.ExecutionID(id))
+		if err != nil {
+			return nil, err
+		}
+		executions = append(executions, execution)
+	}
+	return executions, nil
+}

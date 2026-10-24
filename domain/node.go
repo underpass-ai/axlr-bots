@@ -18,6 +18,7 @@ type Node struct {
 	registeredAt      time.Time
 	lastSeenAt        time.Time
 	certificateSerial string
+	certificateExpiry time.Time
 	revokedAt         time.Time
 }
 
@@ -107,6 +108,9 @@ func (n *Node) Certify(serial string, labels NodeLabels, now time.Time) error {
 	if serial == "" {
 		return invalid("certificate serial", "must not be empty")
 	}
+	if serial != n.certificateSerial {
+		n.certificateExpiry = time.Time{}
+	}
 	n.certificateSerial = serial
 	if len(labels) > 0 {
 		n.labels = labels
@@ -117,6 +121,22 @@ func (n *Node) Certify(serial string, labels NodeLabels, now time.Time) error {
 	}
 	n.lastSeenAt = now
 	return nil
+}
+
+// CertificateExpiry is when the node's current certificate stops being
+// valid; zero until the control plane has seen it (at enrollment, or on
+// the node's next call over mutual TLS).
+func (n Node) CertificateExpiry() time.Time { return n.certificateExpiry }
+
+// RecordCertificateExpiry keeps the expiry of the certificate with the
+// serial when it is the node's current one, and reports whether the
+// node changed. A certificate the node no longer holds is ignored.
+func (n *Node) RecordCertificateExpiry(serial string, notAfter time.Time) bool {
+	if serial == "" || serial != n.certificateSerial || notAfter.IsZero() || notAfter.Equal(n.certificateExpiry) {
+		return false
+	}
+	n.certificateExpiry = notAfter
+	return true
 }
 
 // Revoke cuts the node off as of now.
@@ -158,6 +178,10 @@ func (n Node) Snapshot() NodeSnapshot {
 		ID: n.id.String(), HostName: n.hostName, Labels: n.labels.Copy(), Capabilities: n.capabilities,
 		Status: n.status.String(), RegisteredAt: n.registeredAt, LastSeenAt: n.lastSeenAt, CertificateSerial: n.certificateSerial,
 	}
+	if !n.certificateExpiry.IsZero() {
+		expiry := n.certificateExpiry
+		s.CertificateNotAfter = &expiry
+	}
 	if !n.revokedAt.IsZero() {
 		revoked := n.revokedAt
 		s.RevokedAt = &revoked
@@ -189,6 +213,9 @@ func RestoreNode(s NodeSnapshot) (Node, error) {
 	node.status = status
 	node.lastSeenAt = s.LastSeenAt
 	node.certificateSerial = s.CertificateSerial
+	if s.CertificateNotAfter != nil {
+		node.certificateExpiry = *s.CertificateNotAfter
+	}
 	if s.RevokedAt != nil {
 		node.revokedAt = *s.RevokedAt
 	}

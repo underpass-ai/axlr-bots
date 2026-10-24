@@ -136,3 +136,25 @@ func TestEventLogListsABotsEvents(t *testing.T) {
 		t.Error("a directory read as a log")
 	}
 }
+
+func TestEventLogListsATasksEvents(t *testing.T) {
+	ctx := context.Background()
+	log := NewEventLog(t.TempDir())
+	if events, err := log.ListTaskEvents(ctx, "task-1", 10); err != nil || len(events) != 0 {
+		t.Error("a missing log should list nothing:", err)
+	}
+	for i, task := range []domain.TaskID{"task-1", "task-2", "task-1", "task-1"} {
+		event, _ := domain.NewEvent(domain.EventID("evt-"+string(rune('a'+i))), domain.EventTaskSubmitted, "underpass", "bot-1", task, "trace", t0, nil)
+		_ = log.Publish(ctx, event)
+	}
+	events, err := log.ListTaskEvents(ctx, "task-1", 10)
+	if err != nil || len(events) != 3 || events[0].ID != "evt-a" || events[2].ID != "evt-d" {
+		t.Errorf("task-1 = %+v %v", events, err)
+	}
+	if newest, _ := log.ListTaskEvents(ctx, "task-1", 1); len(newest) != 1 || newest[0].ID != "evt-d" {
+		t.Errorf("newest = %+v", newest)
+	}
+	if other, _ := log.ListTaskEvents(ctx, "task-2", 0); len(other) != 1 || other[0].ID != "evt-b" {
+		t.Errorf("task-2 = %+v", other)
+	}
+}

@@ -34,9 +34,21 @@ func (l *EventLog) Publish(_ context.Context, event domain.Event) error {
 const maxEventLineBytes = 4 << 20
 
 // ListEvents scans the log for the bot's events and returns the newest
-// limit of them, oldest first. A line that is not an event is skipped:
-// the log is append-only and a torn last line must not hide the rest.
+// limit of them, oldest first.
 func (l *EventLog) ListEvents(_ context.Context, bot domain.BotID, limit int) ([]domain.Event, error) {
+	return l.tail(limit, func(event domain.Event) bool { return event.BotID == bot })
+}
+
+// ListTaskEvents answers the task's newest limit events, oldest first:
+// its timeline.
+func (l *EventLog) ListTaskEvents(_ context.Context, task domain.TaskID, limit int) ([]domain.Event, error) {
+	return l.tail(limit, func(event domain.Event) bool { return event.TaskID == task })
+}
+
+// tail reads the log and keeps the newest limit events that match. A
+// line that is not an event is skipped: the log is append-only and a
+// torn last line must not hide the rest.
+func (l *EventLog) tail(limit int, match func(domain.Event) bool) ([]domain.Event, error) {
 	f, err := os.Open(l.file.path)
 	if errors.Is(err, os.ErrNotExist) {
 		return []domain.Event{}, nil
@@ -53,7 +65,7 @@ func (l *EventLog) ListEvents(_ context.Context, bot domain.BotID, limit int) ([
 	scanner.Buffer(make([]byte, 0, 64*1024), maxEventLineBytes)
 	for scanner.Scan() {
 		var event domain.Event
-		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil || event.BotID != bot {
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil || !match(event) {
 			continue
 		}
 		kept = append(kept, event)
@@ -67,5 +79,4 @@ func (l *EventLog) ListEvents(_ context.Context, bot domain.BotID, limit int) ([
 	return kept, nil
 }
 
-// Path is the log file.
 func (l *EventLog) Path() string { return l.file.path }

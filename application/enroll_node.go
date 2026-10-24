@@ -93,6 +93,7 @@ func (uc EnrollNode) certify(ctx context.Context, enrollment domain.Enrollment, 
 	if err := node.Certify(issued.Serial, enrollment.Labels(), now); err != nil {
 		return domain.Node{}, err
 	}
+	node.RecordCertificateExpiry(issued.Serial, issued.NotAfter)
 	if err := uc.deps.Nodes.Save(ctx, node); err != nil {
 		return domain.Node{}, err
 	}

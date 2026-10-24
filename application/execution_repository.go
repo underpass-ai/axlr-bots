@@ -13,4 +13,6 @@ type ExecutionRepository interface {
 	Get(ctx context.Context, id domain.ExecutionID) (domain.Execution, error)
 	// ListRunning returns every execution still Running, in id order.
 	ListRunning(ctx context.Context) ([]domain.Execution, error)
+	// List answers every execution, in no particular order.
+	List(ctx context.Context) ([]domain.Execution, error)
 }

@@ -224,14 +224,23 @@ func TestTaskRepositoryListsByStatus(t *testing.T) {
 	if list, err := repo.ListByStatus(ctx, domain.TaskFailed); err != nil || len(list) != 0 {
 		t.Errorf("failed: %v %d", err, len(list))
 	}
+	if all, err := repo.List(ctx); err != nil || len(all) != 3 {
+		t.Errorf("all: %v %d", err, len(all))
+	}
 	_ = os.WriteFile(filepath.Join(repo.files.dir, "bad.json"), []byte("{"), 0o644)
 	if _, err := repo.ListByStatus(ctx, domain.TaskRunning); err == nil {
 		t.Error("corrupt task ignored by the scan")
+	}
+	if _, err := repo.List(ctx); err == nil {
+		t.Error("corrupt task ignored by the list")
 	}
 	broken := NewTaskRepository(filepath.Join(t.TempDir(), "f"))
 	_ = os.WriteFile(filepath.Dir(broken.files.dir), []byte("x"), 0o644)
 	if _, err := broken.ListByStatus(ctx, domain.TaskRunning); err == nil {
 		t.Error("scan over an unreadable directory succeeded")
+	}
+	if _, err := broken.List(ctx); err == nil {
+		t.Error("list over an unreadable directory succeeded")
 	}
 }
 
@@ -314,9 +323,18 @@ func TestNodeRepositoryAndRunningExecutions(t *testing.T) {
 	if list, err := NewExecutionRepository(filepath.Join(state, "nowhere")).ListRunning(ctx); err != nil || len(list) != 0 {
 		t.Errorf("no dir: %v %d", err, len(list))
 	}
+	if all, err := execs.List(ctx); err != nil || len(all) != 2 {
+		t.Errorf("all executions = %v %d", err, len(all))
+	}
+	if all, err := NewExecutionRepository(filepath.Join(state, "nowhere")).List(ctx); err != nil || len(all) != 0 {
+		t.Errorf("no dir: %v %d", err, len(all))
+	}
 	_ = os.WriteFile(filepath.Join(state, "executions", "bad.json"), []byte("{"), 0o644)
 	if _, err := execs.ListRunning(ctx); err == nil {
 		t.Error("corrupt execution listed")
+	}
+	if _, err := execs.List(ctx); err == nil {
+		t.Error("corrupt execution in the list")
 	}
 }
 

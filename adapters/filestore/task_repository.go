@@ -69,3 +69,20 @@ func (r TaskRepository) ListByStatus(ctx context.Context, status domain.TaskStat
 	}
 	return tasks, nil
 }
+
+// List reads every task, in the directory's order.
+func (r TaskRepository) List(ctx context.Context) ([]domain.Task, error) {
+	ids, err := r.files.ids()
+	if err != nil {
+		return nil, err
+	}
+	tasks := make([]domain.Task, 0, len(ids))
+	for _, id := range ids {
+		task, err := r.Get(ctx, domain.TaskID(id))
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+	return tasks, nil
+}
