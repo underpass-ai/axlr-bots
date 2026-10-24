@@ -1,0 +1,22 @@
+{
+  "id": "bot",
+  "tenant": "default",
+  "name": "bot",
+  "owner": "operator",
+  "mission": "Do what each task asks, within the policy.",
+  "level": "observe",
+  "allowedTools": ["local_read", "local_search", "local_list"],
+  "triggers": [{"type": "manual"}],
+  "model": {
+    "model": "anthropic/claude-haiku-5.5",
+    "routingPolicy": "cost-optimized",
+    "allowRemoteProviders": true,
+    "maxContextTokens": 32000
+  },
+  "budgets": {
+    "maxModelCallsPerTask": 10,
+    "maxToolCallsPerTask": 20,
+    "maxDelegationDepth": 0,
+    "taskTimeoutSeconds": 300
+  }
+}

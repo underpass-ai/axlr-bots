@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"os/signal"
 	"syscall"
 
@@ -17,6 +18,7 @@ import (
 func serve(ctx context.Context, app application.Dependencies, socketPath string, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	listen := flags.String("listen", os.Getenv("UNDERPASS_LISTEN"), "a TCP address to serve nodes on too, such as 127.0.0.1:7878 (also UNDERPASS_LISTEN)")
 	tick := flags.Duration("tick", daemon.DefaultTick, "how often to look for Pending tasks")
 	reconcileEvery := flags.Duration("reconcile-every", daemon.DefaultReconcileEvery, "how often to fail the tasks a dead run left Running")
 	grace := flags.Duration("grace", 0, "reconciliation grace (default: the bot's task timeout plus 1m)")
@@ -34,7 +36,7 @@ func serve(ctx context.Context, app application.Dependencies, socketPath string,
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	logger := log.New(stderr, "", log.LstdFlags)
-	if err := daemon.Run(ctx, app, daemon.Options{SocketPath: socketPath, Tick: *tick, ReconcileEvery: *reconcileEvery, Grace: *grace, Log: logger}); err != nil {
+	if err := daemon.Run(ctx, app, daemon.Options{SocketPath: socketPath, ListenAddr: *listen, Tick: *tick, ReconcileEvery: *reconcileEvery, Grace: *grace, Log: logger}); err != nil {
 		fmt.Fprintln(stderr, "underpass-bots:", err)
 		return exitError
 	}

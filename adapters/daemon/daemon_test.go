@@ -47,7 +47,7 @@ func (f *fixture) start(t *testing.T) (*unixapi.Client, func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, f.deps, Options{SocketPath: f.socket, Tick: 20 * time.Millisecond, ReconcileEvery: 50 * time.Millisecond, Grace: time.Millisecond, Log: log.New(f.logs, "", 0)})
+		done <- Run(ctx, f.deps, Options{SocketPath: f.socket, Tick: 20 * time.Millisecond, ReconcileEvery: 50 * time.Millisecond, Grace: time.Millisecond, NodeOfflineAfter: 150 * time.Millisecond, Log: log.New(f.logs, "", 0)})
 	}()
 	deadline := time.Now().Add(5 * time.Second)
 	for !unixapi.Reachable(context.Background(), f.socket) {
@@ -83,15 +83,15 @@ func TestDaemonRunsWhatArrivesOverTheSocketAndSurvivesARestart(t *testing.T) {
 	f := newFixture(t, "completed")
 	client, stop := f.start(t)
 	ctx := context.Background()
-	if _, err := client.RegisterBot(ctx, application.BotDefinition{Tenant: "ops", Name: "sre-host-bot", Owner: "sre", Mission: "diagnose", AllowedTools: []string{"local_read"}}); err != nil {
+	if _, err := client.RegisterBot(ctx, application.BotDefinition{Tenant: "ops", Name: "bot", Owner: "sre", Mission: "diagnose", AllowedTools: []string{"local_read"}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.EnableBot(ctx, "sre-host-bot"); err != nil {
+	if _, err := client.EnableBot(ctx, "bot"); err != nil {
 		t.Fatal(err)
 	}
-	alert, err := client.Alert(ctx, unixapi.AlertRequest{BotID: "sre-host-bot", Unit: "demo-broken", UserManager: true})
+	alert, err := client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "List the files in your workspace", IdempotencyKey: "k-1"})
 	if err != nil || !alert.Created {
-		t.Fatalf("alert: %v %+v", err, alert)
+		t.Fatalf("submit: %v %+v", err, alert)
 	}
 	done := waitFor(t, client, alert.Task.ID, "Completed")
 	report, err := client.GetReport(ctx, done.ID)
@@ -112,21 +112,21 @@ func TestDaemonRunsWhatArrivesOverTheSocketAndSurvivesARestart(t *testing.T) {
 	// Restart: the bot and the task are still there, and a task spooled
 	// straight into the state directory while the daemon was down runs.
 	local := unixapi.NewLocal(f.deps)
-	spooled, err := local.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "sre-host-bot", Objective: "spooled while down", IdempotencyKey: "spool-1"})
+	spooled, err := local.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "spooled while down", IdempotencyKey: "spool-1"})
 	if err != nil || !spooled.Created {
 		t.Fatal(err)
 	}
 	client, stop = f.start(t)
 	defer stop()
-	if bot, err := client.GetBot(ctx, "sre-host-bot"); err != nil || bot.Status != "Enabled" {
+	if bot, err := client.GetBot(ctx, "bot"); err != nil || bot.Status != "Enabled" {
 		t.Errorf("bot after restart: %v %+v", err, bot)
 	}
 	if task, err := client.GetTask(ctx, done.ID); err != nil || task.Status != "Completed" {
 		t.Errorf("task after restart: %v %+v", err, task)
 	}
 	waitFor(t, client, spooled.Task.ID, "Completed")
-	if repeat, err := client.Alert(ctx, unixapi.AlertRequest{BotID: "sre-host-bot", Unit: "demo-broken.service"}); err != nil || repeat.Created || repeat.Task.ID != alert.Task.ID {
-		t.Errorf("repeated alert after restart: %v %+v", err, repeat)
+	if repeat, err := client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "List the files in your workspace", IdempotencyKey: "k-1"}); err != nil || repeat.Created || repeat.Task.ID != alert.Task.ID {
+		t.Errorf("repeated submission after restart: %v %+v", err, repeat)
 	}
 }
 
@@ -212,4 +212,48 @@ func TestDaemonRefusals(t *testing.T) {
 	if o.tick() != DefaultTick || o.reconcileEvery() != DefaultReconcileEvery || o.log() == nil {
 		t.Error("defaults wrong")
 	}
+}
+
+func TestDaemonLeavesNodeBackedTasksToTheNodeAndMarksItOffline(t *testing.T) {
+	f := newFixture(t, "completed")
+	client, stop := f.start(t)
+	defer stop()
+	ctx := context.Background()
+	if _, err := client.RegisterBot(ctx, application.BotDefinition{Tenant: "t", Name: "bot", Owner: "o", Mission: "m"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.EnableBot(ctx, "bot"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Register(ctx, application.NodeRegistration{ID: "web-1", HostName: "web-1"}); err != nil {
+		t.Fatal(err)
+	}
+	submitted, _ := client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "o", IdempotencyKey: "k"})
+	time.Sleep(100 * time.Millisecond)
+	if task, _ := client.GetTask(ctx, submitted.Task.ID); task.Status != "Pending" {
+		t.Fatalf("the daemon ran a node-backed task in process: %+v", task)
+	}
+	assignment, found, err := client.NextAssignment(ctx, "web-1", 0)
+	if err != nil || !found || assignment.Run.TaskID != domain.TaskID(submitted.Task.ID) {
+		t.Fatalf("assignment: %v %v", err, found)
+	}
+	// The node goes silent: its lease expires, the task fails, the node is Offline,
+	// and the next task runs in process again.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		node, _ := client.GetNode(ctx, "web-1")
+		if node.Status == "Offline" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("node still %s: %s", node.Status, f.logs.String())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !strings.Contains(f.logs.String(), "nodes offline: [web-1]") {
+		t.Errorf("logs = %s", f.logs.String())
+	}
+	next, _ := client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "o2", IdempotencyKey: "k2"})
+	waitFor(t, client, next.Task.ID, "Completed")
+	_ = assignment
 }

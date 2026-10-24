@@ -50,7 +50,7 @@ exit 1`
 
 func definitionFile(t *testing.T) string {
 	t.Helper()
-	return filepath.Join("..", "..", "examples", "server-incident-investigator.json")
+	return filepath.Join("..", "..", "examples", "bot.json")
 }
 
 type cli struct {
@@ -89,23 +89,23 @@ func TestPhaseZeroDemo(t *testing.T) {
 
 	// Register, then "restart": every call is a new process over the same state.
 	code, bot := c.json("bot", "register", "--file", definitionFile(t))
-	if code != exitOK || bot["status"] != "Registered" || bot["id"] != "server-incident-investigator" {
+	if code != exitOK || bot["status"] != "Registered" || bot["id"] != "bot" {
 		t.Fatalf("register: %d %v", code, bot)
 	}
-	code, bot = c.json("bot", "enable", "server-incident-investigator")
+	code, bot = c.json("bot", "enable", "bot")
 	if code != exitOK || bot["status"] != "Enabled" {
 		t.Fatalf("enable: %d %v", code, bot)
 	}
 	code, out, _ := c.run("bot", "list")
-	if code != exitOK || !strings.Contains(out, `"server-incident-investigator"`) {
+	if code != exitOK || !strings.Contains(out, `"bot"`) {
 		t.Fatalf("list: %d %s", code, out)
 	}
-	code, bot = c.json("bot", "get", "server-incident-investigator")
+	code, bot = c.json("bot", "get", "bot")
 	if code != exitOK || bot["status"] != "Enabled" {
 		t.Fatalf("get after restart: %d %v", code, bot)
 	}
 
-	code, submitted := c.json("task", "submit", "server-incident-investigator", "--objective", "Investigate an HTTP 500 spike", "--key", "alert-1", "--correlation", "trace-abc")
+	code, submitted := c.json("task", "submit", "bot", "--objective", "Investigate an HTTP 500 spike", "--key", "alert-1", "--correlation", "trace-abc")
 	if code != exitOK || submitted["created"] != true {
 		t.Fatalf("submit: %d %v", code, submitted)
 	}
@@ -137,7 +137,7 @@ func TestPhaseZeroDemo(t *testing.T) {
 	}
 
 	// Resubmitting the same key names the same task; it does not run again.
-	code, again := c.json("task", "submit", "server-incident-investigator", "--objective", "Investigate an HTTP 500 spike", "--key", "alert-1")
+	code, again := c.json("task", "submit", "bot", "--objective", "Investigate an HTTP 500 spike", "--key", "alert-1")
 	if code != exitOK || again["created"] != false || again["task"].(map[string]any)["id"] != taskID {
 		t.Errorf("resubmit: %d %v", code, again)
 	}
@@ -159,8 +159,8 @@ func TestTaskRunExitCodesFollowTheOutcome(t *testing.T) {
 	for scenario, want := range map[string]int{"decision": exitDecisionRequired, "failed": exitError} {
 		c := cli{t: t, state: t.TempDir(), axlr: fakeAXLR(t, scenario)}
 		_, _ = c.json("bot", "register", "--file", definitionFile(t))
-		_, _ = c.json("bot", "enable", "server-incident-investigator")
-		_, submitted := c.json("task", "submit", "server-incident-investigator", "--objective", "o", "--key", "k")
+		_, _ = c.json("bot", "enable", "bot")
+		_, submitted := c.json("task", "submit", "bot", "--objective", "o", "--key", "k")
 		taskID := submitted["task"].(map[string]any)["id"].(string)
 		code, ran := c.json("task", "run", taskID)
 		if code != want {
@@ -173,8 +173,8 @@ func TestTaskDecideContinuesAWaitingTask(t *testing.T) {
 	state := t.TempDir()
 	stopped := cli{t: t, state: state, axlr: fakeAXLR(t, "decision")}
 	_, _ = stopped.json("bot", "register", "--file", definitionFile(t))
-	_, _ = stopped.json("bot", "enable", "server-incident-investigator")
-	_, submitted := stopped.json("task", "submit", "server-incident-investigator", "--objective", "Investigate an HTTP 500 spike", "--key", "alert-1")
+	_, _ = stopped.json("bot", "enable", "bot")
+	_, submitted := stopped.json("task", "submit", "bot", "--objective", "Investigate an HTTP 500 spike", "--key", "alert-1")
 	taskID := submitted["task"].(map[string]any)["id"].(string)
 	code, ran := stopped.json("task", "run", taskID)
 	if code != exitDecisionRequired || ran["task"].(map[string]any)["status"] != "WaitingApproval" {
@@ -228,7 +228,7 @@ func TestTaskDecideContinuesAWaitingTask(t *testing.T) {
 		t.Error("axlr-tui was run for a completed task")
 	}
 	// A Pending task has nothing to decide either.
-	_, other := deciding.json("task", "submit", "server-incident-investigator", "--objective", "o", "--key", "alert-2")
+	_, other := deciding.json("task", "submit", "bot", "--objective", "o", "--key", "alert-2")
 	code, _, errText = deciding.run("task", "decide", other["task"].(map[string]any)["id"].(string), "approve")
 	if code != exitError || !strings.Contains(errText, "is Pending: cannot decide") {
 		t.Errorf("pending task: %d %s", code, errText)
@@ -240,8 +240,8 @@ func TestTaskDecideExitCodesFollowTheOutcome(t *testing.T) {
 		state := t.TempDir()
 		c := cli{t: t, state: state, axlr: fakeAXLR(t, "decision")}
 		_, _ = c.json("bot", "register", "--file", definitionFile(t))
-		_, _ = c.json("bot", "enable", "server-incident-investigator")
-		_, submitted := c.json("task", "submit", "server-incident-investigator", "--objective", "o", "--key", "k")
+		_, _ = c.json("bot", "enable", "bot")
+		_, submitted := c.json("task", "submit", "bot", "--objective", "o", "--key", "k")
 		taskID := submitted["task"].(map[string]any)["id"].(string)
 		_, _ = c.json("task", "run", taskID)
 		c.axlr = fakeAXLR(t, scenario)
@@ -300,10 +300,10 @@ func TestUsageAndErrors(t *testing.T) {
 		{[]string{"task", "report"}, exitUsage, "exactly one"},
 		{[]string{"task", "report", "--bogus", "t"}, exitUsage, "flag provided but not defined"},
 		{[]string{"task", "report", "ghost"}, exitError, "not found"},
-		{[]string{"alert"}, exitUsage, "needs --unit"},
-		{[]string{"alert", "--unit", "x", "extra"}, exitUsage, "needs --unit"},
-		{[]string{"alert", "--unit", "x", "--at", "yesterday"}, exitUsage, "RFC 3339"},
-		{[]string{"alert", "--bogus"}, exitUsage, "flag provided but not defined"},
+		{[]string{"node", "list", "extra"}, exitUsage, "no arguments"},
+		{[]string{"node", "get"}, exitUsage, "exactly one"},
+		{[]string{"node", "get", "Bad Id"}, exitError, "node id"},
+		{[]string{"node", "get", "ghost"}, exitError, "not found"},
 		{[]string{"serve", "extra"}, exitUsage, "takes no arguments"},
 		{[]string{"serve", "--bogus"}, exitUsage, "flag provided but not defined"},
 		{[]string{"--socket", "", "serve"}, exitUsage, "needs a socket"},
@@ -344,7 +344,7 @@ func TestBadDefinitionsAndState(t *testing.T) {
 	if code, _, errText := c.run("bot", "register", "--file", definitionFile(t)); code != exitError || !strings.Contains(errText, "already exists") {
 		t.Errorf("duplicate: %d %s", code, errText)
 	}
-	if code, _, errText := c.run("task", "submit", "server-incident-investigator", "--objective", "o", "--key", "k"); code != exitError || !strings.Contains(errText, "is Registered") {
+	if code, _, errText := c.run("task", "submit", "bot", "--objective", "o", "--key", "k"); code != exitError || !strings.Contains(errText, "is Registered") {
 		t.Errorf("submit to a registered bot: %d %s", code, errText)
 	}
 
@@ -398,9 +398,7 @@ func TestDefaults(t *testing.T) {
 	if defaultSocket() != "" {
 		t.Error("default socket should be empty until the state is known")
 	}
-	if envOr("UNDERPASS_NOPE", "x") != "x" || hostname() == "" {
-		t.Error("envOr or hostname wrong")
-	}
+
 	var out bytes.Buffer
 	printJSON(&out, make(chan int))
 	if strings.TrimSpace(out.String()) != "{}" {
@@ -414,7 +412,7 @@ func TestDefaults(t *testing.T) {
 func crashed(t *testing.T, state, taskID string, startedAt time.Time) {
 	t.Helper()
 	ctx := context.Background()
-	task, err := domain.NewTask(domain.TaskID(taskID), "server-incident-investigator", "Investigate", domain.IdempotencyKey("key-"+taskID), "trace-abc", startedAt)
+	task, err := domain.NewTask(domain.TaskID(taskID), "bot", "Investigate", domain.IdempotencyKey("key-"+taskID), "trace-abc", startedAt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,7 +436,7 @@ func TestTaskReconcileFailsWhatACrashLeftRunning(t *testing.T) {
 	state := t.TempDir()
 	c := cli{t: t, state: state, axlr: fakeAXLR(t, "completed")}
 	_, _ = c.json("bot", "register", "--file", definitionFile(t))
-	_, _ = c.json("bot", "enable", "server-incident-investigator")
+	_, _ = c.json("bot", "enable", "bot")
 	// The example bot's timeout is 900s: the default grace is 16 minutes.
 	crashed(t, state, "task-old", time.Now().Add(-time.Hour))
 	crashed(t, state, "task-young", time.Now().Add(-time.Minute))
@@ -500,7 +498,7 @@ func TestTaskReconcileFailsWhatACrashLeftRunning(t *testing.T) {
 
 	// A Running task whose bot is gone is an error, not silence.
 	crashed(t, state, "task-orphan", time.Now().Add(-time.Hour))
-	_ = os.Remove(filepath.Join(state, "bots", "server-incident-investigator.json"))
+	_ = os.Remove(filepath.Join(state, "bots", "bot.json"))
 	if code, _, errText := c.run("task", "reconcile"); code != exitError || !strings.Contains(errText, "reconcile task task-orphan") {
 		t.Errorf("orphan: %d %s", code, errText)
 	}

@@ -13,19 +13,19 @@ here=$(cd "$(dirname "$0")" && pwd)
 state=${UNDERPASS_STATE:-$(mktemp -d)}
 bin=${UNDERPASS_AXLR_BIN:-$here/fake-axlr-tui}
 ub="go run $here/../cmd/underpass-bots --state $state --axlr-bin $bin"
-key=${DEMO_KEY:-alert-2026-10-23-001}
+key=${DEMO_KEY:-demo-2026-10-24-001}
 
 echo "# state: $state"
 echo "# axlr:  $bin"
 echo
 echo "## 1. register"
-$ub bot register --file "$here/server-incident-investigator.json" | grep -E '"id"|"status"'
+$ub bot register --file "$here/bot.json" | grep -E '"id"|"status"'
 echo
 echo "## 2. restart: a new process reads the bot back and enables it"
-$ub bot enable server-incident-investigator | grep -E '"id"|"status"'
+$ub bot enable bot | grep -E '"id"|"status"'
 echo
 echo "## 3. submit"
-submit=$($ub task submit server-incident-investigator --objective "Investigate an HTTP 500 spike in staging and explain the likely cause" --key "$key")
+submit=$($ub task submit bot --objective "List the files in your workspace and say how many there are" --key "$key")
 echo "$submit" | grep -E '"created"|"id"|"status"' | head -3
 task=$(echo "$submit" | sed -n 's/.*"id": "\(task-[^"]*\)".*/\1/p' | head -1)
 echo
@@ -42,7 +42,7 @@ echo "## 5. read the result, not the trace"
 $ub execution get "$execution" | grep -E '"outcome"|"answer"|"tracePath"'
 echo
 echo "## 6. resubmit the same key: same task, no second execution"
-$ub task submit server-incident-investigator --objective "Investigate an HTTP 500 spike in staging and explain the likely cause" --key "$key" | grep -E '"created"|"id"|"status"' | head -3
+$ub task submit bot --objective "List the files in your workspace and say how many there are" --key "$key" | grep -E '"created"|"id"|"status"' | head -3
 set +e
 $ub task run "$task"
 echo "second run exit code: $? (refused)"

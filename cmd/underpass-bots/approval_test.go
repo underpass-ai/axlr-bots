@@ -10,10 +10,10 @@ import (
 	"github.com/underpass-ai/underpass-bots/internal/fakeaxlr"
 )
 
-// TestTheWriteNeverRunsWithoutTheApproval is the fixing path of vision
-// §10.4: the fixer bot (act-with-approval) asks AXLR to restart the unit,
-// AXLR holds the call and the task waits; the restart runs only after
-// `task approve`, through `--session <id> --decide approve`.
+// TestTheWriteNeverRunsWithoutTheApproval is the approval path of vision
+// §10.4: a bot at act-with-approval asks AXLR for a write, AXLR holds the
+// call and the task waits; the write runs only after `task approve`,
+// through `--session <id> --decide approve`.
 func TestTheWriteNeverRunsWithoutTheApproval(t *testing.T) {
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "restart-ran")
@@ -23,12 +23,12 @@ func TestTheWriteNeverRunsWithoutTheApproval(t *testing.T) {
 	}
 	state := t.TempDir()
 	c := cli{t: t, state: state, axlr: bin}
-	code, bot := c.json("bot", "register", "--file", filepath.Join("..", "..", "examples", "sre-host-fixer.json"))
+	code, bot := c.json("bot", "register", "--file", filepath.Join("..", "..", "examples", "bot-act-with-approval.json"))
 	if code != exitOK || bot["level"] != "act-with-approval" {
 		t.Fatalf("register: %d %v", code, bot)
 	}
-	_, _ = c.json("bot", "enable", "sre-host-fixer")
-	_, submitted := c.json("task", "submit", "sre-host-fixer", "--objective", "Restart demo-broken.service, a user unit", "--key", "fix-1")
+	_, _ = c.json("bot", "enable", "bot-act-with-approval")
+	_, submitted := c.json("task", "submit", "bot-act-with-approval", "--objective", "Create a file named hello.txt in your workspace containing hello", "--key", "write-1")
 	taskID := submitted["task"].(map[string]any)["id"].(string)
 
 	code, ran := c.json("task", "run", taskID)
@@ -62,22 +62,13 @@ func TestTheWriteNeverRunsWithoutTheApproval(t *testing.T) {
 	if err := json.Unmarshal(content, &file); err != nil {
 		t.Fatal(err)
 	}
-	restarts := 0
+	writes := 0
 	for _, rule := range file.Policy.Tools.Allow {
-		if rule["name"] == "local_exec" {
-			a, _ := rule["arguments"].(map[string]any)
-			if pattern, _ := a["args"].(string); strings.Contains(pattern, "restart") {
-				restarts++
-			}
+		if rule["name"] == "local_write" {
+			writes++
 		}
 	}
-	writesDenied := 0
-	for _, rule := range file.Policy.Tools.Deny {
-		if rule["name"] == "local_write" || rule["name"] == "local_edit" {
-			writesDenied++
-		}
-	}
-	if file.Policy.Level != "act-with-approval" || restarts != 2 || writesDenied != 2 {
+	if file.Policy.Level != "act-with-approval" || writes != 1 || len(file.Policy.Tools.Deny) != 0 {
 		t.Errorf("policy file = %s", content)
 	}
 	if _, err := os.Stat(marker); err == nil {
@@ -114,7 +105,7 @@ func TestTheWriteNeverRunsWithoutTheApproval(t *testing.T) {
 	marker2 := filepath.Join(dir2, "restart-ran")
 	bin2, _, _ := fakeaxlr.Write(dir2, fakeaxlr.Options{Scenario: "approval-flow", Marker: marker2})
 	c.axlr = bin2
-	_, submitted = c.json("task", "submit", "sre-host-fixer", "--objective", "Restart demo-broken.service again", "--key", "fix-2")
+	_, submitted = c.json("task", "submit", "bot-act-with-approval", "--objective", "Create hello.txt again", "--key", "write-2")
 	taskID = submitted["task"].(map[string]any)["id"].(string)
 	if code, _ := c.json("task", "run", taskID); code != exitDecisionRequired {
 		t.Fatal("second task did not wait")

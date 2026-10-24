@@ -52,11 +52,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "underpass-bots:", err)
 		return exitError
 	}
-	switch rest[0] {
-	case "serve":
+	if rest[0] == "serve" {
 		return serve(ctx, app, socketPath, rest[1:], stdout, stderr)
-	case "alert":
-		return alert(ctx, app, socketPath, rest[1:], stdout, stderr)
 	}
 	if len(rest) < 2 {
 		printUsage(stderr)
@@ -92,6 +89,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return taskReport(ctx, service, rest, stdout, stderr)
 	case "execution get":
 		return executionGet(ctx, service, rest, stdout, stderr)
+	case "node list":
+		return nodeList(ctx, service, rest, stdout, stderr)
+	case "node get":
+		return nodeGet(ctx, service, rest, stdout, stderr)
 	}
 	fmt.Fprintf(stderr, "underpass-bots: unknown command %q %q\n", group, verb)
 	printUsage(stderr)
@@ -146,19 +147,19 @@ func defaultActor() string {
 func printUsage(w io.Writer) {
 	fmt.Fprint(w, `usage: underpass-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>] <command>
 
-  serve [--tick 2s] [--reconcile-every 1m]
-                                      run the control plane: the local API on the
-                                      socket, Pending tasks one at a time, reconciliation
-  alert --unit <name> [--bot <id>] [--host <name>] [--at <RFC3339>] [--window 10m] [--user]
-                                      a systemd unit failed: submit its diagnosis task
-                                      (same unit and window: same task)
+  serve [--listen <addr>] [--tick 2s] [--reconcile-every 1m]
+                                      run the control plane: the API on the socket (and
+                                      a TCP address for nodes elsewhere), executions handed
+                                      to the nodes, in-process runs when no node is online
+  node list                           list the nodes (hosts running underpass-node)
+  node get <node-id>                  show one node
   bot register --file <bot.json>      register a bot from its definition
   bot enable <bot-id>                 let the bot accept tasks
   bot list                            list bots
   bot get <bot-id>                    show one bot
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>]
                                       accept a task; the same key names the same task
-  task run <task-id>                  run a pending task once through AXLR
+  task run <task-id>                  run a pending task now, in process
                                       (exit 0 completed, 3 decision required, 1 failed)
   task approve <task-id>              approve the call a WaitingApproval task stopped on
   task deny <task-id>                 deny it; both run the session to its end under a
@@ -170,10 +171,10 @@ func printUsage(w io.Writer) {
                                       longer than the grace (default: the bot's
                                       task timeout plus 1m); prints failed/skipped
   execution get <execution-id>        show one execution: outcome, answer, usage, policy
-  install [--user] [--prefix <dir>] [--state <dir>] [--axlr-bin <path>]
-                                      install the binary, the systemd units and the
-                                      environment file (see README)
-  uninstall [--user] [--prefix <dir>] [--purge]
+  install [--system] [--prefix <dir>] [--state <dir>] [--axlr-bin <path>]
+                                      install both binaries, the two systemd units and the
+                                      environment file under ~/.local (or --system) (see README)
+  uninstall [--system] [--prefix <dir>] [--purge]
                                       remove them (keep the state unless --purge)
 
 State lives under --state (default $UNDERPASS_STATE, $XDG_STATE_HOME/underpass-bots

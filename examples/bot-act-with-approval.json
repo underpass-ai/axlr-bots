@@ -1,0 +1,22 @@
+{
+  "id": "bot-act-with-approval",
+  "tenant": "default",
+  "name": "bot-act-with-approval",
+  "owner": "operator",
+  "mission": "Do what each task asks, within the policy; a write runs only once a person approves it.",
+  "level": "act-with-approval",
+  "allowedTools": ["local_read", "local_search", "local_list", "local_write"],
+  "triggers": [{"type": "manual"}],
+  "model": {
+    "model": "anthropic/claude-haiku-5.5",
+    "routingPolicy": "cost-optimized",
+    "allowRemoteProviders": true,
+    "maxContextTokens": 32000
+  },
+  "budgets": {
+    "maxModelCallsPerTask": 10,
+    "maxToolCallsPerTask": 20,
+    "maxDelegationDepth": 0,
+    "taskTimeoutSeconds": 300
+  }
+}

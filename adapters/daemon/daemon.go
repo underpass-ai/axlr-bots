@@ -1,10 +1,12 @@
 // Package daemon is the control plane as a long-running service: it
-// serves the local API on a Unix socket, runs Pending tasks one at a
-// time and reconciles the tasks a dead run left Running. The state
-// directory is the spool: a task file that appears there, through the
-// socket or written by a command while the daemon was down, is run on
-// the next tick, and a restart of the daemon loses nothing that was
-// saved.
+// serves the API on a Unix socket (and a TCP address for nodes on other
+// hosts), hands executions to the nodes that poll for them, runs in
+// process the Pending tasks no Online node may run (the single-process
+// mode), marks silent nodes Offline and reconciles the tasks a dead run
+// left Running. The state directory is the spool: a task file that
+// appears there, through the socket or written by a command while the
+// daemon was down, is picked up on the next tick, and a restart of the
+// daemon loses nothing that was saved.
 package daemon
 
 import (
@@ -28,15 +30,23 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	served := make(chan error, 1)
-	go func() { served <- unixapi.NewServer(local).Serve(ctx, options.SocketPath) }()
+	served := make(chan error, 2)
+	server := unixapi.NewServer(local)
+	go func() { served <- server.Serve(ctx, options.SocketPath) }()
+	if options.ListenAddr != "" {
+		go func() { served <- server.ServeTCP(ctx, options.ListenAddr) }()
+	}
 
 	reconcile(ctx, deps, options, logger)
 	ticker := time.NewTicker(options.tick())
 	defer ticker.Stop()
 	reconciler := time.NewTicker(options.reconcileEvery())
 	defer reconciler.Stop()
-	logger.Printf("daemon: serving on %s, tick %s", options.SocketPath, options.tick())
+	listening := options.SocketPath
+	if options.ListenAddr != "" {
+		listening += " and " + options.ListenAddr
+	}
+	logger.Printf("daemon: serving on %s, tick %s", listening, options.tick())
 	for {
 		drain(ctx, runner, logger)
 		select {
@@ -81,8 +91,14 @@ func drain(ctx context.Context, runner *application.SerialRunner, logger interfa
 	}
 }
 
-// reconcile fails the tasks a dead run left Running past the grace.
+// reconcile marks silent nodes Offline and fails the tasks a dead run
+// left Running past the grace or whose node stopped renewing its lease.
 func reconcile(ctx context.Context, deps application.Dependencies, options Options, logger interface{ Printf(string, ...any) }) {
+	if offline, err := application.NewMarkOfflineNodes(deps).Execute(ctx, options.NodeOfflineAfter); err != nil {
+		logger.Printf("daemon: nodes: %v", err)
+	} else if len(offline) > 0 {
+		logger.Printf("daemon: nodes offline: %v", offline)
+	}
 	result, err := application.NewReconcileTasks(deps).Execute(ctx, options.Grace)
 	if err != nil {
 		logger.Printf("daemon: reconcile: %v", err)
