@@ -99,6 +99,11 @@ including chart's own policy, beside its service's rules.
 
 {{- define "axlr-bots-node.inject.volumes" -}}
 {{- $v := .values -}}
+{{- if not $v.sidecar.state.persistent }}
+- name: axlr-node-state
+  emptyDir:
+    sizeLimit: {{ $v.sidecar.state.size }}
+{{- end }}
 - name: axlr-node-tmp
   emptyDir:
     medium: Memory
@@ -118,6 +123,7 @@ including chart's own policy, beside its service's rules.
 
 {{- define "axlr-bots-node.inject.volumeClaimTemplate" -}}
 {{- $v := .values -}}
+{{- if $v.sidecar.state.persistent }}
 - metadata:
     name: axlr-node-state
   spec:
@@ -128,6 +134,7 @@ including chart's own policy, beside its service's rules.
     resources:
       requests:
         storage: {{ required "sidecar.state.size is required" $v.sidecar.state.size | quote }}
+{{- end }}
 {{- end -}}
 
 {{- define "axlr-bots-node.inject.egress" -}}

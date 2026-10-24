@@ -52,6 +52,7 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | Start tasks from a webhook or on a timer, without duplicates | [Triggers](docs/runbooks/triggers.md) |
 | Approve or deny the write a bot wants to make | [Approvals](docs/runbooks/approvals.md) |
 | Add a host: enrollment token, mutual TLS, revocation | [Add a host](docs/runbooks/add-a-host.md) |
+| Run the node agent as a sidecar beside a service in a Kubernetes pod, with Helm | [Sidecar](docs/runbooks/sidecar.md) |
 | Call the control plane over HTTP | [Operator API](docs/reference/operator-api.md) |
 | See what a node and the control plane say to each other | [Node protocol](docs/reference/node-protocol.md) |
 | See how a node runs AXLR and reads the result | [Runtime contract](docs/architecture/runtime-contract.md) |
@@ -67,15 +68,15 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | Component | Runs | Does |
 |---|---|---|
 | `axlr-bots` (control plane) | one host, `systemctl --user` | keeps the bots, tasks, executions, nodes and timers; serves the CLI on a Unix socket, the nodes on a TLS address, operators and webhooks on another; fires the timers; reconciles what a crash left running |
-| `axlr-node` (node agent) | every host that runs bots | enrolls with a token, registers, heartbeats, polls for the executions of the bots placed on its host, runs them, reports |
+| `axlr-node` (node agent) | every host that runs bots, under systemd; or in a pod beside a service, as a sidecar (`charts/axlr-bots-node`) | enrolls with a token, registers, heartbeats, polls for the executions of the bots placed on its host, runs them, reports |
 | AXLR (`axlr-tui --exec`) | on the node, one process per execution | the model loop, the tools, the policy and the approvals; writes the result object the node reports |
 | your model provider | wherever it is | answers the model calls with the key in that host's environment file |
 
 ## Project status
 
-Pre-1.0, one Go module, Linux with systemd. What works today, exercised live on one host with the real AXLR: user-level install, bots with the four autonomy levels and tool rules, manual, webhook and timer triggers with deduplication, the approval path, node enrollment with one-time tokens and mutual TLS, revocation, placement by node or label, the operator API behind a bearer token, correlation ids on every task, execution and event, recovery of the tasks a crash left running, and budgets passed to a runtime that takes them.
+Pre-1.0, one Go module, Linux with systemd or Kubernetes. What works today, exercised live with the real AXLR: user-level install, bots with the four autonomy levels and tool rules, manual, webhook and timer triggers with deduplication, the approval path, node enrollment with one-time tokens and mutual TLS, revocation, placement by node or label, the operator API behind a bearer token, correlation ids on every task, execution and event, recovery of the tasks a crash left running, budgets passed to a runtime that takes them, and the node agent as a sidecar in a pod (a Helm chart, no CRDs), enrolled from a Secret on its first start, reading the service's log read-only under a NetworkPolicy ([live run](docs/live-run.md#the-sidecar-on-kubernetes)).
 
-Next: the node agent as a sidecar beside a service in a pod, budgets enforced by the runtime recorded on every execution, and a durable store in place of one JSON file per aggregate. [Control plane, node and AXLR](docs/architecture/control-plane-node-axlr.md#what-is-left-out) says what is left out.
+Next: one sandbox per execution (a Job with its own identity, filesystem and limits), budgets enforced by the runtime recorded on every execution, and a durable store in place of one JSON file per aggregate. [Control plane, node and AXLR](docs/architecture/control-plane-node-axlr.md#what-is-left-out) says what is left out.
 
 ## License
 

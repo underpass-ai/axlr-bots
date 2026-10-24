@@ -65,6 +65,8 @@ spec:
           emptyDir:
             sizeLimit: 32Mi
         {{- include "axlr-bots-node.inject.volumes" $bots | nindent 8 }}
+  {{- with include "axlr-bots-node.inject.volumeClaimTemplate" $bots | trim }}
   volumeClaimTemplates:
-    {{- include "axlr-bots-node.inject.volumeClaimTemplate" $bots | nindent 4 }}
+    {{- . | nindent 4 }}
+  {{- end }}
 {{- end }}

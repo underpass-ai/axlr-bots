@@ -26,7 +26,9 @@ axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>]
 
 axlr-node --control unix:///path/to/axlr-bots.sock | https://host:7878
           [--node-id <id>] [--labels k=v,k=v] [--state <dir>] [--axlr-bin <path>] [--heartbeat 15s] [--poll 20s]
-axlr-node enroll --control https://host:7878 --token <token> [--ca-file <pem>] [--state <dir>] [--host-name <name>]
+          [--token-file <path> [--ca-file <pem>] [--enroll-retry 10s]]     over https: enroll first if not enrolled
+axlr-node enroll --control https://host:7878 --token <token> | --token-file <path> [--ca-file <pem>] [--state <dir>] [--host-name <name>]
+axlr-node check --control https://host:7878 [--ca-file <pem> | --token-file <path> | --state <dir>] [--timeout 10s]
 ```
 
 ## Defaults and environment
@@ -40,6 +42,9 @@ axlr-node enroll --control https://host:7878 --token <token> [--ca-file <pem>] [
 | operator token file | `serve --api-token-file` | | `<state>/api.token` |
 | who acts (audit) | `--actor` | | the user |
 | node: control plane, id, labels, state, token | `--control`, `--node-id`, `--labels`, `--state`, `--token` | `AXLR_NODE_CONTROL`, `AXLR_NODE_ID`, `AXLR_NODE_LABELS`, `AXLR_NODE_STATE`, `AXLR_NODE_TOKEN` | over the socket the id is the host name; over `https://` it is the certificate's, and a `--node-id` that disagrees is refused |
+| node: token file, pinned CA | `--token-file`, `--ca-file` | `AXLR_NODE_TOKEN_FILE`, `AXLR_NODE_CA_FILE` | none |
+
+`axlr-node --token-file` is a sidecar's first start ([sidecar](../runbooks/sidecar.md)): with no certificate under its state the node enrolls with the token in the file, refusing a token whose node id is not `--node-id` before sending it; with a certificate it keeps it, unless the file holds a token other than the one the certificate came from (`pki/enrollment.json` records its id), which rotates it; a rotation that fails keeps the certificate. Until it has a certificate it retries every `--enroll-retry`, reading the file again each time, and never exits for it. `axlr-node check` asks the node address's `/healthz` over TLS 1.3, verifying the control plane against the CA in `--ca-file`, the token's, or the one enrollment stored, and presents no certificate; it changes nothing.
 
 Every command tries the socket first: when the daemon answers, the command is carried by it, so a `task submit` reaches the running service and never touches the state files. When nothing answers, the command works on the state directory: the task is spooled and runs at the daemon's next start, or with `task run` in process.
 

@@ -51,3 +51,5 @@ axlr-bots node revoke web-2
 ```
 
 The node is `Revoked`, its certificate's serial is denied on every request (an open connection is cut off too), and the executions it still held fail with their tasks (`revoked: node web-2 was revoked at …`). Check: `node get web-2` shows `Revoked`; the tasks it held are `Failed` with a `bot.task.failed` event, `"reason": "revoked"`. A fresh token readmits the host with a new certificate; the old serial stays denied. On the host itself, `axlr-bots uninstall` removes the node unit and binary.
+
+The same node can run inside a Kubernetes pod, beside a service: the [sidecar runbook](sidecar.md) mints one token per replica into a Secret, and the pod enrolls itself on its first start.

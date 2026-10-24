@@ -24,7 +24,7 @@ The control plane decides *when, where, as whom and under which permissions* a u
 
 | | Control plane (`axlr-bots serve`) | Node (`axlr-node`) | AXLR (`axlr-tui --exec`) |
 |---|---|---|---|
-| Keeps | bots, tasks, executions, nodes, timers, enrollments, events, audit, reports | its credentials, the traces, policy files and workspaces of what it ran | the session: transcript, tool calls, decisions, usage |
+| Keeps | bots, tasks, executions, nodes, timers, enrollments, events, audit, reports | its credentials, the traces, policy files and workspaces of what it ran (on the host, or on its pod's volume) | the session: transcript, tool calls, decisions, usage |
 | Decides | which task runs, where, as which bot, with which policy and budget; whether a fire or a report is new | nothing: it runs what it is assigned and reports | each model call and tool call, within the policy; when to stop for a person |
 | Talks to | the CLI (socket), operators and webhooks (TLS, bearer token or the trigger's secret), the nodes (TLS, client certificates) | the control plane only, outbound | the model provider, with the key in the host's environment |
 | Trusts | the socket's owner; a certificate the fleet CA signed, for that node id only; the bearer token; a trigger's own credential | the CA the token carried | the policy file and the approval level it was given |
@@ -47,12 +47,28 @@ The control plane decides *when, where, as whom and under which permissions* a u
 - The policy is applied outside the model: the bot's level and tool rules go to AXLR as a file, a forbidden call is refused before any card, and `act-with-approval` stops for a person ([runtime contract](runtime-contract.md#the-policy)).
 - Everything that can arrive twice is idempotent: submissions by key, webhook fires by delivery, timer fires by slot, reports once per execution, enrollment once per token.
 
+## The node as a sidecar
+
+The same `axlr-node`, from the node image ([`distribution/node.Dockerfile`](../../distribution/node.Dockerfile): `axlr-node` and AXLR's `axlr-tui`, distroless, user 65532), runs as a container in a service's pod, beside the service, packaged by the Helm chart [`charts/axlr-bots-node`](../../charts/axlr-bots-node) ([sidecar runbook](../runbooks/sidecar.md)). Systemd disappears; nothing else changes on the control plane, which stays one per fleet, on a host or wherever it is reachable, and sees the pod as one more node.
+
+| | On a host (systemd) | In a pod (sidecar) |
+|---|---|---|
+| Identity | a token minted for the host's node id, `axlr-node enroll` once | a token per replica in a Secret; the first start enrolls (`--token-file`), refusing a token for another node id before sending it; later starts keep the certificate |
+| Node id | the token's | `<idPrefix><pod name>`: a StatefulSet's ordinal, stable across restarts |
+| State | `~/.local/state/axlr-node` | a PVC per replica (`volumeClaimTemplates`); AXLR's own state on a tmpfs |
+| Labels | the token's and `AXLR_NODE_LABELS` | the token's, plus `namespace`, `app` and `pod` from the Downward API |
+| What the bots read | the host's files under the bot's workspace | the service's volume, mounted read-only as the bot's workspace (`sidecar.workspaces`) |
+| Network | outbound to the control plane | the same, under a NetworkPolicy: egress to DNS, the control plane and the model provider only |
+| Model key | the host's env file | a Secret only the sidecar reads |
+
+The chart renders a demo (a StatefulSet whose service writes a log the sidecar reads) or, as a dependency, the templates another chart includes in its own pod. A sidecar waits rather than exits when it cannot enroll yet, so a missing or wrong token never takes the service's pod out of its endpoints. The webhook trigger is the one that fits there: the service, or whatever watches it, calls the control plane.
+
 ## What is next
 
-- **The node agent as a sidecar** (vision §9.2): the same `axlr-node` inside the pod, beside the service, as a container from the same image. The state directory becomes a volume, the environment (`AXLR_NODE_CONTROL`, `AXLR_TUI`, the model key) comes from the pod spec, and systemd disappears; the service's files are mounted read-only and the bots placed on that node (by a `selector` on its labels) read them with AXLR's own tools. The control plane stays where it is, one per cluster or per fleet, and the webhook trigger is the trigger type that fits there.
+- **One execution, one sandbox** (vision §9.2): an execution runs as an `axlr-tui` process inside the node it is placed on, sharing that node's user, filesystem and limits (on a host, the node's user; in a pod, the sidecar container). A Job per execution, with its own identity, filesystem and limits, is still to come.
 - **Budgets enforced by the runtime**: the control plane already passes `--budget` and records `budget_exceeded`; the budget record on the execution (what was passed) is still to be stored.
 - **A durable store**: a real database behind the repository ports in place of one JSON file per aggregate.
 
 ## What is left out
 
-A systemd unit event as a trigger type; an approval queue beyond `task approve` (who may decide, and when; an expired approval); operator client certificates on the API address (the bearer token is the one credential); a `GET /v1/tasks` listing; `axlr-serve` as a second `RuntimeExecutor`; automatic certificate renewal, CRL/OCSP and a CA key outside the state directory ([node protocol](../reference/node-protocol.md#limits-today)). The vision's §13 and §14 name the rest for Phase 2.
+A systemd unit event as a trigger type; Kubernetes resources for bots (`Bot`, `BotExecution`: no CRDs, vision §9.3); an approval queue beyond `task approve` (who may decide, and when; an expired approval); operator client certificates on the API address (the bearer token is the one credential); a `GET /v1/tasks` listing; `axlr-serve` as a second `RuntimeExecutor`; automatic certificate renewal, CRL/OCSP and a CA key outside the state directory ([node protocol](../reference/node-protocol.md#limits-today)). The vision's §13 and §14 name the rest for Phase 2.

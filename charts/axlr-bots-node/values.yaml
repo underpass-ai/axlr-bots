@@ -6,9 +6,11 @@
 #                         templates in its own pod (docs/runbooks/sidecar.md)
 # With demo.enabled false the chart renders nothing.
 
-# The node image (distribution/node.Dockerfile), by digest.
+# The node image (distribution/node.Dockerfile), by digest. It is not
+# published yet: push it to a registry the cluster pulls from and set
+# image.repository (docs/runbooks/sidecar.md).
 image:
-  repository: container-registry.underpassai.com/underpass-ai/axlr-bots-node
+  repository: ghcr.io/underpass-ai/axlr-bots-node
   digest: ""
 
 controlPlane:
@@ -51,8 +53,11 @@ sidecar:
   # <state>/workspaces/<bot>: [{bot: log-summariser, volume: service-logs}]
   workspaces: []
   # The node's state: its key and certificate, traces, policies. One
-  # volume per replica (a StatefulSet's volumeClaimTemplates).
+  # volume per replica (a StatefulSet's volumeClaimTemplates). With
+  # persistent false it is an emptyDir: it survives a container's restart,
+  # not the pod's, and a new pod needs a fresh token.
   state:
+    persistent: true
     size: 1Gi
     storageClassName: ""
   # AXLR's own state (diagnostics, sessions) lives on a tmpfs.
