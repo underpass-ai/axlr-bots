@@ -316,7 +316,7 @@ fn timeline<'a>(detail: &'a TaskDetail, tokens: Tokens) -> El<'a> {
         list = list.push(
             row![
                 muted(format::clock(event.created_at), tokens),
-                icon(tone.icon(), 16.0, tone.color(&tokens)),
+                icon(tone.event_icon(), 16.0, tone.color(&tokens)),
                 column![bold(event.label()).size(BODY), muted(event.detail(), tokens)].spacing(2),
             ]
             .spacing(10)

@@ -39,6 +39,14 @@ impl Tone {
         }
     }
 
+    /// The icon of an event: a plain dot for one that only happened.
+    pub fn event_icon(self) -> Icon {
+        match self {
+            Self::Idle => Icon::Dot,
+            other => other.icon(),
+        }
+    }
+
     pub fn of_node(status: NodeStatus) -> Self {
         match status {
             NodeStatus::Online => Self::Good,
@@ -89,6 +97,7 @@ impl Tone {
             EventTone::Good => Self::Good,
             EventTone::Bad => Self::Bad,
             EventTone::Waiting => Self::Wait,
+            EventTone::Working => Self::Busy,
             EventTone::Neutral => Self::Idle,
         }
     }
@@ -124,6 +133,9 @@ mod tests {
         assert_eq!(Tone::of_event(EventTone::Bad), Tone::Bad);
         assert_eq!(Tone::of_event(EventTone::Waiting), Tone::Wait);
         assert_eq!(Tone::of_event(EventTone::Neutral), Tone::Idle);
+        assert_eq!(Tone::of_event(EventTone::Working), Tone::Busy);
+        assert_eq!(Tone::Idle.event_icon(), Icon::Dot);
+        assert_eq!(Tone::Good.event_icon(), Icon::Check);
     }
 
     #[test]

@@ -186,7 +186,7 @@ fn events<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         let tone = Tone::of_event(event.tone());
         let mut line = row![
             muted(format::clock(event.created_at), tokens),
-            icon(tone.icon(), 14.0, tone.color(&tokens)),
+            icon(tone.event_icon(), 14.0, tone.color(&tokens)),
             bold(event.label()).size(SMALL),
             muted(event.detail(), tokens),
         ]

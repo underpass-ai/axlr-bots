@@ -32,6 +32,8 @@ pub enum EventTone {
     Good,
     Bad,
     Waiting,
+    /// A run started, went to a node or came back from one.
+    Working,
     Neutral,
 }
 
@@ -75,6 +77,7 @@ impl Event {
             "bot.task.completed" | "bot.enabled" | "node.registered" | "node.enrolled" => EventTone::Good,
             "bot.task.failed" | "node.offline" | "node.revoked" | "bot.task.cancelled" => EventTone::Bad,
             "bot.task.waiting_approval" | "bot.paused" => EventTone::Waiting,
+            "bot.task.started" | "execution.assigned" | "execution.reported" => EventTone::Working,
             "bot.task.decided" => match self.payload_text("decision").as_deref() {
                 Some("deny") => EventTone::Bad,
                 _ => EventTone::Good,
@@ -83,12 +86,13 @@ impl Event {
         }
     }
 
-    /// A payload field as text, when it is one.
+    /// A payload field as text, when it is a string, a number or a flag.
     pub fn payload_text(&self, key: &str) -> Option<String> {
         match self.payload.as_ref()?.get(key)? {
-            serde_json::Value::String(s) => Some(s.clone()),
-            serde_json::Value::Null => None,
-            other => Some(other.to_string()),
+            serde_json::Value::String(s) if !s.is_empty() => Some(s.clone()),
+            serde_json::Value::Number(n) => Some(n.to_string()),
+            serde_json::Value::Bool(b) => Some(b.to_string()),
+            _ => None,
         }
     }
 
@@ -144,6 +148,15 @@ mod tests {
             Some("3")
         );
         assert_eq!(event("bot.task.started", r#"{"x":null}"#).payload_text("x"), None);
+        assert_eq!(
+            event("bot.task.started", r#"{"x":true}"#).payload_text("x").as_deref(),
+            Some("true")
+        );
+        assert_eq!(
+            event("bot.task.submitted", r#"{"trigger":{"name":"manual"}}"#).detail(),
+            ""
+        );
+        assert_eq!(event("bot.task.started", "{}").tone(), EventTone::Working);
         assert_eq!(event("bot.task.started", "{}").detail(), "");
         for kind in [
             "bot.registered",
