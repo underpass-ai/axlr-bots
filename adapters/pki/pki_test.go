@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/underpass-ai/axlr-bots/application"
 )
 
 func TestGenerateLoadAndRefuseToOverwrite(t *testing.T) {
@@ -254,4 +256,36 @@ func TestServerCertificateIsReissuedNearExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = conn.Close()
+}
+
+func TestCertifierOverTheStateDirectory(t *testing.T) {
+	var _ application.Certifier = Certifier{}
+	state := t.TempDir()
+	certifier := NewCertifier(state)
+	if certifier.Dir() != filepath.Join(state, "ca") {
+		t.Error(certifier.Dir())
+	}
+	ctx := context.Background()
+	if _, err := certifier.CACertificate(ctx); err == nil || !strings.Contains(err.Error(), "ca init") {
+		t.Errorf("without a CA: %v", err)
+	}
+	_, csr, _ := NewNodeKeyAndRequest("web-1")
+	if _, err := certifier.IssueNodeCertificate(ctx, "web-1", csr); err == nil {
+		t.Error("issued without a CA")
+	}
+	ca, err := Generate(certifier.Dir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pemCA, err := certifier.CACertificate(ctx)
+	if err != nil || string(pemCA) != string(ca.CertificatePEM()) {
+		t.Errorf("CA: %v", err)
+	}
+	issued, err := certifier.IssueNodeCertificate(ctx, "web-1", csr)
+	if err != nil || issued.Serial == "" || time.Until(issued.NotAfter) < 364*24*time.Hour {
+		t.Errorf("issue: %v %+v", err, issued)
+	}
+	if _, err := certifier.IssueNodeCertificate(ctx, "db-1", csr); err == nil {
+		t.Error("issued for another node")
+	}
 }

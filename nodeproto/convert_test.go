@@ -1,7 +1,9 @@
 package nodeproto
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -74,6 +76,28 @@ func TestReportRoundTrip(t *testing.T) {
 	for i, bad := range []ReportMessage{{Outcome: "odd"}, {Outcome: "Running"}, {Outcome: "Completed", Usage: domain.Usage{Requests: -1}}} {
 		if _, err := ToReport(bad); err == nil {
 			t.Errorf("bad report %d accepted", i)
+		}
+	}
+}
+
+func TestEnrollTokenRoundTrip(t *testing.T) {
+	token := EnrollToken{ID: "enr-1", Secret: "s3cret-s3cret-s3cret", NodeID: "web-2", CAPEM: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"}
+	encoded := token.Encode()
+	if !strings.HasPrefix(encoded, "axlr1.") || strings.ContainsAny(encoded, " \n+/=") {
+		t.Errorf("encoded = %q", encoded)
+	}
+	back, err := DecodeEnrollToken(" " + encoded + "\n")
+	if err != nil || back != token {
+		t.Errorf("decode: %v %+v", err, back)
+	}
+	for name, bad := range map[string]string{
+		"prefix":     "nope." + encoded[6:],
+		"base64":     "axlr1.!!!",
+		"json":       "axlr1." + base64.RawURLEncoding.EncodeToString([]byte("{")),
+		"incomplete": (EnrollToken{ID: "enr-1"}).Encode(),
+	} {
+		if _, err := DecodeEnrollToken(bad); err == nil {
+			t.Errorf("%s: decoded", name)
 		}
 	}
 }

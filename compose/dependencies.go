@@ -1,6 +1,6 @@
 // Package compose is the composition root shared by the command and the
-// daemon: file-backed repositories, JSONL logs, the artifact store and
-// the AXLR executor, all under one state directory.
+// daemon: file-backed repositories, JSONL logs, the artifact store, the
+// fleet CA and the AXLR executor, all under one state directory.
 package compose
 
 import (
@@ -10,6 +10,7 @@ import (
 	"github.com/underpass-ai/axlr-bots/adapters/axlr"
 	"github.com/underpass-ai/axlr-bots/adapters/filestore"
 	"github.com/underpass-ai/axlr-bots/adapters/jsonl"
+	"github.com/underpass-ai/axlr-bots/adapters/pki"
 	"github.com/underpass-ai/axlr-bots/adapters/system"
 	"github.com/underpass-ai/axlr-bots/application"
 )
@@ -26,19 +27,22 @@ func Dependencies(stateDir, axlrBin, actor string) (application.Dependencies, er
 	}
 	executor := axlr.NewExecutor(axlrBin, stateDir)
 	deps := application.Dependencies{
-		Bots:       filestore.NewBotRepository(stateDir),
-		Tasks:      filestore.NewTaskRepository(stateDir),
-		Executions: filestore.NewExecutionRepository(stateDir),
-		Nodes:      filestore.NewNodeRepository(stateDir),
-		Events:     jsonl.NewEventLog(stateDir),
-		Audit:      jsonl.NewAuditLog(stateDir),
-		Runtime:    executor,
-		Decisions:  executor,
-		Traces:     executor,
-		Artifacts:  filestore.NewArtifactStore(stateDir),
-		Clock:      system.Clock{},
-		IDs:        system.IDGenerator{},
-		Actor:      actor,
+		Bots:        filestore.NewBotRepository(stateDir),
+		Tasks:       filestore.NewTaskRepository(stateDir),
+		Executions:  filestore.NewExecutionRepository(stateDir),
+		Nodes:       filestore.NewNodeRepository(stateDir),
+		Enrollments: filestore.NewEnrollmentRepository(stateDir),
+		Certifier:   pki.NewCertifier(stateDir),
+		Denylist:    filestore.NewCertificateDenylist(stateDir),
+		Events:      jsonl.NewEventLog(stateDir),
+		Audit:       jsonl.NewAuditLog(stateDir),
+		Runtime:     executor,
+		Decisions:   executor,
+		Traces:      executor,
+		Artifacts:   filestore.NewArtifactStore(stateDir),
+		Clock:       system.Clock{},
+		IDs:         system.IDGenerator{},
+		Actor:       actor,
 	}
 	if err := deps.Validate(); err != nil {
 		return application.Dependencies{}, err

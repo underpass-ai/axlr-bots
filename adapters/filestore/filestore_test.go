@@ -13,11 +13,13 @@ import (
 )
 
 var (
-	_ application.BotRepository       = BotRepository{}
-	_ application.TaskRepository      = TaskRepository{}
-	_ application.ExecutionRepository = ExecutionRepository{}
-	_ application.ArtifactStore       = ArtifactStore{}
-	_ application.NodeRepository      = NodeRepository{}
+	_ application.BotRepository        = BotRepository{}
+	_ application.TaskRepository       = TaskRepository{}
+	_ application.ExecutionRepository  = ExecutionRepository{}
+	_ application.ArtifactStore        = ArtifactStore{}
+	_ application.NodeRepository       = NodeRepository{}
+	_ application.EnrollmentRepository = EnrollmentRepository{}
+	_ application.CertificateDenylist  = CertificateDenylist{}
 )
 
 var t0 = time.Date(2026, 10, 23, 15, 0, 0, 0, time.UTC)
@@ -315,5 +317,86 @@ func TestNodeRepositoryAndRunningExecutions(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(state, "executions", "bad.json"), []byte("{"), 0o644)
 	if _, err := execs.ListRunning(ctx); err == nil {
 		t.Error("corrupt execution listed")
+	}
+}
+
+func TestEnrollmentRepositoryAndDenylist(t *testing.T) {
+	ctx := context.Background()
+	state := t.TempDir()
+	repo := NewEnrollmentRepository(state)
+	labels, _ := domain.NewNodeLabels(map[string]string{"zone": "eu"})
+	enrollment, err := domain.NewEnrollment("enr-1", "web-2", labels, "a-secret-of-sixteen-plus", t0, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Save(ctx, enrollment); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(filepath.Join(state, "enrollments", "enr-1.json"))
+	if strings.Contains(string(raw), "a-secret-of-sixteen-plus") || !strings.Contains(string(raw), "secretHash") {
+		t.Errorf("the secret is on disk: %s", raw)
+	}
+	got, err := NewEnrollmentRepository(state).Get(ctx, "enr-1")
+	if err != nil || got.NodeID() != "web-2" || got.Labels()["zone"] != "eu" || got.IsUsed() {
+		t.Errorf("reloaded: %v %+v", err, got.Snapshot())
+	}
+	if err := got.Consume("a-secret-of-sixteen-plus", t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	_ = repo.Save(ctx, got)
+	if again, _ := repo.Get(ctx, "enr-1"); !again.IsUsed() {
+		t.Error("the use was lost")
+	}
+	if _, err := repo.Get(ctx, "enr-404"); !domain.IsNotFound(err) {
+		t.Errorf("missing: %v", err)
+	}
+	if list, err := repo.List(ctx); err != nil || len(list) != 1 {
+		t.Errorf("list: %v %d", err, len(list))
+	}
+	_ = os.WriteFile(filepath.Join(state, "enrollments", "bad.json"), []byte(`{"id":"bad"}`), 0o644)
+	if _, err := repo.List(ctx); err == nil {
+		t.Error("an invalid enrollment listed")
+	}
+	if _, err := NewEnrollmentRepository(filepath.Join(state, "enrollments", "bad.json")).List(ctx); err == nil {
+		t.Error("list over a file succeeded")
+	}
+
+	denylist := NewCertificateDenylist(state)
+	if denied, err := denylist.IsDenied(ctx, "s1"); err != nil || denied {
+		t.Errorf("empty denylist: %v %v", denied, err)
+	}
+	if err := denylist.Deny(ctx, "", "web-2"); err == nil {
+		t.Error("an empty serial was denied")
+	}
+	if err := denylist.Deny(ctx, "s1", "web-2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := denylist.Deny(ctx, "s1", "web-2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := denylist.Deny(ctx, "s2", "db-1"); err != nil {
+		t.Fatal(err)
+	}
+	reopened := NewCertificateDenylist(state)
+	if denied, _ := reopened.IsDenied(ctx, "s1"); !denied {
+		t.Error("s1 not denied after a reopen")
+	}
+	if denied, _ := reopened.IsDenied(ctx, "s3"); denied {
+		t.Error("s3 denied")
+	}
+	raw, _ = os.ReadFile(reopened.Path())
+	if strings.Count(string(raw), `"serial"`) != 2 || !strings.Contains(string(raw), `"nodeId": "db-1"`) {
+		t.Errorf("revoked.json = %s", raw)
+	}
+	_ = os.WriteFile(reopened.Path(), []byte("{not json"), 0o644)
+	if _, err := reopened.IsDenied(ctx, "s1"); err == nil {
+		t.Error("a corrupt denylist read")
+	}
+	if err := reopened.Deny(ctx, "s4", "x"); err == nil {
+		t.Error("a corrupt denylist written")
+	}
+	unreadable := NewCertificateDenylist(filepath.Join(state, "enrollments", "enr-1.json"))
+	if _, err := unreadable.IsDenied(ctx, "s1"); err == nil {
+		t.Error("a denylist under a file read")
 	}
 }
