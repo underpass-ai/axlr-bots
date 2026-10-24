@@ -47,23 +47,10 @@ func (a Agent) Run(ctx context.Context) error {
 	if err := a.registerUntilUp(ctx, id); err != nil {
 		return err
 	}
-	heartbeat := time.NewTicker(a.Options.heartbeat())
-	defer heartbeat.Stop()
+	// Heartbeats run on their own, so a long execution does not make the
+	// node look dead to the control plane.
+	go a.heartbeat(ctx, id)
 	for ctx.Err() == nil {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-heartbeat.C:
-			if _, err := a.Transport.Heartbeat(ctx, id); err != nil {
-				logger.Printf("node: heartbeat: %v", err)
-				if domain.IsNotFound(err) {
-					// The control plane lost us (a fresh state): register again.
-					_ = a.register(ctx, id)
-				}
-			}
-			continue
-		default:
-		}
 		assignment, found, err := a.Transport.NextAssignment(ctx, id, a.Options.pollWait())
 		if err != nil {
 			if ctx.Err() != nil {
@@ -79,6 +66,27 @@ func (a Agent) Run(ctx context.Context) error {
 		a.carry(ctx, id, assignment)
 	}
 	return nil
+}
+
+// heartbeat tells the control plane the node is alive until ctx ends; a
+// control plane that lost the node (a fresh state) answers not found,
+// and the node registers again.
+func (a Agent) heartbeat(ctx context.Context, id domain.NodeID) {
+	ticker := time.NewTicker(a.Options.heartbeat())
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if _, err := a.Transport.Heartbeat(ctx, id); err != nil && ctx.Err() == nil {
+				a.Options.log().Printf("node: heartbeat: %v", err)
+				if domain.IsNotFound(err) {
+					_ = a.register(ctx, id)
+				}
+			}
+		}
+	}
 }
 
 // registerUntilUp registers, retrying while the control plane is down.

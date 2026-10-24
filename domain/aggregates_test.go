@@ -15,7 +15,7 @@ func sampleBot(t *testing.T) Bot {
 	tenant, _ := NewTenantID("engineering")
 	name, _ := NewBotName("Server Incident Investigator")
 	owner, _ := NewOwner("platform-team")
-	mission, _ := NewMission("Diagnose server and application incidents")
+	mission, _ := NewMission("Do what each task asks, within the policy")
 	tools, _ := NewAllowedTools([]string{"observability.query_logs", "kubernetes.get_pods"})
 	model, _ := NewModelPolicy("anthropic/claude-haiku-5.5", "cost-optimized", false, 32000)
 	budgets, _ := NewBudgets(20, 60, 2, 900*time.Second)
@@ -112,7 +112,7 @@ func sampleTask(t *testing.T) Task {
 	t.Helper()
 	id, _ := NewTaskID("task-1")
 	bot, _ := NewBotID("bot-1")
-	objective, _ := NewObjective("Investigate an HTTP 500 spike")
+	objective, _ := NewObjective("List the files in your workspace")
 	key, _ := NewIdempotencyKey("alert-1")
 	corr, _ := NewCorrelationID("trace-abc")
 	task, err := NewTask(id, bot, objective, key, corr, t0)
@@ -331,7 +331,7 @@ func TestExecutionSnapshotRoundTrip(t *testing.T) {
 }
 
 func TestEvent(t *testing.T) {
-	payload := map[string]any{"objective": "Investigate an HTTP 500 spike", "readOnly": true}
+	payload := map[string]any{"objective": "List the files in your workspace", "readOnly": true}
 	event, err := NewEvent("evt-1", EventTaskSubmitted, "underpass", "bot-1", "task-1", "trace-abc", t0, payload)
 	if err != nil {
 		t.Fatal(err)

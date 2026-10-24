@@ -9,7 +9,7 @@ import (
 )
 
 func TestScenarios(t *testing.T) {
-	for _, scenario := range []string{"completed", "decision", "failed", "approval-flow"} {
+	for _, scenario := range []string{"completed", "slow", "decision", "failed", "approval-flow"} {
 		dir := t.TempDir()
 		marker := filepath.Join(dir, "marker")
 		bin, argsFile, err := Write(dir, Options{Scenario: scenario, Marker: marker})
@@ -30,7 +30,7 @@ func TestScenarios(t *testing.T) {
 			code = exitErr.ExitCode()
 		}
 		switch scenario {
-		case "completed":
+		case "completed", "slow":
 			if code != 0 || !strings.Contains(string(out), `"status":"completed"`) {
 				t.Errorf("completed: %d %s", code, out)
 			}

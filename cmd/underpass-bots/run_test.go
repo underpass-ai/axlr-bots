@@ -105,7 +105,7 @@ func TestPhaseZeroDemo(t *testing.T) {
 		t.Fatalf("get after restart: %d %v", code, bot)
 	}
 
-	code, submitted := c.json("task", "submit", "bot", "--objective", "Investigate an HTTP 500 spike", "--key", "alert-1", "--correlation", "trace-abc")
+	code, submitted := c.json("task", "submit", "bot", "--objective", "List the files in your workspace", "--key", "task-1", "--correlation", "trace-abc")
 	if code != exitOK || submitted["created"] != true {
 		t.Fatalf("submit: %d %v", code, submitted)
 	}
@@ -137,7 +137,7 @@ func TestPhaseZeroDemo(t *testing.T) {
 	}
 
 	// Resubmitting the same key names the same task; it does not run again.
-	code, again := c.json("task", "submit", "bot", "--objective", "Investigate an HTTP 500 spike", "--key", "alert-1")
+	code, again := c.json("task", "submit", "bot", "--objective", "List the files in your workspace", "--key", "task-1")
 	if code != exitOK || again["created"] != false || again["task"].(map[string]any)["id"] != taskID {
 		t.Errorf("resubmit: %d %v", code, again)
 	}
@@ -174,7 +174,7 @@ func TestTaskDecideContinuesAWaitingTask(t *testing.T) {
 	stopped := cli{t: t, state: state, axlr: fakeAXLR(t, "decision")}
 	_, _ = stopped.json("bot", "register", "--file", definitionFile(t))
 	_, _ = stopped.json("bot", "enable", "bot")
-	_, submitted := stopped.json("task", "submit", "bot", "--objective", "Investigate an HTTP 500 spike", "--key", "alert-1")
+	_, submitted := stopped.json("task", "submit", "bot", "--objective", "List the files in your workspace", "--key", "task-1")
 	taskID := submitted["task"].(map[string]any)["id"].(string)
 	code, ran := stopped.json("task", "run", taskID)
 	if code != exitDecisionRequired || ran["task"].(map[string]any)["status"] != "WaitingApproval" {
@@ -228,7 +228,7 @@ func TestTaskDecideContinuesAWaitingTask(t *testing.T) {
 		t.Error("axlr-tui was run for a completed task")
 	}
 	// A Pending task has nothing to decide either.
-	_, other := deciding.json("task", "submit", "bot", "--objective", "o", "--key", "alert-2")
+	_, other := deciding.json("task", "submit", "bot", "--objective", "o", "--key", "task-2")
 	code, _, errText = deciding.run("task", "decide", other["task"].(map[string]any)["id"].(string), "approve")
 	if code != exitError || !strings.Contains(errText, "is Pending: cannot decide") {
 		t.Errorf("pending task: %d %s", code, errText)

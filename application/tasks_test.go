@@ -27,7 +27,7 @@ func enabledBot(t *testing.T, h *harness) domain.Bot {
 func submit(t *testing.T, h *harness, bot domain.Bot, key string) SubmitTaskResult {
 	t.Helper()
 	res, err := NewSubmitTask(h.deps).Execute(context.Background(), SubmitTaskCommand{
-		BotID: bot.ID().String(), Objective: "Investigate an HTTP 500 spike", IdempotencyKey: key, CorrelationID: "trace-abc",
+		BotID: bot.ID().String(), Objective: "List the files in your workspace", IdempotencyKey: key, CorrelationID: "trace-abc",
 	})
 	if err != nil {
 		t.Fatal(err)

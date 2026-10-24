@@ -34,7 +34,7 @@ func request(timeout time.Duration) application.ExecutionRequest {
 	budgets, _ := domain.NewBudgets(20, 60, 2, 900*time.Second)
 	return application.ExecutionRequest{
 		ExecutionID: "exec-1", TaskID: "task-1", BotID: "sii", TenantID: "engineering",
-		Objective: "Investigate an HTTP 500 spike", Model: "anthropic/claude-haiku-5.5",
+		Objective: "List the files in your workspace", Model: "anthropic/claude-haiku-5.5",
 		AllowedTools: []string{"observability.query_logs"}, Budgets: budgets, Timeout: timeout,
 	}
 }
@@ -84,7 +84,7 @@ func TestExecuteReadsTheResultObject(t *testing.T) {
 		t.Error(err)
 	}
 	args := readArgs(t, argsFile)
-	want := []string{"--exec", "Investigate an HTTP 500 spike", "--json", "--approve", "none", "--model", "anthropic/claude-haiku-5.5", "--mode", "research", "--policy", filepath.Join(e.StateDir, "policies", "exec-1.json"), "--root", filepath.Join(e.StateDir, "workspaces", "sii")}
+	want := []string{"--exec", "List the files in your workspace", "--json", "--approve", "none", "--model", "anthropic/claude-haiku-5.5", "--mode", "research", "--policy", filepath.Join(e.StateDir, "policies", "exec-1.json"), "--root", filepath.Join(e.StateDir, "workspaces", "sii")}
 	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
 		t.Errorf("args = %q\nwant %q", args, want)
 	}

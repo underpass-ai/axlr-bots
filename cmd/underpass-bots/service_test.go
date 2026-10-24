@@ -43,11 +43,11 @@ func TestServeRunsWhatTheCommandsSendOverTheSocket(t *testing.T) {
 	if code, _ := c.json("bot", "enable", "bot"); code != exitOK {
 		t.Fatal("enable")
 	}
-	code, alerted := c.json("task", "submit", "bot", "--objective", "List the files in your workspace and say how many there are", "--key", "demo-1")
-	if code != exitOK || alerted["created"] != true {
-		t.Fatalf("submit: %d %v", code, alerted)
+	code, submitted1 := c.json("task", "submit", "bot", "--objective", "List the files in your workspace and say how many there are", "--key", "demo-1")
+	if code != exitOK || submitted1["created"] != true {
+		t.Fatalf("submit: %d %v", code, submitted1)
 	}
-	task := alerted["task"].(map[string]any)
+	task := submitted1["task"].(map[string]any)
 	taskID := task["id"].(string)
 	// The daemon runs it: the command's axlr-bin is unusable, so a run
 	// in this process would fail.

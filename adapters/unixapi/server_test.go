@@ -63,7 +63,7 @@ func serve(t *testing.T, scenario string) (*Client, *Local, string) {
 
 func definition(name string, level string) application.BotDefinition {
 	return application.BotDefinition{
-		Tenant: "ops", Name: name, Owner: "sre", Mission: "diagnose incidents on this host",
+		Tenant: "ops", Name: name, Owner: "operator", Mission: "do what each task asks, within the policy",
 		AllowedTools: []string{"local_read", "local_exec"}, Level: level,
 		ToolRules: domain.ToolRulesSnapshot{Allow: []domain.ToolRuleSnapshot{{Tool: "local_exec", Arguments: map[string]string{"program": "journalctl"}}}},
 		Model:     application.ModelPolicyDefinition{Model: "anthropic/claude-haiku-5.5"},

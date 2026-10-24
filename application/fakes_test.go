@@ -327,7 +327,7 @@ func sampleDefinition() BotDefinition {
 		Tenant:       "engineering",
 		Name:         "server-incident-investigator",
 		Owner:        "platform-team",
-		Mission:      "Diagnose server and application incidents",
+		Mission:      "Do what each task asks, within the policy",
 		AllowedTools: []string{"observability.query_logs", "kubernetes.get_pods"},
 		Model:        ModelPolicyDefinition{Model: "anthropic/claude-haiku-5.5", RoutingPolicy: "cost-optimized", MaxContextTokens: 32000},
 		Budgets:      BudgetsDefinition{MaxModelCallsPerTask: 20, MaxToolCallsPerTask: 60, MaxDelegationDepth: 2, TaskTimeoutSeconds: 900},

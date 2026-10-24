@@ -27,7 +27,7 @@ func sampleBot(t *testing.T, id string) domain.Bot {
 	tools, _ := domain.NewAllowedTools([]string{"observability.query_logs"})
 	model, _ := domain.NewModelPolicy("anthropic/claude-haiku-5.5", "", false, 0)
 	budgets, _ := domain.NewBudgets(1, 2, 3, time.Minute)
-	bot, err := domain.NewBot(domain.BotID(id), "engineering", "Investigator", "platform-team", "Diagnose incidents", tools, model, budgets, t0)
+	bot, err := domain.NewBot(domain.BotID(id), "engineering", "Investigator", "platform-team", "Do what each task asks", tools, model, budgets, t0)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,7 +12,8 @@ import (
 
 // Options choose what the stand-in does.
 type Options struct {
-	// Scenario is one of completed, decision, failed or approval-flow.
+	// Scenario is one of completed, slow (completed after a second),
+	// decision, failed or approval-flow.
 	Scenario string
 	// NoPolicy makes --help omit -policy, like a build older than the
 	// execution policy.
@@ -49,6 +50,8 @@ func body(options Options) string {
 exit 0`
 	}
 	switch options.Scenario {
+	case "slow":
+		return "sleep 1\n" + completed(`Done after a while.`, ``)
 	case "decision":
 		return `printf '%s\n' '{"type":"session","session":"sess-1"}' '{"type":"decision.required","session":"sess-1","tool":"local_exec","call_id":"c1","status":"approval"}'
 exit 3`

@@ -265,3 +265,45 @@ func (f *fakeTransport) Report(_ context.Context, _ domain.NodeID, _ domain.Exec
 	}
 	return application.ReportAck{Accepted: true, Outcome: report.Outcome}, nil
 }
+
+// TestAgentHeartbeatsWhileItRuns gives the node a run longer than the
+// control plane's offline threshold and checks the node stays Online:
+// the heartbeat is not blocked by the execution.
+func TestAgentHeartbeatsWhileItRuns(t *testing.T) {
+	f := control(t, "completed")
+	ctx := context.Background()
+	bin, _, err := fakeaxlr.Write(f.dir, fakeaxlr.Options{Scenario: "slow"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent := Agent{Transport: f.client, Executor: axlr.NewExecutor(bin, f.nodeDir), Options: Options{NodeID: "web-1", Heartbeat: 30 * time.Millisecond, PollWait: 100 * time.Millisecond, Renew: 30 * time.Millisecond, Log: log.New(f.logs, "", 0)}}
+	agentCtx, stop := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- agent.Run(agentCtx) }()
+	defer func() { stop(); <-done }()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if node, err := f.client.GetNode(ctx, "web-1"); err == nil && node.Status == "Online" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("node not registered")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if _, err := f.client.RegisterBot(ctx, application.BotDefinition{Tenant: "t", Name: "bot", Owner: "o", Mission: "m"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.client.EnableBot(ctx, "bot"); err != nil {
+		t.Fatal(err)
+	}
+	submitted, _ := f.client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "o", IdempotencyKey: "k"})
+	waitFor(t, f.client, submitted.Task.ID, "Running")
+	before, _ := f.client.GetNode(ctx, "web-1")
+	time.Sleep(200 * time.Millisecond)
+	after, _ := f.client.GetNode(ctx, "web-1")
+	if !after.LastSeenAt.After(before.LastSeenAt) {
+		t.Errorf("no heartbeat while running: %s then %s", before.LastSeenAt, after.LastSeenAt)
+	}
+	waitFor(t, f.client, submitted.Task.ID, "Completed")
+}
