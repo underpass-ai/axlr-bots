@@ -71,7 +71,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "axlr-node: state directory:", err)
 		return exitError
 	}
-	transport, id, labelsFromEnrollment, err := transportFor(*control, *nodeID, *stateDir)
+	transport, id, labelsFromEnrollment, identity, err := transportFor(*control, *nodeID, *stateDir)
 	if err != nil {
 		fmt.Fprintln(stderr, "axlr-node:", err)
 		return exitError
@@ -79,12 +79,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	for key, value := range parsedLabels {
 		labelsFromEnrollment[key] = value
 	}
+	logger := log.New(stderr, "", log.LstdFlags)
+	logger.Printf("node: control plane %s, %s", *control, identity)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	agent := nodeagent.Agent{
 		Transport: transport,
 		Executor:  axlr.NewExecutor(*axlrBin, *stateDir),
-		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Heartbeat: *heartbeat, PollWait: *poll, Log: log.New(stderr, "", log.LstdFlags)},
+		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Heartbeat: *heartbeat, PollWait: *poll, Log: logger},
 	}
 	if err := agent.Run(ctx); err != nil {
 		fmt.Fprintln(stderr, "axlr-node:", err)
@@ -108,34 +110,36 @@ func printJSON(w io.Writer, v any) {
 // https the identity is the certificate enroll stored: its common name
 // is the node id, and a --node-id that disagrees is refused; the labels
 // the enrollment gave the node come first (flags add to them). Over the
-// socket the id is the flag's, or the host name.
-func transportFor(control, nodeID, stateDir string) (application.NodeTransport, string, map[string]string, error) {
+// socket the id is the flag's, or the host name. The last value says
+// which, for the log.
+func transportFor(control, nodeID, stateDir string) (application.NodeTransport, string, map[string]string, string, error) {
 	labels := map[string]string{}
 	if !strings.HasPrefix(control, "https://") {
 		if nodeID == "" {
 			nodeID = defaultNodeID()
 		}
-		return unixapi.NewClient(control), nodeID, labels, nil
+		return unixapi.NewClient(control), nodeID, labels, "node id " + nodeID + " from the host (no certificate over the socket)", nil
 	}
 	creds, err := pki.LoadCredentials(stateDir)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, "", nil, "", err
 	}
 	if nodeID != "" && nodeID != creds.NodeID {
-		return nil, "", nil, fmt.Errorf("--node-id %q disagrees with the certificate, which names %q", nodeID, creds.NodeID)
+		return nil, "", nil, "", fmt.Errorf("--node-id %q disagrees with the certificate, which names %q", nodeID, creds.NodeID)
 	}
 	config, err := creds.ClientTLSConfig()
 	if err != nil {
-		return nil, "", nil, err
+		return nil, "", nil, "", err
 	}
 	record, err := loadRecord(stateDir)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, "", nil, "", err
 	}
 	for key, value := range record.Labels {
 		labels[key] = value
 	}
-	return unixapi.NewTLSClient(control, config), creds.NodeID, labels, nil
+	identity := fmt.Sprintf("client certificate %s for node %s (serial %s, until %s)", filepath.Join(stateDir, pki.CredentialsDirName, "node.crt"), creds.NodeID, creds.Serial, creds.NotAfter.UTC().Format("2006-01-02"))
+	return unixapi.NewTLSClient(control, config), creds.NodeID, labels, identity, nil
 }
 
 // parseLabels reads key=value,key=value.
