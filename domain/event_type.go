@@ -28,6 +28,11 @@ const (
 	EventNodeHeartbeat EventType = "node.heartbeat"
 	// EventNodeOffline says a node's heartbeat stopped.
 	EventNodeOffline EventType = "node.offline"
+	// EventNodeEnrolled says a node presented an enrollment token and
+	// received its certificate.
+	EventNodeEnrolled EventType = "node.enrolled"
+	// EventNodeRevoked says the operator cut a node off.
+	EventNodeRevoked EventType = "node.revoked"
 	// EventExecutionAssigned says an execution was handed to a node.
 	EventExecutionAssigned EventType = "execution.assigned"
 	// EventExecutionReported says a node reported how an execution ended.
@@ -39,7 +44,8 @@ func ParseEventType(raw string) (EventType, error) {
 	switch EventType(raw) {
 	case EventBotRegistered, EventBotEnabled, EventTaskSubmitted, EventTaskStarted,
 		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided,
-		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventExecutionAssigned, EventExecutionReported:
+		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked,
+		EventExecutionAssigned, EventExecutionReported:
 		return EventType(raw), nil
 	}
 	return "", invalid("event type", "is not a known event type")
@@ -49,5 +55,9 @@ func (t EventType) String() string { return string(t) }
 
 // AboutNode reports an event about a node rather than a bot.
 func (t EventType) AboutNode() bool {
-	return t == EventNodeRegistered || t == EventNodeHeartbeat || t == EventNodeOffline
+	switch t {
+	case EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked:
+		return true
+	}
+	return false
 }

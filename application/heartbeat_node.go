@@ -24,7 +24,9 @@ func (uc HeartbeatNode) Execute(ctx context.Context, id domain.NodeID) (domain.N
 	if err != nil {
 		return domain.Node{}, err
 	}
-	node.Heartbeat(uc.deps.Clock.Now())
+	if err := node.Heartbeat(uc.deps.Clock.Now()); err != nil {
+		return domain.Node{}, err
+	}
 	if err := uc.deps.Nodes.Save(ctx, node); err != nil {
 		return domain.Node{}, err
 	}

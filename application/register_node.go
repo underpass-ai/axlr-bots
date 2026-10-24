@@ -40,7 +40,7 @@ func (uc RegisterNode) Execute(ctx context.Context, registration NodeRegistratio
 		if err != nil {
 			return domain.Node{}, err
 		}
-		node.Heartbeat(now)
+		_ = node.Heartbeat(now)
 	default:
 		return domain.Node{}, err
 	}

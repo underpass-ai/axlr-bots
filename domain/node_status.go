@@ -10,12 +10,16 @@ const (
 	NodeOnline NodeStatus = "Online"
 	// NodeOffline is a node whose heartbeat stopped.
 	NodeOffline NodeStatus = "Offline"
+	// NodeRevoked is a node the operator cut off: its certificate is
+	// refused and it may not register, heartbeat or take work until it is
+	// enrolled again.
+	NodeRevoked NodeStatus = "Revoked"
 )
 
 // ParseNodeStatus validates a status.
 func ParseNodeStatus(raw string) (NodeStatus, error) {
 	switch NodeStatus(raw) {
-	case NodeRegistered, NodeOnline, NodeOffline:
+	case NodeRegistered, NodeOnline, NodeOffline, NodeRevoked:
 		return NodeStatus(raw), nil
 	}
 	return "", invalid("node status", "is not a known node status")

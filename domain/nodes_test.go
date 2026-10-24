@@ -2,6 +2,8 @@ package domain
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -264,5 +266,134 @@ func TestNodeEvents(t *testing.T) {
 	}
 	if _, err := ParseEventType("execution.reported"); err != nil {
 		t.Error(err)
+	}
+}
+
+func TestNodeCertificateAndRevocation(t *testing.T) {
+	node := sampleNode(t)
+	if node.CertificateSerial() != "" || node.IsRevoked() || node.AcceptsCertificate("") {
+		t.Error("a fresh node holds a certificate")
+	}
+	if err := node.Certify("", nil, t0); err == nil {
+		t.Error("an empty serial was recorded")
+	}
+	labels, _ := NewNodeLabels(map[string]string{"zone": "eu"})
+	if err := node.Certify("ab12", labels, t0.Add(time.Second)); err != nil || node.CertificateSerial() != "ab12" || node.Labels()["zone"] != "eu" {
+		t.Errorf("certify: %v %+v", err, node.Snapshot())
+	}
+	if !node.AcceptsCertificate("ab12") || node.AcceptsCertificate("ab13") {
+		t.Error("the serial check is wrong")
+	}
+	// Rotation: a new certificate supersedes the old one.
+	if err := node.Certify("cd34", nil, t0.Add(2*time.Second)); err != nil || node.AcceptsCertificate("ab12") || !node.AcceptsCertificate("cd34") || node.Labels()["zone"] != "eu" {
+		t.Errorf("rotate: %v", err)
+	}
+	if err := node.Revoke(time.Time{}); err == nil {
+		t.Error("a zero revocation time was accepted")
+	}
+	if err := node.Revoke(t0.Add(time.Minute)); err != nil || !node.IsRevoked() || node.Status() != NodeRevoked || node.AcceptsCertificate("cd34") || node.IsOnline() {
+		t.Errorf("revoke: %v %+v", err, node.Snapshot())
+	}
+	if err := node.Revoke(t0.Add(time.Minute)); err == nil {
+		t.Error("revoked twice")
+	}
+	if err := node.Heartbeat(t0.Add(2 * time.Minute)); err == nil {
+		t.Error("a revoked node heartbeat")
+	}
+	if err := node.Describe("host", nil, NodeCapabilities{}, t0.Add(2*time.Minute)); err == nil {
+		t.Error("a revoked node registered")
+	}
+	snapshot := node.Snapshot()
+	if snapshot.Status != "Revoked" || snapshot.RevokedAt == nil || snapshot.CertificateSerial != "cd34" {
+		t.Errorf("snapshot = %+v", snapshot)
+	}
+	restored, err := RestoreNode(snapshot)
+	if err != nil || !restored.IsRevoked() || !restored.RevokedAt().Equal(t0.Add(time.Minute)) || restored.CertificateSerial() != "cd34" {
+		t.Errorf("restore: %v %+v", err, restored.Snapshot())
+	}
+	snapshot.RevokedAt = nil
+	if _, err := RestoreNode(snapshot); err == nil {
+		t.Error("a revoked node without a time was restored")
+	}
+	// Enrolling again readmits the node.
+	if err := node.Certify("ef56", nil, t0.Add(3*time.Minute)); err != nil || node.IsRevoked() || node.Status() != NodeRegistered || !node.RevokedAt().IsZero() || !node.AcceptsCertificate("ef56") {
+		t.Errorf("readmit: %v %+v", err, node.Snapshot())
+	}
+	if err := node.Heartbeat(t0.Add(4 * time.Minute)); err != nil || !node.IsOnline() {
+		t.Errorf("heartbeat after readmission: %v", err)
+	}
+	if _, err := ParseNodeStatus("Revoked"); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestEnrollmentTokens(t *testing.T) {
+	labels, _ := NewNodeLabels(map[string]string{"zone": "eu"})
+	secret := "a-secret-of-at-least-sixteen-characters"
+	bad := []struct {
+		id     EnrollmentID
+		node   NodeID
+		secret string
+		now    time.Time
+		ttl    time.Duration
+	}{
+		{"", "web-2", secret, t0, time.Hour},
+		{"enr-1", "", secret, t0, time.Hour},
+		{"enr-1", "web-2", "short", t0, time.Hour},
+		{"enr-1", "web-2", secret, time.Time{}, time.Hour},
+		{"enr-1", "web-2", secret, t0, 0},
+	}
+	for _, tc := range bad {
+		if _, err := NewEnrollment(tc.id, tc.node, labels, tc.secret, tc.now, tc.ttl); err == nil {
+			t.Errorf("%+v accepted", tc)
+		}
+	}
+	e, err := NewEnrollment("enr-1", "web-2", labels, secret, t0, time.Hour)
+	if err != nil || e.ID() != "enr-1" || e.NodeID() != "web-2" || e.Labels()["zone"] != "eu" || !e.CreatedAt().Equal(t0) || !e.ExpiresAt().Equal(t0.Add(time.Hour)) || e.IsUsed() {
+		t.Fatalf("new: %v %+v", err, e.Snapshot())
+	}
+	if e.Snapshot().SecretHash == secret || len(e.Snapshot().SecretHash) != 64 || e.Snapshot().UsedAt != nil {
+		t.Error("the secret is stored, or the hash is not SHA-256")
+	}
+	if err := e.Consume("wrong-secret-of-sixteen-chars", t0.Add(time.Minute)); !IsForbidden(err) || e.IsUsed() {
+		t.Errorf("wrong secret: %v", err)
+	}
+	if err := e.Consume(secret, t0.Add(time.Minute)); err != nil || !e.IsUsed() || !e.UsedAt().Equal(t0.Add(time.Minute)) {
+		t.Errorf("consume: %v", err)
+	}
+	var state StateError
+	if err := e.Consume(secret, t0.Add(2*time.Minute)); !errors.As(err, &state) || !strings.Contains(err.Error(), "used at") {
+		t.Errorf("reuse: %v", err)
+	}
+	expired, _ := NewEnrollment("enr-2", "web-3", nil, secret, t0, time.Minute)
+	if err := expired.Consume(secret, t0.Add(2*time.Minute)); !errors.As(err, &state) || !strings.Contains(err.Error(), "expired at") || !expired.IsExpired(t0.Add(2*time.Minute)) {
+		t.Errorf("expired: %v", err)
+	}
+	snapshot := e.Snapshot()
+	restored, err := RestoreEnrollment(snapshot)
+	if err != nil || !restored.IsUsed() || restored.Labels()["zone"] != "eu" || restored.Snapshot().SecretHash != snapshot.SecretHash {
+		t.Errorf("restore: %v %+v", err, restored.Snapshot())
+	}
+	for name, mutate := range map[string]func(*EnrollmentSnapshot){
+		"id":      func(s *EnrollmentSnapshot) { s.ID = "Bad Id" },
+		"node":    func(s *EnrollmentSnapshot) { s.NodeID = "" },
+		"labels":  func(s *EnrollmentSnapshot) { s.Labels = map[string]string{"Bad Key": "v"} },
+		"hash":    func(s *EnrollmentSnapshot) { s.SecretHash = "short" },
+		"created": func(s *EnrollmentSnapshot) { s.CreatedAt = time.Time{} },
+		"expires": func(s *EnrollmentSnapshot) { s.ExpiresAt = s.CreatedAt },
+	} {
+		broken := e.Snapshot()
+		mutate(&broken)
+		if _, err := RestoreEnrollment(broken); err == nil {
+			t.Errorf("%s: bad snapshot restored", name)
+		}
+	}
+	if (ForbiddenError{Reason: "x"}).Error() != "forbidden: x" || IsForbidden(errors.New("other")) {
+		t.Error("forbidden error wording")
+	}
+	for _, kind := range []EventType{EventNodeEnrolled, EventNodeRevoked} {
+		if _, err := NewNodeEvent("evt-1", kind, "web-2", t0, nil); err != nil {
+			t.Errorf("%s: %v", kind, err)
+		}
 	}
 }

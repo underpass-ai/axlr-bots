@@ -11,4 +11,8 @@ type NodeSnapshot struct {
 	Status       string            `json:"status"`
 	RegisteredAt time.Time         `json:"registeredAt"`
 	LastSeenAt   time.Time         `json:"lastSeenAt"`
+	// CertificateSerial is the serial of the node's current client
+	// certificate; empty for a node that talks over the local socket.
+	CertificateSerial string     `json:"certificateSerial,omitempty"`
+	RevokedAt         *time.Time `json:"revokedAt,omitempty"`
 }
