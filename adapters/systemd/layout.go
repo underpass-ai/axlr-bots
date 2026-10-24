@@ -11,11 +11,11 @@ import "path/filepath"
 
 // Names the installer uses.
 const (
-	ServiceName    = "underpass-bots.service"
-	NodeUnitName   = "underpass-node.service"
-	ServiceUser    = "underpass-bots"
-	BinaryName     = "underpass-bots"
-	NodeBinaryName = "underpass-node"
+	ServiceName    = "axlr-bots.service"
+	NodeUnitName   = "axlr-node.service"
+	ServiceUser    = "axlr-bots"
+	BinaryName     = "axlr-bots"
+	NodeBinaryName = "axlr-node"
 	// JournalGroup lets the system-mode service user read the journal.
 	JournalGroup = "systemd-journal"
 )
@@ -27,19 +27,19 @@ type Layout struct {
 	// System is the system-wide variant: a dedicated user, /usr/local,
 	// /etc and /var/lib. Off, the layout is the user's own.
 	System bool
-	// Prefix holds bin/underpass-bots and bin/underpass-node: ~/.local,
+	// Prefix holds bin/axlr-bots and bin/axlr-node: ~/.local,
 	// or /usr/local.
 	Prefix string
-	// StateDir is the control plane's state: ~/.local/state/underpass-bots,
-	// or /var/lib/underpass-bots.
+	// StateDir is the control plane's state: ~/.local/state/axlr-bots,
+	// or /var/lib/axlr-bots.
 	StateDir string
 	// NodeStateDir is the node's state (traces, policies, workspaces):
-	// ~/.local/state/underpass-node, or /var/lib/underpass-node.
+	// ~/.local/state/axlr-node, or /var/lib/axlr-node.
 	NodeStateDir string
 	// UnitDir holds the units: ~/.config/systemd/user, or /etc/systemd/system.
 	UnitDir string
-	// EnvFile holds the model key: ~/.config/underpass-bots/env, or
-	// /etc/underpass-bots/env.
+	// EnvFile holds the model key: ~/.config/axlr-bots/env, or
+	// /etc/axlr-bots/env.
 	EnvFile string
 	// AXLRBin is the axlr-tui the node runs; a bare name is looked up
 	// on the service's PATH.
@@ -56,8 +56,8 @@ func DefaultLayout(system bool, prefix, home string) Layout {
 			prefix = "/usr/local"
 		}
 		return Layout{
-			System: true, Prefix: prefix, StateDir: "/var/lib/underpass-bots", NodeStateDir: "/var/lib/underpass-node",
-			UnitDir: "/etc/systemd/system", EnvFile: "/etc/underpass-bots/env", AXLRBin: "axlr-tui",
+			System: true, Prefix: prefix, StateDir: "/var/lib/axlr-bots", NodeStateDir: "/var/lib/axlr-node",
+			UnitDir: "/etc/systemd/system", EnvFile: "/etc/axlr-bots/env", AXLRBin: "axlr-tui",
 		}
 	}
 	if prefix == "" {
@@ -65,10 +65,10 @@ func DefaultLayout(system bool, prefix, home string) Layout {
 	}
 	return Layout{
 		Prefix:       prefix,
-		StateDir:     filepath.Join(home, ".local", "state", "underpass-bots"),
-		NodeStateDir: filepath.Join(home, ".local", "state", "underpass-node"),
+		StateDir:     filepath.Join(home, ".local", "state", "axlr-bots"),
+		NodeStateDir: filepath.Join(home, ".local", "state", "axlr-node"),
 		UnitDir:      filepath.Join(home, ".config", "systemd", "user"),
-		EnvFile:      filepath.Join(home, ".config", "underpass-bots", "env"),
+		EnvFile:      filepath.Join(home, ".config", "axlr-bots", "env"),
 		AXLRBin:      "axlr-tui",
 	}
 }
@@ -79,7 +79,7 @@ func (l Layout) BinaryPath() string     { return filepath.Join(l.Prefix, "bin", 
 func (l Layout) NodeBinaryPath() string { return filepath.Join(l.Prefix, "bin", NodeBinaryName) }
 
 // SocketPath is the control plane's socket, under its state directory.
-func (l Layout) SocketPath() string { return filepath.Join(l.StateDir, "underpass-bots.sock") }
+func (l Layout) SocketPath() string { return filepath.Join(l.StateDir, "axlr-bots.sock") }
 
 // ServicePath and NodeUnitPath are the unit files.
 func (l Layout) ServicePath() string  { return filepath.Join(l.UnitDir, ServiceName) }

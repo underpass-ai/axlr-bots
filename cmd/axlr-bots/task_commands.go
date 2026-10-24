@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/underpass-ai/underpass-bots/adapters/unixapi"
-	"github.com/underpass-ai/underpass-bots/application"
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
+	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 func taskSubmit(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) < 1 || len(args[0]) == 0 || args[0][0] == '-' {
-		fmt.Fprintln(stderr, "underpass-bots: task submit needs <bot-id> first, then --objective and --key")
+		fmt.Fprintln(stderr, "axlr-bots: task submit needs <bot-id> first, then --objective and --key")
 		return exitUsage
 	}
 	botID, rest := args[0], args[1:]
@@ -26,7 +26,7 @@ func taskSubmit(ctx context.Context, service unixapi.Service, args []string, std
 		return exitUsage
 	}
 	if *objective == "" || *key == "" {
-		fmt.Fprintln(stderr, "underpass-bots: task submit needs --objective and --key")
+		fmt.Fprintln(stderr, "axlr-bots: task submit needs --objective and --key")
 		return exitUsage
 	}
 	result, err := service.SubmitTask(ctx, unixapi.SubmitRequest{BotID: botID, Objective: *objective, IdempotencyKey: *key, CorrelationID: *correlation})
@@ -39,7 +39,7 @@ func taskSubmit(ctx context.Context, service unixapi.Service, args []string, std
 
 func taskRun(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
-		fmt.Fprintln(stderr, "underpass-bots: task run needs exactly one <task-id>")
+		fmt.Fprintln(stderr, "axlr-bots: task run needs exactly one <task-id>")
 		return exitUsage
 	}
 	result, err := service.RunTask(ctx, args[0])
@@ -52,11 +52,11 @@ func taskRun(ctx context.Context, service unixapi.Service, args []string, stdout
 
 func taskDecide(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 2 {
-		fmt.Fprintln(stderr, "underpass-bots: task decide needs <task-id> and approve|deny")
+		fmt.Fprintln(stderr, "axlr-bots: task decide needs <task-id> and approve|deny")
 		return exitUsage
 	}
 	if !application.IsDecision(args[1]) {
-		fmt.Fprintf(stderr, "underpass-bots: task decide takes approve or deny, not %q\n", args[1])
+		fmt.Fprintf(stderr, "axlr-bots: task decide takes approve or deny, not %q\n", args[1])
 		return exitUsage
 	}
 	return taskDecideAs(ctx, service, args[1], args[:1], stdout, stderr)
@@ -65,7 +65,7 @@ func taskDecide(ctx context.Context, service unixapi.Service, args []string, std
 // taskDecideAs is task approve and task deny: the decision is the verb.
 func taskDecideAs(ctx context.Context, service unixapi.Service, decision string, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
-		fmt.Fprintf(stderr, "underpass-bots: task %s needs exactly one <task-id>\n", decision)
+		fmt.Fprintf(stderr, "axlr-bots: task %s needs exactly one <task-id>\n", decision)
 		return exitUsage
 	}
 	result, err := service.DecideTask(ctx, args[0], decision)
@@ -78,7 +78,7 @@ func taskDecideAs(ctx context.Context, service unixapi.Service, decision string,
 
 func taskGet(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
-		fmt.Fprintln(stderr, "underpass-bots: task get needs exactly one <task-id>")
+		fmt.Fprintln(stderr, "axlr-bots: task get needs exactly one <task-id>")
 		return exitUsage
 	}
 	task, err := service.GetTask(ctx, args[0])
@@ -98,7 +98,7 @@ func taskReport(ctx context.Context, service unixapi.Service, args []string, std
 		return exitUsage
 	}
 	if flags.NArg() != 1 {
-		fmt.Fprintln(stderr, "underpass-bots: task report needs exactly one <task-id>")
+		fmt.Fprintln(stderr, "axlr-bots: task report needs exactly one <task-id>")
 		return exitUsage
 	}
 	report, err := service.GetReport(ctx, flags.Arg(0))
@@ -124,7 +124,7 @@ func taskReconcile(ctx context.Context, app application.Dependencies, args []str
 		return exitUsage
 	}
 	if flags.NArg() != 0 {
-		fmt.Fprintln(stderr, "underpass-bots: task reconcile takes no arguments, only --grace")
+		fmt.Fprintln(stderr, "axlr-bots: task reconcile takes no arguments, only --grace")
 		return exitUsage
 	}
 	result, err := application.NewReconcileTasks(app).Execute(ctx, *grace)

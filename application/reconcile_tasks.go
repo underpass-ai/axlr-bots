@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // ReconcileGrace is what the default grace period adds to a bot's task

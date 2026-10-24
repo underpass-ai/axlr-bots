@@ -4,7 +4,7 @@ import (
 	"context"
 	"path/filepath"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // NodeRepository keeps nodes under <state>/nodes/<id>.json.

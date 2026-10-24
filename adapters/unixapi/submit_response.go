@@ -1,6 +1,6 @@
 package unixapi
 
-import "github.com/underpass-ai/underpass-bots/domain"
+import "github.com/underpass-ai/axlr-bots/domain"
 
 // SubmitResponse is what a submission returns: whether this call created
 // the task, and the task the key names.

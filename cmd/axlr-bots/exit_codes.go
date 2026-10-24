@@ -1,6 +1,6 @@
 package main
 
-import "github.com/underpass-ai/underpass-bots/domain"
+import "github.com/underpass-ai/axlr-bots/domain"
 
 // Exit codes of the command. task run and task decide mirror the
 // execution's outcome so a script can branch on it.

@@ -12,8 +12,8 @@ import "strings"
 func RenderService(l Layout) string {
 	var b strings.Builder
 	b.WriteString("[Unit]\n")
-	b.WriteString("Description=Underpass Bots control plane\n")
-	b.WriteString("Documentation=https://github.com/underpass-ai/underpass-bots\n")
+	b.WriteString("Description=AXLR Bots control plane\n")
+	b.WriteString("Documentation=https://github.com/underpass-ai/axlr-bots\n")
 	if l.System {
 		b.WriteString("After=network-online.target\nWants=network-online.target\n")
 	}
@@ -26,7 +26,7 @@ func RenderService(l Layout) string {
 	}
 	b.WriteString("ExecStart=" + l.BinaryPath() + " --state " + l.StateDir + " --socket " + l.SocketPath() + " serve\n")
 	renderRestart(&b)
-	renderSandbox(&b, l, l.StateDir, l.StateDir == "/var/lib/underpass-bots", "underpass-bots")
+	renderSandbox(&b, l, l.StateDir, l.StateDir == "/var/lib/axlr-bots", "axlr-bots")
 	b.WriteString("\n[Install]\n")
 	renderWantedBy(&b, l)
 	return b.String()
@@ -38,14 +38,14 @@ func RenderService(l Layout) string {
 func RenderNodeUnit(l Layout) string {
 	var b strings.Builder
 	b.WriteString("[Unit]\n")
-	b.WriteString("Description=Underpass Bots node agent\n")
-	b.WriteString("Documentation=https://github.com/underpass-ai/underpass-bots\n")
+	b.WriteString("Description=AXLR Bots node agent\n")
+	b.WriteString("Documentation=https://github.com/underpass-ai/axlr-bots\n")
 	b.WriteString("After=" + ServiceName + "\nWants=" + ServiceName + "\n")
 	b.WriteString("\n[Service]\n")
 	b.WriteString("Type=simple\n")
 	renderUser(&b, l)
 	b.WriteString("EnvironmentFile=-" + l.EnvFile + "\n")
-	b.WriteString("Environment=UNDERPASS_NODE_LABELS=host=%l\n")
+	b.WriteString("Environment=AXLR_NODE_LABELS=host=%l\n")
 	if l.System {
 		// axlr-tui keeps its settings and logs under $HOME: inside the
 		// node's state directory, the one place the node may write.
@@ -53,7 +53,7 @@ func RenderNodeUnit(l Layout) string {
 	}
 	b.WriteString("ExecStart=" + l.NodeBinaryPath() + " --control unix://" + l.SocketPath() + " --state " + l.NodeStateDir + "\n")
 	renderRestart(&b)
-	renderSandbox(&b, l, l.NodeStateDir, l.NodeStateDir == "/var/lib/underpass-node", "underpass-node")
+	renderSandbox(&b, l, l.NodeStateDir, l.NodeStateDir == "/var/lib/axlr-node", "axlr-node")
 	if l.System {
 		// The node's executions read the socket in the control plane's state.
 		b.WriteString("ReadWritePaths=" + l.StateDir + "\n")
@@ -112,7 +112,7 @@ func renderWantedBy(b *strings.Builder, l Layout) {
 // placeholder for the operator to fill in.
 func RenderEnv(l Layout, key string) string {
 	var b strings.Builder
-	b.WriteString("# Environment of underpass-bots.service and underpass-node.service.\n")
+	b.WriteString("# Environment of axlr-bots.service and axlr-node.service.\n")
 	b.WriteString("# The model key the bots' runtime (axlr-tui, OpenRouter) uses. It lives here,\n")
 	b.WriteString("# mode 0600, never in a unit file.\n")
 	if key != "" {
@@ -120,6 +120,6 @@ func RenderEnv(l Layout, key string) string {
 	} else {
 		b.WriteString("#OPENROUTER_API_KEY=sk-or-...\n")
 	}
-	b.WriteString("UNDERPASS_AXLR_BIN=" + l.AXLRBin + "\n")
+	b.WriteString("AXLR_TUI=" + l.AXLRBin + "\n")
 	return b.String()
 }

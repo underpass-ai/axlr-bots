@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/underpass-ai/underpass-bots/adapters/systemd"
+	"github.com/underpass-ai/axlr-bots/adapters/systemd"
 )
 
 // installFlags are the flags install and uninstall share: the mode and
@@ -16,13 +16,13 @@ func installFlags(name string, args []string, stderr io.Writer) (*flag.FlagSet, 
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	system := flags.Bool("system", false, "the system-wide variant: a dedicated user, /usr/local, /etc and /var/lib (needs root); default: the user's own under ~/.local and systemctl --user")
-	prefix := flags.String("prefix", "", "where bin/underpass-bots and bin/underpass-node go (default ~/.local, or /usr/local with --system)")
-	state := flags.String("state", "", "the control plane's state directory (default ~/.local/state/underpass-bots, or /var/lib/underpass-bots with --system)")
-	nodeState := flags.String("node-state", "", "the node's state directory (default ~/.local/state/underpass-node, or /var/lib/underpass-node with --system)")
+	prefix := flags.String("prefix", "", "where bin/axlr-bots and bin/axlr-node go (default ~/.local, or /usr/local with --system)")
+	state := flags.String("state", "", "the control plane's state directory (default ~/.local/state/axlr-bots, or /var/lib/axlr-bots with --system)")
+	nodeState := flags.String("node-state", "", "the node's state directory (default ~/.local/state/axlr-node, or /var/lib/axlr-node with --system)")
 	unitDir := flags.String("unit-dir", "", "where the units go (default ~/.config/systemd/user, or /etc/systemd/system with --system)")
-	envFile := flags.String("env-file", "", "the environment file (default ~/.config/underpass-bots/env, or /etc/underpass-bots/env with --system)")
-	axlrBin := flags.String("axlr-bin", defaultAXLRBinary(), "the axlr-tui the node runs (also UNDERPASS_AXLR_BIN)")
-	nodeBinary := flags.String("node-binary", "", "the underpass-node binary to install (default: next to this binary)")
+	envFile := flags.String("env-file", "", "the environment file (default ~/.config/axlr-bots/env, or /etc/axlr-bots/env with --system)")
+	axlrBin := flags.String("axlr-bin", defaultAXLRBinary(), "the axlr-tui the node runs (also AXLR_TUI)")
+	nodeBinary := flags.String("node-binary", "", "the axlr-node binary to install (default: next to this binary)")
 	destDir := flags.String("destdir", "", "put every path under this directory on disk (packaging, tests)")
 	noSystemctl := flags.Bool("no-systemctl", false, "write the files but run no systemctl or useradd")
 	if err := flags.Parse(args); err != nil {
@@ -62,7 +62,7 @@ var nodeSource string
 func install(args []string, stdout, stderr io.Writer) int {
 	_, layout, noSystemctl, err := installFlags("install", args, stderr)
 	if err != nil {
-		fmt.Fprintln(stderr, "underpass-bots:", err)
+		fmt.Fprintln(stderr, "axlr-bots:", err)
 		return exitUsage
 	}
 	executable, err := os.Executable()
@@ -99,7 +99,7 @@ func uninstall(args []string, stdout, stderr io.Writer) int {
 	}
 	_, layout, noSystemctl, err := installFlags("uninstall", filtered, stderr)
 	if err != nil {
-		fmt.Fprintln(stderr, "underpass-bots:", err)
+		fmt.Fprintln(stderr, "axlr-bots:", err)
 		return exitUsage
 	}
 	installer := systemd.Installer{Layout: *layout}

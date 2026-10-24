@@ -8,8 +8,8 @@ import (
 	"io"
 	"os"
 
-	"github.com/underpass-ai/underpass-bots/adapters/unixapi"
-	"github.com/underpass-ai/underpass-bots/application"
+	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
+	"github.com/underpass-ai/axlr-bots/application"
 )
 
 func botRegister(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
@@ -20,7 +20,7 @@ func botRegister(ctx context.Context, service unixapi.Service, args []string, st
 		return exitUsage
 	}
 	if *file == "" {
-		fmt.Fprintln(stderr, "underpass-bots: bot register needs --file <bot.json>")
+		fmt.Fprintln(stderr, "axlr-bots: bot register needs --file <bot.json>")
 		return exitUsage
 	}
 	raw, err := os.ReadFile(*file)
@@ -43,7 +43,7 @@ func botRegister(ctx context.Context, service unixapi.Service, args []string, st
 
 func botEnable(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
-		fmt.Fprintln(stderr, "underpass-bots: bot enable needs exactly one <bot-id>")
+		fmt.Fprintln(stderr, "axlr-bots: bot enable needs exactly one <bot-id>")
 		return exitUsage
 	}
 	bot, err := service.EnableBot(ctx, args[0])
@@ -56,7 +56,7 @@ func botEnable(ctx context.Context, service unixapi.Service, args []string, stdo
 
 func botList(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 0 {
-		fmt.Fprintln(stderr, "underpass-bots: bot list takes no arguments")
+		fmt.Fprintln(stderr, "axlr-bots: bot list takes no arguments")
 		return exitUsage
 	}
 	bots, err := service.ListBots(ctx)
@@ -69,7 +69,7 @@ func botList(ctx context.Context, service unixapi.Service, args []string, stdout
 
 func botGet(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
-		fmt.Fprintln(stderr, "underpass-bots: bot get needs exactly one <bot-id>")
+		fmt.Fprintln(stderr, "axlr-bots: bot get needs exactly one <bot-id>")
 		return exitUsage
 	}
 	bot, err := service.GetBot(ctx, args[0])

@@ -1,6 +1,6 @@
 package nodeproto
 
-import "github.com/underpass-ai/underpass-bots/domain"
+import "github.com/underpass-ai/axlr-bots/domain"
 
 // ReportMessage is how an execution ended, as the node saw it: the
 // contract's result, the usage, the policy it ran under and where the

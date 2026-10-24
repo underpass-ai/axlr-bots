@@ -12,9 +12,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/application"
-	"github.com/underpass-ai/underpass-bots/domain"
-	"github.com/underpass-ai/underpass-bots/nodeproto"
+	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/domain"
+	"github.com/underpass-ai/axlr-bots/nodeproto"
 )
 
 // maxBodyBytes bounds a request body; a bot definition or an objective

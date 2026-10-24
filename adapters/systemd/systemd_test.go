@@ -27,8 +27,8 @@ func (r *recorder) Run(name string, args ...string) error {
 func sources(t *testing.T) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
-	cp := filepath.Join(dir, "underpass-bots")
-	node := filepath.Join(dir, "underpass-node")
+	cp := filepath.Join(dir, "axlr-bots")
+	node := filepath.Join(dir, "axlr-node")
 	for _, path := range []string{cp, node} {
 		if err := os.WriteFile(path, []byte("#!/bin/sh\necho "+filepath.Base(path)+"\n"), 0o755); err != nil {
 			t.Fatal(err)
@@ -48,17 +48,17 @@ func mustRead(t *testing.T, path string) string {
 
 func TestDefaultLayouts(t *testing.T) {
 	usr := DefaultLayout(false, "", "/home/ana")
-	if usr.System || usr.Prefix != "/home/ana/.local" || usr.StateDir != "/home/ana/.local/state/underpass-bots" || usr.NodeStateDir != "/home/ana/.local/state/underpass-node" || usr.UnitDir != "/home/ana/.config/systemd/user" || usr.EnvFile != "/home/ana/.config/underpass-bots/env" {
+	if usr.System || usr.Prefix != "/home/ana/.local" || usr.StateDir != "/home/ana/.local/state/axlr-bots" || usr.NodeStateDir != "/home/ana/.local/state/axlr-node" || usr.UnitDir != "/home/ana/.config/systemd/user" || usr.EnvFile != "/home/ana/.config/axlr-bots/env" {
 		t.Errorf("user layout = %+v", usr)
 	}
-	if usr.BinaryPath() != "/home/ana/.local/bin/underpass-bots" || usr.NodeBinaryPath() != "/home/ana/.local/bin/underpass-node" || usr.SocketPath() != "/home/ana/.local/state/underpass-bots/underpass-bots.sock" || usr.NodeUnitPath() != "/home/ana/.config/systemd/user/underpass-node.service" {
+	if usr.BinaryPath() != "/home/ana/.local/bin/axlr-bots" || usr.NodeBinaryPath() != "/home/ana/.local/bin/axlr-node" || usr.SocketPath() != "/home/ana/.local/state/axlr-bots/axlr-bots.sock" || usr.NodeUnitPath() != "/home/ana/.config/systemd/user/axlr-node.service" {
 		t.Error("user paths wrong")
 	}
 	if strings.Join(usr.Systemctl(), " ") != "systemctl --user" || usr.OnDisk("/x") != "/x" {
 		t.Error("user systemctl or OnDisk wrong")
 	}
 	sys := DefaultLayout(true, "", "/home/ana")
-	if !sys.System || sys.Prefix != "/usr/local" || sys.StateDir != "/var/lib/underpass-bots" || sys.NodeStateDir != "/var/lib/underpass-node" || sys.UnitDir != "/etc/systemd/system" || sys.EnvFile != "/etc/underpass-bots/env" || sys.ServicePath() != "/etc/systemd/system/underpass-bots.service" {
+	if !sys.System || sys.Prefix != "/usr/local" || sys.StateDir != "/var/lib/axlr-bots" || sys.NodeStateDir != "/var/lib/axlr-node" || sys.UnitDir != "/etc/systemd/system" || sys.EnvFile != "/etc/axlr-bots/env" || sys.ServicePath() != "/etc/systemd/system/axlr-bots.service" {
 		t.Errorf("system layout = %+v", sys)
 	}
 	if strings.Join(sys.Systemctl(), " ") != "systemctl" {
@@ -78,8 +78,8 @@ func TestRenderUserUnits(t *testing.T) {
 	l.AXLRBin = "/opt/axlr-tui"
 	service := RenderService(l)
 	for _, want := range []string{
-		"Description=Underpass Bots control plane\n", "Type=simple\n", "EnvironmentFile=-/home/ana/.config/underpass-bots/env\n",
-		"ExecStart=/home/ana/.local/bin/underpass-bots --state /home/ana/.local/state/underpass-bots --socket /home/ana/.local/state/underpass-bots/underpass-bots.sock serve\n",
+		"Description=AXLR Bots control plane\n", "Type=simple\n", "EnvironmentFile=-/home/ana/.config/axlr-bots/env\n",
+		"ExecStart=/home/ana/.local/bin/axlr-bots --state /home/ana/.local/state/axlr-bots --socket /home/ana/.local/state/axlr-bots/axlr-bots.sock serve\n",
 		"Restart=on-failure\n", "NoNewPrivileges=yes\n", "WantedBy=default.target\n", "not available to a user service",
 	} {
 		if !strings.Contains(service, want) {
@@ -93,8 +93,8 @@ func TestRenderUserUnits(t *testing.T) {
 	}
 	node := RenderNodeUnit(l)
 	for _, want := range []string{
-		"Description=Underpass Bots node agent\n", "After=underpass-bots.service\nWants=underpass-bots.service\n", "Environment=UNDERPASS_NODE_LABELS=host=%l\n",
-		"ExecStart=/home/ana/.local/bin/underpass-node --control unix:///home/ana/.local/state/underpass-bots/underpass-bots.sock --state /home/ana/.local/state/underpass-node\n",
+		"Description=AXLR Bots node agent\n", "After=axlr-bots.service\nWants=axlr-bots.service\n", "Environment=AXLR_NODE_LABELS=host=%l\n",
+		"ExecStart=/home/ana/.local/bin/axlr-node --control unix:///home/ana/.local/state/axlr-bots/axlr-bots.sock --state /home/ana/.local/state/axlr-node\n",
 		"WantedBy=default.target\n",
 	} {
 		if !strings.Contains(node, want) {
@@ -105,7 +105,7 @@ func TestRenderUserUnits(t *testing.T) {
 		t.Errorf("user node unit:\n%s", node)
 	}
 	env := RenderEnv(l, "")
-	if !strings.Contains(env, "#OPENROUTER_API_KEY=") || !strings.Contains(env, "UNDERPASS_AXLR_BIN=/opt/axlr-tui\n") {
+	if !strings.Contains(env, "#OPENROUTER_API_KEY=") || !strings.Contains(env, "AXLR_TUI=/opt/axlr-tui\n") {
 		t.Errorf("env:\n%s", env)
 	}
 	if env := RenderEnv(l, "sk-or-test"); !strings.Contains(env, "\nOPENROUTER_API_KEY=sk-or-test\n") {
@@ -117,16 +117,16 @@ func TestRenderSystemUnits(t *testing.T) {
 	l := DefaultLayout(true, "", "")
 	service := RenderService(l)
 	for _, want := range []string{
-		"After=network-online.target\n", "User=underpass-bots\n", "Group=underpass-bots\n", "SupplementaryGroups=systemd-journal\n",
-		"Environment=HOME=/var/lib/underpass-bots\n", "ProtectSystem=strict\n", "ProtectHome=yes\n", "StateDirectory=underpass-bots\n",
-		"ReadWritePaths=/var/lib/underpass-bots\n", "WantedBy=multi-user.target\n",
+		"After=network-online.target\n", "User=axlr-bots\n", "Group=axlr-bots\n", "SupplementaryGroups=systemd-journal\n",
+		"Environment=HOME=/var/lib/axlr-bots\n", "ProtectSystem=strict\n", "ProtectHome=yes\n", "StateDirectory=axlr-bots\n",
+		"ReadWritePaths=/var/lib/axlr-bots\n", "WantedBy=multi-user.target\n",
 	} {
 		if !strings.Contains(service, want) {
 			t.Errorf("system service lacks %q:\n%s", want, service)
 		}
 	}
 	node := RenderNodeUnit(l)
-	for _, want := range []string{"User=underpass-bots\n", "Environment=HOME=/var/lib/underpass-node\n", "StateDirectory=underpass-node\n", "ReadWritePaths=/var/lib/underpass-node\n", "ReadWritePaths=/var/lib/underpass-bots\n", "ProtectSystem=strict\n"} {
+	for _, want := range []string{"User=axlr-bots\n", "Environment=HOME=/var/lib/axlr-node\n", "StateDirectory=axlr-node\n", "ReadWritePaths=/var/lib/axlr-node\n", "ReadWritePaths=/var/lib/axlr-bots\n", "ProtectSystem=strict\n"} {
 		if !strings.Contains(node, want) {
 			t.Errorf("system node unit lacks %q:\n%s", want, node)
 		}
@@ -150,30 +150,30 @@ func TestInstallAndUninstallUserLayoutUnderADestDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Mode != "user" || report.Binary != "/home/ana/.local/bin/underpass-bots" || report.NodeBinary != "/home/ana/.local/bin/underpass-node" || len(report.Units) != 2 || report.Socket != l.SocketPath() {
+	if report.Mode != "user" || report.Binary != "/home/ana/.local/bin/axlr-bots" || report.NodeBinary != "/home/ana/.local/bin/axlr-node" || len(report.Units) != 2 || report.Socket != l.SocketPath() {
 		t.Errorf("report = %+v", report)
 	}
-	for _, bin := range []string{"underpass-bots", "underpass-node"} {
+	for _, bin := range []string{"axlr-bots", "axlr-node"} {
 		path := filepath.Join(dest, "home/ana/.local/bin", bin)
 		if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o755 || !strings.Contains(mustRead(t, path), bin) {
 			t.Errorf("binary %s: %v", bin, err)
 		}
 	}
-	service := mustRead(t, filepath.Join(dest, "home/ana/.config/systemd/user/underpass-bots.service"))
+	service := mustRead(t, filepath.Join(dest, "home/ana/.config/systemd/user/axlr-bots.service"))
 	if service != RenderService(l) || strings.Contains(service, dest) {
 		t.Errorf("service unit:\n%s", service)
 	}
-	if mustRead(t, filepath.Join(dest, "home/ana/.config/systemd/user/underpass-node.service")) != RenderNodeUnit(l) {
+	if mustRead(t, filepath.Join(dest, "home/ana/.config/systemd/user/axlr-node.service")) != RenderNodeUnit(l) {
 		t.Error("node unit differs")
 	}
-	envPath := filepath.Join(dest, "home/ana/.config/underpass-bots/env")
+	envPath := filepath.Join(dest, "home/ana/.config/axlr-bots/env")
 	if info, err := os.Stat(envPath); err != nil || info.Mode().Perm() != 0o600 {
 		t.Errorf("env file: %v", err)
 	}
-	if env := mustRead(t, envPath); !strings.Contains(env, "OPENROUTER_API_KEY=sk-or-test\n") || !strings.Contains(env, "UNDERPASS_AXLR_BIN=/opt/axlr-tui\n") {
+	if env := mustRead(t, envPath); !strings.Contains(env, "OPENROUTER_API_KEY=sk-or-test\n") || !strings.Contains(env, "AXLR_TUI=/opt/axlr-tui\n") {
 		t.Errorf("env:\n%s", env)
 	}
-	for _, dir := range []string{"home/ana/.local/state/underpass-bots", "home/ana/.local/state/underpass-node"} {
+	for _, dir := range []string{"home/ana/.local/state/axlr-bots", "home/ana/.local/state/axlr-node"} {
 		if _, err := os.Stat(filepath.Join(dest, dir)); err != nil {
 			t.Errorf("%s missing", dir)
 		}
@@ -182,7 +182,7 @@ func TestInstallAndUninstallUserLayoutUnderADestDir(t *testing.T) {
 		t.Errorf("commands = %v", runner.calls)
 	}
 	steps := strings.Join(report.NextSteps, "\n")
-	if !strings.Contains(steps, "systemctl --user enable --now underpass-bots.service underpass-node.service") || !strings.Contains(steps, "loginctl enable-linger") {
+	if !strings.Contains(steps, "systemctl --user enable --now axlr-bots.service axlr-node.service") || !strings.Contains(steps, "loginctl enable-linger") {
 		t.Errorf("next steps = %v", report.NextSteps)
 	}
 
@@ -203,7 +203,7 @@ func TestInstallAndUninstallUserLayoutUnderADestDir(t *testing.T) {
 	if len(removed.Units) != 4 || len(removed.NextSteps) != 1 {
 		t.Errorf("uninstall report = %+v", removed)
 	}
-	for _, gone := range []string{"home/ana/.local/bin/underpass-bots", "home/ana/.local/bin/underpass-node", "home/ana/.config/systemd/user/underpass-bots.service", "home/ana/.config/systemd/user/underpass-node.service"} {
+	for _, gone := range []string{"home/ana/.local/bin/axlr-bots", "home/ana/.local/bin/axlr-node", "home/ana/.config/systemd/user/axlr-bots.service", "home/ana/.config/systemd/user/axlr-node.service"} {
 		if _, err := os.Stat(filepath.Join(dest, gone)); err == nil {
 			t.Errorf("%s still there", gone)
 		}
@@ -211,7 +211,7 @@ func TestInstallAndUninstallUserLayoutUnderADestDir(t *testing.T) {
 	if _, err := os.Stat(envPath); err != nil {
 		t.Error("env file removed without --purge")
 	}
-	if strings.Join(runner.calls, "\n") != "systemctl --user disable --now underpass-node.service\nsystemctl --user disable --now underpass-bots.service\nsystemctl --user daemon-reload" {
+	if strings.Join(runner.calls, "\n") != "systemctl --user disable --now axlr-node.service\nsystemctl --user disable --now axlr-bots.service\nsystemctl --user daemon-reload" {
 		t.Errorf("commands = %v", runner.calls)
 	}
 	if _, err := installer.Uninstall(false); err != nil {
@@ -221,7 +221,7 @@ func TestInstallAndUninstallUserLayoutUnderADestDir(t *testing.T) {
 	if err != nil || len(purged.NextSteps) != 0 {
 		t.Errorf("purge: %v %+v", err, purged)
 	}
-	for _, gone := range []string{envPath, filepath.Dir(envPath), filepath.Join(dest, "home/ana/.local/state/underpass-bots"), filepath.Join(dest, "home/ana/.local/state/underpass-node")} {
+	for _, gone := range []string{envPath, filepath.Dir(envPath), filepath.Join(dest, "home/ana/.local/state/axlr-bots"), filepath.Join(dest, "home/ana/.local/state/axlr-node")} {
 		if _, err := os.Stat(gone); err == nil {
 			t.Errorf("%s kept after purge", gone)
 		}
@@ -238,27 +238,27 @@ func TestInstallSystemLayoutUnderADestDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Mode != "system" || report.EnvFile != "/etc/underpass-bots/env" {
+	if report.Mode != "system" || report.EnvFile != "/etc/axlr-bots/env" {
 		t.Errorf("report = %+v", report)
 	}
-	service := mustRead(t, filepath.Join(dest, "etc/systemd/system/underpass-bots.service"))
-	if !strings.Contains(service, "ProtectSystem=strict\n") || !strings.Contains(service, "User=underpass-bots\n") || strings.Contains(service, dest) {
+	service := mustRead(t, filepath.Join(dest, "etc/systemd/system/axlr-bots.service"))
+	if !strings.Contains(service, "ProtectSystem=strict\n") || !strings.Contains(service, "User=axlr-bots\n") || strings.Contains(service, dest) {
 		t.Errorf("service:\n%s", service)
 	}
-	if env := mustRead(t, filepath.Join(dest, "etc/underpass-bots/env")); !strings.Contains(env, "#OPENROUTER_API_KEY=") {
+	if env := mustRead(t, filepath.Join(dest, "etc/axlr-bots/env")); !strings.Contains(env, "#OPENROUTER_API_KEY=") {
 		t.Errorf("env:\n%s", env)
 	}
-	for _, bin := range []string{"usr/local/bin/underpass-bots", "usr/local/bin/underpass-node"} {
+	for _, bin := range []string{"usr/local/bin/axlr-bots", "usr/local/bin/axlr-node"} {
 		if _, err := os.Stat(filepath.Join(dest, bin)); err != nil {
 			t.Error(err)
 		}
 	}
 	calls := strings.Join(runner.calls, "\n")
-	if !strings.Contains(calls, "useradd --system --home-dir /var/lib/underpass-bots --no-create-home --shell /usr/sbin/nologin --groups systemd-journal underpass-bots") || !strings.HasSuffix(calls, "systemctl daemon-reload") {
+	if !strings.Contains(calls, "useradd --system --home-dir /var/lib/axlr-bots --no-create-home --shell /usr/sbin/nologin --groups systemd-journal axlr-bots") || !strings.HasSuffix(calls, "systemctl daemon-reload") {
 		t.Errorf("commands = %v", runner.calls)
 	}
 	joined := strings.Join(report.NextSteps, "\n")
-	if !strings.Contains(joined, "chown underpass-bots: /var/lib/underpass-bots") || !strings.Contains(joined, "chown underpass-bots: /var/lib/underpass-node") || !strings.Contains(joined, "systemctl enable --now underpass-bots.service underpass-node.service") || strings.Contains(joined, "linger") {
+	if !strings.Contains(joined, "chown axlr-bots: /var/lib/axlr-bots") || !strings.Contains(joined, "chown axlr-bots: /var/lib/axlr-node") || !strings.Contains(joined, "systemctl enable --now axlr-bots.service axlr-node.service") || strings.Contains(joined, "linger") {
 		t.Errorf("next steps = %v", report.NextSteps)
 	}
 }

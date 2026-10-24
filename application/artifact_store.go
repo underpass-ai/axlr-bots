@@ -3,7 +3,7 @@ package application
 import (
 	"context"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // Names of the report artifact a completed execution leaves.

@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // SerialRunner runs executions one at a time: the daemon's worker and

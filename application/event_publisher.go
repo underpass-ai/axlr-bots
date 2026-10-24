@@ -3,7 +3,7 @@ package application
 import (
 	"context"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // EventPublisher hands the control plane's events to whoever keeps or

@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/underpass-ai/underpass-bots/adapters/axlr"
-	"github.com/underpass-ai/underpass-bots/adapters/filestore"
-	"github.com/underpass-ai/underpass-bots/adapters/jsonl"
-	"github.com/underpass-ai/underpass-bots/adapters/system"
-	"github.com/underpass-ai/underpass-bots/application"
+	"github.com/underpass-ai/axlr-bots/adapters/axlr"
+	"github.com/underpass-ai/axlr-bots/adapters/filestore"
+	"github.com/underpass-ai/axlr-bots/adapters/jsonl"
+	"github.com/underpass-ai/axlr-bots/adapters/system"
+	"github.com/underpass-ai/axlr-bots/application"
 )
 
 // Dependencies wires the application over the state directory. axlrBin

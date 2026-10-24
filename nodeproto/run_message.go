@@ -1,6 +1,6 @@
 package nodeproto
 
-import "github.com/underpass-ai/underpass-bots/domain"
+import "github.com/underpass-ai/axlr-bots/domain"
 
 // RunMessage is what the node needs to run a task's objective.
 type RunMessage struct {

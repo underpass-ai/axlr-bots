@@ -1,6 +1,6 @@
 package unixapi
 
-import "github.com/underpass-ai/underpass-bots/domain"
+import "github.com/underpass-ai/axlr-bots/domain"
 
 // RunResponse is what a run or a decision returns: the task after it and
 // the execution that carried it.

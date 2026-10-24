@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/application"
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 var (
@@ -312,17 +312,17 @@ func TestTailWriter(t *testing.T) {
 }
 
 // TestLiveExec runs the real axlr-tui once, only when AXLR_LIVE=1. It
-// needs a binary with --exec (UNDERPASS_AXLR_BIN, or axlr-tui on PATH)
+// needs a binary with --exec (AXLR_TUI, or axlr-tui on PATH)
 // and a model provider configured for it (OPENROUTER_API_KEY or
 // ~/.config/axlr/credentials.json).
 func TestLiveExec(t *testing.T) {
 	if os.Getenv("AXLR_LIVE") != "1" {
 		t.Skip("set AXLR_LIVE=1 to run axlr-tui for real")
 	}
-	e := NewExecutor(os.Getenv("UNDERPASS_AXLR_BIN"), t.TempDir())
+	e := NewExecutor(os.Getenv("AXLR_TUI"), t.TempDir())
 	req := application.ExecutionRequest{
 		ExecutionID: "exec-live", TaskID: "task-live", BotID: "live-bot", TenantID: "test",
-		Objective: "Reply with exactly the word pong and nothing else.", Model: os.Getenv("UNDERPASS_AXLR_MODEL"), Timeout: 3 * time.Minute,
+		Objective: "Reply with exactly the word pong and nothing else.", Model: os.Getenv("AXLR_BOTS_AXLR_MODEL"), Timeout: 3 * time.Minute,
 	}
 	report, err := e.Execute(context.Background(), req)
 	if err != nil {

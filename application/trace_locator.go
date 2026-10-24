@@ -1,6 +1,6 @@
 package application
 
-import "github.com/underpass-ai/underpass-bots/domain"
+import "github.com/underpass-ai/axlr-bots/domain"
 
 // TraceLocator finds the trace a runtime adapter kept for an execution, so
 // an execution ended by the control plane itself (reconciliation, not the

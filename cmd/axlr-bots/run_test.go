@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/adapters/filestore"
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/adapters/filestore"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // fakeAXLR writes a shell stand-in for axlr-tui that prints the lines of
@@ -360,25 +360,25 @@ func TestBadDefinitionsAndState(t *testing.T) {
 }
 
 func TestDefaults(t *testing.T) {
-	t.Setenv("UNDERPASS_STATE", "/tmp/custom-state")
+	t.Setenv("AXLR_BOTS_STATE", "/tmp/custom-state")
 	if defaultStateDir() != "/tmp/custom-state" {
-		t.Error("UNDERPASS_STATE ignored")
+		t.Error("AXLR_BOTS_STATE ignored")
 	}
-	t.Setenv("UNDERPASS_STATE", "")
+	t.Setenv("AXLR_BOTS_STATE", "")
 	t.Setenv("XDG_STATE_HOME", "/tmp/xdg")
-	if defaultStateDir() != "/tmp/xdg/underpass-bots" {
+	if defaultStateDir() != "/tmp/xdg/axlr-bots" {
 		t.Error("XDG_STATE_HOME ignored")
 	}
 	t.Setenv("XDG_STATE_HOME", "")
 	t.Setenv("HOME", "/home/someone")
-	if defaultStateDir() != "/home/someone/.local/state/underpass-bots" {
+	if defaultStateDir() != "/home/someone/.local/state/axlr-bots" {
 		t.Errorf("default = %s", defaultStateDir())
 	}
-	t.Setenv("UNDERPASS_AXLR_BIN", "/opt/axlr-tui")
+	t.Setenv("AXLR_TUI", "/opt/axlr-tui")
 	if defaultAXLRBinary() != "/opt/axlr-tui" {
-		t.Error("UNDERPASS_AXLR_BIN ignored")
+		t.Error("AXLR_TUI ignored")
 	}
-	t.Setenv("UNDERPASS_AXLR_BIN", "")
+	t.Setenv("AXLR_TUI", "")
 	if defaultAXLRBinary() != "axlr-tui" {
 		t.Error("default binary wrong")
 	}
@@ -390,11 +390,11 @@ func TestDefaults(t *testing.T) {
 	if defaultActor() != "cli:unknown" {
 		t.Error("fallback actor wrong")
 	}
-	t.Setenv("UNDERPASS_SOCKET", "/run/cp.sock")
+	t.Setenv("AXLR_BOTS_SOCKET", "/run/cp.sock")
 	if defaultSocket() != "/run/cp.sock" {
-		t.Error("UNDERPASS_SOCKET ignored")
+		t.Error("AXLR_BOTS_SOCKET ignored")
 	}
-	t.Setenv("UNDERPASS_SOCKET", "")
+	t.Setenv("AXLR_BOTS_SOCKET", "")
 	if defaultSocket() != "" {
 		t.Error("default socket should be empty until the state is known")
 	}

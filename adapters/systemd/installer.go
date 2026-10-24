@@ -124,7 +124,7 @@ func (i Installer) Uninstall(purge bool) (Report, error) {
 			}
 			report.Units = append(report.Units, path)
 		}
-		// The env file's own directory (/etc/underpass-bots) goes with it
+		// The env file's own directory (/etc/axlr-bots) goes with it
 		// when nothing else is left in it.
 		if dir := filepath.Dir(l.EnvFile); filepath.Base(dir) == BinaryName {
 			_ = os.Remove(l.OnDisk(dir))

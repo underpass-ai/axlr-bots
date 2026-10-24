@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/adapters/unixapi"
+	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 )
 
 func sreDefinitionFile(t *testing.T) string {

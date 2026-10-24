@@ -1,6 +1,6 @@
 package nodeproto
 
-import "github.com/underpass-ai/underpass-bots/domain"
+import "github.com/underpass-ai/axlr-bots/domain"
 
 // RegisterRequest is what a node says about itself.
 type RegisterRequest struct {

@@ -14,7 +14,7 @@ func TestInstallAndUninstallRenderIntoADestDir(t *testing.T) {
 	t.Setenv("HOME", "/home/ana")
 	t.Setenv("OPENROUTER_API_KEY", "sk-or-test")
 	var stdout, stderr bytes.Buffer
-	nodeBinary := filepath.Join(t.TempDir(), "underpass-node")
+	nodeBinary := filepath.Join(t.TempDir(), "axlr-node")
 	if err := os.WriteFile(nodeBinary, []byte("#!/bin/sh\necho node\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -31,21 +31,21 @@ func TestInstallAndUninstallRenderIntoADestDir(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		t.Fatal(err)
 	}
-	if report["mode"] != "user" || report["binary"] != "/home/ana/.local/bin/underpass-bots" || report["nodeBinary"] != "/home/ana/.local/bin/underpass-node" || report["commands"] != nil {
+	if report["mode"] != "user" || report["binary"] != "/home/ana/.local/bin/axlr-bots" || report["nodeBinary"] != "/home/ana/.local/bin/axlr-node" || report["commands"] != nil {
 		t.Errorf("report = %v", report)
 	}
-	service, err := os.ReadFile(filepath.Join(dest, "home/ana/.config/systemd/user/underpass-bots.service"))
+	service, err := os.ReadFile(filepath.Join(dest, "home/ana/.config/systemd/user/axlr-bots.service"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(service), "Type=simple\n") || !strings.Contains(string(service), "ExecStart=/home/ana/.local/bin/underpass-bots --state /home/ana/.local/state/underpass-bots") || strings.Contains(string(service), "sk-or") {
+	if !strings.Contains(string(service), "Type=simple\n") || !strings.Contains(string(service), "ExecStart=/home/ana/.local/bin/axlr-bots --state /home/ana/.local/state/axlr-bots") || strings.Contains(string(service), "sk-or") {
 		t.Errorf("service:\n%s", service)
 	}
-	env, err := os.ReadFile(filepath.Join(dest, "home/ana/.config/underpass-bots/env"))
+	env, err := os.ReadFile(filepath.Join(dest, "home/ana/.config/axlr-bots/env"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(env), "OPENROUTER_API_KEY=sk-or-test\n") || !strings.Contains(string(env), "UNDERPASS_AXLR_BIN=/opt/axlr-tui\n") {
+	if !strings.Contains(string(env), "OPENROUTER_API_KEY=sk-or-test\n") || !strings.Contains(string(env), "AXLR_TUI=/opt/axlr-tui\n") {
 		t.Errorf("env:\n%s", env)
 	}
 	if strings.Contains(stdout.String(), "sk-or-test") {
@@ -54,15 +54,15 @@ func TestInstallAndUninstallRenderIntoADestDir(t *testing.T) {
 	// The installed binary is this test binary, byte for byte.
 	self, _ := os.Executable()
 	want, _ := os.Stat(self)
-	got, err := os.Stat(filepath.Join(dest, "home/ana/.local/bin/underpass-bots"))
+	got, err := os.Stat(filepath.Join(dest, "home/ana/.local/bin/axlr-bots"))
 	if err != nil || got.Size() != want.Size() || got.Mode().Perm() != 0o755 {
 		t.Errorf("binary: %v", err)
 	}
 
-	if node, err := os.ReadFile(filepath.Join(dest, "home/ana/.local/bin/underpass-node")); err != nil || !strings.Contains(string(node), "echo node") {
+	if node, err := os.ReadFile(filepath.Join(dest, "home/ana/.local/bin/axlr-node")); err != nil || !strings.Contains(string(node), "echo node") {
 		t.Errorf("node binary: %v", err)
 	}
-	if unit, err := os.ReadFile(filepath.Join(dest, "home/ana/.config/systemd/user/underpass-node.service")); err != nil || !strings.Contains(string(unit), "--control unix:///home/ana/.local/state/underpass-bots/underpass-bots.sock") {
+	if unit, err := os.ReadFile(filepath.Join(dest, "home/ana/.config/systemd/user/axlr-node.service")); err != nil || !strings.Contains(string(unit), "--control unix:///home/ana/.local/state/axlr-bots/axlr-bots.sock") {
 		t.Errorf("node unit: %v", err)
 	}
 	// The system variant with explicit paths, into the same dest.
@@ -71,11 +71,11 @@ func TestInstallAndUninstallRenderIntoADestDir(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("system install: %d %s", code, stderr.String())
 	}
-	service, _ = os.ReadFile(filepath.Join(dest, "etc/units/underpass-bots.service"))
-	if !strings.Contains(string(service), "ProtectSystem=strict\n") || !strings.Contains(string(service), "ReadWritePaths=/srv/ub\n") || !strings.Contains(string(service), "ExecStart=/opt/ub/bin/underpass-bots --state /srv/ub ") {
+	service, _ = os.ReadFile(filepath.Join(dest, "etc/units/axlr-bots.service"))
+	if !strings.Contains(string(service), "ProtectSystem=strict\n") || !strings.Contains(string(service), "ReadWritePaths=/srv/ub\n") || !strings.Contains(string(service), "ExecStart=/opt/ub/bin/axlr-bots --state /srv/ub ") {
 		t.Errorf("system service:\n%s", service)
 	}
-	if node, _ := os.ReadFile(filepath.Join(dest, "etc/units/underpass-node.service")); !strings.Contains(string(node), "--state /srv/ubn\n") {
+	if node, _ := os.ReadFile(filepath.Join(dest, "etc/units/axlr-node.service")); !strings.Contains(string(node), "--state /srv/ubn\n") {
 		t.Errorf("system node unit:\n%s", node)
 	}
 	if _, err := os.Stat(filepath.Join(dest, "etc/ub/env")); err != nil {
@@ -87,7 +87,7 @@ func TestInstallAndUninstallRenderIntoADestDir(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("uninstall: %d %s", code, stderr.String())
 	}
-	for _, gone := range []string{"home/ana/.local/bin/underpass-bots", "home/ana/.local/bin/underpass-node", "home/ana/.config/systemd/user/underpass-bots.service", "home/ana/.config/systemd/user/underpass-node.service", "home/ana/.config/underpass-bots/env", "home/ana/.local/state/underpass-bots", "home/ana/.local/state/underpass-node"} {
+	for _, gone := range []string{"home/ana/.local/bin/axlr-bots", "home/ana/.local/bin/axlr-node", "home/ana/.config/systemd/user/axlr-bots.service", "home/ana/.config/systemd/user/axlr-node.service", "home/ana/.config/axlr-bots/env", "home/ana/.local/state/axlr-bots", "home/ana/.local/state/axlr-node"} {
 		if _, err := os.Stat(filepath.Join(dest, gone)); err == nil {
 			t.Errorf("%s still there", gone)
 		}

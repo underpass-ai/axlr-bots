@@ -3,7 +3,7 @@ package application
 import (
 	"context"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // ApproveTask continues a task that stopped on a tool call a person must

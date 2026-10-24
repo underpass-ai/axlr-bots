@@ -1,6 +1,6 @@
 package application
 
-import "github.com/underpass-ai/underpass-bots/domain"
+import "github.com/underpass-ai/axlr-bots/domain"
 
 // ApproveTaskResult is the task after the decision and the execution that
 // carried it to its end.

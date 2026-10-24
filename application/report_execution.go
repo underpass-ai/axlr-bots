@@ -3,7 +3,7 @@ package application
 import (
 	"context"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // ReportExecution takes a node's report of how an execution ended and

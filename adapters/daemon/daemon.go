@@ -15,8 +15,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/adapters/unixapi"
-	"github.com/underpass-ai/underpass-bots/application"
+	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
+	"github.com/underpass-ai/axlr-bots/application"
 )
 
 // Run serves until ctx ends. The socket is removed on the way out.

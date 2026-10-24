@@ -3,8 +3,8 @@ package unixapi
 import (
 	"context"
 
-	"github.com/underpass-ai/underpass-bots/application"
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // Local is the Service over the use cases, in process. Runs and

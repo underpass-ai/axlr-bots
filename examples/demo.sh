@@ -8,32 +8,32 @@
 # still there. The installation stays (DEMO_UNINSTALL=1 removes it).
 #
 #   export OPENROUTER_API_KEY=...                  # the installer copies it into the env file
-#   UNDERPASS_AXLR_BIN=/path/to/axlr-tui sh examples/demo.sh
+#   AXLR_TUI=/path/to/axlr-tui sh examples/demo.sh
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
-: "${UNDERPASS_AXLR_BIN:?set UNDERPASS_AXLR_BIN to an axlr-tui with --exec}"
+: "${AXLR_TUI:?set AXLR_TUI to an axlr-tui with --exec}"
 : "${OPENROUTER_API_KEY:?export OPENROUTER_API_KEY for the bots' model}"
 prefix=${DEMO_PREFIX:-$HOME/.local}
-state=$HOME/.local/state/underpass-bots
-nodestate=$HOME/.local/state/underpass-node
-envfile=$HOME/.config/underpass-bots/env
+state=$HOME/.local/state/axlr-bots
+nodestate=$HOME/.local/state/axlr-node
+envfile=$HOME/.config/axlr-bots/env
 build=$(mktemp -d)
-ub="$prefix/bin/underpass-bots --state $state"
+ub="$prefix/bin/axlr-bots --state $state"
 ctl="systemctl --user"
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 
 say() { printf '\n## %s\n' "$*"; }
 wait_for_socket() {
   i=0
-  while [ ! -S "$state/underpass-bots.sock" ]; do
-    i=$((i + 1)); [ $i -gt 50 ] && { echo "the control plane did not start:"; $ctl status underpass-bots.service --no-pager | tail -5; exit 1; }
+  while [ ! -S "$state/axlr-bots.sock" ]; do
+    i=$((i + 1)); [ $i -gt 50 ] && { echo "the control plane did not start:"; $ctl status axlr-bots.service --no-pager | tail -5; exit 1; }
     sleep 0.2
   done
 }
 wait_for_node() {
   i=0
   while ! $ub node list 2>/dev/null | grep -q '"status": "Online"'; do
-    i=$((i + 1)); [ $i -gt 100 ] && { echo "the node did not come online:"; $ctl status underpass-node.service --no-pager | tail -5; exit 1; }
+    i=$((i + 1)); [ $i -gt 100 ] && { echo "the node did not come online:"; $ctl status axlr-node.service --no-pager | tail -5; exit 1; }
     sleep 0.2
   done
 }
@@ -53,19 +53,19 @@ cleanup() {
   rm -rf "$build"
   if [ "${DEMO_UNINSTALL:-0}" = 1 ]; then
     say "uninstall (DEMO_UNINSTALL=1)"
-    "$prefix/bin/underpass-bots" uninstall --prefix "$prefix" | grep -E '"mode"|disable' || true
+    "$prefix/bin/axlr-bots" uninstall --prefix "$prefix" | grep -E '"mode"|disable' || true
   fi
 }
 trap cleanup EXIT
 
 say "0. build and install (user-level: ~/.local, ~/.config, systemctl --user)"
-GOFLAGS=-p=2 go build -o "$build/underpass-bots" "$here/../cmd/underpass-bots"
-GOFLAGS=-p=2 go build -o "$build/underpass-node" "$here/../cmd/underpass-node"
-"$build/underpass-bots" install --prefix "$prefix" --axlr-bin "$UNDERPASS_AXLR_BIN" | grep -E '"mode"|"binary"|"nodeBinary"|"envFile"|"socket"|\.service|linger'
+GOFLAGS=-p=2 go build -o "$build/axlr-bots" "$here/../cmd/axlr-bots"
+GOFLAGS=-p=2 go build -o "$build/axlr-node" "$here/../cmd/axlr-node"
+"$build/axlr-bots" install --prefix "$prefix" --axlr-bin "$AXLR_TUI" | grep -E '"mode"|"binary"|"nodeBinary"|"envFile"|"socket"|\.service|linger'
 grep -q '^OPENROUTER_API_KEY=' "$envfile" || echo "WARNING: $envfile has no OPENROUTER_API_KEY line (it existed before); add it and restart the services"
 
 say "1. start both services; the node registers itself"
-$ctl enable --now underpass-bots.service underpass-node.service
+$ctl enable --now axlr-bots.service axlr-node.service
 wait_for_socket
 wait_for_node
 $ub node list | grep -E '"id"|"hostName"|"status"|"axlrVersion"|"policySupported"|"host"'
@@ -98,7 +98,7 @@ $ub task report "$write" | sed 's/^/    /'
 ls -la "$nodestate/workspaces/bot-act-with-approval/hello-$stamp.txt" && cat "$nodestate/workspaces/bot-act-with-approval/hello-$stamp.txt"
 
 say "5. restart both services: node, bots and tasks are still there"
-$ctl restart underpass-bots.service underpass-node.service
+$ctl restart axlr-bots.service axlr-node.service
 wait_for_socket
 wait_for_node
 $ub node list | grep -E '"id"|"status"'
@@ -106,9 +106,9 @@ $ub bot list | grep -E '"id"|"status"'
 $ub task get "$task" | grep -E '"id"|"status"'
 $ub task get "$write" | grep -E '"id"|"status"'
 echo "service logs (last lines):"
-journalctl --user -u underpass-bots.service -n 3 --no-pager -o cat
-journalctl --user -u underpass-node.service -n 3 --no-pager -o cat
+journalctl --user -u axlr-bots.service -n 3 --no-pager -o cat
+journalctl --user -u axlr-node.service -n 3 --no-pager -o cat
 
 say "installed and running"
-echo "check:     $ctl status underpass-bots.service underpass-node.service"
-echo "uninstall: $prefix/bin/underpass-bots uninstall [--purge]"
+echo "check:     $ctl status axlr-bots.service axlr-node.service"
+echo "uninstall: $prefix/bin/axlr-bots uninstall [--purge]"

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // leftRunning stands for a crash: the task and its execution are saved

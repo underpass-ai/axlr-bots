@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/application"
-	"github.com/underpass-ai/underpass-bots/domain"
-	"github.com/underpass-ai/underpass-bots/nodeproto"
+	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/domain"
+	"github.com/underpass-ai/axlr-bots/nodeproto"
 )
 
 // Client is the Service, and the node protocol's transport, over the
@@ -40,7 +40,7 @@ func NewClient(address string) *Client {
 			return dialer.DialContext(ctx, "unix", socketPath)
 		},
 	}
-	return &Client{http: &http.Client{Transport: transport}, base: "http://underpass-bots", address: socketPath}
+	return &Client{http: &http.Client{Transport: transport}, base: "http://axlr-bots", address: socketPath}
 }
 
 // Reachable reports whether a daemon answers on the socket.

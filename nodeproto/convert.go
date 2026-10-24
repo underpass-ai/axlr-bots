@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/application"
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // FromAssignment renders an assignment as a message.

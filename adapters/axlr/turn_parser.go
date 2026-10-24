@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/underpass-ai/underpass-bots/application"
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // turnParser folds the JSON lines of one run into a report. The result

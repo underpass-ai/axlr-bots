@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // governedBot registers and enables a bot at the level with a rule on

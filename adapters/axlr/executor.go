@@ -20,8 +20,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/application"
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // Exit codes of axlr-tui --exec, as the runtime contract fixes them.

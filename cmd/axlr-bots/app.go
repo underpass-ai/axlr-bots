@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/underpass-ai/underpass-bots/adapters/unixapi"
-	"github.com/underpass-ai/underpass-bots/application"
-	"github.com/underpass-ai/underpass-bots/compose"
+	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
+	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/compose"
 )
 
 // newApp wires the application over the state directory (compose is the
@@ -26,7 +26,7 @@ func newService(ctx context.Context, deps application.Dependencies, socketPath s
 		return unixapi.NewClient(socketPath)
 	}
 	if socketPath != "" && notice != nil {
-		fmt.Fprintf(notice, "underpass-bots: no service answers on %s; working on the state directory directly\n", socketPath)
+		fmt.Fprintf(notice, "axlr-bots: no service answers on %s; working on the state directory directly\n", socketPath)
 	}
 	return unixapi.NewLocal(deps)
 }

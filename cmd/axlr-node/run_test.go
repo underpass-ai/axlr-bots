@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/adapters/unixapi"
-	"github.com/underpass-ai/underpass-bots/application"
-	"github.com/underpass-ai/underpass-bots/compose"
-	"github.com/underpass-ai/underpass-bots/internal/fakeaxlr"
+	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
+	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/compose"
+	"github.com/underpass-ai/axlr-bots/internal/fakeaxlr"
 )
 
 func TestNodeRegistersRunsAndStops(t *testing.T) {
@@ -112,11 +112,11 @@ func TestNodeUsage(t *testing.T) {
 	if err != nil || labels["a"] != "1" || labels["b"] != "2" {
 		t.Errorf("labels = %v %v", labels, err)
 	}
-	if defaultNodeID() == "" || defaultStateDir() == "" || envOr("UNDERPASS_NOPE", "x") != "x" {
+	if defaultNodeID() == "" || defaultStateDir() == "" || envOr("AXLR_BOTS_NOPE", "x") != "x" {
 		t.Error("defaults wrong")
 	}
 	t.Setenv("XDG_STATE_HOME", "/tmp/xdg")
-	if defaultStateDir() != "/tmp/xdg/underpass-node" {
+	if defaultStateDir() != "/tmp/xdg/axlr-node" {
 		t.Error("XDG_STATE_HOME ignored")
 	}
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // NodeTransport is how a node agent speaks to the control plane, always

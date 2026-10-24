@@ -1,6 +1,6 @@
 package application
 
-import "github.com/underpass-ai/underpass-bots/domain"
+import "github.com/underpass-ai/axlr-bots/domain"
 
 // BotDefinition is a bot as an operator writes it (examples/*.json). It
 // is plain input; RegisterBot validates it into a domain.Bot. Level is

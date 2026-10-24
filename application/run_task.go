@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // DefaultTaskTimeout bounds a task whose bot sets no timeout.

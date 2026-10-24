@@ -3,7 +3,7 @@ package application
 import (
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // ExecutionRequest is everything the runtime needs for one execution:

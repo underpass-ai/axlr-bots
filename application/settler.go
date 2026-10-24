@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // settler records how a run ended: it applies the runtime's report to the

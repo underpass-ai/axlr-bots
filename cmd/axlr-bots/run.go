@@ -9,21 +9,21 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/underpass-ai/underpass-bots/application"
+	"github.com/underpass-ai/axlr-bots/application"
 )
 
 // socketFileName is the daemon's socket under the state directory.
-const socketFileName = "underpass-bots.sock"
+const socketFileName = "axlr-bots.sock"
 
 // run parses the global flags, wires the application and dispatches the
 // subcommand. It returns the exit code.
 func run(args []string, stdout, stderr io.Writer) int {
-	flags := flag.NewFlagSet("underpass-bots", flag.ContinueOnError)
+	flags := flag.NewFlagSet("axlr-bots", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	stateDir := flags.String("state", defaultStateDir(), "state directory (bots, tasks, executions, events, audit, traces, artifacts)")
-	axlrBin := flags.String("axlr-bin", defaultAXLRBinary(), "the axlr-tui to run tasks with (also UNDERPASS_AXLR_BIN)")
+	axlrBin := flags.String("axlr-bin", defaultAXLRBinary(), "the axlr-tui to run tasks with (also AXLR_TUI)")
 	actor := flags.String("actor", defaultActor(), "who is acting, for the audit log")
-	socket := flags.String("socket", defaultSocket(), "the daemon's socket (also UNDERPASS_SOCKET; default <state>/underpass-bots.sock; empty: never use a daemon)")
+	socket := flags.String("socket", defaultSocket(), "the daemon's socket (also AXLR_BOTS_SOCKET; default <state>/axlr-bots.sock; empty: never use a daemon)")
 	flags.Usage = func() { printUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -37,7 +37,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 	socketPath := *socket
-	if socketPath == "" && !flagSet(flags, "socket") && os.Getenv("UNDERPASS_SOCKET") == "" {
+	if socketPath == "" && !flagSet(flags, "socket") && os.Getenv("AXLR_BOTS_SOCKET") == "" {
 		socketPath = filepath.Join(*stateDir, socketFileName)
 	}
 	ctx := context.Background()
@@ -49,7 +49,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	app, err := newApp(*stateDir, *axlrBin, *actor)
 	if err != nil {
-		fmt.Fprintln(stderr, "underpass-bots:", err)
+		fmt.Fprintln(stderr, "axlr-bots:", err)
 		return exitError
 	}
 	if rest[0] == "serve" {
@@ -94,7 +94,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "node get":
 		return nodeGet(ctx, service, rest, stdout, stderr)
 	}
-	fmt.Fprintf(stderr, "underpass-bots: unknown command %q %q\n", group, verb)
+	fmt.Fprintf(stderr, "axlr-bots: unknown command %q %q\n", group, verb)
 	printUsage(stderr)
 	return exitUsage
 }
@@ -111,30 +111,30 @@ func flagSet(flags *flag.FlagSet, name string) bool {
 }
 
 func defaultStateDir() string {
-	if dir := os.Getenv("UNDERPASS_STATE"); dir != "" {
+	if dir := os.Getenv("AXLR_BOTS_STATE"); dir != "" {
 		return dir
 	}
 	if dir := os.Getenv("XDG_STATE_HOME"); dir != "" {
-		return filepath.Join(dir, "underpass-bots")
+		return filepath.Join(dir, "axlr-bots")
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return filepath.Join(".", "underpass-bots-state")
+		return filepath.Join(".", "axlr-bots-state")
 	}
-	return filepath.Join(home, ".local", "state", "underpass-bots")
+	return filepath.Join(home, ".local", "state", "axlr-bots")
 }
 
 func defaultAXLRBinary() string {
-	if bin := os.Getenv("UNDERPASS_AXLR_BIN"); bin != "" {
+	if bin := os.Getenv("AXLR_TUI"); bin != "" {
 		return bin
 	}
 	return "axlr-tui"
 }
 
-// defaultSocket is UNDERPASS_SOCKET; empty means <state>/underpass-bots.sock
+// defaultSocket is AXLR_BOTS_SOCKET; empty means <state>/axlr-bots.sock
 // once the state directory is known.
 func defaultSocket() string {
-	return os.Getenv("UNDERPASS_SOCKET")
+	return os.Getenv("AXLR_BOTS_SOCKET")
 }
 
 func defaultActor() string {
@@ -145,13 +145,13 @@ func defaultActor() string {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprint(w, `usage: underpass-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>] <command>
+	fmt.Fprint(w, `usage: axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>] <command>
 
   serve [--listen <addr>] [--tick 2s] [--reconcile-every 1m]
                                       run the control plane: the API on the socket (and
                                       a TCP address for nodes elsewhere), executions handed
                                       to the nodes, in-process runs when no node is online
-  node list                           list the nodes (hosts running underpass-node)
+  node list                           list the nodes (hosts running axlr-node)
   node get <node-id>                  show one node
   bot register --file <bot.json>      register a bot from its definition
   bot enable <bot-id>                 let the bot accept tasks
@@ -177,8 +177,8 @@ func printUsage(w io.Writer) {
   uninstall [--system] [--prefix <dir>] [--purge]
                                       remove them (keep the state unless --purge)
 
-State lives under --state (default $UNDERPASS_STATE, $XDG_STATE_HOME/underpass-bots
-or ~/.local/state/underpass-bots). When a daemon answers on the socket the
+State lives under --state (default $AXLR_BOTS_STATE, $XDG_STATE_HOME/axlr-bots
+or ~/.local/state/axlr-bots). When a daemon answers on the socket the
 commands go through it; otherwise they work on the state directory. Output is
 JSON on stdout.
 `)

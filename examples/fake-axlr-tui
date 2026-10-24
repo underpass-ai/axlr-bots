@@ -2,7 +2,7 @@
 # A stand-in for `axlr-tui --exec --json` that needs no model provider:
 # it prints the JSON lines of a finished turn, ending with the execution
 # result object of the runtime contract, and exits 0. Point the control
-# plane at it with --axlr-bin (or UNDERPASS_AXLR_BIN) to run the Phase 0
+# plane at it with --axlr-bin (or AXLR_TUI) to run the Phase 0
 # demo offline.
 prompt=""
 for a in "$@"; do

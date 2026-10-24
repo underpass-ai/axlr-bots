@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // NodeOfflineAfter is how long without a heartbeat a node is Offline.

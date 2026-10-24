@@ -9,8 +9,8 @@ package unixapi
 import (
 	"context"
 
-	"github.com/underpass-ai/underpass-bots/application"
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // Service is what an operator can ask the control plane.

@@ -4,15 +4,15 @@
 # it through AXLR, read the result, resubmit the same key and show that no
 # second execution happens.
 #
-#   UNDERPASS_AXLR_BIN=<axlr-tui with --exec> sh examples/phase0-demo.sh
+#   AXLR_TUI=<axlr-tui with --exec> sh examples/phase0-demo.sh
 #
-# Without UNDERPASS_AXLR_BIN it uses examples/fake-axlr-tui, which needs
+# Without AXLR_TUI it uses examples/fake-axlr-tui, which needs
 # no model provider.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
-state=${UNDERPASS_STATE:-$(mktemp -d)}
-bin=${UNDERPASS_AXLR_BIN:-$here/fake-axlr-tui}
-ub="go run $here/../cmd/underpass-bots --state $state --axlr-bin $bin"
+state=${AXLR_BOTS_STATE:-$(mktemp -d)}
+bin=${AXLR_TUI:-$here/fake-axlr-tui}
+ub="go run $here/../cmd/axlr-bots --state $state --axlr-bin $bin"
 key=${DEMO_KEY:-demo-2026-10-24-001}
 
 echo "# state: $state"

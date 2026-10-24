@@ -1,6 +1,6 @@
 package nodeproto
 
-import "github.com/underpass-ai/underpass-bots/domain"
+import "github.com/underpass-ai/axlr-bots/domain"
 
 // DecideMessage is what the node needs to decide a pending call.
 type DecideMessage struct {

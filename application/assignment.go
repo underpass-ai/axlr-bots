@@ -3,7 +3,7 @@ package application
 import (
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // LeaseDuration is how long a node holds an execution before it must

@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/adapters/unixapi"
-	"github.com/underpass-ai/underpass-bots/application"
-	"github.com/underpass-ai/underpass-bots/compose"
-	"github.com/underpass-ai/underpass-bots/domain"
-	"github.com/underpass-ai/underpass-bots/internal/fakeaxlr"
+	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
+	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/compose"
+	"github.com/underpass-ai/axlr-bots/domain"
+	"github.com/underpass-ai/axlr-bots/internal/fakeaxlr"
 )
 
 type fixture struct {

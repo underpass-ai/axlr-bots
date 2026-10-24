@@ -1,6 +1,6 @@
 package application
 
-import "github.com/underpass-ai/underpass-bots/domain"
+import "github.com/underpass-ai/axlr-bots/domain"
 
 // ExecutionReport is how a run ended, as the runtime reported it, and
 // the policy the adapter ran it under (nil when the adapter keeps none).

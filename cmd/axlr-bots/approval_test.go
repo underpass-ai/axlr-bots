@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/underpass-ai/underpass-bots/internal/fakeaxlr"
+	"github.com/underpass-ai/axlr-bots/internal/fakeaxlr"
 )
 
 // TestTheWriteNeverRunsWithoutTheApproval is the approval path of vision

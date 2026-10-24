@@ -1,4 +1,4 @@
-// Command underpass-bots is the stub control plane of Underpass Bots:
+// Command axlr-bots is the stub control plane of AXLR Bots:
 // it registers bots, accepts tasks and runs them through AXLR, keeping
 // everything under a state directory so a bot survives a restart.
 package main

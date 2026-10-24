@@ -1,6 +1,6 @@
 package application
 
-import "github.com/underpass-ai/underpass-bots/domain"
+import "github.com/underpass-ai/axlr-bots/domain"
 
 // RunTaskResult is the task after its run and the execution that ran it.
 type RunTaskResult struct {

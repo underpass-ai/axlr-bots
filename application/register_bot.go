@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // RegisterBot validates a definition, stores the bot as Registered and

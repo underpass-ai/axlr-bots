@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 func TestClockIsUTCNow(t *testing.T) {

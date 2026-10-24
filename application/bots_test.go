@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 func TestDependenciesValidate(t *testing.T) {

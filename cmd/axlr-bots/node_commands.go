@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/underpass-ai/underpass-bots/adapters/unixapi"
+	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 )
 
 func nodeList(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 0 {
-		fmt.Fprintln(stderr, "underpass-bots: node list takes no arguments")
+		fmt.Fprintln(stderr, "axlr-bots: node list takes no arguments")
 		return exitUsage
 	}
 	nodes, err := service.ListNodes(ctx)
@@ -23,7 +23,7 @@ func nodeList(ctx context.Context, service unixapi.Service, args []string, stdou
 
 func nodeGet(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
-		fmt.Fprintln(stderr, "underpass-bots: node get needs exactly one <node-id>")
+		fmt.Fprintln(stderr, "axlr-bots: node get needs exactly one <node-id>")
 		return exitUsage
 	}
 	node, err := service.GetNode(ctx, args[0])

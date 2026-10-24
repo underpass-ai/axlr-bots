@@ -1,5 +1,5 @@
 // Package nodeagent is the node side of the platform: the process a host
-// runs under systemd (`underpass-node`). It registers with the control
+// runs under systemd (`axlr-node`). It registers with the control
 // plane, heartbeats, long-polls for the executions of the bots placed on
 // the node, runs them with AXLR on the host and reports the result; it
 // renews its lease while it runs. Every message goes out from the node;
@@ -13,8 +13,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/application"
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // Executor runs assignments on the host: the AXLR adapter.

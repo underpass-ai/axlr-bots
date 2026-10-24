@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 var t0 = time.Date(2026, 10, 23, 15, 0, 0, 0, time.UTC)

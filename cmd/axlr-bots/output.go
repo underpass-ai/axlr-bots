@@ -18,6 +18,6 @@ func printJSON(w io.Writer, v any) {
 
 // fail reports an error on stderr and returns the error exit code.
 func fail(stderr io.Writer, err error) int {
-	fmt.Fprintln(stderr, "underpass-bots:", err)
+	fmt.Fprintln(stderr, "axlr-bots:", err)
 	return exitError
 }

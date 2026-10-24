@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // Decisions a person can take on a pending tool call.
