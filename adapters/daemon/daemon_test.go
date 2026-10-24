@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,7 +23,26 @@ type fixture struct {
 	state  string
 	socket string
 	deps   application.Dependencies
-	logs   *bytes.Buffer
+	logs   *syncBuffer
+}
+
+// syncBuffer is a log sink the daemon's goroutines write and the test
+// reads.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func newFixture(t *testing.T, scenario string) *fixture {
@@ -37,7 +57,7 @@ func newFixture(t *testing.T, scenario string) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &fixture{dir: dir, state: state, socket: filepath.Join(dir, "cp.sock"), deps: deps, logs: &bytes.Buffer{}}
+	return &fixture{dir: dir, state: state, socket: filepath.Join(dir, "cp.sock"), deps: deps, logs: &syncBuffer{}}
 }
 
 // start runs the daemon with fast ticks and returns a stop function

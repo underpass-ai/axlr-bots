@@ -100,7 +100,14 @@ func TestServeRunsWhatTheCommandsSendOverTheSocket(t *testing.T) {
 	if code, _, errText := c.run("task", "approve", manual); code != exitError || !strings.Contains(errText, "cannot decide") {
 		t.Errorf("approve a completed task: %d %s", code, errText)
 	}
-	if code, execution := c.json("execution", "get", ran["execution"].(map[string]any)["id"].(string)); code != exitOK || execution["policy"].(map[string]any)["enforced"] != true {
+	// The daemon's own tick may have started the task before the run
+	// asked over the socket; either way the execution is the task's.
+	_, got := c.json("task", "get", manual)
+	executionID := got["executionIds"].([]any)[0].(string)
+	if ran["execution"] != nil && ran["execution"].(map[string]any)["id"] != executionID {
+		t.Errorf("run over the socket started a second execution: %v", ran)
+	}
+	if code, execution := c.json("execution", "get", executionID); code != exitOK || execution["policy"].(map[string]any)["enforced"] != true {
 		t.Errorf("execution over the socket: %d %v", code, execution)
 	}
 	if code, bots, _ := c.run("bot", "list"); code != exitOK || !strings.Contains(bots, "bot") {
