@@ -23,6 +23,10 @@ func installFlags(name string, args []string, stderr io.Writer) (*flag.FlagSet, 
 	envFile := flags.String("env-file", "", "the environment file (default ~/.config/axlr-bots/env, or /etc/axlr-bots/env with --system)")
 	axlrBin := flags.String("axlr-bin", defaultAXLRBinary(), "the axlr-tui the node runs (also AXLR_TUI)")
 	nodeBinary := flags.String("node-binary", "", "the axlr-node binary to install (default: next to this binary)")
+	listen := flags.String("listen", "", "the TLS address the control plane serves nodes on, such as 127.0.0.1:7878 or 0.0.0.0:7878 (default: the socket only)")
+	serverNames := flags.String("server-names", "", "names and addresses nodes dial the control plane by, comma-separated, for its certificate")
+	control := flags.String("control", "", "the control plane the node agent talks to, https://host:7878 (default: the socket on this host)")
+	nodeOnly := flags.Bool("node-only", false, "install the node agent alone, for a host that joins a control plane elsewhere (needs --control)")
 	destDir := flags.String("destdir", "", "put every path under this directory on disk (packaging, tests)")
 	noSystemctl := flags.Bool("no-systemctl", false, "write the files but run no systemctl or useradd")
 	if err := flags.Parse(args); err != nil {
@@ -46,6 +50,10 @@ func installFlags(name string, args []string, stderr io.Writer) (*flag.FlagSet, 
 		layout.EnvFile = *envFile
 	}
 	layout.AXLRBin = *axlrBin
+	layout.Listen = *listen
+	layout.ServerNames = *serverNames
+	layout.Control = *control
+	layout.NodeOnly = *nodeOnly
 	layout.DestDir = *destDir
 	nodeSource = *nodeBinary
 	return flags, &layout, noSystemctl, nil

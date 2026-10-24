@@ -62,8 +62,49 @@ func TestInstallAndUninstallRenderIntoADestDir(t *testing.T) {
 	if node, err := os.ReadFile(filepath.Join(dest, "home/ana/.local/bin/axlr-node")); err != nil || !strings.Contains(string(node), "echo node") {
 		t.Errorf("node binary: %v", err)
 	}
-	if unit, err := os.ReadFile(filepath.Join(dest, "home/ana/.config/systemd/user/axlr-node.service")); err != nil || !strings.Contains(string(unit), "--control unix:///home/ana/.local/state/axlr-bots/axlr-bots.sock") {
-		t.Errorf("node unit: %v", err)
+	if unit, err := os.ReadFile(filepath.Join(dest, "home/ana/.config/systemd/user/axlr-node.service")); err != nil || !strings.Contains(string(unit), "Environment=AXLR_NODE_CONTROL=unix:///home/ana/.local/state/axlr-bots/axlr-bots.sock\n") {
+		t.Errorf("node unit: %v\n%s", err, unit)
+	}
+	// With a TLS address and a control URL.
+	stdout.Reset()
+	if code := run([]string{"install", "--destdir", dest, "--no-systemctl", "--node-binary", nodeBinary, "--listen", "127.0.0.1:7878", "--control", "https://127.0.0.1:7878"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("install --listen: %d %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"listen": "127.0.0.1:7878"`) || !strings.Contains(stdout.String(), "ca init") {
+		t.Errorf("report: %s", stdout.String())
+	}
+	service, _ = os.ReadFile(filepath.Join(dest, "home/ana/.config/systemd/user/axlr-bots.service"))
+	if !strings.Contains(string(service), " serve --listen 127.0.0.1:7878\n") {
+		t.Errorf("listening service:\n%s", service)
+	}
+	if unit, _ := os.ReadFile(filepath.Join(dest, "home/ana/.config/systemd/user/axlr-node.service")); !strings.Contains(string(unit), "Environment=AXLR_NODE_CONTROL=https://127.0.0.1:7878\n") {
+		t.Errorf("node unit:\n%s", unit)
+	}
+	// Node-only, for another host: no control plane binary or unit.
+	other := t.TempDir()
+	stdout.Reset()
+	stderr.Reset()
+	if code := run([]string{"install", "--destdir", other, "--no-systemctl", "--node-binary", nodeBinary, "--node-only"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "--control") {
+		t.Errorf("node-only without --control: %d %s", code, stderr.String())
+	}
+	stdout.Reset()
+	if code := run([]string{"install", "--destdir", other, "--no-systemctl", "--node-binary", nodeBinary, "--node-only", "--control", "https://cp.example:7878"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("node-only install: %d %s", code, stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(other, "home/ana/.local/bin/axlr-bots")); err == nil {
+		t.Error("node-only installed the control plane binary")
+	}
+	if _, err := os.Stat(filepath.Join(other, "home/ana/.config/systemd/user/axlr-bots.service")); err == nil {
+		t.Error("node-only installed the control plane unit")
+	}
+	if _, err := os.Stat(filepath.Join(other, "home/ana/.local/state/axlr-bots")); err == nil {
+		t.Error("node-only created the control plane's state")
+	}
+	if unit, err := os.ReadFile(filepath.Join(other, "home/ana/.config/systemd/user/axlr-node.service")); err != nil || !strings.Contains(string(unit), "Environment=AXLR_NODE_CONTROL=https://cp.example:7878\n") || strings.Contains(string(unit), "After=axlr-bots.service") {
+		t.Errorf("node-only unit: %v\n%s", err, unit)
+	}
+	if !strings.Contains(stdout.String(), "enroll --control https://cp.example:7878") || strings.Contains(stdout.String(), `"binary"`) {
+		t.Errorf("node-only report: %s", stdout.String())
 	}
 	// The system variant with explicit paths, into the same dest.
 	stdout.Reset()

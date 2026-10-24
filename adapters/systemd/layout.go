@@ -44,8 +44,30 @@ type Layout struct {
 	// AXLRBin is the axlr-tui the node runs; a bare name is looked up
 	// on the service's PATH.
 	AXLRBin string
+	// Listen is the TLS address the control plane serves nodes on
+	// (127.0.0.1:7878, or 0.0.0.0:7878 for other hosts); empty serves the
+	// socket only.
+	Listen string
+	// ServerNames are extra names the control plane's certificate is
+	// valid for, comma-separated: the public name nodes dial.
+	ServerNames string
+	// Control is the control plane the node unit talks to; empty means
+	// the socket on this host.
+	Control string
+	// NodeOnly installs the node agent alone: a host that joins a
+	// control plane elsewhere.
+	NodeOnly bool
 	// DestDir is prepended to every path on disk.
 	DestDir string
+}
+
+// NodeControl is the control plane the node unit is given: Control, or
+// the socket on this host.
+func (l Layout) NodeControl() string {
+	if l.Control != "" {
+		return l.Control
+	}
+	return "unix://" + l.SocketPath()
 }
 
 // DefaultLayout is the layout of one mode: the user's own under home

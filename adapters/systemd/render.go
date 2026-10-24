@@ -24,7 +24,14 @@ func RenderService(l Layout) string {
 	if l.System {
 		b.WriteString("Environment=HOME=" + l.StateDir + "\n")
 	}
-	b.WriteString("ExecStart=" + l.BinaryPath() + " --state " + l.StateDir + " --socket " + l.SocketPath() + " serve\n")
+	exec := l.BinaryPath() + " --state " + l.StateDir + " --socket " + l.SocketPath() + " serve"
+	if l.Listen != "" {
+		exec += " --listen " + l.Listen
+	}
+	if l.ServerNames != "" {
+		exec += " --server-names " + l.ServerNames
+	}
+	b.WriteString("ExecStart=" + exec + "\n")
 	renderRestart(&b)
 	renderSandbox(&b, l, l.StateDir, l.StateDir == "/var/lib/axlr-bots", "axlr-bots")
 	b.WriteString("\n[Install]\n")
@@ -32,29 +39,38 @@ func RenderService(l Layout) string {
 	return b.String()
 }
 
-// RenderNodeUnit is the node agent's unit: it starts after the control
-// plane and talks to it over the socket; the host name is its node id
-// and its host= label.
+// RenderNodeUnit is the node agent's unit. On the control plane's host
+// it starts after the control plane and talks to it over the socket,
+// with the host name as its node id; on another host it talks to the
+// control plane's TLS address with the certificate `axlr-node enroll`
+// stored. The control plane is the unit's environment
+// (AXLR_NODE_CONTROL), so the agent's own flags stay the defaults; the
+// host name is its host= label.
 func RenderNodeUnit(l Layout) string {
 	var b strings.Builder
 	b.WriteString("[Unit]\n")
 	b.WriteString("Description=AXLR Bots node agent\n")
 	b.WriteString("Documentation=https://github.com/underpass-ai/axlr-bots\n")
-	b.WriteString("After=" + ServiceName + "\nWants=" + ServiceName + "\n")
+	if l.NodeOnly {
+		b.WriteString("After=network-online.target\nWants=network-online.target\n")
+	} else {
+		b.WriteString("After=" + ServiceName + "\nWants=" + ServiceName + "\n")
+	}
 	b.WriteString("\n[Service]\n")
 	b.WriteString("Type=simple\n")
 	renderUser(&b, l)
 	b.WriteString("EnvironmentFile=-" + l.EnvFile + "\n")
+	b.WriteString("Environment=AXLR_NODE_CONTROL=" + l.NodeControl() + "\n")
 	b.WriteString("Environment=AXLR_NODE_LABELS=host=%l\n")
 	if l.System {
 		// axlr-tui keeps its settings and logs under $HOME: inside the
 		// node's state directory, the one place the node may write.
 		b.WriteString("Environment=HOME=" + l.NodeStateDir + "\n")
 	}
-	b.WriteString("ExecStart=" + l.NodeBinaryPath() + " --control unix://" + l.SocketPath() + " --state " + l.NodeStateDir + "\n")
+	b.WriteString("ExecStart=" + l.NodeBinaryPath() + " --state " + l.NodeStateDir + "\n")
 	renderRestart(&b)
 	renderSandbox(&b, l, l.NodeStateDir, l.NodeStateDir == "/var/lib/axlr-node", "axlr-node")
-	if l.System {
+	if l.System && !l.NodeOnly {
 		// The node's executions read the socket in the control plane's state.
 		b.WriteString("ReadWritePaths=" + l.StateDir + "\n")
 	}

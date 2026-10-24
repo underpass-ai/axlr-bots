@@ -94,15 +94,37 @@ func TestRenderUserUnits(t *testing.T) {
 	node := RenderNodeUnit(l)
 	for _, want := range []string{
 		"Description=AXLR Bots node agent\n", "After=axlr-bots.service\nWants=axlr-bots.service\n", "Environment=AXLR_NODE_LABELS=host=%l\n",
-		"ExecStart=/home/ana/.local/bin/axlr-node --control unix:///home/ana/.local/state/axlr-bots/axlr-bots.sock --state /home/ana/.local/state/axlr-node\n",
+		"Environment=AXLR_NODE_CONTROL=unix:///home/ana/.local/state/axlr-bots/axlr-bots.sock\n",
+		"ExecStart=/home/ana/.local/bin/axlr-node --state /home/ana/.local/state/axlr-node\n",
 		"WantedBy=default.target\n",
 	} {
 		if !strings.Contains(node, want) {
 			t.Errorf("node unit lacks %q:\n%s", want, node)
 		}
 	}
-	if strings.Contains(node, "User=") || strings.Contains(node, "ProtectSystem=strict") {
+	if strings.Contains(node, "User=") || strings.Contains(node, "ProtectSystem=strict") || strings.Contains(node, "--control") {
 		t.Errorf("user node unit:\n%s", node)
+	}
+	// A control plane that listens for other hosts, and a node unit
+	// that talks to one elsewhere.
+	fleet := l
+	fleet.Listen = "0.0.0.0:7878"
+	fleet.ServerNames = "cp.example"
+	fleet.Control = "https://cp.example:7878"
+	if s := RenderService(fleet); !strings.Contains(s, " serve --listen 0.0.0.0:7878 --server-names cp.example\n") {
+		t.Errorf("listening service:\n%s", s)
+	}
+	if n := RenderNodeUnit(fleet); !strings.Contains(n, "Environment=AXLR_NODE_CONTROL=https://cp.example:7878\n") || !strings.Contains(n, "After=axlr-bots.service") {
+		t.Errorf("node unit with a control URL:\n%s", n)
+	}
+	fleet.NodeOnly = true
+	if n := RenderNodeUnit(fleet); !strings.Contains(n, "After=network-online.target\nWants=network-online.target\n") || strings.Contains(n, "axlr-bots.service") {
+		t.Errorf("node-only unit:\n%s", n)
+	}
+	system := DefaultLayout(true, "", "")
+	system.NodeOnly, system.Control = true, "https://cp.example:7878"
+	if n := RenderNodeUnit(system); strings.Contains(n, "ReadWritePaths=/var/lib/axlr-bots\n") || !strings.Contains(n, "ReadWritePaths=/var/lib/axlr-node\n") {
+		t.Errorf("system node-only unit:\n%s", n)
 	}
 	env := RenderEnv(l, "")
 	if !strings.Contains(env, "#OPENROUTER_API_KEY=") || !strings.Contains(env, "AXLR_TUI=/opt/axlr-tui\n") {

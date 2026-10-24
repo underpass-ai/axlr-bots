@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -31,11 +32,18 @@ type Installer struct {
 // Install copies both binaries, writes the units and the environment
 // file (an existing one is kept, so a key is never overwritten), creates
 // the state directories and, system-wide, the service user, and reloads
-// systemd.
+// systemd. With NodeOnly it installs the node agent, its unit and its
+// state alone: the host joins the control plane the layout names.
 func (i Installer) Install() (Report, error) {
 	l := i.Layout
-	report := Report{Mode: mode(l), Binary: l.BinaryPath(), NodeBinary: l.NodeBinaryPath(), EnvFile: l.EnvFile, StateDir: l.StateDir, NodeStateDir: l.NodeStateDir, Socket: l.SocketPath()}
-	if i.Source == "" || i.NodeSource == "" {
+	report := Report{Mode: mode(l), Binary: l.BinaryPath(), NodeBinary: l.NodeBinaryPath(), EnvFile: l.EnvFile, StateDir: l.StateDir, NodeStateDir: l.NodeStateDir, Socket: l.SocketPath(), Control: l.NodeControl(), Listen: l.Listen}
+	if l.NodeOnly {
+		report.Binary, report.StateDir, report.Socket = "", "", ""
+		if l.Control == "" {
+			return report, errors.New("systemd: a node-only install needs the control plane's URL (--control https://host:7878)")
+		}
+	}
+	if (i.Source == "" && !l.NodeOnly) || i.NodeSource == "" {
 		return report, errors.New("systemd: the binaries to install are not named (control plane and node)")
 	}
 	if l.System && i.CreateUser && i.Runner != nil {
@@ -47,18 +55,25 @@ func (i Installer) Install() (Report, error) {
 			report.Commands = append(report.Commands, "useradd "+strings.Join(args, " "))
 		}
 	}
-	if err := copyFile(i.Source, l.OnDisk(l.BinaryPath()), 0o755); err != nil {
-		return report, fmt.Errorf("systemd: install the binary: %w", err)
+	if !l.NodeOnly {
+		if err := copyFile(i.Source, l.OnDisk(l.BinaryPath()), 0o755); err != nil {
+			return report, fmt.Errorf("systemd: install the binary: %w", err)
+		}
 	}
 	if err := copyFile(i.NodeSource, l.OnDisk(l.NodeBinaryPath()), 0o755); err != nil {
 		return report, fmt.Errorf("systemd: install the node binary: %w", err)
 	}
-	for path, content := range map[string]string{l.ServicePath(): RenderService(l), l.NodeUnitPath(): RenderNodeUnit(l)} {
+	units := map[string]string{l.NodeUnitPath(): RenderNodeUnit(l)}
+	if !l.NodeOnly {
+		units[l.ServicePath()] = RenderService(l)
+	}
+	for path, content := range units {
 		if err := writeFile(l.OnDisk(path), content, 0o644); err != nil {
 			return report, fmt.Errorf("systemd: write %s: %w", path, err)
 		}
 		report.Units = append(report.Units, path)
 	}
+	sort.Strings(report.Units)
 	if _, err := os.Stat(l.OnDisk(l.EnvFile)); errors.Is(err, os.ErrNotExist) {
 		if err := writeFile(l.OnDisk(l.EnvFile), RenderEnv(l, i.Key), 0o600); err != nil {
 			return report, fmt.Errorf("systemd: write %s: %w", l.EnvFile, err)
@@ -66,7 +81,11 @@ func (i Installer) Install() (Report, error) {
 	} else if err != nil {
 		return report, fmt.Errorf("systemd: %w", err)
 	}
-	for _, dir := range []string{l.StateDir, l.NodeStateDir} {
+	dirs := []string{l.NodeStateDir}
+	if !l.NodeOnly {
+		dirs = append([]string{l.StateDir}, dirs...)
+	}
+	for _, dir := range dirs {
 		if err := os.MkdirAll(l.OnDisk(dir), 0o750); err != nil {
 			return report, fmt.Errorf("systemd: state directory: %w", err)
 		}
@@ -82,13 +101,24 @@ func (i Installer) Install() (Report, error) {
 		report.Commands = append(report.Commands, strings.Join(l.Systemctl(), " ")+" daemon-reload")
 	}
 	ctl := strings.Join(l.Systemctl(), " ")
-	report.NextSteps = append(report.NextSteps,
-		"put the model key in "+l.EnvFile+" if the installer had none",
-		ctl+" enable --now "+ServiceName+" "+NodeUnitName,
-		l.BinaryPath()+" --state "+l.StateDir+" node list",
-		l.BinaryPath()+" --state "+l.StateDir+" bot register --file examples/bot.json",
-		l.BinaryPath()+" --state "+l.StateDir+" bot enable bot",
-	)
+	report.NextSteps = append(report.NextSteps, "put the model key in "+l.EnvFile+" if the installer had none")
+	switch {
+	case l.NodeOnly:
+		report.NextSteps = append(report.NextSteps,
+			l.NodeBinaryPath()+" enroll --control "+l.Control+" --state "+l.NodeStateDir+" --token <the token axlr-bots node enroll-token printed>",
+			ctl+" enable --now "+NodeUnitName,
+		)
+	default:
+		if l.Listen != "" {
+			report.NextSteps = append(report.NextSteps, l.BinaryPath()+" --state "+l.StateDir+" ca init  # once per fleet, before the service starts")
+		}
+		report.NextSteps = append(report.NextSteps,
+			ctl+" enable --now "+ServiceName+" "+NodeUnitName,
+			l.BinaryPath()+" --state "+l.StateDir+" node list",
+			l.BinaryPath()+" --state "+l.StateDir+" bot register --file examples/bot.json",
+			l.BinaryPath()+" --state "+l.StateDir+" bot enable bot",
+		)
+	}
 	if !l.System {
 		report.NextSteps = append(report.NextSteps, "loginctl enable-linger "+currentUser()+"  # keep the services running after logout")
 	}

@@ -187,8 +187,11 @@ func printUsage(w io.Writer) {
                                       task timeout plus 1m); prints failed/skipped
   execution get <execution-id>        show one execution: outcome, answer, usage, policy
   install [--system] [--prefix <dir>] [--state <dir>] [--axlr-bin <path>]
+          [--listen <addr>] [--server-names a,b] [--control <url>] [--node-only]
                                       install both binaries, the two systemd units and the
-                                      environment file under ~/.local (or --system) (see README)
+                                      environment file under ~/.local (or --system); --listen
+                                      serves nodes over TLS, --node-only joins a control
+                                      plane elsewhere at --control (see README)
   uninstall [--system] [--prefix <dir>] [--purge]
                                       remove them (keep the state unless --purge)
 
