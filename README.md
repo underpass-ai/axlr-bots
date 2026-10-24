@@ -514,17 +514,23 @@ gone`), a `bot.task.failed` event with `"reason": "reconciled"` and a
 ## Live run on this machine
 
 `examples/demo.sh` runs the whole thing user-level: build, install with
-the control plane listening on `127.0.0.1:7878` with TLS beside its
-socket, create the fleet CA, start the control plane, enroll this host
-as a node through the TLS path with a one-time token (so the installed
-node uses mTLS, as a node on another host would), start it and show it
-Online with its certificate, register the example bot, submit a generic
-task and watch the node run it, read the report, the approval path with
-a harmless write in the bot's workspace, then restart both services and
-show the node, the bots and the tasks are still there. The installation
-stays running (`DEMO_UNINSTALL=1` removes it); a second run keeps the CA
-and the node's credentials (`DEMO_REENROLL=1` enrolls the node again,
-which rotates its certificate).
+the control plane listening for nodes on `127.0.0.1:7878` and for
+operators on `127.0.0.1:7879`, both TLS, beside its socket, create the
+fleet CA, start the control plane, enroll this host as a node through
+the TLS path with a one-time token (so the installed node uses mTLS, as
+a node on another host would), start it and show it Online with its
+certificate, register the example bot, submit a generic task and watch
+the node run it, read the report, the approval path with a harmless
+write in the bot's workspace, restart both services and show the node,
+the bots and the tasks are still there; then the automatic triggers: a
+timer every 10 minutes and a webhook on the example bot, the webhook
+fired with `curl` on the operator address with the trigger's secret,
+delivered twice (one task), refused without the secret, the operator
+route refused without the bearer token, both tasks and their executions
+with the trace ids, and a last restart that fires nothing twice. The
+installation stays running (`DEMO_UNINSTALL=1` removes it); a second run
+keeps the CA and the node's credentials (`DEMO_REENROLL=1` enrolls the
+node again, which rotates its certificate).
 
 ```bash
 export OPENROUTER_API_KEY=...
@@ -534,18 +540,22 @@ AXLR_TUI=/path/to/axlr-tui sh examples/demo.sh
 Run on 24 Oct 2026 on this machine (user `gx10a`, host `gx10-ff95`), with
 `claude-haiku-5.5` through OpenRouter and an `axlr-tui` built from AXLR's
 `claude/execution-policy` branch (`/home/gx10a/Documents/ai/tmp/axlr-tui-policy`).
-The CA and the bots were there from the first run of the day;
-`DEMO_REENROLL=1` makes the node enroll again, which is why its
-certificate's serial changes and the previous one stops being accepted:
+The CA, the node's credentials and the bots were there from earlier runs
+of the day. This was the third run of the demo within ten minutes: the
+timer `clock` was armed and fired by the first (its slot `15:59:22Z`,
+task `task-462b…`), and the two later runs, each re-applying the triggers
+and restarting both services, found that slot fired and created no
+second timer task, which is what step 8 counts. The webhook's delivery
+id carries the run's time stamp, so each run is one new webhook task:
 
 ```bash
 set -a; . ~/.hermes/.env; set +a            # exports OPENROUTER_API_KEY
-DEMO_REENROLL=1 AXLR_TUI=/home/gx10a/Documents/ai/tmp/axlr-tui-policy sh examples/demo.sh
+AXLR_TUI=/home/gx10a/Documents/ai/tmp/axlr-tui-policy sh examples/demo.sh
 ```
 
 ```text
 
-## 0. build and install (user-level: ~/.local, ~/.config, systemctl --user; the control plane listens on 127.0.0.1:7878 with TLS)
+## 0. build and install (user-level: ~/.local, ~/.config, systemctl --user; nodes on 127.0.0.1:7878 and operators on 127.0.0.1:7879, both TLS)
   "mode": "user",
   "binary": "/home/gx10a/.local/bin/axlr-bots",
   "nodeBinary": "/home/gx10a/.local/bin/axlr-node",
@@ -555,7 +565,9 @@ DEMO_REENROLL=1 AXLR_TUI=/home/gx10a/Documents/ai/tmp/axlr-tui-policy sh example
   "socket": "/home/gx10a/.local/state/axlr-bots/axlr-bots.sock",
   "control": "https://127.0.0.1:7878",
   "listen": "127.0.0.1:7878",
+  "apiListen": "127.0.0.1:7879",
     "/home/gx10a/.local/bin/axlr-bots --state /home/gx10a/.local/state/axlr-bots ca init  # once per fleet, before the service starts",
+    "the operator bearer token is written to /home/gx10a/.local/state/axlr-bots/api.token at the first start",
     "systemctl --user enable --now axlr-bots.service axlr-node.service",
     "loginctl enable-linger gx10a  # keep the services running after logout"
 
@@ -564,52 +576,46 @@ DEMO_REENROLL=1 AXLR_TUI=/home/gx10a/Documents/ai/tmp/axlr-tui-policy sh example
   "fingerprint": "dcb7e7d6b66e604bc768f9932f621c1803972be2cd3e63e0d6c5ba7fe1cfd2cc",
 
 ## 2. start the control plane; enroll this host as a node over TLS with a one-time token; start the node
-{
-  "token": "axlr1.<one line, shown once; consumed below>",
-  "id": "enr-30c8df33b7736347176ba570",
-  "nodeId": "gx10-ff95",
-  "expiresAt": "2026-10-24T09:45:43.293843263Z"
-}
-  "nodeId": "gx10-ff95",
-  "control": "https://127.0.0.1:7878",
-  "serial": "32a865fa9c3309f8c98ce2f3032ae8f0",
-  "notAfter": "2027-10-24T09:35:43Z",
-  "state": "/home/gx10a/.local/state/axlr-node"
+(the node is enrolled: /home/gx10a/.local/state/axlr-node/pki; DEMO_REENROLL=1 enrolls it again and rotates its certificate)
     "id": "gx10-ff95",
     "hostName": "gx10-ff95",
       "host": "gx10-ff95"
-      "policySupported": true
+      "policySupported": true,
     "status": "Online",
     "certificateSerial": "32a865fa9c3309f8c98ce2f3032ae8f0"
-2026/10/24 11:35:43 node: control plane https://127.0.0.1:7878, client certificate /home/gx10a/.local/state/axlr-node/pki/node.crt for node gx10-ff95 (serial 32a865fa9c3309f8c98ce2f3032ae8f0, until 2027-10-24)
+2026/10/24 18:04:28 node: control plane https://127.0.0.1:7878, client certificate /home/gx10a/.local/state/axlr-node/pki/node.crt for node gx10-ff95 (serial 32a865fa9c3309f8c98ce2f3032ae8f0, until 2027-10-24)
 
 ## 3. register the example bot (observe: AXLR's read tools, manual trigger, any node)
 (bot already registered: the state survived an earlier run)
   "id": "bot",
   "level": "observe",
-      "type": "manual"
+      "type": "manual",
+      "type": "timer",
+      "type": "webhook",
   "status": "Enabled",
 
 ## 4. a generic task: the control plane assigns it to the node over TLS, the node runs it with AXLR
-task task-b052948e28e28fde50ccbdc1 is Completed after about 8s
-    "costUsd": 0.0012014449999999998
+task task-708a26189b5bf886b9c785f3 is Completed after about 8s
+    "costUsd": 0.00122603
     "enforced": true,
   "nodeId": "gx10-ff95",
   "outcome": "Completed",
-    "requests": 3,
+    "requests": 2,
     "runtimeLevel": "observe",
     "toolCalls": [
-    "toolCalls": 2,
+    "toolCalls": 1,
 report:
-    The workspace has no files. Both listings, the default and an explicit root path, came back empty and untruncated, so the count is 0.
+    The workspace has **0 files**. The recursive listing of the workspace root (`.`, up to 8 levels deep) came back empty.
+    
+    The listing skips `.git` and the console's `.axlr` and `.kernel` stores by design, so any files there wouldn't appear.
 
 ## 5. the approval path: a write runs only after task approve
-task task-b94395d7beac5a2a8f641664 is WaitingApproval after about 4s
+task task-c31765eca100f22cb1ed470d is WaitingApproval after about 4s
   "status": "WaitingApproval",
   "outcome": "DecisionRequired",
-        "callId": "toolu_01RTxmDSSBugpexXDgF45Cxs",
+        "callId": "toolu_01LwYwj9yNxWLCxYWjmEcNfu",
       "tool": "local_write",
-      "callId": "toolu_01RTxmDSSBugpexXDgF45Cxs",
+      "callId": "toolu_01LwYwj9yNxWLCxYWjmEcNfu",
       "arguments": {
   "nodeId": "gx10-ff95",
 the file does not exist yet: nothing ran without approval
@@ -617,9 +623,9 @@ approving...
     "status": "Running",
     "kind": "decide",
     "nodeId": "gx10-ff95"
-task task-b94395d7beac5a2a8f641664 is Completed after about 8s
-    Nothing is missing: `hello-20261024T093542Z.txt` exists in the workspace and contains exactly `hello`, which I confirmed by reading it back.
--rw------- 1 gx10a gx10a 5 Oct 24 11:35 /home/gx10a/.local/state/axlr-node/workspaces/bot-act-with-approval/hello-20261024T093542Z.txt
+task task-c31765eca100f22cb1ed470d is Completed after about 10s
+    Nothing is missing: I read the file back and it contains exactly `hello`, so the request is complete.
+-rw------- 1 gx10a gx10a 5 Oct 24 18:04 /home/gx10a/.local/state/axlr-node/workspaces/bot-act-with-approval/hello-20261024T160422Z.txt
 hello
 ## 6. restart both services: node, bots and tasks are still there
     "id": "gx10-ff95",
@@ -629,39 +635,115 @@ hello
     "status": "Enabled",
     "id": "bot",
     "status": "Enabled",
-  "id": "task-b052948e28e28fde50ccbdc1",
+  "id": "task-708a26189b5bf886b9c785f3",
   "status": "Completed",
-  "id": "task-b94395d7beac5a2a8f641664",
+  "id": "task-c31765eca100f22cb1ed470d",
   "status": "Completed",
 service logs (last lines):
-Stopped axlr-bots.service - AXLR Bots control plane.
 Started axlr-bots.service - AXLR Bots control plane.
-2026/10/24 11:36:03 daemon: serving on /home/gx10a/.local/state/axlr-bots/axlr-bots.sock and https://127.0.0.1:7878, tick 2s
-axlr-node.service: Consumed 3.589s CPU time.
+2026/10/24 18:04:50 daemon: operator token read from /home/gx10a/.local/state/axlr-bots/api.token
+2026/10/24 18:04:50 daemon: serving on /home/gx10a/.local/state/axlr-bots/axlr-bots.sock and https://127.0.0.1:7878 (nodes) and https://127.0.0.1:7879 (operators, bearer token), tick 2s
+axlr-node.service: Consumed 3.685s CPU time.
 Started axlr-node.service - AXLR Bots node agent.
-2026/10/24 11:36:03 node: control plane https://127.0.0.1:7878, client certificate /home/gx10a/.local/state/axlr-node/pki/node.crt for node gx10-ff95 (serial 32a865fa9c3309f8c98ce2f3032ae8f0, until 2027-10-24)
-2026/10/24 11:36:03 node: registered as gx10-ff95 (gx10-ff95), axlr "" policy true
+2026/10/24 18:04:50 node: control plane https://127.0.0.1:7878, client certificate /home/gx10a/.local/state/axlr-node/pki/node.crt for node gx10-ff95 (serial 32a865fa9c3309f8c98ce2f3032ae8f0, until 2027-10-24)
+2026/10/24 18:04:50 node: registered as gx10-ff95 (gx10-ff95), axlr "" policy true correlation false
+
+## 7. automatic triggers: a timer every 10 minutes and a webhook on the example bot
+  "name": "bot",
+      "type": "manual",
+      "name": "manual"
+      "type": "timer",
+      "name": "clock",
+      "objective": "Say the current time of this host (the trigger fired at {{.firedAt}}).",
+      "every": "10m0s"
+      "type": "webhook",
+      "name": "deploy",
+      "objective": "Handle event {{.type}} for {{.service}}: say in one sentence what you would check first, without running anything.",
+      "secret": "<redacted>"
+(the secret is generated per run and shown redacted; the timer is armed and fires at once)
+curl --cacert /home/gx10a/.local/state/axlr-bots/ca/ca.crt -H 'X-Axlr-Secret: <secret>' -H 'Idempotency-Key: deploy-20261024T160422Z' -d '{"type": "deploy", "service": "web"}' https://127.0.0.1:7879/v1/triggers/bot/deploy
+{"created":true
+"task":{"id":"task-dc002e74d9f2a08d0f42aa6e"
+"idempotencyKey":"webhook:deploy:1476c6218f02cdcd11c12fc3acc42bd1"
+"trigger":{"type":"webhook"
+the same delivery again: "created":false, task task-dc002e74d9f2a08d0f42aa6e (the same)
+without the secret: HTTP 403
+operator route without the token: HTTP 401
+operator route with the token: HTTP 200
+timer task: task-462b9058850cd655a0b0e0a5
+task task-dc002e74d9f2a08d0f42aa6e is Completed after about 6s
+task task-462b9058850cd655a0b0e0a5 is Completed after about 0s
+  "id": "task-dc002e74d9f2a08d0f42aa6e",
+  "objective": "Handle event deploy for web: say in one sentence what you would check first, without running anything.",
+  "status": "Completed",
+  "idempotencyKey": "webhook:deploy:1476c6218f02cdcd11c12fc3acc42bd1",
+  "correlationId": "trace-8f1cf2d09f22bf4a441c59e3",
+    "type": "webhook",
+    "name": "deploy"
+    "type": "deploy",
+    "id": "exec-840bc8f94fb89071e514f9e8",
+    "outcome": "Completed",
+      "costUsd": 0.000907775
+      "traceId": "trace-8f1cf2d09f22bf4a441c59e3",
+      "carried": false,
+    "nodeId": "gx10-ff95",
+report:
+    I would first check the web deploy's target environment and the build artifact it will ship: confirm the intended branch or commit, that the production build passes locally, and that required env vars and config for that environment are set.
+  "id": "task-462b9058850cd655a0b0e0a5",
+  "objective": "Say the current time of this host (the trigger fired at 2026-10-24T15:59:22Z).",
+  "status": "Completed",
+  "idempotencyKey": "timer:clock:1792857562",
+  "correlationId": "trace-b3291e374a270360e9a61f6f",
+    "type": "timer",
+    "name": "clock"
+    "id": "exec-c5b43e95c519018452e2276d",
+    "outcome": "Completed",
+      "costUsd": 0.0014355799999999999
+      "traceId": "trace-b3291e374a270360e9a61f6f",
+      "carried": false,
+    "nodeId": "gx10-ff95",
+report:
+    Nothing is missing: the only time I have is the trigger timestamp, 2026-10-24T15:59:22Z (UTC). None of my tools can read the host's live clock, so the host's current time may be somewhat later.
+timer state (the next fire is persisted):
+  "schedule": "every 10m0s",
+  "nextFireAt": "2026-10-24T16:09:22.594343227Z",
+  "lastScheduledAt": "2026-10-24T15:59:22.594343227Z",
+  "lastTaskId": "task-462b9058850cd655a0b0e0a5"
+
+## 8. restart both services: the timer fires nothing twice, the webhook delivery stays one task
+timer tasks for the slot 2026-10-24T15:59:22.594343227Z: 1; timer tasks in all: 1 (one per slot)
+fires of the delivery deploy-20261024T160422Z in the events: 2 (two: the delivery and its redelivery); tasks for it: 1
+2026/10/24 18:04:57 daemon: operator token read from /home/gx10a/.local/state/axlr-bots/api.token
+2026/10/24 18:04:57 daemon: serving on /home/gx10a/.local/state/axlr-bots/axlr-bots.sock and https://127.0.0.1:7878 (nodes) and https://127.0.0.1:7879 (operators, bearer token), tick 2s
 
 ## installed and running
 check:     systemctl --user status axlr-bots.service axlr-node.service
 uninstall: /home/gx10a/.local/bin/axlr-bots uninstall [--purge]
 ```
 
-Against the vision's criteria: the bot, the node and both tasks survived
-the restart of both services (§14.1); the task was started by the API
-(§14.2); AXLR received the policy and produced the result object, enforced
-(§14.3, §14.5); the write ran only after `task approve` (§10.4); the
-executions keep the node, the policy, the cost and the trace reference
-(§12.3); nothing needed root (§9.1); the node authenticated with a client
-certificate the fleet CA issued against a one-time token, the control
-plane with a certificate from the same CA, over TLS 1.3, and the
-operator's commands stayed on the socket (§9.4: mutual authentication,
-verifiable delegation through the token, revocation with `node revoke`,
-encryption in transit). The installation is left running on this
-machine with the node on the TLS path; `loginctl show-user gx10a -p
-Linger` says `yes`, so it survives a logout. The `axlr ""` in the node's
-log is the capability the agent reads from `axlr-tui --version`, which
-this build does not print.
+Against the vision's criteria: the bot, the node, the tasks and the
+timer's next fire survived the restarts of both services (§14.1); tasks
+were started by the API and by two automatic triggers, a timer and a
+webhook (§14.2); AXLR received the policy and produced the result
+object, enforced (§14.3, §14.5); the write ran only after `task approve`
+(§10.4); the redelivered webhook and the restarted scheduler created no
+second task, and both fires are in the events with `deduplicated`
+(§14.7); every task has a trace id and every execution and event names
+the bot, the task, the execution and the trace (§14.8; the runtime did
+not carry them yet, `carried: false`); the executions keep the node, the
+policy, the cost and the trace reference (§12.3); nothing needed root
+(§9.1); the node authenticated with a client certificate the fleet CA
+issued against a one-time token, the control plane with a certificate
+from the same CA, over TLS 1.3; the operator's commands stayed on the
+socket and the operator address refused a request without the bearer
+token and a webhook without its secret (§9.4). The installation is left
+running on this machine with the node on the TLS path and the timer
+firing every ten minutes; `loginctl show-user gx10a -p Linger` says
+`yes`, so it survives a logout. The `axlr ""` in the node's log is the
+capability the agent reads from `axlr-tui --version`, which this build
+does not print. The live webhook test ran against this installation
+after the demo and passed in 6 s (`task-7142729d…` Completed on
+`gx10-ff95`, $0.00094).
 
 ## Phase 0 demo (offline)
 
