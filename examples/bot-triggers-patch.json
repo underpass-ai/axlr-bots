@@ -1,0 +1,9 @@
+{
+  "triggers": [
+    {"type": "manual"},
+    {"type": "timer", "name": "clock", "every": "10m",
+     "objective": "Say the current time of this host (the trigger fired at {{.firedAt}})."},
+    {"type": "webhook", "name": "deploy", "secret": "replace-me-with-16-to-256-chars",
+     "objective": "Handle event {{.type}} for {{.service}}: say in one sentence what you would check first, without running anything."}
+  ]
+}

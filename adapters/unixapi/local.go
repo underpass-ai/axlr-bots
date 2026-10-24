@@ -2,6 +2,7 @@ package unixapi
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/application"
@@ -10,10 +11,13 @@ import (
 )
 
 // Local is the Service over the use cases, in process. Runs and
-// decisions go through the SerialRunner, one at a time.
+// decisions go through the SerialRunner, one at a time; submissions and
+// fires are serialised too, so two deliveries of the same key arriving
+// together cannot both pass the idempotency lookup and create two tasks.
 type Local struct {
-	deps   application.Dependencies
-	runner *application.SerialRunner
+	deps    application.Dependencies
+	runner  *application.SerialRunner
+	submits sync.Mutex
 }
 
 // NewLocal wires the service over the dependencies.
@@ -89,6 +93,8 @@ func (l *Local) ListEvents(ctx context.Context, id string, limit int) ([]domain.
 }
 
 func (l *Local) SubmitTask(ctx context.Context, request SubmitRequest) (SubmitResponse, error) {
+	l.submits.Lock()
+	defer l.submits.Unlock()
 	result, err := application.NewSubmitTask(l.deps).Execute(ctx, application.SubmitTaskCommand{
 		BotID: request.BotID, Objective: request.Objective, IdempotencyKey: request.IdempotencyKey, CorrelationID: request.CorrelationID,
 	})
@@ -99,6 +105,8 @@ func (l *Local) SubmitTask(ctx context.Context, request SubmitRequest) (SubmitRe
 }
 
 func (l *Local) FireTrigger(ctx context.Context, request FireRequest) (FireResponse, error) {
+	l.submits.Lock()
+	defer l.submits.Unlock()
 	result, err := application.NewFireTrigger(l.deps).Execute(ctx, application.FireTriggerCommand{
 		BotID: request.BotID, TriggerName: request.Trigger, DeliveryID: request.DeliveryID, Body: request.Body,
 	})

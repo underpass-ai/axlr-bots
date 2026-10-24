@@ -352,6 +352,10 @@ the event as its `input`.
 | `webhook` | `POST /v1/triggers/{bot}/{trigger}` with a JSON object as the body | `webhook:<name>:<hash>` of the `Idempotency-Key` header (the delivery id) when the sender set one, else of the body | the trigger's `secret` in `X-Axlr-Secret`, or the HMAC-SHA256 of the body under its `signingKey` in `X-Axlr-Signature: sha256=<hex>` (`X-Hub-Signature-256` is read too); never the bearer token. Over the socket the caller is trusted, as for every route |
 | `timer` | the daemon, on every tick | `timer:<name>:<unix seconds of the slot>` | none: it is the control plane's own |
 
+`examples/bot-triggers-patch.json` is this patch for the example bot
+(`bot update bot --file examples/bot-triggers-patch.json`, with the
+secret replaced; the demo generates one per run).
+
 A timer runs `every` so often (at least a second; the first fire is when
 it is armed) or on a five-field `cron` expression evaluated in the
 host's time zone (numbers only; Sunday is 0 or 7; a day of month and a

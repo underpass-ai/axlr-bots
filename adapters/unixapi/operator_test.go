@@ -401,3 +401,36 @@ func TestServeAPINeedsAToken(t *testing.T) {
 		t.Error("served without a token")
 	}
 }
+
+func TestSimultaneousRedeliveriesMakeOneTask(t *testing.T) {
+	client, _, _ := serve(t, "completed")
+	ctx := context.Background()
+	if _, err := client.RegisterBot(ctx, triggered("bot-c")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.EnableBot(ctx, "bot-c"); err != nil {
+		t.Fatal(err)
+	}
+	const deliveries = 12
+	results := make(chan FireResponse, deliveries)
+	for range deliveries {
+		go func() {
+			response, err := client.FireTrigger(ctx, FireRequest{BotID: "bot-c", Trigger: "deploy", DeliveryID: "burst-1", Body: json.RawMessage(`{"type": "deploy", "service": "web"}`)})
+			if err != nil {
+				t.Error(err)
+			}
+			results <- response
+		}()
+	}
+	created, ids := 0, map[string]bool{}
+	for range deliveries {
+		response := <-results
+		if response.Created {
+			created++
+		}
+		ids[response.Task.ID] = true
+	}
+	if created != 1 || len(ids) != 1 {
+		t.Errorf("%d tasks created, %d distinct ids, want one of each", created, len(ids))
+	}
+}
