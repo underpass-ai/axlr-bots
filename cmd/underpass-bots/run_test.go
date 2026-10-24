@@ -41,7 +41,7 @@ exit 3`
 exit 1`
 	}
 	path := filepath.Join(dir, "fake-axlr-tui")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + argsFile + "'\n" + body + "\n"
+	script := "#!/bin/sh\nfor a in \"$@\"; do if [ \"$a\" = --help ]; then echo '  -policy string' >&2; exit 0; fi; done\nprintf '%s\\n' \"$@\" > '" + argsFile + "'\n" + body + "\n"
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -54,15 +54,20 @@ func definitionFile(t *testing.T) string {
 }
 
 type cli struct {
-	t     *testing.T
-	state string
-	axlr  string
+	t      *testing.T
+	state  string
+	axlr   string
+	socket string
 }
 
 func (c cli) run(args ...string) (int, string, string) {
 	c.t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := run(append([]string{"--state", c.state, "--axlr-bin", c.axlr, "--actor", "test:cli"}, args...), &stdout, &stderr)
+	global := []string{"--state", c.state, "--axlr-bin", c.axlr, "--actor", "test:cli"}
+	if c.socket != "" {
+		global = append(global, "--socket", c.socket)
+	}
+	code := run(append(global, args...), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
@@ -197,7 +202,7 @@ func TestTaskDecideContinuesAWaitingTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	args := strings.Join(strings.Split(strings.TrimSpace(string(rawArgs)), "\n"), " ")
-	if !strings.HasPrefix(args, "--session sess-1 --decide approve --json --approve none --call c1 --root ") || strings.Contains(args, "--exec") {
+	if !strings.HasPrefix(args, "--session sess-1 --decide approve --json --approve none --call c1 --policy ") || !strings.Contains(args, " --root ") || strings.Contains(args, "--exec") {
 		t.Errorf("axlr-tui args = %q", args)
 	}
 	entries, _ := os.ReadDir(filepath.Join(state, "executions"))
@@ -289,6 +294,21 @@ func TestUsageAndErrors(t *testing.T) {
 		{[]string{"execution", "get"}, exitUsage, "exactly one"},
 		{[]string{"execution", "get", "Bad Id"}, exitError, "execution id"},
 		{[]string{"execution", "get", "ghost"}, exitError, "not found"},
+		{[]string{"task", "approve"}, exitUsage, "task approve needs exactly one"},
+		{[]string{"task", "deny", "a", "b"}, exitUsage, "task deny needs exactly one"},
+		{[]string{"task", "approve", "ghost"}, exitError, "not found"},
+		{[]string{"task", "report"}, exitUsage, "exactly one"},
+		{[]string{"task", "report", "--bogus", "t"}, exitUsage, "flag provided but not defined"},
+		{[]string{"task", "report", "ghost"}, exitError, "not found"},
+		{[]string{"alert"}, exitUsage, "needs --unit"},
+		{[]string{"alert", "--unit", "x", "extra"}, exitUsage, "needs --unit"},
+		{[]string{"alert", "--unit", "x", "--at", "yesterday"}, exitUsage, "RFC 3339"},
+		{[]string{"alert", "--bogus"}, exitUsage, "flag provided but not defined"},
+		{[]string{"serve", "extra"}, exitUsage, "takes no arguments"},
+		{[]string{"serve", "--bogus"}, exitUsage, "flag provided but not defined"},
+		{[]string{"--socket", "", "serve"}, exitUsage, "needs a socket"},
+		{[]string{"install", "--bogus"}, exitError, ""},
+		{[]string{"uninstall", "--bogus"}, exitError, ""},
 	}
 	for _, tc := range cases {
 		code, _, errText := c.run(tc.args...)
@@ -367,6 +387,17 @@ func TestDefaults(t *testing.T) {
 	t.Setenv("USER", "")
 	if defaultActor() != "cli:unknown" {
 		t.Error("fallback actor wrong")
+	}
+	t.Setenv("UNDERPASS_SOCKET", "/run/cp.sock")
+	if defaultSocket() != "/run/cp.sock" {
+		t.Error("UNDERPASS_SOCKET ignored")
+	}
+	t.Setenv("UNDERPASS_SOCKET", "")
+	if defaultSocket() != "" {
+		t.Error("default socket should be empty until the state is known")
+	}
+	if envOr("UNDERPASS_NOPE", "x") != "x" || hostname() == "" {
+		t.Error("envOr or hostname wrong")
 	}
 	var out bytes.Buffer
 	printJSON(&out, make(chan int))

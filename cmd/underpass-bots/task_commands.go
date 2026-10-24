@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/underpass-ai/underpass-bots/adapters/unixapi"
 	"github.com/underpass-ai/underpass-bots/application"
 	"github.com/underpass-ai/underpass-bots/domain"
 )
 
-func taskSubmit(ctx context.Context, app application.Dependencies, args []string, stdout, stderr io.Writer) int {
+func taskSubmit(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) < 1 || len(args[0]) == 0 || args[0][0] == '-' {
 		fmt.Fprintln(stderr, "underpass-bots: task submit needs <bot-id> first, then --objective and --key")
 		return exitUsage
@@ -28,68 +29,90 @@ func taskSubmit(ctx context.Context, app application.Dependencies, args []string
 		fmt.Fprintln(stderr, "underpass-bots: task submit needs --objective and --key")
 		return exitUsage
 	}
-	result, err := application.NewSubmitTask(app).Execute(ctx, application.SubmitTaskCommand{
-		BotID: botID, Objective: *objective, IdempotencyKey: *key, CorrelationID: *correlation,
-	})
+	result, err := service.SubmitTask(ctx, unixapi.SubmitRequest{BotID: botID, Objective: *objective, IdempotencyKey: *key, CorrelationID: *correlation})
 	if err != nil {
 		return fail(stderr, err)
 	}
-	printJSON(stdout, submitOutput{Created: result.Created, Task: result.Task.Snapshot()})
+	printJSON(stdout, result)
 	return exitOK
 }
 
-func taskRun(ctx context.Context, app application.Dependencies, args []string, stdout, stderr io.Writer) int {
+func taskRun(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "underpass-bots: task run needs exactly one <task-id>")
 		return exitUsage
 	}
-	id, err := domain.NewTaskID(args[0])
+	result, err := service.RunTask(ctx, args[0])
 	if err != nil {
 		return fail(stderr, err)
 	}
-	result, err := application.NewRunTask(app).Execute(ctx, id)
-	if err != nil {
-		return fail(stderr, err)
-	}
-	printJSON(stdout, runOutput{Task: result.Task.Snapshot(), Execution: result.Execution.Snapshot()})
-	return exitCodeFor(result.Execution.Outcome())
+	printJSON(stdout, result)
+	return exitCodeFor(result.Execution.Outcome)
 }
 
-func taskDecide(ctx context.Context, app application.Dependencies, args []string, stdout, stderr io.Writer) int {
+func taskDecide(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 2 {
 		fmt.Fprintln(stderr, "underpass-bots: task decide needs <task-id> and approve|deny")
 		return exitUsage
-	}
-	id, err := domain.NewTaskID(args[0])
-	if err != nil {
-		return fail(stderr, err)
 	}
 	if !application.IsDecision(args[1]) {
 		fmt.Fprintf(stderr, "underpass-bots: task decide takes approve or deny, not %q\n", args[1])
 		return exitUsage
 	}
-	result, err := application.NewApproveTask(app).Execute(ctx, id, args[1])
+	return taskDecideAs(ctx, service, args[1], args[:1], stdout, stderr)
+}
+
+// taskDecideAs is task approve and task deny: the decision is the verb.
+func taskDecideAs(ctx context.Context, service unixapi.Service, decision string, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintf(stderr, "underpass-bots: task %s needs exactly one <task-id>\n", decision)
+		return exitUsage
+	}
+	result, err := service.DecideTask(ctx, args[0], decision)
 	if err != nil {
 		return fail(stderr, err)
 	}
-	printJSON(stdout, runOutput{Task: result.Task.Snapshot(), Execution: result.Execution.Snapshot()})
-	return exitCodeFor(result.Execution.Outcome())
+	printJSON(stdout, result)
+	return exitCodeFor(result.Execution.Outcome)
 }
 
-func taskGet(ctx context.Context, app application.Dependencies, args []string, stdout, stderr io.Writer) int {
+func taskGet(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "underpass-bots: task get needs exactly one <task-id>")
 		return exitUsage
 	}
-	id, err := domain.NewTaskID(args[0])
+	task, err := service.GetTask(ctx, args[0])
 	if err != nil {
 		return fail(stderr, err)
 	}
-	task, err := application.NewGetTask(app).Execute(ctx, id)
+	printJSON(stdout, task)
+	return exitOK
+}
+
+// taskReport prints the task's report as text, or only its path.
+func taskReport(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("task report", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	pathOnly := flags.Bool("path", false, "print only where the report is kept")
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 1 {
+		fmt.Fprintln(stderr, "underpass-bots: task report needs exactly one <task-id>")
+		return exitUsage
+	}
+	report, err := service.GetReport(ctx, flags.Arg(0))
 	if err != nil {
 		return fail(stderr, err)
 	}
-	printJSON(stdout, task.Snapshot())
+	if *pathOnly {
+		fmt.Fprintln(stdout, report.Reference)
+		return exitOK
+	}
+	fmt.Fprint(stdout, report.Content)
+	if len(report.Content) > 0 && report.Content[len(report.Content)-1] != '\n' {
+		fmt.Fprintln(stdout)
+	}
 	return exitOK
 }
 

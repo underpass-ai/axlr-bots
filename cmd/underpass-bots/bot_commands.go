@@ -8,11 +8,11 @@ import (
 	"io"
 	"os"
 
+	"github.com/underpass-ai/underpass-bots/adapters/unixapi"
 	"github.com/underpass-ai/underpass-bots/application"
-	"github.com/underpass-ai/underpass-bots/domain"
 )
 
-func botRegister(ctx context.Context, app application.Dependencies, args []string, stdout, stderr io.Writer) int {
+func botRegister(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("bot register", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	file := flags.String("file", "", "bot definition (JSON)")
@@ -33,61 +33,49 @@ func botRegister(ctx context.Context, app application.Dependencies, args []strin
 	if err := decoder.Decode(&definition); err != nil {
 		return fail(stderr, fmt.Errorf("%s: %w", *file, err))
 	}
-	bot, err := application.NewRegisterBot(app).Execute(ctx, definition)
+	bot, err := service.RegisterBot(ctx, definition)
 	if err != nil {
 		return fail(stderr, err)
 	}
-	printJSON(stdout, bot.Snapshot())
+	printJSON(stdout, bot)
 	return exitOK
 }
 
-func botEnable(ctx context.Context, app application.Dependencies, args []string, stdout, stderr io.Writer) int {
+func botEnable(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "underpass-bots: bot enable needs exactly one <bot-id>")
 		return exitUsage
 	}
-	id, err := domain.NewBotID(args[0])
+	bot, err := service.EnableBot(ctx, args[0])
 	if err != nil {
 		return fail(stderr, err)
 	}
-	bot, err := application.NewEnableBot(app).Execute(ctx, id)
-	if err != nil {
-		return fail(stderr, err)
-	}
-	printJSON(stdout, bot.Snapshot())
+	printJSON(stdout, bot)
 	return exitOK
 }
 
-func botList(ctx context.Context, app application.Dependencies, args []string, stdout, stderr io.Writer) int {
+func botList(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 0 {
 		fmt.Fprintln(stderr, "underpass-bots: bot list takes no arguments")
 		return exitUsage
 	}
-	bots, err := application.NewListBots(app).Execute(ctx)
+	bots, err := service.ListBots(ctx)
 	if err != nil {
 		return fail(stderr, err)
 	}
-	snapshots := make([]domain.BotSnapshot, 0, len(bots))
-	for _, b := range bots {
-		snapshots = append(snapshots, b.Snapshot())
-	}
-	printJSON(stdout, snapshots)
+	printJSON(stdout, bots)
 	return exitOK
 }
 
-func botGet(ctx context.Context, app application.Dependencies, args []string, stdout, stderr io.Writer) int {
+func botGet(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "underpass-bots: bot get needs exactly one <bot-id>")
 		return exitUsage
 	}
-	id, err := domain.NewBotID(args[0])
+	bot, err := service.GetBot(ctx, args[0])
 	if err != nil {
 		return fail(stderr, err)
 	}
-	bot, err := application.NewGetBot(app).Execute(ctx, id)
-	if err != nil {
-		return fail(stderr, err)
-	}
-	printJSON(stdout, bot.Snapshot())
+	printJSON(stdout, bot)
 	return exitOK
 }

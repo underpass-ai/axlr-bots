@@ -1,41 +1,32 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"os"
+	"io"
 
-	"github.com/underpass-ai/underpass-bots/adapters/axlr"
-	"github.com/underpass-ai/underpass-bots/adapters/filestore"
-	"github.com/underpass-ai/underpass-bots/adapters/jsonl"
-	"github.com/underpass-ai/underpass-bots/adapters/system"
+	"github.com/underpass-ai/underpass-bots/adapters/unixapi"
 	"github.com/underpass-ai/underpass-bots/application"
+	"github.com/underpass-ai/underpass-bots/compose"
 )
 
-// newApp is the composition root: file-backed repositories, JSONL logs
-// and the AXLR executor under the state directory.
+// newApp wires the application over the state directory (compose is the
+// composition root the daemon shares).
 func newApp(stateDir, axlrBin, actor string) (application.Dependencies, error) {
-	if stateDir == "" {
-		return application.Dependencies{}, fmt.Errorf("the state directory must not be empty")
+	return compose.Dependencies(stateDir, axlrBin, actor)
+}
+
+// newService picks how a command reaches the control plane: through the
+// daemon's socket when a daemon answers on it, so a submission reaches
+// the running service, and in process over the state files otherwise.
+// The in-process path is the Phase 0 command and the fallback that
+// spools a task while the service is down; notice says which was taken.
+func newService(ctx context.Context, deps application.Dependencies, socketPath string, notice io.Writer) unixapi.Service {
+	if socketPath != "" && unixapi.Reachable(ctx, socketPath) {
+		return unixapi.NewClient(socketPath)
 	}
-	if err := os.MkdirAll(stateDir, 0o755); err != nil {
-		return application.Dependencies{}, fmt.Errorf("state directory: %w", err)
+	if socketPath != "" && notice != nil {
+		fmt.Fprintf(notice, "underpass-bots: no service answers on %s; working on the state directory directly\n", socketPath)
 	}
-	executor := axlr.NewExecutor(axlrBin, stateDir)
-	deps := application.Dependencies{
-		Bots:       filestore.NewBotRepository(stateDir),
-		Tasks:      filestore.NewTaskRepository(stateDir),
-		Executions: filestore.NewExecutionRepository(stateDir),
-		Events:     jsonl.NewEventLog(stateDir),
-		Audit:      jsonl.NewAuditLog(stateDir),
-		Runtime:    executor,
-		Decisions:  executor,
-		Traces:     executor,
-		Clock:      system.Clock{},
-		IDs:        system.IDGenerator{},
-		Actor:      actor,
-	}
-	if err := deps.Validate(); err != nil {
-		return application.Dependencies{}, err
-	}
-	return deps, nil
+	return unixapi.NewLocal(deps)
 }

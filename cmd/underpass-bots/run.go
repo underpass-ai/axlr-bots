@@ -8,16 +8,23 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/underpass-ai/underpass-bots/adapters/unixapi"
+	"github.com/underpass-ai/underpass-bots/application"
 )
+
+// socketFileName is the daemon's socket under the state directory.
+const socketFileName = "underpass-bots.sock"
 
 // run parses the global flags, wires the application and dispatches the
 // subcommand. It returns the exit code.
 func run(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("underpass-bots", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	stateDir := flags.String("state", defaultStateDir(), "state directory (bots, tasks, executions, events, audit, traces)")
+	stateDir := flags.String("state", defaultStateDir(), "state directory (bots, tasks, executions, events, audit, traces, artifacts)")
 	axlrBin := flags.String("axlr-bin", defaultAXLRBinary(), "the axlr-tui to run tasks with (also UNDERPASS_AXLR_BIN)")
 	actor := flags.String("actor", defaultActor(), "who is acting, for the audit log")
+	socket := flags.String("socket", defaultSocket(), "the daemon's socket (also UNDERPASS_SOCKET; default <state>/underpass-bots.sock; empty: never use a daemon)")
 	flags.Usage = func() { printUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -26,46 +33,84 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 	rest := flags.Args()
-	if len(rest) < 2 {
+	if len(rest) < 1 {
 		printUsage(stderr)
 		return exitUsage
+	}
+	socketPath := *socket
+	if socketPath == "" && !flagSet(flags, "socket") && os.Getenv("UNDERPASS_SOCKET") == "" {
+		socketPath = filepath.Join(*stateDir, socketFileName)
+	}
+	ctx := context.Background()
+	switch rest[0] {
+	case "install":
+		return install(rest[1:], stdout, stderr)
+	case "uninstall":
+		return uninstall(rest[1:], stdout, stderr)
 	}
 	app, err := newApp(*stateDir, *axlrBin, *actor)
 	if err != nil {
 		fmt.Fprintln(stderr, "underpass-bots:", err)
 		return exitError
 	}
-	ctx := context.Background()
+	switch rest[0] {
+	case "serve":
+		return serve(ctx, app, socketPath, rest[1:], stdout, stderr)
+	case "alert":
+		return alert(ctx, app, socketPath, rest[1:], stdout, stderr)
+	}
+	if len(rest) < 2 {
+		printUsage(stderr)
+		return exitUsage
+	}
 	group, verb, rest := rest[0], rest[1], rest[2:]
-	var code int
+	if group+" "+verb == "task reconcile" {
+		return taskReconcile(ctx, app, rest, stdout, stderr)
+	}
+	service := newService(ctx, app, socketPath, nil)
 	switch group + " " + verb {
 	case "bot register":
-		code = botRegister(ctx, app, rest, stdout, stderr)
+		return botRegister(ctx, service, rest, stdout, stderr)
 	case "bot enable":
-		code = botEnable(ctx, app, rest, stdout, stderr)
+		return botEnable(ctx, service, rest, stdout, stderr)
 	case "bot list":
-		code = botList(ctx, app, rest, stdout, stderr)
+		return botList(ctx, service, rest, stdout, stderr)
 	case "bot get":
-		code = botGet(ctx, app, rest, stdout, stderr)
+		return botGet(ctx, service, rest, stdout, stderr)
 	case "task submit":
-		code = taskSubmit(ctx, app, rest, stdout, stderr)
+		return taskSubmit(ctx, service, rest, stdout, stderr)
 	case "task run":
-		code = taskRun(ctx, app, rest, stdout, stderr)
+		return taskRun(ctx, service, rest, stdout, stderr)
 	case "task decide":
-		code = taskDecide(ctx, app, rest, stdout, stderr)
+		return taskDecide(ctx, service, rest, stdout, stderr)
+	case "task approve":
+		return taskDecideAs(ctx, service, application.DecisionApprove, rest, stdout, stderr)
+	case "task deny":
+		return taskDecideAs(ctx, service, application.DecisionDeny, rest, stdout, stderr)
 	case "task get":
-		code = taskGet(ctx, app, rest, stdout, stderr)
-	case "task reconcile":
-		code = taskReconcile(ctx, app, rest, stdout, stderr)
+		return taskGet(ctx, service, rest, stdout, stderr)
+	case "task report":
+		return taskReport(ctx, service, rest, stdout, stderr)
 	case "execution get":
-		code = executionGet(ctx, app, rest, stdout, stderr)
-	default:
-		fmt.Fprintf(stderr, "underpass-bots: unknown command %q %q\n", group, verb)
-		printUsage(stderr)
-		code = exitUsage
+		return executionGet(ctx, service, rest, stdout, stderr)
 	}
-	return code
+	fmt.Fprintf(stderr, "underpass-bots: unknown command %q %q\n", group, verb)
+	printUsage(stderr)
+	return exitUsage
 }
+
+// flagSet reports whether the flag was given on the command line.
+func flagSet(flags *flag.FlagSet, name string) bool {
+	given := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			given = true
+		}
+	})
+	return given
+}
+
+var _ unixapi.Service = (*unixapi.Local)(nil)
 
 func defaultStateDir() string {
 	if dir := os.Getenv("UNDERPASS_STATE"); dir != "" {
@@ -88,6 +133,12 @@ func defaultAXLRBinary() string {
 	return "axlr-tui"
 }
 
+// defaultSocket is UNDERPASS_SOCKET; empty means <state>/underpass-bots.sock
+// once the state directory is known.
+func defaultSocket() string {
+	return os.Getenv("UNDERPASS_SOCKET")
+}
+
 func defaultActor() string {
 	if user := os.Getenv("USER"); user != "" {
 		return "cli:" + user
@@ -96,8 +147,14 @@ func defaultActor() string {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprint(w, `usage: underpass-bots [--state <dir>] [--axlr-bin <path>] [--actor <name>] <command>
+	fmt.Fprint(w, `usage: underpass-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>] <command>
 
+  serve [--tick 2s] [--reconcile-every 1m]
+                                      run the control plane: the local API on the
+                                      socket, Pending tasks one at a time, reconciliation
+  alert --unit <name> [--bot <id>] [--host <name>] [--at <RFC3339>] [--window 10m] [--user]
+                                      a systemd unit failed: submit its diagnosis task
+                                      (same unit and window: same task)
   bot register --file <bot.json>      register a bot from its definition
   bot enable <bot-id>                 let the bot accept tasks
   bot list                            list bots
@@ -106,16 +163,25 @@ func printUsage(w io.Writer) {
                                       accept a task; the same key names the same task
   task run <task-id>                  run a pending task once through AXLR
                                       (exit 0 completed, 3 decision required, 1 failed)
-  task decide <task-id> approve|deny  decide the call a WaitingApproval task stopped on
-                                      and run it to its end under a new execution
-                                      (same exit codes as task run)
+  task approve <task-id>              approve the call a WaitingApproval task stopped on
+  task deny <task-id>                 deny it; both run the session to its end under a
+                                      new execution (same exit codes as task run)
+  task decide <task-id> approve|deny  the same, with the decision as a word
   task get <task-id>                  show one task
+  task report <task-id> [--path]      print the task's report (or only where it is)
   task reconcile [--grace <duration>] fail the tasks a crashed run left Running
                                       longer than the grace (default: the bot's
                                       task timeout plus 1m); prints failed/skipped
-  execution get <execution-id>        show one execution: outcome, answer, usage
+  execution get <execution-id>        show one execution: outcome, answer, usage, policy
+  install [--user] [--prefix <dir>] [--state <dir>] [--axlr-bin <path>]
+                                      install the binary, the systemd units and the
+                                      environment file (see README)
+  uninstall [--user] [--prefix <dir>] [--purge]
+                                      remove them (keep the state unless --purge)
 
 State lives under --state (default $UNDERPASS_STATE, $XDG_STATE_HOME/underpass-bots
-or ~/.local/state/underpass-bots). Output is JSON on stdout.
+or ~/.local/state/underpass-bots). When a daemon answers on the socket the
+commands go through it; otherwise they work on the state directory. Output is
+JSON on stdout.
 `)
 }

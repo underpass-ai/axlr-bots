@@ -12,11 +12,11 @@ const (
 )
 
 // exitCodeFor maps how an execution ended to the command's exit code.
-func exitCodeFor(outcome domain.ExecutionOutcome) int {
+func exitCodeFor(outcome string) int {
 	switch outcome {
-	case domain.ExecutionCompleted:
+	case domain.ExecutionCompleted.String():
 		return exitOK
-	case domain.ExecutionDecisionRequired:
+	case domain.ExecutionDecisionRequired.String():
 		return exitDecisionRequired
 	}
 	return exitError
