@@ -20,7 +20,7 @@ The maintained documentation surface: every page, what it is for, and the code i
 | [Runtime contract](architecture/runtime-contract.md) | the flags passed to `axlr-tui`, the policy table, correlation, budget, the result mapping | `adapters/axlr/`, AXLR's [`docs/runtime-contract.md`](https://github.com/underpass-ai/AXLR/blob/main/docs/runtime-contract.md) | `91dc705` |
 | [Vision](architecture/vision.md) | the design note of 21 October 2026, copied as written | none: a design record, not a description of the code | 21 Oct 2026 |
 | [Live run](live-run.md) | the demo script's output on a real host, the criteria it meets, the live tests | `examples/demo.sh`, the three live tests | 24 Oct 2026 |
-| [Brand](brand.md) | the marks, their source, how to regenerate them | `docs/assets/brand/emblem.py` | 24 Oct 2026 |
+| [Brand](brand.md) | the three marks, their palette, how to regenerate them | `docs/assets/brand/emblem.py` | 24 Oct 2026 |
 
 ## History boundary
 

@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/assets/brand/axlr-bots-emblem.svg" width="420" alt="AXLR Bots"></p>
+<p align="center"><img src="docs/assets/brand/axlr-bots-emblem-stacked.png" alt="AXLR Bots" width="300"></p>
 
 <p align="center"><strong>Deploy bots like services: give each one a job, a policy and a host, and it keeps working.</strong></p>
 
