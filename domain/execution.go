@@ -16,6 +16,7 @@ type Execution struct {
 	usage         Usage
 	failureReason string
 	tracePath     string
+	policy        PolicyRecord
 }
 
 // NewExecution starts an attempt at the task.
@@ -55,6 +56,19 @@ func (e Execution) FailureReason() string { return e.failureReason }
 
 // TracePath is where the raw runtime events were kept, if anywhere.
 func (e Execution) TracePath() string { return e.tracePath }
+
+// Policy says under which policy the attempt ran; zero until recorded.
+func (e Execution) Policy() PolicyRecord { return e.policy }
+
+// RecordPolicy keeps the policy the runtime adapter ran the attempt
+// under: the levels, whether the runtime enforced it and the file.
+func (e *Execution) RecordPolicy(record PolicyRecord) error {
+	if record.Level == "" {
+		return invalid("policy level", "must not be empty")
+	}
+	e.policy = record
+	return nil
+}
 
 // Complete ends a running attempt with an answer.
 func (e *Execution) Complete(result Result, usage Usage, tracePath string, endedAt time.Time) error {
@@ -109,6 +123,10 @@ func (e Execution) Snapshot() ExecutionSnapshot {
 		FailureReason: e.failureReason,
 		TracePath:     e.tracePath,
 	}
+	if e.policy.Level != "" {
+		policy := e.policy
+		s.Policy = &policy
+	}
 	if !e.endedAt.IsZero() {
 		ended := e.endedAt
 		s.EndedAt = &ended
@@ -137,6 +155,11 @@ func RestoreExecution(s ExecutionSnapshot) (Execution, error) {
 	execution, err := NewExecution(id, task, bot, s.StartedAt)
 	if err != nil {
 		return Execution{}, err
+	}
+	if s.Policy != nil {
+		if err := execution.RecordPolicy(*s.Policy); err != nil {
+			return Execution{}, err
+		}
 	}
 	if !outcome.IsFinal() {
 		return execution, nil

@@ -14,12 +14,15 @@ type Bot struct {
 	allowedTools AllowedTools
 	modelPolicy  ModelPolicy
 	budgets      Budgets
+	level        AutonomyLevel
+	toolRules    ToolRules
 	status       BotStatus
 	createdAt    time.Time
 	updatedAt    time.Time
 }
 
-// NewBot creates a bot in Draft status.
+// NewBot creates a bot in Draft status at the observe level, with no
+// tool rules; Govern raises the level or narrows the tools.
 func NewBot(id BotID, tenant TenantID, name BotName, owner Owner, mission Mission, tools AllowedTools, model ModelPolicy, budgets Budgets, now time.Time) (Bot, error) {
 	if now.IsZero() {
 		return Bot{}, invalid("created at", "must not be zero")
@@ -27,7 +30,7 @@ func NewBot(id BotID, tenant TenantID, name BotName, owner Owner, mission Missio
 	return Bot{
 		id: id, tenantID: tenant, name: name, owner: owner, mission: mission,
 		allowedTools: tools, modelPolicy: model, budgets: budgets,
-		status: BotDraft, createdAt: now, updatedAt: now,
+		level: AutonomyObserve, status: BotDraft, createdAt: now, updatedAt: now,
 	}, nil
 }
 
@@ -54,6 +57,30 @@ func (b Bot) ModelPolicy() ModelPolicy { return b.modelPolicy }
 
 // Budgets bounds each task of the bot.
 func (b Bot) Budgets() Budgets { return b.budgets }
+
+// Level is how far the bot may act on its own.
+func (b Bot) Level() AutonomyLevel { return b.level }
+
+// ToolRules narrows the allowed tools by their arguments.
+func (b Bot) ToolRules() ToolRules { return b.toolRules }
+
+// Govern sets the bot's autonomy level and tool rules. The rules must
+// name allowed tools; the level alone decides nothing about which tools
+// exist, only what the allowed ones may do.
+func (b *Bot) Govern(level AutonomyLevel, rules ToolRules) error {
+	parsed, err := ParseAutonomyLevel(level.String())
+	if err != nil {
+		return err
+	}
+	for _, rule := range rules.Allow() {
+		if !b.allowedTools.Allows(rule.Tool()) {
+			return invalid("tool rules", "allow rule names "+rule.Tool().String()+", which is not an allowed tool")
+		}
+	}
+	b.level = parsed
+	b.toolRules = rules
+	return nil
+}
 
 // Status is the bot's logical state.
 func (b Bot) Status() BotStatus { return b.status }
@@ -118,6 +145,8 @@ func (b Bot) Snapshot() BotSnapshot {
 			MaxDelegationDepth:   b.budgets.MaxDelegationDepth(),
 			TaskTimeoutSeconds:   int(b.budgets.TaskTimeout() / time.Second),
 		},
+		Level:     b.level.String(),
+		ToolRules: b.toolRules.Snapshot(),
 		Status:    b.status.String(),
 		CreatedAt: b.createdAt,
 		UpdatedAt: b.updatedAt,
@@ -162,8 +191,19 @@ func RestoreBot(s BotSnapshot) (Bot, error) {
 	if err != nil {
 		return Bot{}, err
 	}
+	level, err := ParseAutonomyLevel(s.Level)
+	if err != nil {
+		return Bot{}, err
+	}
+	rules, err := RestoreToolRules(s.ToolRules, tools)
+	if err != nil {
+		return Bot{}, err
+	}
 	bot, err := NewBot(id, tenant, name, owner, mission, tools, model, budgets, s.CreatedAt)
 	if err != nil {
+		return Bot{}, err
+	}
+	if err := bot.Govern(level, rules); err != nil {
 		return Bot{}, err
 	}
 	if s.UpdatedAt.IsZero() {

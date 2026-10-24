@@ -13,6 +13,8 @@ type BotSnapshot struct {
 	AllowedTools []string            `json:"allowedTools"`
 	Model        ModelPolicySnapshot `json:"model"`
 	Budgets      BudgetsSnapshot     `json:"budgets"`
+	Level        string              `json:"level"`
+	ToolRules    ToolRulesSnapshot   `json:"toolRules"`
 	Status       string              `json:"status"`
 	CreatedAt    time.Time           `json:"createdAt"`
 	UpdatedAt    time.Time           `json:"updatedAt"`
