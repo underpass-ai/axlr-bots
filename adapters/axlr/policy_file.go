@@ -18,21 +18,6 @@ type policyFile struct {
 	Policy policyObject `json:"policy"`
 }
 
-type policyObject struct {
-	Level string      `json:"level"`
-	Tools policyTools `json:"tools"`
-}
-
-type policyTools struct {
-	Allow []policyRule `json:"allow"`
-	Deny  []policyRule `json:"deny,omitempty"`
-}
-
-type policyRule struct {
-	Name      string            `json:"name"`
-	Arguments map[string]string `json:"arguments,omitempty"`
-}
-
 // runtimeLevel translates the bot's autonomy level into the runtime's.
 // AXLR's observe forbids every command, whatever its arguments, so a bot
 // that observes through read-only host commands (local_exec narrowed by

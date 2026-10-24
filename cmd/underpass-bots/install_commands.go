@@ -48,12 +48,11 @@ func installFlags(name string, args []string, stderr io.Writer) (*flag.FlagSet, 
 // the host. The model key is taken from OPENROUTER_API_KEY in the
 // installer's own environment when set, and never printed.
 func install(args []string, stdout, stderr io.Writer) int {
-	flags, layout, noSystemctl, err := installFlags("install", args, stderr)
+	_, layout, noSystemctl, err := installFlags("install", args, stderr)
 	if err != nil {
 		fmt.Fprintln(stderr, "underpass-bots:", err)
 		return exitUsage
 	}
-	_ = flags
 	executable, err := os.Executable()
 	if err != nil {
 		return fail(stderr, err)

@@ -5,55 +5,477 @@
   "owner": "sre-team",
   "mission": "Diagnose incidents on this host: read the journal, the unit states and the host's resources, explain the likely cause with evidence and propose next steps. Never change the host.",
   "level": "observe",
-  "allowedTools": ["local_read", "local_search", "local_list", "local_exec"],
+  "allowedTools": [
+    "local_read",
+    "local_search",
+    "local_list",
+    "local_exec"
+  ],
   "toolRules": {
     "allow": [
-      {"tool": "local_exec", "arguments": {"program": "journalctl"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"status\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"--user\",\"status\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"--no-pager\",\"status\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"--user\",\"--no-pager\",\"status\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"list-units\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"--user\",\"list-units\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"list-timers\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"--user\",\"list-timers\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"show\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"--user\",\"show\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"cat\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"--user\",\"cat\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"is-active\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"--user\",\"is-active\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"is-failed\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"--user\",\"is-failed\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"list-dependencies\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"--user\",\"list-dependencies\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "df"}},
-      {"tool": "local_exec", "arguments": {"program": "free"}},
-      {"tool": "local_exec", "arguments": {"program": "uptime"}},
-      {"tool": "local_exec", "arguments": {"program": "ss"}},
-      {"tool": "local_exec", "arguments": {"program": "ps"}},
-      {"tool": "local_exec", "arguments": {"program": "dmesg", "args": "**--nopager**"}},
-      {"tool": "local_exec", "arguments": {"program": "tail", "args": "**/var/log/**"}},
-      {"tool": "local_exec", "arguments": {"program": "head", "args": "**/var/log/**"}},
-      {"tool": "local_exec", "arguments": {"program": "ls", "args": "**/var/log**"}}
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "journalctl"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"status\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"--user\",\"status\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"--no-pager\",\"status\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"--user\",\"--no-pager\",\"status\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"list-units\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"--user\",\"list-units\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"list-timers\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"--user\",\"list-timers\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"show\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"--user\",\"show\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"cat\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"--user\",\"cat\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"is-active\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"--user\",\"is-active\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"is-failed\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"--user\",\"is-failed\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"list-dependencies\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"--user\",\"list-dependencies\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "df"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "free"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "uptime"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "ss"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "ps"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "dmesg",
+          "args": "**--nopager**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "tail",
+          "args": "[\"/var/log/*\"]"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "tail",
+          "args": "[\"/var/log/*/*\"]"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "tail",
+          "args": "[\"-n\",\"*\",\"/var/log/*\"]"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "tail",
+          "args": "[\"-n\",\"*\",\"/var/log/*/*\"]"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "tail",
+          "args": "[\"-c\",\"*\",\"/var/log/*\"]"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "head",
+          "args": "[\"/var/log/*\"]"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "head",
+          "args": "[\"/var/log/*/*\"]"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "head",
+          "args": "[\"-n\",\"*\",\"/var/log/*\"]"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "head",
+          "args": "[\"-n\",\"*\",\"/var/log/*/*\"]"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "head",
+          "args": "[\"-c\",\"*\",\"/var/log/*\"]"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "ls",
+          "args": "[\"/var/log\"]"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "ls",
+          "args": "[\"-l\",\"/var/log\"]"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "ls",
+          "args": "[\"-la\",\"/var/log\"]"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "ls",
+          "args": "[\"-lt\",\"/var/log\"]"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "ls",
+          "args": "[\"-lat\",\"/var/log\"]"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "ls",
+          "args": "[\"/var/log/*\"]"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "ls",
+          "args": "[\"-l\",\"/var/log/*\"]"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "ls",
+          "args": "[\"-la\",\"/var/log/*\"]"
+        }
+      }
     ],
     "deny": [
-      {"tool": "local_exec", "arguments": {"program": "journalctl", "args": "**--vacuum**"}},
-      {"tool": "local_exec", "arguments": {"program": "journalctl", "args": "**--rotate**"}},
-      {"tool": "local_exec", "arguments": {"program": "journalctl", "args": "**--flush**"}},
-      {"tool": "local_exec", "arguments": {"program": "journalctl", "args": "**--sync**"}},
-      {"tool": "local_exec", "arguments": {"program": "journalctl", "args": "**--relinquish-var**"}},
-      {"tool": "local_exec", "arguments": {"program": "journalctl", "args": "**--setup-keys**"}},
-      {"tool": "local_exec", "arguments": {"program": "dmesg", "args": "**\"-C\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "dmesg", "args": "**\"-c\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "dmesg", "args": "**--clear**"}},
-      {"tool": "local_exec", "arguments": {"program": "dmesg", "args": "**--read-clear**"}},
-      {"tool": "local_exec", "arguments": {"program": "dmesg", "args": "**\"-n\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "dmesg", "args": "**--console-level**"}},
-      {"tool": "local_exec", "arguments": {"program": "tail", "args": "**\"-f\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "tail", "args": "**--follow**"}},
-      {"tool": "local_write"},
-      {"tool": "local_edit"}
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "journalctl",
+          "args": "**--vacuum**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "journalctl",
+          "args": "**--rotate**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "journalctl",
+          "args": "**--flush**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "journalctl",
+          "args": "**--sync**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "journalctl",
+          "args": "**--relinquish-var**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "journalctl",
+          "args": "**--setup-keys**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "dmesg",
+          "args": "**\"-C\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "dmesg",
+          "args": "**\"-c\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "dmesg",
+          "args": "**--clear**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "dmesg",
+          "args": "**--read-clear**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "dmesg",
+          "args": "**\"-n\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "dmesg",
+          "args": "**--console-level**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "tail",
+          "args": "**\"-f\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "tail",
+          "args": "**--follow**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "dmesg",
+          "args": "**\"-F\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "dmesg",
+          "args": "**--file**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "args": "**/.config/**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "args": "**/.ssh/**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "args": "**/.hermes/**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "args": "**/.aws/**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "args": "**underpass-bots/env**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "args": "**/etc/shadow**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "args": "**/etc/gshadow**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "args": "**credentials**"
+        }
+      },
+      {
+        "tool": "local_write"
+      },
+      {
+        "tool": "local_edit"
+      }
     ]
   },
   "model": {

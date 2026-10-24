@@ -126,7 +126,7 @@ func TestRenderUserUnits(t *testing.T) {
 			t.Errorf("user service lacks %q:\n%s", want, service)
 		}
 	}
-	for _, absent := range []string{"User=", "ProtectSystem=strict", "ProtectHome=yes", "StateDirectory=", "Environment=HOME"} {
+	for _, absent := range []string{"User=", "ProtectSystem=strict", "ProtectHome=yes", "StateDirectory=", "Environment=HOME", "After="} {
 		if strings.Contains(service, absent) {
 			t.Errorf("user service has %q", absent)
 		}

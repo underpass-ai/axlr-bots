@@ -5,23 +5,109 @@
   "owner": "sre-team",
   "mission": "Fix a failed unit on this host once a person approves: restart it with systemctl, check it came back, report what changed. Nothing else is written.",
   "level": "act-with-approval",
-  "allowedTools": ["local_read", "local_search", "local_list", "local_exec"],
+  "allowedTools": [
+    "local_read",
+    "local_search",
+    "local_list",
+    "local_exec"
+  ],
   "toolRules": {
     "allow": [
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"restart\",**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"--user\",\"restart\",**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"status\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"--user\",\"status\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"is-active\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"--user\",\"is-active\"**"}},
-      {"tool": "local_exec", "arguments": {"program": "journalctl"}}
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"restart\",**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"--user\",\"restart\",**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"status\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"--user\",\"status\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"is-active\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "systemctl",
+          "args": "[\"--user\",\"is-active\"**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "journalctl"
+        }
+      }
     ],
     "deny": [
-      {"tool": "local_exec", "arguments": {"program": "journalctl", "args": "**--vacuum**"}},
-      {"tool": "local_exec", "arguments": {"program": "journalctl", "args": "**--rotate**"}},
-      {"tool": "local_exec", "arguments": {"program": "journalctl", "args": "**--flush**"}},
-      {"tool": "local_write"},
-      {"tool": "local_edit"}
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "journalctl",
+          "args": "**--vacuum**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "journalctl",
+          "args": "**--rotate**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "journalctl",
+          "args": "**--flush**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "args": "**/.config/**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "args": "**/.ssh/**"
+        }
+      },
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "args": "**underpass-bots/env**"
+        }
+      },
+      {
+        "tool": "local_write"
+      },
+      {
+        "tool": "local_edit"
+      }
     ]
   },
   "model": {

@@ -71,7 +71,13 @@ func TestTheWriteNeverRunsWithoutTheApproval(t *testing.T) {
 			}
 		}
 	}
-	if file.Policy.Level != "act-with-approval" || restarts != 2 || len(file.Policy.Tools.Deny) != 5 {
+	writesDenied := 0
+	for _, rule := range file.Policy.Tools.Deny {
+		if rule["name"] == "local_write" || rule["name"] == "local_edit" {
+			writesDenied++
+		}
+	}
+	if file.Policy.Level != "act-with-approval" || restarts != 2 || writesDenied != 2 {
 		t.Errorf("policy file = %s", content)
 	}
 	if _, err := os.Stat(marker); err == nil {

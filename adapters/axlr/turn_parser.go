@@ -1,6 +1,7 @@
 package axlr
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -143,7 +144,7 @@ func (p *turnParser) fromResult(r *resultObject) application.ExecutionReport {
 			report.FailureReason = "runtime result says needs_decision but names no pending call"
 			break
 		}
-		report.Result.PendingDecision = &domain.PendingDecision{Tool: r.Pending.Tool, CallID: r.Pending.CallID, SessionID: result.SessionID}
+		report.Result.PendingDecision = &domain.PendingDecision{Tool: r.Pending.Tool, CallID: r.Pending.CallID, SessionID: result.SessionID, Arguments: compactJSON(r.Pending.Arguments)}
 		report.Outcome = domain.ExecutionDecisionRequired
 	case "failed":
 		report.Outcome = domain.ExecutionFailed
@@ -189,6 +190,18 @@ func (p *turnParser) partial() domain.Result {
 	calls := make([]domain.ToolCall, len(p.calls))
 	copy(calls, p.calls)
 	return domain.Result{Answer: p.answer.String(), SessionID: p.sessionID, Sessions: p.sessions, ToolCalls: calls}
+}
+
+// compactJSON keeps the arguments as one line of JSON, or nothing.
+func compactJSON(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, raw); err != nil {
+		return nil
+	}
+	return json.RawMessage(buf.Bytes())
 }
 
 func orElse(value, fallback string) string {

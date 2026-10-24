@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/underpass-ai/underpass-bots/adapters/unixapi"
 	"github.com/underpass-ai/underpass-bots/application"
 )
 
@@ -109,8 +108,6 @@ func flagSet(flags *flag.FlagSet, name string) bool {
 	})
 	return given
 }
-
-var _ unixapi.Service = (*unixapi.Local)(nil)
 
 func defaultStateDir() string {
 	if dir := os.Getenv("UNDERPASS_STATE"); dir != "" {

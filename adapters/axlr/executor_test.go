@@ -151,6 +151,12 @@ func TestExecuteOutcomes(t *testing.T) {
 			if (c.pending == "" && pending != nil) || (c.pending != "" && (pending == nil || pending.CallID != c.pending || pending.SessionID != c.session)) {
 				t.Errorf("pending = %+v", pending)
 			}
+			if c.scenario == "result-needs-decision" && string(pending.Arguments) != `{"program":"touch"}` {
+				t.Errorf("pending arguments = %s", pending.Arguments)
+			}
+			if c.scenario == "legacy-decision" && pending.Arguments != nil {
+				t.Errorf("legacy pending has arguments: %s", pending.Arguments)
+			}
 			if report.TracePath == "" {
 				t.Error("no trace path")
 			}

@@ -97,8 +97,8 @@ done
 echo "task $task is $status after about $((i * 2))s"
 execution=$($ub task get "$task" | sed -n 's/.*"exec-\([^"]*\)".*/exec-\1/p' | tail -1)
 $ub execution get "$execution" | grep -E '"outcome"|"enforced"|"runtimeLevel"|"requests"|"toolCalls"|"costUsd"|"failureReason"'
-echo "commands the bot ran (from the execution's tool calls):"
-$ub execution get "$execution" | grep -E '"name"|"status"' | paste - - | sed 's/[",]//g; s/  */ /g' | sort | uniq -c
+echo "tool calls by status (completed = ran, failed = ran and exited non-zero, forbidden = refused by the policy outside the model):"
+$ub execution get "$execution" | grep -E '^ *"status": "' | sed 's/[",]//g; s/^ *status: //' | sort | uniq -c
 echo "report file: $($ub task report --path "$task")"
 
 say "5. the report"

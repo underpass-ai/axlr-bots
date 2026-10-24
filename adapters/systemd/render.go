@@ -16,9 +16,9 @@ func RenderService(l Layout) string {
 	b.WriteString("[Unit]\n")
 	b.WriteString("Description=Underpass Bots control plane (SRE host bot)\n")
 	b.WriteString("Documentation=https://github.com/underpass-ai/underpass-bots\n")
-	if l.User {
-		b.WriteString("After=default.target\n")
-	} else {
+	if !l.User {
+		// A user service orders itself after nothing: default.target wants
+		// it, and an After= on that target would be a cycle.
 		b.WriteString("After=network-online.target\nWants=network-online.target\n")
 	}
 	b.WriteString("\n[Service]\n")
