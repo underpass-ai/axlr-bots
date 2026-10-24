@@ -3,254 +3,239 @@
 The control plane of **Underpass Bots**: persistent, governed bots that run
 as infrastructure. The control plane decides *when, where, as whom and under
 which permissions* a unit of work runs; **AXLR** decides *how* an agent
-reasons and uses tools. This repository is the recommended experiment of
-vision §18: an **SRE bot that lives on a Linux host under systemd**, is woken
-by a failed unit, diagnoses the host with read-only commands and writes a
-report; later, at a higher autonomy level, it fixes the unit once a person
-approves.
+reasons and uses tools. A bot has no role baked in here: its definition
+(mission, model, tools, autonomy level, triggers, budgets, placement) is
+what an operator writes, and the same install serves every definition.
+
+Two commands come out of this module:
+
+| Command | Role | Where it runs |
+|---|---|---|
+| `underpass-bots` | the control plane: the registry of bots, tasks, executions, policies and nodes, its API, and the operator's CLI | one host (the daemon `serve`); the CLI anywhere the socket is |
+| `underpass-node` | the node agent: registers with the control plane, polls for the executions of the bots placed on its host and runs them with AXLR there | every host that runs bots (N hosts, N bots each) |
 
 ```text
-systemd unit fails ──OnFailure──▶ underpass-bots-alert@<unit>  ──socket──▶ underpass-bots.service (daemon)
-                                   alert --unit <unit>                       bots · tasks · executions · policies
-operator ──CLI──────────────────────────────────────────────────socket──▶    events.jsonl · audit.jsonl · artifacts/
-                                                                                   │ one axlr-tui per execution
-                                                                                   ▼
-                                                            axlr-tui --exec --json --policy <file> --approve local|none
-                                                            journalctl · systemctl status · df · free · … (policy-allowed)
+                       control plane (underpass-bots serve)                 operator / scripts
+                       ┌─────────────────────────────────────────┐          underpass-bots task submit …
+                       │ bots · tasks · executions · policies    │◀─socket──  bot register · task approve
+                       │ nodes · events.jsonl · audit.jsonl      │
+                       │ artifacts/<task>/report.md              │
+                       └──────────▲───────────────▲──────────────┘
+          register · heartbeat    │               │    register · heartbeat
+          next assignment (poll)  │               │    next assignment (poll)
+          lease · report          │               │    lease · report
+                 ┌────────────────┴───┐       ┌───┴────────────────┐
+                 │ host A             │       │ host B             │     … host N
+                 │ underpass-node     │       │ underpass-node     │
+                 │ axlr-tui --exec    │       │ axlr-tui --exec    │
+                 │ bots placed here   │       │ bots placed here   │
+                 └────────────────────┘       └────────────────────┘
 ```
 
-What is here, in the order of the vision:
-
-| Vision | Here |
-|---|---|
-| §9.1 one Linux server, systemd for survival | `underpass-bots install` writes `underpass-bots.service` (a dedicated user, `ProtectSystem=strict`, the state dir writable), `--user` mode for a test without root |
-| §10.4 autonomy levels | a bot has a `level` (`observe`, `propose`, `act-with-approval`, `act-within-policy`) and `toolRules` that narrow its tools by arguments; both become AXLR's per-execution policy (`--policy`) |
-| §12 Server Incident Bot | `examples/sre-host-bot.json` (observe: read-only host commands) and `examples/sre-host-fixer.json` (act-with-approval: `systemctl restart` as the only write) |
-| §12.3 evidence | the diagnosis objective asks for timeline, services, commands run, hypotheses by evidence and next steps; the answer is the task's report file |
-| §14.2 one automatic trigger | the `underpass-bots-alert@.service` template attached with an `OnFailure=` drop-in; `alert --unit` for a script or a person |
-| §14.7 idempotent trigger | the alert's key is `alert:<unit>:<window start>` (10 min): a flapping unit makes one task |
-| §14.6 no task left Running | the daemon reconciles on start and every minute; `task reconcile` by hand |
-| §14.5 a forbidden tool is blocked outside the model | AXLR refuses the call before any card and the execution records `policy.enforced` |
+Every arrow between a node and the control plane goes **out from the
+node**: the control plane never reaches into a host. On one host (the MVP,
+and this machine) both run under `systemctl --user` and talk over a Unix
+socket; nodes elsewhere use a loopback or network address, and TLS with
+client certificates goes in front of it without changing a message.
 
 ## Layout (hexagonal)
 
 | Package | Role |
 |---|---|
-| `domain` | Bot, Task, Execution aggregates; value objects validated in constructors; events (vision §11.2) under a schema version; audit entries. One file per type. |
-| `application` | Ports (`BotRepository`, `TaskRepository`, `ExecutionRepository`, `EventPublisher`, `AuditSink`, `RuntimeExecutor`, `DecisionExecutor`, `TraceLocator`, `ArtifactStore`) and use cases (`RegisterBot`, `EnableBot`, `SubmitTask`, `SubmitAlert`, `RunTask`, `RunNextPending`, `ApproveTask`, `ReconcileTasks`, `GetTask`, `GetReport`, `GetExecution`, …); `SerialRunner` runs one execution at a time. |
+| `domain` | Bot, Task, Execution and Node aggregates; value objects validated in constructors (autonomy level, tool rules, triggers, placement, leases); events (vision §11.2) under a schema version; audit entries. One file per type. |
+| `application` | Ports (`BotRepository`, `TaskRepository`, `ExecutionRepository`, `NodeRepository`, `EventPublisher`, `AuditSink`, `RuntimeExecutor`, `DecisionExecutor`, `TraceLocator`, `ArtifactStore`, `NodeTransport`) and use cases (`RegisterBot`, `EnableBot`, `SubmitTask`, `RunTask`, `ApproveTask`, `RegisterNode`, `HeartbeatNode`, `NextAssignment`, `RenewLease`, `ReportExecution`, `MarkOfflineNodes`, `ReconcileTasks`, `RunNextPending`, `GetReport`, …); `SerialRunner` serialises runs, assignments and reports. |
+| `nodeproto` | The messages of the node protocol, shared by the server and the node's client. |
 | `adapters/filestore` | One JSON file per aggregate under the state directory, written atomically (temp file, fsync, rename); the report artifacts. |
 | `adapters/jsonl` | Append-only `events.jsonl` and `audit.jsonl`. |
-| `adapters/axlr` | Runs `axlr-tui --exec --json [--policy <file>]` as a subprocess and reads the execution result object; keeps the raw lines as the trace and the policy file as evidence. |
-| `adapters/unixapi` | The local API: a `Service` interface with two implementations, `Local` (in process) and `Client` (HTTP over the daemon's Unix socket), and the `Server`. |
-| `adapters/daemon` | The service: the socket API, a worker that runs Pending tasks one at a time, reconciliation on a timer. |
-| `adapters/systemd` | Renders and installs the units and the environment file; removes them. |
+| `adapters/axlr` | Runs `axlr-tui --exec --json [--policy <file>]` as a subprocess and reads the execution result object; keeps the raw lines as the trace and the policy file as evidence. Used by the node, and by the control plane in single-process mode. |
+| `adapters/unixapi` | The API: a `Service` interface with `Local` (in process) and `Client` (HTTP) implementations, the `Server` (Unix socket and TCP), and the node protocol's routes; the `Client` is also the node's `NodeTransport`. |
+| `adapters/daemon` | The control plane as a service: the API, in-process runs for bots no node may run, reconciliation and offline nodes on a timer. |
+| `adapters/nodeagent` | The node agent's loop: register, heartbeat, poll, run, renew, report. |
+| `adapters/systemd` | Renders and installs the two units and the environment file; removes them. |
 | `adapters/system` | Wall clock, random ids. |
-| `compose` | The composition root the command and the daemon share. |
-| `cmd/underpass-bots` | The command: `serve`, `install`, `alert`, `bot …`, `task …`, `execution …`. |
+| `compose` | The composition root the commands share. |
+| `cmd/underpass-bots`, `cmd/underpass-node` | The two commands. |
 | `internal/fakeaxlr` | A shell stand-in for `axlr-tui` the tests run. |
 
-## The runtime contract
+## Install (user-level, the default)
 
-The adapter speaks the contract in AXLR's `docs/runtime-contract.md`:
-
-- Request: `--exec "<objective>"`, `--model` from the bot's model policy,
-  `--root <state>/workspaces/<bot>`, `--approve none`, a timeout from the
-  bot's budgets (default 15 min).
-- Result: the last JSON line, `{"type":"result","result":{"schema":"axlr.execution-result/v1",…}}`,
-  gives status (`completed`, `needs_decision`, `interrupted`, `failed`),
-  answer, sessions, pending call, tool calls, usage and artifacts.
-- Fallback for an `axlr-tui` older than the contract: exit code (0 completed,
-  3 decision required, 1 failed) plus the `completed`, `failed` and
-  `decision.required` lines.
-- Decision: `--session <id> --decide approve|deny [--call <id>] --json`, the
-  session and call the previous execution's `pendingDecision` names, with the
-  same result object at the end. `ApproveTask` (`task decide`) drives it.
-- Policy: `--policy <file>` with the bot's level and tool rules (below).
-  The adapter reads `axlr-tui --help` once; a binary without `-policy`
-  (0.13.0, the contract build) gets no flag, and the execution records
-  `policy.enforced: false`.
-- Not yet taken by AXLR: budgets and correlation (the contract's reserved
-  `budget` and `correlation` fields; see the TODO in `adapters/axlr/executor.go`).
-
-Outcome mapping: `completed` → execution `Completed`, task `Completed`;
-`needs_decision` → `DecisionRequired`, task `WaitingApproval`; `failed`,
-`interrupted` and timeouts → `Failed`, task `Failed`.
-
-## Autonomy level and tool rules
-
-A bot definition has a `level` (vision §10.4) and `toolRules`:
-
-```json
-"level": "observe",
-"allowedTools": ["local_read", "local_search", "local_list", "local_exec"],
-"toolRules": {
-  "allow": [
-    {"tool": "local_exec", "arguments": {"program": "journalctl"}},
-    {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"status\"**"}}
-  ],
-  "deny": [
-    {"tool": "local_exec", "arguments": {"program": "journalctl", "args": "**--vacuum**"}},
-    {"tool": "local_write"}
-  ]
-}
-```
-
-A rule names a tool and patterns its arguments must match, in the words of
-AXLR's contract: a glob over each argument's value as text (`*` within a
-path segment, `**` across segments, `?` one character; an array such as
-`args` is matched as its compact JSON, so `["status"**` means "the first
-argument is `status`"). A tool with allow rules may only be called as a rule
-says; a tool without rules is allowed as a whole; a deny rule wins. Every
-allow rule must name a tool in `allowedTools`.
-
-Before each execution the adapter writes `<state>/policies/<execution>.json`
-and passes it with `--policy`:
-
-| Bot level | AXLR level | `--approve` | Why |
-|---|---|---|---|
-| `observe` without `local_exec` | `observe` | `none` | reads only |
-| `observe` with `local_exec` | `act-within-policy` | `local` | AXLR's `observe` forbids every command whatever its arguments; the allow list still holds only reads and the commands the rules name, and the deny list closes their write forms |
-| `propose` | `propose` | `local` | writes of a plan or a diff only |
-| `act-with-approval` | `act-with-approval` | `none` | every allowed command or write is a person's decision (`needs_decision`), the read-only commands too: AXLR has no notion of a read-only command |
-| `act-within-policy` | `act-within-policy` | `local` | the policy decides |
-
-Without `-policy` in the binary the approval level stays `none` whatever the
-level: nothing runs without a person (fail closed), and the policy file is
-kept as a record. The execution shows all of it:
-
-```json
-"policy": {"level": "observe", "runtimeLevel": "act-within-policy", "enforced": true, "path": "…/policies/exec-….json"}
-```
-
-A forbidden call is refused by AXLR before any card: the model reads
-`forbidden by the execution's policy: …` as the tool result, the call is
-`forbidden` in `result.toolCalls` and the run goes on to its answer (vision
-§14.5, seen live below).
-
-## Build and test
+The platform installs without root under the user's own directories and
+runs under `systemctl --user`. The control plane command installs itself
+and the node agent found beside it.
 
 ```bash
-GOFLAGS=-p=2 go build ./... && GOFLAGS=-p=2 go test -cover ./...
-```
-
-Every package has at least 80% coverage. The AXLR adapter is tested against a
-helper process that imitates `axlr-tui`, the command, the API and the daemon
-against `internal/fakeaxlr` (a shell stand-in that answers `--help`, records
-its arguments and plays a scenario); the installer renders into a `--destdir`
-and checks the unit files. One test runs the real binary only when
-`AXLR_LIVE=1` is set:
-
-```bash
-AXLR_LIVE=1 UNDERPASS_AXLR_BIN=/path/to/axlr-tui GOFLAGS=-p=2 go test ./adapters/axlr -run TestLiveExec -v
-```
-
-It needs an `axlr-tui` with `--exec` (the installed 0.13.0 does not have it;
-build one from AXLR `main` or use the contract build) and a model provider
-for it (`OPENROUTER_API_KEY` or `~/.config/axlr/credentials.json`).
-
-## Install on a Linux host (systemd)
-
-The command installs itself: the binary, the two units and the environment
-file for the model key. Nothing goes into a unit that a `systemctl cat`
-would show to everyone.
-
-```bash
-GOFLAGS=-p=2 go build -o underpass-bots ./cmd/underpass-bots
-export OPENROUTER_API_KEY=...                        # copied into the env file, mode 0600, never printed
-sudo -E ./underpass-bots install --prefix /usr/local --state /var/lib/underpass-bots --axlr-bin /usr/local/bin/axlr-tui
-sudo systemctl enable --now underpass-bots.service
-sudo -u underpass-bots underpass-bots --state /var/lib/underpass-bots bot register --file examples/sre-host-bot.json
-sudo -u underpass-bots underpass-bots --state /var/lib/underpass-bots bot enable sre-host-bot
+GOFLAGS=-p=2 go build -o bin/underpass-bots ./cmd/underpass-bots
+GOFLAGS=-p=2 go build -o bin/underpass-node ./cmd/underpass-node
+export OPENROUTER_API_KEY=...                           # copied into the env file, mode 0600, never printed
+bin/underpass-bots install --axlr-bin /path/to/axlr-tui # a build with --exec; with --policy the bots' rules are enforced
+systemctl --user enable --now underpass-bots.service underpass-node.service
+loginctl enable-linger "$USER"                           # keeps the services running after you log out
+underpass-bots node list                                 # the host, Online
+underpass-bots bot register --file examples/bot.json
+underpass-bots bot enable bot
 ```
 
 | File | What |
 |---|---|
-| `/usr/local/bin/underpass-bots` | the binary (`install` copies the one that runs) |
-| `/etc/systemd/system/underpass-bots.service` | `Type=simple`, `User=underpass-bots` (created by `useradd --system`, in `systemd-journal` to read the journal), `EnvironmentFile=-/etc/underpass-bots/env`, `ExecStart=… serve`, `Restart=on-failure`, `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `StateDirectory=underpass-bots` and `ReadWritePaths=` the state dir, `HOME=` the state dir so `axlr-tui` writes its own files there |
-| `/etc/systemd/system/underpass-bots-alert@.service` | `Type=oneshot`, same user and env file, `ExecStart=… alert --unit %i` |
-| `/etc/underpass-bots/env` | `OPENROUTER_API_KEY=` (or a commented placeholder when the installer had none), `UNDERPASS_AXLR_BIN=`, `UNDERPASS_BOT=sre-host-bot`; an existing file is never overwritten |
-| `/var/lib/underpass-bots/` | the state: bots, tasks, executions, policies, artifacts, traces, logs and the socket |
+| `~/.local/bin/underpass-bots`, `~/.local/bin/underpass-node` | the binaries (`install` copies the ones that run) |
+| `~/.config/systemd/user/underpass-bots.service` | `Type=simple`, `ExecStart=… serve`, `Restart=on-failure`, `NoNewPrivileges=yes`, `EnvironmentFile=-~/.config/underpass-bots/env`, `WantedBy=default.target` |
+| `~/.config/systemd/user/underpass-node.service` | `After=`/`Wants=underpass-bots.service`, `ExecStart=underpass-node --control unix://…/underpass-bots.sock --state ~/.local/state/underpass-node`, the host name as node id and `host=` label |
+| `~/.config/underpass-bots/env` | `OPENROUTER_API_KEY=` (or a commented placeholder when the installer had none) and `UNDERPASS_AXLR_BIN=`; an existing file is never overwritten |
+| `~/.local/state/underpass-bots/` | the control plane's state: bots, tasks, executions, nodes, policies, artifacts, logs, the socket |
+| `~/.local/state/underpass-node/` | the node's state: the traces, policy files and workspaces of what it ran |
 
-`--user` installs the same under `~/.local/bin`, `~/.config/systemd/user`,
-`~/.config/underpass-bots/env` and `~/.local/state/underpass-bots`, for
-`systemctl --user`: no root, no dedicated user, and no `ProtectSystem=`
-(a user manager cannot sandbox the filesystem; the unit says so). The
-environment file adds `UNDERPASS_SYSTEMD_USER=1` so `alert` queries the user
-manager. `--destdir <dir>` renders everything under a directory
-(packaging, tests), `--no-systemctl` writes the files and runs nothing.
+A user service cannot sandbox the filesystem (`ProtectSystem=` and
+`ProtectHome=` need privileges a user manager lacks); the unit says so.
+`--destdir <dir>` renders everything under a directory (packaging, tests),
+`--no-systemctl` writes the files and runs nothing.
 
 ```bash
-underpass-bots uninstall [--user] [--prefix …]   # disable --now, remove units and binary, daemon-reload
-underpass-bots uninstall --user --purge           # also the state directory and the env file (the key)
+underpass-bots uninstall           # disable --now both units, remove them and the binaries
+underpass-bots uninstall --purge   # also both state directories and the env file (the key)
 ```
 
-Known needs of the system mode: `dmesg` wants root or
-`kernel.dmesg_restrict=0` (the bot reports the refusal and goes on); a
-stop of the service sends SIGTERM to a running `axlr-tui`, whose execution
-ends `Failed` and is reported as such (`TimeoutStopSec=30s`).
+### The system-wide variant
 
-## The service and its socket
+`install --system` (as root) puts the binaries under `/usr/local/bin`, the
+units under `/etc/systemd/system`, the env file at `/etc/underpass-bots/env`
+and the state under `/var/lib/underpass-bots` and `/var/lib/underpass-node`,
+all run by a dedicated user `underpass-bots` (`useradd --system`, in
+`systemd-journal`) with `ProtectSystem=strict`, `ProtectHome=yes`,
+`StateDirectory=` and `HOME=` the state directory so `axlr-tui` writes its
+own files there. `uninstall --system` reverses it.
 
-`underpass-bots serve` is the daemon (`Type=simple`, logs to the journal):
+## The control plane
 
-- It serves the local API on a Unix socket, `<state>/underpass-bots.sock`,
-  mode 0660: `POST /v1/tasks`, `POST /v1/alerts`, `POST /v1/tasks/{id}/run`,
-  `POST /v1/tasks/{id}/decide`, `GET /v1/tasks/{id}`, `GET /v1/tasks/{id}/report`,
-  `GET /v1/executions/{id}`, `GET|POST /v1/bots`, `POST /v1/bots/{id}/enable`,
-  `GET /healthz`. HTTP over the socket because `net/http` is in the standard
-  library and the JSON is the same the command prints.
-- Every command tries the socket first (`--socket`, `UNDERPASS_SOCKET`,
-  default `<state>/underpass-bots.sock`). When a daemon answers, the command
-  is carried by it: a `task submit` from the alert unit reaches the running
-  service, which runs the task, and never touches the state files itself.
-  When nothing answers, the command works on the state directory as in
-  Phase 0 (and `alert` says so on stderr): the task is spooled.
-- The state directory is the spool. Every 2 s (`--tick`) the worker runs
-  the oldest Pending task, one at a time (`SerialRunner`: one `axlr-tui`
-  per host at a time, and two callers never start the same task). A task
-  spooled while the daemon was down runs on its first tick after the
-  restart; nothing that was saved is lost.
-- On start and every minute (`--reconcile-every`) it reconciles the tasks a
-  dead run left Running, with the same grace as `task reconcile` (the bot's
-  timeout plus a minute), so a task another process may still be running is
-  not failed under it.
+`underpass-bots serve` is the daemon (`Type=simple`, logs to the journal).
 
-## The trigger: a unit fails
+- It serves the API on a Unix socket, `<state>/underpass-bots.sock`, mode
+  0660, and optionally on a TCP address (`--listen 127.0.0.1:7878`, or
+  `0.0.0.0:7878` for nodes on other hosts). HTTP+JSON, because `net/http`
+  is in the standard library and the JSON is the same the CLI prints.
+- Every CLI command tries the socket first (`--socket`, `UNDERPASS_SOCKET`,
+  default `<state>/underpass-bots.sock`): when the daemon answers, the
+  command is carried by it, so a `task submit` reaches the running service
+  and never touches the state files. When nothing answers, the command
+  works on the state directory as in Phase 0: the task is spooled.
+- A Pending task of a bot an **Online node** may run waits for that node's
+  next poll. A Pending task no Online node may run is run **in process**
+  by the daemon on its next tick (`--tick 2s`), with the control plane's
+  own `axlr-tui`: the **single-process mode**, also what `task run` does
+  from the CLI. Both go through one `SerialRunner`, so a task is never run
+  twice or in two places.
+- On start and every minute (`--reconcile-every`) it marks Offline the
+  nodes silent for over a minute, fails the executions whose node stopped
+  renewing its lease, and fails the in-process runs a dead daemon left
+  Running past the grace (the bot's timeout plus a minute).
 
-`underpass-bots-alert@.service` is a template: `underpass-bots-alert@foo.service`
-runs `underpass-bots alert --unit foo`, which submits the diagnosis task for
-`foo.service` to the running service. Attach it to any unit with a drop-in
-(`systemctl edit foo.service`, or `systemctl --user edit` for a user unit):
+## Nodes and the protocol
 
-```ini
-[Unit]
-OnFailure=underpass-bots-alert@%N.service
+A node is a resource of the control plane, like a bot. The agent
+registers at start, heartbeats every 15 s, long-polls for work, renews a
+lease while it works and reports when it is done. A restarted agent
+registers again and comes Online; a control plane that lost its state
+answers a heartbeat with 404 and the agent registers again.
+
+| Message | Route | Direction | Idempotency |
+|---|---|---|---|
+| register `{id, hostName, labels, capabilities}` | `POST /v1/nodes` | node → control plane | per node id: a repeat describes the node anew |
+| heartbeat | `POST /v1/nodes/{id}/heartbeat` | node → control plane | yes |
+| next assignment | `GET /v1/nodes/{id}/assignments/next?wait=20s` | node → control plane (long poll; `204` when none) | each execution is handed out once; an unleased one assigned to the node (a queued decision) goes first |
+| renew lease | `POST /v1/nodes/{id}/executions/{exec}/lease` | node → control plane | yes; refused for another node's or an ended execution |
+| report `{outcome, result, usage, failureReason, traceReference, policy}` | `POST /v1/nodes/{id}/executions/{exec}/report` | node → control plane | **accepted once**: a repeat answers `accepted: false` with the stored outcome |
+
+An assignment carries a `run` (the task's objective, model, level, tools,
+rules and timeout) or a `decide` (the session, the call and the decision)
+and a lease of two minutes the node renews every 30 s. The control plane
+stores the node id and the lease on the execution; `node.registered`,
+`node.heartbeat`, `node.offline`, `execution.assigned` and
+`execution.reported` are the events. The trace stays on the node; the
+execution keeps its reference. Capabilities say which `axlr-tui` the node
+has and whether it takes `--policy`.
+
+Placement is part of the bot's definition: `"placement": {"nodes":
+["web-1"], "selector": {"zone": "eu"}}`, or nothing for any node.
+
+## A bot's definition
+
+```json
+{
+  "id": "bot", "tenant": "default", "name": "bot", "owner": "operator",
+  "mission": "Do what each task asks, within the policy.",
+  "level": "observe",
+  "allowedTools": ["local_read", "local_search", "local_list"],
+  "toolRules": {"allow": [], "deny": []},
+  "triggers": [{"type": "manual"}],
+  "placement": {},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 32000},
+  "budgets": {"maxModelCallsPerTask": 10, "maxToolCallsPerTask": 20, "maxDelegationDepth": 0, "taskTimeoutSeconds": 300}
+}
 ```
 
-`%N` is the unit's name without its type, so `%i` in the alert unit has no
-`.service` suffix and `alert` adds it back. `OnFailure=` fires when the unit
-enters `failed`: a unit with `Restart=` fires it only once its restarts are
-exhausted (`StartLimitBurst`), not on every attempt.
+- `level` is the autonomy level of vision §10.4: `observe`, `propose`,
+  `act-with-approval` or `act-within-policy` (default `observe`).
+- `allowedTools` are AXLR's tool names; `toolRules` narrow them by their
+  arguments in the runtime contract's words: a glob over each argument's
+  value as text (`*` within a path segment, `**` across segments, `?` one
+  character; an array such as `args` is matched as its compact JSON). A
+  tool with allow rules may only be called as a rule says; a tool without
+  rules is allowed as a whole; a deny rule wins.
+- `triggers` is how tasks reach the bot; `manual` (the API and the CLI) is
+  the one type today and the default. A systemd unit event, a timer and a
+  webhook are the next types, each with its router; a bot that declares
+  triggers takes only those.
+- `placement` says where the bot's tasks run (above).
 
-The task's idempotency key is `alert:<unit>:<start of the 10-minute window>`
-(`--window`): a flapping unit, a redelivered event or an operator repeating
-`alert --unit foo` within the window all name the same task, with
-`"created": false`. The objective is the §12.3 request below, with the unit,
-the host and the time filled in.
+Before each execution the adapter writes `<state>/policies/<execution>.json`
+and passes it with `--policy` when the binary takes it (the adapter reads
+`axlr-tui --help` once):
+
+| Bot level | AXLR level | `--approve` | Why |
+|---|---|---|---|
+| `observe` without `local_exec` | `observe` | `none` | reads only |
+| `observe` with `local_exec` | `act-within-policy` | `local` | AXLR's `observe` forbids every command whatever its arguments; the allow list still holds only reads and the commands the rules name |
+| `propose` | `propose` | `local` | writes of a plan or a diff only |
+| `act-with-approval` | `act-with-approval` | `none` | every allowed write or command is a person's decision (`needs_decision`) |
+| `act-within-policy` | `act-within-policy` | `local` | the policy decides |
+
+Without `-policy` in the binary the approval level stays `none`: nothing
+runs without a person (fail closed), and the policy file is kept as a
+record. The execution shows `"policy": {"level", "runtimeLevel",
+"enforced", "path"}`. A forbidden call is refused by AXLR before any card:
+the model reads `forbidden by the execution's policy: …` as the tool result,
+the call is `forbidden` in `result.toolCalls` and the run goes on (vision
+§14.5).
+
+## The approval path
+
+`examples/bot-act-with-approval.json` is the example bot one level up:
+`local_write` is allowed and AXLR runs it under `act-with-approval` with
+`--approve none`, so the first write is a card: the run stops with
+`needs_decision`, the task is `WaitingApproval` and the execution's
+`result.pendingDecision` names the tool, the call, the session and the
+call's arguments (what would be written, and where).
 
 ```bash
-underpass-bots alert --unit foo [--bot sre-host-bot] [--host $(hostname)] [--at 2026-10-24T10:37:12Z] [--window 10m] [--user]
+underpass-bots task submit bot-act-with-approval --objective "Create hello.txt in your workspace containing hello" --key w-1
+underpass-bots task get task-…        # WaitingApproval; pendingDecision.tool = local_write
+underpass-bots task approve task-…    # a new execution carries the decision
+underpass-bots task deny task-…       # or: the session ends without the write
 ```
 
-## The diagnosis report
+When the stopped execution ran on a node, the decision is queued for that
+node (the AXLR session lives there) and the node runs `axlr-tui --session
+<id> --decide approve --policy <file>` on its next poll and reports; in
+single-process mode the control plane runs it itself. Either way the write
+never runs before `task approve`: `TestTheWriteNeverRunsWithoutTheApproval`
+(`cmd/underpass-bots`) and `TestAgentRunsAssignedTasksAndDecisions`
+(`adapters/nodeagent`) prove it against the stand-in, whose marker file
+appears only after the approval and never after a denial.
 
-The objective (`application.DiagnosisObjective`) names the unit, the host
-and the time, forbids changes and asks for Markdown with exactly these
-sections: **1. Timeline**, **2. Services involved**, **3. Commands run**
-(each with what it showed), **4. Hypotheses, ordered by evidence**,
-**5. Proposed next steps**. When the execution completes, the answer is
-written to `<state>/artifacts/<task-id>/report.md`, listed in the
-execution's `result.artifacts` as `report.md` and named in the
+## Reports
+
+When an execution completes, its answer is written to
+`<state>/artifacts/<task-id>/report.md` on the control plane, listed in
+the execution's `result.artifacts` as `report.md`, and named in the
 `bot.task.completed` event and the daemon's log line.
 
 ```bash
@@ -258,344 +243,256 @@ underpass-bots task report <task-id>          # the text
 underpass-bots task report --path <task-id>   # only where it is
 ```
 
-## Fixing under approval
+## Recovery
 
-`examples/sre-host-fixer.json` is the same bot one level up, vision §10.4
-**act-with-approval**: `local_exec` is allowed for `systemctl restart`,
-`systemctl status`, `systemctl is-active` and `journalctl`, and nothing
-else is written. AXLR runs it under `act-with-approval` with
-`--approve none`: every allowed command is a card, the run stops at the
-first one with `needs_decision`, the task is `WaitingApproval` and the
-execution's `result.pendingDecision` names the call.
+A task is written as `Running` with its execution *before* anything runs,
+so a crash leaves a visible `Running` task, never a lost one. Three things
+end it: the node's report, the daemon's reconciliation (an expired lease,
+or an in-process run older than the grace), or `task reconcile` by hand:
 
 ```bash
-$ub task submit sre-host-fixer --objective "Restart demo-broken.service" --key fix-1
-$ub task run task-…          # exit 3: WaitingApproval, pendingDecision.tool = local_exec
-$ub task approve task-…      # axlr-tui --session <id> --decide approve --policy <file>; the restart runs; exit 0
-$ub task deny task-…         # the session ends without the write
+underpass-bots task reconcile                # {"failed": ["task-…"], "skipped": []}
+underpass-bots task reconcile --grace 30s
 ```
 
-`TestTheWriteNeverRunsWithoutTheApproval` (`cmd/underpass-bots`) proves it
-against the stand-in: the first run passes `--approve none` and a policy at
-`act-with-approval`, the marker the fake creates when it runs the restart is
-absent after the run and after a refused second run, present only after
-`task approve`, and absent after `task deny`. Under this level the
-read-only commands are cards too: AXLR has no notion of a read-only
-command, so the recommended flow is to diagnose with the observe bot and
-fix with the fixer under a narrow objective.
+The failed execution and task carry the diagnosis (`reconciled: … node
+web-1 stopped renewing its lease at …`, or `…; the process that ran it is
+gone`), a `bot.task.failed` event with `"reason": "reconciled"` and a
+`task.reconcile` audit entry. Running it again is harmless.
 
-## Host demo (user mode, live)
+## Live run on this machine
 
-`examples/host-demo.sh` runs the whole experiment of vision §18 on this
-machine without root: install as a user service, start it, register the
-bot, break a throwaway unit that has the OnFailure drop-in, watch the task
-appear and run, read the report, restart the control plane and show the bot
-and the task are still there, then uninstall.
+`examples/demo.sh` runs the whole thing user-level: build, install, start
+both services, show the node Online, register the example bot, submit a
+generic task and watch the node run it, read the report, the approval
+path with a harmless write in the bot's workspace, then restart both
+services and show the node, the bots and the tasks are still there. The
+installation stays running (`DEMO_UNINSTALL=1` removes it).
 
 ```bash
 export OPENROUTER_API_KEY=...
-UNDERPASS_AXLR_BIN=/path/to/axlr-tui sh examples/host-demo.sh    # a build with --policy enforces the rules
+UNDERPASS_AXLR_BIN=/path/to/axlr-tui sh examples/demo.sh
 ```
 
-Run on 24 Oct 2026 with `claude-haiku-5.5` through OpenRouter and an
-`axlr-tui` built from AXLR's `claude/execution-policy` branch (key lines;
-the unit's `ExecStart` exits 1 after logging that `/etc/demo/app.conf` is
-missing):
+Run on 24 Oct 2026 on this machine (user `gx10a`, host `gx10-ff95`), with
+`claude-haiku-5.5` through OpenRouter and an `axlr-tui` built from AXLR's
+`claude/execution-policy` branch (`/home/gx10a/Documents/ai/tmp/axlr-tui-policy`):
+
+```bash
+set -a; . ~/.hermes/.env; set +a            # exports OPENROUTER_API_KEY
+UNDERPASS_AXLR_BIN=/home/gx10a/Documents/ai/tmp/axlr-tui-policy sh examples/demo.sh
+```
 
 ```text
-## 0. build and install (user mode)
+## 0. build and install (user-level: ~/.local, ~/.config, systemctl --user)
   "mode": "user",
   "binary": "/home/gx10a/.local/bin/underpass-bots",
+  "nodeBinary": "/home/gx10a/.local/bin/underpass-node",
     "/home/gx10a/.config/systemd/user/underpass-bots.service",
-    "/home/gx10a/.config/systemd/user/underpass-bots-alert@.service"
+    "/home/gx10a/.config/systemd/user/underpass-node.service"
   "envFile": "/home/gx10a/.config/underpass-bots/env",
   "socket": "/home/gx10a/.local/state/underpass-bots/underpass-bots.sock",
+    "systemctl --user enable --now underpass-bots.service underpass-node.service",
+    "loginctl enable-linger gx10a  # keep the services running after logout"
 
-## 1. start the service and register the bot
+## 1. start both services; the node registers itself
 Created symlink …/default.target.wants/underpass-bots.service → …/underpass-bots.service.
-  "id": "sre-host-bot",
+Created symlink …/default.target.wants/underpass-node.service → …/underpass-node.service.
+    "id": "gx10-ff95",
+    "hostName": "gx10-ff95",
+      "host": "gx10-ff95"
+      "policySupported": true
+    "status": "Online",
+
+## 2. register the example bot (observe: AXLR's read tools, manual trigger, any node)
+  "id": "bot",
   "level": "observe",
+      "type": "manual"
   "status": "Enabled",
 
-## 2. a throwaway unit that fails, with the OnFailure drop-in attached
-[Unit]
-OnFailure=underpass-bots-alert@%N.service
-Job for underpass-demo-broken.service failed because the control process exited with error code.
-underpass-demo-broken.service failed, as intended (exit 1)
-
-## 3. the task the alert created (the same alert again names the same task)
-  "created": false,
-    "id": "task-cc1471b3872fb250304b1c67",
-    "status": "Running",
-    "idempotencyKey": "alert:underpass-demo-broken.service:2026-10-24T01:30:00Z",
-what the OnFailure alert unit logged:
-  "created": true,
-Finished underpass-bots-alert@underpass-demo-broken.service - Underpass Bots: tell the SRE bot that underpass-demo-broken failed.
-
-## 4. the service runs it through AXLR (policy: observe = read-only host commands)
-task task-cc1471b3872fb250304b1c67 is Completed after about 44s
-  "outcome": "Completed",
-    "requests": 4,
-    "toolCalls": 14,
-    "costUsd": 0.008523235
-    "runtimeLevel": "act-within-policy",
+## 3. a generic task: the control plane assigns it to the node, the node runs it with AXLR
+task task-72e656baa6bdbdb7ef4902e8 is Completed after about 8s
+    "costUsd": 0.0013252499999999998
     "enforced": true,
-tool calls by status (completed = ran, failed = ran and exited non-zero, forbidden = refused by the policy outside the model):
-      7 completed
-      1 denied
-      3 failed
-      3 forbidden
-report file: /home/gx10a/.local/state/underpass-bots/artifacts/task-cc1471b3872fb250304b1c67/report.md
+  "nodeId": "gx10-ff95",
+  "outcome": "Completed",
+    "requests": 3,
+    "runtimeLevel": "observe",
+    "toolCalls": 2,
+report:
+    The workspace has no files. I listed it recursively, up to 8 levels deep, both with an explicit `.` path
+    and with the default path, and both calls returned an empty list. The count is 0.
 
-## 5. the report
-# Diagnosis: underpass-demo-broken.service on gx10-ff95
+## 4. the approval path: a write runs only after task approve
+task task-ed866c91d729455d701abf96 is WaitingApproval after about 4s
+  "status": "WaitingApproval",
+  "outcome": "DecisionRequired",
+      "tool": "local_write",
+      "callId": "toolu_01MKirykmsETWGzfZzsMAkmB",
+      "arguments": {
+  "nodeId": "gx10-ff95",
+the file does not exist yet: nothing ran without approval
+approving...
+    "status": "Running",
+    "kind": "decide",
+    "nodeId": "gx10-ff95"
+task task-ed866c91d729455d701abf96 is Completed after about 6s
+    Nothing was missing: I re-read `hello-20261024T020356Z.txt` and it contains exactly `hello`, so the request is complete.
+-rw------- 1 gx10a gx10a 5 Oct 24 04:04 /home/gx10a/.local/state/underpass-node/workspaces/bot-act-with-approval/hello-20261024T020356Z.txt
+hello
 
-**Summary:** The unit exits with status 1 on start because `demo-app` cannot open `/etc/demo/app.conf`
-("No such file or directory"). The journal shows two failed starts. I did not change anything on the host.
-
-## 1. Timeline (UTC, oldest first)
-- **2026-10-24 01:25:02Z (03:25:02 local):** first logged start of `underpass-demo-broken.service` under the user
-  manager (PID 2559). `sh[2874465]` prints `demo-app: cannot open /etc/demo/app.conf: No such file or directory`,
-  then `demo-app: refusing to start without a configuration`. systemd logs `Main process exited, code=exited,
-  status=1/FAILURE`, `Failed with result 'exit-code'`, and `Triggering OnFailure= dependencies`.
-- **2026-10-24 01:38:14Z (03:38:14 local): the alert.** The same sequence repeats in `sh[2887825]` …
-
-## 2. Services involved
-- **`underpass-demo-broken.service`** (user manager, supervised by `systemd[2559]`): the failed unit. …
-- **`/etc/demo/app.conf`** (file dependency, host-local): reported missing at both runs.
-- **No remote hosts or network services** appear in the unit's journal.
-
-## 3. Commands run
-1. `journalctl --user -u underpass-demo-broken.service --no-pager -n 200`: 14 lines, two failed starts …
-2. `systemctl --user status underpass-demo-broken.service --no-pager`: no status shown. Output: `Failed to connect
-   to bus: No medium found`. … so I relied on `journalctl --user` as instructed.
-3. `uptime`: `03:38:22 up 8 days, 9:55, 1 user, load average: 1.04, 0.98, 1.00`.
-4. `free -h`: 121Gi total, 32Gi used, 88Gi available; swap 10Gi of 15Gi used.
-5. `df -h`: root `/` at 72% (249G free) …
-9. `dmesg --nopager`: refused with `dmesg: read kernel buffer failed: Operation not permitted`. …
-10. `timedatectl show --property=Timezone --value`: **refused by policy**. …
-12. `ls -la /etc/demo ~/.config/systemd/user`: **refused by policy** (`local_exec` denied).
-13. `local_read` of `/home/gx10a/.config/systemd/user/underpass-demo-broken.service`: rejected, because paths must
-    be inside the workspace. The unit file is unreadable.
-
-## 4. Hypotheses, ordered by evidence
-1. **The configuration file `/etc/demo/app.conf` is missing on this host (strongest).**
-   - For: both runs log `cannot open /etc/demo/app.conf: No such file or directory`, which is a "not found" error
-     and not a permission error. … The failure is identical at 03:25 and 03:38, so it is consistent and reproducible.
-   - Against: I could not list `/etc/demo` or read the unit file, so I cannot confirm the path the unit expects …
-4. **Host resource exhaustion or kernel-level failure (weak; not supported).**
-   - Against: 88Gi is available, root has 249G free, load is about 1.0, and the demo errors are file-not-found …
-
-## 5. Proposed next steps (for an operator; not done by me)
-1. Confirm the missing file as the operator: `ls -la /etc/demo` and `ls -la /etc/demo/app.conf`. …
-3. Decide the fix: either deploy the missing `app.conf` … or correct the unit's path. …
-
-## 6. restart the control plane: the bot and the task are still there
-  "id": "sre-host-bot",
-  "status": "Enabled",
-  "id": "task-cc1471b3872fb250304b1c67",
+## 5. restart both services: node, bots and tasks are still there
+    "id": "gx10-ff95",
+    "status": "Online",
+    "id": "bot-act-with-approval",
+    "status": "Enabled",
+    "id": "bot",
+    "status": "Enabled",
+  "id": "task-72e656baa6bdbdb7ef4902e8",
   "status": "Completed",
-Started underpass-bots.service - Underpass Bots control plane (SRE host bot).
-2026/10/24 03:39:00 daemon: serving on /home/gx10a/.local/state/underpass-bots/underpass-bots.sock, tick 2s
+  "id": "task-ed866c91d729455d701abf96",
+  "status": "Completed",
+service logs (last lines):
+Stopped underpass-bots.service - Underpass Bots control plane.
+Started underpass-bots.service - Underpass Bots control plane.
+2026/10/24 04:04:16 daemon: serving on /home/gx10a/.local/state/underpass-bots/underpass-bots.sock, tick 2s
+Started underpass-node.service - Underpass Bots node agent.
+2026/10/24 04:04:16 node: registered as gx10-ff95 (gx10-ff95), axlr "" policy true
 
-## cleanup
-  "mode": "user",
-kept the state (/home/gx10a/.local/state/underpass-bots) and the env file …; remove them with: underpass-bots uninstall --user --purge
+## installed and running
+check:     systemctl --user status underpass-bots.service underpass-node.service
+uninstall: /home/gx10a/.local/bin/underpass-bots uninstall [--purge]
 ```
 
-What the run shows against the vision's criteria: the trigger was the
-failed unit and the alert unit created the task (§14.2); the operator's
-repeated alert found it with `"created": false` (§14.7); three calls
-(`timedatectl`, `date`, `ls -la /etc/demo …`) were refused by the policy
-outside the model, one `local_read` outside the workspace was refused by
-AXLR's workspace rule, and the run still went on to its answer (§14.5);
-the bot changed nothing (§14.12); the bot and the task survived the restart
-(§14.1); the cost, the tool calls and the trace are in the execution
-(§12.3). Three commands ran and exited non-zero on the host, among them
-`systemctl --user status` (no bus) and `dmesg` (not permitted), and the
-report says so instead of guessing. It was the second run of the script
-on this machine: the journal already held the first failure, and the
-report's timeline shows both.
-
-Two limits seen in the run, both in user mode: `systemctl --user` cannot
-reach the user manager from inside an execution because AXLR hands a
-command only `PATH` and `HOME` (no `XDG_RUNTIME_DIR`), so the bot has the
-unit's journal but not its status; and `ls /etc/demo` was refused because
-the observe policy only allows `ls` under `/var/log`. The first is for
-AXLR (pass the bus variables through, or let the policy name environment
-variables); the second is the policy doing its job, and a rule can widen
-it. In system mode `systemctl status` needs no bus variable.
-
-## Next: the same bot as a sidecar
-
-Vision §9.2: the bot moves next to the service it watches, as a container
-beside it. What changes, and what does not:
-
-- **No systemd.** The control plane runs as the sidecar's main process
-  (`underpass-bots serve`); the container runtime restarts it. `install`,
-  the units and the environment file are replaced by the image and its
-  environment (`OPENROUTER_API_KEY`, `UNDERPASS_AXLR_BIN`); the state
-  directory becomes a volume so the bot and its tasks survive the
-  container.
-- **Shared volumes instead of the host.** The service's logs and
-  configuration are mounted read-only into the sidecar; the bot's policy
-  allows `tail`, `head` and `ls` on those mounts instead of `/var/log`, and
-  `journalctl` and `systemctl` disappear with the host.
-- **The trigger becomes a webhook.** No `OnFailure=`: the alert source
-  (the orchestrator's events, a health check, Alertmanager) calls
-  `POST /v1/alerts` with `{"unit": "<service>", "at": …}`, so the socket
-  grows a TCP listener for the pod network, with authentication. The
-  idempotency key stays the same, so a storm of alerts is one task.
-- **Fixing under approval stays.** `systemctl restart` becomes the
-  orchestrator's restart (an MCP tool or an API call the policy names),
-  still under `act-with-approval`, and `task approve` is still the only
-  way it runs.
-- **Unchanged:** the bot definition's level and rules, the policy file per
-  execution, the report artifact, the events and the audit log, the
-  reconciliation, and the AXLR contract.
+Against the vision's criteria: the bot, the node and both tasks survived
+the restart of both services (§14.1); the task was started by the API
+(§14.2); AXLR received the policy and produced the result object, enforced
+(§14.3, §14.5); the write ran only after `task approve` (§10.4); the
+executions keep the node, the policy, the cost and the trace reference
+(§12.3); nothing needed root (§9.1). The installation is left running on
+this machine; `loginctl show-user gx10a -p Linger` says `yes`, so it
+survives a logout. The `axlr ""` in the node's log is the capability the
+agent reads from `axlr-tui --version`, which this build does not print.
 
 ## Phase 0 demo (offline)
 
-`examples/phase0-demo.sh` runs the whole script below with no daemon. Without
-`UNDERPASS_AXLR_BIN` it uses `examples/fake-axlr-tui`, a shell stand-in that
-prints a finished turn and its result object, so the demo runs offline.
+`examples/phase0-demo.sh` runs the single-process flow with no daemon and
+no node: register, enable, submit, `task run`, read the result, resubmit
+the same key. Without `UNDERPASS_AXLR_BIN` it uses `examples/fake-axlr-tui`,
+a shell stand-in that prints a finished turn and its result object.
 
 ```bash
 sh examples/phase0-demo.sh
 ```
 
-Step by step, with a real runtime:
+## Build and test
 
 ```bash
-export UNDERPASS_STATE=$(mktemp -d)                # or ~/.local/state/underpass-bots
-export UNDERPASS_AXLR_BIN=/path/to/axlr-tui        # one with --exec; default axlr-tui
-ub="go run ./cmd/underpass-bots"
-
-# 1. register the bot of vision §11
-$ub bot register --file examples/server-incident-investigator.json
-
-# 2. restart: a second invocation reads the bot back from disk and enables it
-$ub bot enable server-incident-investigator
-$ub bot get server-incident-investigator        # "status": "Enabled"
-
-# 3. submit a task with an idempotency key
-$ub task submit server-incident-investigator \
-    --objective "Investigate an HTTP 500 spike in staging" \
-    --key alert-2026-10-23-001                  # "created": true, "id": "task-…"
-
-# 4. run it once through AXLR (exit 0 completed, 3 decision required, 1 failed)
-$ub task run task-…
-
-# 4b. exit 3 means the task is WaitingApproval on a tool call: decide it, and
-#     the same session runs to its end under a second execution
-$ub task get task-…                             # "status": "WaitingApproval"
-$ub task decide task-… approve                  # or deny; same exit codes as task run
-
-# 5. read the result: outcome, answer, usage; the trace stays in traces/
-$ub execution get exec-…
-
-# 6. resubmit the same key: same task back, "created": false, no new execution
-$ub task submit server-incident-investigator \
-    --objective "Investigate an HTTP 500 spike in staging" \
-    --key alert-2026-10-23-001
-$ub task run task-…                             # refused: task is Completed
-ls $UNDERPASS_STATE/executions                  # still one file
+GOFLAGS=-p=2 go build ./... && GOFLAGS=-p=2 go test -cover ./...
 ```
+
+Every package has at least 80% coverage. The AXLR adapter is tested against
+a helper process that imitates `axlr-tui`; the commands, the API, the
+daemon and the node agent against `internal/fakeaxlr` (a shell stand-in
+that answers `--help` and `--version`, records its arguments and plays a
+scenario, including the approval flow with a marker file); the installer
+renders into a `--destdir`. One test runs the real binary only when
+`AXLR_LIVE=1` is set:
+
+```bash
+AXLR_LIVE=1 UNDERPASS_AXLR_BIN=/path/to/axlr-tui GOFLAGS=-p=2 go test ./adapters/axlr -run TestLiveExec -v
+```
+
+## The runtime contract
+
+The adapter speaks the contract in AXLR's `docs/runtime-contract.md`:
+
+- Request: `--exec "<objective>"`, `--model` from the bot's model policy,
+  `--root <state>/workspaces/<bot>`, `--approve` as the policy table says,
+  `--policy <file>` when the binary takes it, a timeout from the bot's
+  budgets (default 15 min).
+- Result: the last JSON line, `{"type":"result","result":{"schema":"axlr.execution-result/v1",…}}`,
+  gives status (`completed`, `needs_decision`, `interrupted`, `failed`),
+  answer, sessions, pending call with its arguments, tool calls, usage and
+  artifacts. Fallback for an older `axlr-tui`: exit code (0 completed, 3
+  decision required, 1 failed) plus the `completed`, `failed` and
+  `decision.required` lines.
+- Decision: `--session <id> --decide approve|deny [--call <id>] --policy <file> --json`.
+- Not yet taken by AXLR: budgets and correlation (the contract's reserved
+  fields; see the TODO in `adapters/axlr/executor.go`).
+
+Outcome mapping: `completed` → `Completed`; `needs_decision` →
+`DecisionRequired`, task `WaitingApproval`; `failed`, `interrupted` and
+timeouts → `Failed`.
 
 State directory layout:
 
 ```text
 <state>/
-  bots/<bot-id>.json          tasks/<task-id>.json     executions/<exec-id>.json
-  events.jsonl                audit.jsonl              underpass-bots.sock (while the daemon runs)
-  traces/<exec-id>.jsonl      traces/<exec-id>.stderr.log
-  policies/<exec-id>.json     (the --policy file AXLR was given)
-  artifacts/<task-id>/report.md
-  workspaces/<bot-id>/        (the --root AXLR runs in)
+  bots/<bot-id>.json       tasks/<task-id>.json      executions/<exec-id>.json   nodes/<node-id>.json
+  events.jsonl             audit.jsonl               underpass-bots.sock (while the daemon runs)
+  policies/<exec-id>.json  artifacts/<task-id>/report.md
+  traces/, workspaces/     (single-process runs; a node keeps its own under its state)
 ```
-
-## Approval
-
-The run's approval level is `--approve none`: AXLR runs nothing the settings
-do not already allow, and a held call ends the execution in
-`needs_decision`. The control plane then shows a `WaitingApproval` task whose
-execution is `DecisionRequired` with `result.pendingDecision`
-(`tool`, `callId`, `sessionId`), and the runtime session keeps the call.
-
-```bash
-$ub task approve task-…           # or task deny; task decide task-… approve|deny is the same
-```
-
-`task approve` appends a new execution to the task, moves it to `Running`
-before anything runs, hands the decision to the session and settles the
-outcome exactly as `task run` does: `Completed`, `Failed`, or
-`WaitingApproval` again when the next call is held too (then decide again).
-Events: `bot.task.decided` `{decision, callId, sessionId, executionId}`,
-then `bot.task.completed`, `bot.task.failed` or `bot.task.waiting_approval`.
-Audit action: `task.decide`. A wrong word, a task that is not
-`WaitingApproval` or a paused bot is refused before anything changes.
-
-## Recovery
-
-`task run` writes the task and its execution as `Running` *before* it calls
-the runtime, on purpose: if the process dies (kill, OOM, power loss), the
-state directory shows a `Running` task with a `Running` execution and no
-`endedAt`, instead of hiding the loss. Nothing else ends them, so the vision's
-§14.6 rule, no task left `Running` forever, is kept by an explicit command:
-
-```bash
-$ub task reconcile                # {"failed": ["task-…"], "skipped": []}
-$ub task reconcile --grace 30s    # a shorter grace for a known-dead process
-```
-
-It reads every `Running` task and fails those whose execution started more
-than a grace period ago, by default the bot's task timeout plus one minute:
-the execution ends `Failed` with the reason `reconciled: the control plane
-found it Running after <age>; the process that ran it is gone` (its trace
-under `traces/` is kept when the file exists), the task moves to `Failed`
-with the same reason, a `bot.task.failed` event with `"reason": "reconciled"`
-is published and a `task.reconcile` audit entry is recorded. Younger tasks
-may still be running in another process and are reported as `skipped`.
-Running it again is harmless. A task whose execution had already ended when
-the process died (between the two saves) is failed too, with a reason that
-names the execution's outcome.
 
 ## Command reference
 
 ```text
 underpass-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>] <command>
 
-  serve [--tick 2s] [--reconcile-every 1m] [--grace <duration>]
-  alert --unit <name> [--bot <id>] [--host <name>] [--at <RFC3339>] [--window 10m] [--user] [--correlation <id>]
-  bot register --file <bot.json>
-  bot enable <bot-id>
-  bot list
-  bot get <bot-id>
+  serve [--listen <addr>] [--tick 2s] [--reconcile-every 1m] [--grace <duration>]
+  node list | node get <node-id>
+  bot register --file <bot.json> | bot enable <bot-id> | bot list | bot get <bot-id>
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>]
-  task run <task-id>
+  task run <task-id>                           in process (exit 0 completed, 3 decision required, 1 failed)
   task approve <task-id> | task deny <task-id> | task decide <task-id> approve|deny
-  task get <task-id>
-  task report <task-id> [--path]
-  task reconcile [--grace <duration>]
+  task get <task-id> | task report <task-id> [--path] | task reconcile [--grace <duration>]
   execution get <execution-id>
-  install [--user] [--prefix <dir>] [--state <dir>] [--unit-dir <dir>] [--env-file <path>] [--axlr-bin <path>] [--destdir <dir>] [--no-systemctl]
-  uninstall [--user] [--prefix <dir>] … [--purge]
+  install [--system] [--prefix <dir>] [--state <dir>] [--node-state <dir>] [--unit-dir <dir>] [--env-file <path>]
+          [--axlr-bin <path>] [--node-binary <path>] [--destdir <dir>] [--no-systemctl]
+  uninstall [--system] [--prefix <dir>] … [--purge]
+
+underpass-node --control unix:///path/to/underpass-bots.sock | http://host:port
+               [--node-id <id>] [--labels k=v,k=v] [--state <dir>] [--axlr-bin <path>] [--heartbeat 15s] [--poll 20s]
 ```
 
 `--state` defaults to `$UNDERPASS_STATE`, then `$XDG_STATE_HOME/underpass-bots`,
-then `~/.local/state/underpass-bots`. `--axlr-bin` defaults to
-`$UNDERPASS_AXLR_BIN`, then `axlr-tui` on `PATH`. `--socket` defaults to
-`$UNDERPASS_SOCKET`, then `<state>/underpass-bots.sock`; `--socket ""` never
-uses a daemon. `alert` reads `UNDERPASS_BOT` and `UNDERPASS_SYSTEMD_USER=1`
-(the env file sets them). Output is JSON on stdout; `task report` prints
-the report as text.
+then `~/.local/state/underpass-bots`; `--axlr-bin` to `$UNDERPASS_AXLR_BIN`,
+then `axlr-tui` on `PATH`; `--socket` to `$UNDERPASS_SOCKET`, then
+`<state>/underpass-bots.sock` (`--socket ""` never uses a daemon). The node
+reads `UNDERPASS_CONTROL`, `UNDERPASS_NODE_ID`, `UNDERPASS_NODE_LABELS`,
+`UNDERPASS_NODE_STATE` and `UNDERPASS_AXLR_BIN`; its id defaults to the host
+name. Output is JSON on stdout; `task report` prints the report as text.
+
+## Next: nodes on other hosts, with mTLS
+
+The messages do not change. The control plane serves `--listen
+0.0.0.0:7878` behind a TLS terminator (or `net/http` with a server
+certificate and `ClientAuth: RequireAndVerifyClientCert`), each node gets a
+client certificate whose common name is its node id, and the server takes
+the node id from the certificate instead of the URL; `underpass-node
+--control https://control.example:7878 --cert … --key …`. The leases,
+the idempotent report and the outbound-only direction already assume a
+network between the two.
+
+## Next: the same node agent as a sidecar
+
+Vision §9.2: the node agent runs inside the pod, beside the service, as a
+container from the same image. The state directory becomes a volume, the
+environment (`UNDERPASS_CONTROL`, `UNDERPASS_AXLR_BIN`, the model key) comes
+from the pod spec, and systemd disappears; the service's files are mounted
+read-only and the bots placed on that node (by a `selector` on its labels)
+read them with AXLR's own tools. The control plane stays where it is, one
+per cluster or per fleet, and the webhook trigger (`POST /v1/triggers`
+from the orchestrator's events or an alerting source) is the trigger type
+that fits there.
 
 ## What is left out
 
-An approval queue beyond `task approve` (who may decide, and when; an
-expired approval), budgets and correlation enforced by the runtime (the
-contract's reserved fields), more triggers than `OnFailure=` (timers,
-webhooks: the sidecar's), `axlr-serve` as a second `RuntimeExecutor`, a
-TCP listener with authentication, and a real store (one JSON file per
-aggregate scans the directory for the idempotency key and for Pending
-tasks). The vision's §13 and §14 name them for Phase 2.
+Trigger types beyond `manual` (a systemd unit event, a timer, a webhook),
+an approval queue beyond `task approve` (who may decide, and when; an
+expired approval), budgets and correlation enforced by the runtime, mTLS
+and node authentication, `axlr-serve` as a second `RuntimeExecutor`, and a
+real store (one JSON file per aggregate scans the directory for the
+idempotency key, the Pending tasks and the Running executions). The
+vision's §13 and §14 name them for Phase 2.

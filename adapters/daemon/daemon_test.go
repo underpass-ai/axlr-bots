@@ -101,6 +101,11 @@ func TestDaemonRunsWhatArrivesOverTheSocketAndSurvivesARestart(t *testing.T) {
 	if _, err := os.Stat(report.Reference); err != nil {
 		t.Error("report file missing:", err)
 	}
+	// The log line follows the task's save by a hair: wait for it.
+	logDeadline := time.Now().Add(2 * time.Second)
+	for !strings.Contains(f.logs.String(), "task "+done.ID+" Completed") && time.Now().Before(logDeadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if !strings.Contains(f.logs.String(), "task "+done.ID+" Completed") || !strings.Contains(f.logs.String(), "report "+report.Reference) {
 		t.Errorf("logs = %s", f.logs.String())
 	}
