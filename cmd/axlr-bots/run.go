@@ -212,7 +212,7 @@ func printUsage(w io.Writer) {
                                       install both binaries, the two systemd units and the
                                       environment file under ~/.local (or --system); --listen
                                       serves nodes over TLS, --node-only joins a control
-                                      plane elsewhere at --control (see README)
+                                      plane elsewhere at --control (see docs/runbooks/install.md)
   uninstall [--system] [--prefix <dir>] [--purge]
                                       remove them (keep the state unless --purge)
 

@@ -1,4 +1,12 @@
+# binaries
 /axlr-bots
+/axlr-node
 /bin/
+*.test
+
+# test output
 /coverage.out
+coverage*.out
+
+# local memory store
 /.kernel/
