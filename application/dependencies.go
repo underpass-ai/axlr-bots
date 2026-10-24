@@ -5,19 +5,22 @@ import "errors"
 // Dependencies are the ports every use case may need, wired once by the
 // composition root. Actor names who is acting, for the audit log.
 type Dependencies struct {
-	Bots       BotRepository
-	Tasks      TaskRepository
-	Executions ExecutionRepository
-	Nodes      NodeRepository
-	Events     EventPublisher
-	Audit      AuditSink
-	Runtime    RuntimeExecutor
-	Decisions  DecisionExecutor
-	Traces     TraceLocator
-	Artifacts  ArtifactStore
-	Clock      Clock
-	IDs        IDGenerator
-	Actor      string
+	Bots        BotRepository
+	Tasks       TaskRepository
+	Executions  ExecutionRepository
+	Nodes       NodeRepository
+	Enrollments EnrollmentRepository
+	Certifier   Certifier
+	Denylist    CertificateDenylist
+	Events      EventPublisher
+	Audit       AuditSink
+	Runtime     RuntimeExecutor
+	Decisions   DecisionExecutor
+	Traces      TraceLocator
+	Artifacts   ArtifactStore
+	Clock       Clock
+	IDs         IDGenerator
+	Actor       string
 }
 
 // Validate reports the first missing dependency.
@@ -31,6 +34,12 @@ func (d Dependencies) Validate() error {
 		return errors.New("application: ExecutionRepository is required")
 	case d.Nodes == nil:
 		return errors.New("application: NodeRepository is required")
+	case d.Enrollments == nil:
+		return errors.New("application: EnrollmentRepository is required")
+	case d.Certifier == nil:
+		return errors.New("application: Certifier is required")
+	case d.Denylist == nil:
+		return errors.New("application: CertificateDenylist is required")
 	case d.Events == nil:
 		return errors.New("application: EventPublisher is required")
 	case d.Audit == nil:

@@ -294,6 +294,9 @@ type harness struct {
 	tasks   *memoryTasks
 	execs   *memoryExecutions
 	nodes   *memoryNodes
+	enrol   *memoryEnrollments
+	ca      *fakeCertifier
+	deny    *memoryDenylist
 	log     *collector
 	runtime *fakeRuntime
 	decider *fakeDecisions
@@ -308,6 +311,9 @@ func newHarness() *harness {
 		tasks:   &memoryTasks{},
 		execs:   &memoryExecutions{},
 		nodes:   &memoryNodes{},
+		enrol:   &memoryEnrollments{},
+		ca:      &fakeCertifier{},
+		deny:    &memoryDenylist{},
 		log:     &collector{},
 		runtime: &fakeRuntime{report: ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "done", SessionID: "sess-1"}, TracePath: "/traces/exec-1.jsonl"}},
 		decider: &fakeDecisions{report: ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "done after approval", SessionID: "sess-1"}, TracePath: "/traces/exec-2.jsonl"}},
@@ -316,7 +322,7 @@ func newHarness() *harness {
 		clock:   &fixedClock{now: t0},
 	}
 	h.deps = Dependencies{
-		Bots: h.bots, Tasks: h.tasks, Executions: h.execs, Nodes: h.nodes, Events: h.log, Audit: h.log,
+		Bots: h.bots, Tasks: h.tasks, Executions: h.execs, Nodes: h.nodes, Enrollments: h.enrol, Certifier: h.ca, Denylist: h.deny, Events: h.log, Audit: h.log,
 		Runtime: h.runtime, Decisions: h.decider, Traces: h.traces, Artifacts: h.store, Clock: h.clock, IDs: &sequentialIDs{}, Actor: "test:operator",
 	}
 	return h
@@ -335,3 +341,93 @@ func sampleDefinition() BotDefinition {
 }
 
 var errBoom = errors.New("boom")
+
+type memoryEnrollments struct {
+	enrollments map[domain.EnrollmentID]domain.Enrollment
+	fail        error
+	listFail    error
+}
+
+func (m *memoryEnrollments) Save(_ context.Context, e domain.Enrollment) error {
+	if m.fail != nil {
+		return m.fail
+	}
+	if m.enrollments == nil {
+		m.enrollments = map[domain.EnrollmentID]domain.Enrollment{}
+	}
+	m.enrollments[e.ID()] = e
+	return nil
+}
+
+func (m *memoryEnrollments) Get(_ context.Context, id domain.EnrollmentID) (domain.Enrollment, error) {
+	if m.listFail != nil {
+		return domain.Enrollment{}, m.listFail
+	}
+	e, ok := m.enrollments[id]
+	if !ok {
+		return domain.Enrollment{}, domain.NotFoundError{Kind: "enrollment", ID: id.String()}
+	}
+	return e, nil
+}
+
+func (m *memoryEnrollments) List(context.Context) ([]domain.Enrollment, error) {
+	if m.listFail != nil {
+		return nil, m.listFail
+	}
+	out := make([]domain.Enrollment, 0, len(m.enrollments))
+	for _, e := range m.enrollments {
+		out = append(out, e)
+	}
+	slices.SortFunc(out, func(a, b domain.Enrollment) int { return strings.Compare(a.ID().String(), b.ID().String()) })
+	return out, nil
+}
+
+// fakeCertifier is the fake Certifier: it issues a serial per request
+// and remembers what it was asked.
+type fakeCertifier struct {
+	issued  int
+	fail    error
+	caFail  error
+	lastCSR []byte
+	lastID  domain.NodeID
+}
+
+func (f *fakeCertifier) IssueNodeCertificate(_ context.Context, node domain.NodeID, csr []byte) (IssuedCertificate, error) {
+	if f.fail != nil {
+		return IssuedCertificate{}, f.fail
+	}
+	f.issued++
+	f.lastCSR, f.lastID = csr, node
+	return IssuedCertificate{CertificatePEM: []byte("CERT " + node.String()), Serial: fmt.Sprintf("serial-%d", f.issued), NotAfter: t0.Add(24 * time.Hour)}, nil
+}
+
+func (f *fakeCertifier) CACertificate(context.Context) ([]byte, error) {
+	if f.caFail != nil {
+		return nil, f.caFail
+	}
+	return []byte("CA PEM"), nil
+}
+
+type memoryDenylist struct {
+	serials map[string]string
+	fail    error
+}
+
+func (m *memoryDenylist) Deny(_ context.Context, serial, node string) error {
+	if m.fail != nil {
+		return m.fail
+	}
+	if m.serials == nil {
+		m.serials = map[string]string{}
+	}
+	m.serials[serial] = node
+	return nil
+}
+
+func (m *memoryDenylist) IsDenied(_ context.Context, serial string) (bool, error) {
+	if m.fail != nil {
+		return false, m.fail
+	}
+	_, denied := m.serials[serial]
+	return denied, nil
+}
