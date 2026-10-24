@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/underpass-ai/axlr-bots/adapters/axlr"
 	"github.com/underpass-ai/axlr-bots/adapters/nodeagent"
@@ -29,16 +30,20 @@ const (
 )
 
 // run parses the flags and serves until SIGTERM or SIGINT; `enroll`
-// is the one subcommand.
+// and `check` are the subcommands.
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "enroll" {
 		return enroll(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "check" {
+		return check(args[1:], stdout, stderr)
 	}
 	flags := flag.NewFlagSet("axlr-node", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() {
 		fmt.Fprintln(stderr, "usage: axlr-node [flags]            run the node agent")
 		fmt.Fprintln(stderr, "       axlr-node enroll [flags]     enroll this host with a one-time token")
+		fmt.Fprintln(stderr, "       axlr-node check [flags]      check the control plane answers over TLS with the fleet CA")
 		flags.PrintDefaults()
 	}
 	control := flags.String("control", envOr("AXLR_NODE_CONTROL", ""), "the control plane: unix:///path/to/axlr-bots.sock on the same host, or https://host:7878 with the credentials enroll stored (also AXLR_NODE_CONTROL)")
@@ -48,6 +53,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	axlrBin := flags.String("axlr-bin", envOr("AXLR_TUI", "axlr-tui"), "the axlr-tui that runs executions (also AXLR_TUI)")
 	heartbeat := flags.Duration("heartbeat", nodeagent.DefaultHeartbeat, "how often to tell the control plane the node is alive")
 	poll := flags.Duration("poll", nodeagent.DefaultPollWait, "how long one poll for an assignment waits")
+	tokenFile := flags.String("token-file", envOr("AXLR_NODE_TOKEN_FILE", ""), "over https, enroll with the token in this file when the state holds no certificate, then run (also AXLR_NODE_TOKEN_FILE): a sidecar's first start")
+	caFile := flags.String("ca-file", envOr("AXLR_NODE_CA_FILE", ""), "with --token-file, the fleet CA in PEM instead of the one the token carries (also AXLR_NODE_CA_FILE)")
+	retry := flags.Duration("enroll-retry", 10*time.Second, "with --token-file, how long to wait between enrollment attempts")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exitOK
@@ -67,9 +75,22 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "axlr-node:", err)
 		return exitUsage
 	}
+	if *tokenFile != "" && !strings.HasPrefix(*control, "https://") {
+		fmt.Fprintln(stderr, "axlr-node: --token-file needs --control https://host:port (the control plane's TLS address)")
+		return exitUsage
+	}
 	if err := os.MkdirAll(*stateDir, 0o755); err != nil {
 		fmt.Fprintln(stderr, "axlr-node: state directory:", err)
 		return exitError
+	}
+	logger := log.New(stderr, "", log.LstdFlags)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+	if *tokenFile != "" {
+		start := firstStart{Control: *control, TokenFile: *tokenFile, CAFile: *caFile, StateDir: *stateDir, NodeID: *nodeID}
+		if !start.untilEnrolled(ctx, *retry, logger.Printf) {
+			return exitOK
+		}
 	}
 	transport, id, labelsFromEnrollment, identity, err := transportFor(*control, *nodeID, *stateDir)
 	if err != nil {
@@ -79,10 +100,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	for key, value := range parsedLabels {
 		labelsFromEnrollment[key] = value
 	}
-	logger := log.New(stderr, "", log.LstdFlags)
 	logger.Printf("node: control plane %s, %s", *control, identity)
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer stop()
 	agent := nodeagent.Agent{
 		Transport: transport,
 		Executor:  axlr.NewExecutor(*axlrBin, *stateDir),

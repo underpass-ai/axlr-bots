@@ -26,6 +26,7 @@ func enroll(args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	control := flags.String("control", envOr("AXLR_NODE_CONTROL", ""), "the control plane: https://host:7878 (also AXLR_NODE_CONTROL)")
 	token := flags.String("token", envOr("AXLR_NODE_TOKEN", ""), "the one-time token axlr-bots node enroll-token printed (also AXLR_NODE_TOKEN)")
+	tokenFile := flags.String("token-file", envOr("AXLR_NODE_TOKEN_FILE", ""), "a file holding the token, in place of --token (also AXLR_NODE_TOKEN_FILE)")
 	caFile := flags.String("ca-file", "", "the fleet CA in PEM, instead of the one the token carries")
 	stateDir := flags.String("state", envOr("AXLR_NODE_STATE", defaultStateDir()), "the node's state; the credentials go under its pki/ directory")
 	hostName := flags.String("host-name", "", "the host name to report (default: the OS's)")
@@ -43,8 +44,16 @@ func enroll(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "axlr-node: enroll needs --control https://host:port (the control plane's TLS address)")
 		return exitUsage
 	}
+	if *token == "" && *tokenFile != "" {
+		raw, err := os.ReadFile(*tokenFile)
+		if err != nil {
+			fmt.Fprintln(stderr, "axlr-node:", err)
+			return exitError
+		}
+		*token = string(raw)
+	}
 	if *token == "" {
-		fmt.Fprintln(stderr, "axlr-node: enroll needs --token (or AXLR_NODE_TOKEN)")
+		fmt.Fprintln(stderr, "axlr-node: enroll needs --token or --token-file (or AXLR_NODE_TOKEN, AXLR_NODE_TOKEN_FILE)")
 		return exitUsage
 	}
 	decoded, err := nodeproto.DecodeEnrollToken(*token)
@@ -107,7 +116,7 @@ func enrollWith(ctx context.Context, control string, token nodeproto.EnrollToken
 	if err := pki.SaveCredentials(stateDir, keyPEM, []byte(response.Certificate), []byte(response.CA)); err != nil {
 		return enrollResult{}, err
 	}
-	record := enrollmentRecord{NodeID: response.Node.ID, Labels: response.Node.Labels, Control: control, Serial: response.Serial}
+	record := enrollmentRecord{NodeID: response.Node.ID, Labels: response.Node.Labels, Control: control, Serial: response.Serial, TokenID: token.ID}
 	if err := record.save(stateDir); err != nil {
 		return enrollResult{}, err
 	}
