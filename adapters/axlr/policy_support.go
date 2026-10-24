@@ -14,6 +14,24 @@ const policyFlag = "-policy"
 // takes --policy.
 const helpTimeout = 15 * time.Second
 
+// SupportsPolicy reports whether the binary takes --policy: what a node
+// tells the control plane as a capability.
+func (e *Executor) SupportsPolicy(ctx context.Context) bool { return e.supportsPolicy(ctx) }
+
+// Version is the binary's version line (`axlr-tui --version`), or ""
+// when it has none.
+func (e *Executor) Version(ctx context.Context) string {
+	versionCtx, cancel := context.WithTimeout(ctx, helpTimeout)
+	defer cancel()
+	args := append(append([]string{}, e.Args...), "--version")
+	out, err := exec.CommandContext(versionCtx, e.binary(), args...).Output()
+	if err != nil {
+		return ""
+	}
+	line, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
+	return line
+}
+
 // supportsPolicy reports whether the binary takes --policy, by reading
 // its --help once per Executor. A binary older than the policy (the
 // contract build, 0.13.0) does not; the control plane then records the

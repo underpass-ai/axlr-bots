@@ -20,10 +20,11 @@ type Service interface {
 	ListBots(ctx context.Context) ([]domain.BotSnapshot, error)
 	GetBot(ctx context.Context, id string) (domain.BotSnapshot, error)
 	SubmitTask(ctx context.Context, request SubmitRequest) (SubmitResponse, error)
-	Alert(ctx context.Context, request AlertRequest) (SubmitResponse, error)
 	RunTask(ctx context.Context, id string) (RunResponse, error)
 	DecideTask(ctx context.Context, id, decision string) (RunResponse, error)
 	GetTask(ctx context.Context, id string) (domain.TaskSnapshot, error)
 	GetReport(ctx context.Context, id string) (ReportResponse, error)
 	GetExecution(ctx context.Context, id string) (domain.ExecutionSnapshot, error)
+	ListNodes(ctx context.Context) ([]domain.NodeSnapshot, error)
+	GetNode(ctx context.Context, id string) (domain.NodeSnapshot, error)
 }

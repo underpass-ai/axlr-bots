@@ -2,7 +2,6 @@ package unixapi
 
 import (
 	"context"
-	"time"
 
 	"github.com/underpass-ai/underpass-bots/application"
 	"github.com/underpass-ai/underpass-bots/domain"
@@ -77,17 +76,6 @@ func (l *Local) SubmitTask(ctx context.Context, request SubmitRequest) (SubmitRe
 	return SubmitResponse{Created: result.Created, Task: result.Task.Snapshot()}, nil
 }
 
-func (l *Local) Alert(ctx context.Context, request AlertRequest) (SubmitResponse, error) {
-	result, err := application.NewSubmitAlert(l.deps).Execute(ctx, application.AlertCommand{
-		BotID: request.BotID, Unit: request.Unit, Host: request.Host, At: request.At,
-		Window: time.Duration(request.WindowSeconds) * time.Second, UserManager: request.UserManager, CorrelationID: request.CorrelationID,
-	})
-	if err != nil {
-		return SubmitResponse{}, err
-	}
-	return SubmitResponse{Created: result.Created, Task: result.Task.Snapshot()}, nil
-}
-
 func (l *Local) RunTask(ctx context.Context, id string) (RunResponse, error) {
 	taskID, err := domain.NewTaskID(id)
 	if err != nil {
@@ -155,3 +143,30 @@ func (l *Local) GetExecution(ctx context.Context, id string) (domain.ExecutionSn
 	}
 	return execution.Snapshot(), nil
 }
+
+func (l *Local) ListNodes(ctx context.Context) ([]domain.NodeSnapshot, error) {
+	nodes, err := application.NewListNodes(l.deps).Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+	snapshots := make([]domain.NodeSnapshot, 0, len(nodes))
+	for _, n := range nodes {
+		snapshots = append(snapshots, n.Snapshot())
+	}
+	return snapshots, nil
+}
+
+func (l *Local) GetNode(ctx context.Context, id string) (domain.NodeSnapshot, error) {
+	nodeID, err := domain.NewNodeID(id)
+	if err != nil {
+		return domain.NodeSnapshot{}, err
+	}
+	node, err := application.NewGetNode(l.deps).Execute(ctx, nodeID)
+	if err != nil {
+		return domain.NodeSnapshot{}, err
+	}
+	return node.Snapshot(), nil
+}
+
+// Dependencies are the use cases' dependencies, for the node routes.
+func (l *Local) Dependencies() application.Dependencies { return l.deps }

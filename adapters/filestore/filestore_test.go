@@ -17,6 +17,7 @@ var (
 	_ application.TaskRepository      = TaskRepository{}
 	_ application.ExecutionRepository = ExecutionRepository{}
 	_ application.ArtifactStore       = ArtifactStore{}
+	_ application.NodeRepository      = NodeRepository{}
 )
 
 var t0 = time.Date(2026, 10, 23, 15, 0, 0, 0, time.UTC)
@@ -264,5 +265,55 @@ func TestArtifactStoreKeepsTheReport(t *testing.T) {
 	}
 	if _, err := blocked.LoadReport(ctx, "task-1"); err == nil || domain.IsNotFound(err) {
 		t.Errorf("read under a file: %v", err)
+	}
+}
+
+func TestNodeRepositoryAndRunningExecutions(t *testing.T) {
+	state := t.TempDir()
+	ctx := context.Background()
+	nodes := NewNodeRepository(state)
+	if list, err := nodes.List(ctx); err != nil || len(list) != 0 {
+		t.Errorf("empty list: %v %d", err, len(list))
+	}
+	labels, _ := domain.NewNodeLabels(map[string]string{"host": "web-1"})
+	node, _ := domain.NewNode("web-1", "web-1.example", labels, domain.NodeCapabilities{PolicySupported: true}, t0)
+	node.Heartbeat(t0.Add(time.Second))
+	if err := nodes.Save(ctx, node); err != nil {
+		t.Fatal(err)
+	}
+	back, err := NewNodeRepository(state).Get(ctx, "web-1")
+	if err != nil || back.Status() != domain.NodeOnline || back.Labels()["host"] != "web-1" || !back.Capabilities().PolicySupported {
+		t.Errorf("reopened node = %v %+v", err, back.Snapshot())
+	}
+	if _, err := nodes.Get(ctx, "ghost"); !domain.IsNotFound(err) {
+		t.Errorf("missing node: %v", err)
+	}
+	if list, err := nodes.List(ctx); err != nil || len(list) != 1 {
+		t.Errorf("list: %v %d", err, len(list))
+	}
+	_ = os.WriteFile(filepath.Join(state, "nodes", "bad.json"), []byte("{"), 0o644)
+	if _, err := nodes.List(ctx); err == nil {
+		t.Error("corrupt node listed")
+	}
+
+	execs := NewExecutionRepository(state)
+	running, _ := domain.NewExecution("exec-run", "task-1", "bot-1", t0)
+	done, _ := domain.NewExecution("exec-done", "task-1", "bot-1", t0)
+	_ = done.Complete(domain.Result{}, domain.Usage{}, "", t0)
+	for _, e := range []domain.Execution{running, done} {
+		if err := execs.Save(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list, err := execs.ListRunning(ctx)
+	if err != nil || len(list) != 1 || list[0].ID() != "exec-run" {
+		t.Errorf("running = %v %d", err, len(list))
+	}
+	if list, err := NewExecutionRepository(filepath.Join(state, "nowhere")).ListRunning(ctx); err != nil || len(list) != 0 {
+		t.Errorf("no dir: %v %d", err, len(list))
+	}
+	_ = os.WriteFile(filepath.Join(state, "executions", "bad.json"), []byte("{"), 0o644)
+	if _, err := execs.ListRunning(ctx); err == nil {
+		t.Error("corrupt execution listed")
 	}
 }

@@ -196,6 +196,17 @@ func TestDecidePassesThePolicy(t *testing.T) {
 	}
 }
 
+func TestCapabilities(t *testing.T) {
+	e, _ := fake(t, "result-completed")
+	if !e.SupportsPolicy(context.Background()) || e.Version(context.Background()) != "axlr-tui 0.14.0-dev" {
+		t.Errorf("capabilities: policy %v version %q", e.SupportsPolicy(context.Background()), e.Version(context.Background()))
+	}
+	missing := NewExecutor("/no/such/axlr-tui", t.TempDir())
+	if missing.SupportsPolicy(context.Background()) || missing.Version(context.Background()) != "" {
+		t.Error("a missing binary has capabilities")
+	}
+}
+
 func TestPolicyFileErrors(t *testing.T) {
 	blocked := NewExecutor(os.Args[0], filepath.Join(t.TempDir(), "file"))
 	if err := os.WriteFile(blocked.StateDir, []byte("x"), 0o644); err != nil {

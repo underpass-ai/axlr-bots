@@ -3,6 +3,8 @@ package unixapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -73,11 +75,11 @@ func TestClientAndServerCarryTheWholeFlow(t *testing.T) {
 	client, _, _ := serve(t, "completed")
 	ctx := context.Background()
 
-	bot, err := client.RegisterBot(ctx, definition("sre-host-bot", "observe"))
+	bot, err := client.RegisterBot(ctx, definition("bot-a", "observe"))
 	if err != nil || bot.Status != "Registered" || bot.Level != "observe" || len(bot.ToolRules.Allow) != 1 {
 		t.Fatalf("register: %v %+v", err, bot)
 	}
-	if _, err := client.RegisterBot(ctx, definition("sre-host-bot", "observe")); err == nil || !strings.Contains(err.Error(), "already exists") {
+	if _, err := client.RegisterBot(ctx, definition("bot-a", "observe")); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("duplicate register: %v", err)
 	}
 	var remote RemoteError
@@ -87,33 +89,24 @@ func TestClientAndServerCarryTheWholeFlow(t *testing.T) {
 	if bots, err := client.ListBots(ctx); err != nil || len(bots) != 1 {
 		t.Errorf("list: %v %d", err, len(bots))
 	}
-	if got, err := client.GetBot(ctx, "sre-host-bot"); err != nil || got.ID != "sre-host-bot" {
+	if got, err := client.GetBot(ctx, "bot-a"); err != nil || got.ID != "bot-a" {
 		t.Errorf("get bot: %v", err)
 	}
 	if _, err := client.GetBot(ctx, "nobody"); !domain.IsNotFound(err) {
 		t.Errorf("unknown bot: %v", err)
 	}
-	if _, err := client.EnableBot(ctx, "sre-host-bot"); err != nil {
+	if _, err := client.EnableBot(ctx, "bot-a"); err != nil {
 		t.Fatal(err)
 	}
 
-	submitted, err := client.SubmitTask(ctx, SubmitRequest{BotID: "sre-host-bot", Objective: "Look at the host", IdempotencyKey: "k-1", CorrelationID: "c-1"})
+	submitted, err := client.SubmitTask(ctx, SubmitRequest{BotID: "bot-a", Objective: "Look at the host", IdempotencyKey: "k-1", CorrelationID: "c-1"})
 	if err != nil || !submitted.Created || submitted.Task.Status != "Pending" || submitted.Task.CorrelationID != "c-1" {
 		t.Fatalf("submit: %v %+v", err, submitted)
 	}
-	again, err := client.SubmitTask(ctx, SubmitRequest{BotID: "sre-host-bot", Objective: "Look at the host", IdempotencyKey: "k-1"})
+	again, err := client.SubmitTask(ctx, SubmitRequest{BotID: "bot-a", Objective: "Look at the host", IdempotencyKey: "k-1"})
 	if err != nil || again.Created || again.Task.ID != submitted.Task.ID {
 		t.Errorf("resubmit: %v %+v", err, again)
 	}
-	at := time.Date(2026, 10, 24, 12, 3, 0, 0, time.UTC)
-	alert, err := client.Alert(ctx, AlertRequest{BotID: "sre-host-bot", Unit: "demo-broken", At: at, WindowSeconds: 600, UserManager: true})
-	if err != nil || !alert.Created || alert.Task.IdempotencyKey != "alert:demo-broken.service:2026-10-24T12:00:00Z" || !strings.Contains(alert.Task.Objective, "--user") {
-		t.Errorf("alert: %v %+v", err, alert)
-	}
-	if repeat, err := client.Alert(ctx, AlertRequest{BotID: "sre-host-bot", Unit: "demo-broken.service", At: at.Add(time.Minute)}); err != nil || repeat.Created {
-		t.Errorf("repeated alert: %v %+v", err, repeat)
-	}
-
 	if _, err := client.GetReport(ctx, submitted.Task.ID); !domain.IsNotFound(err) {
 		t.Errorf("report before the run: %v", err)
 	}
@@ -148,13 +141,13 @@ func TestClientAndServerCarryTheWholeFlow(t *testing.T) {
 func TestDecisionGoesThroughTheRunner(t *testing.T) {
 	client, _, dir := serve(t, "approval-flow")
 	ctx := context.Background()
-	if _, err := client.RegisterBot(ctx, definition("sre-host-fixer", "act-with-approval")); err != nil {
+	if _, err := client.RegisterBot(ctx, definition("bot-b", "act-with-approval")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.EnableBot(ctx, "sre-host-fixer"); err != nil {
+	if _, err := client.EnableBot(ctx, "bot-b"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, err := client.SubmitTask(ctx, SubmitRequest{BotID: "sre-host-fixer", Objective: "Restart demo-broken.service", IdempotencyKey: "fix-1"})
+	submitted, err := client.SubmitTask(ctx, SubmitRequest{BotID: "bot-b", Objective: "Restart demo-broken.service", IdempotencyKey: "fix-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +176,8 @@ func TestServerRefusesBadBodies(t *testing.T) {
 	for _, tc := range []struct{ method, path, body string }{
 		{http.MethodPost, "/v1/bots", `{"nope": 1}`},
 		{http.MethodPost, "/v1/tasks", `not json`},
-		{http.MethodPost, "/v1/alerts", `{"unit": 3}`},
+		{http.MethodPost, "/v1/nodes", `{"id": 3}`},
+		{http.MethodPost, "/v1/nodes/n/executions/exec-1/report", `{"outcome": 1}`},
 		{http.MethodPost, "/v1/tasks/task-1/decide", `{"decision": ["x"]}`},
 	} {
 		rec := httptest.NewRecorder()
@@ -285,7 +279,7 @@ func TestServeErrorsAndReachability(t *testing.T) {
 		t.Error("reachable without a daemon")
 	}
 	client := NewClient(filepath.Join(dir, "nothing.sock"))
-	if _, err := client.ListBots(context.Background()); err == nil || !strings.Contains(err.Error(), "socket") {
+	if _, err := client.ListBots(context.Background()); err == nil || !strings.Contains(err.Error(), "control plane at") {
 		t.Errorf("client without a daemon: %v", err)
 	}
 }
@@ -330,10 +324,164 @@ func TestLocalReportReference(t *testing.T) {
 		func() error { _, err := local.DecideTask(ctx, "bad id", "approve"); return err },
 		func() error { _, err := local.GetTask(ctx, "bad id"); return err },
 		func() error { _, err := local.GetExecution(ctx, "bad id"); return err },
-		func() error { _, err := local.Alert(ctx, AlertRequest{BotID: "b"}); return err },
+		func() error { _, err := local.GetNode(ctx, "Bad"); return err },
 	} {
 		if err := bad(); err == nil {
 			t.Error("bad id accepted")
 		}
+	}
+}
+
+func TestNodeProtocolOverTheSocket(t *testing.T) {
+	client, _, _ := serve(t, "completed")
+	ctx := context.Background()
+	if nodes, err := client.ListNodes(ctx); err != nil || len(nodes) != 0 {
+		t.Errorf("no nodes yet: %v %d", err, len(nodes))
+	}
+	node, err := client.Register(ctx, application.NodeRegistration{ID: "web-1", HostName: "web-1.example", Labels: map[string]string{"host": "web-1"}, Capabilities: domain.NodeCapabilities{AXLRVersion: "dev", PolicySupported: true}})
+	if err != nil || node.Status != "Online" || node.Capabilities.AXLRVersion != "dev" {
+		t.Fatalf("register: %v %+v", err, node)
+	}
+	if _, err := client.Register(ctx, application.NodeRegistration{ID: "Bad Id", HostName: "h"}); err == nil {
+		t.Error("bad registration accepted")
+	}
+	if beat, err := client.Heartbeat(ctx, "web-1"); err != nil || beat.Status != "Online" {
+		t.Errorf("heartbeat: %v %+v", err, beat)
+	}
+	if _, err := client.Heartbeat(ctx, "ghost"); !domain.IsNotFound(err) {
+		t.Errorf("unknown heartbeat: %v", err)
+	}
+	if got, err := client.GetNode(ctx, "web-1"); err != nil || got.HostName != "web-1.example" {
+		t.Errorf("get node: %v %+v", err, got)
+	}
+	if nodes, err := client.ListNodes(ctx); err != nil || len(nodes) != 1 {
+		t.Errorf("list nodes: %v %d", err, len(nodes))
+	}
+	// Nothing to do: the long poll waits and answers 204.
+	started := time.Now()
+	if _, found, err := client.NextAssignment(ctx, "web-1", 300*time.Millisecond); err != nil || found {
+		t.Errorf("empty poll: %v %v", err, found)
+	}
+	if time.Since(started) < 250*time.Millisecond {
+		t.Error("the long poll did not wait")
+	}
+	if _, err := client.RegisterBot(ctx, definition("bot-a", "observe")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.EnableBot(ctx, "bot-a"); err != nil {
+		t.Fatal(err)
+	}
+	submitted, err := client.SubmitTask(ctx, SubmitRequest{BotID: "bot-a", Objective: "List the files in your workspace", IdempotencyKey: "k-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assignment, found, err := client.NextAssignment(ctx, "web-1", 5*time.Second)
+	if err != nil || !found || assignment.Run == nil || assignment.Run.TaskID != domain.TaskID(submitted.Task.ID) || assignment.Run.Objective != "List the files in your workspace" || assignment.Kind != domain.ExecutionRun {
+		t.Fatalf("assignment: %v %v %+v", err, found, assignment)
+	}
+	if task, _ := client.GetTask(ctx, submitted.Task.ID); task.Status != "Running" {
+		t.Errorf("task = %+v", task)
+	}
+	if execution, _ := client.GetExecution(ctx, assignment.ExecutionID.String()); execution.NodeID != "web-1" || execution.LeaseUntil == nil {
+		t.Errorf("execution = %+v", execution)
+	}
+	until, err := client.RenewLease(ctx, "web-1", assignment.ExecutionID)
+	if err != nil || until.Before(time.Now()) {
+		t.Errorf("renew: %v %s", err, until)
+	}
+	if _, err := client.RenewLease(ctx, "db-1", assignment.ExecutionID); err == nil {
+		t.Error("another node renewed the lease")
+	}
+	report := application.ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "3 files", SessionID: "sess-1"}, Usage: domain.Usage{Requests: 1}, TracePath: "node:web-1:traces/exec.jsonl", Policy: &domain.PolicyRecord{Level: "observe", RuntimeLevel: "observe", Enforced: true}}
+	ack, err := client.Report(ctx, "web-1", assignment.ExecutionID, report)
+	if err != nil || !ack.Accepted || ack.Outcome != domain.ExecutionCompleted {
+		t.Fatalf("report: %v %+v", err, ack)
+	}
+	again, err := client.Report(ctx, "web-1", assignment.ExecutionID, report)
+	if err != nil || again.Accepted || again.Outcome != domain.ExecutionCompleted {
+		t.Errorf("second report: %v %+v", err, again)
+	}
+	task, err := client.GetTask(ctx, submitted.Task.ID)
+	if err != nil || task.Status != "Completed" {
+		t.Errorf("task after report = %+v", task)
+	}
+	got, err := client.GetReport(ctx, submitted.Task.ID)
+	if err != nil || got.Content != "3 files" {
+		t.Errorf("report content = %+v %v", got, err)
+	}
+	if execution, _ := client.GetExecution(ctx, assignment.ExecutionID.String()); execution.TracePath != report.TracePath || execution.Policy == nil || !execution.Policy.Enforced {
+		t.Errorf("execution = %+v", execution)
+	}
+	if _, err := client.Report(ctx, "web-1", "exec-missing", report); !domain.IsNotFound(err) {
+		t.Errorf("unknown execution: %v", err)
+	}
+	if _, err := client.Report(ctx, "web-1", assignment.ExecutionID, application.ExecutionReport{Outcome: domain.ExecutionRunning}); err == nil {
+		t.Error("a non-final report was accepted")
+	}
+	if _, _, err := client.NextAssignment(ctx, "Bad Id", 0); err == nil {
+		t.Error("bad node id accepted")
+	}
+	if _, _, err := client.NextAssignment(ctx, "ghost", 0); !domain.IsNotFound(err) {
+		t.Errorf("unknown node: %v", err)
+	}
+}
+
+func TestServeTCPAndNextAssignmentValidation(t *testing.T) {
+	deps, _ := compose.Dependencies(t.TempDir(), "axlr-tui", "test")
+	server := NewServer(NewLocal(deps))
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	_ = listener.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- server.ServeTCP(ctx, address) }()
+	client := NewClient("http://" + address)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := client.ListNodes(context.Background()); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("tcp server not reachable")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := client.Register(context.Background(), application.NodeRegistration{ID: "web-1", HostName: "h"}); err != nil {
+		t.Fatal(err)
+	}
+	handler := server.Handler()
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/nodes/web-1/assignments/next?wait=soon", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("bad wait = %d", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/nodes/web-1/executions/Bad%20Id/lease", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("bad execution id = %d", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/nodes/Bad%20Id/heartbeat", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("bad node id = %d", rec.Code)
+	}
+	// A poll whose request is cancelled answers 204 at once.
+	pollCtx, cancelPoll := context.WithCancel(context.Background())
+	go func() { time.Sleep(50 * time.Millisecond); cancelPoll() }()
+	if _, found, err := client.NextAssignment(pollCtx, "web-1", 10*time.Second); found || (err != nil && !errors.Is(err, context.Canceled)) {
+		t.Logf("cancelled poll: %v %v", err, found)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Error(err)
+	}
+	if err := server.ServeTCP(context.Background(), "256.256.256.256:1"); err == nil {
+		t.Error("bad address served")
+	}
+	if NewClient("unix:///tmp/nothing.sock").address != "/tmp/nothing.sock" {
+		t.Error("unix:// prefix not stripped")
 	}
 }

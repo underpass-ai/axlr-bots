@@ -40,3 +40,19 @@ func (r *SerialRunner) RunNext(ctx context.Context) (RunTaskResult, bool, error)
 	defer r.mu.Unlock()
 	return NewRunNextPending(r.deps).Execute(ctx)
 }
+
+// NextAssignment hands a node its next execution, as NextAssignment
+// does, under the same lock as the runs: a task is never both assigned
+// to a node and run in process.
+func (r *SerialRunner) NextAssignment(ctx context.Context, node domain.NodeID) (Assignment, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return NewNextAssignment(r.deps).Execute(ctx, node)
+}
+
+// Report settles a node's report, as ReportExecution does.
+func (r *SerialRunner) Report(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, report ExecutionReport) (ReportResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return NewReportExecution(r.deps).Execute(ctx, node, execution, report)
+}

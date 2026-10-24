@@ -30,3 +30,22 @@ func (r ExecutionRepository) Get(_ context.Context, id domain.ExecutionID) (doma
 	}
 	return domain.RestoreExecution(snapshot)
 }
+
+// ListRunning scans every execution and keeps the Running ones, in id order.
+func (r ExecutionRepository) ListRunning(ctx context.Context) ([]domain.Execution, error) {
+	ids, err := r.files.ids()
+	if err != nil {
+		return nil, err
+	}
+	running := make([]domain.Execution, 0)
+	for _, id := range ids {
+		execution, err := r.Get(ctx, domain.ExecutionID(id))
+		if err != nil {
+			return nil, err
+		}
+		if execution.Outcome() == domain.ExecutionRunning {
+			running = append(running, execution)
+		}
+	}
+	return running, nil
+}

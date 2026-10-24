@@ -11,21 +11,34 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/underpass-ai/underpass-bots/application"
+	"github.com/underpass-ai/underpass-bots/domain"
+	"github.com/underpass-ai/underpass-bots/nodeproto"
 )
 
 // maxBodyBytes bounds a request body; a bot definition or an objective
 // is far smaller.
 const maxBodyBytes = 1 << 20
 
-// Server serves the Service over HTTP on a Unix socket.
+// Server serves the operator's Service and the node protocol over HTTP:
+// on a Unix socket (the same host), on a loopback or network address
+// (nodes on other hosts; TLS with client certificates goes in front of
+// it without changing the messages).
 type Server struct {
-	service Service
+	service *Local
 }
 
-// NewServer serves the service.
-func NewServer(service Service) *Server {
+// NewServer serves the local service.
+func NewServer(service *Local) *Server {
 	return &Server{service: service}
 }
+
+// pollInterval is how often a long poll looks again for an assignment.
+const pollInterval = 250 * time.Millisecond
+
+// maxPollWait bounds a long poll.
+const maxPollWait = 30 * time.Second
 
 // Handler is the API's routes.
 func (s *Server) Handler() http.Handler {
@@ -38,13 +51,29 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/bots/{id}", s.getBot)
 	mux.HandleFunc("POST /v1/bots/{id}/enable", s.enableBot)
 	mux.HandleFunc("POST /v1/tasks", s.submitTask)
-	mux.HandleFunc("POST /v1/alerts", s.alert)
 	mux.HandleFunc("GET /v1/tasks/{id}", s.getTask)
 	mux.HandleFunc("POST /v1/tasks/{id}/run", s.runTask)
 	mux.HandleFunc("POST /v1/tasks/{id}/decide", s.decideTask)
 	mux.HandleFunc("GET /v1/tasks/{id}/report", s.getReport)
 	mux.HandleFunc("GET /v1/executions/{id}", s.getExecution)
+	mux.HandleFunc("GET /v1/nodes", s.listNodes)
+	mux.HandleFunc("GET /v1/nodes/{id}", s.getNode)
+	mux.HandleFunc("POST /v1/nodes", s.registerNode)
+	mux.HandleFunc("POST /v1/nodes/{id}/heartbeat", s.heartbeat)
+	mux.HandleFunc("GET /v1/nodes/{id}/assignments/next", s.nextAssignment)
+	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/lease", s.renewLease)
+	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/report", s.report)
 	return mux
+}
+
+// ServeTCP listens on a TCP address (127.0.0.1:7878 for a node on this
+// host, 0.0.0.0:7878 for nodes on others) until ctx ends.
+func (s *Server) ServeTCP(ctx context.Context, address string) error {
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return fmt.Errorf("unixapi: %w", err)
+	}
+	return s.serve(ctx, listener, func() {})
 }
 
 // Serve listens on the socket until ctx ends. A socket file left by a
@@ -65,6 +94,12 @@ func (s *Server) Serve(ctx context.Context, socketPath string) error {
 		_ = listener.Close()
 		return fmt.Errorf("unixapi: %w", err)
 	}
+	return s.serve(ctx, listener, func() { _ = os.Remove(socketPath) })
+}
+
+// serve runs the HTTP server on the listener until ctx ends, then
+// cleans up.
+func (s *Server) serve(ctx context.Context, listener net.Listener, cleanup func()) error {
 	server := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
@@ -74,10 +109,10 @@ func (s *Server) Serve(ctx context.Context, socketPath string) error {
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)
 		<-done
-		_ = os.Remove(socketPath)
+		cleanup()
 		return nil
 	case err := <-done:
-		_ = os.Remove(socketPath)
+		cleanup()
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
@@ -118,15 +153,6 @@ func (s *Server) submitTask(w http.ResponseWriter, r *http.Request) {
 	respond(w, createdStatus(response.Created), response, err)
 }
 
-func (s *Server) alert(w http.ResponseWriter, r *http.Request) {
-	var request AlertRequest
-	if !readJSON(w, r, &request) {
-		return
-	}
-	response, err := s.service.Alert(r.Context(), request)
-	respond(w, createdStatus(response.Created), response, err)
-}
-
 func (s *Server) getTask(w http.ResponseWriter, r *http.Request) {
 	value, err := s.service.GetTask(r.Context(), r.PathValue("id"))
 	respond(w, http.StatusOK, value, err)
@@ -154,6 +180,131 @@ func (s *Server) getReport(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getExecution(w http.ResponseWriter, r *http.Request) {
 	value, err := s.service.GetExecution(r.Context(), r.PathValue("id"))
 	respond(w, http.StatusOK, value, err)
+}
+
+func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) {
+	value, err := s.service.ListNodes(r.Context())
+	respond(w, http.StatusOK, value, err)
+}
+
+func (s *Server) getNode(w http.ResponseWriter, r *http.Request) {
+	value, err := s.service.GetNode(r.Context(), r.PathValue("id"))
+	respond(w, http.StatusOK, value, err)
+}
+
+func (s *Server) registerNode(w http.ResponseWriter, r *http.Request) {
+	var request nodeproto.RegisterRequest
+	if !readJSON(w, r, &request) {
+		return
+	}
+	node, err := application.NewRegisterNode(s.service.Dependencies()).Execute(r.Context(), application.NodeRegistration{ID: request.ID, HostName: request.HostName, Labels: request.Labels, Capabilities: request.Capabilities})
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	respond(w, http.StatusOK, node.Snapshot(), nil)
+}
+
+func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
+	id, err := domain.NewNodeID(r.PathValue("id"))
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	node, err := application.NewHeartbeatNode(s.service.Dependencies()).Execute(r.Context(), id)
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	respond(w, http.StatusOK, node.Snapshot(), nil)
+}
+
+// nextAssignment long-polls: it looks for an assignment every
+// pollInterval until one appears or wait passes, then answers 204.
+func (s *Server) nextAssignment(w http.ResponseWriter, r *http.Request) {
+	id, err := domain.NewNodeID(r.PathValue("id"))
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	wait := time.Duration(0)
+	if raw := r.URL.Query().Get("wait"); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil || parsed < 0 {
+			respond(w, 0, nil, domain.ValidationError{Field: "wait", Reason: "must be a duration"})
+			return
+		}
+		wait = min(parsed, maxPollWait)
+	}
+	deadline := time.Now().Add(wait)
+	for {
+		assignment, found, err := s.service.Runner().NextAssignment(r.Context(), id)
+		if err != nil {
+			respond(w, 0, nil, err)
+			return
+		}
+		if found {
+			respond(w, http.StatusOK, nodeproto.FromAssignment(assignment), nil)
+			return
+		}
+		if time.Now().After(deadline) || r.Context().Err() != nil {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		select {
+		case <-r.Context().Done():
+			w.WriteHeader(http.StatusNoContent)
+			return
+		case <-time.After(pollInterval):
+		}
+	}
+}
+
+func (s *Server) renewLease(w http.ResponseWriter, r *http.Request) {
+	id, err := domain.NewNodeID(r.PathValue("id"))
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	executionID, err := domain.NewExecutionID(r.PathValue("exec"))
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	until, err := application.NewRenewLease(s.service.Dependencies()).Execute(r.Context(), id, executionID)
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	respond(w, http.StatusOK, nodeproto.LeaseMessage{LeaseUntil: until}, nil)
+}
+
+func (s *Server) report(w http.ResponseWriter, r *http.Request) {
+	id, err := domain.NewNodeID(r.PathValue("id"))
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	executionID, err := domain.NewExecutionID(r.PathValue("exec"))
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	var message nodeproto.ReportMessage
+	if !readJSON(w, r, &message) {
+		return
+	}
+	report, err := nodeproto.ToReport(message)
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	result, err := s.service.Runner().Report(r.Context(), id, executionID, report)
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	respond(w, http.StatusOK, nodeproto.ReportAck{Accepted: result.Accepted, Outcome: result.Execution.Outcome().String()}, nil)
 }
 
 func createdStatus(created bool) int {

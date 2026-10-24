@@ -24,6 +24,10 @@ func TestHelperProcess(t *testing.T) {
 		}
 	}
 	for _, a := range args {
+		if a == "--version" {
+			fmt.Fprintln(os.Stdout, "axlr-tui 0.14.0-dev")
+			os.Exit(0)
+		}
 		if a == "--help" {
 			// The real axlr-tui prints its flags on --help; one of them
 			// is -policy unless the build is older than the policy.
