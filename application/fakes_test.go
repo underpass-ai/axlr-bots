@@ -214,6 +214,17 @@ func (m *memoryArtifacts) SaveReport(_ context.Context, task domain.TaskID, exec
 	return "/artifacts/" + task.String() + "/" + execution.String() + "/report.md", nil
 }
 
+func (m *memoryArtifacts) LoadReport(_ context.Context, task domain.TaskID) ([]byte, error) {
+	if m.fail != nil {
+		return nil, m.fail
+	}
+	report, ok := m.reports[task]
+	if !ok {
+		return nil, domain.NotFoundError{Kind: "report", ID: task.String()}
+	}
+	return []byte(report), nil
+}
+
 type fixedClock struct{ now time.Time }
 
 func (c *fixedClock) Now() time.Time { return c.now }

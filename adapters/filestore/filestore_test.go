@@ -16,6 +16,7 @@ var (
 	_ application.BotRepository       = BotRepository{}
 	_ application.TaskRepository      = TaskRepository{}
 	_ application.ExecutionRepository = ExecutionRepository{}
+	_ application.ArtifactStore       = ArtifactStore{}
 )
 
 var t0 = time.Date(2026, 10, 23, 15, 0, 0, 0, time.UTC)
@@ -228,5 +229,40 @@ func TestTaskRepositoryListsByStatus(t *testing.T) {
 	_ = os.WriteFile(filepath.Dir(broken.files.dir), []byte("x"), 0o644)
 	if _, err := broken.ListByStatus(ctx, domain.TaskRunning); err == nil {
 		t.Error("scan over an unreadable directory succeeded")
+	}
+}
+
+func TestArtifactStoreKeepsTheReport(t *testing.T) {
+	state := t.TempDir()
+	store := NewArtifactStore(state)
+	ctx := context.Background()
+	if _, err := store.LoadReport(ctx, "task-1"); !domain.IsNotFound(err) {
+		t.Errorf("missing report: %v", err)
+	}
+	path, err := store.SaveReport(ctx, "task-1", "exec-1", []byte("# Report\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != filepath.Join(state, "artifacts", "task-1", "report.md") {
+		t.Errorf("path = %s", path)
+	}
+	if got, err := store.LoadReport(ctx, "task-1"); err != nil || string(got) != "# Report\n" {
+		t.Errorf("load = %q %v", got, err)
+	}
+	if _, err := store.SaveReport(ctx, "task-1", "exec-2", []byte("second")); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := store.LoadReport(ctx, "task-1"); string(got) != "second" {
+		t.Errorf("second report = %q", got)
+	}
+	blocked := NewArtifactStore(filepath.Join(state, "file"))
+	if err := os.WriteFile(filepath.Join(state, "file"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := blocked.SaveReport(ctx, "task-1", "exec-1", nil); err == nil {
+		t.Error("write under a file succeeded")
+	}
+	if _, err := blocked.LoadReport(ctx, "task-1"); err == nil || domain.IsNotFound(err) {
+		t.Errorf("read under a file: %v", err)
 	}
 }

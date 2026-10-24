@@ -19,6 +19,9 @@ type ArtifactStore interface {
 	// SaveReport writes the task's report for the execution and returns
 	// the reference (a path) the execution's artifact list carries.
 	SaveReport(ctx context.Context, task domain.TaskID, execution domain.ExecutionID, content []byte) (string, error)
+	// LoadReport reads the task's report; a domain.NotFoundError when the
+	// task has none.
+	LoadReport(ctx context.Context, task domain.TaskID) ([]byte, error)
 }
 
 // ReportReference finds the report artifact of an execution, or "".

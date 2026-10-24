@@ -196,3 +196,22 @@ func TestRunNextPendingRunsTheOldest(t *testing.T) {
 		t.Errorf("list error: %v %v", err, ran)
 	}
 }
+
+func TestGetReport(t *testing.T) {
+	h := newHarness()
+	bot := enabledBot(t, h)
+	task := submit(t, h, bot, "alert-1").Task
+	if _, err := NewGetReport(h.deps).Execute(context.Background(), task.ID()); !domain.IsNotFound(err) {
+		t.Errorf("before the run: %v", err)
+	}
+	if _, err := NewRunTask(h.deps).Execute(context.Background(), task.ID()); err != nil {
+		t.Fatal(err)
+	}
+	report, err := NewGetReport(h.deps).Execute(context.Background(), task.ID())
+	if err != nil || string(report) != "done" {
+		t.Errorf("report = %q %v", report, err)
+	}
+	if _, err := NewGetReport(h.deps).Execute(context.Background(), "nope"); !domain.IsNotFound(err) {
+		t.Errorf("unknown task: %v", err)
+	}
+}
