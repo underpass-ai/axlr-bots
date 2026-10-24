@@ -1,0 +1,13 @@
+# One policy for the pod: the service's own rules beside the sidecar's
+# egress (DNS, the control plane, the model provider).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-web
+spec:
+  podSelector:
+    matchLabels: {app: {{ .Release.Name }}-web}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    {{- include "axlr-bots-node.inject.egress" (dict "values" (index .Values "axlr-bots-node") "root" $) | nindent 4 }}

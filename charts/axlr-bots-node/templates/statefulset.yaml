@@ -1,0 +1,70 @@
+{{- if .Values.demo.enabled }}
+{{- $name := include "axlr-bots-node.demoName" . }}
+{{- $bots := dict "values" (include "axlr-bots-node.demoValues" . | fromYaml) "root" $ }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "axlr-bots-node.labels" . | nindent 4 }}
+    app.kubernetes.io/component: demo
+spec:
+  serviceName: {{ $name }}
+  replicas: {{ .Values.demo.replicas }}
+  selector:
+    matchLabels:
+      {{- include "axlr-bots-node.selectorLabels" . | nindent 6 }}
+      app: {{ $name }}
+  template:
+    metadata:
+      labels:
+        {{- include "axlr-bots-node.labels" . | nindent 8 }}
+        app.kubernetes.io/component: demo
+        app: {{ $name }}
+    spec:
+      serviceAccountName: {{ $name }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "axlr-bots-node.podSecurityContext" . | nindent 8 }}
+      {{- with include "axlr-bots-node.scheduling" . | trim }}
+      {{- . | nindent 6 }}
+      {{- end }}
+      containers:
+        # The service: a log line every few seconds, kept under 2000 lines.
+        - name: service
+          image: {{ .Values.demo.image }}
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              log=/var/log/service/service.log
+              n=0
+              while true; do
+                n=$((n + 1))
+                r=$((RANDOM % 20))
+                if [ "$r" -eq 0 ]; then level=error status=504 msg="upstream timeout after 2s"
+                elif [ "$r" -lt 3 ]; then level=warn status=200 msg="slow request"
+                else level=info status=200 msg="request served"; fi
+                echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) level=$level msg=\"$msg\" path=/orders/$n status=$status latency_ms=$((RANDOM % 900 + 20))" >> "$log"
+                if [ "$(wc -l < "$log")" -gt 2000 ]; then tail -n 1000 "$log" > "$log.next" && mv "$log.next" "$log"; fi
+                sleep {{ int .Values.demo.intervalSeconds }}
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.demo.resources | nindent 12 }}
+          volumeMounts:
+            - {name: service-logs, mountPath: /var/log/service}
+        {{- include "axlr-bots-node.inject.container" $bots | nindent 8 }}
+      volumes:
+        - name: service-logs
+          emptyDir:
+            sizeLimit: 32Mi
+        {{- include "axlr-bots-node.inject.volumes" $bots | nindent 8 }}
+  volumeClaimTemplates:
+    {{- include "axlr-bots-node.inject.volumeClaimTemplate" $bots | nindent 4 }}
+{{- end }}

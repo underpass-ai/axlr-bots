@@ -51,11 +51,16 @@ COPY --from=build /out/axlr-node /usr/local/bin/axlr-node
 COPY --from=axlr /out/axlr-tui /usr/local/bin/axlr-tui
 COPY LICENSE NOTICE /licenses/axlr-bots/
 COPY --from=axlr /out/licenses/ /licenses/axlr/
-# The state is a volume: the credentials, the traces, the workspaces and
-# AXLR's sessions (under HOME) survive a restart.
+# The state is a volume: the credentials, the traces, the policies and
+# the workspaces survive a restart. AXLR refuses a state directory (its
+# diagnostics and sessions) with an ancestor other accounts may write
+# unless it is sticky, and a volume's root is 0777 or group-writable
+# under fsGroup; /tmp is a tmpfs (1777), in Kubernetes an emptyDir with
+# medium Memory.
 ENV AXLR_TUI=/usr/local/bin/axlr-tui \
     AXLR_NODE_STATE=/var/lib/axlr-node \
-    HOME=/var/lib/axlr-node/home
+    HOME=/var/lib/axlr-node/home \
+    XDG_STATE_HOME=/tmp/axlr-state
 USER 65532:65532
 WORKDIR /var/lib/axlr-node
 ENTRYPOINT ["/usr/local/bin/axlr-node"]

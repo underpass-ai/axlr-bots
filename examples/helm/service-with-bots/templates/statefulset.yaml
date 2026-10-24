@@ -1,0 +1,37 @@
+{{- $bots := dict "values" (index .Values "axlr-bots-node") "root" $ }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-web
+spec:
+  serviceName: {{ .Release.Name }}-web
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels: {app: {{ .Release.Name }}-web}
+  template:
+    metadata:
+      labels: {app: {{ .Release.Name }}-web}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: web
+          image: {{ .Values.image }}
+          command: ["/bin/sh", "-c", "while true; do date -u +'%FT%TZ level=info msg=up' >> /var/log/web/web.log; sleep 10; done"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: app-logs, mountPath: /var/log/web}
+        {{- include "axlr-bots-node.inject.container" $bots | nindent 8 }}
+      volumes:
+        - name: app-logs
+          emptyDir: {sizeLimit: 32Mi}
+        {{- include "axlr-bots-node.inject.volumes" $bots | nindent 8 }}
+  volumeClaimTemplates:
+    {{- include "axlr-bots-node.inject.volumeClaimTemplate" $bots | nindent 4 }}

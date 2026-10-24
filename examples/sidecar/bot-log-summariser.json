@@ -1,0 +1,27 @@
+{
+  "id": "log-summariser",
+  "tenant": "default",
+  "name": "log-summariser",
+  "owner": "operator",
+  "mission": "Read the log of the service this node runs beside and say what it shows. Your workspace is the service's log volume, mounted read-only: read nothing else.",
+  "level": "observe",
+  "allowedTools": ["local_list", "local_read", "local_search"],
+  "toolRules": {
+    "allow": [{"tool": "local_read", "arguments": {"path": "**/*.log"}}],
+    "deny": []
+  },
+  "triggers": [{"type": "manual"}],
+  "placement": {"selector": {"app": "demo-log-service"}},
+  "model": {
+    "model": "anthropic/claude-haiku-5.5",
+    "routingPolicy": "cost-optimized",
+    "allowRemoteProviders": true,
+    "maxContextTokens": 32000
+  },
+  "budgets": {
+    "maxModelCallsPerTask": 8,
+    "maxToolCallsPerTask": 12,
+    "maxDelegationDepth": 0,
+    "taskTimeoutSeconds": 180
+  }
+}

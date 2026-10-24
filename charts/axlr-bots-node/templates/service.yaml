@@ -1,0 +1,16 @@
+{{- if .Values.demo.enabled }}
+# The StatefulSet's governing Service: headless, no ports. It names the
+# pods; nothing connects to the demo.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "axlr-bots-node.demoName" . }}
+  labels:
+    {{- include "axlr-bots-node.labels" . | nindent 4 }}
+    app.kubernetes.io/component: demo
+spec:
+  clusterIP: None
+  selector:
+    {{- include "axlr-bots-node.selectorLabels" . | nindent 4 }}
+    app: {{ include "axlr-bots-node.demoName" . }}
+{{- end }}

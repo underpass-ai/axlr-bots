@@ -1,0 +1,13 @@
+# The demo on a cluster that reaches the control plane at 192.168.1.75.
+# Replace the digest with the one the image push printed.
+image:
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+controlPlane:
+  url: https://192.168.1.75:7878
+enrollment:
+  existingSecret: axlr-bots-enrollment
+model:
+  apiKey:
+    existingSecret: axlr-bots-model
+demo:
+  enabled: true

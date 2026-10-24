@@ -1,0 +1,174 @@
+{{/*
+Templates another chart includes to put the node agent in its own pod.
+Each takes (dict "values" <this chart's values> "root" $); from a chart
+that depends on this one, the values are (index .Values "axlr-bots-node"):
+
+  {{- $bots := dict "values" (index .Values "axlr-bots-node") "root" $ }}
+  spec:
+    containers:
+      - name: my-service
+        …
+      {{- include "axlr-bots-node.inject.container" $bots | nindent 6 }}
+    volumes:
+      {{- include "axlr-bots-node.inject.volumes" $bots | nindent 6 }}
+  volumeClaimTemplates:
+    {{- include "axlr-bots-node.inject.volumeClaimTemplate" $bots | nindent 4 }}
+
+The workload should be a StatefulSet: the node id is <idPrefix><pod name>,
+and the pod's name and its state volume are stable only there. The pod
+needs the label node.appLabelKey (app). sidecar.workspaces names the pod's
+volumes the bots read, mounted read-only. A NetworkPolicy is per pod, so
+the sidecar's egress (axlr-bots-node.inject.egress) goes into the
+including chart's own policy, beside its service's rules.
+*/}}
+
+{{- define "axlr-bots-node.image" -}}
+{{- $digest := required "image.digest is required (sha256:<64 hex>, from the image push)" .image.digest -}}
+{{- if not (regexMatch "^sha256:[0-9a-f]{64}$" $digest) }}{{ fail "image.digest must be sha256:<64 hex>" }}{{ end -}}
+{{- required "image.repository is required" .image.repository }}@{{ $digest }}
+{{- end -}}
+
+{{- define "axlr-bots-node.controlURL" -}}
+{{- $url := required "controlPlane.url is required (https://host:port, the control plane's node address)" .controlPlane.url -}}
+{{- if not (regexMatch "^https://[^/ ]+$" $url) }}{{ fail "controlPlane.url must be https://host:port" }}{{ end -}}
+{{- $url -}}
+{{- end -}}
+
+{{- define "axlr-bots-node.inject.container" -}}
+{{- $v := .values -}}
+{{- if not (regexMatch "^[a-z0-9._-]{0,40}$" (toString $v.node.idPrefix)) }}{{ fail "node.idPrefix may only use lowercase letters, digits, '.', '_' and '-'" }}{{ end -}}
+- name: {{ $v.sidecar.name }}
+  image: {{ include "axlr-bots-node.image" $v }}
+  imagePullPolicy: IfNotPresent
+  {{- if $v.sidecar.native }}
+  restartPolicy: Always
+  {{- end }}
+  env:
+    - name: POD_NAME
+      valueFrom: {fieldRef: {fieldPath: metadata.name}}
+    - name: POD_NAMESPACE
+      valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+    - name: POD_APP
+      valueFrom: {fieldRef: {fieldPath: "metadata.labels['{{ $v.node.appLabelKey }}']"}}
+    - name: AXLR_NODE_ID
+      value: "{{ $v.node.idPrefix }}$(POD_NAME)"
+    - name: AXLR_NODE_LABELS
+      value: "namespace=$(POD_NAMESPACE),app=$(POD_APP),pod=$(POD_NAME){{ range $key, $value := $v.node.labels }}{{ if not (and (regexMatch "^[a-z0-9._-]{1,64}$" $key) (regexMatch "^[a-z0-9._-]{1,64}$" (toString $value))) }}{{ fail "node.labels keys and values may only use lowercase letters, digits, '.', '_' and '-'" }}{{ end }},{{ $key }}={{ $value }}{{ end }}"
+    - name: AXLR_NODE_CONTROL
+      value: {{ include "axlr-bots-node.controlURL" $v | quote }}
+    - name: AXLR_NODE_TOKEN_FILE
+      value: /etc/axlr-node/enroll/$(AXLR_NODE_ID)
+    {{- if $v.controlPlane.ca.existingConfigMap }}
+    - name: AXLR_NODE_CA_FILE
+      value: /etc/axlr-node/ca/ca.crt
+    {{- end }}
+    - name: OPENROUTER_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: {{ required "model.apiKey.existingSecret is required" $v.model.apiKey.existingSecret }}
+          key: {{ $v.model.apiKey.key }}
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+    seccompProfile:
+      type: RuntimeDefault
+  resources:
+    {{- toYaml $v.sidecar.resources | nindent 4 }}
+  volumeMounts:
+    - {name: axlr-node-state, mountPath: /var/lib/axlr-node}
+    - {name: axlr-node-tmp, mountPath: /tmp}
+    - {name: axlr-node-enroll, mountPath: /etc/axlr-node/enroll, readOnly: true}
+    {{- if $v.controlPlane.ca.existingConfigMap }}
+    - {name: axlr-node-ca, mountPath: /etc/axlr-node/ca, readOnly: true}
+    {{- end }}
+    {{- range $v.sidecar.workspaces }}
+    {{- if not (regexMatch "^[a-z0-9._-]{1,64}$" (toString .bot)) }}{{ fail "sidecar.workspaces[].bot must be a bot id" }}{{ end }}
+    - name: {{ required "sidecar.workspaces[].volume is required" .volume }}
+      mountPath: /var/lib/axlr-node/workspaces/{{ .bot }}
+      readOnly: true
+      {{- with .subPath }}
+      subPath: {{ . | quote }}
+      {{- end }}
+    {{- end }}
+{{- end -}}
+
+{{- define "axlr-bots-node.inject.volumes" -}}
+{{- $v := .values -}}
+- name: axlr-node-tmp
+  emptyDir:
+    medium: Memory
+    sizeLimit: {{ $v.sidecar.tmpSize }}
+- name: axlr-node-enroll
+  secret:
+    secretName: {{ required "enrollment.existingSecret is required (one key per node id, each a token)" $v.enrollment.existingSecret }}
+    optional: true
+    defaultMode: 292 # 0444: the sidecar runs as 65532 whatever the pod's fsGroup
+{{- if $v.controlPlane.ca.existingConfigMap }}
+- name: axlr-node-ca
+  configMap:
+    name: {{ $v.controlPlane.ca.existingConfigMap }}
+    items: [{key: ca.crt, path: ca.crt}]
+{{- end }}
+{{- end -}}
+
+{{- define "axlr-bots-node.inject.volumeClaimTemplate" -}}
+{{- $v := .values -}}
+- metadata:
+    name: axlr-node-state
+  spec:
+    accessModes: [ReadWriteOnce]
+    {{- with $v.sidecar.state.storageClassName }}
+    storageClassName: {{ . | quote }}
+    {{- end }}
+    resources:
+      requests:
+        storage: {{ required "sidecar.state.size is required" $v.sidecar.state.size | quote }}
+{{- end -}}
+
+{{- define "axlr-bots-node.inject.egress" -}}
+{{- $v := .values -}}
+{{- $url := include "axlr-bots-node.controlURL" $v -}}
+{{- $hostPort := (urlParse $url).host -}}
+{{- $parts := splitList ":" $hostPort -}}
+{{- $host := first $parts -}}
+{{- $port := ternary (last $parts) "443" (gt (len $parts) 1) -}}
+{{- $cidr := $v.networkPolicy.controlPlaneCIDR -}}
+{{- if not $cidr -}}
+{{- if regexMatch "^[0-9]{1,3}(\\.[0-9]{1,3}){3}$" $host -}}
+{{- $cidr = printf "%s/32" $host -}}
+{{- else -}}
+{{- fail "networkPolicy.controlPlaneCIDR is required when controlPlane.url names a host, not an IP" -}}
+{{- end -}}
+{{- end -}}
+- to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: {{ $v.networkPolicy.dns.namespace }}
+      podSelector:
+        matchLabels:
+          {{- toYaml $v.networkPolicy.dns.podLabels | nindent 10 }}
+  ports:
+    - {protocol: UDP, port: 53}
+    - {protocol: TCP, port: 53}
+- to:
+    - ipBlock:
+        cidr: {{ $cidr }}
+  ports:
+    - {protocol: TCP, port: {{ $port }}}
+- to:
+    {{- range $v.networkPolicy.modelProvider.cidrs }}
+    - ipBlock:
+        cidr: {{ . }}
+        {{- with $v.networkPolicy.modelProvider.except }}
+        except:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+    {{- end }}
+  ports:
+    - {protocol: TCP, port: {{ $v.networkPolicy.modelProvider.port }}}
+{{- end -}}

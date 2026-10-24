@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/compose"
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
@@ -51,5 +53,47 @@ func TestExampleBotsAreRoleNeutral(t *testing.T) {
 		if definition.Budgets.TaskTimeoutSeconds == 0 || definition.Budgets.MaxToolCallsPerTask == 0 {
 			t.Errorf("%s: budgets %+v", name, definition.Budgets)
 		}
+	}
+}
+
+// TestSidecarExampleBot registers the sidecar's example bot as the
+// control plane would and checks it matches the chart's demo: observe,
+// AXLR's read tools only, local_read limited to log files, placed on the
+// demo's app label, its id the workspace the chart mounts the log at.
+func TestSidecarExampleBot(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "sidecar", "bot-log-summariser.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var definition application.BotDefinition
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&definition); err != nil {
+		t.Fatal(err)
+	}
+	deps, err := compose.Dependencies(t.TempDir(), "/nonexistent", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bot, err := application.NewRegisterBot(deps).Execute(context.Background(), definition)
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	snapshot := bot.Snapshot()
+	if snapshot.Level != "observe" || len(snapshot.ToolRules.Allow) != 1 || snapshot.ToolRules.Allow[0].Tool != "local_read" || snapshot.ToolRules.Allow[0].Arguments["path"] != "**/*.log" {
+		t.Errorf("level %q rules %+v", snapshot.Level, snapshot.ToolRules)
+	}
+	for _, tool := range snapshot.AllowedTools {
+		if tool != "local_list" && tool != "local_read" && tool != "local_search" {
+			t.Errorf("tool %q is not a read", tool)
+		}
+	}
+	values, err := os.ReadFile(filepath.Join("..", "..", "charts", "axlr-bots-node", "values.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The demo released as "demo" is demo-log-service; its pods carry app=demo-log-service.
+	if snapshot.Placement.Selector["app"] != "demo-log-service" || !strings.Contains(string(values), "\n  name: log-service\n") || !strings.Contains(string(values), "\n  bot: "+snapshot.ID+"\n") {
+		t.Errorf("placement %+v does not match the chart's demo", snapshot.Placement)
 	}
 }

@@ -35,3 +35,64 @@ jobs:
           coverage=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub(/%/, "", $3); print $3}')
           echo "Total coverage: ${coverage}%"
           awk -v value="$coverage" 'BEGIN { exit !(value >= 80) }'
+
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+      - name: Lint, render and refuse what is wrong
+        shell: bash
+        run: |
+          set -euo pipefail
+          chart=charts/axlr-bots-node
+          example=$chart/values.example.yaml
+          cmp LICENSE $chart/LICENSE
+          cmp NOTICE $chart/NOTICE
+          helm lint $chart
+          helm lint $chart -f $example
+          # Without the demo the chart renders nothing: it is a dependency.
+          test -z "$(helm template test $chart | grep '^kind:' || true)"
+          helm template test $chart -f $example > rendered.yaml
+          for kind in StatefulSet Service ServiceAccount NetworkPolicy Pod; do grep -q "^kind: $kind$" rendered.yaml; done
+          refused() {
+            if helm template test $chart -f $example "$@" >/dev/null 2>&1; then
+              echo "accepted: $*" >&2
+              exit 1
+            fi
+          }
+          for field in image.digest controlPlane.url enrollment.existingSecret model.apiKey.existingSecret; do
+            refused --set-string "$field="
+          done
+          refused --set-string image.digest=sha256:abc
+          refused --set-string controlPlane.url=http://192.168.1.75:7878
+          refused --set-string node.labels.Zone=eu
+          refused --set-string node.idPrefix=Bad
+          refused --set demo.replicas=0
+          refused --set 'sidecar.workspaces[0].bot=Bad,sidecar.workspaces[0].volume=v'
+          refused --set-string controlPlane.url=https://cp.example.internal:7878
+          helm template test $chart -f $example --set-string controlPlane.url=https://cp.example.internal:7878 --set-string networkPolicy.controlPlaneCIDR=10.0.0.5/32 >/dev/null
+          ! helm template test $chart -f $example --set networkPolicy.enabled=false | grep -q '^kind: NetworkPolicy$'
+      - name: Include the sidecar from another chart
+        shell: bash
+        run: |
+          set -euo pipefail
+          helm dependency update examples/helm/service-with-bots
+          helm lint examples/helm/service-with-bots
+          helm template web examples/helm/service-with-bots > inject.yaml
+          grep -q 'name: axlr-node$' inject.yaml
+          grep -q 'mountPath: /var/lib/axlr-node/workspaces/log-summariser' inject.yaml
+
+  node-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Build the node image for amd64 and arm64
+        run: |
+          docker buildx create --use --name multi
+          docker buildx build -f distribution/node.Dockerfile --platform linux/amd64,linux/arm64 .
+      - name: Run it
+        run: |
+          docker buildx build -f distribution/node.Dockerfile --platform linux/amd64 -t axlr-bots-node:ci --load .
+          docker run --rm --read-only axlr-bots-node:ci --help 2>&1 | grep -q 'axlr-node check'
+          test "$(docker run --rm --read-only --entrypoint /usr/local/bin/axlr-tui axlr-bots-node:ci --version 2>&1)" = 0.14.0

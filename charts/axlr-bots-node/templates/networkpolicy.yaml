@@ -1,0 +1,18 @@
+{{- if and .Values.demo.enabled .Values.networkPolicy.enabled }}
+# The demo pod and the chart test: no ingress; egress to DNS, the control
+# plane and the model provider only. The service container needs none.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "axlr-bots-node.demoName" . }}
+  labels:
+    {{- include "axlr-bots-node.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "axlr-bots-node.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    {{- include "axlr-bots-node.inject.egress" (dict "values" .Values "root" $) | nindent 4 }}
+{{- end }}
