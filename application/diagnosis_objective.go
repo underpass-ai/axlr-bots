@@ -19,7 +19,7 @@ func DiagnosisObjective(unit, host string, at time.Time, userManager bool) strin
 	}
 	b.WriteString(" at " + at.UTC().Format(time.RFC3339) + ". Diagnose it. Do not change anything: no restarts, no edits, no writes; only read-only commands.\n")
 	if userManager {
-		b.WriteString("The unit runs under the systemd user manager: query it with `systemctl --user status " + unit + "` and `journalctl --user -u " + unit + " --no-pager -n 200`, and the user manager's other units the same way.\n")
+		b.WriteString("The unit runs under the systemd user manager: query it with `journalctl --user -u " + unit + " --no-pager -n 200` and `systemctl --user status " + unit + "`, and the user manager's other units the same way. If `systemctl --user` cannot reach the bus (the commands you run get no XDG_RUNTIME_DIR), say so once and rely on `journalctl --user`.\n")
 	} else {
 		b.WriteString("Query it with `systemctl status " + unit + "` and `journalctl -u " + unit + " --no-pager -n 200`.\n")
 	}

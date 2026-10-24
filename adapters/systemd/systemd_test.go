@@ -221,6 +221,9 @@ func TestInstallAndUninstallUserModeUnderADestDir(t *testing.T) {
 	if _, err := os.Stat(envPath); err == nil {
 		t.Error("env file kept after purge")
 	}
+	if _, err := os.Stat(filepath.Dir(envPath)); err == nil {
+		t.Error("the env file's directory kept after purge")
+	}
 	if _, err := os.Stat(filepath.Join(dest, "home/ana/.local/state")); err == nil {
 		t.Log("state parent kept (fine)")
 	}
