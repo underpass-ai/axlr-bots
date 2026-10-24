@@ -4,12 +4,23 @@ on a 16-row grid, like the KMP, MADE and AXLR emblems).
 
 AXLR keeps its palette, one colour per letter; BOTS takes the same palette
 reversed. The A of AXLR is an invader bot and the O of BOTS a one-eye bot.
-Writes the one-line emblem, the two-line emblem and the icon, light and dark,
-as SVG and PNG (Pillow). Decided with the author on 24 October 2026; no
-Spectrum bars."""
-import sys
+Writes the one-line and the two-line emblem, light and dark, and the icon, as
+SVG and PNG (Pillow). Decided with the author on 24 October 2026; no
+Spectrum bars.
 
-COPPER, GOLD, BROWN, SAND = "#B85C38", "#D97B2D", "#6B4A2E", "#C9B08C"
+Each theme keeps copper and gold and swaps the one tone that fades into its
+background for the house ink of the KMP, MADE and AXLR emblems: sand becomes
+ink #1B1411 on light, brown becomes cream #F1E6D2 on dark. Every colour keeps
+at least 3:1 against GitHub's page (WCAG non-text contrast); the script checks
+it and prints the table. The icon is copper alone, which passes on both, so
+it has one version."""
+
+COPPER, GOLD, BROWN, SAND = "copper", "gold", "brown", "sand"
+PALETTE = {
+    "light": {COPPER: "#B85C38", GOLD: "#D97B2D", BROWN: "#6B4A2E", SAND: "#1B1411"},
+    "dark": {COPPER: "#B85C38", GOLD: "#D97B2D", BROWN: "#F1E6D2", SAND: "#C9B08C"},
+}
+BACKGROUND = {"light": "#ffffff", "dark": "#0d1117"}  # GitHub's light and dark page
 FONT = {
     "X": ["##      ##", "##      ##", "##      ##", "##      ##", "  ##  ##  ", "  ##  ##  ", "    ##    ", "    ##    ", "  ##  ##  ", "  ##  ##  ", "##      ##", "##      ##", "##      ##", "##      ##"],
     "L": ["##        ", "##        ", "##        ", "##        ", "##        ", "##        ", "##        ", "##        ", "##        ", "##        ", "##        ", "##        ", "##########", "##########"],
@@ -57,6 +68,21 @@ def icon():
     return cells, w, 16
 
 
+def luminance(colour):
+    c = [int(colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    c = [v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in c]
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+
+def contrast(a, b):
+    hi, lo = sorted((luminance(a), luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def paint(cells, theme):
+    return [(x, y, PALETTE[theme][slot]) for x, y, slot in cells]
+
+
 def svg(cells, w, h, title):
     rects = "".join(f'<rect x="{x}" y="{y}" width="1" height="1" fill="{c}"/>' for x, y, c in cells)
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" width="{w*8}" height="{h*8}" '
@@ -75,8 +101,22 @@ def png(cells, w, h, path, scale=8):
     im.save(path)
 
 
-here = __file__.rsplit("/", 1)[0] + "/" if "/" in __file__ else ""
-for name, (cells, w, h) in {"axlr-bots-emblem": one_line(), "axlr-bots-emblem-stacked": two_lines(), "axlr-bots-icon": icon()}.items():
+def write(name, cells, w, h):
     open(here + name + ".svg", "w").write(svg(cells, w, h, "AXLR Bots"))
     png(cells, w, h, here + name + ".png")
     print(name, w, "x", h)
+
+
+print("theme  slot    colour   background  contrast")
+for theme, colours in PALETTE.items():
+    for slot, colour in colours.items():
+        ratio = contrast(colour, BACKGROUND[theme])
+        print(f"{theme:6} {slot:7} {colour}  {BACKGROUND[theme]}     {ratio:5.2f}:1")
+        assert ratio >= 3, f"{theme} {slot} {colour} is {ratio:.2f}:1 on {BACKGROUND[theme]}"
+
+here = __file__.rsplit("/", 1)[0] + "/" if "/" in __file__ else ""
+for name, (cells, w, h) in {"axlr-bots-emblem": one_line(), "axlr-bots-emblem-stacked": two_lines()}.items():
+    for theme in PALETTE:
+        write(f"{name}-{theme}", paint(cells, theme), w, h)
+cells, w, h = icon()
+write("axlr-bots-icon", paint(cells, "light"), w, h)
