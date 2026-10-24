@@ -17,11 +17,12 @@ const DefaultTaskTimeout = 15 * time.Minute
 type RunTask struct {
 	deps Dependencies
 	rec  recorder
+	set  settler
 }
 
 // NewRunTask wires the use case.
 func NewRunTask(deps Dependencies) RunTask {
-	return RunTask{deps: deps, rec: recorder{deps: deps}}
+	return RunTask{deps: deps, rec: recorder{deps: deps}, set: newSettler(deps)}
 }
 
 // Execute runs the task and returns it with its execution.
@@ -73,61 +74,8 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 		Budgets:       bot.Budgets(),
 		Timeout:       bot.Budgets().TaskTimeoutOr(DefaultTaskTimeout),
 	})
-	if runErr != nil {
-		report = ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "runtime: " + runErr.Error()}
-	}
-	ended := uc.deps.Clock.Now()
-	if ended.Before(now) {
-		ended = now
-	}
-	eventType, err := uc.settle(&task, &execution, report, ended)
-	if err != nil {
-		return RunTaskResult{}, err
-	}
-	if err := uc.deps.Executions.Save(ctx, execution); err != nil {
-		return RunTaskResult{}, err
-	}
-	if err := uc.deps.Tasks.Save(ctx, task); err != nil {
-		return RunTaskResult{}, err
-	}
-	payload := map[string]any{"executionId": executionID.String(), "outcome": execution.Outcome().String()}
-	if execution.FailureReason() != "" {
-		payload["reason"] = execution.FailureReason()
-	}
-	if err := uc.rec.event(ctx, eventType, bot, task.ID(), task.CorrelationID(), payload); err != nil {
-		return RunTaskResult{}, err
-	}
-	auditOutcome := domain.AuditOK
-	if execution.Outcome() == domain.ExecutionFailed {
-		auditOutcome = domain.AuditFailed
-	}
-	if err := uc.rec.audit(ctx, "task.run", id.String(), auditOutcome, map[string]string{"execution": executionID.String(), "outcome": execution.Outcome().String()}); err != nil {
+	if err := uc.set.settle(ctx, "task.run", bot, &task, &execution, report, runErr, now); err != nil {
 		return RunTaskResult{}, err
 	}
 	return RunTaskResult{Task: task, Execution: execution}, nil
-}
-
-// settle applies the report to the execution and the task.
-func (uc RunTask) settle(task *domain.Task, execution *domain.Execution, report ExecutionReport, ended time.Time) (domain.EventType, error) {
-	switch report.Outcome {
-	case domain.ExecutionCompleted:
-		if err := execution.Complete(report.Result, report.Usage, report.TracePath, ended); err != nil {
-			return "", err
-		}
-		return domain.EventTaskCompleted, task.Complete(ended)
-	case domain.ExecutionDecisionRequired:
-		if err := execution.RequireDecision(report.Result, report.Usage, report.TracePath, ended); err != nil {
-			return "", err
-		}
-		return domain.EventTaskWaitingApproval, task.AwaitApproval(ended)
-	default:
-		reason := report.FailureReason
-		if reason == "" {
-			reason = "runtime reported " + string(report.Outcome) + " without a reason"
-		}
-		if err := execution.Fail(reason, report.Result, report.Usage, report.TracePath, ended); err != nil {
-			return "", err
-		}
-		return domain.EventTaskFailed, task.Fail(reason, ended)
-	}
 }
