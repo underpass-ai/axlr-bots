@@ -28,6 +28,7 @@ func newApp(stateDir, axlrBin, actor string) (application.Dependencies, error) {
 		Events:     jsonl.NewEventLog(stateDir),
 		Audit:      jsonl.NewAuditLog(stateDir),
 		Runtime:    executor,
+		Decisions:  executor,
 		Traces:     executor,
 		Clock:      system.Clock{},
 		IDs:        system.IDGenerator{},

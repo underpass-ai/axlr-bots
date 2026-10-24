@@ -174,6 +174,19 @@ func (f *fakeRuntime) Execute(_ context.Context, request ExecutionRequest) (Exec
 	return f.report, f.err
 }
 
+// fakeDecisions is the fake DecisionExecutor: it records requests and
+// answers with a scripted report.
+type fakeDecisions struct {
+	requests []DecisionRequest
+	report   ExecutionReport
+	err      error
+}
+
+func (f *fakeDecisions) Decide(_ context.Context, request DecisionRequest) (ExecutionReport, error) {
+	f.requests = append(f.requests, request)
+	return f.report, f.err
+}
+
 // fakeTraces is the fake TraceLocator: the traces it knows about.
 type fakeTraces struct {
 	paths map[domain.ExecutionID]string
@@ -202,6 +215,7 @@ type harness struct {
 	execs   *memoryExecutions
 	log     *collector
 	runtime *fakeRuntime
+	decider *fakeDecisions
 	traces  *fakeTraces
 	clock   *fixedClock
 }
@@ -213,12 +227,13 @@ func newHarness() *harness {
 		execs:   &memoryExecutions{},
 		log:     &collector{},
 		runtime: &fakeRuntime{report: ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "done", SessionID: "sess-1"}, TracePath: "/traces/exec-1.jsonl"}},
+		decider: &fakeDecisions{report: ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "done after approval", SessionID: "sess-1"}, TracePath: "/traces/exec-2.jsonl"}},
 		traces:  &fakeTraces{paths: map[domain.ExecutionID]string{}},
 		clock:   &fixedClock{now: t0},
 	}
 	h.deps = Dependencies{
 		Bots: h.bots, Tasks: h.tasks, Executions: h.execs, Events: h.log, Audit: h.log,
-		Runtime: h.runtime, Traces: h.traces, Clock: h.clock, IDs: &sequentialIDs{}, Actor: "test:operator",
+		Runtime: h.runtime, Decisions: h.decider, Traces: h.traces, Clock: h.clock, IDs: &sequentialIDs{}, Actor: "test:operator",
 	}
 	return h
 }

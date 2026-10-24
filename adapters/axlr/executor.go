@@ -1,8 +1,10 @@
 // Package axlr runs a task through AXLR's one-prompt command,
-// `axlr-tui --exec --json`, and reads the execution result it ends with.
-// It is the RuntimeExecutor adapter of the runtime contract
-// (AXLR docs/runtime-contract.md); switching to the service, axlr-serve,
-// is another adapter behind the same port.
+// `axlr-tui --exec --json`, decides a pending call with
+// `axlr-tui --session <id> --decide approve|deny --json`, and reads the
+// execution result each ends with. It is the RuntimeExecutor and
+// DecisionExecutor adapter of the runtime contract (AXLR
+// docs/runtime-contract.md); switching to the service, axlr-serve, is
+// another adapter behind the same ports.
 package axlr
 
 import (
@@ -89,9 +91,9 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 // Decide approves or denies the pending call of an execution that ended
 // in DecisionRequired, runs the session's turn to its end and reports the
 // result, as `axlr-tui --session <id> --decide approve|deny` does.
-func (e *Executor) Decide(ctx context.Context, request DecisionRequest) (application.ExecutionReport, error) {
+func (e *Executor) Decide(ctx context.Context, request application.DecisionRequest) (application.ExecutionReport, error) {
 	if err := request.Validate(); err != nil {
-		return application.ExecutionReport{}, err
+		return application.ExecutionReport{}, fmt.Errorf("axlr: %w", err)
 	}
 	args := []string{"--session", request.SessionID, "--decide", request.Decision, "--json", "--approve", e.approve()}
 	if request.CallID != "" {

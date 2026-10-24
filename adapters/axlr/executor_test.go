@@ -13,8 +13,9 @@ import (
 )
 
 var (
-	_ application.RuntimeExecutor = (*Executor)(nil)
-	_ application.TraceLocator    = (*Executor)(nil)
+	_ application.RuntimeExecutor  = (*Executor)(nil)
+	_ application.DecisionExecutor = (*Executor)(nil)
+	_ application.TraceLocator     = (*Executor)(nil)
 )
 
 func fake(t *testing.T, scenario string) (*Executor, string) {
@@ -264,7 +265,7 @@ func TestExecuteRefusals(t *testing.T) {
 
 func TestDecide(t *testing.T) {
 	e, argsFile := fake(t, "result-completed")
-	report, err := e.Decide(context.Background(), DecisionRequest{ExecutionID: "exec-2", BotID: "sii", SessionID: "sess-1", CallID: "c2", Decision: "approve", Timeout: time.Minute})
+	report, err := e.Decide(context.Background(), application.DecisionRequest{ExecutionID: "exec-2", BotID: "sii", SessionID: "sess-1", CallID: "c2", Decision: "approve", Timeout: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,13 +277,13 @@ func TestDecide(t *testing.T) {
 		t.Errorf("args = %s", args)
 	}
 	e2, argsFile2 := fake(t, "result-completed")
-	if _, err := e2.Decide(context.Background(), DecisionRequest{ExecutionID: "exec-3", BotID: "sii", SessionID: "sess-1", Decision: "deny"}); err != nil {
+	if _, err := e2.Decide(context.Background(), application.DecisionRequest{ExecutionID: "exec-3", BotID: "sii", SessionID: "sess-1", Decision: "deny"}); err != nil {
 		t.Fatal(err)
 	}
 	if args := strings.Join(readArgs(t, argsFile2), " "); strings.Contains(args, "--call") {
 		t.Errorf("args = %s", args)
 	}
-	for _, bad := range []DecisionRequest{{Decision: "approve"}, {SessionID: "s", Decision: "maybe"}} {
+	for _, bad := range []application.DecisionRequest{{Decision: "approve"}, {SessionID: "s", Decision: "maybe"}} {
 		if _, err := e.Decide(context.Background(), bad); err == nil {
 			t.Errorf("bad decision %+v accepted", bad)
 		}

@@ -11,6 +11,7 @@ type Dependencies struct {
 	Events     EventPublisher
 	Audit      AuditSink
 	Runtime    RuntimeExecutor
+	Decisions  DecisionExecutor
 	Traces     TraceLocator
 	Clock      Clock
 	IDs        IDGenerator
@@ -32,6 +33,8 @@ func (d Dependencies) Validate() error {
 		return errors.New("application: AuditSink is required")
 	case d.Runtime == nil:
 		return errors.New("application: RuntimeExecutor is required")
+	case d.Decisions == nil:
+		return errors.New("application: DecisionExecutor is required")
 	case d.Traces == nil:
 		return errors.New("application: TraceLocator is required")
 	case d.Clock == nil:
