@@ -307,8 +307,10 @@ func TestUsageAndErrors(t *testing.T) {
 		{[]string{"serve", "extra"}, exitUsage, "takes no arguments"},
 		{[]string{"serve", "--bogus"}, exitUsage, "flag provided but not defined"},
 		{[]string{"--socket", "", "serve"}, exitUsage, "needs a socket"},
-		{[]string{"install", "--bogus"}, exitError, ""},
-		{[]string{"uninstall", "--bogus"}, exitError, ""},
+		{[]string{"install", "--bogus"}, exitUsage, "flag provided but not defined"},
+		{[]string{"install", "extra"}, exitUsage, "takes flags only"},
+		{[]string{"uninstall", "--bogus"}, exitUsage, "flag provided but not defined"},
+		{[]string{"uninstall", "--purge", "extra"}, exitUsage, "takes flags only"},
 	}
 	for _, tc := range cases {
 		code, _, errText := c.run(tc.args...)
