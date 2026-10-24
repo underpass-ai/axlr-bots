@@ -52,13 +52,16 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 	if err != nil {
 		return RunTaskResult{}, err
 	}
+	if err := execution.Correlate(task.CorrelationID()); err != nil {
+		return RunTaskResult{}, err
+	}
 	if err := uc.deps.Executions.Save(ctx, execution); err != nil {
 		return RunTaskResult{}, err
 	}
 	if err := uc.deps.Tasks.Save(ctx, task); err != nil {
 		return RunTaskResult{}, err
 	}
-	if err := uc.rec.event(ctx, domain.EventTaskStarted, bot, task.ID(), task.CorrelationID(), map[string]any{"executionId": executionID.String()}); err != nil {
+	if err := uc.rec.executionEvent(ctx, domain.EventTaskStarted, bot, task.ID(), executionID, task.CorrelationID(), map[string]any{"executionId": executionID.String()}); err != nil {
 		return RunTaskResult{}, err
 	}
 

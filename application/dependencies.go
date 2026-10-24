@@ -8,11 +8,13 @@ type Dependencies struct {
 	Bots        BotRepository
 	Tasks       TaskRepository
 	Executions  ExecutionRepository
+	Timers      TimerRepository
 	Nodes       NodeRepository
 	Enrollments EnrollmentRepository
 	Certifier   Certifier
 	Denylist    CertificateDenylist
 	Events      EventPublisher
+	EventReader EventReader
 	Audit       AuditSink
 	Runtime     RuntimeExecutor
 	Decisions   DecisionExecutor
@@ -32,6 +34,8 @@ func (d Dependencies) Validate() error {
 		return errors.New("application: TaskRepository is required")
 	case d.Executions == nil:
 		return errors.New("application: ExecutionRepository is required")
+	case d.Timers == nil:
+		return errors.New("application: TimerRepository is required")
 	case d.Nodes == nil:
 		return errors.New("application: NodeRepository is required")
 	case d.Enrollments == nil:
@@ -42,6 +46,8 @@ func (d Dependencies) Validate() error {
 		return errors.New("application: CertificateDenylist is required")
 	case d.Events == nil:
 		return errors.New("application: EventPublisher is required")
+	case d.EventReader == nil:
+		return errors.New("application: EventReader is required")
 	case d.Audit == nil:
 		return errors.New("application: AuditSink is required")
 	case d.Runtime == nil:

@@ -12,6 +12,13 @@ type recorder struct {
 }
 
 func (r recorder) event(ctx context.Context, kind domain.EventType, bot domain.Bot, task domain.TaskID, correlation domain.CorrelationID, payload map[string]any) error {
+	return r.executionEvent(ctx, kind, bot, task, "", correlation, payload)
+}
+
+// executionEvent publishes an event about an execution: the event names
+// the bot, the task, the execution and the trace, the ids an execution
+// is reconstructed by (vision §14.8).
+func (r recorder) executionEvent(ctx context.Context, kind domain.EventType, bot domain.Bot, task domain.TaskID, execution domain.ExecutionID, correlation domain.CorrelationID, payload map[string]any) error {
 	id, err := domain.NewEventID(r.deps.IDs.NewID("evt-"))
 	if err != nil {
 		return err
@@ -20,6 +27,7 @@ func (r recorder) event(ctx context.Context, kind domain.EventType, bot domain.B
 	if err != nil {
 		return err
 	}
+	event.ExecutionID = execution
 	return r.deps.Events.Publish(ctx, event)
 }
 

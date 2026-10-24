@@ -71,6 +71,9 @@ func (uc ApproveTask) Execute(ctx context.Context, id domain.TaskID, decision st
 	if err != nil {
 		return ApproveTaskResult{}, err
 	}
+	if err := execution.Correlate(task.CorrelationID()); err != nil {
+		return ApproveTaskResult{}, err
+	}
 	if err := execution.Decide(decision); err != nil {
 		return ApproveTaskResult{}, err
 	}
@@ -89,7 +92,7 @@ func (uc ApproveTask) Execute(ctx context.Context, id domain.TaskID, decision st
 	if previous.IsAssigned() {
 		payload["nodeId"] = previous.NodeID().String()
 	}
-	if err := uc.rec.event(ctx, domain.EventTaskDecided, bot, task.ID(), task.CorrelationID(), payload); err != nil {
+	if err := uc.rec.executionEvent(ctx, domain.EventTaskDecided, bot, task.ID(), executionID, task.CorrelationID(), payload); err != nil {
 		return ApproveTaskResult{}, err
 	}
 	if previous.IsAssigned() {

@@ -24,19 +24,33 @@ func NewRunNextPending(deps Dependencies) RunNextPending {
 // Execute runs the oldest Pending task and returns its result with ran
 // true; with no Pending task it returns ran false and nothing else.
 func (uc RunNextPending) Execute(ctx context.Context) (RunTaskResult, bool, error) {
+	id, found, err := uc.Pick(ctx)
+	if err != nil || !found {
+		return RunTaskResult{}, false, err
+	}
+	result, err := NewRunTask(uc.deps).Execute(ctx, id)
+	if err != nil {
+		return RunTaskResult{}, true, err
+	}
+	return result, true, nil
+}
+
+// Pick chooses the oldest Pending task no Online node may run, without
+// running it.
+func (uc RunNextPending) Pick(ctx context.Context) (domain.TaskID, bool, error) {
 	pending, err := uc.deps.Tasks.ListByStatus(ctx, domain.TaskPending)
 	if err != nil {
-		return RunTaskResult{}, false, err
+		return "", false, err
 	}
 	nodes, err := uc.deps.Nodes.List(ctx)
 	if err != nil {
-		return RunTaskResult{}, false, err
+		return "", false, err
 	}
 	var oldest *domain.Task
 	for i := range pending {
 		bot, err := uc.deps.Bots.Get(ctx, pending[i].BotID())
 		if err != nil {
-			return RunTaskResult{}, false, err
+			return "", false, err
 		}
 		if hasOnlineNode(bot, nodes) {
 			continue
@@ -46,13 +60,9 @@ func (uc RunNextPending) Execute(ctx context.Context) (RunTaskResult, bool, erro
 		}
 	}
 	if oldest == nil {
-		return RunTaskResult{}, false, nil
+		return "", false, nil
 	}
-	result, err := NewRunTask(uc.deps).Execute(ctx, oldest.ID())
-	if err != nil {
-		return RunTaskResult{}, true, err
-	}
-	return result, true, nil
+	return oldest.ID(), true, nil
 }
 
 // hasOnlineNode reports a bot an Online node may run.

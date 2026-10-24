@@ -100,6 +100,9 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 	if err != nil {
 		return Assignment{}, false, err
 	}
+	if err := execution.Correlate(task.CorrelationID()); err != nil {
+		return Assignment{}, false, err
+	}
 	if err := execution.AssignTo(node.ID()); err != nil {
 		return Assignment{}, false, err
 	}
@@ -109,7 +112,7 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 	if err := uc.deps.Tasks.Save(ctx, task); err != nil {
 		return Assignment{}, false, err
 	}
-	if err := uc.rec.event(ctx, domain.EventTaskStarted, bot, task.ID(), task.CorrelationID(), map[string]any{"executionId": executionID.String(), "nodeId": node.ID().String()}); err != nil {
+	if err := uc.rec.executionEvent(ctx, domain.EventTaskStarted, bot, task.ID(), executionID, task.CorrelationID(), map[string]any{"executionId": executionID.String(), "nodeId": node.ID().String()}); err != nil {
 		return Assignment{}, false, err
 	}
 	assignment, err := uc.describe(ctx, bot, task, execution)
@@ -158,7 +161,7 @@ func (uc NextAssignment) lease(ctx context.Context, bot domain.Bot, task domain.
 	}
 	assignment.LeaseUntil = until
 	payload := map[string]any{"executionId": execution.ID().String(), "nodeId": execution.NodeID().String(), "kind": execution.Kind().String(), "leaseUntil": until}
-	if err := uc.rec.event(ctx, domain.EventExecutionAssigned, bot, task.ID(), task.CorrelationID(), payload); err != nil {
+	if err := uc.rec.executionEvent(ctx, domain.EventExecutionAssigned, bot, task.ID(), execution.ID(), task.CorrelationID(), payload); err != nil {
 		return Assignment{}, false, err
 	}
 	return assignment, true, nil

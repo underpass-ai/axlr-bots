@@ -9,36 +9,82 @@ import (
 
 // SerialRunner runs executions one at a time: the daemon's worker and
 // its API share one, so two goroutines never start the same task, and
-// the host carries one axlr-tui at a time.
+// the host carries one axlr-tui at a time. It also knows which task is
+// running in process right now, so a cancel can interrupt it without
+// waiting for the lock the run holds.
 type SerialRunner struct {
-	deps Dependencies
-	mu   sync.Mutex
+	deps     Dependencies
+	mu       sync.Mutex
+	flightMu sync.Mutex
+	inFlight map[domain.TaskID]context.CancelFunc
 }
 
 // NewSerialRunner wires the runner.
 func NewSerialRunner(deps Dependencies) *SerialRunner {
-	return &SerialRunner{deps: deps}
+	return &SerialRunner{deps: deps, inFlight: map[domain.TaskID]context.CancelFunc{}}
 }
 
 // Run runs one Pending task, as RunTask does.
 func (r *SerialRunner) Run(ctx context.Context, id domain.TaskID) (RunTaskResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return NewRunTask(r.deps).Execute(ctx, id)
+	runCtx, done := r.track(ctx, id)
+	defer done()
+	return NewRunTask(r.deps).Execute(runCtx, id)
 }
 
 // Decide decides a WaitingApproval task's pending call, as ApproveTask does.
 func (r *SerialRunner) Decide(ctx context.Context, id domain.TaskID, decision string) (ApproveTaskResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return NewApproveTask(r.deps).Execute(ctx, id, decision)
+	runCtx, done := r.track(ctx, id)
+	defer done()
+	return NewApproveTask(r.deps).Execute(runCtx, id, decision)
 }
 
 // RunNext runs the oldest Pending task, as RunNextPending does.
 func (r *SerialRunner) RunNext(ctx context.Context) (RunTaskResult, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return NewRunNextPending(r.deps).Execute(ctx)
+	id, found, err := NewRunNextPending(r.deps).Pick(ctx)
+	if err != nil || !found {
+		return RunTaskResult{}, false, err
+	}
+	runCtx, done := r.track(ctx, id)
+	defer done()
+	result, err := NewRunTask(r.deps).Execute(runCtx, id)
+	if err != nil {
+		return RunTaskResult{}, true, err
+	}
+	return result, true, nil
+}
+
+// Interrupt cancels the in-process run of the task, if one is going on,
+// and reports whether it was. The run then ends as interrupted and its
+// report is dropped, since CancelTask ended the execution first.
+func (r *SerialRunner) Interrupt(id domain.TaskID) bool {
+	r.flightMu.Lock()
+	defer r.flightMu.Unlock()
+	cancel, ok := r.inFlight[id]
+	if ok {
+		cancel()
+	}
+	return ok
+}
+
+// track derives the run's context and remembers how to cancel it while
+// the run lasts.
+func (r *SerialRunner) track(ctx context.Context, id domain.TaskID) (context.Context, func()) {
+	runCtx, cancel := context.WithCancel(ctx)
+	r.flightMu.Lock()
+	r.inFlight[id] = cancel
+	r.flightMu.Unlock()
+	return runCtx, func() {
+		r.flightMu.Lock()
+		delete(r.inFlight, id)
+		r.flightMu.Unlock()
+		cancel()
+	}
 }
 
 // NextAssignment hands a node its next execution, as NextAssignment

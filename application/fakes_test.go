@@ -205,6 +205,23 @@ func (c *collector) Record(_ context.Context, a domain.AuditEntry) error {
 	return nil
 }
 
+// ListEvents is the EventReader over what was published.
+func (c *collector) ListEvents(_ context.Context, bot domain.BotID, limit int) ([]domain.Event, error) {
+	if c.fail != nil {
+		return nil, c.fail
+	}
+	var out []domain.Event
+	for _, e := range c.events {
+		if e.BotID == bot {
+			out = append(out, e)
+		}
+	}
+	if len(out) > limit {
+		out = out[len(out)-limit:]
+	}
+	return out, nil
+}
+
 func (c *collector) eventTypes() []string {
 	out := make([]string, len(c.events))
 	for i, e := range c.events {
@@ -277,6 +294,50 @@ func (m *memoryArtifacts) LoadReport(_ context.Context, task domain.TaskID) ([]b
 	return []byte(report), nil
 }
 
+type memoryTimers struct {
+	timers map[string]domain.Timer
+	fail   error
+}
+
+func (m *memoryTimers) Save(_ context.Context, timer domain.Timer) error {
+	if m.fail != nil {
+		return m.fail
+	}
+	if m.timers == nil {
+		m.timers = map[string]domain.Timer{}
+	}
+	m.timers[timer.Key()] = timer
+	return nil
+}
+
+func (m *memoryTimers) Get(_ context.Context, key string) (domain.Timer, error) {
+	timer, ok := m.timers[key]
+	if !ok {
+		return domain.Timer{}, domain.NotFoundError{Kind: "timer", ID: key}
+	}
+	return timer, nil
+}
+
+func (m *memoryTimers) List(context.Context) ([]domain.Timer, error) {
+	if m.fail != nil {
+		return nil, m.fail
+	}
+	out := make([]domain.Timer, 0, len(m.timers))
+	for _, t := range m.timers {
+		out = append(out, t)
+	}
+	slices.SortFunc(out, func(a, b domain.Timer) int { return strings.Compare(a.Key(), b.Key()) })
+	return out, nil
+}
+
+func (m *memoryTimers) Delete(_ context.Context, key string) error {
+	if m.fail != nil {
+		return m.fail
+	}
+	delete(m.timers, key)
+	return nil
+}
+
 type fixedClock struct{ now time.Time }
 
 func (c *fixedClock) Now() time.Time { return c.now }
@@ -293,6 +354,7 @@ type harness struct {
 	bots    *memoryBots
 	tasks   *memoryTasks
 	execs   *memoryExecutions
+	timers  *memoryTimers
 	nodes   *memoryNodes
 	enrol   *memoryEnrollments
 	ca      *fakeCertifier
@@ -310,6 +372,7 @@ func newHarness() *harness {
 		bots:    &memoryBots{},
 		tasks:   &memoryTasks{},
 		execs:   &memoryExecutions{},
+		timers:  &memoryTimers{},
 		nodes:   &memoryNodes{},
 		enrol:   &memoryEnrollments{},
 		ca:      &fakeCertifier{},
@@ -322,7 +385,7 @@ func newHarness() *harness {
 		clock:   &fixedClock{now: t0},
 	}
 	h.deps = Dependencies{
-		Bots: h.bots, Tasks: h.tasks, Executions: h.execs, Nodes: h.nodes, Enrollments: h.enrol, Certifier: h.ca, Denylist: h.deny, Events: h.log, Audit: h.log,
+		Bots: h.bots, Tasks: h.tasks, Executions: h.execs, Timers: h.timers, Nodes: h.nodes, Enrollments: h.enrol, Certifier: h.ca, Denylist: h.deny, Events: h.log, EventReader: h.log, Audit: h.log,
 		Runtime: h.runtime, Decisions: h.decider, Traces: h.traces, Artifacts: h.store, Clock: h.clock, IDs: &sequentialIDs{}, Actor: "test:operator",
 	}
 	return h

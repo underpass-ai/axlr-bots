@@ -24,8 +24,11 @@ func newSettler(deps Dependencies) settler {
 // execution began, so a clock that runs backwards cannot end it earlier.
 // A completed run's answer is kept as the task's report artifact.
 func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task *domain.Task, execution *domain.Execution, report ExecutionReport, runErr error, started time.Time) error {
+	if dropped, err := s.dropIfEnded(ctx, action, task, execution); dropped || err != nil {
+		return err
+	}
 	if runErr != nil {
-		report = ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "runtime: " + runErr.Error(), Policy: report.Policy}
+		report = ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "runtime: " + runErr.Error(), Policy: report.Policy, Correlation: report.Correlation}
 	}
 	ended := s.deps.Clock.Now()
 	if ended.Before(started) {
@@ -33,6 +36,11 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 	}
 	if report.Policy != nil {
 		if err := execution.RecordPolicy(*report.Policy); err != nil {
+			return err
+		}
+	}
+	if report.Correlation != nil && execution.TraceID() != "" {
+		if err := execution.RecordCorrelation(report.Correlation.Carried, report.Correlation.Path); err != nil {
 			return err
 		}
 	}
@@ -60,7 +68,7 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 	if reference := ReportReference(*execution); reference != "" {
 		payload["report"] = reference
 	}
-	if err := s.rec.event(ctx, eventType, bot, task.ID(), task.CorrelationID(), payload); err != nil {
+	if err := s.rec.executionEvent(ctx, eventType, bot, task.ID(), execution.ID(), task.CorrelationID(), payload); err != nil {
 		return err
 	}
 	auditOutcome := domain.AuditOK
@@ -68,6 +76,22 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 		auditOutcome = domain.AuditFailed
 	}
 	return s.rec.audit(ctx, action, task.ID().String(), auditOutcome, map[string]string{"execution": execution.ID().String(), "outcome": execution.Outcome().String()})
+}
+
+// dropIfEnded keeps the stored execution and task when the execution
+// was ended while the run went on (the operator cancelled it): the
+// report of a run nobody waits for changes nothing, and is audited.
+func (s settler) dropIfEnded(ctx context.Context, action string, task *domain.Task, execution *domain.Execution) (bool, error) {
+	stored, err := s.deps.Executions.Get(ctx, execution.ID())
+	if err != nil || stored.Outcome() == domain.ExecutionRunning {
+		return false, nil
+	}
+	*execution = stored
+	if current, err := s.deps.Tasks.Get(ctx, task.ID()); err == nil {
+		*task = current
+	}
+	details := map[string]string{"execution": execution.ID().String(), "outcome": execution.Outcome().String(), "dropped": "the execution had already ended"}
+	return true, s.rec.audit(ctx, action, task.ID().String(), domain.AuditOK, details)
 }
 
 // apply moves the execution and the task to where the report says and

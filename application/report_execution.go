@@ -50,7 +50,7 @@ func (uc ReportExecution) Execute(ctx context.Context, node domain.NodeID, id do
 		return ReportResult{}, err
 	}
 	payload := map[string]any{"executionId": execution.ID().String(), "nodeId": node.String(), "outcome": execution.Outcome().String()}
-	if err := uc.rec.event(ctx, domain.EventExecutionReported, bot, task.ID(), task.CorrelationID(), payload); err != nil {
+	if err := uc.rec.executionEvent(ctx, domain.EventExecutionReported, bot, task.ID(), execution.ID(), task.CorrelationID(), payload); err != nil {
 		return ReportResult{}, err
 	}
 	return ReportResult{Task: task, Execution: execution, Accepted: true}, nil
