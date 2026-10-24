@@ -23,6 +23,17 @@ func TestHelperProcess(t *testing.T) {
 			break
 		}
 	}
+	for _, a := range args {
+		if a == "--help" {
+			// The real axlr-tui prints its flags on --help; one of them
+			// is -policy unless the build is older than the policy.
+			fmt.Fprintln(os.Stderr, "  -exec string\n    \trun one prompt without the console")
+			if os.Getenv("FAKE_AXLR_NO_POLICY") == "" {
+				fmt.Fprintln(os.Stderr, "  -policy string\n    \twith --exec or --decide: a JSON file with the execution's policy")
+			}
+			os.Exit(0)
+		}
+	}
 	if path := os.Getenv("FAKE_AXLR_ARGS"); path != "" {
 		_ = os.WriteFile(path, []byte(strings.Join(args, "\n")), 0o644)
 	}

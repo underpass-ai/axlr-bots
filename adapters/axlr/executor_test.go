@@ -84,7 +84,7 @@ func TestExecuteReadsTheResultObject(t *testing.T) {
 		t.Error(err)
 	}
 	args := readArgs(t, argsFile)
-	want := []string{"--exec", "Investigate an HTTP 500 spike", "--json", "--approve", "none", "--model", "anthropic/claude-haiku-5.5", "--mode", "research", "--root", filepath.Join(e.StateDir, "workspaces", "sii")}
+	want := []string{"--exec", "Investigate an HTTP 500 spike", "--json", "--approve", "none", "--model", "anthropic/claude-haiku-5.5", "--mode", "research", "--policy", filepath.Join(e.StateDir, "policies", "exec-1.json"), "--root", filepath.Join(e.StateDir, "workspaces", "sii")}
 	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
 		t.Errorf("args = %q\nwant %q", args, want)
 	}
@@ -273,8 +273,11 @@ func TestDecide(t *testing.T) {
 		t.Errorf("report = %+v", report)
 	}
 	args := strings.Join(readArgs(t, argsFile), " ")
-	if !strings.HasPrefix(args, "--session sess-1 --decide approve --json --approve none --call c2 --root ") {
+	if !strings.HasPrefix(args, "--session sess-1 --decide approve --json --approve none --call c2 --policy ") || !strings.Contains(args, filepath.Join("policies", "exec-2.json")+" --root ") {
 		t.Errorf("args = %s", args)
+	}
+	if report.Policy == nil || !report.Policy.Enforced || report.Policy.Level != "observe" || report.Policy.RuntimeLevel != "observe" {
+		t.Errorf("policy = %+v", report.Policy)
 	}
 	e2, argsFile2 := fake(t, "result-completed")
 	if _, err := e2.Decide(context.Background(), application.DecisionRequest{ExecutionID: "exec-3", BotID: "sii", SessionID: "sess-1", Decision: "deny"}); err != nil {

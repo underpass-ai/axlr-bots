@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -56,6 +57,9 @@ type Executor struct {
 	DefaultTimeout time.Duration
 	// WaitDelay is how long after SIGTERM the process is killed.
 	WaitDelay time.Duration
+
+	detect          sync.Once
+	policySupported bool
 }
 
 // NewExecutor runs binary (axlr-tui on PATH when empty) with its traces
@@ -67,39 +71,115 @@ func NewExecutor(binary, stateDir string) *Executor {
 	return &Executor{Binary: binary, StateDir: stateDir, Approve: defaultApprove, DefaultTimeout: defaultTimeout, WaitDelay: defaultWaitDelay}
 }
 
-// Execute runs the task's objective as one prompt and reports the result.
+// Execute runs the task's objective as one prompt under the bot's policy
+// and reports the result.
 func (e *Executor) Execute(ctx context.Context, request application.ExecutionRequest) (application.ExecutionReport, error) {
 	if request.Objective == "" {
 		return application.ExecutionReport{}, errors.New("axlr: the request has no objective")
 	}
-	args := []string{"--exec", request.Objective.String(), "--json", "--approve", e.approve()}
+	policy, err := e.preparePolicy(ctx, request.ExecutionID, request.Level, request.AllowedTools, request.ToolRules)
+	if err != nil {
+		return application.ExecutionReport{}, err
+	}
+	args := []string{"--exec", request.Objective.String(), "--json", "--approve", policy.approve}
 	if request.Model != "" {
 		args = append(args, "--model", request.Model)
 	}
 	if e.Mode != "" {
 		args = append(args, "--mode", e.Mode)
 	}
-	// TODO(runtime-contract): pass request.AllowedTools as the per-execution
-	// policy ({"policy": {"level": "observe", "tools": {"allow": [...]}}}),
-	// request.Budgets as the budget and the ids as the correlation once
-	// axlr-tui takes them (reserved fields of docs/runtime-contract.md,
-	// Phases 1 and 2 of the master plan). Until then the allow-list is
-	// recorded in the request and the execution, not enforced by AXLR.
-	return e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout)
+	args = append(args, policy.args...)
+	// TODO(runtime-contract): pass request.Budgets as the budget and the
+	// ids as the correlation once axlr-tui takes them (reserved fields of
+	// docs/runtime-contract.md, Phase 2 of the master plan).
+	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout)
+	report.Policy = &policy.record
+	return report, err
 }
 
 // Decide approves or denies the pending call of an execution that ended
-// in DecisionRequired, runs the session's turn to its end and reports the
-// result, as `axlr-tui --session <id> --decide approve|deny` does.
+// in DecisionRequired, runs the session's turn to its end under the same
+// policy and reports the result, as `axlr-tui --session <id> --decide
+// approve|deny --policy <file>` does.
 func (e *Executor) Decide(ctx context.Context, request application.DecisionRequest) (application.ExecutionReport, error) {
 	if err := request.Validate(); err != nil {
 		return application.ExecutionReport{}, fmt.Errorf("axlr: %w", err)
 	}
-	args := []string{"--session", request.SessionID, "--decide", request.Decision, "--json", "--approve", e.approve()}
+	policy, err := e.preparePolicy(ctx, request.ExecutionID, request.Level, request.AllowedTools, request.ToolRules)
+	if err != nil {
+		return application.ExecutionReport{}, err
+	}
+	args := []string{"--session", request.SessionID, "--decide", request.Decision, "--json", "--approve", policy.approve}
 	if request.CallID != "" {
 		args = append(args, "--call", request.CallID)
 	}
-	return e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout)
+	args = append(args, policy.args...)
+	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout)
+	report.Policy = &policy.record
+	return report, err
+}
+
+// preparedPolicy is the policy of one run as the command line carries
+// it: the flags, the approval level and the record for the execution.
+type preparedPolicy struct {
+	args    []string
+	approve string
+	record  domain.PolicyRecord
+}
+
+// preparePolicy writes the execution's policy file and decides the run's
+// flags: --policy when the binary takes it, and the approval level the
+// policy needs. The level is only raised to local, which lets the
+// policy's allowed commands and writes run, when the runtime enforces
+// the policy; without enforcement every command waits for a person.
+func (e *Executor) preparePolicy(ctx context.Context, execution domain.ExecutionID, level domain.AutonomyLevel, allowed []string, rules domain.ToolRules) (preparedPolicy, error) {
+	if execution == "" {
+		return preparedPolicy{}, errors.New("axlr: the request needs an execution id")
+	}
+	parsed, err := domain.ParseAutonomyLevel(level.String())
+	if err != nil {
+		return preparedPolicy{}, fmt.Errorf("axlr: %w", err)
+	}
+	object := renderPolicy(parsed, allowed, rules)
+	path, err := e.writePolicy(execution, object)
+	if err != nil {
+		return preparedPolicy{}, fmt.Errorf("axlr: policy file: %w", err)
+	}
+	enforced := e.supportsPolicy(ctx)
+	prepared := preparedPolicy{
+		approve: e.approve(),
+		record:  domain.PolicyRecord{Level: parsed.String(), RuntimeLevel: object.Level, Enforced: enforced, Path: path},
+	}
+	if enforced {
+		prepared.args = []string{"--policy", path}
+		if approveRank(approveForLevel(object.Level)) > approveRank(prepared.approve) {
+			prepared.approve = approveForLevel(object.Level)
+		}
+	}
+	return prepared, nil
+}
+
+// approveForLevel is the run's approval level the runtime level needs:
+// local for the levels whose allowed commands and writes run without a
+// person (the policy decides), none where every call is a person's
+// decision or a read.
+func approveForLevel(runtimeLevel string) string {
+	switch runtimeLevel {
+	case string(domain.AutonomyActWithinPolicy), string(domain.AutonomyPropose):
+		return "local"
+	}
+	return defaultApprove
+}
+
+// approveRank orders the approval levels: none < local < all.
+func approveRank(level string) int {
+	switch level {
+	case "local":
+		return 1
+	case "all":
+		return 2
+	}
+	return 0
 }
 
 func (e *Executor) approve() string {
