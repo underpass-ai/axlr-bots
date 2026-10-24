@@ -19,8 +19,8 @@ Two commands come out of this module:
                        control plane (axlr-bots serve)                 operator / scripts
                        ┌─────────────────────────────────────────┐          axlr-bots task submit …
                        │ bots · tasks · executions · policies    │◀─socket──  bot register · task approve
-                       │ nodes · events.jsonl · audit.jsonl      │
-                       │ artifacts/<task>/report.md              │
+                       │ nodes · timers · events.jsonl · audit   │◀─TLS+token─  POST /v1/bots/{id}/tasks …
+                       │ artifacts/<task>/report.md              │◀─TLS+secret─ POST /v1/triggers/{bot}/{hook}
                        └──────────▲───────────────▲──────────────┘
           register · heartbeat    │               │    register · heartbeat
           next assignment (poll)  │               │    next assignment (poll)
@@ -47,15 +47,15 @@ paths.
 
 | Package | Role |
 |---|---|
-| `domain` | Bot, Task, Execution, Node and Enrollment aggregates; value objects validated in constructors (autonomy level, tool rules, triggers, placement, leases); a node's certificate serial and its `Revoked` status; events (vision §11.2) under a schema version; audit entries. One file per type. |
-| `application` | Ports (`BotRepository`, `TaskRepository`, `ExecutionRepository`, `NodeRepository`, `EnrollmentRepository`, `Certifier`, `CertificateDenylist`, `EventPublisher`, `AuditSink`, `RuntimeExecutor`, `DecisionExecutor`, `TraceLocator`, `ArtifactStore`, `NodeTransport`) and use cases (`RegisterBot`, `EnableBot`, `SubmitTask`, `RunTask`, `ApproveTask`, `RegisterNode`, `HeartbeatNode`, `NextAssignment`, `RenewLease`, `ReportExecution`, `CreateEnrollmentToken`, `EnrollNode`, `AuthenticateNode`, `RevokeNode`, `MarkOfflineNodes`, `ReconcileTasks`, `RunNextPending`, `GetReport`, …); `SerialRunner` serialises runs, assignments, reports and revocations. |
+| `domain` | Bot, Task, Execution, Node, Enrollment and Timer aggregates; value objects validated in constructors (autonomy level, tool rules, triggers with their schedules and credentials, placement, leases); a node's certificate serial and its `Revoked` status; events (vision §11.2) under a schema version with the correlation ids; audit entries. One file per type. |
+| `application` | Ports (`BotRepository`, `TaskRepository`, `ExecutionRepository`, `TimerRepository`, `NodeRepository`, `EnrollmentRepository`, `Certifier`, `CertificateDenylist`, `EventPublisher`, `EventReader`, `AuditSink`, `RuntimeExecutor`, `DecisionExecutor`, `TraceLocator`, `ArtifactStore`, `NodeTransport`) and use cases (`RegisterBot`, `EnableBot`, `UpdateBot`, `SubmitTask`, `FireTrigger`, `TickTimers`, `RunTask`, `ApproveTask`, `CancelTask`, `ListExecutions`, `ListEvents`, `RegisterNode`, `HeartbeatNode`, `NextAssignment`, `RenewLease`, `ReportExecution`, `CreateEnrollmentToken`, `EnrollNode`, `AuthenticateNode`, `RevokeNode`, `MarkOfflineNodes`, `ReconcileTasks`, `RunNextPending`, `GetReport`, …); `SerialRunner` serialises runs, assignments, reports and revocations and interrupts the run a cancel names. |
 | `nodeproto` | The messages of the node protocol, shared by the server and the node's client; the enrollment token's encoding. |
 | `adapters/pki` | The fleet CA (ECDSA P-256; the key under `<state>/ca`, mode 0600), the node certificates it signs from a node's request (common name = node id, a year), the control plane's own certificate (issued at start for the host's names), the node's key and request, its stored credentials, and the TLS 1.3 configurations of both ends. |
-| `adapters/filestore` | One JSON file per aggregate under the state directory, written atomically (temp file, fsync, rename); the enrollments (the hash of each token, never the token); the denylist of revoked certificate serials; the report artifacts. |
-| `adapters/jsonl` | Append-only `events.jsonl` and `audit.jsonl`. |
-| `adapters/axlr` | Runs `axlr-tui --exec --json [--policy <file>]` as a subprocess and reads the execution result object; keeps the raw lines as the trace and the policy file as evidence. Used by the node, and by the control plane in single-process mode. |
-| `adapters/unixapi` | The API: a `Service` interface with `Local` (in process) and `Client` (HTTP) implementations; the `Server` serves everything on the Unix socket and the node protocol alone on the TLS address, where the node's identity is its client certificate; the `Client` is also the node's `NodeTransport`, over the socket or over TLS with the node's certificate. |
-| `adapters/daemon` | The control plane as a service: the API on the socket and the TLS address, in-process runs for bots no node may run, reconciliation and offline nodes on a timer. |
+| `adapters/filestore` | One JSON file per aggregate under the state directory, written atomically (temp file, fsync, rename); the timers (the next fire of every timer trigger); the enrollments (the hash of each token, never the token); the denylist of revoked certificate serials; the report artifacts. |
+| `adapters/jsonl` | Append-only `events.jsonl` (read back per bot for `GET /v1/bots/{id}/events`) and `audit.jsonl`. |
+| `adapters/axlr` | Runs `axlr-tui --exec --json [--policy <file>] [--correlation <file> --budget <file>]` as a subprocess and reads the execution result object; keeps the raw lines as the trace and the policy and correlation files as evidence. Used by the node, and by the control plane in single-process mode. |
+| `adapters/unixapi` | The API: a `Service` interface with `Local` (in process) and `Client` (HTTP) implementations; the `Server` serves everything on the Unix socket, the node protocol alone on the node TLS address (the node's identity is its client certificate) and the operator routes alone on the operator TLS address (a bearer token; webhooks their own secret); the `Client` is also the node's `NodeTransport`. |
+| `adapters/daemon` | The control plane as a service: the API on the socket and the two TLS addresses, in-process runs for bots no node may run, the timer triggers on every tick, reconciliation and offline nodes on a timer. |
 | `adapters/nodeagent` | The node agent's loop: register, heartbeat, poll, run, renew, report. |
 | `adapters/systemd` | Renders and installs the two units and the environment file (or the node's alone, for a host that joins a control plane elsewhere); removes them. |
 | `adapters/system` | Wall clock, random ids. |
@@ -74,7 +74,8 @@ GOFLAGS=-p=2 go build -o bin/axlr-bots ./cmd/axlr-bots
 GOFLAGS=-p=2 go build -o bin/axlr-node ./cmd/axlr-node
 export OPENROUTER_API_KEY=...                           # copied into the env file, mode 0600, never printed
 bin/axlr-bots install --axlr-bin /path/to/axlr-tui \
-    --listen 127.0.0.1:7878 --control https://127.0.0.1:7878   # the TLS address; 0.0.0.0:7878 for other hosts
+    --listen 127.0.0.1:7878 --control https://127.0.0.1:7878 \  # the node TLS address; 0.0.0.0:7878 for other hosts
+    --api-listen 127.0.0.1:7879                              # the operator API over TLS (optional)
 axlr-bots ca init                                        # the fleet CA, once; <state>/ca/ca.key is 0600
 systemctl --user enable --now axlr-bots.service
 token=$(axlr-bots node enroll-token --node-id "$(hostname -s | tr 'A-Z' 'a-z')" | sed -n 's/.*"token": "\([^"]*\)".*/\1/p')
@@ -95,10 +96,10 @@ one a second host can join.
 | File | What |
 |---|---|
 | `~/.local/bin/axlr-bots`, `~/.local/bin/axlr-node` | the binaries (`install` copies the ones that run) |
-| `~/.config/systemd/user/axlr-bots.service` | `Type=simple`, `ExecStart=… serve [--listen <addr>] [--server-names …]`, `Restart=on-failure`, `NoNewPrivileges=yes`, `EnvironmentFile=-~/.config/axlr-bots/env`, `WantedBy=default.target` |
+| `~/.config/systemd/user/axlr-bots.service` | `Type=simple`, `ExecStart=… serve [--listen <addr>] [--server-names …] [--api-listen <addr>]`, `Restart=on-failure`, `NoNewPrivileges=yes`, `EnvironmentFile=-~/.config/axlr-bots/env`, `WantedBy=default.target` |
 | `~/.config/systemd/user/axlr-node.service` | `After=`/`Wants=axlr-bots.service` (or `network-online.target` with `--node-only`), `Environment=AXLR_NODE_CONTROL=<--control, or unix://…/axlr-bots.sock>`, `ExecStart=axlr-node --state ~/.local/state/axlr-node`, the host name as the `host=` label; over `https://` the node id is the certificate's |
 | `~/.config/axlr-bots/env` | `OPENROUTER_API_KEY=` (or a commented placeholder when the installer had none) and `AXLR_TUI=`; an existing file is never overwritten |
-| `~/.local/state/axlr-bots/` | the control plane's state: bots, tasks, executions, nodes, enrollments, policies, artifacts, logs, the socket, and `ca/` (the fleet CA: `ca.key` 0600, `ca.crt`) and `pki/revoked.json` (the denylist) |
+| `~/.local/state/axlr-bots/` | the control plane's state: bots, tasks, executions, timers, nodes, enrollments, policies, correlation files, artifacts, logs, the socket, `api.token` (the operator bearer token, 0600, written at the first start with `--api-listen`), and `ca/` (the fleet CA: `ca.key` 0600, `ca.crt`) and `pki/revoked.json` (the denylist) |
 | `~/.local/state/axlr-node/` | the node's state: the traces, policy files and workspaces of what it ran, and `pki/` (`node.key` 0600, `node.crt`, `ca.crt`, `enrollment.json`) once enrolled |
 
 A user service cannot sandbox the filesystem (`ProtectSystem=` and
@@ -130,13 +131,15 @@ TLS on this machine; the user-level one was.
 `axlr-bots serve` is the daemon (`Type=simple`, logs to the journal).
 
 - It serves the API on a Unix socket, `<state>/axlr-bots.sock`, mode
-  0660, and the node protocol on a TLS address when `--listen` names one
+  0660, the node protocol on a TLS address when `--listen` names one
   (`127.0.0.1:7878` for this host, `0.0.0.0:7878` for nodes on other
-  hosts). HTTP+JSON, because `net/http` is in the standard library and
-  the JSON is the same the CLI prints. The TLS address serves only what a
-  node needs: health, enrollment and the five node routes; a node
-  certificate opens no operator route, and the operator's commands go
-  through the socket.
+  hosts), and the operator API on another TLS address when
+  `--api-listen` names one (`127.0.0.1:7879`; see [The operator
+  API](#the-operator-api)). HTTP+JSON, because `net/http` is in the
+  standard library and the JSON is the same the CLI prints. The node
+  address serves only what a node needs: health, enrollment and the
+  five node routes; a node certificate opens no operator route, and the
+  operator address serves no node route.
 - The TLS address is TLS 1.3 with a server certificate the fleet CA
   issues at start for the host's names (the listen address, the host
   name, `localhost`, the loopback, every interface address when it
@@ -154,6 +157,8 @@ TLS on this machine; the user-level one was.
   own `axlr-tui`: the **single-process mode**, also what `task run` does
   from the CLI. Both go through one `SerialRunner`, so a task is never run
   twice or in two places.
+- On every tick it also runs the scheduler: each timer trigger whose
+  slot has come fires once (see [Triggers](#triggers)).
 - On start and every minute (`--reconcile-every`) it marks Offline the
   nodes silent for over a minute, fails the executions whose node stopped
   renewing its lease, and fails the in-process runs a dead daemon left
@@ -177,13 +182,15 @@ answers a heartbeat with 404 and the agent registers again.
 | report `{outcome, result, usage, failureReason, traceReference, policy}` | `POST /v1/nodes/{id}/executions/{exec}/report` | node → control plane | **accepted once**: a repeat answers `accepted: false` with the stored outcome |
 
 An assignment carries a `run` (the task's objective, model, level, tools,
-rules and timeout) or a `decide` (the session, the call and the decision)
-and a lease of two minutes the node renews every 30 s. The control plane
-stores the node id and the lease on the execution; `node.registered`,
-`node.heartbeat`, `node.offline`, `execution.assigned` and
-`execution.reported` are the events. The trace stays on the node; the
+rules, timeout and correlation ids) or a `decide` (the session, the call
+and the decision) and a lease of two minutes the node renews every 30 s.
+The control plane stores the node id and the lease on the execution;
+`node.registered`, `node.heartbeat`, `node.offline`, `execution.assigned`
+and `execution.reported` are the events. The trace stays on the node; the
 execution keeps its reference. Capabilities say which `axlr-tui` the node
-has and whether it takes `--policy`.
+has and whether it takes `--policy` and the correlation ids. A lease the
+control plane refuses for good (the task was cancelled) stops the run on
+the node, whose late report is then dropped.
 
 Placement is part of the bot's definition: `"placement": {"nodes":
 ["web-1"], "selector": {"zone": "eu"}}`, or nothing for any node.
@@ -301,11 +308,134 @@ test runs against the real `axlr-tui` and a model key with
   character; an array such as `args` is matched as its compact JSON). A
   tool with allow rules may only be called as a rule says; a tool without
   rules is allowed as a whole; a deny rule wins.
-- `triggers` is how tasks reach the bot; `manual` (the API and the CLI) is
-  the one type today and the default. A systemd unit event, a timer and a
-  webhook are the next types, each with its router; a bot that declares
-  triggers takes only those.
+- `triggers` is how tasks reach the bot: `manual` (the API and the CLI,
+  the default), `webhook` and `timer`; a bot that declares triggers takes
+  only those (see [Triggers](#triggers)).
 - `placement` says where the bot's tasks run (above).
+
+`PATCH /v1/bots/{id}` and `bot update --file <patch.json>` replace the
+fields a patch names (`mission`, `level`, `allowedTools`, `toolRules`,
+`triggers`, `placement`, `model`, `budgets`); the identity and the status
+do not change that way, and a patch that strands a tool rule or names a
+bad trigger changes nothing.
+
+## Triggers
+
+A trigger has a type, a name unique within the bot (the type when not
+given) and, for a webhook or a timer, an objective template the fire
+renders over the event (`text/template`; a field the template names and
+the event lacks refuses the fire, so an objective never says `<no
+value>`). Every fire creates a task through the same path as a manual
+submission, under an **idempotency key derived from the trigger and the
+event**, so a redelivered webhook or a scheduler that restarts and fires
+the same slot finds the task it already created and starts nothing
+(vision §14.7). Every fire is a `bot.trigger.fired` event with the task,
+the key and `deduplicated` true or false; the task keeps the trigger and
+the event as its `input`.
+
+```json
+"triggers": [
+  {"type": "manual"},
+  {"type": "webhook", "name": "deploy", "secret": "<16 to 256 characters>",
+   "objective": "Handle event {{.type}} for {{.service}}"},
+  {"type": "webhook", "name": "alerts", "signingKey": "<16 to 256 characters>",
+   "objective": "Look at the alert {{.alertname}} on {{.instance}}"},
+  {"type": "timer", "name": "clock", "every": "10m",
+   "objective": "Say the current time of this host (the trigger fired at {{.firedAt}})."},
+  {"type": "timer", "name": "nightly", "cron": "0 3 * * 1-5", "objective": "Write the nightly report"}
+]
+```
+
+| Type | Fired by | Key | Authentication |
+|---|---|---|---|
+| `manual` | `task submit --key`, `POST /v1/bots/{id}/tasks` with `Idempotency-Key` | the caller's key | the socket, or the operator bearer token |
+| `webhook` | `POST /v1/triggers/{bot}/{trigger}` with a JSON object as the body | `webhook:<name>:<hash>` of the `Idempotency-Key` header (the delivery id) when the sender set one, else of the body | the trigger's `secret` in `X-Axlr-Secret`, or the HMAC-SHA256 of the body under its `signingKey` in `X-Axlr-Signature: sha256=<hex>` (`X-Hub-Signature-256` is read too); never the bearer token. Over the socket the caller is trusted, as for every route |
+| `timer` | the daemon, on every tick | `timer:<name>:<unix seconds of the slot>` | none: it is the control plane's own |
+
+A timer runs `every` so often (at least a second; the first fire is when
+it is armed) or on a five-field `cron` expression evaluated in the
+host's time zone (numbers only; Sunday is 0 or 7; a day of month and a
+day of week both restricted match either, as in cron). Its state is one
+file, `<state>/timers/<bot>~<trigger>.json`, with the next fire: a
+daemon that comes back after a long stop finds the slot in the past,
+**fires once for it** with that slot's key (so a crash between the fire
+and the save fires the same slot again and finds the same task) and
+arms the next slot after now; the slots in between are not replayed. A
+paused bot's timers are advanced, not fired; a changed schedule re-arms
+the timer; a removed trigger drops it. The timer's event carries
+`trigger`, `scheduledAt` and `firedAt`, which the template may use. The
+webhook's secret and signing key are stored with the bot and redacted in
+every answer of the API and the CLI; the webhook body is bounded by 256
+KiB and stored on the task.
+
+## Correlation
+
+The control plane generates every id: `bot_id` at registration,
+`task_id` and a `trace_id` (`trace-…`, the task's `correlationId`; one
+from upstream is kept instead) at submission, `execution_id` at each
+attempt. The task stores the trace id, each execution a `correlation`
+record (`botId`, `taskId`, `executionId`, `traceId`, `carried`, `path`),
+and every event names the bot, the task, the execution and the trace,
+so an execution is reconstructed from any of them (vision §14.8). The
+runtime adapter writes `<state>/correlation/<execution>.json` with the
+contract's object (`{"correlation": {"bot_id", "task_id",
+"execution_id", "trace_id"}}`) for every run and reads `axlr-tui --help`
+once: with `-correlation` it passes `--correlation <file>` (and
+`--budget <file>` with `-budget`: `{"budget": {"seconds", "requests",
+"tool_calls"}}` from the bot's budgets); with `-execution` alone it
+passes one `--execution <bundle>` holding the policy, the budget and
+the correlation in place of `--policy`; otherwise it passes nothing and
+the execution says `"carried": false`. The installed `axlr-tui` on this
+machine takes none of them yet (AXLR's Phase 2), so every execution
+below says `carried: false` while the ids are already generated,
+stored and in every event; the node reports `correlationSupported` in
+its capabilities.
+
+## The operator API
+
+The vision's minimal API (§11.1) plus the routes the CLI uses, served
+on the socket (the CLI's path, trusted) and, with `serve --api-listen
+<addr>` (or `install --api-listen`), on a TLS address for operators and
+webhook senders. The TLS certificate is the fleet CA's (`ca init`,
+`--cacert <state>/ca/ca.crt` on the client); the operator routes take
+`Authorization: Bearer <token>` with the token of `<state>/api.token`
+(generated at the first start, mode 0600, never logged), the trigger
+route takes the trigger's own credential, and `/healthz` is open. A
+node certificate is no credential here: the operator address serves
+no node route, and the bearer token is the only way in, which keeps
+node certificates and operator access apart (a client-certificate
+scheme for operators would need its own CA profile; it is left out).
+Bodies are bounded (1 MiB; a webhook 256 KiB) and unknown fields are
+refused.
+
+| Route | Does | Idempotency |
+|---|---|---|
+| `POST /v1/bots` | register a bot from its definition | per id: a repeat is `409 conflict` |
+| `GET /v1/bots`, `GET /v1/bots/{id}` | list, show (credentials redacted) | |
+| `PATCH /v1/bots/{id}` | replace the fields the patch names | the patch is the whole value of each field |
+| `POST /v1/bots/{id}/enable` | let the bot accept tasks | |
+| `POST /v1/bots/{id}/tasks` `{objective, correlationId?}` | submit a task; `Idempotency-Key` header (or `idempotencyKey` in the body; the header wins) | same bot and key: same task, `200` instead of `201` |
+| `GET /v1/bots/{id}/events?limit=100` | the bot's newest events, oldest first (at most 1000) | |
+| `POST /v1/triggers/{bot}/{trigger}` | fire a webhook with the body as the event; `Idempotency-Key` is the delivery id | same delivery (or same body): same task, `200` |
+| `GET /v1/tasks/{id}` | show a task: status, trigger, input, trace id, executions | |
+| `GET /v1/tasks/{id}/executions` | the task's executions with their correlation, policy, usage and result | |
+| `POST /v1/tasks/{id}/cancel` | stop a task: Pending never runs, Running ends `Cancelled` (the in-process run is interrupted, a node's run stops at its next lease renewal, the late report is dropped), WaitingApproval never gets its decision | a Cancelled task answers `200` with `changed: false`; Completed or Failed is `409` |
+| `POST /v1/tasks` `{botId, objective, idempotencyKey?}` | the older form of submit, with the same header | as above |
+| `POST /v1/tasks/{id}/run`, `/decide`, `GET /v1/tasks/{id}/report`, `GET /v1/executions/{id}` | the CLI's run, approve/deny, report and execution routes | |
+| `GET /v1/nodes`, `GET /v1/nodes/{id}`, `POST /v1/enrollments`, `POST /v1/nodes/{id}/revoke` | the nodes: list, show, mint a token, revoke | |
+
+Errors are `{"kind": "validation|not_found|state|conflict|forbidden|unauthorized|too_large|internal", "error": "…"}`
+with the matching status (`400`, `404`, `409`, `409`, `403`, `401`,
+`413`, `500`).
+
+```bash
+state=~/.local/state/axlr-bots
+curl --cacert $state/ca/ca.crt -H "Authorization: Bearer $(cat $state/api.token)" https://127.0.0.1:7879/v1/bots
+curl --cacert $state/ca/ca.crt -H "Authorization: Bearer $(cat $state/api.token)" -H "Idempotency-Key: deploy-42" \
+     -d '{"objective": "List the files in your workspace"}' https://127.0.0.1:7879/v1/bots/bot/tasks
+curl --cacert $state/ca/ca.crt -H "X-Axlr-Secret: $secret" -H "Idempotency-Key: gh-delivery-1" \
+     -d '{"type": "deploy", "service": "web"}' https://127.0.0.1:7879/v1/triggers/bot/deploy
+```
 
 Before each execution the adapter writes `<state>/policies/<execution>.json`
 and passes it with `--policy` when the binary takes it (the adapter reads
@@ -562,6 +692,25 @@ renders into a `--destdir`. One test runs the real binary only when
 AXLR_LIVE=1 AXLR_TUI=/path/to/axlr-tui GOFLAGS=-p=2 go test ./adapters/axlr -run TestLiveExec -v
 ```
 
+The triggers are tested in `domain` (definitions, the HMAC and secret
+checks, the cron parser and its next fire, the fire keys within the
+key's length), `application` (a redelivered webhook finds its task, a
+timer catches up once after a restart and fires the same slot again
+without a second task, a paused bot's timers advance, a cancel of a
+running task through the runner drops the late report),
+`adapters/unixapi` (the operator routes, the `Idempotency-Key` header,
+a webhook refused without its secret or with a tampered signature,
+accepted with the secret or the signature, `413` past the bound, the
+bearer token on the operator address with no node route on it, a
+cancel of a running task through the API) and `adapters/daemon` (a
+timer fires at once when armed and once more after a restart with the
+slot in the past). One test fires a webhook against the daemon running
+on this machine and waits for the node to complete the task:
+
+```bash
+AXLR_BOTS_LIVE=1 GOFLAGS=-p=2 go test ./cmd/axlr-bots -run TestLiveWebhookRunsOnTheNode -v
+```
+
 The node protocol over TLS is tested in `adapters/pki` (the handshakes:
 an enrolled node, a node that trusts another CA, a certificate another
 CA issued, no certificate), `adapters/unixapi` (enrollment end to end,
@@ -597,8 +746,10 @@ The adapter speaks the contract in AXLR's `docs/runtime-contract.md`:
   decision required, 1 failed) plus the `completed`, `failed` and
   `decision.required` lines.
 - Decision: `--session <id> --decide approve|deny [--call <id>] --policy <file> --json`.
-- Not yet taken by AXLR: budgets and correlation (the contract's reserved
-  fields; see the TODO in `adapters/axlr/executor.go`).
+- Reserved fields: the correlation and the budget are written per
+  execution and passed when the binary's `--help` shows the flags (see
+  [Correlation](#correlation)); the installed build does not take them
+  yet.
 
 Outcome mapping: `completed` → `Completed`; `needs_decision` →
 `DecisionRequired`, task `WaitingApproval`; `failed`, `interrupted` and
@@ -609,14 +760,15 @@ State directory layout:
 ```text
 <state>/
   bots/<bot-id>.json       tasks/<task-id>.json      executions/<exec-id>.json   nodes/<node-id>.json
+  timers/<bot-id>~<trigger>.json (the next fire)      api.token (0600, with --api-listen)
   enrollments/<enr-id>.json (the hash of each token)  ca/ca.key (0600), ca/ca.crt   pki/revoked.json
   events.jsonl             audit.jsonl               axlr-bots.sock (while the daemon runs)
-  policies/<exec-id>.json  artifacts/<task-id>/report.md
+  policies/<exec-id>.json  correlation/<exec-id>.json  artifacts/<task-id>/report.md
   traces/, workspaces/     (single-process runs; a node keeps its own under its state)
 
 <node-state>/
   pki/node.key (0600), pki/node.crt, pki/ca.crt, pki/enrollment.json   (once enrolled)
-  traces/, policies/, workspaces/<bot-id>/
+  traces/, policies/, correlation/, workspaces/<bot-id>/
 ```
 
 ## Command reference
@@ -624,19 +776,23 @@ State directory layout:
 ```text
 axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>] <command>
 
-  serve [--listen <addr>] [--server-names a,b] [--tick 2s] [--reconcile-every 1m] [--grace <duration>]
+  serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--api-token-file <path>]
+        [--tick 2s] [--reconcile-every 1m] [--grace <duration>]
   ca init | ca show
   node list | node get <node-id>
   node enroll-token [--node-id <id>] [--labels k=v,k=v] [--ttl 1h] | node revoke <node-id>
   bot register --file <bot.json> | bot enable <bot-id> | bot list | bot get <bot-id>
+  bot update <bot-id> --file <patch.json> | bot events <bot-id> [--limit 100]
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>]
+  trigger fire <bot-id> <trigger> --body '<json>' | --file <event.json> [--delivery <id>]
   task run <task-id>                           in process (exit 0 completed, 3 decision required, 1 failed)
   task approve <task-id> | task deny <task-id> | task decide <task-id> approve|deny
-  task get <task-id> | task report <task-id> [--path] | task reconcile [--grace <duration>]
+  task get <task-id> | task executions <task-id> | task cancel <task-id>
+  task report <task-id> [--path] | task reconcile [--grace <duration>]
   execution get <execution-id>
   install [--system] [--prefix <dir>] [--state <dir>] [--node-state <dir>] [--unit-dir <dir>] [--env-file <path>]
-          [--axlr-bin <path>] [--node-binary <path>] [--listen <addr>] [--server-names a,b] [--control <url>]
-          [--node-only] [--destdir <dir>] [--no-systemctl]
+          [--axlr-bin <path>] [--node-binary <path>] [--listen <addr>] [--server-names a,b] [--api-listen <addr>]
+          [--control <url>] [--node-only] [--destdir <dir>] [--no-systemctl]
   uninstall [--system] [--prefix <dir>] … [--purge]
 
 axlr-node --control unix:///path/to/axlr-bots.sock | https://host:7878
@@ -648,7 +804,9 @@ axlr-node enroll --control https://host:7878 --token <token> [--ca-file <pem>] [
 then `~/.local/state/axlr-bots`; `--axlr-bin` to `$AXLR_TUI`,
 then `axlr-tui` on `PATH`; `--socket` to `$AXLR_BOTS_SOCKET`, then
 `<state>/axlr-bots.sock` (`--socket ""` never uses a daemon); `serve`
-reads `AXLR_BOTS_LISTEN` and `AXLR_BOTS_SERVER_NAMES`. The node reads
+reads `AXLR_BOTS_LISTEN`, `AXLR_BOTS_SERVER_NAMES` and
+`AXLR_BOTS_API_LISTEN`, and `--api-token-file` defaults to
+`<state>/api.token`. The node reads
 `AXLR_NODE_CONTROL`, `AXLR_NODE_ID`, `AXLR_NODE_LABELS`, `AXLR_NODE_STATE`,
 `AXLR_NODE_TOKEN` (for `enroll`) and `AXLR_TUI`; over the socket its id
 defaults to the host name, over `https://` it is the certificate's and a
@@ -663,18 +821,21 @@ environment (`AXLR_NODE_CONTROL`, `AXLR_TUI`, the model key) comes
 from the pod spec, and systemd disappears; the service's files are mounted
 read-only and the bots placed on that node (by a `selector` on its labels)
 read them with AXLR's own tools. The control plane stays where it is, one
-per cluster or per fleet, and the webhook trigger (`POST /v1/triggers`
-from the orchestrator's events or an alerting source) is the trigger type
-that fits there.
+per cluster or per fleet, and the webhook trigger
+(`POST /v1/triggers/{bot}/{trigger}` from the orchestrator's events or an
+alerting source, with the trigger's secret) is the trigger type that fits
+there.
 
 ## What is left out
 
-Trigger types beyond `manual` (a systemd unit event, a timer, a webhook),
-an approval queue beyond `task approve` (who may decide, and when; an
-expired approval), budgets and correlation enforced by the runtime,
-`axlr-serve` as a second `RuntimeExecutor`, and a real store (one JSON
-file per aggregate scans the directory for the idempotency key, the
-Pending tasks and the Running executions). On the PKI: a node certificate
+A systemd unit event as a trigger type, an approval queue beyond `task
+approve` (who may decide, and when; an expired approval), budgets and
+correlation enforced by the runtime (the control plane passes them once
+`axlr-tui` takes the flags), operator client certificates on the API
+address (the bearer token is the one credential), a `GET /v1/tasks`
+listing, `axlr-serve` as a second `RuntimeExecutor`, and a real store
+(one JSON file per aggregate scans the directory for the idempotency
+key, the Pending tasks and the Running executions). On the PKI: a node certificate
 lasts a year and is renewed by enrolling again with a fresh token (no
 automatic renewal yet), revocation is the control plane's own denylist
 (no CRL or OCSP for other verifiers), and the CA key lives in the

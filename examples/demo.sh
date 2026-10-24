@@ -59,7 +59,7 @@ wait_for_task() {
   done
   echo "task $1 is $status after about $((i * 2))s"
 }
-task_id() { sed -n 's/.*"id": "\(task-[^"]*\)".*/\1/p' | head -1; }
+task_id() { sed -n 's/.*"id": *"\(task-[^"]*\)".*/\1/p' | head -1; }
 last_execution() { $ub task get "$1" | sed -n 's/.*"exec-\([^"]*\)".*/exec-\1/p' | tail -1; }
 cleanup() {
   rm -rf "$build"
