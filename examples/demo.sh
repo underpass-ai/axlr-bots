@@ -79,10 +79,12 @@ say "2. start the control plane; enroll this host as a node over TLS with a one-
 $ctl enable --now axlr-bots.service
 $ctl restart axlr-bots.service
 wait_for_socket
-if [ -f "$nodestate/pki/node.crt" ]; then
-  echo "(the node is enrolled: $nodestate/pki)"
+if [ -f "$nodestate/pki/node.crt" ] && [ "${DEMO_REENROLL:-0}" != 1 ]; then
+  echo "(the node is enrolled: $nodestate/pki; DEMO_REENROLL=1 enrolls it again and rotates its certificate)"
 else
-  token=$($ub node enroll-token --node-id "$(hostname | tr 'A-Z' 'a-z' | cut -d. -f1)" --ttl 10m | tee /dev/stderr | sed -n 's/.*"token": "\([^"]*\)".*/\1/p')
+  minted=$($ub node enroll-token --node-id "$(hostname | tr 'A-Z' 'a-z' | cut -d. -f1)" --ttl 10m)
+  printf '%s\n' "$minted" | sed 's/"token": "axlr1\.[^"]*"/"token": "axlr1.<one line, shown once; consumed below>"/'
+  token=$(printf '%s\n' "$minted" | sed -n 's/.*"token": "\([^"]*\)".*/\1/p')
   "$node" enroll --control "$control" --token "$token" --state "$nodestate" | grep -E '"nodeId"|"control"|"serial"|"notAfter"|"state"'
 fi
 $ctl enable --now axlr-node.service

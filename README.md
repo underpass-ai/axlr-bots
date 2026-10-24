@@ -34,25 +34,30 @@ Two commands come out of this module:
 ```
 
 Every arrow between a node and the control plane goes **out from the
-node**: the control plane never reaches into a host. On one host (the MVP,
-and this machine) both run under `systemctl --user` and talk over a Unix
-socket; nodes elsewhere use a loopback or network address, and TLS with
-client certificates goes in front of it without changing a message.
+node**: the control plane never reaches into a host. On the control
+plane's host both run under `systemctl --user` and may talk over a Unix
+socket; a node on any host (this one included, as installed here) talks
+to the control plane's TLS address with **mutual TLS**: the control plane
+runs the fleet's CA, each node holds a client certificate whose common
+name is its node id, and a new host joins with a one-time token (see
+[Adding a host](#adding-a-host)). The messages are the same on both
+paths.
 
 ## Layout (hexagonal)
 
 | Package | Role |
 |---|---|
-| `domain` | Bot, Task, Execution and Node aggregates; value objects validated in constructors (autonomy level, tool rules, triggers, placement, leases); events (vision §11.2) under a schema version; audit entries. One file per type. |
-| `application` | Ports (`BotRepository`, `TaskRepository`, `ExecutionRepository`, `NodeRepository`, `EventPublisher`, `AuditSink`, `RuntimeExecutor`, `DecisionExecutor`, `TraceLocator`, `ArtifactStore`, `NodeTransport`) and use cases (`RegisterBot`, `EnableBot`, `SubmitTask`, `RunTask`, `ApproveTask`, `RegisterNode`, `HeartbeatNode`, `NextAssignment`, `RenewLease`, `ReportExecution`, `MarkOfflineNodes`, `ReconcileTasks`, `RunNextPending`, `GetReport`, …); `SerialRunner` serialises runs, assignments and reports. |
-| `nodeproto` | The messages of the node protocol, shared by the server and the node's client. |
-| `adapters/filestore` | One JSON file per aggregate under the state directory, written atomically (temp file, fsync, rename); the report artifacts. |
+| `domain` | Bot, Task, Execution, Node and Enrollment aggregates; value objects validated in constructors (autonomy level, tool rules, triggers, placement, leases); a node's certificate serial and its `Revoked` status; events (vision §11.2) under a schema version; audit entries. One file per type. |
+| `application` | Ports (`BotRepository`, `TaskRepository`, `ExecutionRepository`, `NodeRepository`, `EnrollmentRepository`, `Certifier`, `CertificateDenylist`, `EventPublisher`, `AuditSink`, `RuntimeExecutor`, `DecisionExecutor`, `TraceLocator`, `ArtifactStore`, `NodeTransport`) and use cases (`RegisterBot`, `EnableBot`, `SubmitTask`, `RunTask`, `ApproveTask`, `RegisterNode`, `HeartbeatNode`, `NextAssignment`, `RenewLease`, `ReportExecution`, `CreateEnrollmentToken`, `EnrollNode`, `AuthenticateNode`, `RevokeNode`, `MarkOfflineNodes`, `ReconcileTasks`, `RunNextPending`, `GetReport`, …); `SerialRunner` serialises runs, assignments, reports and revocations. |
+| `nodeproto` | The messages of the node protocol, shared by the server and the node's client; the enrollment token's encoding. |
+| `adapters/pki` | The fleet CA (ECDSA P-256; the key under `<state>/ca`, mode 0600), the node certificates it signs from a node's request (common name = node id, a year), the control plane's own certificate (issued at start for the host's names), the node's key and request, its stored credentials, and the TLS 1.3 configurations of both ends. |
+| `adapters/filestore` | One JSON file per aggregate under the state directory, written atomically (temp file, fsync, rename); the enrollments (the hash of each token, never the token); the denylist of revoked certificate serials; the report artifacts. |
 | `adapters/jsonl` | Append-only `events.jsonl` and `audit.jsonl`. |
 | `adapters/axlr` | Runs `axlr-tui --exec --json [--policy <file>]` as a subprocess and reads the execution result object; keeps the raw lines as the trace and the policy file as evidence. Used by the node, and by the control plane in single-process mode. |
-| `adapters/unixapi` | The API: a `Service` interface with `Local` (in process) and `Client` (HTTP) implementations, the `Server` (Unix socket and TCP), and the node protocol's routes; the `Client` is also the node's `NodeTransport`. |
-| `adapters/daemon` | The control plane as a service: the API, in-process runs for bots no node may run, reconciliation and offline nodes on a timer. |
+| `adapters/unixapi` | The API: a `Service` interface with `Local` (in process) and `Client` (HTTP) implementations; the `Server` serves everything on the Unix socket and the node protocol alone on the TLS address, where the node's identity is its client certificate; the `Client` is also the node's `NodeTransport`, over the socket or over TLS with the node's certificate. |
+| `adapters/daemon` | The control plane as a service: the API on the socket and the TLS address, in-process runs for bots no node may run, reconciliation and offline nodes on a timer. |
 | `adapters/nodeagent` | The node agent's loop: register, heartbeat, poll, run, renew, report. |
-| `adapters/systemd` | Renders and installs the two units and the environment file; removes them. |
+| `adapters/systemd` | Renders and installs the two units and the environment file (or the node's alone, for a host that joins a control plane elsewhere); removes them. |
 | `adapters/system` | Wall clock, random ids. |
 | `compose` | The composition root the commands share. |
 | `cmd/axlr-bots`, `cmd/axlr-node` | The two commands. |
@@ -68,22 +73,33 @@ and the node agent found beside it.
 GOFLAGS=-p=2 go build -o bin/axlr-bots ./cmd/axlr-bots
 GOFLAGS=-p=2 go build -o bin/axlr-node ./cmd/axlr-node
 export OPENROUTER_API_KEY=...                           # copied into the env file, mode 0600, never printed
-bin/axlr-bots install --axlr-bin /path/to/axlr-tui # a build with --exec; with --policy the bots' rules are enforced
-systemctl --user enable --now axlr-bots.service axlr-node.service
+bin/axlr-bots install --axlr-bin /path/to/axlr-tui \
+    --listen 127.0.0.1:7878 --control https://127.0.0.1:7878   # the TLS address; 0.0.0.0:7878 for other hosts
+axlr-bots ca init                                        # the fleet CA, once; <state>/ca/ca.key is 0600
+systemctl --user enable --now axlr-bots.service
+axlr-node enroll --control https://127.0.0.1:7878 \
+    --token "$(axlr-bots node enroll-token --node-id "$(hostname)" | jq -r .token)"   # this host's certificate
+systemctl --user enable --now axlr-node.service
 loginctl enable-linger "$USER"                           # keeps the services running after you log out
-axlr-bots node list                                 # the host, Online
+axlr-bots node list                                      # the host, Online, with its certificate's serial
 axlr-bots bot register --file examples/bot.json
 axlr-bots bot enable bot
 ```
 
+Without `--listen` and `--control` the control plane serves the socket
+only and the node unit talks over it (`AXLR_NODE_CONTROL=unix://…`): no
+CA, no enrollment, the host name as the node id. That is the one-host
+install; the TLS install above is what this machine runs, and the only
+one a second host can join.
+
 | File | What |
 |---|---|
 | `~/.local/bin/axlr-bots`, `~/.local/bin/axlr-node` | the binaries (`install` copies the ones that run) |
-| `~/.config/systemd/user/axlr-bots.service` | `Type=simple`, `ExecStart=… serve`, `Restart=on-failure`, `NoNewPrivileges=yes`, `EnvironmentFile=-~/.config/axlr-bots/env`, `WantedBy=default.target` |
-| `~/.config/systemd/user/axlr-node.service` | `After=`/`Wants=axlr-bots.service`, `ExecStart=axlr-node --control unix://…/axlr-bots.sock --state ~/.local/state/axlr-node`, the host name as node id and `host=` label |
+| `~/.config/systemd/user/axlr-bots.service` | `Type=simple`, `ExecStart=… serve [--listen <addr>] [--server-names …]`, `Restart=on-failure`, `NoNewPrivileges=yes`, `EnvironmentFile=-~/.config/axlr-bots/env`, `WantedBy=default.target` |
+| `~/.config/systemd/user/axlr-node.service` | `After=`/`Wants=axlr-bots.service` (or `network-online.target` with `--node-only`), `Environment=AXLR_NODE_CONTROL=<--control, or unix://…/axlr-bots.sock>`, `ExecStart=axlr-node --state ~/.local/state/axlr-node`, the host name as the `host=` label; over `https://` the node id is the certificate's |
 | `~/.config/axlr-bots/env` | `OPENROUTER_API_KEY=` (or a commented placeholder when the installer had none) and `AXLR_TUI=`; an existing file is never overwritten |
-| `~/.local/state/axlr-bots/` | the control plane's state: bots, tasks, executions, nodes, policies, artifacts, logs, the socket |
-| `~/.local/state/axlr-node/` | the node's state: the traces, policy files and workspaces of what it ran |
+| `~/.local/state/axlr-bots/` | the control plane's state: bots, tasks, executions, nodes, enrollments, policies, artifacts, logs, the socket, and `ca/` (the fleet CA: `ca.key` 0600, `ca.crt`) and `pki/revoked.json` (the denylist) |
+| `~/.local/state/axlr-node/` | the node's state: the traces, policy files and workspaces of what it ran, and `pki/` (`node.key` 0600, `node.crt`, `ca.crt`, `enrollment.json`) once enrolled |
 
 A user service cannot sandbox the filesystem (`ProtectSystem=` and
 `ProtectHome=` need privileges a user manager lacks); the unit says so.
@@ -110,9 +126,19 @@ own files there. `uninstall --system` reverses it.
 `axlr-bots serve` is the daemon (`Type=simple`, logs to the journal).
 
 - It serves the API on a Unix socket, `<state>/axlr-bots.sock`, mode
-  0660, and optionally on a TCP address (`--listen 127.0.0.1:7878`, or
-  `0.0.0.0:7878` for nodes on other hosts). HTTP+JSON, because `net/http`
-  is in the standard library and the JSON is the same the CLI prints.
+  0660, and the node protocol on a TLS address when `--listen` names one
+  (`127.0.0.1:7878` for this host, `0.0.0.0:7878` for nodes on other
+  hosts). HTTP+JSON, because `net/http` is in the standard library and
+  the JSON is the same the CLI prints. The TLS address serves only what a
+  node needs: health, enrollment and the five node routes; a node
+  certificate opens no operator route, and the operator's commands go
+  through the socket.
+- The TLS address is TLS 1.3 with a server certificate the fleet CA
+  issues at start for the host's names (the listen address, the host
+  name, `localhost`, the loopback, every interface address when it
+  listens on all of them, plus `--server-names`), reissued before it
+  expires, and a client certificate verified against the CA. Without
+  `ca init` the daemon refuses to listen.
 - Every CLI command tries the socket first (`--socket`, `AXLR_BOTS_SOCKET`,
   default `<state>/axlr-bots.sock`): when the daemon answers, the
   command is carried by it, so a `task submit` reaches the running service
@@ -139,7 +165,8 @@ answers a heartbeat with 404 and the agent registers again.
 
 | Message | Route | Direction | Idempotency |
 |---|---|---|---|
-| register `{id, hostName, labels, capabilities}` | `POST /v1/nodes` | node → control plane | per node id: a repeat describes the node anew |
+| enroll `{tokenId, secret, hostName, csr}` | `POST /v1/enroll` | node → control plane, **without a certificate** | once per token: the answer is the node's certificate, the CA and the node |
+| register `{id, hostName, labels, capabilities}` | `POST /v1/nodes` | node → control plane | per node id: a repeat describes the node anew; a registration without labels keeps the node's |
 | heartbeat | `POST /v1/nodes/{id}/heartbeat` | node → control plane | yes |
 | next assignment | `GET /v1/nodes/{id}/assignments/next?wait=20s` | node → control plane (long poll; `204` when none) | each execution is handed out once; an unleased one assigned to the node (a queued decision) goes first |
 | renew lease | `POST /v1/nodes/{id}/executions/{exec}/lease` | node → control plane | yes; refused for another node's or an ended execution |
@@ -156,6 +183,93 @@ has and whether it takes `--policy`.
 
 Placement is part of the bot's definition: `"placement": {"nodes":
 ["web-1"], "selector": {"zone": "eu"}}`, or nothing for any node.
+
+### Node identity
+
+Over the TLS address a node **is** its client certificate: the server
+takes the node id from the certificate's common name, refuses a URL
+node id (or a registration body) that names another node, and refuses
+the certificate when its serial is on the denylist or is not the one
+recorded at the node's last enrollment. Over the socket, where there is
+no certificate, the node id in the URL is trusted as before (the same
+host, the same user). A node the control plane does not know but whose
+certificate the CA signed may register: that is how a node comes back
+after the control plane lost its state.
+
+- `axlr-bots node enroll-token [--node-id <id>] [--labels k=v] [--ttl 1h]`
+  mints a **one-time token** bound to a future node id (generated when
+  not given) and to the labels the node starts with. The token is one
+  line, `axlr1.…`: the token id, a 256-bit secret, the node id and the CA
+  certificate. The control plane stores the hash of the secret, never the
+  secret; the token is printed once and is in no log. `node.enroll-token`
+  is audited with the token id.
+- `axlr-node enroll --control https://host:7878 --token …` generates the
+  node's key on the host (it never leaves it), verifies the control plane
+  against the CA the token carries (or `--ca-file`), sends a signing
+  request with the token and stores `node.key` (0600), `node.crt` and
+  `ca.crt` under `<node-state>/pki`. The token is consumed before the
+  certificate is signed, so a failure burns the token rather than issue
+  twice; an expired, used or unknown token is refused (409, 409, 403).
+  The enrollment is a `node.enrolled` event and a `node.enroll` audit
+  entry with the certificate's serial. A node that enrols again (a fresh
+  token for the same id) rotates its certificate: the previous one stops
+  being accepted at the next request.
+- `axlr-bots node revoke <id>` marks the node `Revoked`, puts its
+  certificate's serial on the denylist (`<state>/pki/revoked.json`,
+  checked on every request a certificate authenticates, so an open
+  connection is cut off too), and fails the executions it still held with
+  their tasks (`revoked: node web-2 was revoked at …`, a `bot.task.failed`
+  event with `"reason": "revoked"`). A revoked node cannot register,
+  heartbeat or take work; a fresh token readmits it with a new
+  certificate, and the old serial stays denied.
+
+## Adding a host
+
+One control plane, N hosts, N bots per host; every host connects
+outward. On the control plane's host the daemon must listen on an
+address the new host reaches (`install --listen 0.0.0.0:7878
+--server-names cp.example`, port 7878 open inbound), and the operator
+mints a token there:
+
+```bash
+axlr-bots node enroll-token --node-id web-2 --labels zone=eu --ttl 1h
+# {"token": "axlr1.…", "id": "enr-…", "nodeId": "web-2", "labels": {"zone": "eu"}, "expiresAt": "…"}
+```
+
+On the new host, as the user the node will run as, with the repository
+checked out (the token and the control plane's URL are the only things
+copied from the first host; the model key is that host's own):
+
+```bash
+GOFLAGS=-p=2 go build -o bin/axlr-bots ./cmd/axlr-bots
+GOFLAGS=-p=2 go build -o bin/axlr-node ./cmd/axlr-node
+export OPENROUTER_API_KEY=...                                  # this host's key, into its env file
+bin/axlr-bots install --node-only --control https://cp.example:7878 --axlr-bin /path/to/axlr-tui
+~/.local/bin/axlr-node enroll --control https://cp.example:7878 --token 'axlr1.…'
+systemctl --user enable --now axlr-node.service
+loginctl enable-linger "$USER"
+```
+
+`install --node-only` puts `axlr-node`, its unit (with
+`AXLR_NODE_CONTROL=https://cp.example:7878` in its environment and no
+dependency on a local control plane) and the env file in place, and no
+control plane: the second host runs none. `enroll` prints the node id,
+the certificate's serial and expiry; the unit then runs with that
+certificate, and the agent's first log line says so (`client certificate
+…/pki/node.crt for node web-2 (serial …)`). Back on the control plane:
+
+```bash
+axlr-bots node list                      # web-2 Online, certificateSerial set, labels {"zone": "eu", "host": "web-2"}
+axlr-bots bot register --file bot-eu.json   # "placement": {"selector": {"zone": "eu"}} runs on web-2 only
+axlr-bots node revoke web-2              # when the host is retired or compromised
+```
+
+`TestTwoNodesOverTLSRunTheBotWhereItsSelectorSays` (`adapters/daemon`)
+is this flow in one process: a control plane over TLS on `127.0.0.1:0`,
+two agents enrolled with tokens in zones `eu` and `us`, a bot whose
+selector names `us`, and the task's execution on `node-us`. The same
+test runs against the real `axlr-tui` and a model key with
+`AXLR_BOTS_LIVE=1` (below).
 
 ## A bot's definition
 
@@ -263,12 +377,18 @@ gone`), a `bot.task.failed` event with `"reason": "reconciled"` and a
 
 ## Live run on this machine
 
-`examples/demo.sh` runs the whole thing user-level: build, install, start
-both services, show the node Online, register the example bot, submit a
-generic task and watch the node run it, read the report, the approval
-path with a harmless write in the bot's workspace, then restart both
-services and show the node, the bots and the tasks are still there. The
-installation stays running (`DEMO_UNINSTALL=1` removes it).
+`examples/demo.sh` runs the whole thing user-level: build, install with
+the control plane listening on `127.0.0.1:7878` with TLS beside its
+socket, create the fleet CA, start the control plane, enroll this host
+as a node through the TLS path with a one-time token (so the installed
+node uses mTLS, as a node on another host would), start it and show it
+Online with its certificate, register the example bot, submit a generic
+task and watch the node run it, read the report, the approval path with
+a harmless write in the bot's workspace, then restart both services and
+show the node, the bots and the tasks are still there. The installation
+stays running (`DEMO_UNINSTALL=1` removes it); a second run keeps the CA
+and the node's credentials (`DEMO_REENROLL=1` enrolls the node again,
+which rotates its certificate).
 
 ```bash
 export OPENROUTER_API_KEY=...
@@ -277,15 +397,19 @@ AXLR_TUI=/path/to/axlr-tui sh examples/demo.sh
 
 Run on 24 Oct 2026 on this machine (user `gx10a`, host `gx10-ff95`), with
 `claude-haiku-5.5` through OpenRouter and an `axlr-tui` built from AXLR's
-`claude/execution-policy` branch (`/home/gx10a/Documents/ai/tmp/axlr-tui-policy`):
+`claude/execution-policy` branch (`/home/gx10a/Documents/ai/tmp/axlr-tui-policy`).
+The CA and the bots were there from the first run of the day;
+`DEMO_REENROLL=1` makes the node enroll again, which is why its
+certificate's serial changes and the previous one stops being accepted:
 
 ```bash
 set -a; . ~/.hermes/.env; set +a            # exports OPENROUTER_API_KEY
-AXLR_TUI=/home/gx10a/Documents/ai/tmp/axlr-tui-policy sh examples/demo.sh
+DEMO_REENROLL=1 AXLR_TUI=/home/gx10a/Documents/ai/tmp/axlr-tui-policy sh examples/demo.sh
 ```
 
 ```text
-## 0. build and install (user-level: ~/.local, ~/.config, systemctl --user)
+
+## 0. build and install (user-level: ~/.local, ~/.config, systemctl --user; the control plane listens on 127.0.0.1:7878 with TLS)
   "mode": "user",
   "binary": "/home/gx10a/.local/bin/axlr-bots",
   "nodeBinary": "/home/gx10a/.local/bin/axlr-node",
@@ -293,45 +417,63 @@ AXLR_TUI=/home/gx10a/Documents/ai/tmp/axlr-tui-policy sh examples/demo.sh
     "/home/gx10a/.config/systemd/user/axlr-node.service"
   "envFile": "/home/gx10a/.config/axlr-bots/env",
   "socket": "/home/gx10a/.local/state/axlr-bots/axlr-bots.sock",
+  "control": "https://127.0.0.1:7878",
+  "listen": "127.0.0.1:7878",
+    "/home/gx10a/.local/bin/axlr-bots --state /home/gx10a/.local/state/axlr-bots ca init  # once per fleet, before the service starts",
     "systemctl --user enable --now axlr-bots.service axlr-node.service",
     "loginctl enable-linger gx10a  # keep the services running after logout"
 
-## 1. start both services; the node registers itself
-Created symlink …/default.target.wants/axlr-bots.service → …/axlr-bots.service.
-Created symlink …/default.target.wants/axlr-node.service → …/axlr-node.service.
+## 1. the fleet CA (once per fleet; kept across runs)
+(the CA exists: /home/gx10a/.local/state/axlr-bots/ca)
+  "fingerprint": "dcb7e7d6b66e604bc768f9932f621c1803972be2cd3e63e0d6c5ba7fe1cfd2cc",
+
+## 2. start the control plane; enroll this host as a node over TLS with a one-time token; start the node
+{
+  "token": "axlr1.<one line, shown once; consumed below>",
+  "id": "enr-30c8df33b7736347176ba570",
+  "nodeId": "gx10-ff95",
+  "expiresAt": "2026-10-24T09:45:43.293843263Z"
+}
+  "nodeId": "gx10-ff95",
+  "control": "https://127.0.0.1:7878",
+  "serial": "32a865fa9c3309f8c98ce2f3032ae8f0",
+  "notAfter": "2027-10-24T09:35:43Z",
+  "state": "/home/gx10a/.local/state/axlr-node"
     "id": "gx10-ff95",
     "hostName": "gx10-ff95",
       "host": "gx10-ff95"
       "policySupported": true
     "status": "Online",
+    "certificateSerial": "32a865fa9c3309f8c98ce2f3032ae8f0"
+2026/10/24 11:35:43 node: control plane https://127.0.0.1:7878, client certificate /home/gx10a/.local/state/axlr-node/pki/node.crt for node gx10-ff95 (serial 32a865fa9c3309f8c98ce2f3032ae8f0, until 2027-10-24)
 
-## 2. register the example bot (observe: AXLR's read tools, manual trigger, any node)
+## 3. register the example bot (observe: AXLR's read tools, manual trigger, any node)
+(bot already registered: the state survived an earlier run)
   "id": "bot",
   "level": "observe",
       "type": "manual"
   "status": "Enabled",
 
-## 3. a generic task: the control plane assigns it to the node, the node runs it with AXLR
-task task-6e4c4ca0938e8f4ba55b7df4 is Completed after about 8s
-    "costUsd": 0.0010726450000000001
+## 4. a generic task: the control plane assigns it to the node over TLS, the node runs it with AXLR
+task task-b052948e28e28fde50ccbdc1 is Completed after about 8s
+    "costUsd": 0.0012014449999999998
     "enforced": true,
   "nodeId": "gx10-ff95",
   "outcome": "Completed",
-    "requests": 2,
+    "requests": 3,
     "runtimeLevel": "observe",
-    "toolCalls": 1,
+    "toolCalls": [
+    "toolCalls": 2,
 report:
-    The workspace is empty: the recursive listing returned no entries, so there are **0 files**.
+    The workspace has no files. Both listings, the default and an explicit root path, came back empty and untruncated, so the count is 0.
 
-    The workspace is `/home/gx10a/.local/state/axlr-node/workspaces/bot`. The listing skips `.git` and the
-    console's internal `.axlr` and `.kernel` stores, so those aren't counted.
-
-## 4. the approval path: a write runs only after task approve
-task task-679951d5a1a7e010777df49d is WaitingApproval after about 4s
+## 5. the approval path: a write runs only after task approve
+task task-b94395d7beac5a2a8f641664 is WaitingApproval after about 4s
   "status": "WaitingApproval",
   "outcome": "DecisionRequired",
+        "callId": "toolu_01RTxmDSSBugpexXDgF45Cxs",
       "tool": "local_write",
-      "callId": "toolu_01P78zuTmqivD9rtFe5x9bfw",
+      "callId": "toolu_01RTxmDSSBugpexXDgF45Cxs",
       "arguments": {
   "nodeId": "gx10-ff95",
 the file does not exist yet: nothing ran without approval
@@ -339,28 +481,30 @@ approving...
     "status": "Running",
     "kind": "decide",
     "nodeId": "gx10-ff95"
-task task-679951d5a1a7e010777df49d is Completed after about 8s
-    Nothing is missing: I re-read `hello-20261024T070914Z.txt` and it contains exactly `hello`, with no trailing newline.
--rw------- 1 gx10a gx10a 5 Oct 24 09:09 /home/gx10a/.local/state/axlr-node/workspaces/bot-act-with-approval/hello-20261024T070914Z.txt
+task task-b94395d7beac5a2a8f641664 is Completed after about 8s
+    Nothing is missing: `hello-20261024T093542Z.txt` exists in the workspace and contains exactly `hello`, which I confirmed by reading it back.
+-rw------- 1 gx10a gx10a 5 Oct 24 11:35 /home/gx10a/.local/state/axlr-node/workspaces/bot-act-with-approval/hello-20261024T093542Z.txt
 hello
-
-## 5. restart both services: node, bots and tasks are still there
+## 6. restart both services: node, bots and tasks are still there
     "id": "gx10-ff95",
     "status": "Online",
+    "certificateSerial": "32a865fa9c3309f8c98ce2f3032ae8f0"
     "id": "bot-act-with-approval",
     "status": "Enabled",
     "id": "bot",
     "status": "Enabled",
-  "id": "task-6e4c4ca0938e8f4ba55b7df4",
+  "id": "task-b052948e28e28fde50ccbdc1",
   "status": "Completed",
-  "id": "task-679951d5a1a7e010777df49d",
+  "id": "task-b94395d7beac5a2a8f641664",
   "status": "Completed",
 service logs (last lines):
 Stopped axlr-bots.service - AXLR Bots control plane.
 Started axlr-bots.service - AXLR Bots control plane.
-2026/10/24 09:09:36 daemon: serving on /home/gx10a/.local/state/axlr-bots/axlr-bots.sock, tick 2s
+2026/10/24 11:36:03 daemon: serving on /home/gx10a/.local/state/axlr-bots/axlr-bots.sock and https://127.0.0.1:7878, tick 2s
+axlr-node.service: Consumed 3.589s CPU time.
 Started axlr-node.service - AXLR Bots node agent.
-2026/10/24 09:09:36 node: registered as gx10-ff95 (gx10-ff95), axlr "" policy true
+2026/10/24 11:36:03 node: control plane https://127.0.0.1:7878, client certificate /home/gx10a/.local/state/axlr-node/pki/node.crt for node gx10-ff95 (serial 32a865fa9c3309f8c98ce2f3032ae8f0, until 2027-10-24)
+2026/10/24 11:36:03 node: registered as gx10-ff95 (gx10-ff95), axlr "" policy true
 
 ## installed and running
 check:     systemctl --user status axlr-bots.service axlr-node.service
@@ -372,10 +516,16 @@ the restart of both services (§14.1); the task was started by the API
 (§14.2); AXLR received the policy and produced the result object, enforced
 (§14.3, §14.5); the write ran only after `task approve` (§10.4); the
 executions keep the node, the policy, the cost and the trace reference
-(§12.3); nothing needed root (§9.1). The installation is left running on
-this machine; `loginctl show-user gx10a -p Linger` says `yes`, so it
-survives a logout. The `axlr ""` in the node's log is the capability the
-agent reads from `axlr-tui --version`, which this build does not print.
+(§12.3); nothing needed root (§9.1); the node authenticated with a client
+certificate the fleet CA issued against a one-time token, the control
+plane with a certificate from the same CA, over TLS 1.3, and the
+operator's commands stayed on the socket (§9.4: mutual authentication,
+verifiable delegation through the token, revocation with `node revoke`,
+encryption in transit). The installation is left running on this
+machine with the node on the TLS path; `loginctl show-user gx10a -p
+Linger` says `yes`, so it survives a logout. The `axlr ""` in the node's
+log is the capability the agent reads from `axlr-tui --version`, which
+this build does not print.
 
 ## Phase 0 demo (offline)
 
@@ -406,6 +556,21 @@ renders into a `--destdir`. One test runs the real binary only when
 AXLR_LIVE=1 AXLR_TUI=/path/to/axlr-tui GOFLAGS=-p=2 go test ./adapters/axlr -run TestLiveExec -v
 ```
 
+The node protocol over TLS is tested in `adapters/pki` (the handshakes:
+an enrolled node, a node that trusts another CA, a certificate another
+CA issued, no certificate), `adapters/unixapi` (enrollment end to end,
+a reused and an expired token, a wrong secret, no certificate on a node
+route, a certificate for `web-1` on `web-2`'s routes and in a
+registration body, a revoked serial on an open and on a new connection,
+a superseded certificate after rotation), `application` (the use cases
+with a fixed clock) and `adapters/daemon` (two enrolled nodes and a bot
+placed by selector). One of them also runs against the real binary and a
+model key:
+
+```bash
+AXLR_BOTS_LIVE=1 AXLR_TUI=/path/to/axlr-tui OPENROUTER_API_KEY=... GOFLAGS=-p=2 go test ./adapters/daemon -run TestLiveTwoNodesOverTLS -v
+```
+
 ## The runtime contract
 
 The adapter speaks the contract in AXLR's `docs/runtime-contract.md`:
@@ -433,9 +598,14 @@ State directory layout:
 ```text
 <state>/
   bots/<bot-id>.json       tasks/<task-id>.json      executions/<exec-id>.json   nodes/<node-id>.json
+  enrollments/<enr-id>.json (the hash of each token)  ca/ca.key (0600), ca/ca.crt   pki/revoked.json
   events.jsonl             audit.jsonl               axlr-bots.sock (while the daemon runs)
   policies/<exec-id>.json  artifacts/<task-id>/report.md
   traces/, workspaces/     (single-process runs; a node keeps its own under its state)
+
+<node-state>/
+  pki/node.key (0600), pki/node.crt, pki/ca.crt, pki/enrollment.json   (once enrolled)
+  traces/, policies/, workspaces/<bot-id>/
 ```
 
 ## Command reference
@@ -443,8 +613,10 @@ State directory layout:
 ```text
 axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>] <command>
 
-  serve [--listen <addr>] [--tick 2s] [--reconcile-every 1m] [--grace <duration>]
+  serve [--listen <addr>] [--server-names a,b] [--tick 2s] [--reconcile-every 1m] [--grace <duration>]
+  ca init | ca show
   node list | node get <node-id>
+  node enroll-token [--node-id <id>] [--labels k=v,k=v] [--ttl 1h] | node revoke <node-id>
   bot register --file <bot.json> | bot enable <bot-id> | bot list | bot get <bot-id>
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>]
   task run <task-id>                           in process (exit 0 completed, 3 decision required, 1 failed)
@@ -452,31 +624,25 @@ axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>]
   task get <task-id> | task report <task-id> [--path] | task reconcile [--grace <duration>]
   execution get <execution-id>
   install [--system] [--prefix <dir>] [--state <dir>] [--node-state <dir>] [--unit-dir <dir>] [--env-file <path>]
-          [--axlr-bin <path>] [--node-binary <path>] [--destdir <dir>] [--no-systemctl]
+          [--axlr-bin <path>] [--node-binary <path>] [--listen <addr>] [--server-names a,b] [--control <url>]
+          [--node-only] [--destdir <dir>] [--no-systemctl]
   uninstall [--system] [--prefix <dir>] … [--purge]
 
-axlr-node --control unix:///path/to/axlr-bots.sock | http://host:port
+axlr-node --control unix:///path/to/axlr-bots.sock | https://host:7878
                [--node-id <id>] [--labels k=v,k=v] [--state <dir>] [--axlr-bin <path>] [--heartbeat 15s] [--poll 20s]
+axlr-node enroll --control https://host:7878 --token <token> [--ca-file <pem>] [--state <dir>] [--host-name <name>]
 ```
 
 `--state` defaults to `$AXLR_BOTS_STATE`, then `$XDG_STATE_HOME/axlr-bots`,
 then `~/.local/state/axlr-bots`; `--axlr-bin` to `$AXLR_TUI`,
 then `axlr-tui` on `PATH`; `--socket` to `$AXLR_BOTS_SOCKET`, then
-`<state>/axlr-bots.sock` (`--socket ""` never uses a daemon). The node
-reads `AXLR_NODE_CONTROL`, `AXLR_NODE_ID`, `AXLR_NODE_LABELS`,
-`AXLR_NODE_STATE` and `AXLR_TUI`; its id defaults to the host
-name. Output is JSON on stdout; `task report` prints the report as text.
-
-## Next: nodes on other hosts, with mTLS
-
-The messages do not change. The control plane serves `--listen
-0.0.0.0:7878` behind a TLS terminator (or `net/http` with a server
-certificate and `ClientAuth: RequireAndVerifyClientCert`), each node gets a
-client certificate whose common name is its node id, and the server takes
-the node id from the certificate instead of the URL; `axlr-node
---control https://control.example:7878 --cert … --key …`. The leases,
-the idempotent report and the outbound-only direction already assume a
-network between the two.
+`<state>/axlr-bots.sock` (`--socket ""` never uses a daemon); `serve`
+reads `AXLR_BOTS_LISTEN` and `AXLR_BOTS_SERVER_NAMES`. The node reads
+`AXLR_NODE_CONTROL`, `AXLR_NODE_ID`, `AXLR_NODE_LABELS`, `AXLR_NODE_STATE`,
+`AXLR_NODE_TOKEN` (for `enroll`) and `AXLR_TUI`; over the socket its id
+defaults to the host name, over `https://` it is the certificate's and a
+`--node-id` that disagrees is refused. Output is JSON on stdout; `task
+report` prints the report as text.
 
 ## Next: the same node agent as a sidecar
 
@@ -494,8 +660,12 @@ that fits there.
 
 Trigger types beyond `manual` (a systemd unit event, a timer, a webhook),
 an approval queue beyond `task approve` (who may decide, and when; an
-expired approval), budgets and correlation enforced by the runtime, mTLS
-and node authentication, `axlr-serve` as a second `RuntimeExecutor`, and a
-real store (one JSON file per aggregate scans the directory for the
-idempotency key, the Pending tasks and the Running executions). The
-vision's §13 and §14 name them for Phase 2.
+expired approval), budgets and correlation enforced by the runtime,
+`axlr-serve` as a second `RuntimeExecutor`, and a real store (one JSON
+file per aggregate scans the directory for the idempotency key, the
+Pending tasks and the Running executions). On the PKI: a node certificate
+lasts a year and is renewed by enrolling again with a fresh token (no
+automatic renewal yet), revocation is the control plane's own denylist
+(no CRL or OCSP for other verifiers), and the CA key lives in the
+control plane's state directory (no HSM, no intermediate). The vision's
+§13 and §14 name the rest for Phase 2.
