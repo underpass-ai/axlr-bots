@@ -118,6 +118,12 @@ func TestEnrollNodeIssuesOnceAndRecordsTheNode(t *testing.T) {
 	if node, _ := h.nodes.Get(ctx, "web-2"); node.AcceptsCertificate("serial-1") || !node.AcceptsCertificate("serial-2") {
 		t.Error("the old certificate is still accepted")
 	}
+	if denied, _ := h.deny.IsDenied(ctx, "serial-1"); !denied {
+		t.Error("the superseded serial is not on the denylist")
+	}
+	if denied, _ := h.deny.IsDenied(ctx, "serial-2"); denied {
+		t.Error("the current serial is on the denylist")
+	}
 	// The host name defaults to the node id.
 	third := mint(t, h, "db-1", nil)
 	created, err := NewEnrollNode(h.deps).Execute(ctx, EnrollmentRequest{TokenID: third.ID.String(), Secret: third.Secret, CSRPEM: []byte("CSR3")})
@@ -167,6 +173,13 @@ func TestEnrollNodeRefusals(t *testing.T) {
 		"node save":       func(h *harness) { h.nodes.fail = errBoom },
 		"publish":         func(h *harness) { h.log.fail = errBoom },
 		"audit":           func(h *harness) { h.log.recordFail = errBoom },
+		"deny the previous": func(h *harness) {
+			first := mint(t, h, "web-2", nil)
+			if _, err := NewEnrollNode(h.deps).Execute(ctx, EnrollmentRequest{TokenID: first.ID.String(), Secret: first.Secret, CSRPEM: []byte("CSR")}); err != nil {
+				t.Fatal(err)
+			}
+			h.deny.fail = errBoom
+		},
 	} {
 		h := newHarness()
 		token := mint(t, h, "web-2", nil)

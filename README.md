@@ -77,8 +77,8 @@ bin/axlr-bots install --axlr-bin /path/to/axlr-tui \
     --listen 127.0.0.1:7878 --control https://127.0.0.1:7878   # the TLS address; 0.0.0.0:7878 for other hosts
 axlr-bots ca init                                        # the fleet CA, once; <state>/ca/ca.key is 0600
 systemctl --user enable --now axlr-bots.service
-axlr-node enroll --control https://127.0.0.1:7878 \
-    --token "$(axlr-bots node enroll-token --node-id "$(hostname)" | jq -r .token)"   # this host's certificate
+token=$(axlr-bots node enroll-token --node-id "$(hostname -s | tr 'A-Z' 'a-z')" | sed -n 's/.*"token": "\([^"]*\)".*/\1/p')
+axlr-node enroll --control https://127.0.0.1:7878 --token "$token" --state ~/.local/state/axlr-node   # this host's certificate
 systemctl --user enable --now axlr-node.service
 loginctl enable-linger "$USER"                           # keeps the services running after you log out
 axlr-bots node list                                      # the host, Online, with its certificate's serial
@@ -119,7 +119,11 @@ and the state under `/var/lib/axlr-bots` and `/var/lib/axlr-node`,
 all run by a dedicated user `axlr-bots` (`useradd --system`, in
 `systemd-journal`) with `ProtectSystem=strict`, `ProtectHome=yes`,
 `StateDirectory=` and `HOME=` the state directory so `axlr-tui` writes its
-own files there. `uninstall --system` reverses it.
+own files there. `uninstall --system` reverses it. With `--listen`, run
+`ca init` (and `node enroll-token`) as the service user, or `chown -R
+axlr-bots: /var/lib/axlr-bots/ca` afterwards: the key is mode 0600 and
+the daemon must read it. The system-wide variant was not exercised with
+TLS on this machine; the user-level one was.
 
 ## The control plane
 
@@ -212,8 +216,8 @@ after the control plane lost its state.
   twice; an expired, used or unknown token is refused (409, 409, 403).
   The enrollment is a `node.enrolled` event and a `node.enroll` audit
   entry with the certificate's serial. A node that enrols again (a fresh
-  token for the same id) rotates its certificate: the previous one stops
-  being accepted at the next request.
+  token for the same id) rotates its certificate: the previous one goes
+  on the denylist and stops being accepted at the next request.
 - `axlr-bots node revoke <id>` marks the node `Revoked`, puts its
   certificate's serial on the denylist (`<state>/pki/revoked.json`,
   checked on every request a certificate authenticates, so an open
@@ -245,12 +249,14 @@ GOFLAGS=-p=2 go build -o bin/axlr-bots ./cmd/axlr-bots
 GOFLAGS=-p=2 go build -o bin/axlr-node ./cmd/axlr-node
 export OPENROUTER_API_KEY=...                                  # this host's key, into its env file
 bin/axlr-bots install --node-only --control https://cp.example:7878 --axlr-bin /path/to/axlr-tui
-~/.local/bin/axlr-node enroll --control https://cp.example:7878 --token 'axlr1.…'
+~/.local/bin/axlr-node enroll --control https://cp.example:7878 --token 'axlr1.…' --state ~/.local/state/axlr-node
 systemctl --user enable --now axlr-node.service
 loginctl enable-linger "$USER"
 ```
 
-`install --node-only` puts `axlr-node`, its unit (with
+`--state` names the directory the unit runs with (`enroll` would
+otherwise follow `XDG_STATE_HOME` when it is set, and the unit would not
+find the credentials). `install --node-only` puts `axlr-node`, its unit (with
 `AXLR_NODE_CONTROL=https://cp.example:7878` in its environment and no
 dependency on a local control plane) and the env file in place, and no
 control plane: the second host runs none. `enroll` prints the node id,

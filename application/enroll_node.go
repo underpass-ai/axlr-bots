@@ -68,7 +68,9 @@ func (uc EnrollNode) Execute(ctx context.Context, request EnrollmentRequest) (En
 	return EnrollmentResult{Node: node, CertificatePEM: issued.CertificatePEM, CAPEM: ca, Serial: issued.Serial, NotAfter: issued.NotAfter}, nil
 }
 
-// certify records the certificate on the node, creating it when new.
+// certify records the certificate on the node, creating it when new. A
+// certificate the node held before goes on the denylist: the node's
+// record alone would refuse it, but the denylist outlives the record.
 func (uc EnrollNode) certify(ctx context.Context, enrollment domain.Enrollment, hostName string, issued IssuedCertificate, now time.Time) (domain.Node, error) {
 	if hostName == "" {
 		hostName = enrollment.NodeID().String()
@@ -82,6 +84,11 @@ func (uc EnrollNode) certify(ctx context.Context, enrollment domain.Enrollment, 
 		}
 	case err != nil:
 		return domain.Node{}, err
+	}
+	if previous := node.CertificateSerial(); previous != "" && previous != issued.Serial {
+		if err := uc.deps.Denylist.Deny(ctx, previous, node.ID().String()); err != nil {
+			return domain.Node{}, err
+		}
 	}
 	if err := node.Certify(issued.Serial, enrollment.Labels(), now); err != nil {
 		return domain.Node{}, err

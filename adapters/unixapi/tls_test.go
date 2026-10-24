@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,6 +24,7 @@ import (
 type fleet struct {
 	operator *Client
 	url      string
+	state    string
 	ca       pki.Authority
 	other    pki.Authority
 }
@@ -63,7 +65,7 @@ func serveFleet(t *testing.T) *fleet {
 	for !Reachable(context.Background(), socket) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	return &fleet{operator: NewClient(socket), url: "https://" + listener.Addr().String(), ca: ca, other: other}
+	return &fleet{operator: NewClient(socket), url: "https://" + listener.Addr().String(), state: state, ca: ca, other: other}
 }
 
 // token mints a token for the node through the operator's socket.
@@ -283,8 +285,15 @@ func TestTLSRefusals(t *testing.T) {
 	if _, err := rotated.Heartbeat(ctx, "web-1"); err != nil {
 		t.Errorf("rotated: %v", err)
 	}
-	if _, err := readmitted.Heartbeat(ctx, "web-1"); !domain.IsForbidden(err) || !strings.Contains(err.Error(), "not the current one") {
+	if _, err := readmitted.Heartbeat(ctx, "web-1"); !domain.IsForbidden(err) || !strings.Contains(err.Error(), "revoked") {
 		t.Errorf("superseded certificate: %v", err)
+	}
+	// Even with the node's record gone, the superseded serial stays denied.
+	if err := os.Remove(filepath.Join(f.state, "nodes", "web-1.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readmitted.Heartbeat(ctx, "web-1"); !domain.IsForbidden(err) {
+		t.Errorf("superseded certificate without the record: %v", err)
 	}
 	// A certificate whose common name is not a node id.
 	badKey, badCSR, _ := pki.NewNodeKeyAndRequest("Bad Id")
