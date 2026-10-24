@@ -390,10 +390,18 @@ once: with `-correlation` it passes `--correlation <file>` (and
 passes one `--execution <bundle>` holding the policy, the budget and
 the correlation in place of `--policy`; otherwise it passes nothing and
 the execution says `"carried": false`. The installed `axlr-tui` on this
-machine takes none of them yet (AXLR's Phase 2), so every execution
-below says `carried: false` while the ids are already generated,
-stored and in every event; the node reports `correlationSupported` in
-its capabilities.
+machine (the policy build) takes none of them, so every execution below
+says `carried: false` while the ids are already generated, stored and
+in every event; the node reports `correlationSupported` in its
+capabilities. A binary built from AXLR's `claude/execution-budget`
+branch (PR underpass-ai/AXLR#178, `--correlation` and `--budget` with
+`--exec` or `--decide`) was run on 24 Oct 2026 with the files this
+adapter writes: the run completed, every event line and the result
+carried the four ids unchanged, and `TestLiveExec` passed through the
+adapter with both flags on the command line. A run that reaches a
+budget limit ends `budget_exceeded`; the control plane records it as
+`Failed` with the limit as the reason (`budget exceeded: budget:
+tool_calls 60 reached`) and keeps the refused call in the result.
 
 ## The operator API
 
@@ -834,8 +842,8 @@ The adapter speaks the contract in AXLR's `docs/runtime-contract.md`:
 - Decision: `--session <id> --decide approve|deny [--call <id>] --policy <file> --json`.
 - Reserved fields: the correlation and the budget are written per
   execution and passed when the binary's `--help` shows the flags (see
-  [Correlation](#correlation)); the installed build does not take them
-  yet.
+  [Correlation](#correlation)); the installed build does not take them,
+  the budget branch's build does.
 
 Outcome mapping: `completed` → `Completed`; `needs_decision` →
 `DecisionRequired`, task `WaitingApproval`; `failed`, `interrupted` and
