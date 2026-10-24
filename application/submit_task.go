@@ -52,6 +52,10 @@ func (uc SubmitTask) Execute(ctx context.Context, command SubmitTaskCommand) (Su
 		_ = uc.rec.audit(ctx, "task.submit", botID.String(), domain.AuditDenied, map[string]string{"reason": "bot is " + bot.Status().String()})
 		return SubmitTaskResult{}, domain.StateError{Subject: "bot " + botID.String(), Current: bot.Status().String(), Attempted: "accept a task"}
 	}
+	if !bot.AcceptsTrigger(domain.TriggerManual) {
+		_ = uc.rec.audit(ctx, "task.submit", botID.String(), domain.AuditDenied, map[string]string{"reason": "bot takes no manual tasks"})
+		return SubmitTaskResult{}, domain.StateError{Subject: "bot " + botID.String(), Current: "without a manual trigger", Attempted: "accept a manual task"}
+	}
 	taskID, err := domain.NewTaskID(uc.deps.IDs.NewID("task-"))
 	if err != nil {
 		return SubmitTaskResult{}, err

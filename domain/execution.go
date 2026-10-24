@@ -18,6 +18,7 @@ type Execution struct {
 	tracePath     string
 	policy        PolicyRecord
 	kind          ExecutionKind
+	decision      string
 	nodeID        NodeID
 	leaseUntil    time.Time
 }
@@ -49,12 +50,19 @@ func (e Execution) LeaseExpired(now time.Time) bool {
 	return e.outcome == ExecutionRunning && !e.leaseUntil.IsZero() && now.After(e.leaseUntil)
 }
 
+// Decision is the word a decide execution carries: approve or deny.
+func (e Execution) Decision() string { return e.decision }
+
 // Decide makes the execution carry a decision instead of a run.
-func (e *Execution) Decide() error {
+func (e *Execution) Decide(decision string) error {
 	if e.outcome != ExecutionRunning {
 		return StateError{Subject: "execution " + e.id.String(), Current: e.outcome.String(), Attempted: "carry a decision"}
 	}
+	if decision == "" {
+		return invalid("decision", "must not be empty")
+	}
 	e.kind = ExecutionDecide
+	e.decision = decision
 	return nil
 }
 
@@ -187,6 +195,7 @@ func (e Execution) Snapshot() ExecutionSnapshot {
 	}
 	if e.kind != ExecutionRun {
 		s.Kind = e.kind.String()
+		s.Decision = e.decision
 	}
 	s.NodeID = e.nodeID.String()
 	if !e.leaseUntil.IsZero() {
@@ -232,6 +241,11 @@ func RestoreExecution(s ExecutionSnapshot) (Execution, error) {
 		return Execution{}, err
 	}
 	execution.kind = kind
+	if kind == ExecutionDecide {
+		if err := execution.Decide(s.Decision); err != nil {
+			return Execution{}, err
+		}
+	}
 	if s.NodeID != "" {
 		node, err := NewNodeID(s.NodeID)
 		if err != nil {

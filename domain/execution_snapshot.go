@@ -16,6 +16,7 @@ type ExecutionSnapshot struct {
 	TracePath     string        `json:"tracePath,omitempty"`
 	Policy        *PolicyRecord `json:"policy,omitempty"`
 	Kind          string        `json:"kind,omitempty"`
+	Decision      string        `json:"decision,omitempty"`
 	NodeID        string        `json:"nodeId,omitempty"`
 	LeaseUntil    *time.Time    `json:"leaseUntil,omitempty"`
 }

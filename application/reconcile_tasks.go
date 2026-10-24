@@ -73,10 +73,11 @@ func (uc ReconcileTasks) reconcile(ctx context.Context, task domain.Task, grace 
 	}
 	now := uc.deps.Clock.Now()
 	age := now.Sub(execution.StartedAt())
-	if age <= grace {
+	expired := execution.LeaseExpired(now)
+	if age <= grace && !expired {
 		return false, nil
 	}
-	reason := diagnosis(execution, age)
+	reason := diagnosis(execution, age, expired)
 	if execution.Outcome() == domain.ExecutionRunning {
 		tracePath, _ := uc.deps.Traces.TracePath(execution.ID())
 		if err := execution.Fail(reason, domain.Result{}, domain.Usage{}, tracePath, now); err != nil {
@@ -106,10 +107,13 @@ func (uc ReconcileTasks) reconcile(ctx context.Context, task domain.Task, grace 
 // diagnosis is the failure reason a reconciled task and execution carry.
 // An execution that had already ended when its task was still Running
 // (the process died between the two saves) is named as such.
-func diagnosis(execution domain.Execution, age time.Duration) string {
+func diagnosis(execution domain.Execution, age time.Duration, leaseExpired bool) string {
 	found := "the control plane found it Running after " + age.Round(time.Second).String()
 	if execution.Outcome() != domain.ExecutionRunning {
 		found += " although its execution " + execution.ID().String() + " had already ended " + execution.Outcome().String()
+	}
+	if leaseExpired {
+		return "reconciled: " + found + "; node " + execution.NodeID().String() + " stopped renewing its lease at " + execution.LeaseUntil().UTC().Format(time.RFC3339)
 	}
 	return "reconciled: " + found + "; the process that ran it is gone"
 }

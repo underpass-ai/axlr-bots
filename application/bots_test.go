@@ -17,6 +17,7 @@ func TestDependenciesValidate(t *testing.T) {
 		func(d *Dependencies) { d.Bots = nil },
 		func(d *Dependencies) { d.Tasks = nil },
 		func(d *Dependencies) { d.Executions = nil },
+		func(d *Dependencies) { d.Nodes = nil },
 		func(d *Dependencies) { d.Events = nil },
 		func(d *Dependencies) { d.Audit = nil },
 		func(d *Dependencies) { d.Runtime = nil },

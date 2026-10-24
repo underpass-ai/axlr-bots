@@ -8,10 +8,13 @@ import (
 
 // ApproveTask continues a task that stopped on a tool call a person must
 // decide. It hands the decision (approve or deny) to the runtime session
-// that keeps the pending call, under a new execution recorded on the task,
-// and settles the outcome exactly as RunTask does. Only a WaitingApproval
-// task is accepted, and nothing changes until the decision is known good:
-// a wrong word must not cost the task its pending call.
+// that keeps the pending call, under a new execution recorded on the
+// task. When the stopped execution ran on a node, the session lives
+// there: the new execution is assigned to that node and the node reports
+// how it ended; otherwise the decision runs in process and is settled
+// exactly as RunTask does. Only a WaitingApproval task is accepted, and
+// nothing changes until the decision is known good: a wrong word must
+// not cost the task its pending call.
 type ApproveTask struct {
 	deps Dependencies
 	rec  recorder
@@ -68,6 +71,14 @@ func (uc ApproveTask) Execute(ctx context.Context, id domain.TaskID, decision st
 	if err != nil {
 		return ApproveTaskResult{}, err
 	}
+	if err := execution.Decide(decision); err != nil {
+		return ApproveTaskResult{}, err
+	}
+	if previous.IsAssigned() {
+		if err := execution.AssignTo(previous.NodeID()); err != nil {
+			return ApproveTaskResult{}, err
+		}
+	}
 	if err := uc.deps.Executions.Save(ctx, execution); err != nil {
 		return ApproveTaskResult{}, err
 	}
@@ -75,8 +86,18 @@ func (uc ApproveTask) Execute(ctx context.Context, id domain.TaskID, decision st
 		return ApproveTaskResult{}, err
 	}
 	payload := map[string]any{"decision": decision, "callId": pending.CallID, "sessionId": sessionID, "executionId": executionID.String()}
+	if previous.IsAssigned() {
+		payload["nodeId"] = previous.NodeID().String()
+	}
 	if err := uc.rec.event(ctx, domain.EventTaskDecided, bot, task.ID(), task.CorrelationID(), payload); err != nil {
 		return ApproveTaskResult{}, err
+	}
+	if previous.IsAssigned() {
+		// The node takes it on its next poll (NextAssignment) and reports.
+		if err := uc.rec.audit(ctx, "task.decide", task.ID().String(), domain.AuditOK, map[string]string{"execution": executionID.String(), "queuedFor": previous.NodeID().String()}); err != nil {
+			return ApproveTaskResult{}, err
+		}
+		return ApproveTaskResult{Task: task, Execution: execution}, nil
 	}
 
 	report, runErr := uc.deps.Decisions.Decide(ctx, DecisionRequest{

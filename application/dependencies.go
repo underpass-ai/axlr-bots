@@ -8,6 +8,7 @@ type Dependencies struct {
 	Bots       BotRepository
 	Tasks      TaskRepository
 	Executions ExecutionRepository
+	Nodes      NodeRepository
 	Events     EventPublisher
 	Audit      AuditSink
 	Runtime    RuntimeExecutor
@@ -28,6 +29,8 @@ func (d Dependencies) Validate() error {
 		return errors.New("application: TaskRepository is required")
 	case d.Executions == nil:
 		return errors.New("application: ExecutionRepository is required")
+	case d.Nodes == nil:
+		return errors.New("application: NodeRepository is required")
 	case d.Events == nil:
 		return errors.New("application: EventPublisher is required")
 	case d.Audit == nil:

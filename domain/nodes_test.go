@@ -201,7 +201,10 @@ func TestExecutionAssignment(t *testing.T) {
 	if err := e.Lease(t0.Add(time.Minute)); err != nil || e.LeaseExpired(t0.Add(30*time.Second)) || !e.LeaseExpired(t0.Add(2*time.Minute)) {
 		t.Errorf("lease: %v", err)
 	}
-	if err := e.Decide(); err != nil || e.Kind() != ExecutionDecide {
+	if err := e.Decide(""); err == nil {
+		t.Error("empty decision accepted")
+	}
+	if err := e.Decide("approve"); err != nil || e.Kind() != ExecutionDecide || e.Decision() != "approve" {
 		t.Errorf("decide: %v", err)
 	}
 	raw, _ := json.Marshal(e.Snapshot())
@@ -210,20 +213,21 @@ func TestExecutionAssignment(t *testing.T) {
 		t.Fatal(err)
 	}
 	back, err := RestoreExecution(snap)
-	if err != nil || back.NodeID() != "web-1" || back.Kind() != ExecutionDecide || !back.LeaseUntil().Equal(e.LeaseUntil()) {
+	if err != nil || back.NodeID() != "web-1" || back.Kind() != ExecutionDecide || back.Decision() != "approve" || !back.LeaseUntil().Equal(e.LeaseUntil()) {
 		t.Errorf("restored = %v %+v", err, back.Snapshot())
 	}
 	_ = e.Complete(Result{}, Usage{}, "", t0.Add(3*time.Minute))
 	if e.LeaseExpired(t0.Add(time.Hour)) {
 		t.Error("an ended execution has no lease to expire")
 	}
-	for _, attempt := range []func() error{func() error { return e.AssignTo("x") }, func() error { return e.Lease(t0.Add(time.Hour)) }, e.Decide} {
+	for _, attempt := range []func() error{func() error { return e.AssignTo("x") }, func() error { return e.Lease(t0.Add(time.Hour)) }, func() error { return e.Decide("deny") }} {
 		if err := attempt(); err == nil {
 			t.Error("an ended execution was changed")
 		}
 	}
 	bad := []func(*ExecutionSnapshot){
 		func(s *ExecutionSnapshot) { s.Kind = "odd" },
+		func(s *ExecutionSnapshot) { s.Kind = "decide"; s.Decision = "" },
 		func(s *ExecutionSnapshot) { s.NodeID = "Bad Node" },
 		func(s *ExecutionSnapshot) { s.NodeID = ""; lease := t0; s.LeaseUntil = &lease },
 	}

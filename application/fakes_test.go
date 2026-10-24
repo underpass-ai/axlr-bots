@@ -106,6 +106,7 @@ func (m *memoryTasks) FindByIdempotencyKey(_ context.Context, bot domain.BotID, 
 type memoryExecutions struct {
 	executions map[domain.ExecutionID]domain.Execution
 	fail       error
+	listFail   error
 }
 
 func (m *memoryExecutions) Save(_ context.Context, e domain.Execution) error {
@@ -125,6 +126,57 @@ func (m *memoryExecutions) Get(_ context.Context, id domain.ExecutionID) (domain
 		return domain.Execution{}, domain.NotFoundError{Kind: "execution", ID: id.String()}
 	}
 	return e, nil
+}
+
+func (m *memoryExecutions) ListRunning(context.Context) ([]domain.Execution, error) {
+	if m.listFail != nil {
+		return nil, m.listFail
+	}
+	var out []domain.Execution
+	for _, e := range m.executions {
+		if e.Outcome() == domain.ExecutionRunning {
+			out = append(out, e)
+		}
+	}
+	slices.SortFunc(out, func(a, b domain.Execution) int { return strings.Compare(a.ID().String(), b.ID().String()) })
+	return out, nil
+}
+
+type memoryNodes struct {
+	nodes    map[domain.NodeID]domain.Node
+	fail     error
+	listFail error
+}
+
+func (m *memoryNodes) Save(_ context.Context, node domain.Node) error {
+	if m.fail != nil {
+		return m.fail
+	}
+	if m.nodes == nil {
+		m.nodes = map[domain.NodeID]domain.Node{}
+	}
+	m.nodes[node.ID()] = node
+	return nil
+}
+
+func (m *memoryNodes) Get(_ context.Context, id domain.NodeID) (domain.Node, error) {
+	node, ok := m.nodes[id]
+	if !ok {
+		return domain.Node{}, domain.NotFoundError{Kind: "node", ID: id.String()}
+	}
+	return node, nil
+}
+
+func (m *memoryNodes) List(context.Context) ([]domain.Node, error) {
+	if m.listFail != nil {
+		return nil, m.listFail
+	}
+	out := make([]domain.Node, 0, len(m.nodes))
+	for _, n := range m.nodes {
+		out = append(out, n)
+	}
+	slices.SortFunc(out, func(a, b domain.Node) int { return strings.Compare(a.ID().String(), b.ID().String()) })
+	return out, nil
 }
 
 type collector struct {
@@ -241,6 +293,7 @@ type harness struct {
 	bots    *memoryBots
 	tasks   *memoryTasks
 	execs   *memoryExecutions
+	nodes   *memoryNodes
 	log     *collector
 	runtime *fakeRuntime
 	decider *fakeDecisions
@@ -254,6 +307,7 @@ func newHarness() *harness {
 		bots:    &memoryBots{},
 		tasks:   &memoryTasks{},
 		execs:   &memoryExecutions{},
+		nodes:   &memoryNodes{},
 		log:     &collector{},
 		runtime: &fakeRuntime{report: ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "done", SessionID: "sess-1"}, TracePath: "/traces/exec-1.jsonl"}},
 		decider: &fakeDecisions{report: ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "done after approval", SessionID: "sess-1"}, TracePath: "/traces/exec-2.jsonl"}},
@@ -262,7 +316,7 @@ func newHarness() *harness {
 		clock:   &fixedClock{now: t0},
 	}
 	h.deps = Dependencies{
-		Bots: h.bots, Tasks: h.tasks, Executions: h.execs, Events: h.log, Audit: h.log,
+		Bots: h.bots, Tasks: h.tasks, Executions: h.execs, Nodes: h.nodes, Events: h.log, Audit: h.log,
 		Runtime: h.runtime, Decisions: h.decider, Traces: h.traces, Artifacts: h.store, Clock: h.clock, IDs: &sequentialIDs{}, Actor: "test:operator",
 	}
 	return h

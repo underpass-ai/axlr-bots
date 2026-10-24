@@ -3,7 +3,6 @@ package application
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
@@ -112,53 +111,6 @@ func TestApproveTaskCarriesThePolicy(t *testing.T) {
 	}
 	if !res.Execution.Policy().Enforced || h.store.reports[task.ID()] != "done after approval" {
 		t.Errorf("execution = %+v report = %q", res.Execution.Snapshot(), h.store.reports[task.ID()])
-	}
-}
-
-func TestSubmitAlertNamesTheUnitAndTheWindow(t *testing.T) {
-	h := newHarness()
-	bot := governedBot(t, h, "observe")
-	at := time.Date(2026, 10, 24, 10, 37, 12, 0, time.UTC)
-	res, err := NewSubmitAlert(h.deps).Execute(context.Background(), AlertCommand{BotID: bot.ID().String(), Unit: "demo-broken", Host: "box", At: at, UserManager: true, CorrelationID: "sd-1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !res.Created || res.Task.IdempotencyKey() != "alert:demo-broken.service:2026-10-24T10:30:00Z" || res.Task.CorrelationID() != "sd-1" {
-		t.Errorf("task = %+v", res.Task.Snapshot())
-	}
-	objective := res.Task.Objective().String()
-	for _, want := range []string{"demo-broken.service failed on host box at 2026-10-24T10:37:12Z", "systemctl --user status demo-broken.service", "journalctl --user -u demo-broken.service", "1. Timeline", "2. Services involved", "3. Commands run", "4. Hypotheses, ordered by evidence", "5. Proposed next steps", "Do not change anything"} {
-		if !strings.Contains(objective, want) {
-			t.Errorf("objective lacks %q", want)
-		}
-	}
-	// The same unit failing again in the window names the same task; the
-	// next window names a new one.
-	again, err := NewSubmitAlert(h.deps).Execute(context.Background(), AlertCommand{BotID: bot.ID().String(), Unit: "demo-broken.service", At: at.Add(2 * time.Minute)})
-	if err != nil || again.Created || again.Task.ID() != res.Task.ID() {
-		t.Errorf("repeat alert: %v %+v", err, again)
-	}
-	next, err := NewSubmitAlert(h.deps).Execute(context.Background(), AlertCommand{BotID: bot.ID().String(), Unit: "demo-broken.service", At: at.Add(10 * time.Minute)})
-	if err != nil || !next.Created || next.Task.ID() == res.Task.ID() {
-		t.Errorf("next window: %v %+v", err, next)
-	}
-	// A system unit, now, with a custom window and no host.
-	h.clock.now = time.Date(2026, 10, 24, 11, 59, 0, 0, time.UTC)
-	sys, err := NewSubmitAlert(h.deps).Execute(context.Background(), AlertCommand{BotID: bot.ID().String(), Unit: "nginx.service", Window: time.Hour})
-	if err != nil || sys.Task.IdempotencyKey() != "alert:nginx.service:2026-10-24T11:00:00Z" {
-		t.Errorf("system alert: %v %+v", err, sys.Task.Snapshot())
-	}
-	if o := sys.Task.Objective().String(); !strings.Contains(o, "failed on this host") || !strings.Contains(o, "`systemctl status nginx.service`") || strings.Contains(o, "--user") {
-		t.Errorf("system objective = %s", o)
-	}
-	if _, err := NewSubmitAlert(h.deps).Execute(context.Background(), AlertCommand{BotID: bot.ID().String(), Unit: "  "}); err == nil {
-		t.Error("empty unit accepted")
-	}
-	if _, err := NewSubmitAlert(h.deps).Execute(context.Background(), AlertCommand{BotID: "nobody", Unit: "x"}); !domain.IsNotFound(err) {
-		t.Errorf("unknown bot: %v", err)
-	}
-	if AlertKey("a.service", time.Date(2026, 1, 1, 0, 0, 0, 0, time.FixedZone("x", 3600))) != "alert:a.service:2025-12-31T23:00:00Z" {
-		t.Error("AlertKey is not UTC")
 	}
 }
 

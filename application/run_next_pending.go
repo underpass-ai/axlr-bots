@@ -6,7 +6,9 @@ import (
 	"github.com/underpass-ai/underpass-bots/domain"
 )
 
-// RunNextPending runs the oldest Pending task once, through RunTask. The
+// RunNextPending runs the oldest Pending task once, through RunTask, in
+// the control plane's own process: the single-process mode. A task whose
+// bot an Online node may run is left to that node (NextAssignment). The
 // daemon's worker calls it on every tick, so a task submitted by another
 // process (over the socket or straight into the state directory while
 // the daemon was down) is picked up without a hand-off message.
@@ -26,18 +28,39 @@ func (uc RunNextPending) Execute(ctx context.Context) (RunTaskResult, bool, erro
 	if err != nil {
 		return RunTaskResult{}, false, err
 	}
-	if len(pending) == 0 {
-		return RunTaskResult{}, false, nil
+	nodes, err := uc.deps.Nodes.List(ctx)
+	if err != nil {
+		return RunTaskResult{}, false, err
 	}
-	oldest := pending[0]
-	for _, task := range pending[1:] {
-		if task.CreatedAt().Before(oldest.CreatedAt()) {
-			oldest = task
+	var oldest *domain.Task
+	for i := range pending {
+		bot, err := uc.deps.Bots.Get(ctx, pending[i].BotID())
+		if err != nil {
+			return RunTaskResult{}, false, err
 		}
+		if hasOnlineNode(bot, nodes) {
+			continue
+		}
+		if oldest == nil || pending[i].CreatedAt().Before(oldest.CreatedAt()) {
+			oldest = &pending[i]
+		}
+	}
+	if oldest == nil {
+		return RunTaskResult{}, false, nil
 	}
 	result, err := NewRunTask(uc.deps).Execute(ctx, oldest.ID())
 	if err != nil {
 		return RunTaskResult{}, true, err
 	}
 	return result, true, nil
+}
+
+// hasOnlineNode reports a bot an Online node may run.
+func hasOnlineNode(bot domain.Bot, nodes []domain.Node) bool {
+	for _, node := range nodes {
+		if node.IsOnline() && bot.Placement().Admits(node) {
+			return true
+		}
+	}
+	return false
 }
