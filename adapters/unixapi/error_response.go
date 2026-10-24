@@ -13,10 +13,12 @@ type ErrorResponse struct {
 
 // Kinds of errors the API names.
 const (
-	KindNotFound   = "not_found"
-	KindValidation = "validation"
-	KindState      = "state"
-	KindConflict   = "conflict"
-	KindForbidden  = "forbidden"
-	KindInternal   = "internal"
+	KindNotFound     = "not_found"
+	KindValidation   = "validation"
+	KindState        = "state"
+	KindConflict     = "conflict"
+	KindForbidden    = "forbidden"
+	KindUnauthorized = "unauthorized"
+	KindTooLarge     = "too_large"
+	KindInternal     = "internal"
 )

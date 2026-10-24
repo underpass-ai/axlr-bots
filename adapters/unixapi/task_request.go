@@ -1,0 +1,10 @@
+package unixapi
+
+// TaskRequest asks for a task on the bot named in the path (POST
+// /v1/bots/{id}/tasks). The key comes from the Idempotency-Key header
+// or the body; the header wins when both are given.
+type TaskRequest struct {
+	Objective      string `json:"objective"`
+	IdempotencyKey string `json:"idempotencyKey,omitempty"`
+	CorrelationID  string `json:"correlationId,omitempty"`
+}

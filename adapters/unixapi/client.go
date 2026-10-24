@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +28,15 @@ type Client struct {
 	http    *http.Client
 	base    string
 	address string
+	token   string
+}
+
+// WithToken returns the client sending the operator bearer token on
+// every request: what the operator address requires.
+func (c *Client) WithToken(token string) *Client {
+	copied := *c
+	copied.token = token
+	return &copied
 }
 
 // NewClient talks to the control plane at the address. Runs can take as
@@ -74,6 +84,20 @@ func (c *Client) EnableBot(ctx context.Context, id string) (domain.BotSnapshot, 
 	return bot, c.call(ctx, http.MethodPost, "/v1/bots/"+url.PathEscape(id)+"/enable", nil, &bot)
 }
 
+func (c *Client) UpdateBot(ctx context.Context, id string, patch application.BotPatch) (domain.BotSnapshot, error) {
+	var bot domain.BotSnapshot
+	return bot, c.call(ctx, http.MethodPatch, "/v1/bots/"+url.PathEscape(id), patch, &bot)
+}
+
+func (c *Client) ListEvents(ctx context.Context, id string, limit int) ([]domain.Event, error) {
+	events := []domain.Event{}
+	path := "/v1/bots/" + url.PathEscape(id) + "/events"
+	if limit > 0 {
+		path += "?limit=" + strconv.Itoa(limit)
+	}
+	return events, c.call(ctx, http.MethodGet, path, nil, &events)
+}
+
 func (c *Client) ListBots(ctx context.Context) ([]domain.BotSnapshot, error) {
 	bots := []domain.BotSnapshot{}
 	return bots, c.call(ctx, http.MethodGet, "/v1/bots", nil, &bots)
@@ -84,9 +108,37 @@ func (c *Client) GetBot(ctx context.Context, id string) (domain.BotSnapshot, err
 	return bot, c.call(ctx, http.MethodGet, "/v1/bots/"+url.PathEscape(id), nil, &bot)
 }
 
+// SubmitTask posts to the bot's tasks with the key in the
+// Idempotency-Key header, as any client of the operator API would.
 func (c *Client) SubmitTask(ctx context.Context, request SubmitRequest) (SubmitResponse, error) {
 	var response SubmitResponse
-	return response, c.call(ctx, http.MethodPost, "/v1/tasks", request, &response)
+	body := TaskRequest{Objective: request.Objective, CorrelationID: request.CorrelationID}
+	headers := http.Header{}
+	if request.IdempotencyKey != "" {
+		headers.Set(IdempotencyKeyHeader, request.IdempotencyKey)
+	}
+	return response, c.callWith(ctx, http.MethodPost, "/v1/bots/"+url.PathEscape(request.BotID)+"/tasks", headers, body, &response)
+}
+
+// FireTrigger posts the event to the trigger's route with the delivery
+// id in the Idempotency-Key header.
+func (c *Client) FireTrigger(ctx context.Context, request FireRequest) (FireResponse, error) {
+	var response FireResponse
+	headers := http.Header{}
+	if request.DeliveryID != "" {
+		headers.Set(IdempotencyKeyHeader, request.DeliveryID)
+	}
+	return response, c.callWith(ctx, http.MethodPost, "/v1/triggers/"+url.PathEscape(request.BotID)+"/"+url.PathEscape(request.Trigger), headers, request.Body, &response)
+}
+
+func (c *Client) CancelTask(ctx context.Context, id string) (CancelResponse, error) {
+	var response CancelResponse
+	return response, c.call(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/cancel", nil, &response)
+}
+
+func (c *Client) ListExecutions(ctx context.Context, id string) ([]domain.ExecutionSnapshot, error) {
+	executions := []domain.ExecutionSnapshot{}
+	return executions, c.call(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(id)+"/executions", nil, &executions)
 }
 
 func (c *Client) RunTask(ctx context.Context, id string) (RunResponse, error) {
@@ -219,7 +271,12 @@ func (c *Client) callMaybe(ctx context.Context, method, path string, body, into 
 
 // call sends one request and decodes the answer, or the error it carries.
 func (c *Client) call(ctx context.Context, method, path string, body, into any) error {
-	status, raw, err := c.do(ctx, method, path, body)
+	return c.callWith(ctx, method, path, nil, body, into)
+}
+
+// callWith is call with extra headers.
+func (c *Client) callWith(ctx context.Context, method, path string, headers http.Header, body, into any) error {
+	status, raw, err := c.doWith(ctx, method, path, headers, body)
 	if err != nil {
 		return err
 	}
@@ -239,6 +296,12 @@ func (c *Client) call(ctx context.Context, method, path string, body, into any) 
 
 // do sends one request and returns the status and the body.
 func (c *Client) do(ctx context.Context, method, path string, body any) (int, []byte, error) {
+	return c.doWith(ctx, method, path, nil, body)
+}
+
+// doWith is do with extra headers (the bearer token, an idempotency
+// key). A json.RawMessage body is sent as it is.
+func (c *Client) doWith(ctx context.Context, method, path string, headers http.Header, body any) (int, []byte, error) {
 	var reader io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
@@ -253,6 +316,14 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (int, []
 	}
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
+	}
+	for key, values := range headers {
+		for _, value := range values {
+			request.Header.Add(key, value)
+		}
+	}
+	if c.token != "" {
+		request.Header.Set("Authorization", "Bearer "+c.token)
 	}
 	response, err := c.http.Do(request)
 	if err != nil {

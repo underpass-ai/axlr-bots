@@ -22,17 +22,23 @@ func (e RemoteError) Error() string { return e.Message }
 // toWire classifies an error for the response.
 func toWire(err error) (int, ErrorResponse) {
 	var (
-		notFound   domain.NotFoundError
-		validation domain.ValidationError
-		state      domain.StateError
-		conflict   domain.ConflictError
-		forbidden  domain.ForbiddenError
+		notFound     domain.NotFoundError
+		validation   domain.ValidationError
+		state        domain.StateError
+		conflict     domain.ConflictError
+		forbidden    domain.ForbiddenError
+		unauthorized UnauthorizedError
+		tooLarge     *http.MaxBytesError
 	)
 	switch {
 	case errors.As(err, &notFound):
 		return http.StatusNotFound, ErrorResponse{Kind: KindNotFound, Message: err.Error(), Resource: notFound.Kind, ID: notFound.ID}
 	case errors.As(err, &forbidden):
 		return http.StatusForbidden, ErrorResponse{Kind: KindForbidden, Message: err.Error()}
+	case errors.As(err, &unauthorized):
+		return http.StatusUnauthorized, ErrorResponse{Kind: KindUnauthorized, Message: err.Error()}
+	case errors.As(err, &tooLarge):
+		return http.StatusRequestEntityTooLarge, ErrorResponse{Kind: KindTooLarge, Message: "request body: " + err.Error()}
 	case errors.As(err, &validation):
 		return http.StatusBadRequest, ErrorResponse{Kind: KindValidation, Message: err.Error()}
 	case errors.As(err, &state):
@@ -53,6 +59,9 @@ func fromWire(status int, response ErrorResponse) error {
 	}
 	if response.Kind == KindForbidden {
 		return domain.ForbiddenError{Reason: strings.TrimPrefix(response.Message, "forbidden: ")}
+	}
+	if response.Kind == KindUnauthorized {
+		return UnauthorizedError{}
 	}
 	if response.Kind == KindNotFound {
 		if response.Resource == "" {

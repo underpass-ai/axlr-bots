@@ -13,16 +13,28 @@ import (
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
-// Service is what an operator can ask the control plane.
+// Service is what an operator can ask the control plane (vision §11.1).
+// Bot snapshots come back with their trigger credentials redacted.
 type Service interface {
 	RegisterBot(ctx context.Context, definition application.BotDefinition) (domain.BotSnapshot, error)
 	EnableBot(ctx context.Context, id string) (domain.BotSnapshot, error)
+	// UpdateBot applies a partial change to the bot's definition.
+	UpdateBot(ctx context.Context, id string, patch application.BotPatch) (domain.BotSnapshot, error)
 	ListBots(ctx context.Context) ([]domain.BotSnapshot, error)
 	GetBot(ctx context.Context, id string) (domain.BotSnapshot, error)
+	// ListEvents returns the newest limit events of the bot, oldest first.
+	ListEvents(ctx context.Context, id string, limit int) ([]domain.Event, error)
 	SubmitTask(ctx context.Context, request SubmitRequest) (SubmitResponse, error)
+	// FireTrigger fires a webhook trigger with an event; over the operator
+	// address the request authenticates with the trigger's own credential.
+	FireTrigger(ctx context.Context, request FireRequest) (FireResponse, error)
 	RunTask(ctx context.Context, id string) (RunResponse, error)
 	DecideTask(ctx context.Context, id, decision string) (RunResponse, error)
+	// CancelTask stops a task that has not finished.
+	CancelTask(ctx context.Context, id string) (CancelResponse, error)
 	GetTask(ctx context.Context, id string) (domain.TaskSnapshot, error)
+	// ListExecutions returns the task's executions, oldest first.
+	ListExecutions(ctx context.Context, id string) ([]domain.ExecutionSnapshot, error)
 	GetReport(ctx context.Context, id string) (ReportResponse, error)
 	GetExecution(ctx context.Context, id string) (domain.ExecutionSnapshot, error)
 	ListNodes(ctx context.Context) ([]domain.NodeSnapshot, error)

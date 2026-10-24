@@ -29,7 +29,7 @@ func (l *Local) RegisterBot(ctx context.Context, definition application.BotDefin
 	if err != nil {
 		return domain.BotSnapshot{}, err
 	}
-	return bot.Snapshot(), nil
+	return bot.Snapshot().Redacted(), nil
 }
 
 func (l *Local) EnableBot(ctx context.Context, id string) (domain.BotSnapshot, error) {
@@ -41,7 +41,19 @@ func (l *Local) EnableBot(ctx context.Context, id string) (domain.BotSnapshot, e
 	if err != nil {
 		return domain.BotSnapshot{}, err
 	}
-	return bot.Snapshot(), nil
+	return bot.Snapshot().Redacted(), nil
+}
+
+func (l *Local) UpdateBot(ctx context.Context, id string, patch application.BotPatch) (domain.BotSnapshot, error) {
+	botID, err := domain.NewBotID(id)
+	if err != nil {
+		return domain.BotSnapshot{}, err
+	}
+	bot, err := application.NewUpdateBot(l.deps).Execute(ctx, botID, patch)
+	if err != nil {
+		return domain.BotSnapshot{}, err
+	}
+	return bot.Snapshot().Redacted(), nil
 }
 
 func (l *Local) ListBots(ctx context.Context) ([]domain.BotSnapshot, error) {
@@ -51,7 +63,7 @@ func (l *Local) ListBots(ctx context.Context) ([]domain.BotSnapshot, error) {
 	}
 	snapshots := make([]domain.BotSnapshot, 0, len(bots))
 	for _, b := range bots {
-		snapshots = append(snapshots, b.Snapshot())
+		snapshots = append(snapshots, b.Snapshot().Redacted())
 	}
 	return snapshots, nil
 }
@@ -65,7 +77,15 @@ func (l *Local) GetBot(ctx context.Context, id string) (domain.BotSnapshot, erro
 	if err != nil {
 		return domain.BotSnapshot{}, err
 	}
-	return bot.Snapshot(), nil
+	return bot.Snapshot().Redacted(), nil
+}
+
+func (l *Local) ListEvents(ctx context.Context, id string, limit int) ([]domain.Event, error) {
+	botID, err := domain.NewBotID(id)
+	if err != nil {
+		return nil, err
+	}
+	return application.NewListEvents(l.deps).Execute(ctx, botID, limit)
 }
 
 func (l *Local) SubmitTask(ctx context.Context, request SubmitRequest) (SubmitResponse, error) {
@@ -76,6 +96,54 @@ func (l *Local) SubmitTask(ctx context.Context, request SubmitRequest) (SubmitRe
 		return SubmitResponse{}, err
 	}
 	return SubmitResponse{Created: result.Created, Task: result.Task.Snapshot()}, nil
+}
+
+func (l *Local) FireTrigger(ctx context.Context, request FireRequest) (FireResponse, error) {
+	result, err := application.NewFireTrigger(l.deps).Execute(ctx, application.FireTriggerCommand{
+		BotID: request.BotID, TriggerName: request.Trigger, DeliveryID: request.DeliveryID, Body: request.Body,
+	})
+	if err != nil {
+		return FireResponse{}, err
+	}
+	return FireResponse{Created: result.Created, Task: result.Task.Snapshot(), Trigger: result.Trigger, IdempotencyKey: result.IdempotencyKey.String()}, nil
+}
+
+// CancelTask ends the task and, when the control plane itself is
+// running it, interrupts the run.
+func (l *Local) CancelTask(ctx context.Context, id string) (CancelResponse, error) {
+	taskID, err := domain.NewTaskID(id)
+	if err != nil {
+		return CancelResponse{}, err
+	}
+	result, err := application.NewCancelTask(l.deps).Execute(ctx, taskID)
+	if err != nil {
+		return CancelResponse{}, err
+	}
+	if result.Changed {
+		l.runner.Interrupt(taskID)
+	}
+	response := CancelResponse{Task: result.Task.Snapshot(), Changed: result.Changed}
+	if result.Execution != nil {
+		execution := result.Execution.Snapshot()
+		response.Execution = &execution
+	}
+	return response, nil
+}
+
+func (l *Local) ListExecutions(ctx context.Context, id string) ([]domain.ExecutionSnapshot, error) {
+	taskID, err := domain.NewTaskID(id)
+	if err != nil {
+		return nil, err
+	}
+	executions, err := application.NewListExecutions(l.deps).Execute(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	snapshots := make([]domain.ExecutionSnapshot, 0, len(executions))
+	for _, e := range executions {
+		snapshots = append(snapshots, e.Snapshot())
+	}
+	return snapshots, nil
 }
 
 func (l *Local) RunTask(ctx context.Context, id string) (RunResponse, error) {
