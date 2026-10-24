@@ -81,7 +81,7 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 	if err != nil {
 		return application.ExecutionReport{}, err
 	}
-	args := []string{"--exec", request.Objective.String(), "--json", "--approve", policy.approve}
+	args := []string{"--exec", request.PromptText(), "--json", "--approve", policy.approve}
 	if request.Model != "" {
 		args = append(args, "--model", request.Model)
 	}

@@ -378,7 +378,8 @@ func TestNodeProtocolOverTheSocket(t *testing.T) {
 		t.Fatal(err)
 	}
 	assignment, found, err := client.NextAssignment(ctx, "web-1", 5*time.Second)
-	if err != nil || !found || assignment.Run == nil || assignment.Run.TaskID != domain.TaskID(submitted.Task.ID) || assignment.Run.Objective != "List the files in your workspace" || assignment.Kind != domain.ExecutionRun {
+	if err != nil || !found || assignment.Run == nil || assignment.Run.TaskID != domain.TaskID(submitted.Task.ID) || !strings.Contains(string(assignment.Run.Objective), "The task:\nList the files in your workspace") || !strings.HasPrefix(string(assignment.Run.Objective), "You are a bot.") || assignment.Kind != domain.ExecutionRun {
+		// The node receives the bot's mission and the task's objective together, in the objective field.
 		t.Fatalf("assignment: %v %v %+v", err, found, assignment)
 	}
 	if task, _ := client.GetTask(ctx, submitted.Task.ID); task.Status != "Running" {
