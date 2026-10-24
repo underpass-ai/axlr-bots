@@ -119,11 +119,16 @@ func (t *Task) AwaitApproval(now time.Time) error {
 	return nil
 }
 
-// Resume returns a WaitingApproval task to Running once the call is decided.
-func (t *Task) Resume(now time.Time) error {
+// Resume returns a WaitingApproval task to Running under a new execution,
+// the one that carries the decision on the pending call.
+func (t *Task) Resume(execution ExecutionID, now time.Time) error {
 	if t.status != TaskWaitingApproval {
 		return t.refuse("resume")
 	}
+	if execution == "" {
+		return invalid("execution id", "must not be empty")
+	}
+	t.executionIDs = append(t.executionIDs, execution)
 	t.status = TaskRunning
 	t.updatedAt = now
 	return nil

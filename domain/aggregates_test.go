@@ -135,7 +135,7 @@ func TestTaskLifecycle(t *testing.T) {
 		func() error { return task.Complete(t0) },
 		func() error { return task.Fail("x", t0) },
 		func() error { return task.AwaitApproval(t0) },
-		func() error { return task.Resume(t0) },
+		func() error { return task.Resume("exec-9", t0) },
 	} {
 		if err := attempt(); err == nil {
 			t.Error("transition from Pending accepted")
@@ -157,7 +157,10 @@ func TestTaskLifecycle(t *testing.T) {
 	if err := task.AwaitApproval(t1); err != nil || task.Status() != TaskWaitingApproval {
 		t.Fatalf("await: %v", err)
 	}
-	if err := task.Resume(t1); err != nil || task.Status() != TaskRunning {
+	if err := task.Resume("", t1); err == nil {
+		t.Error("resume with an empty execution id accepted")
+	}
+	if err := task.Resume("exec-2", t1); err != nil || task.Status() != TaskRunning || task.CurrentExecutionID() != "exec-2" || len(task.ExecutionIDs()) != 2 {
 		t.Fatalf("resume: %v", err)
 	}
 	if err := task.Complete(t1); err != nil || task.Status() != TaskCompleted || !task.UpdatedAt().Equal(t1) {

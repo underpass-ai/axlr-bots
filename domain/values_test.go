@@ -230,7 +230,7 @@ func TestEnumParsers(t *testing.T) {
 	if _, err := ParseAuditOutcome("maybe"); err == nil {
 		t.Error("accepted maybe")
 	}
-	for _, s := range []string{"bot.registered", "bot.enabled", "bot.task.submitted", "bot.task.started", "bot.task.completed", "bot.task.failed", "bot.task.waiting_approval"} {
+	for _, s := range []string{"bot.registered", "bot.enabled", "bot.task.submitted", "bot.task.started", "bot.task.completed", "bot.task.failed", "bot.task.waiting_approval", "bot.task.decided"} {
 		if v, err := ParseEventType(s); err != nil || v.String() != s {
 			t.Errorf("event type %q: %v", s, err)
 		}

@@ -19,13 +19,16 @@ const (
 	EventTaskFailed EventType = "bot.task.failed"
 	// EventTaskWaitingApproval says a task stopped on a decision for a person.
 	EventTaskWaitingApproval EventType = "bot.task.waiting_approval"
+	// EventTaskDecided says a person decided the pending call and the task
+	// resumed under a new execution.
+	EventTaskDecided EventType = "bot.task.decided"
 )
 
 // ParseEventType validates an event type.
 func ParseEventType(raw string) (EventType, error) {
 	switch EventType(raw) {
 	case EventBotRegistered, EventBotEnabled, EventTaskSubmitted, EventTaskStarted,
-		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval:
+		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided:
 		return EventType(raw), nil
 	}
 	return "", invalid("event type", "is not a known event type")
