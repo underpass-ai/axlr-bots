@@ -54,9 +54,10 @@ func (m *memoryBots) List(context.Context) ([]domain.Bot, error) {
 }
 
 type memoryTasks struct {
-	tasks map[domain.TaskID]domain.Task
-	fail  error
-	saves int
+	tasks    map[domain.TaskID]domain.Task
+	fail     error
+	listFail error
+	saves    int
 }
 
 func (m *memoryTasks) Save(_ context.Context, task domain.Task) error {
@@ -80,8 +81,8 @@ func (m *memoryTasks) Get(_ context.Context, id domain.TaskID) (domain.Task, err
 }
 
 func (m *memoryTasks) ListByStatus(_ context.Context, status domain.TaskStatus) ([]domain.Task, error) {
-	if m.fail != nil {
-		return nil, m.fail
+	if m.listFail != nil {
+		return nil, m.listFail
 	}
 	var out []domain.Task
 	for _, t := range m.tasks {
@@ -127,9 +128,10 @@ func (m *memoryExecutions) Get(_ context.Context, id domain.ExecutionID) (domain
 }
 
 type collector struct {
-	events []domain.Event
-	audits []domain.AuditEntry
-	fail   error
+	events     []domain.Event
+	audits     []domain.AuditEntry
+	fail       error
+	recordFail error
 }
 
 func (c *collector) Publish(_ context.Context, e domain.Event) error {
@@ -143,6 +145,9 @@ func (c *collector) Publish(_ context.Context, e domain.Event) error {
 func (c *collector) Record(_ context.Context, a domain.AuditEntry) error {
 	if c.fail != nil {
 		return c.fail
+	}
+	if c.recordFail != nil {
+		return c.recordFail
 	}
 	c.audits = append(c.audits, a)
 	return nil
