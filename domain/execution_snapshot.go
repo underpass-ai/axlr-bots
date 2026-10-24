@@ -15,4 +15,7 @@ type ExecutionSnapshot struct {
 	FailureReason string        `json:"failureReason,omitempty"`
 	TracePath     string        `json:"tracePath,omitempty"`
 	Policy        *PolicyRecord `json:"policy,omitempty"`
+	Kind          string        `json:"kind,omitempty"`
+	NodeID        string        `json:"nodeId,omitempty"`
+	LeaseUntil    *time.Time    `json:"leaseUntil,omitempty"`
 }

@@ -15,6 +15,8 @@ type BotSnapshot struct {
 	Budgets      BudgetsSnapshot     `json:"budgets"`
 	Level        string              `json:"level"`
 	ToolRules    ToolRulesSnapshot   `json:"toolRules"`
+	Triggers     []TriggerSnapshot   `json:"triggers"`
+	Placement    PlacementSnapshot   `json:"placement"`
 	Status       string              `json:"status"`
 	CreatedAt    time.Time           `json:"createdAt"`
 	UpdatedAt    time.Time           `json:"updatedAt"`

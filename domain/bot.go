@@ -16,6 +16,8 @@ type Bot struct {
 	budgets      Budgets
 	level        AutonomyLevel
 	toolRules    ToolRules
+	triggers     Triggers
+	placement    Placement
 	status       BotStatus
 	createdAt    time.Time
 	updatedAt    time.Time
@@ -30,7 +32,7 @@ func NewBot(id BotID, tenant TenantID, name BotName, owner Owner, mission Missio
 	return Bot{
 		id: id, tenantID: tenant, name: name, owner: owner, mission: mission,
 		allowedTools: tools, modelPolicy: model, budgets: budgets,
-		level: AutonomyObserve, status: BotDraft, createdAt: now, updatedAt: now,
+		level: AutonomyObserve, triggers: DefaultTriggers(), status: BotDraft, createdAt: now, updatedAt: now,
 	}, nil
 }
 
@@ -63,6 +65,21 @@ func (b Bot) Level() AutonomyLevel { return b.level }
 
 // ToolRules narrows the allowed tools by their arguments.
 func (b Bot) ToolRules() ToolRules { return b.toolRules }
+
+// Triggers are the ways tasks reach the bot.
+func (b Bot) Triggers() Triggers { return b.triggers }
+
+// Placement says which nodes may run the bot's tasks.
+func (b Bot) Placement() Placement { return b.placement }
+
+// AcceptsTrigger reports whether a task of the type may reach the bot.
+func (b Bot) AcceptsTrigger(kind TriggerType) bool { return b.triggers.Has(kind) }
+
+// Wire sets how tasks reach the bot and where they run.
+func (b *Bot) Wire(triggers Triggers, placement Placement) {
+	b.triggers = triggers
+	b.placement = placement
+}
 
 // Govern sets the bot's autonomy level and tool rules. The rules must
 // name allowed tools; the level alone decides nothing about which tools
@@ -147,6 +164,8 @@ func (b Bot) Snapshot() BotSnapshot {
 		},
 		Level:     b.level.String(),
 		ToolRules: b.toolRules.Snapshot(),
+		Triggers:  b.triggers.Snapshot(),
+		Placement: b.placement.Snapshot(),
 		Status:    b.status.String(),
 		CreatedAt: b.createdAt,
 		UpdatedAt: b.updatedAt,
@@ -206,6 +225,19 @@ func RestoreBot(s BotSnapshot) (Bot, error) {
 	if err := bot.Govern(level, rules); err != nil {
 		return Bot{}, err
 	}
+	kinds := make([]string, 0, len(s.Triggers))
+	for _, t := range s.Triggers {
+		kinds = append(kinds, t.Type)
+	}
+	triggers, err := NewTriggers(kinds)
+	if err != nil {
+		return Bot{}, err
+	}
+	placement, err := NewPlacement(s.Placement.Nodes, s.Placement.Selector)
+	if err != nil {
+		return Bot{}, err
+	}
+	bot.Wire(triggers, placement)
 	if s.UpdatedAt.IsZero() {
 		return Bot{}, invalid("updated at", "must not be zero")
 	}

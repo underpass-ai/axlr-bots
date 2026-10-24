@@ -22,16 +22,32 @@ const (
 	// EventTaskDecided says a person decided the pending call and the task
 	// resumed under a new execution.
 	EventTaskDecided EventType = "bot.task.decided"
+	// EventNodeRegistered says a node registered (or registered again).
+	EventNodeRegistered EventType = "node.registered"
+	// EventNodeHeartbeat says a node was heard from.
+	EventNodeHeartbeat EventType = "node.heartbeat"
+	// EventNodeOffline says a node's heartbeat stopped.
+	EventNodeOffline EventType = "node.offline"
+	// EventExecutionAssigned says an execution was handed to a node.
+	EventExecutionAssigned EventType = "execution.assigned"
+	// EventExecutionReported says a node reported how an execution ended.
+	EventExecutionReported EventType = "execution.reported"
 )
 
 // ParseEventType validates an event type.
 func ParseEventType(raw string) (EventType, error) {
 	switch EventType(raw) {
 	case EventBotRegistered, EventBotEnabled, EventTaskSubmitted, EventTaskStarted,
-		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided:
+		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided,
+		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventExecutionAssigned, EventExecutionReported:
 		return EventType(raw), nil
 	}
 	return "", invalid("event type", "is not a known event type")
 }
 
 func (t EventType) String() string { return string(t) }
+
+// AboutNode reports an event about a node rather than a bot.
+func (t EventType) AboutNode() bool {
+	return t == EventNodeRegistered || t == EventNodeHeartbeat || t == EventNodeOffline
+}

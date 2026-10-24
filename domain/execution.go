@@ -17,6 +17,9 @@ type Execution struct {
 	failureReason string
 	tracePath     string
 	policy        PolicyRecord
+	kind          ExecutionKind
+	nodeID        NodeID
+	leaseUntil    time.Time
 }
 
 // NewExecution starts an attempt at the task.
@@ -24,7 +27,62 @@ func NewExecution(id ExecutionID, task TaskID, bot BotID, startedAt time.Time) (
 	if startedAt.IsZero() {
 		return Execution{}, invalid("started at", "must not be zero")
 	}
-	return Execution{id: id, taskID: task, botID: bot, startedAt: startedAt, outcome: ExecutionRunning}, nil
+	return Execution{id: id, taskID: task, botID: bot, startedAt: startedAt, outcome: ExecutionRunning, kind: ExecutionRun}, nil
+}
+
+// Kind is what the execution carries: a run or a decision.
+func (e Execution) Kind() ExecutionKind { return e.kind }
+
+// NodeID is the node the execution was assigned to; empty when the
+// control plane ran it in process.
+func (e Execution) NodeID() NodeID { return e.nodeID }
+
+// LeaseUntil is when the node's lease on the execution expires; zero
+// while the execution waits for the node to take it, or in process.
+func (e Execution) LeaseUntil() time.Time { return e.leaseUntil }
+
+// IsAssigned reports an execution a node is to run.
+func (e Execution) IsAssigned() bool { return e.nodeID != "" }
+
+// LeaseExpired reports a leased execution the node stopped renewing.
+func (e Execution) LeaseExpired(now time.Time) bool {
+	return e.outcome == ExecutionRunning && !e.leaseUntil.IsZero() && now.After(e.leaseUntil)
+}
+
+// Decide makes the execution carry a decision instead of a run.
+func (e *Execution) Decide() error {
+	if e.outcome != ExecutionRunning {
+		return StateError{Subject: "execution " + e.id.String(), Current: e.outcome.String(), Attempted: "carry a decision"}
+	}
+	e.kind = ExecutionDecide
+	return nil
+}
+
+// AssignTo hands a running execution to a node, unleased until the node
+// takes it.
+func (e *Execution) AssignTo(node NodeID) error {
+	if e.outcome != ExecutionRunning {
+		return StateError{Subject: "execution " + e.id.String(), Current: e.outcome.String(), Attempted: "assign"}
+	}
+	if node == "" {
+		return invalid("node id", "must not be empty")
+	}
+	e.nodeID = node
+	e.leaseUntil = time.Time{}
+	return nil
+}
+
+// Lease gives the assigned node the execution until the time; renewing
+// extends it.
+func (e *Execution) Lease(until time.Time) error {
+	if e.outcome != ExecutionRunning || e.nodeID == "" {
+		return StateError{Subject: "execution " + e.id.String(), Current: e.outcome.String(), Attempted: "lease"}
+	}
+	if until.Before(e.startedAt) {
+		return invalid("lease until", "must not be before started at")
+	}
+	e.leaseUntil = until
+	return nil
 }
 
 // ID is the execution's identifier.
@@ -127,6 +185,14 @@ func (e Execution) Snapshot() ExecutionSnapshot {
 		policy := e.policy
 		s.Policy = &policy
 	}
+	if e.kind != ExecutionRun {
+		s.Kind = e.kind.String()
+	}
+	s.NodeID = e.nodeID.String()
+	if !e.leaseUntil.IsZero() {
+		lease := e.leaseUntil
+		s.LeaseUntil = &lease
+	}
 	if !e.endedAt.IsZero() {
 		ended := e.endedAt
 		s.EndedAt = &ended
@@ -160,6 +226,24 @@ func RestoreExecution(s ExecutionSnapshot) (Execution, error) {
 		if err := execution.RecordPolicy(*s.Policy); err != nil {
 			return Execution{}, err
 		}
+	}
+	kind, err := ParseExecutionKind(s.Kind)
+	if err != nil {
+		return Execution{}, err
+	}
+	execution.kind = kind
+	if s.NodeID != "" {
+		node, err := NewNodeID(s.NodeID)
+		if err != nil {
+			return Execution{}, err
+		}
+		execution.nodeID = node
+	}
+	if s.LeaseUntil != nil {
+		if execution.nodeID == "" {
+			return Execution{}, invalid("lease until", "needs a node")
+		}
+		execution.leaseUntil = *s.LeaseUntil
 	}
 	if !outcome.IsFinal() {
 		return execution, nil
