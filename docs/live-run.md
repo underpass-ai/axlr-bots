@@ -188,7 +188,7 @@ The bot, the node, the tasks and the timer's next fire survived the restarts of 
 
 ## The correlation flags
 
-A build of AXLR with the result line and the `--correlation` and `--budget` flags (now on AXLR's `main`) was run the same day with the files this adapter writes: the run completed, every event line and the result carried the four ids unchanged, and `TestLiveExec` passed through the adapter with both flags on the command line (5 s, $0.00114). A run that reached its `tool_calls` budget ended `budget_exceeded` and was recorded as `Failed` with the limit as the reason. Switching an installation to such a build is the `AXLR_TUI=` line of the environment file and a restart ([install](runbooks/install.md#change-the-model-key-or-the-axlr-build)).
+A build of AXLR with the result line and the `--correlation` and `--budget` flags (released in AXLR v0.14.0) was run the same day with the files this adapter writes: the run completed, every event line and the result carried the four ids unchanged, and `TestLiveExec` passed through the adapter with both flags on the command line (5 s, $0.00114). A run that reached its `tool_calls` budget ended `budget_exceeded` and was recorded as `Failed` with the limit as the reason. Switching an installation to such a build is the `AXLR_TUI=` line of the environment file and a restart ([install](runbooks/install.md#change-the-model-key-or-the-axlr-build)).
 
 ## The live tests
 

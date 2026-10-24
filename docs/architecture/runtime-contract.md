@@ -19,7 +19,7 @@ The adapter runs `axlr-tui` as a subprocess:
 | Timeout | the process is stopped | the bot's `taskTimeoutSeconds` (15 minutes when absent) |
 | Decision | `--session <id> --decide approve\|deny [--call <id>] --policy <file> --json` | an approval or denial of the pending call |
 
-The adapter reads `axlr-tui --help` once to learn which flags the build takes (`-policy`, `-correlation`, `-budget`, `-execution`) and `--version` for the node's capabilities. With `-correlation` it passes `--correlation` (and `--budget`); with `-execution` alone it passes one `--execution <bundle>` holding the policy, the budget and the correlation in place of `--policy`; without any of them the files are still written as evidence and the execution says `"carried": false`. AXLR's `main` takes `--policy`, `--correlation` and `--budget`.
+The adapter reads `axlr-tui --help` once to learn which flags the build takes (`-policy`, `-correlation`, `-budget`, `-execution`) and `--version` for the node's capabilities. With `-correlation` it passes `--correlation` (and `--budget`); with `-execution` alone it passes one `--execution <bundle>` holding the policy, the budget and the correlation in place of `--policy`; without any of them the files are still written as evidence and the execution says `"carried": false`. AXLR v0.14.0 takes `--policy`, `--correlation` and `--budget`.
 
 ## The policy
 

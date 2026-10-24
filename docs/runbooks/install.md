@@ -5,7 +5,7 @@ Install the control plane and the node agent on one host, user-level, under `sys
 ## Before you start
 
 1. Go 1.26 on the host.
-2. An `axlr-tui` with `--exec`: build it from [AXLR](https://github.com/underpass-ai/AXLR)'s `main` in a checkout (`GOWORK=off go -C tui build -o axlr-tui ./cmd/axlr-tui`). The released 0.13.0 has no `--exec`. A build from `main` also takes `--policy`, `--correlation` and `--budget`; the node reads `axlr-tui --help` once and passes what the build takes ([runtime contract](../architecture/runtime-contract.md)).
+2. An `axlr-tui` with `--exec`: [AXLR](https://github.com/underpass-ai/AXLR) v0.14.0 or later, from its [release archives](https://github.com/underpass-ai/AXLR/releases) or built in a checkout (`GOWORK=off go -C tui build -o axlr-tui ./cmd/axlr-tui`). Releases before 0.14.0 have no `--exec`. v0.14.0 also takes `--policy`, `--correlation` and `--budget`; the node reads `axlr-tui --help` once and passes what the build takes ([runtime contract](../architecture/runtime-contract.md)).
 3. A model key for the bots' model, `OPENROUTER_API_KEY`, in the shell that runs the installer. It is copied into the environment file (mode 0600) and never printed.
 4. A systemd user session (`systemctl --user status` answers).
 
