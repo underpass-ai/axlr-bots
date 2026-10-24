@@ -17,6 +17,7 @@ type Execution struct {
 	failureReason string
 	tracePath     string
 	policy        PolicyRecord
+	correlation   CorrelationRecord
 	kind          ExecutionKind
 	decision      string
 	nodeID        NodeID
@@ -126,6 +127,33 @@ func (e Execution) TracePath() string { return e.tracePath }
 // Policy says under which policy the attempt ran; zero until recorded.
 func (e Execution) Policy() PolicyRecord { return e.policy }
 
+// Correlation is the execution's ids as the runtime contract names
+// them; zero until Correlate.
+func (e Execution) Correlation() CorrelationRecord { return e.correlation }
+
+// TraceID is the task's trace id the execution carries.
+func (e Execution) TraceID() CorrelationID { return CorrelationID(e.correlation.TraceID) }
+
+// Correlate gives the execution the task's trace id: with its own ids
+// that is the correlation the runtime receives.
+func (e *Execution) Correlate(trace CorrelationID) error {
+	if trace == "" {
+		return invalid("trace id", "must not be empty")
+	}
+	e.correlation = CorrelationRecord{BotID: e.botID.String(), TaskID: e.taskID.String(), ExecutionID: e.id.String(), TraceID: trace.String()}
+	return nil
+}
+
+// RecordCorrelation keeps what the runtime adapter did with the
+// correlation: whether it passed it to AXLR and the file it wrote.
+func (e *Execution) RecordCorrelation(carried bool, path string) error {
+	if e.correlation.TraceID == "" {
+		return invalid("correlation", "the execution has no trace id")
+	}
+	e.correlation.Carried, e.correlation.Path = carried, path
+	return nil
+}
+
 // RecordPolicy keeps the policy the runtime adapter ran the attempt
 // under: the levels, whether the runtime enforced it and the file.
 func (e *Execution) RecordPolicy(record PolicyRecord) error {
@@ -147,6 +175,14 @@ func (e *Execution) Fail(reason string, result Result, usage Usage, tracePath st
 		return invalid("failure reason", "must not be empty")
 	}
 	return e.end(ExecutionFailed, result, usage, reason, tracePath, endedAt)
+}
+
+// Cancel ends a running attempt because the operator stopped it.
+func (e *Execution) Cancel(reason string, endedAt time.Time) error {
+	if reason == "" {
+		return invalid("cancel reason", "must not be empty")
+	}
+	return e.end(ExecutionCancelled, Result{}, Usage{}, reason, e.tracePath, endedAt)
 }
 
 // RequireDecision ends a running attempt on a tool call a person must decide.
@@ -193,6 +229,10 @@ func (e Execution) Snapshot() ExecutionSnapshot {
 		policy := e.policy
 		s.Policy = &policy
 	}
+	if e.correlation.TraceID != "" {
+		correlation := e.correlation
+		s.Correlation = &correlation
+	}
 	if e.kind != ExecutionRun {
 		s.Kind = e.kind.String()
 		s.Decision = e.decision
@@ -236,6 +276,14 @@ func RestoreExecution(s ExecutionSnapshot) (Execution, error) {
 			return Execution{}, err
 		}
 	}
+	if s.Correlation != nil {
+		if err := execution.Correlate(CorrelationID(s.Correlation.TraceID)); err != nil {
+			return Execution{}, err
+		}
+		if err := execution.RecordCorrelation(s.Correlation.Carried, s.Correlation.Path); err != nil {
+			return Execution{}, err
+		}
+	}
 	kind, err := ParseExecutionKind(s.Kind)
 	if err != nil {
 		return Execution{}, err
@@ -270,6 +318,9 @@ func RestoreExecution(s ExecutionSnapshot) (Execution, error) {
 		err = execution.Complete(s.Result, s.Usage, s.TracePath, *s.EndedAt)
 	case ExecutionFailed:
 		err = execution.Fail(s.FailureReason, s.Result, s.Usage, s.TracePath, *s.EndedAt)
+	case ExecutionCancelled:
+		execution.tracePath = s.TracePath
+		err = execution.Cancel(s.FailureReason, *s.EndedAt)
 	default:
 		err = execution.RequireDecision(s.Result, s.Usage, s.TracePath, *s.EndedAt)
 	}

@@ -21,3 +21,15 @@ type BotSnapshot struct {
 	CreatedAt    time.Time           `json:"createdAt"`
 	UpdatedAt    time.Time           `json:"updatedAt"`
 }
+
+// Redacted is the snapshot with every trigger credential hidden: what
+// the API answers and the command prints. The repository keeps the
+// unredacted snapshot; RestoreBot refuses a redacted one as a secret.
+func (s BotSnapshot) Redacted() BotSnapshot {
+	triggers := make([]TriggerSnapshot, len(s.Triggers))
+	for i, t := range s.Triggers {
+		triggers[i] = t.Redacted()
+	}
+	s.Triggers = triggers
+	return s
+}

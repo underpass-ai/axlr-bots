@@ -14,15 +14,17 @@ const (
 	// ExecutionDecisionRequired is an attempt stopped on a tool call that
 	// needs a person; the runtime session keeps the pending call.
 	ExecutionDecisionRequired ExecutionOutcome = "DecisionRequired"
+	// ExecutionCancelled is an attempt the operator stopped.
+	ExecutionCancelled ExecutionOutcome = "Cancelled"
 )
 
 // ParseExecutionOutcome validates an outcome.
 func ParseExecutionOutcome(raw string) (ExecutionOutcome, error) {
 	switch ExecutionOutcome(raw) {
-	case ExecutionRunning, ExecutionCompleted, ExecutionFailed, ExecutionDecisionRequired:
+	case ExecutionRunning, ExecutionCompleted, ExecutionFailed, ExecutionDecisionRequired, ExecutionCancelled:
 		return ExecutionOutcome(raw), nil
 	}
-	return "", invalid("execution outcome", "must be Running, Completed, Failed or DecisionRequired")
+	return "", invalid("execution outcome", "must be Running, Completed, Failed, DecisionRequired or Cancelled")
 }
 
 // IsFinal reports whether the attempt has ended.

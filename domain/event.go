@@ -4,7 +4,8 @@ import "time"
 
 // Event is a fact the control plane publishes about a bot, a task, an
 // execution or a node (vision §11.2), with the schema version a real
-// implementation needs. A node event names no bot.
+// implementation needs and the correlation ids (bot, task, execution,
+// trace) an execution is reconstructed by. A node event names no bot.
 type Event struct {
 	ID            EventID        `json:"eventId"`
 	SchemaVersion SchemaVersion  `json:"schemaVersion"`
@@ -13,6 +14,7 @@ type Event struct {
 	BotID         BotID          `json:"botId,omitempty"`
 	NodeID        NodeID         `json:"nodeId,omitempty"`
 	TaskID        TaskID         `json:"taskId,omitempty"`
+	ExecutionID   ExecutionID    `json:"executionId,omitempty"`
 	CorrelationID CorrelationID  `json:"correlationId,omitempty"`
 	CreatedAt     time.Time      `json:"createdAt"`
 	Payload       map[string]any `json:"payload,omitempty"`

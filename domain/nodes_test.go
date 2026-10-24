@@ -138,13 +138,13 @@ func TestTriggers(t *testing.T) {
 	if empty, err := NewTriggers(nil); err != nil || !empty.Has(TriggerManual) {
 		t.Error("empty list should mean manual")
 	}
-	if _, err := NewTriggers([]string{"manual", "manual"}); err == nil {
+	if _, err := NewTriggers([]TriggerSnapshot{{Type: "manual"}, {Type: "manual"}}); err == nil {
 		t.Error("repeated trigger accepted")
 	}
-	if _, err := NewTriggers([]string{"webhook"}); err == nil {
+	if _, err := NewTriggers([]TriggerSnapshot{{Type: "unit-event"}}); err == nil {
 		t.Error("unknown trigger accepted")
 	}
-	if _, err := NewTrigger("manual"); err != nil {
+	if _, err := NewTrigger(TriggerSnapshot{Type: "manual"}); err != nil {
 		t.Error(err)
 	}
 	if TriggerManual.String() != "manual" {

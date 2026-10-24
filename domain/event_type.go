@@ -9,6 +9,12 @@ const (
 	EventBotRegistered EventType = "bot.registered"
 	// EventBotEnabled says a bot now accepts tasks.
 	EventBotEnabled EventType = "bot.enabled"
+	// EventBotUpdated says a bot's definition changed.
+	EventBotUpdated EventType = "bot.updated"
+	// EventTriggerFired says a trigger fired: a webhook arrived or a
+	// timer's slot came. The payload names the task and says whether the
+	// fire created it or found it under its idempotency key.
+	EventTriggerFired EventType = "bot.trigger.fired"
 	// EventTaskSubmitted says a task was accepted for a bot.
 	EventTaskSubmitted EventType = "bot.task.submitted"
 	// EventTaskStarted says an execution began for a task.
@@ -22,6 +28,8 @@ const (
 	// EventTaskDecided says a person decided the pending call and the task
 	// resumed under a new execution.
 	EventTaskDecided EventType = "bot.task.decided"
+	// EventTaskCancelled says the operator stopped the task.
+	EventTaskCancelled EventType = "bot.task.cancelled"
 	// EventNodeRegistered says a node registered (or registered again).
 	EventNodeRegistered EventType = "node.registered"
 	// EventNodeHeartbeat says a node was heard from.
@@ -42,8 +50,8 @@ const (
 // ParseEventType validates an event type.
 func ParseEventType(raw string) (EventType, error) {
 	switch EventType(raw) {
-	case EventBotRegistered, EventBotEnabled, EventTaskSubmitted, EventTaskStarted,
-		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided,
+	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
+		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled,
 		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked,
 		EventExecutionAssigned, EventExecutionReported:
 		return EventType(raw), nil

@@ -1,17 +1,31 @@
 package domain
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
-// TaskSnapshot is a task as plain data.
+// TaskSnapshot is a task as plain data. CorrelationID is the task's
+// trace id; Trigger and Input say how it was created (a manual task
+// has no input).
 type TaskSnapshot struct {
-	ID             string    `json:"id"`
-	BotID          string    `json:"botId"`
-	Objective      string    `json:"objective"`
-	Status         string    `json:"status"`
-	IdempotencyKey string    `json:"idempotencyKey"`
-	CorrelationID  string    `json:"correlationId,omitempty"`
-	ExecutionIDs   []string  `json:"executionIds"`
-	FailureReason  string    `json:"failureReason,omitempty"`
-	CreatedAt      time.Time `json:"createdAt"`
-	UpdatedAt      time.Time `json:"updatedAt"`
+	ID             string             `json:"id"`
+	BotID          string             `json:"botId"`
+	Objective      string             `json:"objective"`
+	Status         string             `json:"status"`
+	IdempotencyKey string             `json:"idempotencyKey"`
+	CorrelationID  string             `json:"correlationId,omitempty"`
+	Trigger        TriggerRefSnapshot `json:"trigger"`
+	Input          json.RawMessage    `json:"input,omitempty"`
+	ExecutionIDs   []string           `json:"executionIds"`
+	FailureReason  string             `json:"failureReason,omitempty"`
+	CreatedAt      time.Time          `json:"createdAt"`
+	UpdatedAt      time.Time          `json:"updatedAt"`
+}
+
+// TriggerRefSnapshot is a trigger reference as plain data; empty means
+// manual (a task written before triggers had names).
+type TriggerRefSnapshot struct {
+	Type string `json:"type,omitempty"`
+	Name string `json:"name,omitempty"`
 }

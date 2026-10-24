@@ -1,9 +1,15 @@
 package domain
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
-// Task is one piece of work asked of a bot: an objective, a status and the
-// executions that tried it. Submissions are idempotent per bot and key.
+// Task is one piece of work asked of a bot: an objective, a status, the
+// trigger it came through with the event that fired it, and the
+// executions that tried it. Submissions are idempotent per bot and key;
+// the correlation id is the trace id every execution and event of the
+// task carries.
 type Task struct {
 	id             TaskID
 	botID          BotID
@@ -11,6 +17,8 @@ type Task struct {
 	status         TaskStatus
 	idempotencyKey IdempotencyKey
 	correlationID  CorrelationID
+	trigger        TriggerRef
+	input          json.RawMessage
 	executionIDs   []ExecutionID
 	failureReason  string
 	createdAt      time.Time
@@ -24,10 +32,32 @@ func NewTask(id TaskID, bot BotID, objective Objective, key IdempotencyKey, corr
 	}
 	return Task{
 		id: id, botID: bot, objective: objective, status: TaskPending,
-		idempotencyKey: key, correlationID: correlation,
+		idempotencyKey: key, correlationID: correlation, trigger: ManualTrigger(),
 		createdAt: now, updatedAt: now,
 	}, nil
 }
+
+// Attribute records the trigger the task came through and the event
+// that fired it (a webhook's body, a timer's slot), before the task is
+// first saved.
+func (t *Task) Attribute(trigger TriggerRef, input []byte) error {
+	ref, err := NewTriggerRef(trigger.Type.String(), trigger.Name)
+	if err != nil {
+		return err
+	}
+	parsed, err := NewTaskInput(input)
+	if err != nil {
+		return err
+	}
+	t.trigger, t.input = ref, parsed
+	return nil
+}
+
+// Trigger is the trigger the task came through.
+func (t Task) Trigger() TriggerRef { return t.trigger }
+
+// Input is the event that fired the task, as JSON; nil for a manual task.
+func (t Task) Input() json.RawMessage { return append(json.RawMessage(nil), t.input...) }
 
 // ID is the task's identifier.
 func (t Task) ID() TaskID { return t.id }
@@ -161,6 +191,8 @@ func (t Task) Snapshot() TaskSnapshot {
 		Status:         t.status.String(),
 		IdempotencyKey: t.idempotencyKey.String(),
 		CorrelationID:  t.correlationID.String(),
+		Trigger:        TriggerRefSnapshot{Type: t.trigger.Type.String(), Name: t.trigger.Name},
+		Input:          t.Input(),
 		ExecutionIDs:   ids,
 		FailureReason:  t.failureReason,
 		CreatedAt:      t.createdAt,
@@ -200,6 +232,13 @@ func RestoreTask(s TaskSnapshot) (Task, error) {
 	}
 	if s.UpdatedAt.IsZero() {
 		return Task{}, invalid("updated at", "must not be zero")
+	}
+	trigger, err := NewTriggerRef(s.Trigger.Type, s.Trigger.Name)
+	if err != nil {
+		return Task{}, err
+	}
+	if err := task.Attribute(trigger, s.Input); err != nil {
+		return Task{}, err
 	}
 	for _, raw := range s.ExecutionIDs {
 		exec, err := NewExecutionID(raw)

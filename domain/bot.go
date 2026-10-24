@@ -75,11 +75,30 @@ func (b Bot) Placement() Placement { return b.placement }
 // AcceptsTrigger reports whether a task of the type may reach the bot.
 func (b Bot) AcceptsTrigger(kind TriggerType) bool { return b.triggers.Has(kind) }
 
+// Trigger finds one of the bot's triggers by name.
+func (b Bot) Trigger(name string) (Trigger, bool) { return b.triggers.Named(name) }
+
 // Wire sets how tasks reach the bot and where they run.
 func (b *Bot) Wire(triggers Triggers, placement Placement) {
 	b.triggers = triggers
 	b.placement = placement
 }
+
+// Redefine replaces the bot's mission and contracts. The tool rules must
+// still name allowed tools: a narrower allow-list that strands a rule is
+// refused, so Govern the rules first when both change.
+func (b *Bot) Redefine(mission Mission, tools AllowedTools, model ModelPolicy, budgets Budgets) error {
+	for _, rule := range b.toolRules.Allow() {
+		if !tools.Allows(rule.Tool()) {
+			return invalid("allowed tools", "an allow rule names "+rule.Tool().String()+", which the new list leaves out")
+		}
+	}
+	b.mission, b.allowedTools, b.modelPolicy, b.budgets = mission, tools, model, budgets
+	return nil
+}
+
+// Touch records that the bot's definition changed.
+func (b *Bot) Touch(now time.Time) { b.updatedAt = now }
 
 // Govern sets the bot's autonomy level and tool rules. The rules must
 // name allowed tools; the level alone decides nothing about which tools
@@ -225,11 +244,7 @@ func RestoreBot(s BotSnapshot) (Bot, error) {
 	if err := bot.Govern(level, rules); err != nil {
 		return Bot{}, err
 	}
-	kinds := make([]string, 0, len(s.Triggers))
-	for _, t := range s.Triggers {
-		kinds = append(kinds, t.Type)
-	}
-	triggers, err := NewTriggers(kinds)
+	triggers, err := NewTriggers(s.Triggers)
 	if err != nil {
 		return Bot{}, err
 	}
