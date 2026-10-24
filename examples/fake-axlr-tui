@@ -5,6 +5,14 @@
 # plane at it with --axlr-bin (or UNDERPASS_AXLR_BIN) to run the Phase 0
 # demo offline.
 prompt=""
+for a in "$@"; do
+  if [ "$a" = --help ]; then
+    # Like the real binary: the flags on stderr. No -policy: the control
+    # plane then records the policy without passing it.
+    echo '  -exec string' >&2
+    exit 0
+  fi
+done
 while [ $# -gt 0 ]; do
   case "$1" in
     --exec|-exec) prompt="$2"; shift ;;
