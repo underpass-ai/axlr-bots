@@ -197,6 +197,23 @@ func (f *fakeTraces) TracePath(execution domain.ExecutionID) (string, bool) {
 	return path, ok
 }
 
+// memoryArtifacts is the fake ArtifactStore: the reports it was given.
+type memoryArtifacts struct {
+	reports map[domain.TaskID]string
+	fail    error
+}
+
+func (m *memoryArtifacts) SaveReport(_ context.Context, task domain.TaskID, execution domain.ExecutionID, content []byte) (string, error) {
+	if m.fail != nil {
+		return "", m.fail
+	}
+	if m.reports == nil {
+		m.reports = map[domain.TaskID]string{}
+	}
+	m.reports[task] = string(content)
+	return "/artifacts/" + task.String() + "/" + execution.String() + "/report.md", nil
+}
+
 type fixedClock struct{ now time.Time }
 
 func (c *fixedClock) Now() time.Time { return c.now }
@@ -217,6 +234,7 @@ type harness struct {
 	runtime *fakeRuntime
 	decider *fakeDecisions
 	traces  *fakeTraces
+	store   *memoryArtifacts
 	clock   *fixedClock
 }
 
@@ -229,11 +247,12 @@ func newHarness() *harness {
 		runtime: &fakeRuntime{report: ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "done", SessionID: "sess-1"}, TracePath: "/traces/exec-1.jsonl"}},
 		decider: &fakeDecisions{report: ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "done after approval", SessionID: "sess-1"}, TracePath: "/traces/exec-2.jsonl"}},
 		traces:  &fakeTraces{paths: map[domain.ExecutionID]string{}},
+		store:   &memoryArtifacts{},
 		clock:   &fixedClock{now: t0},
 	}
 	h.deps = Dependencies{
 		Bots: h.bots, Tasks: h.tasks, Executions: h.execs, Events: h.log, Audit: h.log,
-		Runtime: h.runtime, Decisions: h.decider, Traces: h.traces, Clock: h.clock, IDs: &sequentialIDs{}, Actor: "test:operator",
+		Runtime: h.runtime, Decisions: h.decider, Traces: h.traces, Artifacts: h.store, Clock: h.clock, IDs: &sequentialIDs{}, Actor: "test:operator",
 	}
 	return h
 }

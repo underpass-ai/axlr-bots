@@ -13,6 +13,7 @@ type Dependencies struct {
 	Runtime    RuntimeExecutor
 	Decisions  DecisionExecutor
 	Traces     TraceLocator
+	Artifacts  ArtifactStore
 	Clock      Clock
 	IDs        IDGenerator
 	Actor      string
@@ -37,6 +38,8 @@ func (d Dependencies) Validate() error {
 		return errors.New("application: DecisionExecutor is required")
 	case d.Traces == nil:
 		return errors.New("application: TraceLocator is required")
+	case d.Artifacts == nil:
+		return errors.New("application: ArtifactStore is required")
 	case d.Clock == nil:
 		return errors.New("application: Clock is required")
 	case d.IDs == nil:

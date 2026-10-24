@@ -132,8 +132,21 @@ func TestRunTaskCompletes(t *testing.T) {
 	}
 	req := h.runtime.requests[0]
 	if req.Objective != task.Objective() || req.Model != "anthropic/claude-haiku-5.5" || len(req.AllowedTools) != 2 || req.Timeout != 900*time.Second ||
-		req.BotID != bot.ID() || req.TenantID != "engineering" || req.TaskID != task.ID() || req.ExecutionID != res.Execution.ID() || req.CorrelationID != "trace-abc" {
+		req.BotID != bot.ID() || req.TenantID != "engineering" || req.TaskID != task.ID() || req.ExecutionID != res.Execution.ID() || req.CorrelationID != "trace-abc" ||
+		req.Level != domain.AutonomyObserve || !req.ToolRules.IsEmpty() {
 		t.Errorf("request = %+v", req)
+	}
+	if got := h.store.reports[task.ID()]; got != "done" {
+		t.Errorf("report artifact = %q", got)
+	}
+	if ref := ReportReference(res.Execution); ref != "/artifacts/"+task.ID().String()+"/"+res.Execution.ID().String()+"/report.md" {
+		t.Errorf("report reference = %q", ref)
+	}
+	if res.Execution.Result().Artifacts[0].MediaType != ReportMediaType {
+		t.Errorf("artifacts = %+v", res.Execution.Result().Artifacts)
+	}
+	if got := h.log.events[2].Payload["report"]; got != ReportReference(res.Execution) {
+		t.Errorf("completed event payload = %+v", h.log.events[2].Payload)
 	}
 	if got := h.log.eventTypes(); len(got) != 3 || got[1] != "bot.task.started" || got[2] != "bot.task.completed" {
 		t.Errorf("events = %v", got)

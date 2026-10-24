@@ -22,6 +22,7 @@ func TestDependenciesValidate(t *testing.T) {
 		func(d *Dependencies) { d.Runtime = nil },
 		func(d *Dependencies) { d.Decisions = nil },
 		func(d *Dependencies) { d.Traces = nil },
+		func(d *Dependencies) { d.Artifacts = nil },
 		func(d *Dependencies) { d.Clock = nil },
 		func(d *Dependencies) { d.IDs = nil },
 		func(d *Dependencies) { d.Actor = "" },
@@ -92,6 +93,11 @@ func TestRegisterBotRejectsBadDefinitions(t *testing.T) {
 		func(d *BotDefinition) { d.AllowedTools = []string{"Bad Tool"} },
 		func(d *BotDefinition) { d.Model.RoutingPolicy = "fixed"; d.Model.Model = "" },
 		func(d *BotDefinition) { d.Budgets.TaskTimeoutSeconds = -1 },
+		func(d *BotDefinition) { d.Level = "yolo" },
+		func(d *BotDefinition) {
+			d.ToolRules.Allow = []domain.ToolRuleSnapshot{{Tool: "local_exec", Arguments: map[string]string{"program": "rm"}}}
+		},
+		func(d *BotDefinition) { d.ToolRules.Deny = []domain.ToolRuleSnapshot{{Tool: ""}} },
 	}
 	for i, mutate := range bad {
 		d := sampleDefinition()
@@ -102,6 +108,27 @@ func TestRegisterBotRejectsBadDefinitions(t *testing.T) {
 	}
 	if len(h.log.events) != 0 {
 		t.Error("bad definitions published events")
+	}
+}
+
+func TestRegisterBotGovernsTheBot(t *testing.T) {
+	h := newHarness()
+	d := sampleDefinition()
+	d.Level = "act-with-approval"
+	d.ToolRules = domain.ToolRulesSnapshot{
+		Allow: []domain.ToolRuleSnapshot{{Tool: "observability.query_logs", Arguments: map[string]string{"service": "api-*"}}},
+		Deny:  []domain.ToolRuleSnapshot{{Tool: "local_write"}},
+	}
+	bot, err := NewRegisterBot(h.deps).Execute(context.Background(), d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bot.Level() != domain.AutonomyActWithApproval || len(bot.ToolRules().Allow()) != 1 || len(bot.ToolRules().Deny()) != 1 {
+		t.Errorf("bot = %+v", bot.Snapshot())
+	}
+	plain, err := NewRegisterBot(h.deps).Execute(context.Background(), BotDefinition{Tenant: "t", Name: "plain", Owner: "o", Mission: "m"})
+	if err != nil || plain.Level() != domain.AutonomyObserve || !plain.ToolRules().IsEmpty() {
+		t.Errorf("a definition without a level: %v %s", err, plain.Level())
 	}
 }
 

@@ -86,5 +86,20 @@ func buildBot(d BotDefinition, now time.Time) (domain.Bot, error) {
 	if err != nil {
 		return domain.Bot{}, err
 	}
-	return domain.NewBot(id, tenant, name, owner, mission, tools, model, budgets, now)
+	bot, err := domain.NewBot(id, tenant, name, owner, mission, tools, model, budgets, now)
+	if err != nil {
+		return domain.Bot{}, err
+	}
+	level, err := domain.ParseAutonomyLevel(d.Level)
+	if err != nil {
+		return domain.Bot{}, err
+	}
+	rules, err := domain.RestoreToolRules(d.ToolRules, tools)
+	if err != nil {
+		return domain.Bot{}, err
+	}
+	if err := bot.Govern(level, rules); err != nil {
+		return domain.Bot{}, err
+	}
+	return bot, nil
 }

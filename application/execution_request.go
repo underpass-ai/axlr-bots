@@ -7,9 +7,10 @@ import (
 )
 
 // ExecutionRequest is everything the runtime needs for one execution:
-// identity, the objective as the prompt, the model policy, the tool
-// allow-list and the budget. AXLR does not enforce AllowedTools yet; the
-// adapter passes them on once the runtime contract takes them.
+// identity, the objective as the prompt, the model policy, the policy
+// (the autonomy level, the tool allow-list and the rules that narrow it)
+// and the budget. The adapter hands the policy to the runtime when the
+// runtime takes one and records whether it did.
 type ExecutionRequest struct {
 	ExecutionID   domain.ExecutionID
 	TaskID        domain.TaskID
@@ -18,7 +19,9 @@ type ExecutionRequest struct {
 	CorrelationID domain.CorrelationID
 	Objective     domain.Objective
 	Model         string
+	Level         domain.AutonomyLevel
 	AllowedTools  []string
+	ToolRules     domain.ToolRules
 	Budgets       domain.Budgets
 	Timeout       time.Duration
 }

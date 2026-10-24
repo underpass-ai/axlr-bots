@@ -22,13 +22,26 @@ func newSettler(deps Dependencies) settler {
 // settle ends the execution and the task as the report says, or as Failed
 // when the executor itself returned an error. started is when the
 // execution began, so a clock that runs backwards cannot end it earlier.
+// A completed run's answer is kept as the task's report artifact.
 func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task *domain.Task, execution *domain.Execution, report ExecutionReport, runErr error, started time.Time) error {
 	if runErr != nil {
-		report = ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "runtime: " + runErr.Error()}
+		report = ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "runtime: " + runErr.Error(), Policy: report.Policy}
 	}
 	ended := s.deps.Clock.Now()
 	if ended.Before(started) {
 		ended = started
+	}
+	if report.Policy != nil {
+		if err := execution.RecordPolicy(*report.Policy); err != nil {
+			return err
+		}
+	}
+	if report.Outcome == domain.ExecutionCompleted && report.Result.Answer != "" {
+		reference, err := s.deps.Artifacts.SaveReport(ctx, task.ID(), execution.ID(), []byte(report.Result.Answer))
+		if err != nil {
+			return err
+		}
+		report.Result.Artifacts = append(report.Result.Artifacts, domain.Artifact{Name: ReportArtifactName, MediaType: ReportMediaType, Reference: reference})
 	}
 	eventType, err := apply(task, execution, report, ended)
 	if err != nil {
@@ -43,6 +56,9 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 	payload := map[string]any{"executionId": execution.ID().String(), "outcome": execution.Outcome().String()}
 	if execution.FailureReason() != "" {
 		payload["reason"] = execution.FailureReason()
+	}
+	if reference := ReportReference(*execution); reference != "" {
+		payload["report"] = reference
 	}
 	if err := s.rec.event(ctx, eventType, bot, task.ID(), task.CorrelationID(), payload); err != nil {
 		return err
