@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,9 +27,28 @@ type fixture struct {
 	client  *unixapi.Client
 	cancel  context.CancelFunc
 	served  chan error
-	logs    *bytes.Buffer
+	logs    *syncBuffer
 	marker  string
 	nodeDir string
+}
+
+// syncBuffer is a log sink the agent's goroutines write and the test
+// reads.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // control starts a control plane on a socket with the fake axlr for the
@@ -52,7 +72,7 @@ func control(t *testing.T, scenario string) *fixture {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Cleanup(func() { cancel(); <-served })
-	return &fixture{dir: dir, socket: socket, client: unixapi.NewClient(socket), cancel: cancel, served: served, logs: &bytes.Buffer{}, marker: filepath.Join(dir, "marker"), nodeDir: filepath.Join(dir, "node")}
+	return &fixture{dir: dir, socket: socket, client: unixapi.NewClient(socket), cancel: cancel, served: served, logs: &syncBuffer{}, marker: filepath.Join(dir, "marker"), nodeDir: filepath.Join(dir, "node")}
 }
 
 // agent builds the node agent with the fake axlr scenario.
@@ -137,10 +157,17 @@ func TestAgentRunsAssignedTasksAndDecisions(t *testing.T) {
 	if report, err := f.client.GetReport(ctx, submitted.Task.ID); err != nil || !strings.Contains(report.Content, "Restarted") {
 		t.Errorf("report = %+v %v", report, err)
 	}
-	logs := f.logs.String()
+	// The task is Completed once the control plane took the report; the
+	// agent writes its log line after the answer comes back, so wait for
+	// it rather than read the buffer once.
 	for _, want := range []string{"node: registered as web-1", "assigned, lease until", "reported DecisionRequired (accepted true)", "reported Completed (accepted true)"} {
-		if !strings.Contains(logs, want) {
-			t.Errorf("logs lack %q:\n%s", want, logs)
+		deadline := time.Now().Add(5 * time.Second)
+		for !strings.Contains(f.logs.String(), want) {
+			if time.Now().After(deadline) {
+				t.Errorf("logs lack %q:\n%s", want, f.logs.String())
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
 		}
 	}
 	stop()
