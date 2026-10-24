@@ -169,6 +169,16 @@ func (f *fakeRuntime) Execute(_ context.Context, request ExecutionRequest) (Exec
 	return f.report, f.err
 }
 
+// fakeTraces is the fake TraceLocator: the traces it knows about.
+type fakeTraces struct {
+	paths map[domain.ExecutionID]string
+}
+
+func (f *fakeTraces) TracePath(execution domain.ExecutionID) (string, bool) {
+	path, ok := f.paths[execution]
+	return path, ok
+}
+
 type fixedClock struct{ now time.Time }
 
 func (c *fixedClock) Now() time.Time { return c.now }
@@ -187,6 +197,7 @@ type harness struct {
 	execs   *memoryExecutions
 	log     *collector
 	runtime *fakeRuntime
+	traces  *fakeTraces
 	clock   *fixedClock
 }
 
@@ -197,11 +208,12 @@ func newHarness() *harness {
 		execs:   &memoryExecutions{},
 		log:     &collector{},
 		runtime: &fakeRuntime{report: ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "done", SessionID: "sess-1"}, TracePath: "/traces/exec-1.jsonl"}},
+		traces:  &fakeTraces{paths: map[domain.ExecutionID]string{}},
 		clock:   &fixedClock{now: t0},
 	}
 	h.deps = Dependencies{
 		Bots: h.bots, Tasks: h.tasks, Executions: h.execs, Events: h.log, Audit: h.log,
-		Runtime: h.runtime, Clock: h.clock, IDs: &sequentialIDs{}, Actor: "test:operator",
+		Runtime: h.runtime, Traces: h.traces, Clock: h.clock, IDs: &sequentialIDs{}, Actor: "test:operator",
 	}
 	return h
 }

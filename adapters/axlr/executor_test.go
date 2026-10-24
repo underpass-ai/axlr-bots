@@ -12,7 +12,10 @@ import (
 	"github.com/underpass-ai/underpass-bots/domain"
 )
 
-var _ application.RuntimeExecutor = (*Executor)(nil)
+var (
+	_ application.RuntimeExecutor = (*Executor)(nil)
+	_ application.TraceLocator    = (*Executor)(nil)
+)
 
 func fake(t *testing.T, scenario string) (*Executor, string) {
 	t.Helper()
@@ -321,5 +324,21 @@ func TestLiveExec(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(report.Result.Answer), "pong") || report.Result.SessionID == "" {
 		t.Errorf("answer %q session %q", report.Result.Answer, report.Result.SessionID)
+	}
+}
+
+func TestTracePathReportsOnlyAKeptTrace(t *testing.T) {
+	e := NewExecutor("axlr-tui", t.TempDir())
+	if _, ok := e.TracePath("exec-1"); ok {
+		t.Error("a trace that was never written was found")
+	}
+	_ = os.MkdirAll(filepath.Join(e.StateDir, "traces", "exec-dir.jsonl"), 0o755)
+	if _, ok := e.TracePath("exec-dir"); ok {
+		t.Error("a directory passed as a trace")
+	}
+	want := filepath.Join(e.StateDir, "traces", "exec-1.jsonl")
+	_ = os.WriteFile(want, []byte("{}\n"), 0o644)
+	if got, ok := e.TracePath("exec-1"); !ok || got != want {
+		t.Errorf("TracePath = %q %v, want %q", got, ok, want)
 	}
 }

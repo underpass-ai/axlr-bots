@@ -20,13 +20,15 @@ func newApp(stateDir, axlrBin, actor string) (application.Dependencies, error) {
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		return application.Dependencies{}, fmt.Errorf("state directory: %w", err)
 	}
+	executor := axlr.NewExecutor(axlrBin, stateDir)
 	deps := application.Dependencies{
 		Bots:       filestore.NewBotRepository(stateDir),
 		Tasks:      filestore.NewTaskRepository(stateDir),
 		Executions: filestore.NewExecutionRepository(stateDir),
 		Events:     jsonl.NewEventLog(stateDir),
 		Audit:      jsonl.NewAuditLog(stateDir),
-		Runtime:    axlr.NewExecutor(axlrBin, stateDir),
+		Runtime:    executor,
+		Traces:     executor,
 		Clock:      system.Clock{},
 		IDs:        system.IDGenerator{},
 		Actor:      actor,

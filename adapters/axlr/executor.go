@@ -144,7 +144,7 @@ func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot do
 			return application.ExecutionReport{}, fmt.Errorf("axlr: %w", err)
 		}
 	}
-	tracePath := filepath.Join(traceDir, execution.String()+".jsonl")
+	tracePath := e.tracePath(execution)
 	trace, err := os.Create(tracePath)
 	if err != nil {
 		return application.ExecutionReport{}, fmt.Errorf("axlr: %w", err)
