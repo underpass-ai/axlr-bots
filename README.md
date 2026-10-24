@@ -312,24 +312,26 @@ Created symlink …/default.target.wants/axlr-node.service → …/axlr-node.ser
   "status": "Enabled",
 
 ## 3. a generic task: the control plane assigns it to the node, the node runs it with AXLR
-task task-72e656baa6bdbdb7ef4902e8 is Completed after about 8s
-    "costUsd": 0.0013252499999999998
+task task-6e4c4ca0938e8f4ba55b7df4 is Completed after about 8s
+    "costUsd": 0.0010726450000000001
     "enforced": true,
   "nodeId": "gx10-ff95",
   "outcome": "Completed",
-    "requests": 3,
+    "requests": 2,
     "runtimeLevel": "observe",
-    "toolCalls": 2,
+    "toolCalls": 1,
 report:
-    The workspace has no files. I listed it recursively, up to 8 levels deep, both with an explicit `.` path
-    and with the default path, and both calls returned an empty list. The count is 0.
+    The workspace is empty: the recursive listing returned no entries, so there are **0 files**.
+
+    The workspace is `/home/gx10a/.local/state/axlr-node/workspaces/bot`. The listing skips `.git` and the
+    console's internal `.axlr` and `.kernel` stores, so those aren't counted.
 
 ## 4. the approval path: a write runs only after task approve
-task task-ed866c91d729455d701abf96 is WaitingApproval after about 4s
+task task-679951d5a1a7e010777df49d is WaitingApproval after about 4s
   "status": "WaitingApproval",
   "outcome": "DecisionRequired",
       "tool": "local_write",
-      "callId": "toolu_01MKirykmsETWGzfZzsMAkmB",
+      "callId": "toolu_01P78zuTmqivD9rtFe5x9bfw",
       "arguments": {
   "nodeId": "gx10-ff95",
 the file does not exist yet: nothing ran without approval
@@ -337,9 +339,9 @@ approving...
     "status": "Running",
     "kind": "decide",
     "nodeId": "gx10-ff95"
-task task-ed866c91d729455d701abf96 is Completed after about 6s
-    Nothing was missing: I re-read `hello-20261024T020356Z.txt` and it contains exactly `hello`, so the request is complete.
--rw------- 1 gx10a gx10a 5 Oct 24 04:04 /home/gx10a/.local/state/axlr-node/workspaces/bot-act-with-approval/hello-20261024T020356Z.txt
+task task-679951d5a1a7e010777df49d is Completed after about 8s
+    Nothing is missing: I re-read `hello-20261024T070914Z.txt` and it contains exactly `hello`, with no trailing newline.
+-rw------- 1 gx10a gx10a 5 Oct 24 09:09 /home/gx10a/.local/state/axlr-node/workspaces/bot-act-with-approval/hello-20261024T070914Z.txt
 hello
 
 ## 5. restart both services: node, bots and tasks are still there
@@ -349,16 +351,16 @@ hello
     "status": "Enabled",
     "id": "bot",
     "status": "Enabled",
-  "id": "task-72e656baa6bdbdb7ef4902e8",
+  "id": "task-6e4c4ca0938e8f4ba55b7df4",
   "status": "Completed",
-  "id": "task-ed866c91d729455d701abf96",
+  "id": "task-679951d5a1a7e010777df49d",
   "status": "Completed",
 service logs (last lines):
 Stopped axlr-bots.service - AXLR Bots control plane.
 Started axlr-bots.service - AXLR Bots control plane.
-2026/10/24 04:04:16 daemon: serving on /home/gx10a/.local/state/axlr-bots/axlr-bots.sock, tick 2s
+2026/10/24 09:09:36 daemon: serving on /home/gx10a/.local/state/axlr-bots/axlr-bots.sock, tick 2s
 Started axlr-node.service - AXLR Bots node agent.
-2026/10/24 04:04:16 node: registered as gx10-ff95 (gx10-ff95), axlr "" policy true
+2026/10/24 09:09:36 node: registered as gx10-ff95 (gx10-ff95), axlr "" policy true
 
 ## installed and running
 check:     systemctl --user status axlr-bots.service axlr-node.service
