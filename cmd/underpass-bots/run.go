@@ -51,6 +51,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		code = taskSubmit(ctx, app, rest, stdout, stderr)
 	case "task run":
 		code = taskRun(ctx, app, rest, stdout, stderr)
+	case "task decide":
+		code = taskDecide(ctx, app, rest, stdout, stderr)
 	case "task get":
 		code = taskGet(ctx, app, rest, stdout, stderr)
 	case "task reconcile":
@@ -104,6 +106,9 @@ func printUsage(w io.Writer) {
                                       accept a task; the same key names the same task
   task run <task-id>                  run a pending task once through AXLR
                                       (exit 0 completed, 3 decision required, 1 failed)
+  task decide <task-id> approve|deny  decide the call a WaitingApproval task stopped on
+                                      and run it to its end under a new execution
+                                      (same exit codes as task run)
   task get <task-id>                  show one task
   task reconcile [--grace <duration>] fail the tasks a crashed run left Running
                                       longer than the grace (default: the bot's

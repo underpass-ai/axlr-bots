@@ -52,13 +52,28 @@ func taskRun(ctx context.Context, app application.Dependencies, args []string, s
 		return fail(stderr, err)
 	}
 	printJSON(stdout, runOutput{Task: result.Task.Snapshot(), Execution: result.Execution.Snapshot()})
-	switch result.Execution.Outcome() {
-	case domain.ExecutionCompleted:
-		return exitOK
-	case domain.ExecutionDecisionRequired:
-		return exitDecisionRequired
+	return exitCodeFor(result.Execution.Outcome())
+}
+
+func taskDecide(ctx context.Context, app application.Dependencies, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 2 {
+		fmt.Fprintln(stderr, "underpass-bots: task decide needs <task-id> and approve|deny")
+		return exitUsage
 	}
-	return exitError
+	id, err := domain.NewTaskID(args[0])
+	if err != nil {
+		return fail(stderr, err)
+	}
+	if !application.IsDecision(args[1]) {
+		fmt.Fprintf(stderr, "underpass-bots: task decide takes approve or deny, not %q\n", args[1])
+		return exitUsage
+	}
+	result, err := application.NewApproveTask(app).Execute(ctx, id, args[1])
+	if err != nil {
+		return fail(stderr, err)
+	}
+	printJSON(stdout, runOutput{Task: result.Task.Snapshot(), Execution: result.Execution.Snapshot()})
+	return exitCodeFor(result.Execution.Outcome())
 }
 
 func taskGet(ctx context.Context, app application.Dependencies, args []string, stdout, stderr io.Writer) int {

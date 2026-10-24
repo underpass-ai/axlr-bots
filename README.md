@@ -18,7 +18,7 @@ operator ──CLI──▶ control plane (this repo) ──RuntimeExecutor─�
 | Package | Role |
 |---|---|
 | `domain` | Bot, Task, Execution aggregates; value objects validated in constructors; events (vision §11.2) under a schema version; audit entries. One file per type. |
-| `application` | Ports (`BotRepository`, `TaskRepository`, `ExecutionRepository`, `EventPublisher`, `AuditSink`, `RuntimeExecutor`, `TraceLocator`) and use cases (`RegisterBot`, `EnableBot`, `SubmitTask`, `RunTask`, `ReconcileTasks`, `GetTask`, `GetExecution`, …). |
+| `application` | Ports (`BotRepository`, `TaskRepository`, `ExecutionRepository`, `EventPublisher`, `AuditSink`, `RuntimeExecutor`, `DecisionExecutor`, `TraceLocator`) and use cases (`RegisterBot`, `EnableBot`, `SubmitTask`, `RunTask`, `ApproveTask`, `ReconcileTasks`, `GetTask`, `GetExecution`, …). |
 | `adapters/filestore` | One JSON file per aggregate under the state directory, written atomically (temp file, fsync, rename). |
 | `adapters/jsonl` | Append-only `events.jsonl` and `audit.jsonl`. |
 | `adapters/axlr` | Runs `axlr-tui --exec --json --approve none` as a subprocess and reads the execution result object; keeps the raw lines as the trace. |
@@ -38,8 +38,9 @@ The adapter speaks the contract in AXLR's `docs/runtime-contract.md`:
 - Fallback for an `axlr-tui` older than the contract: exit code (0 completed,
   3 decision required, 1 failed) plus the `completed`, `failed` and
   `decision.required` lines.
-- `Decide` runs `--session <id> --decide approve|deny [--call <id>]` for the
-  approval path (no use case wires it yet).
+- Decision: `--session <id> --decide approve|deny [--call <id>] --json`, the
+  session and call the previous execution's `pendingDecision` names, with the
+  same result object at the end. `ApproveTask` (`task decide`) drives it.
 - Not yet enforced by AXLR: the bot's tool allow-list, budgets and
   correlation. They are recorded in the execution request and will be passed
   as the contract's reserved `policy`, `budget` and `correlation` fields
@@ -99,6 +100,11 @@ $ub task submit server-incident-investigator \
 # 4. run it once through AXLR (exit 0 completed, 3 decision required, 1 failed)
 $ub task run task-…
 
+# 4b. exit 3 means the task is WaitingApproval on a tool call: decide it, and
+#     the same session runs to its end under a second execution
+$ub task get task-…                             # "status": "WaitingApproval"
+$ub task decide task-… approve                  # or deny; same exit codes as task run
+
 # 5. read the result: outcome, answer, usage; the trace stays in traces/
 $ub execution get exec-…
 
@@ -119,6 +125,27 @@ State directory layout:
   traces/<exec-id>.jsonl      traces/<exec-id>.stderr.log
   workspaces/<bot-id>/        (the --root AXLR runs in)
 ```
+
+## Approval
+
+The run's approval level is `--approve none`: AXLR runs nothing the settings
+do not already allow, and a held call ends the execution in
+`needs_decision`. The control plane then shows a `WaitingApproval` task whose
+execution is `DecisionRequired` with `result.pendingDecision`
+(`tool`, `callId`, `sessionId`), and the runtime session keeps the call.
+
+```bash
+$ub task decide task-… approve    # or deny
+```
+
+`task decide` appends a new execution to the task, moves it to `Running`
+before anything runs, hands the decision to the session and settles the
+outcome exactly as `task run` does: `Completed`, `Failed`, or
+`WaitingApproval` again when the next call is held too (then decide again).
+Events: `bot.task.decided` `{decision, callId, sessionId, executionId}`,
+then `bot.task.completed`, `bot.task.failed` or `bot.task.waiting_approval`.
+Audit action: `task.decide`. A wrong word, a task that is not
+`WaitingApproval` or a paused bot is refused before anything changes.
 
 ## Recovery
 
@@ -156,6 +183,7 @@ underpass-bots [--state <dir>] [--axlr-bin <path>] [--actor <name>] <command>
   bot get <bot-id>
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>]
   task run <task-id>
+  task decide <task-id> approve|deny
   task get <task-id>
   task reconcile [--grace <duration>]
   execution get <execution-id>
@@ -167,8 +195,8 @@ then `~/.local/state/underpass-bots`. `--axlr-bin` defaults to
 
 ## What Phase 0 leaves out
 
-Scheduler and triggers (reconciliation is a command, not a loop), the
-approval use case over `Decide`, tool allow-list enforcement (needs the
-contract's `policy`), budgets enforced by the runtime, `axlr-serve` as a
-second `RuntimeExecutor`, and a real store. The vision's §13 and §14 name
+Scheduler and triggers (reconciliation is a command, not a loop), an
+approval queue beyond `task decide` (who may decide, and when), tool
+allow-list enforcement (needs the contract's `policy`), budgets enforced by
+the runtime, `axlr-serve` as a second `RuntimeExecutor`, and a real store. The vision's §13 and §14 name
 them for Phase 1 and 2.

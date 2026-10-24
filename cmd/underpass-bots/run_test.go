@@ -18,6 +18,16 @@ import (
 // the scenario and exits with its code.
 func fakeAXLR(t *testing.T, scenario string) string {
 	t.Helper()
+	path, _ := recordingFakeAXLR(t, scenario)
+	return path
+}
+
+// recordingFakeAXLR is fakeAXLR plus a file where the fake writes the
+// arguments it was called with, one per line.
+func recordingFakeAXLR(t *testing.T, scenario string) (string, string) {
+	t.Helper()
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args.txt")
 	var body string
 	switch scenario {
 	case "completed":
@@ -30,11 +40,12 @@ exit 3`
 		body = `echo "axlr-tui: no model provider" >&2
 exit 1`
 	}
-	path := filepath.Join(t.TempDir(), "fake-axlr-tui")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+	path := filepath.Join(dir, "fake-axlr-tui")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + argsFile + "'\n" + body + "\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return path
+	return path, argsFile
 }
 
 func definitionFile(t *testing.T) string {
@@ -153,6 +164,89 @@ func TestTaskRunExitCodesFollowTheOutcome(t *testing.T) {
 	}
 }
 
+func TestTaskDecideContinuesAWaitingTask(t *testing.T) {
+	state := t.TempDir()
+	stopped := cli{t: t, state: state, axlr: fakeAXLR(t, "decision")}
+	_, _ = stopped.json("bot", "register", "--file", definitionFile(t))
+	_, _ = stopped.json("bot", "enable", "server-incident-investigator")
+	_, submitted := stopped.json("task", "submit", "server-incident-investigator", "--objective", "Investigate an HTTP 500 spike", "--key", "alert-1")
+	taskID := submitted["task"].(map[string]any)["id"].(string)
+	code, ran := stopped.json("task", "run", taskID)
+	if code != exitDecisionRequired || ran["task"].(map[string]any)["status"] != "WaitingApproval" {
+		t.Fatalf("run: %d %v", code, ran)
+	}
+	firstExecution := ran["execution"].(map[string]any)["id"].(string)
+
+	// A decision in a new process: approve, and the fake finishes the turn.
+	fake, argsFile := recordingFakeAXLR(t, "completed")
+	deciding := cli{t: t, state: state, axlr: fake}
+	code, decided := deciding.json("task", "decide", taskID, "approve")
+	if code != exitOK {
+		t.Fatalf("decide: %d %v", code, decided)
+	}
+	task := decided["task"].(map[string]any)
+	execution := decided["execution"].(map[string]any)
+	if task["status"] != "Completed" || execution["outcome"] != "Completed" || execution["result"].(map[string]any)["answer"] != "pong" {
+		t.Errorf("decide = %v", decided)
+	}
+	if ids, _ := json.Marshal(task["executionIds"]); string(ids) != `["`+firstExecution+`","`+execution["id"].(string)+`"]` {
+		t.Errorf("executionIds = %s (first %s)", ids, firstExecution)
+	}
+	rawArgs, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := strings.Join(strings.Split(strings.TrimSpace(string(rawArgs)), "\n"), " ")
+	if !strings.HasPrefix(args, "--session sess-1 --decide approve --json --approve none --call c1 --root ") || strings.Contains(args, "--exec") {
+		t.Errorf("axlr-tui args = %q", args)
+	}
+	entries, _ := os.ReadDir(filepath.Join(state, "executions"))
+	if len(entries) != 2 {
+		t.Errorf("%d executions, want 2", len(entries))
+	}
+	events, _ := os.ReadFile(filepath.Join(state, "events.jsonl"))
+	if !strings.Contains(string(events), `"bot.task.decided"`) || !strings.Contains(string(events), `"callId":"c1"`) {
+		t.Errorf("events = %s", events)
+	}
+	audit, _ := os.ReadFile(filepath.Join(state, "audit.jsonl"))
+	if !strings.Contains(string(audit), `"task.decide"`) {
+		t.Errorf("audit = %s", audit)
+	}
+
+	// Decided: a second decision is refused and the runtime not run.
+	_ = os.Remove(argsFile)
+	code, _, errText := deciding.run("task", "decide", taskID, "deny")
+	if code != exitError || !strings.Contains(errText, "is Completed: cannot decide") {
+		t.Errorf("second decision: %d %s", code, errText)
+	}
+	if _, err := os.Stat(argsFile); err == nil {
+		t.Error("axlr-tui was run for a completed task")
+	}
+	// A Pending task has nothing to decide either.
+	_, other := deciding.json("task", "submit", "server-incident-investigator", "--objective", "o", "--key", "alert-2")
+	code, _, errText = deciding.run("task", "decide", other["task"].(map[string]any)["id"].(string), "approve")
+	if code != exitError || !strings.Contains(errText, "is Pending: cannot decide") {
+		t.Errorf("pending task: %d %s", code, errText)
+	}
+}
+
+func TestTaskDecideExitCodesFollowTheOutcome(t *testing.T) {
+	for scenario, want := range map[string]int{"decision": exitDecisionRequired, "failed": exitError} {
+		state := t.TempDir()
+		c := cli{t: t, state: state, axlr: fakeAXLR(t, "decision")}
+		_, _ = c.json("bot", "register", "--file", definitionFile(t))
+		_, _ = c.json("bot", "enable", "server-incident-investigator")
+		_, submitted := c.json("task", "submit", "server-incident-investigator", "--objective", "o", "--key", "k")
+		taskID := submitted["task"].(map[string]any)["id"].(string)
+		_, _ = c.json("task", "run", taskID)
+		c.axlr = fakeAXLR(t, scenario)
+		code, decided := c.json("task", "decide", taskID, "deny")
+		if code != want {
+			t.Errorf("%s: exit %d, want %d (%v)", scenario, code, want, decided)
+		}
+	}
+}
+
 func TestUsageAndErrors(t *testing.T) {
 	c := cli{t: t, state: t.TempDir(), axlr: fakeAXLR(t, "completed")}
 	cases := []struct {
@@ -181,6 +275,11 @@ func TestUsageAndErrors(t *testing.T) {
 		{[]string{"task", "run"}, exitUsage, "exactly one"},
 		{[]string{"task", "run", "Bad Id"}, exitError, "task id"},
 		{[]string{"task", "run", "ghost"}, exitError, "not found"},
+		{[]string{"task", "decide"}, exitUsage, "needs <task-id> and approve|deny"},
+		{[]string{"task", "decide", "t"}, exitUsage, "needs <task-id> and approve|deny"},
+		{[]string{"task", "decide", "Bad Id", "approve"}, exitError, "task id"},
+		{[]string{"task", "decide", "t", "maybe"}, exitUsage, "approve or deny"},
+		{[]string{"task", "decide", "ghost", "approve"}, exitError, "not found"},
 		{[]string{"task", "get"}, exitUsage, "exactly one"},
 		{[]string{"task", "get", "Bad Id"}, exitError, "task id"},
 		{[]string{"task", "get", "ghost"}, exitError, "not found"},
