@@ -11,11 +11,13 @@ import (
 	"strings"
 )
 
-// Installer puts the control plane on the host as the layout says.
+// Installer puts the platform on the host as the layout says.
 type Installer struct {
 	Layout Layout
-	// Source is the binary to install, usually the running one.
+	// Source is the control plane binary to install, usually the running one.
 	Source string
+	// NodeSource is the node agent binary to install.
+	NodeSource string
 	// Key is the model key written to a new environment file; empty
 	// leaves a placeholder.
 	Key string
@@ -26,16 +28,17 @@ type Installer struct {
 	CreateUser bool
 }
 
-// Install copies the binary, writes the units and the environment file
-// (an existing one is kept, so a key is never overwritten), creates the
-// state directory and the service user, and reloads systemd.
+// Install copies both binaries, writes the units and the environment
+// file (an existing one is kept, so a key is never overwritten), creates
+// the state directories and, system-wide, the service user, and reloads
+// systemd.
 func (i Installer) Install() (Report, error) {
 	l := i.Layout
-	report := Report{Mode: mode(l), Binary: l.BinaryPath(), EnvFile: l.EnvFile, StateDir: l.StateDir, Socket: l.SocketPath()}
-	if i.Source == "" {
-		return report, errors.New("systemd: the binary to install is not named")
+	report := Report{Mode: mode(l), Binary: l.BinaryPath(), NodeBinary: l.NodeBinaryPath(), EnvFile: l.EnvFile, StateDir: l.StateDir, NodeStateDir: l.NodeStateDir, Socket: l.SocketPath()}
+	if i.Source == "" || i.NodeSource == "" {
+		return report, errors.New("systemd: the binaries to install are not named (control plane and node)")
 	}
-	if !l.User && i.CreateUser && i.Runner != nil {
+	if l.System && i.CreateUser && i.Runner != nil {
 		if _, err := user.Lookup(ServiceUser); err != nil {
 			args := []string{"--system", "--home-dir", l.StateDir, "--no-create-home", "--shell", "/usr/sbin/nologin", "--groups", JournalGroup, ServiceUser}
 			if err := i.Runner.Run("useradd", args...); err != nil {
@@ -47,7 +50,10 @@ func (i Installer) Install() (Report, error) {
 	if err := copyFile(i.Source, l.OnDisk(l.BinaryPath()), 0o755); err != nil {
 		return report, fmt.Errorf("systemd: install the binary: %w", err)
 	}
-	for path, content := range map[string]string{l.ServicePath(): RenderService(l), l.AlertUnitPath(): RenderAlertUnit(l)} {
+	if err := copyFile(i.NodeSource, l.OnDisk(l.NodeBinaryPath()), 0o755); err != nil {
+		return report, fmt.Errorf("systemd: install the node binary: %w", err)
+	}
+	for path, content := range map[string]string{l.ServicePath(): RenderService(l), l.NodeUnitPath(): RenderNodeUnit(l)} {
 		if err := writeFile(l.OnDisk(path), content, 0o644); err != nil {
 			return report, fmt.Errorf("systemd: write %s: %w", path, err)
 		}
@@ -60,11 +66,13 @@ func (i Installer) Install() (Report, error) {
 	} else if err != nil {
 		return report, fmt.Errorf("systemd: %w", err)
 	}
-	if err := os.MkdirAll(l.OnDisk(l.StateDir), 0o750); err != nil {
-		return report, fmt.Errorf("systemd: state directory: %w", err)
-	}
-	if !l.User {
-		i.chownState(&report)
+	for _, dir := range []string{l.StateDir, l.NodeStateDir} {
+		if err := os.MkdirAll(l.OnDisk(dir), 0o750); err != nil {
+			return report, fmt.Errorf("systemd: state directory: %w", err)
+		}
+		if l.System {
+			i.chown(dir, &report)
+		}
 	}
 	if i.Runner != nil {
 		args := append(l.Systemctl()[1:], "daemon-reload")
@@ -76,22 +84,25 @@ func (i Installer) Install() (Report, error) {
 	ctl := strings.Join(l.Systemctl(), " ")
 	report.NextSteps = append(report.NextSteps,
 		"put the model key in "+l.EnvFile+" if the installer had none",
-		ctl+" enable --now "+ServiceName,
-		l.BinaryPath()+" --state "+l.StateDir+" bot register --file examples/sre-host-bot.json",
-		l.BinaryPath()+" --state "+l.StateDir+" bot enable sre-host-bot",
-		"attach the alert to a unit: "+ctl+" edit <unit> and add "+strings.TrimSpace(strings.ReplaceAll(RenderDropIn(), "\n", " ")),
+		ctl+" enable --now "+ServiceName+" "+NodeUnitName,
+		l.BinaryPath()+" --state "+l.StateDir+" node list",
+		l.BinaryPath()+" --state "+l.StateDir+" bot register --file examples/bot.json",
+		l.BinaryPath()+" --state "+l.StateDir+" bot enable bot",
 	)
+	if !l.System {
+		report.NextSteps = append(report.NextSteps, "loginctl enable-linger "+currentUser()+"  # keep the services running after logout")
+	}
 	return report, nil
 }
 
-// Uninstall stops and disables the units, removes them and the binary,
-// and reloads systemd. The state directory and the environment file
-// (the key) stay unless purge is set.
+// Uninstall stops and disables the units, removes them and the
+// binaries, and reloads systemd. The state directories and the
+// environment file (the key) stay unless purge is set.
 func (i Installer) Uninstall(purge bool) (Report, error) {
 	l := i.Layout
-	report := Report{Mode: mode(l), Binary: l.BinaryPath(), EnvFile: l.EnvFile, StateDir: l.StateDir, Socket: l.SocketPath()}
+	report := Report{Mode: mode(l), Binary: l.BinaryPath(), NodeBinary: l.NodeBinaryPath(), EnvFile: l.EnvFile, StateDir: l.StateDir, NodeStateDir: l.NodeStateDir, Socket: l.SocketPath()}
 	if i.Runner != nil {
-		for _, unit := range []string{ServiceName} {
+		for _, unit := range []string{NodeUnitName, ServiceName} {
 			args := append(l.Systemctl()[1:], "disable", "--now", unit)
 			// A unit that was never enabled is not an error worth stopping for.
 			if err := i.Runner.Run(l.Systemctl()[0], args...); err == nil {
@@ -99,7 +110,7 @@ func (i Installer) Uninstall(purge bool) (Report, error) {
 			}
 		}
 	}
-	for _, path := range []string{l.ServicePath(), l.AlertUnitPath(), l.BinaryPath()} {
+	for _, path := range []string{l.ServicePath(), l.NodeUnitPath(), l.BinaryPath(), l.NodeBinaryPath()} {
 		if err := os.Remove(l.OnDisk(path)); err == nil {
 			report.Units = append(report.Units, path)
 		} else if !errors.Is(err, os.ErrNotExist) {
@@ -107,7 +118,7 @@ func (i Installer) Uninstall(purge bool) (Report, error) {
 		}
 	}
 	if purge {
-		for _, path := range []string{l.EnvFile, l.StateDir} {
+		for _, path := range []string{l.EnvFile, l.StateDir, l.NodeStateDir} {
 			if err := os.RemoveAll(l.OnDisk(path)); err != nil {
 				return report, fmt.Errorf("systemd: purge %s: %w", path, err)
 			}
@@ -127,32 +138,39 @@ func (i Installer) Uninstall(purge bool) (Report, error) {
 		report.Commands = append(report.Commands, strings.Join(l.Systemctl(), " ")+" daemon-reload")
 	}
 	if !purge {
-		report.NextSteps = []string{"the state directory " + l.StateDir + " and " + l.EnvFile + " were kept; remove them with --purge"}
+		report.NextSteps = []string{"the state directories " + l.StateDir + " and " + l.NodeStateDir + " and " + l.EnvFile + " were kept; remove them with --purge"}
 	}
 	return report, nil
 }
 
-// chownState gives the state directory to the service user when the
-// user exists and the installer may change owners; otherwise it says so
-// in the report and goes on.
-func (i Installer) chownState(report *Report) {
+// chown gives a state directory to the service user when the user
+// exists and the installer may change owners; otherwise it says so in
+// the report and goes on.
+func (i Installer) chown(dir string, report *Report) {
 	u, err := user.Lookup(ServiceUser)
 	if err != nil {
-		report.NextSteps = append(report.NextSteps, "chown "+ServiceUser+": "+i.Layout.StateDir+" once the user exists")
+		report.NextSteps = append(report.NextSteps, "chown "+ServiceUser+": "+dir+" once the user exists")
 		return
 	}
 	uid, _ := strconv.Atoi(u.Uid)
 	gid, _ := strconv.Atoi(u.Gid)
-	if err := os.Chown(i.Layout.OnDisk(i.Layout.StateDir), uid, gid); err != nil {
-		report.NextSteps = append(report.NextSteps, "chown "+ServiceUser+": "+i.Layout.StateDir+" ("+err.Error()+")")
+	if err := os.Chown(i.Layout.OnDisk(dir), uid, gid); err != nil {
+		report.NextSteps = append(report.NextSteps, "chown "+ServiceUser+": "+dir+" ("+err.Error()+")")
 	}
 }
 
 func mode(l Layout) string {
-	if l.User {
-		return "user"
+	if l.System {
+		return "system"
 	}
-	return "system"
+	return "user"
+}
+
+func currentUser() string {
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		return u.Username
+	}
+	return "$USER"
 }
 
 func writeFile(path, content string, perm os.FileMode) error {

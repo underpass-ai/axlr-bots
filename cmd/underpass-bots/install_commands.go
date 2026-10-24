@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/underpass-ai/underpass-bots/adapters/systemd"
 )
@@ -14,12 +15,14 @@ import (
 func installFlags(name string, args []string, stderr io.Writer) (*flag.FlagSet, *systemd.Layout, *bool, error) {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	user := flags.Bool("user", false, "install under ~/.local and systemctl --user (no root needed)")
-	prefix := flags.String("prefix", "", "where bin/underpass-bots goes (default /usr/local, or ~/.local with --user)")
-	state := flags.String("state", "", "the state directory (default /var/lib/underpass-bots, or ~/.local/state/underpass-bots with --user)")
-	unitDir := flags.String("unit-dir", "", "where the units go (default /etc/systemd/system, or ~/.config/systemd/user with --user)")
-	envFile := flags.String("env-file", "", "the environment file (default /etc/underpass-bots/env, or ~/.config/underpass-bots/env with --user)")
-	axlrBin := flags.String("axlr-bin", defaultAXLRBinary(), "the axlr-tui the service runs (also UNDERPASS_AXLR_BIN)")
+	system := flags.Bool("system", false, "the system-wide variant: a dedicated user, /usr/local, /etc and /var/lib (needs root); default: the user's own under ~/.local and systemctl --user")
+	prefix := flags.String("prefix", "", "where bin/underpass-bots and bin/underpass-node go (default ~/.local, or /usr/local with --system)")
+	state := flags.String("state", "", "the control plane's state directory (default ~/.local/state/underpass-bots, or /var/lib/underpass-bots with --system)")
+	nodeState := flags.String("node-state", "", "the node's state directory (default ~/.local/state/underpass-node, or /var/lib/underpass-node with --system)")
+	unitDir := flags.String("unit-dir", "", "where the units go (default ~/.config/systemd/user, or /etc/systemd/system with --system)")
+	envFile := flags.String("env-file", "", "the environment file (default ~/.config/underpass-bots/env, or /etc/underpass-bots/env with --system)")
+	axlrBin := flags.String("axlr-bin", defaultAXLRBinary(), "the axlr-tui the node runs (also UNDERPASS_AXLR_BIN)")
+	nodeBinary := flags.String("node-binary", "", "the underpass-node binary to install (default: next to this binary)")
 	destDir := flags.String("destdir", "", "put every path under this directory on disk (packaging, tests)")
 	noSystemctl := flags.Bool("no-systemctl", false, "write the files but run no systemctl or useradd")
 	if err := flags.Parse(args); err != nil {
@@ -29,9 +32,12 @@ func installFlags(name string, args []string, stderr io.Writer) (*flag.FlagSet, 
 		return nil, nil, nil, fmt.Errorf("%s takes flags only", name)
 	}
 	home, _ := os.UserHomeDir()
-	layout := systemd.DefaultLayout(*user, *prefix, home)
+	layout := systemd.DefaultLayout(*system, *prefix, home)
 	if *state != "" {
 		layout.StateDir = *state
+	}
+	if *nodeState != "" {
+		layout.NodeStateDir = *nodeState
 	}
 	if *unitDir != "" {
 		layout.UnitDir = *unitDir
@@ -41,12 +47,18 @@ func installFlags(name string, args []string, stderr io.Writer) (*flag.FlagSet, 
 	}
 	layout.AXLRBin = *axlrBin
 	layout.DestDir = *destDir
+	nodeSource = *nodeBinary
 	return flags, &layout, noSystemctl, nil
 }
 
-// install puts the running binary, the units and the environment file on
-// the host. The model key is taken from OPENROUTER_API_KEY in the
-// installer's own environment when set, and never printed.
+// nodeSource is the --node-binary of the last parse; empty means next
+// to the running binary.
+var nodeSource string
+
+// install puts the running binary, the node binary found beside it, the
+// two units and the environment file on the host. The model key is
+// taken from OPENROUTER_API_KEY in the installer's own environment when
+// set, and never printed.
 func install(args []string, stdout, stderr io.Writer) int {
 	_, layout, noSystemctl, err := installFlags("install", args, stderr)
 	if err != nil {
@@ -57,7 +69,11 @@ func install(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	installer := systemd.Installer{Layout: *layout, Source: executable, Key: os.Getenv("OPENROUTER_API_KEY"), CreateUser: true}
+	node := nodeSource
+	if node == "" {
+		node = filepath.Join(filepath.Dir(executable), systemd.NodeBinaryName)
+	}
+	installer := systemd.Installer{Layout: *layout, Source: executable, NodeSource: node, Key: os.Getenv("OPENROUTER_API_KEY"), CreateUser: true}
 	if !*noSystemctl {
 		installer.Runner = systemd.ExecRunner{}
 	}

@@ -24,13 +24,17 @@ func (r *recorder) Run(name string, args ...string) error {
 	return nil
 }
 
-func source(t *testing.T) string {
+func sources(t *testing.T) (string, string) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "underpass-bots")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\necho binary\n"), 0o755); err != nil {
-		t.Fatal(err)
+	dir := t.TempDir()
+	cp := filepath.Join(dir, "underpass-bots")
+	node := filepath.Join(dir, "underpass-node")
+	for _, path := range []string{cp, node} {
+		if err := os.WriteFile(path, []byte("#!/bin/sh\necho "+filepath.Base(path)+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
-	return path
+	return cp, node
 }
 
 func mustRead(t *testing.T, path string) string {
@@ -43,70 +47,65 @@ func mustRead(t *testing.T, path string) string {
 }
 
 func TestDefaultLayouts(t *testing.T) {
-	sys := DefaultLayout(false, "", "/home/x")
-	if sys.User || sys.Prefix != "/usr/local" || sys.StateDir != "/var/lib/underpass-bots" || sys.UnitDir != "/etc/systemd/system" || sys.EnvFile != "/etc/underpass-bots/env" {
-		t.Errorf("system layout = %+v", sys)
-	}
-	if sys.BinaryPath() != "/usr/local/bin/underpass-bots" || sys.SocketPath() != "/var/lib/underpass-bots/underpass-bots.sock" || sys.ServicePath() != "/etc/systemd/system/underpass-bots.service" || sys.AlertUnitPath() != "/etc/systemd/system/underpass-bots-alert@.service" {
-		t.Errorf("system paths wrong: %s %s", sys.BinaryPath(), sys.SocketPath())
-	}
-	if strings.Join(sys.Systemctl(), " ") != "systemctl" || sys.OnDisk("/etc/x") != "/etc/x" {
-		t.Error("system systemctl or OnDisk wrong")
-	}
-	usr := DefaultLayout(true, "", "/home/x")
-	if !usr.User || usr.Prefix != "/home/x/.local" || usr.StateDir != "/home/x/.local/state/underpass-bots" || usr.UnitDir != "/home/x/.config/systemd/user" || usr.EnvFile != "/home/x/.config/underpass-bots/env" {
+	usr := DefaultLayout(false, "", "/home/ana")
+	if usr.System || usr.Prefix != "/home/ana/.local" || usr.StateDir != "/home/ana/.local/state/underpass-bots" || usr.NodeStateDir != "/home/ana/.local/state/underpass-node" || usr.UnitDir != "/home/ana/.config/systemd/user" || usr.EnvFile != "/home/ana/.config/underpass-bots/env" {
 		t.Errorf("user layout = %+v", usr)
 	}
-	if strings.Join(usr.Systemctl(), " ") != "systemctl --user" {
-		t.Error("user systemctl wrong")
+	if usr.BinaryPath() != "/home/ana/.local/bin/underpass-bots" || usr.NodeBinaryPath() != "/home/ana/.local/bin/underpass-node" || usr.SocketPath() != "/home/ana/.local/state/underpass-bots/underpass-bots.sock" || usr.NodeUnitPath() != "/home/ana/.config/systemd/user/underpass-node.service" {
+		t.Error("user paths wrong")
 	}
-	usr.DestDir = "/tmp/dest"
-	if usr.OnDisk("/home/x/.local/bin") != "/tmp/dest/home/x/.local/bin" {
+	if strings.Join(usr.Systemctl(), " ") != "systemctl --user" || usr.OnDisk("/x") != "/x" {
+		t.Error("user systemctl or OnDisk wrong")
+	}
+	sys := DefaultLayout(true, "", "/home/ana")
+	if !sys.System || sys.Prefix != "/usr/local" || sys.StateDir != "/var/lib/underpass-bots" || sys.NodeStateDir != "/var/lib/underpass-node" || sys.UnitDir != "/etc/systemd/system" || sys.EnvFile != "/etc/underpass-bots/env" || sys.ServicePath() != "/etc/systemd/system/underpass-bots.service" {
+		t.Errorf("system layout = %+v", sys)
+	}
+	if strings.Join(sys.Systemctl(), " ") != "systemctl" {
+		t.Error("system systemctl wrong")
+	}
+	sys.DestDir = "/tmp/dest"
+	if sys.OnDisk("/etc/x") != "/tmp/dest/etc/x" {
 		t.Error("OnDisk wrong")
 	}
-	if DefaultLayout(false, "/opt/ub", "").Prefix != "/opt/ub" || DefaultLayout(true, "/opt/ub", "/h").Prefix != "/opt/ub" {
+	if DefaultLayout(true, "/opt/ub", "").Prefix != "/opt/ub" || DefaultLayout(false, "/opt/ub", "/h").Prefix != "/opt/ub" {
 		t.Error("explicit prefix ignored")
 	}
 }
 
-func TestRenderSystemUnits(t *testing.T) {
-	l := DefaultLayout(false, "", "")
-	l.AXLRBin = "/opt/axlr/axlr-tui"
+func TestRenderUserUnits(t *testing.T) {
+	l := DefaultLayout(false, "", "/home/ana")
+	l.AXLRBin = "/opt/axlr-tui"
 	service := RenderService(l)
 	for _, want := range []string{
-		"Type=simple\n", "User=underpass-bots\n", "Group=underpass-bots\n", "SupplementaryGroups=systemd-journal\n",
-		"EnvironmentFile=-/etc/underpass-bots/env\n", "Environment=HOME=/var/lib/underpass-bots\n",
-		"ExecStart=/usr/local/bin/underpass-bots --state /var/lib/underpass-bots --socket /var/lib/underpass-bots/underpass-bots.sock serve\n",
-		"Restart=on-failure\n", "NoNewPrivileges=yes\n", "ProtectSystem=strict\n", "ProtectHome=yes\n",
-		"StateDirectory=underpass-bots\n", "ReadWritePaths=/var/lib/underpass-bots\n", "WantedBy=multi-user.target\n", "After=network-online.target\n",
+		"Description=Underpass Bots control plane\n", "Type=simple\n", "EnvironmentFile=-/home/ana/.config/underpass-bots/env\n",
+		"ExecStart=/home/ana/.local/bin/underpass-bots --state /home/ana/.local/state/underpass-bots --socket /home/ana/.local/state/underpass-bots/underpass-bots.sock serve\n",
+		"Restart=on-failure\n", "NoNewPrivileges=yes\n", "WantedBy=default.target\n", "not available to a user service",
 	} {
 		if !strings.Contains(service, want) {
 			t.Errorf("service lacks %q:\n%s", want, service)
 		}
 	}
-	if strings.Contains(service, "OPENROUTER") || strings.Contains(service, "sk-or") {
-		t.Error("the unit carries the key")
-	}
-	custom := l
-	custom.StateDir = "/srv/ub"
-	if s := RenderService(custom); strings.Contains(s, "StateDirectory=") || !strings.Contains(s, "ReadWritePaths=/srv/ub\n") {
-		t.Errorf("custom state dir:\n%s", s)
-	}
-	alert := RenderAlertUnit(l)
-	for _, want := range []string{
-		"Type=oneshot\n", "User=underpass-bots\n", "After=underpass-bots.service\n", "Description=Underpass Bots: tell the SRE bot that %i failed\n",
-		"ExecStart=/usr/local/bin/underpass-bots --state /var/lib/underpass-bots --socket /var/lib/underpass-bots/underpass-bots.sock alert --unit %i\n",
-		"ProtectSystem=strict\n",
-	} {
-		if !strings.Contains(alert, want) {
-			t.Errorf("alert unit lacks %q:\n%s", want, alert)
+	for _, absent := range []string{"User=", "ProtectSystem=strict", "ProtectHome=yes", "StateDirectory=", "Environment=HOME", "After=", "OPENROUTER", "sk-or"} {
+		if strings.Contains(service, absent) {
+			t.Errorf("user service has %q", absent)
 		}
 	}
-	if !strings.Contains(RenderDropIn(), "OnFailure=underpass-bots-alert@%N.service\n") {
-		t.Error("drop-in wrong")
+	node := RenderNodeUnit(l)
+	for _, want := range []string{
+		"Description=Underpass Bots node agent\n", "After=underpass-bots.service\nWants=underpass-bots.service\n", "Environment=UNDERPASS_NODE_LABELS=host=%l\n",
+		"ExecStart=/home/ana/.local/bin/underpass-node --control unix:///home/ana/.local/state/underpass-bots/underpass-bots.sock --state /home/ana/.local/state/underpass-node\n",
+		"WantedBy=default.target\n",
+	} {
+		if !strings.Contains(node, want) {
+			t.Errorf("node unit lacks %q:\n%s", want, node)
+		}
+	}
+	if strings.Contains(node, "User=") || strings.Contains(node, "ProtectSystem=strict") {
+		t.Errorf("user node unit:\n%s", node)
 	}
 	env := RenderEnv(l, "")
-	if !strings.Contains(env, "#OPENROUTER_API_KEY=") || !strings.Contains(env, "UNDERPASS_AXLR_BIN=/opt/axlr/axlr-tui\n") || strings.Contains(env, "UNDERPASS_SYSTEMD_USER") {
+	if !strings.Contains(env, "#OPENROUTER_API_KEY=") || !strings.Contains(env, "UNDERPASS_AXLR_BIN=/opt/axlr-tui\n") {
 		t.Errorf("env:\n%s", env)
 	}
 	if env := RenderEnv(l, "sk-or-test"); !strings.Contains(env, "\nOPENROUTER_API_KEY=sk-or-test\n") {
@@ -114,71 +113,76 @@ func TestRenderSystemUnits(t *testing.T) {
 	}
 }
 
-func TestRenderUserUnits(t *testing.T) {
-	l := DefaultLayout(true, "", "/home/ana")
+func TestRenderSystemUnits(t *testing.T) {
+	l := DefaultLayout(true, "", "")
 	service := RenderService(l)
 	for _, want := range []string{
-		"Type=simple\n", "EnvironmentFile=-/home/ana/.config/underpass-bots/env\n",
-		"ExecStart=/home/ana/.local/bin/underpass-bots --state /home/ana/.local/state/underpass-bots --socket /home/ana/.local/state/underpass-bots/underpass-bots.sock serve\n",
-		"Restart=on-failure\n", "NoNewPrivileges=yes\n", "WantedBy=default.target\n", "not available to a user service",
+		"After=network-online.target\n", "User=underpass-bots\n", "Group=underpass-bots\n", "SupplementaryGroups=systemd-journal\n",
+		"Environment=HOME=/var/lib/underpass-bots\n", "ProtectSystem=strict\n", "ProtectHome=yes\n", "StateDirectory=underpass-bots\n",
+		"ReadWritePaths=/var/lib/underpass-bots\n", "WantedBy=multi-user.target\n",
 	} {
 		if !strings.Contains(service, want) {
-			t.Errorf("user service lacks %q:\n%s", want, service)
+			t.Errorf("system service lacks %q:\n%s", want, service)
 		}
 	}
-	for _, absent := range []string{"User=", "ProtectSystem=strict", "ProtectHome=yes", "StateDirectory=", "Environment=HOME", "After="} {
-		if strings.Contains(service, absent) {
-			t.Errorf("user service has %q", absent)
+	node := RenderNodeUnit(l)
+	for _, want := range []string{"User=underpass-bots\n", "Environment=HOME=/var/lib/underpass-node\n", "StateDirectory=underpass-node\n", "ReadWritePaths=/var/lib/underpass-node\n", "ReadWritePaths=/var/lib/underpass-bots\n", "ProtectSystem=strict\n"} {
+		if !strings.Contains(node, want) {
+			t.Errorf("system node unit lacks %q:\n%s", want, node)
 		}
 	}
-	alert := RenderAlertUnit(l)
-	if strings.Contains(alert, "User=") || strings.Contains(alert, "ProtectSystem") || !strings.Contains(alert, "alert --unit %i\n") {
-		t.Errorf("user alert unit:\n%s", alert)
-	}
-	if env := RenderEnv(l, ""); !strings.Contains(env, "UNDERPASS_SYSTEMD_USER=1\n") {
-		t.Errorf("user env:\n%s", env)
+	custom := l
+	custom.StateDir = "/srv/ub"
+	if s := RenderService(custom); strings.Contains(s, "StateDirectory=") || !strings.Contains(s, "ReadWritePaths=/srv/ub\n") {
+		t.Errorf("custom state dir:\n%s", s)
 	}
 }
 
-func TestInstallAndUninstallUserModeUnderADestDir(t *testing.T) {
+func TestInstallAndUninstallUserLayoutUnderADestDir(t *testing.T) {
 	dest := t.TempDir()
-	l := DefaultLayout(true, "", "/home/ana")
+	l := DefaultLayout(false, "", "/home/ana")
 	l.DestDir = dest
 	l.AXLRBin = "/opt/axlr-tui"
+	cp, node := sources(t)
 	runner := &recorder{}
-	installer := Installer{Layout: l, Source: source(t), Key: "sk-or-test", Runner: runner}
+	installer := Installer{Layout: l, Source: cp, NodeSource: node, Key: "sk-or-test", Runner: runner}
 	report, err := installer.Install()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Mode != "user" || report.Binary != "/home/ana/.local/bin/underpass-bots" || len(report.Units) != 2 || report.Socket != l.SocketPath() {
+	if report.Mode != "user" || report.Binary != "/home/ana/.local/bin/underpass-bots" || report.NodeBinary != "/home/ana/.local/bin/underpass-node" || len(report.Units) != 2 || report.Socket != l.SocketPath() {
 		t.Errorf("report = %+v", report)
 	}
-	bin := filepath.Join(dest, "home/ana/.local/bin/underpass-bots")
-	if info, err := os.Stat(bin); err != nil || info.Mode().Perm() != 0o755 || mustRead(t, bin) != "#!/bin/sh\necho binary\n" {
-		t.Errorf("binary: %v", err)
+	for _, bin := range []string{"underpass-bots", "underpass-node"} {
+		path := filepath.Join(dest, "home/ana/.local/bin", bin)
+		if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o755 || !strings.Contains(mustRead(t, path), bin) {
+			t.Errorf("binary %s: %v", bin, err)
+		}
 	}
 	service := mustRead(t, filepath.Join(dest, "home/ana/.config/systemd/user/underpass-bots.service"))
 	if service != RenderService(l) || strings.Contains(service, dest) {
 		t.Errorf("service unit:\n%s", service)
 	}
-	if mustRead(t, filepath.Join(dest, "home/ana/.config/systemd/user/underpass-bots-alert@.service")) != RenderAlertUnit(l) {
-		t.Error("alert unit differs")
+	if mustRead(t, filepath.Join(dest, "home/ana/.config/systemd/user/underpass-node.service")) != RenderNodeUnit(l) {
+		t.Error("node unit differs")
 	}
 	envPath := filepath.Join(dest, "home/ana/.config/underpass-bots/env")
 	if info, err := os.Stat(envPath); err != nil || info.Mode().Perm() != 0o600 {
 		t.Errorf("env file: %v", err)
 	}
-	if env := mustRead(t, envPath); !strings.Contains(env, "OPENROUTER_API_KEY=sk-or-test\n") || !strings.Contains(env, "UNDERPASS_AXLR_BIN=/opt/axlr-tui\n") || !strings.Contains(env, "UNDERPASS_SYSTEMD_USER=1\n") {
+	if env := mustRead(t, envPath); !strings.Contains(env, "OPENROUTER_API_KEY=sk-or-test\n") || !strings.Contains(env, "UNDERPASS_AXLR_BIN=/opt/axlr-tui\n") {
 		t.Errorf("env:\n%s", env)
 	}
-	if _, err := os.Stat(filepath.Join(dest, "home/ana/.local/state/underpass-bots")); err != nil {
-		t.Error("state dir missing")
+	for _, dir := range []string{"home/ana/.local/state/underpass-bots", "home/ana/.local/state/underpass-node"} {
+		if _, err := os.Stat(filepath.Join(dest, dir)); err != nil {
+			t.Errorf("%s missing", dir)
+		}
 	}
 	if strings.Join(runner.calls, "\n") != "systemctl --user daemon-reload" {
 		t.Errorf("commands = %v", runner.calls)
 	}
-	if len(report.NextSteps) < 3 || !strings.Contains(strings.Join(report.NextSteps, "\n"), "systemctl --user enable --now underpass-bots.service") {
+	steps := strings.Join(report.NextSteps, "\n")
+	if !strings.Contains(steps, "systemctl --user enable --now underpass-bots.service underpass-node.service") || !strings.Contains(steps, "loginctl enable-linger") {
 		t.Errorf("next steps = %v", report.NextSteps)
 	}
 
@@ -196,10 +200,10 @@ func TestInstallAndUninstallUserModeUnderADestDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(removed.Units) != 3 || len(removed.NextSteps) != 1 {
+	if len(removed.Units) != 4 || len(removed.NextSteps) != 1 {
 		t.Errorf("uninstall report = %+v", removed)
 	}
-	for _, gone := range []string{"home/ana/.local/bin/underpass-bots", "home/ana/.config/systemd/user/underpass-bots.service", "home/ana/.config/systemd/user/underpass-bots-alert@.service"} {
+	for _, gone := range []string{"home/ana/.local/bin/underpass-bots", "home/ana/.local/bin/underpass-node", "home/ana/.config/systemd/user/underpass-bots.service", "home/ana/.config/systemd/user/underpass-node.service"} {
 		if _, err := os.Stat(filepath.Join(dest, gone)); err == nil {
 			t.Errorf("%s still there", gone)
 		}
@@ -207,10 +211,9 @@ func TestInstallAndUninstallUserModeUnderADestDir(t *testing.T) {
 	if _, err := os.Stat(envPath); err != nil {
 		t.Error("env file removed without --purge")
 	}
-	if strings.Join(runner.calls, "\n") != "systemctl --user disable --now underpass-bots.service\nsystemctl --user daemon-reload" {
+	if strings.Join(runner.calls, "\n") != "systemctl --user disable --now underpass-node.service\nsystemctl --user disable --now underpass-bots.service\nsystemctl --user daemon-reload" {
 		t.Errorf("commands = %v", runner.calls)
 	}
-	// Uninstall again: nothing to remove, no error. Purge drops the rest.
 	if _, err := installer.Uninstall(false); err != nil {
 		t.Error(err)
 	}
@@ -218,24 +221,20 @@ func TestInstallAndUninstallUserModeUnderADestDir(t *testing.T) {
 	if err != nil || len(purged.NextSteps) != 0 {
 		t.Errorf("purge: %v %+v", err, purged)
 	}
-	if _, err := os.Stat(envPath); err == nil {
-		t.Error("env file kept after purge")
-	}
-	if _, err := os.Stat(filepath.Dir(envPath)); err == nil {
-		t.Error("the env file's directory kept after purge")
-	}
-	if _, err := os.Stat(filepath.Join(dest, "home/ana/.local/state")); err == nil {
-		t.Log("state parent kept (fine)")
+	for _, gone := range []string{envPath, filepath.Dir(envPath), filepath.Join(dest, "home/ana/.local/state/underpass-bots"), filepath.Join(dest, "home/ana/.local/state/underpass-node")} {
+		if _, err := os.Stat(gone); err == nil {
+			t.Errorf("%s kept after purge", gone)
+		}
 	}
 }
 
-func TestInstallSystemModeUnderADestDir(t *testing.T) {
+func TestInstallSystemLayoutUnderADestDir(t *testing.T) {
 	dest := t.TempDir()
-	l := DefaultLayout(false, "", "")
+	l := DefaultLayout(true, "", "")
 	l.DestDir = dest
+	cp, node := sources(t)
 	runner := &recorder{}
-	installer := Installer{Layout: l, Source: source(t), Runner: runner, CreateUser: true}
-	report, err := installer.Install()
+	report, err := (Installer{Layout: l, Source: cp, NodeSource: node, Runner: runner, CreateUser: true}).Install()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,47 +248,48 @@ func TestInstallSystemModeUnderADestDir(t *testing.T) {
 	if env := mustRead(t, filepath.Join(dest, "etc/underpass-bots/env")); !strings.Contains(env, "#OPENROUTER_API_KEY=") {
 		t.Errorf("env:\n%s", env)
 	}
-	if _, err := os.Stat(filepath.Join(dest, "usr/local/bin/underpass-bots")); err != nil {
-		t.Error(err)
+	for _, bin := range []string{"usr/local/bin/underpass-bots", "usr/local/bin/underpass-node"} {
+		if _, err := os.Stat(filepath.Join(dest, bin)); err != nil {
+			t.Error(err)
+		}
 	}
 	calls := strings.Join(runner.calls, "\n")
-	// The service user does not exist on a test machine: useradd is asked for.
 	if !strings.Contains(calls, "useradd --system --home-dir /var/lib/underpass-bots --no-create-home --shell /usr/sbin/nologin --groups systemd-journal underpass-bots") || !strings.HasSuffix(calls, "systemctl daemon-reload") {
 		t.Errorf("commands = %v", runner.calls)
 	}
-	// Without the user the chown is deferred to a next step.
 	joined := strings.Join(report.NextSteps, "\n")
-	if !strings.Contains(joined, "chown underpass-bots:") || !strings.Contains(joined, "systemctl enable --now underpass-bots.service") {
+	if !strings.Contains(joined, "chown underpass-bots: /var/lib/underpass-bots") || !strings.Contains(joined, "chown underpass-bots: /var/lib/underpass-node") || !strings.Contains(joined, "systemctl enable --now underpass-bots.service underpass-node.service") || strings.Contains(joined, "linger") {
 		t.Errorf("next steps = %v", report.NextSteps)
 	}
 }
 
 func TestInstallerFailures(t *testing.T) {
-	l := DefaultLayout(true, "", "/home/ana")
+	l := DefaultLayout(false, "", "/home/ana")
 	l.DestDir = t.TempDir()
-	if _, err := (Installer{Layout: l}).Install(); err == nil {
-		t.Error("no source accepted")
+	cp, node := sources(t)
+	if _, err := (Installer{Layout: l, Source: cp}).Install(); err == nil {
+		t.Error("no node source accepted")
 	}
-	if _, err := (Installer{Layout: l, Source: "/no/such/binary"}).Install(); err == nil {
+	if _, err := (Installer{Layout: l, Source: "/no/such/binary", NodeSource: node}).Install(); err == nil {
 		t.Error("missing source accepted")
 	}
-	// systemctl failing is reported.
+	if _, err := (Installer{Layout: l, Source: cp, NodeSource: "/no/such/node"}).Install(); err == nil {
+		t.Error("missing node source accepted")
+	}
 	runner := &recorder{fail: map[string]error{"systemctl --user daemon-reload": errors.New("no bus")}}
-	if _, err := (Installer{Layout: l, Source: source(t), Runner: runner}).Install(); err == nil || !strings.Contains(err.Error(), "no bus") {
+	if _, err := (Installer{Layout: l, Source: cp, NodeSource: node, Runner: runner}).Install(); err == nil || !strings.Contains(err.Error(), "no bus") {
 		t.Errorf("daemon-reload failure: %v", err)
 	}
-	if _, err := (Installer{Layout: l, Source: source(t), Runner: runner}).Uninstall(false); err == nil || !strings.Contains(err.Error(), "no bus") {
+	if _, err := (Installer{Layout: l, Source: cp, NodeSource: node, Runner: runner}).Uninstall(false); err == nil || !strings.Contains(err.Error(), "no bus") {
 		t.Errorf("uninstall daemon-reload failure: %v", err)
 	}
-	// useradd failing is reported in system mode.
-	sys := DefaultLayout(false, "", "")
+	sys := DefaultLayout(true, "", "")
 	sys.DestDir = t.TempDir()
 	failing := &recorder{fail: map[string]error{"useradd": errors.New("not root")}}
-	if _, err := (Installer{Layout: sys, Source: source(t), Runner: failing, CreateUser: true}).Install(); err == nil || !strings.Contains(err.Error(), "not root") {
+	if _, err := (Installer{Layout: sys, Source: cp, NodeSource: node, Runner: failing, CreateUser: true}).Install(); err == nil || !strings.Contains(err.Error(), "not root") {
 		t.Errorf("useradd failure: %v", err)
 	}
-	// A unit directory that is a file cannot take the units.
-	blocked := DefaultLayout(true, "", "/home/ana")
+	blocked := DefaultLayout(false, "", "/home/ana")
 	blocked.DestDir = t.TempDir()
 	if err := os.MkdirAll(filepath.Dir(blocked.OnDisk(blocked.UnitDir)), 0o755); err != nil {
 		t.Fatal(err)
@@ -297,24 +297,22 @@ func TestInstallerFailures(t *testing.T) {
 	if err := os.WriteFile(blocked.OnDisk(blocked.UnitDir), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (Installer{Layout: blocked, Source: source(t)}).Install(); err == nil {
+	if _, err := (Installer{Layout: blocked, Source: cp, NodeSource: node}).Install(); err == nil {
 		t.Error("units written under a file")
 	}
-	if _, err := (Installer{Layout: blocked, Source: source(t)}).Uninstall(false); err == nil {
+	if _, err := (Installer{Layout: blocked, Source: cp, NodeSource: node}).Uninstall(false); err == nil {
 		t.Error("uninstall removed a unit under a file")
 	}
-	// An env path that is a directory is an error, not a silent skip.
-	envDir := DefaultLayout(true, "", "/home/ana")
+	envDir := DefaultLayout(false, "", "/home/ana")
 	envDir.DestDir = t.TempDir()
 	if err := os.MkdirAll(envDir.OnDisk(envDir.EnvFile), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (Installer{Layout: envDir, Source: source(t)}).Install(); err != nil {
+	if _, err := (Installer{Layout: envDir, Source: cp, NodeSource: node}).Install(); err != nil {
 		t.Errorf("an existing env path is kept: %v", err)
 	}
-	// Purge failing on a read-only parent is reported.
-	if _, err := (Installer{Layout: Layout{User: true, DestDir: "/proc/underpass-nope", EnvFile: "/env", StateDir: "/state", UnitDir: "/u", Prefix: "/p"}}).Uninstall(true); err == nil {
-		t.Log("purge under /proc did not fail (ok on some systems)")
+	if currentUser() == "" {
+		t.Error("currentUser empty")
 	}
 }
 
