@@ -1,0 +1,39 @@
+use std::path::PathBuf;
+
+use crate::application::{EventFeed, PanelConfig};
+use crate::domain::{BotForm, BotId, Decision, IdempotencyKey, NodeId, TaskId};
+
+/// What the panel asks the outside world to do after a message: a call
+/// to the control plane, a dialog, the clipboard. The update logic only
+/// returns effects; the runtime carries them out.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Effect {
+    Refresh {
+        generation: u64,
+    },
+    LoadTask(TaskId),
+    FollowBot(BotId, EventFeed),
+    Mint {
+        node_id: String,
+        labels: String,
+        ttl: String,
+    },
+    Revoke(NodeId),
+    RegisterForm(BotForm),
+    PickFile,
+    RegisterFile(PathBuf),
+    Enable(BotId),
+    Pause(BotId),
+    Submit {
+        bot: BotId,
+        objective: String,
+        key: IdempotencyKey,
+    },
+    Cancel(TaskId),
+    Decide(TaskId, Decision),
+    Copy(String),
+    Connect {
+        config: PanelConfig,
+        save: bool,
+    },
+}
