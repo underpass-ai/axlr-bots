@@ -2,3 +2,5 @@
 //! clock, files and dialogs, the settings file, and the in-memory fakes.
 
 pub mod fake;
+pub mod http;
+pub mod system;
