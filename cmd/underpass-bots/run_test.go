@@ -326,7 +326,8 @@ func TestTaskReconcileFailsWhatACrashLeftRunning(t *testing.T) {
 	}
 	code, task := c.json("task", "get", "task-old")
 	reason, _ := task["failureReason"].(string)
-	if code != exitOK || task["status"] != "Failed" || !strings.HasPrefix(reason, "reconciled: the control plane found it Running after 1h0m0s; the process that ran it is gone") {
+	// The age is read from the wall clock: a slow disk may make it 1h0m1s.
+	if code != exitOK || task["status"] != "Failed" || !strings.HasPrefix(reason, "reconciled: the control plane found it Running after 1h0m") || !strings.HasSuffix(reason, "; the process that ran it is gone") {
 		t.Errorf("old task: %d %v", code, task)
 	}
 	code, execution := c.json("execution", "get", "exec-task-old")
