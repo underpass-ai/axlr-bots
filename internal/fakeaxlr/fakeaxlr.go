@@ -18,6 +18,9 @@ type Options struct {
 	// NoPolicy makes --help omit -policy, like a build older than the
 	// execution policy.
 	NoPolicy bool
+	// Correlation makes --help advertise -correlation and -budget, like a
+	// build that takes the contract's reserved fields.
+	Correlation bool
 	// Marker is a file the approval-flow scenario creates when, and only
 	// when, it runs the write after --decide approve.
 	Marker string
@@ -30,7 +33,7 @@ const resultCompleted = `{"type":"result","session":"sess-1","result":{"schema":
 func Write(dir string, options Options) (bin, argsFile string, err error) {
 	argsFile = filepath.Join(dir, "args.txt")
 	script := "#!/bin/sh\n" +
-		"for a in \"$@\"; do if [ \"$a\" = --help ]; then echo '  -exec string' >&2; " + helpPolicy(options.NoPolicy) + "exit 0; fi; done\n" +
+		"for a in \"$@\"; do if [ \"$a\" = --help ]; then echo '  -exec string' >&2; " + helpPolicy(options.NoPolicy) + helpCorrelation(options.Correlation) + "exit 0; fi; done\n" +
 		"printf '%s\\n' \"$@\" > '" + argsFile + "'\n" +
 		body(options) + "\n"
 	bin = filepath.Join(dir, "fake-axlr-tui")
@@ -42,6 +45,13 @@ func helpPolicy(noPolicy bool) string {
 		return ""
 	}
 	return "echo '  -policy string' >&2; "
+}
+
+func helpCorrelation(correlation bool) string {
+	if !correlation {
+		return ""
+	}
+	return "echo '  -correlation string' >&2; echo '  -budget string' >&2; "
 }
 
 func body(options Options) string {

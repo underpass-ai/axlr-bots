@@ -48,7 +48,7 @@ func TestWebhookFireIsIdempotentOnRedelivery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !first.Created || first.Task.Objective() != "Handle event deploy for web" || first.Task.Trigger().Name != "deploy" || string(first.Task.Input()) != string(body) {
+	if !first.Created || first.Task.Objective() != "Handle event deploy for web" || first.Task.Trigger().Name != "deploy" || string(first.Task.Input()) != `{"type":"deploy","service":"web"}` {
 		t.Errorf("first = %+v", first.Task.Snapshot())
 	}
 	if !strings.HasPrefix(first.IdempotencyKey.String(), "webhook:deploy:") || first.Task.IdempotencyKey() != first.IdempotencyKey {

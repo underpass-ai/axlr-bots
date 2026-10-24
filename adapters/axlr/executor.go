@@ -58,8 +58,8 @@ type Executor struct {
 	// WaitDelay is how long after SIGTERM the process is killed.
 	WaitDelay time.Duration
 
-	detect          sync.Once
-	policySupported bool
+	detect   sync.Once
+	features features
 }
 
 // NewExecutor runs binary (axlr-tui on PATH when empty) with its traces
@@ -88,12 +88,19 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 	if e.Mode != "" {
 		args = append(args, "--mode", e.Mode)
 	}
+	// The correlation ids and the budget go with the run when the binary
+	// takes them (docs/runtime-contract.md, the reserved fields); the
+	// correlation file is written either way and the record says whether
+	// the runtime carried the ids.
+	correlation, err := e.prepareCorrelation(ctx, request.ExecutionID, request.TaskID, request.BotID, request.CorrelationID, request.Budgets, e.timeout(request.Timeout), &policy)
+	if err != nil {
+		return application.ExecutionReport{}, err
+	}
 	args = append(args, policy.args...)
-	// TODO(runtime-contract): pass request.Budgets as the budget and the
-	// ids as the correlation once axlr-tui takes them (reserved fields of
-	// docs/runtime-contract.md, Phase 2 of the master plan).
+	args = append(args, correlation.args...)
 	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout)
 	report.Policy = &policy.record
+	correlate(&report, correlation)
 	return report, err
 }
 
@@ -113,17 +120,25 @@ func (e *Executor) Decide(ctx context.Context, request application.DecisionReque
 	if request.CallID != "" {
 		args = append(args, "--call", request.CallID)
 	}
+	correlation, err := e.prepareCorrelation(ctx, request.ExecutionID, request.TaskID, request.BotID, request.CorrelationID, domain.Budgets{}, e.timeout(request.Timeout), &policy)
+	if err != nil {
+		return application.ExecutionReport{}, err
+	}
 	args = append(args, policy.args...)
+	args = append(args, correlation.args...)
 	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout)
 	report.Policy = &policy.record
+	correlate(&report, correlation)
 	return report, err
 }
 
 // preparedPolicy is the policy of one run as the command line carries
-// it: the flags, the approval level and the record for the execution.
+// it: the flags, the approval level, the object written and the record
+// for the execution.
 type preparedPolicy struct {
 	args    []string
 	approve string
+	object  policyObject
 	record  domain.PolicyRecord
 }
 
@@ -148,6 +163,7 @@ func (e *Executor) preparePolicy(ctx context.Context, execution domain.Execution
 	enforced := e.supportsPolicy(ctx)
 	prepared := preparedPolicy{
 		approve: e.approve(),
+		object:  object,
 		record:  domain.PolicyRecord{Level: parsed.String(), RuntimeLevel: object.Level, Enforced: enforced, Path: path},
 	}
 	if enforced {

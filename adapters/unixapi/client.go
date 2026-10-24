@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -168,10 +169,16 @@ func (c *Client) NextAssignment(ctx context.Context, node domain.NodeID, wait ti
 	return assignment, true, nil
 }
 
-// RenewLease extends the node's lease on an execution.
+// RenewLease extends the node's lease on an execution. A refusal of the
+// lease itself (the execution has ended, or is another node's: a state
+// error) is application.ErrLeaseLost, so the node stops the run.
 func (c *Client) RenewLease(ctx context.Context, node domain.NodeID, execution domain.ExecutionID) (time.Time, error) {
 	var lease nodeproto.LeaseMessage
 	err := c.call(ctx, http.MethodPost, "/v1/nodes/"+url.PathEscape(node.String())+"/executions/"+url.PathEscape(execution.String())+"/lease", nil, &lease)
+	var remote RemoteError
+	if errors.As(err, &remote) && remote.Kind == KindState {
+		return time.Time{}, fmt.Errorf("%w: %s", application.ErrLeaseLost, remote.Message)
+	}
 	return lease.LeaseUntil, err
 }
 

@@ -7,10 +7,11 @@ import "github.com/underpass-ai/axlr-bots/domain"
 // node kept the trace (a reference on the node, not a file the control
 // plane can open).
 type ReportMessage struct {
-	Outcome        string               `json:"outcome"`
-	Result         domain.Result        `json:"result"`
-	Usage          domain.Usage         `json:"usage"`
-	FailureReason  string               `json:"failureReason,omitempty"`
-	TraceReference string               `json:"traceReference,omitempty"`
-	Policy         *domain.PolicyRecord `json:"policy,omitempty"`
+	Outcome        string                    `json:"outcome"`
+	Result         domain.Result             `json:"result"`
+	Usage          domain.Usage              `json:"usage"`
+	FailureReason  string                    `json:"failureReason,omitempty"`
+	TraceReference string                    `json:"traceReference,omitempty"`
+	Policy         *domain.PolicyRecord      `json:"policy,omitempty"`
+	Correlation    *domain.CorrelationRecord `json:"correlation,omitempty"`
 }

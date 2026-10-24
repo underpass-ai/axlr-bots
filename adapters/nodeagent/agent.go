@@ -22,6 +22,7 @@ type Executor interface {
 	application.RuntimeExecutor
 	application.DecisionExecutor
 	SupportsPolicy(ctx context.Context) bool
+	SupportsCorrelation(ctx context.Context) bool
 	Version(ctx context.Context) string
 }
 
@@ -110,41 +111,45 @@ func (a Agent) register(ctx context.Context, id domain.NodeID) error {
 	}
 	registration := application.NodeRegistration{
 		ID: id.String(), HostName: host, Labels: a.Options.Labels,
-		Capabilities: domain.NodeCapabilities{AXLRVersion: a.Executor.Version(ctx), PolicySupported: a.Executor.SupportsPolicy(ctx)},
+		Capabilities: domain.NodeCapabilities{AXLRVersion: a.Executor.Version(ctx), PolicySupported: a.Executor.SupportsPolicy(ctx), CorrelationSupported: a.Executor.SupportsCorrelation(ctx)},
 	}
 	node, err := a.Transport.Register(ctx, registration)
 	if err != nil {
 		return err
 	}
-	a.Options.log().Printf("node: registered as %s (%s), axlr %q policy %v", node.ID, node.HostName, registration.Capabilities.AXLRVersion, registration.Capabilities.PolicySupported)
+	a.Options.log().Printf("node: registered as %s (%s), axlr %q policy %v correlation %v", node.ID, node.HostName, registration.Capabilities.AXLRVersion, registration.Capabilities.PolicySupported, registration.Capabilities.CorrelationSupported)
 	return nil
 }
 
 // carry runs one assignment, renewing the lease meanwhile, and reports.
+// A lease the control plane refuses (the execution was cancelled, or
+// reconciled away) stops the run: its report would be dropped anyway.
 func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment application.Assignment) {
 	logger := a.Options.log()
 	logger.Printf("node: execution %s (%s) assigned, lease until %s", assignment.ExecutionID, assignment.Kind, assignment.LeaseUntil.Format(time.RFC3339))
-	runCtx, stopRenewing := context.WithCancel(ctx)
-	go a.renew(runCtx, id, assignment.ExecutionID)
+	runCtx, stopRun := context.WithCancel(ctx)
+	defer stopRun()
+	go a.renew(runCtx, id, assignment.ExecutionID, stopRun)
 	var report application.ExecutionReport
 	var err error
 	switch {
 	case assignment.Run != nil:
-		report, err = a.Executor.Execute(ctx, *assignment.Run)
+		report, err = a.Executor.Execute(runCtx, *assignment.Run)
 	case assignment.Decide != nil:
-		report, err = a.Executor.Decide(ctx, *assignment.Decide)
+		report, err = a.Executor.Decide(runCtx, *assignment.Decide)
 	default:
 		err = errors.New("the assignment carries neither a run nor a decision")
 	}
-	stopRenewing()
+	stopRun()
 	if err != nil {
-		report = application.ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "node " + id.String() + ": " + err.Error(), Policy: report.Policy}
+		report = application.ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "node " + id.String() + ": " + err.Error(), Policy: report.Policy, Correlation: report.Correlation}
 	}
 	a.report(id, assignment.ExecutionID, report)
 }
 
-// renew extends the lease until ctx ends.
-func (a Agent) renew(ctx context.Context, id domain.NodeID, execution domain.ExecutionID) {
+// renew extends the lease until ctx ends; a lease the control plane
+// refuses for good (application.ErrLeaseLost) stops the run.
+func (a Agent) renew(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, stopRun context.CancelFunc) {
 	ticker := time.NewTicker(a.Options.renew())
 	defer ticker.Stop()
 	for {
@@ -154,6 +159,12 @@ func (a Agent) renew(ctx context.Context, id domain.NodeID, execution domain.Exe
 		case <-ticker.C:
 			if _, err := a.Transport.RenewLease(ctx, id, execution); err != nil && ctx.Err() == nil {
 				a.Options.log().Printf("node: renew lease of %s: %v", execution, err)
+				if errors.Is(err, application.ErrLeaseLost) {
+					logger := a.Options.log()
+					logger.Printf("node: execution %s: the lease is lost, stopping the run", execution)
+					stopRun()
+					return
+				}
 			}
 		}
 	}

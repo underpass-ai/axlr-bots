@@ -22,7 +22,7 @@ func FromAssignment(a application.Assignment) AssignmentMessage {
 	if a.Decide != nil {
 		d := a.Decide
 		m.Decide = &DecideMessage{
-			BotID: d.BotID.String(), SessionID: d.SessionID, CallID: d.CallID, Decision: d.Decision, Level: d.Level.String(),
+			TaskID: d.TaskID.String(), BotID: d.BotID.String(), CorrelationID: d.CorrelationID.String(), SessionID: d.SessionID, CallID: d.CallID, Decision: d.Decision, Level: d.Level.String(),
 			AllowedTools: d.AllowedTools, ToolRules: d.ToolRules.Snapshot(), TimeoutSeconds: int(d.Timeout / time.Second),
 		}
 	}
@@ -71,7 +71,7 @@ func ToAssignment(m AssignmentMessage) (application.Assignment, error) {
 			return application.Assignment{}, err
 		}
 		a.Decide = &application.DecisionRequest{
-			ExecutionID: executionID, BotID: botID, SessionID: d.SessionID, CallID: d.CallID, Decision: d.Decision,
+			ExecutionID: executionID, TaskID: domain.TaskID(d.TaskID), BotID: botID, CorrelationID: domain.CorrelationID(d.CorrelationID), SessionID: d.SessionID, CallID: d.CallID, Decision: d.Decision,
 			Level: level, AllowedTools: tools.Names(), ToolRules: rules, Timeout: time.Duration(d.TimeoutSeconds) * time.Second,
 		}
 		if err := a.Decide.Validate(); err != nil {
@@ -101,7 +101,7 @@ func policyOf(level string, allowed []string, rules domain.ToolRulesSnapshot) (d
 
 // FromReport renders a report as a message.
 func FromReport(r application.ExecutionReport) ReportMessage {
-	return ReportMessage{Outcome: r.Outcome.String(), Result: r.Result, Usage: r.Usage, FailureReason: r.FailureReason, TraceReference: r.TracePath, Policy: r.Policy}
+	return ReportMessage{Outcome: r.Outcome.String(), Result: r.Result, Usage: r.Usage, FailureReason: r.FailureReason, TraceReference: r.TracePath, Policy: r.Policy, Correlation: r.Correlation}
 }
 
 // ToReport reads a report message back.
@@ -116,5 +116,5 @@ func ToReport(m ReportMessage) (application.ExecutionReport, error) {
 	if err := m.Usage.Validate(); err != nil {
 		return application.ExecutionReport{}, err
 	}
-	return application.ExecutionReport{Outcome: outcome, Result: m.Result, Usage: m.Usage, FailureReason: m.FailureReason, TracePath: m.TraceReference, Policy: m.Policy}, nil
+	return application.ExecutionReport{Outcome: outcome, Result: m.Result, Usage: m.Usage, FailureReason: m.FailureReason, TracePath: m.TraceReference, Policy: m.Policy, Correlation: m.Correlation}, nil
 }

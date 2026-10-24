@@ -137,7 +137,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 			sessionID = previous.Result().SessionID
 		}
 		assignment.Decide = &DecisionRequest{
-			ExecutionID: execution.ID(), BotID: bot.ID(), SessionID: sessionID, CallID: pending.CallID, Decision: decision,
+			ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), CorrelationID: task.CorrelationID(), SessionID: sessionID, CallID: pending.CallID, Decision: decision,
 			Level: bot.Level(), AllowedTools: bot.AllowedTools().Names(), ToolRules: bot.ToolRules(), Timeout: timeout,
 		}
 		return assignment, nil

@@ -35,6 +35,13 @@ func TestHelperProcess(t *testing.T) {
 			if os.Getenv("FAKE_AXLR_NO_POLICY") == "" {
 				fmt.Fprintln(os.Stderr, "  -policy string\n    \twith --exec or --decide: a JSON file with the execution's policy")
 			}
+			if os.Getenv("FAKE_AXLR_CORRELATION") != "" {
+				fmt.Fprintln(os.Stderr, "  -correlation string\n    \ta JSON file with the execution's correlation ids")
+				fmt.Fprintln(os.Stderr, "  -budget string\n    \ta JSON file with the execution's budget")
+			}
+			if os.Getenv("FAKE_AXLR_EXECUTION") != "" {
+				fmt.Fprintln(os.Stderr, "  -execution string\n    \ta JSON file with the execution's policy, budget and correlation")
+			}
 			os.Exit(0)
 		}
 	}

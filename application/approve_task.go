@@ -104,15 +104,17 @@ func (uc ApproveTask) Execute(ctx context.Context, id domain.TaskID, decision st
 	}
 
 	report, runErr := uc.deps.Decisions.Decide(ctx, DecisionRequest{
-		ExecutionID:  executionID,
-		BotID:        bot.ID(),
-		SessionID:    sessionID,
-		CallID:       pending.CallID,
-		Decision:     decision,
-		Level:        bot.Level(),
-		AllowedTools: bot.AllowedTools().Names(),
-		ToolRules:    bot.ToolRules(),
-		Timeout:      bot.Budgets().TaskTimeoutOr(DefaultTaskTimeout),
+		ExecutionID:   executionID,
+		TaskID:        task.ID(),
+		BotID:         bot.ID(),
+		CorrelationID: task.CorrelationID(),
+		SessionID:     sessionID,
+		CallID:        pending.CallID,
+		Decision:      decision,
+		Level:         bot.Level(),
+		AllowedTools:  bot.AllowedTools().Names(),
+		ToolRules:     bot.ToolRules(),
+		Timeout:       bot.Budgets().TaskTimeoutOr(DefaultTaskTimeout),
 	})
 	if err := uc.set.settle(ctx, "task.decide", bot, &task, &execution, report, runErr, now); err != nil {
 		return ApproveTaskResult{}, err

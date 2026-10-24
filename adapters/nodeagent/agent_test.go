@@ -23,6 +23,7 @@ var _ Executor = (*axlr.Executor)(nil)
 
 type fixture struct {
 	dir     string
+	deps    application.Dependencies
 	socket  string
 	client  *unixapi.Client
 	cancel  context.CancelFunc
@@ -72,7 +73,7 @@ func control(t *testing.T, scenario string) *fixture {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Cleanup(func() { cancel(); <-served })
-	return &fixture{dir: dir, socket: socket, client: unixapi.NewClient(socket), cancel: cancel, served: served, logs: &syncBuffer{}, marker: filepath.Join(dir, "marker"), nodeDir: filepath.Join(dir, "node")}
+	return &fixture{dir: dir, deps: deps, socket: socket, client: unixapi.NewClient(socket), cancel: cancel, served: served, logs: &syncBuffer{}, marker: filepath.Join(dir, "marker"), nodeDir: filepath.Join(dir, "node")}
 }
 
 // agent builds the node agent with the fake axlr scenario.
@@ -333,4 +334,58 @@ func TestAgentHeartbeatsWhileItRuns(t *testing.T) {
 		t.Errorf("no heartbeat while running: %s then %s", before.LastSeenAt, after.LastSeenAt)
 	}
 	waitFor(t, f.client, submitted.Task.ID, "Completed")
+}
+
+func TestAgentStopsARunWhoseLeaseIsLost(t *testing.T) {
+	f := control(t, "completed")
+	ctx := context.Background()
+	agent := f.agent(t, "slow")
+	agentCtx, stop := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- agent.Run(agentCtx) }()
+	if _, err := f.client.RegisterBot(ctx, application.BotDefinition{Tenant: "t", Name: "bot", Owner: "o", Mission: "do what each task asks", AllowedTools: []string{"local_read"}, Budgets: application.BudgetsDefinition{TaskTimeoutSeconds: 30}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.client.EnableBot(ctx, "bot"); err != nil {
+		t.Fatal(err)
+	}
+	submitted, err := f.client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "take a while", IdempotencyKey: "k-slow"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	running := waitFor(t, f.client, submitted.Task.ID, "Running")
+	node, _ := f.client.GetNode(ctx, "web-1")
+	if node.Capabilities.CorrelationSupported {
+		t.Error("the stand-in does not take the correlation")
+	}
+	// The operator cancels the task while the node runs it: the next lease
+	// renewal is refused, the agent stops the run and its report is dropped.
+	cancelled, err := application.NewCancelTask(f.deps).Execute(ctx, domain.TaskID(submitted.Task.ID))
+	if err != nil || cancelled.Execution == nil || cancelled.Execution.NodeID() != "web-1" {
+		t.Fatalf("cancel: %v %+v", err, cancelled)
+	}
+	for _, want := range []string{"the lease is lost, stopping the run", "(accepted false)"} {
+		deadline := time.Now().Add(5 * time.Second)
+		for !strings.Contains(f.logs.String(), want) {
+			if time.Now().After(deadline) {
+				t.Errorf("logs lack %q:\n%s", want, f.logs.String())
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	task, _ := f.client.GetTask(ctx, submitted.Task.ID)
+	execution, _ := f.client.GetExecution(ctx, running.ExecutionIDs[0])
+	if task.Status != "Cancelled" || execution.Outcome != "Cancelled" || execution.Correlation == nil || execution.Correlation.TraceID != task.CorrelationID {
+		t.Errorf("task %s, execution %+v", task.Status, execution)
+	}
+	stop()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Error(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("agent did not stop")
+	}
 }

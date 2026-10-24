@@ -17,15 +17,17 @@ const (
 // or deny, optionally checking the call id, under a new execution and
 // the same policy the first execution ran under.
 type DecisionRequest struct {
-	ExecutionID  domain.ExecutionID
-	BotID        domain.BotID
-	SessionID    string
-	CallID       string
-	Decision     string
-	Level        domain.AutonomyLevel
-	AllowedTools []string
-	ToolRules    domain.ToolRules
-	Timeout      time.Duration
+	ExecutionID   domain.ExecutionID
+	TaskID        domain.TaskID
+	BotID         domain.BotID
+	CorrelationID domain.CorrelationID
+	SessionID     string
+	CallID        string
+	Decision      string
+	Level         domain.AutonomyLevel
+	AllowedTools  []string
+	ToolRules     domain.ToolRules
+	Timeout       time.Duration
 }
 
 // Validate checks the request names a session and a known decision.
