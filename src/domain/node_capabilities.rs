@@ -11,4 +11,8 @@ pub struct NodeCapabilities {
     pub policy_supported: bool,
     #[serde(default)]
     pub correlation_supported: bool,
+    /// A node that runs only the bots placed on it by name or label, such
+    /// as an agent beside a service in a pod.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub dedicated: bool,
 }

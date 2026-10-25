@@ -39,9 +39,11 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             pill(Tone::of_node(n.status), n.status.name(), tokens)
         }),
         table::column(bold("Node"), move |n: &'a Node| -> El<'a> {
-            column![bold(n.id.to_string()), muted(n.host_name.clone(), tokens)]
-                .spacing(2)
-                .into()
+            let mut name = row![bold(n.id.to_string())].spacing(8).align_y(Alignment::Center);
+            if n.capabilities.dedicated {
+                name = name.push(chip("dedicated", tokens));
+            }
+            column![name, muted(n.host_name.clone(), tokens)].spacing(2).into()
         })
         .width(Length::FillPortion(2)),
         table::column(bold("Labels"), move |n: &'a Node| -> El<'a> {

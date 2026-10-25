@@ -93,6 +93,12 @@ mod tests {
         )
         .unwrap();
         assert!(minimal.labels.is_empty() && minimal.certificate_not_after.is_none());
+        assert!(!minimal.capabilities.dedicated);
+        let sidecar: Node = serde_json::from_str(
+            r#"{"id":"demo-log-service-0","hostName":"h","capabilities":{"policySupported":true,"correlationSupported":true,"dedicated":true},"status":"Online","registeredAt":"2026-10-24T00:00:00Z","lastSeenAt":"2026-10-24T00:00:00Z"}"#,
+        )
+        .unwrap();
+        assert!(sidecar.capabilities.dedicated);
         assert!(serde_json::from_str::<Node>(r#"{"id":"Bad Id"}"#).is_err());
     }
 

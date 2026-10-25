@@ -91,6 +91,10 @@ fn the_nodes_screen_lists_the_nodes_and_mints_a_token() {
             "Revoke",
         ],
     );
+    if let Some(fleet) = app.fleet.as_mut() {
+        fleet.nodes[1].capabilities.dedicated = true;
+    }
+    shows(&app, &["dedicated"]);
     assert!(matches!(
         messages_of_click(&app, "New host token").as_slice(),
         [Message::MintOpen]

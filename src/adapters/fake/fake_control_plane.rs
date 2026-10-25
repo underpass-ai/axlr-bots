@@ -183,6 +183,7 @@ impl FakeState {
                 axlr_version: "0.14.0".into(),
                 policy_supported: true,
                 correlation_supported: true,
+                dedicated: false,
             },
             status,
             registered_at: now - Duration::days(1),
