@@ -57,6 +57,9 @@ type Executor struct {
 	DefaultTimeout time.Duration
 	// WaitDelay is how long after SIGTERM the process is killed.
 	WaitDelay time.Duration
+	// Relay is the absolute path of axlr-node, whose mcp-relay AXLR
+	// starts to reach the delegation tool; empty wires no tool.
+	Relay string
 
 	detect   sync.Once
 	features features
@@ -80,6 +83,9 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 	policy, err := e.preparePolicy(ctx, request.ExecutionID, request.Level, request.AllowedTools, request.ToolRules)
 	if err != nil {
 		return application.ExecutionReport{}, err
+	}
+	if err := e.wireDelegation(request.ExecutionID, request.Delegation, request.DelegationSocket, &policy); err != nil {
+		return application.ExecutionReport{}, fmt.Errorf("axlr: delegation manifest: %w", err)
 	}
 	args := []string{"--exec", request.PromptText(), "--json", "--approve", policy.approve}
 	if request.Model != "" {
@@ -115,6 +121,9 @@ func (e *Executor) Decide(ctx context.Context, request application.DecisionReque
 	policy, err := e.preparePolicy(ctx, request.ExecutionID, request.Level, request.AllowedTools, request.ToolRules)
 	if err != nil {
 		return application.ExecutionReport{}, err
+	}
+	if err := e.wireDelegation(request.ExecutionID, request.Delegation, request.DelegationSocket, &policy); err != nil {
+		return application.ExecutionReport{}, fmt.Errorf("axlr: delegation manifest: %w", err)
 	}
 	args := []string{"--session", request.SessionID, "--decide", request.Decision, "--json", "--approve", policy.approve}
 	if request.CallID != "" {

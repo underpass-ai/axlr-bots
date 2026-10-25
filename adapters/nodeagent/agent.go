@@ -12,6 +12,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/application"
@@ -34,6 +37,9 @@ type Agent struct {
 	Transport application.NodeTransport
 	Executor  Executor
 	Options   Options
+
+	slots *slots
+	wg    *sync.WaitGroup
 }
 
 // Run registers and serves until ctx ends. A control plane that is not
@@ -51,12 +57,23 @@ func (a Agent) Run(ctx context.Context) error {
 	if err := a.registerUntilUp(ctx, id); err != nil {
 		return err
 	}
+	a.sweepSockets()
+	a.slots, a.wg = newSlots(1), &sync.WaitGroup{}
+	// Every execution in flight is reported before Run returns, as when
+	// the agent ran one at a time.
+	defer a.wg.Wait()
 	// Heartbeats run on their own, so a long execution does not make the
 	// node look dead to the control plane.
 	go a.heartbeat(ctx, id)
 	for ctx.Err() == nil {
+		// One execution works at a time; one that waits for a child it
+		// delegated lends its slot, so the child may run here too.
+		if !a.slots.acquire(ctx) {
+			return nil
+		}
 		assignment, found, err := a.Transport.NextAssignment(ctx, id, a.Options.pollWait())
 		if err != nil {
+			a.slots.release()
 			if ctx.Err() != nil {
 				return nil
 			}
@@ -65,11 +82,55 @@ func (a Agent) Run(ctx context.Context) error {
 			continue
 		}
 		if !found {
+			a.slots.release()
 			continue
 		}
-		a.carry(ctx, id, assignment)
+		a.wg.Add(1)
+		go func() {
+			defer a.wg.Done()
+			defer a.slots.release()
+			a.carry(ctx, id, assignment)
+		}()
 	}
 	return nil
+}
+
+// sweepSockets removes the delegation sockets a stopped agent left.
+func (a Agent) sweepSockets() {
+	dir := a.Options.SocketDir
+	if dir == "" {
+		return
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		a.Options.log().Printf("node: delegation sockets: %v (the delegation tool is off)", err)
+		return
+	}
+	_ = os.Chmod(dir, 0o700)
+	stale, _ := filepath.Glob(filepath.Join(dir, "*.sock"))
+	for _, path := range stale {
+		_ = os.Remove(path)
+	}
+}
+
+// serveDelegation opens the execution's delegation socket when its bot
+// may delegate, and says where it is; "" when the tool is not served.
+func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, offer *application.DelegationOffer) (string, func()) {
+	if offer == nil || a.Options.SocketDir == "" || a.slots == nil {
+		return "", func() {}
+	}
+	path := filepath.Join(a.Options.SocketDir, execution.String()+".sock")
+	if len(path) >= maxSocketPath {
+		a.Options.log().Printf("node: execution %s: socket path %s is too long; the delegation tool is off", execution, path)
+		return "", func() {}
+	}
+	d := delegator{transport: a.Transport, node: id, execution: execution, slots: a.slots, pollWait: a.Options.pollWait(), log: a.Options.log()}
+	server, err := serveMCP(ctx, path, delegateTool(*offer), a.Executor.Version(ctx), d.call)
+	if err != nil {
+		a.Options.log().Printf("node: execution %s: delegation socket: %v; the delegation tool is off", execution, err)
+		return "", func() {}
+	}
+	a.Options.log().Printf("node: execution %s may delegate to %s (depth %d of %d)", execution, strings.Join(offer.Targets, ", "), offer.Depth, offer.MaxDepth)
+	return path, server.Close
 }
 
 // heartbeat tells the control plane the node is alive until ctx ends; a
@@ -139,10 +200,18 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	switch {
 	case assignment.Run != nil:
 		bot = assignment.Run.BotID
-		report, err = a.Executor.Execute(runCtx, *assignment.Run)
+		request := *assignment.Run
+		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation)
+		request.DelegationSocket = socket
+		report, err = a.Executor.Execute(runCtx, request)
+		closeSocket()
 	case assignment.Decide != nil:
 		bot = assignment.Decide.BotID
-		report, err = a.Executor.Decide(runCtx, *assignment.Decide)
+		request := *assignment.Decide
+		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation)
+		request.DelegationSocket = socket
+		report, err = a.Executor.Decide(runCtx, request)
+		closeSocket()
 	default:
 		err = errors.New("the assignment carries neither a run nor a decision")
 	}

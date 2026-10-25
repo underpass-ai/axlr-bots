@@ -9,6 +9,11 @@ type TriggerRef struct {
 // ManualTrigger is the reference of a task submitted by hand.
 func ManualTrigger() TriggerRef { return TriggerRef{Type: TriggerManual, Name: TriggerManual.String()} }
 
+// DelegationTrigger is the reference of a task another bot asked for.
+func DelegationTrigger() TriggerRef {
+	return TriggerRef{Type: TriggerDelegation, Name: TriggerDelegation.String()}
+}
+
 // NewTriggerRef validates a reference; an empty one is the manual trigger.
 func NewTriggerRef(kind, name string) (TriggerRef, error) {
 	if kind == "" && name == "" {

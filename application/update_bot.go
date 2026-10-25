@@ -128,6 +128,16 @@ func applyPatch(bot *domain.Bot, patch BotPatch) ([]string, error) {
 		bot.SetApprovals(approvals)
 		changed = append(changed, "approvals")
 	}
+	if patch.Delegation != nil {
+		delegation, err := domain.NewDelegation(*patch.Delegation)
+		if err != nil {
+			return nil, err
+		}
+		if err := bot.SetDelegation(delegation); err != nil {
+			return nil, err
+		}
+		changed = append(changed, "delegation")
+	}
 	return changed, nil
 }
 

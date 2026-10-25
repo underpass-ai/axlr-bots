@@ -115,5 +115,14 @@ func buildBot(d BotDefinition, now time.Time) (domain.Bot, error) {
 		return domain.Bot{}, err
 	}
 	bot.SetApprovals(approvals)
+	if d.Delegation != nil {
+		delegation, err := domain.NewDelegation(*d.Delegation)
+		if err != nil {
+			return domain.Bot{}, err
+		}
+		if err := bot.SetDelegation(delegation); err != nil {
+			return domain.Bot{}, err
+		}
+	}
 	return bot, nil
 }

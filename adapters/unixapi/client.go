@@ -368,6 +368,30 @@ func (c *Client) Report(ctx context.Context, node domain.NodeID, execution domai
 	return application.ReportAck{Accepted: ack.Accepted, Outcome: outcome}, nil
 }
 
+// Delegate asks the control plane that another bot do a task for the
+// execution (application.NodeTransport); a refusal comes back as the
+// answer's Refused.
+func (c *Client) Delegate(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, command application.DelegateCommand) (application.DelegationAnswer, error) {
+	var message nodeproto.DelegationMessage
+	path := "/v1/nodes/" + url.PathEscape(node.String()) + "/executions/" + url.PathEscape(execution.String()) + "/delegations"
+	request := nodeproto.DelegateMessage{Bot: command.Bot, Objective: command.Objective, Wait: command.Wait}
+	if err := c.call(ctx, http.MethodPost, path, request, &message); err != nil {
+		return application.DelegationAnswer{}, err
+	}
+	return nodeproto.ToDelegation(message)
+}
+
+// AwaitDelegation waits up to wait for the child to end and answers its
+// state.
+func (c *Client) AwaitDelegation(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, child domain.TaskID, wait time.Duration) (application.DelegationAnswer, error) {
+	var message nodeproto.DelegationMessage
+	path := "/v1/nodes/" + url.PathEscape(node.String()) + "/executions/" + url.PathEscape(execution.String()) + "/delegations/" + url.PathEscape(child.String()) + "?wait=" + url.QueryEscape(wait.String())
+	if err := c.call(ctx, http.MethodGet, path, nil, &message); err != nil {
+		return application.DelegationAnswer{}, err
+	}
+	return nodeproto.ToDelegation(message)
+}
+
 // request builds a request to the control plane with the bearer token.
 func (c *Client) request(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {
 	request, err := http.NewRequestWithContext(ctx, method, c.base+path, body)

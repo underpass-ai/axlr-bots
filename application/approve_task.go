@@ -51,6 +51,14 @@ func (uc ApproveTask) Execute(ctx context.Context, id domain.TaskID, decision, c
 	if err != nil {
 		return ApproveTaskResult{}, err
 	}
+	if task.DeadlinePassed(uc.deps.Clock.Now()) {
+		// The delegation's deadline came while the task waited: nothing
+		// it was granted is left to run the call with.
+		if err := newDeadlineKeeper(uc.deps).miss(ctx, bot, &task, nil); err != nil {
+			return ApproveTaskResult{}, err
+		}
+		return ApproveTaskResult{}, uc.deny(ctx, id, domain.StateError{Subject: "task " + id.String(), Current: "past its delegation's deadline", Attempted: "decide"})
+	}
 	previous, err := uc.deps.Executions.Get(ctx, task.CurrentExecutionID())
 	if err != nil {
 		return ApproveTaskResult{}, err
@@ -163,7 +171,7 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 		Level:         bot.Level(),
 		AllowedTools:  bot.AllowedTools().Names(),
 		ToolRules:     bot.ToolRules(),
-		Timeout:       bot.Budgets().TaskTimeoutOr(DefaultTaskTimeout),
+		Timeout:       runTimeout(bot, task, uc.deps.Clock.Now()),
 	})
 	if err := uc.set.settle(ctx, "task.decide", bot, &task, &execution, report, runErr, now); err != nil {
 		return ApproveTaskResult{}, err

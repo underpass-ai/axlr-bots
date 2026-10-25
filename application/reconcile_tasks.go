@@ -19,7 +19,8 @@ const ReconcileGrace = time.Minute
 // use case finds every Running task whose execution started more than a
 // grace period ago and fails it with a diagnosis: the loss is explicit
 // and no task stays Running forever. A younger task may still be running
-// in another process and is left alone.
+// in another process and is left alone. A delegated task still Pending
+// or waiting for a person past its deadline is failed too.
 type ReconcileTasks struct {
 	deps Dependencies
 	rec  recorder
@@ -52,7 +53,40 @@ func (uc ReconcileTasks) Execute(ctx context.Context, grace time.Duration) (Reco
 			result.Skipped = append(result.Skipped, task.ID())
 		}
 	}
+	missed, err := uc.missDeadlines(ctx)
+	if err != nil {
+		return ReconcileTasksResult{}, err
+	}
+	result.Failed = append(result.Failed, missed...)
 	return result, nil
+}
+
+// missDeadlines fails the delegated tasks still Pending or waiting for a
+// person when their deadline came: nothing else would end a child whose
+// node is gone or whose approval outlives its grant.
+func (uc ReconcileTasks) missDeadlines(ctx context.Context) ([]domain.TaskID, error) {
+	var missed []domain.TaskID
+	now := uc.deps.Clock.Now()
+	for _, status := range []domain.TaskStatus{domain.TaskPending, domain.TaskWaitingApproval} {
+		tasks, err := uc.deps.Tasks.ListByStatus(ctx, status)
+		if err != nil {
+			return nil, err
+		}
+		for i := range tasks {
+			if !tasks[i].DeadlinePassed(now) {
+				continue
+			}
+			bot, err := uc.deps.Bots.Get(ctx, tasks[i].BotID())
+			if err != nil {
+				return nil, err
+			}
+			if err := newDeadlineKeeper(uc.deps).miss(ctx, bot, &tasks[i], nil); err != nil {
+				return nil, fmt.Errorf("fail task %s past its deadline: %w", tasks[i].ID(), err)
+			}
+			missed = append(missed, tasks[i].ID())
+		}
+	}
+	return missed, nil
 }
 
 // reconcile fails one Running task when its execution is older than the

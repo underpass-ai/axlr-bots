@@ -15,4 +15,5 @@ type DecideMessage struct {
 	AllowedTools   []string                 `json:"allowedTools"`
 	ToolRules      domain.ToolRulesSnapshot `json:"toolRules"`
 	TimeoutSeconds int                      `json:"timeoutSeconds"`
+	Delegation     *DelegationOfferMessage  `json:"delegation,omitempty"`
 }

@@ -27,4 +27,10 @@ type ExecutionRequest struct {
 	ToolRules    domain.ToolRules
 	Budgets      domain.Budgets
 	Timeout      time.Duration
+	// Delegation is set when the bot may ask other bots: the node then
+	// serves the delegation tool to the execution.
+	Delegation *DelegationOffer
+	// DelegationSocket is where the node serves that tool for this
+	// execution; the node sets it, it never travels.
+	DelegationSocket string
 }

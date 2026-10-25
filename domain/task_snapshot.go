@@ -9,6 +9,8 @@ import (
 // trace id; Trigger and Input say how it was created (a manual task
 // has no input). Approval is the last wait for a person's decision:
 // its deadline while the task waits, its outcome once it ended.
+// Delegation is where a delegated task came from; Children are the
+// tasks this one delegated, and the granted counts what it handed them.
 type TaskSnapshot struct {
 	ID             string             `json:"id"`
 	BotID          string             `json:"botId"`
@@ -21,6 +23,10 @@ type TaskSnapshot struct {
 	ExecutionIDs   []string           `json:"executionIds"`
 	FailureReason  string             `json:"failureReason,omitempty"`
 	Approval       *ApprovalWait      `json:"approval,omitempty"`
+	Delegation     *TaskLineage       `json:"delegation,omitempty"`
+	Children       []string           `json:"children,omitempty"`
+	GrantedModel   int                `json:"grantedModelCalls,omitempty"`
+	GrantedTools   int                `json:"grantedToolCalls,omitempty"`
 	CreatedAt      time.Time          `json:"createdAt"`
 	UpdatedAt      time.Time          `json:"updatedAt"`
 }

@@ -29,8 +29,8 @@ const (
 	exitUsage = 2
 )
 
-// run parses the flags and serves until SIGTERM or SIGINT; `enroll`
-// and `check` are the subcommands.
+// run parses the flags and serves until SIGTERM or SIGINT; `enroll`,
+// `check` and `mcp-relay` are the subcommands.
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "enroll" {
 		return enroll(args[1:], stdout, stderr)
@@ -38,12 +38,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "check" {
 		return check(args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "mcp-relay" {
+		return mcpRelay(args[1:], stdinOf, stdout, stderr)
+	}
 	flags := flag.NewFlagSet("axlr-node", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() {
 		fmt.Fprintln(stderr, "usage: axlr-node [flags]            run the node agent")
 		fmt.Fprintln(stderr, "       axlr-node enroll [flags]     enroll this host with a one-time token")
 		fmt.Fprintln(stderr, "       axlr-node check [flags]      check the control plane answers over TLS with the fleet CA")
+		fmt.Fprintln(stderr, "       axlr-node mcp-relay --socket <path>   the delegation tool's stdio server, which AXLR starts per execution")
 		flags.PrintDefaults()
 	}
 	control := flags.String("control", envOr("AXLR_NODE_CONTROL", ""), "the control plane: unix:///path/to/axlr-bots.sock on the same host, or https://host:7878 with the credentials enroll stored (also AXLR_NODE_CONTROL)")
@@ -102,10 +106,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 		labelsFromEnrollment[key] = value
 	}
 	logger.Printf("node: control plane %s, %s", *control, identity)
+	executor := axlr.NewExecutor(*axlrBin, *stateDir)
+	// AXLR reaches the delegation tool through this binary's mcp-relay.
+	if self, err := os.Executable(); err == nil {
+		executor.Relay = self
+	} else {
+		logger.Printf("node: own path unknown (%v): no delegation tool", err)
+	}
 	agent := nodeagent.Agent{
 		Transport: transport,
-		Executor:  axlr.NewExecutor(*axlrBin, *stateDir),
-		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Dedicated: *dedicated, Heartbeat: *heartbeat, PollWait: *poll, Log: logger},
+		Executor:  executor,
+		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Dedicated: *dedicated, Heartbeat: *heartbeat, PollWait: *poll, Log: logger, SocketDir: filepath.Join(*stateDir, "run")},
 	}
 	if err := agent.Run(ctx); err != nil {
 		fmt.Fprintln(stderr, "axlr-node:", err)

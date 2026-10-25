@@ -3,6 +3,7 @@ package nodeagent
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log"
 	"os"
@@ -281,6 +282,12 @@ func (f *fakeTransport) UploadArtifact(_ context.Context, _ domain.NodeID, _ dom
 	return err
 }
 
+func (f *fakeTransport) Delegate(context.Context, domain.NodeID, domain.ExecutionID, application.DelegateCommand) (application.DelegationAnswer, error) {
+	return application.DelegationAnswer{}, errors.New("not served")
+}
+func (f *fakeTransport) AwaitDelegation(context.Context, domain.NodeID, domain.ExecutionID, domain.TaskID, time.Duration) (application.DelegationAnswer, error) {
+	return application.DelegationAnswer{}, errors.New("not served")
+}
 func (f *fakeTransport) Register(context.Context, application.NodeRegistration) (domain.NodeSnapshot, error) {
 	return domain.NodeSnapshot{}, nil
 }
