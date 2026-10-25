@@ -11,12 +11,15 @@ import (
 
 // enrollmentRecord is what enroll leaves beside the credentials: the
 // node id the certificate names, the labels the control plane gave the
-// node and the control plane's URL, so the agent needs no flags.
+// node, the control plane's URL and the token the certificate came
+// from, so the agent needs no flags and a first start knows a token it
+// already used.
 type enrollmentRecord struct {
 	NodeID  string            `json:"nodeId"`
 	Labels  map[string]string `json:"labels,omitempty"`
 	Control string            `json:"control"`
 	Serial  string            `json:"serial"`
+	TokenID string            `json:"tokenId,omitempty"`
 }
 
 func recordPath(stateDir string) string {

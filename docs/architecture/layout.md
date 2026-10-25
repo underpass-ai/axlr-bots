@@ -19,7 +19,9 @@ One Go module, hexagonal: the domain depends on nothing, the application holds t
 | `adapters/systemd` | Renders and installs the two units and the environment file (or the node's alone, for a host that joins a control plane elsewhere); removes them |
 | `adapters/system` | Wall clock, random ids |
 | `compose` | The composition root the commands share |
-| `cmd/axlr-bots`, `cmd/axlr-node` | The two commands |
+| `cmd/axlr-bots`, `cmd/axlr-node` | The two commands; `axlr-node`'s first start from a token file and its `check` |
+| `distribution/node.Dockerfile` | The node image: `axlr-node` and AXLR's `axlr-tui` from its release archive, checked by sha256; distroless, user 65532 |
+| `charts/axlr-bots-node` | The Helm chart of the sidecar: the templates another chart includes, the demo StatefulSet, the NetworkPolicy, the chart test ([sidecar](../runbooks/sidecar.md)) |
 | `internal/fakeaxlr` | A shell stand-in for `axlr-tui` the tests run |
 
 ## The state directory
@@ -34,7 +36,7 @@ One Go module, hexagonal: the domain depends on nothing, the application holds t
   traces/, workspaces/     (single-process runs; a node keeps its own under its state)
 
 <node-state>/
-  pki/node.key (0600), pki/node.crt, pki/ca.crt, pki/enrollment.json   (once enrolled)
+  pki/node.key (0600), pki/node.crt, pki/ca.crt, pki/enrollment.json (with the token's id)   (once enrolled)
   traces/, policies/, correlation/, workspaces/<bot-id>/
 ```
 

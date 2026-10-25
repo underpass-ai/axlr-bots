@@ -10,3 +10,7 @@ coverage*.out
 
 # local memory store
 /.kernel/
+
+# helm dependency build output
+/examples/helm/*/charts/
+/examples/helm/*/Chart.lock

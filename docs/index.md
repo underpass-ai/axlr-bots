@@ -17,6 +17,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 |:--|:--|
 | Install on one host, or a control plane with TLS for a fleet; keep it running; uninstall | [Install](runbooks/install.md) |
 | Join a second host with a one-time token; rotate or revoke its certificate | [Add a host](runbooks/add-a-host.md) |
+| Run the node agent as a sidecar in a Kubernetes pod with Helm: the image, the tokens, the demo, your own chart | [Sidecar](runbooks/sidecar.md) |
 | Start tasks from a webhook or on a timer and verify nothing fires twice | [Triggers](runbooks/triggers.md) |
 | Approve or deny the write a bot wants to make | [Approvals](runbooks/approvals.md) |
 | Recover after a crash, a silent node or a lost control plane | [Recovery](runbooks/recovery.md) |
@@ -32,4 +33,4 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 
 ## Documentation status and evidence
 
-The guides were reconciled with `main` at `91dc705` on 24 October 2026; the [documentation catalog](documentation-catalog.md) lists every page with its purpose and that revision. The [live run](live-run.md) records the demo script's output on a real host and the three live tests. [Brand](brand.md) documents the marks.
+The guides were reconciled with `main` at `91dc705` on 24 October 2026; the [documentation catalog](documentation-catalog.md) lists every page with its purpose and that revision. The [live run](live-run.md) records the demo script's output on a real host, the sidecar on a real cluster and the three live tests. [Brand](brand.md) documents the marks.

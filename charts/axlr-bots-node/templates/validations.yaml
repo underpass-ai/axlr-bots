@@ -1,0 +1,5 @@
+{{- if .Values.demo.enabled }}
+{{- if lt (int .Values.demo.replicas) 1 }}{{ fail "demo.replicas must be at least 1" }}{{ end -}}
+{{- if not (regexMatch "^[a-z0-9._-]{1,64}$" (toString .Values.demo.bot)) }}{{ fail "demo.bot must be a bot id" }}{{ end -}}
+{{- if lt (int .Values.demo.intervalSeconds) 1 }}{{ fail "demo.intervalSeconds must be at least 1" }}{{ end -}}
+{{- end }}

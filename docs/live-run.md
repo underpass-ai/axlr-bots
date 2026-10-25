@@ -190,6 +190,92 @@ The bot, the node, the tasks and the timer's next fire survived the restarts of 
 
 A build of AXLR with the result line and the `--correlation` and `--budget` flags (released in AXLR v0.14.0) was run the same day with the files this adapter writes: the run completed, every event line and the result carried the four ids unchanged, and `TestLiveExec` passed through the adapter with both flags on the command line (5 s, $0.00114). A run that reached its `tool_calls` budget ended `budget_exceeded` and was recorded as `Failed` with the limit as the reason. Switching an installation to such a build is the `AXLR_TUI=` line of the environment file and a restart ([install](runbooks/install.md#change-the-model-key-or-the-axlr-build)).
 
+## The sidecar on Kubernetes
+
+On 25 October 2026 the node agent ran as a sidecar in a pod of a real cluster, beside the two hosts already enrolled. The control plane is the systemd one on `host-1` (`--listen 0.0.0.0:7878`, reached at `192.168.1.75`); the cluster's control-plane node is `host-2`, which is also enrolled as a node over systemd. The procedure is the [sidecar runbook](runbooks/sidecar.md).
+
+What the cluster needed, each approved by the operator first: the node image pushed to the cluster's own registry (on the LAN; nothing public); the demo pod and the chart test pinned to `host-2` with a toleration of `node.kubernetes.io/unschedulable`, because every node was cordoned (the cordon stayed; only these pods tolerate it); and the `local-path` provisioner's helper image made fully qualified (`docker.io/library/busybox:1.37.0`), because CRI-O on `host-2` enforces short names and refused `busybox`, so no volume could be provisioned. That last change also let the provisioner finish deleting a volume released months before.
+
+Before the cluster, the image ran under Docker against a throwaway control plane, as the pod runs it (`--read-only`, a tmpfs on `/tmp`, user 65532, every capability dropped, the log directory mounted read-only as the bot's workspace): the first start enrolled, the restart kept the certificate, the summary completed ($0.0014), and a task told to read `secret.txt` and `../pki/node.key` got both `local_read` calls `forbidden` by the policy. The first run had failed with `diagnostic directory /var/lib/axlr-node belongs to uid 1000 …`: AXLR checks the ancestors of its state directory, which is why the image sets `XDG_STATE_HOME=/tmp/axlr-state` on a tmpfs.
+
+The cluster run, condensed to the lines that matter (the hosts shown as `host-1` and `host-2`):
+
+```text
+$ axlr-bots node enroll-token --node-id demo-log-service-0 --ttl 2h | jq -j .token | kubectl -n underpass-labs create secret generic axlr-bots-enrollment --from-file=demo-log-service-0=/dev/stdin
+token id enr-25454831d681d5f2dbd876c6 for demo-log-service-0
+secret/axlr-bots-enrollment created
+$ helm install demo axlr-bots-node-0.1.0.tgz -n underpass-labs -f values.live.yaml
+STATUS: deployed
+$ kubectl -n underpass-labs get pod,pvc -l app.kubernetes.io/instance=demo
+pod/demo-log-service-0   2/2   Running   host-2
+persistentvolumeclaim/axlr-node-state-demo-log-service-0   Bound   1Gi   RWO   local-path
+$ kubectl -n underpass-labs logs demo-log-service-0 -c axlr-node
+node: enrolled as node demo-log-service-0 with token enr-25454831d681d5f2dbd876c6 (serial e9f55a309b14da46be5d6c7a0a054dcf, until 2027-10-24)
+node: control plane https://192.168.1.75:7878, client certificate /var/lib/axlr-node/pki/node.crt for node demo-log-service-0 (serial e9f55a30…, until 2027-10-24)
+node: registered as demo-log-service-0 (demo-log-service-0), axlr "" policy true correlation true
+$ axlr-bots node list
+demo-log-service-0  Online  {"app": "demo-log-service", "namespace": "underpass-labs", "pod": "demo-log-service-0"}  e9f55a309b14da46be5d6c7a0a054dcf
+host-1              Online  {"host": "host-1"}
+host-2              Online  {"host": "host-2", …}
+$ axlr-bots bot register --file examples/sidecar/bot-log-summariser.json && axlr-bots bot enable log-summariser
+$ axlr-bots task submit log-summariser --objective "Summarise the last lines of the service log" --key k8s-sidecar-1
+task-3c30871d5c7287cdb80bea1b Pending trace-eea9af13794c5c730555aef9
+$ axlr-bots task report task-3c30871d5c7287cdb80bea1b
+The last six lines of `service.log` (23:48:35Z to 23:49:00Z) show a healthy service. All six requests returned HTTP 200, for `/orders/1` through `/orders/6`, at roughly one request every 5 seconds.
+- **Latency:** between 461 ms and 884 ms, with most under 650 ms. …
+- **Warnings:** one `level=warn` "slow request" line, for `/orders/5` at 461 ms. It was still a 200 response.
+- **Errors:** none.
+$ axlr-bots task executions task-3c30871d5c7287cdb80bea1b
+nodeId demo-log-service-0, outcome Completed, policy {level observe, runtimeLevel observe, enforced true}, correlation carried true,
+tool calls local_list, local_list, local_read; 4 model requests, $0.00103
+$ kubectl -n underpass-labs delete pod demo-log-service-0          # the StatefulSet recreates it on the same volume
+node: keeping the certificate for node demo-log-service-0 (token enr-25454831d681d5f2dbd876c6 already used)
+node: registered as demo-log-service-0 (demo-log-service-0), axlr "" policy true correlation true
+$ helm test demo -n underpass-labs --logs
+TEST SUITE: demo-log-service-check   Phase: Succeeded
+{"ca": "the token at /etc/axlr-node/enroll/demo-log-service-0", "control": "https://192.168.1.75:7878", "status": "ok"}
+```
+
+A probe pod with the demo's labels, so under its NetworkPolicy, asked the cluster's API server (`https://10.96.0.1:443`) and got `context deadline exceeded`: the policy lets the pod reach DNS, the control plane and the model provider, and nothing in the cluster's private ranges.
+
+### The sidecar took other bots' tasks
+
+The first sidecar registered like any node, so the control plane also gave it the tasks of the example bots placed on any node: two timer tasks of `bot` and one of `bot-act-with-approval` failed there with `axlr: mkdir /var/lib/axlr-node/workspaces/bot: permission denied`. Two fixes, both live since 00:54 UTC. First, the runtime had created `workspaces/` on the state volume as root when it mounted the log volume inside it; the workspaces now have a volume of their own. Second, the sidecar registers `dedicated`, and the control plane gives it only the tasks of bots whose placement names it or selects its labels. That needed the control plane rebuilt with the field, and the image `0.1.1`, each approved first. Afterwards a task of `bot` ran on `host-1`, and one of `log-summariser` on `demo-log-service-0`:
+
+```text
+$ axlr-bots node list
+demo-log-service-0  Online  dedicated
+host-1              Online
+host-2              Online
+bot -> host-1 Completed
+log-summariser -> demo-log-service-0 Completed
+```
+
+### Over HTTPS with mutual TLS
+
+Later the same night the demo's service became an HTTPS server with mutual TLS (`demo.https`, [sidecar runbook](runbooks/sidecar.md#the-service-over-https-with-mutual-tls)), each step again approved first. The Service took `192.168.1.240` from MetalLB; cert-manager issued the server's certificate from the cluster's Let's Encrypt issuer (DNS-01 on Route53), and the client CA and a client certificate in the namespace; the pod was recreated with nginx in place of the log writer, and the sidecar kept its certificate.
+
+```text
+$ kubectl -n underpass-labs get svc demo-log-service-https
+demo-log-service-https   LoadBalancer   192.168.1.240   443:31234/TCP
+$ openssl s_client -connect 192.168.1.240:443 -servername axlr-bots-demo.underpassai.com | openssl x509 -noout -subject -issuer
+subject=CN = axlr-bots-demo.underpassai.com
+issuer=C = US, O = Let's Encrypt, CN = YE2
+$ curl https://axlr-bots-demo.underpassai.com/                                      # verify=0 against the system's CAs
+400
+$ curl --cert client.crt --key client.key https://axlr-bots-demo.underpassai.com/orders/1
+hello CN=axlr-bots-demo-client from axlr-bots-demo.underpassai.com
+$ curl --cert rogue.crt --key rogue.key https://axlr-bots-demo.underpassai.com/     # self-signed, not from the client CA
+400
+$ axlr-bots task report task-d781cd27caacc97277a74fd6                                # "Summarise the last lines of the service log"
+The service log is `access.log` in the workspace. It has six lines, all from 2026-10-25 00:15:20 UTC, and `error.log` is empty.
+- **Client:** every request comes from 192.168.1.75 over TLSv1.3.
+- **Successful requests:** three `curl` calls with a client certificate (CN=axlr-bots-demo-client) returned 200 for `/orders/1`, `/orders/2` and `/orders/3`, each 67 bytes.
+- **Rejected requests:** two `GET /` requests returned 400. One was a plain `curl` with no client certificate (verify=NONE). The other presented a self-signed certificate for `CN=rogue`, which failed verification.
+```
+
+The execution ran on `demo-log-service-0` (observe, enforced, $0.0009).
+
 ## The live tests
 
 Three tests run the real binary when asked; everything else runs against the stand-ins.

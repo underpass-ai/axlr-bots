@@ -1,0 +1,143 @@
+# The node agent of AXLR Bots (axlr-node, with AXLR's axlr-tui) as a
+# sidecar. Two ways to use the chart:
+#   demo.enabled: true    a StatefulSet: a service that writes a log and the
+#                         sidecar beside it, reading that log read-only
+#   as a dependency       another chart includes the axlr-bots-node.inject.*
+#                         templates in its own pod (docs/runbooks/sidecar.md)
+# With demo.enabled false the chart renders nothing.
+
+# The node image (distribution/node.Dockerfile), by digest. It is not
+# published yet: push it to a registry the cluster pulls from and set
+# image.repository (docs/runbooks/sidecar.md).
+image:
+  repository: ghcr.io/underpass-ai/axlr-bots-node
+  digest: ""
+
+controlPlane:
+  # The control plane's node address, as the pod reaches it.
+  url: ""
+  # A ConfigMap holding the fleet CA as ca.crt (axlr-bots ca show), to pin
+  # it instead of trusting the one the enrollment token carries.
+  ca:
+    existingConfigMap: ""
+
+enrollment:
+  # A Secret with one key per node id, each holding that node's one-time
+  # token (axlr-bots node enroll-token --node-id <id>). Read at a first
+  # start only; it may be deleted once every replica is enrolled.
+  existingSecret: ""
+
+model:
+  apiKey:
+    # A Secret holding the model provider's key; the sidecar alone reads it.
+    existingSecret: ""
+    key: OPENROUTER_API_KEY
+
+node:
+  # The node id is <idPrefix><pod name>: a StatefulSet's name is stable,
+  # so the id, the certificate and the replica's volume stay together.
+  idPrefix: ""
+  # The pod label whose value becomes the node's app label.
+  appLabelKey: app
+  # Extra node labels for placement selectors; lowercase identifiers.
+  labels: {}
+  # A dedicated node runs only the bots whose placement names it or
+  # selects its labels, never those placed on any node: a sidecar is
+  # there for its service. It needs a control plane that knows it.
+  dedicated: true
+
+sidecar:
+  name: axlr-node
+  # true adds restartPolicy: Always, for a native sidecar in initContainers.
+  native: false
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: "1", memory: 512Mi}
+  # Volumes of the pod a bot reads as its workspace, mounted read-only at
+  # <state>/workspaces/<bot>: [{bot: log-summariser, volume: service-logs}]
+  workspaces: []
+  # The node's state: its key and certificate, traces, policies. One
+  # volume per replica (a StatefulSet's volumeClaimTemplates). With
+  # persistent false it is an emptyDir: it survives a container's restart,
+  # not the pod's, and a new pod needs a fresh token.
+  state:
+    persistent: true
+    size: 1Gi
+    storageClassName: ""
+  # The bots' workspaces are scratch space per pod (an emptyDir); the
+  # volumes in workspaces above are mounted inside it.
+  workspacesSize: 1Gi
+  # AXLR's own state (diagnostics, sessions) lives on a tmpfs.
+  tmpSize: 64Mi
+
+networkPolicy:
+  enabled: true
+  # The control plane's address as a CIDR; empty takes <ip>/32 from
+  # controlPlane.url when it names an IP.
+  controlPlaneCIDR: ""
+  dns:
+    namespace: kube-system
+    podLabels: {k8s-app: kube-dns}
+  # A NetworkPolicy cannot name a host: the model provider is HTTPS to
+  # these ranges (the public internet by default). Narrow it to the
+  # provider's ranges, or route through an egress proxy.
+  modelProvider:
+    cidrs: [0.0.0.0/0]
+    except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16]
+    port: 443
+
+# Where the demo pod and the chart test run.
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+demo:
+  enabled: false
+  replicas: 1
+  # The StatefulSet is <release>-<name>; its pods' app label is the same.
+  name: log-service
+  image: docker.io/library/busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+  # The bot that reads the service's log (examples/sidecar/bot-log-summariser.json).
+  bot: log-summariser
+  intervalSeconds: 5
+  resources:
+    requests: {cpu: 5m, memory: 8Mi}
+    limits: {cpu: 50m, memory: 32Mi}
+  # The service as an HTTPS server with mutual TLS in place of the log
+  # writer: nginx on 8443 behind a LoadBalancer Service (MetalLB, say),
+  # every request needing a client certificate from the client CA, its
+  # access log on the volume the bot reads.
+  https:
+    enabled: false
+    # The DNS name clients use; it points at the Service's address.
+    host: ""
+    image: docker.io/nginxinc/nginx-unprivileged:1.29.3-alpine@sha256:5aea7cc516b419e3526f47dd1531be31a56a046cfe44754d94f9383e13e2ee99
+    resources:
+      requests: {cpu: 10m, memory: 16Mi}
+      limits: {cpu: 200m, memory: 64Mi}
+    service:
+      port: 443
+      annotations: {}
+      # Local keeps the client's address in the access log and the policy.
+      externalTrafficPolicy: Local
+    # NetworkPolicy peers allowed to reach the server.
+    ingressFrom:
+      - ipBlock: {cidr: 192.168.0.0/16}
+    # The server's certificate (tls.crt, tls.key) and the CA client
+    # certificates must chain to (ca.crt): existing Secrets, or made by
+    # cert-manager below.
+    serverTLS:
+      existingSecret: ""
+    clientCA:
+      existingSecret: ""
+    certManager:
+      enabled: false
+      # Signs the server's certificate for host (an ACME issuer for a
+      # publicly trusted one).
+      serverIssuer: {kind: ClusterIssuer, name: ""}
+      # A private CA in the release's namespace (self-signed root) and one
+      # client certificate from it, for the test.
+      clientCommonName: axlr-bots-demo-client
+
+tests:
+  enabled: true

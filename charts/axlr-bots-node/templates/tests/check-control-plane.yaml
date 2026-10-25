@@ -1,0 +1,62 @@
+{{- if and .Values.demo.enabled .Values.tests.enabled }}
+{{- $name := include "axlr-bots-node.demoName" . }}
+# helm test: from this namespace, through the NetworkPolicy, the control
+# plane answers /healthz over TLS 1.3 verified against the fleet CA (the
+# pinned one, or the one replica 0's token carries). It changes nothing.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ $name }}-check
+  labels:
+    {{- include "axlr-bots-node.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ $name }}
+  automountServiceAccountToken: false
+  securityContext:
+    {{- include "axlr-bots-node.podSecurityContext" . | nindent 4 }}
+  {{- with include "axlr-bots-node.scheduling" . | trim }}
+  {{- . | nindent 2 }}
+  {{- end }}
+  containers:
+    - name: check
+      image: {{ include "axlr-bots-node.image" .Values }}
+      imagePullPolicy: IfNotPresent
+      args:
+        - check
+        - --control={{ include "axlr-bots-node.controlURL" .Values }}
+        {{- if .Values.controlPlane.ca.existingConfigMap }}
+        - --ca-file=/etc/axlr-node/ca/ca.crt
+        {{- else }}
+        - --token-file=/etc/axlr-node/enroll/{{ .Values.node.idPrefix }}{{ $name }}-0
+        {{- end }}
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      resources:
+        requests: {cpu: 10m, memory: 16Mi}
+        limits: {cpu: 100m, memory: 64Mi}
+      volumeMounts:
+        - {name: axlr-node-enroll, mountPath: /etc/axlr-node/enroll, readOnly: true}
+        {{- if .Values.controlPlane.ca.existingConfigMap }}
+        - {name: axlr-node-ca, mountPath: /etc/axlr-node/ca, readOnly: true}
+        {{- end }}
+  volumes:
+    - name: axlr-node-enroll
+      secret:
+        secretName: {{ required "enrollment.existingSecret is required" .Values.enrollment.existingSecret }}
+        optional: true
+        defaultMode: 292
+    {{- if .Values.controlPlane.ca.existingConfigMap }}
+    - name: axlr-node-ca
+      configMap:
+        name: {{ .Values.controlPlane.ca.existingConfigMap }}
+        items: [{key: ca.crt, path: ca.crt}]
+    {{- end }}
+{{- end }}

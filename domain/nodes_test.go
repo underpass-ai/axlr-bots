@@ -118,6 +118,13 @@ func TestPlacement(t *testing.T) {
 	if !both.Admits(node) || !both.Admits(other) {
 		t.Error("named or selected should both admit")
 	}
+	// A dedicated node takes the bots that name or select it, not the rest.
+	sidecar, _ := NewNode("svc-0", "svc-0", NodeLabels{"app": "svc"}, NodeCapabilities{Dedicated: true}, t0)
+	bySelector, _ := NewPlacement(nil, map[string]string{"app": "svc"})
+	byName, _ := NewPlacement([]string{"svc-0"}, nil)
+	if any.Admits(sidecar) || !bySelector.Admits(sidecar) || !byName.Admits(sidecar) || selected.Admits(sidecar) {
+		t.Error("dedicated node admitted wrong")
+	}
 	if _, err := NewPlacement([]string{"Bad Node"}, nil); err == nil {
 		t.Error("bad node id accepted")
 	}

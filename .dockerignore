@@ -1,0 +1,12 @@
+*
+!go.mod
+!adapters/
+!application/
+!cmd/
+!compose/
+!domain/
+!internal/
+!nodeproto/
+!LICENSE
+!NOTICE
+**/*_test.go

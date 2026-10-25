@@ -1,0 +1,27 @@
+{{- if and .Values.demo.enabled .Values.networkPolicy.enabled }}
+# The demo pod and the chart test: egress to DNS, the control plane and
+# the model provider only; no ingress, but the HTTPS service's port from
+# demo.https.ingressFrom when it is on.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "axlr-bots-node.demoName" . }}
+  labels:
+    {{- include "axlr-bots-node.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "axlr-bots-node.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  {{- if .Values.demo.https.enabled }}
+  ingress:
+    - from:
+        {{- toYaml .Values.demo.https.ingressFrom | nindent 8 }}
+      ports:
+        - {protocol: TCP, port: 8443}
+  {{- else }}
+  ingress: []
+  {{- end }}
+  egress:
+    {{- include "axlr-bots-node.inject.egress" (dict "values" .Values "root" $) | nindent 4 }}
+{{- end }}
