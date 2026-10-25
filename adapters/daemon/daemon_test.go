@@ -297,7 +297,10 @@ func TestDaemonLeavesNodeBackedTasksToTheNodeAndMarksItOffline(t *testing.T) {
 		<-beaten
 		t.Fatalf("the daemon ran a node-backed task in process: %+v", task)
 	}
-	assignment, found, err := client.NextAssignment(ctx, "web-1", 0)
+	// Ask as the node does, with a long poll: with no wait, a loaded runner
+	// can ask a moment before the task is ready for the node (25 Oct 2026,
+	// CI: "assignment: <nil> false").
+	assignment, found, err := client.NextAssignment(ctx, "web-1", 2*time.Second)
 	stopBeating()
 	<-beaten
 	if err != nil || !found || assignment.Run.TaskID != domain.TaskID(submitted.Task.ID) {
