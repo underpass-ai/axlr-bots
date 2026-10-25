@@ -151,3 +151,31 @@ func TestSlotsLendAndReclaim(t *testing.T) {
 		t.Error("a freed slot was not taken")
 	}
 }
+
+func TestTheToolsSchemaEncodesEveryTargetAsJSON(t *testing.T) {
+	odd := `bot"},"x":{"type":"string\`
+	tool := delegateTool(application.DelegationOffer{Targets: []string{"bot-b", odd}, Depth: 1, MaxDepth: 2})
+	var schema struct {
+		Type       string `json:"type"`
+		Properties struct {
+			Bot struct {
+				Enum []string `json:"enum"`
+			} `json:"bot"`
+		} `json:"properties"`
+		Required             []string `json:"required"`
+		AdditionalProperties bool     `json:"additionalProperties"`
+	}
+	if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+		t.Fatalf("schema %s: %v", tool.InputSchema, err)
+	}
+	if schema.Type != "object" || len(schema.Properties.Bot.Enum) != 2 || schema.Properties.Bot.Enum[1] != odd || len(schema.Required) != 2 || schema.AdditionalProperties {
+		t.Errorf("schema = %+v", schema)
+	}
+	var properties map[string]map[string]any
+	_ = json.Unmarshal(tool.InputSchema, &struct {
+		Properties *map[string]map[string]any `json:"properties"`
+	}{&properties})
+	if len(properties) != 3 {
+		t.Errorf("a target broke out of its string: %s", tool.InputSchema)
+	}
+}
