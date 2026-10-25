@@ -24,7 +24,17 @@ impl Connect {
     pub async fn try_config(&self, config: &PanelConfig) -> Result<Arc<dyn ControlPlane>, PanelError> {
         config.validate()?;
         let control_plane = self.connector.connect(config)?;
-        control_plane.overview(self.clock.start_of_today()).await?;
+        control_plane
+            .overview(self.clock.start_of_today())
+            .await
+            .map_err(|error| match error {
+                PanelError::NotFound(_) => PanelError::Config(
+                    "this control plane has no /v1/overview: the panel needs axlr-bots with its routes \
+                 (underpass-ai/axlr-bots#3)"
+                        .into(),
+                ),
+                other => other,
+            })?;
         Ok(control_plane)
     }
 
@@ -76,6 +86,12 @@ mod tests {
             Err(PanelError::Config(_))
         ));
         assert!(store.saved().is_none());
+        control_plane.fail_with(Some(PanelError::NotFound("404 page not found".into())));
+        let older = run(connect.save(config("https://127.0.0.1:7879/"))).err();
+        assert!(
+            matches!(older, Some(PanelError::Config(ref m)) if m.contains("/v1/overview")),
+            "{older:?}"
+        );
         control_plane.fail_with(Some(PanelError::Unauthorized("bad token".into())));
         assert!(matches!(
             run(connect.save(config("https://127.0.0.1:7879/"))),

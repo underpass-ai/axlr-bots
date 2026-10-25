@@ -10,7 +10,7 @@ AXLR Bots Panel is a native desktop application for [AXLR Bots](https://github.c
 
 ## Install
 
-User-level, no root. You need Rust 1.88 or newer and a control plane with its operator address on (`axlr-bots serve --api-listen 127.0.0.1:7879`, as the [install runbook](https://github.com/underpass-ai/axlr-bots/blob/main/docs/runbooks/install.md) sets up).
+User-level, no root. You need Rust 1.88 or newer and a control plane with its operator address on (`axlr-bots serve --api-listen 127.0.0.1:7879`, as the [install runbook](https://github.com/underpass-ai/axlr-bots/blob/main/docs/runbooks/install.md) sets up). The control plane must serve the panel's routes: build `axlr-bots` from the branch of [underpass-ai/axlr-bots#3](https://github.com/underpass-ai/axlr-bots/pull/3) (or `main` once it is merged). An older one answers the first **Connect** with *Check settings: this control plane has no /v1/overview*.
 
 ```bash
 make install        # ~/.local/bin/axlr-bots-panel, the icon, and the menu entry "AXLR Bots"
@@ -51,7 +51,7 @@ The screenshots are a live control plane with three nodes: `gx10-ff95` (the pane
 
 ## Made to be read fast
 
-Every status is a pill with a colour, an icon and one or two words: green ✓ done or on, copper ▶ working, amber ⚠ needs a person, red ✕ failed or off, grey ⏸ stopped or waiting its turn. Text is 16 px or larger, left-aligned, never italic; numbers are big. The two themes keep every text colour at 4.5:1 or more against its background (a test checks it). The icons are 16 × 16 pixel glyphs in the house style of the AXLR Bots emblem (`assets/icons/make_icons.py` draws them).
+Every status is a pill with a colour, an icon and one or two words: green ✓ done or on, copper ▶ working, amber ⚠ needs a person, red ✕ failed or off, grey ⏸ stopped or waiting its turn. Body text is 16 px and secondary text 14 px, left-aligned, never italic; numbers are big. The two themes keep every text colour at 4.5:1 or more against its background (a test checks it). The icons are 16 × 16 pixel glyphs in the house style of the AXLR Bots emblem (`assets/icons/make_icons.py` draws them).
 
 ## How it works
 
