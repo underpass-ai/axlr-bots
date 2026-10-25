@@ -75,11 +75,15 @@ func TestExecutionArtifactPrintsWhatTheControlPlaneKeeps(t *testing.T) {
 		t.Errorf("stdout: %d %q", code, out)
 	}
 	file := filepath.Join(t.TempDir(), "notes.md")
-	if code, out, _ := c.run("execution", "artifact", "--out", file, executionID, "notes.md"); code != exitOK || !strings.Contains(out, "text/markdown") {
-		t.Errorf("--out: %d %s", code, out)
+	for _, args := range [][]string{{"execution", "artifact", "--out", file, executionID, "notes.md"}, {"execution", "artifact", executionID, "notes.md", "--out", file + "2"}} {
+		if code, out, _ := c.run(args...); code != exitOK || !strings.Contains(out, "text/markdown") {
+			t.Errorf("%v: %d %s", args, code, out)
+		}
 	}
-	if data, _ := os.ReadFile(file); string(data) != fakeaxlr.DeliveredContent {
-		t.Errorf("file = %q", data)
+	for _, path := range []string{file, file + "2"} {
+		if data, _ := os.ReadFile(path); string(data) != fakeaxlr.DeliveredContent {
+			t.Errorf("%s = %q", path, data)
+		}
 	}
 	if code, _, errText := c.run("execution", "artifact", executionID, "plan.md"); code != exitError || !strings.Contains(errText, "not found") {
 		t.Errorf("not kept: %d %s", code, errText)

@@ -31,14 +31,16 @@ func executionArtifact(ctx context.Context, service unixapi.Service, args []stri
 	flags := flag.NewFlagSet("execution artifact", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	out := flags.String("out", "", "write the artifact to this file instead of stdout")
-	if err := flags.Parse(args); err != nil {
+	positional, ok := parseAnywhere(flags, args)
+	if !ok {
 		return exitUsage
 	}
-	if flags.NArg() != 2 {
+	if len(positional) != 2 {
 		fmt.Fprintln(stderr, "axlr-bots: execution artifact needs <execution-id> and <name>")
 		return exitUsage
 	}
-	content, err := service.GetArtifact(ctx, flags.Arg(0), flags.Arg(1))
+	name := positional[1]
+	content, err := service.GetArtifact(ctx, positional[0], name)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -57,7 +59,7 @@ func executionArtifact(ctx context.Context, service unixapi.Service, args []stri
 		return fail(stderr, err)
 	}
 	if got := hex.EncodeToString(hash.Sum(nil)); content.Artifact.SHA256 != "" && got != content.Artifact.SHA256 {
-		return fail(stderr, fmt.Errorf("artifact %s: the bytes hash to %s, it was kept as %s", flags.Arg(1), got, content.Artifact.SHA256))
+		return fail(stderr, fmt.Errorf("artifact %s: the bytes hash to %s, it was kept as %s", name, got, content.Artifact.SHA256))
 	}
 	if *out != "" {
 		fmt.Fprintf(stdout, "%s (%s, sha256 %s)\n", *out, content.Artifact.MediaType, content.Artifact.SHA256)

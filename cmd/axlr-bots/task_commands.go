@@ -85,17 +85,8 @@ func decideArgs(name string, args []string, stderr io.Writer) ([]string, string,
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	call := flags.String("call", "", "the pending call the decision is for; refused when the task waits on another")
-	var positional []string
-	for {
-		if err := flags.Parse(args); err != nil {
-			return nil, "", false
-		}
-		args = flags.Args()
-		if len(args) == 0 {
-			return positional, *call, true
-		}
-		positional, args = append(positional, args[0]), args[1:]
-	}
+	positional, ok := parseAnywhere(flags, args)
+	return positional, *call, ok
 }
 
 func decide(ctx context.Context, service unixapi.Service, id string, request unixapi.DecideRequest, stdout, stderr io.Writer) int {
