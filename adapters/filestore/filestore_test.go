@@ -479,3 +479,27 @@ func TestTaskRepositoryKeepsTheTriggerAndInput(t *testing.T) {
 		t.Error("lookup by the fire key failed")
 	}
 }
+
+func TestCollectionRefusesIDsThatAreNotFileNames(t *testing.T) {
+	ctx := context.Background()
+	state := t.TempDir()
+	files := collection{dir: filepath.Join(state, "tasks"), kind: "task"}
+	for _, id := range []string{"", "../escape", "a/b", `a\b`, ".."} {
+		if _, err := files.path(id); err == nil {
+			t.Errorf("%q was taken as a file name", id)
+		}
+		if err := files.write(id, map[string]string{}); err == nil {
+			t.Errorf("%q was written", id)
+		}
+		var into map[string]string
+		if err := files.read(id, &into); err == nil {
+			t.Errorf("%q was read", id)
+		}
+	}
+	if err := NewTimerRepository(state).Delete(ctx, "../x"); err == nil {
+		t.Error("a timer outside the directory was deleted")
+	}
+	if path, err := files.path("task-1"); err != nil || path != filepath.Join(state, "tasks", "task-1.json") {
+		t.Errorf("task-1 = %q %v", path, err)
+	}
+}
