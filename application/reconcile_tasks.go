@@ -37,11 +37,21 @@ func NewReconcileTasks(deps Dependencies) ReconcileTasks {
 // sets none) plus ReconcileGrace. A task already failed stays failed if a
 // later task's reconciliation fails with an error; running again is safe.
 func (uc ReconcileTasks) Execute(ctx context.Context, grace time.Duration) (ReconcileTasksResult, error) {
+	// The delegated tasks past their deadline go first: a Running task
+	// failed below is then the pass's last change, and the caller's log
+	// of it follows at once.
+	missed, err := uc.missDeadlines(ctx)
+	if err != nil {
+		return ReconcileTasksResult{}, err
+	}
 	tasks, err := uc.deps.Tasks.ListByStatus(ctx, domain.TaskRunning)
 	if err != nil {
 		return ReconcileTasksResult{}, err
 	}
-	result := ReconcileTasksResult{Failed: []domain.TaskID{}, Skipped: []domain.TaskID{}}
+	result := ReconcileTasksResult{Failed: missed, Skipped: []domain.TaskID{}}
+	if result.Failed == nil {
+		result.Failed = []domain.TaskID{}
+	}
 	for _, task := range tasks {
 		failed, err := uc.reconcile(ctx, task, grace)
 		if err != nil {
@@ -53,11 +63,6 @@ func (uc ReconcileTasks) Execute(ctx context.Context, grace time.Duration) (Reco
 			result.Skipped = append(result.Skipped, task.ID())
 		}
 	}
-	missed, err := uc.missDeadlines(ctx)
-	if err != nil {
-		return ReconcileTasksResult{}, err
-	}
-	result.Failed = append(result.Failed, missed...)
 	return result, nil
 }
 

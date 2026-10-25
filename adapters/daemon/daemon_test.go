@@ -99,6 +99,20 @@ func waitFor(t *testing.T, client *unixapi.Client, id string, status string) dom
 	}
 }
 
+// waitForLog waits for the daemon to log text: it logs a pass after the
+// pass has saved what it changed, so a test that saw the change may
+// read the log before the line is there.
+func waitForLog(t *testing.T, f *fixture, text string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(f.logs.String(), text) {
+		if time.Now().After(deadline) {
+			t.Fatalf("no %q in the logs: %s", text, f.logs.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestDaemonRunsWhatArrivesOverTheSocketAndSurvivesARestart(t *testing.T) {
 	f := newFixture(t, "completed")
 	client, stop := f.start(t)
@@ -185,9 +199,10 @@ func TestDaemonReconcilesWhatACrashLeftRunning(t *testing.T) {
 	client, stop := f.start(t)
 	defer stop()
 	failed := waitFor(t, client, submitted.Task.ID, "Failed")
-	if !strings.Contains(failed.FailureReason, "reconciled") || !strings.Contains(f.logs.String(), "reconcile: failed ["+failed.ID+"]") {
-		t.Errorf("task = %+v logs = %s", failed, f.logs.String())
+	if !strings.Contains(failed.FailureReason, "reconciled") {
+		t.Errorf("task = %+v", failed)
 	}
+	waitForLog(t, f, "reconcile: failed ["+failed.ID+"]")
 }
 
 func TestDaemonLogsRunErrorsAndKeepsGoing(t *testing.T) {
@@ -221,7 +236,8 @@ func TestDaemonLogsRunErrorsAndKeepsGoing(t *testing.T) {
 		t.Fatal(err)
 	}
 	failed := waitFor(t, client, submitted.Task.ID, "Failed")
-	if !strings.Contains(f.logs.String(), "task "+failed.ID+" Failed (execution ") || !strings.Contains(f.logs.String(), "no model provider") {
+	waitForLog(t, f, "task "+failed.ID+" Failed (execution ")
+	if !strings.Contains(f.logs.String(), "no model provider") {
 		t.Errorf("logs = %s", f.logs.String())
 	}
 	stop()
@@ -259,12 +275,31 @@ func TestDaemonLeavesNodeBackedTasksToTheNodeAndMarksItOffline(t *testing.T) {
 	if _, err := client.Register(ctx, application.NodeRegistration{ID: "web-1", HostName: "web-1"}); err != nil {
 		t.Fatal(err)
 	}
+	// The node stays alive until it takes the task: the fixture marks a
+	// node silent for 150 ms Offline, which a slow runner reached within
+	// the 100 ms wait below (25 Oct 2026, CI).
+	beating, stopBeating := context.WithCancel(ctx)
+	beaten := make(chan struct{})
+	go func() {
+		defer close(beaten)
+		for beating.Err() == nil {
+			_, _ = client.Heartbeat(beating, "web-1")
+			select {
+			case <-beating.Done():
+			case <-time.After(30 * time.Millisecond):
+			}
+		}
+	}()
 	submitted, _ := client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "o", IdempotencyKey: "k"})
 	time.Sleep(100 * time.Millisecond)
 	if task, _ := client.GetTask(ctx, submitted.Task.ID); task.Status != "Pending" {
+		stopBeating()
+		<-beaten
 		t.Fatalf("the daemon ran a node-backed task in process: %+v", task)
 	}
 	assignment, found, err := client.NextAssignment(ctx, "web-1", 0)
+	stopBeating()
+	<-beaten
 	if err != nil || !found || assignment.Run.TaskID != domain.TaskID(submitted.Task.ID) {
 		t.Fatalf("assignment: %v %v", err, found)
 	}
