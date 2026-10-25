@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/underpass-ai/axlr-bots/actions/workflows/ci.yml/badge.svg)](https://github.com/underpass-ai/axlr-bots/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-AXLR Bots is Underpass's control plane for bots that live as infrastructure: one control plane, N hosts, N bots per host. A bot is a declared resource with a mission, a model, tools, an autonomy level, triggers, budgets and a placement; it exists without running anything, and when a task arrives (by hand, from a webhook, on a timer) the control plane starts an execution on the host the bot is placed on. [AXLR](https://github.com/underpass-ai/AXLR) runs each execution: the LLM proposes, the policy decides, outside the model. The [vision note](docs/architecture/vision.md) is the design; this repository is what exists today.
+AXLR Bots is Underpass's control plane for bots that live as infrastructure: one control plane, N hosts, N bots per host. A bot is a declared resource with a mission, a model, tools, an autonomy level, triggers, budgets and a placement; it exists without running anything, and when a task arrives (by hand, from a webhook, on a timer, or asked by another bot) the control plane starts an execution on the host the bot is placed on. [AXLR](https://github.com/underpass-ai/AXLR) runs each execution: the LLM proposes, the policy decides, outside the model. The [vision note](docs/architecture/vision.md) is the design; this repository is what exists today.
 
 ## Install
 
@@ -51,6 +51,7 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | Write a bot: mission, model, tools, autonomy level, triggers, budgets, placement | [Bot definition](docs/reference/bot-definition.md) |
 | Start tasks from a webhook or on a timer, without duplicates | [Triggers](docs/runbooks/triggers.md) |
 | Approve or deny the write a bot wants to make, be notified of it, let it expire | [Approvals](docs/runbooks/approvals.md) |
+| Let a bot ask another bot to do a task, within depth and budget limits that stop loops | [Delegation](docs/reference/bot-definition.md#delegation), [ADR](docs/architecture/delegation.md) |
 | Add a host: enrollment token, mutual TLS, revocation | [Add a host](docs/runbooks/add-a-host.md) |
 | Run the node agent as a sidecar beside a service in a Kubernetes pod, with Helm | [Sidecar](docs/runbooks/sidecar.md) |
 | Call the control plane over HTTP | [Operator API](docs/reference/operator-api.md) |
@@ -74,7 +75,7 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 
 ## Project status
 
-Pre-1.0, one Go module, Linux with systemd or Kubernetes. What works today, exercised live with the real AXLR: user-level install, bots with the four autonomy levels and tool rules, manual, webhook and timer triggers with deduplication, the approval path with its expiry and notifications, artifacts uploaded by the node and served by the control plane, node enrollment with one-time tokens and mutual TLS, revocation, placement by node or label, the operator API behind a bearer token, correlation ids on every task, execution and event, recovery of the tasks a crash left running, budgets passed to a runtime that takes them, and the node agent as a sidecar in a pod (a Helm chart, no CRDs), enrolled from a Secret on its first start, reading the service's log read-only under a NetworkPolicy ([live run](docs/live-run.md#the-sidecar-on-kubernetes)).
+Pre-1.0, one Go module, Linux with systemd or Kubernetes. What works today, exercised live with the real AXLR: user-level install, bots with the four autonomy levels and tool rules, manual, webhook and timer triggers with deduplication, the approval path with its expiry and notifications, artifacts uploaded by the node and served by the control plane, a bot asking another bot through the control plane with the loop cut by depth and by the chain ([live run](docs/live-run.md#delegation-between-bots-gx10-25-oct-2026)), node enrollment with one-time tokens and mutual TLS, revocation, placement by node or label, the operator API behind a bearer token, correlation ids on every task, execution and event, recovery of the tasks a crash left running, budgets passed to a runtime that takes them, and the node agent as a sidecar in a pod (a Helm chart, no CRDs), enrolled from a Secret on its first start, reading the service's log read-only under a NetworkPolicy ([live run](docs/live-run.md#the-sidecar-on-kubernetes)).
 
 Next: one sandbox per execution (a Job with its own identity, filesystem and limits), budgets enforced by the runtime recorded on every execution, and a durable store in place of one JSON file per aggregate. [Control plane, node and AXLR](docs/architecture/control-plane-node-axlr.md#what-is-left-out) says what is left out.
 

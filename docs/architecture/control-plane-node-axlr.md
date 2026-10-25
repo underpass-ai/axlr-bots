@@ -47,6 +47,16 @@ The control plane decides *when, where, as whom and under which permissions* a u
 - The policy is applied outside the model: the bot's level and tool rules go to AXLR as a file, a forbidden call is refused before any card, and `act-with-approval` stops for a person ([runtime contract](runtime-contract.md#the-policy)).
 - Everything that can arrive twice is idempotent: submissions by key, webhook fires by delivery, timer fires by slot, reports once per execution, enrollment once per token.
 
+## Delegation between bots
+
+A bot whose definition names other bots in `delegation.to` may ask one of them to do a task while it runs ([ADR](delegation.md)). The node serves the execution the tool `axlr_bots_delegate` over a local socket, AXLR reaches it through `axlr-node mcp-relay`, and the ask goes to the control plane over the node's mutual-TLS channel. The control plane alone decides: it takes the asking bot, its task, its depth, its chain and its budget from the execution the node holds, refuses a target the bot may not ask or that takes no delegated task, a chain deeper than its limit, a bot already on the chain and a share too small to run, and otherwise creates the child under the parent's trace id with its grant. A waiting parent lends its node's slot, so the child can run on the same node.
+
+```text
+ bot-a's execution ──axlr_bots_delegate──▶ node ──mTLS──▶ control plane: checks, creates bot-b's task (depth 1, grant)
+        ▲                                                         │
+        └────────── the child's answer ◀── node polls ◀───────────┘   bot-b's execution runs on a node, reports
+```
+
 ## The node as a sidecar
 
 The same `axlr-node`, from the node image ([`distribution/node.Dockerfile`](../../distribution/node.Dockerfile): `axlr-node` and AXLR's `axlr-tui`, distroless, user 65532), runs as a container in a service's pod, beside the service, packaged by the Helm chart [`charts/axlr-bots-node`](../../charts/axlr-bots-node) ([sidecar runbook](../runbooks/sidecar.md)). Systemd disappears; nothing else changes on the control plane, which stays one per fleet, on a host or wherever it is reachable, and sees the pod as one more node.
@@ -67,9 +77,9 @@ The chart renders a demo (a StatefulSet whose service writes a log the sidecar r
 ## What is next
 
 - **One execution, one sandbox** (vision §9.2): an execution runs as an `axlr-tui` process inside the node it is placed on, sharing that node's user, filesystem and limits (on a host, the node's user; in a pod, the sidecar container). A Job per execution, with its own identity, filesystem and limits, is still to come.
-- **Budgets enforced by the runtime**: the control plane already passes `--budget` and records `budget_exceeded`; the budget record on the execution (what was passed) is still to be stored.
+- **Budgets enforced by the runtime**: the control plane passes `--budget` (on a node too, since delegation: the requests and tool calls, not only the seconds) and records `budget_exceeded`; the budget record on the execution (what was passed) is still to be stored.
 - **A durable store**: a real database behind the repository ports in place of one JSON file per aggregate.
 
 ## What is left out
 
-A systemd unit event as a trigger type; Kubernetes resources for bots (`Bot`, `BotExecution`: no CRDs, vision §9.3); an approval queue beyond `task approve` (who may decide, and when; an expired approval); operator client certificates on the API address (the bearer token is the one credential); a `GET /v1/tasks` listing; `axlr-serve` as a second `RuntimeExecutor`; automatic certificate renewal, CRL/OCSP and a CA key outside the state directory ([node protocol](../reference/node-protocol.md#limits-today)). The vision's §13 and §14 name the rest for Phase 2.
+A systemd unit event as a trigger type; Kubernetes resources for bots (`Bot`, `BotExecution`: no CRDs, vision §9.3); an approval queue beyond `task approve` (who may decide, and when; an expired approval); operator client certificates on the API address (the bearer token is the one credential); a `GET /v1/tasks` listing; `axlr-serve` as a second `RuntimeExecutor`; delegation from the control plane's in-process runs and a cancel that reaches a task's children ([delegation](delegation.md#left-out)); automatic certificate renewal, CRL/OCSP and a CA key outside the state directory ([node protocol](../reference/node-protocol.md#limits-today)). The vision's §13 and §14 name the rest for Phase 2.

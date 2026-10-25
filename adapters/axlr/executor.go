@@ -57,6 +57,9 @@ type Executor struct {
 	DefaultTimeout time.Duration
 	// WaitDelay is how long after SIGTERM the process is killed.
 	WaitDelay time.Duration
+	// Relay is the absolute path of axlr-node, whose mcp-relay AXLR
+	// starts to reach the delegation tool; empty wires no tool.
+	Relay string
 
 	detect   sync.Once
 	features features
@@ -81,6 +84,9 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 	if err != nil {
 		return application.ExecutionReport{}, err
 	}
+	if err := e.wireDelegation(request.ExecutionID, request.Delegation, request.DelegationSocket, &policy); err != nil {
+		return application.ExecutionReport{}, fmt.Errorf("axlr: delegation manifest: %w", err)
+	}
 	args := []string{"--exec", request.PromptText(), "--json", "--approve", policy.approve}
 	if request.Model != "" {
 		args = append(args, "--model", request.Model)
@@ -97,6 +103,7 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 		return application.ExecutionReport{}, err
 	}
 	args = append(args, policy.args...)
+	args = append(args, policy.plugin...)
 	args = append(args, correlation.args...)
 	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout)
 	report.Policy = &policy.record
@@ -116,6 +123,9 @@ func (e *Executor) Decide(ctx context.Context, request application.DecisionReque
 	if err != nil {
 		return application.ExecutionReport{}, err
 	}
+	if err := e.wireDelegation(request.ExecutionID, request.Delegation, request.DelegationSocket, &policy); err != nil {
+		return application.ExecutionReport{}, fmt.Errorf("axlr: delegation manifest: %w", err)
+	}
 	args := []string{"--session", request.SessionID, "--decide", request.Decision, "--json", "--approve", policy.approve}
 	if request.CallID != "" {
 		args = append(args, "--call", request.CallID)
@@ -125,6 +135,7 @@ func (e *Executor) Decide(ctx context.Context, request application.DecisionReque
 		return application.ExecutionReport{}, err
 	}
 	args = append(args, policy.args...)
+	args = append(args, policy.plugin...)
 	args = append(args, correlation.args...)
 	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout)
 	report.Policy = &policy.record
@@ -133,10 +144,11 @@ func (e *Executor) Decide(ctx context.Context, request application.DecisionReque
 }
 
 // preparedPolicy is the policy of one run as the command line carries
-// it: the flags, the approval level, the object written and the record
-// for the execution.
+// it: the flags, the delegation tool's, the approval level, the object
+// written and the record for the execution.
 type preparedPolicy struct {
 	args    []string
+	plugin  []string
 	approve string
 	object  policyObject
 	record  domain.PolicyRecord

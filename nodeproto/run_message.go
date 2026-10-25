@@ -14,4 +14,6 @@ type RunMessage struct {
 	AllowedTools   []string                 `json:"allowedTools"`
 	ToolRules      domain.ToolRulesSnapshot `json:"toolRules"`
 	TimeoutSeconds int                      `json:"timeoutSeconds"`
+	Budgets        *BudgetsMessage          `json:"budgets,omitempty"`
+	Delegation     *DelegationOfferMessage  `json:"delegation,omitempty"`
 }

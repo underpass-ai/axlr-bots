@@ -19,7 +19,8 @@ const ReconcileGrace = time.Minute
 // use case finds every Running task whose execution started more than a
 // grace period ago and fails it with a diagnosis: the loss is explicit
 // and no task stays Running forever. A younger task may still be running
-// in another process and is left alone.
+// in another process and is left alone. A delegated task still Pending
+// or waiting for a person past its deadline is failed too.
 type ReconcileTasks struct {
 	deps Dependencies
 	rec  recorder
@@ -36,11 +37,21 @@ func NewReconcileTasks(deps Dependencies) ReconcileTasks {
 // sets none) plus ReconcileGrace. A task already failed stays failed if a
 // later task's reconciliation fails with an error; running again is safe.
 func (uc ReconcileTasks) Execute(ctx context.Context, grace time.Duration) (ReconcileTasksResult, error) {
+	// The delegated tasks past their deadline go first: a Running task
+	// failed below is then the pass's last change, and the caller's log
+	// of it follows at once.
+	missed, err := uc.missDeadlines(ctx)
+	if err != nil {
+		return ReconcileTasksResult{}, err
+	}
 	tasks, err := uc.deps.Tasks.ListByStatus(ctx, domain.TaskRunning)
 	if err != nil {
 		return ReconcileTasksResult{}, err
 	}
-	result := ReconcileTasksResult{Failed: []domain.TaskID{}, Skipped: []domain.TaskID{}}
+	result := ReconcileTasksResult{Failed: missed, Skipped: []domain.TaskID{}}
+	if result.Failed == nil {
+		result.Failed = []domain.TaskID{}
+	}
 	for _, task := range tasks {
 		failed, err := uc.reconcile(ctx, task, grace)
 		if err != nil {
@@ -53,6 +64,34 @@ func (uc ReconcileTasks) Execute(ctx context.Context, grace time.Duration) (Reco
 		}
 	}
 	return result, nil
+}
+
+// missDeadlines fails the delegated tasks still Pending or waiting for a
+// person when their deadline came: nothing else would end a child whose
+// node is gone or whose approval outlives its grant.
+func (uc ReconcileTasks) missDeadlines(ctx context.Context) ([]domain.TaskID, error) {
+	var missed []domain.TaskID
+	now := uc.deps.Clock.Now()
+	for _, status := range []domain.TaskStatus{domain.TaskPending, domain.TaskWaitingApproval} {
+		tasks, err := uc.deps.Tasks.ListByStatus(ctx, status)
+		if err != nil {
+			return nil, err
+		}
+		for i := range tasks {
+			if !tasks[i].DeadlinePassed(now) {
+				continue
+			}
+			bot, err := uc.deps.Bots.Get(ctx, tasks[i].BotID())
+			if err != nil {
+				return nil, err
+			}
+			if err := newDeadlineKeeper(uc.deps).miss(ctx, bot, &tasks[i], nil); err != nil {
+				return nil, fmt.Errorf("fail task %s past its deadline: %w", tasks[i].ID(), err)
+			}
+			missed = append(missed, tasks[i].ID())
+		}
+	}
+	return missed, nil
 }
 
 // reconcile fails one Running task when its execution is older than the

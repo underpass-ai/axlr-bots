@@ -39,6 +39,12 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 		_ = uc.rec.audit(ctx, "task.run", id.String(), domain.AuditDenied, map[string]string{"reason": "bot is " + bot.Status().String()})
 		return RunTaskResult{}, domain.StateError{Subject: "bot " + bot.ID().String(), Current: bot.Status().String(), Attempted: "run a task"}
 	}
+	if task.Status() == domain.TaskPending && task.DeadlinePassed(uc.deps.Clock.Now()) {
+		if err := newDeadlineKeeper(uc.deps).miss(ctx, bot, &task, nil); err != nil {
+			return RunTaskResult{}, err
+		}
+		return RunTaskResult{}, domain.StateError{Subject: "task " + id.String(), Current: task.Status().String(), Attempted: "run after its delegation's deadline"}
+	}
 	executionID, err := domain.NewExecutionID(uc.deps.IDs.NewID("exec-"))
 	if err != nil {
 		return RunTaskResult{}, err
@@ -81,8 +87,8 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 		Level:         bot.Level(),
 		AllowedTools:  bot.AllowedTools().Names(),
 		ToolRules:     bot.ToolRules(),
-		Budgets:       bot.Budgets(),
-		Timeout:       bot.Budgets().TaskTimeoutOr(DefaultTaskTimeout),
+		Budgets:       taskBudgets(bot, task),
+		Timeout:       runTimeout(bot, task, now),
 	})
 	if err := uc.set.settle(ctx, "task.run", bot, &task, &execution, report, runErr, now); err != nil {
 		return RunTaskResult{}, err

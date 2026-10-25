@@ -139,3 +139,12 @@ func (r *SerialRunner) RevokeNode(ctx context.Context, node domain.NodeID) (Revo
 	defer r.mu.Unlock()
 	return NewRevokeNode(r.deps).Execute(ctx, node)
 }
+
+// Delegate creates the task an execution asks another bot for, as
+// DelegateTask does, under the same lock as the assignments and the
+// reports: the parent task is never changed by two of them at once.
+func (r *SerialRunner) Delegate(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, command DelegateCommand) (DelegationAnswer, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return NewDelegateTask(r.deps).Execute(ctx, node, execution, command)
+}

@@ -22,6 +22,10 @@ type Task struct {
 	executionIDs   []ExecutionID
 	failureReason  string
 	approval       *ApprovalWait
+	lineage        *TaskLineage
+	children       []TaskID
+	grantedModel   int
+	grantedTools   int
 	createdAt      time.Time
 	updatedAt      time.Time
 }
@@ -51,6 +55,83 @@ func (t *Task) Attribute(trigger TriggerRef, input []byte) error {
 		return err
 	}
 	t.trigger, t.input = ref, parsed
+	return nil
+}
+
+// Link records where a delegated task came from, before the task is
+// first saved.
+func (t *Task) Link(lineage TaskLineage) error {
+	if err := lineage.Validate(); err != nil {
+		return err
+	}
+	lineage.Chain = append([]string(nil), lineage.Chain...)
+	t.lineage = &lineage
+	return nil
+}
+
+// Lineage is where a delegated task came from; false for a task nobody
+// delegated.
+func (t Task) Lineage() (TaskLineage, bool) {
+	if t.lineage == nil {
+		return TaskLineage{}, false
+	}
+	copied := *t.lineage
+	copied.Chain = append([]string(nil), t.lineage.Chain...)
+	return copied, true
+}
+
+// Depth is how many delegations led to the task: 0 for one nobody
+// delegated.
+func (t Task) Depth() int {
+	if t.lineage == nil {
+		return 0
+	}
+	return t.lineage.Depth
+}
+
+// Children lists the tasks this task delegated, oldest first.
+func (t Task) Children() []TaskID { return append([]TaskID(nil), t.children...) }
+
+// Granted is what the task has handed its children so far: model calls
+// and tool calls out of its own limits.
+func (t Task) Granted() (modelCalls, toolCalls int) { return t.grantedModel, t.grantedTools }
+
+// AdoptChild records a task this Running task delegated and what it was
+// granted out of the task's own limits.
+func (t *Task) AdoptChild(child TaskID, grant DelegationGrant, now time.Time) error {
+	if t.status != TaskRunning {
+		return t.refuse("delegate")
+	}
+	if child == "" || child == t.id {
+		return invalid("child task", "must be another task")
+	}
+	if err := grant.Validate(); err != nil {
+		return err
+	}
+	t.children = append(t.children, child)
+	t.grantedModel += grant.MaxModelCalls
+	t.grantedTools += grant.MaxToolCalls
+	t.updatedAt = now
+	return nil
+}
+
+// DeadlinePassed reports a delegated task whose grant's deadline has
+// come.
+func (t Task) DeadlinePassed(now time.Time) bool {
+	return t.lineage != nil && !now.Before(t.lineage.Grant.Deadline)
+}
+
+// MissDeadline fails a delegated task that has not finished when its
+// deadline came: Pending (it never ran), WaitingApproval (nobody decided
+// in time) or Running (its node never reported).
+func (t *Task) MissDeadline(now time.Time) error {
+	if t.lineage == nil || t.status.IsTerminal() || !t.DeadlinePassed(now) {
+		return t.refuse("miss its deadline")
+	}
+	t.closeApproval(ApprovalExpired, now)
+	t.status = TaskFailed
+	t.failureReason = "deadline: the delegation's deadline " + t.lineage.Grant.Deadline.UTC().Format(time.RFC3339) + " passed before the task ended"
+	t.updatedAt = now
 	return nil
 }
 
@@ -259,7 +340,11 @@ func (t Task) Snapshot() TaskSnapshot {
 		copied := *t.approval
 		approval = &copied
 	}
-	return TaskSnapshot{
+	var children []string
+	for _, child := range t.children {
+		children = append(children, child.String())
+	}
+	snapshot := TaskSnapshot{
 		ID:             t.id.String(),
 		BotID:          t.botID.String(),
 		Objective:      t.objective.String(),
@@ -271,9 +356,16 @@ func (t Task) Snapshot() TaskSnapshot {
 		ExecutionIDs:   ids,
 		FailureReason:  t.failureReason,
 		Approval:       approval,
+		Children:       children,
+		GrantedModel:   t.grantedModel,
+		GrantedTools:   t.grantedTools,
 		CreatedAt:      t.createdAt,
 		UpdatedAt:      t.updatedAt,
 	}
+	if lineage, ok := t.Lineage(); ok {
+		snapshot.Delegation = &lineage
+	}
+	return snapshot
 }
 
 // RestoreTask rebuilds a task from a snapshot, validating every value.
@@ -336,6 +428,22 @@ func RestoreTask(s TaskSnapshot) (Task, error) {
 		approval := *s.Approval
 		task.approval = &approval
 	}
+	if s.Delegation != nil {
+		if err := task.Link(*s.Delegation); err != nil {
+			return Task{}, err
+		}
+	}
+	for _, raw := range s.Children {
+		child, err := NewTaskID(raw)
+		if err != nil {
+			return Task{}, err
+		}
+		task.children = append(task.children, child)
+	}
+	if s.GrantedModel < 0 || s.GrantedTools < 0 {
+		return Task{}, invalid("granted", "must not be negative")
+	}
+	task.grantedModel, task.grantedTools = s.GrantedModel, s.GrantedTools
 	task.status = status
 	task.failureReason = s.FailureReason
 	task.updatedAt = s.UpdatedAt

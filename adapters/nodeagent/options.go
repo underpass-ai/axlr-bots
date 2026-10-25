@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+// maxSocketPath is the longest Unix socket path the agent opens: the
+// kernel's sun_path is 108 bytes on Linux, 104 on the BSDs.
+const maxSocketPath = 104
+
 // Defaults of the agent's loop.
 const (
 	DefaultHeartbeat = 15 * time.Second
@@ -33,6 +37,10 @@ type Options struct {
 	Renew time.Duration
 	// Upload bounds the upload of one artifact.
 	Upload time.Duration
+	// SocketDir holds the socket the agent serves the delegation tool on
+	// for each execution of a bot that may delegate (mode 0700); empty
+	// serves no tool.
+	SocketDir string
 	// Log receives one line per registration, assignment and report;
 	// nil discards them.
 	Log *log.Logger

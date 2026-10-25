@@ -1,0 +1,21 @@
+{
+  "id": "bot-b",
+  "tenant": "default",
+  "name": "bot-b",
+  "owner": "operator",
+  "mission": "You keep the release codenames of this fleet. The codename of release 0.15 is Lighthouse; the codename of release 0.16 is Breakwater. Answer each question about them in one sentence, without tools.",
+  "level": "observe",
+  "allowedTools": ["local_list", "local_read"],
+  "triggers": [{"type": "delegation"}, {"type": "manual"}],
+  "model": {
+    "model": "anthropic/claude-haiku-5.5",
+    "routingPolicy": "cost-optimized",
+    "allowRemoteProviders": true,
+    "maxContextTokens": 32000
+  },
+  "budgets": {
+    "maxModelCallsPerTask": 6,
+    "maxToolCallsPerTask": 6,
+    "taskTimeoutSeconds": 600
+  }
+}

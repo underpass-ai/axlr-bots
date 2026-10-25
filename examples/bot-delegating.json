@@ -1,0 +1,22 @@
+{
+  "id": "bot-a",
+  "tenant": "default",
+  "name": "bot-a",
+  "owner": "operator",
+  "mission": "Answer each task in one or two sentences. You know nothing about releases yourself: when a task needs another bot's knowledge, ask that bot with the axlr_bots_delegate tool (wait true) and answer with what it said.",
+  "level": "observe",
+  "allowedTools": ["local_list", "local_read"],
+  "triggers": [{"type": "manual"}],
+  "delegation": {"to": ["bot-b"], "maxDepth": 1, "budgetShare": 0.5},
+  "model": {
+    "model": "anthropic/claude-haiku-5.5",
+    "routingPolicy": "cost-optimized",
+    "allowRemoteProviders": true,
+    "maxContextTokens": 32000
+  },
+  "budgets": {
+    "maxModelCallsPerTask": 10,
+    "maxToolCallsPerTask": 10,
+    "taskTimeoutSeconds": 480
+  }
+}

@@ -97,3 +97,38 @@ func TestSidecarExampleBot(t *testing.T) {
 		t.Errorf("placement %+v does not match the chart's demo", snapshot.Placement)
 	}
 }
+
+// TestDelegationExampleBotsFormAPair registers the delegation examples
+// as the command does: bot-a may ask bot-b, which takes delegated tasks
+// and asks nobody.
+func TestDelegationExampleBotsFormAPair(t *testing.T) {
+	deps, err := compose.Dependencies(t.TempDir(), "/nonexistent", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bots := map[string]domain.Bot{}
+	for _, name := range []string{"bot-delegating.json", "bot-delegate-target.json"} {
+		raw, err := os.ReadFile(filepath.Join("..", "..", "examples", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var definition application.BotDefinition
+		decoder := json.NewDecoder(strings.NewReader(string(raw)))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&definition); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		bot, err := application.NewRegisterBot(deps).Execute(context.Background(), definition)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		bots[bot.ID().String()] = bot
+	}
+	a, b := bots["bot-a"], bots["bot-b"]
+	if !a.Delegation().Allows("bot-b") || a.DelegationDepth() != 1 || a.Level() != domain.AutonomyObserve {
+		t.Errorf("bot-a = %+v", a.Snapshot().Delegation)
+	}
+	if b.Delegation().Enabled() || !b.AcceptsTrigger(domain.TriggerDelegation) {
+		t.Errorf("bot-b = %+v triggers %+v", b.Snapshot().Delegation, b.Snapshot().Triggers)
+	}
+}

@@ -124,6 +124,8 @@ func (s *Server) nodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/lease", s.authenticated(s.renewLease))
 	mux.HandleFunc("PUT /v1/nodes/{id}/executions/{exec}/artifacts/{name}", s.authenticated(s.uploadArtifact))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/report", s.authenticated(s.report))
+	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/delegations", s.authenticated(s.delegate))
+	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/delegations/{task}", s.authenticated(s.awaitDelegation))
 }
 
 // ServeTLS serves the node protocol on the listener with the TLS
@@ -599,6 +601,87 @@ func (s *Server) report(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusOK, nodeproto.ReportAck{Accepted: result.Accepted, Outcome: result.Execution.Outcome().String()}, nil)
+}
+
+// delegate is POST /v1/nodes/{id}/executions/{exec}/delegations: the
+// execution asks another bot to do a task. A refusal is a 200 answer
+// with refused set; the node hands it to the model.
+func (s *Server) delegate(w http.ResponseWriter, r *http.Request) {
+	id, executionID, ok := nodeExecution(w, r)
+	if !ok {
+		return
+	}
+	var message nodeproto.DelegateMessage
+	if !readJSON(w, r, &message) {
+		return
+	}
+	answer, err := s.service.Runner().Delegate(r.Context(), id, executionID, application.DelegateCommand{Bot: message.Bot, Objective: message.Objective, Wait: message.Wait})
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	status := http.StatusOK
+	if answer.Created {
+		status = http.StatusCreated
+	}
+	respond(w, status, nodeproto.FromDelegation(answer), nil)
+}
+
+// awaitDelegation is GET .../delegations/{task}?wait=20s: it answers the
+// child's state at once when it has ended, or when wait passes.
+func (s *Server) awaitDelegation(w http.ResponseWriter, r *http.Request) {
+	id, executionID, ok := nodeExecution(w, r)
+	if !ok {
+		return
+	}
+	child, err := domain.NewTaskID(r.PathValue("task"))
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	wait := time.Duration(0)
+	if raw := r.URL.Query().Get("wait"); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil || parsed < 0 {
+			respond(w, 0, nil, domain.ValidationError{Field: "wait", Reason: "must be a duration"})
+			return
+		}
+		wait = min(parsed, maxPollWait)
+	}
+	deadline := time.Now().Add(wait)
+	read := application.NewGetDelegation(s.service.Dependencies())
+	for {
+		answer, err := read.Execute(r.Context(), id, executionID, child)
+		if err != nil {
+			respond(w, 0, nil, err)
+			return
+		}
+		if answer.Done || time.Now().After(deadline) || r.Context().Err() != nil {
+			respond(w, http.StatusOK, nodeproto.FromDelegation(answer), nil)
+			return
+		}
+		select {
+		case <-r.Context().Done():
+			respond(w, http.StatusOK, nodeproto.FromDelegation(answer), nil)
+			return
+		case <-time.After(pollInterval):
+		}
+	}
+}
+
+// nodeExecution reads the node and execution ids of a node route.
+func nodeExecution(w http.ResponseWriter, r *http.Request) (domain.NodeID, domain.ExecutionID, bool) {
+	id, err := domain.NewNodeID(r.PathValue("id"))
+	if err != nil {
+		respond(w, 0, nil, err)
+		return "", "", false
+	}
+	executionID, err := domain.NewExecutionID(r.PathValue("exec"))
+	if err != nil {
+		respond(w, 0, nil, err)
+		return "", "", false
+	}
+	return id, executionID, true
 }
 
 // uploadArtifact is PUT /v1/nodes/{id}/executions/{exec}/artifacts/{name}:

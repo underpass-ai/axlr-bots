@@ -43,9 +43,9 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 	}
 	t := Trigger{kind: kind, name: name}
 	switch kind {
-	case TriggerManual:
+	case TriggerManual, TriggerDelegation:
 		if s.Objective != "" || s.Secret != "" || s.SigningKey != "" || s.Every != "" || s.Cron != "" {
-			return Trigger{}, invalid("trigger "+name, "a manual trigger takes no objective, credentials or schedule")
+			return Trigger{}, invalid("trigger "+name, "a "+kind.String()+" trigger takes no objective, credentials or schedule")
 		}
 		return t, nil
 	case TriggerWebhook:

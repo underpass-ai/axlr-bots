@@ -28,6 +28,10 @@ type DecisionRequest struct {
 	AllowedTools  []string
 	ToolRules     domain.ToolRules
 	Timeout       time.Duration
+	// Delegation and DelegationSocket are as on an ExecutionRequest: the
+	// session goes on with the tool it had.
+	Delegation       *DelegationOffer
+	DelegationSocket string
 }
 
 // Validate checks the request names a session and a known decision.

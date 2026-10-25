@@ -62,6 +62,8 @@ type submission struct {
 	key         domain.IdempotencyKey
 	correlation domain.CorrelationID
 	input       []byte
+	// lineage links a delegated task to the task that asked for it.
+	lineage *domain.TaskLineage
 	// accepts refuses the submission for a reason of its own, after the
 	// idempotency lookup and the bot's status; nil accepts.
 	accepts func() error
@@ -107,6 +109,11 @@ func submitTask(ctx context.Context, deps Dependencies, s submission) (SubmitTas
 	}
 	if err := task.Attribute(s.trigger, s.input); err != nil {
 		return SubmitTaskResult{}, err
+	}
+	if s.lineage != nil {
+		if err := task.Link(*s.lineage); err != nil {
+			return SubmitTaskResult{}, err
+		}
 	}
 	if err := deps.Tasks.Save(ctx, task); err != nil {
 		return SubmitTaskResult{}, err

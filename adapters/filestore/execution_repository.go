@@ -3,6 +3,7 @@ package filestore
 import (
 	"context"
 	"path/filepath"
+	"sync"
 
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -10,15 +11,32 @@ import (
 // ExecutionRepository keeps executions under <state>/executions/<id>.json.
 type ExecutionRepository struct {
 	files collection
+	// mu makes Save's check and write one step: copies of the repository
+	// share it.
+	mu *sync.Mutex
 }
 
 // NewExecutionRepository stores executions under the state directory.
 func NewExecutionRepository(stateDir string) ExecutionRepository {
-	return ExecutionRepository{files: collection{dir: filepath.Join(stateDir, "executions"), kind: "execution"}}
+	return ExecutionRepository{files: collection{dir: filepath.Join(stateDir, "executions"), kind: "execution"}, mu: &sync.Mutex{}}
 }
 
-// Save writes the execution atomically.
-func (r ExecutionRepository) Save(_ context.Context, execution domain.Execution) error {
+// Save writes the execution atomically. An execution that has ended
+// never runs again, so a Running copy of one that ended is refused (a
+// domain.StateError): a lease renewal that read the execution before a
+// cancel or a report saved it cannot bring it back.
+func (r ExecutionRepository) Save(ctx context.Context, execution domain.Execution) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if execution.Outcome() == domain.ExecutionRunning {
+		stored, err := r.Get(ctx, execution.ID())
+		switch {
+		case err == nil && stored.Outcome().IsFinal():
+			return domain.StateError{Subject: "execution " + execution.ID().String(), Current: stored.Outcome().String(), Attempted: "run again"}
+		case err != nil && !domain.IsNotFound(err):
+			return err
+		}
+	}
 	return r.files.write(execution.ID().String(), execution.Snapshot())
 }
 

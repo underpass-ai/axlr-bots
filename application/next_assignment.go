@@ -55,6 +55,14 @@ func (uc NextAssignment) queued(ctx context.Context, node domain.Node) (Assignme
 		if err != nil {
 			return Assignment{}, false, err
 		}
+		if task.DeadlinePassed(uc.deps.Clock.Now()) {
+			// A decision that would start after the delegation's
+			// deadline runs nothing.
+			if err := newDeadlineKeeper(uc.deps).miss(ctx, bot, &task, &execution); err != nil {
+				return Assignment{}, false, err
+			}
+			continue
+		}
 		assignment, err := uc.describe(ctx, bot, task, execution)
 		if err != nil {
 			return Assignment{}, false, err
@@ -78,6 +86,13 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 			return Assignment{}, false, err
 		}
 		if !candidate.AcceptsTasks() || !candidate.Placement().Admits(node) {
+			continue
+		}
+		if pending[i].DeadlinePassed(uc.deps.Clock.Now()) {
+			// A delegated task that waited past its deadline never runs.
+			if err := newDeadlineKeeper(uc.deps).miss(ctx, candidate, &pending[i], nil); err != nil {
+				return Assignment{}, false, err
+			}
 			continue
 		}
 		if chosen == nil || pending[i].CreatedAt().Before(chosen.CreatedAt()) {
@@ -122,10 +137,12 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 	return uc.lease(ctx, bot, task, execution, assignment)
 }
 
-// describe builds what the node needs for the execution.
+// describe builds what the node needs for the execution: a delegated
+// task runs with its grant and until its deadline, and a bot that may
+// delegate gets the delegation tool in its allow-list.
 func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task domain.Task, execution domain.Execution) (Assignment, error) {
 	assignment := Assignment{ExecutionID: execution.ID(), Kind: execution.Kind()}
-	timeout := bot.Budgets().TaskTimeoutOr(DefaultTaskTimeout)
+	timeout := runTimeout(bot, task, uc.deps.Clock.Now())
 	if execution.Kind() == domain.ExecutionDecide {
 		previous, decision, err := decisionOf(ctx, uc.deps, task, execution)
 		if err != nil {
@@ -138,7 +155,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 		}
 		assignment.Decide = &DecisionRequest{
 			ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), CorrelationID: task.CorrelationID(), SessionID: sessionID, CallID: pending.CallID, Decision: decision,
-			Level: bot.Level(), AllowedTools: bot.AllowedTools().Names(), ToolRules: bot.ToolRules(), Timeout: timeout,
+			Level: bot.Level(), AllowedTools: allowedTools(bot), ToolRules: bot.ToolRules(), Timeout: timeout, Delegation: delegationOffer(bot, task),
 		}
 		return assignment, nil
 	}
@@ -148,8 +165,8 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 	}
 	assignment.Run = &ExecutionRequest{
 		ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), TenantID: bot.TenantID(), CorrelationID: task.CorrelationID(),
-		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: bot.Level(), AllowedTools: bot.AllowedTools().Names(),
-		ToolRules: bot.ToolRules(), Budgets: bot.Budgets(), Timeout: timeout,
+		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: bot.Level(), AllowedTools: allowedTools(bot),
+		ToolRules: bot.ToolRules(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: delegationOffer(bot, task),
 	}
 	return assignment, nil
 }

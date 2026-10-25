@@ -16,14 +16,17 @@ func FromAssignment(a application.Assignment) AssignmentMessage {
 		m.Run = &RunMessage{
 			TaskID: r.TaskID.String(), BotID: r.BotID.String(), TenantID: r.TenantID.String(), CorrelationID: r.CorrelationID.String(),
 			Objective: r.PromptText(), Model: r.Model, Level: r.Level.String(), AllowedTools: r.AllowedTools,
-			ToolRules: r.ToolRules.Snapshot(), TimeoutSeconds: int(r.Timeout / time.Second),
+			ToolRules: r.ToolRules.Snapshot(), TimeoutSeconds: int(r.Timeout / time.Second), Delegation: fromOffer(r.Delegation),
+		}
+		if model, tools := r.Budgets.MaxModelCallsPerTask(), r.Budgets.MaxToolCallsPerTask(); model > 0 || tools > 0 {
+			m.Run.Budgets = &BudgetsMessage{MaxModelCalls: model, MaxToolCalls: tools}
 		}
 	}
 	if a.Decide != nil {
 		d := a.Decide
 		m.Decide = &DecideMessage{
 			TaskID: d.TaskID.String(), BotID: d.BotID.String(), CorrelationID: d.CorrelationID.String(), SessionID: d.SessionID, CallID: d.CallID, Decision: d.Decision, Level: d.Level.String(),
-			AllowedTools: d.AllowedTools, ToolRules: d.ToolRules.Snapshot(), TimeoutSeconds: int(d.Timeout / time.Second),
+			AllowedTools: d.AllowedTools, ToolRules: d.ToolRules.Snapshot(), TimeoutSeconds: int(d.Timeout / time.Second), Delegation: fromOffer(d.Delegation),
 		}
 	}
 	return m
@@ -59,6 +62,14 @@ func ToAssignment(m AssignmentMessage) (application.Assignment, error) {
 		a.Run = &application.ExecutionRequest{
 			ExecutionID: executionID, TaskID: domain.TaskID(r.TaskID), BotID: botID, TenantID: domain.TenantID(r.TenantID), CorrelationID: domain.CorrelationID(r.CorrelationID),
 			Objective: objective, Model: r.Model, Level: level, AllowedTools: tools.Names(), ToolRules: rules, Timeout: time.Duration(r.TimeoutSeconds) * time.Second,
+			Delegation: toOffer(r.Delegation),
+		}
+		if r.Budgets != nil {
+			budgets, err := domain.NewBudgets(r.Budgets.MaxModelCalls, r.Budgets.MaxToolCalls, 0, a.Run.Timeout)
+			if err != nil {
+				return application.Assignment{}, err
+			}
+			a.Run.Budgets = budgets
 		}
 	case kind == domain.ExecutionDecide && m.Decide != nil:
 		d := m.Decide
@@ -73,6 +84,7 @@ func ToAssignment(m AssignmentMessage) (application.Assignment, error) {
 		a.Decide = &application.DecisionRequest{
 			ExecutionID: executionID, TaskID: domain.TaskID(d.TaskID), BotID: botID, CorrelationID: domain.CorrelationID(d.CorrelationID), SessionID: d.SessionID, CallID: d.CallID, Decision: d.Decision,
 			Level: level, AllowedTools: tools.Names(), ToolRules: rules, Timeout: time.Duration(d.TimeoutSeconds) * time.Second,
+			Delegation: toOffer(d.Delegation),
 		}
 		if err := a.Decide.Validate(); err != nil {
 			return application.Assignment{}, err
@@ -80,6 +92,58 @@ func ToAssignment(m AssignmentMessage) (application.Assignment, error) {
 	default:
 		return application.Assignment{}, fmt.Errorf("nodeproto: assignment %s of kind %s carries no %s", m.ExecutionID, kind, kind)
 	}
+	return a, nil
+}
+
+func fromOffer(o *application.DelegationOffer) *DelegationOfferMessage {
+	if o == nil {
+		return nil
+	}
+	return &DelegationOfferMessage{Targets: append([]string{}, o.Targets...), Depth: o.Depth, MaxDepth: o.MaxDepth}
+}
+
+func toOffer(m *DelegationOfferMessage) *application.DelegationOffer {
+	if m == nil || len(m.Targets) == 0 {
+		return nil
+	}
+	return &application.DelegationOffer{Targets: append([]string(nil), m.Targets...), Depth: m.Depth, MaxDepth: m.MaxDepth}
+}
+
+// FromDelegation renders a delegation answer as a message.
+func FromDelegation(a application.DelegationAnswer) DelegationMessage {
+	m := DelegationMessage{Refused: a.Refused, WaitUntil: a.WaitUntil}
+	if a.Refused != nil {
+		return m
+	}
+	grant := a.Grant
+	m.TaskID, m.BotID, m.Status, m.Created, m.Depth, m.Grant = a.TaskID.String(), a.BotID.String(), a.Status.String(), a.Created, a.Depth, &grant
+	m.Done, m.Answer, m.FailureReason = a.Done, a.Answer, a.FailureReason
+	return m
+}
+
+// ToDelegation reads a delegation message back.
+func ToDelegation(m DelegationMessage) (application.DelegationAnswer, error) {
+	a := application.DelegationAnswer{Refused: m.Refused, WaitUntil: m.WaitUntil}
+	if m.Refused != nil {
+		return a, nil
+	}
+	task, err := domain.NewTaskID(m.TaskID)
+	if err != nil {
+		return application.DelegationAnswer{}, err
+	}
+	bot, err := domain.NewBotID(m.BotID)
+	if err != nil {
+		return application.DelegationAnswer{}, err
+	}
+	status, err := domain.ParseTaskStatus(m.Status)
+	if err != nil {
+		return application.DelegationAnswer{}, err
+	}
+	a.TaskID, a.BotID, a.Status, a.Created, a.Depth = task, bot, status, m.Created, m.Depth
+	if m.Grant != nil {
+		a.Grant = *m.Grant
+	}
+	a.Done, a.Answer, a.FailureReason = m.Done, m.Answer, m.FailureReason
 	return a, nil
 }
 

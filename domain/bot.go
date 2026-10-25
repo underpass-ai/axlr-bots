@@ -19,6 +19,7 @@ type Bot struct {
 	triggers     Triggers
 	placement    Placement
 	approvals    Approvals
+	delegation   Delegation
 	status       BotStatus
 	createdAt    time.Time
 	updatedAt    time.Time
@@ -78,6 +79,31 @@ func (b Bot) Approvals() Approvals { return b.approvals }
 
 // SetApprovals replaces how the bot's pending calls wait for a person.
 func (b *Bot) SetApprovals(approvals Approvals) { b.approvals = approvals }
+
+// Delegation says which bots the bot may ask to do a task.
+func (b Bot) Delegation() Delegation { return b.delegation }
+
+// SetDelegation replaces which bots the bot may ask; a bot may not name
+// itself.
+func (b *Bot) SetDelegation(delegation Delegation) error {
+	if delegation.Allows(b.id) {
+		return invalid("delegation to", "a bot may not delegate to itself")
+	}
+	b.delegation = delegation
+	return nil
+}
+
+// DelegationDepth is how deep a chain through the bot may go: the
+// delegation's maxDepth, else the budgets' maxDelegationDepth, else 1.
+func (b Bot) DelegationDepth() int {
+	switch {
+	case b.delegation.MaxDepth() > 0:
+		return b.delegation.MaxDepth()
+	case b.budgets.MaxDelegationDepth() > 0:
+		return min(b.budgets.MaxDelegationDepth(), MaxDelegationDepthLimit)
+	}
+	return DefaultDelegationDepth
+}
 
 // AcceptsTrigger reports whether a task of the type may reach the bot.
 func (b Bot) AcceptsTrigger(kind TriggerType) bool { return b.triggers.Has(kind) }
@@ -188,14 +214,15 @@ func (b Bot) Snapshot() BotSnapshot {
 			MaxDelegationDepth:   b.budgets.MaxDelegationDepth(),
 			TaskTimeoutSeconds:   int(b.budgets.TaskTimeout() / time.Second),
 		},
-		Level:     b.level.String(),
-		ToolRules: b.toolRules.Snapshot(),
-		Triggers:  b.triggers.Snapshot(),
-		Placement: b.placement.Snapshot(),
-		Approvals: b.approvals.Snapshot(),
-		Status:    b.status.String(),
-		CreatedAt: b.createdAt,
-		UpdatedAt: b.updatedAt,
+		Level:      b.level.String(),
+		ToolRules:  b.toolRules.Snapshot(),
+		Triggers:   b.triggers.Snapshot(),
+		Placement:  b.placement.Snapshot(),
+		Approvals:  b.approvals.Snapshot(),
+		Delegation: b.delegation.Snapshot(),
+		Status:     b.status.String(),
+		CreatedAt:  b.createdAt,
+		UpdatedAt:  b.updatedAt,
 	}
 }
 
@@ -266,6 +293,15 @@ func RestoreBot(s BotSnapshot) (Bot, error) {
 		return Bot{}, err
 	}
 	bot.SetApprovals(approvals)
+	if s.Delegation != nil {
+		delegation, err := NewDelegation(*s.Delegation)
+		if err != nil {
+			return Bot{}, err
+		}
+		if err := bot.SetDelegation(delegation); err != nil {
+			return Bot{}, err
+		}
+	}
 	if s.UpdatedAt.IsZero() {
 		return Bot{}, invalid("updated at", "must not be zero")
 	}
