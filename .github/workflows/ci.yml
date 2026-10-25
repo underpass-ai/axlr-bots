@@ -106,4 +106,4 @@ jobs:
         run: |
           docker buildx build -f distribution/node.Dockerfile --platform linux/amd64 -t axlr-bots-node:ci --load .
           docker run --rm --read-only axlr-bots-node:ci --help 2>&1 | grep -q 'axlr-node check'
-          test "$(docker run --rm --read-only --entrypoint /usr/local/bin/axlr-tui axlr-bots-node:ci --version 2>&1)" = 0.14.0
+          test "$(docker run --rm --read-only --entrypoint /usr/local/bin/axlr-tui axlr-bots-node:ci --version 2>&1)" = "$(sed -n 's/^ARG AXLR_VERSION=//p' distribution/node.Dockerfile)"
