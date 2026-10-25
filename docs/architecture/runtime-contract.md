@@ -15,7 +15,8 @@ The adapter runs `axlr-tui` as a subprocess:
 | Approval level | `--approve none\|local` | the policy table below |
 | Policy | `--policy <state>/policies/<execution>.json` | the bot's level and tools, when the build takes the flag |
 | Correlation | `--correlation <state>/correlation/<execution>.json` | the four ids, when the build takes the flag |
-| Budget | `--budget <file>` | the bot's budgets, when the build takes the flag |
+| Budget | `--budget <file>` | the bot's budgets (a delegated task's grant), when the build takes the flag |
+| Delegation tool | `--plugin <state>/mcp/<execution>.json` | the node's `axlr-node mcp-relay` to the execution's socket, for a bot that may delegate, under an enforced policy ([delegation](delegation.md)) |
 | Timeout | the process is stopped | the bot's `taskTimeoutSeconds` (15 minutes when absent) |
 | Decision | `--session <id> --decide approve\|deny [--call <id>] --policy <file> --json` | an approval or denial of the pending call |
 
@@ -33,7 +34,7 @@ Before each execution the adapter writes `<state>/policies/<execution>.json` wit
 | `act-with-approval` | `act-with-approval` | `none` | every allowed write or command is a person's decision (`needs_decision`) |
 | `act-within-policy` | `act-within-policy` | `local` | the policy decides |
 
-Without `-policy` in the binary the approval level stays `none`: nothing runs without a person (fail closed), and the policy file is kept as a record. The execution shows `"policy": {"level", "runtimeLevel", "enforced", "path"}`. A forbidden call is refused by AXLR before any card: the model reads `forbidden by the execution's policy: …` as the tool result, the call is `forbidden` in `result.toolCalls` and the run goes on (vision §14.5).
+A run given the delegation tool is `--approve all`: AXLR registers a `--plugin` server with manual approval and approves no MCP tool under `none` or `local`; under the enforced policy the allow list still forbids every tool the bot does not name, `act-with-approval` still asks a person for each allowed call, and the destructive list still asks. Without `-policy` in the binary the approval level stays `none`: nothing runs without a person (fail closed), the policy file is kept as a record, and the delegation tool is not given. The execution shows `"policy": {"level", "runtimeLevel", "enforced", "path"}`, and `"delegation"`, the manifest's path, when the run had the tool. A forbidden call is refused by AXLR before any card: the model reads `forbidden by the execution's policy: …` as the tool result, the call is `forbidden` in `result.toolCalls` and the run goes on (vision §14.5).
 
 ## Correlation
 

@@ -315,6 +315,37 @@ The temporary node was stopped and revoked and the bot paused afterwards.
 
 **Found on the way.** Every task on `gx10-ff95` had failed since the node's restart at 08:04 (`axlr-tui: jev: TYPESAFE_API_KEY is required for Jev`): AXLR's settings turn on the Jev judge and the key reached the user's systemd manager only after the node had started. Restarting the node with the new binary gave it the key; the `bot` timer completed again at 18:25.
 
+## Delegation between bots (gx10, 25 Oct 2026)
+
+The installed control plane was replaced by this build (the old binary kept as `axlr-bots.before-delegation`); `gx10-ff95`, `wrx80` and `demo-log-service-0` stayed Online and their node binaries were not touched. A temporary dedicated node, `gx10-deleg`, enrolled with a one-time token and ran this build's `axlr-node` with an `axlr-tui` built from AXLR `main` (`81a327a`, 0.14.0 plus #179–#182). The two example bots, [`bot-delegating.json`](../examples/bot-delegating.json) (`bot-a`) and [`bot-delegate-target.json`](../examples/bot-delegate-target.json) (`bot-b`), were placed on it; both `observe`, haiku-5.5.
+
+**A task that needs the other bot's answer.** `bot-a` may ask `bot-b`, `maxDepth: 1`:
+
+```text
+$ axlr-bots task submit bot-a --objective "What is the codename of release 0.15? Only bot-b knows it: ask bot-b, then answer with the codename." --key deleg-live-1
+20:24:30 node: execution exec-68e01f6d… (run) assigned                       policy allow: axlr_bots_delegate, local_list, local_read
+20:24:30 node: execution exec-68e01f6d… may delegate to bot-b (depth 0 of 1)
+20:24:36 node: execution exec-68e01f6d…: delegated task-f4380d7e… to bot-b at depth 1 (created true, wait true)
+20:24:36 node: execution exec-aa6383fb… (run) assigned                       the child, on the same node, while the parent waits
+20:24:39 node: execution exec-aa6383fb… reported Completed                   "The codename of release 0.15 is Lighthouse."
+20:24:40 node: execution exec-68e01f6d…: delegated task task-f4380d7e… ended Completed
+20:24:41 node: execution exec-68e01f6d… reported Completed                   "The codename of release 0.15 is Lighthouse, according to bot-b."
+bot.task.delegated {"childTaskId": "task-f4380d7e…", "childBotId": "bot-b", "depth": 1, "maxDepth": 1, "chain": ["bot-a"],
+                    "grant": {"maxModelCalls": 5, "maxToolCalls": 5, "deadline": "2026-10-25T19:28:33Z"}, "wait": true}
+```
+
+The child shares the parent's trace id (`trace-6124dd89…`); `GET /v1/tasks/task-f4380d7e…` shows `delegation` with its parent and grant, the parent's shows `children` and `grantedModelCalls: 5`. The grant is half of `bot-a`'s 10 calls (under `bot-b`'s own 6) and half of the 474 s `bot-a` had left. The model reached the tool through AXLR's `axlr_tools` and `axlr_call_tool`; the execution's policy record names the manifest (`"delegation": "…/mcp/exec-68e01f6d….json"`), and the socket was gone once it ended.
+
+**A loop.** `bot-b` was patched to ask `bot-a` back before it answers (`delegation: {to: [bot-a], maxDepth: 1}`):
+
+| `bot-a` | What cut `bot-b`'s ask | `bot.delegation.refused` |
+|---|---|---|
+| no `delegation` trigger | its consent | `target_unavailable`: "bot bot-a takes no delegated task: its triggers do not include delegation" |
+| `delegation` trigger, `maxDepth: 1` | the depth | `depth_exceeded`: "a task of bot-a would be at depth 2; this chain allows 1" |
+| `maxDepth: 2` on both | the visited set | `cycle`: "bot bot-a is already on this chain (bot-a → bot-b): asking it again would loop" |
+
+Each time `bot-b` read the refusal as the tool's error, answered without it ("Breakwater. The confirmation from bot-a was refused with reason \"cycle\" …"), and `bot-a`'s task completed with one child; `audit.jsonl` has `task.delegate` `denied` with the reason. No third task was created.
+
 ## The live tests
 
 Three tests run the real binary when asked; everything else runs against the stand-ins.

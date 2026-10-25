@@ -19,6 +19,8 @@ Over the TLS address a node **is** its certificate: the server takes the node id
 | renew lease | `POST /v1/nodes/{id}/executions/{exec}/lease` | node → control plane | yes; refused for another node's or an ended execution |
 | artifact (the bytes; `Content-Type`, `Content-Length`, `X-Axlr-Artifact-Sha256`) | `PUT /v1/nodes/{id}/executions/{exec}/artifacts/{name}` | node → control plane, before the report | per name: a repeat replaces it; refused once the execution has ended ([below](#artifacts)) |
 | report `{outcome, result, usage, failureReason, traceReference, policy, correlation, receipt}` | `POST /v1/nodes/{id}/executions/{exec}/report` | node → control plane (at most 8 MiB) | **accepted once**: a repeat answers `accepted: false` with the stored outcome |
+| delegate `{bot, objective, wait}` | `POST /v1/nodes/{id}/executions/{exec}/delegations` | node → control plane, while the execution runs | per asking task, bot and objective: a repeat answers the same child, `201` when created, `200` otherwise; a refusal is `200` with `refused: {reason, message}` ([below](#delegation)) |
+| read a delegation | `GET /v1/nodes/{id}/executions/{exec}/delegations/{task}?wait=20s` | node → control plane (long poll, at most 30 s) | yes; only a child of the execution's own task |
 
 The node address serves only these routes and `/healthz`; a node certificate opens no operator route ([API](operator-api.md)).
 
@@ -30,9 +32,13 @@ The agent registers at start, heartbeats every 15 s, long-polls for work (20 s),
 
 ## Assignments and leases
 
-An assignment carries a `run` (the task's objective, model, level, allowed tools, rules, timeout and correlation ids) or a `decide` (the session, the call and the decision, with the task and correlation ids) and a lease of two minutes. The control plane stores the node id and the lease on the execution. A lease the control plane refuses for good (the task was cancelled) stops the run on the node, whose late report is then dropped; a node that stops renewing (it died, or lost the network) is reconciled: the execution and its task fail with the diagnosis once the lease expires ([command reference](cli.md#recovery)).
+An assignment carries a `run` (the task's objective, model, level, allowed tools, rules, timeout, correlation ids and, when it has any, its `budgets` of model and tool calls) or a `decide` (the session, the call and the decision, with the task and correlation ids) and a lease of two minutes. The control plane stores the node id and the lease on the execution. A lease the control plane refuses for good (the task was cancelled) stops the run on the node, whose late report is then dropped; a node that stops renewing (it died, or lost the network) is reconciled: the execution and its task fail with the diagnosis once the lease expires ([command reference](cli.md#recovery)).
 
 The trace of the run stays on the node (`<node-state>/traces/<execution>.jsonl`); the execution keeps its reference. The report carries the result object AXLR produced, the usage, the policy record and the correlation record.
+
+## Delegation
+
+A run (or a decision) of a bot that may delegate carries `delegation: {targets, depth, maxDepth}`, and its allowed tools include `axlr_bots_delegate`. For it the agent opens `<node-state>/run/<execution>.sock` (directory 0700), and the AXLR adapter writes `<node-state>/mcp/<execution>.json`, an MCP manifest whose command is `axlr-node mcp-relay --socket <sock>`, and passes it with `--plugin` and `--approve all` (only under an enforced policy; [runtime contract](../architecture/runtime-contract.md#the-policy)). The model's call reaches the agent through the relay; the agent sends **delegate** with the node's certificate and, when the call waits, **reads the delegation** until the child ends or `waitUntil` (the parent's deadline less 10 s) passes. While it waits, the agent counts the execution as idle and takes the next assignment, so a child placed on the same node runs. The control plane takes the asking bot, task, depth, chain and budget from the execution the node holds, never from the message, and checks them in the order the [ADR](../architecture/delegation.md#3-how-depth-and-budget-propagate) gives. A node older than the field ignores `delegation` and `budgets` and never offers the tool.
 
 ## Artifacts
 
@@ -42,7 +48,7 @@ The report carries AXLR's receipt line (`axlr.execution-receipt/v1`, at most 1 M
 
 ## Events
 
-`node.registered`, `node.heartbeat`, `node.offline`, `node.enrolled`, `node.revoked`, `execution.assigned` and `execution.reported` are the node events, in `events.jsonl` with the bot, task, execution and trace ids they concern. The control plane marks Offline the nodes silent for over a minute, on start and every minute.
+`node.registered`, `node.heartbeat`, `node.offline`, `node.enrolled`, `node.revoked`, `execution.assigned` and `execution.reported` are the node events, and `bot.task.delegated` and `bot.delegation.refused` the delegation's, on the asking bot's stream, in `events.jsonl` with the bot, task, execution and trace ids they concern. The control plane marks Offline the nodes silent for over a minute, on start and every minute.
 
 ## Revocation
 
@@ -56,8 +62,8 @@ The node is marked `Revoked`, its certificate's serial goes on the denylist (`<s
 
 | | |
 |---|---|
-| Out of the node | the registration, heartbeats, polls, lease renewals and reports; the bytes of the artifacts an execution delivered; the signing request at enrollment |
-| Into the node | the assignments (the objective, model, level, tools, rules, timeout and correlation ids, or a decision) and its own certificate once |
+| Out of the node | the registration, heartbeats, polls, lease renewals and reports; the bytes of the artifacts an execution delivered; an execution's delegations (the target and the objective the model wrote); the signing request at enrollment |
+| Into the node | the assignments (the objective, model, level, tools, rules, timeout, budgets and correlation ids, the delegation targets, or a decision), the state and answer of a child an execution delegated, and its own certificate once |
 | Never leaves the node | its private key, the AXLR session and its trace (the execution keeps a reference), the workspace beyond the delivered artifacts |
 | Never leaves the control plane | the CA key, the token secrets (stored hashed), the operator bearer token |
 | Per host | the model key, in that host's environment file |

@@ -32,6 +32,7 @@ axlr-node --control unix:///path/to/axlr-bots.sock | https://host:7878
           [--dedicated]                                                    only the bots placed on this node by name or selector
 axlr-node enroll --control https://host:7878 --token <token> | --token-file <path> [--ca-file <pem>] [--state <dir>] [--host-name <name>]
 axlr-node check --control https://host:7878 [--ca-file <pem> | --token-file <path> | --state <dir>] [--timeout 10s]
+axlr-node mcp-relay --socket <path>
 ```
 
 ## Defaults and environment
@@ -48,7 +49,7 @@ axlr-node check --control https://host:7878 [--ca-file <pem> | --token-file <pat
 | node: token file, pinned CA | `--token-file`, `--ca-file` | `AXLR_NODE_TOKEN_FILE`, `AXLR_NODE_CA_FILE` | none |
 | node: dedicated | `--dedicated` | `AXLR_NODE_DEDICATED=true` | off: the node also runs bots placed on any node |
 
-`axlr-node --token-file` is a sidecar's first start ([sidecar](../runbooks/sidecar.md)): with no certificate under its state the node enrolls with the token in the file, refusing a token whose node id is not `--node-id` before sending it; with a certificate it keeps it, unless the file holds a token other than the one the certificate came from (`pki/enrollment.json` records its id), which rotates it; a rotation that fails keeps the certificate. Until it has a certificate it retries every `--enroll-retry`, reading the file again each time, and never exits for it. `axlr-node check` asks the node address's `/healthz` over TLS 1.3, verifying the control plane against the CA in `--ca-file`, the token's, or the one enrollment stored, and presents no certificate; it changes nothing.
+`axlr-node --token-file` is a sidecar's first start ([sidecar](../runbooks/sidecar.md)): with no certificate under its state the node enrolls with the token in the file, refusing a token whose node id is not `--node-id` before sending it; with a certificate it keeps it, unless the file holds a token other than the one the certificate came from (`pki/enrollment.json` records its id), which rotates it; a rotation that fails keeps the certificate. Until it has a certificate it retries every `--enroll-retry`, reading the file again each time, and never exits for it. `axlr-node mcp-relay` is not run by hand: AXLR starts it as the stdio MCP server of an execution whose bot may delegate, and it pipes its stdin and stdout to the agent's socket for that execution, `<state>/run/<execution>.sock` ([delegation](../architecture/delegation.md)). `axlr-node check` asks the node address's `/healthz` over TLS 1.3, verifying the control plane against the CA in `--ca-file`, the token's, or the one enrollment stored, and presents no certificate; it changes nothing.
 
 Every command tries the socket first: when the daemon answers, the command is carried by it, so a `task submit` reaches the running service and never touches the state files. When nothing answers, the command works on the state directory: the task is spooled and runs at the daemon's next start, or with `task run` in process.
 

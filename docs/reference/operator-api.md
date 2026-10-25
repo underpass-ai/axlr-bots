@@ -27,7 +27,7 @@ Every CLI command tries the socket first (`--socket`, `AXLR_BOTS_SOCKET`, defaul
 | `GET /v1/bots/{id}/events?limit=100` | the bot's newest events, oldest first (at most 1000) | |
 | `POST /v1/triggers/{bot}/{trigger}` | fire a webhook with the body as the event; `Idempotency-Key` is the delivery id ([triggers](../runbooks/triggers.md)) | same delivery (or same body): same task, `200` |
 | `GET /v1/tasks?bot=&status=&since=&limit=100` | the tasks across bots, newest created first; each parameter optional: `bot` one bot (an unknown bot is `404`), `status` one status, `since` created at or after an RFC 3339 time, `limit` at most 1000 | |
-| `GET /v1/tasks/{id}` | show a task: status, trigger, input, trace id, executions | |
+| `GET /v1/tasks/{id}` | show a task: status, trigger, input, trace id, executions; a delegated task's `delegation` (parent task, execution and bot, depth, the chain's limit, the chain, its `grant`), a task that delegated its `children` and what it granted them (`grantedModelCalls`, `grantedToolCalls`) ([delegation](../architecture/delegation.md)) | |
 | `GET /v1/tasks/{id}/events?limit=100` | the task's timeline: its newest events, oldest first (at most 1000) | |
 | `GET /v1/tasks/{id}/executions` | the task's executions with their correlation, policy, usage, result and receipt; `result.artifacts` lists what each delivered, `stored: true` for the ones the control plane keeps ([artifacts](#artifacts)) | |
 | `POST /v1/tasks/{id}/cancel` | stop a task: Pending never runs, Running ends `Cancelled` (the in-process run is interrupted, a node's run stops at its next lease renewal, the late report is dropped), WaitingApproval never gets its decision | a Cancelled task answers `200` with `changed: false`; Completed or Failed is `409` |
