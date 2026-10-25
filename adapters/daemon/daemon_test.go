@@ -207,7 +207,13 @@ func TestDaemonLogsRunErrorsAndKeepsGoing(t *testing.T) {
 		t.Fatal(err)
 	}
 	client, stop := f.start(t)
-	time.Sleep(80 * time.Millisecond)
+	// The run tick and the reconcile pass both read the broken file; on a
+	// loaded runner the reconcile error can be the only line after a fixed
+	// sleep (25 Oct 2026: 2 of 3 full-suite runs). Wait for the run's own line.
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(f.logs.String(), "daemon: run:") && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if !strings.Contains(f.logs.String(), "daemon: run:") {
 		t.Errorf("logs = %s", f.logs.String())
 	}
