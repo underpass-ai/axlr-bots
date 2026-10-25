@@ -226,7 +226,7 @@ func TestHandshakes(t *testing.T) {
 
 func TestServerCertificateIsReissuedNearExpiry(t *testing.T) {
 	ca, _ := Generate(filepath.Join(t.TempDir(), "ca"))
-	issuer := &serverCertificate{authority: ca, hosts: []string{"localhost"}}
+	issuer := &serverCertificate{authority: ca, hosts: func() []string { return []string{"localhost"} }}
 	first, err := issuer.get(nil)
 	if err != nil || first.Leaf.DNSNames[0] != "localhost" {
 		t.Fatalf("first: %v", err)
@@ -287,5 +287,40 @@ func TestCertifierOverTheStateDirectory(t *testing.T) {
 	}
 	if _, err := certifier.IssueNodeCertificate(ctx, "db-1", csr); err == nil {
 		t.Error("issued for another node")
+	}
+}
+
+// The names are read at each handshake: an address that arrives after the
+// daemon started is added by reissuing, and the same set in another order
+// or with repeats keeps the certificate.
+func TestServerCertificateFollowsTheNamesItMustCarry(t *testing.T) {
+	ca, _ := Generate(filepath.Join(t.TempDir(), "ca"))
+	names := []string{"127.0.0.1", "localhost"}
+	issuer := &serverCertificate{authority: ca, hosts: func() []string { return names }}
+	first, err := issuer.get(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names = []string{"localhost", "127.0.0.1", "localhost"}
+	if again, _ := issuer.get(nil); again != first {
+		t.Error("the same names in another order replaced the certificate")
+	}
+	names = []string{"127.0.0.1", "localhost", "192.0.2.10"}
+	grown, err := issuer.get(nil)
+	if err != nil || grown == first {
+		t.Fatalf("a new address did not reissue: %v", err)
+	}
+	found := false
+	for _, ip := range grown.Leaf.IPAddresses {
+		found = found || ip.String() == "192.0.2.10"
+	}
+	if !found {
+		t.Errorf("IP SANs %v lack the new address", grown.Leaf.IPAddresses)
+	}
+	if len(grown.Leaf.DNSNames) != 1 {
+		t.Errorf("DNS SANs %v repeat a name", grown.Leaf.DNSNames)
+	}
+	if ServerTLSConfigFor(ca, func() []string { return names }).GetCertificate == nil {
+		t.Error("no certificate source")
 	}
 }

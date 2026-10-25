@@ -50,15 +50,22 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 			fmt.Fprintln(stderr, "axlr-bots: serve --listen/--api-listen:", err)
 			return exitError
 		}
-		hosts := serverNames(*listen, *names)
-		if *listen == "" {
-			hosts = serverNames(*apiListen, *names)
-		} else if *apiListen != "" {
-			hosts = append(hosts, serverNames(*apiListen, "")...)
+		// The names are read at each handshake: a listener on every
+		// interface must also carry an address that arrives after start.
+		listenAddr, apiAddr, extra := *listen, *apiListen, *names
+		hosts := func() []string {
+			if listenAddr == "" {
+				return serverNames(apiAddr, extra)
+			}
+			names := serverNames(listenAddr, extra)
+			if apiAddr != "" {
+				names = append(names, serverNames(apiAddr, "")...)
+			}
+			return names
 		}
 		options.ListenAddr = *listen
 		options.APIListenAddr = *apiListen
-		options.TLS = pki.ServerTLSConfig(authority, hosts)
+		options.TLS = pki.ServerTLSConfigFor(authority, hosts)
 	}
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
