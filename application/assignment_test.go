@@ -326,3 +326,31 @@ func TestDedicatedNodeTakesOnlyTheBotsPlacedOnIt(t *testing.T) {
 		t.Errorf("in-process run with only a dedicated node: %v %v", err, ran)
 	}
 }
+
+// An operator cancels the task between the control plane creating the
+// execution and leasing it to the node: the node is given nothing to run,
+// and that is not an error of the node's poll (25 Oct 2026: the node
+// logged "poll: execution … is Cancelled: cannot run again").
+func TestNextAssignmentGivesNothingWhenTheTaskIsCancelledMeanwhile(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	bot := enabledBot(t, h)
+	node := onlineNode(t, h, "web-1")
+	task := submit(t, h, bot, "k-cancel").Task
+	h.execs.beforeSave = func(e domain.Execution) {
+		if _, stored := h.execs.executions[e.ID()]; !stored {
+			return
+		}
+		h.execs.beforeSave = nil
+		if _, err := NewCancelTask(h.deps).Execute(ctx, task.ID()); err != nil {
+			t.Fatalf("cancel: %v", err)
+		}
+	}
+	assignment, found, err := NewNextAssignment(h.deps).Execute(ctx, node.ID())
+	if err != nil || found || assignment.Run != nil {
+		t.Fatalf("assignment: %v %v %+v", err, found, assignment)
+	}
+	if got, _ := h.tasks.Get(ctx, task.ID()); got.Status() != domain.TaskCancelled {
+		t.Errorf("task %s", got.Status())
+	}
+}
