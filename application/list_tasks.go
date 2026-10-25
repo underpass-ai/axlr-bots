@@ -60,7 +60,7 @@ func (uc ListTasks) Execute(ctx context.Context, query TaskQuery) ([]domain.Task
 	if err != nil {
 		return nil, err
 	}
-	tasks := make([]domain.Task, 0, min(len(all), limit))
+	tasks := make([]domain.Task, 0, len(all))
 	for _, task := range all {
 		if bot != "" && task.BotID() != bot {
 			continue

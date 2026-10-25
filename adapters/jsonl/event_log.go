@@ -33,6 +33,9 @@ func (l *EventLog) Publish(_ context.Context, event domain.Event) error {
 // maxEventLineBytes bounds one event line when reading back.
 const maxEventLineBytes = 4 << 20
 
+// eventBatch is the first capacity of a read's result.
+const eventBatch = 64
+
 // ListEvents scans the log for the bot's events and returns the newest
 // limit of them, oldest first.
 func (l *EventLog) ListEvents(_ context.Context, bot domain.BotID, limit int) ([]domain.Event, error) {
@@ -60,7 +63,9 @@ func (l *EventLog) tail(limit int, match func(domain.Event) bool) ([]domain.Even
 	if limit <= 0 {
 		limit = 1
 	}
-	kept := make([]domain.Event, 0, min(limit, 256))
+	// The first capacity is fixed, not the caller's limit: the slice grows
+	// only with the events the log holds.
+	kept := make([]domain.Event, 0, eventBatch)
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxEventLineBytes)
 	for scanner.Scan() {
