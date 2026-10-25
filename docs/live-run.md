@@ -238,6 +238,19 @@ TEST SUITE: demo-log-service-check   Phase: Succeeded
 
 A probe pod with the demo's labels, so under its NetworkPolicy, asked the cluster's API server (`https://10.96.0.1:443`) and got `context deadline exceeded`: the policy lets the pod reach DNS, the control plane and the model provider, and nothing in the cluster's private ranges.
 
+### The sidecar took other bots' tasks
+
+The first sidecar registered like any node, so the control plane also gave it the tasks of the example bots placed on any node: two timer tasks of `bot` and one of `bot-act-with-approval` failed there with `axlr: mkdir /var/lib/axlr-node/workspaces/bot: permission denied`. Two fixes, both live since 00:54 UTC. First, the runtime had created `workspaces/` on the state volume as root when it mounted the log volume inside it; the workspaces now have a volume of their own. Second, the sidecar registers `dedicated`, and the control plane gives it only the tasks of bots whose placement names it or selects its labels. That needed the control plane rebuilt with the field, and the image `0.1.1`, each approved first. Afterwards a task of `bot` ran on `host-1`, and one of `log-summariser` on `demo-log-service-0`:
+
+```text
+$ axlr-bots node list
+demo-log-service-0  Online  dedicated
+host-1              Online
+host-2              Online
+bot -> host-1 Completed
+log-summariser -> demo-log-service-0 Completed
+```
+
 ### Over HTTPS with mutual TLS
 
 Later the same night the demo's service became an HTTPS server with mutual TLS (`demo.https`, [sidecar runbook](runbooks/sidecar.md#the-service-over-https-with-mutual-tls)), each step again approved first. The Service took `192.168.1.240` from MetalLB; cert-manager issued the server's certificate from the cluster's Let's Encrypt issuer (DNS-01 on Route53), and the client CA and a client certificate in the namespace; the pod was recreated with nginx in place of the log writer, and the sidecar kept its certificate.
