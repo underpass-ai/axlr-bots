@@ -41,7 +41,7 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 - **A bot is not an execution.** The bot is the durable resource; each task runs as an execution that ends, and the bot, its tasks and its events survive every restart.
 - **Nodes connect outward, with mutual TLS.** The control plane runs the fleet CA; a host joins with a one-time token and is its certificate from then on. The control plane never reaches into a host.
 - **Everything is idempotent.** Submissions carry a key, webhook fires derive theirs from the delivery, timers from the slot, reports are accepted once: a retry, a redelivery or a restart creates nothing twice.
-- **The policy lives outside the model.** The bot's level and tool rules go to AXLR as a policy file; a forbidden call is refused before any approval card, and `act-with-approval` stops for a person.
+- **The policy lives outside the model.** The bot's level and tool rules go to AXLR as a policy file; a forbidden call is refused before any approval card, and `act-with-approval` stops for a person, who is notified (a signed webhook or a local command); past its deadline the call is denied or the task cancelled, and a late approval authorises nothing.
 
 ## Choose a path
 
@@ -50,7 +50,7 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | Install for one host or a fleet, keep it running after logout, uninstall | [Install](docs/runbooks/install.md) |
 | Write a bot: mission, model, tools, autonomy level, triggers, budgets, placement | [Bot definition](docs/reference/bot-definition.md) |
 | Start tasks from a webhook or on a timer, without duplicates | [Triggers](docs/runbooks/triggers.md) |
-| Approve or deny the write a bot wants to make | [Approvals](docs/runbooks/approvals.md) |
+| Approve or deny the write a bot wants to make, be notified of it, let it expire | [Approvals](docs/runbooks/approvals.md) |
 | Add a host: enrollment token, mutual TLS, revocation | [Add a host](docs/runbooks/add-a-host.md) |
 | Run the node agent as a sidecar beside a service in a Kubernetes pod, with Helm | [Sidecar](docs/runbooks/sidecar.md) |
 | Call the control plane over HTTP | [Operator API](docs/reference/operator-api.md) |

@@ -29,6 +29,7 @@ A bot has no role baked in: its definition is what an operator writes, and the s
 | `toolRules` | narrows the allowed tools by their arguments ([below](#tool-rules)) |
 | `triggers` | how tasks reach the bot: `manual` (the default), `webhook`, `timer`; a bot that declares triggers takes only those ([below](#triggers)) |
 | `placement` | where the bot's tasks run: `{"nodes": ["web-1"]}`, `{"selector": {"zone": "eu"}}`, or nothing for any node but a dedicated one, such as a sidecar ([nodes](node-protocol.md)) |
+| `approvals` | how a pending call waits for a person: `ttl` (default `1h`), `onExpire` (`deny`, the default, or `cancel`) and the `notify` targets told when a task starts to wait ([below](#approvals)) |
 | `model` | the model policy: `model` is passed to AXLR as `--model`; `routingPolicy`, `allowRemoteProviders` and `maxContextTokens` are validated and stored with the bot |
 | `budgets` | `taskTimeoutSeconds` bounds every execution (15 minutes when absent); `maxModelCallsPerTask` and `maxToolCallsPerTask` go to AXLR as the execution's budget when the build takes `--budget` ([runtime contract](../architecture/runtime-contract.md)); `maxDelegationDepth` is stored for the delegation to come |
 
@@ -44,6 +45,29 @@ The levels are the vision's (§10.4). The policy is applied outside the model: A
 | `act-within-policy` | every allowed call runs; the tool rules are the limit |
 
 How each level is handed to AXLR (`--approve`, the policy file) is in the [runtime contract](../architecture/runtime-contract.md#the-policy).
+
+## Approvals
+
+A call the policy leaves to a person stops the task in `WaitingApproval` ([runbook](../runbooks/approvals.md)). `approvals` says how long it waits, what happens when nobody decides, and who is told.
+
+```json
+"approvals": {
+  "ttl": "15m",
+  "onExpire": "deny",
+  "notify": [
+    {"type": "webhook", "name": "ops", "url": "https://hooks.example.com/axlr", "secret": "<16 to 256 characters>"},
+    {"type": "command", "name": "desktop", "command": ["/usr/local/bin/axlr-notify", "--urgency", "critical"]}
+  ]
+}
+```
+
+| Field | What it says |
+|---|---|
+| `ttl` | a duration from `1m` to `720h`; the wait's deadline is when the task stopped plus the `ttl`, kept on the task (`approval.deadline`) so a restart keeps it |
+| `onExpire` | `deny`: at the deadline the call is denied as a person's deny would (a new execution hands the denial to the session, which goes on without the call); `cancel`: the task ends `Cancelled` and the session stays where it is. A paused bot's expired task is cancelled either way |
+| `notify` | up to 8 targets, names unique (the type when not given). A `webhook` takes an absolute `http`/`https` `url` without credentials and the `secret` its deliveries are signed with; a `command` takes the program by its absolute path and its arguments |
+
+A decision that arrives after the deadline authorises nothing (vision §14): it is refused with `409 approval_expired`, whether the daemon has carried out the expiry yet or not, and the call never runs. The secret is stored with the bot and redacted in every answer, as a trigger's is; a `PATCH` of `approvals` replaces the whole value, secrets included. A bot defined before approvals waits an hour and then denies.
 
 ## Tool rules
 
@@ -99,7 +123,7 @@ axlr-bots bot get bot                                # credentials redacted
 axlr-bots bot events bot --limit 100                 # the bot's newest events, oldest first
 ```
 
-A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `model`, `budgets`) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`examples/bot-triggers-patch.json`](../../examples/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`examples/bot-act-with-approval.json`](../../examples/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
+A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `model`, `budgets`) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`examples/bot-triggers-patch.json`](../../examples/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`examples/bot-act-with-approval.json`](../../examples/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
 
 ## Tasks
 
