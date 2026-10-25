@@ -1,0 +1,131 @@
+{{- if and .Values.demo.enabled .Values.demo.https.enabled }}
+{{- $name := include "axlr-bots-node.demoName" . }}
+{{- $host := required "demo.https.host is required (the DNS name clients use)" .Values.demo.https.host }}
+# nginx: TLS on 8443 with the server's certificate, every request needing
+# a client certificate the client CA signed; the access log goes to the
+# volume the bot reads.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-nginx
+  labels:
+    {{- include "axlr-bots-node.labels" . | nindent 4 }}
+data:
+  nginx.conf: |
+    worker_processes 1;
+    pid /tmp/nginx.pid;
+    error_log /var/log/service/error.log warn;
+    events { worker_connections 256; }
+    http {
+      client_body_temp_path /tmp/client_temp;
+      proxy_temp_path /tmp/proxy_temp;
+      fastcgi_temp_path /tmp/fastcgi_temp;
+      uwsgi_temp_path /tmp/uwsgi_temp;
+      scgi_temp_path /tmp/scgi_temp;
+      server_tokens off;
+      log_format service '$time_iso8601 client=$remote_addr tls=$ssl_protocol verify=$ssl_client_verify dn="$ssl_client_s_dn" "$request" status=$status bytes=$body_bytes_sent rt=$request_time ua="$http_user_agent"';
+      access_log /var/log/service/access.log service;
+      server {
+        listen 8443 ssl;
+        server_name {{ $host }};
+        ssl_certificate /etc/nginx/tls/tls.crt;
+        ssl_certificate_key /etc/nginx/tls/tls.key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_client_certificate /etc/nginx/client-ca/ca.crt;
+        ssl_verify_client on;
+        ssl_verify_depth 2;
+        location / {
+          default_type text/plain;
+          return 200 "hello $ssl_client_s_dn from {{ $host }}\n";
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-https
+  labels:
+    {{- include "axlr-bots-node.labels" . | nindent 4 }}
+    app.kubernetes.io/component: demo
+  {{- with .Values.demo.https.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: {{ .Values.demo.https.service.externalTrafficPolicy }}
+  selector:
+    {{- include "axlr-bots-node.selectorLabels" . | nindent 4 }}
+    app: {{ $name }}
+  ports:
+    - {name: https, protocol: TCP, port: {{ .Values.demo.https.service.port }}, targetPort: https}
+{{- if .Values.demo.https.certManager.enabled }}
+{{- $issuer := required "demo.https.certManager.serverIssuer.name is required" .Values.demo.https.certManager.serverIssuer.name }}
+---
+# The server's certificate for the host.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $name }}-tls
+  labels:
+    {{- include "axlr-bots-node.labels" . | nindent 4 }}
+spec:
+  secretName: {{ $name }}-tls
+  dnsNames: [{{ $host | quote }}]
+  privateKey: {algorithm: ECDSA, size: 256, rotationPolicy: Always}
+  usages: [server auth, digital signature]
+  issuerRef:
+    kind: {{ .Values.demo.https.certManager.serverIssuer.kind }}
+    name: {{ $issuer }}
+---
+# A private CA for the clients: a self-signed root in this namespace, an
+# issuer that signs with it, and one client certificate for the test.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $name }}-selfsigned
+  labels:
+    {{- include "axlr-bots-node.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $name }}-client-ca
+  labels:
+    {{- include "axlr-bots-node.labels" . | nindent 4 }}
+spec:
+  isCA: true
+  commonName: {{ $name }} client CA
+  secretName: {{ $name }}-client-ca
+  duration: 8760h
+  privateKey: {algorithm: ECDSA, size: 256}
+  issuerRef: {kind: Issuer, name: {{ $name }}-selfsigned}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $name }}-client-ca
+  labels:
+    {{- include "axlr-bots-node.labels" . | nindent 4 }}
+spec:
+  ca:
+    secretName: {{ $name }}-client-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $name }}-client
+  labels:
+    {{- include "axlr-bots-node.labels" . | nindent 4 }}
+spec:
+  commonName: {{ .Values.demo.https.certManager.clientCommonName }}
+  secretName: {{ $name }}-client
+  duration: 720h
+  privateKey: {algorithm: ECDSA, size: 256}
+  usages: [client auth, digital signature]
+  issuerRef: {kind: Issuer, name: {{ $name }}-client-ca}
+{{- end }}
+{{- end }}

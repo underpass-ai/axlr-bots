@@ -238,6 +238,31 @@ TEST SUITE: demo-log-service-check   Phase: Succeeded
 
 A probe pod with the demo's labels, so under its NetworkPolicy, asked the cluster's API server (`https://10.96.0.1:443`) and got `context deadline exceeded`: the policy lets the pod reach DNS, the control plane and the model provider, and nothing in the cluster's private ranges.
 
+### Over HTTPS with mutual TLS
+
+Later the same night the demo's service became an HTTPS server with mutual TLS (`demo.https`, [sidecar runbook](runbooks/sidecar.md#the-service-over-https-with-mutual-tls)), each step again approved first. The Service took `192.168.1.240` from MetalLB; cert-manager issued the server's certificate from the cluster's Let's Encrypt issuer (DNS-01 on Route53), and the client CA and a client certificate in the namespace; the pod was recreated with nginx in place of the log writer, and the sidecar kept its certificate.
+
+```text
+$ kubectl -n underpass-labs get svc demo-log-service-https
+demo-log-service-https   LoadBalancer   192.168.1.240   443:31234/TCP
+$ openssl s_client -connect 192.168.1.240:443 -servername axlr-bots-demo.underpassai.com | openssl x509 -noout -subject -issuer
+subject=CN = axlr-bots-demo.underpassai.com
+issuer=C = US, O = Let's Encrypt, CN = YE2
+$ curl https://axlr-bots-demo.underpassai.com/                                      # verify=0 against the system's CAs
+400
+$ curl --cert client.crt --key client.key https://axlr-bots-demo.underpassai.com/orders/1
+hello CN=axlr-bots-demo-client from axlr-bots-demo.underpassai.com
+$ curl --cert rogue.crt --key rogue.key https://axlr-bots-demo.underpassai.com/     # self-signed, not from the client CA
+400
+$ axlr-bots task report task-d781cd27caacc97277a74fd6                                # "Summarise the last lines of the service log"
+The service log is `access.log` in the workspace. It has six lines, all from 2026-10-25 00:15:20 UTC, and `error.log` is empty.
+- **Client:** every request comes from 192.168.1.75 over TLSv1.3.
+- **Successful requests:** three `curl` calls with a client certificate (CN=axlr-bots-demo-client) returned 200 for `/orders/1`, `/orders/2` and `/orders/3`, each 67 bytes.
+- **Rejected requests:** two `GET /` requests returned 400. One was a plain `curl` with no client certificate (verify=NONE). The other presented a self-signed certificate for `CN=rogue`, which failed verification.
+```
+
+The execution ran on `demo-log-service-0` (observe, enforced, $0.0009).
+
 ## The live tests
 
 Three tests run the real binary when asked; everything else runs against the stand-ins.

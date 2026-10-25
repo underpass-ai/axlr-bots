@@ -44,7 +44,22 @@
       "image": {"type": "string", "minLength": 1},
       "bot": {"type": "string", "pattern": "^[a-z0-9._-]{1,64}$"},
       "intervalSeconds": {"type": "integer", "minimum": 1},
-      "resources": {"type": "object"}}},
+      "resources": {"type": "object"},
+      "https": {"type": "object", "properties": {
+        "enabled": {"type": "boolean"},
+        "host": {"type": "string", "pattern": "^([a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+)?$"},
+        "image": {"type": "string", "minLength": 1},
+        "service": {"type": "object", "properties": {
+          "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+          "annotations": {"type": "object"},
+          "externalTrafficPolicy": {"enum": ["Local", "Cluster"]}}},
+        "ingressFrom": {"type": "array", "minItems": 1},
+        "serverTLS": {"type": "object", "properties": {"existingSecret": {"type": "string"}}},
+        "clientCA": {"type": "object", "properties": {"existingSecret": {"type": "string"}}},
+        "certManager": {"type": "object", "properties": {
+          "enabled": {"type": "boolean"},
+          "serverIssuer": {"type": "object", "properties": {"kind": {"enum": ["Issuer", "ClusterIssuer"]}, "name": {"type": "string"}}},
+          "clientCommonName": {"type": "string", "minLength": 1}}}}}}},
     "tests": {"type": "object", "properties": {"enabled": {"type": "boolean"}}}
   }
 }

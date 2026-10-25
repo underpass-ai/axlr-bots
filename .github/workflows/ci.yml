@@ -73,6 +73,17 @@ jobs:
           refused --set-string controlPlane.url=https://cp.example.internal:7878
           helm template test $chart -f $example --set-string controlPlane.url=https://cp.example.internal:7878 --set-string networkPolicy.controlPlaneCIDR=10.0.0.5/32 >/dev/null
           ! helm template test $chart -f $example --set networkPolicy.enabled=false | grep -q '^kind: NetworkPolicy$'
+          # The HTTPS service with mutual TLS: cert-manager's certificates, or Secrets given.
+          https="--set demo.https.enabled=true --set-string demo.https.host=demo.example.com"
+          helm template test $chart -f $example $https --set demo.https.certManager.enabled=true --set-string demo.https.certManager.serverIssuer.name=acme > https.yaml
+          test "$(grep -c '^kind: Certificate$' https.yaml)" = 3
+          grep -q 'ssl_verify_client on;' https.yaml
+          grep -q 'type: LoadBalancer' https.yaml
+          ! helm template test $chart -f $example $https --set-string demo.https.serverTLS.existingSecret=tls --set-string demo.https.clientCA.existingSecret=ca | grep -q '^kind: Certificate$'
+          refused $https
+          refused --set demo.https.enabled=true --set demo.https.certManager.enabled=true --set-string demo.https.certManager.serverIssuer.name=acme
+          refused $https --set demo.https.certManager.enabled=true
+          refused $https --set-string demo.https.host=Bad_Host
       - name: Include the sidecar from another chart
         shell: bash
         run: |

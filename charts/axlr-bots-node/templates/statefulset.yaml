@@ -30,6 +30,29 @@ spec:
       {{- . | nindent 6 }}
       {{- end }}
       containers:
+        {{- if .Values.demo.https.enabled }}
+        # The service: nginx with mutual TLS, its access log on the volume.
+        - name: service
+          image: {{ .Values.demo.https.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - {name: https, containerPort: 8443}
+          readinessProbe:
+            tcpSocket: {port: https}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.demo.https.resources | nindent 12 }}
+          volumeMounts:
+            - {name: service-logs, mountPath: /var/log/service}
+            - {name: nginx-conf, mountPath: /etc/nginx/nginx.conf, subPath: nginx.conf, readOnly: true}
+            - {name: server-tls, mountPath: /etc/nginx/tls, readOnly: true}
+            - {name: client-ca, mountPath: /etc/nginx/client-ca, readOnly: true}
+            - {name: nginx-tmp, mountPath: /tmp}
+        {{- else }}
         # The service: a log line every few seconds, kept under 2000 lines.
         - name: service
           image: {{ .Values.demo.image }}
@@ -59,11 +82,29 @@ spec:
             {{- toYaml .Values.demo.resources | nindent 12 }}
           volumeMounts:
             - {name: service-logs, mountPath: /var/log/service}
+        {{- end }}
         {{- include "axlr-bots-node.inject.container" $bots | nindent 8 }}
       volumes:
         - name: service-logs
           emptyDir:
             sizeLimit: 32Mi
+        {{- if .Values.demo.https.enabled }}
+        - name: nginx-conf
+          configMap:
+            name: {{ $name }}-nginx
+        - name: server-tls
+          secret:
+            secretName: {{ include "axlr-bots-node.https.serverSecret" . }}
+            items: [{key: tls.crt, path: tls.crt}, {key: tls.key, path: tls.key}]
+            defaultMode: 288 # 0440: root and the pod's fsGroup
+        - name: client-ca
+          secret:
+            secretName: {{ include "axlr-bots-node.https.clientCASecret" . }}
+            items: [{key: ca.crt, path: ca.crt}]
+        - name: nginx-tmp
+          emptyDir:
+            sizeLimit: 16Mi
+        {{- end }}
         {{- include "axlr-bots-node.inject.volumes" $bots | nindent 8 }}
   {{- with include "axlr-bots-node.inject.volumeClaimTemplate" $bots | trim }}
   volumeClaimTemplates:

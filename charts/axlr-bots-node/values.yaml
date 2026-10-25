@@ -96,6 +96,41 @@ demo:
   resources:
     requests: {cpu: 5m, memory: 8Mi}
     limits: {cpu: 50m, memory: 32Mi}
+  # The service as an HTTPS server with mutual TLS in place of the log
+  # writer: nginx on 8443 behind a LoadBalancer Service (MetalLB, say),
+  # every request needing a client certificate from the client CA, its
+  # access log on the volume the bot reads.
+  https:
+    enabled: false
+    # The DNS name clients use; it points at the Service's address.
+    host: ""
+    image: docker.io/nginxinc/nginx-unprivileged:1.29.3-alpine@sha256:5aea7cc516b419e3526f47dd1531be31a56a046cfe44754d94f9383e13e2ee99
+    resources:
+      requests: {cpu: 10m, memory: 16Mi}
+      limits: {cpu: 200m, memory: 64Mi}
+    service:
+      port: 443
+      annotations: {}
+      # Local keeps the client's address in the access log and the policy.
+      externalTrafficPolicy: Local
+    # NetworkPolicy peers allowed to reach the server.
+    ingressFrom:
+      - ipBlock: {cidr: 192.168.0.0/16}
+    # The server's certificate (tls.crt, tls.key) and the CA client
+    # certificates must chain to (ca.crt): existing Secrets, or made by
+    # cert-manager below.
+    serverTLS:
+      existingSecret: ""
+    clientCA:
+      existingSecret: ""
+    certManager:
+      enabled: false
+      # Signs the server's certificate for host (an ACME issuer for a
+      # publicly trusted one).
+      serverIssuer: {kind: ClusterIssuer, name: ""}
+      # A private CA in the release's namespace (self-signed root) and one
+      # client certificate from it, for the test.
+      clientCommonName: axlr-bots-demo-client
 
 tests:
   enabled: true

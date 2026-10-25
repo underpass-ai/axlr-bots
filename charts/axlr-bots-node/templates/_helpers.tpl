@@ -47,3 +47,20 @@ affinity:
   {{- toYaml . | nindent 2 }}
 {{- end }}
 {{- end -}}
+
+{{/* The Secrets the HTTPS demo reads: given, or the ones cert-manager makes. */}}
+{{- define "axlr-bots-node.https.serverSecret" -}}
+{{- if .Values.demo.https.certManager.enabled -}}
+{{- printf "%s-tls" (include "axlr-bots-node.demoName" .) -}}
+{{- else -}}
+{{- required "demo.https.serverTLS.existingSecret is required (or demo.https.certManager.enabled)" .Values.demo.https.serverTLS.existingSecret -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "axlr-bots-node.https.clientCASecret" -}}
+{{- if .Values.demo.https.certManager.enabled -}}
+{{- printf "%s-client-ca" (include "axlr-bots-node.demoName" .) -}}
+{{- else -}}
+{{- required "demo.https.clientCA.existingSecret is required (or demo.https.certManager.enabled)" .Values.demo.https.clientCA.existingSecret -}}
+{{- end -}}
+{{- end -}}

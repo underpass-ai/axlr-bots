@@ -93,6 +93,28 @@ axlr-bots task report task-…
 
 Check: `task executions` shows `"nodeId": "demo-log-service-0"`, `"policy": {"level": "observe", "enforced": true}` and the `local_read` of `service.log`. The workspace is the log volume itself, so AXLR's `--root` confines every read to it; a read of another file or of `../pki/node.key` is refused by the policy before it runs ([live run](../live-run.md#the-sidecar-on-kubernetes)).
 
+## The service over HTTPS with mutual TLS
+
+`demo.https` turns the demo's service into what a real one looks like from outside: nginx on 8443 with TLS, every request needing a client certificate, behind a `LoadBalancer` Service (MetalLB on a bare-metal cluster), its access log on the volume the bot reads. The sidecar does not change; the bot now summarises who called, with which certificate, and what was refused.
+
+```bash
+helm upgrade demo charts/axlr-bots-node -n <namespace> --reuse-values \
+  --set demo.https.enabled=true \
+  --set demo.https.host=axlr-bots-demo.example.com \
+  --set demo.https.certManager.enabled=true \
+  --set demo.https.certManager.serverIssuer.name=letsencrypt-prod   # a ClusterIssuer (ACME, DNS-01 for a LAN address)
+kubectl -n <namespace> get svc demo-log-service-https                  # EXTERNAL-IP: the address the DNS name must point at
+```
+
+With `certManager.enabled` the chart asks cert-manager for the server's certificate from that issuer, and makes a private client CA in the namespace (a self-signed root, an issuer that signs with it) and one client certificate (`demo-log-service-client`) for the test; the pod mounts the CA's `ca.crt` only, never its key. Without cert-manager, `serverTLS.existingSecret` (`tls.crt`, `tls.key`) and `clientCA.existingSecret` (`ca.crt`) name your own. Point the DNS name at the Service's address (an `A` record; an ACME issuer with a DNS-01 solver issues for a name whose address is private), then:
+
+```bash
+curl https://axlr-bots-demo.example.com/                                              # 400: no required SSL certificate
+curl --cert client.crt --key client.key https://axlr-bots-demo.example.com/orders/1   # 200: hello CN=axlr-bots-demo-client
+```
+
+`externalTrafficPolicy: Local` keeps the client's address, in the access log and for the NetworkPolicy, which admits port 8443 from `demo.https.ingressFrom` (the LAN, `192.168.0.0/16`, by default) and nothing else. The certificate's name goes into the public Certificate Transparency logs when the issuer is a public CA.
+
 ## In your own chart
 
 Depend on this chart with its demo off and include its templates in your pod; [`examples/helm/service-with-bots`](../../examples/helm/service-with-bots) is a complete one:
