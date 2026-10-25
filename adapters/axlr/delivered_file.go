@@ -14,9 +14,9 @@ import (
 // OpenDelivered opens a file an execution delivered, by the reference
 // AXLR's result gives it: a path relative to the bot's workspace, with
 // `/` separators. The reference is not trusted: one that is absolute,
-// climbs out, or reaches outside the workspace once links are resolved
-// is refused, and so is anything but a regular file of at most
-// domain.MaxArtifactBytes.
+// holds ".." once cleaned (even inside a name), or reaches outside the
+// workspace once links are resolved is refused, and so is anything but
+// a regular file of at most domain.MaxArtifactBytes.
 func (e *Executor) OpenDelivered(bot domain.BotID, reference string) (io.ReadCloser, error) {
 	if bot == "" || strings.ContainsAny(bot.String(), `/\`) || strings.Contains(bot.String(), "..") {
 		return nil, fmt.Errorf("axlr: bot id %q is not a workspace", bot)
@@ -25,8 +25,8 @@ func (e *Executor) OpenDelivered(bot domain.BotID, reference string) (io.ReadClo
 		return nil, fmt.Errorf("axlr: reference %q is not a path inside the workspace", reference)
 	}
 	relative := filepath.Clean(filepath.FromSlash(reference))
-	if relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
-		return nil, fmt.Errorf("axlr: reference %q leaves the workspace", reference)
+	if relative == "." || strings.Contains(relative, "..") || filepath.IsAbs(relative) {
+		return nil, fmt.Errorf("axlr: reference %q leaves the workspace, or may", reference)
 	}
 	workspace, err := filepath.EvalSymlinks(filepath.Join(e.StateDir, "workspaces", bot.String()))
 	if err != nil {

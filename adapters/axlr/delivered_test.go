@@ -64,7 +64,7 @@ func TestOpenDeliveredStaysInsideTheWorkspace(t *testing.T) {
 	_ = big.Truncate(domain.MaxArtifactBytes + 1)
 	_ = big.Close()
 
-	for _, good := range []string{".axlr/deliverables/s1/notes.md", "inside.md", "./inside.md", "dir/../inside.md"} {
+	for _, good := range []string{".axlr/deliverables/s1/notes.md", "inside.md", "./inside.md", "dir/../inside.md", "dir//../inside.md"} {
 		file, err := e.OpenDelivered("bot", good)
 		if err != nil {
 			t.Errorf("%s: %v", good, err)
@@ -76,7 +76,7 @@ func TestOpenDeliveredStaysInsideTheWorkspace(t *testing.T) {
 			t.Errorf("%s = %q", good, data)
 		}
 	}
-	for _, bad := range []string{"", "/etc/passwd", "../secret.txt", "..", ".", "dir/../../secret.txt", "link.txt", "dir", "big.bin", "missing.md", `a\b`, "a\x00b"} {
+	for _, bad := range []string{"", "/etc/passwd", "../secret.txt", "..", ".", "dir/../../secret.txt", "link.txt", "dir", "big.bin", "missing.md", `a\b`, "a\x00b", "notes..md"} {
 		if file, err := e.OpenDelivered("bot", bad); err == nil {
 			_ = file.Close()
 			t.Errorf("opened %q", bad)

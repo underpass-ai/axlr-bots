@@ -67,6 +67,11 @@ func (s ArtifactStore) artifactPaths(execution domain.ExecutionID, name string) 
 	if err := domain.ValidateArtifactName(name); err != nil {
 		return "", "", err
 	}
+	// Checked here too, beside the join, where a reader of this file
+	// (and a path analysis) sees that the name cannot leave the directory.
+	if strings.Contains(name, "..") || strings.ContainsAny(name, `/\`) {
+		return "", "", fmt.Errorf("filestore: artifact name %q is not a file name", name)
+	}
 	dir, err := s.executionDir(execution)
 	if err != nil {
 		return "", "", err
