@@ -22,7 +22,7 @@ pod demo-log-service-0 (StatefulSet)                                    control 
 
 ## 1. Build and push the node image
 
-[`distribution/node.Dockerfile`](../../distribution/node.Dockerfile) builds `axlr-node` and takes `axlr-tui` from AXLR v0.14.0's release archive for the target, checked against the sha256 the release publishes; the image is distroless, runs as 65532 and holds nothing else. The build stages run on the build platform, so both architectures build without emulation. With Docker's default builder, build each one, push, and join them:
+[`distribution/node.Dockerfile`](../../distribution/node.Dockerfile) builds `axlr-node` and takes `axlr-tui` from AXLR v0.15.0's release archive for the target, checked against the sha256 the release publishes; the image is distroless, runs as 65532 and holds nothing else. The build stages run on the build platform, so both architectures build without emulation. With Docker's default builder, build each one, push, and join them:
 
 ```bash
 R=registry.example.internal/underpass-ai/axlr-bots-node
