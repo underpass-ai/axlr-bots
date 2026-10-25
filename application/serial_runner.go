@@ -52,12 +52,8 @@ func (r *SerialRunner) ExpireApprovals(ctx context.Context) ([]ExpiredApproval, 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	uc := NewExpireApprovals(r.deps)
-	due, err := uc.Due(ctx)
-	if err != nil {
-		return nil, err
-	}
+	due, first := uc.Due(ctx)
 	var done []ExpiredApproval
-	var first error
 	for _, id := range due {
 		runCtx, untrack := r.track(ctx, id)
 		expired, err := uc.Expire(runCtx, id)

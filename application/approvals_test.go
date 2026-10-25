@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -505,3 +506,36 @@ func TestDeliveriesSucceedAndPortErrors(t *testing.T) {
 		t.Errorf("task gone: %v %+v", err, outcomes)
 	}
 }
+
+func TestOneBrokenWaitDoesNotHoldUpTheOthers(t *testing.T) {
+	h := newHarness()
+	_, task := waitingWith(t, h, domain.ApprovalsSnapshot{TTL: "1m"})
+	ctx := context.Background()
+	orphan, _ := domain.NewTask("task-orphan", "ghost", "o", "k-orphan", "", t0)
+	_ = orphan.Start("exec-orphan", t0)
+	_ = orphan.AwaitApproval(testWait(t0), t0)
+	snapshot := orphan.Snapshot()
+	snapshot.Approval = nil
+	orphan, _ = domain.RestoreTask(snapshot)
+	_ = h.tasks.Save(ctx, orphan)
+	h.clock.now = t0.Add(time.Hour)
+	done, err := NewSerialRunner(h.deps).ExpireApprovals(ctx)
+	if !domain.IsNotFound(err) || !strings.Contains(err.Error(), "task-orphan") {
+		t.Errorf("error = %v", err)
+	}
+	if len(done) != 1 || done[0].TaskID != task.ID() {
+		t.Errorf("done = %+v", done)
+	}
+}
+
+func TestAnUploadCutShortIsRefused(t *testing.T) {
+	artifact := domain.Artifact{Name: "a.txt", Size: 10, SHA256: strings.Repeat("a", 64)}
+	reader := newVerifiedReader(shortReader{}, artifact)
+	if _, err := reader.Read(make([]byte, 16)); err == nil || !strings.Contains(err.Error(), "ended after 3 of the 10 bytes") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+type shortReader struct{}
+
+func (shortReader) Read(p []byte) (int, error) { return copy(p, "abc"), io.ErrUnexpectedEOF }

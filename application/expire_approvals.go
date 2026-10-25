@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -30,7 +31,9 @@ func NewExpireApprovals(deps Dependencies) ExpireApprovals {
 // Due lists the WaitingApproval tasks whose deadline has passed, and the
 // ones whose expiry was recorded but whose denial is still to be
 // carried. A task that waited before approvals had deadlines is given
-// one: the bot's time to live from when it began to wait.
+// one: the bot's time to live from when it began to wait. A task that
+// cannot be given one is left out and its error returned with the
+// others, so one broken task does not hold up every expiry.
 func (uc ExpireApprovals) Due(ctx context.Context) ([]domain.TaskID, error) {
 	tasks, err := uc.deps.Tasks.ListByStatus(ctx, domain.TaskWaitingApproval)
 	if err != nil {
@@ -38,6 +41,7 @@ func (uc ExpireApprovals) Due(ctx context.Context) ([]domain.TaskID, error) {
 	}
 	now := uc.deps.Clock.Now()
 	due := []domain.TaskID{}
+	var first error
 	for _, task := range tasks {
 		wait, ok := task.Approval()
 		if ok && wait.Outcome == domain.ApprovalExpired {
@@ -46,14 +50,17 @@ func (uc ExpireApprovals) Due(ctx context.Context) ([]domain.TaskID, error) {
 		}
 		if !ok || !wait.Open() {
 			if wait, err = uc.record(ctx, &task); err != nil {
-				return nil, err
+				if first == nil {
+					first = fmt.Errorf("give task %s a deadline: %w", task.ID(), err)
+				}
+				continue
 			}
 		}
 		if now.After(wait.Deadline) {
 			due = append(due, task.ID())
 		}
 	}
-	return due, nil
+	return due, first
 }
 
 // record gives a task without a deadline the wait it is under.

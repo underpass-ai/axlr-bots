@@ -3,6 +3,7 @@ package application
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -32,6 +33,9 @@ func (v *verifiedReader) Read(p []byte) (int, error) {
 	field := "artifact " + v.want.Name
 	if v.read > v.want.Size {
 		return n, domain.ValidationError{Field: field, Reason: fmt.Sprintf("is larger than the %d bytes it lists", v.want.Size)}
+	}
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		return n, domain.ValidationError{Field: field, Reason: fmt.Sprintf("ended after %d of the %d bytes it lists", v.read, v.want.Size)}
 	}
 	if err == io.EOF {
 		if v.read != v.want.Size {
