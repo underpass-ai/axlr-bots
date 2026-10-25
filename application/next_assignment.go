@@ -142,9 +142,13 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 		}
 		return assignment, nil
 	}
+	prompt, err := domain.NewPrompt(bot.Mission(), task.Objective())
+	if err != nil {
+		return Assignment{}, err
+	}
 	assignment.Run = &ExecutionRequest{
 		ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), TenantID: bot.TenantID(), CorrelationID: task.CorrelationID(),
-		Objective: task.Objective(), Model: bot.ModelPolicy().Model(), Level: bot.Level(), AllowedTools: bot.AllowedTools().Names(),
+		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: bot.Level(), AllowedTools: bot.AllowedTools().Names(),
 		ToolRules: bot.ToolRules(), Budgets: bot.Budgets(), Timeout: timeout,
 	}
 	return assignment, nil

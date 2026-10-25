@@ -15,7 +15,7 @@ func FromAssignment(a application.Assignment) AssignmentMessage {
 		r := a.Run
 		m.Run = &RunMessage{
 			TaskID: r.TaskID.String(), BotID: r.BotID.String(), TenantID: r.TenantID.String(), CorrelationID: r.CorrelationID.String(),
-			Objective: r.Objective.String(), Model: r.Model, Level: r.Level.String(), AllowedTools: r.AllowedTools,
+			Objective: r.PromptText(), Model: r.Model, Level: r.Level.String(), AllowedTools: r.AllowedTools,
 			ToolRules: r.ToolRules.Snapshot(), TimeoutSeconds: int(r.Timeout / time.Second),
 		}
 	}

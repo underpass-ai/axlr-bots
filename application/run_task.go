@@ -65,6 +65,10 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 		return RunTaskResult{}, err
 	}
 
+	prompt, err := domain.NewPrompt(bot.Mission(), task.Objective())
+	if err != nil {
+		return RunTaskResult{}, err
+	}
 	report, runErr := uc.deps.Runtime.Execute(ctx, ExecutionRequest{
 		ExecutionID:   executionID,
 		TaskID:        task.ID(),
@@ -72,6 +76,7 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 		TenantID:      bot.TenantID(),
 		CorrelationID: task.CorrelationID(),
 		Objective:     task.Objective(),
+		Prompt:        prompt,
 		Model:         bot.ModelPolicy().Model(),
 		Level:         bot.Level(),
 		AllowedTools:  bot.AllowedTools().Names(),
