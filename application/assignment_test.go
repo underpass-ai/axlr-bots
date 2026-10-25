@@ -167,7 +167,7 @@ func TestApproveTaskQueuesTheDecisionForTheNode(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.log.events = nil
-	decided, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove)
+	decided, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -29,8 +29,11 @@ func toWire(err error) (int, ErrorResponse) {
 		forbidden    domain.ForbiddenError
 		unauthorized UnauthorizedError
 		tooLarge     *http.MaxBytesError
+		expired      domain.ApprovalExpiredError
 	)
 	switch {
+	case errors.As(err, &expired):
+		return http.StatusConflict, ErrorResponse{Kind: KindApprovalExpired, Message: err.Error()}
 	case errors.As(err, &notFound):
 		return http.StatusNotFound, ErrorResponse{Kind: KindNotFound, Message: err.Error(), Resource: notFound.Kind, ID: notFound.ID}
 	case errors.As(err, &forbidden):

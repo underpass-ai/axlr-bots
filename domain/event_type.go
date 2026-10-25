@@ -33,6 +33,10 @@ const (
 	EventTaskDecided EventType = "bot.task.decided"
 	// EventTaskCancelled says the operator stopped the task.
 	EventTaskCancelled EventType = "bot.task.cancelled"
+	// EventApprovalExpired says nobody decided a pending call by its
+	// deadline: the call was denied or the task cancelled, as the bot's
+	// approvals say.
+	EventApprovalExpired EventType = "bot.approval.expired"
 	// EventNodeRegistered says a node registered (or registered again).
 	EventNodeRegistered EventType = "node.registered"
 	// EventNodeHeartbeat says a node was heard from.
@@ -54,7 +58,7 @@ const (
 func ParseEventType(raw string) (EventType, error) {
 	switch EventType(raw) {
 	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
-		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled,
+		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventApprovalExpired,
 		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked,
 		EventExecutionAssigned, EventExecutionReported:
 		return EventType(raw), nil

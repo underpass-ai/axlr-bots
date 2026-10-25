@@ -1,6 +1,12 @@
 package domain
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
+
+// MaxReceiptBytes bounds the receipt an execution keeps.
+const MaxReceiptBytes = 1 << 20
 
 // Execution is one attempt at a task: when it ran, how it ended and what
 // it produced. The control plane reads its outcome and result from the
@@ -22,6 +28,7 @@ type Execution struct {
 	decision      string
 	nodeID        NodeID
 	leaseUntil    time.Time
+	receipt       json.RawMessage
 }
 
 // NewExecution starts an attempt at the task.
@@ -164,6 +171,28 @@ func (e *Execution) RecordPolicy(record PolicyRecord) error {
 	return nil
 }
 
+// Receipt is the runtime's account of the execution (AXLR's
+// axlr.execution-receipt/v1) as it reported it; nil when it gave none.
+func (e Execution) Receipt() json.RawMessage { return append(json.RawMessage(nil), e.receipt...) }
+
+// RecordReceipt keeps the runtime's receipt: one JSON object of at most
+// MaxReceiptBytes.
+func (e *Execution) RecordReceipt(receipt json.RawMessage) error {
+	if len(receipt) == 0 {
+		e.receipt = nil
+		return nil
+	}
+	if len(receipt) > MaxReceiptBytes {
+		return invalid("receipt", "must be at most 1 MiB")
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(receipt, &object); err != nil {
+		return invalid("receipt", "must be a JSON object")
+	}
+	e.receipt = append(json.RawMessage(nil), receipt...)
+	return nil
+}
+
 // Complete ends a running attempt with an answer.
 func (e *Execution) Complete(result Result, usage Usage, tracePath string, endedAt time.Time) error {
 	return e.end(ExecutionCompleted, result, usage, "", tracePath, endedAt)
@@ -238,6 +267,7 @@ func (e Execution) Snapshot() ExecutionSnapshot {
 		s.Decision = e.decision
 	}
 	s.NodeID = e.nodeID.String()
+	s.Receipt = e.Receipt()
 	if !e.leaseUntil.IsZero() {
 		lease := e.leaseUntil
 		s.LeaseUntil = &lease
@@ -306,6 +336,9 @@ func RestoreExecution(s ExecutionSnapshot) (Execution, error) {
 			return Execution{}, invalid("lease until", "needs a node")
 		}
 		execution.leaseUntil = *s.LeaseUntil
+	}
+	if err := execution.RecordReceipt(s.Receipt); err != nil {
+		return Execution{}, err
 	}
 	if !outcome.IsFinal() {
 		return execution, nil

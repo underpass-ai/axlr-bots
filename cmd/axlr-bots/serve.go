@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/underpass-ai/axlr-bots/adapters/daemon"
@@ -16,12 +18,37 @@ import (
 	"github.com/underpass-ai/axlr-bots/application"
 )
 
+// operatorURL is the base of the links an approval notification carries:
+// --api-url, or the operator address itself; a wildcard address names
+// the host instead.
+func operatorURL(explicit, apiListen string) string {
+	if explicit != "" {
+		return strings.TrimRight(explicit, "/")
+	}
+	if apiListen == "" {
+		return ""
+	}
+	host, port, err := net.SplitHostPort(apiListen)
+	if err != nil {
+		return ""
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		if name, err := os.Hostname(); err == nil && name != "" {
+			host = name
+		} else {
+			host = "localhost"
+		}
+	}
+	return "https://" + net.JoinHostPort(host, port)
+}
+
 // serve runs the control plane as a service until SIGTERM or SIGINT.
 // With --listen it also serves the node protocol over TLS, with a
 // certificate the fleet CA (ca init) issues for the host's names and
 // client certificates verified against that CA; with --api-listen it
 // serves the operator routes over TLS on another address, behind the
-// bearer token in --api-token-file (generated when the file is missing).
+// bearer token in --api-token-file (generated when the file is missing),
+// and --api-url is the base the approval notifications link to.
 func serve(ctx context.Context, app application.Dependencies, stateDir, socketPath string, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -29,6 +56,7 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 	names := flags.String("server-names", os.Getenv("AXLR_BOTS_SERVER_NAMES"), "names and addresses nodes dial the control plane by, comma-separated, added to the host's own (also AXLR_BOTS_SERVER_NAMES)")
 	apiListen := flags.String("api-listen", os.Getenv("AXLR_BOTS_API_LISTEN"), "a TLS address to serve operators and webhook senders on, such as 127.0.0.1:7879 (also AXLR_BOTS_API_LISTEN); needs ca init")
 	apiTokenFile := flags.String("api-token-file", "", "the file with the operator bearer token (default <state>/api.token; generated when missing)")
+	apiURL := flags.String("api-url", os.Getenv("AXLR_BOTS_API_URL"), "the operator API's base URL that approval notifications link to (also AXLR_BOTS_API_URL; default https://<api-listen>)")
 	tick := flags.Duration("tick", daemon.DefaultTick, "how often to look for Pending tasks")
 	reconcileEvery := flags.Duration("reconcile-every", daemon.DefaultReconcileEvery, "how often to fail the tasks a dead run left Running")
 	grace := flags.Duration("grace", 0, "reconciliation grace (default: the bot's task timeout plus 1m)")
@@ -86,6 +114,10 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 		} else {
 			options.Log.Printf("daemon: operator token read from %s", path)
 		}
+	}
+	app.OperatorURL = operatorURL(*apiURL, *apiListen)
+	if app.OperatorURL != "" {
+		options.Log.Printf("daemon: approval notifications link to %s", app.OperatorURL)
 	}
 	if err := daemon.Run(ctx, app, options); err != nil {
 		fmt.Fprintln(stderr, "axlr-bots:", err)

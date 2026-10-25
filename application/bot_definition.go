@@ -6,8 +6,9 @@ import "github.com/underpass-ai/axlr-bots/domain"
 // is plain input; RegisterBot validates it into a domain.Bot. Level is
 // the autonomy level (observe when absent), ToolRules narrows the
 // allowed tools by their arguments in the runtime contract's words,
-// Triggers says how tasks reach the bot (manual when absent) and
-// Placement which nodes run them (any when absent).
+// Triggers says how tasks reach the bot (manual when absent), Placement
+// which nodes run them (any when absent) and Approvals how a pending
+// call waits for a person (an hour, then deny, when absent).
 type BotDefinition struct {
 	ID           string                   `json:"id,omitempty"`
 	Tenant       string                   `json:"tenant"`
@@ -19,6 +20,7 @@ type BotDefinition struct {
 	ToolRules    domain.ToolRulesSnapshot `json:"toolRules"`
 	Triggers     []domain.TriggerSnapshot `json:"triggers"`
 	Placement    domain.PlacementSnapshot `json:"placement"`
+	Approvals    domain.ApprovalsSnapshot `json:"approvals"`
 	Model        ModelPolicyDefinition    `json:"model"`
 	Budgets      BudgetsDefinition        `json:"budgets"`
 }

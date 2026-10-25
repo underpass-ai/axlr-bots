@@ -113,6 +113,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return taskReport(ctx, service, rest, stdout, stderr)
 	case "execution get":
 		return executionGet(ctx, service, rest, stdout, stderr)
+	case "execution artifact":
+		return executionArtifact(ctx, service, rest, stdout, stderr)
 	case "node list":
 		return nodeList(ctx, service, rest, stdout, stderr)
 	case "node get":
@@ -197,7 +199,8 @@ func printUsage(w io.Writer) {
   bot get <bot-id>                    show one bot
   bot update <bot-id> --file <patch.json>
                                       replace the fields the patch names (mission, level,
-                                      allowedTools, toolRules, triggers, placement, model, budgets)
+                                      allowedTools, toolRules, triggers, placement, approvals,
+                                      model, budgets)
   bot events <bot-id> [--limit 100]   the bot's newest events, oldest first
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>]
                                       accept a task; the same key names the same task
@@ -205,9 +208,11 @@ func printUsage(w io.Writer) {
                                       fire a webhook trigger with an event (over the socket)
   task run <task-id>                  run a pending task now, in process
                                       (exit 0 completed, 3 decision required, 1 failed)
-  task approve <task-id>              approve the call a WaitingApproval task stopped on
-  task deny <task-id>                 deny it; both run the session to its end under a
-                                      new execution (same exit codes as task run)
+  task approve <task-id> [--call <id>] approve the call a WaitingApproval task stopped on
+  task deny <task-id> [--call <id>]   deny it; both run the session to its end under a
+                                      new execution (same exit codes as task run); --call
+                                      must name the pending call; past its deadline the
+                                      decision is refused (approval_expired)
   task decide <task-id> approve|deny  the same, with the decision as a word
   task get <task-id>                  show one task
   task list [--bot <id>] [--status <s>] [--since <time>] [--limit 100]
@@ -219,7 +224,11 @@ func printUsage(w io.Writer) {
   task reconcile [--grace <duration>] fail the tasks a crashed run left Running
                                       longer than the grace (default: the bot's
                                       task timeout plus 1m); prints failed/skipped
-  execution get <execution-id>        show one execution: outcome, answer, usage, policy
+  execution get <execution-id>        show one execution: outcome, answer, usage, policy,
+                                      artifacts and receipt
+  execution artifact <execution-id> <name> [--out <file>]
+                                      an artifact the control plane keeps, checked
+                                      against its SHA-256
   overview [--since <time>]           nodes, bots and tasks by status; tasks, executions
                                       and cost since the start of today
   install [--system] [--prefix <dir>] [--state <dir>] [--axlr-bin <path>]

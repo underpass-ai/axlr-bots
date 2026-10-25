@@ -3,7 +3,8 @@
 // plane, heartbeats, long-polls for the executions of the bots placed on
 // the node, runs them with AXLR on the host and reports the result; it
 // renews its lease while it runs. Every message goes out from the node;
-// the control plane never connects in.
+// the control plane never connects in. The artifacts an execution
+// delivered are uploaded from the workspace before the report.
 package nodeagent
 
 import (
@@ -17,10 +18,12 @@ import (
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
-// Executor runs assignments on the host: the AXLR adapter.
+// Executor runs assignments on the host: the AXLR adapter. It also opens
+// what an execution delivered in its workspace.
 type Executor interface {
 	application.RuntimeExecutor
 	application.DecisionExecutor
+	application.Workspace
 	SupportsPolicy(ctx context.Context) bool
 	SupportsCorrelation(ctx context.Context) bool
 	Version(ctx context.Context) string
@@ -132,19 +135,57 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	go a.renew(runCtx, id, assignment.ExecutionID, stopRun)
 	var report application.ExecutionReport
 	var err error
+	var bot domain.BotID
 	switch {
 	case assignment.Run != nil:
+		bot = assignment.Run.BotID
 		report, err = a.Executor.Execute(runCtx, *assignment.Run)
 	case assignment.Decide != nil:
+		bot = assignment.Decide.BotID
 		report, err = a.Executor.Decide(runCtx, *assignment.Decide)
 	default:
 		err = errors.New("the assignment carries neither a run nor a decision")
 	}
-	stopRun()
 	if err != nil {
+		stopRun()
 		report = application.ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "node " + id.String() + ": " + err.Error(), Policy: report.Policy, Correlation: report.Correlation}
+		a.report(id, assignment.ExecutionID, report)
+		return
 	}
+	// The lease is still renewed while the artifacts go up: the
+	// control plane takes them only for an execution that runs.
+	a.upload(id, assignment.ExecutionID, bot, report.Result.Artifacts)
+	stopRun()
 	a.report(id, assignment.ExecutionID, report)
+}
+
+// upload hands over the bytes of each artifact the execution delivered
+// that AXLR lists with a size and a hash (older builds list none). One
+// that cannot be read or is refused is logged and left out: the report
+// still lists it, and the control plane marks it not kept.
+func (a Agent) upload(id domain.NodeID, execution domain.ExecutionID, bot domain.BotID, artifacts []domain.Artifact) {
+	logger := a.Options.log()
+	for _, artifact := range artifacts {
+		if !artifact.Verifiable() {
+			continue
+		}
+		if err := a.uploadOne(id, execution, bot, artifact); err != nil {
+			logger.Printf("node: execution %s: artifact %s not uploaded: %v", execution, artifact.Name, err)
+			continue
+		}
+		logger.Printf("node: execution %s: artifact %s uploaded (%d bytes)", execution, artifact.Name, artifact.Size)
+	}
+}
+
+func (a Agent) uploadOne(id domain.NodeID, execution domain.ExecutionID, bot domain.BotID, artifact domain.Artifact) error {
+	file, err := a.Executor.OpenDelivered(bot, artifact.Reference)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), a.Options.uploadTimeout())
+	defer cancel()
+	return a.Transport.UploadArtifact(ctx, id, execution, artifact, file)
 }
 
 // renew extends the lease until ctx ends; a lease the control plane

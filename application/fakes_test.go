@@ -1,9 +1,11 @@
 package application
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"sync"
@@ -305,10 +307,147 @@ func (f *fakeTraces) TracePath(execution domain.ExecutionID) (string, bool) {
 	return path, ok
 }
 
-// memoryArtifacts is the fake ArtifactStore: the reports it was given.
+// memoryArtifacts is the fake ArtifactStore: the reports it was given
+// and the artifacts kept per execution.
 type memoryArtifacts struct {
-	reports map[domain.TaskID]string
-	fail    error
+	reports   map[domain.TaskID]string
+	fail      error
+	kept      map[domain.ExecutionID]map[string]storedBytes
+	saveFail  error
+	listFail  error
+	openFail  error
+	saveCalls int
+}
+
+type storedBytes struct {
+	listing domain.Artifact
+	content []byte
+}
+
+func (m *memoryArtifacts) SaveArtifact(_ context.Context, execution domain.ExecutionID, artifact domain.Artifact, content io.Reader) error {
+	m.saveCalls++
+	if m.saveFail != nil {
+		return m.saveFail
+	}
+	data, err := io.ReadAll(content)
+	if err != nil {
+		return err
+	}
+	if m.kept == nil {
+		m.kept = map[domain.ExecutionID]map[string]storedBytes{}
+	}
+	if m.kept[execution] == nil {
+		m.kept[execution] = map[string]storedBytes{}
+	}
+	m.kept[execution][artifact.Name] = storedBytes{listing: artifact, content: data}
+	return nil
+}
+
+func (m *memoryArtifacts) StoredArtifacts(_ context.Context, execution domain.ExecutionID) ([]domain.Artifact, error) {
+	if m.listFail != nil {
+		return nil, m.listFail
+	}
+	var out []domain.Artifact
+	for _, kept := range m.kept[execution] {
+		out = append(out, kept.listing)
+	}
+	slices.SortFunc(out, func(a, b domain.Artifact) int { return strings.Compare(a.Name, b.Name) })
+	return out, nil
+}
+
+func (m *memoryArtifacts) OpenArtifact(_ context.Context, execution domain.ExecutionID, name string) (io.ReadCloser, error) {
+	if m.openFail != nil {
+		return nil, m.openFail
+	}
+	kept, ok := m.kept[execution][name]
+	if !ok {
+		return nil, domain.NotFoundError{Kind: "artifact", ID: name}
+	}
+	return io.NopCloser(bytes.NewReader(kept.content)), nil
+}
+
+// fakeWorkspace is the fake Workspace: the files of each bot's
+// workspace by reference.
+type fakeWorkspace struct {
+	files map[string]string
+	fail  error
+}
+
+func (f *fakeWorkspace) OpenDelivered(bot domain.BotID, reference string) (io.ReadCloser, error) {
+	if f.fail != nil {
+		return nil, f.fail
+	}
+	content, ok := f.files[bot.String()+"/"+reference]
+	if !ok {
+		return nil, fmt.Errorf("%s: no such file in the workspace of %s", reference, bot)
+	}
+	return io.NopCloser(strings.NewReader(content)), nil
+}
+
+// memoryDeliveries is the fake DeliveryRepository.
+type memoryDeliveries struct {
+	deliveries map[domain.DeliveryID]domain.Delivery
+	fail       error
+	getFail    error
+	listFail   error
+}
+
+func (m *memoryDeliveries) Save(_ context.Context, d domain.Delivery) error {
+	if m.fail != nil {
+		return m.fail
+	}
+	if m.deliveries == nil {
+		m.deliveries = map[domain.DeliveryID]domain.Delivery{}
+	}
+	m.deliveries[d.ID()] = d
+	return nil
+}
+
+func (m *memoryDeliveries) Get(_ context.Context, id domain.DeliveryID) (domain.Delivery, error) {
+	if m.getFail != nil {
+		return domain.Delivery{}, m.getFail
+	}
+	d, ok := m.deliveries[id]
+	if !ok {
+		return domain.Delivery{}, domain.NotFoundError{Kind: "delivery", ID: id.String()}
+	}
+	return d, nil
+}
+
+func (m *memoryDeliveries) ListPending(context.Context) ([]domain.Delivery, error) {
+	if m.listFail != nil {
+		return nil, m.listFail
+	}
+	var out []domain.Delivery
+	for _, d := range m.deliveries {
+		if d.Status() == domain.DeliveryPending {
+			out = append(out, d)
+		}
+	}
+	slices.SortFunc(out, func(a, b domain.Delivery) int { return strings.Compare(a.ID().String(), b.ID().String()) })
+	return out, nil
+}
+
+// fakeNotifier is the fake NotificationSender: it records each attempt
+// and fails the first failures of them.
+type fakeNotifier struct {
+	sent     []domain.Delivery
+	targets  []domain.NotifyTarget
+	failures int
+}
+
+func (f *fakeNotifier) Send(_ context.Context, target domain.NotifyTarget, d domain.Delivery) error {
+	f.sent = append(f.sent, d)
+	f.targets = append(f.targets, target)
+	if f.failures > 0 {
+		f.failures--
+		return errors.New("HTTP 503")
+	}
+	return nil
+}
+
+func testWait(since time.Time) domain.ApprovalWait {
+	return domain.ApprovalWait{CallID: "call-1", Tool: "local_write", Since: since, Deadline: since.Add(time.Hour), OnExpire: domain.ExpireDeny}
 }
 
 func (m *memoryArtifacts) SaveReport(_ context.Context, task domain.TaskID, execution domain.ExecutionID, content []byte) (string, error) {
@@ -403,6 +542,9 @@ type harness struct {
 	decider *fakeDecisions
 	traces  *fakeTraces
 	store   *memoryArtifacts
+	work    *fakeWorkspace
+	outbox  *memoryDeliveries
+	notify  *fakeNotifier
 	clock   *fixedClock
 }
 
@@ -421,11 +563,15 @@ func newHarness() *harness {
 		decider: &fakeDecisions{report: ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "done after approval", SessionID: "sess-1"}, TracePath: "/traces/exec-2.jsonl"}},
 		traces:  &fakeTraces{paths: map[domain.ExecutionID]string{}},
 		store:   &memoryArtifacts{},
+		work:    &fakeWorkspace{files: map[string]string{}},
+		outbox:  &memoryDeliveries{},
+		notify:  &fakeNotifier{},
 		clock:   &fixedClock{now: t0},
 	}
 	h.deps = Dependencies{
 		Bots: h.bots, Tasks: h.tasks, Executions: h.execs, Timers: h.timers, Nodes: h.nodes, Enrollments: h.enrol, Certifier: h.ca, Denylist: h.deny, Events: h.log, EventReader: h.log, Audit: h.log,
-		Runtime: h.runtime, Decisions: h.decider, Traces: h.traces, Artifacts: h.store, Clock: h.clock, IDs: &sequentialIDs{}, Actor: "test:operator",
+		Runtime: h.runtime, Decisions: h.decider, Traces: h.traces, Artifacts: h.store, Workspace: h.work, Deliveries: h.outbox, Notifier: h.notify,
+		Clock: h.clock, IDs: &sequentialIDs{}, Actor: "test:operator",
 	}
 	return h
 }

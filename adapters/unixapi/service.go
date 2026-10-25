@@ -31,7 +31,9 @@ type Service interface {
 	// address the request authenticates with the trigger's own credential.
 	FireTrigger(ctx context.Context, request FireRequest) (FireResponse, error)
 	RunTask(ctx context.Context, id string) (RunResponse, error)
-	DecideTask(ctx context.Context, id, decision string) (RunResponse, error)
+	// DecideTask decides the pending call; a decision after its deadline
+	// is refused with the kind approval_expired.
+	DecideTask(ctx context.Context, id string, request DecideRequest) (RunResponse, error)
 	// CancelTask stops a task that has not finished.
 	CancelTask(ctx context.Context, id string) (CancelResponse, error)
 	GetTask(ctx context.Context, id string) (domain.TaskSnapshot, error)
@@ -42,6 +44,9 @@ type Service interface {
 	ListExecutions(ctx context.Context, id string) ([]domain.ExecutionSnapshot, error)
 	GetReport(ctx context.Context, id string) (ReportResponse, error)
 	GetExecution(ctx context.Context, id string) (domain.ExecutionSnapshot, error)
+	// GetArtifact opens an artifact the control plane keeps for the
+	// execution; the caller closes the body.
+	GetArtifact(ctx context.Context, execution, name string) (ArtifactContent, error)
 	ListNodes(ctx context.Context) ([]domain.NodeSnapshot, error)
 	GetNode(ctx context.Context, id string) (domain.NodeSnapshot, error)
 	// CreateEnrollmentToken mints a one-time token for a node to come;

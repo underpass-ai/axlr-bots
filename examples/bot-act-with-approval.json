@@ -7,6 +7,7 @@
   "level": "act-with-approval",
   "allowedTools": ["local_read", "local_search", "local_list", "local_write"],
   "triggers": [{"type": "manual"}],
+  "approvals": {"ttl": "15m", "onExpire": "deny"},
   "model": {
     "model": "anthropic/claude-haiku-5.5",
     "routingPolicy": "cost-optimized",

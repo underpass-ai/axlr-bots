@@ -11,6 +11,7 @@ const (
 	DefaultHeartbeat = 15 * time.Second
 	DefaultPollWait  = 20 * time.Second
 	DefaultRenew     = 30 * time.Second
+	DefaultUpload    = 2 * time.Minute
 )
 
 // Options tune the agent.
@@ -30,6 +31,8 @@ type Options struct {
 	PollWait time.Duration
 	// Renew is how often a running execution's lease is renewed.
 	Renew time.Duration
+	// Upload bounds the upload of one artifact.
+	Upload time.Duration
 	// Log receives one line per registration, assignment and report;
 	// nil discards them.
 	Log *log.Logger
@@ -54,6 +57,13 @@ func (o Options) renew() time.Duration {
 		return o.Renew
 	}
 	return DefaultRenew
+}
+
+func (o Options) uploadTimeout() time.Duration {
+	if o.Upload > 0 {
+		return o.Upload
+	}
+	return DefaultUpload
 }
 
 func (o Options) log() *log.Logger {

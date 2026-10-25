@@ -101,7 +101,7 @@ func policyOf(level string, allowed []string, rules domain.ToolRulesSnapshot) (d
 
 // FromReport renders a report as a message.
 func FromReport(r application.ExecutionReport) ReportMessage {
-	return ReportMessage{Outcome: r.Outcome.String(), Result: r.Result, Usage: r.Usage, FailureReason: r.FailureReason, TraceReference: r.TracePath, Policy: r.Policy, Correlation: r.Correlation}
+	return ReportMessage{Outcome: r.Outcome.String(), Result: r.Result, Usage: r.Usage, FailureReason: r.FailureReason, TraceReference: r.TracePath, Policy: r.Policy, Correlation: r.Correlation, Receipt: r.Receipt}
 }
 
 // ToReport reads a report message back.
@@ -116,5 +116,5 @@ func ToReport(m ReportMessage) (application.ExecutionReport, error) {
 	if err := m.Usage.Validate(); err != nil {
 		return application.ExecutionReport{}, err
 	}
-	return application.ExecutionReport{Outcome: outcome, Result: m.Result, Usage: m.Usage, FailureReason: m.FailureReason, TracePath: m.TraceReference, Policy: m.Policy, Correlation: m.Correlation}, nil
+	return application.ExecutionReport{Outcome: outcome, Result: m.Result, Usage: m.Usage, FailureReason: m.FailureReason, TracePath: m.TraceReference, Policy: m.Policy, Correlation: m.Correlation, Receipt: m.Receipt}, nil
 }

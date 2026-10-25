@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -33,13 +34,45 @@ func (r *SerialRunner) Run(ctx context.Context, id domain.TaskID) (RunTaskResult
 	return NewRunTask(r.deps).Execute(runCtx, id)
 }
 
-// Decide decides a WaitingApproval task's pending call, as ApproveTask does.
-func (r *SerialRunner) Decide(ctx context.Context, id domain.TaskID, decision string) (ApproveTaskResult, error) {
+// Decide decides a WaitingApproval task's pending call, as ApproveTask
+// does; callID, when given, must name it.
+func (r *SerialRunner) Decide(ctx context.Context, id domain.TaskID, decision, callID string) (ApproveTaskResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	runCtx, done := r.track(ctx, id)
 	defer done()
-	return NewApproveTask(r.deps).Execute(runCtx, id, decision)
+	return NewApproveTask(r.deps).Execute(runCtx, id, decision, callID)
+}
+
+// ExpireApprovals carries out every deadline that has passed, as
+// ExpireApprovals does, under the same lock as the decisions: a call is
+// never both decided by a person and denied by its deadline. It returns
+// what it did, and the first error after trying every task.
+func (r *SerialRunner) ExpireApprovals(ctx context.Context) ([]ExpiredApproval, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	uc := NewExpireApprovals(r.deps)
+	due, err := uc.Due(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var done []ExpiredApproval
+	var first error
+	for _, id := range due {
+		runCtx, untrack := r.track(ctx, id)
+		expired, err := uc.Expire(runCtx, id)
+		untrack()
+		if err != nil {
+			if first == nil {
+				first = fmt.Errorf("expire approval of %s: %w", id, err)
+			}
+			continue
+		}
+		if expired.Action != "" {
+			done = append(done, expired)
+		}
+	}
+	return done, first
 }
 
 // RunNext runs the oldest Pending task, as RunNextPending does.

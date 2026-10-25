@@ -1,6 +1,7 @@
 // Package compose is the composition root shared by the command and the
 // daemon: file-backed repositories, JSONL logs, the artifact store, the
-// fleet CA and the AXLR executor, all under one state directory.
+// notification outbox and its sender, the fleet CA and the AXLR
+// executor, all under one state directory.
 package compose
 
 import (
@@ -10,6 +11,7 @@ import (
 	"github.com/underpass-ai/axlr-bots/adapters/axlr"
 	"github.com/underpass-ai/axlr-bots/adapters/filestore"
 	"github.com/underpass-ai/axlr-bots/adapters/jsonl"
+	"github.com/underpass-ai/axlr-bots/adapters/notify"
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
 	"github.com/underpass-ai/axlr-bots/adapters/system"
 	"github.com/underpass-ai/axlr-bots/application"
@@ -43,6 +45,9 @@ func Dependencies(stateDir, axlrBin, actor string) (application.Dependencies, er
 		Decisions:   executor,
 		Traces:      executor,
 		Artifacts:   filestore.NewArtifactStore(stateDir),
+		Workspace:   executor,
+		Deliveries:  filestore.NewDeliveryRepository(stateDir),
+		Notifier:    notify.NewSender(),
 		Clock:       system.Clock{},
 		IDs:         system.IDGenerator{},
 		Actor:       actor,

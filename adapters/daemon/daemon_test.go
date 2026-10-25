@@ -67,7 +67,7 @@ func (f *fixture) start(t *testing.T) (*unixapi.Client, func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, f.deps, Options{SocketPath: f.socket, Tick: 20 * time.Millisecond, ReconcileEvery: 50 * time.Millisecond, Grace: time.Millisecond, NodeOfflineAfter: 150 * time.Millisecond, Log: log.New(f.logs, "", 0)})
+		done <- Run(ctx, f.deps, Options{SocketPath: f.socket, Tick: 20 * time.Millisecond, ReconcileEvery: 50 * time.Millisecond, DeliverEvery: 20 * time.Millisecond, Grace: time.Millisecond, NodeOfflineAfter: 150 * time.Millisecond, Log: log.New(f.logs, "", 0)})
 	}()
 	deadline := time.Now().Add(5 * time.Second)
 	for !unixapi.Reachable(context.Background(), f.socket) {
@@ -240,7 +240,7 @@ func TestDaemonRefusals(t *testing.T) {
 		t.Error("socket under a file served")
 	}
 	o := Options{}
-	if o.tick() != DefaultTick || o.reconcileEvery() != DefaultReconcileEvery || o.log() == nil {
+	if o.tick() != DefaultTick || o.reconcileEvery() != DefaultReconcileEvery || o.deliverEvery() != DefaultDeliverEvery || o.log() == nil {
 		t.Error("defaults wrong")
 	}
 }
