@@ -160,7 +160,7 @@ func TestRunWithTokenFile(t *testing.T) {
 	state := filepath.Join(t.TempDir(), "node")
 	tokenFile, tokenID := mintToFile(t, operator, "demo-0")
 	bin, _, _ := fakeaxlr.Write(t.TempDir(), fakeaxlr.Options{Scenario: "completed"})
-	args := []string{"--control", url, "--state", state, "--token-file", tokenFile, "--node-id", "demo-0", "--labels", "namespace=labs,app=demo,pod=demo-0", "--axlr-bin", bin, "--heartbeat", "50ms", "--poll", "100ms", "--enroll-retry", "20ms"}
+	args := []string{"--control", url, "--state", state, "--token-file", tokenFile, "--node-id", "demo-0", "--labels", "namespace=labs,app=demo,pod=demo-0", "--dedicated", "--axlr-bin", bin, "--heartbeat", "50ms", "--poll", "100ms", "--enroll-retry", "20ms"}
 	serial := ""
 	for _, want := range []string{"enrolled as node demo-0 with token " + tokenID, "keeping the certificate for node demo-0 (token " + tokenID + " already used)"} {
 		var stdout bytes.Buffer
@@ -170,7 +170,7 @@ func TestRunWithTokenFile(t *testing.T) {
 		deadline := time.Now().Add(5 * time.Second)
 		for {
 			node, err := operator.GetNode(context.Background(), "demo-0")
-			if err == nil && node.Status == "Online" && node.Labels["app"] == "demo" && node.Labels["zone"] == "k8s" && strings.Contains(stderr.String(), "registered as demo-0") {
+			if err == nil && node.Status == "Online" && node.Labels["app"] == "demo" && node.Labels["zone"] == "k8s" && node.Capabilities.Dedicated && strings.Contains(stderr.String(), "registered as demo-0") {
 				if serial != "" && node.CertificateSerial != serial {
 					t.Fatalf("the restart re-enrolled: %s then %s", serial, node.CertificateSerial)
 				}

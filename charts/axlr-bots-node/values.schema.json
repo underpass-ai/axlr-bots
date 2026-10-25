@@ -14,6 +14,7 @@
     "node": {"type": "object", "properties": {
       "idPrefix": {"type": "string", "pattern": "^[a-z0-9._-]{0,40}$"},
       "appLabelKey": {"type": "string", "minLength": 1},
+      "dedicated": {"type": "boolean"},
       "labels": {"type": "object", "propertyNames": {"pattern": "^[a-z0-9._-]{1,64}$"},
         "additionalProperties": {"type": "string", "pattern": "^[a-z0-9._-]{1,64}$"}}}},
     "sidecar": {"type": "object", "properties": {
@@ -25,6 +26,7 @@
         "volume": {"type": "string", "minLength": 1},
         "subPath": {"type": "string"}}}},
       "state": {"type": "object", "properties": {"persistent": {"type": "boolean"}, "size": {"type": "string", "minLength": 1}, "storageClassName": {"type": "string"}}},
+      "workspacesSize": {"type": "string", "minLength": 1},
       "tmpSize": {"type": "string", "minLength": 1}}},
     "networkPolicy": {"type": "object", "properties": {
       "enabled": {"type": "boolean"},

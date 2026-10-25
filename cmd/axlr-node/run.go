@@ -56,6 +56,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	tokenFile := flags.String("token-file", envOr("AXLR_NODE_TOKEN_FILE", ""), "over https, enroll with the token in this file when the state holds no certificate, then run (also AXLR_NODE_TOKEN_FILE): a sidecar's first start")
 	caFile := flags.String("ca-file", envOr("AXLR_NODE_CA_FILE", ""), "with --token-file, the fleet CA in PEM instead of the one the token carries (also AXLR_NODE_CA_FILE)")
 	retry := flags.Duration("enroll-retry", 10*time.Second, "with --token-file, how long to wait between enrollment attempts")
+	dedicated := flags.Bool("dedicated", envOr("AXLR_NODE_DEDICATED", "") == "true", "run only the bots whose placement names this node or selects its labels, never those placed on any node (also AXLR_NODE_DEDICATED=true): a sidecar")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exitOK
@@ -104,7 +105,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	agent := nodeagent.Agent{
 		Transport: transport,
 		Executor:  axlr.NewExecutor(*axlrBin, *stateDir),
-		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Heartbeat: *heartbeat, PollWait: *poll, Log: logger},
+		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Dedicated: *dedicated, Heartbeat: *heartbeat, PollWait: *poll, Log: logger},
 	}
 	if err := agent.Run(ctx); err != nil {
 		fmt.Fprintln(stderr, "axlr-node:", err)

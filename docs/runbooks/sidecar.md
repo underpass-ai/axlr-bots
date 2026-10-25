@@ -78,6 +78,8 @@ axlr-bots node list                                                     # demo-l
 helm test demo -n <namespace> --logs                                    # {"status": "ok", "control": "https://…"}
 ```
 
+The sidecar registers **dedicated** (`node.dedicated: true`): it runs only the bots whose placement names it or selects its labels, never a bot placed on any node, whose tasks keep going to the other nodes (or run in process when none is Online). Without it, the first live run's sidecar took the example bots' timer tasks. A dedicated node needs a control plane that knows the field: an older one refuses its registration.
+
 The sidecar's labels come from the Downward API: `namespace`, `app` (the pod's `app` label, `node.appLabelKey`) and `pod`, plus `node.labels`; values must be lowercase identifiers. The chart test (`axlr-node check`) asks the control plane's `/healthz` over TLS 1.3, verified against the fleet CA, from inside the namespace and through the NetworkPolicy; it changes nothing on either side.
 
 ## 5. Register the bot and run the task
@@ -152,7 +154,8 @@ The workload must be a StatefulSet whose pods carry an `app` label. A NetworkPol
 | Path | Volume | Survives |
 |---|---|---|
 | `/var/lib/axlr-node`: `pki/` (key 0600, certificate, CA, `enrollment.json` with the token id), traces, policies, correlation | the replica's PVC (`axlr-node-state`) | the pod's deletion and rescheduling |
-| `/var/lib/axlr-node/workspaces/<bot>` | the service's volume, read-only (`sidecar.workspaces`) | whatever that volume does |
+| `/var/lib/axlr-node/workspaces` | an emptyDir of its own: scratch space for the bots without a volume | a container's restart, not the pod's |
+| `/var/lib/axlr-node/workspaces/<bot>` | the service's volume, read-only (`sidecar.workspaces`), mounted inside the one above | whatever that volume does |
 | `/tmp`: AXLR's `XDG_STATE_HOME` (diagnostics, sessions) | tmpfs (emptyDir, medium Memory) | a container's restart, not the pod's |
 | `/etc/axlr-node/enroll/<node id>` | the token Secret, read-only, optional | read at a first start only |
 

@@ -37,10 +37,11 @@ func (p Placement) Selector() map[string]string { return p.selector.Copy() }
 func (p Placement) IsEmpty() bool { return len(p.nodes) == 0 && len(p.selector) == 0 }
 
 // Admits reports whether the node may run the bot: named, or matching
-// every selector label, or any node when the placement is empty.
+// every selector label, or any node but a dedicated one when the
+// placement is empty.
 func (p Placement) Admits(node Node) bool {
 	if p.IsEmpty() {
-		return true
+		return !node.Capabilities().Dedicated
 	}
 	for _, id := range p.nodes {
 		if id == node.ID() {

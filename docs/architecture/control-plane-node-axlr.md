@@ -57,6 +57,7 @@ The same `axlr-node`, from the node image ([`distribution/node.Dockerfile`](../.
 | Node id | the token's | `<idPrefix><pod name>`: a StatefulSet's ordinal, stable across restarts |
 | State | `~/.local/state/axlr-node` | a PVC per replica (`volumeClaimTemplates`); AXLR's own state on a tmpfs |
 | Labels | the token's and `AXLR_NODE_LABELS` | the token's, plus `namespace`, `app` and `pod` from the Downward API |
+| Which bots | those placed on it, and those placed on any node | those placed on it by name or selector only (`dedicated`) |
 | What the bots read | the host's files under the bot's workspace | the service's volume, mounted read-only as the bot's workspace (`sidecar.workspaces`) |
 | Network | outbound to the control plane | the same, under a NetworkPolicy: egress to DNS, the control plane and the model provider only |
 | Model key | the host's env file | a Secret only the sidecar reads |

@@ -41,6 +41,10 @@ node:
   appLabelKey: app
   # Extra node labels for placement selectors; lowercase identifiers.
   labels: {}
+  # A dedicated node runs only the bots whose placement names it or
+  # selects its labels, never those placed on any node: a sidecar is
+  # there for its service. It needs a control plane that knows it.
+  dedicated: true
 
 sidecar:
   name: axlr-node
@@ -60,6 +64,9 @@ sidecar:
     persistent: true
     size: 1Gi
     storageClassName: ""
+  # The bots' workspaces are scratch space per pod (an emptyDir); the
+  # volumes in workspaces above are mounted inside it.
+  workspacesSize: 1Gi
   # AXLR's own state (diagnostics, sessions) lives on a tmpfs.
   tmpSize: 64Mi
 

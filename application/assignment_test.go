@@ -289,3 +289,40 @@ func containsAll(text string, parts ...string) bool {
 	}
 	return true
 }
+
+func TestDedicatedNodeTakesOnlyTheBotsPlacedOnIt(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	anyNode := enabledBot(t, h)
+	d := sampleDefinition()
+	d.Name = "beside"
+	d.Placement = domain.PlacementSnapshot{Selector: map[string]string{"app": "svc"}}
+	placed, err := NewRegisterBot(h.deps).Execute(ctx, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	placed, _ = NewEnableBot(h.deps).Execute(ctx, placed.ID())
+	registration := registration("svc-0")
+	registration.Labels = map[string]string{"app": "svc"}
+	registration.Capabilities.Dedicated = true
+	sidecar, err := NewRegisterNode(h.deps).Execute(ctx, registration)
+	if err != nil || !sidecar.Capabilities().Dedicated {
+		t.Fatalf("register: %+v %v", sidecar.Snapshot(), err)
+	}
+	h.clock.now = t0.Add(time.Second)
+	submit(t, h, anyNode, "k-any")
+	h.clock.now = t0.Add(2 * time.Second)
+	wanted := submit(t, h, placed, "k-placed").Task
+	// The older task is the any-node bot's: the sidecar skips it.
+	assignment, found, err := NewNextAssignment(h.deps).Execute(ctx, sidecar.ID())
+	if err != nil || !found || assignment.Run.TaskID != wanted.ID() {
+		t.Fatalf("assignment = %+v %v %v", assignment, found, err)
+	}
+	if _, found, _ := NewNextAssignment(h.deps).Execute(ctx, sidecar.ID()); found {
+		t.Error("the sidecar took the any-node bot's task")
+	}
+	// No other node is Online: the any-node task runs in process.
+	if _, ran, err := NewRunNextPending(h.deps).Execute(ctx); err != nil || !ran {
+		t.Errorf("in-process run with only a dedicated node: %v %v", err, ran)
+	}
+}

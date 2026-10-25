@@ -25,7 +25,7 @@ The node address serves only these routes and `/healthz`; a node certificate ope
 
 The agent registers at start, heartbeats every 15 s, long-polls for work (20 s), renews the lease every 30 s while it works and reports when it is done. A restarted agent registers again and comes Online. A control plane that lost its state answers a heartbeat with 404 and the agent registers again; a node whose certificate the CA signed is accepted even when the control plane does not know it.
 
-`capabilities` say which `axlr-tui` the node has (`axlr-tui --version`) and whether it takes `--policy` (`policySupported`) and the correlation ids (`correlationSupported`), read once from `--help`.
+`capabilities` say which `axlr-tui` the node has (`axlr-tui --version`) and whether it takes `--policy` (`policySupported`) and the correlation ids (`correlationSupported`), read once from `--help`, and whether the node is `dedicated` (`axlr-node --dedicated`): a dedicated node is assigned only the tasks of bots whose placement names it or selects its labels, never those of a bot placed on any node, which is what a [sidecar](../runbooks/sidecar.md) is. A control plane older than the field refuses such a registration, and the node keeps retrying rather than take work it was not meant for.
 
 ## Assignments and leases
 

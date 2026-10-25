@@ -21,6 +21,9 @@ type Options struct {
 	HostName string
 	// Labels are the node's labels, for placement selectors.
 	Labels map[string]string
+	// Dedicated registers a node that runs only the bots placed on it by
+	// name or selector, never those placed on any node.
+	Dedicated bool
 	// Heartbeat is how often the agent reports it is alive.
 	Heartbeat time.Duration
 	// PollWait is how long one long poll for an assignment waits.

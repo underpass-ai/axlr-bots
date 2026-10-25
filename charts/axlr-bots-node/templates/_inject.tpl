@@ -54,6 +54,8 @@ including chart's own policy, beside its service's rules.
       value: "{{ $v.node.idPrefix }}$(POD_NAME)"
     - name: AXLR_NODE_LABELS
       value: "namespace=$(POD_NAMESPACE),app=$(POD_APP),pod=$(POD_NAME){{ range $key, $value := $v.node.labels }}{{ if not (and (regexMatch "^[a-z0-9._-]{1,64}$" $key) (regexMatch "^[a-z0-9._-]{1,64}$" (toString $value))) }}{{ fail "node.labels keys and values may only use lowercase letters, digits, '.', '_' and '-'" }}{{ end }},{{ $key }}={{ $value }}{{ end }}"
+    - name: AXLR_NODE_DEDICATED
+      value: {{ ternary "true" "false" (eq (toString $v.node.dedicated) "true") | quote }}
     - name: AXLR_NODE_CONTROL
       value: {{ include "axlr-bots-node.controlURL" $v | quote }}
     - name: AXLR_NODE_TOKEN_FILE
@@ -81,6 +83,10 @@ including chart's own policy, beside its service's rules.
     {{- toYaml $v.sidecar.resources | nindent 4 }}
   volumeMounts:
     - {name: axlr-node-state, mountPath: /var/lib/axlr-node}
+    # Its own volume, before the bots' read-only mounts inside it: the
+    # runtime creates those mount points as root, which would leave
+    # workspaces/ on the state volume unwritable for every other bot.
+    - {name: axlr-node-workspaces, mountPath: /var/lib/axlr-node/workspaces}
     - {name: axlr-node-tmp, mountPath: /tmp}
     - {name: axlr-node-enroll, mountPath: /etc/axlr-node/enroll, readOnly: true}
     {{- if $v.controlPlane.ca.existingConfigMap }}
@@ -104,6 +110,9 @@ including chart's own policy, beside its service's rules.
   emptyDir:
     sizeLimit: {{ $v.sidecar.state.size }}
 {{- end }}
+- name: axlr-node-workspaces
+  emptyDir:
+    sizeLimit: {{ $v.sidecar.workspacesSize }}
 - name: axlr-node-tmp
   emptyDir:
     medium: Memory
