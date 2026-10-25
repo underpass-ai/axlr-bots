@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -178,6 +179,13 @@ func (uc NextAssignment) lease(ctx context.Context, bot domain.Bot, task domain.
 		return Assignment{}, false, err
 	}
 	if err := uc.deps.Executions.Save(ctx, execution); err != nil {
+		// The execution ended between its creation and this lease: an
+		// operator cancelled the task in that moment. There is nothing for
+		// the node to run, which is not the node's error.
+		var state domain.StateError
+		if errors.As(err, &state) {
+			return Assignment{}, false, nil
+		}
 		return Assignment{}, false, err
 	}
 	assignment.LeaseUntil = until

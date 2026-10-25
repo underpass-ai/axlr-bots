@@ -369,6 +369,16 @@ func TestAgentStopsARunWhoseLeaseIsLost(t *testing.T) {
 		t.Fatal(err)
 	}
 	running := waitFor(t, f.client, submitted.Task.ID, "Running")
+	// The task is Running as soon as the control plane creates the
+	// assignment, before the node takes it. Cancelled in that moment, the
+	// node is given nothing to run and no lease is ever lost (1 run in 40
+	// on one CPU, 25 Oct 2026): wait until the node has the run.
+	assigned := "execution " + running.ExecutionIDs[0] + " (run) assigned"
+	for deadline := time.Now().Add(5 * time.Second); !strings.Contains(f.logs.String(), assigned); time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the node never took the run:\n%s", f.logs.String())
+		}
+	}
 	node, _ := f.client.GetNode(ctx, "web-1")
 	if node.Capabilities.CorrelationSupported {
 		t.Error("the stand-in does not take the correlation")

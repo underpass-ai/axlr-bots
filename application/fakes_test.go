@@ -120,11 +120,22 @@ type memoryExecutions struct {
 	executions map[domain.ExecutionID]domain.Execution
 	fail       error
 	listFail   error
+	// beforeSave, when set, runs before each Save with the execution
+	// about to be saved: a write by someone else between a use case's
+	// read and its save. The hook clears it when it has done its write.
+	beforeSave func(domain.Execution)
 }
 
 func (m *memoryExecutions) Save(_ context.Context, e domain.Execution) error {
+	if hook := m.beforeSave; hook != nil {
+		hook(e)
+	}
 	if m.fail != nil {
 		return m.fail
+	}
+	// The file store's contract: an execution that ended never runs again.
+	if stored, ok := m.executions[e.ID()]; ok && stored.Outcome().IsFinal() && e.Outcome() == domain.ExecutionRunning {
+		return domain.StateError{Subject: "execution " + e.ID().String(), Current: stored.Outcome().String(), Attempted: "run again"}
 	}
 	if m.executions == nil {
 		m.executions = map[domain.ExecutionID]domain.Execution{}
