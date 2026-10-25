@@ -229,7 +229,10 @@ fn a_finished_task_shows_its_answer_and_failure() {
         .clone();
     send(&mut app, Message::Go(Screen::Task(done)));
     shows(&app, &["Answer", "auto OK", "wrx80"]);
-    assert_eq!(app.answer.as_ref().map(|(source, _)| source.as_str()), Some("There are 3 files."));
+    assert_eq!(
+        app.answer.as_ref().map(|(source, _)| source.as_str()),
+        Some("There are 3 files.")
+    );
     let failed = app
         .fleet
         .as_ref()

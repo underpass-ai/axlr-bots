@@ -1,7 +1,7 @@
 //! How the panel's surfaces, buttons and fields look, from the tokens.
 
 use iced::widget::{button, container, svg, text_input};
-use iced::{Background, Border, Color, Shadow, Theme, Vector};
+use iced::{Background, Border, Color, Shadow, Theme};
 
 use super::{Tokens, Tone};
 
@@ -18,11 +18,9 @@ pub fn card(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
             width: 1.0,
             radius: RADIUS.into(),
         },
-        shadow: Shadow {
-            color: Tokens::fade(Color::BLACK, if tokens.dark { 0.35 } else { 0.06 }),
-            offset: Vector::new(0.0, 2.0),
-            blur_radius: 8.0,
-        },
+        // No shadow: the software renderer draws blurred shadows as grey
+        // blocks, and the border already separates a card from the page.
+        shadow: Shadow::default(),
         snap: true,
     }
 }
