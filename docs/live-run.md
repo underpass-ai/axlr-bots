@@ -346,6 +346,8 @@ The child shares the parent's trace id (`trace-6124dd89…`); `GET /v1/tasks/tas
 
 Each time `bot-b` read the refusal as the tool's error, answered without it ("Breakwater. The confirmation from bot-a was refused with reason \"cycle\" …"), and `bot-a`'s task completed with one child; `audit.jsonl` has `task.delegate` `denied` with the reason. No third task was created.
 
+The temporary node was stopped and revoked and both bots paused afterwards. Not run live: a delegating bot at `act-with-approval` (the card on the delegation call is covered by the executor's tests only), and `wait: false`.
+
 ## The live tests
 
 Three tests run the real binary when asked; everything else runs against the stand-ins.

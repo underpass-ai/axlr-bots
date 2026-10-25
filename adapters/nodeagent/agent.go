@@ -118,6 +118,9 @@ func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution 
 	if offer == nil || a.Options.SocketDir == "" || a.slots == nil {
 		return "", func() {}
 	}
+	if strings.ContainsAny(execution.String(), `/\`) || strings.Contains(execution.String(), "..") {
+		return "", func() {}
+	}
 	path := filepath.Join(a.Options.SocketDir, execution.String()+".sock")
 	if len(path) >= maxSocketPath {
 		a.Options.log().Printf("node: execution %s: socket path %s is too long; the delegation tool is off", execution, path)

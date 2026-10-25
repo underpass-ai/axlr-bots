@@ -112,6 +112,16 @@ func TestMCPServerReplacesAStaleSocketAndRemovesItsOwn(t *testing.T) {
 	if _, err := serveMCP(context.Background(), dir+"/missing/x.sock", mcpTool{}, "v", nil); err == nil {
 		t.Error("listened in a missing directory")
 	}
+	for _, bad := range []string{dir + "/../x.sock", dir + "/x.json"} {
+		if _, err := serveMCP(context.Background(), bad, mcpTool{}, "v", nil); err == nil {
+			t.Errorf("listened on %s", bad)
+		}
+	}
+	agent := Agent{Options: Options{SocketDir: dir}, slots: newSlots(1)}
+	if socket, closeSocket := agent.serveDelegation(context.Background(), "web-1", "exec-..", &application.DelegationOffer{Targets: []string{"b"}}); socket != "" {
+		closeSocket()
+		t.Errorf("served %s", socket)
+	}
 }
 
 func TestSlotsLendAndReclaim(t *testing.T) {

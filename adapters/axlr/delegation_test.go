@@ -103,3 +103,25 @@ func TestDelegationManifestErrors(t *testing.T) {
 		t.Error("decide wrote a manifest into a file")
 	}
 }
+
+func TestTheDelegationToolSurvivesTheExecutionBundle(t *testing.T) {
+	t.Setenv("FAKE_AXLR_EXECUTION", "1")
+	e, argsFile := fake(t, "result-completed")
+	e.Relay = "/usr/local/bin/axlr-node"
+	if _, err := e.Execute(context.Background(), delegatingRequest()); err != nil {
+		t.Fatal(err)
+	}
+	args := strings.Join(readArgs(t, argsFile), " ")
+	if !strings.Contains(args, "--execution ") || strings.Contains(args, "--policy") || !strings.Contains(args, "--plugin "+filepath.Join(e.StateDir, "mcp", "exec-1.json")) || !strings.Contains(args, "--approve all") {
+		t.Errorf("args = %s", args)
+	}
+}
+
+func TestAnExecutionIDThatIsNotAFileNameWiresNoManifest(t *testing.T) {
+	e, _ := fake(t, "result-completed")
+	e.Relay = "/usr/local/bin/axlr-node"
+	policy := preparedPolicy{record: domain.PolicyRecord{Enforced: true}}
+	if err := e.wireDelegation("exec-..", &application.DelegationOffer{Targets: []string{"bot-b"}}, "/x.sock", &policy); err == nil || len(policy.plugin) != 0 {
+		t.Errorf("wired %v: %v", policy.plugin, err)
+	}
+}

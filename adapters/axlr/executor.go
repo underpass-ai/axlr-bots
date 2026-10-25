@@ -103,6 +103,7 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 		return application.ExecutionReport{}, err
 	}
 	args = append(args, policy.args...)
+	args = append(args, policy.plugin...)
 	args = append(args, correlation.args...)
 	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout)
 	report.Policy = &policy.record
@@ -134,6 +135,7 @@ func (e *Executor) Decide(ctx context.Context, request application.DecisionReque
 		return application.ExecutionReport{}, err
 	}
 	args = append(args, policy.args...)
+	args = append(args, policy.plugin...)
 	args = append(args, correlation.args...)
 	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout)
 	report.Policy = &policy.record
@@ -142,10 +144,11 @@ func (e *Executor) Decide(ctx context.Context, request application.DecisionReque
 }
 
 // preparedPolicy is the policy of one run as the command line carries
-// it: the flags, the approval level, the object written and the record
-// for the execution.
+// it: the flags, the delegation tool's, the approval level, the object
+// written and the record for the execution.
 type preparedPolicy struct {
 	args    []string
+	plugin  []string
 	approve string
 	object  policyObject
 	record  domain.PolicyRecord

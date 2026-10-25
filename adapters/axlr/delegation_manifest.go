@@ -2,8 +2,10 @@ package axlr
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -33,8 +35,11 @@ type delegationManifest struct {
 // act-with-approval still asks a person for every allowed call
 // (docs/architecture/delegation.md).
 func (e *Executor) wireDelegation(execution domain.ExecutionID, offer *application.DelegationOffer, socket string, policy *preparedPolicy) error {
-	if offer == nil || socket == "" || e.Relay == "" || len(policy.args) == 0 {
+	if offer == nil || socket == "" || e.Relay == "" || !policy.record.Enforced {
 		return nil
+	}
+	if strings.ContainsAny(execution.String(), `/\`) || strings.Contains(execution.String(), "..") {
+		return errors.New("the execution id is not a file name")
 	}
 	manifest := delegationManifest{ManifestVersion: 1, ID: delegationPluginID, Command: e.Relay, Args: []string{"mcp-relay", "--socket", socket}, AllowTools: []string{application.DelegateToolName}}
 	folder := filepath.Join(e.StateDir, "mcp")
@@ -49,7 +54,8 @@ func (e *Executor) wireDelegation(execution domain.ExecutionID, offer *applicati
 	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
 		return err
 	}
-	policy.args = append(policy.args, "--plugin", path)
+	// Its own flags: an --execution bundle replaces --policy, not this.
+	policy.plugin = []string{"--plugin", path}
 	policy.approve = "all"
 	policy.record.Delegation = path
 	return nil

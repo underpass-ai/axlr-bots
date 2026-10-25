@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -28,6 +29,9 @@ type mcpServer struct {
 // serveMCP listens on path (a stale socket there is replaced) and
 // serves every connection until Close.
 func serveMCP(ctx context.Context, path string, tool mcpTool, version string, call func(context.Context, json.RawMessage) mcpToolResult) (*mcpServer, error) {
+	if strings.Contains(path, "..") || !strings.HasSuffix(path, ".sock") {
+		return nil, errors.New("a socket path ends in .sock and holds no ..")
+	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
