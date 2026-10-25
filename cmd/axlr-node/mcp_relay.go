@@ -35,20 +35,15 @@ func mcpRelay(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return exitError
 	}
 	defer conn.Close()
-	done := make(chan struct{}, 2)
 	go func() {
 		_, _ = io.Copy(conn, stdin)
-		// The client closed its side: let the agent see the end.
+		// The client closed its side: let the agent see the end and
+		// close its own once it has answered.
 		if unix, ok := conn.(*net.UnixConn); ok {
 			_ = unix.CloseWrite()
 		}
-		done <- struct{}{}
 	}()
-	go func() {
-		_, _ = io.Copy(stdout, conn)
-		done <- struct{}{}
-	}()
-	<-done
+	_, _ = io.Copy(stdout, conn)
 	return exitOK
 }
 
