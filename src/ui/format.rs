@@ -7,6 +7,14 @@ pub fn age(from: DateTime<Utc>, now: DateTime<Utc>) -> String {
     span(now - from)
 }
 
+/// `just now`, `12s ago`, `5m ago`.
+pub fn ago(from: DateTime<Utc>, now: DateTime<Utc>) -> String {
+    match age(from, now).as_str() {
+        "now" => "just now".to_string(),
+        other => format!("{other} ago"),
+    }
+}
+
 /// A duration as one unit: `45s`, `3m`, `2h`, `5d`.
 pub fn span(duration: Duration) -> String {
     let seconds = duration.num_seconds().max(0);
@@ -82,6 +90,8 @@ mod tests {
         assert_eq!(age(now - Duration::hours(3), now), "3h");
         assert_eq!(age(now - Duration::days(2), now), "2d");
         assert_eq!(age(now + Duration::minutes(1), now), "now");
+        assert_eq!(ago(now, now), "just now");
+        assert_eq!(ago(now - Duration::minutes(5), now), "5m ago");
         assert_eq!(run_length(Duration::seconds(7)), "7s");
         assert_eq!(run_length(Duration::seconds(90)), "1m 30s");
         assert_eq!(run_length(Duration::minutes(125)), "2h 5m");

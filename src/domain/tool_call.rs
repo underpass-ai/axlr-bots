@@ -28,6 +28,9 @@ pub enum CallVerdict {
 
 impl ToolCall {
     pub fn verdict(&self) -> CallVerdict {
+        if self.decision.is_empty() && self.status == "pending" {
+            return CallVerdict::Asking;
+        }
         match self.decision.as_str() {
             "approve" | "auto_approve" | "allow" | "allowed" => CallVerdict::Allowed,
             "deny" | "auto_deny" | "denied" | "refuse" | "forbidden" => CallVerdict::Refused,
@@ -38,6 +41,9 @@ impl ToolCall {
 
     /// The decision in short words: `person OK`, `auto OK`, `refused`.
     pub fn decision_label(&self) -> &'static str {
+        if self.decision.is_empty() && self.status == "pending" {
+            return "asking";
+        }
         match self.decision.as_str() {
             "approve" => "person OK",
             "auto_approve" | "allow" | "allowed" => "auto OK",
@@ -73,6 +79,14 @@ mod tests {
         assert_eq!(call("ask").verdict(), CallVerdict::Asking);
         assert_eq!(call("ask").decision_label(), "asking");
         assert_eq!(call("").decision_label(), "—");
+        let pending = ToolCall {
+            status: "pending".into(),
+            ..call("")
+        };
+        assert_eq!(
+            (pending.verdict(), pending.decision_label()),
+            (CallVerdict::Asking, "asking")
+        );
         assert_eq!(call("maybe").verdict(), CallVerdict::Unknown);
         assert_eq!(call("maybe").decision_label(), "other");
     }

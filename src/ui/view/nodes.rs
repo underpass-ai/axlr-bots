@@ -42,14 +42,16 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             column![bold(n.id.to_string()), muted(n.host_name.clone(), tokens)]
                 .spacing(2)
                 .into()
-        }),
+        })
+        .width(Length::FillPortion(2)),
         table::column(bold("Labels"), move |n: &'a Node| -> El<'a> {
             let mut chips = row![].spacing(6);
             for pair in n.label_pairs() {
                 chips = chips.push(chip(pair, tokens));
             }
-            chips.into()
-        }),
+            chips.wrap().into()
+        })
+        .width(Length::FillPortion(3)),
         table::column(bold("Last seen"), move |n: &'a Node| {
             text(format::age(n.last_seen_at, now))
         }),

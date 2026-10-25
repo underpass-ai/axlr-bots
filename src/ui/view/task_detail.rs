@@ -1,7 +1,7 @@
 //! One task: the call waiting for a person, the answer, the executions
 //! and the timeline.
 
-use iced::widget::{Space, column, container, mouse_area, row, scrollable, text};
+use iced::widget::{Space, column, container, markdown, mouse_area, row, scrollable, text};
 use iced::{Alignment, Font, Length, mouse};
 
 use super::widgets::{
@@ -39,8 +39,7 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     let mut header = row![
         back,
         pill(Tone::of_task(task.status), task.status.label(), tokens),
-        bold(task.headline(80)).size(22.0),
-        Space::new().width(Length::Fill)
+        bold(task.headline(80)).size(22.0).width(Length::Fill),
     ]
     .spacing(12)
     .align_y(Alignment::Center);
@@ -62,9 +61,9 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
                 fact(
                     "Created",
                     text(format!(
-                        "{} · {} ago",
+                        "{} · {}",
                         format::when(task.created_at),
-                        format::age(task.created_at, app.now)
+                        format::ago(task.created_at, app.now)
                     )),
                     tokens
                 ),
@@ -103,13 +102,11 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
             .style(styles::tone_card(tokens, Tone::Bad)),
         );
     }
-    if let Some(answer) = detail.answer() {
-        page = page.push(section(
-            Icon::Check,
-            "Answer",
-            text(answer.to_string()).size(BODY),
-            tokens,
-        ));
+    if let Some((_, content)) = &app.answer {
+        let style = markdown::Style::from_palette(tokens.theme().palette());
+        let answer =
+            markdown::view(content.items(), markdown::Settings::with_text_size(BODY, style)).map(Message::Copy);
+        page = page.push(section(Icon::Check, "Answer", answer, tokens));
     }
     let usage = detail.total_usage();
     let mut runs = column![

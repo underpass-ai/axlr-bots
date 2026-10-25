@@ -46,16 +46,17 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             pill(Tone::of_bot(b.status), b.status.name(), tokens)
         }),
         table::column(bold("Bot"), move |b: &'a Bot| -> El<'a> {
-            column![bold(b.id.to_string()), muted(b.owner.clone(), tokens)]
+            column![bold(b.id.to_string()), muted(b.model.short_model().to_string(), tokens)]
                 .spacing(2)
                 .into()
-        }),
+        })
+        .width(Length::FillPortion(3)),
         table::column(bold("Level"), move |b: &'a Bot| chip(b.level.label(), tokens)),
-        table::column(bold("Model"), move |b: &'a Bot| text(b.model.short_model().to_string())),
-        table::column(bold("Runs on"), move |b: &'a Bot| text(b.placement.describe())),
+        table::column(bold("Runs on"), move |b: &'a Bot| text(b.placement.describe())).width(Length::FillPortion(2)),
         table::column(bold("Starts by"), move |b: &'a Bot| {
             text(b.trigger_summary()).size(SMALL)
-        }),
+        })
+        .width(Length::FillPortion(2)),
         table::column(text(""), move |b: &'a Bot| -> El<'a> {
             let switch = if b.status.can_pause() {
                 action(

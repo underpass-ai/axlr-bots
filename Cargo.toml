@@ -9,7 +9,7 @@ readme = "README.md"
 publish = false
 
 [dependencies]
-iced = { version = "0.14", features = ["tokio", "svg", "image"] }
+iced = { version = "0.14", features = ["tokio", "svg", "image", "markdown"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

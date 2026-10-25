@@ -25,6 +25,8 @@ pub struct App {
     refreshing_since: Option<DateTime<Utc>>,
     generation: u64,
     pub task: Option<TaskDetail>,
+    /// The task's answer, parsed as Markdown once per answer.
+    pub answer: Option<(String, iced::widget::markdown::Content)>,
     task_loading: bool,
     pub bot: Option<BotView>,
     bot_loading: bool,
@@ -59,6 +61,7 @@ impl App {
             refreshing_since: None,
             generation: 0,
             task: None,
+            answer: None,
             task_loading: false,
             bot: None,
             bot_loading: false,
@@ -142,7 +145,16 @@ impl App {
                     return Vec::new();
                 }
                 match result {
-                    Ok(detail) => self.task = Some(detail),
+                    Ok(detail) => {
+                        let answer = detail.answer().map(str::to_string);
+                        if answer.as_deref() != self.answer.as_ref().map(|(source, _)| source.as_str()) {
+                            self.answer = answer.map(|source| {
+                                let parsed = iced::widget::markdown::Content::parse(&source);
+                                (source, parsed)
+                            });
+                        }
+                        self.task = Some(detail);
+                    }
                     Err(error) => self.banner = Some(Banner::error(&error, self.now)),
                 }
                 Vec::new()
@@ -547,6 +559,7 @@ impl App {
             && self.task.as_ref().is_some_and(|t| &t.task.id != id)
         {
             self.task = None;
+            self.answer = None;
         }
         if let Screen::Bot(id) = &screen
             && self.bot.as_ref().is_some_and(|b| &b.bot.id != id)
