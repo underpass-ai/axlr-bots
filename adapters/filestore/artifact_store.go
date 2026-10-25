@@ -91,7 +91,7 @@ func (s ArtifactStore) SaveArtifact(_ context.Context, execution domain.Executio
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, "."+artifact.Name+".*.tmp")
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err
 	}
