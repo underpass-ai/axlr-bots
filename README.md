@@ -41,7 +41,7 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 - **A bot is not an execution.** The bot is the durable resource; each task runs as an execution that ends, and the bot, its tasks and its events survive every restart.
 - **Nodes connect outward, with mutual TLS.** The control plane runs the fleet CA; a host joins with a one-time token and is its certificate from then on. The control plane never reaches into a host.
 - **Everything is idempotent.** Submissions carry a key, webhook fires derive theirs from the delivery, timers from the slot, reports are accepted once: a retry, a redelivery or a restart creates nothing twice.
-- **The policy lives outside the model.** The bot's level and tool rules go to AXLR as a policy file; a forbidden call is refused before any approval card, and `act-with-approval` stops for a person.
+- **The policy lives outside the model.** The bot's level and tool rules go to AXLR as a policy file; a forbidden call is refused before any approval card, and `act-with-approval` stops for a person, who is notified (a signed webhook or a local command); past its deadline the call is denied or the task cancelled, and a late approval authorises nothing.
 
 ## Choose a path
 
@@ -50,7 +50,7 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | Install for one host or a fleet, keep it running after logout, uninstall | [Install](docs/runbooks/install.md) |
 | Write a bot: mission, model, tools, autonomy level, triggers, budgets, placement | [Bot definition](docs/reference/bot-definition.md) |
 | Start tasks from a webhook or on a timer, without duplicates | [Triggers](docs/runbooks/triggers.md) |
-| Approve or deny the write a bot wants to make | [Approvals](docs/runbooks/approvals.md) |
+| Approve or deny the write a bot wants to make, be notified of it, let it expire | [Approvals](docs/runbooks/approvals.md) |
 | Add a host: enrollment token, mutual TLS, revocation | [Add a host](docs/runbooks/add-a-host.md) |
 | Run the node agent as a sidecar beside a service in a Kubernetes pod, with Helm | [Sidecar](docs/runbooks/sidecar.md) |
 | Call the control plane over HTTP | [Operator API](docs/reference/operator-api.md) |
@@ -74,7 +74,7 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 
 ## Project status
 
-Pre-1.0, one Go module, Linux with systemd or Kubernetes. What works today, exercised live with the real AXLR: user-level install, bots with the four autonomy levels and tool rules, manual, webhook and timer triggers with deduplication, the approval path, node enrollment with one-time tokens and mutual TLS, revocation, placement by node or label, the operator API behind a bearer token, correlation ids on every task, execution and event, recovery of the tasks a crash left running, budgets passed to a runtime that takes them, and the node agent as a sidecar in a pod (a Helm chart, no CRDs), enrolled from a Secret on its first start, reading the service's log read-only under a NetworkPolicy ([live run](docs/live-run.md#the-sidecar-on-kubernetes)).
+Pre-1.0, one Go module, Linux with systemd or Kubernetes. What works today, exercised live with the real AXLR: user-level install, bots with the four autonomy levels and tool rules, manual, webhook and timer triggers with deduplication, the approval path with its expiry and notifications, artifacts uploaded by the node and served by the control plane, node enrollment with one-time tokens and mutual TLS, revocation, placement by node or label, the operator API behind a bearer token, correlation ids on every task, execution and event, recovery of the tasks a crash left running, budgets passed to a runtime that takes them, and the node agent as a sidecar in a pod (a Helm chart, no CRDs), enrolled from a Secret on its first start, reading the service's log read-only under a NetworkPolicy ([live run](docs/live-run.md#the-sidecar-on-kubernetes)).
 
 Next: one sandbox per execution (a Job with its own identity, filesystem and limits), budgets enforced by the runtime recorded on every execution, and a durable store in place of one JSON file per aggregate. [Control plane, node and AXLR](docs/architecture/control-plane-node-axlr.md#what-is-left-out) says what is left out.
 

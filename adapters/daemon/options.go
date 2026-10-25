@@ -12,6 +12,7 @@ import (
 const (
 	DefaultTick           = 2 * time.Second
 	DefaultReconcileEvery = time.Minute
+	DefaultDeliverEvery   = 2 * time.Second
 )
 
 // Options tune the daemon.
@@ -43,6 +44,8 @@ type Options struct {
 	Tick time.Duration
 	// ReconcileEvery is how often tasks a dead run left Running are failed.
 	ReconcileEvery time.Duration
+	// DeliverEvery is how often the notifications that are due go out.
+	DeliverEvery time.Duration
 	// Grace is the reconciliation grace; zero means the bot's task
 	// timeout plus a minute, as `task reconcile` does.
 	Grace time.Duration
@@ -66,6 +69,13 @@ func (o Options) reconcileEvery() time.Duration {
 		return o.ReconcileEvery
 	}
 	return DefaultReconcileEvery
+}
+
+func (o Options) deliverEvery() time.Duration {
+	if o.DeliverEvery > 0 {
+		return o.DeliverEvery
+	}
+	return DefaultDeliverEvery
 }
 
 func (o Options) log() *log.Logger {

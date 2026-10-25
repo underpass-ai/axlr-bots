@@ -24,7 +24,11 @@ type turnParser struct {
 	failure   string
 	pending   *domain.PendingDecision
 	result    *resultObject
+	receipt   json.RawMessage
 }
+
+// receiptSchema is the execution receipt the adapter keeps.
+const receiptSchema = "axlr.execution-receipt/v1"
 
 func newTurnParser() *turnParser {
 	return &turnParser{index: map[string]int{}}
@@ -57,6 +61,8 @@ func (p *turnParser) feed(line []byte) {
 		p.ended = event.Type
 		p.failure = event.Error
 		p.session(event.Session)
+	case "receipt":
+		p.keepReceipt(event.Receipt)
 	case "result":
 		// TODO(runtime-contract): the result object, axlr.execution-result/v1,
 		// is the contract's result; keep this parse in step with AXLR's
@@ -64,6 +70,21 @@ func (p *turnParser) feed(line []byte) {
 		if event.Result != nil && event.Result.Schema == resultSchema {
 			p.result = event.Result
 		}
+	}
+}
+
+// keepReceipt keeps the receipt line's object when it is the schema the
+// adapter knows and fits what an execution keeps; otherwise the trace
+// alone has it.
+func (p *turnParser) keepReceipt(raw json.RawMessage) {
+	var head struct {
+		Schema string `json:"schema"`
+	}
+	if json.Unmarshal(raw, &head) != nil || head.Schema != receiptSchema {
+		return
+	}
+	if receipt := compactJSON(raw); len(receipt) <= domain.MaxReceiptBytes {
+		p.receipt = receipt
 	}
 }
 
@@ -100,15 +121,18 @@ func (p *turnParser) interrupted(reason string) application.ExecutionReport {
 		Result:        p.partial(),
 		Usage:         domain.Usage{ToolCalls: len(p.calls)},
 		FailureReason: reason,
+		Receipt:       p.receipt,
 	}
 }
 
 // report turns the run into a report once the process has exited.
 func (p *turnParser) report(exitCode int, stderrLine string) application.ExecutionReport {
+	report := p.fromEvents(exitCode, stderrLine)
 	if p.result != nil {
-		return p.fromResult(p.result)
+		report = p.fromResult(p.result)
 	}
-	return p.fromEvents(exitCode, stderrLine)
+	report.Receipt = p.receipt
+	return report
 }
 
 func (p *turnParser) fromResult(r *resultObject) application.ExecutionReport {
@@ -123,7 +147,10 @@ func (p *turnParser) fromResult(r *resultObject) application.ExecutionReport {
 		result.ToolCalls = append(result.ToolCalls, domain.ToolCall{Name: c.Tool, CallID: c.CallID, Decision: c.Decision, Status: c.Status})
 	}
 	for _, a := range r.Artifacts {
-		result.Artifacts = append(result.Artifacts, domain.Artifact{Name: a.Name, MediaType: a.MediaType, Reference: a.Reference})
+		result.Artifacts = append(result.Artifacts, domain.Artifact{
+			Name: a.Name, MediaType: a.MediaType, Reference: a.Reference, Size: a.Size, SHA256: a.SHA256,
+			Description: a.Description, Source: a.Source, SessionID: a.SessionID, CallID: a.CallID,
+		})
 	}
 	usage := domain.Usage{
 		Requests:         r.Usage.Requests,

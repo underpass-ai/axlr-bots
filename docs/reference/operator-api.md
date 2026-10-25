@@ -7,7 +7,7 @@ The vision's minimal API (§11.1) plus the routes the CLI uses. Everything is HT
 | Listener | Flag | Serves | Credential |
 |---|---|---|---|
 | Unix socket `<state>/axlr-bots.sock` (mode 0660) | always | every route: the CLI's path | the socket's permissions (same host, same user); the caller is trusted |
-| node address (TLS 1.3) | `serve --listen <addr>` | `/healthz`, enrollment and the five node routes only ([protocol](node-protocol.md)) | the node's client certificate |
+| node address (TLS 1.3) | `serve --listen <addr>` | `/healthz`, enrollment and the six node routes only ([protocol](node-protocol.md)) | the node's client certificate |
 | operator address (TLS 1.3) | `serve --api-listen <addr>` | the operator routes below and `/healthz`; no node route | `Authorization: Bearer <token>`; a webhook its own secret or signature |
 
 The TLS certificate of both addresses is issued by the fleet CA (`ca init`; clients pass `--cacert <state>/ca/ca.crt`). The bearer token is generated at the first start with `--api-listen`, written to `<state>/api.token` (mode 0600, `--api-token-file` names another path) and never logged. A node certificate is no credential on the operator address, which keeps node identity and operator access apart (operator client certificates would need their own CA profile; the bearer token is the one credential). Bodies are bounded (1 MiB; a webhook 256 KiB) and unknown fields are refused.
@@ -29,10 +29,13 @@ Every CLI command tries the socket first (`--socket`, `AXLR_BOTS_SOCKET`, defaul
 | `GET /v1/tasks?bot=&status=&since=&limit=100` | the tasks across bots, newest created first; each parameter optional: `bot` one bot (an unknown bot is `404`), `status` one status, `since` created at or after an RFC 3339 time, `limit` at most 1000 | |
 | `GET /v1/tasks/{id}` | show a task: status, trigger, input, trace id, executions | |
 | `GET /v1/tasks/{id}/events?limit=100` | the task's timeline: its newest events, oldest first (at most 1000) | |
-| `GET /v1/tasks/{id}/executions` | the task's executions with their correlation, policy, usage and result | |
+| `GET /v1/tasks/{id}/executions` | the task's executions with their correlation, policy, usage, result and receipt; `result.artifacts` lists what each delivered, `stored: true` for the ones the control plane keeps ([artifacts](#artifacts)) | |
 | `POST /v1/tasks/{id}/cancel` | stop a task: Pending never runs, Running ends `Cancelled` (the in-process run is interrupted, a node's run stops at its next lease renewal, the late report is dropped), WaitingApproval never gets its decision | a Cancelled task answers `200` with `changed: false`; Completed or Failed is `409` |
 | `POST /v1/tasks` `{botId, objective, idempotencyKey?}` | the older form of submit, with the same header | as above |
-| `POST /v1/tasks/{id}/run`, `POST /v1/tasks/{id}/decide`, `GET /v1/tasks/{id}/report`, `GET /v1/executions/{id}` | the CLI's run, approve/deny, report and execution routes | |
+| `POST /v1/tasks/{id}/approve?call=`, `POST /v1/tasks/{id}/deny?call=` | decide the call a WaitingApproval task waits on; no body. `call`, when given, must name the pending call (a notification's links carry it), else `409 state`; after the call's deadline `409 approval_expired` and nothing runs ([approvals](../runbooks/approvals.md)) | a task decided once is `409 state` |
+| `POST /v1/tasks/{id}/decide` `{decision, callId?}` | the same with the decision in the body | as above |
+| `POST /v1/tasks/{id}/run`, `GET /v1/tasks/{id}/report`, `GET /v1/executions/{id}` | the CLI's run, report and execution routes | |
+| `GET /v1/executions/{id}/artifacts/{name}` | the bytes of an artifact the control plane keeps for the execution, as a download: `Content-Type` its media type, `X-Axlr-Artifact-Sha256` its hash; `404` for one not kept | |
 | `GET /v1/overview?since=` | the dashboard's counts ([below](#the-overview)) | |
 | `GET /v1/nodes`, `GET /v1/nodes/{id}`, `POST /v1/enrollments`, `POST /v1/nodes/{id}/revoke` | the nodes: list, show, mint a token, revoke; a node shows `certificateNotAfter`, its certificate's expiry, once the control plane has seen it (at enrollment, or on the node's next call over mutual TLS) | |
 
@@ -58,9 +61,21 @@ A manual submission carries the caller's key (`task submit --key`, the `Idempote
 
 `tasks` counts every task by its status now; `tasksSince` the tasks created since the moment; `executionsSince` and `costUsdSince` the executions started since then and the cost they reported. The `axlr-bots overview` command prints the same.
 
+## Artifacts
+
+An execution that delivers files with AXLR's `axlr_deliver` lists them in its result with a name, a media type, a size and a SHA-256 ([runtime contract](../architecture/runtime-contract.md)). The control plane keeps a copy of each under `<state>/artifacts/executions/<execution-id>/<name>`: a node uploads the bytes from its workspace over its mutual-TLS channel before it reports ([node protocol](node-protocol.md#artifacts)), and an execution the control plane runs itself is read from its own workspace. A copy is kept only when its bytes are the size and hash the result lists; at most 32 MiB each, 64 and 256 MiB per execution; a later delivery of the same name replaces the earlier one. The execution lists every artifact and marks the kept ones `stored: true`; one that did not match (a file changed after its delivery) or came from an AXLR build without the hash is listed without it. `report.md` with `source: answer` is the control plane's own report of the answer, read with `GET /v1/tasks/{id}/report`.
+
+```bash
+axlr-bots execution artifact exec-… notes.md --out notes.md     # checks the SHA-256 on the way
+curl --cacert $state/ca/ca.crt -H "Authorization: Bearer $(cat $state/api.token)" -OJ \
+     https://cp.example.internal:7879/v1/executions/exec-…/artifacts/notes.md
+```
+
+The execution also keeps AXLR's receipt (`axlr.execution-receipt/v1`: every request with its model and cost, every tool call with the hashes of its arguments and outcome) as `receipt`, when the build writes one.
+
 ## Errors
 
-`{"kind": "validation|not_found|state|conflict|forbidden|unauthorized|too_large|internal", "error": "…"}` with the matching status (`400`, `404`, `409`, `409`, `403`, `401`, `413`, `500`).
+`{"kind": "validation|not_found|state|conflict|forbidden|unauthorized|too_large|approval_expired|internal", "error": "…"}` with the matching status (`400`, `404`, `409`, `409`, `403`, `401`, `413`, `409`, `500`). `approval_expired` is a decision that came after the pending call's deadline: it authorises nothing.
 
 ## Examples
 
@@ -71,4 +86,6 @@ curl --cacert $state/ca/ca.crt -H "Authorization: Bearer $(cat $state/api.token)
      -d '{"objective": "List the files in your workspace"}' https://cp.example.internal:7879/v1/bots/bot/tasks
 curl --cacert $state/ca/ca.crt -H "X-Axlr-Secret: $secret" -H "Idempotency-Key: gh-delivery-1" \
      -d '{"type": "deploy", "service": "web"}' https://cp.example.internal:7879/v1/triggers/bot/deploy
+curl --cacert $state/ca/ca.crt -H "Authorization: Bearer $(cat $state/api.token)" -X POST \
+     "https://cp.example.internal:7879/v1/tasks/task-…/approve?call=call-…"
 ```

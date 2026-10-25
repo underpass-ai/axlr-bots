@@ -151,9 +151,9 @@ func (c *Client) RunTask(ctx context.Context, id string) (RunResponse, error) {
 	return response, c.call(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/run", nil, &response)
 }
 
-func (c *Client) DecideTask(ctx context.Context, id, decision string) (RunResponse, error) {
+func (c *Client) DecideTask(ctx context.Context, id string, request DecideRequest) (RunResponse, error) {
 	var response RunResponse
-	return response, c.call(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/decide", DecideRequest{Decision: decision}, &response)
+	return response, c.call(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/decide", request, &response)
 }
 
 func (c *Client) GetTask(ctx context.Context, id string) (domain.TaskSnapshot, error) {
@@ -213,6 +213,28 @@ func (c *Client) GetReport(ctx context.Context, id string) (ReportResponse, erro
 func (c *Client) GetExecution(ctx context.Context, id string) (domain.ExecutionSnapshot, error) {
 	var execution domain.ExecutionSnapshot
 	return execution, c.call(ctx, http.MethodGet, "/v1/executions/"+url.PathEscape(id), nil, &execution)
+}
+
+// GetArtifact downloads an artifact the control plane keeps; the
+// listing is read from the answer's headers.
+func (c *Client) GetArtifact(ctx context.Context, execution, name string) (ArtifactContent, error) {
+	request, err := c.request(ctx, http.MethodGet, "/v1/executions/"+url.PathEscape(execution)+"/artifacts/"+url.PathEscape(name), nil)
+	if err != nil {
+		return ArtifactContent{}, err
+	}
+	response, err := c.http.Do(request)
+	if err != nil {
+		return ArtifactContent{}, fmt.Errorf("control plane at %s: %w", c.address, err)
+	}
+	if response.StatusCode >= 400 {
+		defer response.Body.Close()
+		raw, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		var failure ErrorResponse
+		_ = json.Unmarshal(raw, &failure)
+		return ArtifactContent{}, fromWire(response.StatusCode, failure)
+	}
+	artifact := domain.Artifact{Name: name, MediaType: response.Header.Get("Content-Type"), Size: response.ContentLength, SHA256: response.Header.Get(nodeproto.ArtifactSHA256Header), Stored: true}
+	return ArtifactContent{Artifact: artifact, Body: response.Body}, nil
 }
 
 func (c *Client) ListNodes(ctx context.Context) ([]domain.NodeSnapshot, error) {
@@ -283,6 +305,55 @@ func (c *Client) RenewLease(ctx context.Context, node domain.NodeID, execution d
 	return lease.LeaseUntil, err
 }
 
+// UploadArtifact puts an artifact's bytes to the control plane, before
+// the report: the size goes as the Content-Length, the hash in its
+// header, and the control plane checks both.
+func (c *Client) UploadArtifact(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, artifact domain.Artifact, content io.Reader) error {
+	path := "/v1/nodes/" + url.PathEscape(node.String()) + "/executions/" + url.PathEscape(execution.String()) + "/artifacts/" + url.PathEscape(artifact.Name)
+	request, err := c.request(ctx, http.MethodPut, path, content)
+	if err != nil {
+		return err
+	}
+	request.ContentLength = artifact.Size
+	if artifact.Size == 0 {
+		request.Body = http.NoBody
+	}
+	if artifact.MediaType != "" {
+		request.Header.Set("Content-Type", artifact.MediaType)
+	}
+	request.Header.Set(nodeproto.ArtifactSHA256Header, artifact.SHA256)
+	if artifact.Reference != "" {
+		request.Header.Set(nodeproto.ArtifactReferenceHeader, artifact.Reference)
+	}
+	if description := headerSafe(artifact.Description); description != "" {
+		request.Header.Set(nodeproto.ArtifactDescriptionHeader, description)
+	}
+	response, err := c.http.Do(request)
+	if err != nil {
+		return fmt.Errorf("control plane at %s: %w", c.address, err)
+	}
+	defer response.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if response.StatusCode >= 400 {
+		var failure ErrorResponse
+		_ = json.Unmarshal(raw, &failure)
+		return fromWire(response.StatusCode, failure)
+	}
+	return nil
+}
+
+// headerSafe keeps the printable ASCII of a description, bounded, so it
+// fits in a header.
+func headerSafe(text string) string {
+	var b strings.Builder
+	for _, r := range text {
+		if r >= 0x20 && r < 0x7f && b.Len() < 300 {
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
 // Report hands the execution's result to the control plane.
 func (c *Client) Report(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, report application.ExecutionReport) (application.ReportAck, error) {
 	var ack nodeproto.ReportAck
@@ -295,6 +366,18 @@ func (c *Client) Report(ctx context.Context, node domain.NodeID, execution domai
 		return application.ReportAck{}, err
 	}
 	return application.ReportAck{Accepted: ack.Accepted, Outcome: outcome}, nil
+}
+
+// request builds a request to the control plane with the bearer token.
+func (c *Client) request(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {
+	request, err := http.NewRequestWithContext(ctx, method, c.base+path, body)
+	if err != nil {
+		return nil, err
+	}
+	if c.token != "" {
+		request.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	return request, nil
 }
 
 // callMaybe is call for an answer that may be 204 No Content: found is
@@ -359,7 +442,7 @@ func (c *Client) doWith(ctx context.Context, method, path string, headers http.H
 		}
 		reader = bytes.NewReader(raw)
 	}
-	request, err := http.NewRequestWithContext(ctx, method, c.base+path, reader)
+	request, err := c.request(ctx, method, path, reader)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -370,9 +453,6 @@ func (c *Client) doWith(ctx context.Context, method, path string, headers http.H
 		for _, value := range values {
 			request.Header.Add(key, value)
 		}
-	}
-	if c.token != "" {
-		request.Header.Set("Authorization", "Bearer "+c.token)
 	}
 	response, err := c.http.Do(request)
 	if err != nil {

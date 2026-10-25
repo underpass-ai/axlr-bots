@@ -13,6 +13,7 @@ type BotPatch struct {
 	ToolRules    *domain.ToolRulesSnapshot `json:"toolRules,omitempty"`
 	Triggers     *[]domain.TriggerSnapshot `json:"triggers,omitempty"`
 	Placement    *domain.PlacementSnapshot `json:"placement,omitempty"`
+	Approvals    *domain.ApprovalsSnapshot `json:"approvals,omitempty"`
 	Model        *ModelPolicyDefinition    `json:"model,omitempty"`
 	Budgets      *BudgetsDefinition        `json:"budgets,omitempty"`
 }

@@ -20,6 +20,7 @@ var (
 	_ application.NodeRepository       = NodeRepository{}
 	_ application.EnrollmentRepository = EnrollmentRepository{}
 	_ application.CertificateDenylist  = CertificateDenylist{}
+	_ application.DeliveryRepository   = DeliveryRepository{}
 )
 
 var t0 = time.Date(2026, 10, 23, 15, 0, 0, 0, time.UTC)

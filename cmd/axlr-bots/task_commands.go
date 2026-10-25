@@ -52,24 +52,45 @@ func taskRun(ctx context.Context, service unixapi.Service, args []string, stdout
 }
 
 func taskDecide(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
-	if len(args) != 2 {
+	positional, call, ok := decideArgs("task decide", args, stderr)
+	if !ok {
+		return exitUsage
+	}
+	if len(positional) != 2 {
 		fmt.Fprintln(stderr, "axlr-bots: task decide needs <task-id> and approve|deny")
 		return exitUsage
 	}
-	if !application.IsDecision(args[1]) {
-		fmt.Fprintf(stderr, "axlr-bots: task decide takes approve or deny, not %q\n", args[1])
+	if !application.IsDecision(positional[1]) {
+		fmt.Fprintf(stderr, "axlr-bots: task decide takes approve or deny, not %q\n", positional[1])
 		return exitUsage
 	}
-	return taskDecideAs(ctx, service, args[1], args[:1], stdout, stderr)
+	return decide(ctx, service, positional[0], unixapi.DecideRequest{Decision: positional[1], CallID: call}, stdout, stderr)
 }
 
 // taskDecideAs is task approve and task deny: the decision is the verb.
 func taskDecideAs(ctx context.Context, service unixapi.Service, decision string, args []string, stdout, stderr io.Writer) int {
-	if len(args) != 1 {
+	positional, call, ok := decideArgs("task "+decision, args, stderr)
+	if !ok {
+		return exitUsage
+	}
+	if len(positional) != 1 {
 		fmt.Fprintf(stderr, "axlr-bots: task %s needs exactly one <task-id>\n", decision)
 		return exitUsage
 	}
-	result, err := service.DecideTask(ctx, args[0], decision)
+	return decide(ctx, service, positional[0], unixapi.DecideRequest{Decision: decision, CallID: call}, stdout, stderr)
+}
+
+// decideArgs reads --call, before or after the positional arguments.
+func decideArgs(name string, args []string, stderr io.Writer) ([]string, string, bool) {
+	flags := flag.NewFlagSet(name, flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	call := flags.String("call", "", "the pending call the decision is for; refused when the task waits on another")
+	positional, ok := parseAnywhere(flags, args)
+	return positional, *call, ok
+}
+
+func decide(ctx context.Context, service unixapi.Service, id string, request unixapi.DecideRequest, stdout, stderr io.Writer) int {
+	result, err := service.DecideTask(ctx, id, request)
 	if err != nil {
 		return fail(stderr, err)
 	}

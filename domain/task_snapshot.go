@@ -7,7 +7,8 @@ import (
 
 // TaskSnapshot is a task as plain data. CorrelationID is the task's
 // trace id; Trigger and Input say how it was created (a manual task
-// has no input).
+// has no input). Approval is the last wait for a person's decision:
+// its deadline while the task waits, its outcome once it ended.
 type TaskSnapshot struct {
 	ID             string             `json:"id"`
 	BotID          string             `json:"botId"`
@@ -19,6 +20,7 @@ type TaskSnapshot struct {
 	Input          json.RawMessage    `json:"input,omitempty"`
 	ExecutionIDs   []string           `json:"executionIds"`
 	FailureReason  string             `json:"failureReason,omitempty"`
+	Approval       *ApprovalWait      `json:"approval,omitempty"`
 	CreatedAt      time.Time          `json:"createdAt"`
 	UpdatedAt      time.Time          `json:"updatedAt"`
 }

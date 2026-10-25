@@ -134,8 +134,8 @@ func TestTaskLifecycle(t *testing.T) {
 	for _, attempt := range []func() error{
 		func() error { return task.Complete(t0) },
 		func() error { return task.Fail("x", t0) },
-		func() error { return task.AwaitApproval(t0) },
-		func() error { return task.Resume("exec-9", t0) },
+		func() error { return task.AwaitApproval(sampleWait(t0), t0) },
+		func() error { return task.Resume("exec-9", ApprovalApproved, t0) },
 	} {
 		if err := attempt(); err == nil {
 			t.Error("transition from Pending accepted")
@@ -154,13 +154,16 @@ func TestTaskLifecycle(t *testing.T) {
 	if err := task.Fail("", t1); err == nil {
 		t.Error("empty failure reason accepted")
 	}
-	if err := task.AwaitApproval(t1); err != nil || task.Status() != TaskWaitingApproval {
+	if err := task.AwaitApproval(sampleWait(t1), t1); err != nil || task.Status() != TaskWaitingApproval {
 		t.Fatalf("await: %v", err)
 	}
-	if err := task.Resume("", t1); err == nil {
+	if err := task.Resume("", ApprovalApproved, t1); err == nil {
 		t.Error("resume with an empty execution id accepted")
 	}
-	if err := task.Resume("exec-2", t1); err != nil || task.Status() != TaskRunning || task.CurrentExecutionID() != "exec-2" || len(task.ExecutionIDs()) != 2 {
+	if err := task.Resume("exec-2", "maybe", t1); err == nil {
+		t.Error("resume with an unknown outcome accepted")
+	}
+	if err := task.Resume("exec-2", ApprovalApproved, t1); err != nil || task.Status() != TaskRunning || task.CurrentExecutionID() != "exec-2" || len(task.ExecutionIDs()) != 2 {
 		t.Fatalf("resume: %v", err)
 	}
 	if err := task.Complete(t1); err != nil || task.Status() != TaskCompleted || !task.UpdatedAt().Equal(t1) {

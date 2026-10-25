@@ -1,10 +1,12 @@
 // Package fakeaxlr writes a shell stand-in for axlr-tui that the tests of
 // the command, the API and the daemon run instead of the real binary: it
-// answers --help, records the arguments of every run and plays one
-// scenario of the runtime contract.
+// answers --help and --version, records the arguments of every run and
+// plays one scenario of the runtime contract.
 package fakeaxlr
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,7 +15,9 @@ import (
 // Options choose what the stand-in does.
 type Options struct {
 	// Scenario is one of completed, slow (completed after a second),
-	// decision, failed or approval-flow.
+	// decision, failed, approval-flow or delivered (two artifacts written
+	// to the workspace, one of them changed after its delivery, and a
+	// receipt).
 	Scenario string
 	// NoPolicy makes --help omit -policy, like a build older than the
 	// execution policy.
@@ -28,12 +32,31 @@ type Options struct {
 
 const resultCompleted = `{"type":"result","session":"sess-1","result":{"schema":"axlr.execution-result/v1","status":"completed","session_id":"sess-1","sessions":["sess-1"],"answer":"%s","tool_calls":[%s],"usage":{"requests":1,"prompt_tokens":10,"completion_tokens":1,"cost_usd":0.001},"artifacts":[]}}`
 
+// DeliveredContent is what the delivered scenario writes as notes.md.
+const DeliveredContent = "# notes\n\nThe disk is full.\n"
+
+// delivered writes notes.md as listed and plan.md other than listed,
+// then lists both with the receipt and the result.
+func delivered() string {
+	sum := sha256.Sum256([]byte(DeliveredContent))
+	notes := fmt.Sprintf(`{"name":"notes.md","media_type":"text/markdown","size":%d,"sha256":"%s","reference":".axlr/deliverables/sess-1/notes.md","description":"What I found","source":"inline","session_id":"sess-1","call_id":"deliver-1"}`, len(DeliveredContent), hex.EncodeToString(sum[:]))
+	plan := fmt.Sprintf(`{"name":"plan.md","media_type":"text/markdown","size":7,"sha256":"%s","reference":"plan.md","source":"file","session_id":"sess-1","call_id":"deliver-2"}`, hex.EncodeToString(sum[:]))
+	receipt := `{"type":"receipt","receipt":{"schema":"axlr.execution-receipt/v1","status":"completed","session_id":"sess-1","complete":true}}`
+	result := `{"type":"result","session":"sess-1","result":{"schema":"axlr.execution-result/v1","status":"completed","session_id":"sess-1","sessions":["sess-1"],"answer":"Delivered the notes.","tool_calls":[],"usage":{"requests":1},"artifacts":[` + notes + `,` + plan + `]}}`
+	return `mkdir -p .axlr/deliverables/sess-1
+printf '# notes\n\nThe disk is full.\n' > .axlr/deliverables/sess-1/notes.md
+printf 'changed' > plan.md
+printf '%s\n' '{"type":"session","session":"sess-1"}' '{"type":"artifact","artifact":` + notes + `}' '` + receipt + `' '` + result + `'
+exit 0`
+}
+
 // Write writes the stand-in under dir and returns its path and the file
 // it records the last run's arguments in, one per line.
 func Write(dir string, options Options) (bin, argsFile string, err error) {
 	argsFile = filepath.Join(dir, "args.txt")
 	script := "#!/bin/sh\n" +
-		"for a in \"$@\"; do if [ \"$a\" = --help ]; then echo '  -exec string' >&2; " + helpPolicy(options.NoPolicy) + helpCorrelation(options.Correlation) + "exit 0; fi; done\n" +
+		"for a in \"$@\"; do if [ \"$a\" = --help ]; then echo '  -exec string' >&2; " + helpPolicy(options.NoPolicy) + helpCorrelation(options.Correlation) + "exit 0; fi; " +
+		"if [ \"$a\" = --version ]; then echo 'axlr-tui 0.0.0-fake'; exit 0; fi; done\n" +
 		"printf '%s\\n' \"$@\" > '" + argsFile + "'\n" +
 		body(options) + "\n"
 	bin = filepath.Join(dir, "fake-axlr-tui")
@@ -68,6 +91,8 @@ exit 3`
 	case "failed":
 		return `echo "axlr-tui: no model provider" >&2
 exit 1`
+	case "delivered":
+		return delivered()
 	case "approval-flow":
 		return `decide=""
 prev=""

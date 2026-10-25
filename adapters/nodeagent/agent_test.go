@@ -3,6 +3,7 @@ package nodeagent
 import (
 	"bytes"
 	"context"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -144,7 +145,7 @@ func TestAgentRunsAssignedTasksAndDecisions(t *testing.T) {
 	if _, err := os.Stat(f.marker); err == nil {
 		t.Fatal("the write ran before the approval")
 	}
-	decided, err := f.client.DecideTask(ctx, submitted.Task.ID, "approve")
+	decided, err := f.client.DecideTask(ctx, submitted.Task.ID, unixapi.DecideRequest{Decision: "approve"})
 	if err != nil || decided.Task.Status != "Running" || decided.Execution.NodeID != "web-1" || decided.Execution.Kind != "decide" {
 		t.Fatalf("decide: %v %+v", err, decided)
 	}
@@ -271,6 +272,13 @@ type fakeTransport struct {
 	report   application.ExecutionReport
 	reports  int
 	notFound bool
+	uploads  []string
+}
+
+func (f *fakeTransport) UploadArtifact(_ context.Context, _ domain.NodeID, _ domain.ExecutionID, artifact domain.Artifact, content io.Reader) error {
+	data, err := io.ReadAll(content)
+	f.uploads = append(f.uploads, artifact.Name+"="+string(data))
+	return err
 }
 
 func (f *fakeTransport) Register(context.Context, application.NodeRegistration) (domain.NodeSnapshot, error) {
@@ -387,5 +395,77 @@ func TestAgentStopsARunWhoseLeaseIsLost(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("agent did not stop")
+	}
+}
+
+func TestAgentUploadsWhatTheExecutionDeliveredBeforeItReports(t *testing.T) {
+	f := control(t, "completed")
+	ctx := context.Background()
+	agent := f.agent(t, "delivered")
+	agentCtx, stop := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- agent.Run(agentCtx) }()
+	defer func() { stop(); <-done }()
+	if _, err := f.client.RegisterBot(ctx, application.BotDefinition{Tenant: "t", Name: "bot", Owner: "o", Mission: "m", AllowedTools: []string{"local_read", "axlr_deliver"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.client.EnableBot(ctx, "bot"); err != nil {
+		t.Fatal(err)
+	}
+	submitted, _ := f.client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "write the notes", IdempotencyKey: "k"})
+	completed := waitFor(t, f.client, submitted.Task.ID, "Completed")
+	executions, err := f.client.ListExecutions(ctx, completed.ID)
+	if err != nil || len(executions) != 1 {
+		t.Fatalf("executions: %v %d", err, len(executions))
+	}
+	execution := executions[0]
+	artifacts := execution.Result.Artifacts
+	if len(artifacts) != 3 || artifacts[0].Name != "notes.md" || !artifacts[0].Stored || artifacts[1].Name != "plan.md" || artifacts[1].Stored || artifacts[2].Name != "report.md" {
+		t.Fatalf("artifacts = %+v", artifacts)
+	}
+	if !strings.Contains(string(execution.Receipt), `"axlr.execution-receipt/v1"`) {
+		t.Errorf("receipt = %s", execution.Receipt)
+	}
+	content, err := f.client.GetArtifact(ctx, execution.ID, "notes.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := io.ReadAll(content.Body)
+	_ = content.Body.Close()
+	if string(data) != fakeaxlr.DeliveredContent || content.Artifact.MediaType != "text/markdown" || content.Artifact.SHA256 != artifacts[0].SHA256 {
+		t.Errorf("served %q %+v", data, content.Artifact)
+	}
+	if _, err := f.client.GetArtifact(ctx, execution.ID, "plan.md"); !domain.IsNotFound(err) {
+		t.Errorf("an artifact that did not match was served: %v", err)
+	}
+	for _, want := range []string{"artifact notes.md uploaded", "artifact plan.md not uploaded"} {
+		if !strings.Contains(f.logs.String(), want) {
+			t.Errorf("logs lack %q:\n%s", want, f.logs.String())
+		}
+	}
+}
+
+func TestAgentUploadsOnlyVerifiableArtifacts(t *testing.T) {
+	f := control(t, "completed")
+	fake := &fakeTransport{}
+	agent := f.agent(t, "completed")
+	agent.Transport = fake
+	workspace := filepath.Join(f.nodeDir, "workspaces", "bot")
+	_ = os.MkdirAll(workspace, 0o755)
+	_ = os.WriteFile(filepath.Join(workspace, "a.txt"), []byte("hello"), 0o644)
+	hello := "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+	agent.upload("web-1", "exec-1", "bot", []domain.Artifact{
+		{Name: "a.txt", Size: 5, SHA256: hello, Reference: "a.txt"},
+		{Name: "legacy.txt", Reference: "a.txt"},
+		{Name: "gone.txt", Size: 5, SHA256: hello, Reference: "gone.txt"},
+	})
+	if len(fake.uploads) != 1 || fake.uploads[0] != "a.txt=hello" {
+		t.Errorf("uploads = %v", fake.uploads)
+	}
+	if !strings.Contains(f.logs.String(), "artifact gone.txt not uploaded") {
+		t.Errorf("logs = %s", f.logs.String())
+	}
+	if (Options{}).uploadTimeout() != DefaultUpload || (Options{Upload: time.Second}).uploadTimeout() != time.Second {
+		t.Error("upload timeout")
 	}
 }

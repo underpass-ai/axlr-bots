@@ -26,6 +26,12 @@ var (
 // with the fake axlr-tui in the scenario, and returns a client to it.
 func serve(t *testing.T, scenario string) (*Client, *Local, string) {
 	t.Helper()
+	return serveWith(t, scenario, nil)
+}
+
+// serveWith is serve with a change to the dependencies (a test clock).
+func serveWith(t *testing.T, scenario string, change func(*application.Dependencies)) (*Client, *Local, string) {
+	t.Helper()
 	dir := t.TempDir()
 	bin, _, err := fakeaxlr.Write(dir, fakeaxlr.Options{Scenario: scenario, Marker: filepath.Join(dir, "marker")})
 	if err != nil {
@@ -34,6 +40,9 @@ func serve(t *testing.T, scenario string) (*Client, *Local, string) {
 	deps, err := compose.Dependencies(filepath.Join(dir, "state"), bin, "test:api")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if change != nil {
+		change(&deps)
 	}
 	local := NewLocal(deps)
 	socket := filepath.Join(dir, "cp.sock")
@@ -131,7 +140,7 @@ func TestClientAndServerCarryTheWholeFlow(t *testing.T) {
 	if _, err := client.GetTask(ctx, "bad id"); err == nil || !errorsAs(err, &remote) || remote.Kind != KindValidation {
 		t.Errorf("bad task id: %v", err)
 	}
-	if _, err := client.DecideTask(ctx, submitted.Task.ID, "approve"); err == nil || remote.Kind == "" {
+	if _, err := client.DecideTask(ctx, submitted.Task.ID, DecideRequest{Decision: "approve"}); err == nil || remote.Kind == "" {
 		t.Errorf("decide a completed task: %v", err)
 	}
 }
@@ -156,10 +165,10 @@ func TestDecisionGoesThroughTheRunner(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "marker")); err == nil {
 		t.Fatal("the write ran before the approval")
 	}
-	if _, err := client.DecideTask(ctx, submitted.Task.ID, "maybe"); err == nil {
+	if _, err := client.DecideTask(ctx, submitted.Task.ID, DecideRequest{Decision: "maybe"}); err == nil {
 		t.Error("bad decision accepted")
 	}
-	decided, err := client.DecideTask(ctx, submitted.Task.ID, "approve")
+	decided, err := client.DecideTask(ctx, submitted.Task.ID, DecideRequest{Decision: "approve"})
 	if err != nil || decided.Task.Status != "Completed" || len(decided.Task.ExecutionIDs) != 2 {
 		t.Fatalf("decide: %v %+v", err, decided)
 	}
@@ -323,7 +332,10 @@ func TestLocalReportReference(t *testing.T) {
 		func() error { _, err := local.EnableBot(ctx, "Bad"); return err },
 		func() error { _, err := local.GetBot(ctx, "Bad"); return err },
 		func() error { _, err := local.RunTask(ctx, "bad id"); return err },
-		func() error { _, err := local.DecideTask(ctx, "bad id", "approve"); return err },
+		func() error {
+			_, err := local.DecideTask(ctx, "bad id", DecideRequest{Decision: "approve"})
+			return err
+		},
 		func() error { _, err := local.GetTask(ctx, "bad id"); return err },
 		func() error { _, err := local.GetExecution(ctx, "bad id"); return err },
 		func() error { _, err := local.GetNode(ctx, "Bad"); return err },

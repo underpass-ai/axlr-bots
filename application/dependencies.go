@@ -3,7 +3,9 @@ package application
 import "errors"
 
 // Dependencies are the ports every use case may need, wired once by the
-// composition root. Actor names who is acting, for the audit log.
+// composition root. Actor names who is acting, for the audit log;
+// OperatorURL is the operator API's base URL (https://host:7879), for
+// the approve and deny links a notification carries, and may be empty.
 type Dependencies struct {
 	Bots        BotRepository
 	Tasks       TaskRepository
@@ -20,9 +22,13 @@ type Dependencies struct {
 	Decisions   DecisionExecutor
 	Traces      TraceLocator
 	Artifacts   ArtifactStore
+	Workspace   Workspace
+	Deliveries  DeliveryRepository
+	Notifier    NotificationSender
 	Clock       Clock
 	IDs         IDGenerator
 	Actor       string
+	OperatorURL string
 }
 
 // Validate reports the first missing dependency.
@@ -58,6 +64,12 @@ func (d Dependencies) Validate() error {
 		return errors.New("application: TraceLocator is required")
 	case d.Artifacts == nil:
 		return errors.New("application: ArtifactStore is required")
+	case d.Workspace == nil:
+		return errors.New("application: Workspace is required")
+	case d.Deliveries == nil:
+		return errors.New("application: DeliveryRepository is required")
+	case d.Notifier == nil:
+		return errors.New("application: NotificationSender is required")
 	case d.Clock == nil:
 		return errors.New("application: Clock is required")
 	case d.IDs == nil:

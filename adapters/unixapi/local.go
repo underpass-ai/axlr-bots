@@ -178,12 +178,12 @@ func (l *Local) RunTask(ctx context.Context, id string) (RunResponse, error) {
 	return RunResponse{Task: result.Task.Snapshot(), Execution: result.Execution.Snapshot()}, nil
 }
 
-func (l *Local) DecideTask(ctx context.Context, id, decision string) (RunResponse, error) {
+func (l *Local) DecideTask(ctx context.Context, id string, request DecideRequest) (RunResponse, error) {
 	taskID, err := domain.NewTaskID(id)
 	if err != nil {
 		return RunResponse{}, err
 	}
-	result, err := l.runner.Decide(ctx, taskID, decision)
+	result, err := l.runner.Decide(ctx, taskID, request.Decision, request.CallID)
 	if err != nil {
 		return RunResponse{}, err
 	}
@@ -259,6 +259,19 @@ func (l *Local) GetExecution(ctx context.Context, id string) (domain.ExecutionSn
 		return domain.ExecutionSnapshot{}, err
 	}
 	return execution.Snapshot(), nil
+}
+
+// GetArtifact opens an artifact the execution lists as kept.
+func (l *Local) GetArtifact(ctx context.Context, execution, name string) (ArtifactContent, error) {
+	executionID, err := domain.NewExecutionID(execution)
+	if err != nil {
+		return ArtifactContent{}, err
+	}
+	artifact, body, err := application.NewGetArtifact(l.deps).Execute(ctx, executionID, name)
+	if err != nil {
+		return ArtifactContent{}, err
+	}
+	return ArtifactContent{Artifact: artifact, Body: body}, nil
 }
 
 func (l *Local) ListNodes(ctx context.Context) ([]domain.NodeSnapshot, error) {

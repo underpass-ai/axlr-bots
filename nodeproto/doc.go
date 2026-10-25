@@ -9,5 +9,6 @@
 //	node ──POST /v1/nodes/{id}/heartbeat───────▶ control plane   liveness
 //	node ──GET  /v1/nodes/{id}/assignments/next?wait=20s──▶     long poll: one Assignment or 204
 //	node ──POST /v1/nodes/{id}/executions/{exec}/lease─▶        renew (idempotent)
+//	node ──PUT  /v1/nodes/{id}/executions/{exec}/artifacts/{name}▶ an artifact's bytes, before the report
 //	node ──POST /v1/nodes/{id}/executions/{exec}/report▶        result (idempotent: accepted once)
 package nodeproto

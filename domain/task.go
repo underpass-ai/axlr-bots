@@ -21,6 +21,7 @@ type Task struct {
 	input          json.RawMessage
 	executionIDs   []ExecutionID
 	failureReason  string
+	approval       *ApprovalWait
 	createdAt      time.Time
 	updatedAt      time.Time
 }
@@ -139,25 +140,93 @@ func (t *Task) Fail(reason string, now time.Time) error {
 	return nil
 }
 
-// AwaitApproval parks a Running task until a person decides a tool call.
-func (t *Task) AwaitApproval(now time.Time) error {
+// AwaitApproval parks a Running task until a person decides a tool
+// call: the wait names the call and the deadline it must be decided by.
+func (t *Task) AwaitApproval(wait ApprovalWait, now time.Time) error {
 	if t.status != TaskRunning {
 		return t.refuse("wait for approval")
 	}
+	wait.Outcome, wait.ClosedAt = "", nil
+	if err := wait.Validate(); err != nil {
+		return err
+	}
+	t.approval = &wait
 	t.status = TaskWaitingApproval
 	t.updatedAt = now
 	return nil
 }
 
+// RecordApproval gives a WaitingApproval task that waited before
+// approvals had deadlines the wait it is under; a task that has one
+// keeps it.
+func (t *Task) RecordApproval(wait ApprovalWait) error {
+	if t.status != TaskWaitingApproval {
+		return t.refuse("record an approval wait")
+	}
+	if t.approval != nil && t.approval.Open() {
+		return t.refuse("record a second approval wait")
+	}
+	wait.Outcome, wait.ClosedAt = "", nil
+	if err := wait.Validate(); err != nil {
+		return err
+	}
+	t.approval = &wait
+	return nil
+}
+
+// Approval is the last wait for a person's decision, open or closed,
+// and false when the task never waited under a deadline.
+func (t Task) Approval() (ApprovalWait, bool) {
+	if t.approval == nil {
+		return ApprovalWait{}, false
+	}
+	return *t.approval, true
+}
+
+// ApprovalExpired reports a WaitingApproval task whose deadline has passed.
+func (t Task) ApprovalExpired(now time.Time) bool {
+	return t.status == TaskWaitingApproval && t.approval != nil && t.approval.Open() && now.After(t.approval.Deadline)
+}
+
+// ExpireApproval closes the open wait as expired; the task stays
+// WaitingApproval until it is cancelled or resumed with the denial.
+func (t *Task) ExpireApproval(now time.Time) error {
+	if t.status != TaskWaitingApproval || t.approval == nil || !t.approval.Open() {
+		return t.refuse("expire its approval")
+	}
+	t.closeApproval(ApprovalExpired, now)
+	return nil
+}
+
+// closeApproval ends the open wait with the outcome, if there is one.
+func (t *Task) closeApproval(outcome string, now time.Time) {
+	if t.approval == nil || !t.approval.Open() {
+		return
+	}
+	// A copy, not the shared wait: a Task is a value, and a copy of it
+	// must not see this one close its wait.
+	closed, at := *t.approval, now
+	closed.Outcome, closed.ClosedAt = outcome, &at
+	t.approval = &closed
+}
+
 // Resume returns a WaitingApproval task to Running under a new execution,
-// the one that carries the decision on the pending call.
-func (t *Task) Resume(execution ExecutionID, now time.Time) error {
+// the one that carries the decision on the pending call; the wait is
+// closed with the outcome (approved, denied, or expired when the
+// deadline denied it).
+func (t *Task) Resume(execution ExecutionID, outcome string, now time.Time) error {
 	if t.status != TaskWaitingApproval {
 		return t.refuse("resume")
 	}
 	if execution == "" {
 		return invalid("execution id", "must not be empty")
 	}
+	switch outcome {
+	case ApprovalApproved, ApprovalDenied, ApprovalExpired:
+	default:
+		return invalid("approval outcome", "a resumed task is approved, denied or expired")
+	}
+	t.closeApproval(outcome, now)
 	t.executionIDs = append(t.executionIDs, execution)
 	t.status = TaskRunning
 	t.updatedAt = now
@@ -169,6 +238,7 @@ func (t *Task) Cancel(now time.Time) error {
 	if t.status.IsTerminal() {
 		return t.refuse("cancel")
 	}
+	t.closeApproval(ApprovalCancelled, now)
 	t.status = TaskCancelled
 	t.updatedAt = now
 	return nil
@@ -184,6 +254,11 @@ func (t Task) Snapshot() TaskSnapshot {
 	for i, id := range t.executionIDs {
 		ids[i] = id.String()
 	}
+	var approval *ApprovalWait
+	if t.approval != nil {
+		copied := *t.approval
+		approval = &copied
+	}
 	return TaskSnapshot{
 		ID:             t.id.String(),
 		BotID:          t.botID.String(),
@@ -195,6 +270,7 @@ func (t Task) Snapshot() TaskSnapshot {
 		Input:          t.Input(),
 		ExecutionIDs:   ids,
 		FailureReason:  t.failureReason,
+		Approval:       approval,
 		CreatedAt:      t.createdAt,
 		UpdatedAt:      t.updatedAt,
 	}
@@ -249,6 +325,16 @@ func RestoreTask(s TaskSnapshot) (Task, error) {
 	}
 	if status == TaskFailed && s.FailureReason == "" {
 		return Task{}, invalid("failure reason", "is required by a Failed task")
+	}
+	if s.Approval != nil {
+		if err := s.Approval.Validate(); err != nil {
+			return Task{}, err
+		}
+		if s.Approval.Open() && status != TaskWaitingApproval {
+			return Task{}, invalid("approval", "an open wait needs a WaitingApproval task")
+		}
+		approval := *s.Approval
+		task.approval = &approval
 	}
 	task.status = status
 	task.failureReason = s.FailureReason

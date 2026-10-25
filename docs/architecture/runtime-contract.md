@@ -54,4 +54,8 @@ The last JSON line, `{"type":"result","result":{"schema":"axlr.execution-result/
 | `failed`, `interrupted`, a timeout, a cancel | `Failed` (or `Cancelled` when the task was cancelled) | the same, with the reason |
 | `budget_exceeded` | `Failed`, `budget exceeded: …` | `Failed` |
 
-The execution keeps the node, the policy record, the correlation record, the usage with its cost, the trace reference and the result (vision §12.3).
+The execution keeps the node, the policy record, the correlation record, the usage with its cost, the trace reference, the result and the receipt (vision §12.3).
+
+## Artifacts and the receipt
+
+An AXLR build with `axlr_deliver` lists each deliverable in the result's `artifacts` with `name`, `media_type`, `size`, `sha256`, `reference` (a path relative to the workspace), `description`, `source` (`file` or `inline`), `session_id` and `call_id`, and writes one line `{"type":"receipt","receipt":{"schema":"axlr.execution-receipt/v1",…}}` just before the result (AXLR's [`docs/runtime-contract.md`](https://github.com/underpass-ai/AXLR/blob/main/docs/runtime-contract.md), sections Artifacts and Receipt). The adapter feature-detects both: an artifact without a size and a hash (an older build) is listed and never copied, and a receipt of another schema or past 1 MiB stays in the trace alone. An artifact with them is copied to the control plane, checked against its size and hash, and kept per execution ([operator API](../reference/operator-api.md#artifacts), [node protocol](../reference/node-protocol.md#artifacts)); the receipt is kept on the execution as `receipt`.

@@ -46,7 +46,7 @@ func TestSerialRunnerNeverOverlaps(t *testing.T) {
 			case 1:
 				_, _, _ = runner.RunNext(context.Background())
 			default:
-				_, _ = runner.Decide(context.Background(), id, DecisionApprove)
+				_, _ = runner.Decide(context.Background(), id, DecisionApprove, "")
 			}
 		}(i, id)
 	}

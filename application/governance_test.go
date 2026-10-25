@@ -101,7 +101,7 @@ func TestApproveTaskCarriesThePolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.decider.report.Policy = &domain.PolicyRecord{Level: "act-with-approval", RuntimeLevel: "act-with-approval", Enforced: true}
-	res, err := NewApproveTask(h.deps).Execute(context.Background(), task.ID(), DecisionApprove)
+	res, err := NewApproveTask(h.deps).Execute(context.Background(), task.ID(), DecisionApprove, "")
 	if err != nil {
 		t.Fatal(err)
 	}

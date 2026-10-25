@@ -19,7 +19,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | Join a second host with a one-time token; rotate or revoke its certificate | [Add a host](runbooks/add-a-host.md) |
 | Run the node agent as a sidecar in a Kubernetes pod with Helm: the image, the tokens, the demo, your own chart | [Sidecar](runbooks/sidecar.md) |
 | Start tasks from a webhook or on a timer and verify nothing fires twice | [Triggers](runbooks/triggers.md) |
-| Approve or deny the write a bot wants to make | [Approvals](runbooks/approvals.md) |
+| Approve or deny the write a bot wants to make, be notified of it, let it expire | [Approvals](runbooks/approvals.md) |
 | Recover after a crash, a silent node or a lost control plane | [Recovery](runbooks/recovery.md) |
 
 ## Architecture

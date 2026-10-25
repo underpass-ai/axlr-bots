@@ -63,6 +63,15 @@ func TestHelperProcess(t *testing.T) {
 	)
 	resultCompleted := `{"type":"result","session":"sess-1","result":{"schema":"axlr.execution-result/v1","status":"completed","session_id":"sess-1","sessions":["sess-0","sess-1"],"answer":"The spike came from pod api-3.","tool_calls":[{"call_id":"c1","tool":"local_read","decision":"auto_approve","status":"completed"}],"usage":{"requests":2,"prompt_tokens":3120,"cached_tokens":2048,"cache_write_tokens":0,"completion_tokens":96,"reasoning_tokens":40,"cost_usd":0.0021,"cost_requests":2,"unmetered_requests":0},"artifacts":[{"name":"report.md","media_type":"text/markdown","reference":"artifacts/report.md"}]}}`
 	switch scenario {
+	case "result-delivered":
+		artifact := `{"name":"notes.md","media_type":"text/markdown","size":8,"sha256":"` + strings.Repeat("ab", 32) + `","reference":".axlr/deliverables/sess-1/notes.md","description":"What I found","source":"inline","session_id":"sess-1","call_id":"deliver-1"}`
+		say(session, `{"type":"artifact","artifact":`+artifact+`}`,
+			`{"type":"receipt","receipt":{"schema":"axlr.execution-receipt/v1",  "status":"completed","complete":true}}`,
+			`{"type":"result","session":"sess-1","result":{"schema":"axlr.execution-result/v1","status":"completed","session_id":"sess-1","answer":"Delivered.","tool_calls":[],"usage":{"requests":1},"artifacts":[`+artifact+`]}}`)
+		os.Exit(0)
+	case "receipt-unknown":
+		say(session, `{"type":"receipt","receipt":{"schema":"axlr.execution-receipt/v9"}}`, `{"type":"receipt","receipt":"no"}`, `{"type":"completed","session":"sess-1"}`)
+		os.Exit(0)
 	case "result-completed":
 		say(session, text, reqd, done, text2, `{"type":"completed","session":"sess-1","status":"idle"}`, resultCompleted)
 		os.Exit(0)

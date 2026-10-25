@@ -21,8 +21,13 @@ import (
 )
 
 // maxBodyBytes bounds a request body; a bot definition or an objective
-// is far smaller. A webhook's event is bounded by the task input.
-const maxBodyBytes = 1 << 20
+// is far smaller. A webhook's event is bounded by the task input, an
+// artifact by domain.MaxArtifactBytes, and a node's report, which
+// carries the answer and the receipt, by maxReportBytes.
+const (
+	maxBodyBytes   = 1 << 20
+	maxReportBytes = 8 << 20
+)
 
 // Server serves the operator's Service and the node protocol over HTTP:
 // everything on a Unix socket (the same host), the node protocol alone
@@ -92,8 +97,11 @@ func (s *Server) operatorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/tasks/{id}/cancel", s.cancelTask)
 	mux.HandleFunc("POST /v1/tasks/{id}/run", s.runTask)
 	mux.HandleFunc("POST /v1/tasks/{id}/decide", s.decideTask)
+	mux.HandleFunc("POST /v1/tasks/{id}/approve", s.decideAs(application.DecisionApprove))
+	mux.HandleFunc("POST /v1/tasks/{id}/deny", s.decideAs(application.DecisionDeny))
 	mux.HandleFunc("GET /v1/tasks/{id}/report", s.getReport)
 	mux.HandleFunc("GET /v1/executions/{id}", s.getExecution)
+	mux.HandleFunc("GET /v1/executions/{id}/artifacts/{name}", s.getArtifact)
 	mux.HandleFunc("POST /v1/triggers/{bot}/{trigger}", s.fireTrigger)
 	mux.HandleFunc("GET /v1/overview", s.getOverview)
 	mux.HandleFunc("GET /v1/nodes", s.listNodes)
@@ -114,6 +122,7 @@ func (s *Server) nodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/nodes/{id}/heartbeat", s.authenticated(s.heartbeat))
 	mux.HandleFunc("GET /v1/nodes/{id}/assignments/next", s.authenticated(s.nextAssignment))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/lease", s.authenticated(s.renewLease))
+	mux.HandleFunc("PUT /v1/nodes/{id}/executions/{exec}/artifacts/{name}", s.authenticated(s.uploadArtifact))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/report", s.authenticated(s.report))
 }
 
@@ -409,8 +418,43 @@ func (s *Server) decideTask(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &request) {
 		return
 	}
-	value, err := s.service.DecideTask(r.Context(), r.PathValue("id"), request.Decision)
+	value, err := s.service.DecideTask(r.Context(), r.PathValue("id"), request)
 	respond(w, http.StatusOK, value, err)
+}
+
+// decideAs is POST /v1/tasks/{id}/approve and /deny: the decision is the
+// route, the pending call the optional ?call= (what a notification's
+// links carry), and no body is read.
+func (s *Server) decideAs(decision string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		request := DecideRequest{Decision: decision, CallID: r.URL.Query().Get("call")}
+		value, err := s.service.DecideTask(r.Context(), r.PathValue("id"), request)
+		respond(w, http.StatusOK, value, err)
+	}
+}
+
+// getArtifact is GET /v1/executions/{id}/artifacts/{name}: the bytes of
+// an artifact the control plane keeps, with its media type, size and
+// hash in the headers, as a download.
+func (s *Server) getArtifact(w http.ResponseWriter, r *http.Request) {
+	content, err := s.service.GetArtifact(r.Context(), r.PathValue("id"), r.PathValue("name"))
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	defer content.Body.Close()
+	artifact := content.Artifact
+	mediaType := artifact.MediaType
+	if domain.ValidateMediaType(mediaType) != nil {
+		mediaType = application.DefaultArtifactMediaType
+	}
+	w.Header().Set("Content-Type", mediaType)
+	w.Header().Set("Content-Length", strconv.FormatInt(artifact.Size, 10))
+	w.Header().Set("Content-Disposition", `attachment; filename="`+artifact.Name+`"`)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set(nodeproto.ArtifactSHA256Header, artifact.SHA256)
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, content.Body)
 }
 
 func (s *Server) getReport(w http.ResponseWriter, r *http.Request) {
@@ -541,7 +585,7 @@ func (s *Server) report(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var message nodeproto.ReportMessage
-	if !readJSON(w, r, &message) {
+	if !readJSONLimit(w, r, &message, maxReportBytes) {
 		return
 	}
 	report, err := nodeproto.ToReport(message)
@@ -555,6 +599,37 @@ func (s *Server) report(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusOK, nodeproto.ReportAck{Accepted: result.Accepted, Outcome: result.Execution.Outcome().String()}, nil)
+}
+
+// uploadArtifact is PUT /v1/nodes/{id}/executions/{exec}/artifacts/{name}:
+// the body is the artifact's bytes, its size the Content-Length, its
+// media type the Content-Type and its hash the SHA-256 header.
+func (s *Server) uploadArtifact(w http.ResponseWriter, r *http.Request) {
+	id, err := domain.NewNodeID(r.PathValue("id"))
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	executionID, err := domain.NewExecutionID(r.PathValue("exec"))
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	if r.ContentLength < 0 {
+		respond(w, 0, nil, domain.ValidationError{Field: "Content-Length", Reason: "an artifact upload states its size"})
+		return
+	}
+	if r.ContentLength > domain.MaxArtifactBytes {
+		respond(w, 0, nil, &http.MaxBytesError{Limit: domain.MaxArtifactBytes})
+		return
+	}
+	artifact := domain.Artifact{
+		Name: r.PathValue("name"), MediaType: r.Header.Get("Content-Type"), Size: r.ContentLength, SHA256: r.Header.Get(nodeproto.ArtifactSHA256Header),
+		Reference: r.Header.Get(nodeproto.ArtifactReferenceHeader), Description: r.Header.Get(nodeproto.ArtifactDescriptionHeader),
+	}
+	body := http.MaxBytesReader(w, r.Body, domain.MaxArtifactBytes+1)
+	stored, err := application.NewUploadArtifact(s.service.Dependencies()).Execute(r.Context(), id, executionID, artifact, body)
+	respond(w, http.StatusCreated, stored, err)
 }
 
 // enroll takes a node's token and signing request and answers with its
@@ -596,7 +671,12 @@ func createdStatus(created bool) int {
 // readJSON decodes the body, refusing unknown fields; false means the
 // error was already written.
 func readJSON(w http.ResponseWriter, r *http.Request, into any) bool {
-	decoder := json.NewDecoder(io.LimitReader(r.Body, maxBodyBytes))
+	return readJSONLimit(w, r, into, maxBodyBytes)
+}
+
+// readJSONLimit is readJSON with its own bound on the body.
+func readJSONLimit(w http.ResponseWriter, r *http.Request, into any, limit int64) bool {
+	decoder := json.NewDecoder(io.LimitReader(r.Body, limit))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(into); err != nil {
 		writeJSON(w, http.StatusBadRequest, ErrorResponse{Kind: KindValidation, Message: "request body: " + err.Error()})

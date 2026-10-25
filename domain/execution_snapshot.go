@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // ExecutionSnapshot is an execution as plain data.
 type ExecutionSnapshot struct {
@@ -20,4 +23,5 @@ type ExecutionSnapshot struct {
 	Decision      string             `json:"decision,omitempty"`
 	NodeID        string             `json:"nodeId,omitempty"`
 	LeaseUntil    *time.Time         `json:"leaseUntil,omitempty"`
+	Receipt       json.RawMessage    `json:"receipt,omitempty"`
 }

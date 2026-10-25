@@ -20,5 +20,8 @@ const (
 	KindForbidden    = "forbidden"
 	KindUnauthorized = "unauthorized"
 	KindTooLarge     = "too_large"
-	KindInternal     = "internal"
+	// KindApprovalExpired is a decision after the pending call's
+	// deadline: it authorises nothing.
+	KindApprovalExpired = "approval_expired"
+	KindInternal        = "internal"
 )

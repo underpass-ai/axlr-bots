@@ -9,7 +9,7 @@ import (
 )
 
 func TestScenarios(t *testing.T) {
-	for _, scenario := range []string{"completed", "slow", "decision", "failed", "approval-flow"} {
+	for _, scenario := range []string{"completed", "slow", "decision", "failed", "approval-flow", "delivered"} {
 		dir := t.TempDir()
 		marker := filepath.Join(dir, "marker")
 		bin, argsFile, err := Write(dir, Options{Scenario: scenario, Marker: marker})
@@ -20,7 +20,13 @@ func TestScenarios(t *testing.T) {
 		if !strings.Contains(string(help), "-policy") {
 			t.Errorf("%s: help = %s", scenario, help)
 		}
-		out, runErr := exec.Command(bin, "--exec", "hi", "--json").CombinedOutput()
+		if version, err := exec.Command(bin, "--version").Output(); err != nil || strings.TrimSpace(string(version)) != "axlr-tui 0.0.0-fake" {
+			t.Errorf("%s: version = %q %v", scenario, version, err)
+		}
+		run := exec.Command(bin, "--exec", "hi", "--json")
+		run.Dir = dir
+		t.Chdir(dir)
+		out, runErr := run.CombinedOutput()
 		args, _ := os.ReadFile(argsFile)
 		if !strings.HasPrefix(string(args), "--exec\nhi\n") {
 			t.Errorf("%s: args = %q", scenario, args)
@@ -44,6 +50,11 @@ func TestScenarios(t *testing.T) {
 		case "failed":
 			if code != 1 {
 				t.Errorf("failed: %d", code)
+			}
+		case "delivered":
+			notes, _ := os.ReadFile(filepath.Join(".axlr", "deliverables", "sess-1", "notes.md"))
+			if code != 0 || !strings.Contains(string(out), `"type":"receipt"`) || !strings.Contains(string(out), `"name":"plan.md"`) || string(notes) != DeliveredContent {
+				t.Errorf("delivered: %d %s %q", code, out, notes)
 			}
 		}
 		if scenario == "approval-flow" {

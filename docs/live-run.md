@@ -276,6 +276,45 @@ The service log is `access.log` in the workspace. It has six lines, all from 202
 
 The execution ran on `demo-log-service-0` (observe, enforced, $0.0009).
 
+## Approvals that expire, notifications and artifacts (gx10, 25 Oct 2026)
+
+The installed control plane and the gx10 node were replaced by this build (the old binaries kept as `*.before-approvals`); `gx10-ff95`, `wrx80` and `demo-log-service-0` stayed Online through both restarts.
+
+**Expiry.** `bot-act-with-approval` was patched to `{"ttl": "2m", "onExpire": "deny", "notify": [{"type": "command", "name": "file", "command": ["/bin/sh", "-c", "cat > …/last-approval-request.json"]}]}` and given a write:
+
+```text
+18:21:26.513 bot.task.waiting_approval {"deadline": "2026-10-25T18:23:26.5Z", "callId": "toolu_01Gvgz…"}   on gx10-ff95
+18:21:28     daemon: notification dlv-1fb5f03cc48c6742c380e6a6 of task task-1831b5d5… to file: delivered (attempt 1)
+             (the file holds axlr-bots.approval-request/v1: local_write expiry-check.txt, the deadline, actions.approve.url
+              https://127.0.0.1:7879/v1/tasks/task-1831b5d5…/approve?call=toolu_01Gvgz…)
+18:23:28.194 bot.approval.expired {"action": "deny", "deadline": "2026-10-25T18:23:26.5Z"}
+18:23:28.196 bot.task.decided {"decision": "deny", "reason": "approval expired", "nodeId": "gx10-ff95"}
+18:23:30.974 bot.task.completed   "I didn't create expiry-check.txt. You denied the write approval, so nothing was written."
+$ axlr-bots task approve task-1831b5d5…            # exit 1
+axlr-bots: approval expired: task task-1831b5d5… (call toolu_01Gvgz…) had to be decided by 2026-10-25T18:23:26Z; the decision authorises nothing
+$ curl … -X POST https://127.0.0.1:7879/v1/tasks/task-1831b5d5…/approve?call=toolu_01Gvgz…
+{"kind":"approval_expired", …}  HTTP 409
+```
+
+The task ends with `approval.outcome: expired`; `expiry-check.txt` never appeared in the workspace; `audit.jsonl` has the delivery as `approval.notify` (queued, then delivered on attempt 1). The bot's `ttl` was set back to `15m` afterwards.
+
+**Artifacts.** A temporary dedicated node, `gx10-artifacts`, enrolled with a one-time token and ran an `axlr-tui` built from AXLR PR #180 (`axlr_deliver`, the receipt); the bot `bot-artifacts` (`act-within-policy`, `local_read`, `local_list`, `axlr_deliver`) was placed on it. One task, haiku-5.5, $0.0012:
+
+```text
+node: execution exec-587ace1e…: artifact findings.md uploaded (405 bytes)
+result.artifacts[0] = {"name": "findings.md", "mediaType": "text/markdown", "size": 405, "sha256": "f02be984…f980",
+                       "reference": ".axlr/deliverables/3b4c06…/findings.md", "source": "inline", "stored": true}
+receipt = axlr.execution-receipt/v1, completed, complete: true, 2 requests, tool calls [axlr_deliver]
+$ curl … https://127.0.0.1:7879/v1/executions/exec-587ace1e…/artifacts/findings.md
+HTTP/2 200, content-type: text/markdown, content-length: 405, x-axlr-artifact-sha256: f02be984…f980
+sha256 of the download = sha256 of the file in the node's workspace = f02be984…f980
+$ axlr-bots execution artifact exec-587ace1e… findings.md --out findings.md     # the hash checked on the way
+```
+
+The temporary node was stopped and revoked and the bot paused afterwards.
+
+**Found on the way.** Every task on `gx10-ff95` had failed since the node's restart at 08:04 (`axlr-tui: jev: TYPESAFE_API_KEY is required for Jev`): AXLR's settings turn on the Jev judge and the key reached the user's systemd manager only after the node had started. Restarting the node with the new binary gave it the key; the `bot` timer completed again at 18:25.
+
 ## The live tests
 
 Three tests run the real binary when asked; everything else runs against the stand-ins.

@@ -17,7 +17,8 @@ Over the TLS address a node **is** its certificate: the server takes the node id
 | heartbeat | `POST /v1/nodes/{id}/heartbeat` | node → control plane | yes |
 | next assignment | `GET /v1/nodes/{id}/assignments/next?wait=20s` | node → control plane (long poll; `204` when none) | each execution is handed out once; an unleased one assigned to the node (a queued decision) goes first |
 | renew lease | `POST /v1/nodes/{id}/executions/{exec}/lease` | node → control plane | yes; refused for another node's or an ended execution |
-| report `{outcome, result, usage, failureReason, traceReference, policy, correlation}` | `POST /v1/nodes/{id}/executions/{exec}/report` | node → control plane | **accepted once**: a repeat answers `accepted: false` with the stored outcome |
+| artifact (the bytes; `Content-Type`, `Content-Length`, `X-Axlr-Artifact-Sha256`) | `PUT /v1/nodes/{id}/executions/{exec}/artifacts/{name}` | node → control plane, before the report | per name: a repeat replaces it; refused once the execution has ended ([below](#artifacts)) |
+| report `{outcome, result, usage, failureReason, traceReference, policy, correlation, receipt}` | `POST /v1/nodes/{id}/executions/{exec}/report` | node → control plane (at most 8 MiB) | **accepted once**: a repeat answers `accepted: false` with the stored outcome |
 
 The node address serves only these routes and `/healthz`; a node certificate opens no operator route ([API](operator-api.md)).
 
@@ -32,6 +33,12 @@ The agent registers at start, heartbeats every 15 s, long-polls for work (20 s),
 An assignment carries a `run` (the task's objective, model, level, allowed tools, rules, timeout and correlation ids) or a `decide` (the session, the call and the decision, with the task and correlation ids) and a lease of two minutes. The control plane stores the node id and the lease on the execution. A lease the control plane refuses for good (the task was cancelled) stops the run on the node, whose late report is then dropped; a node that stops renewing (it died, or lost the network) is reconciled: the execution and its task fail with the diagnosis once the lease expires ([command reference](cli.md#recovery)).
 
 The trace of the run stays on the node (`<node-state>/traces/<execution>.jsonl`); the execution keeps its reference. The report carries the result object AXLR produced, the usage, the policy record and the correlation record.
+
+## Artifacts
+
+When AXLR's result lists artifacts with a size and a SHA-256 (the `axlr_deliver` contract; older builds list none, or none with a hash), the node opens each file by its reference **inside the bot's workspace only** (a reference that is absolute, holds `..` or resolves through a link outside the workspace is refused, and so is anything but a regular file of at most 32 MiB) and puts its bytes to the control plane, one request per artifact, while it still renews the lease; then it reports. The control plane takes an upload only from the node the execution is assigned to and while the execution runs, streams it to a temporary file, and keeps it only when its length is the `Content-Length` and its hash the header's (`400 validation` otherwise, or when the execution already keeps 64 artifacts or 256 MiB; `413` past 32 MiB; `409 state` from another node or for an execution that ended). The report then marks `stored: true` the artifacts the control plane holds with that name, size and hash, whatever the node claimed. An artifact the node could not read or the control plane refused is logged on the node, audited (`artifact.upload`, denied) and listed without `stored`.
+
+The report carries AXLR's receipt line (`axlr.execution-receipt/v1`, at most 1 MiB) as `receipt` when the build writes one; the execution keeps it. **Upgrade the control plane before the nodes**: the control plane refuses unknown fields, so a control plane older than these fields refuses a report that carries them, while a new control plane takes the reports of older nodes as before.
 
 ## Events
 
@@ -49,9 +56,9 @@ The node is marked `Revoked`, its certificate's serial goes on the denylist (`<s
 
 | | |
 |---|---|
-| Out of the node | the registration, heartbeats, polls, lease renewals and reports; the signing request at enrollment |
+| Out of the node | the registration, heartbeats, polls, lease renewals and reports; the bytes of the artifacts an execution delivered; the signing request at enrollment |
 | Into the node | the assignments (the objective, model, level, tools, rules, timeout and correlation ids, or a decision) and its own certificate once |
-| Never leaves the node | its private key, the AXLR session and its trace (the execution keeps a reference), the workspace |
+| Never leaves the node | its private key, the AXLR session and its trace (the execution keeps a reference), the workspace beyond the delivered artifacts |
 | Never leaves the control plane | the CA key, the token secrets (stored hashed), the operator bearer token |
 | Per host | the model key, in that host's environment file |
 

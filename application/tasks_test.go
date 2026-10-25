@@ -313,7 +313,7 @@ func TestApproveTaskCompletesUnderASecondExecution(t *testing.T) {
 	h.clock.now = t0.Add(2 * time.Minute)
 	ctx := context.Background()
 
-	res, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove)
+	res, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,7 +360,7 @@ func TestApproveTaskCompletesUnderASecondExecution(t *testing.T) {
 	}
 
 	// A decided task cannot be decided again; nothing reaches the runtime.
-	if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove); err == nil {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, ""); err == nil {
 		t.Error("completed task decided again")
 	}
 	if len(h.decider.requests) != 1 {
@@ -393,7 +393,7 @@ func TestApproveTaskOutcomes(t *testing.T) {
 			h := newHarness()
 			_, task := waitingTask(t, h)
 			h.decider.report, h.decider.err = c.report, c.err
-			res, err := NewApproveTask(h.deps).Execute(context.Background(), task.ID(), c.decision)
+			res, err := NewApproveTask(h.deps).Execute(context.Background(), task.ID(), c.decision, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -422,12 +422,12 @@ func TestApproveTaskDecidesAgainAfterAnotherStop(t *testing.T) {
 	second := pendingReport("sess-1")
 	second.Result.PendingDecision.CallID = "c2"
 	h.decider.report = second
-	res, err := NewApproveTask(h.deps).Execute(context.Background(), task.ID(), DecisionApprove)
+	res, err := NewApproveTask(h.deps).Execute(context.Background(), task.ID(), DecisionApprove, "")
 	if err != nil || res.Task.Status() != domain.TaskWaitingApproval {
 		t.Fatalf("%v %s", err, res.Task.Status())
 	}
 	h.decider.report = ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "done"}}
-	res, err = NewApproveTask(h.deps).Execute(context.Background(), task.ID(), DecisionDeny)
+	res, err = NewApproveTask(h.deps).Execute(context.Background(), task.ID(), DecisionDeny, "")
 	if err != nil || res.Task.Status() != domain.TaskCompleted || len(res.Task.ExecutionIDs()) != 3 {
 		t.Fatalf("%v %s %v", err, res.Task.Status(), res.Task.ExecutionIDs())
 	}
@@ -446,7 +446,7 @@ func TestApproveTaskFallsBackToTheResultSession(t *testing.T) {
 	if _, err := NewRunTask(h.deps).Execute(context.Background(), task.ID()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewApproveTask(h.deps).Execute(context.Background(), task.ID(), DecisionApprove); err != nil {
+	if _, err := NewApproveTask(h.deps).Execute(context.Background(), task.ID(), DecisionApprove, ""); err != nil {
 		t.Fatal(err)
 	}
 	if h.decider.requests[0].SessionID != "sess-9" || h.log.events[len(h.log.events)-2].Payload["sessionId"] != "sess-9" {
@@ -465,7 +465,7 @@ func TestApproveTaskRefusals(t *testing.T) {
 	refuse := func(name string, id domain.TaskID, decision string, want func(error) bool) {
 		t.Helper()
 		saves := h.tasks.saves
-		_, err := uc.Execute(ctx, id, decision)
+		_, err := uc.Execute(ctx, id, decision, "")
 		if err == nil || !want(err) {
 			t.Errorf("%s: %v", name, err)
 		}
@@ -497,13 +497,13 @@ func TestApproveTaskRefusals(t *testing.T) {
 
 	orphan, _ := domain.NewTask("orphan", "ghost", "o", "k", "", t0)
 	_ = orphan.Start("exec-orphan", t0)
-	_ = orphan.AwaitApproval(t0)
+	_ = orphan.AwaitApproval(testWait(t0), t0)
 	_ = h.tasks.Save(ctx, orphan)
 	refuse("bot vanished", "orphan", DecisionApprove, domain.IsNotFound)
 
 	lost, _ := domain.NewTask("lost", bot.ID(), "o", "k2", "", t0)
 	_ = lost.Start("exec-lost", t0)
-	_ = lost.AwaitApproval(t0)
+	_ = lost.AwaitApproval(testWait(t0), t0)
 	_ = h.tasks.Save(ctx, lost)
 	refuse("execution vanished", "lost", DecisionApprove, domain.IsNotFound)
 
@@ -528,7 +528,7 @@ func TestApproveTaskPortErrors(t *testing.T) {
 		h := newHarness()
 		_, task := waitingTask(t, h)
 		arrange(h)
-		if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove); !errors.Is(err, errBoom) {
+		if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, ""); !errors.Is(err, errBoom) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
@@ -537,14 +537,14 @@ func TestApproveTaskPortErrors(t *testing.T) {
 	h := newHarness()
 	_, task := waitingTask(t, h)
 	h.decider.report = ExecutionReport{Outcome: domain.ExecutionDecisionRequired}
-	if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove); err == nil {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, ""); err == nil {
 		t.Error("decision without pending call accepted")
 	}
 	// A clock that runs backwards must not end the execution before it began.
 	h = newHarness()
 	_, task = waitingTask(t, h)
 	h.clock.now = t0.Add(-time.Hour)
-	res, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove)
+	res, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, "")
 	if err != nil || res.Execution.EndedAt().Before(res.Execution.StartedAt()) {
 		t.Errorf("%v ended %s started %s", err, res.Execution.EndedAt(), res.Execution.StartedAt())
 	}

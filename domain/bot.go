@@ -18,6 +18,7 @@ type Bot struct {
 	toolRules    ToolRules
 	triggers     Triggers
 	placement    Placement
+	approvals    Approvals
 	status       BotStatus
 	createdAt    time.Time
 	updatedAt    time.Time
@@ -32,7 +33,7 @@ func NewBot(id BotID, tenant TenantID, name BotName, owner Owner, mission Missio
 	return Bot{
 		id: id, tenantID: tenant, name: name, owner: owner, mission: mission,
 		allowedTools: tools, modelPolicy: model, budgets: budgets,
-		level: AutonomyObserve, triggers: DefaultTriggers(), status: BotDraft, createdAt: now, updatedAt: now,
+		level: AutonomyObserve, triggers: DefaultTriggers(), approvals: DefaultApprovals(), status: BotDraft, createdAt: now, updatedAt: now,
 	}, nil
 }
 
@@ -71,6 +72,12 @@ func (b Bot) Triggers() Triggers { return b.triggers }
 
 // Placement says which nodes may run the bot's tasks.
 func (b Bot) Placement() Placement { return b.placement }
+
+// Approvals says how the bot's pending calls wait for a person.
+func (b Bot) Approvals() Approvals { return b.approvals }
+
+// SetApprovals replaces how the bot's pending calls wait for a person.
+func (b *Bot) SetApprovals(approvals Approvals) { b.approvals = approvals }
 
 // AcceptsTrigger reports whether a task of the type may reach the bot.
 func (b Bot) AcceptsTrigger(kind TriggerType) bool { return b.triggers.Has(kind) }
@@ -185,6 +192,7 @@ func (b Bot) Snapshot() BotSnapshot {
 		ToolRules: b.toolRules.Snapshot(),
 		Triggers:  b.triggers.Snapshot(),
 		Placement: b.placement.Snapshot(),
+		Approvals: b.approvals.Snapshot(),
 		Status:    b.status.String(),
 		CreatedAt: b.createdAt,
 		UpdatedAt: b.updatedAt,
@@ -253,6 +261,11 @@ func RestoreBot(s BotSnapshot) (Bot, error) {
 		return Bot{}, err
 	}
 	bot.Wire(triggers, placement)
+	approvals, err := NewApprovals(s.Approvals)
+	if err != nil {
+		return Bot{}, err
+	}
+	bot.SetApprovals(approvals)
 	if s.UpdatedAt.IsZero() {
 		return Bot{}, invalid("updated at", "must not be zero")
 	}

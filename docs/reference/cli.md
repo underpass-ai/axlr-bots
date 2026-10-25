@@ -5,7 +5,7 @@ Two commands come out of this module: `axlr-bots`, the control plane and the ope
 ```text
 axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>] <command>
 
-  serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--api-token-file <path>]
+  serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--api-token-file <path>] [--api-url <url>]
         [--tick 2s] [--reconcile-every 1m] [--grace <duration>]
   ca init | ca show
   node list | node get <node-id>
@@ -15,11 +15,11 @@ axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>]
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>]
   trigger fire <bot-id> <trigger> --body '<json>' | --file <event.json> [--delivery <id>]
   task run <task-id>                           in process (exit 0 completed, 3 decision required, 1 failed)
-  task approve <task-id> | task deny <task-id> | task decide <task-id> approve|deny
+  task approve <task-id> | task deny <task-id> | task decide <task-id> approve|deny   [--call <id>]
   task get <task-id> | task executions <task-id> | task events <task-id> [--limit 100] | task cancel <task-id>
   task list [--bot <id>] [--status <status>] [--since <rfc3339>] [--limit 100]
   task report <task-id> [--path] | task reconcile [--grace <duration>]
-  execution get <execution-id>
+  execution get <execution-id> | execution artifact <execution-id> <name> [--out <file>]
   overview [--since <rfc3339>]                 nodes, bots and tasks by status; tasks, executions and cost since today
   install [--system] [--prefix <dir>] [--state <dir>] [--node-state <dir>] [--unit-dir <dir>] [--env-file <path>]
           [--axlr-bin <path>] [--node-binary <path>] [--listen <addr>] [--server-names a,b] [--api-listen <addr>]
