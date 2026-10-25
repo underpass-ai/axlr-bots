@@ -94,6 +94,17 @@ func (m *memoryTasks) ListByStatus(_ context.Context, status domain.TaskStatus) 
 	return out, nil
 }
 
+func (m *memoryTasks) List(context.Context) ([]domain.Task, error) {
+	if m.listFail != nil {
+		return nil, m.listFail
+	}
+	out := make([]domain.Task, 0, len(m.tasks))
+	for _, t := range m.tasks {
+		out = append(out, t)
+	}
+	return out, nil
+}
+
 func (m *memoryTasks) FindByIdempotencyKey(_ context.Context, bot domain.BotID, key domain.IdempotencyKey) (domain.Task, bool, error) {
 	for _, t := range m.tasks {
 		if t.BotID() == bot && t.IdempotencyKey() == key {
@@ -139,6 +150,17 @@ func (m *memoryExecutions) ListRunning(context.Context) ([]domain.Execution, err
 		}
 	}
 	slices.SortFunc(out, func(a, b domain.Execution) int { return strings.Compare(a.ID().String(), b.ID().String()) })
+	return out, nil
+}
+
+func (m *memoryExecutions) List(context.Context) ([]domain.Execution, error) {
+	if m.listFail != nil {
+		return nil, m.listFail
+	}
+	out := make([]domain.Execution, 0, len(m.executions))
+	for _, e := range m.executions {
+		out = append(out, e)
+	}
 	return out, nil
 }
 
@@ -213,6 +235,23 @@ func (c *collector) ListEvents(_ context.Context, bot domain.BotID, limit int) (
 	var out []domain.Event
 	for _, e := range c.events {
 		if e.BotID == bot {
+			out = append(out, e)
+		}
+	}
+	if len(out) > limit {
+		out = out[len(out)-limit:]
+	}
+	return out, nil
+}
+
+// ListTaskEvents is the EventReader of a task over what was published.
+func (c *collector) ListTaskEvents(_ context.Context, task domain.TaskID, limit int) ([]domain.Event, error) {
+	if c.fail != nil {
+		return nil, c.fail
+	}
+	var out []domain.Event
+	for _, e := range c.events {
+		if e.TaskID == task {
 			out = append(out, e)
 		}
 	}

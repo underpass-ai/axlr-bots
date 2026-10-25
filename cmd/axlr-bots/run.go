@@ -55,6 +55,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if rest[0] == "serve" {
 		return serve(ctx, app, *stateDir, socketPath, rest[1:], stdout, stderr)
 	}
+	if rest[0] == "overview" {
+		return overview(ctx, newService(ctx, app, socketPath, nil), rest[1:], stdout, stderr)
+	}
 	if len(rest) < 2 {
 		printUsage(stderr)
 		return exitUsage
@@ -74,6 +77,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return botRegister(ctx, service, rest, stdout, stderr)
 	case "bot enable":
 		return botEnable(ctx, service, rest, stdout, stderr)
+	case "bot pause":
+		return botPause(ctx, service, rest, stdout, stderr)
 	case "bot list":
 		return botList(ctx, service, rest, stdout, stderr)
 	case "bot get":
@@ -84,6 +89,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return botEvents(ctx, service, rest, stdout, stderr)
 	case "task submit":
 		return taskSubmit(ctx, service, rest, stdout, stderr)
+	case "task list":
+		return taskList(ctx, service, rest, stdout, stderr)
+	case "task events":
+		return taskEvents(ctx, service, rest, stdout, stderr)
 	case "task cancel":
 		return taskCancel(ctx, service, rest, stdout, stderr)
 	case "task executions":
@@ -183,6 +192,7 @@ func printUsage(w io.Writer) {
   node revoke <node-id>               refuse the node's certificate and fail what it ran
   bot register --file <bot.json>      register a bot from its definition
   bot enable <bot-id>                 let the bot accept tasks
+  bot pause <bot-id>                  put an enabled bot on hold; it accepts no task
   bot list                            list bots
   bot get <bot-id>                    show one bot
   bot update <bot-id> --file <patch.json>
@@ -200,6 +210,9 @@ func printUsage(w io.Writer) {
                                       new execution (same exit codes as task run)
   task decide <task-id> approve|deny  the same, with the decision as a word
   task get <task-id>                  show one task
+  task list [--bot <id>] [--status <s>] [--since <time>] [--limit 100]
+                                      the tasks across bots, newest first
+  task events <task-id> [--limit 100] the task's timeline, oldest first
   task executions <task-id>           the task's executions, oldest first
   task cancel <task-id>               stop a task that has not finished
   task report <task-id> [--path]      print the task's report (or only where it is)
@@ -207,6 +220,8 @@ func printUsage(w io.Writer) {
                                       longer than the grace (default: the bot's
                                       task timeout plus 1m); prints failed/skipped
   execution get <execution-id>        show one execution: outcome, answer, usage, policy
+  overview [--since <time>]           nodes, bots and tasks by status; tasks, executions
+                                      and cost since the start of today
   install [--system] [--prefix <dir>] [--state <dir>] [--axlr-bin <path>]
           [--listen <addr>] [--server-names a,b] [--control <url>] [--node-only]
                                       install both binaries, the two systemd units and the

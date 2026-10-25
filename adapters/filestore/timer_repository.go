@@ -54,7 +54,11 @@ func (r TimerRepository) List(ctx context.Context) ([]domain.Timer, error) {
 
 // Delete removes the timer's file; a missing one is not an error.
 func (r TimerRepository) Delete(_ context.Context, key string) error {
-	if err := os.Remove(r.files.path(key)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	path, err := r.files.path(key)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return nil

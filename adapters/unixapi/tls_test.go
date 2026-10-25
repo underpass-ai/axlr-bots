@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/underpass-ai/axlr-bots/adapters/filestore"
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/compose"
@@ -128,6 +129,25 @@ func TestEnrolledNodesSpeakOverTLS(t *testing.T) {
 	listed, err := f.operator.ListNodes(ctx)
 	if err != nil || len(listed) != 1 || listed[0].CertificateSerial != creds.Serial {
 		t.Errorf("list: %v %+v", err, listed)
+	}
+	if len(listed) == 1 && (listed[0].CertificateNotAfter == nil || !listed[0].CertificateNotAfter.Equal(creds.NotAfter)) {
+		t.Errorf("certificate expiry = %v, want %v", listed[0].CertificateNotAfter, creds.NotAfter)
+	}
+	// A node enrolled before expiries were kept gets one on its next
+	// call over mutual TLS.
+	nodes := filestore.NewNodeRepository(f.state)
+	stored, _ := nodes.Get(ctx, "web-1")
+	snapshot := stored.Snapshot()
+	snapshot.CertificateNotAfter = nil
+	forgotten, _ := domain.RestoreNode(snapshot)
+	if err := nodes.Save(ctx, forgotten); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := node.Heartbeat(ctx, "web-1"); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := f.operator.GetNode(ctx, "web-1"); again.CertificateNotAfter == nil || !again.CertificateNotAfter.Equal(creds.NotAfter) {
+		t.Errorf("expiry after the heartbeat = %v", again.CertificateNotAfter)
 	}
 	// The whole flow: a task assigned, leased and reported over TLS.
 	if _, err := f.operator.RegisterBot(ctx, definition("bot-a", "observe")); err != nil {

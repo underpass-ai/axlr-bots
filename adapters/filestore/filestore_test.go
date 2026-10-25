@@ -224,14 +224,23 @@ func TestTaskRepositoryListsByStatus(t *testing.T) {
 	if list, err := repo.ListByStatus(ctx, domain.TaskFailed); err != nil || len(list) != 0 {
 		t.Errorf("failed: %v %d", err, len(list))
 	}
+	if all, err := repo.List(ctx); err != nil || len(all) != 3 {
+		t.Errorf("all: %v %d", err, len(all))
+	}
 	_ = os.WriteFile(filepath.Join(repo.files.dir, "bad.json"), []byte("{"), 0o644)
 	if _, err := repo.ListByStatus(ctx, domain.TaskRunning); err == nil {
 		t.Error("corrupt task ignored by the scan")
+	}
+	if _, err := repo.List(ctx); err == nil {
+		t.Error("corrupt task ignored by the list")
 	}
 	broken := NewTaskRepository(filepath.Join(t.TempDir(), "f"))
 	_ = os.WriteFile(filepath.Dir(broken.files.dir), []byte("x"), 0o644)
 	if _, err := broken.ListByStatus(ctx, domain.TaskRunning); err == nil {
 		t.Error("scan over an unreadable directory succeeded")
+	}
+	if _, err := broken.List(ctx); err == nil {
+		t.Error("list over an unreadable directory succeeded")
 	}
 }
 
@@ -314,9 +323,18 @@ func TestNodeRepositoryAndRunningExecutions(t *testing.T) {
 	if list, err := NewExecutionRepository(filepath.Join(state, "nowhere")).ListRunning(ctx); err != nil || len(list) != 0 {
 		t.Errorf("no dir: %v %d", err, len(list))
 	}
+	if all, err := execs.List(ctx); err != nil || len(all) != 2 {
+		t.Errorf("all executions = %v %d", err, len(all))
+	}
+	if all, err := NewExecutionRepository(filepath.Join(state, "nowhere")).List(ctx); err != nil || len(all) != 0 {
+		t.Errorf("no dir: %v %d", err, len(all))
+	}
 	_ = os.WriteFile(filepath.Join(state, "executions", "bad.json"), []byte("{"), 0o644)
 	if _, err := execs.ListRunning(ctx); err == nil {
 		t.Error("corrupt execution listed")
+	}
+	if _, err := execs.List(ctx); err == nil {
+		t.Error("corrupt execution in the list")
 	}
 }
 
@@ -459,5 +477,29 @@ func TestTaskRepositoryKeepsTheTriggerAndInput(t *testing.T) {
 	found, ok, err := repo.FindByIdempotencyKey(ctx, "bot-1", "webhook:deploy:abc")
 	if err != nil || !ok || found.ID() != "task-w" {
 		t.Error("lookup by the fire key failed")
+	}
+}
+
+func TestCollectionRefusesIDsThatAreNotFileNames(t *testing.T) {
+	ctx := context.Background()
+	state := t.TempDir()
+	files := collection{dir: filepath.Join(state, "tasks"), kind: "task"}
+	for _, id := range []string{"", "../escape", "a/b", `a\b`, ".."} {
+		if _, err := files.path(id); err == nil {
+			t.Errorf("%q was taken as a file name", id)
+		}
+		if err := files.write(id, map[string]string{}); err == nil {
+			t.Errorf("%q was written", id)
+		}
+		var into map[string]string
+		if err := files.read(id, &into); err == nil {
+			t.Errorf("%q was read", id)
+		}
+	}
+	if err := NewTimerRepository(state).Delete(ctx, "../x"); err == nil {
+		t.Error("a timer outside the directory was deleted")
+	}
+	if path, err := files.path("task-1"); err != nil || path != filepath.Join(state, "tasks", "task-1.json") {
+		t.Errorf("task-1 = %q %v", path, err)
 	}
 }

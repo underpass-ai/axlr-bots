@@ -17,4 +17,6 @@ type TaskRepository interface {
 	FindByIdempotencyKey(ctx context.Context, bot domain.BotID, key domain.IdempotencyKey) (domain.Task, bool, error)
 	// ListByStatus returns every task in the status, in id order.
 	ListByStatus(ctx context.Context, status domain.TaskStatus) ([]domain.Task, error)
+	// List answers every task, in no particular order.
+	List(ctx context.Context) ([]domain.Task, error)
 }

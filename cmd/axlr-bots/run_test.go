@@ -153,6 +153,28 @@ func TestPhaseZeroDemo(t *testing.T) {
 	if n := strings.Count(string(events), "\n"); n != 5 {
 		t.Errorf("%d events: %s", n, events)
 	}
+
+	// The panel's views: the task list, the task's timeline, the overview
+	// and a bot put on hold.
+	code, out, _ = c.run("task", "list", "--bot", "bot", "--status", "Completed", "--since", "2000-01-01T00:00:00Z", "--limit", "5")
+	if code != exitOK || !strings.Contains(out, taskID) {
+		t.Errorf("task list: %d %s", code, out)
+	}
+	code, out, _ = c.run("task", "events", taskID, "--limit", "10")
+	if code != exitOK || !strings.Contains(out, "bot.task.completed") {
+		t.Errorf("task events: %d %s", code, out)
+	}
+	code, overview := c.json("overview", "--since", "2000-01-01T00:00:00Z")
+	if code != exitOK || overview["executionsSince"] != float64(1) || overview["tasks"].(map[string]any)["Completed"] != float64(1) {
+		t.Errorf("overview: %d %v", code, overview)
+	}
+	if code, today := c.json("overview"); code != exitOK || today["since"] == nil {
+		t.Errorf("overview today: %d %v", code, today)
+	}
+	code, bot = c.json("bot", "pause", "bot")
+	if code != exitOK || bot["status"] != "Paused" {
+		t.Errorf("pause: %d %v", code, bot)
+	}
 }
 
 func TestTaskRunExitCodesFollowTheOutcome(t *testing.T) {
@@ -269,6 +291,19 @@ func TestUsageAndErrors(t *testing.T) {
 		{[]string{"bot", "enable", "Bad Id"}, exitError, "bot id"},
 		{[]string{"bot", "enable", "ghost"}, exitError, "not found"},
 		{[]string{"bot", "list", "extra"}, exitUsage, "no arguments"},
+		{[]string{"bot", "pause"}, exitUsage, "exactly one"},
+		{[]string{"bot", "pause", "ghost"}, exitError, "not found"},
+		{[]string{"task", "list", "extra"}, exitUsage, "flags only"},
+		{[]string{"task", "list", "--bogus"}, exitUsage, "flag provided but not defined"},
+		{[]string{"task", "list", "--since", "yesterday"}, exitUsage, "RFC 3339"},
+		{[]string{"task", "list", "--status", "Sleeping"}, exitError, "task status"},
+		{[]string{"task", "events"}, exitUsage, "needs <task-id>"},
+		{[]string{"task", "events", "t", "extra"}, exitUsage, "--limit only"},
+		{[]string{"task", "events", "t", "--bogus"}, exitUsage, "flag provided but not defined"},
+		{[]string{"task", "events", "ghost"}, exitError, "not found"},
+		{[]string{"overview", "extra"}, exitUsage, "--since only"},
+		{[]string{"overview", "--bogus"}, exitUsage, "flag provided but not defined"},
+		{[]string{"overview", "--since", "yesterday"}, exitUsage, "RFC 3339"},
 		{[]string{"bot", "get"}, exitUsage, "exactly one"},
 		{[]string{"bot", "get", "Bad Id"}, exitError, "bot id"},
 		{[]string{"bot", "get", "ghost"}, exitError, "not found"},

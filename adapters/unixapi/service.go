@@ -8,6 +8,7 @@ package unixapi
 
 import (
 	"context"
+	"time"
 
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -18,6 +19,7 @@ import (
 type Service interface {
 	RegisterBot(ctx context.Context, definition application.BotDefinition) (domain.BotSnapshot, error)
 	EnableBot(ctx context.Context, id string) (domain.BotSnapshot, error)
+	PauseBot(ctx context.Context, id string) (domain.BotSnapshot, error)
 	// UpdateBot applies a partial change to the bot's definition.
 	UpdateBot(ctx context.Context, id string, patch application.BotPatch) (domain.BotSnapshot, error)
 	ListBots(ctx context.Context) ([]domain.BotSnapshot, error)
@@ -33,6 +35,9 @@ type Service interface {
 	// CancelTask stops a task that has not finished.
 	CancelTask(ctx context.Context, id string) (CancelResponse, error)
 	GetTask(ctx context.Context, id string) (domain.TaskSnapshot, error)
+	ListTasks(ctx context.Context, query application.TaskQuery) ([]domain.TaskSnapshot, error)
+	ListTaskEvents(ctx context.Context, id string, limit int) ([]domain.Event, error)
+	GetOverview(ctx context.Context, since time.Time) (application.Overview, error)
 	// ListExecutions returns the task's executions, oldest first.
 	ListExecutions(ctx context.Context, id string) ([]domain.ExecutionSnapshot, error)
 	GetReport(ctx context.Context, id string) (ReportResponse, error)

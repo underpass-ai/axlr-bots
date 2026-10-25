@@ -17,20 +17,35 @@ type collection struct {
 	kind string
 }
 
-func (c collection) path(id string) string {
-	return filepath.Join(c.dir, id+".json")
+// path is the file of the record id. The ids reaching here are
+// validated identifiers; an id that is not a plain file name (a
+// separator, a "..") is refused all the same, so no caller can step out
+// of the directory.
+func (c collection) path(id string) (string, error) {
+	if id == "" || strings.ContainsAny(id, `/\`) || strings.Contains(id, "..") {
+		return "", fmt.Errorf("filestore: %s id %q is not a file name", c.kind, id)
+	}
+	return filepath.Join(c.dir, id+".json"), nil
 }
 
 func (c collection) write(id string, snapshot any) error {
+	path, err := c.path(id)
+	if err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return err
 	}
-	return writeAtomically(c.path(id), append(data, '\n'))
+	return writeAtomically(path, append(data, '\n'))
 }
 
 func (c collection) read(id string, snapshot any) error {
-	data, err := os.ReadFile(c.path(id))
+	path, err := c.path(id)
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return domain.NotFoundError{Kind: c.kind, ID: id}
 	}

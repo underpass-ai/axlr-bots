@@ -10,15 +10,17 @@ axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>]
   ca init | ca show
   node list | node get <node-id>
   node enroll-token [--node-id <id>] [--labels k=v,k=v] [--ttl 1h] | node revoke <node-id>
-  bot register --file <bot.json> | bot enable <bot-id> | bot list | bot get <bot-id>
+  bot register --file <bot.json> | bot enable <bot-id> | bot pause <bot-id> | bot list | bot get <bot-id>
   bot update <bot-id> --file <patch.json> | bot events <bot-id> [--limit 100]
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>]
   trigger fire <bot-id> <trigger> --body '<json>' | --file <event.json> [--delivery <id>]
   task run <task-id>                           in process (exit 0 completed, 3 decision required, 1 failed)
   task approve <task-id> | task deny <task-id> | task decide <task-id> approve|deny
-  task get <task-id> | task executions <task-id> | task cancel <task-id>
+  task get <task-id> | task executions <task-id> | task events <task-id> [--limit 100] | task cancel <task-id>
+  task list [--bot <id>] [--status <status>] [--since <rfc3339>] [--limit 100]
   task report <task-id> [--path] | task reconcile [--grace <duration>]
   execution get <execution-id>
+  overview [--since <rfc3339>]                 nodes, bots and tasks by status; tasks, executions and cost since today
   install [--system] [--prefix <dir>] [--state <dir>] [--node-state <dir>] [--unit-dir <dir>] [--env-file <path>]
           [--axlr-bin <path>] [--node-binary <path>] [--listen <addr>] [--server-names a,b] [--api-listen <addr>]
           [--control <url>] [--node-only] [--destdir <dir>] [--no-systemctl]

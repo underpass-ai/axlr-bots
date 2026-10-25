@@ -407,3 +407,40 @@ func TestEnrollmentTokens(t *testing.T) {
 		}
 	}
 }
+
+func TestNodeCertificateExpiry(t *testing.T) {
+	node := sampleNode(t)
+	expiry := t0.Add(90 * 24 * time.Hour)
+	if node.RecordCertificateExpiry("ab12", expiry) || !node.CertificateExpiry().IsZero() {
+		t.Error("an expiry was kept for a node without a certificate")
+	}
+	if err := node.Certify("ab12", nil, t0); err != nil {
+		t.Fatal(err)
+	}
+	if node.RecordCertificateExpiry("zz99", expiry) || node.RecordCertificateExpiry("ab12", time.Time{}) || node.RecordCertificateExpiry("", expiry) {
+		t.Error("an expiry of another certificate was kept")
+	}
+	if !node.RecordCertificateExpiry("ab12", expiry) || !node.CertificateExpiry().Equal(expiry) {
+		t.Errorf("expiry = %v", node.CertificateExpiry())
+	}
+	if node.RecordCertificateExpiry("ab12", expiry) {
+		t.Error("the same expiry changed the node")
+	}
+	snapshot := node.Snapshot()
+	if snapshot.CertificateNotAfter == nil || !snapshot.CertificateNotAfter.Equal(expiry) {
+		t.Fatalf("snapshot = %+v", snapshot)
+	}
+	restored, err := RestoreNode(snapshot)
+	if err != nil || !restored.CertificateExpiry().Equal(expiry) {
+		t.Errorf("restored = %v %v", restored.CertificateExpiry(), err)
+	}
+	if err := node.Certify("ab12", nil, t0.Add(time.Second)); err != nil || !node.CertificateExpiry().Equal(expiry) {
+		t.Error("certifying the same serial forgot the expiry")
+	}
+	if err := node.Certify("cd34", nil, t0.Add(time.Second)); err != nil || !node.CertificateExpiry().IsZero() || node.Snapshot().CertificateNotAfter != nil {
+		t.Error("a new certificate kept the old expiry")
+	}
+	if kind, err := ParseEventType("bot.paused"); err != nil || kind != EventBotPaused {
+		t.Errorf("bot.paused = %v %v", kind, err)
+	}
+}

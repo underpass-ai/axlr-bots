@@ -54,6 +54,19 @@ func botEnable(ctx context.Context, service unixapi.Service, args []string, stdo
 	return exitOK
 }
 
+func botPause(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, "axlr-bots: bot pause needs exactly one <bot-id>")
+		return exitUsage
+	}
+	bot, err := service.PauseBot(ctx, args[0])
+	if err != nil {
+		return fail(stderr, err)
+	}
+	printJSON(stdout, bot)
+	return exitOK
+}
+
 func botList(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 0 {
 		fmt.Fprintln(stderr, "axlr-bots: bot list takes no arguments")

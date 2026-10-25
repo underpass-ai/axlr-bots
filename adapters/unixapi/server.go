@@ -81,10 +81,13 @@ func (s *Server) operatorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/bots/{id}", s.getBot)
 	mux.HandleFunc("PATCH /v1/bots/{id}", s.patchBot)
 	mux.HandleFunc("POST /v1/bots/{id}/enable", s.enableBot)
+	mux.HandleFunc("POST /v1/bots/{id}/pause", s.pauseBot)
 	mux.HandleFunc("POST /v1/bots/{id}/tasks", s.submitBotTask)
 	mux.HandleFunc("GET /v1/bots/{id}/events", s.listEvents)
 	mux.HandleFunc("POST /v1/tasks", s.submitTask)
+	mux.HandleFunc("GET /v1/tasks", s.listTasks)
 	mux.HandleFunc("GET /v1/tasks/{id}", s.getTask)
+	mux.HandleFunc("GET /v1/tasks/{id}/events", s.listTaskEvents)
 	mux.HandleFunc("GET /v1/tasks/{id}/executions", s.listExecutions)
 	mux.HandleFunc("POST /v1/tasks/{id}/cancel", s.cancelTask)
 	mux.HandleFunc("POST /v1/tasks/{id}/run", s.runTask)
@@ -92,6 +95,7 @@ func (s *Server) operatorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/tasks/{id}/report", s.getReport)
 	mux.HandleFunc("GET /v1/executions/{id}", s.getExecution)
 	mux.HandleFunc("POST /v1/triggers/{bot}/{trigger}", s.fireTrigger)
+	mux.HandleFunc("GET /v1/overview", s.getOverview)
 	mux.HandleFunc("GET /v1/nodes", s.listNodes)
 	mux.HandleFunc("GET /v1/nodes/{id}", s.getNode)
 	mux.HandleFunc("POST /v1/enrollments", s.createEnrollmentToken)
@@ -213,6 +217,11 @@ func (s *Server) enableBot(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, value, err)
 }
 
+func (s *Server) pauseBot(w http.ResponseWriter, r *http.Request) {
+	value, err := s.service.PauseBot(r.Context(), r.PathValue("id"))
+	respond(w, http.StatusOK, value, err)
+}
+
 func (s *Server) patchBot(w http.ResponseWriter, r *http.Request) {
 	var patch application.BotPatch
 	if !readJSON(w, r, &patch) {
@@ -252,17 +261,79 @@ func (s *Server) submitBotTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) {
-	limit := 0
-	if raw := r.URL.Query().Get("limit"); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil || parsed < 0 {
-			respond(w, 0, nil, domain.ValidationError{Field: "limit", Reason: "must be a number"})
-			return
-		}
-		limit = parsed
+	limit, err := queryLimit(r)
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
 	}
 	value, err := s.service.ListEvents(r.Context(), r.PathValue("id"), limit)
 	respond(w, http.StatusOK, value, err)
+}
+
+// listTasks is GET /v1/tasks?bot=&status=&since=&limit=: the tasks
+// across bots, newest first.
+func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
+	limit, err := queryLimit(r)
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	since, err := querySince(r)
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	query := application.TaskQuery{BotID: r.URL.Query().Get("bot"), Status: r.URL.Query().Get("status"), Since: since, Limit: limit}
+	value, err := s.service.ListTasks(r.Context(), query)
+	respond(w, http.StatusOK, value, err)
+}
+
+func (s *Server) listTaskEvents(w http.ResponseWriter, r *http.Request) {
+	limit, err := queryLimit(r)
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	value, err := s.service.ListTaskEvents(r.Context(), r.PathValue("id"), limit)
+	respond(w, http.StatusOK, value, err)
+}
+
+// getOverview is GET /v1/overview?since=: the dashboard's counts.
+func (s *Server) getOverview(w http.ResponseWriter, r *http.Request) {
+	since, err := querySince(r)
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	value, err := s.service.GetOverview(r.Context(), since)
+	respond(w, http.StatusOK, value, err)
+}
+
+// queryLimit reads the limit parameter: zero when it is absent.
+func queryLimit(r *http.Request) (int, error) {
+	raw := r.URL.Query().Get("limit")
+	if raw == "" {
+		return 0, nil
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed < 0 {
+		return 0, domain.ValidationError{Field: "limit", Reason: "must be a number"}
+	}
+	return parsed, nil
+}
+
+// querySince reads the since parameter as an RFC 3339 time: zero when it
+// is absent.
+func querySince(r *http.Request) (time.Time, error) {
+	raw := r.URL.Query().Get("since")
+	if raw == "" {
+		return time.Time{}, nil
+	}
+	since, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return time.Time{}, domain.ValidationError{Field: "since", Reason: "must be an RFC 3339 time"}
+	}
+	return since, nil
 }
 
 func (s *Server) listExecutions(w http.ResponseWriter, r *http.Request) {

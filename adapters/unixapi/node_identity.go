@@ -55,6 +55,9 @@ func (s *Server) authenticated(next http.HandlerFunc) http.HandlerFunc {
 			respond(w, 0, nil, err)
 			return
 		}
+		// The expiry is for the operator to read; failing to keep it
+		// must not refuse the node's call.
+		_ = application.NewRecordNodeCertificate(s.service.Dependencies()).Execute(r.Context(), identity.ID, identity.Serial, leaf.NotAfter)
 		next(w, r.WithContext(context.WithValue(r.Context(), identityKey{}, identity)))
 	}
 }
