@@ -30,7 +30,8 @@ A bot has no role baked in: its definition is what an operator writes, and the s
 | `triggers` | how tasks reach the bot: `manual` (the default), `webhook`, `timer`, `delegation`; a bot that declares triggers takes only those ([below](#triggers)) |
 | `placement` | where the bot's tasks run: `{"nodes": ["web-1"]}`, `{"selector": {"zone": "eu"}}`, or nothing for any node but a dedicated one, such as a sidecar ([nodes](node-protocol.md)) |
 | `approvals` | how a pending call waits for a person: `ttl` (default `1h`), `onExpire` (`deny`, the default, or `cancel`) and the `notify` targets told when a task starts to wait ([below](#approvals)) |
-| `delegation` | the bots this bot may ask to do a task, how deep a chain through it may go and the share of its task a child may take; absent: it asks nobody ([below](#delegation)) |
+| `delegation` | the bots outside its teams this bot may ask to do a task, how deep a chain through it may go and the share of its task a child may take; absent: it asks only its teammates ([below](#delegation)) |
+| `groups` | the teams the bot belongs to, up to 8; the panel calls each a Team. Teammates know each other and may ask each other to do a task ([below](#teams)) |
 | `model` | the model policy: `model` is passed to AXLR as `--model`; `routingPolicy`, `allowRemoteProviders` and `maxContextTokens` are validated and stored with the bot |
 | `budgets` | `taskTimeoutSeconds` bounds every execution (15 minutes when absent); `maxModelCallsPerTask` and `maxToolCallsPerTask` go to AXLR as the execution's budget when the build takes `--budget` ([runtime contract](../architecture/runtime-contract.md)); `maxDelegationDepth` is the depth limit of a [delegation](#delegation) that names none |
 
@@ -85,10 +86,26 @@ A bot may ask another bot to do a task while it runs: the model calls the tool `
 | `budgetShare` | the share of the asking task a child may take, more than 0 and at most 1; absent: 0.5 |
 | `split` | how that share is taken: `geometric`, of what the asking task has not granted yet (later children get less), or `even`, of the whole pool divided by `maxChildren` (every child the same); absent: `geometric` |
 | `maxChildren` | the most children one task may ask for, 1 to 32; needed by `even`, a cap only with `geometric` |
+| `fromTeam` | `false`: the bot takes no task its teammates delegate; absent: it takes them ([teams](#teams)) |
 
-The target takes delegated tasks only when its `triggers` include `{"type": "delegation"}` (no options, like `manual`); the asking bot's tenant must be its tenant, and it must be Enabled. An ask is refused, with an event `bot.delegation.refused` and its reason, when the target is not in `to` (`not_allowed`), cannot take it (`target_unavailable`), the chain would be deeper than allowed (`depth_exceeded`), the target already asked along the chain (`cycle`: A→B→A), or there is too little left to share (`budget_exhausted`: the task already asked `maxChildren` bots, "maxChildren reached", or the grant is under one model or tool call, or under 30 seconds). The child is granted, of each limit the asking task has, the share of what it has not granted yet (`geometric`) or the share of the whole limit over `maxChildren` (`even`), never more than the target's own budgets; its deadline is the share of the asking task's time left, under either split. To give each of *N* children its whole budget *c*, size the pool at `N × c / budgetShare` with `even` ([ADR](../architecture/delegation.md#3-how-depth-and-budget-propagate)). It runs with that grant, under its own mission, level and tools, with the asking task's trace id; a child that cannot end by its deadline (it waited for a node or a person past it) fails with the reason `deadline`.
+The target takes delegated tasks when its `triggers` include `{"type": "delegation"}` (no options, like `manual`) or when the asking bot is its teammate ([teams](#teams)); the asking bot's tenant must be its tenant, and it must be Enabled. An ask is refused, with an event `bot.delegation.refused` and its reason, when the target is neither in `to` nor a teammate (`not_allowed`), cannot take it (`target_unavailable`), the chain would be deeper than allowed (`depth_exceeded`), the target already asked along the chain (`cycle`: A→B→A), or there is too little left to share (`budget_exhausted`: the task already asked `maxChildren` bots, "maxChildren reached", or the grant is under one model or tool call, or under 30 seconds). The child is granted, of each limit the asking task has, the share of what it has not granted yet (`geometric`) or the share of the whole limit over `maxChildren` (`even`), never more than the target's own budgets; its deadline is the share of the asking task's time left, under either split. To give each of *N* children its whole budget *c*, size the pool at `N × c / budgetShare` with `even` ([ADR](../architecture/delegation.md#3-how-depth-and-budget-propagate)). It runs with that grant, under its own mission, level and tools, with the asking task's trace id; a child that cannot end by its deadline (it waited for a node or a person past it) fails with the reason `deadline`.
 
 [`examples/bot-delegating.json`](../../examples/bot-delegating.json) asks [`examples/bot-delegate-target.json`](../../examples/bot-delegate-target.json); the tool's schema and the wiring are in the [ADR](../architecture/delegation.md#1-how-the-model-asks).
+
+## Teams
+
+A team is a name bots share: `"groups": ["port"]`. Nothing else needs to be written ([ADR](../architecture/groups-and-events.md)). A team exists while a bot of the tenant names it; `axlr-bots group list` and `GET /v1/groups` show each team with its members.
+
+| Inside a team, by default | Change it with |
+|---|---|
+| each task's prompt lists the bot's Enabled teammates between its mission and the task, one line each: id, the first sentence of its mission, its tools, where it runs, whether it takes delegated tasks. At most 32; when the prompt's 8000 characters would not hold them all, the list is cut from the end ("… and N more"), never the mission or the objective | — |
+| a bot may ask any Enabled teammate to do a task with `axlr_bots_delegate`, without naming it in `delegation.to`; the target needs no `delegation` trigger: the team is its consent. Depth, cycle and budget are checked as for any [delegation](#delegation) | `delegation.to` adds bots outside the team; `"delegation": {"fromTeam": false}` refuses the teammates' tasks (the `delegation` trigger still takes anyone's that may ask) |
+
+```json
+{"id": "plane", "tenant": "default", "name": "plane", "owner": "operator", "mission": "…", "groups": ["port"], "…": "…"}
+```
+
+[`examples/bot-team-a.json`](../../examples/bot-team-a.json) asks [`examples/bot-team-b.json`](../../examples/bot-team-b.json), its teammate in `releases`, with no `delegation` block and no `delegation` trigger. Teams belong to a tenant: two tenants may use one name, and their bots are not teammates.
 
 ## Tool rules
 
@@ -145,7 +162,7 @@ axlr-bots bot get bot                                # credentials redacted
 axlr-bots bot events bot --limit 100                 # the bot's newest events, oldest first
 ```
 
-A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `delegation`, `model`, `budgets`) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`examples/bot-triggers-patch.json`](../../examples/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`examples/bot-act-with-approval.json`](../../examples/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
+A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `delegation`, `groups`, `model`, `budgets`) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`examples/bot-triggers-patch.json`](../../examples/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`examples/bot-act-with-approval.json`](../../examples/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
 
 ## Tasks
 

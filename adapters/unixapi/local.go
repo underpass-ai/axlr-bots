@@ -96,6 +96,14 @@ func (l *Local) GetBot(ctx context.Context, id string) (domain.BotSnapshot, erro
 	return bot.Snapshot().Redacted(), nil
 }
 
+func (l *Local) ListGroups(ctx context.Context) ([]application.Group, error) {
+	return application.NewListGroups(l.deps).Execute(ctx)
+}
+
+func (l *Local) GetGroup(ctx context.Context, name, tenant string) (application.Group, error) {
+	return application.NewGetGroup(l.deps).Execute(ctx, name, tenant)
+}
+
 func (l *Local) ListEvents(ctx context.Context, id string, limit int) ([]domain.Event, error) {
 	botID, err := domain.NewBotID(id)
 	if err != nil {

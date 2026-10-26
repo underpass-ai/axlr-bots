@@ -25,4 +25,31 @@ func NewPrompt(mission Mission, objective Objective) (Prompt, error) {
 	return Prompt(value), nil
 }
 
+// NewTeamPrompt composes the mission, the team directory and the
+// objective. The directory takes what the mission and the objective
+// leave of the prompt's limit and is cut from the end to fit; it never
+// cuts them, and a directory that does not fit at all is left out.
+func NewTeamPrompt(mission Mission, objective Objective, directory TeamDirectory) (Prompt, error) {
+	plain, err := NewPrompt(mission, objective)
+	if err != nil || directory.Empty() {
+		return plain, err
+	}
+	head := "You are a bot. Your mission, set by your operator:\n" + mission.String() + "\n\n"
+	tail := "\n\nThe task:\n" + objective.String()
+	rendered := directory.Render(MaxPromptLength - len(head) - len(tail))
+	if rendered == "" {
+		return plain, nil
+	}
+	return newPromptText(head + rendered + tail)
+}
+
+// newPromptText validates a composed prompt.
+func newPromptText(text string) (Prompt, error) {
+	value, err := validateText("prompt", text, MaxPromptLength)
+	if err != nil {
+		return "", err
+	}
+	return Prompt(value), nil
+}
+
 func (p Prompt) String() string { return string(p) }

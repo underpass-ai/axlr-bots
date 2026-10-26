@@ -37,7 +37,7 @@ func init() {
 		domain.NodeCapabilities{}, domain.NotifyTargetSnapshot{}, domain.PendingDecision{}, domain.PlacementSnapshot{},
 		domain.PolicyRecord{}, domain.Result{}, domain.TaskLineage{}, domain.ToolCall{}, domain.ToolRuleSnapshot{},
 		domain.ToolRulesSnapshot{}, domain.TriggerRef{}, domain.TriggerRefSnapshot{}, domain.TriggerSnapshot{}, domain.Usage{},
-		application.Overview{}, application.BotDefinition{}, application.BotPatch{},
+		application.Overview{}, application.BotDefinition{}, application.BotPatch{}, application.Group{}, application.GroupMember{},
 		application.BudgetsDefinition{}, application.ModelPolicyDefinition{},
 		SubmitRequest{}, TaskRequest{}, SubmitResponse{}, RunResponse{}, CancelResponse{}, ReportResponse{},
 		DecideRequest{}, EnrollTokenRequest{}, EnrollTokenResponse{}, RevokeResponse{}, FireResponse{}, ErrorResponse{},

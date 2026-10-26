@@ -17,9 +17,10 @@ import (
 var t0 = time.Date(2026, 10, 23, 15, 0, 0, 0, time.UTC)
 
 type memoryBots struct {
-	mu   sync.Mutex
-	bots map[domain.BotID]domain.Bot
-	fail error
+	mu       sync.Mutex
+	bots     map[domain.BotID]domain.Bot
+	fail     error
+	listFail error
 }
 
 func (m *memoryBots) Save(_ context.Context, bot domain.Bot) error {
@@ -46,6 +47,9 @@ func (m *memoryBots) Get(_ context.Context, id domain.BotID) (domain.Bot, error)
 }
 
 func (m *memoryBots) List(context.Context) ([]domain.Bot, error) {
+	if m.listFail != nil {
+		return nil, m.listFail
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := make([]domain.Bot, 0, len(m.bots))

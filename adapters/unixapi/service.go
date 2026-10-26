@@ -24,6 +24,11 @@ type Service interface {
 	UpdateBot(ctx context.Context, id string, patch application.BotPatch) (domain.BotSnapshot, error)
 	ListBots(ctx context.Context) ([]domain.BotSnapshot, error)
 	GetBot(ctx context.Context, id string) (domain.BotSnapshot, error)
+	// ListGroups returns the teams the bots name, with their members.
+	ListGroups(ctx context.Context) ([]application.Group, error)
+	// GetGroup returns one team; tenant may be empty when only one tenant
+	// has a team of that name.
+	GetGroup(ctx context.Context, name, tenant string) (application.Group, error)
 	// ListEvents returns the newest limit events of the bot, oldest first.
 	ListEvents(ctx context.Context, id string, limit int) ([]domain.Event, error)
 	SubmitTask(ctx context.Context, request SubmitRequest) (SubmitResponse, error)
