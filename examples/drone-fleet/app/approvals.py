@@ -15,6 +15,7 @@ import math
 import re
 import threading
 import time
+import urllib.parse
 
 log = logging.getLogger("approvals")
 
@@ -29,6 +30,7 @@ class Approvals:
         self.route_of = route_of          # (vehicle, arguments) -> (route [[lat, lon]], distance_m) or (None, 0)
         self.lock = threading.Lock()
         self.cache = (0.0, [])
+        self.placed = {}                  # bot -> (when read, the vehicle it runs on)
 
     @property
     def enabled(self):
@@ -43,6 +45,24 @@ class Approvals:
         except OSError:
             return False
         return bool(code) and hmac.compare_digest(presented.encode(), code.encode())
+
+    def vehicle_of(self, bot):
+        """The vehicle a bot flies: a pilot's by its name, any other bot's by
+        the one node it is placed on (a bot a person added in the panel)."""
+        if bot.startswith("pilot-"):
+            return bot[len("pilot-"):]
+        at, vehicle = self.placed.get(bot, (0.0, ""))
+        if time.time() - at < 300:
+            return vehicle
+        vehicle = ""
+        try:
+            nodes = ((self.cp.get("/v1/bots/" + urllib.parse.quote(bot, safe="")) or {}).get("placement") or {}).get("nodes") or []
+            if len(nodes) == 1 and isinstance(nodes[0], str):
+                vehicle = nodes[0]
+        except Exception as exc:
+            log.warning("bot %s: %s", bot, exc)
+        self.placed[bot] = (time.time(), vehicle)
+        return vehicle
 
     def pending(self):
         with self.lock:
@@ -70,7 +90,7 @@ class Approvals:
                 why = str(args.get("why", ""))[:300]
                 args = args["arguments"]
             bot = task.get("botId", "")
-            vehicle = bot[len("pilot-"):] if bot.startswith("pilot-") else ""
+            vehicle = self.vehicle_of(bot)
             route, distance = self.route_of(vehicle, args) if vehicle and isinstance(args, dict) else (None, 0)
             pattern = args.get("pattern") if isinstance(args, dict) else None
             alts = [w.get("alt_m") for w in args.get("waypoints") or [] if isinstance(w, dict)] if isinstance(args, dict) else []

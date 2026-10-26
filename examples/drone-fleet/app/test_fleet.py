@@ -516,6 +516,21 @@ class AisTest(unittest.TestCase):
 
 
 class ApprovalsTest(unittest.TestCase):
+    def test_a_bot_a_person_added_shows_the_route_of_the_vehicle_it_runs_on(self):
+        class CP:
+            enabled = True
+            asked = []
+
+            def get(self, path):
+                self.asked.append(path)
+                return {"placement": {"nodes": ["quad-1"]}} if path == "/v1/bots/operador-quad-1" else {}
+        a = approvals.Approvals(CP(), "", lambda v, args: (None, 0))
+        self.assertEqual(a.vehicle_of("pilot-quad-0"), "quad-0")
+        self.assertEqual(a.vehicle_of("operador-quad-1"), "quad-1")
+        self.assertEqual(a.vehicle_of("operador-quad-1"), "quad-1")
+        self.assertEqual(a.vehicle_of("dispatcher"), "")
+        self.assertEqual(CP.asked, ["/v1/bots/operador-quad-1", "/v1/bots/dispatcher"])
+
     def test_the_code_is_needed_and_compared_whole(self):
         path = os.path.join(tempfile.mkdtemp(), "code")
         with open(path, "w") as f:
