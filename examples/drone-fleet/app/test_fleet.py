@@ -367,6 +367,34 @@ class IncidentBaseTest(unittest.TestCase):
         self.assertNotIn("containers", view)
 
 
+class ImageryTest(unittest.TestCase):
+    @staticmethod
+    def jpeg(colour):
+        from PIL import Image
+        import io
+        out = io.BytesIO()
+        Image.new("RGB", (64, 48), colour).save(out, "JPEG")
+        return out.getvalue()
+
+    def test_a_white_frame_falls_back_to_esri_and_two_white_frames_to_no_photo(self):
+        sea, white = self.jpeg((30, 70, 60)), self.jpeg((255, 255, 255))
+        bbox = vision.frame(51.955, 3.94, 100)
+        asked = []
+
+        def serve(answers):
+            def get(url):
+                asked.append(url)
+                return answers["pdok" if "service.pdok.nl" in url else "esri"]
+            return get
+        self.assertEqual(vision.fetch_imagery(bbox, get=serve({"pdok": sea, "esri": white}))[1], "pdok")
+        self.assertIn("CRS=EPSG:3857", asked[0])
+        self.assertEqual(vision.fetch_imagery(bbox, get=serve({"pdok": white, "esri": sea})), (sea, "esri"))
+        with self.assertRaisesRegex(vision.NoImagery, "pdok: blank; esri: blank"):
+            vision.fetch_imagery(bbox, get=serve({"pdok": white, "esri": white}))
+        self.assertTrue(vision.blank(b"not a jpeg"))
+        self.assertIn("Beeldmateriaal Nederland", vision.CREDITS["pdok"])
+
+
 class VisionParseTest(unittest.TestCase):
     def test_the_answer_is_bounded_whatever_comes_around_it(self):
         out = vision.parse('```json\n{"containers": [{"x": 0.2, "y": 0.4}, {"x": 7, "y": 0}, {"y": 1}], "summary": "two boxes"}\n```')

@@ -1,6 +1,6 @@
 """Containers drawn into an aerial photo where the simulation says they float.
 
-The imagery is real (Esri World Imagery, as the vision module fetches it)
+The imagery is real (PDOK's aerial photo, or Esri's out at sea, as the vision module fetches it)
 and has no containers in the sea, so the ground station draws them in
 before the vision model looks: a top view of a 20 or 40 ft box at its
 true size for the photo's scale, turned to its heading, its corrugated

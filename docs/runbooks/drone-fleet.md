@@ -33,7 +33,7 @@ The safety limits live in the companion computer, not in the model: a refused ro
 - The images in a registry the cluster pulls from. On wrx80 they were built with podman and pushed to the lab registry:
 
 ```bash
-podman build -t $R/fleet-app:0.5.1 examples/drone-fleet                                         # vehicle_pilot.py, fleet_base.py, the map, the 3D view, the search
+podman build -t $R/fleet-app:0.5.2 examples/drone-fleet                                         # vehicle_pilot.py, fleet_base.py, the map, the 3D view, the search
 podman build -t $R/fleet-sitl:4.7.2 examples/drone-fleet/sitl                                    # SITL (checked sha256) + mavlink-router
 podman build -f examples/drone-fleet/control-plane.Dockerfile -t $R/control-plane:0.2.0-fleet .  # axlr-bots
 ```
@@ -123,8 +123,8 @@ Overpass ─▶ fetch_osm.py ─▶ prepare.py (shapely) ─▶ build_scene.py (
 To rebuild it, follow the [port3d README](../../examples/drone-fleet/port3d/README.md), then the fleet-app image and the digest in `values.yaml`:
 
 ```bash
-podman build -t $R/fleet-app:0.5.1 examples/drone-fleet
-podman push --digestfile /tmp/digest $R/fleet-app:0.5.1
+podman build -t $R/fleet-app:0.5.2 examples/drone-fleet
+podman push --digestfile /tmp/digest $R/fleet-app:0.5.2
 helm upgrade fleet examples/helm/drone-fleet -n port-fleet -f values-in-use.yaml   # helm get values fleet -n port-fleet -o yaml
 ```
 
@@ -153,8 +153,8 @@ A search at sea, run by the same bots on a fleet of its own: a vessel calls in t
 | Piece | Does |
 |---|---|
 | `drift.py` | each container's leeway from its immersion (about 5 % of the 10 m wind at 40 % immersion, nothing at 100 %: Daniel et al. 2002; Breivik et al. 2012, arXiv:1201.0603) plus a cross-wind part, carried by the current; a container that crosses the shoreline is ashore. The planner's datum is a cloud of 400 particles drawn from the same uncertainties: its centre, the radius holding nine in ten, its drift |
-| `sprites.py` | draws each container that the photo's frame holds into the Esri imagery, at its true size for the photo's scale, turned to its heading, low in the water with foam |
-| `vision.py` | during a search, every photo: the model answers with the containers it sees and where in the frame; the base maps them back to the sea and matches them to the simulation's containers within 10 % of the frame (25 m at least). An unmatched spot at sea is a sighting too (a false one); one on land is dropped |
+| `sprites.py` | draws each container that the photo's frame holds into the aerial photo, at its true size for the photo's scale, turned to its heading, low in the water with foam |
+| `vision.py` | fetches each photo's frame from PDOK's Dutch aerial photo (`Actueel_orthoHR`, 8 cm, CC BY 4.0); where PDOK answers white (no data, from about 2 km out to sea) from Esri instead, and where both do it sends nothing to the model. During a search, every photo: the model answers with the containers it sees and where in the frame; the base maps them back to the sea and matches them to the simulation's containers within 10 % of the frame (25 m at least). An unmatched spot at sea is a sighting too (a false one); one on land is dropped |
 | `incident.py` | the sea, the sightings, the counters; fires `sightings` (a sighting 20 s old that no quad confirmed, at most every 75 s) and `report` at the end (every container confirmed or ashore, the time limit, or `POST /api/incident/end`) |
 | `patterns.py` | `run_mission`'s `pattern`: `expanding_square` or `parallel_track` aimed at a target the base names (`datum`, `S3`), led by the target's drift for the time the vehicle needs to get there, checked like any route |
 | `control_plane.py`, `approvals.py` | the base fires the bots' webhooks, adds up the model cost of every task since the call, and relays the phone's decisions, with the operator token from a Secret |
@@ -222,6 +222,8 @@ curl -X POST http://127.0.0.1:18090/api/incident -H "X-Incident-Secret: $(cat ~/
 | `/api/incident/report` | the report, once the reporter has delivered it |
 
 `POST /api/incident/end` (same header) ends a search early; the report follows.
+
+On the lab the same pages answer on HTTPS at `https://sar.underpassai.com` (Route 53 A record to the ingress controller's LAN address, `base.ingress.enabled=true`, `base.ingress.clusterIssuer=letsencrypt-prod-r53`); `/m` and `/api/approvals` still need the approver's code, and `/api/incident` the incident secret.
 
 ### The first run (26 Oct 2026, a rehearsal)
 
@@ -356,6 +358,15 @@ The map, the 3D view and the phone page share one stylesheet, [`app/static/theme
 
 These four pictures are a replay of a captured `/api/fleet` with a synthetic incident, taken to show the theme; the pictures of the recorded run below are the run itself.
 
+### Imagery and its credit
+
+| Where | Source | Credit shown |
+|---|---|---|
+| the map (default layer), the phone page, the photos the vision model reads | PDOK `luchtfotorgb`, layer `Actueel_orthoHR` (WMS for the photos, WMTS EPSG:3857 for the map) | Luchtfoto © Beeldmateriaal Nederland / PDOK (CC BY 4.0) |
+| a photo where PDOK has no data; the map's second layer | Esri World Imagery | Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community |
+
+Each analysed photo carries its source and credit (`imagery`, `credit`) in the base's stream, and the map's photo popup shows the credit. The recorded run above (26 Oct, fleet-app 0.4.0) used Esri for every photo; PDOK came in fleet-app 0.5.2.
+
 ## Limits
 
 - The vehicles are SITL: the sensors are SITL's backends (rangefinders, optical flow, camera trigger), RTK is SITL's fix 6 with no correction link, and the map's hardware labels describe what the vehicles stand for.
@@ -363,6 +374,7 @@ These four pictures are a replay of a captured `/api/fleet` with a synthetic inc
 - Each sidecar's AXLR reads its MCP configuration from its own state volume (`~/.config/axlr/mcp.json`, written by an init container): the pilot's tool is per node, not per bot. An `act-with-approval` bot asks for every MCP call.
 - The bays and the stock live in the base's memory: a restart of `fleet-base-0` starts them over.
 - The search's sea, sightings and counters live in the base's memory too; a restart of `fleet-base-0` ends the search without a report.
+- PDOK's aerial photo reaches about 2 km out to sea west of Maasvlakte 2 (imagery at 2 km, white at 2.5 km). The example call keeps the containers within 1.7 km of the shore for the whole search; the plane's leg ends past 2 km take Esri's frames, and the map's PDOK layer is white there (the layer control has Esri too).
 - The drift is one wind and one current for the whole area and the whole search; the containers are drawn into imagery taken on a calm day, so the sea in the photos does not match the storm.
 - The vision model sees the containers the simulation draws; how well it would see a real one in a real sea is not measured here.
 - aisstream.io allows a few connections per key; the base keeps one and drops a ship after 15 minutes without news.
