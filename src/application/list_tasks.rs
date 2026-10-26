@@ -32,20 +32,22 @@ mod tests {
         let (control_plane, _) = fleet();
         let uc = ListTasks::new(control_plane.clone());
         let all = run(uc.execute(TaskFilter::default())).unwrap();
-        assert_eq!(all.len(), 4);
+        assert_eq!(all.len(), 5);
         assert!(all.windows(2).all(|w| w[0].created_at >= w[1].created_at));
         let mut filter = TaskFilter {
             bot: Some(BotId::new("bot").unwrap()),
             ..Default::default()
         };
-        assert_eq!(run(uc.execute(filter.clone())).unwrap().len(), 2);
+        assert_eq!(run(uc.execute(filter.clone())).unwrap().len(), 3);
         filter.status = Some(TaskStatus::Failed);
+        assert_eq!(run(uc.execute(filter.clone())).unwrap().len(), 1);
+        filter.status = Some(TaskStatus::Expired);
         assert_eq!(run(uc.execute(filter)).unwrap().len(), 1);
         let recent = TaskFilter {
             since: Some(now() - chrono::Duration::minutes(3)),
             ..Default::default()
         };
-        assert_eq!(run(uc.execute(recent)).unwrap().len(), 2);
+        assert_eq!(run(uc.execute(recent)).unwrap().len(), 3);
         let limited = TaskFilter::with_limit(1);
         assert_eq!(run(uc.execute(limited)).unwrap().len(), 1);
         let ghost = TaskFilter {

@@ -53,8 +53,10 @@ mod tests {
         assert_eq!(fleet.nodes[0].id.as_str(), "gx10-ff95");
         assert_eq!(fleet.bots.len(), 3);
         assert_eq!(fleet.bots[0].id.as_str(), "bot");
-        assert_eq!(fleet.tasks.len(), 4);
+        assert_eq!(fleet.tasks.len(), 5);
         assert_eq!(fleet.overview.tasks_in(TaskStatus::WaitingApproval), 1);
+        assert_eq!(fleet.overview.tasks_since_in(TaskStatus::Failed), 1);
+        assert_eq!(fleet.overview.tasks_since_in(TaskStatus::Expired), 1);
         assert_eq!(fleet.overview.since.unwrap().to_rfc3339(), "2026-10-25T00:00:00+00:00");
         assert_eq!(fleet.waiting().len(), 1);
         assert_eq!(fleet.active().len(), 1);

@@ -135,7 +135,10 @@ mod tests {
           "approvals": {"ttl": "20m", "onExpire": "deny"},
           "delegation": {"to": ["pilot-quad-0"], "maxDepth": 1}}"#;
         let definition = BotDefinition::from_json(text).unwrap();
-        assert_eq!(definition.triggers[1].trigger_type, super::super::TriggerType::Delegation);
+        assert_eq!(
+            definition.triggers[1].trigger_type,
+            super::super::TriggerType::Delegation
+        );
         assert_eq!(definition.delegation.as_ref().unwrap()["to"][0], "pilot-quad-0");
         let out = serde_json::to_value(&definition).unwrap();
         assert_eq!(out["approvals"]["ttl"], "20m");

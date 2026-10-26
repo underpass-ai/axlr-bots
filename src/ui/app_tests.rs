@@ -382,11 +382,15 @@ fn filters_open_the_task_list() {
     assert_eq!(app.screen, Screen::Tasks);
     let shown = app.filter.apply(&app.fleet.as_ref().unwrap().tasks);
     assert_eq!(shown.len(), 1);
+    app.apply(Message::FilterStatus(Some(TaskStatus::Expired)));
+    let shown = app.filter.apply(&app.fleet.as_ref().unwrap().tasks);
+    assert_eq!(shown.len(), 1);
+    assert_eq!(shown[0].status, TaskStatus::Expired);
     app.apply(Message::FilterBot(BotChoice::One(BotId::new("bot-wrx80").unwrap())));
     assert!(app.filter.apply(&app.fleet.as_ref().unwrap().tasks).is_empty());
     app.apply(Message::FilterBot(BotChoice::All));
     app.apply(Message::FilterStatus(None));
-    assert_eq!(app.filter.apply(&app.fleet.as_ref().unwrap().tasks).len(), 4);
+    assert_eq!(app.filter.apply(&app.fleet.as_ref().unwrap().tasks).len(), 5);
 }
 
 #[test]

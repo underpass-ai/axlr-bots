@@ -114,6 +114,12 @@ impl FakeControlPlane {
                 None,
                 now - Duration::minutes(2),
             );
+            state.add_task(
+                "bot",
+                "Write the patrol report",
+                TaskStatus::Expired,
+                now - Duration::minutes(1),
+            );
             state.add_task("bot", "Say the time", TaskStatus::Running, now - Duration::seconds(20));
         }
         fake
@@ -245,10 +251,12 @@ impl FakeState {
             },
             input: None,
             execution_ids: Vec::new(),
-            failure_reason: if status == TaskStatus::Failed {
-                "the file does not exist".into()
-            } else {
-                String::new()
+            failure_reason: match status {
+                TaskStatus::Failed => "the file does not exist".into(),
+                TaskStatus::Expired => {
+                    "approval expired: nobody decided the call call-2 (local_write) by its deadline".into()
+                }
+                _ => String::new(),
             },
             created_at: at,
             updated_at: at,
@@ -663,7 +671,7 @@ impl ControlPlane for FakeControlPlane {
                     execution: None,
                     changed: false,
                 }),
-                TaskStatus::Completed | TaskStatus::Failed => {
+                TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Expired => {
                     Err(PanelError::State(format!("task {id} is {}", task.status.name())))
                 }
                 _ => {

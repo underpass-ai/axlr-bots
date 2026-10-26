@@ -8,16 +8,19 @@ pub enum TaskStatus {
     WaitingApproval,
     Completed,
     Failed,
+    /// Nobody decided the call it waited on in time; the call never ran.
+    Expired,
     Cancelled,
 }
 
 impl TaskStatus {
-    pub const ALL: [TaskStatus; 6] = [
+    pub const ALL: [TaskStatus; 7] = [
         Self::Pending,
         Self::Running,
         Self::WaitingApproval,
         Self::Completed,
         Self::Failed,
+        Self::Expired,
         Self::Cancelled,
     ];
 
@@ -29,6 +32,7 @@ impl TaskStatus {
             Self::WaitingApproval => "WaitingApproval",
             Self::Completed => "Completed",
             Self::Failed => "Failed",
+            Self::Expired => "Expired",
             Self::Cancelled => "Cancelled",
         }
     }
@@ -45,9 +49,9 @@ impl TaskStatus {
         Self::ALL.into_iter().find(|s| s.name() == raw)
     }
 
-    /// A Completed, Failed or Cancelled task has ended.
+    /// A Completed, Failed, Expired or Cancelled task has ended.
     pub fn is_terminal(self) -> bool {
-        matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
+        matches!(self, Self::Completed | Self::Failed | Self::Expired | Self::Cancelled)
     }
 
     /// A task that has not ended can be cancelled.
@@ -73,6 +77,9 @@ mod tests {
         assert_eq!(TaskStatus::WaitingApproval.label(), "Waiting");
         assert_eq!(TaskStatus::Running.label(), "Running");
         assert!(TaskStatus::Failed.is_terminal());
+        assert!(TaskStatus::Expired.is_terminal());
+        assert!(!TaskStatus::Expired.can_cancel());
+        assert_eq!(TaskStatus::parse("Expired"), Some(TaskStatus::Expired));
         assert!(TaskStatus::WaitingApproval.can_cancel());
         assert!(!TaskStatus::Completed.can_cancel());
     }

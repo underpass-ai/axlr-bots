@@ -17,6 +17,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let online = o.nodes_in(NodeStatus::Online);
     let waiting = o.tasks_in(TaskStatus::WaitingApproval);
     let failed_today = o.tasks_since_in(TaskStatus::Failed);
+    let expired_today = o.tasks_since_in(TaskStatus::Expired);
     let stats = row![
         stat(
             Icon::Nodes,
@@ -60,6 +61,14 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             "failed today",
             if failed_today > 0 { Tone::Bad } else { Tone::Idle },
             Some(Message::FilterStatus(Some(TaskStatus::Failed))),
+            tokens
+        ),
+        stat(
+            Icon::Hourglass,
+            expired_today.to_string(),
+            "expired today",
+            if expired_today > 0 { Tone::Wait } else { Tone::Idle },
+            Some(Message::FilterStatus(Some(TaskStatus::Expired))),
             tokens
         ),
         stat(

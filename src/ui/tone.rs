@@ -69,6 +69,8 @@ impl Tone {
             TaskStatus::Running => Self::Busy,
             TaskStatus::WaitingApproval => Self::Wait,
             TaskStatus::Failed => Self::Bad,
+            // Nobody decided in time: a person's miss, not a crash.
+            TaskStatus::Expired => Self::Wait,
             TaskStatus::Pending | TaskStatus::Cancelled => Self::Idle,
         }
     }
@@ -119,6 +121,7 @@ mod tests {
         assert_eq!(Tone::of_task(TaskStatus::Running), Tone::Busy);
         assert_eq!(Tone::of_task(TaskStatus::Cancelled), Tone::Idle);
         assert_eq!(Tone::of_task(TaskStatus::Failed), Tone::Bad);
+        assert_eq!(Tone::of_task(TaskStatus::Expired), Tone::Wait);
         assert_eq!(Tone::of_task(TaskStatus::Completed), Tone::Good);
         assert_eq!(Tone::of_outcome(ExecutionOutcome::DecisionRequired), Tone::Wait);
         assert_eq!(Tone::of_outcome(ExecutionOutcome::Running), Tone::Busy);

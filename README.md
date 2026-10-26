@@ -6,7 +6,7 @@
 
 AXLR Bots Panel is a native desktop application for [AXLR Bots](https://github.com/underpass-ai/axlr-bots), Underpass's control plane for bots that live as infrastructure. It talks to a running control plane through its operator API (HTTPS with the fleet CA, the bearer token from its file) and shows nodes, bots, tasks and executions with status pills, icons and colour, in few words. It is written in Rust with [Iced](https://iced.rs) and draws with the GPU or without one.
 
-<p align="center"><img src="docs/screenshots/overview-light.png" alt="Home: nodes online, bots on, tasks running, waiting and failed today, cost today" width="860"></p>
+<p align="center"><img src="docs/screenshots/overview-light.png" alt="Home: nodes online, bots on, tasks running, waiting, failed and expired today, cost today" width="860"></p>
 
 ## Install
 
@@ -38,7 +38,7 @@ The panel reads the control plane every 3 seconds, in the background; the window
 
 | Screen | Light | Dark |
 |:--|:--:|:--:|
-| **Home**: nodes online, bots on, tasks running, waiting and failed today, cost today; the tasks that need you; the nodes; the latest tasks | <img src="docs/screenshots/overview-light.png" width="300"> | <img src="docs/screenshots/overview-dark.png" width="300"> |
+| **Home**: nodes online, bots on, tasks running, waiting, failed and expired today, cost today; the tasks that need you; the nodes; the latest tasks | <img src="docs/screenshots/overview-light.png" width="300"> | <img src="docs/screenshots/overview-dark.png" width="300"> |
 | **Nodes**: status, labels, last heartbeat, certificate expiry, AXLR version; a one-time host token with copy buttons; revoke with a second click | <img src="docs/screenshots/nodes-light.png" width="300"> | <img src="docs/screenshots/nodes-dark.png" width="300"> |
 | **Bots**: status, level, model, placement, triggers; turn on or pause; add one from a form or a definition file | <img src="docs/screenshots/bots-light.png" width="300"> | <img src="docs/screenshots/bots-dark.png" width="300"> |
 | **Bot**: mission, model, tools and tool rules, level, budgets, placement, triggers, its events as they happen, its latest tasks | <img src="docs/screenshots/bot-light.png" width="300"> | <img src="docs/screenshots/bot-dark.png" width="300"> |

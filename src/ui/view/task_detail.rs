@@ -8,7 +8,7 @@ use super::widgets::{
     BODY, El, SMALL, action, bold, card, chip, empty, fact, icon, icon_button, muted, pill, section, section_title,
 };
 use crate::application::TaskDetail;
-use crate::domain::{Execution, ExecutionKind, TaskId};
+use crate::domain::{Execution, ExecutionKind, TaskId, TaskStatus};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
 use crate::ui::{App, Icon, Message, Screen, Tokens, Tone};
@@ -87,11 +87,16 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
         page = page.push(waiting);
     }
     if !task.failure_reason.is_empty() {
+        // An expired task is nobody's decision in time, not a crash.
+        let (glyph, why, tone) = match task.status {
+            TaskStatus::Expired => (Icon::Hourglass, "Why it expired", Tone::Wait),
+            _ => (Icon::Cross, "Why it failed", Tone::Bad),
+        };
         page = page.push(
             container(
                 row![
-                    icon(Icon::Cross, 20.0, tokens.bad),
-                    bold("Why it failed"),
+                    icon(glyph, 20.0, tone.color(&tokens)),
+                    bold(why),
                     text(task.failure_reason.clone())
                 ]
                 .spacing(12)
@@ -99,7 +104,7 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
             )
             .padding(16)
             .width(Length::Fill)
-            .style(styles::tone_card(tokens, Tone::Bad)),
+            .style(styles::tone_card(tokens, tone)),
         );
     }
     if let Some((_, content)) = &app.answer {

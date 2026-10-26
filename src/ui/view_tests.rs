@@ -60,6 +60,8 @@ fn home_shows_the_counts_and_what_needs_a_person() {
             "2/2",
             "nodes online",
             "need you",
+            "failed today",
+            "expired today",
             "Needs you",
             "Review",
             "gx10-ff95",
@@ -69,6 +71,11 @@ fn home_shows_the_counts_and_what_needs_a_person() {
     );
     let sent = messages_of_click(&app, "Review");
     assert!(matches!(sent.as_slice(), [Message::Go(Screen::Task(_))]));
+    let sent = messages_of_click(&app, "expired today");
+    assert!(matches!(
+        sent.as_slice(),
+        [Message::FilterStatus(Some(TaskStatus::Expired))]
+    ));
     let sent = messages_of_click(&app, "Nodes");
     assert!(matches!(sent.as_slice(), [Message::Go(Screen::Nodes)]));
     app.apply(Message::ToggleTheme);
@@ -163,9 +170,10 @@ fn the_tasks_screen_filters_and_sends() {
         &app,
         &[
             "Tasks",
-            "All 4",
+            "All 5",
             "Waiting 1",
             "Failed 1",
+            "Expired 1",
             "Write hello into hello.txt",
             "Open",
         ],
@@ -249,6 +257,18 @@ fn a_finished_task_shows_its_answer_and_failure() {
         .clone();
     send(&mut app, Message::Go(Screen::Task(failed)));
     shows(&app, &["Why it failed", "the file does not exist"]);
+    let expired = app
+        .fleet
+        .as_ref()
+        .unwrap()
+        .tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::Expired)
+        .unwrap()
+        .id
+        .clone();
+    send(&mut app, Message::Go(Screen::Task(expired)));
+    shows(&app, &["Expired", "Why it expired"]);
 }
 
 #[test]

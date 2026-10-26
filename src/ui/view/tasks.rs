@@ -10,12 +10,13 @@ use crate::ui::styles::{self, Kind};
 use crate::ui::{App, BotChoice, Icon, Message, Screen, Tokens, Tone};
 
 /// The status chips, in the order an operator looks for them.
-const FILTERS: [(Option<TaskStatus>, &str); 7] = [
+const FILTERS: [(Option<TaskStatus>, &str); 8] = [
     (None, "All"),
     (Some(TaskStatus::WaitingApproval), "Waiting"),
     (Some(TaskStatus::Running), "Running"),
     (Some(TaskStatus::Pending), "Pending"),
     (Some(TaskStatus::Failed), "Failed"),
+    (Some(TaskStatus::Expired), "Expired"),
     (Some(TaskStatus::Completed), "Done"),
     (Some(TaskStatus::Cancelled), "Stopped"),
 ];
