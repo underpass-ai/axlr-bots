@@ -307,22 +307,46 @@ fn execution_card<'a>(app: &'a App, execution: &'a Execution, tokens: Tokens) ->
     .spacing(10)
     .align_y(Alignment::Center);
     let mut body = column![head].spacing(10);
-    if !execution.result.tool_calls.is_empty() {
-        let mut calls = column![].spacing(6);
-        for call in &execution.result.tool_calls {
-            let tone = Tone::of_verdict(call.verdict());
-            calls = calls.push(
+    let steps = execution.steps();
+    if !steps.is_empty() {
+        // Why each call ran or not: its decision in words, and the bot's
+        // own rules about the tool.
+        let rules = app
+            .fleet
+            .as_ref()
+            .and_then(|f| f.bots.iter().find(|b| b.id == execution.bot_id))
+            .map(|b| &b.tool_rules);
+        let mut list = column![muted("Steps", tokens)].spacing(6);
+        for step in steps {
+            let tone = Tone::of_verdict(step.verdict());
+            let when = step.started_at.map(format::clock).unwrap_or_default();
+            let took = step.duration_ms.map(|ms| format!("{ms} ms")).unwrap_or_default();
+            let mut line = column![
                 row![
+                    container(muted(when, tokens)).width(70),
                     icon(Icon::Wrench, 14.0, tokens.muted),
-                    container(bold(call.name.clone()).size(SMALL)).width(150),
-                    pill(tone, call.decision_label(), tokens),
-                    muted(call.status.clone(), tokens),
+                    container(bold(step.tool.clone()).size(SMALL)).width(150),
+                    pill(tone, step.why(), tokens),
+                    muted(step.ended().to_string(), tokens),
+                    Space::new().width(Length::Fill),
+                    muted(took, tokens).wrapping(iced::widget::text::Wrapping::None),
                 ]
                 .spacing(10)
-                .align_y(Alignment::Center),
-            );
+                .align_y(Alignment::Center)
+            ]
+            .spacing(2);
+            let about = rules.map(|r| r.about(&step.tool)).unwrap_or_default();
+            if !about.is_empty() {
+                line = line.push(
+                    container(muted(format!("Its rules: {}", about.join(" · ")), tokens)).padding(iced::Padding {
+                        left: 80.0,
+                        ..Default::default()
+                    }),
+                );
+            }
+            list = list.push(line);
         }
-        body = body.push(calls);
+        body = body.push(list);
     }
     if !execution.failure_reason.is_empty() {
         body = body.push(
