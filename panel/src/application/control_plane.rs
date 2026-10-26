@@ -3,7 +3,8 @@ use chrono::{DateTime, Utc};
 use super::PortFuture;
 use crate::domain::{
     Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, EnrollmentRequest, EnrollmentToken,
-    Event, Execution, Node, NodeId, Overview, RevokedNode, SubmittedTask, Task, TaskFilter, TaskId, TaskSubmission,
+    Event, Execution, Node, NodeId, Overview, RevokedNode, StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId,
+    TaskSubmission,
 };
 
 /// The control plane as the panel needs it: the operator API's routes.
@@ -23,6 +24,9 @@ pub trait ControlPlane: Send + Sync {
     fn patch_bot(&self, id: BotId, patch: BotPatch) -> PortFuture<'_, Bot>;
     fn enable_bot(&self, id: BotId) -> PortFuture<'_, Bot>;
     fn pause_bot(&self, id: BotId) -> PortFuture<'_, Bot>;
+    /// Pauses the bot and cancels its pending, running and waiting tasks.
+    /// A control plane older than the route answers not found.
+    fn stop_bot(&self, id: BotId) -> PortFuture<'_, StoppedBotAnswer>;
     /// The bot's newest `limit` events, oldest first.
     fn bot_events(&self, id: BotId, limit: u32) -> PortFuture<'_, Vec<Event>>;
     /// A team's timeline after the event `after` names, oldest first;
