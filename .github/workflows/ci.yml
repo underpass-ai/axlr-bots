@@ -103,6 +103,26 @@ jobs:
           test "$(grep -c '^kind: StatefulSet$' fleet.yaml)" = 6
           grep -q 'value: "https://fleet-cp:7878"' fleet.yaml
           helm template fleet examples/helm/drone-fleet --set base.ingress.enabled=true --set base.ingress.host=fleet.example.com | grep -q '^kind: Ingress$'
+          ! grep -q 'CP_URL' fleet.yaml
+          helm template fleet examples/helm/drone-fleet -n sar-demo -f examples/helm/drone-fleet/values-sar.yaml > sar.yaml
+          test "$(grep -c '^kind: StatefulSet$' sar.yaml)" = 5
+          grep -q 'value: "https://fleet-cp:7879"' sar.yaml
+          grep -q 'AIS_KEY_FILE' sar.yaml
+          grep -q 'SIM_BATT_CAP_AH 10' sar.yaml
+          grep -q 'reporter/fleet.json' sar.yaml
+
+  fleet-app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Test the port fleet's services
+        working-directory: examples/drone-fleet/app
+        run: |
+          pip install pymavlink==2.4.50 pillow==12.0.0 websockets==15.0.1
+          PHOTOS_DIR=$(mktemp -d) python -m unittest -v test_fleet
 
   node-image:
     runs-on: ubuntu-latest
