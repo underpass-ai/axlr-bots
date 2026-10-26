@@ -1,0 +1,34 @@
+[package]
+name = "axlr-bots-panel"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "Apache-2.0"
+description = "Desktop control panel for AXLR Bots: nodes, bots, tasks and approvals over the operator API"
+readme = "README.md"
+repository = "https://github.com/underpass-ai/axlr-bots"
+publish = false
+
+[dependencies]
+iced = { version = "0.14", features = ["tokio", "svg", "image", "markdown"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+chrono = { version = "0.4", default-features = false, features = ["serde", "clock", "std"] }
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
+uuid = { version = "1", features = ["v4"] }
+futures = "0.3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+axum = "0.8"
+axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rcgen = "0.14"
+iced_test = "0.14"
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4

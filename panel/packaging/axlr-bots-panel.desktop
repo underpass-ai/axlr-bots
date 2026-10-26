@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=AXLR Bots
+GenericName=Bots control panel
+Comment=Nodes, bots, tasks and approvals of the AXLR Bots control plane
+Exec=axlr-bots-panel
+Icon=axlr-bots-panel
+Terminal=false
+Categories=Development;System;Monitor;
+Keywords=axlr;bots;control;plane;agents;
+StartupWMClass=axlr-bots-panel

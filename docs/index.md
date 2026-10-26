@@ -8,6 +8,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 |:--|:--|
 | Write a bot: mission, model, tools, autonomy level, triggers, budgets, placement | [Bot definition](reference/bot-definition.md) |
 | Look up a command, its defaults and its environment | [Command reference](reference/cli.md) |
+| Watch the fleet, send tasks and approve calls from a desktop window | [Control panel](../panel/README.md) |
 | Call the control plane over HTTP: listeners, routes, idempotency key, errors | [Operator API](reference/operator-api.md) |
 | Know what a node and the control plane say to each other, and how a node is identified | [Node protocol](reference/node-protocol.md) |
 

@@ -1,9 +1,17 @@
 name: CI
 
+# The panel has its own workflow (panel.yml); a change to panel/ alone runs
+# nothing here.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - panel/**
+      - .github/workflows/panel.yml
   pull_request:
+    paths-ignore:
+      - panel/**
+      - .github/workflows/panel.yml
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

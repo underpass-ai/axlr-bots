@@ -5,6 +5,7 @@ The maintained documentation surface: every page, what it is for, and the code i
 | Page | Purpose | Executable authority | Audited revision |
 |:--|:--|:--|:--|
 | [README](../README.md) | what AXLR Bots is, install, the first bot, where to read next | `cmd/axlr-bots`, `cmd/axlr-node` | `node-sidecar`, 25 Oct 2026 |
+| [Control panel](../panel/README.md) | the desktop panel: install, run, the screens, how it is built | `panel/src`, `panel/Makefile` | `panel-monorepo`, 26 Oct 2026 |
 | [Documentation home](index.md) | the task → guide tables | this catalog | `bot-delegation`, 25 Oct 2026 |
 | [Bot definition](reference/bot-definition.md) | the fields of a bot, the autonomy levels, the approvals, the tool rules, the triggers, update semantics, tasks | `application/bot_definition.go`, `domain/` | `bot-delegation`, 25 Oct 2026 |
 | [Command reference](reference/cli.md) | every command and flag, defaults and environment, reports, logs | `axlr-bots --help`, `axlr-node --help`, `cmd/axlr-bots/run.go` | `bot-delegation`, 25 Oct 2026 |

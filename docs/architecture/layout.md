@@ -24,6 +24,7 @@ One Go module, hexagonal: the domain depends on nothing, the application holds t
 | `distribution/node.Dockerfile` | The node image: `axlr-node` and AXLR's `axlr-tui` from its release archive, checked by sha256; distroless, user 65532 |
 | `charts/axlr-bots-node` | The Helm chart of the sidecar: the templates another chart includes, the demo StatefulSet, the NetworkPolicy, the chart test ([sidecar](../runbooks/sidecar.md)) |
 | `internal/fakeaxlr` | A shell stand-in for `axlr-tui` the tests run |
+| `panel` | The desktop control panel, a Rust crate of its own (Iced) over the operator API; hexagonal like the Go side, one file per type ([panel](../../panel/README.md)) |
 
 ## The state directory
 
