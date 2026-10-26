@@ -2,6 +2,8 @@
 
 use chrono::{DateTime, Duration, Local, Utc};
 
+use crate::domain::Event;
+
 /// `now`, `12s`, `5m`, `3h`, `2d` ago.
 pub fn age(from: DateTime<Utc>, now: DateTime<Utc>) -> String {
     span(now - from)
@@ -63,6 +65,24 @@ pub fn clock(moment: DateTime<Utc>) -> String {
     moment.with_timezone(&Local).format("%H:%M:%S").to_string()
 }
 
+/// Events one per line, `14:05:09 Failed · the file does not exist`:
+/// what a copy of a timeline takes.
+pub fn events<'a>(events: impl IntoIterator<Item = &'a Event>) -> String {
+    events
+        .into_iter()
+        .map(|event| {
+            let detail = event.detail();
+            let head = format!("{} {}", clock(event.created_at), event.label());
+            if detail.is_empty() {
+                head
+            } else {
+                format!("{head} · {detail}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// The local date and time, `25 Oct 14:05`.
 pub fn when(moment: DateTime<Utc>) -> String {
     moment.with_timezone(&Local).format("%d %b %H:%M").to_string()
@@ -80,6 +100,26 @@ pub fn short_id(id: &str, keep: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn events_one_per_line() {
+        let failed: Event = serde_json::from_str(
+            r#"{"eventId":"e1","type":"bot.task.failed","createdAt":"2026-10-25T10:00:00Z","payload":{"reason":"no file"}}"#,
+        )
+        .unwrap();
+        let started: Event =
+            serde_json::from_str(r#"{"eventId":"e2","type":"bot.task.started","createdAt":"2026-10-25T10:00:05Z"}"#)
+                .unwrap();
+        assert_eq!(
+            events([&failed, &started]),
+            format!(
+                "{} Failed · no file\n{} Started",
+                clock(failed.created_at),
+                clock(started.created_at)
+            )
+        );
+        assert_eq!(events(&[]), "");
+    }
 
     #[test]
     fn ages_and_lengths() {

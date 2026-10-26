@@ -19,6 +19,10 @@ pub enum Message {
     SetTheme(ThemeMode),
     DismissBanner,
     Copy(String),
+    /// The cursor or the selection moved in the answer's plain text.
+    AnswerSelect(iced::widget::text_editor::Action),
+    /// The answer as plain text to select (`true`), or as Markdown.
+    AnswerSelecting(bool),
 
     FleetLoaded {
         generation: u64,

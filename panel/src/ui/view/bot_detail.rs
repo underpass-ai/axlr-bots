@@ -3,7 +3,9 @@
 use iced::widget::{Space, column, mouse_area, row, scrollable, text};
 use iced::{Alignment, Length, mouse};
 
-use super::widgets::{El, SMALL, action, bold, chip, empty, fact, icon, muted, pill, section, title};
+use super::widgets::{
+    El, SMALL, action, bold, chip, copy_button, empty, fact, icon, muted, pill, section, section_with, title,
+};
 use crate::domain::{AutonomyLevel, Bot, BotId, TaskId};
 use crate::ui::format;
 use crate::ui::styles::Kind;
@@ -57,7 +59,13 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
     .align_y(Alignment::Center);
 
     let left = column![
-        section(Icon::Bolt, "Mission", text(bot.mission.clone()), tokens),
+        section_with(
+            Icon::Bolt,
+            "Mission",
+            vec![copy_button("Copy mission", bot.mission.clone(), tokens)],
+            text(bot.mission.clone()),
+            tokens
+        ),
         section(
             Icon::Chip,
             "Model",
@@ -126,7 +134,13 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
         ),
         section(Icon::Pin, "Runs on", text(bot.placement.describe()), tokens),
         section(Icon::Play, "Starts by", triggers, tokens),
-        section(Icon::Clock, "Events", events(app, tokens), tokens),
+        section_with(
+            Icon::Clock,
+            "Events",
+            event_tools(app, tokens),
+            events(app, tokens),
+            tokens
+        ),
         section(Icon::Tasks, "Latest tasks", tasks(app, &bot.id, tokens), tokens),
     ]
     .spacing(14)
@@ -176,6 +190,18 @@ fn tools<'a>(bot: &'a Bot, tokens: Tokens) -> El<'a> {
         body = body.push(row![icon(Icon::Cross, 14.0, tokens.bad), text(rule.describe()).size(SMALL)].spacing(8));
     }
     body.into()
+}
+
+/// A copy of the events, newest first as they show, once there is one.
+fn event_tools<'a>(app: &'a App, tokens: Tokens) -> Vec<El<'a>> {
+    match app.feed() {
+        Some(feed) if !feed.events.is_empty() => vec![copy_button(
+            "Copy events",
+            format::events(feed.events.iter().rev()),
+            tokens,
+        )],
+        _ => Vec::new(),
+    }
 }
 
 fn events<'a>(app: &'a App, tokens: Tokens) -> El<'a> {

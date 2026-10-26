@@ -191,6 +191,39 @@ pub fn action<'a>(
     .into()
 }
 
+/// A quiet small button that copies `value`, named for what it copies.
+pub fn copy_button<'a>(label: &'a str, value: impl Into<String>, tokens: Tokens) -> El<'a> {
+    button(
+        row![
+            icon(Icon::Copy, 14.0, tokens.muted),
+            semibold(label).size(SMALL).color(tokens.muted)
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center),
+    )
+    .padding(Padding::from([4, 8]))
+    .style(styles::button_style(tokens, Kind::Ghost))
+    .on_press(Message::Copy(value.into()))
+    .into()
+}
+
+/// A card with a titled section and buttons at the right of its title.
+pub fn section_with<'a>(
+    glyph: Icon,
+    words: impl text::IntoFragment<'a>,
+    tools: Vec<El<'a>>,
+    body: impl Into<El<'a>>,
+    tokens: Tokens,
+) -> El<'a> {
+    let mut head = row![section_title(glyph, words, tokens), Space::new().width(Length::Fill)]
+        .spacing(6)
+        .align_y(Alignment::Center);
+    for tool in tools {
+        head = head.push(tool);
+    }
+    card(column![head, body.into()].spacing(14), tokens).into()
+}
+
 /// An icon alone in a quiet button, with a tip on hover.
 pub fn icon_button<'a>(glyph: Icon, tip: &'a str, on_press: Option<Message>, tokens: Tokens) -> El<'a> {
     let button = button(icon(glyph, 18.0, tokens.text))

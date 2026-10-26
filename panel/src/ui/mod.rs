@@ -1,6 +1,7 @@
 //! The Iced interface: the state machine (`App`), the effects it asks
 //! for and the runtime that carries them out, and the views.
 
+mod answer;
 mod app;
 #[cfg(test)]
 mod app_tests;
@@ -32,6 +33,7 @@ pub mod view;
 #[cfg(test)]
 mod view_tests;
 
+pub use answer::Answer;
 pub use app::App;
 pub use banner::Banner;
 pub use bot_choice::{BotChoice, NodeChoice};

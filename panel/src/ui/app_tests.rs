@@ -436,3 +436,30 @@ fn without_a_connection_nothing_is_asked_of_the_control_plane() {
     }
     assert!(futures::executor::block_on(app.services.clone().execute(Effect::Copy("x".into()))).is_none());
 }
+
+#[test]
+fn the_answer_turns_into_text_to_select_and_keeps_the_selection_on_reload() {
+    use iced::widget::text_editor::{Action, Edit};
+    let mut app = connected();
+    // Without an answer on screen, both messages do nothing.
+    app.apply(Message::AnswerSelecting(true));
+    app.apply(Message::AnswerSelect(Action::SelectAll));
+    assert!(app.answer.is_none());
+    let done = task_in(&app, TaskStatus::Completed);
+    send(&mut app, Message::Go(Screen::Task(done)));
+    app.apply(Message::AnswerSelecting(true));
+    assert!(app.answer.as_ref().unwrap().selecting);
+    app.apply(Message::AnswerSelect(Action::Edit(Edit::Paste("x".to_string().into()))));
+    app.apply(Message::AnswerSelect(Action::SelectAll));
+    let effects = app.apply(Message::Tick(app.now));
+    drive(&mut app, effects);
+    let answer = app.answer.as_ref().unwrap();
+    assert!(answer.selecting, "a reload of the same answer keeps the view");
+    assert_eq!(answer.plain.selection().as_deref(), Some("There are 3 files."));
+    app.apply(Message::AnswerSelecting(false));
+    assert!(!app.answer.as_ref().unwrap().selecting);
+    let source = app.answer.as_ref().unwrap().source.clone();
+    let copied = send(&mut app, Message::Copy(source));
+    assert_eq!(copied, vec!["There are 3 files.".to_string()]);
+    assert_eq!(app.banner.as_ref().unwrap().title, "Copied");
+}

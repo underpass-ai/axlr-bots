@@ -33,6 +33,18 @@ impl PendingDecision {
             Some(other) => vec![("arguments".to_string(), other.to_string())],
         }
     }
+
+    /// The tool, then its arguments one per line: what a copy of the call
+    /// takes.
+    pub fn call_text(&self) -> String {
+        let mut lines = vec![self.tool.clone()];
+        lines.extend(
+            self.argument_lines()
+                .into_iter()
+                .map(|(name, value)| format!("{name}: {value}")),
+        );
+        lines.join("\n")
+    }
 }
 
 #[cfg(test)]
@@ -53,8 +65,13 @@ mod tests {
                 ("path".to_string(), "hello.txt".to_string()),
             ]
         );
+        assert_eq!(
+            pending.call_text(),
+            "local_write\nappend: false\ncontent: hello\npath: hello.txt"
+        );
         let bare: PendingDecision = serde_json::from_str(r#"{"tool":"t"}"#).unwrap();
         assert!(bare.argument_lines().is_empty());
+        assert_eq!(bare.call_text(), "t");
         let list: PendingDecision = serde_json::from_str(r#"{"tool":"t","arguments":[1,2]}"#).unwrap();
         assert_eq!(
             list.argument_lines(),

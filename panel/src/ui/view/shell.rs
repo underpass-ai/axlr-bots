@@ -226,6 +226,14 @@ fn main<'a>(app: &'a App, content: El<'a>, tokens: Tokens) -> El<'a> {
             words = words.push(text(banner.detail.clone()).size(BODY).color(tokens.muted));
         }
         let mut line = row![words, Space::new().width(Length::Fill)].align_y(Alignment::Center);
+        if banner.tone == Tone::Bad {
+            line = line.push(icon_button(
+                Icon::Copy,
+                "Copy error",
+                Some(Message::Copy(banner.copy_text())),
+                tokens,
+            ));
+        }
         if banner.tone == Tone::Bad && app.screen != Screen::Settings {
             line = line.push(action(
                 Kind::Secondary,

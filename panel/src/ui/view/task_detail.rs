@@ -1,11 +1,12 @@
 //! One task: the call waiting for a person, the answer, the executions
 //! and the timeline.
 
-use iced::widget::{Space, column, container, markdown, mouse_area, row, scrollable, text};
+use iced::widget::{Space, column, container, markdown, mouse_area, row, scrollable, text, text_editor};
 use iced::{Alignment, Font, Length, mouse};
 
 use super::widgets::{
-    BODY, El, SMALL, action, bold, card, chip, empty, fact, icon, icon_button, muted, pill, section, section_title,
+    BODY, El, REGULAR, SMALL, action, bold, card, chip, copy_button, empty, fact, icon, icon_button, muted, pill,
+    section, section_title, section_with,
 };
 use crate::application::TaskDetail;
 use crate::domain::{Execution, ExecutionKind, TaskId, TaskStatus};
@@ -43,6 +44,7 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     ]
     .spacing(12)
     .align_y(Alignment::Center);
+    header = header.push(copy_button("Copy task", task.objective.clone(), tokens));
     if let Some(stop) = stop {
         header = header.push(stop);
     }
@@ -82,7 +84,13 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
         tokens,
     );
 
-    let mut page = column![header, facts].spacing(16);
+    let mut page = column![header].spacing(16);
+    // The header shows the objective's first line, cut; a longer one is
+    // here whole.
+    if task.headline(80) != task.objective.trim() {
+        page = page.push(section(Icon::Tasks, "Task", text(task.objective.clone()), tokens));
+    }
+    page = page.push(facts);
     if let Some(waiting) = approval(app, detail, tokens) {
         page = page.push(waiting);
     }
@@ -97,7 +105,8 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
                 row![
                     icon(glyph, 20.0, tone.color(&tokens)),
                     bold(why),
-                    text(task.failure_reason.clone())
+                    text(task.failure_reason.clone()).width(Length::Fill),
+                    copy_button("Copy reason", task.failure_reason.clone(), tokens),
                 ]
                 .spacing(12)
                 .align_y(Alignment::Center),
@@ -107,11 +116,46 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
             .style(styles::tone_card(tokens, tone)),
         );
     }
-    if let Some((_, content)) = &app.answer {
-        let style = markdown::Style::from_palette(tokens.theme().palette());
-        let answer =
-            markdown::view(content.items(), markdown::Settings::with_text_size(BODY, style)).map(Message::Copy);
-        page = page.push(section(Icon::Check, "Answer", answer, tokens));
+    if let Some(answer) = &app.answer {
+        // Markdown to read; plain text to select a part of and copy.
+        let (body, toggle): (El<'a>, El<'a>) = if answer.selecting {
+            (
+                text_editor(&answer.plain)
+                    .on_action(Message::AnswerSelect)
+                    .font(REGULAR)
+                    .size(BODY)
+                    .padding(12)
+                    .style(styles::reader(tokens))
+                    .into(),
+                action(
+                    Kind::Ghost,
+                    Icon::File,
+                    "Formatted",
+                    Some(Message::AnswerSelecting(false)),
+                    tokens,
+                ),
+            )
+        } else {
+            let style = markdown::Style::from_palette(tokens.theme().palette());
+            (
+                markdown::view(answer.markdown.items(), markdown::Settings::with_text_size(BODY, style))
+                    .map(Message::Copy),
+                action(
+                    Kind::Ghost,
+                    Icon::File,
+                    "Select text",
+                    Some(Message::AnswerSelecting(true)),
+                    tokens,
+                ),
+            )
+        };
+        page = page.push(section_with(
+            Icon::Check,
+            "Answer",
+            vec![toggle, copy_button("Copy answer", answer.source.clone(), tokens)],
+            body,
+            tokens,
+        ));
     }
     let usage = detail.total_usage();
     let mut runs = column![
@@ -134,7 +178,14 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     page = page.push(
         row![
             container(section(Icon::Play, "Runs", runs, tokens)).width(Length::FillPortion(3)),
-            container(section(Icon::Clock, "Timeline", timeline(detail, tokens), tokens)).width(Length::FillPortion(2)),
+            container(section_with(
+                Icon::Clock,
+                "Timeline",
+                timeline_tools(detail, tokens),
+                timeline(detail, tokens),
+                tokens
+            ))
+            .width(Length::FillPortion(2)),
         ]
         .spacing(14),
     );
@@ -170,10 +221,11 @@ fn approval<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> Option<
         arguments = arguments.push(
             row![
                 container(bold(name).size(SMALL)).width(120),
-                container(text(value).font(Font::MONOSPACE).size(SMALL))
+                container(text(value.clone()).font(Font::MONOSPACE).size(SMALL))
                     .padding(6)
                     .width(Length::Fill)
-                    .style(styles::chip(tokens))
+                    .style(styles::chip(tokens)),
+                icon_button(Icon::Copy, "Copy", Some(Message::Copy(value)), tokens),
             ]
             .spacing(10)
             .align_y(Alignment::Center),
@@ -202,7 +254,9 @@ fn approval<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> Option<
                 section_title(Icon::Alert, "Needs your OK", tokens),
                 row![
                     muted("The bot wants to call", tokens),
-                    bold(pending.tool.clone()).size(20.0)
+                    bold(pending.tool.clone()).size(20.0),
+                    Space::new().width(Length::Fill),
+                    copy_button("Copy call", pending.call_text(), tokens),
                 ]
                 .spacing(10)
                 .align_y(Alignment::Center),
@@ -265,9 +319,16 @@ fn execution_card<'a>(app: &'a App, execution: &'a Execution, tokens: Tokens) ->
         body = body.push(
             row![
                 icon(Icon::Cross, 14.0, tokens.bad),
-                text(execution.failure_reason.clone()).size(SMALL)
+                text(execution.failure_reason.clone()).size(SMALL).width(Length::Fill),
+                icon_button(
+                    Icon::Copy,
+                    "Copy error",
+                    Some(Message::Copy(execution.failure_reason.clone())),
+                    tokens
+                ),
             ]
-            .spacing(8),
+            .spacing(8)
+            .align_y(Alignment::Center),
         );
     }
     let mut ids = row![muted(format::short_id(execution.id.as_str(), 18), tokens)]
@@ -307,6 +368,14 @@ fn execution_card<'a>(app: &'a App, execution: &'a Execution, tokens: Tokens) ->
         .width(Length::Fill)
         .style(styles::chip(tokens))
         .into()
+}
+
+/// A copy of the whole timeline, once it has an event.
+fn timeline_tools<'a>(detail: &'a TaskDetail, tokens: Tokens) -> Vec<El<'a>> {
+    if detail.events.is_empty() {
+        return Vec::new();
+    }
+    vec![copy_button("Copy timeline", format::events(&detail.events), tokens)]
 }
 
 fn timeline<'a>(detail: &'a TaskDetail, tokens: Tokens) -> El<'a> {

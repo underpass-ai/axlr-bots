@@ -31,6 +31,14 @@ impl Banner {
         }
     }
 
+    /// The title and the detail on one line, as a copy takes them.
+    pub fn copy_text(&self) -> String {
+        if self.detail.is_empty() {
+            return self.title.clone();
+        }
+        format!("{}: {}", self.title, self.detail)
+    }
+
     /// A good banner goes after 6 seconds, a bad one after 20.
     pub fn expired(&self, now: DateTime<Utc>) -> bool {
         let shown = match self.tone {
@@ -53,6 +61,8 @@ mod tests {
         assert!(good.expired(at + Duration::seconds(7)));
         let bad = Banner::error(&PanelError::NotFound("task-1".into()), at);
         assert_eq!((bad.title.as_str(), bad.detail.as_str()), ("Not found", "task-1"));
+        assert_eq!(bad.copy_text(), "Not found: task-1");
+        assert_eq!(Banner::good("Copied", "", at).copy_text(), "Copied");
         assert!(!bad.expired(at + Duration::seconds(7)));
         assert!(bad.expired(at + Duration::seconds(21)));
     }
