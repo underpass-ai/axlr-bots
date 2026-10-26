@@ -109,6 +109,7 @@ Una plataforma para **crear, desplegar y operar bots autónomos persistentes den
 10. **Progressive autonomy.** Los permisos aumentan solo tras validación operativa, no mediante promesas de un prompt.
 11. **Simplicidad primero.** Una sola tarea debe ejecutarse con un runtime ligero sin obligar a desplegar todo el ecosistema.
 12. **Portabilidad.** La misma definición lógica debe funcionar en servidor único, VM o Kubernetes, con adaptadores específicos.
+13. **El operador se siente al mando.** Todo lo que el control plane permite hacer se puede hacer desde el panel: crear y cambiar bots y grupos, dar órdenes en lenguaje llano, aprobar o denegar, parar o retirar un bot al momento, y ver qué hace cada bot y por qué. Con respuesta inmediata y estado en vivo. La API sigue siendo el núcleo (*headless first*); el panel es la forma en que una persona lo controla.
 
 ---
 
