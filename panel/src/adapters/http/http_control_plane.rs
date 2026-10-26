@@ -9,8 +9,8 @@ use super::api_error::ApiError;
 use crate::application::{ControlPlane, PanelConfig, PanelError, PortFuture};
 use crate::domain::{
     Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, EnrollmentRequest, EnrollmentToken,
-    Event, Execution, Node, NodeId, Overview, RevokedNode, Secret, StoppedBotAnswer, SubmittedTask, Task, TaskFilter,
-    TaskId, TaskSubmission,
+    Event, Execution, Node, NodeId, Overview, RevokedNode, Secret, SentTaskMessage, StoppedBotAnswer, SubmittedTask,
+    Task, TaskFilter, TaskId, TaskSubmission,
 };
 
 /// How long a read may take.
@@ -150,6 +150,11 @@ struct ObjectiveBody<'a> {
 const POLL_MARGIN: Duration = Duration::from_secs(10);
 
 #[derive(Serialize)]
+struct TextBody {
+    text: String,
+}
+
+#[derive(Serialize)]
 struct DecisionBody {
     decision: Decision,
 }
@@ -260,6 +265,10 @@ impl ControlPlane for HttpControlPlane {
 
     fn stop_bot(&self, id: BotId) -> PortFuture<'_, StoppedBotAnswer> {
         self.post(format!("/v1/bots/{id}/stop"), NO_BODY)
+    }
+
+    fn send_task_message(&self, id: TaskId, text: String) -> PortFuture<'_, SentTaskMessage> {
+        self.post(format!("/v1/tasks/{id}/messages"), Some(TextBody { text }))
     }
 
     fn cancel_task(&self, id: TaskId) -> PortFuture<'_, CancelledTask> {

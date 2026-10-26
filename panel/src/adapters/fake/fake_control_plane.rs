@@ -7,8 +7,8 @@ use crate::application::{ControlPlane, PanelError, PortFuture};
 use crate::domain::{
     Bot, BotDefinition, BotId, BotPatch, BotStatus, Budgets, CancelledTask, DecidedTask, Decision, EnrollmentRequest,
     EnrollmentToken, Event, Execution, ExecutionId, ExecutionKind, ExecutionOutcome, ExecutionResult, Node,
-    NodeCapabilities, NodeId, NodeStatus, Overview, PendingDecision, RevokedNode, Secret, StoppedBotAnswer,
-    SubmittedTask, Task, TaskFilter, TaskId, TaskStatus, TaskSubmission, ToolCall, TriggerRef, Usage,
+    NodeCapabilities, NodeId, NodeStatus, Overview, PendingDecision, RevokedNode, Secret, SentTaskMessage,
+    StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId, TaskStatus, TaskSubmission, ToolCall, TriggerRef, Usage,
 };
 
 /// The control plane in memory: what the use cases and the interface are
@@ -28,7 +28,7 @@ struct FakeState {
     executions: Vec<Execution>,
     events: Vec<Event>,
     failure: Option<PanelError>,
-    /// Answers as a control plane from before the stop route.
+    /// Answers as a control plane from before the stop and message routes.
     older: bool,
     calls: Vec<String>,
     serial: u64,
@@ -132,9 +132,9 @@ impl FakeControlPlane {
         self.state.lock().unwrap().failure = failure;
     }
 
-    /// From now on it answers as a control plane from before the stop
-    /// route.
-    pub fn without_stop_route(&self) {
+    /// From now on it answers as a control plane from before the stop and
+    /// message routes.
+    pub fn without_newer_routes(&self) {
         self.state.lock().unwrap().older = true;
     }
 
@@ -164,6 +164,20 @@ impl FakeControlPlane {
         let mut state = self.state.lock().unwrap();
         let payload = payload.as_object().cloned();
         state.bot_event_with(kind, &BotId::new(bot).unwrap(), payload);
+    }
+
+    /// What a running task's run says back to the person, as its node
+    /// hands it over.
+    pub fn say(&self, task: &TaskId, text: &str) {
+        let mut state = self.state.lock().unwrap();
+        let now = state.clock();
+        let bot = state
+            .tasks
+            .iter()
+            .find(|t| &t.id == task)
+            .map(|t| t.bot_id.to_string())
+            .unwrap();
+        state.event("bot.task.said", &bot, task, now, serde_json::json!({ "text": text }));
     }
 
     /// Finishes a task as a node's report would.
@@ -779,6 +793,31 @@ impl ControlPlane for FakeControlPlane {
                 bot,
                 cancelled,
                 not_cancelled: Vec::new(),
+            })
+        })
+    }
+
+    fn send_task_message(&self, id: TaskId, text: String) -> PortFuture<'_, SentTaskMessage> {
+        self.call(format!("send_task_message {id}"), move |s| {
+            if s.older {
+                return Err(PanelError::NotFound("404 page not found".into()));
+            }
+            let now = s.clock();
+            let task = s.task_mut(&id)?.clone();
+            if task.status != TaskStatus::Running {
+                return Err(PanelError::State(format!("task {id} is {}", task.status.name())));
+            }
+            s.event(
+                "bot.task.message",
+                task.bot_id.as_str(),
+                &id,
+                now,
+                serde_json::json!({ "text": text }),
+            );
+            Ok(SentTaskMessage {
+                task_id: id,
+                execution_id: "exec-run".into(),
+                created_at: now,
             })
         })
     }

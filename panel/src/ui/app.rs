@@ -396,6 +396,7 @@ impl App {
                     bot: view.bot.id.clone(),
                     message: self.chat_draft.clone(),
                     earlier: view.chat.clone(),
+                    running: self.running_task(&view.bot),
                 }]
             }
             Message::ChatSent(result) => {
@@ -728,6 +729,17 @@ impl App {
             self.settings.saved = self.settings.saved || self.connected();
         }
         self.reload_screen()
+    }
+
+    /// The task a bot runs now, as the newest read of the fleet and its
+    /// events say.
+    pub fn running_task(&self, bot: &crate::domain::Bot) -> Option<TaskId> {
+        let tasks = self.fleet.as_ref().map(|f| f.tasks.as_slice()).unwrap_or_default();
+        let events = self.feed().map(|f| f.events.as_slice()).unwrap_or_default();
+        match crate::application::BotNow::of(bot, tasks, events) {
+            crate::application::BotNow::Working { task, .. } => Some(task.id),
+            _ => None,
+        }
     }
 
     /// The bot on screen, as the control plane now has it.

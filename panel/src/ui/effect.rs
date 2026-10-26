@@ -43,6 +43,8 @@ pub enum Effect {
         bot: BotId,
         message: String,
         earlier: Vec<ChatTurn>,
+        /// The task the bot runs now, which takes the message first.
+        running: Option<TaskId>,
     },
     Submit {
         bot: BotId,

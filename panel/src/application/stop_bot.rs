@@ -83,7 +83,7 @@ mod tests {
     #[test]
     fn an_older_control_plane_has_the_panel_stop_it_itself() {
         let (control_plane, _) = fleet();
-        control_plane.without_stop_route();
+        control_plane.without_newer_routes();
         stops_on(control_plane.clone());
         assert!(control_plane.calls().iter().any(|c| c.starts_with("cancel_task")));
     }
@@ -110,7 +110,7 @@ mod tests {
         let (control_plane, _) = fleet();
         let error = run(StopBot::new(control_plane.clone()).execute(BotId::new("ghost").unwrap())).unwrap_err();
         assert!(matches!(error, PanelError::NotFound(_)));
-        control_plane.without_stop_route();
+        control_plane.without_newer_routes();
         let error = run(StopBot::new(control_plane.clone()).execute(BotId::new("ghost").unwrap())).unwrap_err();
         assert!(matches!(error, PanelError::NotFound(_)));
         control_plane.fail_with(Some(PanelError::Unreachable("down".into())));

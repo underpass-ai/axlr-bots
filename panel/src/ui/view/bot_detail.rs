@@ -10,7 +10,7 @@ use super::widgets::{
     El, SMALL, action, bold, chip, copy_button, empty, fact, icon, muted, pill, section, section_title, section_with,
     title,
 };
-use crate::application::BotNow;
+use crate::application::{BotNow, ChatLine};
 use crate::domain::{Bot, BotId, BotStatus, TaskId};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
@@ -139,32 +139,34 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
     .into()
 }
 
-/// The bot's chat: each message as a task, and its answer under it; a
-/// box to write the next one.
+/// The bot's chat in time order: messages that ran as tasks with their
+/// answers, and messages to a running task with what its run said back;
+/// a box to write the next one.
 fn chat<'a>(app: &'a App, view: &'a BotView, tokens: Tokens) -> El<'a> {
     let mut list = column![].spacing(8);
-    if view.chat.is_empty() {
-        list = list.push(muted(
-            "Ask it something or give it an order. Each message runs as a task.",
-            tokens,
-        ));
+    let running = app.running_task(&view.bot);
+    let hint = match running.as_ref() {
+        Some(_) => "It is working now: your message goes to its run, and it answers between its steps.",
+        None => "Ask it something or give it an order. Each message runs as a task.",
+    };
+    let lines = ChatLine::log(&view.chat, &view.feed.events);
+    if lines.is_empty() || running.is_some() {
+        list = list.push(muted(hint, tokens));
     }
-    for turn in &view.chat {
-        let mine = container(text(turn.message().to_string()).size(15.0))
-            .padding(10)
-            .max_width(560)
-            .style(styles::bubble(tokens, true));
-        let reply = mouse_area(
-            container(text(cut(&turn.reply(), 400)).size(15.0))
+    for line in lines {
+        let bubble = mouse_area(
+            container(text(cut(&line.text, 400)).size(15.0))
                 .padding(10)
                 .max_width(560)
-                .style(styles::bubble(tokens, false)),
+                .style(styles::bubble(tokens, line.mine)),
         )
-        .on_press(Message::Go(Screen::Task(turn.task.id.clone())))
+        .on_press(Message::Go(Screen::Task(line.task)))
         .interaction(mouse::Interaction::Pointer);
-        list = list
-            .push(row![Space::new().width(Length::Fill), mine])
-            .push(row![reply, Space::new().width(Length::Fill)]);
+        list = list.push(if line.mine {
+            row![Space::new().width(Length::Fill), bubble]
+        } else {
+            row![bubble, Space::new().width(Length::Fill)]
+        });
     }
     let ready = !app.chat_busy && !app.chat_draft.trim().is_empty() && view.bot.status.accepts_tasks();
     let input = text_input(&format!("Message {}…", view.bot.id), &app.chat_draft)
