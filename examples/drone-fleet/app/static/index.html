@@ -75,7 +75,7 @@
 <body>
 <div id="app">
   <div id="mapwrap"><div id="map"></div>
-    <div class="sim">SIMULATION<small>simulated vehicles and containers · real imagery and AIS</small></div></div>
+    <div class="sim">SIMULATION<small id="simnote">simulated vehicles and containers · real imagery</small></div></div>
   <aside>
     <header><h1>Port fleet</h1><small id="updated">connecting…</small><span class="ais" id="ais">AIS off</span><a class="view3d" href="3d">3D view</a></header>
     <section id="incident" hidden></section>
@@ -290,6 +290,8 @@ function drawStatic(f) {
 }
 
 function render(f) {
+  // Say "live AIS" only while the ships really are live.
+  document.getElementById("simnote").textContent = "simulated vehicles and containers · real imagery" + ((f.ais || {}).status === "live" ? " and live AIS" : "");
   drawStatic(f);
   document.getElementById("updated").textContent = "live · " + new Date(f.updated).toLocaleTimeString();
   const counts = { out: 0, ready: 0, station: 0, off: 0 };
