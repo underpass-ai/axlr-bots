@@ -451,6 +451,7 @@ class Pilot:
         self.missions = 0
         self._last_pos = None
         self._stopped_since = None
+        self._last_item = None  # a rover's mission: the index of its RTL item
         self._camera = 0
         self._photos_at_start = 0
 
@@ -460,7 +461,7 @@ class Pilot:
         if not s["connected"]:
             return "offline"
         if s["armed"]:
-            if self.kind == "rover" and s["mode"] == "HOLD":
+            if self.kind == "rover" and self._rover_done(s):
                 return "parking"
             return {"AUTO": "mission", "RTL": "returning", "LAND": "landing", "GUIDED": "takeoff"}.get(s["mode"], s["mode"].lower())
         if self.flight and self.flight["status"] == "starting":
@@ -562,9 +563,14 @@ class Pilot:
             json.dump(bot_view, f, indent=1)
         os.replace(tmp, self.telemetry_file)
 
+    def _rover_done(self, s):
+        """A rover's RTL ends in HOLD; its mission's RTL item ends in AUTO,
+        the mission complete: either way it stands at home, armed."""
+        return s["mode"] == "HOLD" or (s["mode"] == "AUTO" and self._last_item is not None and s["mission_seq"] >= self._last_item)
+
     def _watch_flight(self, s):
-        if self.kind == "rover" and s["armed"] and s["mode"] == "HOLD":
-            # A rover's RTL ends in HOLD, armed: park it once it stands still.
+        if self.kind == "rover" and s["armed"] and self._rover_done(s):
+            # park it once it stands still
             if s["groundspeed"] < 0.3:
                 self._stopped_since = self._stopped_since or time.monotonic()
                 if time.monotonic() - self._stopped_since > 3:
@@ -797,6 +803,7 @@ class Pilot:
                  {"frame": rel, "command": mav.MAV_CMD_DO_CHANGE_SPEED, "p1": 1, "p2": speed, "p3": -1}]
         items += self._camera_on() + [self._wp(p) for p in route[1:]] + self._camera_off()
         items.append({"frame": rel, "command": mav.MAV_CMD_NAV_RETURN_TO_LAUNCH})
+        self._last_item = len(items) - 1
         v.upload_mission(items)
         v.set_mode("HOLD")
         v.arm()

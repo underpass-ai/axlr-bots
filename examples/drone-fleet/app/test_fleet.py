@@ -153,6 +153,13 @@ class RouteTest(unittest.TestCase):
         with self.assertRaisesRegex(mcp_http.ToolError, "no route through rwg; it can reach apm"):
             p.run_mission({"name": "restock", "deliveries": [{"station": "rwg", "batteries": 1, "parts": 1}]})
 
+    def test_a_rover_parks_when_its_mission_s_rtl_is_done_in_auto(self):
+        p = self.rover()
+        p._last_item = 9
+        self.assertFalse(p._rover_done({"mode": "AUTO", "mission_seq": 5}))
+        self.assertTrue(p._rover_done({"mode": "AUTO", "mission_seq": 9}))
+        self.assertTrue(p._rover_done({"mode": "HOLD", "mission_seq": 0}))
+
     def test_the_library_gives_each_rover_its_station_s_routes(self):
         path = os.path.join(tempfile.mkdtemp(), "routes.json")
         with open(path, "w") as f:
