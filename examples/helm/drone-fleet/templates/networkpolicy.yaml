@@ -53,6 +53,13 @@ spec:
         - podSelector: {matchLabels: {fleet.underpass.ai/vehicle: "true"}}
       ports:
         - {protocol: TCP, port: 8080}
+    {{- if .Values.ais.enabled }}
+    # The ships: the fleet's ais service.
+    - to:
+        - podSelector: {matchLabels: {app: ais}}
+      ports:
+        - {protocol: TCP, port: 8080}
+    {{- end }}
     {{- if and .Values.incident.enabled .Values.controlPlane.enabled }}
     # The incident's webhooks, costs and the phone's decisions: the operator API.
     - to:

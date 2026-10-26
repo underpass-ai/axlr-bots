@@ -3,6 +3,12 @@ app.kubernetes.io/part-of: {{ .Release.Name }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
+{{- define "fleet.aisLabels" -}}
+app.kubernetes.io/name: ais
+app.kubernetes.io/component: ais-receiver
+fleet.underpass.ai/source: aisstream.io
+{{- end -}}
+
 {{- define "fleet.cp" -}}{{ .Release.Name }}-cp{{- end -}}
 {{- define "fleet.base" -}}{{ .Release.Name }}-base{{- end -}}
 

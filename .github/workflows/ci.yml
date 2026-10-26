@@ -107,17 +107,27 @@ jobs:
           set -euo pipefail
           helm dependency update examples/helm/drone-fleet
           helm lint examples/helm/drone-fleet
+          # One fleet: the port's patrols and the search, the AIS receiver of its own.
           helm template fleet examples/helm/drone-fleet -n port-fleet > fleet.yaml
-          test "$(grep -c '^kind: StatefulSet$' fleet.yaml)" = 6
+          test "$(grep -c '^kind: StatefulSet$' fleet.yaml)" = 7
+          test "$(grep -c '^kind: Deployment$' fleet.yaml)" = 1
           grep -q 'value: "https://fleet-cp:7878"' fleet.yaml
-          helm template fleet examples/helm/drone-fleet --set base.ingress.enabled=true --set base.ingress.host=fleet.example.com | grep -q '^kind: Ingress$'
-          ! grep -q 'CP_URL' fleet.yaml
-          helm template fleet examples/helm/drone-fleet -n sar-demo -f examples/helm/drone-fleet/values-sar.yaml > sar.yaml
-          test "$(grep -c '^kind: StatefulSet$' sar.yaml)" = 5
-          grep -q 'value: "https://fleet-cp:7879"' sar.yaml
-          grep -q 'AIS_KEY_FILE' sar.yaml
-          grep -q 'SIM_BATT_CAP_AH 10' sar.yaml
-          grep -q 'reporter/fleet.json' sar.yaml
+          grep -q 'value: "https://fleet-cp:7879"' fleet.yaml
+          grep -q 'value: "http://ais:8080"' fleet.yaml
+          grep -q 'command: \["python", "/app/ais.py"\]' fleet.yaml
+          grep -q 'app.kubernetes.io/name: ais' fleet.yaml
+          grep -q 'value: "sar-dispatcher"' fleet.yaml
+          grep -q 'value: "logistics-demo"' fleet.yaml
+          grep -q 'reporter/fleet.json' fleet.yaml
+          grep -q 'SIM_BATT_CAP_AH 10' fleet.yaml
+          test "$(grep -c 'name: TELEMETRY_DIR' fleet.yaml)" = 5
+          helm template fleet examples/helm/drone-fleet --set base.ingress.enabled=true --set base.ingress.host=fleet.example.com \
+            --set 'base.ingress.extraHosts={sar.example.com}' > ingress.yaml
+          grep -q '^kind: Ingress$' ingress.yaml
+          grep -q 'secretName: fleet-base-sar-example-com-tls' ingress.yaml
+          # Without the search and AIS: no operator API in the base, no receiver.
+          helm template fleet examples/helm/drone-fleet --set incident.enabled=false --set ais.enabled=false > plain.yaml
+          ! grep -q -E 'CP_URL|AIS_URL|^kind: Deployment$' plain.yaml
 
   fleet-app:
     runs-on: ubuntu-latest

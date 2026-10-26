@@ -1,13 +1,19 @@
 # A port's fleet operated by AXLR Bots: its own control plane, a fleet base
 # (the maintenance stations' stock, the RTK base, the live map, the node of
-# the dispatcher and logistics bots) and the vehicles. Each vehicle is a
-# StatefulSet replica: ArduPilot SITL, mavlink-router, the vehicle pilot
-# (the companion computer: telemetry, the safety limits, the run_mission MCP
-# tool) and the AXLR Bots node agent as its sidecar.
+# the dispatcher, logistics and search bots), the AIS receiver and the
+# vehicles. Each vehicle is a StatefulSet replica: ArduPilot SITL,
+# mavlink-router, the vehicle pilot (the companion computer: telemetry, the
+# safety limits, the run_mission MCP tool) and the AXLR Bots node agent as
+# its sidecar.
+#
+# One fleet does both jobs: the port's patrols (dispatcher, logistics, the
+# terminal quads, the rovers, the plane) and the containers-overboard search
+# (sar-dispatcher, logistics-demo, reporter, the sea-defence quads, the same
+# plane and supply rover). Every bot can send a vehicle to a ship AIS hears.
 # The runbook is docs/runbooks/drone-fleet.md.
 
 images:
-  app: container-registry.underpassai.com/axlr-bots/fleet-app@sha256:2ad8980bffcce7473479f9716b2e2a3fd6f831f5443b607b9861bc431945d811
+  app: container-registry.underpassai.com/axlr-bots/fleet-app@sha256:058d0e5b35a377691634aa05231443cfbd757696c59cfa1579764a9dc2c33e54
   sitl: container-registry.underpassai.com/axlr-bots/fleet-sitl@sha256:9d0ddd377ac6a5d5dca13feb0a7ef1311725dcc45c58b7e369034e44c5adfd9a
   controlPlane: container-registry.underpassai.com/axlr-bots/control-plane@sha256:ba05aba27c395ef8ea791332159a0ad8c812d315b7c1a674fee464b130a0ec8a
 
@@ -21,13 +27,15 @@ controlPlane:
 
 base:
   # The bots placed on the base's node: each gets fleet.json in its workspace.
-  bots: [dispatcher, logistics]
+  bots: [dispatcher, logistics, sar-dispatcher, logistics-demo, reporter]
   inspectionSeconds: 30
   swapSeconds: 10
   ingress:
     enabled: false
     className: nginx
     host: ""
+    # More names for the same map, each with its own certificate.
+    extraHosts: []
     clusterIssuer: ""
   # The ops centre: the supply rover loads and unloads here.
   depot: {name: depot, label: "Depot", lat: 51.94020, lon: 4.00485}
@@ -38,6 +46,7 @@ base:
     - {name: rwg, label: "RWG station", lat: 51.94064, lon: 3.98544, bays: 2, batteries: 2, parts: 3}
     - {name: euromax, label: "Euromax station", lat: 51.94700, lon: 4.02720, bays: 2, batteries: 3, parts: 4}
     - {name: airstrip, label: "Beach airstrip", lat: 51.93417, lon: 3.97509, bays: 1, batteries: 2, parts: 2}
+    - {name: dike, label: "Sea-defence station", lat: 51.95700, lon: 3.96750, bays: 3, batteries: 3, parts: 3}
 
 # The ground station analyses one photo in `every` (at most maxPerFlight a
 # flight): the aerial photo of its footprint (PDOK's, Esri's past PDOK's
@@ -51,14 +60,17 @@ vision:
 
 # Containers overboard (examples/drone-fleet/app/incident.py): a vessel's
 # call starts a simulated drift, the photos look for the containers, and
-# the base fires the dispatcher's webhooks (incident, sightings, report) and
-# the logistics bot's (restock). Off unless enabled; the Secrets are made by
-# hand (docs/runbooks/drone-fleet.md, "Containers overboard"), each mounted
-# read-only into the base.
+# the base fires the search bots' webhooks (incident, sightings, report) and
+# the restock bot's. The Secrets are made by hand
+# (docs/runbooks/drone-fleet.md, "Containers overboard"), each mounted
+# read-only into the base and optional to it.
 incident:
-  enabled: false
-  # The shoreline, south to north, as [lat, lon]: a container east of it is ashore.
-  coast: []
+  enabled: true
+  # The sea defence's waterline (from aerial imagery, 2026), south to north,
+  # as [lat, lon]: a container east of it is ashore.
+  coast: [[51.925, 3.976], [51.935, 3.9715], [51.945, 3.967], [51.955, 3.9645], [51.965, 3.9616], [51.975, 3.958]]
+  # The bots the base calls: the search's own, apart from the port's.
+  bots: {dispatcher: sar-dispatcher, logistics: logistics-demo, reporter: reporter}
   secrets:
     incident: fleet-incident     # key SECRET: the vessel's call, header X-Incident-Secret
     operator: fleet-operator     # keys ca.crt and api.token: the control plane's operator API
@@ -69,12 +81,18 @@ incident:
   # During a search every photo is analysed, up to this many a flight.
   maxPerFlight: 80
 
-# Live ships from aisstream.io: one connection per key, made by the base.
+# Live ships from aisstream.io: the Deployment and Service `ais`
+# (templates/ais.yaml) hold the one connection per key and serve the ships
+# to the base, which shows them and hands them to the bots and the vehicles.
 ais:
-  enabled: false
+  enabled: true
   secret: fleet-ais              # key AISSTREAM_API_KEY
   # lat1,lon1,lat2,lon2: Maasvlakte, the Maasmond and the approach channels.
   bbox: "51.90,3.80,52.05,4.15"
+  # HTTPS out of the cluster: a NetworkPolicy cannot name stream.aisstream.io.
+  egress:
+    cidrs: [0.0.0.0/0]
+    except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16]
 
 # What the vehicles inspect. `for` lists the kinds that may go there.
 zones:
@@ -122,7 +140,8 @@ vehicles:
     pads: ["51.94020,4.00500,5,0"]
     stations: [depot]
     hardware: {lidar: "forward + aft lidar", camera: "Intel RealSense D455 depth + RGB"}
-    env: {MAX_RADIUS_M: "2600", MAX_SPEED_M_S: "10", CARRY_BATTERIES: "8", CARRY_PARTS: "10"}
+    # As far as the sea-defence station.
+    env: {MAX_RADIUS_M: "3500", MAX_SPEED_M_S: "10", CARRY_BATTERIES: "8", CARRY_PARTS: "10"}
   - name: plane
     kind: plane
     role: patrol
@@ -132,11 +151,24 @@ vehicles:
     hardware: {lidar: "landing lidar", camera: "survey camera"}
     env: {RUNWAY_HEADING: "345"}
 
+  # The search's quads on the sea defence: two kilometres out over the sea
+  # and back on one pack, a 10 Ah pack, simulated to match.
+  - name: sea-quad
+    kind: quad
+    role: patrol
+    replicas: 3
+    pads: ["51.96400,3.96500,5,0", "51.95700,3.96700,5,0", "51.95000,3.96950,5,0"]
+    stations: [dike, dike, dike]
+    hardware: {lidar: "down + forward + aft lidar", camera: "gimbal RGB camera", flow: "optical flow"}
+    env: {MAX_RADIUS_M: "2000"}
+    params: {BATT_CAPACITY: 10000, SIM_BATT_CAP_AH: 10}
+
 resources:
   sitl: {requests: {cpu: 300m, memory: 256Mi}, limits: {memory: 1Gi}}
   router: {requests: {cpu: 20m, memory: 32Mi}, limits: {memory: 128Mi}}
   app: {requests: {cpu: 50m, memory: 96Mi}, limits: {cpu: "1", memory: 256Mi}}
   controlPlane: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: "1", memory: 512Mi}}
+  ais: {requests: {cpu: 20m, memory: 48Mi}, limits: {cpu: 500m, memory: 128Mi}}
 
 nodeSelector: {}
 tolerations: []

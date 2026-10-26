@@ -106,6 +106,8 @@ spec:
             - {name: MAVLINK_URL, value: "tcp:127.0.0.1:5770"}
             # The bot's workspace is the sidecar's: pilot-<pod>/telemetry.json.
             - {name: TELEMETRY_FILE, value: "/workspaces/pilot-$(POD_NAME)/telemetry.json"}
+            # …and every other bot placed on this node (one a person adds in the panel) reads the same file.
+            - {name: TELEMETRY_DIR, value: /workspaces}
             - {name: ZONES_FILE, value: /etc/fleet/zones.json}
             - {name: LAYOUT_FILE, value: /etc/fleet/layout.json}
             - {name: CREW_URL, value: "http://{{ $base }}:8081"}

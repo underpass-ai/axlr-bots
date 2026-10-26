@@ -66,11 +66,15 @@ spec:
             - {name: INCIDENT_SECRET_FILE, value: /etc/fleet-secrets/incident/SECRET}
             - {name: APPROVER_CODE_FILE, value: /etc/fleet-secrets/approver/CODE}
             - {name: AUTO_RESTOCK, value: {{ ternary "1" "0" .Values.incident.autoRestock | quote }}}
+            # The bots the incident's webhooks call: the search's, apart from the port's.
+            - {name: DISPATCHER_BOT, value: {{ .Values.incident.bots.dispatcher | quote }}}
+            - {name: LOGISTICS_BOT, value: {{ .Values.incident.bots.logistics | quote }}}
+            - {name: REPORT_BOT, value: {{ .Values.incident.bots.reporter | quote }}}
             - {name: INCIDENT_MAX_PER_FLIGHT, value: {{ .Values.incident.maxPerFlight | quote }}}
             {{- end }}
             {{- if .Values.ais.enabled }}
-            - {name: AIS_KEY_FILE, value: /etc/fleet-secrets/ais/AISSTREAM_API_KEY}
-            - {name: AIS_BBOX, value: {{ .Values.ais.bbox | quote }}}
+            # The ships, from the fleet's ais service (templates/ais.yaml).
+            - {name: AIS_URL, value: "http://ais:8080"}
             {{- end }}
             {{- if .Values.vision.enabled }}
             # The ground station's image analysis: aerial imagery at each
@@ -100,9 +104,6 @@ spec:
             - {name: secret-{{ $name }}, mountPath: /etc/fleet-secrets/{{ $name }}, readOnly: true}
             {{- end }}
             {{- end }}
-            {{- if .Values.ais.enabled }}
-            - {name: secret-ais, mountPath: /etc/fleet-secrets/ais, readOnly: true}
-            {{- end }}
         {{- include "axlr-bots-node.inject.container" $bots | nindent 8 }}
       volumes:
         - name: photos
@@ -114,10 +115,6 @@ spec:
         - name: secret-{{ $name }}
           secret: {secretName: {{ $secret }}, optional: true, defaultMode: 0440}
         {{- end }}
-        {{- end }}
-        {{- if .Values.ais.enabled }}
-        - name: secret-ais
-          secret: {secretName: {{ .Values.ais.secret }}, optional: true, defaultMode: 0440}
         {{- end }}
         {{- include "axlr-bots-node.inject.volumes" $bots | nindent 8 }}
   volumeClaimTemplates:
@@ -141,12 +138,18 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
   ingressClassName: {{ .Values.base.ingress.className }}
+  {{- $hosts := prepend (.Values.base.ingress.extraHosts | default list) (required "base.ingress.host is required" .Values.base.ingress.host) }}
   rules:
-    - host: {{ required "base.ingress.host is required" .Values.base.ingress.host }}
+    {{- range $hosts }}
+    - host: {{ . }}
       http:
         paths:
           - {path: /, pathType: Prefix, backend: {service: {name: {{ $base }}, port: {name: http}}}}
+    {{- end }}
+  # One certificate per host: the first keeps <base>-tls.
   tls:
-    - hosts: [{{ .Values.base.ingress.host }}]
-      secretName: {{ $base }}-tls
+    {{- range $i, $host := $hosts }}
+    - hosts: [{{ $host }}]
+      secretName: {{ if eq $i 0 }}{{ $base }}-tls{{ else }}{{ $base }}-{{ $host | replace "." "-" }}-tls{{ end }}
+    {{- end }}
 {{- end }}
