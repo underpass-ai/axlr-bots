@@ -67,7 +67,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             Icon::Hourglass,
             expired_today.to_string(),
             "expired today",
-            if expired_today > 0 { Tone::Wait } else { Tone::Idle },
+            if expired_today > 0 { Tone::Late } else { Tone::Idle },
             Some(Message::FilterStatus(Some(TaskStatus::Expired))),
             tokens
         ),

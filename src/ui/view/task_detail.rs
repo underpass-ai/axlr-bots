@@ -89,7 +89,7 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     if !task.failure_reason.is_empty() {
         // An expired task is nobody's decision in time, not a crash.
         let (glyph, why, tone) = match task.status {
-            TaskStatus::Expired => (Icon::Hourglass, "Why it expired", Tone::Wait),
+            TaskStatus::Expired => (Icon::Hourglass, "Why it expired", Tone::Late),
             _ => (Icon::Cross, "Why it failed", Tone::Bad),
         };
         page = page.push(
