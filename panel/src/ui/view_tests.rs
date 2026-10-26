@@ -67,6 +67,7 @@ fn home_shows_the_counts_and_what_needs_a_person() {
             "gx10-ff95",
             "Latest tasks",
             "2/2 nodes online",
+            "127.0.0.1:7879",
         ],
     );
     let sent = messages_of_click(&app, "Review");

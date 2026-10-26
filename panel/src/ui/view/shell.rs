@@ -83,6 +83,9 @@ fn header<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     container(
         row![
             Space::new().width(Length::Fill),
+            row![icon(Icon::Nodes, 14.0, tokens.muted), muted(where_to(app), tokens)]
+                .spacing(6)
+                .align_y(Alignment::Center),
             row![
                 icon(Icon::Dot, 16.0, tone.color(&tokens)),
                 text(status).font(SEMIBOLD).size(SMALL)
@@ -99,6 +102,14 @@ fn header<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     .width(Length::Fill)
     .style(styles::raised(tokens))
     .into()
+}
+
+/// The control plane this window talks to, so two windows on two
+/// control planes are told apart.
+fn where_to(app: &App) -> String {
+    app.endpoint
+        .clone()
+        .unwrap_or_else(|| crate::ui::format::endpoint(&app.settings.api_url))
 }
 
 /// The dot and the word of the header: online, connecting, or why not.

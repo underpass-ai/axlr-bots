@@ -6,6 +6,7 @@ use super::{
 };
 use crate::application::{EventFeed, Fleet, PanelConfig, PanelError, TaskDetail};
 use crate::domain::{Decision, TaskId, TaskStatus};
+use crate::ui::format;
 
 /// How long a refresh may stay unanswered before the next tick tries again.
 const REFRESH_PATIENCE: i64 = 20;
@@ -19,6 +20,8 @@ pub struct App {
     pub screen: Screen,
     pub now: DateTime<Utc>,
     pub fleet: Option<Fleet>,
+    /// The control plane's address, `host:port`, once connected.
+    pub endpoint: Option<String>,
     /// Why the last refresh failed, until one succeeds.
     pub fleet_error: Option<PanelError>,
     pub last_refresh: Option<DateTime<Utc>>,
@@ -56,6 +59,7 @@ impl App {
             screen: if saved { launch.screen.clone() } else { Screen::Settings },
             now,
             fleet: None,
+            endpoint: None,
             fleet_error: None,
             last_refresh: None,
             refreshing_since: None,
@@ -94,6 +98,19 @@ impl App {
 
     pub fn connected(&self) -> bool {
         self.services.control_plane.is_some()
+    }
+
+    /// The window's title: the control plane once connected, and how many
+    /// tasks wait for a person.
+    pub fn window_title(&self) -> String {
+        let mut title = "AXLR Bots".to_string();
+        if let Some(endpoint) = &self.endpoint {
+            title = format!("{title} · {endpoint}");
+        }
+        match self.waiting_count() {
+            0 => title,
+            n => format!("{title} · {n} need you"),
+        }
     }
 
     /// Tasks waiting for a person, from the last refresh.
@@ -486,6 +503,7 @@ impl App {
                 match result {
                     Ok(connection) => {
                         self.services.control_plane = Some(connection.0);
+                        self.endpoint = Some(format::endpoint(&self.settings.api_url));
                         self.fleet_error = None;
                         if saved {
                             self.settings.saved = true;

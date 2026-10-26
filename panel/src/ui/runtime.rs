@@ -39,10 +39,7 @@ pub fn theme(app: &App) -> Theme {
 }
 
 pub fn title(app: &App) -> String {
-    match app.waiting_count() {
-        0 => "AXLR Bots".to_string(),
-        n => format!("AXLR Bots · {n} need you"),
-    }
+    app.window_title()
 }
 
 /// Starts the window: the brand's icon, the embedded typefaces, a size

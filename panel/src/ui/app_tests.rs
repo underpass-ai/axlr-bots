@@ -463,3 +463,12 @@ fn the_answer_turns_into_text_to_select_and_keeps_the_selection_on_reload() {
     assert_eq!(copied, vec!["There are 3 files.".to_string()]);
     assert_eq!(app.banner.as_ref().unwrap().title, "Copied");
 }
+
+#[test]
+fn the_window_names_its_control_plane() {
+    let mut app = app();
+    assert_eq!(app.window_title(), "AXLR Bots");
+    send(&mut app, Message::SettingsSave);
+    assert_eq!(app.endpoint.as_deref(), Some("127.0.0.1:7879"));
+    assert_eq!(app.window_title(), "AXLR Bots · 127.0.0.1:7879 · 1 need you");
+}
