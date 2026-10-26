@@ -8,7 +8,7 @@ data:
   zones.json: |
     {{- dict "zones" .Values.zones | toPrettyJson | nindent 4 }}
   layout.json: |
-    {{- dict "depot" .Values.base.depot "rtk" .Values.base.rtk "stations" .Values.base.stations | toPrettyJson | nindent 4 }}
+    {{- dict "depot" .Values.base.depot "rtk" .Values.base.rtk "stations" .Values.base.stations "coast" .Values.incident.coast | toPrettyJson | nindent 4 }}
   router.conf: |
     {{- .Files.Get "files/router.conf" | nindent 4 }}
   quad.parm: |
@@ -17,6 +17,15 @@ data:
     {{- .Files.Get "files/rover.parm" | nindent 4 }}
   plane.parm: |
     {{- .Files.Get "files/plane.parm" | nindent 4 }}
+  {{- range .Values.vehicles }}
+  {{- if .params }}
+  # The {{ .name }} group's own parameters, after its kind's.
+  {{ .name }}-group.parm: |
+    {{- range $k, $v := .params }}
+    {{ $k }} {{ $v }}
+    {{- end }}
+  {{- end }}
+  {{- end }}
   # AXLR's MCP configuration for each vehicle's sidecar: the pilot's tool on
   # loopback, every call asking a person (approval manual).
   mcp.json: |

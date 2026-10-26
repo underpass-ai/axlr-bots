@@ -1,0 +1,55 @@
+# Containers overboard off Maasvlakte 2: the fleet of the search, in a
+# namespace of its own so it shares nothing with the port's patrols.
+#
+#   helm install fleet examples/helm/drone-fleet -n sar-demo -f examples/helm/drone-fleet/values-sar.yaml
+#
+# A plane on the beach airstrip sweeps; three quads on the sea defence
+# look close; the supply rover brings packs and parts from the depot. The
+# vehicles and the containers are simulated; the imagery and the AIS ships
+# are real. The runbook is docs/runbooks/drone-fleet.md, "Containers
+# overboard".
+
+base:
+  bots: [dispatcher, logistics, reporter]
+  stations:
+    - {name: dike, label: "Sea-defence station", lat: 51.95700, lon: 3.96750, bays: 3, batteries: 3, parts: 3}
+    - {name: airstrip, label: "Beach airstrip", lat: 51.93350, lon: 3.97280, bays: 1, batteries: 2, parts: 2}
+
+incident:
+  enabled: true
+  # The sea defence's waterline (Esri imagery, 2026), south to north.
+  coast: [[51.925, 3.976], [51.935, 3.9715], [51.945, 3.967], [51.955, 3.9645], [51.965, 3.9616], [51.975, 3.958]]
+
+ais:
+  enabled: true
+
+zones:
+  - {name: coastline, lat: 51.9463, lon: 3.9706, radius_m: 600, for: [plane, quad], about: "the Maasvlakte 2 sea defence and beach"}
+
+vehicles:
+  - name: quad
+    kind: quad
+    role: patrol
+    replicas: 3
+    pads: ["51.96400,3.96500,5,0", "51.95700,3.96700,5,0", "51.95000,3.96950,5,0"]
+    stations: [dike, dike, dike]
+    hardware: {lidar: "down + forward + aft lidar", camera: "gimbal RGB camera", flow: "optical flow"}
+    # Two kilometres out over the sea and back on one pack: a 10 Ah pack, simulated to match.
+    env: {MAX_RADIUS_M: "2000"}
+    params: {BATT_CAPACITY: 10000, SIM_BATT_CAP_AH: 10}
+  - name: supply
+    kind: rover
+    role: supply
+    replicas: 1
+    pads: ["51.94020,4.00500,5,0"]
+    stations: [depot]
+    hardware: {lidar: "forward + aft lidar", camera: "Intel RealSense D455 depth + RGB"}
+    env: {MAX_RADIUS_M: "3500", MAX_SPEED_M_S: "10", CARRY_BATTERIES: "8", CARRY_PARTS: "10"}
+  - name: plane
+    kind: plane
+    role: patrol
+    replicas: 1
+    pads: ["51.93350,3.97280,5,345"]
+    stations: [airstrip]
+    hardware: {lidar: "landing lidar", camera: "survey camera"}
+    env: {RUNWAY_HEADING: "345"}

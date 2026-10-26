@@ -60,7 +60,7 @@ spec:
           env:
             - {name: VEHICLE_KIND, value: {{ $group.kind | quote }}}
             - {name: HOMES, value: {{ join ";" $group.pads | quote }}}
-            - {name: EXTRA_DEFAULTS, value: "/etc/sitl/{{ $group.kind }}.parm"}
+            - {name: EXTRA_DEFAULTS, value: "/etc/sitl/{{ $group.kind }}.parm{{ if $group.params }},/etc/sitl/group.parm{{ end }}"}
             - name: POD_INDEX
               valueFrom: {fieldRef: {fieldPath: "metadata.labels['apps.kubernetes.io/pod-index']"}}
           securityContext:
@@ -73,6 +73,9 @@ spec:
           volumeMounts:
             - {name: sitl-data, mountPath: /data}
             - {name: config, mountPath: /etc/sitl/{{ $group.kind }}.parm, subPath: {{ $group.kind }}.parm, readOnly: true}
+            {{- if $group.params }}
+            - {name: config, mountPath: /etc/sitl/group.parm, subPath: {{ $group.name }}-group.parm, readOnly: true}
+            {{- end }}
         - name: router
           image: {{ $root.Values.images.sitl }}
           command: ["/usr/local/bin/mavlink-routerd", "-c", "/etc/mavlink-router/router.conf"]
