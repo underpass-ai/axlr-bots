@@ -12,8 +12,9 @@ import (
 // decided in time (vision §8.2, §14). The bot's approvals say what
 // happens: deny (the default) hands the session a denial under a new
 // execution, as a person's deny would, so the session goes on without
-// the call; cancel ends the task Cancelled. A paused bot cannot carry a
-// denial, so its expired task is cancelled. Each expiry publishes
+// the call (a run that then fails ends the task Expired, not Failed);
+// cancel ends the task Expired at once. A paused bot cannot carry a
+// denial, so its expired task ends Expired too. Each expiry publishes
 // bot.approval.expired and is audited. The deadline is on the task, so
 // a restart loses none: the first pass after it expires what came due
 // while the control plane was down.
@@ -108,7 +109,7 @@ func (uc ExpireApprovals) Expire(ctx context.Context, id domain.TaskID) (Expired
 			return ExpiredApproval{}, err
 		}
 		if action == domain.ExpireCancel {
-			if err := task.Cancel(now); err != nil {
+			if err := task.EndExpired(now); err != nil {
 				return ExpiredApproval{}, err
 			}
 		}
@@ -128,7 +129,7 @@ func (uc ExpireApprovals) Expire(ctx context.Context, id domain.TaskID) (Expired
 		}
 	} else if action == domain.ExpireCancel {
 		// The expiry was recorded; the bot was paused before its denial.
-		if err := task.Cancel(now); err != nil {
+		if err := task.EndExpired(now); err != nil {
 			return ExpiredApproval{}, err
 		}
 		if err := uc.deps.Tasks.Save(ctx, task); err != nil {
@@ -136,8 +137,8 @@ func (uc ExpireApprovals) Expire(ctx context.Context, id domain.TaskID) (Expired
 		}
 	}
 	if action == domain.ExpireCancel {
-		reason := "approval expired at " + wait.Deadline.UTC().Format(time.RFC3339)
-		if err := uc.rec.executionEvent(ctx, domain.EventTaskCancelled, bot, task.ID(), "", task.CorrelationID(), map[string]any{"reason": reason}); err != nil {
+		payload := map[string]any{"reason": task.FailureReason(), "deadline": wait.Deadline, "action": action.String()}
+		if err := uc.rec.executionEvent(ctx, domain.EventTaskExpired, bot, task.ID(), "", task.CorrelationID(), payload); err != nil {
 			return ExpiredApproval{}, err
 		}
 		return ExpiredApproval{TaskID: id, Action: action, Task: task}, nil

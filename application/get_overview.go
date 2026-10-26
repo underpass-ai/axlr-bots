@@ -75,7 +75,7 @@ func (uc GetOverview) Execute(ctx context.Context, since time.Time) (Overview, e
 func taskStatuses() []string {
 	return []string{
 		string(domain.TaskPending), string(domain.TaskRunning), string(domain.TaskWaitingApproval),
-		string(domain.TaskCompleted), string(domain.TaskFailed), string(domain.TaskCancelled),
+		string(domain.TaskCompleted), string(domain.TaskFailed), string(domain.TaskExpired), string(domain.TaskCancelled),
 	}
 }
 

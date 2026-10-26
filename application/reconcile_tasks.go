@@ -133,7 +133,7 @@ func (uc ReconcileTasks) reconcile(ctx context.Context, task domain.Task, grace 
 		return false, err
 	}
 	payload := map[string]any{"executionId": execution.ID().String(), "reason": "reconciled"}
-	if err := uc.rec.executionEvent(ctx, domain.EventTaskFailed, bot, task.ID(), execution.ID(), task.CorrelationID(), payload); err != nil {
+	if err := uc.rec.executionEvent(ctx, endEvent(task), bot, task.ID(), execution.ID(), task.CorrelationID(), payload); err != nil {
 		return false, err
 	}
 	details := map[string]string{"execution": execution.ID().String(), "age": age.Round(time.Second).String()}

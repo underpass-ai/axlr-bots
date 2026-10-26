@@ -160,6 +160,19 @@ func apply(task *domain.Task, execution *domain.Execution, report ExecutionRepor
 		if err := execution.Fail(reason, report.Result, report.Usage, report.TracePath, ended); err != nil {
 			return "", err
 		}
-		return domain.EventTaskFailed, task.Fail(reason, ended)
+		if err := task.Fail(reason, ended); err != nil {
+			return "", err
+		}
+		return endEvent(*task), nil
 	}
+}
+
+// endEvent names the event that tells a task ended without completing:
+// bot.task.expired when nobody decided its call in time, bot.task.failed
+// otherwise.
+func endEvent(task domain.Task) domain.EventType {
+	if task.Status() == domain.TaskExpired {
+		return domain.EventTaskExpired
+	}
+	return domain.EventTaskFailed
 }

@@ -52,14 +52,14 @@ A manual submission carries the caller's key (`task submit --key`, the `Idempote
   "since": "2026-10-25T00:00:00+02:00",
   "nodes": {"Registered": 0, "Online": 2, "Offline": 0, "Revoked": 0},
   "bots": {"Draft": 0, "Registered": 0, "Enabled": 3, "Paused": 1},
-  "tasks": {"Pending": 0, "Running": 1, "WaitingApproval": 1, "Completed": 58, "Failed": 2, "Cancelled": 1},
-  "tasksSince": {"Pending": 0, "Running": 1, "WaitingApproval": 1, "Completed": 4, "Failed": 0, "Cancelled": 0},
+  "tasks": {"Pending": 0, "Running": 1, "WaitingApproval": 1, "Completed": 58, "Failed": 2, "Expired": 5, "Cancelled": 1},
+  "tasksSince": {"Pending": 0, "Running": 1, "WaitingApproval": 1, "Completed": 4, "Failed": 0, "Expired": 4, "Cancelled": 0},
   "executionsSince": 6,
   "costUsdSince": 0.0123
 }
 ```
 
-`tasks` counts every task by its status now; `tasksSince` the tasks created since the moment; `executionsSince` and `costUsdSince` the executions started since then and the cost they reported. The `axlr-bots overview` command prints the same.
+`tasks` counts every task by its status now; `tasksSince` the tasks created since the moment. `Expired` is a task nobody decided in time ([approvals](../runbooks/approvals.md#expiry)), counted apart from `Failed`; `executionsSince` and `costUsdSince` the executions started since then and the cost they reported. The `axlr-bots overview` command prints the same.
 
 ## Artifacts
 

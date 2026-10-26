@@ -6,8 +6,8 @@ At the `act-with-approval` level every allowed write or command is a person's de
 Running ──needs_decision──▶ WaitingApproval ──approve──▶ Running (decide execution) ──▶ Completed / Failed
                               │  deadline = stop + ttl     ──deny────▶ Running (decide execution) ──▶ …
                               │  notify each target
-                              └─ deadline passed ──onExpire deny──▶ Running (a denial)  ──▶ …
-                                                 └─onExpire cancel─▶ Cancelled
+                              └─ deadline passed ──onExpire deny──▶ Running (a denial)  ──▶ Completed / Expired
+                                                 └─onExpire cancel─▶ Expired
                                  a decision after the deadline: 409 approval_expired, nothing runs
 ```
 
@@ -41,10 +41,12 @@ The deadline is when the task stopped plus the bot's `approvals.ttl` (default `1
 
 | `onExpire` | What happens | Events |
 |---|---|---|
-| `deny` (default) | a new execution hands the session a denial, exactly as `task deny` would (queued for the node, or run in process); the session goes on without the call | `bot.approval.expired`, `bot.task.decided` (`decision: deny`, `reason: approval expired`), then the outcome |
-| `cancel` | the task ends `Cancelled`; the session stays where it is | `bot.approval.expired`, `bot.task.cancelled` |
+| `deny` (default) | a new execution hands the session a denial, exactly as `task deny` would (queued for the node, or run in process); the session goes on without the call. A run that completes ends the task `Completed`; one that fails ends it `Expired`, with the run's error as its `failureReason` | `bot.approval.expired`, `bot.task.decided` (`decision: deny`, `reason: approval expired`), then `bot.task.completed` or `bot.task.expired` |
+| `cancel` | the task ends `Expired` (`failureReason`: the call and the deadline); the session stays where it is | `bot.approval.expired`, `bot.task.expired` (`action: cancel`) |
 
-A paused bot cannot carry a denial: its expired task is cancelled. A task that waited before approvals had deadlines gets one at the daemon's first pass: when it began to wait plus the bot's `ttl`.
+`Expired` is its own end, apart from `Failed`: nobody decided the call in time, so the call never ran. It is counted apart in the [overview](../reference/operator-api.md#the-overview) and listed with `task list --status Expired`. A delegated task still waiting when its delegation's deadline comes ends `Expired` too. A task that failed after a later wait was decided ends `Failed`: only the last wait counts. Tasks that ended before this release keep the status they were stored with.
+
+A paused bot cannot carry a denial: its expired task ends `Expired` at once. A task that waited before approvals had deadlines gets one at the daemon's first pass: when it began to wait plus the bot's `ttl`.
 
 **A late decision authorises nothing** (vision §14). After the deadline, `approve` and `deny` are refused with `409 approval_expired` and the call never runs, whether the daemon has carried out the expiry yet or not; the refusal is audited (`task.decide`, denied).
 

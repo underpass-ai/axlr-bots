@@ -50,7 +50,7 @@ func (uc GetDelegation) Execute(ctx context.Context, node domain.NodeID, executi
 		if child.Status() == domain.TaskCompleted {
 			answer.Answer = ran.Result().Answer
 		}
-		if answer.FailureReason == "" && child.Status() == domain.TaskFailed {
+		if answer.FailureReason == "" && (child.Status() == domain.TaskFailed || child.Status() == domain.TaskExpired) {
 			answer.FailureReason = ran.FailureReason()
 		}
 	}

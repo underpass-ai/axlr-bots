@@ -91,7 +91,7 @@ func (uc RevokeNode) failExecutions(ctx context.Context, node domain.Node, now t
 			return nil, err
 		}
 		payload := map[string]any{"executionId": execution.ID().String(), "reason": "revoked", "nodeId": node.ID().String()}
-		if err := uc.rec.executionEvent(ctx, domain.EventTaskFailed, bot, task.ID(), execution.ID(), task.CorrelationID(), payload); err != nil {
+		if err := uc.rec.executionEvent(ctx, endEvent(task), bot, task.ID(), execution.ID(), task.CorrelationID(), payload); err != nil {
 			return nil, err
 		}
 		failed = append(failed, task.ID())

@@ -199,7 +199,7 @@ func taskList(ctx context.Context, service unixapi.Service, args []string, stdou
 	flags := flag.NewFlagSet("task list", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	bot := flags.String("bot", "", "only this bot's tasks")
-	status := flags.String("status", "", "only tasks in this status (Pending, Running, WaitingApproval, Completed, Failed, Cancelled)")
+	status := flags.String("status", "", "only tasks in this status (Pending, Running, WaitingApproval, Completed, Failed, Expired, Cancelled)")
 	since := flags.String("since", "", "only tasks created at or after this RFC 3339 time")
 	limit := flags.Int("limit", 0, "how many of the newest tasks (default 100, at most 1000)")
 	if err := flags.Parse(args); err != nil {
