@@ -1,14 +1,15 @@
 # Runbook: a port's fleet of autonomous vehicles
 
-A fleet of simulated autonomous vehicles at the Port of Rotterdam (Maasvlakte 2), operated by AXLR Bots: quadcopters, ground rovers, a supply rover and a fixed-wing plane, each an ArduPilot 4.7.2 SITL with the node agent as its sidecar, maintenance stations that run out of battery packs and parts, and a live map. Every launch waits for a person's approval in the panel. The chart is [`examples/helm/drone-fleet`](../../examples/helm/drone-fleet), the services and the bots are in [`examples/drone-fleet`](../../examples/drone-fleet).
+A fleet of simulated autonomous vehicles at the Port of Rotterdam (Maasvlakte 2), operated by AXLR Bots: quadcopters, ground rovers, a supply rover and a fixed-wing plane, each an ArduPilot 4.7.2 SITL with the node agent as its sidecar, maintenance stations that run out of battery packs and parts, the real ships around the port from AIS, and a live map. One fleet does two jobs: the port's patrols, and the search for containers lost overboard (section 7). Any bot on a vehicle can send it to a ship AIS hears (section 10). Every launch waits for a person's approval in the panel or on a phone. The chart is [`examples/helm/drone-fleet`](../../examples/helm/drone-fleet), the services and the bots are in [`examples/drone-fleet`](../../examples/drone-fleet).
 
 ```text
- operator (panel) ──approve──┐                               flota.<domain> (live map)
-                              ▼                                       ▲
- webhook / timer ──▶ fleet-cp (axlr-bots, in the namespace) ◀──mTLS── fleet-base-0: fleet_base.py + axlr-node
-                      │  dispatcher, logistics: delegate          │   stations' stock, bays, depot, RTK base
-                      ▼                                           │   bots: dispatcher, logistics (observe)
-   quad-0..2, rover-0..1, supply-0, plane-0 (one pod per vehicle) ─┘
+ operator (panel, phone /m) ──approve──┐                     flota.<domain>, sar.<domain> (live map)
+                                        ▼                             ▲
+ webhook / timer ──▶ fleet-cp (axlr-bots, in the namespace) ◀──mTLS── fleet-base-0: fleet_base.py + axlr-node ◀── ais (Deployment):
+                      │  dispatcher, logistics,                   │   stations' stock, bays, depot, RTK base      aisstream.io, the ships
+                      │  sar-dispatcher, logistics-demo: delegate │   bots: dispatcher, logistics, sar-dispatcher,
+                      ▼                                           │         logistics-demo, reporter
+   quad-0..2, rover-0..1, supply-0, plane-0, sea-quad-0..2 (one pod per vehicle) ─┘
    ├─ sitl      ArduCopter X / ArduRover / ArduPlane, RTK GPS, lidars, optical flow, camera
    ├─ router    mavlink-router: 5770 for the pilot and anyone else
    ├─ pilot     vehicle_pilot.py, the companion computer: telemetry.json, the limits, MCP run_mission on 127.0.0.1:8765
@@ -23,7 +24,8 @@ A fleet of simulated autonomous vehicles at the Port of Rotterdam (Maasvlakte 2)
 | `logistics` bot | reads the stations' stock and sends the supply rover on a delivery run |
 | `pilot-<vehicle>` bots | read `telemetry.json`; a quad's or the plane's plans the route in metres from home, a rover's picks one of its precomputed routes; call `run_mission` once: that call waits for a person |
 | `vehicle_pilot.py` | refuses a route outside the geofence, the altitude band or the speed range, and a vehicle that is not ready; uploads the mission over MAVLink, launches it, and after landing queues the vehicle at its station: inspection, then a fresh battery pack |
-| `fleet_base.py` | polls every vehicle, hands out the bays (a service takes a pack and a part from the station), moves the supply rover's cargo when it reaches a station, writes `fleet.json` for the two bots and serves the map |
+| `fleet_base.py` | polls every vehicle, hands out the bays (a service takes a pack and a part from the station), moves the supply rover's cargo when it reaches a station, writes `fleet.json` for the base's bots and serves the map |
+| `ais` service | the one connection to aisstream.io; serves the ships to the base, which shows them and hands them to the bots and the vehicles |
 
 The safety limits live in the companion computer, not in the model: a refused route is the tool's error, which the model reads, and nothing moved.
 
@@ -33,7 +35,7 @@ The safety limits live in the companion computer, not in the model: a refused ro
 - The images in a registry the cluster pulls from. On wrx80 they were built with podman and pushed to the lab registry:
 
 ```bash
-podman build -t $R/fleet-app:0.5.2 examples/drone-fleet                                         # vehicle_pilot.py, fleet_base.py, the map, the 3D view, the search
+podman build -t $R/fleet-app:0.6.0 examples/drone-fleet                                         # vehicle_pilot.py, fleet_base.py, ais.py, the map, the 3D view, the search
 podman build -t $R/fleet-sitl:4.7.2 examples/drone-fleet/sitl                                    # SITL (checked sha256) + mavlink-router
 podman build -f examples/drone-fleet/control-plane.Dockerfile -t $R/control-plane:0.2.0-fleet .  # axlr-bots
 ```
@@ -53,14 +55,14 @@ helm install fleet examples/helm/drone-fleet -n port-fleet \
 
 The release must be called `fleet`: the nodes dial `https://fleet-cp:7878` (`axlr-bots-node.controlPlane.url`). The control plane's first start runs `ca init`; the sidecars wait for their tokens.
 
-## 2. Enroll the eight nodes
+## 2. Enroll the eleven nodes
 
 One token per pod, into one Secret, without printing them:
 
 ```bash
 python3 - <<'EOF'
 import base64, json, subprocess
-nodes = ["fleet-base-0", "quad-0", "quad-1", "quad-2", "rover-0", "rover-1", "supply-0", "plane-0"]
+nodes = ["fleet-base-0", "quad-0", "quad-1", "quad-2", "rover-0", "rover-1", "supply-0", "plane-0", "sea-quad-0", "sea-quad-1", "sea-quad-2"]
 cli = ["kubectl", "-n", "port-fleet", "exec", "fleet-cp-0", "-c", "control-plane", "--", "/usr/local/bin/axlr-bots", "--state", "/var/lib/axlr-bots"]
 data = {n: base64.b64encode(json.loads(subprocess.run(cli + ["node", "enroll-token", "--node-id", n, "--ttl", "2h"], capture_output=True, text=True, check=True).stdout)["token"].encode()).decode() for n in nodes}
 secret = {"apiVersion": "v1", "kind": "Secret", "metadata": {"name": "fleet-enrollment", "namespace": "port-fleet"}, "data": data}
@@ -68,7 +70,7 @@ subprocess.run(["kubectl", "apply", "-f", "-"], input=json.dumps(secret), text=T
 EOF
 ```
 
-Check: `node list` (through the control plane pod, below) shows the eight `Online` within a minute or two, as kubelet refreshes the Secret's volume.
+Check: `node list` (through the control plane pod, below) shows the eleven `Online` within a minute or two, as kubelet refreshes the Secret's volume.
 
 ## 3. Register the bots
 
@@ -78,10 +80,12 @@ reg() { kubectl -n port-fleet exec -i fleet-cp-0 -c control-plane -- /busybox/sh
 cd examples/drone-fleet/bots
 reg dispatcher < dispatcher.json
 reg logistics < logistics.json
-for v in quad-0 quad-1 quad-2 plane-0; do sed "s/VEHICLE/$v/g" pilot.json | reg pilot-$v; done
+for v in quad-0 quad-1 quad-2 plane-0 sea-quad-0 sea-quad-1 sea-quad-2; do sed "s/VEHICLE/$v/g" pilot.json | reg pilot-$v; done
 for v in rover-0 rover-1; do sed "s/VEHICLE/$v/g" rover-pilot.json | reg pilot-$v; done
 sed "s/VEHICLE/supply-0/g" supply-pilot.json | reg pilot-supply-0
 ```
+
+The search's bots (`sar-dispatcher`, `logistics-demo`, `reporter`) carry webhook secrets: section 7 registers them.
 
 The pilots are `act-with-approval` with `local_read` (only `telemetry.json`) and `run_mission`; a rover's pilot picks one of its rover's precomputed routes and never plans waypoints; the dispatcher and logistics are `observe`, with the vehicles' pilots as their delegation targets.
 
@@ -123,8 +127,8 @@ Overpass ─▶ fetch_osm.py ─▶ prepare.py (shapely) ─▶ build_scene.py (
 To rebuild it, follow the [port3d README](../../examples/drone-fleet/port3d/README.md), then the fleet-app image and the digest in `values.yaml`:
 
 ```bash
-podman build -t $R/fleet-app:0.5.2 examples/drone-fleet
-podman push --digestfile /tmp/digest $R/fleet-app:0.5.2
+podman build -t $R/fleet-app:0.6.0 examples/drone-fleet
+podman push --digestfile /tmp/digest $R/fleet-app:0.6.0
 helm upgrade fleet examples/helm/drone-fleet -n port-fleet -f values-in-use.yaml   # helm get values fleet -n port-fleet -o yaml
 ```
 
@@ -134,7 +138,7 @@ The image is the vehicles' too: an upgrade restarts every vehicle, and a task pa
 
 ## 7. Containers overboard
 
-A search at sea, run by the same bots on a fleet of its own: a vessel calls in that it lost containers off Maasvlakte 2, the containers drift with the wind and the current, a plane sweeps the area and quads confirm what it saw, every takeoff waits for a person on a phone, and a report comes back at the end. **It is a simulation**: the vehicles and the containers are simulated; the aerial imagery and the AIS ships are real. Every page shows it, and so does the report's first line. The precedent is real: in January 2019 the MSC Zoe lost about 342 containers north of the Wadden Islands.
+A search at sea, run on the same fleet by bots of its own: a vessel calls in that it lost containers off Maasvlakte 2, the containers drift with the wind and the current, a plane sweeps the area and quads confirm what it saw, every takeoff waits for a person on a phone, and a report comes back at the end. **It is a simulation**: the vehicles and the containers are simulated; the aerial imagery and the AIS ships are real. Every page shows it, and so does the report's first line. The precedent is real: in January 2019 the MSC Zoe lost about 342 containers north of the Wadden Islands.
 
 ```text
  vessel ──POST /api/incident──▶ fleet base: drift.py starts the sea at the loss, runs it to now
@@ -159,53 +163,50 @@ A search at sea, run by the same bots on a fleet of its own: a vessel calls in t
 | `patterns.py` | `run_mission`'s `pattern`: `expanding_square` or `parallel_track` aimed at a target the base names (`datum`, `S3`), led by the target's drift for the time the vehicle needs to get there, checked like any route |
 | `control_plane.py`, `approvals.py` | the base fires the bots' webhooks, adds up the model cost of every task since the call, and relays the phone's decisions, with the operator token from a Secret |
 | `ais.py` | one websocket to aisstream.io for the port and its approaches; the ships go into the map's stream |
-| `bots/sar/` | `dispatcher` (observe: the plane sweeps, the nearest quad within 1800 m confirms), `logistics` (with a `restock` webhook), `reporter` (propose: writes the report inline with `axlr_deliver`) |
+| `bots/sar/` | `sar-dispatcher` (observe: the plane sweeps, the nearest sea-defence quad within 1800 m confirms), `logistics-demo` (with a `restock` webhook), `reporter` (propose: writes the report inline with `axlr_deliver`). The port's `dispatcher` and `logistics` keep their own jobs; the base calls the search's by the names in `incident.bots` |
 
 The bots never read the truth: `fleet.json` gives them the datum, its drift, the open sightings with their predicted position and each vehicle's distance to each target. The containers on the map are labelled as the simulation's.
 
-### Install it in a namespace of its own
+### Turn it on in the fleet
+
+`values.yaml` already holds the search: the sea-defence station and its three quads (`sea-quad-0..2`: 10 Ah packs, a 2 km geofence), the plane on the beach airstrip and the supply rover at the depot (shared with the port), `incident` and `ais` on, and the base's five bots (`base.bots`). What it needs by hand is the Secrets, each optional to the pod, so the fleet starts without them and picks them up when kubelet refreshes the volume:
 
 ```bash
-kubectl create namespace sar-demo
-grep '^OPENROUTER_API_KEY=' ~/.config/axlr-bots/env | cut -d= -f2- | tr -d '\n' \
-  | kubectl -n sar-demo create secret generic fleet-model --from-file=OPENROUTER_API_KEY=/dev/stdin
-head -c 24 /dev/urandom | base64 | tr -d '/+=\n' | kubectl -n sar-demo create secret generic fleet-webhook --from-file=SECRET=/dev/stdin
-tr -d '\n' < ~/.config/axlr-bots/sar-incident-secret | kubectl -n sar-demo create secret generic fleet-incident --from-file=SECRET=/dev/stdin
-tr -d '\n' < ~/.config/axlr-bots/sar-approver-code | kubectl -n sar-demo create secret generic fleet-approver --from-file=CODE=/dev/stdin
-tr -d '\n' < ~/.config/axlr-bots/aisstream.key | kubectl -n sar-demo create secret generic fleet-ais --from-file=AISSTREAM_API_KEY=/dev/stdin
-helm install fleet examples/helm/drone-fleet -n sar-demo -f examples/helm/drone-fleet/values-sar.yaml
+ns=port-fleet
+head -c 24 /dev/urandom | base64 | tr -d '/+=\n' | kubectl -n $ns create secret generic fleet-webhook --from-file=SECRET=/dev/stdin
+tr -d '\n' < ~/.config/axlr-bots/sar-incident-secret | kubectl -n $ns create secret generic fleet-incident --from-file=SECRET=/dev/stdin
+tr -d '\n' < ~/.config/axlr-bots/sar-approver-code | kubectl -n $ns create secret generic fleet-approver --from-file=CODE=/dev/stdin
+tr -d '\n' < ~/.config/axlr-bots/aisstream.key | kubectl -n $ns create secret generic fleet-ais --from-file=AISSTREAM_API_KEY=/dev/stdin
 ```
 
-`values-sar.yaml` puts three quads on the sea defence (10 Ah packs, a 2 km geofence), the plane on the beach airstrip and the supply rover at the depot, turns on `incident` and `ais`, and gives the base three bots (`base.bots`). Every Secret is optional to the pod, so it starts without them and picks them up when kubelet refreshes the volume.
-
-Then enroll the six nodes (step 2, with `fleet-base-0 quad-0 quad-1 quad-2 supply-0 plane-0`) and give the base the operator API, without printing the token:
+On the lab, `fleet-webhook` already held the port's `mission` webhook secret (key `secret`); the base reads key `SECRET`, so it got the same value under that key. Then give the base the operator API, without printing the token:
 
 ```bash
 python3 - <<'PY'
 import base64, json, subprocess
-ns = "sar-demo"
+ns = "port-fleet"
 cat = lambda p: subprocess.run(["kubectl", "-n", ns, "exec", "fleet-cp-0", "-c", "control-plane", "--", "/busybox/cat", p], capture_output=True, check=True).stdout
 data = {"ca.crt": base64.b64encode(cat("/var/lib/axlr-bots/ca/ca.crt")).decode(), "api.token": base64.b64encode(cat("/var/lib/axlr-bots/api.token").strip()).decode()}
 subprocess.run(["kubectl", "apply", "-f", "-"], input=json.dumps({"apiVersion": "v1", "kind": "Secret", "metadata": {"name": "fleet-operator", "namespace": ns}, "data": data}), text=True, check=True)
 PY
 ```
 
-Register the bots with the webhook secret put in where the definitions say `WEBHOOK_SECRET` (the `reg` function of step 3, with its namespace changed):
+Register the search's bots with the webhook secret put in where the definitions say `WEBHOOK_SECRET` (the `reg` function of step 3):
 
 ```bash
-SECRET=$(kubectl -n sar-demo get secret fleet-webhook -o jsonpath='{.data.SECRET}' | base64 -d)
+SECRET=$(kubectl -n port-fleet get secret fleet-webhook -o jsonpath='{.data.SECRET}' | base64 -d)
 cd examples/drone-fleet/bots
-for b in dispatcher logistics reporter; do sed "s/WEBHOOK_SECRET/$SECRET/g" sar/$b.json | reg $b; done
-for v in quad-0 quad-1 quad-2 plane-0; do sed "s/VEHICLE/$v/g" pilot.json | reg pilot-$v; done
-sed "s/VEHICLE/supply-0/g" supply-pilot.json | reg pilot-supply-0
+for b in sar-dispatcher logistics-demo reporter; do sed "s/WEBHOOK_SECRET/$SECRET/g" sar/$b.json | reg $b; done
 unset SECRET
 ```
 
 The dispatcher's budget is sized for the way grants work today: each child gets `floor(share × (pool − granted))`, so a call that delegates to four pilots of 10 model calls and 6 tool calls needs a pool of about 2 × 4 × that, 80 and 48. [axlr-bots#14](https://github.com/underpass-ai/axlr-bots/issues/14) proposes an even split instead.
 
+Until 26 Oct 2026 the search ran in a namespace of its own, `sar-demo`, with `values-sar.yaml`. The two fleets are one now; `sar-demo` was scaled to zero, and its history (tasks, executions, the incident reports) was copied out first.
+
 ### Run a search
 
-The map, the 3D view and the phone page are the base's port 8080 (`kubectl -n sar-demo port-forward svc/fleet-base 18090:8080`); the panel is the control plane's 7879, as in step 4. A vessel's call:
+The map, the 3D view and the phone page are the base's port 8080 (`kubectl -n port-fleet port-forward svc/fleet-base 18090:8080`); the panel is the control plane's 7879, as in step 4. A vessel's call:
 
 ```bash
 curl -X POST http://127.0.0.1:18090/api/incident -H "X-Incident-Secret: $(cat ~/.config/axlr-bots/sar-incident-secret)" \
@@ -223,7 +224,7 @@ curl -X POST http://127.0.0.1:18090/api/incident -H "X-Incident-Secret: $(cat ~/
 
 `POST /api/incident/end` (same header) ends a search early; the report follows.
 
-On the lab the same pages answer on HTTPS at `https://sar.underpassai.com` (Route 53 A record to the ingress controller's LAN address, `base.ingress.enabled=true`, `base.ingress.clusterIssuer=letsencrypt-prod-r53`); `/m` and `/api/approvals` still need the approver's code, and `/api/incident` the incident secret.
+On the lab the same pages answer on HTTPS at `https://flota.underpassai.com` and `https://sar.underpassai.com`, one map under two names (Route 53 A records to the ingress controller's LAN address; `base.ingress.host`, `base.ingress.extraHosts`, one certificate each from `letsencrypt-prod-r53`); `/m` and `/api/approvals` still need the approver's code, and `/api/incident` the incident secret.
 
 ### The first run (26 Oct 2026, a rehearsal)
 
@@ -344,6 +345,39 @@ The swing differs from run to run, and the lookahead does not decide it. Nine ru
 
 A bare SITL rover, as the live fleet runs it, arms with the new `rover.parm` and drives as before: its forward rangefinders read nothing in range, so proximity is healthy and empty.
 
+## 10. Send a vehicle to a ship
+
+The ships AIS hears are targets for any bot that flies a quad or the plane, the pilots and the bots a person adds in the panel alike. The `ais` service holds the stream; the base hands the ships on:
+
+| Who reads | Where | What |
+|---|---|---|
+| the base's bots | `fleet.json` → `ships` | the 40 nearest the depot: MMSI, name, type, length, position, speed, course |
+| every bot on a vehicle | `telemetry.json` → `ships` | the 20 nearest the vehicle, in metres from home, with `distance_m` and `inside_geofence` |
+| `run_mission` | `pattern.target` | any ship AIS hears, by MMSI or name; `orbit` (a circle of `points` at `radius_m`) or a search pattern, led by the ship's course and speed |
+
+The pilot writes `telemetry.json` into the workspace of every bot on its node (`TELEMETRY_DIR`), so a bot needs no file of its own. A ship beyond the geofence is the tool's error, with the distance now and on arrival; the phone page shows the route of any bot's call, by the node the bot runs on.
+
+### From the panel
+
+| Field (Bots → New bot) | Put |
+|---|---|
+| Name | e.g. `operador-quad-1` |
+| Mission | "You fly quad-1. Read telemetry.json and use run_mission for what the operator asks." |
+| Level | `act-with-approval` |
+| Tools | `local_read`, `run_mission` |
+| Model | `anthropic/claude-haiku-5.5` |
+| Runs on | the vehicle's node, e.g. `quad-1` |
+| Approvals | a TTL (e.g. 1h), on expiry deny |
+
+Then Tasks → New task on that bot: "go to the ship CONESTE". The call waits in the panel and on `/m`.
+
+### The first run (26 Oct 2026)
+
+| Order | What happened |
+|---|---|
+| "ve al barco CONESTE" (temporary bot on quad-0, 740 m away) | the bot read the ship's position in `telemetry.json` and called `run_mission` with one waypoint over it, 20 m up; the phone page showed the route; approved on `/m`; quad-0 took off |
+| "ve al barco OOCL CHONGQING" (3.2 km away) | the bot read `inside_geofence: false`, called nothing, and answered with the distance and the 1500 m limit |
+
 ## The look
 
 The map, the 3D view and the phone page share one stylesheet, [`app/static/theme.css`](../../examples/drone-fleet/app/static/theme.css): the AXLR Bots emblem, ink on a warm white page (graphite with `?theme=dark` or a dark system theme), the emblem's copper as the one accent, one colour per status in a pill that names it, [Lexend](https://www.lexend.com) for words and [DotGothic16](https://github.com/fontworks-fonts/DotGothic16) for the counters (both SIL Open Font License, served from `app/static/fonts` with their licences). The viewer sits in a rounded frame; `?hud=0` drops the frame and the side column for a recording. The **SIMULATION** label and the imagery's attribution stay on every page, the phone's route maps included; the panel's own look is the same palette ([axlr-bots-panel](https://github.com/underpass-ai/axlr-bots-panel)).
@@ -377,4 +411,6 @@ Each analysed photo carries its source and credit (`imagery`, `credit`) in the b
 - PDOK's aerial photo reaches about 2 km out to sea west of Maasvlakte 2 (imagery at 2 km, white at 2.5 km). The example call keeps the containers within 1.7 km of the shore for the whole search; the plane's leg ends past 2 km take Esri's frames, and the map's PDOK layer is white there (the layer control has Esri too).
 - The drift is one wind and one current for the whole area and the whole search; the containers are drawn into imagery taken on a calm day, so the sea in the photos does not match the storm.
 - The vision model sees the containers the simulation draws; how well it would see a real one in a real sea is not measured here.
-- aisstream.io allows a few connections per key; the base keeps one and drops a ship after 15 minutes without news.
+- aisstream.io allows a few connections per key; the `ais` service keeps one (its Deployment is `Recreate`, never two at once) and drops a ship after 15 minutes without news.
+- A NetworkPolicy cannot name a host: the `ais` pod may reach DNS and HTTPS anywhere outside the cluster and the private ranges (`ais.egress`), not only stream.aisstream.io.
+- A ship is a target where AIS says it is: the orbit is drawn around the led position when the call is made and does not follow the ship after takeoff. Over a moored ship the quay cranes (up to about 130 m) are not in the simulation; fly above them.

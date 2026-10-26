@@ -2,7 +2,7 @@ apiVersion: v2
 name: drone-fleet
 description: A port's fleet of autonomous vehicles operated by AXLR Bots, each vehicle an ArduPilot SITL with the node agent as its sidecar
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "0.1.0"
 dependencies:
   - name: axlr-bots-node

@@ -607,32 +607,71 @@ function renderIncident(f, now) {
 
 // -- live AIS ------------------------------------------------------------------------
 
-const SHIP_COLOUR = { cargo: "#2f8f5b", tanker: "#a63a32", passenger: "#3a6fb0", tug: "#c27a3a", pilot: "#d1a530", fishing: "#7d5fb2" };
+const SHIP_COLOUR = { cargo: "#2f8f5b", tanker: "#a63a32", passenger: "#3a6fb0", tug: "#c27a3a", towing: "#c27a3a", pilot: "#d1a530",
+  "search and rescue": "#d9692b", "port tender": "#c27a3a", fishing: "#7d5fb2", "dredging or diving": "#8a7a3a" };
+const BOX_COLOURS = ["#b8473a", "#2f6f9f", "#c9a23a", "#4f8f5f", "#8a8f96", "#e2e6ea"];
+const SMALL = new Set(["tug", "towing", "pilot", "search and rescue", "port tender", "law enforcement", "fishing"]);
 const ships = {};
-function hull(L, B, colour) {
-  const H = Math.max(3, Math.min(18, L * 0.07));
+// A ship at its AIS size: length A+B and beam C+D around the antenna (AIS
+// gives the antenna's position, A metres behind the bow and C from port),
+// sunk to its draught, with the superstructure of its type. Without static
+// data yet: a 60 m hull, redrawn when the data comes.
+function shipKey(s) { return [s.length_m, s.beam_m, s.draught_m, s.type_name, s.dim && [s.dim.a, s.dim.b, s.dim.c, s.dim.d]].join("|"); }
+function hull(s) {
+  const L = s.length_m > 4 ? s.length_m : 60, B = s.beam_m > 1 ? s.beam_m : Math.max(6, L / 7);
+  const F = Math.max(2.5, Math.min(14, L * 0.045));          // freeboard, above the water
+  const T = s.draught_m > 0 ? s.draught_m : F * 0.8;         // draught, below it
+  const type = s.type_name || "", colour = SHIP_COLOUR[type] || "#56606b", white = mat("#e9edf2");
   const sh = new THREE.Shape();
   sh.moveTo(-B / 2, -L / 2); sh.lineTo(B / 2, -L / 2); sh.lineTo(B / 2, L * 0.28); sh.quadraticCurveTo(B / 2, L * 0.42, 0, L / 2);
   sh.quadraticCurveTo(-B / 2, L * 0.42, -B / 2, L * 0.28); sh.closePath();
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: H, bevelEnabled: false }), new THREE.MeshStandardMaterial({ color: colour, roughness: 0.6, metalness: 0.2 }));
+  const hg = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: T + F, bevelEnabled: false }), new THREE.MeshStandardMaterial({ color: colour, roughness: 0.6, metalness: 0.2 }));
   body.rotation.x = -Math.PI / 2;  // the shape's +y (bow) to -z (north), the extrusion up
-  body.position.y = -H * 0.45;
-  const house = box(B * 0.8, H * 1.4, Math.max(4, L * 0.12), mat("#e9edf2"));
-  house.position.set(0, H * 0.55 + H * 0.7, L * 0.36);
-  g.add(body, house);
-  return { g, H };
+  body.position.y = -T;
+  hg.add(body);
+  let top = F;
+  const add = (w, h, d, m, z, y = F) => { const b = box(w, h, d, m); b.position.set(0, y + h / 2, z); hg.add(b); top = Math.max(top, y + h); return b; };
+  if (type === "passenger") {
+    add(B * 0.86, F * 1.8, L * 0.62, white, L * 0.04);
+  } else if (SMALL.has(type)) {
+    add(B * 0.7, F * 1.6, L * 0.3, white, -L * 0.08);
+  } else {
+    add(B * 0.82, Math.max(6, F * 1.5), Math.max(4, L * 0.1), white, L * 0.38);   // the deckhouse aft
+    if (type === "cargo" && L >= 80) {
+      // container bays from the bow to the deckhouse
+      const bays = Math.floor(L * 0.6 / 13);
+      for (let i = 0; i < bays; i++) add(B * 0.86, F * (0.5 + ((i * 7) % 5) / 10), 12, mat(BOX_COLOURS[(i * 5) % BOX_COLOURS.length]), -L * 0.32 + i * 13);
+    } else if (type === "tanker") {
+      add(1.2, 1.2, L * 0.62, mat("#c9ccd1"), -L * 0.04);                            // the deck's pipe run
+    }
+  }
+  const d = s.dim || {};
+  // the hull's centre, from the antenna: forward (A-B)/2, to starboard (D-C)/2
+  if (d.a + d.b > 0) hg.position.set(((d.d || 0) - (d.c || 0)) / 2, 0, -((d.a || 0) - (d.b || 0)) / 2);
+  const navs = [glow("#ff3b30", 0.01, [-B / 2, F, 0]), glow("#30d158", 0.01, [B / 2, F, 0]), glow("#ffffff", 0.013, [0, top + 2, -L * 0.1])];
+  for (const n of navs) n.visible = night;
+  hg.add(...navs);
+  return { hg, navs, top };
 }
 function addShip(s) {
-  const L = s.length_m > 4 ? s.length_m : 60, B = s.beam_m > 1 ? s.beam_m : Math.max(6, L / 7);
-  const { g, H } = hull(L, B, SHIP_COLOUR[s.type_name] || "#56606b");
+  const g = new THREE.Group();
   const div = document.createElement("div"); div.className = "shlbl";
-  const label = new CSS2DObject(div); label.center.set(0.5, 1.4); label.position.y = H * 2.5 + 6;
-  const navs = [glow("#ff3b30", 0.01, [-B / 2, H, 0]), glow("#30d158", 0.01, [B / 2, H, 0]), glow("#ffffff", 0.013, [0, H * 2.4, L * 0.3])];
-  for (const n of navs) n.visible = night;
-  g.add(label, ...navs);
+  const label = new CSS2DObject(div); label.center.set(0.5, 1.4);
+  g.add(label);
   scene.add(g);
-  return ships[s.mmsi] = { g, div, navs, from: null, to: null, t0: 0, yaw: 0 };
+  const sh = ships[s.mmsi] = { g, div, label, navs: [], hg: null, key: null, from: null, to: null, t0: 0, yaw: 0 };
+  shapeShip(sh, s);
+  return sh;
+}
+function shapeShip(sh, s) {
+  const key = shipKey(s);
+  if (sh.key === key) return;
+  if (sh.hg) sh.g.remove(sh.hg);
+  const { hg, navs, top } = hull(s);
+  sh.g.add(hg);
+  sh.hg = hg; sh.navs = navs; sh.key = key;
+  sh.label.position.y = top + 8;
 }
 function renderShips(f, now) {
   const a = f.ais || { status: "off" };
@@ -643,6 +682,7 @@ function renderShips(f, now) {
     if (s.lat == null || s.lon == null) continue;
     seen.add(s.mmsi);
     const sh = ships[s.mmsi] || addShip(s);
+    shapeShip(sh, s);
     const target = sea3(s.lat, s.lon, 0);
     sh.from = sh.to ? sh.g.position.clone() : target.clone();
     sh.to = target; sh.t0 = now;
