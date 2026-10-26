@@ -20,6 +20,7 @@
   header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
   header h1 { font-size: 20px; margin: 0; }
   header small { color: var(--muted); font-size: 14px; }
+  .view3d { margin-left: auto; background: var(--accent); color: #0d1117; font-weight: 700; font-size: 16px; padding: 4px 12px; border-radius: 8px; text-decoration: none; }
   .counts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
   .count { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px; text-align: center; }
   .count b { display: block; font-size: 24px; }
@@ -48,7 +49,7 @@
 <div id="app">
   <div id="map"></div>
   <aside>
-    <header><h1>Port fleet</h1><small id="updated">connecting…</small></header>
+    <header><h1>Port fleet</h1><small id="updated">connecting…</small><a class="view3d" href="3d">3D view</a></header>
     <div class="counts">
       <div class="count"><b id="c-out">0</b><span>out</span></div>
       <div class="count"><b id="c-ready">0</b><span>ready</span></div>

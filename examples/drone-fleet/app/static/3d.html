@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Port Fleet 3D · AXLR Bots</title>
+<!-- three.js core from cdnjs; cdnjs has no addons, so the loader, the
+     controls and the labels come from the same version on jsdelivr. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.180.0/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+  }
+}
+</script>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --line: #30363d; --text: #f0f6fc; --muted: #b1bac4;
+    --ok: #3fb950; --work: #f0883e; --warn: #e3b341; --bad: #f85149; --idle: #8b949e; --accent: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 18px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+  #app { display: grid; grid-template-columns: 1fr 400px; height: 100vh; }
+  #view { position: relative; overflow: hidden; }
+  #view canvas { display: block; }
+  #labels { position: absolute; inset: 0; pointer-events: none; }
+  aside { overflow-y: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 16px; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 24px; margin: 0; }
+  #updated { color: var(--muted); font-size: 16px; }
+  .btn { display: inline-block; background: var(--accent); color: #0d1117; font-weight: 700; font-size: 17px;
+    padding: 6px 14px; border-radius: 8px; text-decoration: none; border: 0; cursor: pointer; }
+  .btn.ghost { background: transparent; color: var(--text); border: 2px solid var(--line); }
+  h2 { font-size: 16px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 16px 0 8px; }
+  .card { background: var(--bg); border: 2px solid var(--line); border-radius: 10px; padding: 9px 12px; margin-bottom: 8px; cursor: pointer; }
+  .card.on { border-color: var(--accent); }
+  .card .top { display: flex; align-items: center; gap: 10px; }
+  .card .name { font-weight: 700; font-size: 19px; flex: 1; display: flex; align-items: center; gap: 8px; }
+  .swatch { width: 14px; height: 14px; border-radius: 50%; display: inline-block; }
+  .pill { font-size: 15px; padding: 2px 10px; border-radius: 999px; color: #0d1117; font-weight: 700; white-space: nowrap; }
+  .meta { color: var(--muted); font-size: 16px; margin-top: 4px; }
+  .bar { height: 7px; background: var(--line); border-radius: 4px; margin-top: 6px; overflow: hidden; }
+  .bar i { display: block; height: 100%; }
+  .lbl { background: rgba(5, 8, 12, .86); color: #fff; border: 2px solid #fff; border-radius: 7px; padding: 3px 9px;
+    font: 700 17px system-ui, sans-serif; white-space: nowrap; cursor: pointer; }
+  .lbl small { font-weight: 600; font-size: 15px; color: #d0d7de; }
+  .slbl { background: rgba(5, 8, 12, .8); color: #fff; border-radius: 6px; padding: 2px 8px; margin-top: 10px;
+    font: 600 15px system-ui, sans-serif; white-space: nowrap; }
+  .zlbl { color: #fff; font: 700 15px system-ui, sans-serif; text-shadow: 0 0 4px #000, 0 0 8px #000; white-space: nowrap; }
+  #loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700;
+    background: rgba(13, 17, 23, .7); pointer-events: none; }
+  #hint { position: absolute; left: 12px; bottom: 12px; background: rgba(5, 8, 12, .8); padding: 6px 12px; border-radius: 8px;
+    font-size: 15px; color: #d0d7de; pointer-events: none; }
+  #attrib { position: absolute; right: 8px; bottom: 6px; font-size: 13px; color: #d0d7de; text-shadow: 0 0 3px #000; }
+  #attrib a { color: #d0d7de; }
+  #compass { position: absolute; top: 12px; left: 12px; width: 64px; height: 64px; border-radius: 50%; background: rgba(5, 8, 12, .8);
+    border: 2px solid #fff; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+  #compass svg { width: 52px; height: 52px; }
+  @media (max-width: 900px) {
+    #app { grid-template-columns: 1fr; grid-template-rows: 60vh auto; }
+    html, body { overflow: auto; }
+    aside { border-left: 0; border-top: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="view">
+    <div id="labels"></div>
+    <div id="compass"><svg viewBox="-26 -26 52 52"><g id="needle"><path d="M0-22L7 2H-7Z" fill="#f85149"/><path d="M0 22L7 2H-7Z" fill="#fff"/>
+      <text x="0" y="-8" text-anchor="middle" font-size="11" font-weight="800" fill="#fff" dy="-14">N</text></g></svg></div>
+    <div id="loading">Loading the port…</div>
+    <div id="hint">Drag to orbit · right-drag to pan · wheel to zoom · click a vehicle to follow it</div>
+    <div id="attrib">3D port from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a> (ODbL)</div>
+  </div>
+  <aside>
+    <header>
+      <h1>Port fleet 3D</h1>
+      <a class="btn" href="./">2D map</a>
+      <button class="btn ghost" id="overview">Overview</button>
+    </header>
+    <div id="updated">connecting…</div>
+    <h2>Vehicles</h2><div id="vehicles"></div>
+    <h2>Stations</h2><div id="stations"></div>
+  </aside>
+</div>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+import { Line2 } from "three/addons/lines/Line2.js";
+import { LineGeometry } from "three/addons/lines/LineGeometry.js";
+import { LineMaterial } from "three/addons/lines/LineMaterial.js";
+
+// The model's frame (port3d/area.py): metres east, up, -north of ORIGIN.
+const ORIGIN = [51.9440, 3.9990], GROUND = 5.0, R = 6378137.0;
+const COS0 = Math.cos(ORIGIN[0] * Math.PI / 180);
+function local(lat, lon, alt = 0) {
+  const north = (lat - ORIGIN[0]) * Math.PI / 180 * R;
+  const east = (lon - ORIGIN[1]) * Math.PI / 180 * R * COS0;
+  return new THREE.Vector3(east, GROUND + alt, -north);
+}
+
+const PHASE = {
+  mission: ["out", "#f0883e"], takeoff: ["taking off", "#f0883e"], starting: ["starting", "#f0883e"],
+  returning: ["returning", "#58a6ff"], landing: ["landing", "#58a6ff"], parking: ["parking", "#58a6ff"],
+  ready: ["ready", "#3fb950"], queued: ["waiting bay", "#e3b341"], inspection: ["inspection", "#e3b341"],
+  swap: ["battery swap", "#e3b341"], booting: ["booting", "#8b949e"], offline: ["offline", "#f85149"],
+};
+const OUT = new Set(["mission", "takeoff", "starting", "returning", "landing", "parking"]);
+const HUES = ["#ff5c8a", "#ffd43b", "#4dd4ff", "#b48cff", "#7cfc6a", "#ff9f43", "#ffffff", "#ff6b6b"];
+function phase(p) { return PHASE[p] || [p || "?", "#8b949e"]; }
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+// -- the scene ---------------------------------------------------------------
+
+const view = document.getElementById("view");
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+} catch (err) {
+  document.getElementById("loading").textContent = "This view needs WebGL, which this browser has turned off. The 2D map works without it.";
+  throw err;
+}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+view.prepend(renderer.domElement);
+const labels = new CSS2DRenderer({ element: document.getElementById("labels") });
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#9fbbd6");
+scene.fog = new THREE.Fog("#9fbbd6", 6000, 16000);
+scene.add(new THREE.HemisphereLight("#dce9f7", "#4a5560", 1.6));
+const sun = new THREE.DirectionalLight("#fff4e0", 2.4);
+sun.position.set(-3000, 5000, 2500);
+scene.add(sun);
+
+const camera = new THREE.PerspectiveCamera(50, 1, 1, 40000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI / 2 - 0.04;
+controls.minDistance = 15;
+controls.maxDistance = 14000;
+const HOME = { pos: new THREE.Vector3(-1900, 2300, 2600), target: new THREE.Vector3(400, 0, -500) };
+camera.position.copy(HOME.pos);
+controls.target.copy(HOME.target);
+
+const fatMaterials = [];
+function resize() {
+  const w = view.clientWidth, h = view.clientHeight;
+  renderer.setSize(w, h);
+  for (const m of fatMaterials) m.resolution.set(w, h);
+  labels.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize);
+resize();
+
+let rotors = null, rotorBase = [];
+new GLTFLoader().load("port.glb", gltf => {
+  const port = gltf.scene;
+  port.traverse(o => {
+    if (o.isInstancedMesh && o.name.startsWith("turbine_rotors")) {
+      rotors = o;
+      for (let i = 0; i < o.count; i++) { const m = new THREE.Matrix4(); o.getMatrixAt(i, m); rotorBase.push(m); }
+    }
+    if (o.isMesh && o.material && o.material.name === "water") {
+      o.material.roughness = 0.18; o.material.metalness = 0.15; o.renderOrder = -1;
+    }
+  });
+  scene.add(port);
+  document.getElementById("loading").remove();
+}, ev => {
+  if (ev.total) document.getElementById("loading").textContent = `Loading the port… ${Math.round(100 * ev.loaded / ev.total)} %`;
+}, err => { document.getElementById("loading").textContent = "Could not load the port model: " + err.message; });
+
+// -- vehicles ----------------------------------------------------------------
+
+const mat = c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.5, metalness: 0.2 });
+function box(w, h, d, m) { return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); }
+function cyl(r, h, m, seg = 16) { return new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, seg), m); }
+
+// Models face -Z (north) before the heading turns them; sizes in metres,
+// scaled up a few times so they read from the air.
+function model(kind, role, colour) {
+  const g = new THREE.Group(), body = mat(colour), dark = mat("#222831"), light = mat("#e6edf3");
+  g.userData.props = [];
+  if (kind === "quad") {
+    g.add(box(0.5, 0.18, 0.5, body));
+    for (const a of [Math.PI / 4, -Math.PI / 4]) { const arm = box(1.5, 0.06, 0.08, dark); arm.rotation.y = a; g.add(arm); }
+    for (const [x, z] of [[0.53, 0.53], [-0.53, 0.53], [0.53, -0.53], [-0.53, -0.53]]) {
+      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.02, 20), new THREE.MeshBasicMaterial({ color: "#cfd8e3", transparent: true, opacity: 0.6 }));
+      p.position.set(x, 0.12, z); g.add(p);
+      const blade = box(0.6, 0.02, 0.05, light); blade.position.set(x, 0.13, z); g.add(blade); g.userData.props.push(blade);
+    }
+    const nose = box(0.12, 0.08, 0.2, light); nose.position.set(0, 0, -0.3); g.add(nose);
+    g.scale.setScalar(4);
+  } else if (kind === "plane") {
+    const f = cyl(0.12, 1.4, body, 12); f.rotation.x = Math.PI / 2; g.add(f);
+    const w = box(2.2, 0.04, 0.32, body); w.position.z = -0.1; g.add(w);
+    const t = box(0.7, 0.03, 0.18, body); t.position.z = 0.62; g.add(t);
+    const fin = box(0.03, 0.3, 0.2, body); fin.position.set(0, 0.15, 0.62); g.add(fin);
+    const prop = box(0.5, 0.04, 0.02, light); prop.position.z = -0.72; prop.rotation.z = 0.5; g.add(prop); g.userData.props.push(prop);
+    g.scale.setScalar(5);
+  } else {
+    const supply = role === "supply";
+    const L = supply ? 1.8 : 1.1, W = supply ? 1.0 : 0.7;
+    const b = box(W, 0.45, L, body); b.position.y = 0.45; g.add(b);
+    if (supply) { const cargo = box(W * 0.9, 0.5, L * 0.55, light); cargo.position.set(0, 0.9, 0.25); g.add(cargo); }
+    else { const mastp = box(0.08, 0.5, 0.08, dark); mastp.position.set(0, 0.9, -0.2); g.add(mastp); const cam = box(0.3, 0.12, 0.12, light); cam.position.set(0, 1.15, -0.2); g.add(cam); }
+    for (const x of [-W / 2 - 0.06, W / 2 + 0.06]) for (const z of [-L * 0.35, L * 0.35]) {
+      const wh = cyl(0.22, 0.14, dark, 14); wh.rotation.z = Math.PI / 2; wh.position.set(x, 0.22, z); g.add(wh);
+    }
+    g.scale.setScalar(3);
+  }
+  return g;
+}
+
+const vehicles = {};   // id -> state
+let hueIndex = 0, following = null, centred = false;
+
+function marker(colour) {
+  const c = document.createElement("canvas"); c.width = c.height = 64;
+  const x = c.getContext("2d");
+  x.beginPath(); x.arc(32, 32, 26, 0, 2 * Math.PI); x.fillStyle = colour; x.fill();
+  x.lineWidth = 7; x.strokeStyle = "#ffffff"; x.stroke();
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), sizeAttenuation: false, depthTest: false }));
+  s.scale.set(0.028, 0.028, 1);
+  s.renderOrder = 10;
+  return s;
+}
+
+function lineObj(colour, max, opts = {}) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(max * 3), 3));
+  geo.setDrawRange(0, 0);
+  const m = opts.dashed
+    ? new THREE.LineDashedMaterial({ color: colour, dashSize: 14, gapSize: 9, transparent: true, opacity: 0.95 })
+    : new THREE.LineBasicMaterial({ color: colour, transparent: true, opacity: opts.opacity ?? 1 });
+  const l = new THREE.Line(geo, m);
+  l.frustumCulled = false;
+  return l;
+}
+// Trails and routes: lines a few pixels wide at any distance.
+function fatLine(colour, width, dashed) {
+  const m = new LineMaterial({ color: colour, linewidth: width, dashed, dashSize: 16, gapSize: 10, transparent: true, opacity: 0.95 });
+  m.resolution.set(view.clientWidth, view.clientHeight);
+  fatMaterials.push(m);
+  const l = new Line2(new LineGeometry(), m);
+  l.frustumCulled = false;
+  l.visible = false;
+  return l;
+}
+function setFat(l, pts) {
+  if (pts.length < 2) { l.visible = false; return; }
+  const g = new LineGeometry();
+  g.setPositions(pts.flatMap(p => [p.x, p.y, p.z]));
+  l.geometry.dispose();
+  l.geometry = g;
+  if (l.material.dashed) l.computeLineDistances();
+  l.visible = true;
+}
+function setLine(l, pts) {
+  const a = l.geometry.attributes.position, n = Math.min(pts.length, a.count);
+  for (let i = 0; i < n; i++) a.setXYZ(i, pts[i].x, pts[i].y, pts[i].z);
+  a.needsUpdate = true;
+  l.geometry.setDrawRange(0, n);
+  l.geometry.computeBoundingSphere();
+  if (l.material.isLineDashedMaterial) l.computeLineDistances();
+}
+
+function addVehicle(v) {
+  const colour = HUES[hueIndex++ % HUES.length];
+  const group = new THREE.Group();
+  const body = model(v.kind || "quad", v.role, colour);
+  group.add(body);
+  const dot = marker(colour);
+  dot.position.y = 6;
+  group.add(dot);
+  // the label sits above the vehicle (its bottom on the point), lifted
+  // further when vehicles stand together
+  const wrap = document.createElement("div");
+  const div = document.createElement("div");
+  div.className = "lbl";
+  div.style.borderColor = colour;
+  wrap.appendChild(div);
+  const label = new CSS2DObject(wrap);
+  label.center.set(0.5, 1);
+  label.position.y = 6;
+  group.add(label);
+  div.addEventListener("pointerdown", () => follow(v.vehicle));
+  wrap.style.pointerEvents = "auto";
+  scene.add(group);
+  const stick = lineObj("#ffffff", 2, { opacity: 0.7 });
+  const trail = fatLine(colour, 4, false);
+  const route = fatLine(colour, 3, true);
+  const drops = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: colour, transparent: true, opacity: 0.45 }));
+  drops.frustumCulled = false;
+  scene.add(stick, trail, route, drops);
+  return vehicles[v.vehicle] = { id: v.vehicle, colour, group, body, dot, div, wrap, stick, trail, route, drops, trailPts: [],
+    from: null, to: null, t0: 0, yawFrom: 0, yawTo: 0, data: v, routeKey: "" };
+}
+
+function updateVehicle(v, now) {
+  const s = vehicles[v.vehicle] || addVehicle(v);
+  s.data = v;
+  const pos = v.position;
+  if (pos && pos.lat != null) {
+    const target = local(pos.lat, pos.lon, Math.max(0, pos.alt_m || 0));
+    const current = s.to ? currentPos(s, now) : target.clone();
+    s.from = current; s.to = target; s.t0 = now;
+    s.yawFrom = s.group.rotation.y; s.yawTo = -(v.heading || 0) * Math.PI / 180;
+    s.group.visible = true;
+  } else {
+    s.group.visible = false;
+  }
+  const [label, col] = phase(v.phase);
+  const alt = pos && pos.alt_m > 1 ? ` · ${Math.round(pos.alt_m)} m` : "";
+  s.div.innerHTML = `${esc(v.vehicle)}<small>${alt} · ${esc(label)}</small>`;
+  s.div.style.background = OUT.has(v.phase) ? "rgba(5,8,12,.92)" : "rgba(5,8,12,.78)";
+  // trail: while it is out; cleared when it is ready again
+  if (OUT.has(v.phase) && s.to) {
+    const last = s.trailPts[s.trailPts.length - 1];
+    if (!last || last.distanceTo(s.to) > 1.5) { s.trailPts.push(s.to.clone()); if (s.trailPts.length > 3000) s.trailPts.shift(); }
+    setFat(s.trail, s.trailPts);
+  } else if (v.phase === "ready" && s.trailPts.length) { s.trailPts = []; setFat(s.trail, []); }
+  // the planned route, at its altitudes, with a line down from each waypoint
+  const fl = v.flight;
+  const show = fl && fl.route && (OUT.has(v.phase) || fl.status === "starting");
+  const key = show ? JSON.stringify(fl.route) : "";
+  if (key !== s.routeKey) {
+    s.routeKey = key;
+    if (show) {
+      const pts = fl.route.map(p => local(p.lat, p.lon, Math.max(0, p.alt_m || 0)));
+      pts.push(pts[0].clone());
+      setFat(s.route, pts);
+      const seg = [];
+      for (const p of pts) if (p.y > GROUND + 1) seg.push(p.x, p.y, p.z, p.x, GROUND, p.z);
+      s.drops.geometry.setAttribute("position", new THREE.Float32BufferAttribute(seg, 3));
+    } else {
+      setFat(s.route, []);
+      s.drops.geometry.setAttribute("position", new THREE.Float32BufferAttribute([], 3));
+    }
+  }
+}
+
+function currentPos(s, now) {
+  const k = Math.min(1, (now - s.t0) / 1000);
+  return s.from.clone().lerp(s.to, k);
+}
+
+// -- stations, depot, zones -----------------------------------------------------
+
+const statics = new THREE.Group();
+scene.add(statics);
+let zonesDrawn = false;
+const stationLabels = {};
+
+function pad(lat, lon, colour, text, side = false) {
+  const p = local(lat, lon);
+  const g = new THREE.Group();
+  g.position.copy(p);
+  const disc = cyl(9, 0.6, new THREE.MeshStandardMaterial({ color: colour, roughness: 0.6 }), 28);
+  disc.position.y = 0.3; g.add(disc);
+  const pole = cyl(0.5, 30, mat("#e6edf3"), 8); pole.position.y = 15; g.add(pole);
+  const flag = box(6, 3, 0.3, new THREE.MeshStandardMaterial({ color: colour })); flag.position.set(3, 28.5, 0); g.add(flag);
+  // the station's label hangs below its pad; the vehicles' stand above
+  const div = document.createElement("div"); div.className = "slbl"; div.textContent = text;
+  const l = new CSS2DObject(div); l.center.set(side ? -0.08 : 0.5, side ? 1.2 : 0); g.add(l);
+  statics.add(g);
+  return div;
+}
+
+function drawStatic(f) {
+  if (zonesDrawn) return;
+  for (const z of f.zones || []) {
+    const c = local(z.lat, z.lon, 0.4), pts = [];
+    for (let i = 0; i <= 96; i++) { const a = 2 * Math.PI * i / 96; pts.push(new THREE.Vector3(c.x + z.radius_m * Math.cos(a), c.y, c.z + z.radius_m * Math.sin(a))); }
+    const ring = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineDashedMaterial({ color: "#7cc4ff", dashSize: 18, gapSize: 12 }));
+    ring.computeLineDistances();
+    statics.add(ring);
+    const div = document.createElement("div"); div.className = "zlbl"; div.textContent = z.name;
+    const l = new CSS2DObject(div); l.position.copy(c); statics.add(l);
+  }
+  if (f.depot) pad(f.depot.lat, f.depot.lon, "#8b949e", f.depot.label || "Depot");
+  if (f.rtk) pad(f.rtk.lat, f.rtk.lon, "#b48cff", f.rtk.label || "RTK base", true);
+  for (const s of f.stations || []) stationLabels[s.name] = pad(s.lat, s.lon, "#3fb950", s.label);
+  zonesDrawn = true;
+}
+
+// -- the panel ---------------------------------------------------------------
+
+function render(f) {
+  const now = performance.now();
+  drawStatic(f);
+  document.getElementById("updated").textContent = "live · " + new Date(f.updated).toLocaleTimeString();
+  const cards = [];
+  for (const v of f.vehicles) {
+    updateVehicle(v, now);
+    const s = vehicles[v.vehicle], [label, col] = phase(v.phase), pos = v.position || {}, fl = v.flight;
+    let detail = `${v.role === "supply" ? "supply rover" : esc(v.kind)}`;
+    if (OUT.has(v.phase) && fl) detail = `${esc(fl.name)} · ${Math.round(v.groundspeed_m_s || 0)} m/s`;
+    if (pos.alt_m > 1) detail += ` · ${Math.round(pos.alt_m)} m up`;
+    cards.push(`<div class="card${following === v.vehicle ? " on" : ""}" data-id="${esc(v.vehicle)}"><div class="top">
+      <span class="name"><i class="swatch" style="background:${s.colour}"></i>${esc(v.vehicle)}</span><span class="pill" style="background:${col}">${esc(label)}</span></div>
+      <div class="meta">${detail} · battery ${v.battery_pct == null ? "–" : v.battery_pct + " %"}</div>
+      <div class="bar"><i style="width:${v.battery_pct || 0}%;background:${(v.battery_pct || 0) >= 60 ? "var(--ok)" : (v.battery_pct || 0) >= 30 ? "var(--warn)" : "var(--bad)"}"></i></div></div>`);
+  }
+  document.getElementById("vehicles").innerHTML = cards.join("");
+  // vehicles within 60 m of each other stack their labels
+  const seen = [];
+  for (const s of Object.values(vehicles)) {
+    if (!s.to) continue;
+    const n = seen.filter(p => p.distanceTo(s.to) < 60).length;
+    s.wrap.style.paddingBottom = `${8 + n * 36}px`;
+    seen.push(s.to);
+  }
+  const sc = [];
+  for (const s of f.stations || []) {
+    const low = s.batteries < 2 || s.parts < 2;
+    if (stationLabels[s.name]) stationLabels[s.name].textContent = `${s.label} · ${s.batteries} packs · ${s.parts} parts`;
+    sc.push(`<div class="card"><div class="top"><span class="name">${esc(s.label)}</span><span class="pill" style="background:${low ? "var(--bad)" : "var(--ok)"}">${low ? "low stock" : "stocked"}</span></div>
+      <div class="meta">${s.batteries}/${s.max_batteries} packs · ${s.parts}/${s.max_parts} parts · bays ${s.in_bays.length}/${s.bays}${s.waiting.length ? " · queue " + s.waiting.map(esc).join(", ") : ""}</div></div>`);
+  }
+  document.getElementById("stations").innerHTML = sc.join("");
+  if (!centred) {
+    // start over the fleet: the centre of the vehicles and stations
+    const pts = Object.values(vehicles).filter(s => s.to).map(s => s.to);
+    for (const s of f.stations || []) pts.push(local(s.lat, s.lon));
+    if (pts.length) {
+      const c = pts.reduce((a, p) => a.add(p), new THREE.Vector3()).multiplyScalar(1 / pts.length);
+      c.y = GROUND;
+      HOME.target.copy(c);
+      HOME.pos.copy(c).add(new THREE.Vector3(-1500, 1900, 2300));
+      fly(HOME.pos, HOME.target);
+      centred = true;
+    }
+  }
+}
+
+document.getElementById("vehicles").addEventListener("click", ev => {
+  const card = ev.target.closest(".card"); if (card) follow(card.dataset.id);
+});
+document.getElementById("overview").addEventListener("click", () => { following = null; fly(HOME.pos, HOME.target); });
+window.addEventListener("keydown", ev => { if (ev.key === "Escape") following = null; });
+
+// -- the camera ----------------------------------------------------------------
+
+let flight = null;
+function fly(pos, target) {
+  flight = { p0: camera.position.clone(), t0: controls.target.clone(), p1: pos.clone(), t1: target.clone(), start: performance.now() };
+}
+function follow(id) {
+  const s = vehicles[id]; if (!s || !s.to) return;
+  following = id;
+  const p = currentPos(s, performance.now());
+  const back = new THREE.Vector3(-45, 32, 58);
+  fly(p.clone().add(back), p);
+}
+
+const clock = new THREE.Clock();
+function frame() {
+  requestAnimationFrame(frame);
+  const now = performance.now(), dt = clock.getDelta();
+  for (const s of Object.values(vehicles)) {
+    if (!s.to) continue;
+    const p = currentPos(s, now);
+    s.group.position.copy(p);
+    const k = Math.min(1, (now - s.t0) / 600);
+    let d = s.yawTo - s.yawFrom; d = Math.atan2(Math.sin(d), Math.cos(d));
+    s.group.rotation.y = s.yawFrom + d * k;
+    // the dot marks it from afar; close by the model shows itself
+    s.dot.visible = camera.position.distanceTo(p) > 350;
+    const up = p.y > GROUND + 1;
+    setLine(s.stick, up ? [p, new THREE.Vector3(p.x, GROUND, p.z)] : []);
+    if (OUT.has(s.data.phase)) for (const b of s.body.userData.props) b.rotation.y += dt * 40;
+  }
+  if (flight) {
+    const k = Math.min(1, (now - flight.start) / 1200), e = k * k * (3 - 2 * k);
+    camera.position.lerpVectors(flight.p0, flight.p1, e);
+    controls.target.lerpVectors(flight.t0, flight.t1, e);
+    if (k >= 1) flight = null;
+  } else if (following && vehicles[following] && vehicles[following].to) {
+    // keep the camera's offset while the vehicle moves
+    const p = vehicles[following].group.position, delta = p.clone().sub(controls.target);
+    controls.target.add(delta);
+    camera.position.add(delta);
+  }
+  if (rotors) {
+    const spin = new THREE.Matrix4().makeRotationX(now / 1000 * 1.1), m = new THREE.Matrix4();
+    for (let i = 0; i < rotorBase.length; i++) { m.multiplyMatrices(rotorBase[i], spin); rotors.setMatrixAt(i, m); }
+    rotors.instanceMatrix.needsUpdate = true;
+  }
+  controls.update();
+  const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
+  document.getElementById("needle").setAttribute("transform", `rotate(${Math.atan2(dir.x, -dir.z) * -180 / Math.PI})`);
+  renderer.render(scene, camera);
+  labels.render(scene, camera);
+}
+frame();
+
+function connect() {
+  const es = new EventSource("api/stream");
+  es.onmessage = m => render(JSON.parse(m.data));
+  es.onerror = () => { es.close(); document.getElementById("updated").textContent = "reconnecting…"; setTimeout(connect, 3000); };
+}
+fetch("api/fleet").then(r => r.json()).then(render).finally(connect);
+</script>
+</body>
+</html>

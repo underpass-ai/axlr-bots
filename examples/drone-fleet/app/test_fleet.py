@@ -3,7 +3,11 @@
 import json
 import os
 import tempfile
+import threading
 import unittest
+import urllib.error
+import urllib.request
+from http.server import ThreadingHTTPServer
 
 os.environ.setdefault("PHOTOS_DIR", tempfile.mkdtemp())
 
@@ -145,6 +149,23 @@ class BaseTest(unittest.TestCase):
         flight["status"] = "landed"
         b._deliveries()
         self.assertEqual(b.depot["spent_recharged"], 2)
+
+
+class PagesTest(unittest.TestCase):
+    def test_the_map_the_3d_view_and_the_port_model(self):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), fleet_base.Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        url = f"http://127.0.0.1:{server.server_address[1]}"
+        for path, ctype in (("/", "text/html"), ("/3d", "text/html"), ("/port.glb", "model/gltf-binary")):
+            with urllib.request.urlopen(url + path) as r:
+                self.assertEqual(r.headers["Content-Type"].split(";")[0], ctype, path)
+                body = r.read()
+            if path == "/port.glb":
+                self.assertEqual(body[:4], b"glTF")
+        with self.assertRaises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(url + "/../fleet_base.py")
+        self.assertEqual(e.exception.code, 404)
 
 
 if __name__ == "__main__":

@@ -14,8 +14,9 @@ It polls every vehicle's /state, and keeps what no single vehicle knows:
              packs are loaded; back at the depot they are recharged
 
 It writes <FLEET_FILE> every second for the dispatcher and logistics bots
-(their read-only workspace) and serves the map: GET /, /api/fleet and the
-event stream /api/stream.
+(their read-only workspace) and serves the map: GET /, the 3D view /3d (the
+port model is static/port.glb, from port3d/), /api/fleet and the event
+stream /api/stream.
 """
 
 import json
@@ -36,7 +37,9 @@ log = logging.getLogger("fleet-base")
 
 ARRIVAL_M = 25
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
-TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png"}
+TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png",
+         ".glb": "model/gltf-binary"}
+PAGES = {"/": "index.html", "": "index.html", "/3d": "3d.html"}
 
 
 def now_iso():
@@ -273,7 +276,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, f.read(), "image/jpeg", "max-age=86400")
         if self.crew_api:
             return self._send(404, b"not found\n", "text/plain")
-        name = "index.html" if url.path in ("/", "") else url.path.lstrip("/")
+        name = PAGES.get(url.path, url.path.lstrip("/"))
         path = os.path.realpath(os.path.join(STATIC, name))
         if not path.startswith(STATIC + os.sep) or not os.path.isfile(path):
             return self._send(404, b"not found\n", "text/plain")
