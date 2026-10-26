@@ -165,7 +165,8 @@ class PagesTest(unittest.TestCase):
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self.addCleanup(server.shutdown)
         url = f"http://127.0.0.1:{server.server_address[1]}"
-        for path, ctype in (("/", "text/html"), ("/3d", "text/html"), ("/port.glb", "model/gltf-binary")):
+        for path, ctype in (("/", "text/html"), ("/3d", "text/html"), ("/m", "text/html"), ("/port.glb", "model/gltf-binary"),
+                            ("/theme.css", "text/css"), ("/brand-light.svg", "image/svg+xml"), ("/fonts/Lexend-Regular.ttf", "font/ttf")):
             with urllib.request.urlopen(url + path) as r:
                 self.assertEqual(r.headers["Content-Type"].split(";")[0], ctype, path)
                 body = r.read()

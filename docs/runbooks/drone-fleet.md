@@ -255,6 +255,20 @@ The same call, recorded with OBS. Every takeoff waited on the phone page (`/m`);
 
 ![What the vision model saw from quad-1 at 35 m: three containers, each matched to the simulation's](../assets/drone-fleet/sar-vision-quad.jpg)
 
+## The look
+
+The map, the 3D view and the phone page share one stylesheet, [`app/static/theme.css`](../../examples/drone-fleet/app/static/theme.css): the AXLR Bots emblem, ink on a warm white page (graphite with `?theme=dark` or a dark system theme), the emblem's copper as the one accent, one colour per status in a pill that names it, [Lexend](https://www.lexend.com) for words and [DotGothic16](https://github.com/fontworks-fonts/DotGothic16) for the counters (both SIL Open Font License, served from `app/static/fonts` with their licences). The viewer sits in a rounded frame; `?hud=0` drops the frame and the side column for a recording. The **SIMULATION** label and the imagery's attribution stay on every page, the phone's route maps included; the panel's own look is the same palette ([axlr-bots-panel](https://github.com/underpass-ai/axlr-bots-panel)).
+
+![The live map during a search: the datum, the containers and their drift, the plane's track, quad-0's square, the AIS ships, and the incident's numbers beside it](../assets/drone-fleet/ui-map.jpg)
+
+![The same search in 3D by day](../assets/drone-fleet/ui-3d-day.jpg)
+
+![The same search in 3D at night, and the phone page with a takeoff waiting for a person](../assets/drone-fleet/ui-3d-night.jpg)
+
+![The phone page in the same theme: the incident's numbers, the pending takeoff, its route on the imagery with the imagery's attribution, Approve or Deny](../assets/drone-fleet/ui-phone.jpg)
+
+These four pictures are a replay of a captured `/api/fleet` with a synthetic incident, taken to show the theme; the pictures of the recorded run below are the run itself.
+
 ## Limits
 
 - The vehicles are SITL: the sensors are SITL's backends (rangefinders, optical flow, camera trigger), RTK is SITL's fix 6 with no correction link, and the map's hardware labels describe what the vehicles stand for.
