@@ -248,7 +248,7 @@ The same call, recorded with OBS. Every takeoff waited on the phone page (`/m`);
 | photos | 418 analysed |
 | cost | $0.048 of bot models (dispatcher, pilots, logistics, reporter) and $0.081 of vision: $0.129 |
 | report | `incident-report.md` through `axlr_deliver`, 45 seconds after the end |
-| AIS | off: no aisstream.io key yet, so the pages said "real imagery" only |
+| AIS | off during this run (no aisstream.io key yet), so the pages said "real imagery" only. With the key added afterwards (Secret `fleet-ais`), the base had 93 ships around Maasvlakte within minutes, names first and sizes after the next static reports (every ~6 minutes) |
 
 ![The search at night in 3D: the plane's track across the drift, the quads' squares, the containers and their drift arrows](../assets/drone-fleet/sar-3d-night.jpg)
 
