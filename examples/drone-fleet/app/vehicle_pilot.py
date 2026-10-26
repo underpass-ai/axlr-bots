@@ -18,6 +18,12 @@ station's stock (the fleet base hands them out), is inspected, and gets a
 fresh battery pack; only then is it ready again, so the dispatcher sends the
 spares in the meantime. A supply rover (ROLE=supply) takes no waypoints: it
 drives from the depot to the stations its mission names, with their cargo.
+
+A rover takes no waypoints at all: it drives routes precomputed from the
+port's map (ROUTES_FILE, written by port3d/routes.py) along its roads and
+yards, clear of sheds, container blocks and water, with turns a car can
+drive. Its bot picks one by name; a supply run is the route through the
+stations its deliveries name, in that order.
 """
 
 import collections
@@ -56,6 +62,9 @@ HARDWARE = {k: v for k, v in (
     ("camera", os.environ.get("HW_CAMERA", "")),
     ("optical_flow", os.environ.get("HW_FLOW", "")),
 ) if v}
+
+ROUTES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "routes.json")
+MAX_ROUTE_POINTS = 400
 
 INSPECTION = {
     "quad": ["motors", "propellers", "frame", "GPS", "compass", "radio link", "battery cells"],
@@ -424,8 +433,9 @@ class Pilot:
 
     NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,39}$")
 
-    def __init__(self, vehicle_id, kind, vehicle, limits, crew, zones, telemetry_file, role="patrol", stations=(), capacity=(8, 10)):
+    def __init__(self, vehicle_id, kind, vehicle, limits, crew, zones, telemetry_file, role="patrol", stations=(), capacity=(8, 10), routes=None):
         self.vehicle_id = vehicle_id
+        self.routes = routes or {}  # a patrol rover's: id -> route; a supply rover's: (station, …) -> route
         self.kind = kind
         self.role = role
         self.stations = {st["name"]: st for st in stations}
@@ -441,6 +451,7 @@ class Pilot:
         self.missions = 0
         self._last_pos = None
         self._stopped_since = None
+        self._last_item = None  # a rover's mission: the index of its RTL item
         self._camera = 0
         self._photos_at_start = 0
 
@@ -450,7 +461,7 @@ class Pilot:
         if not s["connected"]:
             return "offline"
         if s["armed"]:
-            if self.kind == "rover" and s["mode"] == "HOLD":
+            if self.kind == "rover" and self._rover_done(s):
                 return "parking"
             return {"AUTO": "mission", "RTL": "returning", "LAND": "landing", "GUIDED": "takeoff"}.get(s["mode"], s["mode"].lower())
         if self.flight and self.flight["status"] == "starting":
@@ -517,7 +528,14 @@ class Pilot:
         if self.role == "supply":
             out["stations"] = stations
             out["capacity"] = {"batteries": self.capacity[0], "parts": self.capacity[1]}
+        elif self.routes:
+            out["routes"] = self.route_menu()
         return out
+
+    def route_menu(self):
+        """What the bot reads of a patrol rover's routes."""
+        return [{"route": rid, "zone": r.get("zone"), "about": r.get("about", ""), "length_m": r["length_m"]}
+                for rid, r in self.routes.items()]
 
     def tick(self):
         """Once a second: distance flown, the mission's end, the crew, the file."""
@@ -545,9 +563,14 @@ class Pilot:
             json.dump(bot_view, f, indent=1)
         os.replace(tmp, self.telemetry_file)
 
+    def _rover_done(self, s):
+        """A rover's RTL ends in HOLD; its mission's RTL item ends in AUTO,
+        the mission complete: either way it stands at home, armed."""
+        return s["mode"] == "HOLD" or (s["mode"] == "AUTO" and self._last_item is not None and s["mission_seq"] >= self._last_item)
+
     def _watch_flight(self, s):
-        if self.kind == "rover" and s["armed"] and s["mode"] == "HOLD":
-            # A rover's RTL ends in HOLD, armed: park it once it stands still.
+        if self.kind == "rover" and s["armed"] and self._rover_done(s):
+            # park it once it stands still
             if s["groundspeed"] < 0.3:
                 self._stopped_since = self._stopped_since or time.monotonic()
                 if time.monotonic() - self._stopped_since > 3:
@@ -586,6 +609,25 @@ class Pilot:
             if lim.max_alt_m > 0 and not lim.min_alt_m <= alt <= lim.max_alt_m:
                 raise mcp_http.ToolError(f"waypoint {i}: altitude {alt:.0f} m, allowed {lim.min_alt_m:.0f} to {lim.max_alt_m:.0f} m")
             plan.append((north, east, alt))
+        return plan
+
+    def check_route(self, name, points, speed, home):
+        """A precomputed route: the name, the speed, and every point inside
+        the geofence (it was drawn from the station's position, not this
+        vehicle's home); the plan in metres from home."""
+        lim = self.limits
+        if not isinstance(name, str) or not self.NAME.match(name):
+            raise mcp_http.ToolError("name: 1 to 40 letters, digits, spaces, '_', '.' or '-'")
+        if isinstance(speed, bool) or not isinstance(speed, (int, float)) or not lim.min_speed <= speed <= lim.max_speed:
+            raise mcp_http.ToolError(f"speed_m_s: from {lim.min_speed:g} to {lim.max_speed:g}")
+        if not 1 <= len(points) <= MAX_ROUTE_POINTS:
+            raise mcp_http.ToolError(f"the route has {len(points)} points, at most {MAX_ROUTE_POINTS}")
+        plan = []
+        for lat, lon in points:
+            north, east = geo.offset_m(home["lat"], home["lon"], lat, lon)
+            if math.hypot(north, east) > lim.max_radius_m:
+                raise mcp_http.ToolError(f"the route reaches {math.hypot(north, east):.0f} m from home, outside the {lim.max_radius_m:.0f} m geofence")
+            plan.append((north, east, 0.0))
         return plan
 
     def check_ready(self):
@@ -634,12 +676,27 @@ class Pilot:
         photo_every = arguments.get("photo_every_m", 0) or 0
         if isinstance(photo_every, bool) or not isinstance(photo_every, (int, float)) or not 0 <= photo_every <= 500:
             raise mcp_http.ToolError("photo_every_m: 0 (no photos) to 500")
-        if self.role == "supply":
+        route_id = None
+        if self.kind == "rover":
             home = self.vehicle.snapshot()["home"]
             if not home:
                 raise mcp_http.ToolError("the rover has no home yet; try again in a minute")
+        if self.role == "supply":
             waypoints, deliveries = self.check_deliveries(arguments.get("deliveries"), home)
-            plan = self.check_plan(name, waypoints, speed)
+            if self.routes:
+                order = tuple(d["station"] for d in deliveries)
+                if order not in self.routes:
+                    raise mcp_http.ToolError(f"no route through {' then '.join(order)}; it can reach "
+                                             f"{', '.join(sorted({s for k in self.routes for s in k}))}")
+                route_id = "supply:" + ">".join(order)
+                plan = self.check_route(name, self.routes[order]["points"], speed, home)
+            else:
+                plan = self.check_plan(name, waypoints, speed)
+        elif self.kind == "rover" and self.routes:
+            route_id = arguments.get("route")
+            if route_id not in self.routes:
+                raise mcp_http.ToolError(f"route: one of {', '.join(self.routes)}")
+            plan = self.check_route(name, self.routes[route_id]["points"], speed, home)
         else:
             plan = self.check_plan(name, arguments.get("waypoints"), speed)
         if not self.busy.acquire(blocking=False):
@@ -661,16 +718,19 @@ class Pilot:
             }
             if deliveries:
                 self.flight["deliveries"] = deliveries
+            if route_id:
+                self.flight["route_id"] = route_id
             self.flown_m = 0.0
             self.flight["photo_every_m"] = photo_every
             self._photos_at_start = s["photos"]
-            self.vehicle.event(f"mission {name}: {len(plan)} waypoints, {legs:.0f} m" + (f", a photo every {photo_every:g} m" if photo_every else ""))
+            self.vehicle.event(f"mission {name}: " + (f"route {route_id}" if route_id else f"{len(plan)} waypoints") + f", {legs:.0f} m"
+                               + (f", a photo every {photo_every:g} m" if photo_every else ""))
             self._camera = photo_every
             {"quad": self._launch_quad, "rover": self._launch_rover, "plane": self._launch_plane}[self.kind](route, plan, speed)
             self.flight["status"] = "flying"
             return {
                 "accepted": True, "vehicle": self.vehicle_id, "kind": self.kind, "mission": name,
-                "waypoints": len(plan), "distance_m": round(legs), "eta_s": eta,
+                **({"route": route_id} if route_id else {"waypoints": len(plan)}), "distance_m": round(legs), "eta_s": eta,
                 "status": "on its way in AUTO; it comes back to its station by itself",
             }
         except mcp_http.ToolError:
@@ -743,6 +803,7 @@ class Pilot:
                  {"frame": rel, "command": mav.MAV_CMD_DO_CHANGE_SPEED, "p1": 1, "p2": speed, "p3": -1}]
         items += self._camera_on() + [self._wp(p) for p in route[1:]] + self._camera_off()
         items.append({"frame": rel, "command": mav.MAV_CMD_NAV_RETURN_TO_LAUNCH})
+        self._last_item = len(items) - 1
         v.upload_mission(items)
         v.set_mode("HOLD")
         v.arm()
@@ -793,7 +854,9 @@ def supply_tool(pilot, limits):
             "Send this supply rover on a delivery run: it loads charged battery packs and spare parts at the depot, "
             "drives to the stations in the order given, unloads what each delivery says, picks up the spent packs, "
             f"and drives back to the depot. It carries at most {pilot.capacity[0]} packs and {pilot.capacity[1]} parts in all. "
-            "The route is the stations' own positions: give no waypoints. One call per run; it answers once the rover is on its way."
+            "Give no waypoints: it drives the route precomputed through those stations in that order, along the port's roads "
+            "and yards, clear of buildings, container blocks and water, turning round at each station like a car. "
+            "One call per run; it answers once the rover is on its way."
         ),
         "inputSchema": {
             "type": "object",
@@ -818,6 +881,44 @@ def supply_tool(pilot, limits):
             "additionalProperties": False,
         },
     }
+
+
+def route_tool(pilot, limits):
+    """A patrol rover's tool: one of its precomputed routes, by name."""
+    ids = list(pilot.routes)
+    menu = "; ".join(f"{rid}: {r.get('zone')} ({r['length_m']} m)" for rid, r in pilot.routes.items())
+    return {
+        "name": "run_mission",
+        "description": (
+            "Drive this ground rover on one of its precomputed routes and bring it home: out to the zone, a lap of it and back "
+            "to its station, along the port's roads and yard lanes, clear of buildings, container blocks and water, with turns "
+            f"a car can drive. Give no waypoints; pick the route whose zone the objective names. Routes: {menu}. "
+            f"Speed {limits.min_speed:g} to {limits.max_speed:g} m/s. The service refuses a vehicle that is not ready "
+            "(at its station, low battery). One call per mission; it answers once the rover is on its way."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "a short mission name, e.g. 'rwg-yard-round'", "maxLength": 40},
+                "route": {"type": "string", "enum": ids, "description": "the route to drive"},
+                "speed_m_s": {"type": "number", "description": f"cruise speed in m/s, {limits.min_speed:g} to {limits.max_speed:g}"},
+                "photo_every_m": {"type": "number", "minimum": 0, "maximum": 500, "description": "camera: one photo every so many metres along the route; 0 or absent: none"},
+            },
+            "required": ["name", "route"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def load_routes(path, kind, role, station):
+    """The routes this rover may drive, from the library routes.py wrote."""
+    if kind != "rover" or not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        library = json.load(f).get("routes", [])
+    if role == "supply":
+        return {tuple(r["stations"]): r for r in library if r["kind"] == "supply" and r["from"] == station}
+    return {r["id"]: r for r in library if r["kind"] == "patrol" and r["from"] == station}
 
 
 def mission_tool(kind, limits):
@@ -907,12 +1008,13 @@ def main():
         with open(layout_file) as f:
             stations = json.load(f).get("stations", [])
     capacity = (int(env_float("CARRY_BATTERIES", 8)), int(env_float("CARRY_PARTS", 10)))
+    routes = load_routes(os.environ.get("ROUTES_FILE", ROUTES_FILE), kind, role, station)
     limits = Limits(kind)
     vehicle = Vehicle(os.environ.get("MAVLINK_URL", "tcp:127.0.0.1:5770"))
     crew = GroundCrew(vehicle, vehicle_id, kind, station, os.environ.get("CREW_URL", ""),
                       env_float("INSPECTION_S", 30), env_float("SWAP_S", 10))
     pilot = Pilot(vehicle_id, kind, vehicle, limits, crew, zones, os.environ.get("TELEMETRY_FILE", "/var/lib/vehicle/telemetry.json"),
-                  role=role, stations=stations, capacity=capacity)
+                  role=role, stations=stations, capacity=capacity, routes=routes)
     vehicle.start()
 
     StateHandler.pilot = pilot
@@ -920,10 +1022,16 @@ def main():
     threading.Thread(target=state_server.serve_forever, name="state", daemon=True).start()
 
     tools = mcp_http.Tools(server_name="vehicle", version="0.1.0")
-    tools.add(supply_tool(pilot, limits) if role == "supply" else mission_tool(kind, limits), pilot.run_mission)
+    if role == "supply":
+        tool = supply_tool(pilot, limits)
+    elif routes:
+        tool = route_tool(pilot, limits)
+    else:
+        tool = mission_tool(kind, limits)
+    tools.add(tool, pilot.run_mission)
     mcp_server = ThreadingHTTPServer(env_listen("MCP_LISTEN", "127.0.0.1:8765"), mcp_http.handler(tools))
     threading.Thread(target=mcp_server.serve_forever, name="mcp", daemon=True).start()
-    log.info("%s %s at station %s: state on %s, MCP on %s", kind, vehicle_id, station, state_server.server_address, mcp_server.server_address)
+    log.info("%s %s at station %s: %d routes, state on %s, MCP on %s", kind, vehicle_id, station, len(routes), state_server.server_address, mcp_server.server_address)
 
     while True:
         try:

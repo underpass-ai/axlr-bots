@@ -9,6 +9,7 @@ Overpass API ─ fetch_osm.py ─▶ build/osm.json ─ prepare.py (shapely) ─
                                        ├─▶ ../app/static/port.glb                     the browser: GPU instances
                                        └─▶ gazebo/models/maasvlakte2/meshes/port.glb   gz sim: plain nodes
                        gazebo_world.py ─▶ gazebo/models/maasvlakte2/model.sdf, gazebo/worlds/maasvlakte2.sdf
+                             routes.py ─▶ ../app/routes.json                            the rovers' routes
 ```
 
 | Step | Makes | Needs |
@@ -17,6 +18,7 @@ Overpass API ─ fetch_osm.py ─▶ build/osm.json ─ prepare.py (shapely) ─
 | `prepare.py` | land (the bbox minus the sea and the harbours), the land's top as disjoint patches, buildings with heights, cranes, container stacks, ships, turbines; triangulated | `uv run` (shapely) |
 | `build_scene.py` | the scene, `build/port.blend` and the two glb files | Blender 4.2 or later |
 | `gazebo_world.py` | the world and the model around the gz glb | Python |
+| `routes.py` | the rovers' routes: patrols from each rover station, supply runs from the depot | `uv run` (shapely, PyYAML) |
 
 ## Build
 
@@ -27,6 +29,7 @@ uv run prepare.py
 blender -b --factory-startup -P build_scene.py -- --features build/features.json \
   --web ../app/static/port.glb --gazebo gazebo/models/maasvlakte2/meshes/port.glb --blend build/port.blend
 python3 gazebo_world.py
+uv run routes.py                         # reads ../../helm/drone-fleet/values.yaml: run it again when a station moves
 ```
 
 `--date` asks Overpass for the data as it was then: the committed models were built from 2026-10-26T07:50:21Z, and `prepare.py` and `build_scene.py` draw the stacks and the ships from a fixed seed, so the same date gives the same scene. Leave it out for today's map. On the lab, Blender runs on wrx80 (`ssh wrx80`; copy the directory there and the two glb files back).
@@ -43,6 +46,25 @@ Metres east, north and up of 51.9440 N, 3.9990 E: Blender's X, Y, Z; glTF's x, y
 | building footprints, storage tanks, piers, breakwaters | the container stacks: inside each stacking crane's block (OSM maps the blocks), heights at random |
 | quay cranes (points, turned to face the nearest water), stacking blocks, crane rails | ships at the berths with three or more quay cranes, a bulk carrier at the coal terminal |
 | wind turbines (Vestas V162), masts, chimneys | coal and ore piles beside the stacker-reclaimers' rails |
+
+## The rovers' routes
+
+A rover's bot does not plan: it picks one of the routes `routes.py` precomputed, and the vehicle pilot drives it.
+
+```text
+features.json ─▶ the lattice: every 5 m of land, minus water and what is in the way grown by 1.5 m
+                 a metre costs 1 on a road, 1.3 on a yard, 1.6 on works, 3 on grass or sand
+              ─▶ A* in 8 directions; leaving a stop backwards costs 12 m a radian of turn
+              ─▶ pulled taut where clear (turns ≤ 100°), corners rounded with 6 m arcs
+              ─▶ checked: inside the geofence, nothing inside an obstacle
+```
+
+| Route | From | Is |
+|---|---|---|
+| `<station>:<zone>` | each rover's station | out to the zone, a lap through six points spread over it, back |
+| `supply:<a>><b>…` | the depot | through the stations in that order and back, a balloon loop at each to turn round |
+
+Only the zones within a rover's geofence (1500 m) get a route: from Euromax the Euromax yard and the Distripark, from RWG the RWG yard. The supply runs cover every ordered choice of stations.
 
 ## Gazebo
 
