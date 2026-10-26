@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::application::{EventFeed, PanelConfig};
-use crate::domain::{BotForm, BotId, Decision, IdempotencyKey, NodeId, TaskId};
+use crate::domain::{AutonomyLevel, BotForm, BotId, Decision, IdempotencyKey, NodeId, TaskId};
 
 /// What the panel asks the outside world to do after a message: a call
 /// to the control plane, a dialog, the clipboard. The update logic only
@@ -24,6 +24,8 @@ pub enum Effect {
     RegisterFile(PathBuf),
     Enable(BotId),
     Pause(BotId),
+    SetLevel(BotId, AutonomyLevel),
+    StopBot(BotId),
     Submit {
         bot: BotId,
         objective: String,

@@ -28,6 +28,7 @@ func (uc UpdateBot) Execute(ctx context.Context, id domain.BotID, patch BotPatch
 	if err != nil {
 		return domain.Bot{}, err
 	}
+	previous := bot.Level()
 	changed, err := applyPatch(&bot, patch)
 	if err != nil {
 		_ = uc.rec.audit(ctx, "bot.update", id.String(), domain.AuditDenied, map[string]string{"reason": err.Error()})
@@ -40,7 +41,12 @@ func (uc UpdateBot) Execute(ctx context.Context, id domain.BotID, patch BotPatch
 	if err := uc.deps.Bots.Save(ctx, bot); err != nil {
 		return domain.Bot{}, err
 	}
-	if err := uc.rec.event(ctx, domain.EventBotUpdated, bot, "", "", map[string]any{"fields": changed}); err != nil {
+	payload := map[string]any{"fields": changed}
+	if bot.Level() != previous {
+		// A turned dial says where from and where to, for the timeline.
+		payload["previousLevel"], payload["level"] = previous.String(), bot.Level().String()
+	}
+	if err := uc.rec.event(ctx, domain.EventBotUpdated, bot, "", "", payload); err != nil {
 		return domain.Bot{}, err
 	}
 	if err := uc.rec.audit(ctx, "bot.update", id.String(), domain.AuditOK, map[string]string{"fields": joinStrings(changed)}); err != nil {

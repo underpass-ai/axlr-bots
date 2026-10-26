@@ -3,8 +3,10 @@ use std::sync::Arc;
 use super::{BotView, Connection, Effect, Message};
 use crate::application::{
     CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader, FilePicker, FollowBotEvents, KeySource,
-    LoadTaskDetail, MintEnrollmentToken, PanelError, RefreshFleet, RegisterBot, RevokeNode, SubmitTask, SwitchBot,
+    LoadTaskDetail, MintEnrollmentToken, PanelError, PatchBot, RefreshFleet, RegisterBot, RevokeNode, StopBot,
+    SubmitTask, SwitchBot,
 };
+use crate::domain::BotPatch;
 
 /// The ports the panel's effects run through.
 #[derive(Clone)]
@@ -91,6 +93,20 @@ impl Services {
             }),
             Effect::Pause(id) => Message::Switched(match self.control_plane() {
                 Ok(cp) => SwitchBot::new(cp).pause(id).await,
+                Err(e) => Err(e),
+            }),
+            Effect::SetLevel(id, level) => Message::Leveled(match self.control_plane() {
+                Ok(cp) => {
+                    let patch = BotPatch {
+                        level: Some(level),
+                        ..BotPatch::default()
+                    };
+                    PatchBot::new(cp).execute(id, patch).await
+                }
+                Err(e) => Err(e),
+            }),
+            Effect::StopBot(id) => Message::BotStopped(match self.control_plane() {
+                Ok(cp) => StopBot::new(cp).execute(id).await,
                 Err(e) => Err(e),
             }),
             Effect::Submit { bot, objective, key } => Message::Submitted(match self.control_plane() {

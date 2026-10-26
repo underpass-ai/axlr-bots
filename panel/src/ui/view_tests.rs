@@ -70,6 +70,15 @@ fn home_shows_the_counts_and_what_needs_a_person() {
             "127.0.0.1:7879",
         ],
     );
+    shows(&app, &["wants local_write · hello", "Approve", "Deny"]);
+    assert!(matches!(
+        messages_of_click(&app, "Approve").as_slice(),
+        [Message::Approve(_)]
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Deny").as_slice(),
+        [Message::AskDeny(_)]
+    ));
     let sent = messages_of_click(&app, "Review");
     assert!(matches!(sent.as_slice(), [Message::Go(Screen::Task(_))]));
     let sent = messages_of_click(&app, "expired today");
@@ -172,6 +181,24 @@ fn the_bots_screen_lists_switches_and_adds() {
     ));
     let sent = messages_of_click(&app, "New task");
     assert!(matches!(sent.as_slice(), [Message::SubmitOpen(Some(_))]));
+    shows(&app, &["Observe", "Propose", "Ask first", "Act", "Stop bot"]);
+    assert!(matches!(
+        messages_of_click(&app, "Observe").as_slice(),
+        [Message::SetLevel(_, crate::domain::AutonomyLevel::Observe)]
+    ));
+    assert!(
+        messages_of_click(&app, "Ask first").is_empty(),
+        "the lit level is not a button"
+    );
+    assert!(matches!(
+        messages_of_click(&app, "Stop bot").as_slice(),
+        [Message::AskStopBot(_)]
+    ));
+    app.switching = true;
+    assert!(
+        messages_of_click(&app, "Observe").is_empty(),
+        "no turn while one is on its way"
+    );
 }
 
 #[test]
@@ -190,6 +217,13 @@ fn the_tasks_screen_filters_and_sends() {
             "Open",
         ],
     );
+    assert!(matches!(
+        messages_of_click(&app, "Approve").as_slice(),
+        [Message::Approve(_)]
+    ));
+    app.deciding = app.fleet.as_ref().unwrap().waiting().first().map(|t| t.id.clone());
+    assert!(messages_of_click(&app, "Approve").is_empty(), "one answer at a time");
+    app.deciding = None;
     let sent = messages_of_click(&app, "Failed 1");
     assert!(matches!(
         sent.as_slice(),

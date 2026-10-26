@@ -29,11 +29,14 @@ mod register_bot;
 mod revoke_node;
 mod show_bot;
 mod show_node;
+mod stop_bot;
+mod stopped_bot;
 mod submit_task;
 mod switch_bot;
 mod task_detail;
 #[cfg(test)]
 pub(crate) mod test_support;
+mod waiting_call;
 
 pub use cancel_task::CancelTask;
 pub use clock::Clock;
@@ -64,6 +67,9 @@ pub use register_bot::RegisterBot;
 pub use revoke_node::RevokeNode;
 pub use show_bot::{BOT_EVENTS, ShowBot};
 pub use show_node::ShowNode;
+pub use stop_bot::StopBot;
+pub use stopped_bot::StoppedBot;
 pub use submit_task::SubmitTask;
 pub use switch_bot::SwitchBot;
 pub use task_detail::TaskDetail;
+pub use waiting_call::WaitingCall;

@@ -472,3 +472,93 @@ fn the_window_names_its_control_plane() {
     assert_eq!(app.endpoint.as_deref(), Some("127.0.0.1:7879"));
     assert_eq!(app.window_title(), "AXLR Bots · 127.0.0.1:7879 · 1 need you");
 }
+
+#[test]
+fn the_dial_turns_a_bot_at_once_and_its_feed_says_so() {
+    let mut app = connected();
+    let id = BotId::new("bot-act-with-approval").unwrap();
+    send(&mut app, Message::Go(Screen::Bot(id.clone())));
+    assert_eq!(app.bot.as_ref().unwrap().bot.level, AutonomyLevel::ActWithApproval);
+    let effects = app.apply(Message::SetLevel(id.clone(), AutonomyLevel::Observe));
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::SetLevel(_, AutonomyLevel::Observe)]
+    ));
+    assert!(
+        app.apply(Message::SetLevel(id.clone(), AutonomyLevel::Propose))
+            .is_empty(),
+        "one turn at a time"
+    );
+    drive(&mut app, effects);
+    assert!(!app.switching);
+    assert_eq!(app.bot.as_ref().unwrap().bot.level, AutonomyLevel::Observe);
+    assert_eq!(
+        app.banner.as_ref().unwrap().title,
+        "bot-act-with-approval is now Observe"
+    );
+    let feed = app.feed().unwrap();
+    let turned = feed.events.iter().rev().find(|e| e.label() == "Level changed").unwrap();
+    assert_eq!(turned.detail(), "Ask first → Observe");
+
+    // A turn the control plane refuses says why.
+    send(
+        &mut app,
+        Message::SetLevel(BotId::new("ghost").unwrap(), AutonomyLevel::ActWithinPolicy),
+    );
+    assert_eq!(app.banner.as_ref().unwrap().title, "Not found");
+    assert!(!app.switching);
+}
+
+#[test]
+fn a_bot_is_stopped_with_its_open_tasks_after_the_second_click() {
+    let mut app = connected();
+    let waiting = app.fleet.as_ref().unwrap().waiting()[0].clone();
+    let id = waiting.bot_id.clone();
+    send(&mut app, Message::Go(Screen::Bot(id.clone())));
+    assert!(app.apply(Message::AskStopBot(id.clone())).is_empty());
+    assert_eq!(app.confirm, Some(Confirm::StopBot(id.clone())));
+    let effects = app.apply(Message::ConfirmYes);
+    assert!(matches!(effects.as_slice(), [Effect::StopBot(_)]));
+    assert!(app.switching);
+    drive(&mut app, effects);
+    assert!(!app.switching);
+    assert_eq!(app.bot.as_ref().unwrap().bot.status, BotStatus::Paused);
+    let banner = app.banner.as_ref().unwrap();
+    assert_eq!(banner.title, format!("{id} stopped"));
+    assert!(banner.detail.contains("cancelled"), "{}", banner.detail);
+    let fleet = app.fleet.as_ref().unwrap();
+    assert!(
+        fleet
+            .tasks
+            .iter()
+            .filter(|t| t.bot_id == id)
+            .all(|t| !t.status.can_cancel())
+    );
+
+    // Stopped again: nothing open.
+    send(&mut app, Message::AskStopBot(id.clone()));
+    send(&mut app, Message::ConfirmYes);
+    assert_eq!(app.banner.as_ref().unwrap().detail, "no open task");
+    send(&mut app, Message::AskStopBot(BotId::new("ghost").unwrap()));
+    send(&mut app, Message::ConfirmYes);
+    assert_eq!(app.banner.as_ref().unwrap().title, "Not found");
+}
+
+#[test]
+fn a_stop_that_could_not_cancel_everything_says_how_many() {
+    let mut app = connected();
+    let bot = app.fleet.as_ref().unwrap().bots[0].clone();
+    app.apply(Message::BotStopped(Ok(crate::application::StoppedBot {
+        bot,
+        cancelled: 2,
+        not_cancelled: 1,
+    })));
+    assert_eq!(app.banner.as_ref().unwrap().detail, "2 tasks cancelled, 1 could not be");
+    let bot = app.fleet.as_ref().unwrap().bots[0].clone();
+    app.apply(Message::BotStopped(Ok(crate::application::StoppedBot {
+        bot,
+        cancelled: 1,
+        not_cancelled: 0,
+    })));
+    assert_eq!(app.banner.as_ref().unwrap().detail, "1 task cancelled");
+}

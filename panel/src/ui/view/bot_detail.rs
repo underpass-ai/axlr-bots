@@ -51,8 +51,20 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
         back,
         title(Icon::Bots, bot.id.to_string(), tokens),
         pill(Tone::of_bot(bot.status), bot.status.name(), tokens),
-        Space::new().width(Length::Fill),
+    ]
+    .spacing(12)
+    .align_y(Alignment::Center);
+    // The controls in one bar under the name: on or paused, stopped, a
+    // new task.
+    let controls = row![
         switch,
+        action(
+            Kind::Danger,
+            Icon::Stop,
+            "Stop bot",
+            (!app.switching).then(|| Message::AskStopBot(bot.id.clone())),
+            tokens,
+        ),
         new_task,
     ]
     .spacing(12)
@@ -124,10 +136,9 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
             Icon::Alert,
             "Level",
             column![
-                row![chip(bot.level.label(), tokens), muted(bot.level.name(), tokens)]
-                    .spacing(10)
-                    .align_y(Alignment::Center),
+                dial(app, bot, tokens),
                 text(level_words(bot.level)),
+                muted("A turn counts from the bot's next step.", tokens),
             ]
             .spacing(8),
             tokens
@@ -147,7 +158,7 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
     .width(Length::FillPortion(1));
 
     scrollable(
-        column![header, row![left, right].spacing(14)]
+        column![header, controls, row![left, right].spacing(14)]
             .spacing(18)
             .padding(iced::Padding {
                 right: 12.0,
@@ -167,6 +178,23 @@ fn limit(value: u32) -> String {
 }
 
 /// What a level lets the bot do, in one sentence.
+/// The autonomy dial: the four levels, the bot's own lit; a click turns
+/// it at once.
+fn dial<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
+    let mut dial = row![].spacing(6);
+    for level in AutonomyLevel::ALL {
+        let current = level == bot.level;
+        dial = dial.push(action(
+            Kind::Chip(current),
+            if current { Icon::Check } else { Icon::Dot },
+            level.label(),
+            (!current && !app.switching).then(|| Message::SetLevel(bot.id.clone(), level)),
+            tokens,
+        ));
+    }
+    dial.into()
+}
+
 fn level_words(level: AutonomyLevel) -> &'static str {
     match level {
         AutonomyLevel::Observe => "Reads only. It never writes.",

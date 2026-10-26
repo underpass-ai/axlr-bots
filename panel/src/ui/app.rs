@@ -345,13 +345,55 @@ impl App {
                             "is paused"
                         };
                         self.banner = Some(Banner::good(format!("{} {word}", bot.id), "", self.now));
-                        if let Some(view) = self.bot.as_mut().filter(|v| v.bot.id == bot.id) {
-                            view.bot = bot;
-                        }
+                        self.replace_bot(bot);
                     }
                     Err(error) => self.banner = Some(Banner::error(&error, self.now)),
                 }
                 self.refresh_now()
+            }
+
+            Message::SetLevel(id, level) => self.switch(Effect::SetLevel(id, level)),
+            Message::Leveled(result) => {
+                self.switching = false;
+                match result {
+                    Ok(bot) => {
+                        self.banner = Some(Banner::good(
+                            format!("{} is now {}", bot.id, bot.level.label()),
+                            "From its next step",
+                            self.now,
+                        ));
+                        self.replace_bot(bot);
+                    }
+                    Err(error) => self.banner = Some(Banner::error(&error, self.now)),
+                }
+                let mut effects = self.reload_screen();
+                effects.extend(self.refresh_now());
+                effects
+            }
+            Message::AskStopBot(id) => {
+                self.confirm = Some(Confirm::StopBot(id));
+                Vec::new()
+            }
+            Message::BotStopped(result) => {
+                self.switching = false;
+                match result {
+                    Ok(stopped) => {
+                        let mut detail = match stopped.cancelled {
+                            0 => "no open task".to_string(),
+                            1 => "1 task cancelled".to_string(),
+                            n => format!("{n} tasks cancelled"),
+                        };
+                        if stopped.not_cancelled > 0 {
+                            detail = format!("{detail}, {} could not be", stopped.not_cancelled);
+                        }
+                        self.banner = Some(Banner::good(format!("{} stopped", stopped.bot.id), detail, self.now));
+                        self.replace_bot(stopped.bot);
+                    }
+                    Err(error) => self.banner = Some(Banner::error(&error, self.now)),
+                }
+                let mut effects = self.reload_screen();
+                effects.extend(self.refresh_now());
+                effects
             }
 
             Message::FilterStatus(status) => {
@@ -469,6 +511,10 @@ impl App {
                 Some(Confirm::Revoke(id)) => vec![Effect::Revoke(id)],
                 Some(Confirm::Cancel(id)) => vec![Effect::Cancel(id)],
                 Some(Confirm::Deny(id)) => self.decide(id, Decision::Deny),
+                Some(Confirm::StopBot(id)) => {
+                    self.switching = true;
+                    vec![Effect::StopBot(id)]
+                }
                 None => Vec::new(),
             },
             Message::ConfirmNo => {
@@ -603,6 +649,13 @@ impl App {
             self.settings.saved = self.settings.saved || self.connected();
         }
         self.reload_screen()
+    }
+
+    /// The bot on screen, as the control plane now has it.
+    fn replace_bot(&mut self, bot: crate::domain::Bot) {
+        if let Some(view) = self.bot.as_mut().filter(|v| v.bot.id == bot.id) {
+            view.bot = bot;
+        }
     }
 
     fn switch(&mut self, effect: Effect) -> Vec<Effect> {
