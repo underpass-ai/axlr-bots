@@ -91,6 +91,7 @@ func (s *Server) operatorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /v1/bots/{id}", s.patchBot)
 	mux.HandleFunc("POST /v1/bots/{id}/enable", s.enableBot)
 	mux.HandleFunc("POST /v1/bots/{id}/pause", s.pauseBot)
+	mux.HandleFunc("POST /v1/bots/{id}/stop", s.stopBot)
 	mux.HandleFunc("POST /v1/bots/{id}/tasks", s.submitBotTask)
 	mux.HandleFunc("GET /v1/bots/{id}/events", s.listEvents)
 	mux.HandleFunc("GET /v1/groups", s.listGroups)
@@ -286,6 +287,11 @@ func (s *Server) pauseBot(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, value, err)
 }
 
+func (s *Server) stopBot(w http.ResponseWriter, r *http.Request) {
+	value, err := s.service.StopBot(r.Context(), r.PathValue("id"))
+	respond(w, http.StatusOK, value, err)
+}
+
 func (s *Server) patchBot(w http.ResponseWriter, r *http.Request) {
 	var patch application.BotPatch
 	if !readJSON(w, r, &patch) {
@@ -320,7 +326,7 @@ func (s *Server) submitBotTask(w http.ResponseWriter, r *http.Request) {
 	if key == "" {
 		key = request.IdempotencyKey
 	}
-	response, err := s.service.SubmitTask(r.Context(), SubmitRequest{BotID: r.PathValue("id"), Objective: request.Objective, IdempotencyKey: key, CorrelationID: request.CorrelationID})
+	response, err := s.service.SubmitTask(r.Context(), SubmitRequest{BotID: r.PathValue("id"), Objective: request.Objective, IdempotencyKey: key, CorrelationID: request.CorrelationID, Priority: request.Priority})
 	respond(w, createdStatus(response.Created), response, err)
 }
 

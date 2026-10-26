@@ -14,7 +14,7 @@ const maxSocketPath = 104
 const (
 	DefaultHeartbeat = 15 * time.Second
 	DefaultPollWait  = 20 * time.Second
-	DefaultRenew     = 30 * time.Second
+	DefaultRenew     = 10 * time.Second
 	DefaultUpload    = 2 * time.Minute
 )
 

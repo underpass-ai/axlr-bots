@@ -20,6 +20,8 @@ type Service interface {
 	RegisterBot(ctx context.Context, definition application.BotDefinition) (domain.BotSnapshot, error)
 	EnableBot(ctx context.Context, id string) (domain.BotSnapshot, error)
 	PauseBot(ctx context.Context, id string) (domain.BotSnapshot, error)
+	// StopBot pauses the bot and cancels every task it has not finished.
+	StopBot(ctx context.Context, id string) (StopResponse, error)
 	// UpdateBot applies a partial change to the bot's definition.
 	UpdateBot(ctx context.Context, id string, patch application.BotPatch) (domain.BotSnapshot, error)
 	ListBots(ctx context.Context) ([]domain.BotSnapshot, error)

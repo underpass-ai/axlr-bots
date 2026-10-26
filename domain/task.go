@@ -26,6 +26,7 @@ type Task struct {
 	children       []TaskID
 	grantedModel   int
 	grantedTools   int
+	priority       TaskPriority
 	createdAt      time.Time
 	updatedAt      time.Time
 }
@@ -37,7 +38,7 @@ func NewTask(id TaskID, bot BotID, objective Objective, key IdempotencyKey, corr
 	}
 	return Task{
 		id: id, botID: bot, objective: objective, status: TaskPending,
-		idempotencyKey: key, correlationID: correlation, trigger: ManualTrigger(),
+		idempotencyKey: key, correlationID: correlation, trigger: ManualTrigger(), priority: PriorityNormal,
 		createdAt: now, updatedAt: now,
 	}, nil
 }
@@ -57,6 +58,16 @@ func (t *Task) Attribute(trigger TriggerRef, input []byte) error {
 	t.trigger, t.input = ref, parsed
 	return nil
 }
+
+// Prioritize sets whether the task waits its turn or goes first, before
+// the task is first saved.
+func (t *Task) Prioritize(priority TaskPriority) { t.priority = priority }
+
+// Priority says whether the task waits its turn or goes first.
+func (t Task) Priority() TaskPriority { return t.priority }
+
+// IsUrgent reports whether the task goes first.
+func (t Task) IsUrgent() bool { return t.priority == PriorityUrgent }
 
 // Link records where a delegated task came from, before the task is
 // first saved.
@@ -349,11 +360,18 @@ func (t *Task) Resume(execution ExecutionID, outcome string, now time.Time) erro
 
 // Cancel stops a task that has not finished.
 func (t *Task) Cancel(now time.Time) error {
+	return t.CancelBecause("", now)
+}
+
+// CancelBecause stops the task as Cancel does and keeps why: who stopped
+// it, or the urgent task that preempted it.
+func (t *Task) CancelBecause(reason string, now time.Time) error {
 	if t.status.IsTerminal() {
 		return t.refuse("cancel")
 	}
 	t.closeApproval(ApprovalCancelled, now)
 	t.status = TaskCancelled
+	t.failureReason = reason
 	t.updatedAt = now
 	return nil
 }
@@ -392,6 +410,7 @@ func (t Task) Snapshot() TaskSnapshot {
 		Children:       children,
 		GrantedModel:   t.grantedModel,
 		GrantedTools:   t.grantedTools,
+		Priority:       t.prioritySnapshot(),
 		CreatedAt:      t.createdAt,
 		UpdatedAt:      t.updatedAt,
 	}
@@ -399,6 +418,15 @@ func (t Task) Snapshot() TaskSnapshot {
 		snapshot.Delegation = &lineage
 	}
 	return snapshot
+}
+
+// prioritySnapshot is the priority as stored: empty for normal, so a
+// task written before priorities reads the same.
+func (t Task) prioritySnapshot() string {
+	if t.priority == PriorityUrgent {
+		return t.priority.String()
+	}
+	return ""
 }
 
 // RestoreTask rebuilds a task from a snapshot, validating every value.
@@ -480,6 +508,9 @@ func RestoreTask(s TaskSnapshot) (Task, error) {
 		return Task{}, invalid("granted", "must not be negative")
 	}
 	task.grantedModel, task.grantedTools = s.GrantedModel, s.GrantedTools
+	if task.priority, err = ParseTaskPriority(s.Priority); err != nil {
+		return Task{}, err
+	}
 	task.status = status
 	task.failureReason = s.FailureReason
 	task.updatedAt = s.UpdatedAt

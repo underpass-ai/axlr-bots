@@ -11,6 +11,7 @@ import (
 // its deadline while the task waits, its outcome once it ended.
 // Delegation is where a delegated task came from; Children are the
 // tasks this one delegated, and the granted counts what it handed them.
+// Priority is urgent for a task that goes first; empty for normal.
 type TaskSnapshot struct {
 	ID             string             `json:"id"`
 	BotID          string             `json:"botId"`
@@ -27,6 +28,7 @@ type TaskSnapshot struct {
 	Children       []string           `json:"children,omitempty"`
 	GrantedModel   int                `json:"grantedModelCalls,omitempty"`
 	GrantedTools   int                `json:"grantedToolCalls,omitempty"`
+	Priority       string             `json:"priority,omitempty"`
 	CreatedAt      time.Time          `json:"createdAt"`
 	UpdatedAt      time.Time          `json:"updatedAt"`
 }

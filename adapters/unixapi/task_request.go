@@ -7,4 +7,7 @@ type TaskRequest struct {
 	Objective      string `json:"objective"`
 	IdempotencyKey string `json:"idempotencyKey,omitempty"`
 	CorrelationID  string `json:"correlationId,omitempty"`
+	// Priority is urgent for a task that goes first and cancels the
+	// bot's work in progress; absent or normal waits its turn.
+	Priority string `json:"priority,omitempty"`
 }

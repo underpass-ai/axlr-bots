@@ -218,14 +218,18 @@ func (uc EmitEvent) deliver(ctx context.Context, e emission, mate domain.Bot) (*
 	if err != nil {
 		return nil, nil, err
 	}
-	created, err := submitTask(ctx, uc.deps, submission{
+	s := submission{
 		action: "task.event", bot: mate, trigger: trigger.Ref(), objective: objective,
 		key: key, correlation: e.task.CorrelationID(), input: input, lineage: &child,
-	})
+	}
+	if mate.InterruptedBy(trigger, e.severity, addressed) {
+		s.priority, s.why = domain.PriorityUrgent, "a "+e.severity.String()+" from its teammate "+e.bot.ID().String()+", event "+e.name.String()
+	}
+	created, err := submitTask(ctx, uc.deps, s)
 	if err != nil {
 		return nil, nil, err
 	}
-	return &EventDelivery{BotID: mate.ID().String(), TaskID: created.Task.ID().String(), Trigger: trigger.Name(), Created: created.Created}, nil, nil
+	return &EventDelivery{BotID: mate.ID().String(), TaskID: created.Task.ID().String(), Trigger: trigger.Name(), Created: created.Created, Urgent: created.Task.IsUrgent()}, nil, nil
 }
 
 // fields are what an event trigger's objective template reads and what
@@ -342,7 +346,7 @@ func botIDs(bots []domain.Bot) []string {
 func deliveriesPayload(deliveries []EventDelivery) []map[string]any {
 	out := make([]map[string]any, 0, len(deliveries))
 	for _, d := range deliveries {
-		out = append(out, map[string]any{"botId": d.BotID, "taskId": d.TaskID, "trigger": d.Trigger, "created": d.Created})
+		out = append(out, map[string]any{"botId": d.BotID, "taskId": d.TaskID, "trigger": d.Trigger, "created": d.Created, "urgent": d.Urgent})
 	}
 	return out
 }

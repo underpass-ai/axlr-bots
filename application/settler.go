@@ -103,9 +103,50 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 		return err
 	}
 	if waiting {
+		if pending := execution.Result().PendingDecision; pending != nil {
+			if actor, ok := approvedByPolicy(bot, *pending); ok && s.autoApprove(ctx, *task, pending.CallID, actor) {
+				return nil
+			}
+		}
 		return s.notes.queue(ctx, bot, *task, *execution, wait)
 	}
 	return nil
+}
+
+// PolicyActor is who decides a call the bot's approvals.autoApprove
+// names: the operator's rule, not a person at the moment.
+const PolicyActor = "policy:autoApprove"
+
+// TeamEventActor is who decides a call of the emit tool: the control
+// plane checks every event itself (the team, the name, the severity, the
+// rate, the chain), so a person is never asked to approve telling the
+// team.
+const TeamEventActor = "policy:team-event"
+
+// approvedByPolicy says whether the call runs without a person, and as
+// whom: the emit tool always, any other call when the bot's
+// approvals.autoApprove names it.
+func approvedByPolicy(bot domain.Bot, pending domain.PendingDecision) (string, bool) {
+	if tool, _, ok := domain.UnwrapCall(pending.Tool, pending.Arguments); ok && domain.ToolBaseName(tool) == EmitEventToolName {
+		return TeamEventActor, true
+	}
+	if bot.Approvals().AutoApproves(pending.Tool, pending.Arguments) {
+		return PolicyActor, true
+	}
+	return "", false
+}
+
+// autoApprove decides the call the task stopped on as the policy says,
+// without a person; false when it could not (the bot was paused
+// meanwhile), and then a person is asked as usual.
+func (s settler) autoApprove(ctx context.Context, task domain.Task, callID, actor string) bool {
+	deps := s.deps
+	deps.Actor = actor
+	if _, err := NewApproveTask(deps).Execute(ctx, task.ID(), DecisionApprove, callID); err != nil {
+		_ = s.rec.audit(ctx, "task.decide", task.ID().String(), domain.AuditFailed, map[string]string{"actor": actor, "reason": err.Error()})
+		return false
+	}
+	return true
 }
 
 // storedNames are the names of the artifacts the store keeps.

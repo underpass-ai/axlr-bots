@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -132,4 +133,36 @@ func TestTheTeamTimelineWaitsForTheNextEvent(t *testing.T) {
 		}
 	}
 	_ = dir
+}
+
+func TestStopAndUrgentOverTheSocket(t *testing.T) {
+	client, _, _ := serve(t, "completed")
+	ctx := context.Background()
+	if _, err := client.RegisterBot(ctx, definition("quad-1", "observe")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.EnableBot(ctx, "quad-1"); err != nil {
+		t.Fatal(err)
+	}
+	first, err := client.SubmitTask(ctx, SubmitRequest{BotID: "quad-1", Objective: "Patrol", IdempotencyKey: "k-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	urgent, err := client.SubmitTask(ctx, SubmitRequest{BotID: "quad-1", Objective: "Return home", IdempotencyKey: "k-2", Priority: "urgent"})
+	if err != nil || urgent.Task.Priority != "urgent" {
+		t.Fatalf("urgent = %+v %v", urgent.Task, err)
+	}
+	stopped, err := client.StopBot(ctx, "quad-1")
+	if err != nil || stopped.Bot.Status != "Paused" || len(stopped.Cancelled) != 2 || len(stopped.NotCancelled) != 0 {
+		t.Fatalf("stop = %+v %v", stopped, err)
+	}
+	if task, _ := client.GetTask(ctx, first.Task.ID); task.Status != "Cancelled" || !strings.HasPrefix(task.FailureReason, "stopped by ") {
+		t.Errorf("first = %+v", task)
+	}
+	if _, err := client.StopBot(ctx, "ghost"); !domain.IsNotFound(err) {
+		t.Errorf("ghost: %v", err)
+	}
+	if _, err := client.StopBot(ctx, "Bad Id"); err == nil {
+		t.Error("a bad id was stopped")
+	}
 }

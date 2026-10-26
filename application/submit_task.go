@@ -38,6 +38,10 @@ func (uc SubmitTask) Execute(ctx context.Context, command SubmitTaskCommand) (Su
 	if err != nil {
 		return SubmitTaskResult{}, err
 	}
+	priority, err := domain.ParseTaskPriority(command.Priority)
+	if err != nil {
+		return SubmitTaskResult{}, err
+	}
 	bot, err := uc.deps.Bots.Get(ctx, botID)
 	if err != nil {
 		return SubmitTaskResult{}, err
@@ -49,7 +53,7 @@ func (uc SubmitTask) Execute(ctx context.Context, command SubmitTaskCommand) (Su
 		}
 		return nil
 	}
-	return submitTask(ctx, uc.deps, submission{action: "task.submit", bot: bot, trigger: domain.ManualTrigger(), objective: objective, key: key, correlation: correlation, accepts: accepts})
+	return submitTask(ctx, uc.deps, submission{action: "task.submit", bot: bot, trigger: domain.ManualTrigger(), objective: objective, key: key, correlation: correlation, accepts: accepts, priority: priority, why: "the operator submitted it as urgent"})
 }
 
 // submission is one task to create: what SubmitTask and FireTrigger
@@ -67,6 +71,10 @@ type submission struct {
 	// accepts refuses the submission for a reason of its own, after the
 	// idempotency lookup and the bot's status; nil accepts.
 	accepts func() error
+	// priority is urgent for a task that goes first and preempts the
+	// bot's work in progress; why says who made it urgent.
+	priority domain.TaskPriority
+	why      string
 }
 
 // submitTask creates the task unless the key already names one. The
@@ -115,6 +123,9 @@ func submitTask(ctx context.Context, deps Dependencies, s submission) (SubmitTas
 			return SubmitTaskResult{}, err
 		}
 	}
+	if s.priority == domain.PriorityUrgent {
+		task.Prioritize(domain.PriorityUrgent)
+	}
 	if err := deps.Tasks.Save(ctx, task); err != nil {
 		return SubmitTaskResult{}, err
 	}
@@ -122,12 +133,20 @@ func submitTask(ctx context.Context, deps Dependencies, s submission) (SubmitTas
 		"objective": s.objective.String(), "idempotencyKey": s.key.String(),
 		"trigger": map[string]any{"type": s.trigger.Type.String(), "name": s.trigger.Name},
 	}
+	if task.IsUrgent() {
+		payload["priority"], payload["why"] = task.Priority().String(), s.why
+	}
 	if err := rec.event(ctx, domain.EventTaskSubmitted, s.bot, taskID, correlation, payload); err != nil {
 		return SubmitTaskResult{}, err
 	}
 	details := map[string]string{"bot": botID.String(), "idempotencyKey": s.key.String(), "trigger": s.trigger.Name}
 	if err := rec.audit(ctx, s.action, taskID.String(), domain.AuditOK, details); err != nil {
 		return SubmitTaskResult{}, err
+	}
+	if task.IsUrgent() {
+		if err := preemptFor(ctx, deps, s.bot, task, s.why); err != nil {
+			return SubmitTaskResult{}, err
+		}
 	}
 	return SubmitTaskResult{Task: task, Created: true}, nil
 }

@@ -6,4 +6,5 @@ type SubmitRequest struct {
 	Objective      string `json:"objective"`
 	IdempotencyKey string `json:"idempotencyKey"`
 	CorrelationID  string `json:"correlationId,omitempty"`
+	Priority       string `json:"priority,omitempty"`
 }

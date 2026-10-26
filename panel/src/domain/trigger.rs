@@ -24,6 +24,9 @@ pub struct Trigger {
     pub cron: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub events: Vec<String>,
+    /// An event trigger whose warnings and criticals make urgent tasks.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub interrupt: bool,
 }
 
 impl Trigger {
@@ -68,6 +71,9 @@ mod tests {
                 .contains(r#""events":["ship.*"]"#)
         );
         assert!(!serde_json::to_string(&Trigger::manual()).unwrap().contains("events"));
+        let loud: Trigger = serde_json::from_str(r#"{"type":"event","events":["recall"],"interrupt":true}"#).unwrap();
+        assert!(loud.interrupt);
+        assert!(!serde_json::to_string(&Trigger::manual()).unwrap().contains("interrupt"));
     }
 
     #[test]

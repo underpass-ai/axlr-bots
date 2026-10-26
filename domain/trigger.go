@@ -27,6 +27,7 @@ type Trigger struct {
 	signingKey string
 	schedule   Schedule
 	events     []EventPattern
+	interrupt  bool
 }
 
 // NewTrigger validates a trigger from its definition.
@@ -44,9 +45,10 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 		return Trigger{}, err
 	}
 	t := Trigger{kind: kind, name: name}
-	if len(s.Events) > 0 && kind != TriggerEvent {
-		return Trigger{}, invalid("trigger "+name, "only an event trigger takes events")
+	if (len(s.Events) > 0 || s.Interrupt) && kind != TriggerEvent {
+		return Trigger{}, invalid("trigger "+name, "only an event trigger takes events or interrupt")
 	}
+	t.interrupt = s.Interrupt
 	switch kind {
 	case TriggerManual, TriggerDelegation:
 		if s.Objective != "" || s.Secret != "" || s.SigningKey != "" || s.Every != "" || s.Cron != "" {
@@ -159,6 +161,10 @@ func (t Trigger) Authenticates(presentedSecret, signature string, body []byte) b
 // declares no event trigger of its own.
 func TeamEventTrigger() Trigger { return Trigger{kind: TriggerEvent, name: "team"} }
 
+// Interrupts reports whether the warnings and criticals an event
+// trigger hears make urgent tasks.
+func (t Trigger) Interrupts() bool { return t.interrupt }
+
 // Hears reports whether an event trigger takes the event.
 func (t Trigger) Hears(name EventName) bool {
 	for _, pattern := range t.events {
@@ -179,5 +185,6 @@ func (t Trigger) Snapshot() TriggerSnapshot {
 	for _, pattern := range t.events {
 		s.Events = append(s.Events, pattern.String())
 	}
+	s.Interrupt = t.interrupt
 	return s
 }

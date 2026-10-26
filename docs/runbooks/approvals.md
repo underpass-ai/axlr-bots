@@ -105,6 +105,10 @@ jq -r '"\(.botId) asks for \(.call.tool) on \(.taskId) before \(.deadline)"' | x
 
 A user-level control plane needs `DISPLAY` or `DBUS_SESSION_BUS_ADDRESS` in its environment for `notify-send` to reach the desktop.
 
+## Without a person
+
+`approvals.autoApprove` names the calls the control plane approves itself, such as a vehicle's `return_home`: `{"autoApprove": [{"tool": "return_home"}]}` ([reference](../reference/bot-definition.md#approvals)). The task still stops on the call for a moment (`bot.task.waiting_approval`), then `bot.task.decided` follows at once with `decidedBy: policy:autoApprove`, and nobody is notified. Keep every other call, taking off or going somewhere new, a person's. A bot's call of `axlr_bots_emit_event` (telling its team) is approved the same way without any rule, as `policy:team-event`.
+
 ## Cancel instead
 
 ```bash

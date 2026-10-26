@@ -133,6 +133,20 @@ func (b Bot) Hears(name EventName, severity Severity, addressed bool) (Trigger, 
 	return Trigger{}, false
 }
 
+// InterruptedBy reports whether the event the bot heard by the trigger
+// makes an urgent task: only a warning or a critical, only when the bot
+// is interruptible, and then when it was addressed to the bot (the
+// team's default) or the bot's own event trigger says interrupt.
+func (b Bot) InterruptedBy(trigger Trigger, severity Severity, addressed bool) bool {
+	if !b.events.Interruptible() || !severity.AtLeast(SeverityWarning) {
+		return false
+	}
+	if b.triggers.Has(TriggerEvent) {
+		return trigger.Interrupts()
+	}
+	return addressed
+}
+
 // IsTeammateOf reports whether the bot and other are different bots of
 // one tenant that share a team.
 func (b Bot) IsTeammateOf(other Bot) bool {
