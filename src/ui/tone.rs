@@ -12,6 +12,8 @@ pub enum Tone {
     Busy,
     /// Needs a person.
     Wait,
+    /// Nobody decided in time: a person's miss, not a crash.
+    Late,
     /// Failed, off-line, refused.
     Bad,
     /// Stopped, waiting its turn, not started.
@@ -23,7 +25,7 @@ impl Tone {
         match self {
             Self::Good => tokens.good,
             Self::Busy => tokens.busy,
-            Self::Wait => tokens.wait,
+            Self::Wait | Self::Late => tokens.wait,
             Self::Bad => tokens.bad,
             Self::Idle => tokens.idle,
         }
@@ -34,6 +36,7 @@ impl Tone {
             Self::Good => Icon::Check,
             Self::Busy => Icon::Play,
             Self::Wait => Icon::Alert,
+            Self::Late => Icon::Hourglass,
             Self::Bad => Icon::Cross,
             Self::Idle => Icon::Pause,
         }
@@ -69,6 +72,7 @@ impl Tone {
             TaskStatus::Running => Self::Busy,
             TaskStatus::WaitingApproval => Self::Wait,
             TaskStatus::Failed => Self::Bad,
+            TaskStatus::Expired => Self::Late,
             TaskStatus::Pending | TaskStatus::Cancelled => Self::Idle,
         }
     }
@@ -119,6 +123,8 @@ mod tests {
         assert_eq!(Tone::of_task(TaskStatus::Running), Tone::Busy);
         assert_eq!(Tone::of_task(TaskStatus::Cancelled), Tone::Idle);
         assert_eq!(Tone::of_task(TaskStatus::Failed), Tone::Bad);
+        assert_eq!(Tone::of_task(TaskStatus::Expired), Tone::Late);
+        assert_eq!(Tone::Late.icon(), Icon::Hourglass);
         assert_eq!(Tone::of_task(TaskStatus::Completed), Tone::Good);
         assert_eq!(Tone::of_outcome(ExecutionOutcome::DecisionRequired), Tone::Wait);
         assert_eq!(Tone::of_outcome(ExecutionOutcome::Running), Tone::Busy);

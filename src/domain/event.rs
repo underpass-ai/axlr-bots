@@ -53,6 +53,8 @@ impl Event {
             "bot.task.waiting_approval" => "Needs OK".into(),
             "bot.task.decided" => self.decision_label(),
             "bot.task.cancelled" => "Cancelled".into(),
+            "bot.task.expired" => "Expired".into(),
+            "bot.approval.expired" => "Approval expired".into(),
             "execution.assigned" => "Sent to node".into(),
             "execution.reported" => "Node reported".into(),
             "node.registered" => "Node joined".into(),
@@ -76,7 +78,9 @@ impl Event {
         match self.event_type.as_str() {
             "bot.task.completed" | "bot.enabled" | "node.registered" | "node.enrolled" => EventTone::Good,
             "bot.task.failed" | "node.offline" | "node.revoked" | "bot.task.cancelled" => EventTone::Bad,
-            "bot.task.waiting_approval" | "bot.paused" => EventTone::Waiting,
+            "bot.task.waiting_approval" | "bot.paused" | "bot.task.expired" | "bot.approval.expired" => {
+                EventTone::Waiting
+            }
             "bot.task.started" | "execution.assigned" | "execution.reported" => EventTone::Working,
             "bot.task.decided" => match self.payload_text("decision").as_deref() {
                 Some("deny") => EventTone::Bad,
@@ -127,6 +131,9 @@ mod tests {
         assert_eq!(event("bot.task.completed", "{}").tone(), EventTone::Good);
         assert_eq!(event("bot.task.failed", r#"{"reason":"timeout"}"#).detail(), "timeout");
         assert_eq!(event("bot.task.failed", "{}").tone(), EventTone::Bad);
+        assert_eq!(event("bot.task.expired", "{}").label(), "Expired");
+        assert_eq!(event("bot.task.expired", "{}").tone(), EventTone::Waiting);
+        assert_eq!(event("bot.approval.expired", "{}").label(), "Approval expired");
         assert_eq!(
             event("bot.task.waiting_approval", r#"{"tool":"local_write"}"#).tone(),
             EventTone::Waiting

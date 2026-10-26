@@ -67,7 +67,7 @@ mod tests {
         let overview: Overview = serde_json::from_str(
             r#"{"since":"2026-10-24T22:00:00Z","nodes":{"Offline":1,"Online":2,"Registered":0,"Revoked":1},
             "bots":{"Enabled":3,"Paused":1},"tasks":{"Running":1,"WaitingApproval":2,"Completed":40},
-            "tasksSince":{"Completed":4,"Failed":1},"executionsSince":6,"costUsdSince":0.0123}"#,
+            "tasksSince":{"Completed":4,"Failed":1,"Expired":5},"executionsSince":6,"costUsdSince":0.0123}"#,
         )
         .unwrap();
         assert_eq!(overview.nodes_in(NodeStatus::Online), 2);
@@ -78,6 +78,7 @@ mod tests {
         assert_eq!(overview.total_bots(), 4);
         assert_eq!(overview.tasks_in(TaskStatus::WaitingApproval), 2);
         assert_eq!(overview.tasks_since_in(TaskStatus::Failed), 1);
+        assert_eq!(overview.tasks_since_in(TaskStatus::Expired), 5);
         assert_eq!(overview.tasks_since_in(TaskStatus::Pending), 0);
         assert_eq!(overview.executions_since, 6);
         assert!((overview.cost_usd_since - 0.0123).abs() < 1e-9);
