@@ -1,6 +1,6 @@
 # ADR: teams of bots, events and urgent tasks
 
-Status: proposed, 26 October 2026. Vision principle 13 ([#30](https://github.com/underpass-ai/axlr-bots/pull/30): the operator creates bots and groups and recalls a bot at once from the panel); builds on [delegation](delegation.md).
+Status: accepted, 26 October 2026 (the product owner: «Todo ok»). Vision principle 13 ([#30](https://github.com/underpass-ai/axlr-bots/pull/30): the operator creates bots and groups and recalls a bot at once from the panel); builds on [delegation](delegation.md).
 
 ## Context
 
