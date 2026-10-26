@@ -1,4 +1,4 @@
-use crate::domain::{NodeId, TaskId};
+use crate::domain::{BotId, NodeId, TaskId};
 
 /// An act that cannot be undone, waiting for a second click.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -6,6 +6,7 @@ pub enum Confirm {
     Revoke(NodeId),
     Cancel(TaskId),
     Deny(TaskId),
+    StopBot(BotId),
 }
 
 impl Confirm {
@@ -14,6 +15,7 @@ impl Confirm {
             Self::Revoke(id) => format!("Revoke {id}?"),
             Self::Cancel(id) => format!("Stop {id}?"),
             Self::Deny(_) => "Deny this call?".to_string(),
+            Self::StopBot(id) => format!("Stop {id}?"),
         }
     }
 
@@ -26,6 +28,10 @@ impl Confirm {
             ],
             Self::Cancel(_) => ["The task stops and does not run again.", "A Pending task never starts."],
             Self::Deny(_) => ["The bot does not make this call.", "The run goes on without it."],
+            Self::StopBot(_) => [
+                "It is paused: it takes no new task.",
+                "Its pending, running and waiting tasks are cancelled.",
+            ],
         }
     }
 
@@ -35,6 +41,7 @@ impl Confirm {
             Self::Revoke(_) => "Revoke",
             Self::Cancel(_) => "Stop task",
             Self::Deny(_) => "Deny",
+            Self::StopBot(_) => "Stop",
         }
     }
 }
@@ -53,5 +60,8 @@ mod tests {
         assert!(cancel.lines()[0].contains("stops"));
         let deny = Confirm::Deny(TaskId::new("task-1").unwrap());
         assert_eq!((deny.title().as_str(), deny.act()), ("Deny this call?", "Deny"));
+        let stop = Confirm::StopBot(BotId::new("pilot").unwrap());
+        assert_eq!((stop.title().as_str(), stop.act()), ("Stop pilot?", "Stop"));
+        assert!(stop.lines()[1].contains("cancelled"));
     }
 }

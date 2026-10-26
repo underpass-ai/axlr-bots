@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use super::AutonomyLevel;
+
 /// Something that happened to a bot, a task or a node, as the control
 /// plane's event log keeps it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -44,6 +46,7 @@ impl Event {
             "bot.registered" => "Bot added".into(),
             "bot.enabled" => "Bot on".into(),
             "bot.paused" => "Bot paused".into(),
+            "bot.updated" if self.level_change().is_some() => "Level changed".into(),
             "bot.updated" => "Bot changed".into(),
             "bot.trigger.fired" => "Trigger fired".into(),
             "bot.task.submitted" => "Task in".into(),
@@ -100,8 +103,19 @@ impl Event {
         }
     }
 
+    /// A turned autonomy dial: the level before and after, in the
+    /// panel's words.
+    pub fn level_change(&self) -> Option<(AutonomyLevel, AutonomyLevel)> {
+        let before = AutonomyLevel::parse(&self.payload_text("previousLevel")?)?;
+        let after = AutonomyLevel::parse(&self.payload_text("level")?)?;
+        Some((before, after))
+    }
+
     /// One useful detail of the payload: the node, the reason, the tool.
     pub fn detail(&self) -> String {
+        if let Some((before, after)) = self.level_change() {
+            return format!("{} → {}", before.label(), after.label());
+        }
         for key in ["nodeId", "reason", "tool", "trigger", "outcome"] {
             if let Some(value) = self.payload_text(key) {
                 return value;
@@ -123,6 +137,19 @@ mod tests {
             r#"{{"eventId":"evt-1","type":"{kind}","tenantId":"default","botId":"bot","taskId":"task-1","createdAt":"2026-10-24T16:04:40Z","payload":{payload}}}"#
         ))
         .unwrap()
+    }
+
+    #[test]
+    fn a_turned_dial_says_from_and_to() {
+        let turned = event(
+            "bot.updated",
+            r#"{"fields":["level"],"previousLevel":"act-within-policy","level":"observe"}"#,
+        );
+        assert_eq!(turned.label(), "Level changed");
+        assert_eq!(turned.detail(), "Act → Observe");
+        let other = event("bot.updated", r#"{"fields":["mission"]}"#);
+        assert_eq!(other.label(), "Bot changed");
+        assert!(other.level_change().is_none());
     }
 
     #[test]

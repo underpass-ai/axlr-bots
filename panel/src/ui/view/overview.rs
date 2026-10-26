@@ -104,15 +104,29 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     if !waiting_tasks.is_empty() {
         let mut list = column![].spacing(10);
         for task in waiting_tasks {
+            // What the bot wants to do, so an OK here is not blind.
+            let wants: El<'a> = match fleet.call_of(&task.id) {
+                Some(call) => row![
+                    icon(Icon::Wrench, 14.0, tokens.muted),
+                    muted(format!("wants {}", call.summary(40)), tokens).wrapping(Wrapping::None)
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center)
+                .into(),
+                None => Space::new().into(),
+            };
             list = list.push(
                 row![
                     pill(Tone::Wait, "Needs OK", tokens),
                     bold(task.bot_id.to_string()),
-                    text(task.headline(70)).wrapping(Wrapping::None).width(Length::Fill),
+                    column![text(task.headline(70)).wrapping(Wrapping::None), wants]
+                        .spacing(2)
+                        .width(Length::Fill),
                     muted(format::age(task.created_at, app.now), tokens),
+                    super::decide::buttons(app, &task.id, tokens),
                     action(
-                        Kind::Primary,
-                        Icon::Check,
+                        Kind::Ghost,
+                        Icon::Play,
                         "Review",
                         Some(Message::Go(Screen::Task(task.id.clone()))),
                         tokens

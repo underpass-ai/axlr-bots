@@ -26,6 +26,12 @@ fn messages_of_click(app: &App, label: &str) -> Vec<Message> {
     ui.into_messages().collect()
 }
 
+fn simulator_misses(app: &App, word: &str) -> bool {
+    let _turn = turn();
+    let mut ui = simulator(view::view(app));
+    ui.find(word).is_err()
+}
+
 fn shows(app: &App, words: &[&str]) {
     let _turn = turn();
     let mut ui = simulator(view::view(app));
@@ -70,6 +76,15 @@ fn home_shows_the_counts_and_what_needs_a_person() {
             "127.0.0.1:7879",
         ],
     );
+    shows(&app, &["wants local_write · hello", "Approve", "Deny"]);
+    assert!(matches!(
+        messages_of_click(&app, "Approve").as_slice(),
+        [Message::Approve(_)]
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Deny").as_slice(),
+        [Message::AskDeny(_)]
+    ));
     let sent = messages_of_click(&app, "Review");
     assert!(matches!(sent.as_slice(), [Message::Go(Screen::Task(_))]));
     let sent = messages_of_click(&app, "expired today");
@@ -150,15 +165,22 @@ fn the_bots_screen_lists_switches_and_adds() {
     shows(
         &app,
         &[
-            "Mission",
-            "Writes only after a person says OK.",
-            "Budgets",
-            "5m",
+            "Pause",
+            "Stop",
+            "It asks before acting",
+            "wants local_write · hello",
+            "Approve",
+            "What it does",
             "Events",
-            "Latest tasks",
+            "Recent work",
             "New task",
             "Copy mission",
+            "Advanced",
         ],
+    );
+    assert!(
+        simulator_misses(&app, "How much may it do alone?"),
+        "Advanced is closed by default"
     );
     let sent = messages_of_click(&app, "Copy mission");
     assert!(matches!(
@@ -172,6 +194,61 @@ fn the_bots_screen_lists_switches_and_adds() {
     ));
     let sent = messages_of_click(&app, "New task");
     assert!(matches!(sent.as_slice(), [Message::SubmitOpen(Some(_))]));
+    assert!(matches!(
+        messages_of_click(&app, "Approve").as_slice(),
+        [Message::Approve(_)]
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Stop").as_slice(),
+        [Message::AskStopBot(_)]
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Advanced").as_slice(),
+        [Message::ShowAdvanced(true)]
+    ));
+
+    app.apply(Message::ShowAdvanced(true));
+    shows(
+        &app,
+        &[
+            "How much may it do alone?",
+            "Ask me before acting",
+            "Act on its own within its rules",
+            "Only watch and report",
+            "Starts by",
+            "Budgets",
+            "Hide advanced",
+        ],
+    );
+    assert!(
+        simulator_misses(&app, "Propose only"),
+        "Propose shows only on a bot that has it"
+    );
+    assert!(matches!(
+        messages_of_click(&app, "Only watch and report").as_slice(),
+        [Message::SetLevel(_, crate::domain::AutonomyLevel::Observe)]
+    ));
+    assert!(
+        messages_of_click(&app, "Ask me before acting").is_empty(),
+        "the bot's own level is not a button"
+    );
+    app.switching = true;
+    assert!(
+        messages_of_click(&app, "Only watch and report").is_empty(),
+        "no change while one is on its way"
+    );
+    app.switching = false;
+    send(
+        &mut app,
+        Message::SetLevel(
+            BotId::new("bot-act-with-approval").unwrap(),
+            crate::domain::AutonomyLevel::Propose,
+        ),
+    );
+    app.apply(Message::ShowAdvanced(true));
+    shows(&app, &["Propose only"]);
+    send(&mut app, Message::Go(Screen::Bots));
+    assert!(!app.advanced, "Advanced closes when the page changes");
 }
 
 #[test]
@@ -190,6 +267,13 @@ fn the_tasks_screen_filters_and_sends() {
             "Open",
         ],
     );
+    assert!(matches!(
+        messages_of_click(&app, "Approve").as_slice(),
+        [Message::Approve(_)]
+    ));
+    app.deciding = app.fleet.as_ref().unwrap().waiting().first().map(|t| t.id.clone());
+    assert!(messages_of_click(&app, "Approve").is_empty(), "one answer at a time");
+    app.deciding = None;
     let sent = messages_of_click(&app, "Failed 1");
     assert!(matches!(
         sent.as_slice(),

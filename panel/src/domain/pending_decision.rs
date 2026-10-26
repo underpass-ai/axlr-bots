@@ -34,6 +34,21 @@ impl PendingDecision {
         }
     }
 
+    /// The call in a few words: the tool and its first argument's value,
+    /// cut to `max` characters, `local_write · hello`.
+    pub fn summary(&self, max: usize) -> String {
+        let Some((_, value)) = self.argument_lines().into_iter().next() else {
+            return self.tool.clone();
+        };
+        let value = value.lines().next().unwrap_or_default();
+        let value = if value.chars().count() > max {
+            format!("{}…", value.chars().take(max.saturating_sub(1)).collect::<String>())
+        } else {
+            value.to_string()
+        };
+        format!("{} · {value}", self.tool)
+    }
+
     /// The tool, then its arguments one per line: what a copy of the call
     /// takes.
     pub fn call_text(&self) -> String {
@@ -72,6 +87,12 @@ mod tests {
         let bare: PendingDecision = serde_json::from_str(r#"{"tool":"t"}"#).unwrap();
         assert!(bare.argument_lines().is_empty());
         assert_eq!(bare.call_text(), "t");
+        assert_eq!(bare.summary(10), "t");
+        assert_eq!(pending.summary(10), "local_write · false");
+        let long: PendingDecision =
+            serde_json::from_str(r#"{"tool":"say","arguments":{"text":"a long line\nand more"}}"#).unwrap();
+        assert_eq!(long.summary(6), "say · a lon…");
+        assert_eq!(long.summary(40), "say · a long line");
         let list: PendingDecision = serde_json::from_str(r#"{"tool":"t","arguments":[1,2]}"#).unwrap();
         assert_eq!(
             list.argument_lines(),

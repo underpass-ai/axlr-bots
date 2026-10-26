@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::{Clock, ControlPlane, Fleet, PanelError};
+use super::{Clock, ControlPlane, Fleet, PanelError, WaitingCall};
 use crate::domain::TaskFilter;
 
 /// Reads the fleet in one go: the overview since the start of the
@@ -12,6 +12,9 @@ pub struct RefreshFleet {
 
 /// How many of the newest tasks a refresh reads.
 pub const RECENT_TASKS: u32 = 200;
+
+/// How many waiting tasks a refresh reads the call of.
+pub const WAITING_CALLS: usize = 10;
 
 impl RefreshFleet {
     pub fn new(control_plane: Arc<dyn ControlPlane>, clock: Arc<dyn Clock>) -> Self {
@@ -30,12 +33,37 @@ impl RefreshFleet {
         nodes.sort_by(|a, b| a.id.cmp(&b.id));
         let mut bots = bots;
         bots.sort_by(|a, b| a.id.cmp(&b.id));
-        Ok(Fleet {
+        let fleet = Fleet {
             overview,
             nodes,
             bots,
             tasks,
-        })
+            calls: Vec::new(),
+        };
+        let calls = self.waiting_calls(&fleet).await;
+        Ok(Fleet { calls, ..fleet })
+    }
+
+    /// The calls of the newest waiting tasks. A call that cannot be read
+    /// is left out: the task still shows, without what it wants.
+    async fn waiting_calls(&self, fleet: &Fleet) -> Vec<WaitingCall> {
+        let waiting: Vec<_> = fleet
+            .waiting()
+            .into_iter()
+            .take(WAITING_CALLS)
+            .map(|t| t.id.clone())
+            .collect();
+        let reads = waiting.iter().map(|id| self.control_plane.task_executions(id.clone()));
+        let results = futures::future::join_all(reads).await;
+        waiting
+            .into_iter()
+            .zip(results)
+            .filter_map(|(task, result)| {
+                let executions = result.ok()?;
+                let call = WaitingCall::newest(&executions)?.clone();
+                Some(WaitingCall { task, call })
+            })
+            .collect()
     }
 }
 
@@ -60,6 +88,20 @@ mod tests {
         assert_eq!(fleet.overview.since.unwrap().to_rfc3339(), "2026-10-25T00:00:00+00:00");
         assert_eq!(fleet.waiting().len(), 1);
         assert_eq!(fleet.active().len(), 1);
+        let waiting = fleet.waiting()[0].id.clone();
+        assert_eq!(fleet.call_of(&waiting).map(|c| c.tool.as_str()), Some("local_write"));
+        assert!(
+            fleet
+                .call_of(
+                    &fleet
+                        .tasks
+                        .iter()
+                        .find(|t| t.status == TaskStatus::Completed)
+                        .unwrap()
+                        .id
+                )
+                .is_none()
+        );
         assert!(control_plane.calls().contains(&"overview".to_string()));
     }
 

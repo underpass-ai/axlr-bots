@@ -1,4 +1,5 @@
-use crate::domain::{Bot, Node, Overview, Task, TaskStatus};
+use super::WaitingCall;
+use crate::domain::{Bot, Node, Overview, PendingDecision, Task, TaskId, TaskStatus};
 
 /// Everything the panel shows at once, read in one refresh: the overview's
 /// counts, the nodes, the bots and the newest tasks.
@@ -8,6 +9,8 @@ pub struct Fleet {
     pub nodes: Vec<Node>,
     pub bots: Vec<Bot>,
     pub tasks: Vec<Task>,
+    /// The calls the newest waiting tasks stopped on.
+    pub calls: Vec<WaitingCall>,
 }
 
 impl Fleet {
@@ -17,6 +20,11 @@ impl Fleet {
             .iter()
             .filter(|t| t.status == TaskStatus::WaitingApproval)
             .collect()
+    }
+
+    /// The call a waiting task stopped on, when the refresh read it.
+    pub fn call_of(&self, task: &TaskId) -> Option<&PendingDecision> {
+        self.calls.iter().find(|c| &c.task == task).map(|c| &c.call)
     }
 
     /// The tasks running or waiting to start, newest first.

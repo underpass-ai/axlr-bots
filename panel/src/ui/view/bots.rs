@@ -79,6 +79,12 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             };
             row![
                 switch,
+                icon_button(
+                    Icon::Stop,
+                    "Stop bot and its tasks",
+                    (!switching).then(|| Message::AskStopBot(b.id.clone())),
+                    tokens
+                ),
                 action(
                     Kind::Ghost,
                     Icon::Play,

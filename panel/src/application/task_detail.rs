@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 
-use crate::domain::{Event, Execution, ExecutionOutcome, PendingDecision, Task, TaskStatus, Usage};
+use super::WaitingCall;
+use crate::domain::{Event, Execution, PendingDecision, Task, TaskStatus, Usage};
 
 /// One task with everything about it: its executions and its timeline.
 #[derive(Debug, Clone, PartialEq)]
@@ -17,11 +18,7 @@ impl TaskDetail {
         if self.task.status != TaskStatus::WaitingApproval {
             return None;
         }
-        self.executions
-            .iter()
-            .rev()
-            .find(|e| e.outcome == ExecutionOutcome::DecisionRequired)
-            .and_then(|e| e.result.pending_decision.as_ref())
+        WaitingCall::newest(&self.executions)
     }
 
     /// The usage of every execution, added up.

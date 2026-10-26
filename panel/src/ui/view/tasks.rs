@@ -82,7 +82,10 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         table::column(bold("From"), move |t: &'a Task| muted(t.trigger.describe(), tokens)),
         table::column(bold("Age"), move |t: &'a Task| text(format::age(t.created_at, now))),
         table::column(text(""), move |t: &'a Task| -> El<'a> {
-            let mut buttons = row![].spacing(6);
+            let mut buttons = row![].spacing(6).align_y(Alignment::Center);
+            if t.status == TaskStatus::WaitingApproval {
+                buttons = buttons.push(super::decide::buttons(app, &t.id, tokens));
+            }
             if t.status.can_cancel() {
                 buttons = buttons.push(icon_button(
                     Icon::Stop,

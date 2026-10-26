@@ -375,6 +375,10 @@ impl FakeState {
     }
 
     fn bot_event(&mut self, kind: &str, bot: &BotId) {
+        self.bot_event_with(kind, bot, None);
+    }
+
+    fn bot_event_with(&mut self, kind: &str, bot: &BotId, payload: Option<serde_json::Map<String, serde_json::Value>>) {
         let id = self.next("evt");
         let now = self.clock();
         self.events.push(Event {
@@ -387,7 +391,7 @@ impl FakeState {
             execution_id: String::new(),
             correlation_id: String::new(),
             created_at: now,
-            payload: None,
+            payload,
         });
     }
 
@@ -573,7 +577,13 @@ impl ControlPlane for FakeControlPlane {
             if let Some(mission) = patch.mission {
                 bot.mission = mission;
             }
-            if let Some(level) = patch.level {
+            // The control plane names the levels when the dial turns.
+            let mut payload = serde_json::Map::new();
+            if let Some(level) = patch.level
+                && level != bot.level
+            {
+                payload.insert("previousLevel".into(), bot.level.name().into());
+                payload.insert("level".into(), level.name().into());
                 bot.level = level;
             }
             if let Some(tools) = patch.allowed_tools {
@@ -584,7 +594,7 @@ impl ControlPlane for FakeControlPlane {
             }
             bot.updated_at = now;
             let bot = bot.clone();
-            s.bot_event("bot.updated", &id);
+            s.bot_event_with("bot.updated", &id, (!payload.is_empty()).then_some(payload));
             Ok(bot)
         })
     }

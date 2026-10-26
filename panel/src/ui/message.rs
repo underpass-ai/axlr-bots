@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 
 use super::{BotChoice, BotView, Connection, NodeChoice, Screen, ThemeMode};
-use crate::application::{Fleet, PanelError, TaskDetail};
+use crate::application::{Fleet, PanelError, StoppedBot, TaskDetail};
 use crate::domain::{
     AutonomyLevel, Bot, BotId, CancelledTask, DecidedTask, EnrollmentToken, NodeId, RevokedNode, SubmittedTask, TaskId,
     TaskStatus,
@@ -56,6 +56,13 @@ pub enum Message {
     Enable(BotId),
     Pause(BotId),
     Switched(Result<Bot, PanelError>),
+    /// Open or close a bot page's Advanced part.
+    ShowAdvanced(bool),
+    /// Set how much a bot may do alone.
+    SetLevel(BotId, AutonomyLevel),
+    Leveled(Result<Bot, PanelError>),
+    AskStopBot(BotId),
+    BotStopped(Result<StoppedBot, PanelError>),
 
     FilterStatus(Option<TaskStatus>),
     FilterBot(BotChoice),
