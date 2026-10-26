@@ -66,6 +66,17 @@ impl Tone {
         }
     }
 
+    /// What a bot is doing now: amber when it waits for a person or is
+    /// paused, busy when it works, quiet otherwise.
+    pub fn of_now(now: &crate::application::BotNow) -> Self {
+        use crate::application::BotNow;
+        match now {
+            BotNow::Waiting { .. } | BotNow::Off(BotStatus::Paused) => Self::Wait,
+            BotNow::Working { .. } => Self::Busy,
+            BotNow::Queued { .. } | BotNow::Off(_) | BotNow::Idle => Self::Idle,
+        }
+    }
+
     pub fn of_task(status: TaskStatus) -> Self {
         match status {
             TaskStatus::Completed => Self::Good,
@@ -110,6 +121,14 @@ impl Tone {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn what_a_bot_does_now_has_a_tone() {
+        use crate::application::BotNow;
+        assert_eq!(Tone::of_now(&BotNow::Idle), Tone::Idle);
+        assert_eq!(Tone::of_now(&BotNow::Off(BotStatus::Paused)), Tone::Wait);
+        assert_eq!(Tone::of_now(&BotNow::Off(BotStatus::Draft)), Tone::Idle);
+    }
 
     #[test]
     fn statuses_map_to_tones() {

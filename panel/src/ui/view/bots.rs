@@ -7,6 +7,7 @@ use super::levels;
 use super::widgets::{
     El, SMALL, action, bold, card, chip, empty, field, icon, icon_button, muted, pill, section_title, title,
 };
+use crate::application::BotNow;
 use crate::domain::{AutonomyLevel, Bot};
 use crate::ui::styles::Kind;
 use crate::ui::{App, Icon, Message, NodeChoice, Screen, Tokens, Tone};
@@ -50,6 +51,15 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             column![bold(b.id.to_string()), muted(b.model.short_model().to_string(), tokens)]
                 .spacing(2)
                 .into()
+        })
+        .width(Length::FillPortion(3)),
+        table::column(bold("Now"), move |b: &'a Bot| -> El<'a> {
+            let state = BotNow::of(b, &fleet.tasks, &[]);
+            let mut cell = column![pill(Tone::of_now(&state), state.word(), tokens)].spacing(4);
+            if let Some(task) = state.task() {
+                cell = cell.push(muted(task.headline(36), tokens));
+            }
+            cell.into()
         })
         .width(Length::FillPortion(3)),
         table::column(bold("Level"), move |b: &'a Bot| chip(b.level.label(), tokens)),

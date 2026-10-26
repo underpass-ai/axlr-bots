@@ -223,8 +223,15 @@ fn the_bots_screen_lists_switches_and_adds() {
             "New task",
             "Copy mission",
             "Advanced",
+            "Now",
+            "Waits for you",
+            "It waits for your OK before it goes on.",
         ],
     );
+    assert!(matches!(
+        messages_of_click(&app, "Open task").as_slice(),
+        [Message::Go(Screen::Task(_))]
+    ));
     assert!(
         simulator_misses(&app, "How much may it do alone?"),
         "Advanced is closed by default"
@@ -477,4 +484,17 @@ fn errors_and_empty_places_say_so() {
     shows(&app, &["Loading the task…", "Not found"]);
     send(&mut app, Message::Go(Screen::Bot(BotId::new("ghost").unwrap())));
     shows(&app, &["Loading the bot…"]);
+}
+
+#[test]
+fn now_says_what_each_bot_is_doing() {
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Bots));
+    shows(&app, &["Now", "Working", "Say the time", "Waits for you", "Idle"]);
+    send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
+    shows(&app, &["Working", "Say the time", "Open task"]);
+    send(&mut app, Message::Go(Screen::Bot(BotId::new("bot-wrx80").unwrap())));
+    shows(&app, &["Idle", "It waits for a task."]);
+    send(&mut app, Message::Pause(BotId::new("bot-wrx80").unwrap()));
+    shows(&app, &["Paused", "It takes no new task until you turn it on."]);
 }

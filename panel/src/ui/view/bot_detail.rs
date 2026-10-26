@@ -10,7 +10,8 @@ use super::widgets::{
     El, SMALL, action, bold, chip, copy_button, empty, fact, icon, muted, pill, section, section_title, section_with,
     title,
 };
-use crate::domain::{Bot, BotId, TaskId};
+use crate::application::BotNow;
+use crate::domain::{Bot, BotId, BotStatus, TaskId};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
 use crate::ui::{App, Icon, Message, Screen, Tokens, Tone};
@@ -65,6 +66,7 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
         left = left.push(asking);
     }
     left = left
+        .push(section(Icon::Play, "Now", now(app, bot, tokens), tokens))
         .push(section_with(
             Icon::Bolt,
             "What it does",
@@ -121,6 +123,58 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
     }))
     .height(Length::Fill)
     .into()
+}
+
+/// What the bot is doing right now, in a sentence, and its newest step.
+fn now<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
+    let tasks = app.fleet.as_ref().map(|f| f.tasks.as_slice()).unwrap_or_default();
+    let events = app.feed().map(|f| f.events.as_slice()).unwrap_or_default();
+    let state = BotNow::of(bot, tasks, events);
+    let (headline, detail) = match &state {
+        BotNow::Waiting { task } => (task.headline(70), "It waits for your OK before it goes on.".to_string()),
+        BotNow::Working { task, since, last } => {
+            let mut detail = format!("for {}", format::span(app.now - *since));
+            if let Some(step) = last {
+                let what = match step.detail() {
+                    words if words.is_empty() => step.label(),
+                    words => format!("{} · {words}", step.label()),
+                };
+                detail = format!(
+                    "{detail} · last step: {what}, {}",
+                    format::ago(step.created_at, app.now)
+                );
+            }
+            (task.headline(70), detail)
+        }
+        BotNow::Queued { task } => (task.headline(70), "Queued: it waits for a free node.".to_string()),
+        BotNow::Off(BotStatus::Paused) => (
+            "Paused".to_string(),
+            "It takes no new task until you turn it on.".to_string(),
+        ),
+        BotNow::Off(_) => (
+            "Not switched on".to_string(),
+            "Turn it on to give it tasks.".to_string(),
+        ),
+        BotNow::Idle => ("Idle".to_string(), "It waits for a task.".to_string()),
+    };
+    let mut body = row![
+        pill(Tone::of_now(&state), state.word(), tokens),
+        column![bold(headline).size(18.0), muted(detail, tokens)]
+            .spacing(4)
+            .width(Length::Fill),
+    ]
+    .spacing(12)
+    .align_y(Alignment::Center);
+    if let Some(task) = state.task() {
+        body = body.push(action(
+            Kind::Ghost,
+            Icon::Play,
+            "Open task",
+            Some(Message::Go(Screen::Task(task.id.clone()))),
+            tokens,
+        ));
+    }
+    body.into()
 }
 
 /// The calls of this bot waiting for a person, each answered in one

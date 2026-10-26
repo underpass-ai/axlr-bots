@@ -1,5 +1,6 @@
 //! The use cases the panel offers and the ports they need.
 
+mod bot_now;
 mod cancel_task;
 mod clock;
 mod config_store;
@@ -38,6 +39,7 @@ mod task_detail;
 pub(crate) mod test_support;
 mod waiting_call;
 
+pub use bot_now::BotNow;
 pub use cancel_task::CancelTask;
 pub use clock::Clock;
 pub use config_store::ConfigStore;
