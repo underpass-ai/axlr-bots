@@ -7,9 +7,9 @@
 # The runbook is docs/runbooks/drone-fleet.md.
 
 images:
-  app: container-registry.underpassai.com/axlr-bots/fleet-app@sha256:731f511dad6f2dcd0d07c2a2479ebd35c09d27b629fe5ec9976bc2b6013f31d5
+  app: container-registry.underpassai.com/axlr-bots/fleet-app@sha256:ba8668b292a5bda4541b98b9ff6b87014656ec1369dc8e51a0743df81f5df6a3
   sitl: container-registry.underpassai.com/axlr-bots/fleet-sitl@sha256:9d0ddd377ac6a5d5dca13feb0a7ef1311725dcc45c58b7e369034e44c5adfd9a
-  controlPlane: container-registry.underpassai.com/axlr-bots/control-plane@sha256:d09779eb9d91916df11ffdf988ee7d96ae12b71b60ebbfe845c3d1c7723be257
+  controlPlane: container-registry.underpassai.com/axlr-bots/control-plane@sha256:ba05aba27c395ef8ea791332159a0ad8c812d315b7c1a674fee464b130a0ec8a
 
 # The fleet's own control plane, in the namespace. Nodes dial it by its
 # Service's name; the operator API (the panel, the CLI, webhooks) is the
