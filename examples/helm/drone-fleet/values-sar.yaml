@@ -13,7 +13,7 @@ base:
   bots: [dispatcher, logistics, reporter]
   stations:
     - {name: dike, label: "Sea-defence station", lat: 51.95700, lon: 3.96750, bays: 3, batteries: 3, parts: 3}
-    - {name: airstrip, label: "Beach airstrip", lat: 51.93350, lon: 3.97280, bays: 1, batteries: 2, parts: 2}
+    - {name: airstrip, label: "Beach airstrip", lat: 51.93417, lon: 3.97509, bays: 1, batteries: 2, parts: 2}
 
 incident:
   enabled: true
@@ -49,7 +49,7 @@ vehicles:
     kind: plane
     role: patrol
     replicas: 1
-    pads: ["51.93350,3.97280,5,345"]
+    pads: ["51.93417,3.97509,5,345"]
     stations: [airstrip]
     hardware: {lidar: "landing lidar", camera: "survey camera"}
     env: {RUNWAY_HEADING: "345"}

@@ -668,6 +668,20 @@ class Pilot:
             raise mcp_http.ToolError(f"the rover carries at most {self.capacity[0]} packs and {self.capacity[1]} parts")
         return waypoints, clean
 
+    def plan_route_or_pattern(self, name, arguments, speed):
+        """A quad's or a plane's plan: its waypoints, or a search pattern drawn here (patterns.py)."""
+        if arguments.get("pattern") is None:
+            return self.check_plan(name, arguments.get("waypoints"), speed), None
+        if arguments.get("waypoints"):
+            raise mcp_http.ToolError("give waypoints or a pattern, not both")
+        try:
+            waypoints, centre = patterns.expand(arguments["pattern"], self.targets, speed if isinstance(speed, (int, float)) else 10,
+                                                self.limits.max_waypoints, self.limits.min_alt_m)
+        except patterns.PatternError as exc:
+            raise mcp_http.ToolError(str(exc))
+        plan = self.check_plan(name, waypoints, speed)
+        return plan, dict(arguments["pattern"], centre_north_m=round(centre[0]), centre_east_m=round(centre[1]))
+
     def run_mission(self, arguments):
         name = arguments.get("name")
         speed = arguments.get("speed_m_s", round((self.limits.min_speed + self.limits.max_speed) / 2))
@@ -682,18 +696,8 @@ class Pilot:
                 raise mcp_http.ToolError("the rover has no home yet; try again in a minute")
             waypoints, deliveries = self.check_deliveries(arguments.get("deliveries"), home)
             plan = self.check_plan(name, waypoints, speed)
-        elif arguments.get("pattern") is not None:
-            if arguments.get("waypoints"):
-                raise mcp_http.ToolError("give waypoints or a pattern, not both")
-            try:
-                waypoints, centre = patterns.expand(arguments["pattern"], self.targets, speed if isinstance(speed, (int, float)) else 10,
-                                                    self.limits.max_waypoints, self.limits.min_alt_m)
-            except patterns.PatternError as exc:
-                raise mcp_http.ToolError(str(exc))
-            plan = self.check_plan(name, waypoints, speed)
-            pattern = dict(arguments["pattern"], centre_north_m=round(centre[0]), centre_east_m=round(centre[1]))
         else:
-            plan = self.check_plan(name, arguments.get("waypoints"), speed)
+            plan, pattern = self.plan_route_or_pattern(name, arguments, speed)
         if not self.busy.acquire(blocking=False):
             raise mcp_http.ToolError("another mission is being started on this vehicle")
         try:
