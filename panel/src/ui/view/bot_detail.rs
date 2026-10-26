@@ -219,7 +219,8 @@ fn now<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
                     words => format!("{} · {words}", step.label()),
                 };
                 detail = format!(
-                    "{detail} · last step: {what}, {}",
+                    "{detail} · last step: {}, {}",
+                    cut(&what, 60),
                     format::ago(step.created_at, app.now)
                 );
             }
