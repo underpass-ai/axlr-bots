@@ -562,3 +562,34 @@ fn a_stop_that_could_not_cancel_everything_says_how_many() {
     })));
     assert_eq!(app.banner.as_ref().unwrap().detail, "1 task cancelled");
 }
+
+#[test]
+fn a_chat_message_runs_as_a_task_and_shows_in_the_chat() {
+    let mut app = connected();
+    // Without a bot on screen, nothing is sent.
+    app.apply(Message::ChatInput("hello".into()));
+    assert!(app.apply(Message::ChatSend).is_empty());
+    let id = BotId::new("bot-wrx80").unwrap();
+    send(&mut app, Message::Go(Screen::Bot(id.clone())));
+    assert!(app.chat_draft.is_empty(), "a new page starts with an empty box");
+    assert!(app.bot.as_ref().unwrap().chat.is_empty());
+    app.apply(Message::ChatInput("   ".into()));
+    assert!(app.apply(Message::ChatSend).is_empty(), "an empty message is not sent");
+    app.apply(Message::ChatInput("How many files are there?".into()));
+    let effects = app.apply(Message::ChatSend);
+    assert!(matches!(effects.as_slice(), [Effect::SendChat { message, .. }] if message == "How many files are there?"));
+    assert!(app.apply(Message::ChatSend).is_empty(), "one message at a time");
+    drive(&mut app, effects);
+    assert!(!app.chat_busy);
+    assert!(app.chat_draft.is_empty());
+    let chat = &app.bot.as_ref().unwrap().chat;
+    assert_eq!(chat.len(), 1);
+    assert_eq!(chat[0].message(), "How many files are there?");
+
+    // A message the control plane refuses keeps the words and says why.
+    send(&mut app, Message::Pause(id.clone()));
+    app.apply(Message::ChatInput("Still there?".into()));
+    send(&mut app, Message::ChatSend);
+    assert_eq!(app.chat_draft, "Still there?");
+    assert_eq!(app.banner.as_ref().unwrap().tone, Tone::Bad);
+}

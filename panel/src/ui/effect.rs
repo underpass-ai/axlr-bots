@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::application::{EventFeed, PanelConfig};
+use crate::application::{ChatTurn, EventFeed, PanelConfig};
 use crate::domain::{AutonomyLevel, BotForm, BotId, Decision, IdempotencyKey, NodeId, TaskId};
 
 /// What the panel asks the outside world to do after a message: a call
@@ -26,6 +26,12 @@ pub enum Effect {
     Pause(BotId),
     SetLevel(BotId, AutonomyLevel),
     StopBot(BotId),
+    /// A message to a bot from its chat, with the turns before it.
+    SendChat {
+        bot: BotId,
+        message: String,
+        earlier: Vec<ChatTurn>,
+    },
     Submit {
         bot: BotId,
         objective: String,

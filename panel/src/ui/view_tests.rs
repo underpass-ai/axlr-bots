@@ -498,3 +498,39 @@ fn now_says_what_each_bot_is_doing() {
     send(&mut app, Message::Pause(BotId::new("bot-wrx80").unwrap()));
     shows(&app, &["Paused", "It takes no new task until you turn it on."]);
 }
+
+#[test]
+fn the_chat_sends_and_shows_the_turns() {
+    let mut app = connected();
+    let id = BotId::new("bot-wrx80").unwrap();
+    send(&mut app, Message::Go(Screen::Bot(id.clone())));
+    shows(
+        &app,
+        &[
+            "Talk to it",
+            "Ask it something or give it an order. Each message runs as a task.",
+            "Send",
+        ],
+    );
+    assert!(messages_of_click(&app, "Send").is_empty(), "nothing to send yet");
+    app.apply(Message::ChatInput("How many files are there?".into()));
+    assert!(matches!(
+        messages_of_click(&app, "Send").as_slice(),
+        [Message::ChatSend]
+    ));
+    send(&mut app, Message::ChatSend);
+    shows(
+        &app,
+        &["How many files are there?", "Queued: it waits for a free node."],
+    );
+    assert!(matches!(
+        messages_of_click(&app, "Got it. It starts as soon as a node is free.").as_slice(),
+        [Message::Go(Screen::Task(_))]
+    ));
+    app.chat_busy = true;
+    app.apply(Message::ChatInput("more".into()));
+    shows(&app, &["Sending…"]);
+    app.chat_busy = false;
+    send(&mut app, Message::Pause(id));
+    shows(&app, &["Turn it on to talk to it."]);
+}

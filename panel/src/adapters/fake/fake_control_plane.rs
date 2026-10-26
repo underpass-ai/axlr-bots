@@ -621,15 +621,18 @@ impl ControlPlane for FakeControlPlane {
             if let Some(bot) = &filter.bot {
                 s.bot(bot)?;
             }
-            let mut tasks: Vec<Task> = s
+            // Newest first; of two made in the same instant, the later one.
+            let mut tasks: Vec<(usize, Task)> = s
                 .tasks
                 .iter()
-                .filter(|t| filter.bot.as_ref().is_none_or(|b| &t.bot_id == b))
-                .filter(|t| filter.status.is_none_or(|st| t.status == st))
-                .filter(|t| filter.since.is_none_or(|since| t.created_at >= since))
-                .cloned()
+                .enumerate()
+                .filter(|(_, t)| filter.bot.as_ref().is_none_or(|b| &t.bot_id == b))
+                .filter(|(_, t)| filter.status.is_none_or(|st| t.status == st))
+                .filter(|(_, t)| filter.since.is_none_or(|since| t.created_at >= since))
+                .map(|(i, t)| (i, t.clone()))
                 .collect();
-            tasks.sort_by_key(|t| std::cmp::Reverse(t.created_at));
+            tasks.sort_by_key(|(i, t)| std::cmp::Reverse((t.created_at, *i)));
+            let mut tasks: Vec<Task> = tasks.into_iter().map(|(_, t)| t).collect();
             tasks.truncate(filter.limit as usize);
             Ok(tasks)
         })

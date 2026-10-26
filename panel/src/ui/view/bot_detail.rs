@@ -2,7 +2,7 @@
 //! what it does, its events and recent work; its definition under
 //! Advanced, closed by default.
 
-use iced::widget::{Space, column, container, mouse_area, row, scrollable, text};
+use iced::widget::{Space, column, container, mouse_area, row, scrollable, text, text_input};
 use iced::{Alignment, Length, mouse};
 
 use super::levels;
@@ -14,7 +14,7 @@ use crate::application::BotNow;
 use crate::domain::{Bot, BotId, BotStatus, TaskId};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
-use crate::ui::{App, Icon, Message, Screen, Tokens, Tone};
+use crate::ui::{App, BotView, Icon, Message, Screen, Tokens, Tone};
 
 pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
     let back = action(Kind::Ghost, Icon::Back, "Bots", Some(Message::Go(Screen::Bots)), tokens);
@@ -67,20 +67,7 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
     }
     left = left
         .push(section(Icon::Play, "Now", now(app, bot, tokens), tokens))
-        .push(section_with(
-            Icon::Bolt,
-            "What it does",
-            vec![copy_button("Copy mission", bot.mission.clone(), tokens)],
-            text(bot.mission.clone()),
-            tokens,
-        ))
-        .push(section_with(
-            Icon::Clock,
-            "Events",
-            event_tools(app, tokens),
-            events(app, tokens),
-            tokens,
-        ));
+        .push(section(Icon::Bolt, "Talk to it", chat(app, view, tokens), tokens));
     let new_task = action(
         Kind::Ghost,
         Icon::Plus,
@@ -105,7 +92,21 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
             tasks(app, &bot.id, tokens),
             tokens
         ),
+        section_with(
+            Icon::Bolt,
+            "What it does",
+            vec![copy_button("Copy mission", bot.mission.clone(), tokens)],
+            text(bot.mission.clone()),
+            tokens,
+        ),
         advanced_toggle,
+        section_with(
+            Icon::Clock,
+            "Events",
+            event_tools(app, tokens),
+            events(app, tokens),
+            tokens,
+        ),
     ]
     .spacing(14)
     .width(Length::FillPortion(2));
@@ -123,6 +124,69 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
     }))
     .height(Length::Fill)
     .into()
+}
+
+/// The bot's chat: each message as a task, and its answer under it; a
+/// box to write the next one.
+fn chat<'a>(app: &'a App, view: &'a BotView, tokens: Tokens) -> El<'a> {
+    let mut list = column![].spacing(8);
+    if view.chat.is_empty() {
+        list = list.push(muted(
+            "Ask it something or give it an order. Each message runs as a task.",
+            tokens,
+        ));
+    }
+    for turn in &view.chat {
+        let mine = container(text(turn.message().to_string()).size(15.0))
+            .padding(10)
+            .max_width(560)
+            .style(styles::bubble(tokens, true));
+        let reply = mouse_area(
+            container(text(cut(&turn.reply(), 400)).size(15.0))
+                .padding(10)
+                .max_width(560)
+                .style(styles::bubble(tokens, false)),
+        )
+        .on_press(Message::Go(Screen::Task(turn.task.id.clone())))
+        .interaction(mouse::Interaction::Pointer);
+        list = list
+            .push(row![Space::new().width(Length::Fill), mine])
+            .push(row![reply, Space::new().width(Length::Fill)]);
+    }
+    let ready = !app.chat_busy && !app.chat_draft.trim().is_empty() && view.bot.status.accepts_tasks();
+    let input = text_input(&format!("Message {}…", view.bot.id), &app.chat_draft)
+        .on_input(Message::ChatInput)
+        .on_submit_maybe(ready.then_some(Message::ChatSend))
+        .padding(10)
+        .style(styles::field(tokens));
+    let mut body = column![
+        list,
+        row![
+            input,
+            action(
+                Kind::Primary,
+                Icon::Play,
+                if app.chat_busy { "Sending…" } else { "Send" },
+                ready.then_some(Message::ChatSend),
+                tokens
+            )
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center),
+    ]
+    .spacing(12);
+    if !view.bot.status.accepts_tasks() {
+        body = body.push(muted("Turn it on to talk to it.", tokens));
+    }
+    body.into()
+}
+
+/// A text cut to `max` characters with an ellipsis.
+fn cut(words: &str, max: usize) -> String {
+    if words.chars().count() <= max {
+        return words.to_string();
+    }
+    format!("{}…", words.chars().take(max.saturating_sub(1)).collect::<String>())
 }
 
 /// What the bot is doing right now, in a sentence, and its newest step.
