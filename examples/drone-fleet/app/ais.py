@@ -113,7 +113,11 @@ class AIS:
                     lat, lon = body.get("Latitude"), body.get("Longitude")
                 if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)) or abs(lat) > 90 or abs(lon) > 180:
                     return
-                ship.update(lat=lat, lon=lon, sog=body.get("Sog"), cog=body.get("Cog"), updated=now)
+                # AIS sends 102.3 kn for "no speed" and 360 degrees for "no course".
+                sog, cog = body.get("Sog"), body.get("Cog")
+                ship.update(lat=lat, lon=lon, updated=now,
+                            sog=sog if isinstance(sog, (int, float)) and 0 <= sog < 102.2 else None,
+                            cog=cog if isinstance(cog, (int, float)) and 0 <= cog < 360 else None)
                 heading = body.get("TrueHeading")
                 ship["heading"] = heading if isinstance(heading, (int, float)) and 0 <= heading < 360 else None
                 status = body.get("NavigationalStatus")

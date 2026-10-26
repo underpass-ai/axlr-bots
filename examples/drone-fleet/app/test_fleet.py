@@ -328,9 +328,12 @@ class AisTest(unittest.TestCase):
         a.handle({"MessageType": "ShipStaticData", "MetaData": {"MMSI": 244123456},
                   "Message": {"ShipStaticData": {"Type": 71, "Dimension": {"A": 200, "B": 100, "C": 24, "D": 24}, "Name": "NORDIC"}}})
         a.handle({"MessageType": "PositionReport", "MetaData": {"MMSI": 1, "latitude": 91, "longitude": 0}, "Message": {"PositionReport": {}}})
-        ships = a.ships()
-        self.assertEqual(len(ships), 1)
-        ship = ships[0]
+        a.handle({"MessageType": "PositionReport", "MetaData": {"MMSI": 2, "latitude": 51.95, "longitude": 4.0},
+                  "Message": {"PositionReport": {"Sog": 102.3, "Cog": 360, "TrueHeading": 511}}})
+        moored = next(s for s in a.ships() if s["mmsi"] == "2")
+        self.assertEqual((moored["sog"], moored["cog"]), (None, None))
+        ship = next(s for s in a.ships() if s["mmsi"] == "244123456")
+        self.assertEqual(len(a.ships()), 2)
         self.assertEqual((ship["name"], ship["type_name"], ship["length_m"], ship["beam_m"], ship["heading"]), ("NORDIC", "cargo", 300, 48, None))
         self.assertEqual(a.summary()["status"], "live")
 
