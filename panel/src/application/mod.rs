@@ -2,6 +2,8 @@
 
 mod bot_now;
 mod cancel_task;
+mod chat_line;
+mod chat_sent;
 mod chat_turn;
 mod clock;
 mod config_store;
@@ -47,6 +49,8 @@ mod waiting_call;
 
 pub use bot_now::BotNow;
 pub use cancel_task::CancelTask;
+pub use chat_line::{CHAT_LINES, ChatLine};
+pub use chat_sent::ChatSent;
 pub use chat_turn::{CHAT_CONTEXT_MARK, CHAT_KEY_PREFIX, ChatTurn};
 pub use clock::Clock;
 pub use config_store::ConfigStore;

@@ -637,3 +637,32 @@ fn a_task_says_it_was_urgent_and_why_it_stopped() {
     send(&mut app, Message::SubmitSend);
     shows(&app, &["urgent", "Told by", "nobody: not a teammate's event"]);
 }
+
+#[test]
+fn the_chat_writes_to_a_running_task_and_shows_its_answer() {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    let bot = BotId::new("bot").unwrap();
+    send(&mut app, Message::Go(Screen::Bot(bot.clone())));
+    shows(
+        &app,
+        &["It is working now: your message goes to its run, and it answers between its steps."],
+    );
+    let running = app.running_task(&app.bot.as_ref().unwrap().bot.clone()).unwrap();
+    app.apply(Message::ChatInput("check row F".into()));
+    let effects = app.apply(Message::ChatSend);
+    assert!(matches!(effects.as_slice(), [Effect::SendChat { running: Some(id), .. }] if *id == running));
+    super::test_runtime::drive(&mut app, effects);
+    assert!(app.chat_draft.is_empty());
+    fake.say(&running, "OK, row F next.");
+    let tick = app.now + chrono::Duration::seconds(5);
+    send(&mut app, Message::Tick(tick));
+    shows(&app, &["check row F", "OK, row F next.", "You wrote", "It answered"]);
+    assert!(matches!(
+        messages_of_click(&app, "OK, row F next.").as_slice(),
+        [Message::Go(Screen::Task(id))] if *id == running
+    ));
+}

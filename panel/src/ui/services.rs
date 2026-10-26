@@ -118,10 +118,15 @@ impl Services {
                 }
                 Err(e) => Err(e),
             }),
-            Effect::SendChat { bot, message, earlier } => Message::ChatSent(match self.control_plane() {
+            Effect::SendChat {
+                bot,
+                message,
+                earlier,
+                running,
+            } => Message::ChatSent(match self.control_plane() {
                 Ok(cp) => {
                     SendChat::new(cp, self.keys.clone())
-                        .execute(bot, &message, &earlier)
+                        .execute(bot, &message, &earlier, running)
                         .await
                 }
                 Err(e) => Err(e),

@@ -3,8 +3,8 @@ use chrono::{DateTime, Utc};
 use super::PortFuture;
 use crate::domain::{
     Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, EnrollmentRequest, EnrollmentToken,
-    Event, Execution, Node, NodeId, Overview, RevokedNode, StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId,
-    TaskSubmission,
+    Event, Execution, Node, NodeId, Overview, RevokedNode, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task,
+    TaskFilter, TaskId, TaskSubmission,
 };
 
 /// The control plane as the panel needs it: the operator API's routes.
@@ -39,6 +39,9 @@ pub trait ControlPlane: Send + Sync {
     fn get_task(&self, id: TaskId) -> PortFuture<'_, Task>;
     fn submit_task(&self, submission: TaskSubmission) -> PortFuture<'_, SubmittedTask>;
     fn cancel_task(&self, id: TaskId) -> PortFuture<'_, CancelledTask>;
+    /// Writes to a running task: its node hands the text to the run
+    /// between model steps. Any other task is a state error.
+    fn send_task_message(&self, id: TaskId, text: String) -> PortFuture<'_, SentTaskMessage>;
     fn decide_task(&self, id: TaskId, decision: Decision) -> PortFuture<'_, DecidedTask>;
     /// The task's executions, oldest first.
     fn task_executions(&self, id: TaskId) -> PortFuture<'_, Vec<Execution>>;

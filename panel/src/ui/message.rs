@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 
 use super::{BotChoice, BotView, Connection, NodeChoice, Screen, ThemeMode};
-use crate::application::{EventFeed, Fleet, PanelError, StoppedBot, TaskDetail};
+use crate::application::{ChatSent, EventFeed, Fleet, PanelError, StoppedBot, TaskDetail};
 use crate::domain::{
     AutonomyLevel, Bot, BotId, CancelledTask, DecidedTask, EnrollmentToken, NodeId, RevokedNode, SubmittedTask, TaskId,
     TaskStatus,
@@ -70,7 +70,7 @@ pub enum Message {
     /// The message being written in a bot's chat.
     ChatInput(String),
     ChatSend,
-    ChatSent(Result<SubmittedTask, PanelError>),
+    ChatSent(Result<ChatSent, PanelError>),
     BotStopped(Result<StoppedBot, PanelError>),
     /// Bring a vehicle's bot home at once: an urgent task.
     Recall(BotId),

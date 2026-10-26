@@ -56,6 +56,8 @@ impl Event {
             "bot.task.waiting_approval" => "Needs OK".into(),
             "bot.task.decided" => self.decision_label(),
             "bot.task.cancelled" => "Cancelled".into(),
+            "bot.task.message" => "You wrote".into(),
+            "bot.task.said" => "It answered".into(),
             "bot.task.expired" => "Expired".into(),
             "bot.approval.expired" => "Approval expired".into(),
             "bot.event.emitted" => match self.payload_text("severity").as_deref() {
@@ -171,7 +173,7 @@ impl Event {
         {
             return "by its policy, no person needed".into();
         }
-        for key in ["nodeId", "reason", "tool", "trigger", "outcome"] {
+        for key in ["nodeId", "reason", "text", "tool", "trigger", "outcome"] {
             if let Some(value) = self.payload_text(key) {
                 return value;
             }
