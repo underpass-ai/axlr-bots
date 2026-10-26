@@ -95,10 +95,13 @@ body.nohud .viewer { margin: 0; border-radius: 0; border: 0; }
 
 /* what floats over the viewer: a light glass box, dark text */
 .hud { background: var(--hud); color: var(--hud-text); border: 1px solid var(--hud-line); border-radius: 8px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
-.sim { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1000; pointer-events: none; text-align: center; white-space: nowrap;
-  background: var(--hud); color: var(--sim); border: 1px solid var(--sim); border-radius: 8px; padding: 6px 16px; font: 700 16px/1.2 var(--font); letter-spacing: .12em; }
-.sim small { display: block; font: 500 12px/1.3 var(--font); letter-spacing: 0; color: var(--hud-text); opacity: .8; }
-.counter { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); z-index: 1000; pointer-events: none; white-space: nowrap;
+/* the SIMULATION ribbon: a thin band across the top of the viewer, on every page, never over the map's content */
+.sim { position: absolute; top: 0; left: 0; right: 0; z-index: 1000; pointer-events: none; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  background: var(--hud); color: var(--sim); border-bottom: 1px solid var(--sim); padding: 7px 14px; font: 700 14px/1.2 var(--font); letter-spacing: .14em;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.sim small { font: 500 13px/1.3 var(--font); letter-spacing: 0; color: var(--hud-text); opacity: .85; }
+.leaflet-top { top: 36px; }
+.counter { position: absolute; top: 48px; left: 50%; transform: translateX(-50%); z-index: 1000; pointer-events: none; white-space: nowrap;
   background: var(--hud); color: var(--hud-text); border: 1px solid var(--bad); border-radius: 8px; padding: 6px 16px; font: 400 22px/1.2 var(--num); font-variant-numeric: tabular-nums; }
 .counter[hidden] { display: none; }
 .counter.ended { border-color: var(--ok); }
@@ -107,7 +110,7 @@ body.nohud .viewer { margin: 0; border-radius: 0; border: 0; }
 .counter .w { font: 600 15px/1.2 var(--font); }
 .attrib { position: absolute; right: 0; bottom: 0; z-index: 1000; font: 12px/1.4 var(--font); color: var(--hud-text); background: var(--hud); padding: 3px 9px; border-top-left-radius: 8px; }
 .attrib a { color: var(--hud-text); }
-@media (max-width: 700px) { .sim { white-space: normal; width: 88%; font-size: 14px; } .counter { font-size: 17px; top: 64px; } }
+@media (max-width: 700px) { .sim { font-size: 13px; padding: 6px 10px; gap: 8px; } .sim small { font-size: 12px; } .counter { font-size: 17px; top: 64px; } }
 
 /* Leaflet in this theme */
 .leaflet-container { background: #0d1117; font-family: var(--font); }
