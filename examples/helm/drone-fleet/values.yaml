@@ -7,7 +7,7 @@
 # The runbook is docs/runbooks/drone-fleet.md.
 
 images:
-  app: container-registry.underpassai.com/axlr-bots/fleet-app@sha256:ba8668b292a5bda4541b98b9ff6b87014656ec1369dc8e51a0743df81f5df6a3
+  app: container-registry.underpassai.com/axlr-bots/fleet-app@sha256:2ad8980bffcce7473479f9716b2e2a3fd6f831f5443b607b9861bc431945d811
   sitl: container-registry.underpassai.com/axlr-bots/fleet-sitl@sha256:9d0ddd377ac6a5d5dca13feb0a7ef1311725dcc45c58b7e369034e44c5adfd9a
   controlPlane: container-registry.underpassai.com/axlr-bots/control-plane@sha256:ba05aba27c395ef8ea791332159a0ad8c812d315b7c1a674fee464b130a0ec8a
 
@@ -40,7 +40,8 @@ base:
     - {name: airstrip, label: "Beach airstrip", lat: 51.93417, lon: 3.97509, bays: 1, batteries: 2, parts: 2}
 
 # The ground station analyses one photo in `every` (at most maxPerFlight a
-# flight): the aerial imagery of its footprint, read by a vision model
+# flight): the aerial photo of its footprint (PDOK's, Esri's past PDOK's
+# coverage), read by a vision model
 # through the model provider (the key of axlr-bots-node.model.apiKey).
 vision:
   enabled: true

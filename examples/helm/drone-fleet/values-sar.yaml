@@ -17,7 +17,7 @@ base:
 
 incident:
   enabled: true
-  # The sea defence's waterline (Esri imagery, 2026), south to north.
+  # The sea defence's waterline (from aerial imagery, 2026), south to north.
   coast: [[51.925, 3.976], [51.935, 3.9715], [51.945, 3.967], [51.955, 3.9645], [51.965, 3.9616], [51.975, 3.958]]
 
 ais:
