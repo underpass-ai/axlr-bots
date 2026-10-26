@@ -3,6 +3,7 @@
 import json
 import math
 import os
+import re
 import tempfile
 import threading
 import time
@@ -496,23 +497,119 @@ class AisTest(unittest.TestCase):
         self.assertEqual((ship["length_m"], ship["beam_m"], ship["dim"], ship["draught_m"], ship["imo"], ship["callsign"]),
                          (300, 50, {"a": 250, "b": 50, "c": 10, "d": 40}, 14.2, 9876543, "PDAB"))
 
-    def test_the_service_serves_the_ships_and_the_base_reads_them(self):
-        a = ais.AIS("", [[51.9, 3.8], [52.05, 4.15]])
-        a.handle({"MessageType": "PositionReport", "MetaData": {"MMSI": 9, "ShipName": "ONE", "latitude": 51.95, "longitude": 4.0}, "Message": {"PositionReport": {}}})
-        ais.Handler.ais = a
-        server = ThreadingHTTPServer(("127.0.0.1", 0), ais.Handler)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+
+class AisApiTest(unittest.TestCase):
+    """The ais service against its OpenAPI file, and the base reading it."""
+
+    SPEC = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ais-openapi.json")))
+    TYPES = {"string": str, "integer": int, "number": (int, float), "object": dict, "array": list, "null": type(None), "boolean": bool}
+
+    def check(self, value, schema, where="$"):
+        if "$ref" in schema:
+            return self.check(value, self.SPEC["components"]["schemas"][schema["$ref"].rsplit("/", 1)[1]], where)
+        if "oneOf" in schema:
+            errors = []
+            for option in schema["oneOf"]:
+                try:
+                    return self.check(value, option, where)
+                except AssertionError as exc:
+                    errors.append(str(exc))
+            self.fail(f"{where}: matches no option: {errors}")
+        kinds = schema.get("type")
+        if kinds:
+            kinds = kinds if isinstance(kinds, list) else [kinds]
+            ok = any(isinstance(value, self.TYPES[k]) and not (k in ("integer", "number") and isinstance(value, bool)) for k in kinds)
+            self.assertTrue(ok, f"{where}: {value!r} is not {kinds}")
+        if "enum" in schema:
+            self.assertIn(value, schema["enum"], where)
+        if isinstance(value, dict):
+            for key in schema.get("required", []):
+                self.assertIn(key, value, f"{where}: {key} missing")
+            for key, sub in schema.get("properties", {}).items():
+                if key in value:
+                    self.check(value[key], sub, f"{where}.{key}")
+        if isinstance(value, list) and "items" in schema:
+            for i, item in enumerate(value):
+                self.check(item, schema["items"], f"{where}[{i}]")
+
+    def response(self, path, status):
+        template = next(t for t in self.SPEC["paths"] if re.fullmatch(re.sub(r"\{[^}]+\}", "[^/]+", t), path.split("?")[0]))
+        return self.SPEC["paths"][template]["get"]["responses"][str(status)]["content"]["application/json"]["schema"]
+
+    def get(self, path):
         try:
-            remote = ais.Remote(f"http://127.0.0.1:{server.server_address[1]}")
-            remote.start()
-            for _ in range(50):
-                if remote.ships():
-                    break
-                time.sleep(0.05)
-            self.assertEqual([s["name"] for s in remote.ships()], ["ONE"])
-            self.assertEqual(remote.summary()["status"], "live")
-        finally:
-            server.shutdown()
+            with urllib.request.urlopen(self.url + path, timeout=3) as r:
+                return r.status, json.load(r)
+        except urllib.error.HTTPError as exc:
+            return exc.code, json.load(exc)
+
+    def setUp(self):
+        a = self.ais = ais.AIS("", [[51.9, 3.8], [52.05, 4.15]])
+        a.handle({"MessageType": "PositionReport", "MetaData": {"MMSI": 244123456, "ShipName": "NORDIC STAR", "latitude": 51.95, "longitude": 4.0},
+                  "Message": {"PositionReport": {"Sog": 102.3, "Cog": 360, "TrueHeading": 511, "NavigationalStatus": 15}}})
+        a.handle({"MessageType": "ShipStaticData", "MetaData": {"MMSI": 244123456},
+                  "Message": {"ShipStaticData": {"Type": 71, "Dimension": {"A": 200, "B": 100, "C": 24, "D": 24}, "MaximumStaticDraught": 12.5, "Name": "NORDIC STAR"}}})
+        a.handle({"MessageType": "PositionReport", "MetaData": {"MMSI": 211000001, "ShipName": "TUG ONE", "latitude": 51.99, "longitude": 4.1},
+                  "Message": {"PositionReport": {"Sog": 8.2, "Cog": 90.5, "TrueHeading": 91, "NavigationalStatus": 0}}})
+        ais.Handler.ais = a
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), ais.Handler)
+        self.server.daemon_threads = True
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+    def test_every_answer_matches_the_openapi_file(self):
+        for path, status in [("/v1/ships", 200), ("/v1/ships?bbox=51.9,3.9,51.96,4.05", 200), ("/v1/ships?type=cargo&name=nordic", 200),
+                             ("/v1/ships?bbox=x", 400), ("/v1/ships/244123456", 200), ("/v1/ships/999", 404),
+                             ("/v1/ships/244123456/track?since=0", 200), ("/v1/ships/244123456/track?since=2026-10-26T18:00:00Z", 200),
+                             ("/v1/ships/244123456/track?since=yesterday", 400)]:
+            got, body = self.get(path)
+            self.assertEqual(got, status, path)
+            self.check(body, self.response(path, status), path)
+
+    def test_filters_and_not_available_values(self):
+        _, body = self.get("/v1/ships?bbox=51.9,3.9,51.96,4.05")
+        self.assertEqual([s["mmsi"] for s in body["ships"]], ["244123456"])
+        _, body = self.get("/v1/ships?type=70&name=Star")
+        self.assertEqual([s["name"] for s in body["ships"]], [])          # 71 is cargo, but not type 70
+        _, body = self.get("/v1/ships?type=CARGO&name=star")
+        self.assertEqual([s["name"] for s in body["ships"]], ["NORDIC STAR"])
+        _, ship = self.get("/v1/ships/244123456")
+        self.assertEqual((ship["sog"], ship["cog"], ship["heading"], ship["nav_status"]), (None, None, None, None))
+        self.assertEqual((ship["length_m"], ship["beam_m"], ship["dim"], ship["draught_m"], ship["type"]), (300, 48, {"a": 200, "b": 100, "c": 24, "d": 24}, 12.5, 71))
+        _, track = self.get("/v1/ships/211000001/track")
+        self.assertEqual([(p["lat"], p["sog"]) for p in track["points"]], [(51.99, 8.2)])
+
+    def test_the_stream_sends_each_update_and_the_base_reads_the_list(self):
+        events = []
+        def read():
+            with urllib.request.urlopen(self.url + "/v1/stream", timeout=5) as r:
+                for line in r:
+                    if line.startswith(b"event:") or line.startswith(b"data:"):
+                        events.append(line.decode().strip())
+                    if len(events) >= 2:
+                        return
+        reader = threading.Thread(target=read, daemon=True)
+        reader.start()
+        for _ in range(50):
+            if self.ais.subscribers:
+                break
+            time.sleep(0.02)
+        self.ais.handle({"MessageType": "PositionReport", "MetaData": {"MMSI": 211000001, "latitude": 51.991, "longitude": 4.1}, "Message": {"PositionReport": {"Sog": 8.0, "Cog": 91}}})
+        reader.join(3)
+        self.assertEqual(events[0], "event: position")
+        self.check(json.loads(events[1][len("data:"):]), {"$ref": "#/components/schemas/Ship"})
+        remote = ais.Remote(self.url)
+        remote.start()
+        for _ in range(50):
+            if remote.ships():
+                break
+            time.sleep(0.05)
+        self.assertEqual(sorted(s["mmsi"] for s in remote.ships()), ["211000001", "244123456"])
+        self.assertEqual(remote.summary()["status"], "live")
 
 
 class ApprovalsTest(unittest.TestCase):
