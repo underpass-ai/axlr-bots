@@ -13,6 +13,17 @@ pub enum Effect {
     },
     LoadTask(TaskId),
     FollowBot(BotId, EventFeed),
+    /// Read a team's timeline after the feed, waiting up to `wait` seconds.
+    FollowTeam {
+        name: String,
+        feed: EventFeed,
+        wait: u32,
+    },
+    Recall {
+        bot: BotId,
+        key: IdempotencyKey,
+    },
+    SetTeams(BotId, Vec<String>),
     Mint {
         node_id: String,
         labels: String,
@@ -36,6 +47,7 @@ pub enum Effect {
         bot: BotId,
         objective: String,
         key: IdempotencyKey,
+        urgent: bool,
     },
     Cancel(TaskId),
     Decide(TaskId, Decision),

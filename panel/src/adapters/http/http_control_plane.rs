@@ -141,7 +141,13 @@ fn transport_error(error: reqwest::Error) -> PanelError {
 #[derive(Serialize)]
 struct ObjectiveBody<'a> {
     objective: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    priority: Option<&'static str>,
 }
+
+/// A long poll of a team's timeline waits this much longer than the
+/// control plane does.
+const POLL_MARGIN: Duration = Duration::from_secs(10);
 
 #[derive(Serialize)]
 struct DecisionBody {
@@ -204,6 +210,21 @@ impl ControlPlane for HttpControlPlane {
         self.get_query(format!("/v1/bots/{id}/events"), vec![("limit", limit.to_string())])
     }
 
+    fn group_events(&self, name: String, after: Option<String>, wait_seconds: u32) -> PortFuture<'_, Vec<Event>> {
+        let mut query = vec![("limit", "200".to_string())];
+        if let Some(after) = after {
+            query.push(("after", after));
+        }
+        if wait_seconds > 0 {
+            query.push(("wait", format!("{wait_seconds}s")));
+        }
+        let timeout = READ_TIMEOUT + Duration::from_secs(u64::from(wait_seconds)) + POLL_MARGIN;
+        let request = self
+            .request(Method::GET, &format!("/v1/groups/{name}/events"), timeout)
+            .query(&query);
+        Box::pin(send(request))
+    }
+
     fn list_tasks(&self, filter: TaskFilter) -> PortFuture<'_, Vec<Task>> {
         let mut query = vec![("limit", filter.limit.to_string())];
         if let Some(bot) = filter.bot {
@@ -232,6 +253,7 @@ impl ControlPlane for HttpControlPlane {
             .header("Idempotency-Key", submission.key.as_str())
             .json(&ObjectiveBody {
                 objective: submission.objective.as_str(),
+                priority: submission.urgent.then_some("urgent"),
             });
         Box::pin(send(request))
     }

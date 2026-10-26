@@ -21,10 +21,27 @@ impl SubmitTask {
     }
 
     pub async fn execute(&self, bot: &str, objective: &str, key: IdempotencyKey) -> Result<SubmittedTask, PanelError> {
+        self.send(bot, objective, key, false).await
+    }
+
+    /// Submits it as urgent: it goes first and cancels the bot's work in
+    /// progress.
+    pub async fn urgent(&self, bot: &str, objective: &str, key: IdempotencyKey) -> Result<SubmittedTask, PanelError> {
+        self.send(bot, objective, key, true).await
+    }
+
+    async fn send(
+        &self,
+        bot: &str,
+        objective: &str,
+        key: IdempotencyKey,
+        urgent: bool,
+    ) -> Result<SubmittedTask, PanelError> {
         let submission = TaskSubmission {
             bot_id: BotId::new(bot)?,
             objective: Objective::new(objective)?,
             key,
+            urgent,
         };
         self.control_plane.submit_task(submission).await
     }

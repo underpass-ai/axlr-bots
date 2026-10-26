@@ -2,7 +2,7 @@ use chrono::{DateTime, Duration, Utc};
 
 use super::{
     Answer, Banner, BotChoice, BotView, Confirm, Effect, Launch, Message, MintForm, NodeChoice, RegisterForm, Screen,
-    Services, SettingsForm, SubmitForm, TaskViewFilter, ThemeMode,
+    Services, SettingsForm, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode,
 };
 use crate::application::{EventFeed, Fleet, PanelConfig, PanelError, TaskDetail};
 use crate::domain::{Decision, TaskId, TaskStatus};
@@ -50,6 +50,8 @@ pub struct App {
     pub advanced: bool,
     /// A bot being switched on or paused.
     pub switching: bool,
+    /// The teams' timelines and a bot's team being edited.
+    pub watch: TeamWatch,
     /// Where to go once connected.
     target: Screen,
 }
@@ -87,6 +89,7 @@ impl App {
             chat_busy: false,
             advanced: false,
             switching: false,
+            watch: TeamWatch::default(),
             target: if launch.screen == Screen::Settings {
                 Screen::Overview
             } else {
@@ -172,10 +175,13 @@ impl App {
                         self.fleet = Some(fleet);
                         self.fleet_error = None;
                         self.last_refresh = Some(self.now);
+                        self.follow_teams()
                     }
-                    Err(error) => self.fleet_error = Some(error),
+                    Err(error) => {
+                        self.fleet_error = Some(error);
+                        Vec::new()
+                    }
                 }
-                Vec::new()
             }
             Message::TaskLoaded(id, result) => {
                 self.task_loading = false;
@@ -294,6 +300,10 @@ impl App {
             }
             Message::RegisterModel(value) => {
                 self.register.form.model = value;
+                Vec::new()
+            }
+            Message::RegisterTeam(value) => {
+                self.register.form.team = value;
                 Vec::new()
             }
             Message::RegisterNode(choice) => {
@@ -415,6 +425,16 @@ impl App {
                 effects.extend(self.refresh_now());
                 effects
             }
+            Message::Recall(id) => self.recall(id),
+            Message::Recalled(result) => self.recalled(result),
+            Message::TeamEdit(id, words) => self.team_edit(id, words),
+            Message::TeamSave => self.team_save(),
+            Message::TeamCancel => {
+                self.watch.editing = None;
+                Vec::new()
+            }
+            Message::TeamSaved(result) => self.team_saved(result),
+            Message::TeamLoaded(name, result) => self.team_loaded(name, result),
             Message::AskStopBot(id) => {
                 self.confirm = Some(Confirm::StopBot(id));
                 Vec::new()
@@ -478,6 +498,10 @@ impl App {
                 self.submit.objective = value;
                 Vec::new()
             }
+            Message::SubmitUrgent(urgent) => {
+                self.submit.urgent = urgent;
+                Vec::new()
+            }
             Message::SubmitSend => {
                 let (Some(bot), Some(key)) = (self.submit.bot.clone(), self.submit.key.clone()) else {
                     return Vec::new();
@@ -490,6 +514,7 @@ impl App {
                     bot,
                     objective: self.submit.objective.clone(),
                     key,
+                    urgent: self.submit.urgent,
                 }]
             }
             Message::Submitted(result) => {
@@ -636,7 +661,7 @@ impl App {
     }
 
     /// A refresh, now: a new generation so an older answer is dropped.
-    fn refresh_now(&mut self) -> Vec<Effect> {
+    pub(super) fn refresh_now(&mut self) -> Vec<Effect> {
         if !self.connected() {
             return Vec::new();
         }
@@ -649,7 +674,7 @@ impl App {
 
     /// Reads again what the screen shows beside the fleet: a task's detail
     /// or a bot's events, unless a read is on its way.
-    fn reload_screen(&mut self) -> Vec<Effect> {
+    pub(super) fn reload_screen(&mut self) -> Vec<Effect> {
         if !self.connected() {
             return Vec::new();
         }
@@ -672,7 +697,7 @@ impl App {
         }
     }
 
-    fn go(&mut self, screen: Screen) -> Vec<Effect> {
+    pub(super) fn go(&mut self, screen: Screen) -> Vec<Effect> {
         if let Screen::Task(id) = &screen
             && self.task.as_ref().is_some_and(|t| &t.task.id != id)
         {
@@ -687,6 +712,7 @@ impl App {
         if screen != self.screen {
             self.advanced = false;
             self.chat_draft.clear();
+            self.watch.editing = None;
             self.task_loading = false;
             self.bot_loading = false;
         }
@@ -699,13 +725,13 @@ impl App {
     }
 
     /// The bot on screen, as the control plane now has it.
-    fn replace_bot(&mut self, bot: crate::domain::Bot) {
+    pub(super) fn replace_bot(&mut self, bot: crate::domain::Bot) {
         if let Some(view) = self.bot.as_mut().filter(|v| v.bot.id == bot.id) {
             view.bot = bot;
         }
     }
 
-    fn switch(&mut self, effect: Effect) -> Vec<Effect> {
+    pub(super) fn switch(&mut self, effect: Effect) -> Vec<Effect> {
         if self.switching {
             return Vec::new();
         }

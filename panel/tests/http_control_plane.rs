@@ -101,6 +101,7 @@ async fn route(
             r#"{"kind":"state","error":"bot paused is Paused: cannot pause"}"#,
         ),
         ("GET", "/v1/bots/bot-wrx80/events") => ok(format!("[{EVENT}]")),
+        ("GET", "/v1/groups/port/events") => ok(format!("[{EVENT}]")),
         ("GET", "/v1/tasks") => ok(format!("[{TASK}]")),
         ("GET", "/v1/tasks/task-1") => ok(TASK.into()),
         ("POST", "/v1/bots/bot-wrx80/tasks") => json(
@@ -257,6 +258,14 @@ async fn reads_every_route_with_the_token_over_tls() {
     );
     assert_eq!(api.task_events(task_id.clone(), 200).await.unwrap().len(), 1);
     assert_eq!(server.last().path, "/v1/tasks/task-1/events?limit=200");
+    let team = api.group_events("port".into(), Some("evt-9".into()), 20).await.unwrap();
+    assert_eq!(team[0].event_type, "bot.task.submitted");
+    assert_eq!(
+        server.last().path,
+        "/v1/groups/port/events?limit=200&after=evt-9&wait=20s"
+    );
+    api.group_events("port".into(), None, 0).await.unwrap();
+    assert_eq!(server.last().path, "/v1/groups/port/events?limit=200");
 }
 
 #[tokio::test]
@@ -304,6 +313,12 @@ async fn sends_the_acts_with_their_bodies() {
         (server.last().method, server.last().body),
         (Method::PATCH, r#"{"mission":"New"}"#.to_string())
     );
+    let teams = BotPatch {
+        groups: Some(vec!["port".into()]),
+        ..Default::default()
+    };
+    api.patch_bot(bot_id.clone(), teams).await.unwrap();
+    assert_eq!(server.last().body, r#"{"groups":["port"]}"#);
     assert_eq!(api.enable_bot(bot_id.clone()).await.unwrap().status.name(), "Enabled");
     assert_eq!(api.pause_bot(bot_id.clone()).await.unwrap().status.name(), "Paused");
     let refused = api.pause_bot(BotId::new("paused").unwrap()).await.unwrap_err();
@@ -313,11 +328,21 @@ async fn sends_the_acts_with_their_bodies() {
         bot_id: bot_id.clone(),
         objective: Objective::new("Count the files").unwrap(),
         key: IdempotencyKey::new("panel-123").unwrap(),
+        urgent: false,
     };
-    let submitted = api.submit_task(submission).await.unwrap();
+    let submitted = api.submit_task(submission.clone()).await.unwrap();
     assert!(submitted.created);
     assert_eq!(server.last().idempotency_key, "panel-123");
     assert_eq!(server.last().body, r#"{"objective":"Count the files"}"#);
+    let urgent = TaskSubmission {
+        urgent: true,
+        ..submission
+    };
+    api.submit_task(urgent).await.unwrap();
+    assert_eq!(
+        server.last().body,
+        r#"{"objective":"Count the files","priority":"urgent"}"#
+    );
 
     assert!(api.cancel_task(task_id.clone()).await.unwrap().changed);
     let decided = api.decide_task(task_id, Decision::Approve).await.unwrap();

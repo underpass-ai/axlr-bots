@@ -10,6 +10,8 @@ pub enum Screen {
     Bot(BotId),
     Tasks,
     Task(TaskId),
+    Teams,
+    Team(String),
     Settings,
 }
 
@@ -19,6 +21,7 @@ pub enum Section {
     Overview,
     Nodes,
     Bots,
+    Teams,
     Tasks,
     Settings,
 }
@@ -30,12 +33,14 @@ impl Screen {
         match raw.split_once(':') {
             Some(("bot", id)) => BotId::new(id).ok().map(Self::Bot),
             Some(("task", id)) => TaskId::new(id).ok().map(Self::Task),
+            Some(("team", name)) if !name.is_empty() => Some(Self::Team(name.to_string())),
             Some(_) => None,
             None => match raw {
                 "overview" => Some(Self::Overview),
                 "nodes" => Some(Self::Nodes),
                 "bots" => Some(Self::Bots),
                 "tasks" => Some(Self::Tasks),
+                "teams" => Some(Self::Teams),
                 "settings" => Some(Self::Settings),
                 _ => None,
             },
@@ -48,6 +53,7 @@ impl Screen {
             Self::Nodes => Section::Nodes,
             Self::Bots | Self::Bot(_) => Section::Bots,
             Self::Tasks | Self::Task(_) => Section::Tasks,
+            Self::Teams | Self::Team(_) => Section::Teams,
             Self::Settings => Section::Settings,
         }
     }
@@ -75,6 +81,10 @@ mod tests {
         assert_eq!(Screen::parse("task:Bad Id"), None);
         assert_eq!(Screen::parse("node:x"), None);
         assert_eq!(Screen::parse("home"), None);
+        assert_eq!(Screen::parse("teams"), Some(Screen::Teams));
+        assert_eq!(Screen::parse("team:port"), Some(Screen::Team("port".into())));
+        assert_eq!(Screen::parse("team:"), None);
+        assert_eq!(Screen::Team("port".into()).section(), Section::Teams);
         assert_eq!(Screen::Task(TaskId::new("t").unwrap()).section(), Section::Tasks);
         assert_eq!(Screen::Bot(BotId::new("b").unwrap()).section(), Section::Bots);
         assert_eq!(Screen::default().section(), Section::Overview);

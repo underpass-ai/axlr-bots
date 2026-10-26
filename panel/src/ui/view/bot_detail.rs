@@ -44,11 +44,23 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
     } else {
         Space::new().into()
     };
+    let recall: El<'a> = if bot.can_return_home() {
+        action(
+            Kind::Secondary,
+            Icon::Back,
+            "Recall",
+            (!app.switching && bot.status.accepts_tasks()).then(|| Message::Recall(bot.id.clone())),
+            tokens,
+        )
+    } else {
+        Space::new().into()
+    };
     let header = row![
         back,
         title(Icon::Bots, bot.id.to_string(), tokens),
         pill(Tone::of_bot(bot.status), bot.status.name(), tokens),
         Space::new().width(Length::Fill),
+        recall,
         switch,
         action(
             Kind::Danger,
@@ -99,6 +111,7 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
             text(bot.mission.clone()),
             tokens,
         ),
+        team(app, bot, tokens),
         advanced_toggle,
         section_with(
             Icon::Clock,
@@ -239,6 +252,60 @@ fn now<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
         ));
     }
     body.into()
+}
+
+/// Its teams, and the field that changes them.
+fn team<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
+    let editing = app.watch.editing.as_ref().filter(|(id, _)| id == &bot.id);
+    let body: El<'a> = match editing {
+        Some((_, words)) => row![
+            container(super::widgets::field(
+                "Team",
+                "port",
+                words,
+                {
+                    let id = bot.id.clone();
+                    move |w| Message::TeamEdit(id.clone(), w)
+                },
+                Some(Message::TeamSave),
+                tokens
+            ))
+            .width(Length::Fill),
+            action(
+                Kind::Primary,
+                Icon::Check,
+                "Save",
+                (!app.switching).then_some(Message::TeamSave),
+                tokens
+            ),
+            action(Kind::Ghost, Icon::Cross, "Cancel", Some(Message::TeamCancel), tokens),
+        ]
+        .spacing(10)
+        .align_y(Alignment::End)
+        .into(),
+        None => {
+            let mut line = row![].spacing(8).align_y(Alignment::Center);
+            if bot.groups.is_empty() {
+                line = line.push(muted("In no team: it knows no other bot", tokens));
+            }
+            for name in &bot.groups {
+                line = line.push(
+                    mouse_area(chip(name.clone(), tokens))
+                        .on_press(Message::Go(Screen::Team(name.clone())))
+                        .interaction(mouse::Interaction::Pointer),
+                );
+            }
+            line = line.push(Space::new().width(Length::Fill)).push(action(
+                Kind::Ghost,
+                Icon::Team,
+                "Change",
+                Some(Message::TeamEdit(bot.id.clone(), bot.groups.join(", "))),
+                tokens,
+            ));
+            line.into()
+        }
+    };
+    section(Icon::Team, "Team", body, tokens)
 }
 
 /// The calls of this bot waiting for a person, each answered in one

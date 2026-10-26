@@ -24,11 +24,28 @@ pub struct Task {
     pub execution_ids: Vec<ExecutionId>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub failure_reason: String,
+    /// `urgent` for a task that went first; empty for normal.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub priority: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 impl Task {
+    /// Whether it went first and stopped the bot's work in progress.
+    pub fn is_urgent(&self) -> bool {
+        self.priority == "urgent"
+    }
+
+    /// Who said what, for a task a teammate's event made: `plane: a ship
+    /// is entering your zone`.
+    pub fn told_by(&self) -> Option<String> {
+        let input = self.input.as_ref()?;
+        let from = input.get("from")?.as_str()?;
+        let message = input.get("message")?.as_str()?;
+        Some(format!("{from}: {message}"))
+    }
+
     /// The objective's first line, cut to `max` characters with an ellipsis.
     pub fn headline(&self, max: usize) -> String {
         let first = self.objective.lines().next().unwrap_or_default();
@@ -52,6 +69,16 @@ mod tests {
             "createdAt":"2026-10-24T22:32:26Z","updatedAt":"2026-10-24T22:32:33Z"}"#,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn says_who_told_it_and_whether_it_was_urgent() {
+        let mut task = sample();
+        assert!(!task.is_urgent() && task.told_by().is_none());
+        task.priority = "urgent".into();
+        task.input = Some(serde_json::json!({"from": "plane", "message": "a ship"}));
+        assert!(task.is_urgent());
+        assert_eq!(task.told_by().as_deref(), Some("plane: a ship"));
     }
 
     #[test]

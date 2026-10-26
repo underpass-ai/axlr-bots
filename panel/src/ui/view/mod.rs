@@ -10,6 +10,7 @@ mod settings;
 mod shell;
 mod task_detail;
 mod tasks;
+mod teams;
 pub mod widgets;
 
 use iced::Element;
@@ -26,6 +27,8 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::Bot(id) => bot_detail::view(app, id, tokens),
         Screen::Tasks => tasks::view(app, tokens),
         Screen::Task(id) => task_detail::view(app, id, tokens),
+        Screen::Teams => teams::list(app, tokens),
+        Screen::Team(name) => teams::detail(app, name, tokens),
         Screen::Settings => settings::view(app, tokens),
     };
     shell::frame(app, content, tokens)
@@ -52,7 +55,12 @@ pub(crate) mod tests {
     /// A panel over the sample fleet, not connected yet.
     pub(crate) fn app() -> App {
         let now = "2026-10-25T10:00:00Z".parse().unwrap();
-        let control_plane = Arc::new(FakeControlPlane::sample(now));
+        app_over(Arc::new(FakeControlPlane::sample(now)))
+    }
+
+    /// A panel over the fake given, which a test keeps to change it.
+    pub(crate) fn app_over(control_plane: Arc<FakeControlPlane>) -> App {
+        let now = "2026-10-25T10:00:00Z".parse().unwrap();
         let clock = Arc::new(FixedClock::new(now));
         let store = Arc::new(MemoryConfigStore::new(None, config()));
         let connector = Arc::new(FakeConnector::new("https://127.0.0.1:7879", control_plane));

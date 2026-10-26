@@ -3,6 +3,7 @@
 
 mod answer;
 mod app;
+mod app_teams;
 #[cfg(test)]
 mod app_tests;
 mod banner;
@@ -24,6 +25,7 @@ mod settings_form;
 pub mod styles;
 mod submit_form;
 mod task_view_filter;
+mod team_watch;
 #[cfg(test)]
 mod test_runtime;
 mod theme_mode;
@@ -52,6 +54,7 @@ pub use services::Services;
 pub use settings_form::SettingsForm;
 pub use submit_form::SubmitForm;
 pub use task_view_filter::TaskViewFilter;
+pub use team_watch::TeamWatch;
 pub use theme_mode::ThemeMode;
 pub use tokens::Tokens;
 pub use tone::Tone;

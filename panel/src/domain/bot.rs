@@ -29,12 +29,25 @@ pub struct Bot {
     pub triggers: Vec<Trigger>,
     #[serde(default)]
     pub placement: Placement,
+    /// The teams it belongs to.
+    #[serde(default)]
+    pub groups: Vec<String>,
     pub status: BotStatus,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 impl Bot {
+    /// Whether it may fly or drive home: its tools include `return_home`.
+    pub fn can_return_home(&self) -> bool {
+        self.allowed_tools.iter().any(|t| t == super::RETURN_HOME_TOOL)
+    }
+
+    /// Its teams, `port, sea`, or empty.
+    pub fn team_summary(&self) -> String {
+        self.groups.join(", ")
+    }
+
     /// The trigger types, `manual · timer · webhook`.
     pub fn trigger_summary(&self) -> String {
         let names: Vec<&str> = self.triggers.iter().map(|t| t.trigger_type.name()).collect();

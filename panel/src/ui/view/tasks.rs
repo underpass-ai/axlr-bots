@@ -171,7 +171,21 @@ fn submit_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
                     form.ready().then_some(Message::SubmitSend),
                     tokens
                 ),
-                muted(format!("key {key}: sending twice makes one task"), tokens),
+                action(
+                    Kind::Chip(form.urgent),
+                    Icon::Bolt,
+                    "Urgent",
+                    Some(Message::SubmitUrgent(!form.urgent)),
+                    tokens
+                ),
+                muted(
+                    if form.urgent {
+                        "urgent: it goes first and stops what the bot is doing".to_string()
+                    } else {
+                        format!("key {key}: sending twice makes one task")
+                    },
+                    tokens
+                ),
             ]
             .spacing(14)
             .align_y(Alignment::Center),

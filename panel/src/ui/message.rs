@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 
 use super::{BotChoice, BotView, Connection, NodeChoice, Screen, ThemeMode};
-use crate::application::{Fleet, PanelError, StoppedBot, TaskDetail};
+use crate::application::{EventFeed, Fleet, PanelError, StoppedBot, TaskDetail};
 use crate::domain::{
     AutonomyLevel, Bot, BotId, CancelledTask, DecidedTask, EnrollmentToken, NodeId, RevokedNode, SubmittedTask, TaskId,
     TaskStatus,
@@ -51,6 +51,7 @@ pub enum Message {
     RegisterNode(NodeChoice),
     /// Show or hide the New bot form's Advanced part.
     RegisterAdvanced(bool),
+    RegisterTeam(String),
     RegisterSubmit,
     PickFile,
     FilePicked(Result<Option<PathBuf>, PanelError>),
@@ -69,6 +70,16 @@ pub enum Message {
     ChatSend,
     ChatSent(Result<SubmittedTask, PanelError>),
     BotStopped(Result<StoppedBot, PanelError>),
+    /// Bring a vehicle's bot home at once: an urgent task.
+    Recall(BotId),
+    Recalled(Result<SubmittedTask, PanelError>),
+    /// Change a bot's team: open the field, type, save.
+    TeamEdit(BotId, String),
+    TeamSave,
+    TeamCancel,
+    TeamSaved(Result<Bot, PanelError>),
+    /// What a team's read of its timeline brought.
+    TeamLoaded(String, Result<EventFeed, PanelError>),
 
     FilterStatus(Option<TaskStatus>),
     FilterBot(BotChoice),
@@ -76,6 +87,7 @@ pub enum Message {
     SubmitClose,
     SubmitBot(BotChoice),
     SubmitObjective(String),
+    SubmitUrgent(bool),
     SubmitSend,
     Submitted(Result<SubmittedTask, PanelError>),
     AskCancel(TaskId),

@@ -58,6 +58,15 @@ impl Event {
             "bot.task.cancelled" => "Cancelled".into(),
             "bot.task.expired" => "Expired".into(),
             "bot.approval.expired" => "Approval expired".into(),
+            "bot.event.emitted" => match self.payload_text("severity").as_deref() {
+                Some("critical") => "Alarm to the team".into(),
+                Some("warning") => "Warning to the team".into(),
+                _ => "Told the team".into(),
+            },
+            "bot.event.refused" => "Event refused".into(),
+            "bot.task.preempted" => "Stopped for urgent".into(),
+            "bot.task.delegated" => "Asked a bot".into(),
+            "bot.delegation.refused" => "Ask refused".into(),
             "execution.assigned" => "Sent to node".into(),
             "execution.reported" => "Node reported".into(),
             "node.registered" => "Node joined".into(),
@@ -80,7 +89,17 @@ impl Event {
     pub fn tone(&self) -> EventTone {
         match self.event_type.as_str() {
             "bot.task.completed" | "bot.enabled" | "node.registered" | "node.enrolled" => EventTone::Good,
-            "bot.task.failed" | "node.offline" | "node.revoked" | "bot.task.cancelled" => EventTone::Bad,
+            "bot.task.failed"
+            | "node.offline"
+            | "node.revoked"
+            | "bot.task.cancelled"
+            | "bot.event.refused"
+            | "bot.delegation.refused" => EventTone::Bad,
+            "bot.task.preempted" => EventTone::Waiting,
+            "bot.event.emitted" => match self.payload_text("severity").as_deref() {
+                Some("warning") | Some("critical") => EventTone::Waiting,
+                _ => EventTone::Neutral,
+            },
             "bot.task.waiting_approval" | "bot.paused" | "bot.task.expired" | "bot.approval.expired" => {
                 EventTone::Waiting
             }
@@ -111,10 +130,46 @@ impl Event {
         Some((before, after))
     }
 
+    /// Whether people should see it now: a teammate's warning or alarm.
+    pub fn needs_attention(&self) -> bool {
+        self.event_type == "bot.event.emitted"
+            && matches!(
+                self.payload_text("severity").as_deref(),
+                Some("warning") | Some("critical")
+            )
+    }
+
+    /// Who an event was for: `quad-1, quad-2`, or `the team`.
+    pub fn addressed_to(&self) -> String {
+        let to: Vec<&str> = self
+            .payload
+            .as_ref()
+            .and_then(|p| p.get("to"))
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+            .unwrap_or_default();
+        if to.is_empty() {
+            "the team".into()
+        } else {
+            to.join(", ")
+        }
+    }
+
     /// One useful detail of the payload: the node, the reason, the tool.
     pub fn detail(&self) -> String {
         if let Some((before, after)) = self.level_change() {
             return format!("{} → {}", before.label(), after.label());
+        }
+        if self.event_type == "bot.event.emitted" {
+            let message = self.payload_text("message").unwrap_or_default();
+            return format!("{} → {}: {message}", self.bot_id, self.addressed_to());
+        }
+        if self.event_type == "bot.task.decided"
+            && self
+                .payload_text("decidedBy")
+                .is_some_and(|by| by.starts_with("policy:"))
+        {
+            return "by its policy, no person needed".into();
         }
         for key in ["nodeId", "reason", "tool", "trigger", "outcome"] {
             if let Some(value) = self.payload_text(key) {
@@ -137,6 +192,39 @@ mod tests {
             r#"{{"eventId":"evt-1","type":"{kind}","tenantId":"default","botId":"bot","taskId":"task-1","createdAt":"2026-10-24T16:04:40Z","payload":{payload}}}"#
         ))
         .unwrap()
+    }
+
+    #[test]
+    fn a_teams_events_say_who_told_whom_what() {
+        let warning = event(
+            "bot.event.emitted",
+            r#"{"name":"recall","severity":"warning","message":"a ship","to":["quad-1"]}"#,
+        );
+        assert_eq!(warning.label(), "Warning to the team");
+        assert_eq!(warning.detail(), "bot → quad-1: a ship");
+        assert!(warning.needs_attention());
+        assert_eq!(warning.tone(), EventTone::Waiting);
+        let alarm = event("bot.event.emitted", r#"{"severity":"critical","message":"fire"}"#);
+        assert_eq!(
+            (alarm.label().as_str(), alarm.addressed_to().as_str()),
+            ("Alarm to the team", "the team")
+        );
+        let info = event("bot.event.emitted", r#"{"severity":"info","message":"x"}"#);
+        assert_eq!(info.label(), "Told the team");
+        assert!(!info.needs_attention());
+        assert_eq!(info.tone(), EventTone::Neutral);
+        assert_eq!(event("bot.event.refused", "{}").tone(), EventTone::Bad);
+        assert_eq!(
+            event("bot.task.preempted", r#"{"reason":"preempted by task-2"}"#).label(),
+            "Stopped for urgent"
+        );
+        let by_policy = event(
+            "bot.task.decided",
+            r#"{"decision":"approve","decidedBy":"policy:autoApprove"}"#,
+        );
+        assert_eq!(by_policy.detail(), "by its policy, no person needed");
+        assert_eq!(event("bot.task.delegated", "{}").label(), "Asked a bot");
+        assert_eq!(event("bot.delegation.refused", "{}").tone(), EventTone::Bad);
     }
 
     #[test]

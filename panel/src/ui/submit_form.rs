@@ -9,6 +9,8 @@ pub struct SubmitForm {
     pub objective: String,
     pub key: Option<IdempotencyKey>,
     pub busy: bool,
+    /// Goes first and cancels the bot's work in progress.
+    pub urgent: bool,
 }
 
 impl SubmitForm {
@@ -19,6 +21,7 @@ impl SubmitForm {
             objective: String::new(),
             key: Some(key),
             busy: false,
+            urgent: false,
         }
     }
 
