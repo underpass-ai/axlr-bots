@@ -3,6 +3,7 @@ package application
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"math"
 	"time"
 
@@ -79,6 +80,42 @@ func shareOf(pool, granted int, share float64, own int) (int, bool) {
 		grant = own
 	}
 	return grant, true
+}
+
+// evenShareOf is one limit of a child's grant under the even split: the
+// share of the parent's whole pool divided among the most children it
+// may ask for, never more than the child bot's own limit. Where the
+// parent has no limit the child has its own (0: none). False when that
+// is under one.
+func evenShareOf(pool int, share float64, children, own int) (int, bool) {
+	if pool == 0 {
+		return own, true
+	}
+	grant := int(math.Floor(share * float64(pool) / float64(children)))
+	if grant < 1 {
+		return 0, false
+	}
+	if own > 0 && own < grant {
+		grant = own
+	}
+	return grant, true
+}
+
+// limitOf is one limit of a child's grant under the delegation's split.
+func limitOf(policy domain.Delegation, pool, granted, own int) (int, bool) {
+	if policy.Split() == domain.SplitEven {
+		return evenShareOf(pool, policy.BudgetShare(), policy.MaxChildren(), own)
+	}
+	return shareOf(pool, granted, policy.BudgetShare(), own)
+}
+
+// underOne says why a limit of the grant is under one, in the split's
+// terms.
+func underOne(policy domain.Delegation, limit string, pool, granted int) string {
+	if policy.Split() == domain.SplitEven {
+		return fmt.Sprintf("this task has %d %s, and %.2f of them split among %d children is under one each", pool, limit, policy.BudgetShare(), policy.MaxChildren())
+	}
+	return fmt.Sprintf("this task has %d of its %d %s left to share, and %.2f of them is under one", pool-granted, pool, limit, policy.BudgetShare())
 }
 
 // delegationKey is the child's idempotency key under its bot: the same
