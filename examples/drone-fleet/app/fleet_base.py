@@ -233,6 +233,9 @@ class Base:
             try:
                 if job[0] == "fire":
                     _, trigger, event, key, bot = job
+                    if trigger == "restock" and self._supply_waiting():
+                        log.info("restock skipped: a supply run is already waiting for a person")
+                        continue
                     task = self.dispatch.fire(trigger, event, key, bot)
                     if task and self.incident:
                         with self.lock:
@@ -253,6 +256,16 @@ class Base:
                             self.event(f"report {report['name']} delivered")
             except Exception as exc:
                 log.warning("control plane job %s: %s", job[0], exc)
+
+    def _supply_waiting(self):
+        """A restock already asked for and not decided: the supply rover's pilot or the restock bot waits."""
+        with self.lock:
+            pilots = {"pilot-" + vid for vid, st in self.states.items() if st.get("role") == "supply"}
+        try:
+            return any(t.get("botId") in pilots | {self.dispatch.logistics} for t in self.cp.waiting())
+        except Exception as exc:
+            log.warning("waiting tasks: %s", exc)
+            return False
 
     def start_incident(self, report):
         with self.lock:
