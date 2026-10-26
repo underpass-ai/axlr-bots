@@ -1,0 +1,58 @@
+name: Panel
+
+# The desktop panel in panel/ (Rust). It runs when the panel changes, or when
+# what it reads changes: the operator API's server and its reference.
+on:
+  push:
+    branches: [main]
+    paths:
+      - panel/**
+      - adapters/unixapi/**
+      - docs/reference/operator-api.md
+      - .github/workflows/panel.yml
+  pull_request:
+    paths:
+      - panel/**
+      - adapters/unixapi/**
+      - docs/reference/operator-api.md
+      - .github/workflows/panel.yml
+
+concurrency:
+  group: panel-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: panel
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: panel
+      - name: Format
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Tests
+        run: cargo test --locked
+
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: panel/Cargo.toml
+          command: check

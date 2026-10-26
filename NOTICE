@@ -2,3 +2,7 @@ AXLR Bots
 Copyright 2026 Tirso García Ibáñez.
 
 This repository is part of the Underpass AI project.
+
+The desktop control panel in panel/ embeds the Lexend and DotGothic16 fonts
+(panel/assets/fonts), under the SIL Open Font License 1.1; their licences
+sit beside them.

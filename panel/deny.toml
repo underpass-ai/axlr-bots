@@ -1,0 +1,22 @@
+# cargo deny check: run by CI (the panel workflow) and by `make deny`.
+[graph]
+all-features = true
+
+[advisories]
+# A vulnerability anywhere fails. An unmaintained crate fails only when the
+# panel depends on it directly: the ones below Iced, rfd and the test TLS
+# server are theirs to replace.
+unmaintained = "workspace"
+ignore = []
+
+[licenses]
+allow = ["Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-3.0", "Zlib", "CC0-1.0", "MPL-2.0", "BSL-1.0", "NCSA", "CDLA-Permissive-2.0"]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

@@ -2,7 +2,7 @@
 
 <p align="center"><strong>Deploy bots like services: give each one a job, a policy and a host, and it keeps working.</strong></p>
 
-[![CI](https://github.com/underpass-ai/axlr-bots/actions/workflows/ci.yml/badge.svg)](https://github.com/underpass-ai/axlr-bots/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![CI](https://github.com/underpass-ai/axlr-bots/actions/workflows/ci.yml/badge.svg)](https://github.com/underpass-ai/axlr-bots/actions/workflows/ci.yml) [![Panel](https://github.com/underpass-ai/axlr-bots/actions/workflows/panel.yml/badge.svg)](https://github.com/underpass-ai/axlr-bots/actions/workflows/panel.yml) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 AXLR Bots is Underpass's control plane for bots that live as infrastructure: one control plane, N hosts, N bots per host. A bot is a declared resource with a mission, a model, tools, an autonomy level, triggers, budgets and a placement; it exists without running anything, and when a task arrives (by hand, from a webhook, on a timer, or asked by another bot) the control plane starts an execution on the host the bot is placed on. [AXLR](https://github.com/underpass-ai/AXLR) runs each execution: the LLM proposes, the policy decides, outside the model. The [vision note](docs/architecture/vision.md) is the design; this repository is what exists today.
 
@@ -28,6 +28,24 @@ axlr-bots task get task-…                                                     
 axlr-bots task report task-…                                                     # the answer, kept as the task's artifact
 axlr-bots bot events bot                                                         # bot.task.submitted … bot.task.completed, with the trace id
 ```
+
+## The control panel
+
+A desktop window over the operator API, in [`panel/`](panel/README.md): see the fleet, send tasks, say yes or no to a bot. Rust and [Iced](https://iced.rs), light and dark, no root.
+
+<p align="center"><img src="panel/docs/screenshots/overview-light.png" alt="The panel's Home: nodes online, bots on, tasks running, waiting, failed and expired today, cost today" width="860"></p>
+
+| Tasks | A call waiting for you | Nodes |
+|:--:|:--:|:--:|
+| <img src="panel/docs/screenshots/tasks-light.png" width="280"> | <img src="panel/docs/screenshots/task-waiting-light.png" width="280"> | <img src="panel/docs/screenshots/nodes-light.png" width="280"> |
+
+```bash
+cd panel
+make install        # ~/.local/bin/axlr-bots-panel, the icon and the menu entry; needs Rust 1.88
+axlr-bots-panel     # the first run reads this host's axlr-bots install and asks to Connect
+```
+
+The [panel's README](panel/README.md) has every screen, the flags and how it is built.
 
 ## How it works
 
@@ -56,6 +74,7 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | Run the node agent as a sidecar beside a service in a Kubernetes pod, with Helm | [Sidecar](docs/runbooks/sidecar.md) |
 | Install the demo fleet: autonomous vehicles in a port (ArduPilot SITL quads, rovers, a plane), a dispatcher and a logistics bot, a pilot bot per vehicle whose every launch waits for a person, maintenance stations and a live map, its own control plane in the namespace | [Drone fleet](docs/runbooks/drone-fleet.md) |
 | Run a simulated search for containers lost overboard: drift from wind and current, a plane that sweeps, quads that confirm, real aerial imagery with the containers drawn in for the vision model, live AIS ships, every takeoff approved on a phone, a report at the end | [Drone fleet, containers overboard](docs/runbooks/drone-fleet.md#7-containers-overboard) |
+| Watch the fleet and approve calls from a desktop window | [Control panel](panel/README.md) |
 | Call the control plane over HTTP | [Operator API](docs/reference/operator-api.md) |
 | See what a node and the control plane say to each other | [Node protocol](docs/reference/node-protocol.md) |
 | See how a node runs AXLR and reads the result | [Runtime contract](docs/architecture/runtime-contract.md) |
@@ -73,11 +92,12 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | `axlr-bots` (control plane) | one host, `systemctl --user` | keeps the bots, tasks, executions, nodes and timers; serves the CLI on a Unix socket, the nodes on a TLS address, operators and webhooks on another; fires the timers; reconciles what a crash left running |
 | `axlr-node` (node agent) | every host that runs bots, under systemd; or in a pod beside a service, as a sidecar (`charts/axlr-bots-node`) | enrolls with a token, registers, heartbeats, polls for the executions of the bots placed on its host, runs them, reports |
 | AXLR (`axlr-tui --exec`) | on the node, one process per execution | the model loop, the tools, the policy and the approvals; writes the result object the node reports |
+| `axlr-bots-panel` (control panel) | an operator's desktop | reads and drives the control plane over the operator API, with the fleet CA and the bearer token |
 | your model provider | wherever it is | answers the model calls with the key in that host's environment file |
 
 ## Project status
 
-Pre-1.0, one Go module, Linux with systemd or Kubernetes. What works today, exercised live with the real AXLR: user-level install, bots with the four autonomy levels and tool rules, manual, webhook and timer triggers with deduplication, the approval path with its expiry and notifications, artifacts uploaded by the node and served by the control plane, a bot asking another bot through the control plane with the loop cut by depth and by the chain ([live run](docs/live-run.md#delegation-between-bots-gx10-25-oct-2026)), node enrollment with one-time tokens and mutual TLS, revocation, placement by node or label, the operator API behind a bearer token, correlation ids on every task, execution and event, recovery of the tasks a crash left running, budgets passed to a runtime that takes them, and the node agent as a sidecar in a pod (a Helm chart, no CRDs), enrolled from a Secret on its first start, reading the service's log read-only under a NetworkPolicy ([live run](docs/live-run.md#the-sidecar-on-kubernetes)).
+Pre-1.0, one Go module and a Rust desktop panel, Linux with systemd or Kubernetes. What works today, exercised live with the real AXLR: user-level install, bots with the four autonomy levels and tool rules, manual, webhook and timer triggers with deduplication, the approval path with its expiry and notifications, artifacts uploaded by the node and served by the control plane, a bot asking another bot through the control plane with the loop cut by depth and by the chain ([live run](docs/live-run.md#delegation-between-bots-gx10-25-oct-2026)), node enrollment with one-time tokens and mutual TLS, revocation, placement by node or label, the operator API behind a bearer token, correlation ids on every task, execution and event, recovery of the tasks a crash left running, budgets passed to a runtime that takes them, and the node agent as a sidecar in a pod (a Helm chart, no CRDs), enrolled from a Secret on its first start, reading the service's log read-only under a NetworkPolicy ([live run](docs/live-run.md#the-sidecar-on-kubernetes)).
 
 Next: one sandbox per execution (a Job with its own identity, filesystem and limits), budgets enforced by the runtime recorded on every execution, and a durable store in place of one JSON file per aggregate. [Control plane, node and AXLR](docs/architecture/control-plane-node-axlr.md#what-is-left-out) says what is left out.
 

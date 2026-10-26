@@ -6,6 +6,7 @@ rust-version = "1.88"
 license = "Apache-2.0"
 description = "Desktop control panel for AXLR Bots: nodes, bots, tasks and approvals over the operator API"
 readme = "README.md"
+repository = "https://github.com/underpass-ai/axlr-bots"
 publish = false
 
 [dependencies]

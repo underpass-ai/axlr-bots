@@ -6,7 +6,7 @@ BIN := $(PREFIX)/bin
 APPS := $(PREFIX)/share/applications
 ICONS := $(PREFIX)/share/icons/hicolor
 
-.PHONY: build check install uninstall coverage
+.PHONY: build check deny install uninstall coverage
 
 build:
 	cargo build --release -j 2
@@ -15,6 +15,9 @@ check:
 	cargo fmt --check
 	cargo clippy -j 2 --all-targets -- -D warnings
 	cargo test -j 2
+
+deny:
+	cargo deny check
 
 coverage:
 	CARGO_BUILD_JOBS=2 cargo llvm-cov --lib --tests --summary-only --ignore-filename-regex 'src/(main|ui/view/|ui/runtime)'

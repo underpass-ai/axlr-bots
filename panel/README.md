@@ -2,17 +2,18 @@
 
 <p align="center"><strong>The control panel of AXLR Bots: see the fleet, send tasks, say yes or no to a bot, from one window.</strong></p>
 
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](../LICENSE)
 
-AXLR Bots Panel is a native desktop application for [AXLR Bots](https://github.com/underpass-ai/axlr-bots), Underpass's control plane for bots that live as infrastructure. It talks to a running control plane through its operator API (HTTPS with the fleet CA, the bearer token from its file) and shows nodes, bots, tasks and executions with status pills, icons and colour, in few words. It is written in Rust with [Iced](https://iced.rs) and draws with the GPU or without one.
+AXLR Bots Panel is a native desktop application for [AXLR Bots](../README.md), Underpass's control plane for bots that live as infrastructure. It talks to a running control plane through its operator API (HTTPS with the fleet CA, the bearer token from its file) and shows nodes, bots, tasks and executions with status pills, icons and colour, in few words. It is written in Rust with [Iced](https://iced.rs) and draws with the GPU or without one.
 
 <p align="center"><img src="docs/screenshots/overview-light.png" alt="Home: nodes online, bots on, tasks running, waiting, failed and expired today, cost today" width="860"></p>
 
 ## Install
 
-User-level, no root. You need Rust 1.88 or newer and a control plane with its operator address on (`axlr-bots serve --api-listen 127.0.0.1:7879`, as the [install runbook](https://github.com/underpass-ai/axlr-bots/blob/main/docs/runbooks/install.md) sets up). The control plane must serve the panel's routes: build `axlr-bots` from the branch of [underpass-ai/axlr-bots#3](https://github.com/underpass-ai/axlr-bots/pull/3) (or `main` once it is merged). An older one answers the first **Connect** with *Check settings: this control plane has no /v1/overview*.
+User-level, no root. You need Rust 1.88 or newer and a control plane with its operator address on (`axlr-bots serve --api-listen 127.0.0.1:7879`, as the [install runbook](../docs/runbooks/install.md) sets up). Build the control plane from the same commit as the panel: the two ship together in this repository. A control plane older than the panel's routes answers the first **Connect** with *Check settings: this control plane has no /v1/overview*.
 
 ```bash
+cd panel
 make install        # ~/.local/bin/axlr-bots-panel, the icon, and the menu entry "AXLR Bots"
 ```
 
@@ -47,7 +48,7 @@ The panel reads the control plane every 3 seconds, in the background; the window
 | **Task, done**: the answer, every run with its node, outcome, tool calls and their decisions, usage and cost, trace and policy; the timeline | <img src="docs/screenshots/task-light.png" width="300"> | <img src="docs/screenshots/task-dark.png" width="300"> |
 | **Settings**: the API address, the CA and the token file; the theme | <img src="docs/screenshots/settings-light.png" width="300"> | <img src="docs/screenshots/settings-dark.png" width="300"> |
 
-The screenshots are the live control plane of the [port fleet](https://github.com/underpass-ai/axlr-bots/blob/main/docs/runbooks/drone-fleet.md): eight nodes (the fleet base, three quadcopters, two rovers, a supply rover and a plane, each a node agent beside its autopilot in a pod), nine bots, and four pilots waiting for a person before they take off. [The live run](docs/live-run.md) shows a task sent to a node and a write approved, both from the panel.
+The screenshots are the live control plane of the [port fleet](../docs/runbooks/drone-fleet.md): eight nodes (the fleet base, three quadcopters, two rovers, a supply rover and a plane, each a node agent beside its autopilot in a pod), nine bots, and four pilots waiting for a person before they take off. [The live run](docs/live-run.md) shows a task sent to a node and a write approved, both from the panel.
 
 ## Made to be read fast
 
@@ -78,11 +79,12 @@ Words are set in [Lexend](https://www.lexend.com) (made for reading fluency) and
 - **Nothing twice.** A task form keeps one idempotency key from the moment it opens, so sending twice names one task. A refresh carries a generation, and an older answer is dropped.
 - **Acts that cannot be undone ask twice**: revoking a node, stopping a task, denying a call.
 
-The routes the panel reads beyond the original operator API (the task list across bots, a task's timeline, the overview, pausing a bot, a node's certificate expiry) come from [underpass-ai/axlr-bots#3](https://github.com/underpass-ai/axlr-bots/pull/3).
+The routes the panel reads beyond the original operator API (the task list across bots, a task's timeline, the overview, pausing a bot, a node's certificate expiry) are documented in the [operator API reference](../docs/reference/operator-api.md).
 
 ## Development
 
 ```bash
+cd panel
 make check          # cargo fmt --check, cargo clippy -D warnings, cargo test (two jobs)
 make coverage       # cargo llvm-cov over domain, application, adapters and the update logic
 AXLR_PANEL_LIVE=1 cargo test --test live_control_plane -- --nocapture   # read the running control plane
@@ -92,4 +94,4 @@ The HTTPS adapter is tested against a local TLS server with a CA made for the te
 
 ## License
 
-Apache License 2.0; see [LICENSE](LICENSE) and [NOTICE](NOTICE). Part of [Underpass AI](https://underpassai.com).
+Apache License 2.0, like the rest of AXLR Bots; see [LICENSE](../LICENSE) and [NOTICE](../NOTICE). Part of [Underpass AI](https://underpassai.com).
