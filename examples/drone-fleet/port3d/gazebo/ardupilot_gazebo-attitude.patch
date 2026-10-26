@@ -1,0 +1,21 @@
+diff --git i/src/ArduPilotPlugin.cc w/src/ArduPilotPlugin.cc
+index 78c0e20..1380b3b 100755
+--- i/src/ArduPilotPlugin.cc
++++ w/src/ArduPilotPlugin.cc
+@@ -1957,6 +1957,16 @@ void gz::sim::systems::ArduPilotPlugin::CreateStateJSON(
+     writer.Double(wldAToBdyA.Rot().Z());
+     writer.EndArray();
+ 
++    // Euler angles as well: ArduRover 4.7.2's JSON backend reads rng_n only
++    // when they come (it tests the bit of the key three before rng_n's). It
++    // takes the quaternion when it has both.
++    writer.Key("attitude");
++    writer.StartArray();
++    writer.Double(wldAToBdyA.Rot().Roll());
++    writer.Double(wldAToBdyA.Rot().Pitch());
++    writer.Double(wldAToBdyA.Rot().Yaw());
++    writer.EndArray();
++
+     writer.Key("velocity");
+     writer.StartArray();
+     writer.Double(velWldA.X());
