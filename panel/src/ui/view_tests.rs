@@ -156,8 +156,19 @@ fn the_bots_screen_lists_switches_and_adds() {
             "Events",
             "Latest tasks",
             "New task",
+            "Copy mission",
         ],
     );
+    let sent = messages_of_click(&app, "Copy mission");
+    assert!(matches!(
+        sent.as_slice(),
+        [Message::Copy(mission)] if mission == "Do what each task asks, within the policy."
+    ));
+    assert!(!app.feed().unwrap().events.is_empty(), "the sample bot has events");
+    assert!(matches!(
+        messages_of_click(&app, "Copy events").as_slice(),
+        [Message::Copy(events)] if !events.is_empty()
+    ));
     let sent = messages_of_click(&app, "New task");
     assert!(matches!(sent.as_slice(), [Message::SubmitOpen(Some(_))]));
 }
@@ -222,6 +233,10 @@ fn a_waiting_task_shows_the_call_and_its_answers() {
         messages_of_click(&app, "Deny").as_slice(),
         [Message::AskDeny(_)]
     ));
+    assert!(matches!(
+        messages_of_click(&app, "Copy call").as_slice(),
+        [Message::Copy(call)] if call.starts_with("local_write\n") && call.contains("path: hello.txt")
+    ));
     app.deciding = app.task.as_ref().map(|t| t.task.id.clone());
     shows(&app, &["Sending your answer…"]);
 }
@@ -240,9 +255,46 @@ fn a_finished_task_shows_its_answer_and_failure() {
         .id
         .clone();
     send(&mut app, Message::Go(Screen::Task(done)));
-    shows(&app, &["Answer", "auto OK", "wrx80"]);
+    shows(
+        &app,
+        &[
+            "Answer",
+            "auto OK",
+            "wrx80",
+            "Copy task",
+            "Copy answer",
+            "Select text",
+            "Copy timeline",
+        ],
+    );
+    assert!(matches!(
+        messages_of_click(&app, "Copy answer").as_slice(),
+        [Message::Copy(answer)] if answer == "There are 3 files."
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Copy timeline").as_slice(),
+        [Message::Copy(timeline)] if timeline.contains("Done")
+    ));
+    let objective = app.task.as_ref().unwrap().task.objective.clone();
+    assert!(matches!(
+        messages_of_click(&app, "Copy task").as_slice(),
+        [Message::Copy(copied)] if *copied == objective
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Select text").as_slice(),
+        [Message::AnswerSelecting(true)]
+    ));
+    app.apply(Message::AnswerSelecting(true));
+    shows(&app, &["Formatted", "Copy answer"]);
+    assert!(matches!(
+        messages_of_click(&app, "Formatted").as_slice(),
+        [Message::AnswerSelecting(false)]
+    ));
+    // A long objective shows whole under the header's first line.
+    app.task.as_mut().unwrap().task.objective = "Count the files\nthen list them".into();
+    shows(&app, &["Count the files\nthen list them"]);
     assert_eq!(
-        app.answer.as_ref().map(|(source, _)| source.as_str()),
+        app.answer.as_ref().map(|a| a.source.as_str()),
         Some("There are 3 files.")
     );
     let failed = app
@@ -257,6 +309,10 @@ fn a_finished_task_shows_its_answer_and_failure() {
         .clone();
     send(&mut app, Message::Go(Screen::Task(failed)));
     shows(&app, &["Why it failed", "the file does not exist"]);
+    assert!(matches!(
+        messages_of_click(&app, "Copy reason").as_slice(),
+        [Message::Copy(reason)] if reason.contains("the file does not exist")
+    ));
     let expired = app
         .fleet
         .as_ref()

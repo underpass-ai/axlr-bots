@@ -1,7 +1,7 @@
 //! How the panel's surfaces, buttons and fields look, from the tokens:
 //! thin lines, slightly rounded corners, no shadows.
 
-use iced::widget::{button, container, svg, text_input};
+use iced::widget::{button, container, svg, text_editor, text_input};
 use iced::{Background, Border, Color, Shadow, Theme};
 
 use super::{Tokens, Tone};
@@ -238,6 +238,25 @@ pub fn field(tokens: Tokens) -> impl Fn(&Theme, text_input::Status) -> text_inpu
     }
 }
 
+/// Text to read and select, not to edit: the chip's quiet fill, the
+/// accent's border once focused.
+pub fn reader(tokens: Tokens) -> impl Fn(&Theme, text_editor::Status) -> text_editor::Style {
+    move |_, status| {
+        let focused = matches!(status, text_editor::Status::Focused { .. });
+        text_editor::Style {
+            background: Background::Color(tokens.surface),
+            border: Border {
+                color: if focused { tokens.accent } else { tokens.border },
+                width: 1.0,
+                radius: RADIUS_S.into(),
+            },
+            placeholder: Tokens::fade(tokens.muted, 0.75),
+            value: tokens.text,
+            selection: Tokens::fade(tokens.accent, 0.35),
+        }
+    }
+}
+
 /// The text colour that reads on a filled colour: ink on light fills,
 /// white on dark ones.
 pub fn on(fill: Color) -> Color {
@@ -267,6 +286,17 @@ pub fn shade(color: Color, amount: f32) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_reader_marks_its_focus() {
+        let theme = Tokens::LIGHT.theme();
+        let tokens = Tokens::LIGHT;
+        let idle = reader(tokens)(&theme, text_editor::Status::Active);
+        let focused = reader(tokens)(&theme, text_editor::Status::Focused { is_hovered: false });
+        assert_eq!(idle.border.color, tokens.border);
+        assert_eq!(focused.border.color, tokens.accent);
+        assert_eq!(idle.value, tokens.text);
+    }
 
     #[test]
     fn button_styles_follow_the_kind_and_the_status() {

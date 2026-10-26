@@ -1,8 +1,8 @@
 use chrono::{DateTime, Duration, Utc};
 
 use super::{
-    Banner, BotChoice, BotView, Confirm, Effect, Launch, Message, MintForm, NodeChoice, RegisterForm, Screen, Services,
-    SettingsForm, SubmitForm, TaskViewFilter, ThemeMode,
+    Answer, Banner, BotChoice, BotView, Confirm, Effect, Launch, Message, MintForm, NodeChoice, RegisterForm, Screen,
+    Services, SettingsForm, SubmitForm, TaskViewFilter, ThemeMode,
 };
 use crate::application::{EventFeed, Fleet, PanelConfig, PanelError, TaskDetail};
 use crate::domain::{Decision, TaskId, TaskStatus};
@@ -25,8 +25,8 @@ pub struct App {
     refreshing_since: Option<DateTime<Utc>>,
     generation: u64,
     pub task: Option<TaskDetail>,
-    /// The task's answer, parsed as Markdown once per answer.
-    pub answer: Option<(String, iced::widget::markdown::Content)>,
+    /// The task's answer, parsed once per answer.
+    pub answer: Option<Answer>,
     task_loading: bool,
     pub bot: Option<BotView>,
     bot_loading: bool,
@@ -124,6 +124,18 @@ impl App {
                 self.banner = Some(Banner::good("Copied", "", self.now));
                 vec![Effect::Copy(text)]
             }
+            Message::AnswerSelect(action) => {
+                if let Some(answer) = self.answer.as_mut() {
+                    answer.select(action);
+                }
+                Vec::new()
+            }
+            Message::AnswerSelecting(selecting) => {
+                if let Some(answer) = self.answer.as_mut() {
+                    answer.selecting = selecting;
+                }
+                Vec::new()
+            }
             Message::FleetLoaded { generation, result } => {
                 if generation != self.generation {
                     return Vec::new();
@@ -147,11 +159,8 @@ impl App {
                 match result {
                     Ok(detail) => {
                         let answer = detail.answer().map(str::to_string);
-                        if answer.as_deref() != self.answer.as_ref().map(|(source, _)| source.as_str()) {
-                            self.answer = answer.map(|source| {
-                                let parsed = iced::widget::markdown::Content::parse(&source);
-                                (source, parsed)
-                            });
+                        if answer.as_deref() != self.answer.as_ref().map(|a| a.source.as_str()) {
+                            self.answer = answer.map(Answer::new);
                         }
                         self.task = Some(detail);
                     }
