@@ -87,6 +87,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return botUpdate(ctx, service, rest, stdout, stderr)
 	case "bot events":
 		return botEvents(ctx, service, rest, stdout, stderr)
+	case "group list":
+		return groupList(ctx, service, rest, stdout, stderr)
+	case "group get":
+		return groupGet(ctx, service, rest, stdout, stderr)
 	case "task submit":
 		return taskSubmit(ctx, service, rest, stdout, stderr)
 	case "task list":
@@ -200,8 +204,10 @@ func printUsage(w io.Writer) {
   bot update <bot-id> --file <patch.json>
                                       replace the fields the patch names (mission, level,
                                       allowedTools, toolRules, triggers, placement, approvals,
-                                      model, budgets)
+                                      delegation, groups, model, budgets)
   bot events <bot-id> [--limit 100]   the bot's newest events, oldest first
+  group list                          list the teams the bots name, with their members
+  group get <group> [--tenant <id>]   show one team: each member's purpose, tools, where it runs
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>]
                                       accept a task; the same key names the same task
   trigger fire <bot-id> <trigger> --body '<json>' | --file <event.json> [--delivery <id>]

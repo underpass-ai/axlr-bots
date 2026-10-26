@@ -139,11 +139,17 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 }
 
 // describe builds what the node needs for the execution: a delegated
-// task runs with its grant and until its deadline, and a bot that may
-// delegate gets the delegation tool in its allow-list.
+// task runs with its grant and until its deadline, a bot that may
+// delegate gets the delegation tool in its allow-list, and a bot in a
+// team reads its teammates between its mission and the task.
 func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task domain.Task, execution domain.Execution) (Assignment, error) {
 	assignment := Assignment{ExecutionID: execution.ID(), Kind: execution.Kind()}
 	timeout := runTimeout(bot, task, uc.deps.Clock.Now())
+	mates, err := teammatesOf(ctx, uc.deps, bot)
+	if err != nil {
+		return Assignment{}, err
+	}
+	offer := delegationOffer(bot, task, mates)
 	if execution.Kind() == domain.ExecutionDecide {
 		previous, decision, err := decisionOf(ctx, uc.deps, task, execution)
 		if err != nil {
@@ -156,18 +162,18 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 		}
 		assignment.Decide = &DecisionRequest{
 			ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), CorrelationID: task.CorrelationID(), SessionID: sessionID, CallID: pending.CallID, Decision: decision,
-			Level: bot.Level(), AllowedTools: allowedTools(bot), ToolRules: bot.ToolRules(), Timeout: timeout, Delegation: delegationOffer(bot, task),
+			Level: bot.Level(), AllowedTools: allowedTools(bot, offer), ToolRules: bot.ToolRules(), Timeout: timeout, Delegation: offer,
 		}
 		return assignment, nil
 	}
-	prompt, err := domain.NewPrompt(bot.Mission(), task.Objective())
+	prompt, err := domain.NewTeamPrompt(bot.Mission(), task.Objective(), directoryOf(bot, mates))
 	if err != nil {
 		return Assignment{}, err
 	}
 	assignment.Run = &ExecutionRequest{
 		ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), TenantID: bot.TenantID(), CorrelationID: task.CorrelationID(),
-		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: bot.Level(), AllowedTools: allowedTools(bot),
-		ToolRules: bot.ToolRules(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: delegationOffer(bot, task),
+		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: bot.Level(), AllowedTools: allowedTools(bot, offer),
+		ToolRules: bot.ToolRules(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer,
 	}
 	return assignment, nil
 }

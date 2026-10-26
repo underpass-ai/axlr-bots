@@ -71,7 +71,11 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 		return RunTaskResult{}, err
 	}
 
-	prompt, err := domain.NewPrompt(bot.Mission(), task.Objective())
+	mates, err := teammatesOf(ctx, uc.deps, bot)
+	if err != nil {
+		return RunTaskResult{}, err
+	}
+	prompt, err := domain.NewTeamPrompt(bot.Mission(), task.Objective(), directoryOf(bot, mates))
 	if err != nil {
 		return RunTaskResult{}, err
 	}

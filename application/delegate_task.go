@@ -50,13 +50,18 @@ func (uc DelegateTask) Execute(ctx context.Context, node domain.NodeID, executio
 	}
 	now := uc.deps.Clock.Now()
 	waitUntil := executionDeadline(d.bot, d.task, d.execution).Add(-DelegationWaitMargin)
-	if !d.bot.Delegation().Allows(d.target) {
-		return uc.refuse(ctx, d, domain.RefusedNotAllowed, fmt.Sprintf("bot %s may not delegate to %s; it may ask: %s", d.bot.ID(), d.target, joinBots(d.bot.Delegation().To())))
-	}
-	target, reason, err := uc.targetOf(ctx, d)
+	target, found, err := uc.find(ctx, d.target)
 	if err != nil {
 		return DelegationAnswer{}, err
 	}
+	if !d.bot.Delegation().Allows(d.target) && !(found && target.IsTeammateOf(d.bot)) {
+		mates, err := teammatesOf(ctx, uc.deps, d.bot)
+		if err != nil {
+			return DelegationAnswer{}, err
+		}
+		return uc.refuse(ctx, d, domain.RefusedNotAllowed, fmt.Sprintf("bot %s may not delegate to %s: it is not a teammate and the delegation does not name it; it may ask: %s", d.bot.ID(), d.target, joinNames(delegationTargets(d.bot, mates))))
+	}
+	reason := unavailable(d, target, found)
 	if reason != "" {
 		return uc.refuse(ctx, d, domain.RefusedTargetUnavailable, reason)
 	}
@@ -134,23 +139,34 @@ func (uc DelegateTask) load(ctx context.Context, node domain.NodeID, executionID
 	return delegation{node: node, execution: execution, task: task, bot: bot, target: target, objective: objective, wait: command.Wait}, nil
 }
 
-// targetOf loads the target and says why it cannot take the task, if
-// it cannot.
-func (uc DelegateTask) targetOf(ctx context.Context, d delegation) (domain.Bot, string, error) {
-	target, err := uc.deps.Bots.Get(ctx, d.target)
+// find loads the target; false when no bot has its id.
+func (uc DelegateTask) find(ctx context.Context, id domain.BotID) (domain.Bot, bool, error) {
+	target, err := uc.deps.Bots.Get(ctx, id)
 	switch {
 	case domain.IsNotFound(err):
-		return domain.Bot{}, "bot " + d.target.String() + " does not exist", nil
+		return domain.Bot{}, false, nil
 	case err != nil:
-		return domain.Bot{}, "", err
-	case target.TenantID() != d.bot.TenantID():
-		return domain.Bot{}, "bot " + d.target.String() + " belongs to another tenant", nil
-	case !target.AcceptsTasks():
-		return domain.Bot{}, "bot " + d.target.String() + " is " + target.Status().String() + " and takes no task", nil
-	case !target.AcceptsTrigger(domain.TriggerDelegation):
-		return domain.Bot{}, "bot " + d.target.String() + " takes no delegated task: its triggers do not include delegation", nil
+		return domain.Bot{}, false, err
 	}
-	return target, "", nil
+	return target, true, nil
+}
+
+// unavailable says why the target cannot take the task, or "" when it
+// can.
+func unavailable(d delegation, target domain.Bot, found bool) string {
+	switch {
+	case !found:
+		return "bot " + d.target.String() + " does not exist"
+	case target.TenantID() != d.bot.TenantID():
+		return "bot " + d.target.String() + " belongs to another tenant"
+	case !target.AcceptsTasks():
+		return "bot " + d.target.String() + " is " + target.Status().String() + " and takes no task"
+	case target.IsTeammateOf(d.bot) && !target.TakesDelegationFrom(d.bot):
+		return "bot " + d.target.String() + " takes no delegated task from its team: its delegation says fromTeam false"
+	case !target.TakesDelegationFrom(d.bot):
+		return "bot " + d.target.String() + " takes no delegated task: its triggers do not include delegation"
+	}
+	return ""
 }
 
 // grant shares the parent's pool with the child, or says why there is
@@ -259,13 +275,9 @@ func answerFor(child domain.Task, waitUntil time.Time) DelegationAnswer {
 	return DelegationAnswer{TaskID: child.ID(), BotID: child.BotID(), Status: child.Status(), Done: child.Status().IsTerminal(), FailureReason: child.FailureReason(), WaitUntil: waitUntil}
 }
 
-func joinBots(ids []domain.BotID) string {
-	if len(ids) == 0 {
+func joinNames(names []string) string {
+	if len(names) == 0 {
 		return "none"
-	}
-	names := make([]string, len(ids))
-	for i, id := range ids {
-		names[i] = id.String()
 	}
 	return strings.Join(names, ", ")
 }

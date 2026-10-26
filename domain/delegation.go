@@ -20,14 +20,16 @@ const (
 
 // Delegation says which bots a bot may ask to do a task, how deep a
 // chain through it may go, how much of its task a child may take, how
-// that is split among the children and how many one task may ask for.
-// The zero value delegates to nobody: deny by default.
+// that is split among the children, how many one task may ask for and
+// whether it takes the tasks its teammates delegate. The zero value
+// names nobody outside the bot's teams and takes its teammates' tasks.
 type Delegation struct {
 	to          []BotID
 	maxDepth    int
 	budgetShare float64
 	split       DelegationSplit
 	maxChildren int
+	refuseTeam  bool
 }
 
 // NewDelegation validates a delegation: up to 16 distinct targets, a
@@ -39,7 +41,7 @@ func NewDelegation(s DelegationSnapshot) (Delegation, error) {
 	if len(s.To) > maxDelegationTargets {
 		return Delegation{}, invalid("delegation to", "names at most 16 bots")
 	}
-	d := Delegation{maxDepth: s.MaxDepth, budgetShare: s.BudgetShare, maxChildren: s.MaxChildren}
+	d := Delegation{maxDepth: s.MaxDepth, budgetShare: s.BudgetShare, maxChildren: s.MaxChildren, refuseTeam: s.FromTeam != nil && !*s.FromTeam}
 	seen := map[BotID]bool{}
 	for _, raw := range s.To {
 		id, err := NewBotID(raw)
@@ -77,8 +79,13 @@ func NewDelegation(s DelegationSnapshot) (Delegation, error) {
 // To lists the bots this bot may ask.
 func (d Delegation) To() []BotID { return append([]BotID(nil), d.to...) }
 
-// Enabled reports whether the bot may ask any bot.
+// Enabled reports whether the bot names any bot to ask outside its
+// teams.
 func (d Delegation) Enabled() bool { return len(d.to) > 0 }
+
+// FromTeam reports whether the bot takes the tasks its teammates
+// delegate; true unless the definition says fromTeam false.
+func (d Delegation) FromTeam() bool { return !d.refuseTeam }
 
 // Allows reports whether the bot may ask target.
 func (d Delegation) Allows(target BotID) bool {
@@ -116,12 +123,17 @@ func (d Delegation) MaxChildren() int { return d.maxChildren }
 
 // Snapshot returns the delegation as plain data, nil when it is empty.
 func (d Delegation) Snapshot() *DelegationSnapshot {
-	if len(d.to) == 0 && d.maxDepth == 0 && d.budgetShare == 0 && d.split == "" && d.maxChildren == 0 {
+	if len(d.to) == 0 && d.maxDepth == 0 && d.budgetShare == 0 && d.split == "" && d.maxChildren == 0 && !d.refuseTeam {
 		return nil
 	}
 	to := make([]string, len(d.to))
 	for i, id := range d.to {
 		to[i] = id.String()
 	}
-	return &DelegationSnapshot{To: to, MaxDepth: d.maxDepth, BudgetShare: d.budgetShare, Split: d.split.String(), MaxChildren: d.maxChildren}
+	s := &DelegationSnapshot{To: to, MaxDepth: d.maxDepth, BudgetShare: d.budgetShare, Split: d.split.String(), MaxChildren: d.maxChildren}
+	if d.refuseTeam {
+		refuse := false
+		s.FromTeam = &refuse
+	}
+	return s
 }

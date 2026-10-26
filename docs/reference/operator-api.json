@@ -322,6 +322,72 @@
         }
       }
     },
+    "/v1/groups": {
+      "get": {
+        "operationId": "listGroups",
+        "description": "every team the bots name, sorted by tenant and name, each with its members sorted by id",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Group"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/groups/{name}": {
+      "parameters": [
+        {
+          "name": "name",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "team name"
+        }
+      ],
+      "get": {
+        "operationId": "getGroup",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "the tenant, needed when several have a team of that name"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Group"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/tasks": {
       "get": {
         "operationId": "listTasks",
@@ -1215,6 +1281,13 @@
               "$ref": "#/components/schemas/TriggerSnapshot"
             },
             "type": "array"
+          },
+          "groups": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "description": "the teams the bot belongs to (at most 8); the panel calls them Team"
           }
         },
         "required": [
@@ -1270,6 +1343,13 @@
               "$ref": "#/components/schemas/TriggerSnapshot"
             },
             "type": "array"
+          },
+          "groups": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "description": "the teams the bot belongs to (at most 8); the panel calls them Team"
           }
         }
       },
@@ -1340,6 +1420,13 @@
           "updatedAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "groups": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "description": "the teams the bot belongs to (at most 8); the panel calls them Team"
           }
         },
         "required": [
@@ -1520,6 +1607,10 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "fromTeam": {
+            "type": "boolean",
+            "description": "false: the bot takes no task its teammates delegate; absent: it does"
           }
         }
       },
@@ -1800,6 +1891,84 @@
           "task",
           "trigger",
           "idempotencyKey"
+        ]
+      },
+      "Group": {
+        "type": "object",
+        "x-go-type": "application.Group",
+        "description": "a team, derived from the bots that name it in their groups",
+        "properties": {
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GroupMember"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "members",
+          "name",
+          "tenantId"
+        ]
+      },
+      "GroupMember": {
+        "type": "object",
+        "x-go-type": "application.GroupMember",
+        "description": "one bot of a team, as its teammates read it in their directory",
+        "properties": {
+          "botId": {
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "placement": {
+            "$ref": "#/components/schemas/PlacementSnapshot"
+          },
+          "purpose": {
+            "type": "string",
+            "description": "the first sentence of its mission, at most 120 characters"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BotStatus"
+          },
+          "takesDelegation": {
+            "type": "boolean",
+            "description": "whether it takes the tasks its teammates delegate"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "where": {
+            "type": "string",
+            "description": "where its tasks run, in words"
+          }
+        },
+        "required": [
+          "botId",
+          "groups",
+          "name",
+          "placement",
+          "purpose",
+          "status",
+          "takesDelegation",
+          "tools",
+          "where"
         ]
       },
       "ModelPolicyDefinition": {

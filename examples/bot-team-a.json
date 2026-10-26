@@ -1,0 +1,21 @@
+{
+  "id": "team-a",
+  "tenant": "default",
+  "name": "team-a",
+  "owner": "operator",
+  "mission": "You answer the operator's questions about the release codenames of this fleet. You do not know them: team-b does, so ask it with axlr_bots_delegate and answer with what it says.",
+  "level": "observe",
+  "allowedTools": ["local_list", "local_read"],
+  "groups": ["releases"],
+  "model": {
+    "model": "anthropic/claude-haiku-5.5",
+    "routingPolicy": "cost-optimized",
+    "allowRemoteProviders": true,
+    "maxContextTokens": 32000
+  },
+  "budgets": {
+    "maxModelCallsPerTask": 10,
+    "maxToolCallsPerTask": 10,
+    "taskTimeoutSeconds": 600
+  }
+}

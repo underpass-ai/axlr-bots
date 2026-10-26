@@ -113,6 +113,20 @@ func (c *Client) GetBot(ctx context.Context, id string) (domain.BotSnapshot, err
 	return bot, c.call(ctx, http.MethodGet, "/v1/bots/"+url.PathEscape(id), nil, &bot)
 }
 
+func (c *Client) ListGroups(ctx context.Context) ([]application.Group, error) {
+	groups := []application.Group{}
+	return groups, c.call(ctx, http.MethodGet, "/v1/groups", nil, &groups)
+}
+
+func (c *Client) GetGroup(ctx context.Context, name, tenant string) (application.Group, error) {
+	var group application.Group
+	path := "/v1/groups/" + url.PathEscape(name)
+	if tenant != "" {
+		path += "?tenant=" + url.QueryEscape(tenant)
+	}
+	return group, c.call(ctx, http.MethodGet, path, nil, &group)
+}
+
 // SubmitTask posts to the bot's tasks with the key in the
 // Idempotency-Key header, as any client of the operator API would.
 func (c *Client) SubmitTask(ctx context.Context, request SubmitRequest) (SubmitResponse, error) {

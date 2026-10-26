@@ -1,5 +1,7 @@
 package domain
 
+import "strings"
+
 // Placement says which nodes may run a bot's tasks: named nodes, nodes
 // whose labels match a selector, or any node when both are empty.
 type Placement struct {
@@ -66,4 +68,24 @@ func (p Placement) Snapshot() PlacementSnapshot {
 		s.Nodes = append(s.Nodes, id.String())
 	}
 	return s
+}
+
+// Where says in a few words where the bot's tasks run, as its teammates
+// read it: the nodes it names, the labels it selects, or any node.
+func (p Placement) Where() string {
+	switch {
+	case len(p.nodes) > 0:
+		names := make([]string, len(p.nodes))
+		for i, id := range p.nodes {
+			names[i] = id.String()
+		}
+		return "node " + strings.Join(names, ", ")
+	case len(p.selector) > 0:
+		pairs := make([]string, 0, len(p.selector))
+		for _, key := range p.selector.Keys() {
+			pairs = append(pairs, key+"="+p.selector[key])
+		}
+		return "nodes labelled " + strings.Join(pairs, ", ")
+	}
+	return "any node"
 }

@@ -140,22 +140,21 @@ func runTimeout(bot domain.Bot, task domain.Task, now time.Time) time.Duration {
 
 // allowedTools is the execution's tool allow-list: the bot's, and the
 // delegation tool when the bot may ask other bots.
-func allowedTools(bot domain.Bot) []string {
+func allowedTools(bot domain.Bot, offer *DelegationOffer) []string {
 	tools := bot.AllowedTools().Names()
-	if bot.Delegation().Enabled() && !bot.AllowedTools().Allows(DelegateToolName) {
+	if offer != nil && !bot.AllowedTools().Allows(DelegateToolName) {
 		tools = append(tools, DelegateToolName)
 	}
 	return tools
 }
 
-// delegationOffer tells the node the bot may delegate, or nil.
-func delegationOffer(bot domain.Bot, task domain.Task) *DelegationOffer {
-	if !bot.Delegation().Enabled() {
+// delegationOffer tells the node the bot may delegate, to the bots its
+// delegation names and its teammates that take its tasks, or nil when
+// there is nobody to ask.
+func delegationOffer(bot domain.Bot, task domain.Task, mates []domain.Bot) *DelegationOffer {
+	targets := delegationTargets(bot, mates)
+	if len(targets) == 0 {
 		return nil
-	}
-	targets := make([]string, 0, len(bot.Delegation().To()))
-	for _, id := range bot.Delegation().To() {
-		targets = append(targets, id.String())
 	}
 	return &DelegationOffer{Targets: targets, Depth: task.Depth(), MaxDepth: chainDepthLimit(bot, task)}
 }

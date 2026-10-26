@@ -20,6 +20,7 @@ type Bot struct {
 	placement    Placement
 	approvals    Approvals
 	delegation   Delegation
+	teams        Teams
 	status       BotStatus
 	createdAt    time.Time
 	updatedAt    time.Time
@@ -103,6 +104,28 @@ func (b Bot) DelegationDepth() int {
 		return min(b.budgets.MaxDelegationDepth(), MaxDelegationDepthLimit)
 	}
 	return DefaultDelegationDepth
+}
+
+// Teams are the teams the bot belongs to.
+func (b Bot) Teams() Teams { return b.teams }
+
+// JoinTeams replaces the teams the bot belongs to.
+func (b *Bot) JoinTeams(teams Teams) { b.teams = teams }
+
+// IsTeammateOf reports whether the bot and other are different bots of
+// one tenant that share a team.
+func (b Bot) IsTeammateOf(other Bot) bool {
+	return b.id != other.id && b.tenantID == other.tenantID && len(b.teams.Shared(other.teams)) > 0
+}
+
+// TakesDelegationFrom reports whether the bot takes a task the asker
+// delegates: it declares the delegation trigger, or the asker is a
+// teammate and the bot does not refuse its team (delegation.fromTeam).
+func (b Bot) TakesDelegationFrom(asker Bot) bool {
+	if b.AcceptsTrigger(TriggerDelegation) {
+		return true
+	}
+	return b.IsTeammateOf(asker) && b.delegation.FromTeam()
 }
 
 // AcceptsTrigger reports whether a task of the type may reach the bot.
@@ -220,6 +243,7 @@ func (b Bot) Snapshot() BotSnapshot {
 		Placement:  b.placement.Snapshot(),
 		Approvals:  b.approvals.Snapshot(),
 		Delegation: b.delegation.Snapshot(),
+		Groups:     b.teams.Snapshot(),
 		Status:     b.status.String(),
 		CreatedAt:  b.createdAt,
 		UpdatedAt:  b.updatedAt,
@@ -302,6 +326,11 @@ func RestoreBot(s BotSnapshot) (Bot, error) {
 			return Bot{}, err
 		}
 	}
+	teams, err := NewTeams(s.Groups)
+	if err != nil {
+		return Bot{}, err
+	}
+	bot.JoinTeams(teams)
 	if s.UpdatedAt.IsZero() {
 		return Bot{}, invalid("updated at", "must not be zero")
 	}

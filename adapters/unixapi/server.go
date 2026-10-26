@@ -89,6 +89,8 @@ func (s *Server) operatorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/bots/{id}/pause", s.pauseBot)
 	mux.HandleFunc("POST /v1/bots/{id}/tasks", s.submitBotTask)
 	mux.HandleFunc("GET /v1/bots/{id}/events", s.listEvents)
+	mux.HandleFunc("GET /v1/groups", s.listGroups)
+	mux.HandleFunc("GET /v1/groups/{name}", s.getGroup)
 	mux.HandleFunc("POST /v1/tasks", s.submitTask)
 	mux.HandleFunc("GET /v1/tasks", s.listTasks)
 	mux.HandleFunc("GET /v1/tasks/{id}", s.getTask)
@@ -220,6 +222,16 @@ func (s *Server) listBots(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getBot(w http.ResponseWriter, r *http.Request) {
 	value, err := s.service.GetBot(r.Context(), r.PathValue("id"))
+	respond(w, http.StatusOK, value, err)
+}
+
+func (s *Server) listGroups(w http.ResponseWriter, r *http.Request) {
+	value, err := s.service.ListGroups(r.Context())
+	respond(w, http.StatusOK, value, err)
+}
+
+func (s *Server) getGroup(w http.ResponseWriter, r *http.Request) {
+	value, err := s.service.GetGroup(r.Context(), r.PathValue("name"), r.URL.Query().Get("tenant"))
 	respond(w, http.StatusOK, value, err)
 }
 
