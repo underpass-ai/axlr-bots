@@ -143,6 +143,21 @@ impl FakeControlPlane {
         }
     }
 
+    /// Puts a bot in teams, as a patch would, without an event.
+    pub fn set_groups(&self, id: &str, groups: &[&str]) {
+        let mut state = self.state.lock().unwrap();
+        if let Some(bot) = state.bots.get_mut(&BotId::new(id).unwrap()) {
+            bot.groups = groups.iter().map(|g| g.to_string()).collect();
+        }
+    }
+
+    /// Records an event of a bot, as the control plane would publish it.
+    pub fn publish(&self, kind: &str, bot: &str, payload: serde_json::Value) {
+        let mut state = self.state.lock().unwrap();
+        let payload = payload.as_object().cloned();
+        state.bot_event_with(kind, &BotId::new(bot).unwrap(), payload);
+    }
+
     /// Finishes a task as a node's report would.
     pub fn finish_task(&self, id: &TaskId, status: TaskStatus) {
         let mut state = self.state.lock().unwrap();
@@ -228,6 +243,7 @@ impl FakeState {
                 nodes: nodes.iter().map(|n| NodeId::new(n).unwrap()).collect(),
                 ..Default::default()
             },
+            groups: Vec::new(),
             status: BotStatus::Enabled,
             created_at: now - Duration::days(1),
             updated_at: now - Duration::days(1),
@@ -251,6 +267,7 @@ impl FakeState {
             },
             input: None,
             execution_ids: Vec::new(),
+            priority: String::new(),
             failure_reason: match status {
                 TaskStatus::Failed => "the file does not exist".into(),
                 TaskStatus::Expired => {
@@ -557,6 +574,7 @@ impl ControlPlane for FakeControlPlane {
                 tool_rules: definition.tool_rules,
                 triggers: definition.triggers,
                 placement: definition.placement,
+                groups: definition.groups,
                 status: BotStatus::Registered,
                 created_at: now,
                 updated_at: now,
@@ -592,6 +610,9 @@ impl ControlPlane for FakeControlPlane {
             if let Some(placement) = patch.placement {
                 bot.placement = placement;
             }
+            if let Some(groups) = patch.groups {
+                bot.groups = groups;
+            }
             bot.updated_at = now;
             let bot = bot.clone();
             s.bot_event_with("bot.updated", &id, (!payload.is_empty()).then_some(payload));
@@ -613,6 +634,31 @@ impl ControlPlane for FakeControlPlane {
             let events: Vec<Event> = s.events.iter().filter(|e| e.bot_id == id.as_str()).cloned().collect();
             let skip = events.len().saturating_sub(limit as usize);
             Ok(events.into_iter().skip(skip).collect())
+        })
+    }
+
+    fn group_events(&self, name: String, after: Option<String>, _wait_seconds: u32) -> PortFuture<'_, Vec<Event>> {
+        self.call(format!("group_events {name}"), move |s| {
+            let members: Vec<String> = s
+                .bots
+                .values()
+                .filter(|b| b.groups.contains(&name))
+                .map(|b| b.id.to_string())
+                .collect();
+            if members.is_empty() {
+                return Err(PanelError::NotFound(format!("group {name} not found")));
+            }
+            let events: Vec<Event> = s
+                .events
+                .iter()
+                .filter(|e| members.contains(&e.bot_id))
+                .cloned()
+                .collect();
+            let start = after
+                .and_then(|cursor| events.iter().position(|e| e.event_id == cursor))
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            Ok(events.into_iter().skip(start).collect())
         })
     }
 
@@ -667,6 +713,9 @@ impl ControlPlane for FakeControlPlane {
             );
             let task = s.task_mut(&id)?;
             task.idempotency_key = submission.key.as_str().to_string();
+            if submission.urgent {
+                task.priority = "urgent".into();
+            }
             Ok(SubmittedTask {
                 created: true,
                 task: task.clone(),

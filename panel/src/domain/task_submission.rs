@@ -7,4 +7,6 @@ pub struct TaskSubmission {
     pub bot_id: BotId,
     pub objective: Objective,
     pub key: IdempotencyKey,
+    /// Goes first and cancels the bot's work in progress.
+    pub urgent: bool,
 }

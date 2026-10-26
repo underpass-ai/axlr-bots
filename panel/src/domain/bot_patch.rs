@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use super::identifier::validate_text;
+use super::identifier::{validate_identifier, validate_text};
 use super::{AutonomyLevel, DomainError, Placement};
 
 /// The fields of a bot to replace; the others stay. Each named field is
@@ -16,11 +16,18 @@ pub struct BotPatch {
     pub allowed_tools: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub placement: Option<Placement>,
+    /// The bot's teams, the whole new list.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub groups: Option<Vec<String>>,
 }
 
 impl BotPatch {
     pub fn is_empty(&self) -> bool {
-        self.mission.is_none() && self.level.is_none() && self.allowed_tools.is_none() && self.placement.is_none()
+        self.mission.is_none()
+            && self.level.is_none()
+            && self.allowed_tools.is_none()
+            && self.placement.is_none()
+            && self.groups.is_none()
     }
 
     /// A patch must name a field, and a new mission must be valid.
@@ -31,6 +38,14 @@ impl BotPatch {
         if let Some(mission) = &self.mission {
             validate_text("mission", mission, 2000)?;
         }
+        if let Some(groups) = &self.groups {
+            if groups.len() > 8 {
+                return Err(DomainError::new("team", "a bot is in at most 8 teams"));
+            }
+            for team in groups {
+                validate_identifier("team", team)?;
+            }
+        }
         Ok(())
     }
 }
@@ -38,6 +53,31 @@ impl BotPatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_patch_of_teams() {
+        let teams = BotPatch {
+            groups: Some(vec!["port".into()]),
+            ..BotPatch::default()
+        };
+        assert!(!teams.is_empty() && teams.validate().is_ok());
+        assert_eq!(serde_json::to_string(&teams).unwrap(), r#"{"groups":["port"]}"#);
+        let none = BotPatch {
+            groups: Some(Vec::new()),
+            ..BotPatch::default()
+        };
+        assert!(none.validate().is_ok());
+        let bad = BotPatch {
+            groups: Some(vec!["Bad Name".into()]),
+            ..BotPatch::default()
+        };
+        assert!(bad.validate().is_err());
+        let many = BotPatch {
+            groups: Some((0..9).map(|i| format!("t{i}")).collect()),
+            ..BotPatch::default()
+        };
+        assert!(many.validate().is_err());
+    }
 
     #[test]
     fn serializes_only_what_changes() {

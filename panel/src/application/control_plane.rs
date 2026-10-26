@@ -25,6 +25,10 @@ pub trait ControlPlane: Send + Sync {
     fn pause_bot(&self, id: BotId) -> PortFuture<'_, Bot>;
     /// The bot's newest `limit` events, oldest first.
     fn bot_events(&self, id: BotId, limit: u32) -> PortFuture<'_, Vec<Event>>;
+    /// A team's timeline after the event `after` names, oldest first;
+    /// with `wait_seconds`, the control plane answers as soon as there is
+    /// a new one.
+    fn group_events(&self, name: String, after: Option<String>, wait_seconds: u32) -> PortFuture<'_, Vec<Event>>;
 
     /// Tasks across bots, newest first.
     fn list_tasks(&self, filter: TaskFilter) -> PortFuture<'_, Vec<Task>>;

@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use super::{BotView, Connection, Effect, Message};
 use crate::application::{
-    CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader, FilePicker, FollowBotEvents, KeySource,
-    LoadChat, LoadTaskDetail, MintEnrollmentToken, PanelError, PatchBot, RefreshFleet, RegisterBot, RevokeNode,
-    SendChat, StopBot, SubmitTask, SwitchBot,
+    CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader, FilePicker, FollowBotEvents,
+    FollowTeamEvents, KeySource, LoadChat, LoadTaskDetail, MintEnrollmentToken, PanelError, PatchBot, RefreshFleet,
+    RegisterBot, RevokeNode, SendChat, StopBot, SubmitTask, SwitchBot,
 };
 use crate::domain::BotPatch;
 
@@ -122,11 +122,44 @@ impl Services {
                 Ok(cp) => StopBot::new(cp).execute(id).await,
                 Err(e) => Err(e),
             }),
-            Effect::Submit { bot, objective, key } => Message::Submitted(match self.control_plane() {
+            Effect::Submit {
+                bot,
+                objective,
+                key,
+                urgent,
+            } => Message::Submitted(match self.control_plane() {
+                Ok(cp) => {
+                    let uc = SubmitTask::new(cp, self.keys.clone());
+                    if urgent {
+                        uc.urgent(bot.as_str(), &objective, key).await
+                    } else {
+                        uc.execute(bot.as_str(), &objective, key).await
+                    }
+                }
+                Err(e) => Err(e),
+            }),
+            Effect::Recall { bot, key } => Message::Recalled(match self.control_plane() {
                 Ok(cp) => {
                     SubmitTask::new(cp, self.keys.clone())
-                        .execute(bot.as_str(), &objective, key)
+                        .urgent(bot.as_str(), super::app_teams::RECALL_OBJECTIVE, key)
                         .await
+                }
+                Err(e) => Err(e),
+            }),
+            Effect::FollowTeam { name, feed, wait } => {
+                let result = match self.control_plane() {
+                    Ok(cp) => FollowTeamEvents::new(cp).execute(name.clone(), feed, wait).await,
+                    Err(e) => Err(e),
+                };
+                Message::TeamLoaded(name, result)
+            }
+            Effect::SetTeams(id, groups) => Message::TeamSaved(match self.control_plane() {
+                Ok(cp) => {
+                    let patch = BotPatch {
+                        groups: Some(groups),
+                        ..BotPatch::default()
+                    };
+                    PatchBot::new(cp).execute(id, patch).await
                 }
                 Err(e) => Err(e),
             }),

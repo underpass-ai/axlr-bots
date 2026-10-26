@@ -37,13 +37,13 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
             tokens,
         )
     });
-    let mut header = row![
-        back,
-        pill(Tone::of_task(task.status), task.status.label(), tokens),
-        bold(task.headline(80)).size(22.0).width(Length::Fill),
-    ]
-    .spacing(12)
-    .align_y(Alignment::Center);
+    let mut header = row![back, pill(Tone::of_task(task.status), task.status.label(), tokens)]
+        .spacing(12)
+        .align_y(Alignment::Center);
+    if task.is_urgent() {
+        header = header.push(pill(Tone::Wait, "urgent", tokens));
+    }
+    header = header.push(bold(task.headline(80)).size(22.0).width(Length::Fill));
     header = header.push(copy_button("Copy task", task.objective.clone(), tokens));
     if let Some(stop) = stop {
         header = header.push(stop);
@@ -60,6 +60,14 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
                     tokens
                 ),
                 fact("Started by", text(task.trigger.describe()), tokens),
+                fact(
+                    "Told by",
+                    text(
+                        task.told_by()
+                            .unwrap_or_else(|| "nobody: not a teammate's event".into())
+                    ),
+                    tokens
+                ),
                 fact(
                     "Created",
                     text(format!(
@@ -98,6 +106,7 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
         // An expired task is nobody's decision in time, not a crash.
         let (glyph, why, tone) = match task.status {
             TaskStatus::Expired => (Icon::Hourglass, "Why it expired", Tone::Late),
+            TaskStatus::Cancelled => (Icon::Stop, "Why it stopped", Tone::Idle),
             _ => (Icon::Cross, "Why it failed", Tone::Bad),
         };
         page = page.push(

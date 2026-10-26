@@ -31,10 +31,11 @@ pub enum Icon {
     Wrench,
     Chip,
     Trace,
+    Team,
 }
 
 impl Icon {
-    pub const ALL: [Icon; 28] = [
+    pub const ALL: [Icon; 29] = [
         Icon::Overview,
         Icon::Nodes,
         Icon::Bots,
@@ -63,6 +64,7 @@ impl Icon {
         Icon::Wrench,
         Icon::Chip,
         Icon::Trace,
+        Icon::Team,
     ];
 
     fn bytes(self) -> &'static [u8] {
@@ -95,6 +97,7 @@ impl Icon {
             Icon::Wrench => include_bytes!("../../assets/icons/wrench.svg"),
             Icon::Chip => include_bytes!("../../assets/icons/chip.svg"),
             Icon::Trace => include_bytes!("../../assets/icons/trace.svg"),
+            Icon::Team => include_bytes!("../../assets/icons/team.svg"),
         }
     }
 

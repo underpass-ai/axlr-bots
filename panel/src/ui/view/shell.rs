@@ -207,6 +207,7 @@ fn sidebar<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             entry(Icon::Overview, "Home", Section::Overview, Screen::Overview, 0),
             entry(Icon::Nodes, "Nodes", Section::Nodes, Screen::Nodes, 0),
             entry(Icon::Bots, "Bots", Section::Bots, Screen::Bots, 0),
+            entry(Icon::Team, "Teams", Section::Teams, Screen::Teams, 0),
             entry(Icon::Tasks, "Tasks", Section::Tasks, Screen::Tasks, waiting),
             Space::new().height(Length::Fill),
             entry(Icon::Settings, "Settings", Section::Settings, Screen::Settings, 0),

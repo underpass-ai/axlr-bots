@@ -29,6 +29,7 @@ impl SendChat {
                 bot_id: bot,
                 objective,
                 key,
+                urgent: false,
             })
             .await
     }

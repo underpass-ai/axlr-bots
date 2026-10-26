@@ -534,3 +534,84 @@ fn the_chat_sends_and_shows_the_turns() {
     send(&mut app, Message::Pause(id));
     shows(&app, &["Turn it on to talk to it."]);
 }
+
+#[test]
+fn the_teams_screen_shows_who_is_in_each_and_what_happens() {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    send(&mut app, Message::Go(Screen::Teams));
+    shows(&app, &["Teams", "No team yet"]);
+    fake.set_groups("bot", &["port"]);
+    fake.set_groups("bot-wrx80", &["port"]);
+    fake.set_groups("bot-act-with-approval", &["lab"]);
+    let tick = app.now + chrono::Duration::seconds(3);
+    send(&mut app, Message::Tick(tick));
+    fake.publish(
+        "bot.event.emitted",
+        "bot",
+        serde_json::json!({"name": "recall", "severity": "warning", "message": "a ship is entering", "to": ["bot-wrx80"]}),
+    );
+    send(&mut app, Message::Tick(tick + chrono::Duration::seconds(3)));
+    shows(
+        &app,
+        &["port", "2 bots", "lab", "only one bot: a typo?", "bot · bot-wrx80"],
+    );
+    let sent = messages_of_click(&app, "Open");
+    assert!(matches!(sent.as_slice(), [Message::Go(Screen::Team(name))] if name == "lab"));
+    send(&mut app, Message::Go(Screen::Team("port".into())));
+    shows(
+        &app,
+        &[
+            "Team port",
+            "Who is in it",
+            "What happens",
+            "Warning to the team",
+            "bot → bot-wrx80: a ship is entering",
+        ],
+    );
+    send(&mut app, Message::Go(Screen::Team("sea".into())));
+    shows(&app, &["No bot is in this team now"]);
+}
+
+#[test]
+fn a_bot_page_shows_its_team_and_recalls_a_vehicle() {
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Bots));
+    app.apply(Message::RegisterOpen);
+    shows(
+        &app,
+        &["Which team is it in?", "a name its teammates share; empty: on its own"],
+    );
+    app.apply(Message::RegisterName("pilot-quad-1".into()));
+    app.apply(Message::RegisterMission("Fly quad-1.".into()));
+    app.apply(Message::RegisterTools("local_read, return_home".into()));
+    app.apply(Message::RegisterTeam("port".into()));
+    send(&mut app, Message::RegisterSubmit);
+    send(&mut app, Message::Enable(BotId::new("pilot-quad-1").unwrap()));
+    send(&mut app, Message::Go(Screen::Bot(BotId::new("pilot-quad-1").unwrap())));
+    shows(&app, &["Team", "port", "Change", "Recall"]);
+    let sent = messages_of_click(&app, "Recall");
+    assert!(matches!(sent.as_slice(), [Message::Recall(id)] if id.as_str() == "pilot-quad-1"));
+    let sent = messages_of_click(&app, "Change");
+    assert!(matches!(sent.as_slice(), [Message::TeamEdit(_, words)] if words == "port"));
+    app.apply(Message::TeamEdit(BotId::new("pilot-quad-1").unwrap(), "port".into()));
+    shows(&app, &["Save", "Cancel"]);
+    send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
+    shows(&app, &["In no team: it knows no other bot"]);
+    assert!(simulator_misses(&app, "Recall"));
+}
+
+#[test]
+fn a_task_says_it_was_urgent_and_why_it_stopped() {
+    let mut app = connected();
+    app.apply(Message::SubmitOpen(Some(BotId::new("bot-wrx80").unwrap())));
+    shows(&app, &["Urgent"]);
+    app.apply(Message::SubmitUrgent(true));
+    shows(&app, &["urgent: it goes first and stops what the bot is doing"]);
+    app.apply(Message::SubmitObjective("Come back".into()));
+    send(&mut app, Message::SubmitSend);
+    shows(&app, &["urgent", "Told by", "nobody: not a teammate's event"]);
+}

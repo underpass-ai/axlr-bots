@@ -63,6 +63,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         })
         .width(Length::FillPortion(3)),
         table::column(bold("Level"), move |b: &'a Bot| chip(b.level.label(), tokens)),
+        table::column(bold("Team"), move |b: &'a Bot| text(b.team_summary()).size(SMALL)),
         table::column(bold("Runs on"), move |b: &'a Bot| text(b.placement.describe())).width(Length::FillPortion(2)),
         table::column(bold("Starts by"), move |b: &'a Bot| {
             text(b.trigger_summary()).size(SMALL)
@@ -126,6 +127,30 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     .into()
 }
 
+/// The Team question: a name its teammates share, with the teams there
+/// are.
+fn team_field<'a>(app: &'a App, value: &'a str, tokens: Tokens) -> El<'a> {
+    let names: Vec<String> = app.teams().into_iter().map(|t| t.name).collect();
+    let hint = if names.is_empty() {
+        "a name its teammates share; empty: on its own".to_string()
+    } else {
+        format!("teams now: {}", names.join(", "))
+    };
+    column![
+        field(
+            "Which team is it in?",
+            "port",
+            value,
+            Message::RegisterTeam,
+            None,
+            tokens
+        ),
+        muted(hint, tokens),
+    ]
+    .spacing(4)
+    .into()
+}
+
 fn register_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let form = &app.register.form;
     let nodes: Vec<NodeChoice> = std::iter::once(NodeChoice::Any)
@@ -168,11 +193,16 @@ fn register_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             None,
             tokens
         ),
-        column![
-            bold("Where does it run?").size(SMALL),
-            pick_list(nodes, selected, Message::RegisterNode).padding(10).width(360)
+        row![
+            column![
+                bold("Where does it run?").size(SMALL),
+                pick_list(nodes, selected, Message::RegisterNode).padding(10).width(360)
+            ]
+            .spacing(6),
+            container(team_field(app, &form.team, tokens)).width(360),
         ]
-        .spacing(6),
+        .spacing(14)
+        .align_y(Alignment::Start),
         row![
             icon(Icon::Check, 14.0, tokens.good),
             muted(

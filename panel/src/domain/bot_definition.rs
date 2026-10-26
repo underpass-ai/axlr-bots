@@ -34,6 +34,12 @@ pub struct BotDefinition {
     /// The bots this bot may delegate to; passed through as written.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delegation: Option<serde_json::Value>,
+    /// The teams it belongs to: the panel's Team.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<String>,
+    /// What it may tell its teams; passed through as written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub events: Option<serde_json::Value>,
 }
 
 /// The few fields of the register form.
@@ -45,6 +51,23 @@ pub struct BotForm {
     pub tools: String,
     pub model: String,
     pub node: String,
+    /// The team, or several separated by commas; empty: none.
+    pub team: String,
+}
+
+/// The tool a vehicle's bot calls to fly or drive home; the panel lets it
+/// run without a person, as returning is safe.
+pub const RETURN_HOME_TOOL: &str = "return_home";
+
+/// The team names a form's field holds, without repeats.
+pub fn team_names(raw: &str) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for name in raw.split([',', ' ']).map(str::trim).filter(|t| !t.is_empty()) {
+        if !names.iter().any(|n| n == name) {
+            names.push(name.to_string());
+        }
+    }
+    names
 }
 
 impl BotDefinition {
@@ -77,6 +100,10 @@ impl BotDefinition {
             }
         };
         let model = form.model.trim();
+        let approvals = tools
+            .iter()
+            .any(|t| t == RETURN_HOME_TOOL)
+            .then(|| serde_json::json!({"autoApprove": [{"tool": RETURN_HOME_TOOL}]}));
         let definition = Self {
             id: id.clone(),
             tenant: "default".into(),
@@ -99,8 +126,10 @@ impl BotDefinition {
                 max_context_tokens: 0,
             },
             budgets: Budgets::default(),
-            approvals: None,
+            approvals,
             delegation: None,
+            groups: team_names(&form.team),
+            events: None,
         };
         definition.validate()?;
         Ok(definition)
@@ -129,8 +158,14 @@ impl BotDefinition {
         if self.triggers.iter().any(|t| t.trigger_type == TriggerType::Unknown) {
             return Err(DomainError::new(
                 "trigger type",
-                "must be manual, webhook, timer or delegation",
+                "must be manual, webhook, timer, delegation or event",
             ));
+        }
+        if self.groups.len() > 8 {
+            return Err(DomainError::new("team", "a bot is in at most 8 teams"));
+        }
+        for team in &self.groups {
+            validate_identifier("team", team)?;
         }
         Ok(())
     }
@@ -196,6 +231,52 @@ mod tests {
     }
 
     #[test]
+    fn a_form_with_a_team_and_return_home() {
+        let form = BotForm {
+            name: "pilot-quad-1".into(),
+            mission: "Fly quad-1.".into(),
+            level: AutonomyLevel::ActWithApproval,
+            tools: "local_read, run_mission, return_home".into(),
+            team: " port, sea port ".into(),
+            ..BotForm::default()
+        };
+        let definition = BotDefinition::from_form(&form).unwrap();
+        assert_eq!(definition.groups, vec!["port", "sea"]);
+        assert_eq!(
+            definition.approvals.as_ref().unwrap()["autoApprove"][0]["tool"],
+            "return_home"
+        );
+        let out = serde_json::to_value(&definition).unwrap();
+        assert_eq!(out["groups"][1], "sea");
+        let plain = BotDefinition::from_form(&BotForm {
+            name: "helper".into(),
+            mission: "Help.".into(),
+            ..BotForm::default()
+        })
+        .unwrap();
+        assert!(plain.groups.is_empty() && plain.approvals.is_none());
+        assert!(!serde_json::to_string(&plain).unwrap().contains("groups"));
+        let bad = BotForm {
+            team: "Port".into(),
+            ..form
+        };
+        assert!(BotDefinition::from_form(&bad).is_err());
+    }
+
+    #[test]
+    fn reads_a_definition_with_teams_and_events() {
+        let text = r#"{"tenant": "default", "name": "plane", "owner": "ops", "mission": "Fly.",
+          "groups": ["port"], "events": {"perMinute": 3},
+          "triggers": [{"type": "manual"}, {"type": "event", "events": ["ship.*"], "interrupt": true}]}"#;
+        let definition = BotDefinition::from_json(text).unwrap();
+        assert_eq!(definition.groups, vec!["port"]);
+        assert_eq!(definition.events.as_ref().unwrap()["perMinute"], 3);
+        assert!(definition.triggers[1].interrupt);
+        let many = r#"{"tenant": "default", "name": "x", "owner": "o", "mission": "m", "groups": ["a","b","c","d","e","f","g","h","i"]}"#;
+        assert!(BotDefinition::from_json(many).is_err());
+    }
+
+    #[test]
     fn builds_a_definition_from_the_form() {
         let form = BotForm {
             name: "helper".into(),
@@ -204,6 +285,7 @@ mod tests {
             tools: "local_read, local_list local_search".into(),
             model: "anthropic/claude-haiku-5.5".into(),
             node: "wrx80".into(),
+            team: String::new(),
         };
         let definition = BotDefinition::from_form(&form).unwrap();
         assert_eq!(definition.id, "helper");
