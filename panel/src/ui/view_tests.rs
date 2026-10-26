@@ -157,7 +157,54 @@ fn the_bots_screen_lists_switches_and_adds() {
         ],
     );
     app.apply(Message::RegisterOpen);
-    shows(&app, &["New bot", "Mission", "Add bot", "Runs on"]);
+    shows(
+        &app,
+        &[
+            "New bot",
+            "Name",
+            "What should it do?",
+            "Where does it run?",
+            "Ask me before acting: it works on its own and asks you first before anything that changes the world.",
+            "Add bot",
+            "Advanced",
+        ],
+    );
+    assert!(simulator_misses(&app, "Tools"), "Advanced is closed by default");
+    assert!(matches!(
+        messages_of_click(&app, "Advanced").as_slice(),
+        [Message::RegisterAdvanced(true)]
+    ));
+    app.apply(Message::RegisterAdvanced(true));
+    shows(
+        &app,
+        &[
+            "How much may it do alone?",
+            "Tools",
+            "Model",
+            "Hide advanced",
+            "It starts when you give it a task.",
+        ],
+    );
+    assert!(matches!(
+        messages_of_click(&app, "Act on its own within its rules").as_slice(),
+        [Message::RegisterLevel(crate::domain::AutonomyLevel::ActWithinPolicy)]
+    ));
+    assert!(
+        messages_of_click(&app, "Ask me before acting").is_empty(),
+        "the picked level"
+    );
+    app.apply(Message::RegisterLevel(crate::domain::AutonomyLevel::Observe));
+    shows(
+        &app,
+        &["Only watch and report: it works on its own and only watches and reports."],
+    );
+    app.apply(Message::RegisterLevel(crate::domain::AutonomyLevel::ActWithinPolicy));
+    shows(
+        &app,
+        &["Act on its own within its rules: it works on its own and acts within its rules without asking."],
+    );
+    app.apply(Message::RegisterAdvanced(false));
+    assert!(simulator_misses(&app, "Tools"));
     send(
         &mut app,
         Message::Go(Screen::Bot(BotId::new("bot-act-with-approval").unwrap())),

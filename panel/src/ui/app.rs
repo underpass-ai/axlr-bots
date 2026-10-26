@@ -297,6 +297,10 @@ impl App {
                 };
                 Vec::new()
             }
+            Message::RegisterAdvanced(open) => {
+                self.register.advanced = open;
+                Vec::new()
+            }
             Message::RegisterSubmit => {
                 if self.register.busy {
                     return Vec::new();
