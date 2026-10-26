@@ -7,7 +7,7 @@
 # The runbook is docs/runbooks/drone-fleet.md.
 
 images:
-  app: container-registry.underpassai.com/axlr-bots/fleet-app@sha256:4ea977c741674ed0f0e36fa05710b8f7005cb39fd6f66daf00210c260ba23387
+  app: container-registry.underpassai.com/axlr-bots/fleet-app@sha256:6a010e4bcb6dfc04accea29c7d36c200d4e2b8cb0205fd4cd52ad3b2782711d7
   sitl: container-registry.underpassai.com/axlr-bots/fleet-sitl@sha256:9d0ddd377ac6a5d5dca13feb0a7ef1311725dcc45c58b7e369034e44c5adfd9a
   controlPlane: container-registry.underpassai.com/axlr-bots/control-plane@sha256:d09779eb9d91916df11ffdf988ee7d96ae12b71b60ebbfe845c3d1c7723be257
 
@@ -20,6 +20,8 @@ controlPlane:
   storageClassName: ""
 
 base:
+  # The bots placed on the base's node: each gets fleet.json in its workspace.
+  bots: [dispatcher, logistics]
   inspectionSeconds: 30
   swapSeconds: 10
   ingress:
@@ -46,6 +48,33 @@ vision:
   every: 4
   maxPerFlight: 12
 
+# Containers overboard (examples/drone-fleet/app/incident.py): a vessel's
+# call starts a simulated drift, the photos look for the containers, and
+# the base fires the dispatcher's webhooks (incident, sightings, report) and
+# the logistics bot's (restock). Off unless enabled; the Secrets are made by
+# hand (docs/runbooks/drone-fleet.md, "Containers overboard"), each mounted
+# read-only into the base.
+incident:
+  enabled: false
+  # The shoreline, south to north, as [lat, lon]: a container east of it is ashore.
+  coast: []
+  secrets:
+    incident: fleet-incident     # key SECRET: the vessel's call, header X-Incident-Secret
+    operator: fleet-operator     # keys ca.crt and api.token: the control plane's operator API
+    webhook: fleet-webhook       # key SECRET: the bots' webhook triggers
+    approver: fleet-approver     # key CODE: the phone page (/m)
+  # Call the logistics bot when a station runs low and the supply rover is ready.
+  autoRestock: true
+  # During a search every photo is analysed, up to this many a flight.
+  maxPerFlight: 80
+
+# Live ships from aisstream.io: one connection per key, made by the base.
+ais:
+  enabled: false
+  secret: fleet-ais              # key AISSTREAM_API_KEY
+  # lat1,lon1,lat2,lon2: Maasvlakte, the Maasmond and the approach channels.
+  bbox: "51.90,3.80,52.05,4.15"
+
 # What the vehicles inspect. `for` lists the kinds that may go there.
 zones:
   - {name: apm-cranes, lat: 51.9545, lon: 4.0017, radius_m: 200, for: [quad], about: "APM Terminals quay cranes: booms, spreaders, cable reels"}
@@ -65,7 +94,8 @@ hardware:
   gnss: "u-blox ZED-F9P RTK"
 
 # One StatefulSet per group; replica i gets pads[i] (lat,lon,alt,heading)
-# and stations[i]. Node ids are the pod names; the bot of replica i is
+# and stations[i]. A group's `params` (ArduPilot parameters) go after its
+# kind's defaults. Node ids are the pod names; the bot of replica i is
 # pilot-<pod name>.
 vehicles:
   - name: quad

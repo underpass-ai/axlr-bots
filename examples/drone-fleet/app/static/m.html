@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<title>Approvals · AXLR Bots</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --line: #30363d; --text: #f0f6fc; --muted: #b1bac4;
+    --ok: #3fb950; --work: #f0883e; --warn: #e3b341; --bad: #f85149; --idle: #8b949e; --accent: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 18px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { padding: 12px 12px calc(24px + env(safe-area-inset-bottom)); max-width: 560px; margin: 0 auto; }
+  .sim { background: #b42318; color: #fff; border: 2px solid #ffd7d2; border-radius: 10px; padding: 5px 10px; text-align: center;
+    font-weight: 800; font-size: 19px; letter-spacing: .08em; }
+  .sim small { display: block; font-size: 14px; font-weight: 600; letter-spacing: 0; color: #ffe9e6; }
+  header { display: flex; align-items: center; gap: 10px; margin: 12px 0 8px; }
+  header h1 { font-size: 24px; margin: 0; flex: 1; }
+  #live { font-size: 16px; color: var(--muted); }
+  #incident { background: #2a1416; border: 2px solid var(--bad); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; }
+  #incident[hidden] { display: none; }
+  #incident .t { font-weight: 800; font-size: 19px; }
+  #incident .big { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+  #incident .big div { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 4px; text-align: center; }
+  #incident .big b { display: block; font-size: 26px; }
+  #incident .big span { font-size: 15px; color: var(--muted); }
+  .card { background: var(--panel); border: 2px solid var(--warn); border-radius: 14px; padding: 12px; margin-bottom: 14px; }
+  .card .top { display: flex; align-items: center; gap: 10px; }
+  .card .who { font-size: 22px; font-weight: 800; flex: 1; }
+  .left { font-size: 17px; font-weight: 800; padding: 3px 10px; border-radius: 999px; background: var(--warn); color: #0d1117; white-space: nowrap; }
+  .left.late { background: var(--bad); color: #fff; }
+  .mission { font-size: 20px; font-weight: 700; margin-top: 6px; }
+  .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0; }
+  .facts div { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 17px; }
+  .facts span { display: block; font-size: 15px; color: var(--muted); }
+  .why { color: var(--muted); font-size: 16px; margin: 4px 0 8px; }
+  .mini { height: 190px; border-radius: 10px; border: 1px solid var(--line); background: #0d1117; }
+  .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .buttons button { font: 800 22px system-ui, sans-serif; padding: 16px 8px; border-radius: 12px; border: 0; cursor: pointer; color: #0d1117; }
+  .approve { background: var(--ok); }
+  .deny { background: var(--bad); color: #fff !important; }
+  .buttons button:disabled { opacity: .5; }
+  .empty { text-align: center; color: var(--muted); font-size: 20px; padding: 40px 10px; border: 2px dashed var(--line); border-radius: 14px; }
+  .empty b { display: block; font-size: 40px; color: var(--ok); }
+  form { background: var(--panel); border: 2px solid var(--line); border-radius: 14px; padding: 16px; }
+  form label { display: block; font-weight: 700; font-size: 20px; margin-bottom: 10px; }
+  form input { width: 100%; font: 700 26px system-ui; padding: 12px; border-radius: 10px; border: 2px solid var(--line); background: var(--bg); color: var(--text); letter-spacing: .2em; }
+  form button { margin-top: 12px; width: 100%; font: 800 22px system-ui; padding: 14px; border: 0; border-radius: 12px; background: var(--accent); color: #0d1117; }
+  form p { color: var(--bad); font-weight: 700; min-height: 1.4em; margin: 8px 0 0; }
+  #toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%); max-width: 92vw;
+    padding: 12px 20px; border-radius: 12px; font-weight: 800; font-size: 20px; color: #0d1117; background: var(--ok);
+    box-shadow: 0 4px 18px rgba(0,0,0,.6); opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 2000; }
+  #toast.show { opacity: 1; }
+  #toast.bad { background: var(--bad); color: #fff; }
+  .leaflet-container { background: #0d1117; font: 14px system-ui; }
+</style>
+</head>
+<body>
+<div class="sim">SIMULATION<small>simulated vehicles and containers</small></div>
+<header><h1>✋ Approvals</h1><span id="live">connecting…</span></header>
+<section id="incident" hidden></section>
+<main id="main"></main>
+<div id="toast"></div>
+<script>
+const KEY = "approverCode";
+const main = document.getElementById("main");
+const cards = {};   // task + call -> {el, map, item}
+let code = "", polling = null, ticking = null;
+
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function mmss(s) { s = Math.max(0, Math.round(s || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
+function km(m) { return m >= 1000 ? (m / 1000).toFixed(1) + " km" : Math.round(m || 0) + " m"; }
+function store(get, value) {
+  try { if (get) return localStorage.getItem(KEY) || ""; if (value) localStorage.setItem(KEY, value); else localStorage.removeItem(KEY); } catch (e) { /* private mode */ }
+  return "";
+}
+function toast(text, bad) {
+  const t = document.getElementById("toast");
+  t.textContent = text; t.className = "show" + (bad ? " bad" : "");
+  clearTimeout(t._h); t._h = setTimeout(() => { t.className = bad ? "bad" : ""; }, 2600);
+}
+
+// -- the code, asked once ---------------------------------------------------------
+function askCode(message) {
+  if (polling) { clearInterval(polling); polling = null; }
+  for (const k of Object.keys(cards)) drop(k);
+  main.innerHTML = `<form id="codeform"><label for="code">🔑 Approver code</label>
+    <input id="code" type="password" inputmode="numeric" autocomplete="current-password" required>
+    <button type="submit">Open</button><p>${esc(message || "")}</p></form>`;
+  document.getElementById("codeform").addEventListener("submit", ev => {
+    ev.preventDefault();
+    code = document.getElementById("code").value.trim();
+    if (!code) return;
+    store(false, code);
+    main.innerHTML = "";
+    start();
+  });
+  document.getElementById("code").focus();
+}
+
+// -- the pending calls --------------------------------------------------------------
+async function poll() {
+  let r;
+  try { r = await fetch("api/approvals", { headers: { "X-Approver-Code": code }, cache: "no-store" }); }
+  catch (e) { document.getElementById("live").textContent = "⚠ offline"; return; }
+  if (r.status === 401 || r.status === 403) { store(false, ""); askCode("Wrong code. Try again."); return; }
+  if (!r.ok) { document.getElementById("live").textContent = `⚠ error ${r.status}`; return; }
+  const items = await r.json();
+  document.getElementById("live").textContent = "live · " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const keep = new Set();
+  for (const it of items) {
+    const k = it.task + "/" + it.call;
+    keep.add(k);
+    if (!cards[k]) add(k, it);
+    cards[k].item = it;
+    tick(cards[k]);
+  }
+  for (const k of Object.keys(cards)) if (!keep.has(k)) drop(k);
+  const empty = document.getElementById("empty");
+  if (!items.length && !empty) main.insertAdjacentHTML("beforeend", `<div class="empty" id="empty"><b>✓</b>Nothing waiting for you</div>`);
+  if (items.length && empty) empty.remove();
+}
+
+function add(k, it) {
+  const m = it.mission || {};
+  const el = document.createElement("div");
+  el.className = "card";
+  const pattern = m.pattern ? m.pattern.replace(/_/g, " ") : "waypoints";
+  el.innerHTML = `<div class="top"><span class="who">${it.vehicle && it.vehicle.startsWith("plane") ? "✈️" : it.vehicle && it.vehicle.startsWith("quad") ? "🚁" : "🚙"} ${esc(it.vehicle || it.bot)}</span><span class="left"></span></div>
+    <div class="mission">${esc(m.name || it.tool)}</div>
+    <div class="facts"><div><span>pattern</span>${esc(pattern)}</div><div><span>waypoints</span>${esc(m.waypoints ?? "–")}</div>
+      <div><span>distance</span>${km(m.distance_m)}</div><div><span>altitude</span>${m.alt_m ? esc(m.alt_m) + " m" : "ground"}</div>
+      <div><span>photo every</span>${m.photo_every_m ? esc(m.photo_every_m) + " m" : "no photos"}</div><div><span>bot</span>${esc(it.bot)}</div></div>
+    <div class="why">${esc(it.objective)}</div>
+    <div class="mini"></div>
+    <div class="buttons"><button class="approve">✓ Approve</button><button class="deny">✕ Deny</button></div>`;
+  main.prepend(el);
+  const card = cards[k] = { el, map: null, item: it };
+  el.querySelector(".approve").addEventListener("click", () => decide(k, "approve"));
+  el.querySelector(".deny").addEventListener("click", () => decide(k, "deny"));
+  const route = (it.route || []).filter(p => Array.isArray(p) && p.length >= 2);
+  if (route.length) {
+    const map = L.map(el.querySelector(".mini"), { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false });
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19 }).addTo(map);
+    L.polyline(route.concat([route[0]]), { color: "#fff", weight: 3, dashArray: "6 6" }).addTo(map);
+    L.polyline(route, { color: "#f0883e", weight: 3 }).addTo(map);
+    L.circleMarker(route[0], { radius: 7, color: "#fff", weight: 3, fillColor: "#3fb950", fillOpacity: 1 }).bindTooltip("home", { permanent: true, direction: "right" }).addTo(map);
+    map.fitBounds(L.latLngBounds(route).pad(0.15));
+    card.map = map;
+  }
+}
+
+function drop(k) {
+  const c = cards[k]; if (!c) return;
+  if (c.map) c.map.remove();
+  c.el.remove();
+  delete cards[k];
+}
+
+function tick(c) {
+  const left = (c.item.deadline || 0) - Date.now() / 1000;
+  const el = c.el.querySelector(".left");
+  el.textContent = left > 0 ? "⏱ " + mmss(left) : "expired";
+  el.className = "left" + (left < 120 ? " late" : "");
+}
+
+async function decide(k, what) {
+  const c = cards[k]; if (!c) return;
+  const buttons = c.el.querySelectorAll("button");
+  buttons.forEach(b => b.disabled = true);
+  const it = c.item;
+  let ok = false, error = "";
+  try {
+    const r = await fetch(`api/approvals/${encodeURIComponent(it.task)}/${what}?call=${encodeURIComponent(it.call)}`, { method: "POST", headers: { "X-Approver-Code": code } });
+    if (r.status === 401 || r.status === 403) { store(false, ""); askCode("Wrong code. Try again."); return; }
+    const body = await r.json().catch(() => ({}));
+    ok = r.ok && body.ok !== false;
+    error = body.error || (r.ok ? "" : `error ${r.status}`);
+  } catch (e) { error = "offline"; }
+  if (ok) { toast(what === "approve" ? `✓ ${it.vehicle || it.bot}: approved` : `✕ ${it.vehicle || it.bot}: denied`, what !== "approve"); drop(k); }
+  else { toast("⚠ " + (error || "not done"), true); buttons.forEach(b => b.disabled = false); }
+}
+
+// -- the incident counter --------------------------------------------------------------
+async function incident() {
+  try {
+    const f = await (await fetch("api/fleet", { cache: "no-store" })).json();
+    const i = f.incident, box = document.getElementById("incident");
+    if (!i) { box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML = `<div class="t">${i.status === "ended" ? "✓ Search ended" : "⚠ " + esc(i.title || i.total + " containers overboard")}</div>
+      <div class="big"><div><b style="color:var(--ok)">${i.found}/${i.total}</b><span>found</span></div><div><b>${mmss(i.elapsed_s)}</b><span>time</span></div>
+      <div><b>$${((i.cost || {}).total_usd || 0).toFixed(2)}</b><span>model</span></div></div>`;
+  } catch (e) { /* the counter waits for the next round */ }
+}
+
+function start() {
+  poll();
+  polling = setInterval(() => { poll(); }, 2000);
+  if (!ticking) ticking = setInterval(() => { for (const c of Object.values(cards)) tick(c); }, 1000);
+}
+
+incident();
+setInterval(incident, 3000);
+code = store(true);
+if (code) start(); else askCode();
+</script>
+</body>
+</html>

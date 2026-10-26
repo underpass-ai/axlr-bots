@@ -13,15 +13,26 @@ It polls every vehicle's /state, and keeps what no single vehicle knows:
              when it reaches a station the cargo is unloaded and the spent
              packs are loaded; back at the depot they are recharged
 
+  incident   containers overboard (incident.py): POST /api/incident starts the
+             drift, the photos look for the containers, the dispatcher's
+             webhooks fire as the search goes, the report comes back
+  ships      live AIS around the port (ais.py), with a key file
+  phone      GET /m: the calls waiting for a person, approve or deny
+             (approvals.py), behind the approver's code
+
 It writes <FLEET_FILE> every second for the dispatcher and logistics bots
-(their read-only workspace) and serves the map: GET /, /api/fleet and the
-event stream /api/stream.
+(their read-only workspace) and serves the map: GET /, the 3D view /3d (the
+port model is static/port.glb, from port3d/), /api/fleet and the event
+stream /api/stream. Everything simulated is marked so: the snapshot says
+"simulation": true and every page shows it.
 """
 
+import hmac
 import json
 import logging
 import math
 import os
+import queue
 import threading
 import time
 import urllib.parse
@@ -29,14 +40,23 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import ais
+import approvals
+import control_plane
 import geo
+import incident
+import patterns
 import vision
 
 log = logging.getLogger("fleet-base")
 
 ARRIVAL_M = 25
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
-TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png"}
+TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png",
+         ".glb": "model/gltf-binary"}
+PAGES = {"/": "index.html", "": "index.html", "/3d": "3d.html", "/m": "m.html"}
+MAX_BODY = 64 << 10
+RESTOCK_EVERY = 300
 
 
 def now_iso():
@@ -49,7 +69,7 @@ class Base:
         self.layout = layout
         self.zones = zones
         self.fleet_file = fleet_file
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.states = {}
         self.bays = {}                    # station -> {vehicle: granted at}
         self.stations = {}
@@ -69,6 +89,21 @@ class Base:
         self.events = []
         self.pool = ThreadPoolExecutor(max_workers=max(4, len(vehicles)))
         self.vision = vision.from_env()
+        self.vision.search = self
+        self.coast = [tuple(p) for p in layout.get("coast") or []]
+        self.cp = control_plane.ControlPlane(os.environ.get("CP_URL", ""), os.environ.get("CP_CA_FILE", ""),
+                                             os.environ.get("CP_TOKEN_FILE", ""), os.environ.get("CP_WEBHOOK_SECRET_FILE", ""))
+        self.dispatch = incident.Dispatcher(self.cp if self.cp.enabled else None, os.environ.get("DISPATCHER_BOT", "dispatcher"),
+                                            os.environ.get("LOGISTICS_BOT", "logistics"), os.environ.get("REPORT_BOT", "reporter"))
+        self.incident = None
+        self.incident_secret_file = os.environ.get("INCIDENT_SECRET_FILE", "")
+        self.auto_restock = os.environ.get("AUTO_RESTOCK", "") == "1"
+        self.cp_jobs = queue.Queue()
+        threading.Thread(target=self._cp_worker, name="control-plane", daemon=True).start()
+        self.last_costs = 0.0
+        self.ais = ais.from_env()
+        self.ais.start()
+        self.approvals = approvals.Approvals(self.cp if self.cp.enabled else None, os.environ.get("APPROVER_CODE_FILE", ""), self.route_of)
 
     def event(self, text):
         log.info("%s", text)
@@ -95,6 +130,7 @@ class Base:
                     self.states[vid] = state
             self._release_bays()
             self._deliveries()
+            self._search(time.time())
             for vid, state in self.states.items():
                 flight = state.get("flight") or {}
                 if flight.get("shots"):
@@ -159,6 +195,140 @@ class Base:
                 self.cargo[vid] = {"batteries": 0, "parts": 0, "spent": 0}
                 done.add("unloaded")
 
+    # -- the search ----------------------------------------------------------
+
+    def _search(self, now):
+        """One second of the incident: the sea, the webhooks it calls for, the costs."""
+        inc = self.incident
+        if self.auto_restock and now - getattr(self, "_restocked", 0) > RESTOCK_EVERY:
+            low = [st["label"] for st in self.stations.values() if st["batteries"] < 2 or st["parts"] < 2]
+            supply_ready = any(s.get("role") == "supply" and s.get("phase") == "ready" for s in self.states.values())
+            if low and supply_ready:
+                self._restocked = now
+                self.event("stations running low: " + ", ".join(low) + "; logistics called")
+                self.cp_jobs.put(("fire", "restock", {"stations": ", ".join(low)}, f"restock-{int(now)}", self.dispatch.logistics))
+        if inc is None:
+            return
+        if inc.tick(now):
+            self.event(f"search {inc.id} ended: {inc.end_reason}; {inc.found()}/{inc.count} found")
+        due = inc.due_dispatch(now)
+        if due:
+            self.event(f"sightings {due['sightings']}: dispatcher called")
+            self.cp_jobs.put(("fire", "sightings", due, f"{inc.id}-sightings-{int(now)}", None))
+        if inc.status == "ended" and inc.report_task is None and not getattr(inc, "report_asked", False):
+            inc.report_asked = True
+            self.cp_jobs.put(("report", inc))
+        if now - self.last_costs > 15 and (inc.status == "searching" or not inc.report or now - (inc.ended_at or now) < 600):
+            self.last_costs = now
+            self.cp_jobs.put(("costs", inc))
+
+    def _cp_worker(self):
+        """Calls to the control plane, one at a time, off the polling loop."""
+        while True:
+            job = self.cp_jobs.get()
+            try:
+                if job[0] == "fire":
+                    _, trigger, event, key, bot = job
+                    task = self.dispatch.fire(trigger, event, key, bot)
+                    if task and self.incident:
+                        with self.lock:
+                            self.incident.tasks.append(task)
+                elif job[0] == "report":
+                    inc = job[1]
+                    with self.lock:
+                        event = inc.report_event(time.time())
+                    inc.report_task = self.dispatch.fire("report", event, f"{inc.id}-report", self.dispatch.reporter) or ""
+                elif job[0] == "costs":
+                    inc = job[1]
+                    cost = self.dispatch.bots_cost(inc.started_at)
+                    report = self.dispatch.report_of(inc.report_task) if inc.report_task and not inc.report else None
+                    with self.lock:
+                        inc.cost["bots_usd"] = round(cost, 4)
+                        if report:
+                            inc.report = report
+                            self.event(f"report {report['name']} delivered")
+            except Exception as exc:
+                log.warning("control plane job %s: %s", job[0], exc)
+
+    def start_incident(self, report):
+        with self.lock:
+            if self.incident and self.incident.status == "searching":
+                raise ValueError(f"a search is on: {self.incident.id}")
+            inc = incident.Incident(report, self.coast)
+            self.incident = inc
+            self.last_costs = 0.0
+            self.event(f"MAYDAY relay: {inc.vessel} lost {inc.count} containers at {inc.lost['lat']:.4f}, {inc.lost['lon']:.4f}")
+            d = inc.sea.datum()
+            event = {"incident": inc.id, "vessel": inc.vessel, "count": inc.count, "lat": inc.lost["lat"], "lon": inc.lost["lon"],
+                     "lost_at": incident.iso(inc.lost_at), "reported_at": incident.iso(inc.started_at),
+                     "wind": f"from {inc.wind['from_deg']:.0f} deg at {inc.wind['speed_m_s']:.0f} m/s",
+                     "current": f"to {inc.current['to_deg']:.0f} deg at {inc.current['speed_m_s']:.2f} m/s",
+                     "datum": f"{d['lat']:.5f}, {d['lon']:.5f}, radius {d['radius_m']} m, drifting to {d['drift']['to_deg']} deg at {d['drift']['speed_m_s']} m/s"}
+        self.cp_jobs.put(("fire", "incident", event, inc.id, None))
+        return {"incident": inc.id, "total": inc.count, "datum": {"lat": d["lat"], "lon": d["lon"], "radius_m": d["radius_m"]}}
+
+    def end_incident(self, reason):
+        with self.lock:
+            if not self.incident or self.incident.status != "searching":
+                raise ValueError("no search is on")
+            self.incident.end(reason)
+            self.event(f"search {self.incident.id} ended: {reason}")
+            return {"incident": self.incident.id, "found": self.incident.found(), "total": self.incident.count}
+
+    # Hooks for vision.py, called from its workers.
+    def searching(self):
+        with self.lock:
+            return self.incident is not None and self.incident.status == "searching"
+
+    def floaters(self):
+        with self.lock:
+            return self.incident.floaters() if self.incident else []
+
+    def observe(self, vehicle, kind, alt_m, t, containers, bbox, photo_id, cost):
+        with self.lock:
+            if not self.incident:
+                return []
+            self.incident.cost["vision_usd"] = round(self.incident.cost["vision_usd"] + cost, 5)
+            seen = self.incident.observe(vehicle, kind, alt_m, t, containers, bbox, photo_id)
+            for d in seen:
+                if d["container"]:
+                    st = self.incident.state[d["container"]]
+                    if st["confirmed_by"] == vehicle and st["confirmed_at"] == t:
+                        self.event(f"{vehicle} confirmed a container ({self.incident.found()}/{self.incident.count})")
+            return seen
+
+    def targets(self):
+        with self.lock:
+            return self.incident.targets(time.time()) if self.incident else {}
+
+    def route_of(self, vehicle, args):
+        """The route a pending run_mission would fly, for the phone page: [[lat, lon]], metres."""
+        with self.lock:
+            state = self.states.get(vehicle) or {}
+            home = state.get("home")
+            targets = self.incident.targets(time.time()) if self.incident else {}
+        if not home:
+            return None, 0
+        try:
+            if args.get("deliveries"):
+                pts = [(self.stations[d["station"]]["lat"], self.stations[d["station"]]["lon"]) for d in args["deliveries"] if d.get("station") in self.stations]
+            else:
+                waypoints = args.get("waypoints")
+                if args.get("pattern"):
+                    ne = {}
+                    for name, t in targets.items():
+                        n, e = geo.offset_m(home["lat"], home["lon"], t["lat"], t["lon"])
+                        dr = t.get("drift") or targets.get("datum", {}).get("drift") or {}
+                        a = math.radians(dr.get("to_deg", 0))
+                        ne[name] = {"north_m": n, "east_m": e, "drift_n": dr.get("speed_m_s", 0) * math.cos(a), "drift_e": dr.get("speed_m_s", 0) * math.sin(a)}
+                    speed = args.get("speed_m_s") if isinstance(args.get("speed_m_s"), (int, float)) else 10
+                    waypoints, _ = patterns.expand(args["pattern"], ne, speed, 24)
+                pts = [geo.point_at(home["lat"], home["lon"], float(w["north_m"]), float(w["east_m"])) for w in waypoints or []]
+        except (patterns.PatternError, KeyError, TypeError, ValueError):
+            return None, 0
+        route = [[home["lat"], home["lon"]]] + [[round(a, 6), round(b, 6)] for a, b in pts] + [[home["lat"], home["lon"]]]
+        return route, approvals.distance(route)
+
     # -- the crew ----------------------------------------------------------
 
     def crew(self, vid, station):
@@ -205,6 +375,10 @@ class Base:
             "photos": self.vision.recent(60),
             "vehicles": [self.states.get(v) or {"vehicle": v, "phase": "offline"} for v in self.vehicles],
             "events": self.events[-20:],
+            "simulation": True,
+            "incident": self.incident.snapshot(time.time()) if self.incident else None,
+            "ships": self.ais.ships(),
+            "ais": self.ais.summary(),
         }
 
     def _bot_view(self, snap):
@@ -228,7 +402,24 @@ class Base:
             "depot": {"name": self.depot["name"], "label": self.depot["label"]},
             "zones": [{k: z.get(k) for k in ("name", "about", "for")} for z in self.zones],
             "findings": self.vision.findings(),
-        }
+        } | ({"incident": self._incident_view(snap)} if self.incident else {})
+
+    def _incident_view(self, snap):
+        """The incident for the bots, with how far each vehicle is from each target."""
+        now = time.time()
+        view = self.incident.bot_view(now)
+        targets = self.incident.targets(now)
+        homes = {s.get("vehicle"): s.get("home") for s in snap["vehicles"] if s.get("home") and s.get("role", "patrol") != "supply"}
+
+        def distances(lat, lon):
+            return {vid: round(math.hypot(*geo.offset_m(h["lat"], h["lon"], lat, lon))) for vid, h in homes.items()}
+        if "datum" in targets:
+            view["datum"]["distance_from_home_m"] = distances(targets["datum"]["lat"], targets["datum"]["lon"])
+        for s in view["open_sightings"]:
+            t = targets.get(s["id"])
+            if t:
+                s.update(lat=round(t["lat"], 5), lon=round(t["lon"], 5), distance_from_home_m=distances(t["lat"], t["lon"]))
+        return view
 
     def snapshot(self):
         with self.lock:
@@ -259,6 +450,17 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, json.dumps(self.base.snapshot()).encode())
         if url.path == "/api/stream":
             return self._stream()
+        if url.path == "/api/targets" and self.crew_api:
+            return self._send(200, json.dumps(self.base.targets()).encode())
+        if url.path == "/api/approvals" and not self.crew_api:
+            if not self.base.approvals.authorised(self.headers.get("X-Approver-Code", "")):
+                return self._send(401, b'{"error": "the approver code is required"}')
+            try:
+                return self._send(200, json.dumps(self.base.approvals.pending()).encode())
+            except Exception as exc:
+                return self._send(502, json.dumps({"error": str(exc)[:200]}).encode())
+        if url.path == "/api/incident/report" and not self.crew_api:
+            return self._report()
         if url.path.startswith("/api/crew/") and self.crew_api:
             vid = url.path.rsplit("/", 1)[1]
             station = urllib.parse.parse_qs(url.query).get("station", [""])[0]
@@ -273,12 +475,70 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, f.read(), "image/jpeg", "max-age=86400")
         if self.crew_api:
             return self._send(404, b"not found\n", "text/plain")
-        name = "index.html" if url.path in ("/", "") else url.path.lstrip("/")
+        name = PAGES.get(url.path, url.path.lstrip("/"))
         path = os.path.realpath(os.path.join(STATIC, name))
         if not path.startswith(STATIC + os.sep) or not os.path.isfile(path):
             return self._send(404, b"not found\n", "text/plain")
         with open(path, "rb") as f:
             self._send(200, f.read(), TYPES.get(os.path.splitext(path)[1], "application/octet-stream"), "max-age=60")
+
+    def _report(self):
+        inc = self.base.incident
+        if not inc or not inc.report:
+            return self._send(404, b"no report yet\n", "text/plain")
+        try:
+            body, _ = self.base.cp.artifact(inc.report["execution"], inc.report["name"])
+        except Exception as exc:
+            return self._send(502, f"the control plane: {exc}\n".encode(), "text/plain")
+        return self._send(200, body, "text/markdown; charset=utf-8")
+
+    def _body(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        if length > MAX_BODY:
+            raise ValueError("body too large")
+        raw = self.rfile.read(length) if length else b"{}"
+        value = json.loads(raw or b"{}")
+        if not isinstance(value, dict):
+            raise ValueError("a JSON object")
+        return value
+
+    def _incident_allowed(self):
+        path = self.base.incident_secret_file
+        if not path:
+            return False
+        try:
+            with open(path) as f:
+                secret = f.read().strip()
+        except OSError:
+            return False
+        presented = self.headers.get("X-Incident-Secret", "")
+        return bool(secret and presented) and hmac.compare_digest(presented.encode(), secret.encode())
+
+    def do_POST(self):
+        url = urllib.parse.urlparse(self.path)
+        try:
+            if self.crew_api:
+                return self._send(404, b"not found\n", "text/plain")
+            if url.path in ("/api/incident", "/api/incident/end"):
+                if not self._incident_allowed():
+                    return self._send(403, b'{"error": "the incident secret is required"}')
+                body = self._body()
+                if url.path == "/api/incident":
+                    return self._send(201, json.dumps(self.base.start_incident(body)).encode())
+                return self._send(200, json.dumps(self.base.end_incident(str(body.get("reason", "ended by the operator"))[:80])).encode())
+            parts = url.path.strip("/").split("/")
+            if len(parts) == 4 and parts[:2] == ["api", "approvals"] and parts[3] in ("approve", "deny"):
+                if not self.base.approvals.authorised(self.headers.get("X-Approver-Code", "")):
+                    return self._send(401, b'{"ok": false, "error": "the approver code is required"}')
+                call = urllib.parse.parse_qs(url.query).get("call", [""])[0]
+                try:
+                    self.base.approvals.decide(parts[2], parts[3], call)
+                except control_plane.APIError as exc:
+                    return self._send(409 if exc.status == 409 else 502, json.dumps({"ok": False, "error": exc.message}).encode())
+                return self._send(200, b'{"ok": true}')
+            return self._send(404, b"not found\n", "text/plain")
+        except ValueError as exc:
+            return self._send(400, json.dumps({"error": str(exc)[:200]}).encode())
 
     def _stream(self):
         self.send_response(200)

@@ -1,8 +1,9 @@
 # The port fleet's services: vehicle_pilot.py beside each vehicle and
-# fleet_base.py (stations, stock, the live map). Python's standard library
-# and pymavlink, nothing else.
+# fleet_base.py (stations, stock, the live map). Python's standard library,
+# pymavlink, Pillow (the containers drawn into the imagery) and websockets
+# (the AIS stream), nothing else.
 FROM docker.io/library/python:3.13-slim@sha256:d98cc29d3266e535dd9da1099688d9cb3ca4753813571e071763d17725460962 AS build
-RUN pip wheel --no-cache-dir --wheel-dir /wheels pymavlink==2.4.50
+RUN pip wheel --no-cache-dir --wheel-dir /wheels pymavlink==2.4.50 pillow==12.0.0 websockets==15.0.1
 
 FROM docker.io/library/python:3.13-slim@sha256:d98cc29d3266e535dd9da1099688d9cb3ca4753813571e071763d17725460962
 COPY --from=build /wheels /wheels

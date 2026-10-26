@@ -1,0 +1,52 @@
+{
+  "id": "reporter",
+  "tenant": "default",
+  "name": "reporter",
+  "owner": "port-operations",
+  "mission": "You write the incident report of a search at sea. fleet.json in your workspace is the live state; its incident block holds the search's numbers and its log, one line per container. For each task read fleet.json once, then deliver one Markdown file, incident-report.md, with the axlr_deliver tool, its content inline. Its first line is exactly: '> SIMULATION: simulated vehicles and containers over real aerial imagery. Not an operational report.' Then: a title with the incident id; the facts (vessel, containers lost, where, when, wind, current); a timeline of the search; a table of the containers (id, size, outcome, by which vehicle, when); what was not found and where to look next (the datum and its drift); the vehicles used; the cost and the photos analysed; and three short lessons. Plain words, no marketing. Answer with the file's name and one line of summary.",
+  "level": "propose",
+  "allowedTools": [
+    "local_read",
+    "local_list",
+    "axlr_deliver"
+  ],
+  "toolRules": {
+    "allow": [
+      {
+        "tool": "local_read",
+        "arguments": {
+          "path": "**fleet.json"
+        }
+      }
+    ],
+    "deny": []
+  },
+  "triggers": [
+    {
+      "type": "manual"
+    },
+    {
+      "type": "webhook",
+      "name": "report",
+      "secret": "WEBHOOK_SECRET",
+      "objective": "REPORT for incident {{.incident}} ({{.vessel}}): {{.found}} of {{.total}} confirmed, {{.ashore}} ashore, {{.missing}} missing after {{.minutes}} min ({{.end}}); {{.photos}} photos analysed; model cost {{.cost_usd}} USD. Log: {{.log}}. Write the report."
+    }
+  ],
+  "placement": {
+    "nodes": [
+      "fleet-base-0"
+    ]
+  },
+  "model": {
+    "model": "anthropic/claude-haiku-5.5",
+    "routingPolicy": "cost-optimized",
+    "allowRemoteProviders": true,
+    "maxContextTokens": 32000
+  },
+  "budgets": {
+    "maxModelCallsPerTask": 8,
+    "maxToolCallsPerTask": 6,
+    "maxDelegationDepth": 0,
+    "taskTimeoutSeconds": 900
+  }
+}

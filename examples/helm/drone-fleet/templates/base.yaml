@@ -51,9 +51,27 @@ spec:
             - {name: VEHICLES, value: {{ join "," $vehicles | quote }}}
             - {name: LAYOUT_FILE, value: /etc/fleet/layout.json}
             - {name: ZONES_FILE, value: /etc/fleet/zones.json}
-            # The dispatcher's and the logistics bot's workspaces are the sidecar's.
-            - {name: FLEET_FILE, value: "/workspaces/dispatcher/fleet.json,/workspaces/logistics/fleet.json"}
+            # The base's bots' workspaces (the dispatcher's, the logistics bot's…) are the sidecar's.
+            {{- $files := list }}
+            {{- range .Values.base.bots }}{{ $files = append $files (printf "/workspaces/%s/fleet.json" .) }}{{ end }}
+            - {name: FLEET_FILE, value: {{ join "," $files | quote }}}
             - {name: PHOTOS_DIR, value: /var/lib/fleet/photos}
+            {{- if .Values.incident.enabled }}
+            # Containers overboard: the control plane's operator API for the
+            # webhooks, the costs and the phone's decisions.
+            - {name: CP_URL, value: "https://{{ include "fleet.cp" . }}:7879"}
+            - {name: CP_CA_FILE, value: /etc/fleet-secrets/operator/ca.crt}
+            - {name: CP_TOKEN_FILE, value: /etc/fleet-secrets/operator/api.token}
+            - {name: CP_WEBHOOK_SECRET_FILE, value: /etc/fleet-secrets/webhook/SECRET}
+            - {name: INCIDENT_SECRET_FILE, value: /etc/fleet-secrets/incident/SECRET}
+            - {name: APPROVER_CODE_FILE, value: /etc/fleet-secrets/approver/CODE}
+            - {name: AUTO_RESTOCK, value: {{ ternary "1" "0" .Values.incident.autoRestock | quote }}}
+            - {name: INCIDENT_MAX_PER_FLIGHT, value: {{ .Values.incident.maxPerFlight | quote }}}
+            {{- end }}
+            {{- if .Values.ais.enabled }}
+            - {name: AIS_KEY_FILE, value: /etc/fleet-secrets/ais/AISSTREAM_API_KEY}
+            - {name: AIS_BBOX, value: {{ .Values.ais.bbox | quote }}}
+            {{- end }}
             {{- if .Values.vision.enabled }}
             # The ground station's image analysis: aerial imagery at each
             # photo's footprint and a vision model (vision.py).
@@ -77,12 +95,30 @@ spec:
             - {name: config, mountPath: /etc/fleet, readOnly: true}
             - {name: axlr-node-workspaces, mountPath: /workspaces}
             - {name: photos, mountPath: /var/lib/fleet/photos}
+            {{- if .Values.incident.enabled }}
+            {{- range $name, $secret := .Values.incident.secrets }}
+            - {name: secret-{{ $name }}, mountPath: /etc/fleet-secrets/{{ $name }}, readOnly: true}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.ais.enabled }}
+            - {name: secret-ais, mountPath: /etc/fleet-secrets/ais, readOnly: true}
+            {{- end }}
         {{- include "axlr-bots-node.inject.container" $bots | nindent 8 }}
       volumes:
         - name: photos
           emptyDir: {sizeLimit: 512Mi}
         - name: config
           configMap: {name: {{ .Release.Name }}-config}
+        {{- if .Values.incident.enabled }}
+        {{- range $name, $secret := .Values.incident.secrets }}
+        - name: secret-{{ $name }}
+          secret: {secretName: {{ $secret }}, optional: true, defaultMode: 0440}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.ais.enabled }}
+        - name: secret-ais
+          secret: {secretName: {{ .Values.ais.secret }}, optional: true, defaultMode: 0440}
+        {{- end }}
         {{- include "axlr-bots-node.inject.volumes" $bots | nindent 8 }}
   volumeClaimTemplates:
     {{- include "axlr-bots-node.inject.volumeClaimTemplate" $bots | nindent 4 }}
