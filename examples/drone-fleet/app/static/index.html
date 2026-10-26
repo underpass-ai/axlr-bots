@@ -17,8 +17,8 @@
   #app { display: grid; grid-template-columns: 1fr 380px; height: 100vh; }
   #map { height: 100%; }
   aside { overflow-y: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 14px; }
-  header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-  header h1 { font-size: 20px; margin: 0; }
+  header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  header h1 { font-size: 20px; margin: 0; white-space: nowrap; }
   header small { color: var(--muted); font-size: 14px; }
   .view3d { margin-left: auto; background: var(--accent); color: #0d1117; font-weight: 700; font-size: 16px; padding: 4px 12px; border-radius: 8px; text-decoration: none; }
   .counts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
@@ -42,14 +42,43 @@
   .zlabel { background: transparent; border: 0; box-shadow: none; color: #fff; font: 600 13px system-ui; text-shadow: 0 0 3px #000, 0 0 6px #000; }
   .zlabel::before { display: none; }
   .leaflet-container { background: #0d1117; }
-  @media (max-width: 800px) { #app { grid-template-columns: 1fr; grid-template-rows: 55vh auto; } aside { border-left: 0; } }
+  #mapwrap { position: relative; height: 100%; }
+  .sim { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1000; pointer-events: none;
+    background: #b42318; color: #fff; border: 2px solid #ffd7d2; border-radius: 10px; padding: 6px 16px; text-align: center;
+    font-weight: 800; font-size: 20px; letter-spacing: .08em; box-shadow: 0 2px 12px rgba(0,0,0,.5); white-space: nowrap; }
+  .sim small { display: block; font-size: 14px; font-weight: 600; letter-spacing: 0; color: #ffe9e6; }
+  .ais { font-size: 13px; padding: 2px 8px; border-radius: 999px; background: var(--line); color: var(--text); white-space: nowrap; }
+  .ais.live { background: #1f6f3f; } .ais.error { background: #8e1f1a; }
+  #incident { background: #2a1416; border: 2px solid var(--bad); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+  #incident[hidden] { display: none; }
+  #incident .title { font-size: 20px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+  #incident .title .pill { margin-left: auto; }
+  #incident .big { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 8px 0; }
+  #incident .big div { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 4px; text-align: center; }
+  #incident .big b { display: block; font-size: 26px; line-height: 1.1; }
+  #incident .big span { font-size: 13px; color: var(--muted); }
+  #incident .big .found b { color: var(--ok); font-size: 30px; }
+  #incident .meta a { color: var(--accent); font-weight: 700; }
+  .cbox { width: 26px; height: 10px; border-radius: 2px; }
+  .clabel { background: rgba(13,17,23,.85); color: #fff; border: 0; border-radius: 4px; font: 700 12px system-ui; padding: 0 4px; box-shadow: none; }
+  .clabel::before { display: none; }
+  .qmark { width: 22px; height: 22px; border-radius: 50%; background: #8e1f1a; color: #fff; border: 2px solid #fff;
+    font: 800 15px/18px system-ui; text-align: center; }
+  .shot { position: relative; width: 300px; }
+  .shot img { width: 300px; border-radius: 6px; display: block; }
+  .shot i { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border: 3px solid #3fb950; border-radius: 50%; box-shadow: 0 0 0 2px #000; }
+  .shot i.miss { border-color: #f85149; }
+  @media (max-width: 800px) { #app { grid-template-columns: 1fr; grid-template-rows: 55vh auto; } aside { border-left: 0; }
+    .sim { white-space: normal; width: 88%; font-size: 16px; } }
 </style>
 </head>
 <body>
 <div id="app">
-  <div id="map"></div>
+  <div id="mapwrap"><div id="map"></div>
+    <div class="sim">SIMULATION<small>simulated vehicles and containers · real imagery and AIS</small></div></div>
   <aside>
-    <header><h1>Port fleet</h1><small id="updated">connecting…</small><a class="view3d" href="3d">3D view</a></header>
+    <header><h1>Port fleet</h1><small id="updated">connecting…</small><span class="ais" id="ais">AIS off</span><a class="view3d" href="3d">3D view</a></header>
+    <section id="incident" hidden></section>
     <div class="counts">
       <div class="count"><b id="c-out">0</b><span>out</span></div>
       <div class="count"><b id="c-ready">0</b><span>ready</span></div>
@@ -83,11 +112,150 @@ const dark = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}
   { maxZoom: 20, subdomains: "abcd", attribution: "© OpenStreetMap contributors © CARTO" });
 const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap contributors" });
 sat.addTo(map);
-L.control.layers({ "Satellite": sat, "Dark": dark, "Streets": osm }).addTo(map);
+const overlayCtl = L.control.layers({ "Satellite": sat, "Dark": dark, "Streets": osm }).addTo(map);
 const layers = { zones: L.layerGroup().addTo(map), stations: L.layerGroup().addTo(map), routes: L.layerGroup().addTo(map), trails: L.layerGroup().addTo(map) };
 const markers = {}, trails = {}, routes = {}, photoPins = {};
 layers.photos = L.layerGroup().addTo(map);
 let fitted = false, zonesDrawn = false;
+
+// -- the incident: simulated containers, their drift, the datum, the sightings --
+layers.incident = L.layerGroup().addTo(map);
+layers.ships = L.layerGroup().addTo(map);
+overlayCtl.addOverlay(layers.incident, "Containers (simulated)");
+overlayCtl.addOverlay(layers.ships, "Ships (live AIS)");
+const STATE = {
+  missing: ["missing", "#8b949e"], sighted: ["sighted", "#e3b341"], confirmed: ["found ✓", "#3fb950"], ashore: ["ashore", "#6e7681"],
+};
+const R_EARTH = 6378137.0;
+let incidentId = null;
+const inc = { containers: {}, arrows: {}, sightings: {}, datum: null, track: null, lost: null };
+
+function ahead(lat, lon, toDeg, metres) {
+  const a = toDeg * Math.PI / 180, n = metres * Math.cos(a), e = metres * Math.sin(a);
+  return [lat + n / R_EARTH * 180 / Math.PI, lon + e / (R_EARTH * Math.cos(lat * Math.PI / 180)) * 180 / Math.PI];
+}
+function mmss(s) { s = Math.max(0, Math.round(s || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
+function usd(x) { return "$" + (x || 0).toFixed(2); }
+
+function containerIcon(c) {
+  const [, col] = STATE[c.state] || STATE.missing;
+  const fill = c.state === "missing" ? "none" : c.state === "ashore" ? "#6e7681" : c.colour;
+  const stroke = c.state === "missing" ? c.colour : col;
+  const dash = c.state === "missing" ? ' stroke-dasharray="4 3"' : "";
+  const tick = c.state === "confirmed" ? '<circle cx="15" cy="-9" r="7" fill="#3fb950" stroke="#0d1117" stroke-width="1.5"/><path d="M11.5-9l2.5 2.5 4.5-5" stroke="#0d1117" stroke-width="2.2" fill="none"/>' : "";
+  const svg = `<svg width="44" height="44" viewBox="-22 -22 44 44"><g transform="rotate(${c.heading_deg || 0})" opacity="${c.state === "missing" ? 0.75 : 1}">
+    <rect x="-13" y="-5" width="26" height="10" rx="1.5" fill="${fill}" stroke="${stroke}" stroke-width="${c.state === "missing" ? 2 : 3}"${dash}/></g>${tick}</svg>`;
+  return L.divIcon({ html: svg, className: "", iconSize: [44, 44], iconAnchor: [22, 22] });
+}
+function arrowLatLngs(c) {
+  const d = c.drift || {};
+  if (!d.speed_m_s) return null;
+  const len = d.speed_m_s * 300;  // five minutes of its drift
+  const tip = ahead(c.lat, c.lon, d.to_deg, len);
+  const head = Math.min(40, len * 0.35);
+  const l = ahead(tip[0], tip[1], d.to_deg + 150, head), r = ahead(tip[0], tip[1], d.to_deg - 150, head);
+  return [[[c.lat, c.lon], tip], [l, tip, r]];
+}
+
+function renderIncident(f) {
+  const box = document.getElementById("incident");
+  const i = f.incident;
+  if (!i) {
+    box.hidden = true;
+    if (incidentId) { layers.incident.clearLayers(); Object.assign(inc, { containers: {}, arrows: {}, sightings: {}, datum: null, track: null, lost: null }); incidentId = null; }
+    return;
+  }
+  if (incidentId !== i.id) {
+    layers.incident.clearLayers();
+    Object.assign(inc, { containers: {}, arrows: {}, sightings: {}, datum: null, track: null, lost: null });
+    incidentId = i.id;
+    if (i.datum) { const ll = [i.datum.lat, i.datum.lon]; if (fitted) map.flyTo(ll, 15); else map.setView(ll, 15); fitted = true; }
+  }
+  const ended = i.status === "ended";
+  const w = i.wind || {}, cur = i.current || {}, dr = i.drift || {};
+  const report = i.report ? ` · <a href="${esc(i.report.url)}" target="_blank" rel="noopener">📄 report</a>` : "";
+  box.hidden = false;
+  box.innerHTML = `<div class="title">⚠ ${esc(i.title || `${i.total} containers overboard`)}<span class="pill" style="background:${ended ? "var(--ok)" : "var(--warn)"}">${ended ? "ended" : "searching"}</span></div>
+    <div class="big"><div class="found"><b>${i.found}/${i.total}</b><span>found</span></div><div><b>${i.sighted}</b><span>sighted</span></div>
+      <div><b>${mmss(i.elapsed_s)}</b><span>time</span></div><div><b>${usd((i.cost || {}).total_usd)}</b><span>model cost</span></div></div>
+    <div class="meta">🚢 ${esc(i.vessel)} · lost ${fmtTime(i.lost_at)}</div>
+    <div class="meta">💨 wind from ${Math.round(w.from_deg || 0)}° ${(w.speed_m_s || 0).toFixed(0)} m/s · 🌊 current to ${Math.round(cur.to_deg || 0)}° ${(cur.speed_m_s || 0).toFixed(1)} m/s</div>
+    <div class="meta">➜ drift to ${Math.round(dr.to_deg || 0)}° at ${(dr.speed_m_s || 0).toFixed(2)} m/s · bots ${usd((i.cost || {}).bots_usd)} + vision ${usd((i.cost || {}).vision_usd)}${report}</div>`;
+
+  if (i.lost && !inc.lost) {
+    inc.lost = L.marker([i.lost.lat, i.lost.lon], { icon: L.divIcon({ html: '<div style="font:800 22px system-ui;color:#f85149;text-shadow:0 0 3px #000">✕</div>', className: "", iconSize: [22, 22], iconAnchor: [11, 11] }) })
+      .bindTooltip("lost here", { permanent: true, direction: "right", className: "vlabel", offset: [10, 0] }).addTo(layers.incident);
+  }
+  if (i.datum) {
+    const ll = [i.datum.lat, i.datum.lon];
+    if (!inc.datum) inc.datum = L.circle(ll, { radius: i.datum.radius_m, color: "#e3b341", weight: 2.5, dashArray: "10 8", fillOpacity: 0.06 })
+      .bindTooltip("datum", { permanent: true, direction: "top", className: "vlabel" }).addTo(layers.incident);
+    inc.datum.setLatLng(ll).setRadius(i.datum.radius_m);
+  }
+  if (i.datum_track && i.datum_track.length > 1) {
+    if (!inc.track) inc.track = L.polyline(i.datum_track, { color: "#e3b341", weight: 2, opacity: 0.8 }).addTo(layers.incident);
+    else inc.track.setLatLngs(i.datum_track);
+  }
+  for (const c of i.containers || []) {
+    const ll = [c.lat, c.lon];
+    const [label] = STATE[c.state] || STATE.missing;
+    const tip = `${esc(c.id)} · ${esc(label)}${c.state === "missing" ? " · simulated truth" : ""}${c.confirmed_by ? " · " + esc(c.confirmed_by) : c.sighted_by ? " · " + esc(c.sighted_by) : ""}`;
+    let m = inc.containers[c.id];
+    if (!m) {
+      m = inc.containers[c.id] = L.marker(ll, { icon: containerIcon(c), zIndexOffset: 500 }).bindTooltip(tip, { direction: "right", offset: [12, 0], className: "clabel" }).addTo(layers.incident);
+      m._state = c.state;
+    }
+    m.setLatLng(ll);
+    if (m._state !== c.state) { m.setIcon(containerIcon(c)); m._state = c.state; }
+    m.setTooltipContent(tip);
+    const arrow = c.state === "ashore" ? null : arrowLatLngs(c);
+    let a = inc.arrows[c.id];
+    if (arrow) {
+      if (!a) a = inc.arrows[c.id] = L.polyline(arrow, { color: "#9be7ff", weight: 2.5, opacity: 0.9 }).addTo(layers.incident);
+      else a.setLatLngs(arrow);
+    } else if (a) { layers.incident.removeLayer(a); delete inc.arrows[c.id]; }
+  }
+  for (const s of i.sightings || []) {
+    const p = s.now || s;
+    let m = inc.sightings[s.id];
+    const text = `${esc(s.id)} · ${esc(s.vehicle)} · ${fmtTime(s.t)}${s.container ? " → " + esc(s.container) : " · no container there"}`;
+    if (!m) {
+      m = inc.sightings[s.id] = s.container
+        ? L.circleMarker([p.lat, p.lon], { radius: 4, color: "#e3b341", weight: 2, fillOpacity: 0.9 })
+        : L.marker([p.lat, p.lon], { icon: L.divIcon({ html: '<div class="qmark">?</div>', className: "", iconSize: [22, 22], iconAnchor: [11, 11] }) });
+      m.bindTooltip(text, { className: "clabel" }).addTo(layers.incident);
+    }
+    m.setLatLng([p.lat, p.lon]);
+  }
+}
+
+// -- live AIS ------------------------------------------------------------------
+const SHIP_COLOUR = { cargo: "#3fb950", tanker: "#f85149", passenger: "#58a6ff", tug: "#d18f52", pilot: "#e3b341", fishing: "#b48cff" };
+const shipMarkers = {};
+function shipIcon(s) {
+  const dir = s.heading != null && s.heading < 360 ? s.heading : (s.cog || 0);
+  const col = SHIP_COLOUR[s.type_name] || "#c9d1d9";
+  const svg = `<svg width="30" height="30" viewBox="-15 -15 30 30" style="transform:rotate(${dir}deg)"><path d="M0-13L5-5V11H-5V-5Z" fill="${col}" stroke="#0d1117" stroke-width="1.5"/></svg>`;
+  return L.divIcon({ html: svg, className: "", iconSize: [30, 30], iconAnchor: [15, 15] });
+}
+function renderShips(f) {
+  const a = f.ais || { status: "off" };
+  const el = document.getElementById("ais");
+  el.className = "ais " + (a.status || "off");
+  el.textContent = a.status === "live" ? `🛳 AIS live · ${(f.ships || []).length}` : a.status === "connecting" ? "🛳 AIS connecting…" : a.status === "error" ? "🛳 AIS error" : "🛳 AIS off";
+  if (a.error) el.title = a.error;
+  const seen = new Set();
+  for (const s of f.ships || []) {
+    if (s.lat == null || s.lon == null) continue;
+    seen.add(s.mmsi);
+    const name = s.name || s.mmsi;
+    const pop = `<b>${esc(name)}</b> · MMSI ${esc(s.mmsi)}<br>${esc(s.type_name || "vessel")}${s.length_m ? ` · ${Math.round(s.length_m)} m` : ""}<br>${(s.sog || 0).toFixed(1)} kn · course ${Math.round(s.cog || 0)}°<br><small>live AIS (aisstream.io)</small>`;
+    let m = shipMarkers[s.mmsi];
+    if (!m) m = shipMarkers[s.mmsi] = L.marker([s.lat, s.lon], { icon: shipIcon(s), zIndexOffset: 200 }).bindTooltip(esc(name), { direction: "right", offset: [10, 0], className: "vlabel" }).bindPopup(pop).addTo(layers.ships);
+    else { m.setLatLng([s.lat, s.lon]).setIcon(shipIcon(s)); m.setPopupContent(pop); }
+  }
+  for (const k of Object.keys(shipMarkers)) if (!seen.has(k)) { layers.ships.removeLayer(shipMarkers[k]); delete shipMarkers[k]; }
+}
 
 function color(phase) { return (PHASE[phase] || [phase, "var(--idle)"])[1]; }
 function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v.slice(4, -1)).trim() || v; }
@@ -192,11 +360,14 @@ function render(f) {
       <div class="meta">${s.waiting.length ? "queue: " + s.waiting.map(esc).join(", ") : "no queue"} · ${s.serviced} served</div></div>`);
   }
   document.getElementById("stations").innerHTML = scards.join("");
+  renderIncident(f);
+  renderShips(f);
 
   for (const p of f.photos || []) {
     if (photoPins[p.id]) continue;
     const a = p.analysis || {};
-    const html = `<div style="width:300px"><img src="photos/${esc(p.id)}.jpg" style="width:300px;border-radius:6px"><br>
+    const rings = (p.detections || []).map(d => `<i class="${d.container ? "" : "miss"}" style="left:${(100 * d.x).toFixed(1)}%;top:${(100 * d.y).toFixed(1)}%" title="${esc(d.container || "no container")}"></i>`).join("");
+    const html = `<div style="width:300px"><div class="shot"><img src="photos/${esc(p.id)}.jpg">${rings}</div>
       <b>${esc(p.vehicle)}</b> · ${esc(p.mission)} · ${Math.round(p.alt_m)} m<br>${esc(a.summary)}
       ${(a.findings || []).length ? "<ul>" + a.findings.map(x => `<li>${esc(x)}</li>`).join("") + "</ul>" : ""}
       <small>${(a.objects || []).map(esc).join(" · ")}</small></div>`;

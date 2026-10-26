@@ -25,7 +25,7 @@
   #app { display: grid; grid-template-columns: 1fr 400px; height: 100vh; }
   #view { position: relative; overflow: hidden; }
   #view canvas { display: block; }
-  #labels { position: absolute; inset: 0; pointer-events: none; }
+  #labels { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
   aside { overflow-y: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 16px; }
   header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
   header h1 { font-size: 24px; margin: 0; }
@@ -58,6 +58,28 @@
   #compass { position: absolute; top: 12px; left: 12px; width: 64px; height: 64px; border-radius: 50%; background: rgba(5, 8, 12, .8);
     border: 2px solid #fff; display: flex; align-items: center; justify-content: center; pointer-events: none; }
   #compass svg { width: 52px; height: 52px; }
+  .sim { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5; pointer-events: none;
+    background: #b42318; color: #fff; border: 2px solid #ffd7d2; border-radius: 10px; padding: 6px 18px; text-align: center;
+    font-weight: 800; font-size: 22px; letter-spacing: .08em; box-shadow: 0 2px 12px rgba(0,0,0,.5); white-space: nowrap; }
+  .sim small { display: block; font-size: 15px; font-weight: 600; letter-spacing: 0; color: #ffe9e6; }
+  #counter { position: absolute; top: 84px; left: 50%; transform: translateX(-50%); z-index: 5; pointer-events: none;
+    background: rgba(5, 8, 12, .86); border: 3px solid #f85149; border-radius: 14px; padding: 8px 22px;
+    font: 800 30px/1.25 system-ui, sans-serif; color: #fff; white-space: nowrap; text-shadow: 0 1px 2px #000; }
+  #counter[hidden] { display: none; }
+  #counter.ended { border-color: #3fb950; }
+  #counter b { color: #3fb950; }
+  #counter .warn { color: #ffb4ab; }
+  .clbl { background: rgba(5, 8, 12, .85); color: #fff; border-radius: 6px; padding: 1px 7px; font: 700 15px system-ui, sans-serif; white-space: nowrap; }
+  .shlbl { background: rgba(10, 30, 50, .82); color: #cfe8ff; border: 1px solid #7cc4ff; border-radius: 6px; padding: 1px 7px; font: 600 14px system-ui, sans-serif; white-space: nowrap; }
+  .inc { background: #2a1416; border: 2px solid var(--bad); border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
+  .inc .t { font-weight: 800; font-size: 19px; }
+  .inc .big { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0 2px; }
+  .inc .big div { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 4px; text-align: center; }
+  .inc .big b { display: block; font-size: 24px; }
+  .inc .big span { font-size: 14px; color: var(--muted); }
+  body.nohud #app { grid-template-columns: 1fr; }
+  body.nohud aside, body.nohud #hint { display: none; }
+  @media (max-width: 700px) { .sim { font-size: 17px; } #counter { font-size: 20px; top: 76px; } }
   @media (max-width: 900px) {
     #app { grid-template-columns: 1fr; grid-template-rows: 60vh auto; }
     html, body { overflow: auto; }
@@ -71,6 +93,8 @@
     <div id="labels"></div>
     <div id="compass"><svg viewBox="-26 -26 52 52"><g id="needle"><path d="M0-22L7 2H-7Z" fill="#f85149"/><path d="M0 22L7 2H-7Z" fill="#fff"/>
       <text x="0" y="-8" text-anchor="middle" font-size="11" font-weight="800" fill="#fff" dy="-14">N</text></g></svg></div>
+    <div class="sim">SIMULATION<small>simulated vehicles and containers · real imagery and AIS</small></div>
+    <div id="counter" hidden></div>
     <div id="loading">Loading the port…</div>
     <div id="hint">Drag to orbit · right-drag to pan · wheel to zoom · click a vehicle to follow it</div>
     <div id="attrib">3D port from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a> (ODbL)</div>
@@ -80,8 +104,11 @@
       <h1>Port fleet 3D</h1>
       <a class="btn" href="./">2D map</a>
       <button class="btn ghost" id="overview">Overview</button>
+      <button class="btn ghost" id="night">🌙 Night</button>
     </header>
     <div id="updated">connecting…</div>
+    <div class="meta" id="ais">🛳 AIS off</div>
+    <div id="incident"></div>
     <h2>Vehicles</h2><div id="vehicles"></div>
     <h2>Stations</h2><div id="stations"></div>
   </aside>
@@ -94,6 +121,11 @@ import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer
 import { Line2 } from "three/addons/lines/Line2.js";
 import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
+
+// ?hud=0: the canvas alone (for recording); ?night=1: night; ?tour=1: a slow orbit.
+const PARAMS = new URLSearchParams(location.search);
+if (PARAMS.get("hud") === "0") document.body.classList.add("nohud");
+let night = PARAMS.get("night") === "1", touring = PARAMS.get("tour") === "1";
 
 // The model's frame (port3d/area.py): metres east, up, -north of ORIGIN.
 const ORIGIN = [51.9440, 3.9990], GROUND = 5.0, R = 6378137.0;
@@ -134,10 +166,19 @@ const labels = new CSS2DRenderer({ element: document.getElementById("labels") })
 const scene = new THREE.Scene();
 scene.background = new THREE.Color("#9fbbd6");
 scene.fog = new THREE.Fog("#9fbbd6", 6000, 16000);
-scene.add(new THREE.HemisphereLight("#dce9f7", "#4a5560", 1.6));
+const hemi = new THREE.HemisphereLight("#dce9f7", "#4a5560", 1.6);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight("#fff4e0", 2.4);
 sun.position.set(-3000, 5000, 2500);
 scene.add(sun);
+
+// The open sea around the model: the modelled area ends at the beach, the
+// containers drift west of it. Just under the model's own water.
+const sea = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000), new THREE.MeshStandardMaterial({ color: "#14385a", roughness: 0.25, metalness: 0.1 }));
+sea.rotation.x = -Math.PI / 2;
+sea.position.y = -0.4;
+sea.renderOrder = -2;
+scene.add(sea);
 
 const camera = new THREE.PerspectiveCamera(50, 1, 1, 40000);
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -162,6 +203,7 @@ window.addEventListener("resize", resize);
 resize();
 
 let rotors = null, rotorBase = [];
+const portMats = {};
 new GLTFLoader().load("port.glb", gltf => {
   const port = gltf.scene;
   port.traverse(o => {
@@ -172,8 +214,11 @@ new GLTFLoader().load("port.glb", gltf => {
     if (o.isMesh && o.material && o.material.name === "water") {
       o.material.roughness = 0.18; o.material.metalness = 0.15; o.renderOrder = -1;
     }
+    if (o.isMesh && o.material && o.material.name) portMats[o.material.name] = o.material;
   });
   scene.add(port);
+  for (const m of Object.values(portMats)) m.userData.day = { color: m.color.clone(), emissive: m.emissive.clone(), ei: m.emissiveIntensity };
+  setNight(night);
   document.getElementById("loading").remove();
 }, ev => {
   if (ev.total) document.getElementById("loading").textContent = `Loading the port… ${Math.round(100 * ev.loaded / ev.total)} %`;
@@ -282,6 +327,10 @@ function addVehicle(v) {
   const dot = marker(colour);
   dot.position.y = 6;
   group.add(dot);
+  // navigation lights, shown at night: red to port, green to starboard, a white strobe
+  const span = v.kind === "plane" ? 5.5 : v.kind === "quad" ? 3 : 2;
+  const navs = [glow("#ff3b30", 0.012, [-span, 1, 0]), glow("#30d158", 0.012, [span, 1, 0]), glow("#ffffff", 0.016, [0, 2, 0])];
+  for (const n of navs) { n.visible = night; group.add(n); }
   // the label sits above the vehicle (its bottom on the point), lifted
   // further when vehicles stand together
   const wrap = document.createElement("div");
@@ -302,7 +351,7 @@ function addVehicle(v) {
   const drops = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: colour, transparent: true, opacity: 0.45 }));
   drops.frustumCulled = false;
   scene.add(stick, trail, route, drops);
-  return vehicles[v.vehicle] = { id: v.vehicle, colour, group, body, dot, div, wrap, stick, trail, route, drops, trailPts: [],
+  return vehicles[v.vehicle] = { id: v.vehicle, colour, group, body, dot, div, wrap, stick, trail, route, drops, trailPts: [], navs,
     from: null, to: null, t0: 0, yawFrom: 0, yawTo: 0, data: v, routeKey: "" };
 }
 
@@ -387,10 +436,251 @@ function drawStatic(f) {
     const div = document.createElement("div"); div.className = "zlbl"; div.textContent = z.name;
     const l = new CSS2DObject(div); l.position.copy(c); statics.add(l);
   }
-  if (f.depot) pad(f.depot.lat, f.depot.lon, "#8b949e", f.depot.label || "Depot");
+  if (f.depot) { pad(f.depot.lat, f.depot.lon, "#8b949e", f.depot.label || "Depot"); floodlight(f.depot.lat, f.depot.lon); }
+  for (const s of f.stations || []) floodlight(s.lat, s.lon);
+  nightLights.visible = night;
   if (f.rtk) pad(f.rtk.lat, f.rtk.lon, "#b48cff", f.rtk.label || "RTK base", true);
   for (const s of f.stations || []) stationLabels[s.name] = pad(s.lat, s.lon, "#3fb950", s.label);
   zonesDrawn = true;
+}
+
+// -- night -------------------------------------------------------------------------
+
+// A soft round light that keeps its size on screen (sizeAttenuation false) or in the world.
+const glowTex = (() => {
+  const c = document.createElement("canvas"); c.width = c.height = 64;
+  const x = c.getContext("2d"), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(0.25, "rgba(255,255,255,.85)"); g.addColorStop(1, "rgba(255,255,255,0)");
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+function glow(colour, size, at, world = false) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: colour, transparent: true, depthWrite: false,
+    blending: THREE.AdditiveBlending, sizeAttenuation: world }));
+  s.scale.set(size, size, 1);
+  if (at) s.position.set(...at);
+  s.renderOrder = 9;
+  return s;
+}
+
+// Warm floodlights over the stations and the depot, only at night.
+const nightLights = new THREE.Group();
+scene.add(nightLights);
+function floodlight(lat, lon) {
+  const p = local(lat, lon, 25);
+  const l = new THREE.PointLight("#ffb35c", 3, 700, 0);
+  l.position.copy(p);
+  nightLights.add(l);
+  const g = glow("#ffc27a", 70, null, true); g.position.copy(p); nightLights.add(g);
+}
+
+const DAY = { bg: "#9fbbd6", fogNear: 6000, fogFar: 16000, hemi: ["#dce9f7", "#4a5560", 1.6], sun: ["#fff4e0", 2.4], exposure: 1.05, sea: "#14385a" };
+const NIGHT = { bg: "#16243a", fogNear: 3000, fogFar: 13000, hemi: ["#3a4f78", "#0a0d14", 0.32], sun: ["#9db4ff", 0.55], exposure: 1.15, sea: "#0b2036" };
+// the night sky: black overhead, a faint glow on the horizon (the fog's colour)
+const nightSky = (() => {
+  const c = document.createElement("canvas"); c.width = 2; c.height = 256;
+  const x = c.getContext("2d"), g = x.createLinearGradient(0, 0, 0, 256);
+  g.addColorStop(0, "#01030a"); g.addColorStop(0.55, "#0a1426"); g.addColorStop(1, NIGHT.bg);
+  x.fillStyle = g; x.fillRect(0, 0, 2, 256);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
+const dayColour = new THREE.Color(DAY.bg);
+// what glows at night in the port model: offices, ships' deckhouses, the cranes
+const LIT = { office: ["#ffcf7a", 0.35], deckhouse: ["#ffe2a8", 0.45], sts: ["#4d8dff", 0.25], machine: ["#ffd27a", 0.2], tank: ["#ffb35c", 0.12] };
+function setNight(on) {
+  night = on;
+  const k = on ? NIGHT : DAY;
+  scene.background = on ? nightSky : dayColour;
+  scene.fog.color.set(k.bg); scene.fog.near = k.fogNear; scene.fog.far = k.fogFar;
+  hemi.color.set(k.hemi[0]); hemi.groundColor.set(k.hemi[1]); hemi.intensity = k.hemi[2];
+  sun.color.set(k.sun[0]); sun.intensity = k.sun[1];
+  renderer.toneMappingExposure = k.exposure;
+  sea.material.color.set(k.sea);
+  for (const [name, m] of Object.entries(portMats)) {
+    const day = m.userData.day; if (!day) continue;
+    m.color.copy(day.color);
+    if (on) m.color.multiplyScalar(name === "water" ? 0.45 : 0.8);
+    if (on && LIT[name]) { m.emissive.set(LIT[name][0]); m.emissiveIntensity = LIT[name][1]; }
+    else { m.emissive.copy(day.emissive); m.emissiveIntensity = day.ei; }
+  }
+  nightLights.visible = on;
+  for (const v of Object.values(vehicles)) for (const n of v.navs) n.visible = on;
+  for (const sh of Object.values(ships)) for (const n of sh.navs) n.visible = on;
+  for (const c of Object.values(boxes)) c.box.material.emissiveIntensity = on ? 0.35 : 0.08;
+  document.getElementById("night").textContent = on ? "☀️ Day" : "🌙 Night";
+}
+document.getElementById("night").addEventListener("click", () => setNight(!night));
+
+// -- the incident: the simulated containers, their drift, the datum ---------------
+
+// The sea is at 0 (the quays at GROUND). A container floats low: about 0.8 m shows.
+const STATE = { missing: "#8b949e", sighted: "#e3b341", confirmed: "#3fb950", ashore: "#6e7681" };
+const boxes = {};      // container id -> its objects
+const incidentGroup = new THREE.Group();
+scene.add(incidentGroup);
+let incidentId = null, datumRing = null, datumTrack = null, lostMark = null, lastIncident = null;
+function sea3(lat, lon, y) { const p = local(lat, lon); p.y = y; return p; }
+function ahead(lat, lon, toDeg, metres) {
+  const a = toDeg * Math.PI / 180, n = metres * Math.cos(a), e = metres * Math.sin(a);
+  return [lat + n / R * 180 / Math.PI, lon + e / (R * Math.cos(lat * Math.PI / 180)) * 180 / Math.PI];
+}
+function squareMarker(colour) {
+  const c = document.createElement("canvas"); c.width = 64; c.height = 32;
+  const x = c.getContext("2d");
+  x.fillStyle = colour; x.strokeStyle = "#fff"; x.lineWidth = 5;
+  x.fillRect(4, 6, 56, 20); x.strokeRect(4, 6, 56, 20);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), sizeAttenuation: false, depthTest: false }));
+  sp.scale.set(0.026, 0.013, 1);
+  sp.renderOrder = 10;
+  return sp;
+}
+function addBox(c) {
+  const g = new THREE.Group();
+  // 40 ft: 12.2 × 2.44 × 2.6 m, drawn twice its size so it reads from the air
+  const box = new THREE.Mesh(new THREE.BoxGeometry(2.44, 2.6, 12.2),
+    new THREE.MeshStandardMaterial({ color: c.colour, emissive: c.colour, emissiveIntensity: night ? 0.35 : 0.08, roughness: 0.7, metalness: 0.3 }));
+  box.scale.setScalar(2);
+  box.position.y = -0.9;
+  const ring = new THREE.Mesh(new THREE.RingGeometry(22, 27, 48), new THREE.MeshBasicMaterial({ color: STATE.missing, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.3;
+  const far = squareMarker(c.colour); far.position.y = 4;
+  const div = document.createElement("div"); div.className = "clbl";
+  const label = new CSS2DObject(div); label.center.set(0.5, 1.6); label.position.y = 3;
+  const shaft = fatLine("#9be7ff", 4, false);
+  const head = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: "#9be7ff", side: THREE.DoubleSide }));
+  head.frustumCulled = false;
+  g.add(box, ring, far, label);
+  incidentGroup.add(g, shaft, head);
+  return boxes[c.id] = { g, box, ring, far, div, label, shaft, head, from: null, to: null, t0: 0, state: "" };
+}
+function updateArrow(b, c) {
+  const d = c.drift || {};
+  if (!d.speed_m_s || c.state === "ashore") { setFat(b.shaft, []); b.head.visible = false; return; }
+  const len = Math.max(60, d.speed_m_s * 300);  // five minutes of its drift
+  const tip = ahead(c.lat, c.lon, d.to_deg, len), base = ahead(c.lat, c.lon, d.to_deg, len - 45);
+  const l = ahead(base[0], base[1], d.to_deg - 90, 20), r = ahead(base[0], base[1], d.to_deg + 90, 20);
+  setFat(b.shaft, [sea3(c.lat, c.lon, 0.6), sea3(base[0], base[1], 0.6)]);
+  const pts = [sea3(tip[0], tip[1], 0.6), sea3(l[0], l[1], 0.6), sea3(r[0], r[1], 0.6)];
+  b.head.geometry.setFromPoints(pts);
+  b.head.geometry.computeBoundingSphere();
+  b.head.visible = true;
+}
+function circle(lat, lon, radius, y, n = 96) {
+  const c = sea3(lat, lon, y), pts = [];
+  for (let i = 0; i <= n; i++) { const a = 2 * Math.PI * i / n; pts.push(new THREE.Vector3(c.x + radius * Math.cos(a), y, c.z + radius * Math.sin(a))); }
+  return pts;
+}
+function clearIncident() {
+  for (const b of Object.values(boxes)) { b.shaft.geometry.dispose(); }
+  incidentGroup.clear();
+  for (const k of Object.keys(boxes)) delete boxes[k];
+  datumRing = datumTrack = lostMark = null;
+}
+function mmss(s) { s = Math.max(0, Math.round(s || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
+function usd(x) { return "$" + (x || 0).toFixed(2); }
+function renderIncident(f, now) {
+  const i = f.incident, counter = document.getElementById("counter"), panel = document.getElementById("incident");
+  lastIncident = i;
+  if (!i) { counter.hidden = true; panel.innerHTML = ""; if (incidentId) { clearIncident(); incidentId = null; } return; }
+  if (incidentId !== i.id) {
+    clearIncident();
+    incidentId = i.id;
+    if (!touring && i.datum) { const c = sea3(i.datum.lat, i.datum.lon, 0); fly(c.clone().add(new THREE.Vector3(-900, 1100, 1500)), c); }
+  }
+  const ended = i.status === "ended", cost = (i.cost || {}).total_usd;
+  counter.hidden = false;
+  counter.className = ended ? "ended" : "";
+  counter.innerHTML = ended
+    ? `✓ Search ended · found <b>${i.found}/${i.total}</b> · ${mmss(i.elapsed_s)} · ${usd(cost)}`
+    : `<span class="warn">⚠ ${i.total} containers overboard</span> · found <b>${i.found}/${i.total}</b> · ${mmss(i.elapsed_s)} · ${usd(cost)}`;
+  const w = i.wind || {}, dr = i.drift || {};
+  panel.innerHTML = `<div class="inc"><div class="t">⚠ ${esc(i.title || i.total + " containers overboard")}</div>
+    <div class="big"><div><b style="color:var(--ok)">${i.found}/${i.total}</b><span>found</span></div><div><b>${i.sighted}</b><span>sighted</span></div><div><b>${mmss(i.elapsed_s)}</b><span>time</span></div></div>
+    <div class="meta">🚢 ${esc(i.vessel)} · 💨 ${Math.round(w.from_deg || 0)}° ${Math.round(w.speed_m_s || 0)} m/s · ➜ ${Math.round(dr.to_deg || 0)}° ${(dr.speed_m_s || 0).toFixed(2)} m/s</div>
+    <div class="meta">model cost ${usd(cost)}${i.report ? ` · <a href="${esc(i.report.url)}" target="_blank" rel="noopener" style="color:var(--accent)">📄 report</a>` : ""}</div></div>`;
+
+  if (i.lost && !lostMark) {
+    lostMark = new THREE.Group();
+    lostMark.position.copy(sea3(i.lost.lat, i.lost.lon, 0));
+    const pole = cyl(0.8, 30, new THREE.MeshStandardMaterial({ color: "#f85149", emissive: "#f85149", emissiveIntensity: 0.4 }), 8); pole.position.y = 15;
+    lostMark.add(pole, glow("#ff6b5c", 0.02, [0, 31, 0]));
+    const div = document.createElement("div"); div.className = "clbl"; div.textContent = "✕ lost here";
+    const l = new CSS2DObject(div); l.center.set(0.5, 1.2); l.position.y = 31; lostMark.add(l);
+    incidentGroup.add(lostMark);
+  }
+  if (i.datum) {
+    if (!datumRing) { datumRing = fatLine("#e3b341", 4, true); incidentGroup.add(datumRing); }
+    setFat(datumRing, circle(i.datum.lat, i.datum.lon, i.datum.radius_m, 0.8));
+  }
+  if (i.datum_track && i.datum_track.length > 1) {
+    if (!datumTrack) { datumTrack = fatLine("#e3b341", 2.5, false); incidentGroup.add(datumTrack); }
+    setFat(datumTrack, i.datum_track.map(p => sea3(p[0], p[1], 0.7)));
+  }
+  for (const c of i.containers || []) {
+    const b = boxes[c.id] || addBox(c);
+    const target = sea3(c.lat, c.lon, 0);
+    b.from = b.to ? b.g.position.clone() : target.clone();
+    b.to = target; b.t0 = now;
+    b.g.rotation.y = -(c.heading_deg || 0) * Math.PI / 180;
+    if (b.state !== c.state) {
+      b.state = c.state;
+      b.ring.material.color.set(STATE[c.state] || STATE.missing);
+      b.ring.material.opacity = c.state === "missing" ? 0.45 : 0.9;
+      b.box.material.opacity = c.state === "missing" ? 0.7 : 1;
+      b.box.material.transparent = c.state === "missing";
+    }
+    b.div.textContent = c.state === "confirmed" ? `${c.id} ✓` : c.state === "sighted" ? `${c.id} ?` : c.state === "ashore" ? `${c.id} ashore` : c.id;
+    b.div.style.borderLeft = `5px solid ${STATE[c.state] || STATE.missing}`;
+    updateArrow(b, c);
+  }
+}
+
+// -- live AIS ------------------------------------------------------------------------
+
+const SHIP_COLOUR = { cargo: "#2f8f5b", tanker: "#a63a32", passenger: "#3a6fb0", tug: "#c27a3a", pilot: "#d1a530", fishing: "#7d5fb2" };
+const ships = {};
+function hull(L, B, colour) {
+  const H = Math.max(3, Math.min(18, L * 0.07));
+  const sh = new THREE.Shape();
+  sh.moveTo(-B / 2, -L / 2); sh.lineTo(B / 2, -L / 2); sh.lineTo(B / 2, L * 0.28); sh.quadraticCurveTo(B / 2, L * 0.42, 0, L / 2);
+  sh.quadraticCurveTo(-B / 2, L * 0.42, -B / 2, L * 0.28); sh.closePath();
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: H, bevelEnabled: false }), new THREE.MeshStandardMaterial({ color: colour, roughness: 0.6, metalness: 0.2 }));
+  body.rotation.x = -Math.PI / 2;  // the shape's +y (bow) to -z (north), the extrusion up
+  body.position.y = -H * 0.45;
+  const house = box(B * 0.8, H * 1.4, Math.max(4, L * 0.12), mat("#e9edf2"));
+  house.position.set(0, H * 0.55 + H * 0.7, L * 0.36);
+  g.add(body, house);
+  return { g, H };
+}
+function addShip(s) {
+  const L = s.length_m > 4 ? s.length_m : 60, B = s.beam_m > 1 ? s.beam_m : Math.max(6, L / 7);
+  const { g, H } = hull(L, B, SHIP_COLOUR[s.type_name] || "#56606b");
+  const div = document.createElement("div"); div.className = "shlbl";
+  const label = new CSS2DObject(div); label.center.set(0.5, 1.4); label.position.y = H * 2.5 + 6;
+  const navs = [glow("#ff3b30", 0.01, [-B / 2, H, 0]), glow("#30d158", 0.01, [B / 2, H, 0]), glow("#ffffff", 0.013, [0, H * 2.4, L * 0.3])];
+  for (const n of navs) n.visible = night;
+  g.add(label, ...navs);
+  scene.add(g);
+  return ships[s.mmsi] = { g, div, navs, from: null, to: null, t0: 0, yaw: 0 };
+}
+function renderShips(f, now) {
+  const a = f.ais || { status: "off" };
+  document.getElementById("ais").textContent = a.status === "live" ? `🛳 AIS live · ${(f.ships || []).length} ships` : a.status === "connecting" ? "🛳 AIS connecting…" : a.status === "error" ? "🛳 AIS error" : "🛳 AIS off";
+  const seen = new Set();
+  for (const s of f.ships || []) {
+    if (s.lat == null || s.lon == null) continue;
+    seen.add(s.mmsi);
+    const sh = ships[s.mmsi] || addShip(s);
+    const target = sea3(s.lat, s.lon, 0);
+    sh.from = sh.to ? sh.g.position.clone() : target.clone();
+    sh.to = target; sh.t0 = now;
+    const dir = s.heading != null && s.heading < 360 ? s.heading : (s.cog || 0);
+    sh.g.rotation.y = -dir * Math.PI / 180;
+    sh.div.textContent = s.name || s.mmsi;
+  }
+  for (const k of Object.keys(ships)) if (!seen.has(k)) { scene.remove(ships[k].g); delete ships[k]; }
 }
 
 // -- the panel ---------------------------------------------------------------
@@ -441,6 +731,8 @@ function render(f) {
       centred = true;
     }
   }
+  renderIncident(f, now);
+  renderShips(f, now);
 }
 
 document.getElementById("vehicles").addEventListener("click", ev => {
@@ -464,6 +756,9 @@ function follow(id) {
 }
 
 const clock = new THREE.Clock();
+let tourAngle = -0.9;
+const tourCentre = new THREE.Vector3();
+renderer.domElement.addEventListener("pointerdown", () => { touring = false; });
 function frame() {
   requestAnimationFrame(frame);
   const now = performance.now(), dt = clock.getDelta();
@@ -480,7 +775,28 @@ function frame() {
     setLine(s.stick, up ? [p, new THREE.Vector3(p.x, GROUND, p.z)] : []);
     if (OUT.has(s.data.phase)) for (const b of s.body.userData.props) b.rotation.y += dt * 40;
   }
-  if (flight) {
+  // containers and ships glide between the stream's updates
+  for (const b of Object.values(boxes)) {
+    if (!b.to) continue;
+    b.g.position.lerpVectors(b.from, b.to, Math.min(1, (now - b.t0) / 1000));
+    const d = camera.position.distanceTo(b.g.position);
+    b.far.visible = d > 700;
+    b.label.visible = d < 1800;
+  }
+  for (const sh of Object.values(ships)) if (sh.to) sh.g.position.lerpVectors(sh.from, sh.to, Math.min(1, (now - sh.t0) / 1000));
+  if (night) {
+    const strobe = now % 1300 < 110;
+    for (const v of Object.values(vehicles)) v.navs[2].visible = strobe;
+  }
+  if (touring) {
+    // a slow orbit around the datum (the port when there is no incident)
+    flight = null; following = null;
+    tourAngle += dt * 2 * Math.PI / 160;
+    const c = lastIncident && lastIncident.datum ? sea3(lastIncident.datum.lat, lastIncident.datum.lon, 0) : HOME.target;
+    tourCentre.lerp(c, tourCentre.lengthSq() ? 0.02 : 1);
+    camera.position.set(tourCentre.x + 2300 * Math.sin(tourAngle), tourCentre.y + 950, tourCentre.z + 2300 * Math.cos(tourAngle));
+    controls.target.copy(tourCentre);
+  } else if (flight) {
     const k = Math.min(1, (now - flight.start) / 1200), e = k * k * (3 - 2 * k);
     camera.position.lerpVectors(flight.p0, flight.p1, e);
     controls.target.lerpVectors(flight.t0, flight.t1, e);
@@ -509,6 +825,7 @@ function connect() {
   es.onmessage = m => render(JSON.parse(m.data));
   es.onerror = () => { es.close(); document.getElementById("updated").textContent = "reconnecting…"; setTimeout(connect, 3000); };
 }
+setNight(night);
 fetch("api/fleet").then(r => r.json()).then(render).finally(connect);
 </script>
 </body>
