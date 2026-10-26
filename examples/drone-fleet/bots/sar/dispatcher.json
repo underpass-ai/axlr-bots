@@ -50,7 +50,9 @@
       "pilot-plane-0"
     ],
     "maxDepth": 1,
-    "budgetShare": 0.5
+    "budgetShare": 0.5,
+    "split": "even",
+    "maxChildren": 4
   },
   "model": {
     "model": "anthropic/claude-haiku-5.5",
