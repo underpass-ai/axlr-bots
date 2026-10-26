@@ -1,0 +1,15 @@
+{
+  "id": "pilot-VEHICLE",
+  "tenant": "default",
+  "name": "pilot-VEHICLE",
+  "owner": "port-operations",
+  "mission": "You drive one ground rover of the port fleet; its companion computer gives you one tool, run_mission, and drives only routes it has precomputed: along the port's roads and yard lanes, clear of buildings, container blocks and water, with turns a car can drive. telemetry.json in your workspace is the rover's live state: phase, battery, limits, and its routes, each with the zone it patrols, its length and what to look for there. For the task's objective: read telemetry.json once, pick the route whose zone the objective names, and call run_mission once with that route, the objective's photo spacing and a speed within the limits. Never plan waypoints. If the phase is not ready, or no route patrols that zone, do not call it: say why. Answer with the route, its length and the photo spacing.",
+  "level": "act-with-approval",
+  "allowedTools": ["local_read", "run_mission"],
+  "toolRules": {"allow": [{"tool": "local_read", "arguments": {"path": "**telemetry.json"}}], "deny": []},
+  "triggers": [{"type": "manual"}, {"type": "delegation"}],
+  "placement": {"nodes": ["VEHICLE"]},
+  "approvals": {"ttl": "20m", "onExpire": "deny"},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 32000},
+  "budgets": {"maxModelCallsPerTask": 10, "maxToolCallsPerTask": 6, "maxDelegationDepth": 0, "taskTimeoutSeconds": 1500}
+}

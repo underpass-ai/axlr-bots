@@ -21,7 +21,7 @@ A fleet of simulated autonomous vehicles at the Port of Rotterdam (Maasvlakte 2)
 |---|---|
 | `dispatcher` bot | reads `fleet.json`, picks the ready vehicles for the zones a mission needs, and delegates one objective to each pilot (`wait: false`) |
 | `logistics` bot | reads the stations' stock and sends the supply rover on a delivery run |
-| `pilot-<vehicle>` bots | read `telemetry.json`, plan the route in metres from home, call `run_mission` once: that call waits for a person |
+| `pilot-<vehicle>` bots | read `telemetry.json`; a quad's or the plane's plans the route in metres from home, a rover's picks one of its precomputed routes; call `run_mission` once: that call waits for a person |
 | `vehicle_pilot.py` | refuses a route outside the geofence, the altitude band or the speed range, and a vehicle that is not ready; uploads the mission over MAVLink, launches it, and after landing queues the vehicle at its station: inspection, then a fresh battery pack |
 | `fleet_base.py` | polls every vehicle, hands out the bays (a service takes a pack and a part from the station), moves the supply rover's cargo when it reaches a station, writes `fleet.json` for the two bots and serves the map |
 
@@ -78,11 +78,12 @@ reg() { kubectl -n port-fleet exec -i fleet-cp-0 -c control-plane -- /busybox/sh
 cd examples/drone-fleet/bots
 reg dispatcher < dispatcher.json
 reg logistics < logistics.json
-for v in quad-0 quad-1 quad-2 rover-0 rover-1 plane-0; do sed "s/VEHICLE/$v/g" pilot.json | reg pilot-$v; done
+for v in quad-0 quad-1 quad-2 plane-0; do sed "s/VEHICLE/$v/g" pilot.json | reg pilot-$v; done
+for v in rover-0 rover-1; do sed "s/VEHICLE/$v/g" rover-pilot.json | reg pilot-$v; done
 sed "s/VEHICLE/supply-0/g" supply-pilot.json | reg pilot-supply-0
 ```
 
-The pilots are `act-with-approval` with `local_read` (only `telemetry.json`) and `run_mission`; the dispatcher and logistics are `observe`, with the vehicles' pilots as their delegation targets.
+The pilots are `act-with-approval` with `local_read` (only `telemetry.json`) and `run_mission`; a rover's pilot picks one of its rover's precomputed routes and never plans waypoints; the dispatcher and logistics are `observe`, with the vehicles' pilots as their delegation targets.
 
 ## 4. The panel
 
