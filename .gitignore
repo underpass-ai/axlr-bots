@@ -17,3 +17,5 @@ coverage*.out
 
 # port3d intermediate data (fetch_osm.py, prepare.py, build_scene.py --blend)
 /examples/drone-fleet/port3d/build/
+__pycache__/
+*.pyc

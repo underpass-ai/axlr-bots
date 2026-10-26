@@ -14,103 +14,70 @@
   }
 }
 </script>
+<link rel="stylesheet" href="theme.css">
+<script>(function(){var t=new URLSearchParams(location.search).get("theme");if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;})();</script>
 <style>
-  :root {
-    --bg: #0d1117; --panel: #161b22; --line: #30363d; --text: #f0f6fc; --muted: #b1bac4;
-    --ok: #3fb950; --work: #f0883e; --warn: #e3b341; --bad: #f85149; --idle: #8b949e; --accent: #58a6ff;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-    font: 18px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+  html, body { height: 100%; overflow: hidden; }
   #app { display: grid; grid-template-columns: 1fr 400px; height: 100vh; }
-  #view { position: relative; overflow: hidden; }
+  #view { height: calc(100vh - 24px); }
+  body.nohud #view { height: 100vh; }
   #view canvas { display: block; }
   #labels { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
-  aside { overflow-y: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 16px; }
-  header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
-  header h1 { font-size: 24px; margin: 0; }
-  #updated { color: var(--muted); font-size: 16px; }
-  .btn { display: inline-block; background: var(--accent); color: #0d1117; font-weight: 700; font-size: 17px;
-    padding: 6px 14px; border-radius: 8px; text-decoration: none; border: 0; cursor: pointer; }
-  .btn.ghost { background: transparent; color: var(--text); border: 2px solid var(--line); }
-  h2 { font-size: 16px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 16px 0 8px; }
-  .card { background: var(--bg); border: 2px solid var(--line); border-radius: 10px; padding: 9px 12px; margin-bottom: 8px; cursor: pointer; }
-  .card.on { border-color: var(--accent); }
-  .card .top { display: flex; align-items: center; gap: 10px; }
-  .card .name { font-weight: 700; font-size: 19px; flex: 1; display: flex; align-items: center; gap: 8px; }
-  .swatch { width: 14px; height: 14px; border-radius: 50%; display: inline-block; }
-  .pill { font-size: 15px; padding: 2px 10px; border-radius: 999px; color: #0d1117; font-weight: 700; white-space: nowrap; }
-  .meta { color: var(--muted); font-size: 16px; margin-top: 4px; }
-  .bar { height: 7px; background: var(--line); border-radius: 4px; margin-top: 6px; overflow: hidden; }
-  .bar i { display: block; height: 100%; }
-  .lbl { background: rgba(5, 8, 12, .86); color: #fff; border: 2px solid #fff; border-radius: 7px; padding: 3px 9px;
-    font: 700 17px system-ui, sans-serif; white-space: nowrap; cursor: pointer; }
-  .lbl small { font-weight: 600; font-size: 15px; color: #d0d7de; }
-  .slbl { background: rgba(5, 8, 12, .8); color: #fff; border-radius: 6px; padding: 2px 8px; margin-top: 10px;
-    font: 600 15px system-ui, sans-serif; white-space: nowrap; }
-  .zlbl { color: #fff; font: 700 15px system-ui, sans-serif; text-shadow: 0 0 4px #000, 0 0 8px #000; white-space: nowrap; }
-  #loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700;
+  aside { overflow-y: auto; padding: 14px 14px 14px 12px; }
+  header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  header .brand { margin-right: auto; }
+  .btn { font-size: 14px; padding: 6px 11px; }
+  #updated { margin-bottom: 10px; }
+  .card { margin-bottom: 8px; cursor: pointer; }
+  .card.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .swatch { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 7px; vertical-align: -1px; }
+  .lbl { background: var(--hud); color: var(--hud-text); border: 1.5px solid var(--hud-line); border-radius: 7px; padding: 3px 9px;
+    font: 700 15px/1.2 var(--font); white-space: nowrap; cursor: pointer; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  .lbl small { font-weight: 500; font-size: 13px; opacity: .8; }
+  .slbl { background: var(--hud); color: var(--hud-text); border: 1px solid var(--hud-line); border-radius: 6px; padding: 2px 8px; margin-top: 10px; font: 600 13px/1.2 var(--font); white-space: nowrap; }
+  .zlbl { color: #fff; font: 700 14px/1.2 var(--font); text-shadow: 0 0 4px #000, 0 0 8px #000; white-space: nowrap; }
+  .clbl { background: var(--hud); color: var(--hud-text); border: 1px solid var(--hud-line); border-radius: 6px; padding: 1px 7px; font: 600 13px/1.2 var(--font); white-space: nowrap; }
+  .shlbl { background: rgba(10, 30, 50, .82); color: #cfe8ff; border: 1px solid #7cc4ff; border-radius: 6px; padding: 1px 7px; font: 600 13px/1.2 var(--font); white-space: nowrap; }
+  #loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; color: #fff;
     background: rgba(13, 17, 23, .7); pointer-events: none; }
-  #hint { position: absolute; left: 12px; bottom: 12px; background: rgba(5, 8, 12, .8); padding: 6px 12px; border-radius: 8px;
-    font-size: 15px; color: #d0d7de; pointer-events: none; }
-  #attrib { position: absolute; right: 8px; bottom: 6px; font-size: 13px; color: #d0d7de; text-shadow: 0 0 3px #000; }
-  #attrib a { color: #d0d7de; }
-  #compass { position: absolute; top: 12px; left: 12px; width: 64px; height: 64px; border-radius: 50%; background: rgba(5, 8, 12, .8);
-    border: 2px solid #fff; display: flex; align-items: center; justify-content: center; pointer-events: none; }
-  #compass svg { width: 52px; height: 52px; }
-  .sim { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5; pointer-events: none;
-    background: #b42318; color: #fff; border: 2px solid #ffd7d2; border-radius: 10px; padding: 6px 18px; text-align: center;
-    font-weight: 800; font-size: 22px; letter-spacing: .08em; box-shadow: 0 2px 12px rgba(0,0,0,.5); white-space: nowrap; }
-  .sim small { display: block; font-size: 15px; font-weight: 600; letter-spacing: 0; color: #ffe9e6; }
-  #counter { position: absolute; top: 84px; left: 50%; transform: translateX(-50%); z-index: 5; pointer-events: none;
-    background: rgba(5, 8, 12, .86); border: 3px solid #f85149; border-radius: 14px; padding: 8px 22px;
-    font: 800 30px/1.25 system-ui, sans-serif; color: #fff; white-space: nowrap; text-shadow: 0 1px 2px #000; }
-  #counter[hidden] { display: none; }
-  #counter.ended { border-color: #3fb950; }
-  #counter b { color: #3fb950; }
-  #counter .warn { color: #ffb4ab; }
-  .clbl { background: rgba(5, 8, 12, .85); color: #fff; border-radius: 6px; padding: 1px 7px; font: 700 15px system-ui, sans-serif; white-space: nowrap; }
-  .shlbl { background: rgba(10, 30, 50, .82); color: #cfe8ff; border: 1px solid #7cc4ff; border-radius: 6px; padding: 1px 7px; font: 600 14px system-ui, sans-serif; white-space: nowrap; }
-  .inc { background: #2a1416; border: 2px solid var(--bad); border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
-  .inc .t { font-weight: 800; font-size: 19px; }
-  .inc .big { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0 2px; }
-  .inc .big div { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 4px; text-align: center; }
-  .inc .big b { display: block; font-size: 24px; }
-  .inc .big span { font-size: 14px; color: var(--muted); }
+  #hint { position: absolute; left: 12px; bottom: 12px; padding: 5px 11px; font-size: 13px; pointer-events: none; }
+  #compass { position: absolute; top: 12px; left: 12px; width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+  #compass svg { width: 46px; height: 46px; }
+  #incident .inc { margin-top: 4px; }
+  #incident .inc .big b { font-size: 24px; }
   body.nohud #app { grid-template-columns: 1fr; }
   body.nohud aside, body.nohud #hint { display: none; }
-  @media (max-width: 700px) { .sim { font-size: 17px; } #counter { font-size: 20px; top: 76px; } }
   @media (max-width: 900px) {
     #app { grid-template-columns: 1fr; grid-template-rows: 60vh auto; }
     html, body { overflow: auto; }
-    aside { border-left: 0; border-top: 1px solid var(--line); }
+    #view { height: 100%; }
   }
 </style>
 </head>
 <body>
 <div id="app">
-  <div id="view">
+  <div id="view" class="viewer">
     <div id="labels"></div>
-    <div id="compass"><svg viewBox="-26 -26 52 52"><g id="needle"><path d="M0-22L7 2H-7Z" fill="#f85149"/><path d="M0 22L7 2H-7Z" fill="#fff"/>
-      <text x="0" y="-8" text-anchor="middle" font-size="11" font-weight="800" fill="#fff" dy="-14">N</text></g></svg></div>
+    <div id="compass" class="hud"><svg viewBox="-26 -26 52 52"><g id="needle"><path d="M0-22L7 2H-7Z" fill="#B3261E"/><path d="M0 22L7 2H-7Z" fill="currentColor" opacity=".7"/>
+      <text x="0" y="-8" text-anchor="middle" font-size="11" font-weight="800" fill="currentColor" dy="-14">N</text></g></svg></div>
     <div class="sim">SIMULATION<small id="simnote">simulated vehicles and containers · real imagery</small></div>
-    <div id="counter" hidden></div>
+    <div id="counter" class="counter" hidden></div>
     <div id="loading">Loading the port…</div>
-    <div id="hint">Drag to orbit · right-drag to pan · wheel to zoom · click a vehicle to follow it</div>
-    <div id="attrib">3D port from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a> (ODbL)</div>
+    <div id="hint" class="hud">Drag to orbit · right-drag to pan · wheel to zoom · click a vehicle to follow it</div>
+    <div id="attrib" class="attrib">3D port from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a> (ODbL)</div>
   </div>
   <aside>
     <header>
-      <h1>Port fleet 3D</h1>
-      <a class="btn" href="./">2D map</a>
+      <a class="brand" href="./" aria-label="AXLR Bots"><img class="light" src="brand-light.svg" alt="AXLR Bots"><img class="dark" src="brand-dark.svg" alt=""></a>
+      <a class="btn ghost" href="./">2D map</a>
       <button class="btn ghost" id="overview">Overview</button>
       <button class="btn ghost" id="night">🌙 Night</button>
     </header>
-    <div id="updated">connecting…</div>
-    <div class="meta" id="ais">🛳 AIS off</div>
+    <div id="updated" class="pill" style="--tone:var(--idle)">connecting…</div>
+    <div id="ais" class="pill" style="--tone:var(--idle)">🛳 AIS off</div>
     <div id="incident"></div>
-    <h2>Vehicles</h2><div id="vehicles"></div>
-    <h2>Stations</h2><div id="stations"></div>
+    <h2 class="eyebrow">Vehicles</h2><div id="vehicles"></div>
+    <h2 class="eyebrow">Stations</h2><div id="stations"></div>
   </aside>
 </div>
 <script type="module">
@@ -137,14 +104,14 @@ function local(lat, lon, alt = 0) {
 }
 
 const PHASE = {
-  mission: ["out", "#f0883e"], takeoff: ["taking off", "#f0883e"], starting: ["starting", "#f0883e"],
-  returning: ["returning", "#58a6ff"], landing: ["landing", "#58a6ff"], parking: ["parking", "#58a6ff"],
-  ready: ["ready", "#3fb950"], queued: ["waiting bay", "#e3b341"], inspection: ["inspection", "#e3b341"],
-  swap: ["battery swap", "#e3b341"], booting: ["booting", "#8b949e"], offline: ["offline", "#f85149"],
+  mission: ["out", "var(--work)"], takeoff: ["taking off", "var(--work)"], starting: ["starting", "var(--work)"],
+  returning: ["returning", "var(--work)"], landing: ["landing", "var(--work)"], parking: ["parking", "var(--work)"],
+  ready: ["ready", "var(--ok)"], queued: ["waiting bay", "var(--warn)"], inspection: ["inspection", "var(--warn)"],
+  swap: ["battery swap", "var(--warn)"], booting: ["booting", "var(--idle)"], offline: ["offline", "var(--bad)"],
 };
 const OUT = new Set(["mission", "takeoff", "starting", "returning", "landing", "parking"]);
 const HUES = ["#ff5c8a", "#ffd43b", "#4dd4ff", "#b48cff", "#7cfc6a", "#ff9f43", "#ffffff", "#ff6b6b"];
-function phase(p) { return PHASE[p] || [p || "?", "#8b949e"]; }
+function phase(p) { return PHASE[p] || [p || "?", "var(--idle)"]; }
 function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
 // -- the scene ---------------------------------------------------------------
@@ -371,7 +338,7 @@ function updateVehicle(v, now) {
   const [label, col] = phase(v.phase);
   const alt = pos && pos.alt_m > 1 ? ` · ${Math.round(pos.alt_m)} m` : "";
   s.div.innerHTML = `${esc(v.vehicle)}<small>${alt} · ${esc(label)}</small>`;
-  s.div.style.background = OUT.has(v.phase) ? "rgba(5,8,12,.92)" : "rgba(5,8,12,.78)";
+  s.div.style.opacity = OUT.has(v.phase) ? "1" : "0.82";
   // trail: while it is out; cleared when it is ready again
   if (OUT.has(v.phase) && s.to) {
     const last = s.trailPts[s.trailPts.length - 1];
@@ -590,13 +557,13 @@ function renderIncident(f, now) {
   }
   const ended = i.status === "ended", cost = (i.cost || {}).total_usd;
   counter.hidden = false;
-  counter.className = ended ? "ended" : "";
+  counter.className = "counter" + (ended ? " ended" : "");
   counter.innerHTML = ended
-    ? `✓ Search ended · found <b>${i.found}/${i.total}</b> · ${mmss(i.elapsed_s)} · ${usd(cost)}`
-    : `<span class="warn">⚠ ${i.total} containers overboard</span> · found <b>${i.found}/${i.total}</b> · ${mmss(i.elapsed_s)} · ${usd(cost)}`;
+    ? `<span class="w">✓ Search ended</span> · found <b>${i.found}/${i.total}</b> · ${mmss(i.elapsed_s)} · ${usd(cost)}`
+    : `<span class="w warn">⚠ ${i.total} containers overboard</span> · found <b>${i.found}/${i.total}</b> · ${mmss(i.elapsed_s)} · ${usd(cost)}`;
   const w = i.wind || {}, dr = i.drift || {};
   panel.innerHTML = `<div class="inc"><div class="t">⚠ ${esc(i.title || i.total + " containers overboard")}</div>
-    <div class="big"><div><b style="color:var(--ok)">${i.found}/${i.total}</b><span>found</span></div><div><b>${i.sighted}</b><span>sighted</span></div><div><b>${mmss(i.elapsed_s)}</b><span>time</span></div></div>
+    <div class="big three"><div class="found"><b>${i.found}/${i.total}</b><span>found</span></div><div><b>${i.sighted}</b><span>sighted</span></div><div><b>${mmss(i.elapsed_s)}</b><span>time</span></div></div>
     <div class="meta">🚢 ${esc(i.vessel)} · 💨 ${Math.round(w.from_deg || 0)}° ${Math.round(w.speed_m_s || 0)} m/s · ➜ ${Math.round(dr.to_deg || 0)}° ${(dr.speed_m_s || 0).toFixed(2)} m/s</div>
     <div class="meta">model cost ${usd(cost)}${i.report ? ` · <a href="${esc(i.report.url)}" target="_blank" rel="noopener" style="color:var(--accent)">📄 report</a>` : ""}</div></div>`;
 
@@ -667,6 +634,7 @@ function addShip(s) {
 }
 function renderShips(f, now) {
   const a = f.ais || { status: "off" };
+  document.getElementById("ais").style.setProperty("--tone", a.status === "live" ? "var(--ok)" : a.status === "error" ? "var(--bad)" : "var(--idle)");
   document.getElementById("ais").textContent = a.status === "live" ? `🛳 AIS live · ${(f.ships || []).length} ships` : a.status === "connecting" ? "🛳 AIS connecting…" : a.status === "error" ? "🛳 AIS error" : "🛳 AIS off";
   const seen = new Set();
   for (const s of f.ships || []) {
@@ -690,7 +658,7 @@ function render(f) {
   document.getElementById("simnote").textContent = "simulated vehicles and containers · real imagery" + ((f.ais || {}).status === "live" ? " and live AIS" : "");
   const now = performance.now();
   drawStatic(f);
-  document.getElementById("updated").textContent = "live · " + new Date(f.updated).toLocaleTimeString();
+  live("live · " + new Date(f.updated).toLocaleTimeString(), "var(--ok)");
   const cards = [];
   for (const v of f.vehicles) {
     updateVehicle(v, now);
@@ -699,7 +667,7 @@ function render(f) {
     if (OUT.has(v.phase) && fl) detail = `${esc(fl.name)} · ${Math.round(v.groundspeed_m_s || 0)} m/s`;
     if (pos.alt_m > 1) detail += ` · ${Math.round(pos.alt_m)} m up`;
     cards.push(`<div class="card${following === v.vehicle ? " on" : ""}" data-id="${esc(v.vehicle)}"><div class="top">
-      <span class="name"><i class="swatch" style="background:${s.colour}"></i>${esc(v.vehicle)}</span><span class="pill" style="background:${col}">${esc(label)}</span></div>
+      <span class="name"><i class="swatch" style="background:${s.colour}"></i>${esc(v.vehicle)}</span><span class="pill" style="--tone:${col}">${esc(label)}</span></div>
       <div class="meta">${detail} · battery ${v.battery_pct == null ? "–" : v.battery_pct + " %"}</div>
       <div class="bar"><i style="width:${v.battery_pct || 0}%;background:${(v.battery_pct || 0) >= 60 ? "var(--ok)" : (v.battery_pct || 0) >= 30 ? "var(--warn)" : "var(--bad)"}"></i></div></div>`);
   }
@@ -716,7 +684,7 @@ function render(f) {
   for (const s of f.stations || []) {
     const low = s.batteries < 2 || s.parts < 2;
     if (stationLabels[s.name]) stationLabels[s.name].textContent = `${s.label} · ${s.batteries} packs · ${s.parts} parts`;
-    sc.push(`<div class="card"><div class="top"><span class="name">${esc(s.label)}</span><span class="pill" style="background:${low ? "var(--bad)" : "var(--ok)"}">${low ? "low stock" : "stocked"}</span></div>
+    sc.push(`<div class="card"><div class="top"><span class="name">${esc(s.label)}</span><span class="pill" style="--tone:${low ? "var(--bad)" : "var(--ok)"}">${low ? "low stock" : "stocked"}</span></div>
       <div class="meta">${s.batteries}/${s.max_batteries} packs · ${s.parts}/${s.max_parts} parts · bays ${s.in_bays.length}/${s.bays}${s.waiting.length ? " · queue " + s.waiting.map(esc).join(", ") : ""}</div></div>`);
   }
   document.getElementById("stations").innerHTML = sc.join("");
@@ -825,8 +793,9 @@ frame();
 function connect() {
   const es = new EventSource("api/stream");
   es.onmessage = m => render(JSON.parse(m.data));
-  es.onerror = () => { es.close(); document.getElementById("updated").textContent = "reconnecting…"; setTimeout(connect, 3000); };
+  es.onerror = () => { es.close(); live("reconnecting…", "var(--idle)"); setTimeout(connect, 3000); };
 }
+function live(text, tone) { const el = document.getElementById("updated"); el.textContent = text; el.style.setProperty("--tone", tone); }
 setNight(night);
 fetch("api/fleet").then(r => r.json()).then(render).finally(connect);
 </script>

@@ -53,7 +53,7 @@ log = logging.getLogger("fleet-base")
 ARRIVAL_M = 25
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png",
-         ".glb": "model/gltf-binary"}
+         ".glb": "model/gltf-binary", ".ttf": "font/ttf", ".txt": "text/plain; charset=utf-8"}
 PAGES = {"/": "index.html", "": "index.html", "/3d": "3d.html", "/m": "m.html"}
 MAX_BODY = 64 << 10
 RESTOCK_EVERY = 300
