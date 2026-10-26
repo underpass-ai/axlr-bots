@@ -5,7 +5,10 @@ It runs in the vehicle's pod, next to the vehicle (ArduPilot SITL: a quad X,
 a rover or a plane, behind mavlink-router) and the AXLR Bots sidecar, and
 offers:
 
-  <TELEMETRY_FILE>          every second: what the bot reads (its workspace)
+  <TELEMETRY_FILE>          every second: what the bot reads (its workspace),
+                            and the same file in every other bot's workspace
+                            under TELEMETRY_DIR (the bots a person adds on
+                            this node read what the pilot reads)
   GET  <STATE_LISTEN>/state the same plus the events, for the fleet map
   POST <MCP_LISTEN>/mcp     one MCP tool, run_mission, for the sidecar's AXLR,
                             on loopback only
@@ -23,7 +26,9 @@ During a search the fleet base names targets (the datum, each sighting);
 the pilot keeps them in telemetry.json in metres from home, and run_mission
 takes a search pattern aimed at one of them instead of waypoints
 (patterns.py): the companion computer draws the pattern, leads the drift,
-and checks it against the same limits.
+and checks it against the same limits. The ships AIS hears are targets too,
+by MMSI or name ("go to ship X": an orbit round it, led by its course and
+speed); one beyond the geofence is refused with its distance.
 
 A rover takes no waypoints at all: it drives routes precomputed from the
 port's map (ROUTES_FILE, written by port3d/routes.py) along its roads and
@@ -72,6 +77,7 @@ HARDWARE = {k: v for k, v in (
 
 ROUTES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "routes.json")
 MAX_ROUTE_POINTS = 400
+SHIPS_SHOWN = 20         # the nearest ships in telemetry.json; the tool knows every one AIS hears
 
 INSPECTION = {
     "quad": ["motors", "propellers", "frame", "GPS", "compass", "radio link", "battery cells"],
@@ -440,7 +446,8 @@ class Pilot:
 
     NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,39}$")
 
-    def __init__(self, vehicle_id, kind, vehicle, limits, crew, zones, telemetry_file, role="patrol", stations=(), capacity=(8, 10), routes=None):
+    def __init__(self, vehicle_id, kind, vehicle, limits, crew, zones, telemetry_file, role="patrol", stations=(), capacity=(8, 10), routes=None,
+                 telemetry_dir=""):
         self.vehicle_id = vehicle_id
         self.routes = routes or {}  # a patrol rover's: id -> route; a supply rover's: (station, …) -> route
         self.kind = kind
@@ -452,6 +459,7 @@ class Pilot:
         self.crew = crew
         self.zones = zones
         self.telemetry_file = telemetry_file
+        self.telemetry_dir = telemetry_dir
         self.busy = threading.Lock()
         self.flight = None
         self.flown_m = 0.0
@@ -539,10 +547,29 @@ class Pilot:
             out["capacity"] = {"batteries": self.capacity[0], "parts": self.capacity[1]}
         elif self.routes:
             out["routes"] = self.route_menu()
-        if self.targets and self.role != "supply":
+        searched = {k: v for k, v in self.targets.items() if not v.get("ship")}
+        if searched and self.role != "supply":
             out["targets"] = {k: {"north_m": round(v["north_m"]), "east_m": round(v["east_m"]), "distance_m": round(math.hypot(v["north_m"], v["east_m"])),
                                   "about": v.get("about", ""), **({"radius_m": v["radius_m"]} if "radius_m" in v else {})}
-                              for k, v in self.targets.items()}
+                              for k, v in searched.items()}
+        if self.flies_patterns():
+            out["ships"] = self.ship_menu()
+        return out
+
+    def flies_patterns(self):
+        return self.role != "supply" and not (self.kind == "rover" and self.routes)
+
+    def ship_menu(self):
+        """The ships AIS hears, nearest first: what a bot can name as a target."""
+        ships = sorted((v | {"mmsi": k} for k, v in self.targets.items() if v.get("ship")),
+                       key=lambda v: math.hypot(v["north_m"], v["east_m"]))
+        out = []
+        for v in ships[:SHIPS_SHOWN]:
+            distance = math.hypot(v["north_m"], v["east_m"])
+            out.append({"mmsi": v["mmsi"], "name": v["name"], "type": v["type"], "length_m": v["length_m"],
+                        "speed_kn": v["speed_kn"], "course_deg": v["course_deg"],
+                        "north_m": round(v["north_m"]), "east_m": round(v["east_m"]), "distance_m": round(distance),
+                        "inside_geofence": distance <= self.limits.max_radius_m})
         return out
 
     def route_menu(self):
@@ -551,31 +578,30 @@ class Pilot:
                 for rid, r in self.routes.items()]
 
     def refresh_targets(self, home):
-        """The fleet base's search targets, in metres from home, every 2 s."""
+        """The fleet base's search targets and the ships AIS hears, in metres from home, every 2 s."""
         if not self.crew.crew_url or not home or time.monotonic() - self._targets_at < 2:
             return
         self._targets_at = time.monotonic()
         try:
             with urllib.request.urlopen(f"{self.crew.crew_url}/api/targets", timeout=1.5) as response:
-                raw = json.load(response)
+                raw = json.load(response) or {}
         except Exception:
             return
-        targets = {}
-        for name, t in (raw or {}).items():
+        self.targets = patterns.relative(home, raw.get("targets") or {}, raw.get("ships") or [] if self.flies_patterns() else [])
+
+    def telemetry_paths(self):
+        """This pilot's bot's file, and one in each other bot's workspace on the node."""
+        paths = [self.telemetry_file]
+        if self.telemetry_dir:
             try:
-                north, east = geo.offset_m(home["lat"], home["lon"], float(t["lat"]), float(t["lon"]))
-            except (KeyError, TypeError, ValueError):
-                continue
-            drift = t.get("drift") or raw.get("datum", {}).get("drift") or {}
-            dn = de = 0.0
-            if isinstance(drift.get("to_deg"), (int, float)) and isinstance(drift.get("speed_m_s"), (int, float)):
-                a = math.radians(drift["to_deg"])
-                dn, de = drift["speed_m_s"] * math.cos(a), drift["speed_m_s"] * math.sin(a)
-            entry = {"north_m": north, "east_m": east, "drift_n": dn, "drift_e": de, "about": str(t.get("about", ""))[:120]}
-            if isinstance(t.get("radius_m"), (int, float)):
-                entry["radius_m"] = round(t["radius_m"])
-            targets[str(name)[:20]] = entry
-        self.targets = targets
+                names = sorted(os.listdir(self.telemetry_dir))
+            except OSError:
+                names = []
+            for name in names:
+                path = os.path.join(self.telemetry_dir, name, "telemetry.json")
+                if os.path.isdir(os.path.join(self.telemetry_dir, name)) and path != self.telemetry_file:
+                    paths.append(path)
+        return paths
 
     def tick(self):
         """Once a second: distance flown, the mission's end, the crew, the file."""
@@ -599,10 +625,14 @@ class Pilot:
         state = self.state()
         bot_view = {k: v for k, v in state.items() if k != "events"}
         os.makedirs(os.path.dirname(self.telemetry_file), exist_ok=True)
-        tmp = self.telemetry_file + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(bot_view, f, indent=1)
-        os.replace(tmp, self.telemetry_file)
+        for path in self.telemetry_paths():
+            tmp = path + ".tmp"
+            try:
+                with open(tmp, "w") as f:
+                    json.dump(bot_view, f, indent=1)
+                os.replace(tmp, path)
+            except OSError as exc:
+                log.warning("telemetry %s: %s", path, exc)
 
     def _rover_done(self, s):
         """A rover's RTL ends in HOLD; its mission's RTL item ends in AUTO,
@@ -719,8 +749,20 @@ class Pilot:
         try:
             waypoints, centre = patterns.expand(arguments["pattern"], self.targets, speed if isinstance(speed, (int, float)) else 10,
                                                 self.limits.max_waypoints, self.limits.min_alt_m)
+            target = arguments["pattern"].get("target")
+            key = patterns.find(target, self.targets) if target is not None else None
         except patterns.PatternError as exc:
             raise mcp_http.ToolError(str(exc))
+        ship = self.targets.get(key) if key else None
+        if ship and ship.get("ship"):
+            now = math.hypot(ship["north_m"], ship["east_m"])
+            then = math.hypot(*centre)
+            if max(now, then) > self.limits.max_radius_m:
+                mmsi = key
+                raise mcp_http.ToolError(
+                    f"ship {ship['name'] or mmsi} (MMSI {mmsi}) is {now:.0f} m from home"
+                    + (f" and will be {then:.0f} m away when the vehicle gets there" if abs(then - now) >= 50 else "")
+                    + f", outside the {self.limits.max_radius_m:.0f} m geofence: nothing moved")
         plan = self.check_plan(name, waypoints, speed)
         return plan, dict(arguments["pattern"], centre_north_m=round(centre[0]), centre_east_m=round(centre[1]))
 
@@ -1001,7 +1043,9 @@ def mission_tool(kind, limits):
             f"{what} Waypoints are metres north and east of the vehicle's home. "
             f"Limits: within {lim['max_radius_m']:g} m of home, at most {lim['max_waypoints']} waypoints, "
             f"speed {limits.min_speed:g} to {limits.max_speed:g} m/s. Instead of waypoints, a search pattern: the service draws it "
-            "around a target named in telemetry.json's targets (the datum, a sighting), leads the target's drift, and checks it like a route. "
+            "around a target named in telemetry.json's targets (the datum, a sighting) or a ship from its ships (by MMSI or name: "
+            "pattern orbit, to look all round it), leads the target's drift or the ship's course and speed, and checks it like a route; "
+            "a ship beyond the geofence is refused with its distance. "
             "The service refuses a route outside the limits and a vehicle that is not ready (at its station, low battery). "
             "One call per mission; it answers once the vehicle is on its way."
         ),
@@ -1020,12 +1064,15 @@ def mission_tool(kind, limits):
                     "description": "a search pattern instead of waypoints",
                     "properties": {
                         "kind": {"type": "string", "enum": list(patterns.KINDS),
-                                 "description": "expanding_square: from a point where something was seen, outwards; parallel_track: straight legs across an area"},
-                        "target": {"type": "string", "description": "a name from telemetry.json's targets, e.g. 'datum' or 'S3'"},
+                                 "description": "expanding_square: from a point where something was seen, outwards; parallel_track: straight legs across an area; "
+                                                "orbit: a circle of points round the target, e.g. a ship"},
+                        "target": {"type": "string", "description": "a name from telemetry.json's targets, e.g. 'datum' or 'S3', or a ship from its ships: its MMSI or its name"},
                         "centre_north_m": {"type": "number", "description": "without a target: the centre, metres north of home"},
                         "centre_east_m": {"type": "number", "description": "without a target: the centre, metres east of home"},
                         "spacing_m": {"type": "number", "description": "track spacing in metres, 10 to 1000"},
                         "legs": {"type": "integer", "description": f"expanding_square: legs, 2 to {limits.max_waypoints - 1}"},
+                        "radius_m": {"type": "number", "description": "orbit: the circle's radius in metres, 20 to 1000 (default 80)"},
+                        "points": {"type": "integer", "description": f"orbit: points on the circle, 4 to {min(24, limits.max_waypoints - 1)} (default 8)"},
                         "length_m": {"type": "number", "description": "parallel_track: leg length in metres"},
                         "width_m": {"type": "number", "description": "parallel_track: width of the area across the legs, in metres"},
                         "heading_deg": {"type": "number", "description": "direction of the first leg (parallel_track: of the legs), 0 north, 90 east"},
@@ -1093,7 +1140,7 @@ def main():
     crew = GroundCrew(vehicle, vehicle_id, kind, station, os.environ.get("CREW_URL", ""),
                       env_float("INSPECTION_S", 30), env_float("SWAP_S", 10))
     pilot = Pilot(vehicle_id, kind, vehicle, limits, crew, zones, os.environ.get("TELEMETRY_FILE", "/var/lib/vehicle/telemetry.json"),
-                  role=role, stations=stations, capacity=capacity, routes=routes)
+                  role=role, stations=stations, capacity=capacity, routes=routes, telemetry_dir=os.environ.get("TELEMETRY_DIR", ""))
     vehicle.start()
 
     StateHandler.pilot = pilot

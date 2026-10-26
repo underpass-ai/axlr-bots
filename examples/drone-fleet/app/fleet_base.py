@@ -16,7 +16,10 @@ It polls every vehicle's /state, and keeps what no single vehicle knows:
   incident   containers overboard (incident.py): POST /api/incident starts the
              drift, the photos look for the containers, the dispatcher's
              webhooks fire as the search goes, the report comes back
-  ships      live AIS around the port (ais.py), with a key file
+  ships      live AIS around the port: read from the fleet's `ais` service
+             (AIS_URL), or its own connection with a key file (ais.py); the
+             bots get them in fleet.json and the vehicles in /api/targets,
+             so a bot can send a vehicle to a ship
   phone      GET /m: the calls waiting for a person, approve or deny
              (approvals.py), behind the approver's code
 
@@ -57,6 +60,7 @@ TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": 
 PAGES = {"/": "index.html", "": "index.html", "/3d": "3d.html", "/m": "m.html"}
 MAX_BODY = 64 << 10
 RESTOCK_EVERY = 300
+SHIPS_FOR_BOTS = 40     # the ships nearest the depot in fleet.json
 
 
 def now_iso():
@@ -298,8 +302,10 @@ class Base:
             return seen
 
     def targets(self):
+        """What the vehicles aim a pattern at: the search's targets and the ships AIS hears."""
         with self.lock:
-            return self.incident.targets(time.time()) if self.incident else {}
+            targets = self.incident.targets(time.time()) if self.incident else {}
+        return {"targets": targets, "ships": self.ais.ships()}
 
     def route_of(self, vehicle, args):
         """The route a pending run_mission would fly, for the phone page: [[lat, lon]], metres."""
@@ -307,6 +313,7 @@ class Base:
             state = self.states.get(vehicle) or {}
             home = state.get("home")
             targets = self.incident.targets(time.time()) if self.incident else {}
+        ships = self.ais.ships()
         if not home:
             return None, 0
         try:
@@ -315,12 +322,7 @@ class Base:
             else:
                 waypoints = args.get("waypoints")
                 if args.get("pattern"):
-                    ne = {}
-                    for name, t in targets.items():
-                        n, e = geo.offset_m(home["lat"], home["lon"], t["lat"], t["lon"])
-                        dr = t.get("drift") or targets.get("datum", {}).get("drift") or {}
-                        a = math.radians(dr.get("to_deg", 0))
-                        ne[name] = {"north_m": n, "east_m": e, "drift_n": dr.get("speed_m_s", 0) * math.cos(a), "drift_e": dr.get("speed_m_s", 0) * math.sin(a)}
+                    ne = patterns.relative(home, targets, ships)
                     speed = args.get("speed_m_s") if isinstance(args.get("speed_m_s"), (int, float)) else 10
                     waypoints, _ = patterns.expand(args["pattern"], ne, speed, 24)
                 pts = [geo.point_at(home["lat"], home["lon"], float(w["north_m"]), float(w["east_m"])) for w in waypoints or []]
@@ -402,7 +404,18 @@ class Base:
             "depot": {"name": self.depot["name"], "label": self.depot["label"]},
             "zones": [{k: z.get(k) for k in ("name", "about", "for")} for z in self.zones],
             "findings": self.vision.findings(),
-        } | ({"incident": self._incident_view(snap)} if self.incident else {})
+        } | ({"ships": self._ships_view(snap["ships"])} if snap["ships"] else {}) | ({"incident": self._incident_view(snap)} if self.incident else {})
+
+    def _ships_view(self, ships):
+        """The ships nearest the depot, for the bots: who, where, how fast, which way."""
+        def far(s):
+            return math.hypot(*geo.offset_m(self.depot["lat"], self.depot["lon"], s["lat"], s["lon"]))
+        out = []
+        for s in sorted(ships, key=far)[:SHIPS_FOR_BOTS]:
+            out.append({"mmsi": s["mmsi"], "name": s.get("name", ""), "type": s.get("type_name", ""), "length_m": s.get("length_m"),
+                        "lat": round(s["lat"], 5), "lon": round(s["lon"], 5),
+                        "speed_kn": s.get("sog"), "course_deg": None if s.get("cog") is None else round(s["cog"])})
+        return out
 
     def _incident_view(self, snap):
         """The incident for the bots, with how far each vehicle is from each target."""

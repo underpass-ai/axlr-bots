@@ -1,6 +1,7 @@
 """Unit tests of the port fleet's services: python -m unittest -v test_fleet (in the app image)."""
 
 import json
+import math
 import os
 import tempfile
 import threading
@@ -290,6 +291,72 @@ class PatternTest(unittest.TestCase):
             p.run_mission({"name": "x", "waypoints": [{"north_m": 1, "east_m": 1, "alt_m": 20}], "pattern": {"kind": "expanding_square", "target": "datum"}})
 
 
+class ShipTargetTest(unittest.TestCase):
+    # quad-0's home at the APM station; one ship 800 m north-east, one 4 km out, moving.
+    HOME = {"lat": 51.9455, "lon": 3.9972}
+    NEAR = {"mmsi": "244123456", "name": "NORDIC  STAR", "type_name": "cargo", "length_m": 300, "lat": 51.9505, "lon": 4.0050, "sog": None, "cog": None}
+    FAR = {"mmsi": "211000001", "name": "OUTBOUND", "type_name": "tanker", "length_m": 180, "lat": 51.9800, "lon": 3.9972, "sog": 10.0, "cog": 0.0}
+
+    def test_an_orbit_closes_on_its_first_point(self):
+        pts = patterns.orbit(100, 4)
+        self.assertEqual([(round(n), round(e)) for n, e in pts], [(100, 0), (0, 100), (-100, 0), (0, -100), (100, 0)])
+
+    def test_a_ship_is_found_by_mmsi_or_name_and_led_by_its_course(self):
+        targets = patterns.relative(self.HOME, {}, [self.NEAR, self.FAR])
+        self.assertEqual(patterns.find("244123456", targets), "244123456")
+        self.assertEqual(patterns.find("nordic star", targets), "244123456")
+        with self.assertRaisesRegex(patterns.PatternError, "2 ships"):
+            patterns.find("X", dict(targets, a={"ship": True, "name": "X"}, b={"ship": True, "name": "x"}))
+        with self.assertRaisesRegex(patterns.PatternError, "ships AIS hears"):
+            patterns.find("GHOST", targets)
+        far = targets["211000001"]
+        _, centre = patterns.expand({"kind": "orbit", "target": "OUTBOUND", "radius_m": 100, "alt_m": 40}, targets, 10, 20)
+        lead = math.hypot(far["north_m"], far["east_m"]) / 10
+        self.assertAlmostEqual(centre[0], far["north_m"] + 10 * patterns.KNOT * lead, places=3)
+
+    def test_the_pilot_orbits_a_ship_inside_its_geofence_and_refuses_one_outside(self):
+        p = PlanTest.pilot(PlanTest(), "quad")
+        p.targets = patterns.relative(self.HOME, {}, [self.NEAR, self.FAR])
+        p.check_ready = lambda: (_ for _ in ()).throw(mcp_http.ToolError("stop here"))
+        with self.assertRaisesRegex(mcp_http.ToolError, "stop here"):
+            p.run_mission({"name": "look", "pattern": {"kind": "orbit", "target": "Nordic Star", "radius_m": 120, "alt_m": 60}})
+        with self.assertRaisesRegex(mcp_http.ToolError, r"OUTBOUND \(MMSI 211000001\) is 38\d\d m from home and will be \d+ m away .*1500 m geofence: nothing moved"):
+            p.run_mission({"name": "far", "pattern": {"kind": "orbit", "target": "211000001", "alt_m": 60}})
+        menu = p.ship_menu()
+        self.assertEqual([(s["mmsi"], s["inside_geofence"]) for s in menu], [("244123456", True), ("211000001", False)])
+
+    def test_every_bot_on_the_node_gets_the_telemetry(self):
+        root = tempfile.mkdtemp()
+        for bot in ("pilot-quad-0", "operador-quad-0"):
+            os.makedirs(os.path.join(root, bot))
+        p = PlanTest.pilot(PlanTest(), "quad")
+        p.telemetry_file, p.telemetry_dir = os.path.join(root, "pilot-quad-0", "telemetry.json"), root
+        p.tick = vehicle_pilot.Pilot.tick.__get__(p)
+        p.vehicle.state.update(lat=51.9455, lon=3.9972, alt_m=0, heading=0, groundspeed=0, satellites=20, hdop=0.5,
+                               lidar_down_m=None, proximity_m=None, flow_quality=None, mission_seq=0)
+        p.vehicle.cond = threading.Condition()
+        p.vehicle.events, p.vehicle.shots = [], []
+        p.targets = patterns.relative(self.HOME, {}, [self.NEAR])
+        p.tick()
+        for bot in ("pilot-quad-0", "operador-quad-0"):
+            with open(os.path.join(root, bot, "telemetry.json")) as f:
+                seen = json.load(f)
+            self.assertEqual((seen["vehicle"], [s["name"] for s in seen["ships"]]), ("quad-0", ["NORDIC  STAR"]))
+            self.assertNotIn("targets", seen)                  # a ship is not a search target
+
+    def test_the_base_serves_ships_to_the_vehicles_and_the_bots(self):
+        b = fleet_base.Base({}, {"stations": [], "depot": {"lat": 51.9402, "lon": 4.00485}}, [], "/dev/null")
+        b.ais = type("Ships", (), {"ships": lambda self: [ShipTargetTest.NEAR, ShipTargetTest.FAR], "summary": lambda self: {}})()
+        self.assertEqual(sorted(s["mmsi"] for s in b.targets()["ships"]), ["211000001", "244123456"])
+        view = b._ships_view(b.ais.ships())
+        self.assertEqual(view[0]["mmsi"], "244123456")
+        self.assertEqual(set(view[0]), {"mmsi", "name", "type", "length_m", "lat", "lon", "speed_kn", "course_deg"})
+        b.states["quad-0"] = {"home": self.HOME}
+        route, distance = b.route_of("quad-0", {"pattern": {"kind": "orbit", "target": "244123456", "radius_m": 80, "points": 8}})
+        self.assertEqual(len(route), 11)
+        self.assertGreater(distance, 1000)
+
+
 class IncidentTest(unittest.TestCase):
     def test_a_report_needs_a_vessel_and_a_position(self):
         with self.assertRaisesRegex(ValueError, "vessel"):
@@ -418,6 +485,34 @@ class AisTest(unittest.TestCase):
         self.assertEqual(len(a.ships()), 2)
         self.assertEqual((ship["name"], ship["type_name"], ship["length_m"], ship["beam_m"], ship["heading"]), ("NORDIC", "cargo", 300, 48, None))
         self.assertEqual(a.summary()["status"], "live")
+
+    def test_static_data_keeps_the_hull_around_the_antenna_and_the_draught(self):
+        a = ais.AIS("", [[51.9, 3.8], [52.05, 4.15]])
+        a.handle({"MessageType": "PositionReport", "MetaData": {"MMSI": 7, "latitude": 51.95, "longitude": 4.0}, "Message": {"PositionReport": {"Sog": 0.1, "Cog": 10}}})
+        a.handle({"MessageType": "ShipStaticData", "MetaData": {"MMSI": 7},
+                  "Message": {"ShipStaticData": {"Type": 82, "Dimension": {"A": 250, "B": 50, "C": 10, "D": 40}, "MaximumStaticDraught": 14.2,
+                                                 "ImoNumber": 9876543, "CallSign": "PDAB ", "Name": "TANK"}}})
+        ship = a.ships()[0]
+        self.assertEqual((ship["length_m"], ship["beam_m"], ship["dim"], ship["draught_m"], ship["imo"], ship["callsign"]),
+                         (300, 50, {"a": 250, "b": 50, "c": 10, "d": 40}, 14.2, 9876543, "PDAB"))
+
+    def test_the_service_serves_the_ships_and_the_base_reads_them(self):
+        a = ais.AIS("", [[51.9, 3.8], [52.05, 4.15]])
+        a.handle({"MessageType": "PositionReport", "MetaData": {"MMSI": 9, "ShipName": "ONE", "latitude": 51.95, "longitude": 4.0}, "Message": {"PositionReport": {}}})
+        ais.Handler.ais = a
+        server = ThreadingHTTPServer(("127.0.0.1", 0), ais.Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            remote = ais.Remote(f"http://127.0.0.1:{server.server_address[1]}")
+            remote.start()
+            for _ in range(50):
+                if remote.ships():
+                    break
+                time.sleep(0.05)
+            self.assertEqual([s["name"] for s in remote.ships()], ["ONE"])
+            self.assertEqual(remote.summary()["status"], "live")
+        finally:
+            server.shutdown()
 
 
 class ApprovalsTest(unittest.TestCase):
