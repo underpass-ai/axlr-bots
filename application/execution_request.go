@@ -36,6 +36,9 @@ type ExecutionRequest struct {
 	// DelegationSocket is where the node serves those tools for this
 	// execution; the node sets it, it never travels.
 	DelegationSocket string
+	// OnSaid hears what the run says back to an operator's message as
+	// it says it; the node sets it, it never travels.
+	OnSaid func(SaidReply) `json:"-"`
 }
 
 // NodeTools names the tools the node serves the execution on its

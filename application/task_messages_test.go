@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -83,5 +84,37 @@ func TestAMessageNeedsWordsATaskAndARunOnANode(t *testing.T) {
 	}
 	if _, err := NewSendTaskMessage(h.deps).Execute(ctx, pending.ID(), "hi"); !isState(err) {
 		t.Fatalf("a pending task: %v", err)
+	}
+}
+
+func TestARunsReplyGoesToTheTaskTimeline(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	node, execution := runningOnNode(t, h)
+	record := NewRecordSaid(h.deps)
+	if err := record.Execute(ctx, node.ID(), execution, SaidReply{InReplyTo: "check row F", Text: "  OK, row F next.  "}); err != nil {
+		t.Fatal(err)
+	}
+	event := h.log.events[len(h.log.events)-1]
+	if event.Type != domain.EventTaskSaid || event.ExecutionID != execution || event.Payload["text"] != "OK, row F next." || event.Payload["inReplyTo"] != "check row F" {
+		t.Fatalf("%+v", event)
+	}
+	if err := record.Execute(ctx, node.ID(), execution, SaidReply{Text: strings.Repeat("a", MaxSaidLength+3)}); err != nil {
+		t.Fatal(err)
+	}
+	if text := h.log.events[len(h.log.events)-1].Payload["text"].(string); len([]rune(text)) != MaxSaidLength {
+		t.Fatalf("%d", len([]rune(text)))
+	}
+	if _, has := h.log.events[len(h.log.events)-1].Payload["inReplyTo"]; has {
+		t.Fatal("a reply to nothing names nothing")
+	}
+	if err := record.Execute(ctx, node.ID(), execution, SaidReply{Text: "  "}); err == nil {
+		t.Fatal("empty words are refused")
+	}
+	if err := record.Execute(ctx, "db-1", execution, SaidReply{Text: "x"}); !isState(err) {
+		t.Fatalf("another node: %v", err)
+	}
+	if err := record.Execute(ctx, node.ID(), "exec-none", SaidReply{Text: "x"}); err == nil {
+		t.Fatal("an unknown execution is refused")
 	}
 }

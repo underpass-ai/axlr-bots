@@ -1940,6 +1940,7 @@
           "bot.task.expired",
           "bot.task.delegated",
           "bot.task.message",
+          "bot.task.said",
           "bot.delegation.refused",
           "bot.event.emitted",
           "bot.event.refused",
