@@ -223,6 +223,8 @@ curl -X POST http://127.0.0.1:18090/api/incident -H "X-Incident-Secret: $(cat ~/
 
 `POST /api/incident/end` (same header) ends a search early; the report follows.
 
+On the lab the same pages answer on HTTPS at `https://sar.underpassai.com` (Route 53 A record to the ingress controller's LAN address, `base.ingress.enabled=true`, `base.ingress.clusterIssuer=letsencrypt-prod-r53`); `/m` and `/api/approvals` still need the approver's code, and `/api/incident` the incident secret.
+
 ### The first run (26 Oct 2026, a rehearsal)
 
 | | |
