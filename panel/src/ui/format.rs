@@ -83,6 +83,14 @@ pub fn events<'a>(events: impl IntoIterator<Item = &'a Event>) -> String {
         .join("\n")
 }
 
+/// An address without its scheme and its trailing slash:
+/// `https://127.0.0.1:7879/` is `127.0.0.1:7879`.
+pub fn endpoint(url: &str) -> String {
+    let url = url.trim();
+    let bare = url.split_once("://").map_or(url, |(_, rest)| rest);
+    bare.trim_end_matches('/').to_string()
+}
+
 /// The local date and time, `25 Oct 14:05`.
 pub fn when(moment: DateTime<Utc>) -> String {
     moment.with_timezone(&Local).format("%d %b %H:%M").to_string()
@@ -119,6 +127,12 @@ mod tests {
             )
         );
         assert_eq!(events(&[]), "");
+    }
+
+    #[test]
+    fn endpoints_lose_the_scheme() {
+        assert_eq!(endpoint("https://127.0.0.1:17879/"), "127.0.0.1:17879");
+        assert_eq!(endpoint(" cp.example:7879 "), "cp.example:7879");
     }
 
     #[test]
