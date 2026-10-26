@@ -131,8 +131,114 @@ The image is the vehicles' too: an upgrade restarts every vehicle, and a task pa
 
 ![The same port rendered in Blender: the Prinses Amaliahaven, quay cranes, a ship alongside, the stacking blocks](../assets/drone-fleet/3d-blender-amaliahaven.jpg)
 
+## 7. Containers overboard
+
+A search at sea, run by the same bots on a fleet of its own: a vessel calls in that it lost containers off Maasvlakte 2, the containers drift with the wind and the current, a plane sweeps the area and quads confirm what it saw, every takeoff waits for a person on a phone, and a report comes back at the end. **It is a simulation**: the vehicles and the containers are simulated; the aerial imagery and the AIS ships are real. Every page shows it, and so does the report's first line. The precedent is real: in January 2019 the MSC Zoe lost about 342 containers north of the Wadden Islands.
+
+```text
+ vessel ──POST /api/incident──▶ fleet base: drift.py starts the sea at the loss, runs it to now
+                                    │ webhook incident (datum, wind, current)
+                                    ▼
+                               dispatcher ──delegate──▶ pilot-plane-0: parallel_track on the datum
+                                    ▲                └─▶ pilot-quad-n: expanding_square on the datum
+   webhook sightings (S1, S2…) ─────┘                         │ run_mission waits for a person (phone /m or panel)
+         ▲                                                   ▼
+ fleet base ◀── vision.py: real imagery + the containers drawn in (sprites.py) ── each photo
+    │  a sighting from high up marks a container sighted; one from a quad below 60 m confirms it
+    ├──webhook restock──▶ logistics ──delegate──▶ pilot-supply-0: packs and parts to the station
+    └──webhook report (the end)──▶ reporter: incident-report.md through axlr_deliver
+```
+
+| Piece | Does |
+|---|---|
+| `drift.py` | each container's leeway from its immersion (about 5 % of the 10 m wind at 40 % immersion, nothing at 100 %: Daniel et al. 2002; Breivik et al. 2012, arXiv:1201.0603) plus a cross-wind part, carried by the current; a container that crosses the shoreline is ashore. The planner's datum is a cloud of 400 particles drawn from the same uncertainties: its centre, the radius holding nine in ten, its drift |
+| `sprites.py` | draws each container that the photo's frame holds into the Esri imagery, at its true size for the photo's scale, turned to its heading, low in the water with foam |
+| `vision.py` | during a search, every photo: the model answers with the containers it sees and where in the frame; the base maps them back to the sea and matches them to the simulation's containers within 10 % of the frame (25 m at least). An unmatched spot at sea is a sighting too (a false one); one on land is dropped |
+| `incident.py` | the sea, the sightings, the counters; fires `sightings` (a sighting 20 s old that no quad confirmed, at most every 75 s) and `report` at the end (every container confirmed or ashore, the time limit, or `POST /api/incident/end`) |
+| `patterns.py` | `run_mission`'s `pattern`: `expanding_square` or `parallel_track` aimed at a target the base names (`datum`, `S3`), led by the target's drift for the time the vehicle needs to get there, checked like any route |
+| `control_plane.py`, `approvals.py` | the base fires the bots' webhooks, adds up the model cost of every task since the call, and relays the phone's decisions, with the operator token from a Secret |
+| `ais.py` | one websocket to aisstream.io for the port and its approaches; the ships go into the map's stream |
+| `bots/sar/` | `dispatcher` (observe: the plane sweeps, the nearest quad within 1800 m confirms), `logistics` (with a `restock` webhook), `reporter` (propose: writes the report inline with `axlr_deliver`) |
+
+The bots never read the truth: `fleet.json` gives them the datum, its drift, the open sightings with their predicted position and each vehicle's distance to each target. The containers on the map are labelled as the simulation's.
+
+### Install it in a namespace of its own
+
+```bash
+kubectl create namespace sar-demo
+grep '^OPENROUTER_API_KEY=' ~/.config/axlr-bots/env | cut -d= -f2- | tr -d '\n' \
+  | kubectl -n sar-demo create secret generic fleet-model --from-file=OPENROUTER_API_KEY=/dev/stdin
+head -c 24 /dev/urandom | base64 | tr -d '/+=\n' | kubectl -n sar-demo create secret generic fleet-webhook --from-file=SECRET=/dev/stdin
+tr -d '\n' < ~/.config/axlr-bots/sar-incident-secret | kubectl -n sar-demo create secret generic fleet-incident --from-file=SECRET=/dev/stdin
+tr -d '\n' < ~/.config/axlr-bots/sar-approver-code | kubectl -n sar-demo create secret generic fleet-approver --from-file=CODE=/dev/stdin
+tr -d '\n' < ~/.config/axlr-bots/aisstream.key | kubectl -n sar-demo create secret generic fleet-ais --from-file=AISSTREAM_API_KEY=/dev/stdin
+helm install fleet examples/helm/drone-fleet -n sar-demo -f examples/helm/drone-fleet/values-sar.yaml
+```
+
+`values-sar.yaml` puts three quads on the sea defence (10 Ah packs, a 2 km geofence), the plane on the beach airstrip and the supply rover at the depot, turns on `incident` and `ais`, and gives the base three bots (`base.bots`). Every Secret is optional to the pod, so it starts without them and picks them up when kubelet refreshes the volume.
+
+Then enroll the six nodes (step 2, with `fleet-base-0 quad-0 quad-1 quad-2 supply-0 plane-0`) and give the base the operator API, without printing the token:
+
+```bash
+python3 - <<'PY'
+import base64, json, subprocess
+ns = "sar-demo"
+cat = lambda p: subprocess.run(["kubectl", "-n", ns, "exec", "fleet-cp-0", "-c", "control-plane", "--", "/busybox/cat", p], capture_output=True, check=True).stdout
+data = {"ca.crt": base64.b64encode(cat("/var/lib/axlr-bots/ca/ca.crt")).decode(), "api.token": base64.b64encode(cat("/var/lib/axlr-bots/api.token").strip()).decode()}
+subprocess.run(["kubectl", "apply", "-f", "-"], input=json.dumps({"apiVersion": "v1", "kind": "Secret", "metadata": {"name": "fleet-operator", "namespace": ns}, "data": data}), text=True, check=True)
+PY
+```
+
+Register the bots with the webhook secret put in where the definitions say `WEBHOOK_SECRET` (the `reg` function of step 3, with its namespace changed):
+
+```bash
+SECRET=$(kubectl -n sar-demo get secret fleet-webhook -o jsonpath='{.data.SECRET}' | base64 -d)
+cd examples/drone-fleet/bots
+for b in dispatcher logistics reporter; do sed "s/WEBHOOK_SECRET/$SECRET/g" sar/$b.json | reg $b; done
+for v in quad-0 quad-1 quad-2 plane-0; do sed "s/VEHICLE/$v/g" pilot.json | reg pilot-$v; done
+sed "s/VEHICLE/supply-0/g" supply-pilot.json | reg pilot-supply-0
+unset SECRET
+```
+
+The dispatcher's budget is sized for the way grants work today: each child gets `floor(share × (pool − granted))`, so a call that delegates to four pilots of 10 model calls and 6 tool calls needs a pool of about 2 × 4 × that, 80 and 48. [axlr-bots#14](https://github.com/underpass-ai/axlr-bots/issues/14) proposes an even split instead.
+
+### Run a search
+
+The map, the 3D view and the phone page are the base's port 8080 (`kubectl -n sar-demo port-forward svc/fleet-base 18090:8080`); the panel is the control plane's 7879, as in step 4. A vessel's call:
+
+```bash
+curl -X POST http://127.0.0.1:18090/api/incident -H "X-Incident-Secret: $(cat ~/.config/axlr-bots/sar-incident-secret)" \
+  -H 'Content-Type: application/json' -d '{"vessel": "MV DEMO TRADER", "count": 14, "lat": 51.951, "lon": 3.937,
+  "lost_minutes_ago": 20, "wind_from_deg": 250, "wind_m_s": 10, "current_to_deg": 25, "current_m_s": 0.25,
+  "vessel_heading_deg": 220, "spread_m": 600, "max_minutes": 40}'
+```
+
+| Where | What you see |
+|---|---|
+| `/` | the containers (outlines: the simulation's truth), their drift arrows, the datum and its track, the sightings, the plane's track and the quads' squares, the AIS ships, the counters |
+| `/3d?night=1` | the same at night over the port model; `&tour=1` circles the datum, `&hud=0` leaves only the canvas |
+| `/m` | the calls waiting for a person, each with its route on a map: **Approve** or **Deny**. It asks once for the approver's code |
+| `/api/incident/report` | the report, once the reporter has delivered it |
+
+`POST /api/incident/end` (same header) ends a search early; the report follows.
+
+### The first run (26 Oct 2026, a rehearsal)
+
+| | |
+|---|---|
+| dispatcher | read `fleet.json`, sent the plane a `parallel_track` on the datum across the drift (heading 139°, 1208 × 966 m, 170 m apart, 100 m up) and the nearest quad an `expanding_square` (60 m, 10 legs, 35 m) |
+| sightings | the plane sighted 11 containers, the quads confirmed 8 in 9.5 minutes; 215 photos analysed |
+| refusals | a quad sent to a sighting 2.4 km away was refused by its own companion computer ("outside the 2000 m geofence") after the person approved it; another pilot read the distance and did not call `run_mission` at all. The dispatcher now reads each quad's distance to each target |
+| false positive | something white on the beach, seen by a quad on its way out: denied. Unmatched spots on land are now dropped |
+| cost | $0.039 of bot models and $0.044 of vision, $0.08 in all |
+| report | `incident-report.md`, delivered by the reporter through `axlr_deliver` and stored by the control plane |
+
 ## Limits
 
 - The vehicles are SITL: the sensors are SITL's backends (rangefinders, optical flow, camera trigger), RTK is SITL's fix 6 with no correction link, and the map's hardware labels describe what the vehicles stand for.
 - Each sidecar's AXLR reads its MCP configuration from its own state volume (`~/.config/axlr/mcp.json`, written by an init container): the pilot's tool is per node, not per bot. An `act-with-approval` bot asks for every MCP call.
 - The bays and the stock live in the base's memory: a restart of `fleet-base-0` starts them over.
+- The search's sea, sightings and counters live in the base's memory too; a restart of `fleet-base-0` ends the search without a report.
+- The drift is one wind and one current for the whole area and the whole search; the containers are drawn into imagery taken on a calm day, so the sea in the photos does not match the storm.
+- The vision model sees the containers the simulation draws; how well it would see a real one in a real sea is not measured here.
+- aisstream.io allows a few connections per key; the base keeps one and drops a ship after 15 minutes without news.
