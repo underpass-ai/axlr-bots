@@ -214,6 +214,24 @@ pub fn button_style(tokens: Tokens, kind: Kind) -> impl Fn(&Theme, button::Statu
     }
 }
 
+/// A chat bubble: the person's in a light wash of the accent, the bot's
+/// in the raised grey.
+pub fn bubble(tokens: Tokens, mine: bool) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
+        background: Some(Background::Color(if mine {
+            mix(tokens.surface, tokens.accent, 0.14)
+        } else {
+            tokens.raised
+        })),
+        text_color: Some(tokens.text),
+        border: Border {
+            radius: RADIUS_S.into(),
+            ..Border::default()
+        },
+        ..container::Style::default()
+    }
+}
+
 /// A card to pick among a few: the picked one in a light wash of the
 /// accent with an accent border, so its words stay ink on light.
 pub fn choice(tokens: Tokens, picked: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
@@ -312,6 +330,16 @@ pub fn shade(color: Color, amount: f32) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bubbles_tell_the_person_from_the_bot() {
+        let theme = Tokens::LIGHT.theme();
+        let tokens = Tokens::LIGHT;
+        let mine = bubble(tokens, true)(&theme);
+        let theirs = bubble(tokens, false)(&theme);
+        assert_ne!(mine.background, theirs.background);
+        assert_eq!(theirs.background, Some(Background::Color(tokens.raised)));
+    }
 
     #[test]
     fn a_picked_choice_stays_readable() {

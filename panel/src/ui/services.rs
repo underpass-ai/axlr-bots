@@ -3,8 +3,8 @@ use std::sync::Arc;
 use super::{BotView, Connection, Effect, Message};
 use crate::application::{
     CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader, FilePicker, FollowBotEvents, KeySource,
-    LoadTaskDetail, MintEnrollmentToken, PanelError, PatchBot, RefreshFleet, RegisterBot, RevokeNode, StopBot,
-    SubmitTask, SwitchBot,
+    LoadChat, LoadTaskDetail, MintEnrollmentToken, PanelError, PatchBot, RefreshFleet, RegisterBot, RevokeNode,
+    SendChat, StopBot, SubmitTask, SwitchBot,
 };
 use crate::domain::BotPatch;
 
@@ -61,10 +61,15 @@ impl Services {
             Effect::FollowBot(id, feed) => {
                 let result = match self.control_plane() {
                     Ok(cp) => match cp.get_bot(id.clone()).await {
-                        Ok(bot) => FollowBotEvents::new(cp)
-                            .execute(id.clone(), feed)
-                            .await
-                            .map(|feed| BotView { bot, feed }),
+                        Ok(bot) => {
+                            let (follow, load) = (FollowBotEvents::new(cp.clone()), LoadChat::new(cp));
+                            let (feed, chat) =
+                                futures::join!(follow.execute(id.clone(), feed), load.execute(id.clone()));
+                            match (feed, chat) {
+                                (Ok(feed), Ok(chat)) => Ok(BotView { bot, feed, chat }),
+                                (Err(e), _) | (_, Err(e)) => Err(e),
+                            }
+                        }
                         Err(e) => Err(e),
                     },
                     Err(e) => Err(e),
@@ -102,6 +107,14 @@ impl Services {
                         ..BotPatch::default()
                     };
                     PatchBot::new(cp).execute(id, patch).await
+                }
+                Err(e) => Err(e),
+            }),
+            Effect::SendChat { bot, message, earlier } => Message::ChatSent(match self.control_plane() {
+                Ok(cp) => {
+                    SendChat::new(cp, self.keys.clone())
+                        .execute(bot, &message, &earlier)
+                        .await
                 }
                 Err(e) => Err(e),
             }),

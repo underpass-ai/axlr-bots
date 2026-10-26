@@ -64,6 +64,10 @@ pub enum Message {
     SetLevel(BotId, AutonomyLevel),
     Leveled(Result<Bot, PanelError>),
     AskStopBot(BotId),
+    /// The message being written in a bot's chat.
+    ChatInput(String),
+    ChatSend,
+    ChatSent(Result<SubmittedTask, PanelError>),
     BotStopped(Result<StoppedBot, PanelError>),
 
     FilterStatus(Option<TaskStatus>),

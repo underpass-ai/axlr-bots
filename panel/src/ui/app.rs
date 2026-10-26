@@ -42,6 +42,10 @@ pub struct App {
     pub banner: Option<Banner>,
     /// The task whose decision is on its way.
     pub deciding: Option<TaskId>,
+    /// The message being written in the bot page's chat, and whether one
+    /// is on its way.
+    pub chat_draft: String,
+    pub chat_busy: bool,
     /// A bot page's Advanced part is open.
     pub advanced: bool,
     /// A bot being switched on or paused.
@@ -79,6 +83,8 @@ impl App {
             confirm: None,
             banner: None,
             deciding: None,
+            chat_draft: String::new(),
+            chat_busy: false,
             advanced: false,
             switching: false,
             target: if launch.screen == Screen::Settings {
@@ -359,6 +365,34 @@ impl App {
                 self.refresh_now()
             }
 
+            Message::ChatInput(value) => {
+                self.chat_draft = value;
+                Vec::new()
+            }
+            Message::ChatSend => {
+                let Some(view) = self.bot.as_ref() else {
+                    return Vec::new();
+                };
+                if self.chat_busy || self.chat_draft.trim().is_empty() {
+                    return Vec::new();
+                }
+                self.chat_busy = true;
+                vec![Effect::SendChat {
+                    bot: view.bot.id.clone(),
+                    message: self.chat_draft.clone(),
+                    earlier: view.chat.clone(),
+                }]
+            }
+            Message::ChatSent(result) => {
+                self.chat_busy = false;
+                match result {
+                    Ok(_) => self.chat_draft.clear(),
+                    Err(error) => self.banner = Some(Banner::error(&error, self.now)),
+                }
+                let mut effects = self.reload_screen();
+                effects.extend(self.refresh_now());
+                effects
+            }
             Message::ShowAdvanced(open) => {
                 self.advanced = open;
                 Vec::new()
@@ -652,6 +686,7 @@ impl App {
         }
         if screen != self.screen {
             self.advanced = false;
+            self.chat_draft.clear();
             self.task_loading = false;
             self.bot_loading = false;
         }
