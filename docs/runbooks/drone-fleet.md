@@ -21,7 +21,7 @@ A fleet of simulated autonomous vehicles at the Port of Rotterdam (Maasvlakte 2)
 |---|---|
 | `dispatcher` bot | reads `fleet.json`, picks the ready vehicles for the zones a mission needs, and delegates one objective to each pilot (`wait: false`) |
 | `logistics` bot | reads the stations' stock and sends the supply rover on a delivery run |
-| `pilot-<vehicle>` bots | read `telemetry.json`, plan the route in metres from home, call `run_mission` once: that call waits for a person |
+| `pilot-<vehicle>` bots | read `telemetry.json`; a quad's or the plane's plans the route in metres from home, a rover's picks one of its precomputed routes; call `run_mission` once: that call waits for a person |
 | `vehicle_pilot.py` | refuses a route outside the geofence, the altitude band or the speed range, and a vehicle that is not ready; uploads the mission over MAVLink, launches it, and after landing queues the vehicle at its station: inspection, then a fresh battery pack |
 | `fleet_base.py` | polls every vehicle, hands out the bays (a service takes a pack and a part from the station), moves the supply rover's cargo when it reaches a station, writes `fleet.json` for the two bots and serves the map |
 
@@ -78,11 +78,12 @@ reg() { kubectl -n port-fleet exec -i fleet-cp-0 -c control-plane -- /busybox/sh
 cd examples/drone-fleet/bots
 reg dispatcher < dispatcher.json
 reg logistics < logistics.json
-for v in quad-0 quad-1 quad-2 rover-0 rover-1 plane-0; do sed "s/VEHICLE/$v/g" pilot.json | reg pilot-$v; done
+for v in quad-0 quad-1 quad-2 plane-0; do sed "s/VEHICLE/$v/g" pilot.json | reg pilot-$v; done
+for v in rover-0 rover-1; do sed "s/VEHICLE/$v/g" rover-pilot.json | reg pilot-$v; done
 sed "s/VEHICLE/supply-0/g" supply-pilot.json | reg pilot-supply-0
 ```
 
-The pilots are `act-with-approval` with `local_read` (only `telemetry.json`) and `run_mission`; the dispatcher and logistics are `observe`, with the vehicles' pilots as their delegation targets.
+The pilots are `act-with-approval` with `local_read` (only `telemetry.json`) and `run_mission`; a rover's pilot picks one of its rover's precomputed routes and never plans waypoints; the dispatcher and logistics are `observe`, with the vehicles' pilots as their delegation targets.
 
 ## 4. The panel
 
@@ -254,6 +255,34 @@ The same call, recorded with OBS. Every takeoff waited on the phone page (`/m`);
 ![A takeoff waiting on the phone page: quad-0's expanding square on sighting S2, its route on the map, Approve or Deny](../assets/drone-fleet/sar-phone-approval.jpg)
 
 ![What the vision model saw from quad-1 at 35 m: three containers, each matched to the simulation's](../assets/drone-fleet/sar-vision-quad.jpg)
+
+## 8. The rovers' routes
+
+A rover's bot does not plan a route: it picks one its rover's companion computer has precomputed, by name, and the vehicle pilot drives it. The routes keep to the roads and yards, clear of sheds, container blocks, tanks, coal piles and water, with corners a car can drive; a supply run is the route through its stations in the order the deliveries name, turning round in a loop at each.
+
+![The rover routes over the drivable map of the port](../assets/drone-fleet/rover-routes.jpg)
+
+| Who | Routes | The bot sends |
+|---|---|---|
+| rover-0 (Euromax) | `euromax:euromax-yard`, `euromax:distripark` | `{name, route, speed_m_s, photo_every_m}` |
+| rover-1 (RWG) | `rwg:rwg-yard` | the same |
+| supply-0 (depot) | `supply:<station>>…`, every order of the four stations | `{name, deliveries, speed_m_s}`, as before |
+
+`examples/drone-fleet/port3d/routes.py` writes them into `app/routes.json` (in the image) from the port model and `values.yaml`; run it again when a station or a zone moves (the [port3d README](../../examples/drone-fleet/port3d/README.md) has the method). A zone beyond a rover's 1500 m geofence gets no route from that rover. Each route says the tightest corner it keeps and how much of it passes within the clearance of an obstacle.
+
+Live, on a first run: rover-1 drove `rwg:rwg-yard` (3.9 km) at most 0.1 m off the route, supply-0 drove `supply:apm>rwg` (3.5 km) at most 1.3 m off it and unloaded at both stations.
+
+![rover-1 on its route along the RWG quay](../assets/drone-fleet/3d-rover-route.jpg)
+
+The rover pilots' bot is `bots/rover-pilot.json`. On a running fleet, change their mission in place:
+
+```bash
+python3 -c 'import json; print(json.dumps({"mission": json.load(open("rover-pilot.json"))["mission"]}))' > /tmp/patch.json
+for v in rover-0 rover-1; do kubectl -n port-fleet exec -i fleet-cp-0 -c control-plane -- /busybox/sh -c \
+  "cat > /tmp/patch.json && axlr-bots --state /var/lib/axlr-bots bot update pilot-$v --file /tmp/patch.json" < /tmp/patch.json; done
+```
+
+The rovers avoid what the map knows. What it does not (a truck, a person) is for ArduPilot's own avoidance with the depth camera and the lidars, which needs a world the sensors can see: the Gazebo world in `port3d/gazebo` is the step for that.
 
 ## The look
 
