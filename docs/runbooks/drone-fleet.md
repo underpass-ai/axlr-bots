@@ -282,7 +282,7 @@ for v in rover-0 rover-1; do kubectl -n port-fleet exec -i fleet-cp-0 -c control
   "cat > /tmp/patch.json && axlr-bots --state /var/lib/axlr-bots bot update pilot-$v --file /tmp/patch.json" < /tmp/patch.json; done
 ```
 
-The rovers avoid what the map knows. What it does not (a truck, a person) is for ArduPilot's own avoidance with the depth camera and the lidars: section 8.
+The rovers avoid what the map knows. What it does not (a truck, a person) is for ArduPilot's own avoidance with the depth camera and the lidars: section 9.
 
 ## 9. Obstacles no map knows
 
@@ -359,7 +359,7 @@ These four pictures are a replay of a captured `/api/fleet` with a synthetic inc
 ## Limits
 
 - The vehicles are SITL: the sensors are SITL's backends (rangefinders, optical flow, camera trigger), RTK is SITL's fix 6 with no correction link, and the map's hardware labels describe what the vehicles stand for.
-- The rovers' obstacle avoidance is on but blind in the live fleet: a bare SITL rover's rangefinders see nothing. It is shown in gz (section 8), which runs beside the fleet, not in it.
+- The rovers' obstacle avoidance is on but blind in the live fleet: a bare SITL rover's rangefinders see nothing. It is shown in gz (section 9), which runs beside the fleet, not in it.
 - Each sidecar's AXLR reads its MCP configuration from its own state volume (`~/.config/axlr/mcp.json`, written by an init container): the pilot's tool is per node, not per bot. An `act-with-approval` bot asks for every MCP call.
 - The bays and the stock live in the base's memory: a restart of `fleet-base-0` starts them over.
 - The search's sea, sightings and counters live in the base's memory too; a restart of `fleet-base-0` ends the search without a report.
