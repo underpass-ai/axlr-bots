@@ -345,6 +345,39 @@ The swing differs from run to run, and the lookahead does not decide it. Nine ru
 
 A bare SITL rover, as the live fleet runs it, arms with the new `rover.parm` and drives as before: its forward rangefinders read nothing in range, so proximity is healthy and empty.
 
+## 10. Send a vehicle to a ship
+
+The ships AIS hears are targets for any bot that flies a quad or the plane, the pilots and the bots a person adds in the panel alike. The `ais` service holds the stream; the base hands the ships on:
+
+| Who reads | Where | What |
+|---|---|---|
+| the base's bots | `fleet.json` → `ships` | the 40 nearest the depot: MMSI, name, type, length, position, speed, course |
+| every bot on a vehicle | `telemetry.json` → `ships` | the 20 nearest the vehicle, in metres from home, with `distance_m` and `inside_geofence` |
+| `run_mission` | `pattern.target` | any ship AIS hears, by MMSI or name; `orbit` (a circle of `points` at `radius_m`) or a search pattern, led by the ship's course and speed |
+
+The pilot writes `telemetry.json` into the workspace of every bot on its node (`TELEMETRY_DIR`), so a bot needs no file of its own. A ship beyond the geofence is the tool's error, with the distance now and on arrival; the phone page shows the route of any bot's call, by the node the bot runs on.
+
+### From the panel
+
+| Field (Bots → New bot) | Put |
+|---|---|
+| Name | e.g. `operador-quad-1` |
+| Mission | "You fly quad-1. Read telemetry.json and use run_mission for what the operator asks." |
+| Level | `act-with-approval` |
+| Tools | `local_read`, `run_mission` |
+| Model | `anthropic/claude-haiku-5.5` |
+| Runs on | the vehicle's node, e.g. `quad-1` |
+| Approvals | a TTL (e.g. 1h), on expiry deny |
+
+Then Tasks → New task on that bot: "go to the ship CONESTE". The call waits in the panel and on `/m`.
+
+### The first run (26 Oct 2026)
+
+| Order | What happened |
+|---|---|
+| "ve al barco CONESTE" (temporary bot on quad-0, 740 m away) | the bot read the ship's position in `telemetry.json` and called `run_mission` with one waypoint over it, 20 m up; the phone page showed the route; approved on `/m`; quad-0 took off |
+| "ve al barco OOCL CHONGQING" (3.2 km away) | the bot read `inside_geofence: false`, called nothing, and answered with the distance and the 1500 m limit |
+
 ## The look
 
 The map, the 3D view and the phone page share one stylesheet, [`app/static/theme.css`](../../examples/drone-fleet/app/static/theme.css): the AXLR Bots emblem, ink on a warm white page (graphite with `?theme=dark` or a dark system theme), the emblem's copper as the one accent, one colour per status in a pill that names it, [Lexend](https://www.lexend.com) for words and [DotGothic16](https://github.com/fontworks-fonts/DotGothic16) for the counters (both SIL Open Font License, served from `app/static/fonts` with their licences). The viewer sits in a rounded frame; `?hud=0` drops the frame and the side column for a recording. The **SIMULATION** label and the imagery's attribution stay on every page, the phone's route maps included; the panel's own look is the same palette ([axlr-bots-panel](https://github.com/underpass-ai/axlr-bots-panel)).
