@@ -44,6 +44,9 @@ const (
 	// a task and the control plane created it; the payload names the
 	// child task and bot, the depth and the grant.
 	EventTaskDelegated EventType = "bot.task.delegated"
+	// EventTaskMessage says the operator wrote to a running task: the
+	// payload holds the text, the event names the execution it goes to.
+	EventTaskMessage EventType = "bot.task.message"
 	// EventDelegationRefused says a task's execution asked another bot
 	// and the control plane refused: the payload names the target and
 	// the check that refused it.
@@ -80,7 +83,7 @@ const (
 func ParseEventType(raw string) (EventType, error) {
 	switch EventType(raw) {
 	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
-		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventTaskDelegated, EventDelegationRefused,
+		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventTaskDelegated, EventTaskMessage, EventDelegationRefused,
 		EventEventEmitted, EventEventRefused,
 		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked,
 		EventExecutionAssigned, EventExecutionReported:

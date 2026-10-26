@@ -40,7 +40,7 @@ func init() {
 		application.Overview{}, application.BotDefinition{}, application.BotPatch{}, application.Group{}, application.GroupMember{},
 		application.BudgetsDefinition{}, application.ModelPolicyDefinition{},
 		SubmitRequest{}, TaskRequest{}, SubmitResponse{}, RunResponse{}, CancelResponse{}, ReportResponse{},
-		DecideRequest{}, StopResponse{}, application.StopRefusal{}, EnrollTokenRequest{}, EnrollTokenResponse{}, RevokeResponse{}, FireResponse{}, ErrorResponse{},
+		DecideRequest{}, MessageRequest{}, application.SentTaskMessage{}, StopResponse{}, application.StopRefusal{}, EnrollTokenRequest{}, EnrollTokenResponse{}, RevokeResponse{}, FireResponse{}, ErrorResponse{},
 	} {
 		t := reflect.TypeOf(value)
 		contractTypes[t.String()] = t

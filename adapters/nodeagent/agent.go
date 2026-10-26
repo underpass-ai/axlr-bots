@@ -274,17 +274,23 @@ func (a Agent) uploadOne(id domain.NodeID, execution domain.ExecutionID, bot dom
 	return a.Transport.UploadArtifact(ctx, id, execution, artifact, file)
 }
 
-// renew extends the lease until ctx ends; a lease the control plane
-// refuses for good (application.ErrLeaseLost) stops the run.
+// renew extends the lease until ctx ends, and with each renewal hands the
+// operator's new messages to the run; a lease the control plane refuses
+// for good (application.ErrLeaseLost) stops the run.
 func (a Agent) renew(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, stopRun context.CancelFunc) {
 	ticker := time.NewTicker(a.Options.renew())
 	defer ticker.Stop()
+	after := ""
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if _, err := a.Transport.RenewLease(ctx, id, execution); err != nil && ctx.Err() == nil {
+			_, err := a.Transport.RenewLease(ctx, id, execution)
+			if err == nil {
+				after = a.relay(ctx, id, execution, after)
+			}
+			if err != nil && ctx.Err() == nil {
 				a.Options.log().Printf("node: renew lease of %s: %v", execution, err)
 				if errors.Is(err, application.ErrLeaseLost) {
 					logger := a.Options.log()
@@ -295,6 +301,41 @@ func (a Agent) renew(ctx context.Context, id domain.NodeID, execution domain.Exe
 			}
 		}
 	}
+}
+
+// Steerer hands an operator's messages to a running execution: the AXLR
+// adapter writes them where the run reads them between model steps.
+type Steerer interface {
+	Steer(ctx context.Context, execution domain.ExecutionID, texts []string) error
+}
+
+// relay reads the operator's messages after the cursor and hands them to
+// the run; it returns the new cursor. A read that fails leaves the
+// cursor, so the next renewal tries again; messages the run cannot take
+// (an axlr-tui without --steer-file) are logged and dropped.
+func (a Agent) relay(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, after string) string {
+	steerer, ok := a.Executor.(Steerer)
+	if !ok {
+		return after
+	}
+	messages, err := a.Transport.ExecutionMessages(ctx, id, execution, after)
+	if err != nil || len(messages) == 0 {
+		if err != nil && ctx.Err() == nil {
+			a.Options.log().Printf("node: messages of %s: %v", execution, err)
+		}
+		return after
+	}
+	texts := make([]string, 0, len(messages))
+	for _, message := range messages {
+		texts = append(texts, message.Text)
+	}
+	last := messages[len(messages)-1].ID
+	if err := steerer.Steer(ctx, execution, texts); err != nil {
+		a.Options.log().Printf("node: execution %s: %d message(s) not handed to the run: %v", execution, len(texts), err)
+		return last
+	}
+	a.Options.log().Printf("node: execution %s: %d message(s) from the operator handed to the run", execution, len(texts))
+	return last
 }
 
 // report hands the result over, retrying a few times: the control plane

@@ -46,6 +46,9 @@ type Service interface {
 	DecideTask(ctx context.Context, id string, request DecideRequest) (RunResponse, error)
 	// CancelTask stops a task that has not finished.
 	CancelTask(ctx context.Context, id string) (CancelResponse, error)
+	// SendTaskMessage takes what the operator writes to a running task;
+	// its node hands it to the run between model steps.
+	SendTaskMessage(ctx context.Context, id string, request MessageRequest) (application.SentTaskMessage, error)
 	GetTask(ctx context.Context, id string) (domain.TaskSnapshot, error)
 	ListTasks(ctx context.Context, query application.TaskQuery) ([]domain.TaskSnapshot, error)
 	ListTaskEvents(ctx context.Context, id string, limit int) ([]domain.Event, error)

@@ -303,6 +303,9 @@ func (f *fakeTransport) NextAssignment(context.Context, domain.NodeID, time.Dura
 func (f *fakeTransport) RenewLease(context.Context, domain.NodeID, domain.ExecutionID) (time.Time, error) {
 	return time.Time{}, nil
 }
+func (f *fakeTransport) ExecutionMessages(context.Context, domain.NodeID, domain.ExecutionID, string) ([]application.RelayedMessage, error) {
+	return nil, nil
+}
 func (f *fakeTransport) Report(_ context.Context, _ domain.NodeID, _ domain.ExecutionID, report application.ExecutionReport) (application.ReportAck, error) {
 	f.reports++
 	f.report = report
