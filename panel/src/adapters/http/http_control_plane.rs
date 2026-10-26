@@ -9,8 +9,8 @@ use super::api_error::ApiError;
 use crate::application::{ControlPlane, PanelConfig, PanelError, PortFuture};
 use crate::domain::{
     Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, EnrollmentRequest, EnrollmentToken,
-    Event, Execution, Node, NodeId, Overview, RevokedNode, Secret, SubmittedTask, Task, TaskFilter, TaskId,
-    TaskSubmission,
+    Event, Execution, Node, NodeId, Overview, RevokedNode, Secret, StoppedBotAnswer, SubmittedTask, Task, TaskFilter,
+    TaskId, TaskSubmission,
 };
 
 /// How long a read may take.
@@ -256,6 +256,10 @@ impl ControlPlane for HttpControlPlane {
                 priority: submission.urgent.then_some("urgent"),
             });
         Box::pin(send(request))
+    }
+
+    fn stop_bot(&self, id: BotId) -> PortFuture<'_, StoppedBotAnswer> {
+        self.post(format!("/v1/bots/{id}/stop"), NO_BODY)
     }
 
     fn cancel_task(&self, id: TaskId) -> PortFuture<'_, CancelledTask> {

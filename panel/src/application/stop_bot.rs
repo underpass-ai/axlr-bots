@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use super::{ControlPlane, PanelError, StoppedBot};
-use crate::domain::{BotId, TaskFilter};
+use crate::domain::{Bot, BotId, TaskFilter};
 
-/// Stops a bot at once: pauses it so it takes no new task, then cancels
-/// every task of it still pending, running or waiting for a person.
+/// Stops a bot at once: pauses it so it takes no new task, and cancels
+/// every task of it still pending, running or waiting for a person. The
+/// control plane does it in one call (`POST /v1/bots/{id}/stop`).
 pub struct StopBot {
     control_plane: Arc<dyn ControlPlane>,
 }
@@ -14,8 +15,26 @@ impl StopBot {
         Self { control_plane }
     }
 
+    /// Asks the control plane to stop the bot; one from before the stop
+    /// route answers not found for a bot it has, and then the panel stops
+    /// it itself.
     pub async fn execute(&self, id: BotId) -> Result<StoppedBot, PanelError> {
-        let bot = self.control_plane.get_bot(id.clone()).await?;
+        match self.control_plane.stop_bot(id.clone()).await {
+            Ok(answer) => Ok(StoppedBot {
+                bot: answer.bot,
+                cancelled: answer.cancelled.len() as u32,
+                not_cancelled: answer.not_cancelled.len() as u32,
+            }),
+            Err(PanelError::NotFound(_)) => {
+                let bot = self.control_plane.get_bot(id.clone()).await?;
+                self.by_hand(id, bot).await
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Pause, then cancel each open task, one call at a time.
+    async fn by_hand(&self, id: BotId, bot: Bot) -> Result<StoppedBot, PanelError> {
         let bot = if bot.status.can_pause() {
             self.control_plane.pause_bot(id.clone()).await?
         } else {
@@ -56,6 +75,20 @@ mod tests {
     #[test]
     fn pauses_the_bot_and_cancels_its_open_tasks() {
         let (control_plane, _) = fleet();
+        stops_on(control_plane.clone());
+        assert!(control_plane.calls().iter().any(|c| c.starts_with("stop_bot")));
+        assert!(!control_plane.calls().iter().any(|c| c.starts_with("cancel_task")));
+    }
+
+    #[test]
+    fn an_older_control_plane_has_the_panel_stop_it_itself() {
+        let (control_plane, _) = fleet();
+        control_plane.without_stop_route();
+        stops_on(control_plane.clone());
+        assert!(control_plane.calls().iter().any(|c| c.starts_with("cancel_task")));
+    }
+
+    fn stops_on(control_plane: Arc<crate::adapters::fake::FakeControlPlane>) {
         let tasks = run(control_plane.list_tasks(TaskFilter::default())).unwrap();
         let waiting = tasks.iter().find(|t| t.status == TaskStatus::WaitingApproval).unwrap();
         let id = waiting.bot_id.clone();
@@ -75,7 +108,16 @@ mod tests {
     #[test]
     fn an_unknown_bot_is_not_found() {
         let (control_plane, _) = fleet();
-        let error = run(StopBot::new(control_plane).execute(BotId::new("ghost").unwrap())).unwrap_err();
+        let error = run(StopBot::new(control_plane.clone()).execute(BotId::new("ghost").unwrap())).unwrap_err();
         assert!(matches!(error, PanelError::NotFound(_)));
+        control_plane.without_stop_route();
+        let error = run(StopBot::new(control_plane.clone()).execute(BotId::new("ghost").unwrap())).unwrap_err();
+        assert!(matches!(error, PanelError::NotFound(_)));
+        control_plane.fail_with(Some(PanelError::Unreachable("down".into())));
+        let error = run(StopBot::new(control_plane).execute(BotId::new("ghost").unwrap())).unwrap_err();
+        assert!(
+            matches!(error, PanelError::Unreachable(_)),
+            "any other error is passed on"
+        );
     }
 }

@@ -7,8 +7,8 @@ use crate::application::{ControlPlane, PanelError, PortFuture};
 use crate::domain::{
     Bot, BotDefinition, BotId, BotPatch, BotStatus, Budgets, CancelledTask, DecidedTask, Decision, EnrollmentRequest,
     EnrollmentToken, Event, Execution, ExecutionId, ExecutionKind, ExecutionOutcome, ExecutionResult, Node,
-    NodeCapabilities, NodeId, NodeStatus, Overview, PendingDecision, RevokedNode, Secret, SubmittedTask, Task,
-    TaskFilter, TaskId, TaskStatus, TaskSubmission, ToolCall, TriggerRef, Usage,
+    NodeCapabilities, NodeId, NodeStatus, Overview, PendingDecision, RevokedNode, Secret, StoppedBotAnswer,
+    SubmittedTask, Task, TaskFilter, TaskId, TaskStatus, TaskSubmission, ToolCall, TriggerRef, Usage,
 };
 
 /// The control plane in memory: what the use cases and the interface are
@@ -28,6 +28,8 @@ struct FakeState {
     executions: Vec<Execution>,
     events: Vec<Event>,
     failure: Option<PanelError>,
+    /// Answers as a control plane from before the stop route.
+    older: bool,
     calls: Vec<String>,
     serial: u64,
 }
@@ -128,6 +130,12 @@ impl FakeControlPlane {
     /// From now on every call fails with the error; `None` heals it.
     pub fn fail_with(&self, failure: Option<PanelError>) {
         self.state.lock().unwrap().failure = failure;
+    }
+
+    /// From now on it answers as a control plane from before the stop
+    /// route.
+    pub fn without_stop_route(&self) {
+        self.state.lock().unwrap().older = true;
     }
 
     /// The calls made so far, as `route arg`.
@@ -719,6 +727,42 @@ impl ControlPlane for FakeControlPlane {
             Ok(SubmittedTask {
                 created: true,
                 task: task.clone(),
+            })
+        })
+    }
+
+    fn stop_bot(&self, id: BotId) -> PortFuture<'_, StoppedBotAnswer> {
+        self.call(format!("stop_bot {id}"), move |s| {
+            if s.older {
+                return Err(PanelError::NotFound("404 page not found".into()));
+            }
+            let mut bot = s
+                .bots
+                .get(&id)
+                .cloned()
+                .ok_or_else(|| PanelError::NotFound(format!("bot {id} not found")))?;
+            if bot.status.can_pause() {
+                bot = s.switch(&id, BotStatus::Paused)?;
+            }
+            let now = s.clock();
+            let mut cancelled = Vec::new();
+            let open: Vec<TaskId> = s
+                .tasks
+                .iter()
+                .filter(|t| t.bot_id == id && t.status.can_cancel())
+                .map(|t| t.id.clone())
+                .collect();
+            for task_id in open {
+                let task = s.task_mut(&task_id)?;
+                task.status = TaskStatus::Cancelled;
+                task.updated_at = now;
+                s.event("bot.task.cancelled", id.as_str(), &task_id, now, serde_json::json!({}));
+                cancelled.push(task_id.to_string());
+            }
+            Ok(StoppedBotAnswer {
+                bot,
+                cancelled,
+                not_cancelled: Vec::new(),
             })
         })
     }

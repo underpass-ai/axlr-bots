@@ -11,7 +11,8 @@ use std::path::Path;
 
 use axlr_bots_panel::domain::{
     AutonomyLevel, Bot, BotStatus, CancelledTask, DecidedTask, EnrollmentToken, Event, Execution, ExecutionKind,
-    ExecutionOutcome, Node, NodeStatus, Overview, RevokedNode, SubmittedTask, Task, TaskStatus, TriggerType,
+    ExecutionOutcome, Node, NodeStatus, Overview, RevokedNode, StoppedBotAnswer, SubmittedTask, Task, TaskStatus,
+    TriggerType,
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
@@ -135,6 +136,7 @@ fn reads_every_answer_it_asks_for() {
     reads::<Task>(&spec, "TaskSnapshot");
     reads::<SubmittedTask>(&spec, "SubmitResponse");
     reads::<CancelledTask>(&spec, "CancelResponse");
+    reads::<StoppedBotAnswer>(&spec, "StopResponse");
     reads::<DecidedTask>(&spec, "RunResponse");
     reads::<Execution>(&spec, "ExecutionSnapshot");
 }
