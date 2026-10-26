@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Port Fleet · AXLR Bots</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --line: #30363d; --text: #e6edf3; --muted: #9da7b3;
+    --ok: #3fb950; --work: #d18f52; --warn: #e3b341; --bad: #f85149; --idle: #8b949e; --accent: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #app { display: grid; grid-template-columns: 1fr 380px; height: 100vh; }
+  #map { height: 100%; }
+  aside { overflow-y: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 14px; }
+  header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  header h1 { font-size: 20px; margin: 0; }
+  header small { color: var(--muted); font-size: 14px; }
+  .counts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
+  .count { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px; text-align: center; }
+  .count b { display: block; font-size: 24px; }
+  .count span { font-size: 13px; color: var(--muted); }
+  h2 { font-size: 15px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 14px 0 6px; }
+  .card { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; }
+  .card .top { display: flex; align-items: center; gap: 8px; }
+  .card .name { font-weight: 600; flex: 1; }
+  .pill { font-size: 13px; padding: 1px 8px; border-radius: 999px; color: #0d1117; font-weight: 600; white-space: nowrap; }
+  .meta { color: var(--muted); font-size: 14px; margin-top: 3px; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; margin-top: 5px; overflow: hidden; }
+  .bar i { display: block; height: 100%; }
+  .stock { display: flex; gap: 12px; font-size: 14px; margin-top: 4px; }
+  #events { font-size: 14px; }
+  #events div { border-bottom: 1px solid var(--line); padding: 3px 0; }
+  #events time { color: var(--muted); margin-right: 6px; }
+  .vlabel { background: rgba(13,17,23,.85); color: var(--text); border: 0; border-radius: 4px; font: 600 12px system-ui; padding: 1px 5px; box-shadow: none; }
+  .vlabel::before { display: none; }
+  .zlabel { background: transparent; border: 0; box-shadow: none; color: #fff; font: 600 13px system-ui; text-shadow: 0 0 3px #000, 0 0 6px #000; }
+  .zlabel::before { display: none; }
+  .leaflet-container { background: #0d1117; }
+  @media (max-width: 800px) { #app { grid-template-columns: 1fr; grid-template-rows: 55vh auto; } aside { border-left: 0; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="map"></div>
+  <aside>
+    <header><h1>Port fleet</h1><small id="updated">connecting…</small></header>
+    <div class="counts">
+      <div class="count"><b id="c-out">0</b><span>out</span></div>
+      <div class="count"><b id="c-ready">0</b><span>ready</span></div>
+      <div class="count"><b id="c-station">0</b><span>at station</span></div>
+      <div class="count"><b id="c-off">0</b><span>offline</span></div>
+    </div>
+    <h2>Vehicles</h2><div id="vehicles"></div>
+    <h2>Stations</h2><div id="stations"></div>
+    <h2>Events</h2><div id="events"></div>
+  </aside>
+</div>
+<script>
+const PHASE = {
+  mission: ["out", "var(--work)"], takeoff: ["taking off", "var(--work)"], starting: ["starting", "var(--work)"],
+  returning: ["returning", "var(--accent)"], landing: ["landing", "var(--accent)"], parking: ["parking", "var(--accent)"],
+  ready: ["ready", "var(--ok)"], queued: ["waiting bay", "var(--warn)"], inspection: ["inspection", "var(--warn)"],
+  swap: ["battery swap", "var(--warn)"], booting: ["booting", "var(--idle)"], offline: ["offline", "var(--bad)"],
+};
+const OUT = new Set(["mission", "takeoff", "starting", "returning", "landing", "parking"]);
+const STATION = new Set(["queued", "inspection", "swap"]);
+const KIND_ICON = {
+  quad: '<path d="M-9-9L9 9M9-9L-9 9" stroke="#fff" stroke-width="2.5"/><circle cx="-9" cy="-9" r="5"/><circle cx="9" cy="-9" r="5"/><circle cx="-9" cy="9" r="5"/><circle cx="9" cy="9" r="5"/><path d="M0-14L4-7H-4Z" fill="#fff"/>',
+  rover: '<rect x="-7" y="-11" width="14" height="22" rx="3"/><rect x="-10" y="-9" width="3" height="6" fill="#fff"/><rect x="7" y="-9" width="3" height="6" fill="#fff"/><rect x="-10" y="4" width="3" height="6" fill="#fff"/><rect x="7" y="4" width="3" height="6" fill="#fff"/><path d="M0-11L4-5H-4Z" fill="#fff"/>',
+  plane: '<path d="M0-16L3-6L15 2V5L3 1L2 11L6 14V16L0 14L-6 16V14L-2 11L-3 1L-15 5V2L-3-6Z"/>',
+  supply: '<rect x="-9" y="-12" width="18" height="24" rx="3"/><rect x="-6" y="-3" width="12" height="11" fill="#fff"/><path d="M0-12L4-6H-4Z" fill="#fff"/>',
+};
+const map = L.map("map", { zoomControl: true, preferCanvas: false });
+const sat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  { maxZoom: 19, attribution: "Imagery © Esri, Maxar, Earthstar Geographics" });
+const dark = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+  { maxZoom: 20, subdomains: "abcd", attribution: "© OpenStreetMap contributors © CARTO" });
+const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap contributors" });
+sat.addTo(map);
+L.control.layers({ "Satellite": sat, "Dark": dark, "Streets": osm }).addTo(map);
+const layers = { zones: L.layerGroup().addTo(map), stations: L.layerGroup().addTo(map), routes: L.layerGroup().addTo(map), trails: L.layerGroup().addTo(map) };
+const markers = {}, trails = {}, routes = {}, photoPins = {};
+layers.photos = L.layerGroup().addTo(map);
+let fitted = false, zonesDrawn = false;
+
+function color(phase) { return (PHASE[phase] || [phase, "var(--idle)"])[1]; }
+function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v.slice(4, -1)).trim() || v; }
+function icon(v) {
+  const kind = v.role === "supply" ? "supply" : (v.kind || "quad");
+  const fill = css(color(v.phase));
+  const svg = `<svg width="40" height="40" viewBox="-20 -20 40 40" style="transform:rotate(${v.heading || 0}deg)"><g fill="${fill}" stroke="#0d1117" stroke-width="1">${KIND_ICON[kind]}</g></svg>`;
+  return L.divIcon({ html: svg, className: "", iconSize: [40, 40], iconAnchor: [20, 20] });
+}
+function sensors(v) {
+  const g = v.gps || {}, se = v.sensors || {}, hw = v.hardware || {}, fl = v.flight || {};
+  const out = [`🛰 ${esc(g.fix_name || "–")} ${g.satellites || 0} sats`];
+  if (se.lidar_down_m != null) out.push(`lidar ↓ ${se.lidar_down_m.toFixed(1)} m`);
+  if (se.lidar_near_m != null) out.push(`lidar ↔ ${se.lidar_near_m.toFixed(0)} m`);
+  if (se.optical_flow_quality != null) out.push(`flow ${se.optical_flow_quality}`);
+  if (fl.photos) out.push(`📷 ${fl.photos}`);
+  return out.join(" · ") + (hw.autopilot ? `<br>${esc(hw.autopilot)}${hw.gnss ? " · " + esc(hw.gnss) : ""}` : "");
+}
+function battery(p) { return p == null ? "–" : p + " %"; }
+function batColor(p) { return p == null ? "var(--idle)" : p >= 60 ? "var(--ok)" : p >= 30 ? "var(--warn)" : "var(--bad)"; }
+function fmtTime(t) { return new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }); }
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function drawStatic(f) {
+  if (zonesDrawn) return;
+  for (const z of f.zones || []) {
+    L.circle([z.lat, z.lon], { radius: z.radius_m, color: "#58a6ff", weight: 1.5, fillOpacity: 0.08, dashArray: "6 6" })
+      .bindTooltip(z.name, { permanent: true, direction: "center", className: "zlabel" })
+      .bindPopup(`<b>${esc(z.name)}</b><br>${esc(z.about)}`).addTo(layers.zones);
+  }
+  zonesDrawn = true;
+}
+
+function render(f) {
+  drawStatic(f);
+  document.getElementById("updated").textContent = "live · " + new Date(f.updated).toLocaleTimeString();
+  const counts = { out: 0, ready: 0, station: 0, off: 0 };
+  const bounds = [];
+  const cards = [];
+  for (const v of f.vehicles) {
+    const id = v.vehicle;
+    if (OUT.has(v.phase)) counts.out++; else if (v.phase === "ready") counts.ready++;
+    else if (STATION.has(v.phase)) counts.station++; else if (v.phase === "offline") counts.off++;
+    const pos = v.position;
+    if (pos && pos.lat != null) {
+      const ll = [pos.lat, pos.lon];
+      bounds.push(ll);
+      if (!markers[id]) {
+        markers[id] = L.marker(ll, { icon: icon(v), zIndexOffset: 1000 })
+          .bindTooltip(id, { permanent: true, direction: "right", offset: [14, 0], className: "vlabel" }).addTo(map);
+        trails[id] = L.polyline([], { color: css(color("mission")), weight: 2, opacity: 0.8 }).addTo(layers.trails);
+      }
+      markers[id].setLatLng(ll).setIcon(icon(v));
+      markers[id].setTooltipContent(`${id} · ${battery(v.battery_pct)}${pos.alt_m > 1 ? " · " + Math.round(pos.alt_m) + " m" : ""}`);
+      if (OUT.has(v.phase)) {
+        const pts = trails[id].getLatLngs();
+        pts.push(ll); if (pts.length > 600) pts.shift();
+        trails[id].setLatLngs(pts);
+      } else if (v.phase === "ready") trails[id].setLatLngs([]);
+    }
+    const fl = v.flight;
+    if (fl && fl.route && (OUT.has(v.phase) || fl.status === "starting")) {
+      const ll = fl.route.map(p => [p.lat, p.lon]); ll.push(ll[0]);
+      if (!routes[id]) routes[id] = L.polyline(ll, { color: "#fff", weight: 2, dashArray: "4 8", opacity: 0.9 }).addTo(layers.routes);
+      else routes[id].setLatLngs(ll);
+    } else if (routes[id]) { layers.routes.removeLayer(routes[id]); delete routes[id]; }
+    const [label, col] = PHASE[v.phase] || [v.phase || "?", "var(--idle)"];
+    const crew = v.ground_crew || {};
+    let detail = `${v.role === "supply" ? "supply rover" : v.kind} · ${crew.station || ""}`;
+    if (fl && OUT.has(v.phase)) detail = `${esc(fl.name)} · ${Math.round(v.groundspeed_m_s || 0)} m/s` + (pos && pos.alt_m > 1 ? ` · ${Math.round(pos.alt_m)} m` : "");
+    if (v.phase === "inspection") detail = `checked ${(crew.checked || []).length}/${crew.of}: ${esc((crew.checked || []).slice(-1)[0] || "starting")}`;
+    if (v.phase === "queued") detail = `at ${esc(crew.station)}: ${esc(crew.waiting_for || "waiting for a bay")}`;
+    const cargo = (f.cargo || {})[id];
+    if (cargo && OUT.has(v.phase)) detail += ` · 🔋${cargo.batteries} 🔧${cargo.parts} ♻${cargo.spent}`;
+    cards.push(`<div class="card" data-id="${esc(id)}"><div class="top"><span class="name">${esc(id)}</span><span class="pill" style="background:${col}">${esc(label)}</span></div>
+      <div class="meta">${detail} · ${v.missions || 0} missions</div>
+      <div class="meta">${sensors(v)}</div>
+      <div class="bar"><i style="width:${v.battery_pct || 0}%;background:${batColor(v.battery_pct)}"></i></div></div>`);
+  }
+  document.getElementById("vehicles").innerHTML = cards.join("");
+  for (const k of Object.keys(counts)) document.getElementById("c-" + k).textContent = counts[k];
+
+  layers.stations.clearLayers();
+  const scards = [];
+  const depot = f.depot;
+  if (depot) {
+    L.marker([depot.lat, depot.lon], { icon: L.divIcon({ html: '<div style="font-size:26px">🏭</div>', className: "", iconSize: [30, 30], iconAnchor: [15, 15] }) })
+      .bindTooltip(depot.label, { permanent: true, direction: "bottom", className: "vlabel", offset: [0, 12] }).addTo(layers.stations);
+    bounds.push([depot.lat, depot.lon]);
+  }
+  if (f.rtk) {
+    L.marker([f.rtk.lat, f.rtk.lon], { icon: L.divIcon({ html: '<div style="font-size:22px">📡</div>', className: "", iconSize: [26, 26], iconAnchor: [13, 13] }) })
+      .bindTooltip(f.rtk.label || "RTK base", { direction: "top", className: "vlabel" }).addTo(layers.stations);
+  }
+  for (const s of f.stations) {
+    const low = s.batteries < 2 || s.parts < 2;
+    L.marker([s.lat, s.lon], { icon: L.divIcon({ html: `<div style="font-size:24px;filter:${low ? "drop-shadow(0 0 6px #f85149)" : "none"}">🔌</div>`, className: "", iconSize: [28, 28], iconAnchor: [14, 14] }) })
+      .bindTooltip(`${s.label} · 🔋${s.batteries} 🔧${s.parts}`, { permanent: true, direction: "bottom", className: "vlabel", offset: [0, 12] }).addTo(layers.stations);
+    bounds.push([s.lat, s.lon]);
+    scards.push(`<div class="card"><div class="top"><span class="name">${esc(s.label)}</span><span class="pill" style="background:${low ? "var(--bad)" : "var(--ok)"}">${low ? "low stock" : "stocked"}</span></div>
+      <div class="stock"><span>🔋 ${s.batteries}/${s.max_batteries}</span><span>🔧 ${s.parts}/${s.max_parts}</span><span>♻ ${s.spent}</span><span>bays ${s.in_bays.length}/${s.bays}</span></div>
+      <div class="meta">${s.waiting.length ? "queue: " + s.waiting.map(esc).join(", ") : "no queue"} · ${s.serviced} served</div></div>`);
+  }
+  document.getElementById("stations").innerHTML = scards.join("");
+
+  for (const p of f.photos || []) {
+    if (photoPins[p.id]) continue;
+    const a = p.analysis || {};
+    const html = `<div style="width:300px"><img src="photos/${esc(p.id)}.jpg" style="width:300px;border-radius:6px"><br>
+      <b>${esc(p.vehicle)}</b> · ${esc(p.mission)} · ${Math.round(p.alt_m)} m<br>${esc(a.summary)}
+      ${(a.findings || []).length ? "<ul>" + a.findings.map(x => `<li>${esc(x)}</li>`).join("") + "</ul>" : ""}
+      <small>${(a.objects || []).map(esc).join(" · ")}</small></div>`;
+    photoPins[p.id] = L.circleMarker([p.lat, p.lon], { radius: a.alert ? 8 : 5, color: a.alert ? "#f85149" : "#e3b341", weight: 2, fillOpacity: 0.8 })
+      .bindPopup(html, { maxWidth: 320 }).addTo(layers.photos);
+  }
+  const ev = (f.events || []).map(e => ({ t: e.t, text: e.text }));
+  for (const p of (f.photos || []).slice(-8)) ev.push({ t: p.t, text: `📷 ${p.vehicle}: ${(p.analysis || {}).alert ? "⚠ " : ""}${(p.analysis || {}).summary || ""}` });
+  for (const v of f.vehicles) for (const e of v.events || []) ev.push({ t: e.t, text: `${v.vehicle}: ${e.text}` });
+  ev.sort((a, b) => b.t - a.t);
+  document.getElementById("events").innerHTML = ev.slice(0, 25).map(e => `<div><time>${fmtTime(e.t)}</time>${esc(e.text)}</div>`).join("");
+
+  if (!fitted && bounds.length) { map.fitBounds(L.latLngBounds(bounds).pad(0.08)); fitted = true; }
+}
+
+document.getElementById("vehicles").addEventListener("click", ev => {
+  const card = ev.target.closest(".card"); if (!card) return;
+  const m = markers[card.dataset.id]; if (m) map.flyTo(m.getLatLng(), 17);
+});
+
+function connect() {
+  const es = new EventSource("api/stream");
+  es.onmessage = m => render(JSON.parse(m.data));
+  es.onerror = () => { es.close(); document.getElementById("updated").textContent = "reconnecting…"; setTimeout(connect, 3000); };
+}
+fetch("api/fleet").then(r => r.json()).then(render).finally(connect);
+</script>
+</body>
+</html>
