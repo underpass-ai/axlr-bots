@@ -215,6 +215,38 @@
         }
       }
     },
+    "/v1/bots/{id}/stop": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "bot id"
+        }
+      ],
+      "post": {
+        "operationId": "stopBot",
+        "description": "pause the bot when it is Enabled and cancel every task it has not finished (Pending, Running, WaitingApproval)",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StopResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/bots/{id}/tasks": {
       "parameters": [
         {
@@ -1249,6 +1281,13 @@
           },
           "ttl": {
             "type": "string"
+          },
+          "autoApprove": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ToolRuleSnapshot"
+            },
+            "description": "calls the control plane approves without a person (actor policy:autoApprove)"
           }
         }
       },
@@ -1855,6 +1894,7 @@
           "bot.task.waiting_approval",
           "bot.task.decided",
           "bot.task.cancelled",
+          "bot.task.preempted",
           "bot.task.expired",
           "bot.task.delegated",
           "bot.delegation.refused",
@@ -1884,6 +1924,10 @@
           },
           "perMinute": {
             "type": "integer"
+          },
+          "interruptible": {
+            "type": "boolean",
+            "description": "false: no teammate's event interrupts the bot; absent: an addressed warning does"
           }
         }
       },
@@ -2467,6 +2511,48 @@
           "execution"
         ]
       },
+      "StopRefusal": {
+        "type": "object",
+        "x-go-type": "application.StopRefusal",
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "taskId"
+        ]
+      },
+      "StopResponse": {
+        "type": "object",
+        "x-go-type": "unixapi.StopResponse",
+        "properties": {
+          "bot": {
+            "$ref": "#/components/schemas/BotSnapshot"
+          },
+          "cancelled": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notCancelled": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StopRefusal"
+            }
+          }
+        },
+        "required": [
+          "bot",
+          "cancelled",
+          "notCancelled"
+        ]
+      },
       "SubmitRequest": {
         "type": "object",
         "x-go-type": "unixapi.SubmitRequest",
@@ -2482,6 +2568,10 @@
           },
           "objective": {
             "type": "string"
+          },
+          "priority": {
+            "type": "string",
+            "description": "urgent: go first and cancel the bot's work in progress; absent or normal: wait the turn"
           }
         },
         "required": [
@@ -2561,6 +2651,10 @@
           },
           "objective": {
             "type": "string"
+          },
+          "priority": {
+            "type": "string",
+            "description": "urgent: go first and cancel the bot's work in progress; absent or normal: wait the turn"
           }
         },
         "required": [
@@ -2636,6 +2730,10 @@
           "updatedAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "priority": {
+            "type": "string",
+            "description": "urgent for a task that went first; absent for normal"
           }
         },
         "required": [
@@ -2785,6 +2883,10 @@
             },
             "type": "array",
             "description": "an event trigger: the event names or patterns it hears"
+          },
+          "interrupt": {
+            "type": "boolean",
+            "description": "an event trigger: its warnings and criticals make urgent tasks"
           }
         },
         "required": [

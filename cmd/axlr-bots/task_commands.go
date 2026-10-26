@@ -23,6 +23,7 @@ func taskSubmit(ctx context.Context, service unixapi.Service, args []string, std
 	objective := flags.String("objective", "", "what the task asks for")
 	key := flags.String("key", "", "idempotency key: the same key names the same task")
 	correlation := flags.String("correlation", "", "correlation id from upstream, if any")
+	urgent := flags.Bool("urgent", false, "go first and cancel the bot's work in progress")
 	if err := flags.Parse(rest); err != nil {
 		return exitUsage
 	}
@@ -30,7 +31,11 @@ func taskSubmit(ctx context.Context, service unixapi.Service, args []string, std
 		fmt.Fprintln(stderr, "axlr-bots: task submit needs --objective and --key")
 		return exitUsage
 	}
-	result, err := service.SubmitTask(ctx, unixapi.SubmitRequest{BotID: botID, Objective: *objective, IdempotencyKey: *key, CorrelationID: *correlation})
+	priority := ""
+	if *urgent {
+		priority = "urgent"
+	}
+	result, err := service.SubmitTask(ctx, unixapi.SubmitRequest{BotID: botID, Objective: *objective, IdempotencyKey: *key, CorrelationID: *correlation, Priority: priority})
 	if err != nil {
 		return fail(stderr, err)
 	}

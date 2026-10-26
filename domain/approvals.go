@@ -1,7 +1,9 @@
 package domain
 
 import (
+	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -17,9 +19,10 @@ const (
 // what happens when nobody decides in time and who is told (vision §14:
 // an expired approval does not authorise the operation).
 type Approvals struct {
-	ttl      time.Duration
-	onExpire ApprovalExpiry
-	notify   []NotifyTarget
+	ttl         time.Duration
+	onExpire    ApprovalExpiry
+	notify      []NotifyTarget
+	autoApprove []ToolRule
 }
 
 // DefaultApprovals is what a definition without approvals means: an
@@ -61,7 +64,53 @@ func NewApprovals(s ApprovalsSnapshot) (Approvals, error) {
 		seen[target.Name()] = true
 		a.notify = append(a.notify, target)
 	}
+	if len(s.AutoApprove) > maxAutoApproveRules {
+		return Approvals{}, invalid("approvals autoApprove", "takes at most 16 rules")
+	}
+	for _, definition := range s.AutoApprove {
+		rule, err := NewToolRule(definition.Tool, definition.Arguments)
+		if err != nil {
+			return Approvals{}, invalid("approvals autoApprove", err.Error())
+		}
+		a.autoApprove = append(a.autoApprove, rule)
+	}
 	return a, nil
+}
+
+// maxAutoApproveRules bounds the calls approved without a person.
+const maxAutoApproveRules = 16
+
+// MCPCallTool is how AXLR asks for a call of an MCP tool: the tool's
+// name and its own arguments are inside the call's arguments.
+const MCPCallTool = "axlr_call_tool"
+
+// AutoApproves reports whether the control plane approves the call
+// without a person: a rule of autoApprove fits it. An MCP call AXLR
+// wraps in axlr_call_tool is judged by the tool it names (by its own
+// name or as <plugin>/<tool>) and that tool's arguments. Only the
+// operator writes the rules; a call the policy forbids never reaches a
+// decision.
+func (a Approvals) AutoApproves(tool string, arguments []byte) bool {
+	if tool == MCPCallTool {
+		var wrapped struct {
+			Name      string          `json:"name"`
+			Arguments json.RawMessage `json:"arguments"`
+		}
+		if json.Unmarshal(arguments, &wrapped) != nil || wrapped.Name == "" {
+			return false
+		}
+		tool, arguments = wrapped.Name, wrapped.Arguments
+		if len(arguments) == 0 {
+			arguments = []byte("{}")
+		}
+	}
+	short := tool[strings.LastIndex(tool, "/")+1:]
+	for _, rule := range a.autoApprove {
+		if rule.Matches(tool, arguments) || rule.Matches(short, arguments) {
+			return true
+		}
+	}
+	return false
 }
 
 // TTL is how long a pending call waits for a person.
@@ -98,6 +147,9 @@ func (a Approvals) Snapshot() ApprovalsSnapshot {
 	s := ApprovalsSnapshot{TTL: formatTTL(a.TTL()), OnExpire: a.OnExpire().String()}
 	for _, target := range a.notify {
 		s.Notify = append(s.Notify, target.Snapshot())
+	}
+	for _, rule := range a.autoApprove {
+		s.AutoApprove = append(s.AutoApprove, rule.Snapshot())
 	}
 	return s
 }

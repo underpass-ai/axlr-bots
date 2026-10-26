@@ -142,7 +142,7 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 	if err := uc.deps.Tasks.Save(ctx, task); err != nil {
 		return ApproveTaskResult{}, err
 	}
-	payload := map[string]any{"decision": decision, "callId": pending.CallID, "sessionId": sessionID, "executionId": executionID.String()}
+	payload := map[string]any{"decision": decision, "callId": pending.CallID, "sessionId": sessionID, "executionId": executionID.String(), "decidedBy": uc.deps.Actor}
 	if previous.IsAssigned() {
 		payload["nodeId"] = previous.NodeID().String()
 	}

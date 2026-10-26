@@ -10,8 +10,9 @@ import (
 // NextAssignment is what a node asks for: the next execution it should
 // run. Executions already assigned to the node and not yet leased (a
 // decision queued by ApproveTask, or an assignment the node lost before
-// taking it) go first; then the oldest Pending task of a bot placed on
-// the node is started and assigned to it. The node must be Online.
+// taking it) go first; then the oldest urgent Pending task of a bot
+// placed on the node, else the oldest Pending one, is started and
+// assigned to it. The node must be Online.
 type NextAssignment struct {
 	deps Dependencies
 	rec  recorder
@@ -96,7 +97,7 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 			}
 			continue
 		}
-		if chosen == nil || pending[i].CreatedAt().Before(chosen.CreatedAt()) {
+		if chosen == nil || goesBefore(pending[i], *chosen) {
 			chosen, bot = &pending[i], candidate
 		}
 	}
@@ -136,6 +137,15 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 		return Assignment{}, false, err
 	}
 	return uc.lease(ctx, bot, task, execution, assignment)
+}
+
+// goesBefore reports whether a task is assigned before another: an
+// urgent one first, then the older.
+func goesBefore(a, b domain.Task) bool {
+	if a.IsUrgent() != b.IsUrgent() {
+		return a.IsUrgent()
+	}
+	return a.CreatedAt().Before(b.CreatedAt())
 }
 
 // describe builds what the node needs for the execution: a delegated

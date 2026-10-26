@@ -103,9 +103,31 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 		return err
 	}
 	if waiting {
+		if pending := execution.Result().PendingDecision; pending != nil && bot.Approvals().AutoApproves(pending.Tool, pending.Arguments) {
+			if approved := s.autoApprove(ctx, *task, pending.CallID); approved {
+				return nil
+			}
+		}
 		return s.notes.queue(ctx, bot, *task, *execution, wait)
 	}
 	return nil
+}
+
+// PolicyActor is who decides a call the bot's approvals.autoApprove
+// names: the operator's rule, not a person at the moment.
+const PolicyActor = "policy:autoApprove"
+
+// autoApprove decides the call the task stopped on as the operator's
+// rule says, without a person; false when it could not (the bot was
+// paused meanwhile), and then a person is asked as usual.
+func (s settler) autoApprove(ctx context.Context, task domain.Task, callID string) bool {
+	deps := s.deps
+	deps.Actor = PolicyActor
+	if _, err := NewApproveTask(deps).Execute(ctx, task.ID(), DecisionApprove, callID); err != nil {
+		_ = s.rec.audit(ctx, "task.decide", task.ID().String(), domain.AuditFailed, map[string]string{"actor": PolicyActor, "reason": err.Error()})
+		return false
+	}
+	return true
 }
 
 // storedNames are the names of the artifacts the store keeps.

@@ -69,6 +69,7 @@ A call the policy leaves to a person stops the task in `WaitingApproval` ([runbo
 | `ttl` | a duration from `1m` to `720h`; the wait's deadline is when the task stopped plus the `ttl`, kept on the task (`approval.deadline`) so a restart keeps it |
 | `onExpire` | `deny`: at the deadline the call is denied as a person's deny would (a new execution hands the denial to the session, which goes on without the call); `cancel`: the task ends `Expired` and the session stays where it is. A denial whose run fails ends the task `Expired` too, and a paused bot's expired task ends `Expired` either way ([expiry](../runbooks/approvals.md#expiry)) |
 | `notify` | up to 8 targets, names unique (the type when not given). A `webhook` takes an absolute `http`/`https` `url` without credentials and the `secret` its deliveries are signed with; a `command` takes the program by its absolute path and its arguments |
+| `autoApprove` | up to 16 rules, as in `toolRules` (`{"tool": "return_home"}`, argument patterns allowed): a call that fits one is approved by the control plane at once, as actor `policy:autoApprove`, without a notification. An MCP call AXLR asks for as `axlr_call_tool` is judged by the tool it names. It costs one more execution (a few seconds): AXLR's `act-with-approval` asks for every call, so the decision is the control plane's. A bot paused meanwhile, or any other refusal, leaves the call to a person as usual |
 
 A decision that arrives after the deadline authorises nothing (vision §14): it is refused with `409 approval_expired`, whether the daemon has carried out the expiry yet or not, and the call never runs. The secret is stored with the bot and redacted in every answer, as a trigger's is; a `PATCH` of `approvals` replaces the whole value, secrets included. A bot defined before approvals waits an hour and then denies.
 
@@ -93,6 +94,12 @@ The target takes delegated tasks when its `triggers` include `{"type": "delegati
 
 [`examples/bot-delegating.json`](../../examples/bot-delegating.json) asks [`examples/bot-delegate-target.json`](../../examples/bot-delegate-target.json); the tool's schema and the wiring are in the [ADR](../architecture/delegation.md#1-how-the-model-asks).
 
+## Urgent tasks
+
+Only the operator makes a task urgent: with `priority: urgent` at submission (`task submit --urgent`, the panel's Urgent switch), or in the definition of the bot that hears a teammate's event (below). An urgent task is assigned before the bot's other tasks, and it cancels the bot's tasks that are Running or WaitingApproval and not urgent: each ends `Cancelled` with the reason `preempted by the urgent task <id> (<why>)` and a `bot.task.preempted` event, a running execution stops at the node's next lease renewal (10 s), and a waiting call never gets its decision (a late approve or deny is `409`). Pending tasks wait behind it; an urgent task never cancels another urgent one. Cancelling stops the model, not what it started: a vehicle on a mission flies on until the urgent task calls, say, `return_home`.
+
+**Stop** (`bot stop`, `POST /v1/bots/{id}/stop`) is the operator's brake: it pauses the bot and cancels every task it has not finished, Pending included.
+
 ## Teams
 
 A team is a name bots share: `"groups": ["port"]`. Nothing else needs to be written ([ADR](../architecture/groups-and-events.md)). A team exists while a bot of the tenant names it; `axlr-bots group list` and `GET /v1/groups` show each team with its members.
@@ -116,6 +123,7 @@ A bot in a team may tell it that something happened with the tool `axlr_bots_emi
 |---|---|
 | a bot may emit any name, severity up to `warning`, 6 a minute | `"events": {"emit": [{"name": "recall", "maxSeverity": "warning"}, {"name": "ship.*", "maxSeverity": "critical"}], "perMinute": 12}`: only those names (`*` one dot-separated segment, `**` any), each up to its severity; at most 60 a minute |
 | a teammate hears the events addressed to it (`to`) and the team's broadcasts of `warning` or `critical`; `info` broadcasts are for the record | an `event` trigger, `{"type": "event", "name": "ships", "events": ["ship.*"], "objective": "Look at {{.data.where}}: {{.message}}"}`: a bot that declares event triggers hears only what they name |
+| a `warning` or `critical` addressed to the bot makes an [urgent](#urgent-tasks) task: it stops what the bot was doing. A broadcast never does | `"events": {"interruptible": false}`: nothing a teammate emits interrupts the bot; with event triggers, `"interrupt": true` on a trigger makes its warnings and criticals urgent, addressed or not |
 
 The teammate's task runs under its own mission, policy and budgets, until its own timeout, with the emitter's trace id; its objective says who said what (`Your teammate plane says (warning, event recall): …`, or the trigger's template over `name`, `from`, `severity`, `message`, `data`, `dataJSON`, `to`, `teams`, `eventId`), and its `delegation` lineage names the event (`eventId`). A chain is cut as a delegation's is: a teammate already on the chain is skipped (`cycle`), and so is one that would be deeper than the chain allows (`depth_exceeded`, at the least `maxDepth` along it; 1 by default, so a task an event made tells the team but makes no new task). The same call made twice (a retry) is the same event and makes no task twice. A whole event is refused, as `bot.event.refused`, when the bot is in no team (`no_team`), may not emit the name (`not_allowed`) or not at that severity (`severity_not_allowed`), addresses a bot outside its teams (`not_member`) or passed its rate (`rate_limited`).
 
@@ -174,6 +182,8 @@ axlr-bots bot update bot --file patch.json           # PATCH /v1/bots/{id}
 axlr-bots bot get bot                                # credentials redacted
 axlr-bots bot events bot --limit 100                 # the bot's newest events, oldest first
 ```
+
+A task's `priority` is `urgent` when it went first ([urgent tasks](#urgent-tasks)), absent otherwise.
 
 A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `delegation`, `groups`, `events`, `model`, `budgets`) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`examples/bot-triggers-patch.json`](../../examples/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`examples/bot-act-with-approval.json`](../../examples/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
 

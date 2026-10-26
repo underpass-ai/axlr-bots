@@ -67,6 +67,20 @@ func botPause(ctx context.Context, service unixapi.Service, args []string, stdou
 	return exitOK
 }
 
+// botStop pauses the bot and cancels every task it has not finished.
+func botStop(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, "axlr-bots: bot stop needs exactly one <bot-id>")
+		return exitUsage
+	}
+	stopped, err := service.StopBot(ctx, args[0])
+	if err != nil {
+		return fail(stderr, err)
+	}
+	printJSON(stdout, stopped)
+	return exitOK
+}
+
 func botList(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 0 {
 		fmt.Fprintln(stderr, "axlr-bots: bot list takes no arguments")

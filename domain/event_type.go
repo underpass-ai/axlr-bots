@@ -33,6 +33,10 @@ const (
 	EventTaskDecided EventType = "bot.task.decided"
 	// EventTaskCancelled says the operator stopped the task.
 	EventTaskCancelled EventType = "bot.task.cancelled"
+	// EventTaskPreempted says an urgent task of the bot cancelled this
+	// one, which was running or waiting for a person: the payload names
+	// the urgent task and why it was urgent.
+	EventTaskPreempted EventType = "bot.task.preempted"
 	// EventTaskExpired says a task ended Expired: nobody decided the call
 	// it waited on in time, and the call never ran.
 	EventTaskExpired EventType = "bot.task.expired"
@@ -76,7 +80,7 @@ const (
 func ParseEventType(raw string) (EventType, error) {
 	switch EventType(raw) {
 	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
-		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskExpired, EventApprovalExpired, EventTaskDelegated, EventDelegationRefused,
+		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventTaskDelegated, EventDelegationRefused,
 		EventEventEmitted, EventEventRefused,
 		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked,
 		EventExecutionAssigned, EventExecutionReported:

@@ -59,3 +59,27 @@ func TestGroupEventsCommand(t *testing.T) {
 		t.Error("a missing team answered")
 	}
 }
+
+func TestStopAndUrgentCommands(t *testing.T) {
+	c := cli{t: t, state: t.TempDir(), axlr: fakeAXLR(t, "completed"), socket: ""}
+	if code, _, errText := c.run("bot", "register", "--file", filepath.Join("..", "..", "examples", "bot-team-b.json")); code != exitOK {
+		t.Fatalf("register: %s", errText)
+	}
+	if code, _, errText := c.run("bot", "enable", "team-b"); code != exitOK {
+		t.Fatalf("enable: %s", errText)
+	}
+	code, submitted := c.json("task", "submit", "team-b", "--objective", "Come back", "--key", "u-1", "--urgent")
+	if code != exitOK || submitted["task"].(map[string]any)["priority"] != "urgent" {
+		t.Fatalf("submit = %d %v", code, submitted)
+	}
+	code, stopped := c.json("bot", "stop", "team-b")
+	if code != exitOK || len(stopped["cancelled"].([]any)) != 1 || stopped["bot"].(map[string]any)["status"] != "Paused" {
+		t.Errorf("stop = %d %v", code, stopped)
+	}
+	if code, _, _ := c.run("bot", "stop"); code != exitUsage {
+		t.Errorf("stop without id: %d", code)
+	}
+	if code, _, _ := c.run("bot", "stop", "ghost"); code == exitOK {
+		t.Error("a missing bot was stopped")
+	}
+}

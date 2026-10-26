@@ -79,6 +79,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return botEnable(ctx, service, rest, stdout, stderr)
 	case "bot pause":
 		return botPause(ctx, service, rest, stdout, stderr)
+	case "bot stop":
+		return botStop(ctx, service, rest, stdout, stderr)
 	case "bot list":
 		return botList(ctx, service, rest, stdout, stderr)
 	case "bot get":
@@ -201,6 +203,7 @@ func printUsage(w io.Writer) {
   bot register --file <bot.json>      register a bot from its definition
   bot enable <bot-id>                 let the bot accept tasks
   bot pause <bot-id>                  put an enabled bot on hold; it accepts no task
+  bot stop <bot-id>                   pause it and cancel every task it has not finished
   bot list                            list bots
   bot get <bot-id>                    show one bot
   bot update <bot-id> --file <patch.json>
@@ -212,8 +215,9 @@ func printUsage(w io.Writer) {
   group get <group> [--tenant <id>]   show one team: each member's purpose, tools, where it runs
   group events <group> [--after <event-id>] [--limit 100] [--tenant <id>]
                                       the team's timeline: its members' events, oldest first
-  task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>]
-                                      accept a task; the same key names the same task
+  task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>] [--urgent]
+                                      accept a task; the same key names the same task; --urgent
+                                      goes first and cancels the bot's work in progress
   trigger fire <bot-id> <trigger> --body '<json>' | --file <event.json> [--delivery <id>]
                                       fire a webhook trigger with an event (over the socket)
   task run <task-id>                  run a pending task now, in process

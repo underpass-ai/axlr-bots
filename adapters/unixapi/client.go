@@ -103,6 +103,11 @@ func (c *Client) ListEvents(ctx context.Context, id string, limit int) ([]domain
 	return events, c.call(ctx, http.MethodGet, path, nil, &events)
 }
 
+func (c *Client) StopBot(ctx context.Context, id string) (StopResponse, error) {
+	var response StopResponse
+	return response, c.call(ctx, http.MethodPost, "/v1/bots/"+url.PathEscape(id)+"/stop", nil, &response)
+}
+
 func (c *Client) ListBots(ctx context.Context) ([]domain.BotSnapshot, error) {
 	bots := []domain.BotSnapshot{}
 	return bots, c.call(ctx, http.MethodGet, "/v1/bots", nil, &bots)
@@ -150,7 +155,7 @@ func (c *Client) ListGroupEvents(ctx context.Context, query application.GroupEve
 // Idempotency-Key header, as any client of the operator API would.
 func (c *Client) SubmitTask(ctx context.Context, request SubmitRequest) (SubmitResponse, error) {
 	var response SubmitResponse
-	body := TaskRequest{Objective: request.Objective, CorrelationID: request.CorrelationID}
+	body := TaskRequest{Objective: request.Objective, CorrelationID: request.CorrelationID, Priority: request.Priority}
 	headers := http.Header{}
 	if request.IdempotencyKey != "" {
 		headers.Set(IdempotencyKeyHeader, request.IdempotencyKey)

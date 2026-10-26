@@ -1,6 +1,8 @@
 package domain
 
 import (
+	"bytes"
+	"encoding/json"
 	"sort"
 	"unicode"
 	"unicode/utf8"
@@ -83,6 +85,41 @@ func printable(text string) bool {
 	}
 	for _, c := range text {
 		if unicode.IsControl(c) {
+			return false
+		}
+	}
+	return true
+}
+
+// Matches reports whether a call of tool with these arguments (a JSON
+// object) fits the rule: the tool is the rule's, and every argument the
+// rule names is in the call with a value that fits its pattern, a string
+// as it is and anything else as its compact JSON.
+func (r ToolRule) Matches(tool string, arguments json.RawMessage) bool {
+	if tool != r.tool.String() {
+		return false
+	}
+	if len(r.arguments) == 0 {
+		return true
+	}
+	var values map[string]json.RawMessage
+	if err := json.Unmarshal(arguments, &values); err != nil {
+		return false
+	}
+	for key, pattern := range r.arguments {
+		raw, ok := values[key]
+		if !ok {
+			return false
+		}
+		var text string
+		if err := json.Unmarshal(raw, &text); err != nil {
+			var compact bytes.Buffer
+			if json.Compact(&compact, raw) != nil {
+				return false
+			}
+			text = compact.String()
+		}
+		if !globMatches(pattern, text) {
 			return false
 		}
 	}

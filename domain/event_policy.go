@@ -15,6 +15,7 @@ const (
 type EventPolicy struct {
 	rules     []EmitRule
 	perMinute int
+	steady    bool
 }
 
 // NewEventPolicy validates a bot's events: up to 16 rules, a rate from 1
@@ -26,7 +27,7 @@ func NewEventPolicy(s EventsSnapshot) (EventPolicy, error) {
 	if s.PerMinute < 0 || s.PerMinute > MaxEventsPerMinute {
 		return EventPolicy{}, invalid("events perMinute", "must be from 1 to 60")
 	}
-	p := EventPolicy{perMinute: s.PerMinute}
+	p := EventPolicy{perMinute: s.PerMinute, steady: s.Interruptible != nil && !*s.Interruptible}
 	for _, raw := range s.Emit {
 		rule, err := NewEmitRule(raw)
 		if err != nil {
@@ -81,12 +82,20 @@ func (p EventPolicy) Highest() Severity {
 	return best
 }
 
+// Interruptible reports whether a teammate's warning may interrupt the
+// bot; true unless its definition says interruptible false.
+func (p EventPolicy) Interruptible() bool { return !p.steady }
+
 // Snapshot returns the policy as plain data, nil when it is the default.
 func (p EventPolicy) Snapshot() *EventsSnapshot {
-	if len(p.rules) == 0 && p.perMinute == 0 {
+	if len(p.rules) == 0 && p.perMinute == 0 && !p.steady {
 		return nil
 	}
 	s := &EventsSnapshot{PerMinute: p.perMinute}
+	if p.steady {
+		steady := false
+		s.Interruptible = &steady
+	}
 	for _, rule := range p.rules {
 		s.Emit = append(s.Emit, rule.Snapshot())
 	}

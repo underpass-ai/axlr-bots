@@ -72,6 +72,23 @@ func (l *Local) UpdateBot(ctx context.Context, id string, patch application.BotP
 	return bot.Snapshot().Redacted(), nil
 }
 
+func (l *Local) StopBot(ctx context.Context, id string) (StopResponse, error) {
+	botID, err := domain.NewBotID(id)
+	if err != nil {
+		return StopResponse{}, err
+	}
+	result, err := application.NewStopBot(l.deps).Execute(ctx, botID)
+	if err != nil {
+		return StopResponse{}, err
+	}
+	response := StopResponse{Bot: result.Bot.Snapshot().Redacted(), Cancelled: []string{}, NotCancelled: []application.StopRefusal{}}
+	for _, id := range result.Cancelled {
+		response.Cancelled = append(response.Cancelled, id.String())
+	}
+	response.NotCancelled = append(response.NotCancelled, result.NotCancelled...)
+	return response, nil
+}
+
 func (l *Local) ListBots(ctx context.Context) ([]domain.BotSnapshot, error) {
 	bots, err := application.NewListBots(l.deps).Execute(ctx)
 	if err != nil {
@@ -120,7 +137,7 @@ func (l *Local) SubmitTask(ctx context.Context, request SubmitRequest) (SubmitRe
 	l.submits.Lock()
 	defer l.submits.Unlock()
 	result, err := application.NewSubmitTask(l.deps).Execute(ctx, application.SubmitTaskCommand{
-		BotID: request.BotID, Objective: request.Objective, IdempotencyKey: request.IdempotencyKey, CorrelationID: request.CorrelationID,
+		BotID: request.BotID, Objective: request.Objective, IdempotencyKey: request.IdempotencyKey, CorrelationID: request.CorrelationID, Priority: request.Priority,
 	})
 	if err != nil {
 		return SubmitResponse{}, err

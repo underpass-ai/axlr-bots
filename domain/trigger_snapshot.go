@@ -6,7 +6,8 @@ package domain
 // a timer. A webhook authenticates with Secret (a header) or SigningKey
 // (an HMAC over the body); a timer runs Every (a duration) or on Cron
 // (five fields, the host's time zone). An event trigger hears the
-// event names or patterns Events lists.
+// event names or patterns Events lists and, with Interrupt, makes their
+// warnings and criticals urgent.
 type TriggerSnapshot struct {
 	Type       string   `json:"type"`
 	Name       string   `json:"name,omitempty"`
@@ -16,6 +17,7 @@ type TriggerSnapshot struct {
 	Every      string   `json:"every,omitempty"`
 	Cron       string   `json:"cron,omitempty"`
 	Events     []string `json:"events,omitempty"`
+	Interrupt  bool     `json:"interrupt,omitempty"`
 }
 
 // Redacted is the snapshot with its credentials hidden: what the API
