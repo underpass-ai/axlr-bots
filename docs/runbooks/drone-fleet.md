@@ -233,6 +233,28 @@ curl -X POST http://127.0.0.1:18090/api/incident -H "X-Incident-Secret: $(cat ~/
 | cost | $0.039 of bot models and $0.044 of vision, $0.08 in all |
 | report | `incident-report.md`, delivered by the reporter through `axlr_deliver` and stored by the control plane |
 
+### The recorded run (26 Oct 2026, `inc-20261026-103457`)
+
+The same call, recorded with OBS; every takeoff approved on the phone page (`/m`) by the operator at the desk.
+
+| | |
+|---|---|
+| the call | MV DEMO TRADER, 14 containers at 51.951 N 3.937 E, lost 20 minutes before the call; wind from 250° at 10 m/s, current to 25° at 0.25 m/s |
+| first wave | the plane: `parallel_track` on the datum, heading 140°, 1258 × 1006 m; quad-1, the only quad within 1800 m of the datum: `expanding_square` |
+| sightings | 12 sightings, every one matched to a container (no false ones); quad-0 and quad-2 sent to S2 and S3, then quad-0 and quad-1 to S12 and S8 once they were serviced |
+| logistics | the sea-defence station ran down to one pack after two services; the base called `logistics`, the supply rover drove 5 packs and 7 parts from the depot (approved on the phone) while the station sat at zero |
+| result | 12 of 14 confirmed in 27 minutes 24 seconds; 2 never seen (C12, C13); ended by the operator |
+| photos | 418 analysed |
+| cost | $0.048 of bot models (dispatcher, pilots, logistics, reporter) and $0.081 of vision: $0.129 |
+| report | `incident-report.md` through `axlr_deliver`, 45 seconds after the end |
+| AIS | off: no aisstream.io key yet, so the pages said "real imagery" only |
+
+![The search at night in 3D: the plane's track across the drift, the quads' squares, the containers and their drift arrows](../assets/drone-fleet/sar-3d-night.jpg)
+
+![A takeoff waiting on the phone page: quad-0's expanding square on sighting S2, its route on the map, Approve or Deny](../assets/drone-fleet/sar-phone-approval.jpg)
+
+![What the vision model saw from quad-1 at 35 m: three containers, each matched to the simulation's](../assets/drone-fleet/sar-vision-quad.jpg)
+
 ## Limits
 
 - The vehicles are SITL: the sensors are SITL's backends (rangefinders, optical flow, camera trigger), RTK is SITL's fix 6 with no correction link, and the map's hardware labels describe what the vehicles stand for.
