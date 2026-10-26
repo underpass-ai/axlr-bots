@@ -320,7 +320,23 @@ impl FakeState {
                 status: "completed".into(),
             }],
         };
+        // A run that ended has the runtime's receipt, with each call's
+        // timing, as a node reports it.
+        let receipt = outcome.is_final().then(|| {
+            let calls: Vec<serde_json::Value> = tool_calls
+                .iter()
+                .map(|c| {
+                    serde_json::json!({
+                        "call_id": c.call_id, "tool": c.name, "decision": c.decision, "status": c.status,
+                        "started_at": (at + Duration::seconds(2)).to_rfc3339(), "duration_ms": 40,
+                        "arguments_sha256": "00"
+                    })
+                })
+                .collect();
+            serde_json::json!({"schema": "axlr.execution-receipt/v1", "tool_calls": calls, "complete": true})
+        });
         self.executions.push(Execution {
+            receipt,
             id: id.clone(),
             task_id: task.clone(),
             bot_id: bot.clone(),

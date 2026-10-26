@@ -353,6 +353,7 @@ fn a_waiting_task_shows_the_call_and_its_answers() {
         &app,
         &[
             "Needs your OK",
+            "It asked you",
             "local_write",
             "hello.txt",
             "Approve",
@@ -393,12 +394,33 @@ fn a_finished_task_shows_its_answer_and_failure() {
         .unwrap()
         .id
         .clone();
+    // The bot's own rules about the tool show under the step.
+    let bot = app
+        .fleet
+        .as_ref()
+        .unwrap()
+        .tasks
+        .iter()
+        .find(|t| t.id == done)
+        .unwrap()
+        .bot_id
+        .clone();
+    if let Some(b) = app.fleet.as_mut().unwrap().bots.iter_mut().find(|b| b.id == bot) {
+        b.tool_rules.allow.push(crate::domain::ToolRule {
+            tool: "local_list".into(),
+            arguments: [("path".to_string(), "*".to_string())].into(),
+        });
+    }
     send(&mut app, Message::Go(Screen::Task(done)));
+    shows(&app, &["Its rules: allows local_list(path=*)"]);
     shows(
         &app,
         &[
             "Answer",
-            "auto OK",
+            "Steps",
+            "Allowed by its rules",
+            "done",
+            "40 ms",
             "wrx80",
             "Copy task",
             "Copy answer",

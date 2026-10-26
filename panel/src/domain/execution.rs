@@ -2,8 +2,8 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    BotId, Correlation, ExecutionId, ExecutionKind, ExecutionOutcome, ExecutionResult, NodeId, PolicyRecord, TaskId,
-    Usage,
+    BotId, Correlation, ExecutionId, ExecutionKind, ExecutionOutcome, ExecutionResult, NodeId, PolicyRecord, RunStep,
+    TaskId, Usage,
 };
 
 /// One run of a task, or of a decision on it, on a node.
@@ -37,12 +37,25 @@ pub struct Execution {
     pub node_id: Option<NodeId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lease_until: Option<DateTime<Utc>>,
+    /// The runtime's receipt of the run, as it wrote it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receipt: Option<serde_json::Value>,
 }
 
 impl Execution {
     /// How long the execution ran, or has run until `now`.
     pub fn duration(&self, now: DateTime<Utc>) -> Duration {
         (self.ended_at.unwrap_or(now) - self.started_at).max(Duration::zero())
+    }
+
+    /// Its tool calls in order: from the receipt, with their timing, when
+    /// it has one; else from the result.
+    pub fn steps(&self) -> Vec<RunStep> {
+        let from_receipt = self.receipt.as_ref().map(RunStep::from_receipt).unwrap_or_default();
+        if !from_receipt.is_empty() {
+            return from_receipt;
+        }
+        self.result.tool_calls.iter().map(RunStep::from_call).collect()
     }
 
     /// Where it ran: the node, or the control plane itself.
@@ -74,6 +87,12 @@ mod tests {
         assert_eq!(execution.duration(now).num_seconds(), 9);
         assert!(execution.correlation.as_ref().unwrap().carried);
         assert!(execution.policy.as_ref().unwrap().enforced);
+        let steps = execution.steps();
+        assert_eq!(
+            (steps.len(), steps[0].why()),
+            (1, "It asked you"),
+            "no receipt: the result's calls"
+        );
     }
 
     #[test]
