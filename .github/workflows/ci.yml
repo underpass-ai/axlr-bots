@@ -93,6 +93,16 @@ jobs:
           helm template web examples/helm/service-with-bots > inject.yaml
           grep -q 'name: axlr-node$' inject.yaml
           grep -q 'mountPath: /var/lib/axlr-node/workspaces/log-summariser' inject.yaml
+      - name: Render the drone fleet example
+        shell: bash
+        run: |
+          set -euo pipefail
+          helm dependency update examples/helm/drone-fleet
+          helm lint examples/helm/drone-fleet
+          helm template fleet examples/helm/drone-fleet -n port-fleet > fleet.yaml
+          test "$(grep -c '^kind: StatefulSet$' fleet.yaml)" = 6
+          grep -q 'value: "https://fleet-cp:7878"' fleet.yaml
+          helm template fleet examples/helm/drone-fleet --set base.ingress.enabled=true --set base.ingress.host=fleet.example.com | grep -q '^kind: Ingress$'
 
   node-image:
     runs-on: ubuntu-latest

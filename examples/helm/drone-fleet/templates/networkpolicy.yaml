@@ -1,0 +1,77 @@
+{{- $v := index .Values "axlr-bots-node" }}
+{{- $egress := include "axlr-bots-node.inject.egress" (dict "values" $v "root" $) }}
+{{- $base := include "fleet.base" . }}
+# Vehicles: the base reads their state; they reach the base's crew API, and
+# the sidecar its control plane, DNS and the model provider.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-vehicles
+  labels:
+    {{- include "fleet.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {fleet.underpass.ai/vehicle: "true"}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app: {{ $base }}}}
+      ports:
+        - {protocol: TCP, port: 8080}
+        - {protocol: TCP, port: 5770}
+  egress:
+    {{- $egress | nindent 4 }}
+    - to:
+        - podSelector: {matchLabels: {app: {{ $base }}}}
+      ports:
+        - {protocol: TCP, port: 8081}
+---
+# The base: the ingress controller and the vehicles reach its port; it reads
+# the vehicles, and its sidecar reaches the control plane and the model.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-base
+  labels:
+    {{- include "fleet.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {app: {{ $base }}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ingress-nginx}}
+      ports:
+        - {protocol: TCP, port: 8080}
+    - from:
+        - podSelector: {matchLabels: {fleet.underpass.ai/vehicle: "true"}}
+      ports:
+        - {protocol: TCP, port: 8081}
+  egress:
+    {{- $egress | nindent 4 }}
+    - to:
+        - podSelector: {matchLabels: {fleet.underpass.ai/vehicle: "true"}}
+      ports:
+        - {protocol: TCP, port: 8080}
+{{- if .Values.controlPlane.enabled }}
+---
+# The control plane: nodes on 7878, operators and webhooks on 7879 (the
+# panel arrives through kubectl port-forward); it calls nothing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fleet.cp" . }}
+  labels:
+    {{- include "fleet.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {app: {{ include "fleet.cp" . }}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - {protocol: TCP, port: 7878}
+        - {protocol: TCP, port: 7879}
+  egress: []
+{{- end }}

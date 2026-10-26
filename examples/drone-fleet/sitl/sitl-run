@@ -1,0 +1,21 @@
+#!/bin/sh
+# Start this replica's vehicle: VEHICLE_KIND picks the ArduPilot binary and
+# its defaults, POD_INDEX picks its pad from HOMES (lat,lon,alt,heading;...).
+set -eu
+i="${POD_INDEX:-0}"
+home=$(printf '%s\n' "${HOMES:-}" | tr ';' '\n' | sed -n "$((i + 1))p" | tr -d ' ')
+if [ -z "$home" ]; then
+  echo "sitl-run: HOMES has no pad for replica $i" >&2
+  exit 1
+fi
+case "${VEHICLE_KIND:-}" in
+  quad)  bin=arducopter; model=X;     defaults=/opt/sitl/copter.parm,/opt/sitl/copter-X.parm ;;
+  rover) bin=ardurover;  model=rover; defaults=/opt/sitl/rover.parm ;;
+  plane) bin=arduplane;  model=plane; defaults=/opt/sitl/plane.parm ;;
+  *) echo "sitl-run: VEHICLE_KIND must be quad, rover or plane" >&2; exit 1 ;;
+esac
+if [ -n "${EXTRA_DEFAULTS:-}" ]; then
+  defaults="$defaults,$EXTRA_DEFAULTS"
+fi
+echo "sitl-run: $bin --model=$model --home=$home --defaults=$defaults"
+exec "/opt/sitl/$bin" --model="$model" --speedup=1 --instance=0 --home="$home" --defaults="$defaults" --wipe

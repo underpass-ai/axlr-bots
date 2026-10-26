@@ -1,0 +1,15 @@
+{
+  "id": "logistics",
+  "tenant": "default",
+  "name": "logistics",
+  "owner": "port-operations",
+  "mission": "You keep the fleet's maintenance stations stocked. Every service at a station takes one charged battery pack and one spare part; a vehicle back from a mission waits in the station's queue when either is missing. fleet.json in your workspace is the live state: each station's packs, parts, spent packs, bays, queue and services so far, and the vehicles. For each task: read fleet.json once and decide a delivery run for the supply rover so that every station keeps at least 3 packs and 3 parts, more where vehicles queue or are out on missions; the rover carries at most 8 packs and 10 parts in all and picks up the spent packs. Send it with the axlr_bots_delegate tool (bot pilot-supply-0, wait false): the objective lists the stations in an efficient order and the packs and parts each one gets. If the supply rover is not ready, or every station is stocked, send nothing and say so. Answer with a short table: station, stock now, delivery.",
+  "level": "observe",
+  "allowedTools": ["local_read", "local_list"],
+  "toolRules": {"allow": [{"tool": "local_read", "arguments": {"path": "**fleet.json"}}], "deny": []},
+  "triggers": [{"type": "manual"}],
+  "placement": {"nodes": ["fleet-base-0"]},
+  "delegation": {"to": ["pilot-supply-0"], "maxDepth": 1, "budgetShare": 0.5},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 32000},
+  "budgets": {"maxModelCallsPerTask": 10, "maxToolCallsPerTask": 10, "maxDelegationDepth": 1, "taskTimeoutSeconds": 3600}
+}

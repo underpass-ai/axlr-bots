@@ -1,0 +1,148 @@
+{{- $root := . }}
+{{- $base := include "fleet.base" . }}
+{{- range $group := .Values.vehicles }}
+{{- if lt (len $group.pads) (int $group.replicas) }}{{ fail (printf "vehicles %s: %d replicas need as many pads" $group.name (int $group.replicas)) }}{{ end }}
+{{- $v := deepCopy (index $root.Values "axlr-bots-node") }}
+{{- $_ := set $v.node "labels" (dict "kind" $group.kind "role" $group.role "fleet" $root.Release.Name) }}
+{{- $bots := dict "values" $v "root" $root }}
+{{- $hw := mergeOverwrite (deepCopy $root.Values.hardware) (default dict $group.hardware) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $group.name }}
+  labels:
+    {{- include "fleet.labels" $root | nindent 4 }}
+spec:
+  clusterIP: None
+  selector: {app: {{ $group.name }}}
+  ports:
+    - {name: state, port: 8080, targetPort: state}
+    - {name: mavlink, port: 5770, targetPort: mavlink}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $group.name }}
+  labels:
+    {{- include "fleet.labels" $root | nindent 4 }}
+spec:
+  serviceName: {{ $group.name }}
+  replicas: {{ $group.replicas }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels: {app: {{ $group.name }}}
+  template:
+    metadata:
+      labels:
+        app: {{ $group.name }}
+        fleet.underpass.ai/vehicle: "true"
+        {{- include "fleet.labels" $root | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $root.Template.BasePath "/config.yaml") $root | sha256sum }}
+    spec:
+      {{- include "fleet.podSpecCommon" $root | nindent 6 }}
+      initContainers:
+        # AXLR in the sidecar reads its MCP configuration from its HOME, on
+        # the node's state volume: the pilot's tool, every call asking a person.
+        - name: axlr-mcp-config
+          image: {{ $root.Values.images.app }}
+          command: ["/bin/sh", "-c", "mkdir -p /state/home/.config/axlr/plugins && cp /config/mcp.json /state/home/.config/axlr/mcp.json && cp /config/vehicle.json /state/home/.config/axlr/plugins/vehicle.json && chmod 0600 /state/home/.config/axlr/mcp.json /state/home/.config/axlr/plugins/vehicle.json"]
+          securityContext:
+            {{- include "fleet.restricted" $root | nindent 12 }}
+          resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {memory: 64Mi}}
+          volumeMounts:
+            - {name: axlr-node-state, mountPath: /state}
+            - {name: config, mountPath: /config, readOnly: true}
+      containers:
+        - name: sitl
+          image: {{ $root.Values.images.sitl }}
+          env:
+            - {name: VEHICLE_KIND, value: {{ $group.kind | quote }}}
+            - {name: HOMES, value: {{ join ";" $group.pads | quote }}}
+            - {name: EXTRA_DEFAULTS, value: "/etc/sitl/{{ $group.kind }}.parm"}
+            - name: POD_INDEX
+              valueFrom: {fieldRef: {fieldPath: "metadata.labels['apps.kubernetes.io/pod-index']"}}
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            {{- include "fleet.restricted" $root | nindent 12 }}
+          # No CPU limit: a throttled SITL makes its simulated time jump.
+          resources:
+            {{- toYaml $root.Values.resources.sitl | nindent 12 }}
+          volumeMounts:
+            - {name: sitl-data, mountPath: /data}
+            - {name: config, mountPath: /etc/sitl/{{ $group.kind }}.parm, subPath: {{ $group.kind }}.parm, readOnly: true}
+        - name: router
+          image: {{ $root.Values.images.sitl }}
+          command: ["/usr/local/bin/mavlink-routerd", "-c", "/etc/mavlink-router/router.conf"]
+          ports:
+            - {name: mavlink, containerPort: 5770}
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            {{- include "fleet.restricted" $root | nindent 12 }}
+          resources:
+            {{- toYaml $root.Values.resources.router | nindent 12 }}
+          volumeMounts:
+            - {name: config, mountPath: /etc/mavlink-router/router.conf, subPath: router.conf, readOnly: true}
+        - name: pilot
+          image: {{ $root.Values.images.app }}
+          command: ["python", "/app/vehicle_pilot.py"]
+          ports:
+            - {name: state, containerPort: 8080}
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - name: POD_INDEX
+              valueFrom: {fieldRef: {fieldPath: "metadata.labels['apps.kubernetes.io/pod-index']"}}
+            - {name: VEHICLE_ID, value: "$(POD_NAME)"}
+            - {name: VEHICLE_KIND, value: {{ $group.kind | quote }}}
+            - {name: ROLE, value: {{ $group.role | quote }}}
+            - {name: STATIONS, value: {{ join ";" $group.stations | quote }}}
+            - {name: MAVLINK_URL, value: "tcp:127.0.0.1:5770"}
+            # The bot's workspace is the sidecar's: pilot-<pod>/telemetry.json.
+            - {name: TELEMETRY_FILE, value: "/workspaces/pilot-$(POD_NAME)/telemetry.json"}
+            - {name: ZONES_FILE, value: /etc/fleet/zones.json}
+            - {name: LAYOUT_FILE, value: /etc/fleet/layout.json}
+            - {name: CREW_URL, value: "http://{{ $base }}:8081"}
+            - {name: INSPECTION_S, value: {{ $root.Values.base.inspectionSeconds | quote }}}
+            - {name: SWAP_S, value: {{ $root.Values.base.swapSeconds | quote }}}
+            {{- with $hw.autopilot }}
+            - {name: HW_AUTOPILOT, value: {{ . | quote }}}
+            {{- end }}
+            {{- with $hw.gnss }}
+            - {name: HW_GNSS, value: {{ . | quote }}}
+            {{- end }}
+            {{- with $hw.lidar }}
+            - {name: HW_LIDAR, value: {{ . | quote }}}
+            {{- end }}
+            {{- with $hw.camera }}
+            - {name: HW_CAMERA, value: {{ . | quote }}}
+            {{- end }}
+            {{- with $hw.flow }}
+            - {name: HW_FLOW, value: {{ . | quote }}}
+            {{- end }}
+            {{- range $key, $value := $group.env }}
+            - {name: {{ $key }}, value: {{ $value | quote }}}
+            {{- end }}
+          readinessProbe:
+            httpGet: {path: /healthz, port: state}
+            periodSeconds: 10
+          securityContext:
+            {{- include "fleet.restricted" $root | nindent 12 }}
+          resources:
+            {{- toYaml $root.Values.resources.app | nindent 12 }}
+          volumeMounts:
+            - {name: config, mountPath: /etc/fleet, readOnly: true}
+            - {name: axlr-node-workspaces, mountPath: /workspaces}
+        {{- include "axlr-bots-node.inject.container" $bots | nindent 8 }}
+      volumes:
+        - name: sitl-data
+          emptyDir: {sizeLimit: 256Mi}
+        - name: config
+          configMap: {name: {{ $root.Release.Name }}-config}
+        {{- include "axlr-bots-node.inject.volumes" $bots | nindent 8 }}
+  volumeClaimTemplates:
+    {{- include "axlr-bots-node.inject.volumeClaimTemplate" $bots | nindent 4 }}
+{{- end }}

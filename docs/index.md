@@ -18,6 +18,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | Install on one host, or a control plane with TLS for a fleet; keep it running; uninstall | [Install](runbooks/install.md) |
 | Join a second host with a one-time token; rotate or revoke its certificate | [Add a host](runbooks/add-a-host.md) |
 | Run the node agent as a sidecar in a Kubernetes pod with Helm: the image, the tokens, the demo, your own chart | [Sidecar](runbooks/sidecar.md) |
+| Install the port fleet demo: SITL vehicles with the sidecar, the dispatcher, logistics and pilot bots, the stations, the map | [Drone fleet](runbooks/drone-fleet.md) |
 | Start tasks from a webhook or on a timer and verify nothing fires twice | [Triggers](runbooks/triggers.md) |
 | Approve or deny the write a bot wants to make, be notified of it, let it expire | [Approvals](runbooks/approvals.md) |
 | Let a bot ask another bot to do a task, within depth and budget limits that stop loops | [Delegation](reference/bot-definition.md#delegation), [ADR](architecture/delegation.md) |

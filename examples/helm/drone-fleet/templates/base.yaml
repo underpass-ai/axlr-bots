@@ -1,0 +1,116 @@
+{{- $v := deepCopy (index .Values "axlr-bots-node") }}
+{{- $_ := set $v.node "labels" (dict "kind" "base" "role" "operations" "fleet" .Release.Name) }}
+{{- $bots := dict "values" $v "root" $ }}
+{{- $base := include "fleet.base" . }}
+{{- $vehicles := list }}
+{{- range $group := .Values.vehicles }}
+{{- range $i := until (int $group.replicas) }}
+{{- $vehicles = append $vehicles (printf "%s-%d=http://%s-%d.%s:8080/state" $group.name $i $group.name $i $group.name) }}
+{{- end }}
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $base }}
+  labels:
+    {{- include "fleet.labels" . | nindent 4 }}
+spec:
+  selector: {app: {{ $base }}}
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+    - {name: crew, port: 8081, targetPort: crew}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $base }}
+  labels:
+    {{- include "fleet.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ $base }}
+  replicas: 1
+  selector:
+    matchLabels: {app: {{ $base }}}
+  template:
+    metadata:
+      labels:
+        app: {{ $base }}
+        {{- include "fleet.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/config.yaml") . | sha256sum }}
+    spec:
+      {{- include "fleet.podSpecCommon" . | nindent 6 }}
+      containers:
+        - name: base
+          image: {{ .Values.images.app }}
+          command: ["python", "/app/fleet_base.py"]
+          ports:
+            - {name: http, containerPort: 8080}
+            - {name: crew, containerPort: 8081}
+          env:
+            - {name: VEHICLES, value: {{ join "," $vehicles | quote }}}
+            - {name: LAYOUT_FILE, value: /etc/fleet/layout.json}
+            - {name: ZONES_FILE, value: /etc/fleet/zones.json}
+            # The dispatcher's and the logistics bot's workspaces are the sidecar's.
+            - {name: FLEET_FILE, value: "/workspaces/dispatcher/fleet.json,/workspaces/logistics/fleet.json"}
+            - {name: PHOTOS_DIR, value: /var/lib/fleet/photos}
+            {{- if .Values.vision.enabled }}
+            # The ground station's image analysis: aerial imagery at each
+            # photo's footprint and a vision model (vision.py).
+            - {name: VISION_MODEL, value: {{ .Values.vision.model | quote }}}
+            - {name: VISION_EVERY, value: {{ .Values.vision.every | quote }}}
+            - {name: VISION_MAX_PER_FLIGHT, value: {{ .Values.vision.maxPerFlight | quote }}}
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ (index .Values "axlr-bots-node").model.apiKey.existingSecret }}
+                  key: {{ (index .Values "axlr-bots-node").model.apiKey.key | default "OPENROUTER_API_KEY" }}
+            {{- end }}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          securityContext:
+            {{- include "fleet.restricted" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources.app | nindent 12 }}
+          volumeMounts:
+            - {name: config, mountPath: /etc/fleet, readOnly: true}
+            - {name: axlr-node-workspaces, mountPath: /workspaces}
+            - {name: photos, mountPath: /var/lib/fleet/photos}
+        {{- include "axlr-bots-node.inject.container" $bots | nindent 8 }}
+      volumes:
+        - name: photos
+          emptyDir: {sizeLimit: 512Mi}
+        - name: config
+          configMap: {name: {{ .Release.Name }}-config}
+        {{- include "axlr-bots-node.inject.volumes" $bots | nindent 8 }}
+  volumeClaimTemplates:
+    {{- include "axlr-bots-node.inject.volumeClaimTemplate" $bots | nindent 4 }}
+{{- if .Values.base.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $base }}
+  labels:
+    {{- include "fleet.labels" . | nindent 4 }}
+  annotations:
+    {{- with .Values.base.ingress.clusterIssuer }}
+    cert-manager.io/cluster-issuer: {{ . }}
+    {{- end }}
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # The map's event stream: no buffering, long reads.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: {{ .Values.base.ingress.className }}
+  rules:
+    - host: {{ required "base.ingress.host is required" .Values.base.ingress.host }}
+      http:
+        paths:
+          - {path: /, pathType: Prefix, backend: {service: {name: {{ $base }}, port: {name: http}}}}
+  tls:
+    - hosts: [{{ .Values.base.ingress.host }}]
+      secretName: {{ $base }}-tls
+{{- end }}

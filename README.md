@@ -54,6 +54,7 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | Let a bot ask another bot to do a task, within depth and budget limits that stop loops | [Delegation](docs/reference/bot-definition.md#delegation), [ADR](docs/architecture/delegation.md) |
 | Add a host: enrollment token, mutual TLS, revocation | [Add a host](docs/runbooks/add-a-host.md) |
 | Run the node agent as a sidecar beside a service in a Kubernetes pod, with Helm | [Sidecar](docs/runbooks/sidecar.md) |
+| Install the demo fleet: autonomous vehicles in a port (ArduPilot SITL quads, rovers, a plane), a dispatcher and a logistics bot, a pilot bot per vehicle whose every launch waits for a person, maintenance stations and a live map, its own control plane in the namespace | [Drone fleet](docs/runbooks/drone-fleet.md) |
 | Call the control plane over HTTP | [Operator API](docs/reference/operator-api.md) |
 | See what a node and the control plane say to each other | [Node protocol](docs/reference/node-protocol.md) |
 | See how a node runs AXLR and reads the result | [Runtime contract](docs/architecture/runtime-contract.md) |
