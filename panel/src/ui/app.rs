@@ -20,6 +20,8 @@ pub struct App {
     pub screen: Screen,
     pub now: DateTime<Utc>,
     pub fleet: Option<Fleet>,
+    /// The waiting tasks a notice already told the person about.
+    pub noticed: std::collections::BTreeSet<TaskId>,
     /// The control plane's address, `host:port`, once connected.
     pub endpoint: Option<String>,
     /// Why the last refresh failed, until one succeeds.
@@ -67,6 +69,7 @@ impl App {
             screen: if saved { launch.screen.clone() } else { Screen::Settings },
             now,
             fleet: None,
+            noticed: Default::default(),
             endpoint: None,
             fleet_error: None,
             last_refresh: None,
@@ -172,10 +175,12 @@ impl App {
                 self.refreshing_since = None;
                 match result {
                     Ok(fleet) => {
+                        let mut effects = self.notice_waiting(&fleet, self.fleet.is_none());
                         self.fleet = Some(fleet);
                         self.fleet_error = None;
                         self.last_refresh = Some(self.now);
-                        self.follow_teams()
+                        effects.extend(self.follow_teams());
+                        effects
                     }
                     Err(error) => {
                         self.fleet_error = Some(error);
@@ -435,6 +440,7 @@ impl App {
             }
             Message::TeamSaved(result) => self.team_saved(result),
             Message::TeamLoaded(name, result) => self.team_loaded(name, result),
+            Message::NoticeClicked(screen) => self.notice_clicked(screen),
             Message::AskStopBot(id) => {
                 self.confirm = Some(Confirm::StopBot(id));
                 Vec::new()

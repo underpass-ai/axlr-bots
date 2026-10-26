@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-use crate::application::{ChatTurn, EventFeed, PanelConfig};
+use super::Screen;
+use crate::application::{ChatTurn, EventFeed, Notice, PanelConfig};
 use crate::domain::{AutonomyLevel, BotForm, BotId, Decision, IdempotencyKey, NodeId, TaskId};
 
 /// What the panel asks the outside world to do after a message: a call
@@ -52,6 +53,13 @@ pub enum Effect {
     Cancel(TaskId),
     Decide(TaskId, Decision),
     Copy(String),
+    /// A desktop notice, and the place a click on it opens.
+    Notify {
+        notice: Notice,
+        open: Screen,
+    },
+    /// Bring the panel's window to the front.
+    FocusWindow,
     Connect {
         config: PanelConfig,
         save: bool,

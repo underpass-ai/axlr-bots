@@ -3,6 +3,7 @@
 
 mod answer;
 mod app;
+mod app_notices;
 mod app_teams;
 #[cfg(test)]
 mod app_tests;

@@ -3,8 +3,8 @@ use std::sync::Arc;
 use super::{BotView, Connection, Effect, Message};
 use crate::application::{
     CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader, FilePicker, FollowBotEvents,
-    FollowTeamEvents, KeySource, LoadChat, LoadTaskDetail, MintEnrollmentToken, PanelError, PatchBot, RefreshFleet,
-    RegisterBot, RevokeNode, SendChat, StopBot, SubmitTask, SwitchBot,
+    FollowTeamEvents, KeySource, LoadChat, LoadTaskDetail, MintEnrollmentToken, Notifier, PanelError, PatchBot,
+    RefreshFleet, RegisterBot, RevokeNode, SendChat, StopBot, SubmitTask, SwitchBot,
 };
 use crate::domain::BotPatch;
 
@@ -18,6 +18,8 @@ pub struct Services {
     pub picker: Arc<dyn FilePicker>,
     pub reader: Arc<dyn DefinitionReader>,
     pub connect: Arc<Connect>,
+    /// Desktop notices.
+    pub notifier: Arc<dyn Notifier>,
 }
 
 impl Services {
@@ -31,7 +33,13 @@ impl Services {
     /// The clipboard is the runtime's; it answers `None` here.
     pub async fn execute(self, effect: Effect) -> Option<Message> {
         let message = match effect {
-            Effect::Copy(_) => return None,
+            Effect::Copy(_) | Effect::FocusWindow => return None,
+            Effect::Notify { notice, open } => {
+                return match self.notifier.show(notice).await {
+                    Ok(true) => Some(Message::NoticeClicked(open)),
+                    _ => None,
+                };
+            }
             Effect::Connect { config, save } => {
                 let result = if save {
                     self.connect.save(config).await
