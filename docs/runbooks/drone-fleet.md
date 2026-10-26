@@ -235,7 +235,7 @@ curl -X POST http://127.0.0.1:18090/api/incident -H "X-Incident-Secret: $(cat ~/
 
 ### The recorded run (26 Oct 2026, `inc-20261026-103457`)
 
-The same call, recorded with OBS; every takeoff approved on the phone page (`/m`) by the operator at the desk.
+The same call, recorded with OBS. Every takeoff waited on the phone page (`/m`); in this recording its Approve button was pressed by Claude, acting as the operator, over the browser's DevTools protocol, a few seconds after each card appeared.
 
 | | |
 |---|---|
