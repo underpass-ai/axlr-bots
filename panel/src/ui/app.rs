@@ -42,6 +42,8 @@ pub struct App {
     pub banner: Option<Banner>,
     /// The task whose decision is on its way.
     pub deciding: Option<TaskId>,
+    /// A bot page's Advanced part is open.
+    pub advanced: bool,
     /// A bot being switched on or paused.
     pub switching: bool,
     /// Where to go once connected.
@@ -77,6 +79,7 @@ impl App {
             confirm: None,
             banner: None,
             deciding: None,
+            advanced: false,
             switching: false,
             target: if launch.screen == Screen::Settings {
                 Screen::Overview
@@ -352,6 +355,10 @@ impl App {
                 self.refresh_now()
             }
 
+            Message::ShowAdvanced(open) => {
+                self.advanced = open;
+                Vec::new()
+            }
             Message::SetLevel(id, level) => self.switch(Effect::SetLevel(id, level)),
             Message::Leveled(result) => {
                 self.switching = false;
@@ -640,6 +647,7 @@ impl App {
             self.bot = None;
         }
         if screen != self.screen {
+            self.advanced = false;
             self.task_loading = false;
             self.bot_loading = false;
         }

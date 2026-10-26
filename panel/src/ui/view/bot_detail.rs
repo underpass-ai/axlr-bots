@@ -1,14 +1,17 @@
-//! One bot: its definition in cards and its events as they happen.
+//! One bot, in plain words: Pause and Stop, what waits for a person,
+//! what it does, its events and recent work; its definition under
+//! Advanced, closed by default.
 
-use iced::widget::{Space, column, mouse_area, row, scrollable, text};
+use iced::widget::{Space, button, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Length, mouse};
 
 use super::widgets::{
-    El, SMALL, action, bold, chip, copy_button, empty, fact, icon, muted, pill, section, section_with, title,
+    El, SMALL, action, bold, chip, copy_button, empty, fact, icon, muted, pill, section, section_title, section_with,
+    semibold, title,
 };
 use crate::domain::{AutonomyLevel, Bot, BotId, TaskId};
 use crate::ui::format;
-use crate::ui::styles::Kind;
+use crate::ui::styles::{self, Kind};
 use crate::ui::{App, Icon, Message, Screen, Tokens, Tone};
 
 pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
@@ -19,6 +22,7 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
             .into();
     };
     let bot = &view.bot;
+    // Pause and Stop, always in sight.
     let switch = if bot.status.can_pause() {
         action(
             Kind::Secondary,
@@ -38,8 +42,44 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
     } else {
         Space::new().into()
     };
+    let header = row![
+        back,
+        title(Icon::Bots, bot.id.to_string(), tokens),
+        pill(Tone::of_bot(bot.status), bot.status.name(), tokens),
+        Space::new().width(Length::Fill),
+        switch,
+        action(
+            Kind::Danger,
+            Icon::Stop,
+            "Stop",
+            (!app.switching).then(|| Message::AskStopBot(bot.id.clone())),
+            tokens,
+        ),
+    ]
+    .spacing(12)
+    .align_y(Alignment::Center);
+
+    let mut left = column![].spacing(14).width(Length::FillPortion(3));
+    if let Some(asking) = asking(app, &bot.id, tokens) {
+        left = left.push(asking);
+    }
+    left = left
+        .push(section_with(
+            Icon::Bolt,
+            "What it does",
+            vec![copy_button("Copy mission", bot.mission.clone(), tokens)],
+            text(bot.mission.clone()),
+            tokens,
+        ))
+        .push(section_with(
+            Icon::Clock,
+            "Events",
+            event_tools(app, tokens),
+            events(app, tokens),
+            tokens,
+        ));
     let new_task = action(
-        Kind::Primary,
+        Kind::Ghost,
         Icon::Plus,
         "New task",
         bot.status
@@ -47,77 +87,86 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
             .then(|| Message::SubmitOpen(Some(bot.id.clone()))),
         tokens,
     );
-    let header = row![
-        back,
-        title(Icon::Bots, bot.id.to_string(), tokens),
-        pill(Tone::of_bot(bot.status), bot.status.name(), tokens),
-    ]
-    .spacing(12)
-    .align_y(Alignment::Center);
-    // The controls in one bar under the name: on or paused, stopped, a
-    // new task.
-    let controls = row![
-        switch,
-        action(
-            Kind::Danger,
-            Icon::Stop,
-            "Stop bot",
-            (!app.switching).then(|| Message::AskStopBot(bot.id.clone())),
-            tokens,
-        ),
-        new_task,
-    ]
-    .spacing(12)
-    .align_y(Alignment::Center);
-
-    let left = column![
+    let advanced_toggle = action(
+        Kind::Ghost,
+        if app.advanced { Icon::Cross } else { Icon::Settings },
+        if app.advanced { "Hide advanced" } else { "Advanced" },
+        Some(Message::ShowAdvanced(!app.advanced)),
+        tokens,
+    );
+    let right = column![
         section_with(
-            Icon::Bolt,
-            "Mission",
-            vec![copy_button("Copy mission", bot.mission.clone(), tokens)],
-            text(bot.mission.clone()),
+            Icon::Tasks,
+            "Recent work",
+            vec![new_task],
+            tasks(app, &bot.id, tokens),
             tokens
         ),
-        section(
-            Icon::Chip,
-            "Model",
-            column![
-                fact("Model", bold(bot.model.model.clone()), tokens),
-                fact("Routing", text(bot.model.routing_policy.clone()), tokens),
-                fact(
-                    "Remote",
-                    text(if bot.model.allow_remote_providers {
-                        "allowed"
-                    } else {
-                        "local only"
-                    }),
-                    tokens
-                ),
-                fact(
-                    "Context",
-                    text(format::tokens(bot.model.max_context_tokens.into())),
-                    tokens
-                ),
-            ]
-            .spacing(8),
-            tokens
-        ),
-        section(Icon::Wrench, "Tools", tools(bot, tokens), tokens),
-        section(
-            Icon::Coin,
-            "Budgets",
-            column![
-                fact("Model calls", text(limit(bot.budgets.max_model_calls_per_task)), tokens),
-                fact("Tool calls", text(limit(bot.budgets.max_tool_calls_per_task)), tokens),
-                fact("Delegation", text(bot.budgets.max_delegation_depth.to_string()), tokens),
-                fact("Time limit", text(bot.budgets.timeout_label()), tokens),
-            ]
-            .spacing(8),
-            tokens
-        ),
+        advanced_toggle,
     ]
     .spacing(14)
-    .width(Length::FillPortion(1));
+    .width(Length::FillPortion(2));
+
+    // Open, Advanced comes first, under the name, as the operator asked
+    // for it.
+    let mut page = column![header].spacing(18);
+    if app.advanced {
+        page = page.push(advanced(app, bot, tokens));
+    }
+    page = page.push(row![left, right].spacing(14));
+    scrollable(page.padding(iced::Padding {
+        right: 12.0,
+        ..Default::default()
+    }))
+    .height(Length::Fill)
+    .into()
+}
+
+/// The calls of this bot waiting for a person, each answered in one
+/// click.
+fn asking<'a>(app: &'a App, bot: &BotId, tokens: Tokens) -> Option<El<'a>> {
+    let fleet = app.fleet.as_ref()?;
+    let waiting: Vec<_> = fleet.waiting().into_iter().filter(|t| &t.bot_id == bot).collect();
+    if waiting.is_empty() {
+        return None;
+    }
+    let mut list = column![section_title(Icon::Alert, "It asks before acting", tokens)].spacing(12);
+    for task in waiting {
+        let wants = fleet
+            .call_of(&task.id)
+            .map(|call| format!("wants {}", call.summary(48)))
+            .unwrap_or_default();
+        list = list.push(
+            row![
+                column![bold(task.headline(60)), muted(wants, tokens)]
+                    .spacing(2)
+                    .width(Length::Fill),
+                super::decide::buttons(app, &task.id, tokens),
+            ]
+            .spacing(12)
+            .align_y(Alignment::Center),
+        );
+    }
+    Some(
+        container(list)
+            .padding(18)
+            .width(Length::Fill)
+            .style(styles::tone_card(tokens, Tone::Wait))
+            .into(),
+    )
+}
+
+/// What a person rarely changes: how much the bot may do alone, then its
+/// triggers, placement, tools, model and budgets.
+fn advanced<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
+    let mut choices = column![bold("How much may it do alone?")].spacing(10);
+    for level in CHOICES {
+        choices = choices.push(choice(app, bot, level, tokens));
+    }
+    if !CHOICES.contains(&bot.level) {
+        choices = choices.push(choice(app, bot, bot.level, tokens));
+    }
+    choices = choices.push(muted("A change counts from its next step.", tokens));
 
     let mut triggers = column![].spacing(8);
     for trigger in &bot.triggers {
@@ -131,42 +180,95 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
             .align_y(Alignment::Center),
         );
     }
-    let right = column![
-        section(
-            Icon::Alert,
-            "Level",
-            column![
-                dial(app, bot, tokens),
-                text(level_words(bot.level)),
-                muted("A turn counts from the bot's next step.", tokens),
-            ]
-            .spacing(8),
+    let facts = column![
+        fact("Starts by", triggers, tokens),
+        fact("Runs on", text(bot.placement.describe()), tokens),
+        fact("Tools", tools(bot, tokens), tokens),
+        fact(
+            "Model",
+            text(format!(
+                "{} · {} · {}",
+                bot.model.model,
+                bot.model.routing_policy,
+                if bot.model.allow_remote_providers {
+                    "remote allowed"
+                } else {
+                    "local only"
+                }
+            )),
             tokens
         ),
-        section(Icon::Pin, "Runs on", text(bot.placement.describe()), tokens),
-        section(Icon::Play, "Starts by", triggers, tokens),
-        section_with(
-            Icon::Clock,
-            "Events",
-            event_tools(app, tokens),
-            events(app, tokens),
+        fact(
+            "Budgets",
+            text(format!(
+                "{} model calls · {} tool calls · {} per task",
+                limit(bot.budgets.max_model_calls_per_task),
+                limit(bot.budgets.max_tool_calls_per_task),
+                bot.budgets.timeout_label()
+            )),
             tokens
         ),
-        section(Icon::Tasks, "Latest tasks", tasks(app, &bot.id, tokens), tokens),
     ]
-    .spacing(14)
-    .width(Length::FillPortion(1));
-
-    scrollable(
-        column![header, controls, row![left, right].spacing(14)]
-            .spacing(18)
-            .padding(iced::Padding {
-                right: 12.0,
-                ..Default::default()
-            }),
+    .spacing(12);
+    section(
+        Icon::Settings,
+        "Advanced",
+        row![
+            container(choices).width(Length::FillPortion(1)),
+            container(facts).width(Length::FillPortion(1))
+        ]
+        .spacing(24),
+        tokens,
     )
-    .height(Length::Fill)
+}
+
+/// The levels offered in plain words; Propose shows only on a bot that
+/// has it.
+const CHOICES: [AutonomyLevel; 3] = [
+    AutonomyLevel::ActWithApproval,
+    AutonomyLevel::ActWithinPolicy,
+    AutonomyLevel::Observe,
+];
+
+/// One level as a card to pick: its name in plain words and what it
+/// means; the bot's own is lit.
+fn choice<'a>(app: &'a App, bot: &'a Bot, level: AutonomyLevel, tokens: Tokens) -> El<'a> {
+    let current = level == bot.level;
+    let (name, words) = plain(level);
+    button(
+        row![
+            icon(
+                if current { Icon::Check } else { Icon::Dot },
+                16.0,
+                if current { tokens.accent } else { tokens.muted }
+            ),
+            column![semibold(name), text(words).size(SMALL).color(tokens.muted)].spacing(2),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center),
+    )
+    .padding(12)
+    .width(Length::Fill)
+    .style(styles::choice(tokens, current))
+    .on_press_maybe((!current && !app.switching).then(|| Message::SetLevel(bot.id.clone(), level)))
     .into()
+}
+
+/// A level as a person says it.
+fn plain(level: AutonomyLevel) -> (&'static str, &'static str) {
+    match level {
+        AutonomyLevel::ActWithApproval => (
+            "Ask me before acting",
+            "It reads and plans alone. Anything that changes the world waits for your OK.",
+        ),
+        AutonomyLevel::ActWithinPolicy => (
+            "Act on its own within its rules",
+            "It acts alone. Its tool rules still forbid what you forbade.",
+        ),
+        AutonomyLevel::Observe => ("Only watch and report", "It never acts. It tells you what it sees."),
+        AutonomyLevel::Propose => ("Propose only", "It reads and proposes. A person acts."),
+        AutonomyLevel::Unknown => ("A level this panel does not know", "Pick one of the others to set it."),
+    }
 }
 
 fn limit(value: u32) -> String {
@@ -174,34 +276,6 @@ fn limit(value: u32) -> String {
         "default".to_string()
     } else {
         value.to_string()
-    }
-}
-
-/// What a level lets the bot do, in one sentence.
-/// The autonomy dial: the four levels, the bot's own lit; a click turns
-/// it at once.
-fn dial<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
-    let mut dial = row![].spacing(6);
-    for level in AutonomyLevel::ALL {
-        let current = level == bot.level;
-        dial = dial.push(action(
-            Kind::Chip(current),
-            if current { Icon::Check } else { Icon::Dot },
-            level.label(),
-            (!current && !app.switching).then(|| Message::SetLevel(bot.id.clone(), level)),
-            tokens,
-        ));
-    }
-    dial.into()
-}
-
-fn level_words(level: AutonomyLevel) -> &'static str {
-    match level {
-        AutonomyLevel::Observe => "Reads only. It never writes.",
-        AutonomyLevel::Propose => "Reads and proposes. A person acts.",
-        AutonomyLevel::ActWithApproval => "Writes only after a person says OK.",
-        AutonomyLevel::ActWithinPolicy => "Acts alone inside its tool rules.",
-        AutonomyLevel::Unknown => "A level this panel does not know yet.",
     }
 }
 

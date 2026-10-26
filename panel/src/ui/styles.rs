@@ -214,6 +214,32 @@ pub fn button_style(tokens: Tokens, kind: Kind) -> impl Fn(&Theme, button::Statu
     }
 }
 
+/// A card to pick among a few: the picked one in a light wash of the
+/// accent with an accent border, so its words stay ink on light.
+pub fn choice(tokens: Tokens, picked: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_, status| {
+        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+        let background = if picked {
+            mix(tokens.surface, tokens.accent, 0.10)
+        } else if hovered {
+            tokens.raised
+        } else {
+            tokens.surface
+        };
+        button::Style {
+            background: Some(Background::Color(background)),
+            text_color: tokens.text,
+            border: Border {
+                color: if picked { tokens.accent } else { tokens.border },
+                width: if picked { 1.5 } else { 1.0 },
+                radius: RADIUS_S.into(),
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        }
+    }
+}
+
 /// An icon in a colour.
 pub fn tint(color: Color) -> impl Fn(&Theme, svg::Status) -> svg::Style {
     move |_, _| svg::Style { color: Some(color) }
@@ -286,6 +312,18 @@ pub fn shade(color: Color, amount: f32) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_picked_choice_stays_readable() {
+        let theme = Tokens::LIGHT.theme();
+        let tokens = Tokens::LIGHT;
+        let picked = choice(tokens, true)(&theme, button::Status::Disabled);
+        assert_eq!((picked.text_color, picked.border.color), (tokens.text, tokens.accent));
+        let other = choice(tokens, false)(&theme, button::Status::Hovered);
+        assert_eq!(other.background, Some(Background::Color(tokens.raised)));
+        let idle = choice(tokens, false)(&theme, button::Status::Active);
+        assert_eq!(idle.background, Some(Background::Color(tokens.surface)));
+    }
 
     #[test]
     fn the_reader_marks_its_focus() {

@@ -41,7 +41,7 @@ impl Confirm {
             Self::Revoke(_) => "Revoke",
             Self::Cancel(_) => "Stop task",
             Self::Deny(_) => "Deny",
-            Self::StopBot(_) => "Stop bot",
+            Self::StopBot(_) => "Stop",
         }
     }
 }
@@ -61,7 +61,7 @@ mod tests {
         let deny = Confirm::Deny(TaskId::new("task-1").unwrap());
         assert_eq!((deny.title().as_str(), deny.act()), ("Deny this call?", "Deny"));
         let stop = Confirm::StopBot(BotId::new("pilot").unwrap());
-        assert_eq!((stop.title().as_str(), stop.act()), ("Stop pilot?", "Stop bot"));
+        assert_eq!((stop.title().as_str(), stop.act()), ("Stop pilot?", "Stop"));
         assert!(stop.lines()[1].contains("cancelled"));
     }
 }
