@@ -1,42 +1,72 @@
-# ADR: groups of bots, events and urgent tasks
+# ADR: teams of bots, events and urgent tasks
 
 Status: proposed, 26 October 2026. Vision principle 13 ([#30](https://github.com/underpass-ai/axlr-bots/pull/30): the operator creates bots and groups and recalls a bot at once from the panel); builds on [delegation](delegation.md).
 
 ## Context
 
-A bot asks another only by explicit delegation (`delegation.to`): no directory, no events, no groups. The product owner wants bots that "know each other and belong to groups" and work together "by events". Guide case: the operator tells the plane's bot to warn quad-1's bot to pull back because a ship is coming; quad-1 cuts its mission, flies home, and the operator is told why.
+A bot asks another only by explicit delegation (`delegation.to`): no directory, no events, no groups. The product owner wants bots that "know each other and belong to groups" and work together "by events", with two rules:
+
+- "Desde el control pane puedo sentir que puedo controlar mis bots": everything from the panel, one click, immediate feedback.
+- "No se tiene que trasladar la complejidad al usuario": a group is a **team** with a name, picked when creating a bot; everything else has a default; patterns and limits only under *Advanced*.
+
+Guide case, with nothing configured but the team: the operator tells the plane's bot "dile al quad-1 que se retire, hay un barco"; quad-1 cuts its mission, flies home, and the operator sees why.
 
 ```text
-operator ──task──▶ pilot-plane-0 ──axlr_bots_emit_event("vehicle.recall", to quad-1, "ship 244… entering the zone")──▶ control plane
-                                                                                                                 │ checks: emitter may emit it, same group, rate, depth, cycle, budget
-                        ┌───────────────────────────────────────────────┬──────────────────────────────────────┤
-                        ▼                                               ▼                                      ▼
-   pilot-quad-1: urgent task (its trigger `event` with interrupt)   history: bot.event.emitted        panel timeline, phone page (warning),
-   ├─ cancels its own task in progress (preempted)                                                      notify targets (critical)
-   └─ calls return_home ── autoApprove ──▶ vehicle RTL ──▶ task Completed "returning home: ship 244… entering the zone"
+operator ──"dile al quad-1 que se retire"──▶ pilot-plane-0 (its directory lists pilot-quad-1 and its tools)
+   └─ axlr_bots_emit_event(name "recall", to [pilot-quad-1], severity warning, message "ship 244… entering the zone")
+        ▼ control plane: same team, rate, depth, cycle
+        ├─▶ pilot-quad-1: urgent task (a teammate's warning addressed to it interrupts by default)
+        │     ├─ its task in progress, or a pending approval, ends Cancelled (preempted)
+        │     └─ return_home (runs without a person) ──▶ vehicle RTL ──▶ "returning home: ship 244… entering the zone"
+        ├─▶ history: bot.event.emitted
+        └─▶ panel timeline and banner, phone page (warning); notify targets (critical)
 ```
 
 ## Decision
 
+### What the operator sees and does
+
+| In the panel | How | Feedback |
+|---|---|---|
+| put bots in a team | New bot and Edit bot have one field, **Team**: pick one or type a new name. API: `"groups": ["port"]` | the team appears in the Teams view at once; a team of one member is flagged (a typo) |
+| see the teams and who is in each | **Teams** view: each member with its line of the directory (purpose, tools, where it runs) and its status | live, as bots change |
+| watch events flow | the team's timeline: emitted → task received → preempted → done, coloured by severity; `GET /v1/groups/{name}/events?after=<cursor>&wait=20s` long-polls, so an event shows within a second | `warning` and `critical` also raise a banner |
+| give an order in plain words | the task box on a bot, as today, with an **Urgent** switch | the task shows in the timeline with its status |
+| stop or recall a bot at once | **Stop**: cancels the bot's running and waiting tasks, no new one; **Recall**: an urgent task "Return home now" for a bot that has `return_home` | the cancelled and new tasks change on screen within the node's renewal (10 s) |
+| see why each bot decided | every event carries its `message` (required: what and why); a task shows what started it (the event and who emitted it, a delegation, a person), its tool calls with arguments, who approved (a person or `policy`), its answer | one line per step in the timeline; the task detail has the rest |
+| change the defaults | *Advanced*, closed by default: events it may emit, events it listens to, what interrupts it, rate, calls that run without asking | — |
+
+### Defaults of a team (nothing written)
+
+| Behaviour | Default | *Advanced* (field) |
+|---|---|---|
+| knowing the others | each assignment's prompt gets a **directory** of its teammates, one line each: id, purpose (first sentence of its mission, ≤ 120 chars), tools, where it runs. At most 32. When mission + objective + directory pass the prompt's 8000 characters, the directory is cut from the end with "… and N more", never the mission or the objective | — |
+| delegating | a member may delegate to any teammate, and takes delegations from them: the team is the consent. Outside the team, denied as today. Depth, cycle and budget as in [delegation](delegation.md) | `delegation.to` adds bots outside; `delegation.fromTeam: false` refuses teammates |
+| emitting | a member may emit any event name to its team, severity up to `warning`, 6 per minute | `events.emit`: names or patterns, each with `maxSeverity` (`critical` only here); `events.perMinute` (≤ 60) |
+| hearing | a member hears the events **addressed to it** (`to`) and the team's **broadcasts of `warning` or `critical`**; `info` broadcasts go to the history only. Each event heard is a new task (trigger `event`) | `event` triggers with names or patterns replace the default |
+| being interrupted | a teammate's event of `warning` or `critical` **addressed to it** makes an urgent task. Broadcasts never interrupt by default | `events.interruptible: false`, or `interrupt` on each `event` trigger |
+| running without asking | none; the panel pre-ticks `return_home` when the bot's tools include it | `approvals.autoApprove` |
+
+### The rules underneath
+
 | # | Question | Decision |
 |---|---|---|
-| 1 | What is a group | A **tag on the bot**: `"groups": ["port"]`, up to 8, identifier syntax. No new aggregate or store: a group exists while a bot names it; `GET /v1/groups` and `GET /v1/groups/{name}` are derived from the bots of the tenant |
-| 2 | What a member knows | Each assignment's prompt gets a **directory** of the other members of its groups, one line each: id, purpose (first sentence of its mission, ≤ 120 chars), tools, where it runs (nodes or selector), what it takes (`delegation`, the events it listens to). At most 32 members. The prompt keeps its 8000-character limit: when mission + objective + directory do not fit, **the directory is cut** from the end with "… and N more", never the mission or the objective |
-| 3 | Delegating inside a group | A member may delegate to **any member** that declares the `delegation` trigger, without listing it; `delegation.to` still adds bots outside the group. The tool's `enum` is that union. Outside both: `not_allowed`, as today. Depth, cycle and budget are unchanged |
-| 4 | Who may emit what | The bot's definition: `events.emit` lists names or patterns, each with a `maxSeverity` (default `warning`). The model chooses within it; a bot in no group emits nothing |
-| 5 | Who receives | Every Enabled bot that **shares a group** with the emitter and has an `event` trigger matching the name; narrowed to `to` when the call names members. Never the emitter itself |
-| 6 | How it arrives | As a new task of the subscriber (trigger `event`), objective rendered from the trigger's template over the event; idempotency key `event:<event id>:<trigger>` |
-| 7 | Limits | Rate: `events.perMinute` (default 6, at most 60), counted from the emitter's own `bot.event.emitted` in the last minute, so a restart keeps it. Depth and cycle: the subscriber's task gets the emitter's **lineage** (depth + 1, chain), cut with `depth_exceeded` / `cycle` like a delegation. Budget: each delivery is a child of the emitting task: model and tool calls are `share × (pool − granted) / subscribers`, never more than the subscriber's own; **the deadline is the subscriber's own timeout** (nobody waits for an event, and a recall must not die because the emitter is about to end) |
-| 8 | Where it shows | `bot.event.emitted` on the emitter's stream (name, severity, message, data, deliveries, skipped), `GET /v1/groups/{name}/events`; `info`: history only; `warning`: also the panel's banner and the fleet's phone page; `critical`: also the emitter's `approvals.notify` targets (webhook, command) |
-| 9 | Who may make a task urgent | **Only the operator**: at submission (`priority: urgent`, panel/API/CLI) or in the subscriber's definition (`event` trigger with `interrupt: true`). A bot never chooses urgency; it can only emit what the operator let it emit, and the receiver says what interrupts it. Delegations, webhooks and timers are never urgent |
-| 10 | What urgent does | The task goes first in `NextAssignment`. The bot's **Running and WaitingApproval** tasks that are not urgent end `Cancelled` with reason `preempted by <task>` (`bot.task.preempted`); its Pending tasks wait behind. An urgent task never cancels another urgent one |
-| 11 | A pending approval of a preempted task | The wait is closed; a late approve or deny gets `409` (task cancelled) and the call never runs; the card leaves the panel and the phone page |
-| 12 | How fast the cut is | Cancelling refuses the execution's next lease renewal and the node stops `axlr-tui`. This ADR lowers the node's `DefaultRenew` from 30 s to **10 s**. Cancelling stops the model, not the vehicle: the quad keeps flying until the urgent task calls `return_home` |
-| 13 | A call without a person | `approvals.autoApprove`: rules like `toolRules` (`{"tool": "return_home"}`, argument patterns allowed). When a task stops on a call that matches, the control plane decides `approve` at once as actor `policy` (audit `task.decide`, no notification). Costs one more execution (a few seconds). AXLR's `act-with-approval` adds a card to every call even under `--approve all`, so this lives in the control plane; an AXLR per-tool rule would remove the extra execution later. `run_mission` (take off, go somewhere new) stays a person's decision |
+| 1 | What a team is | A **tag on the bot**, up to 8, identifier syntax; the panel calls it Team, the API `groups`. No new aggregate or store: a team exists while a bot names it; `GET /v1/groups` and `GET /v1/groups/{name}` are derived from the tenant's bots |
+| 2 | Who receives | Enabled teammates of the emitter that hear it (defaults above), narrowed to `to` when given; never the emitter. `to` naming a bot outside its teams: `not_member` |
+| 3 | How it arrives | A task of the receiver, trigger `event`, objective "Event {{.name}} from {{.from}} ({{.severity}}): {{.message}}" plus the data, or the trigger's own template; key `event:<event id>:<receiver>`, so a retried call creates nothing twice |
+| 4 | Loops and depth | The receiver's task gets the emitter's **lineage** (depth + 1, the chain), cut with `depth_exceeded` / `cycle` exactly like a delegation; the receiver is skipped, the event still goes to the history and to people |
+| 5 | Budget | The receiver runs on **its own budgets and timeout**. A grant from the emitter's pool, as in delegation, would starve a broadcast (a pool split among 8 teammates leaves less than one call each) and kill a recall when the emitter is about to end. The cost stays bounded: per emitter by `perMinute` × team size, per chain by its depth, and every hop is a task the panel shows |
+| 6 | Who may make a task urgent | The **operator**: at submission (Urgent), or by the receiver's definition, whose default lets a teammate's addressed `warning` interrupt. A bot never makes a broadcast urgent and never raises its severity past its `maxSeverity`; delegations, webhooks and timers are never urgent |
+| 7 | What urgent does | It goes first in `NextAssignment`. The bot's **Running and WaitingApproval** tasks that are not urgent end `Cancelled`, reason `preempted by <task>` (`bot.task.preempted`); its Pending tasks wait behind; an urgent task never cancels another urgent one |
+| 8 | A pending approval of a preempted task | The wait is closed; a late approve or deny gets `409` and the call never runs; the card leaves the panel and the phone page |
+| 9 | How fast | Cancelling refuses the execution's next lease renewal and the node stops `axlr-tui`; the node's `DefaultRenew` goes from 30 s to **10 s**. Cancelling stops the model, not the vehicle: the quad flies on until the urgent task calls `return_home` |
+| 10 | A call without a person | `approvals.autoApprove`: rules like `toolRules` (`{"tool": "return_home"}`). When a task stops on a matching call, the control plane approves it at once as actor `policy` (audit `task.decide`, no notification): one more execution, a few seconds. AXLR's `act-with-approval` asks for every call even under `--approve all`, so this lives in the control plane until AXLR has a per-tool rule. `run_mission` (take off, go somewhere new) stays a person's decision |
+| 11 | Where it shows | `bot.event.emitted` on the emitter's stream (name, severity, message, data, `to`, who got a task, who was skipped and why), `bot.event.refused`, `bot.task.preempted`; `info`: history; `warning`: also the panel's banner and the fleet's phone page; `critical`: also the emitter's `approvals.notify` targets |
+| 12 | Stop | `POST /v1/bots/{id}/stop` cancels the bot's Running and WaitingApproval tasks in one call (reason `stopped by <actor>`), the bot stays Enabled; Pause stays as it is |
 
 ### The tool
 
-Served by the node agent on the execution's socket, next to `axlr_bots_delegate` ([delegation §1](delegation.md#1-how-the-model-asks)), and added to the allowed tools of every bot with `events.emit`:
+Served by the node agent on the execution's socket, next to `axlr_bots_delegate` ([delegation §1](delegation.md#1-how-the-model-asks)), to every bot in a team. The description tells the model when to use which: delegate to ask a teammate for a task and its answer; emit to tell teammates something happened, warn or recall them, without waiting.
 
 ```json
 {
@@ -44,11 +74,11 @@ Served by the node agent on the execution's socket, next to `axlr_bots_delegate`
   "inputSchema": {
     "type": "object",
     "properties": {
-      "name":     {"type": "string", "description": "the event, one of (or matching): vehicle.recall, ship.*"},
+      "name":     {"type": "string", "description": "a short dotted name, e.g. recall, ship.sighted"},
       "message":  {"type": "string", "minLength": 1, "maxLength": 280, "description": "one line for people and bots: what happened and why"},
-      "severity": {"type": "string", "enum": ["info", "warning"], "default": "info"},
-      "data":     {"type": "object", "description": "facts for the receivers, at most 8 KiB as JSON"},
-      "to":       {"type": "array", "items": {"type": "string", "enum": ["pilot-quad-1", "…"]}, "maxItems": 16, "description": "only these members; absent: every member that listens"}
+      "severity": {"type": "string", "enum": ["info", "warning"], "default": "info", "description": "warning: people are told, and a teammate it is addressed to stops what it does"},
+      "to":       {"type": "array", "items": {"type": "string", "enum": ["pilot-quad-1", "…"]}, "maxItems": 16, "description": "only these teammates; absent: the whole team"},
+      "data":     {"type": "object", "description": "facts for the receivers, at most 8 KiB as JSON"}
     },
     "required": ["name", "message"],
     "additionalProperties": false
@@ -56,52 +86,52 @@ Served by the node agent on the execution's socket, next to `axlr_bots_delegate`
 }
 ```
 
-It answers at once with the event id, who got a task (bot, task id) and who was skipped and why. Refusals of the whole call: `not_allowed` (name not in `events.emit`), `severity_not_allowed`, `no_group`, `not_member` (`to` names a bot outside the emitter's groups), `rate_limited`; each is `bot.event.refused` plus an audit entry. Per receiver: `depth_exceeded`, `cycle`, `budget_exhausted`, `target_unavailable`.
+It answers at once with the event id, who got a task and who was skipped and why. Refusals of the whole call, each a `bot.event.refused` and an audit entry: `not_allowed`, `severity_not_allowed`, `no_team`, `not_member`, `rate_limited`. Event names: dot-separated segments `[a-z0-9-]`, ≤ 64 chars; a pattern takes `*` (one segment) or `**` (any).
 
 ### The definition
 
+What the panel writes for the guide case (only `groups`; the rest is default):
+
 ```json
-"groups": ["port"],
-"events": {"emit": [{"name": "vehicle.recall", "maxSeverity": "warning"}, {"name": "ship.*"}], "perMinute": 6},
-"triggers": [
-  {"type": "manual"}, {"type": "delegation"},
-  {"type": "event", "name": "recall", "events": ["vehicle.recall"], "interrupt": true,
-   "objective": "Recall from {{.from}}: {{.message}}. Return home now with return_home and say why."}
-],
-"approvals": {"ttl": "20m", "onExpire": "deny", "autoApprove": [{"tool": "return_home"}]}
+"groups": ["port"]
 ```
 
-| Field | Rule |
-|---|---|
-| event name | dot-separated segments `[a-z0-9-]`, ≤ 64 chars; a pattern takes `*` (one segment) or `**` (any) |
-| trigger `event` | `events`: 1 to 16 names or patterns; `objective`: a template over `name`, `from`, `severity`, `message`, `data`, `group`, `emittedAt` (default: "Event {{.name}} from {{.from}} ({{.severity}}): {{.message}}"); `interrupt`: default false |
-| task `priority` | `normal` (default) or `urgent`, shown on the task and in its approval notification |
+The same bot with every *Advanced* field:
+
+```json
+"groups": ["port"],
+"delegation": {"to": ["logistics"], "fromTeam": true},
+"events": {"emit": [{"name": "recall", "maxSeverity": "warning"}, {"name": "ship.*", "maxSeverity": "critical"}], "perMinute": 6, "interruptible": true},
+"triggers": [{"type": "manual"}, {"type": "event", "name": "ships", "events": ["ship.*"], "interrupt": false, "objective": "…"}],
+"approvals": {"autoApprove": [{"tool": "return_home"}]},
+"priority": "on a task: normal (default) or urgent"
+```
 
 ### The fleet
 
-`examples/drone-fleet/app/vehicle_pilot.py` gets a second tool, `return_home {reason}`: RTL to the vehicle's station (quad and rover RTL, plane RTL then its autoland), "already home" when it is at its station; the pilot bots get `groups: ["port"]`, the recall trigger and `autoApprove` for `return_home`. It goes after [#29](https://github.com/underpass-ai/axlr-bots/pull/29) (ships as targets, `ais`) is on main.
+`examples/drone-fleet/app/vehicle_pilot.py` gets a second tool, `return_home {reason}`: RTL to the vehicle's station (quad and rover RTL, plane RTL then its autoland), "already home" when it is there. The pilot definitions get `groups: ["port"]` and `autoApprove` for `return_home`. After [#29](https://github.com/underpass-ai/axlr-bots/pull/29) is on main.
 
 ## Order of PRs (each from `origin/main`, base `main`)
 
 | PR | Contents |
 |---|---|
 | 1 | this ADR |
-| 2 | groups: `groups`, derived `/v1/groups`, the directory, delegation to members; CLI, OpenAPI, bot reference |
-| 3 | events: `events.emit`, trigger `event`, the node's tool, delivery and limits, `bot.event.*`, `/v1/groups/{name}/events`, notify on `critical` |
-| 4 | urgent tasks and `autoApprove`; `DefaultRenew` 10 s |
-| 5 | fleet: `return_home`, pilot definitions, warnings on the phone page (after #29) |
-| 6 | panel: Groups and Listens to in New bot, a Groups view with members, events in the timeline; contract test |
-| 7 | guide: set it up from the panel (`docs/runbooks/groups-and-events.md`) |
+| 2 | teams: `groups`, derived `/v1/groups`, the directory, delegation inside the team; CLI, OpenAPI, bot reference |
+| 3 | events: the defaults, `events`, trigger `event`, the node's tool, delivery and limits, `bot.event.*`, group events with `after` and `wait`, notify on `critical` |
+| 4 | urgent tasks, Stop, `autoApprove`; `DefaultRenew` 10 s |
+| 5 | fleet: `return_home`, pilot definitions, warnings on the phone page |
+| 6 | panel: Team in New bot and Edit bot, *Advanced*, the Teams view, the live timeline, Urgent, Stop, Recall, the task's why; contract test |
+| 7 | guide: set it up from the panel (`docs/runbooks/teams-and-events.md`) |
 
 ## Consequences
 
-- New fields everywhere the definition travels; an old panel reads the `event` trigger and the new events as `Unknown` (#23) and still works. **Upgrade the control plane first**, then nodes (an old node never offers the emit tool), then the panel.
-- A bot in a group gets the delegation tool when any other member takes delegations: its allowed tools grow by that one tool, still under its level.
-- The prompt is longer by the directory; a bot in no group sees no change.
+- New fields wherever the definition travels; an old panel reads the `event` trigger and the new events as `Unknown` (#23) and still works. **Upgrade the control plane first**, then the nodes (an old node never offers the emit tool), then the panel.
+- A bot in a team gets two more tools (delegate, emit), still under its level and its policy; a bot in no team sees no change.
+- Putting two bots in a team lets them give each other tasks and interrupt each other with an addressed `warning`: the team is a trust boundary, and the panel says so when a bot joins one.
 
 ## Left out
 
 - Events from the operator (`POST /v1/groups/{name}/events`) and from webhooks; urgent webhooks and timers.
 - Cancelling a preempted task's Pending queue and its delegated children.
-- Groups with their own policy (description, notify targets, allowed events): a group aggregate can come later without changing the bots' `groups` field.
+- Teams with their own settings (description, notify targets): a team aggregate can come later without changing the bots' `groups`.
 - Approval without the extra execution: needs a per-tool rule in AXLR.
