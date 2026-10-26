@@ -32,7 +32,7 @@ operator ──"dile al quad-1 que se retire"──▶ pilot-plane-0 (its direct
 | see the teams and who is in each | **Teams** view: each member with its line of the directory (purpose, tools, where it runs) and its status | live, as bots change |
 | watch events flow | the team's timeline: emitted → task received → preempted → done, coloured by severity; `GET /v1/groups/{name}/events?after=<cursor>&wait=20s` long-polls, so an event shows within a second | `warning` and `critical` also raise a banner |
 | give an order in plain words | the task box on a bot, as today, with an **Urgent** switch | the task shows in the timeline with its status |
-| stop or recall a bot at once | **Stop**: cancels the bot's running and waiting tasks, no new one; **Recall**: an urgent task "Return home now" for a bot that has `return_home` | the cancelled and new tasks change on screen within the node's renewal (10 s) |
+| stop or recall a bot at once | **Stop**: pauses the bot and cancels its open tasks; **Recall**: an urgent task "Return home now" for a bot that has `return_home` | the cancelled and new tasks change on screen within the node's renewal (10 s) |
 | see why each bot decided | every event carries its `message` (required: what and why); a task shows what started it (the event and who emitted it, a delegation, a person), its tool calls with arguments, who approved (a person or `policy`), its answer | one line per step in the timeline; the task detail has the rest |
 | change the defaults | *Advanced*, closed by default: events it may emit, events it listens to, what interrupts it, rate, calls that run without asking | — |
 
@@ -62,7 +62,7 @@ operator ──"dile al quad-1 que se retire"──▶ pilot-plane-0 (its direct
 | 9 | How fast | Cancelling refuses the execution's next lease renewal and the node stops `axlr-tui`; the node's `DefaultRenew` goes from 30 s to **10 s**. Cancelling stops the model, not the vehicle: the quad flies on until the urgent task calls `return_home` |
 | 10 | A call without a person | `approvals.autoApprove`: rules like `toolRules` (`{"tool": "return_home"}`). When a task stops on a matching call, the control plane approves it at once as actor `policy` (audit `task.decide`, no notification): one more execution, a few seconds. AXLR's `act-with-approval` asks for every call even under `--approve all`, so this lives in the control plane until AXLR has a per-tool rule. `run_mission` (take off, go somewhere new) stays a person's decision |
 | 11 | Where it shows | `bot.event.emitted` on the emitter's stream (name, severity, message, data, `to`, who got a task, who was skipped and why), `bot.event.refused`, `bot.task.preempted`; `info`: history; `warning`: also the panel's banner and the fleet's phone page; `critical`: also the emitter's `approvals.notify` targets |
-| 12 | Stop | `POST /v1/bots/{id}/stop` cancels the bot's Running and WaitingApproval tasks in one call (reason `stopped by <actor>`), the bot stays Enabled; Pause stays as it is |
+| 12 | Stop | `POST /v1/bots/{id}/stop` does on the server, in one call, what the panel's Stop does today on the client ([#32](https://github.com/underpass-ai/axlr-bots/pull/32)): pause the bot if Enabled, then cancel its Pending, Running and WaitingApproval tasks (reason `stopped by <actor>`); it answers how many were cancelled and which could not be. Enable undoes the pause; the panel switches to the route when it lands |
 
 ### The tool
 
