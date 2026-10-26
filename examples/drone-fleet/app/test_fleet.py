@@ -292,6 +292,18 @@ class PatternTest(unittest.TestCase):
             p.run_mission({"name": "x", "waypoints": [{"north_m": 1, "east_m": 1, "alt_m": 20}], "pattern": {"kind": "expanding_square", "target": "datum"}})
 
 
+class RestockTest(unittest.TestCase):
+    def test_no_second_restock_while_one_waits_for_a_person(self):
+        b = fleet_base.Base({}, {"stations": [], "depot": {"lat": 51.9402, "lon": 4.00485}}, [], "/dev/null")
+        b.states["supply-0"] = {"role": "supply"}
+        fired = []
+        b.dispatch.fire = lambda *a: fired.append(a) or "task-1"
+        b.cp = type("CP", (), {"waiting": lambda self: [{"botId": "pilot-supply-0"}]})()
+        self.assertTrue(b._supply_waiting())
+        b.cp = type("CP", (), {"waiting": lambda self: [{"botId": "pilot-quad-0"}]})()
+        self.assertFalse(b._supply_waiting())
+
+
 class ShipTargetTest(unittest.TestCase):
     # quad-0's home at the APM station; one ship 800 m north-east, one 4 km out, moving.
     HOME = {"lat": 51.9455, "lon": 3.9972}
