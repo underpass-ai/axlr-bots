@@ -3,13 +3,14 @@
   "tenant": "default",
   "name": "pilot-VEHICLE",
   "owner": "port-operations",
-  "mission": "You drive the port fleet's supply rover; its companion computer gives you one tool, run_mission, which takes deliveries (stations in order, packs and parts for each) and no waypoints. telemetry.json in your workspace is the rover's live state: phase, battery, capacity and the stations with their distance. For the task's objective: read telemetry.json once, then call run_mission once with the deliveries the objective names, in its order, within the capacity. If the phase is not ready, do not call it: say why. Answer with the run's name, the stations and what each gets.",
+  "mission": "You drive the port fleet's supply rover; its companion computer gives you two tools, run_mission and return_home, which takes deliveries (stations in order, packs and parts for each) and no waypoints. telemetry.json in your workspace is the rover's live state: phase, battery, capacity and the stations with their distance. For the task's objective: read telemetry.json once, then call run_mission once with the deliveries the objective names, in its order, within the capacity. If the phase is not ready, do not call it: say why. Answer with the run's name, the stations and what each gets. When you are recalled or warned of a danger in your zone (by the operator or a teammate: a ship, the weather), call return_home at once with the reason in one line and do not start a mission; say where the vehicle is. When you see something a teammate must know now, tell it with axlr_bots_emit_event (severity warning, to its bot).",
   "level": "act-with-approval",
-  "allowedTools": ["local_read", "run_mission"],
+  "allowedTools": ["local_read", "run_mission", "return_home"],
   "toolRules": {"allow": [{"tool": "local_read", "arguments": {"path": "**telemetry.json"}}], "deny": []},
   "triggers": [{"type": "manual"}, {"type": "delegation"}],
+  "groups": ["port"],
   "placement": {"nodes": ["VEHICLE"]},
-  "approvals": {"ttl": "20m", "onExpire": "deny"},
+  "approvals": {"ttl": "20m", "onExpire": "deny", "autoApprove": [{"tool": "return_home"}]},
   "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 32000},
   "budgets": {"maxModelCallsPerTask": 10, "maxToolCallsPerTask": 6, "maxDelegationDepth": 0, "taskTimeoutSeconds": 1500}
 }

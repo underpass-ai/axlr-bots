@@ -378,6 +378,18 @@ Then Tasks → New task on that bot: "go to the ship CONESTE". The call waits in
 | "ve al barco CONESTE" (temporary bot on quad-0, 740 m away) | the bot read the ship's position in `telemetry.json` and called `run_mission` with one waypoint over it, 20 m up; the phone page showed the route; approved on `/m`; quad-0 took off |
 | "ve al barco OOCL CHONGQING" (3.2 km away) | the bot read `inside_geofence: false`, called nothing, and answered with the distance and the 1500 m limit |
 
+## 11. A team that warns and recalls
+
+Every vehicle's companion computer serves a second tool, `return_home {reason}`: RTL to its station, where a quad lands, a rover parks and the plane lines up and lands by itself; a vehicle at its station stays there. Coming home is safe, so the pilots' definitions let the control plane approve it (`approvals.autoApprove`), while `run_mission` still waits for a person. The pilots are in team `port` (`groups`), so each knows the others and may warn or recall them with an event ([teams and events](teams-and-events.md)).
+
+| From the panel | What the vehicle does |
+|---|---|
+| a bot in `port` with `return_home` in its Tools (New bot: Team `port`) | the panel adds `autoApprove` for `return_home` |
+| New task on the plane's bot: «Dile al quad-1 que se retire: hay un barco» | the plane emits a `warning` to `pilot-quad-1`; quad-1's bot gets an urgent task, calls `return_home`, the quad flies home; the banner and **Teams → port** say why |
+| **Recall** on quad-1's page | the same, from the operator |
+
+The chart's `vehicle.json` lets the sidecar's AXLR call both tools (`allow_tools`); a `fleet-app` image older than `return_home` answers it as an unknown tool.
+
 ## The look
 
 The map, the 3D view and the phone page share one stylesheet, [`app/static/theme.css`](../../examples/drone-fleet/app/static/theme.css): the AXLR Bots emblem, ink on a warm white page (graphite with `?theme=dark` or a dark system theme), the emblem's copper as the one accent, one colour per status in a pill that names it, [Lexend](https://www.lexend.com) for words and [DotGothic16](https://github.com/fontworks-fonts/DotGothic16) for the counters (both SIL Open Font License, served from `app/static/fonts` with their licences). The viewer sits in a rounded frame; `?hud=0` drops the frame and the side column for a recording. The **SIMULATION** label and the imagery's attribution stay on every page, the phone's route maps included; the panel's own look is the same palette ([axlr-bots-panel](https://github.com/underpass-ai/axlr-bots-panel)).
