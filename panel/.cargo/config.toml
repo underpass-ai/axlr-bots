@@ -1,0 +1,3 @@
+# The host runs local models and a Kubernetes worker: build with two jobs.
+[build]
+jobs = 2
