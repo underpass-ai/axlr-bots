@@ -33,7 +33,7 @@ The safety limits live in the companion computer, not in the model: a refused ro
 - The images in a registry the cluster pulls from. On wrx80 they were built with podman and pushed to the lab registry:
 
 ```bash
-podman build -t $R/fleet-app:0.1.0 examples/drone-fleet                                         # vehicle_pilot.py, fleet_base.py, the map
+podman build -t $R/fleet-app:0.2.0 examples/drone-fleet                                         # vehicle_pilot.py, fleet_base.py, the map, the 3D view
 podman build -t $R/fleet-sitl:4.7.2 examples/drone-fleet/sitl                                    # SITL (checked sha256) + mavlink-router
 podman build -f examples/drone-fleet/control-plane.Dockerfile -t $R/control-plane:0.1.0-fleet .  # axlr-bots
 ```
@@ -103,6 +103,33 @@ kubectl -n port-fleet exec fleet-cp-0 -c control-plane -- axlr-bots --state /var
 ```
 
 The dispatcher delegates; each chosen pilot plans and stops in `WaitingApproval` with its `run_mission` call (the route, the speed, the photo spacing) on the panel's task screen. Approve: the vehicle takes off on the map; deny: it stays on its pad and the pilot says so. After landing the vehicle waits at its station for a bay, is inspected and gets a fresh pack; a station without packs or parts keeps it waiting, which is the `logistics` bot's cue (`task submit logistics …`).
+
+## 6. The port in 3D
+
+`https://flota.<domain>/3d` (the map's **3D view** button) draws the same stream over a model of Maasvlakte 2: each vehicle at its altitude (5 m of quay plus its `alt_m`), its trail, its planned route with a line down from each waypoint, the stations, the depot and the zones. Click a vehicle to follow it; **Overview** goes back. It needs WebGL; the 2D map does not.
+
+![The fleet over Maasvlakte 2, quad-0 orbiting the APM cranes at 70 m](../assets/drone-fleet/3d-overview.jpg)
+
+![Following quad-0 past a container ship at the APM quay](../assets/drone-fleet/3d-follow-quad.jpg)
+
+The model is `examples/drone-fleet/app/static/port.glb` (3 MB), built from OpenStreetMap by [`examples/drone-fleet/port3d`](../../examples/drone-fleet/port3d): the coastline, the harbours, land use, roads, rail, buildings, tanks, the quay cranes and the stacking cranes' blocks come from OSM; heights, container stacks and ships are made up. The same build writes a gz sim (Harmonic) world with the port's origin in its `spherical_coordinates`, for ArduPilot SITL in Gazebo later.
+
+```text
+Overpass ─▶ fetch_osm.py ─▶ prepare.py (shapely) ─▶ build_scene.py (Blender, on wrx80) ─┬─▶ app/static/port.glb  (/3d)
+                                                                                       └─▶ port3d/gazebo/…     (gz sim)
+```
+
+To rebuild it, follow the [port3d README](../../examples/drone-fleet/port3d/README.md), then the fleet-app image and the digest in `values.yaml`:
+
+```bash
+podman build -t $R/fleet-app:0.2.0 examples/drone-fleet
+podman push --digestfile /tmp/digest $R/fleet-app:0.2.0
+helm upgrade fleet examples/helm/drone-fleet -n port-fleet -f values-in-use.yaml   # helm get values fleet -n port-fleet -o yaml
+```
+
+The image is the vehicles' too: an upgrade restarts every vehicle, and a task paused for approval does not survive it (its AXLR session is in the sidecar's `/tmp`).
+
+![The same port rendered in Blender: the Prinses Amaliahaven, quay cranes, a ship alongside, the stacking blocks](../assets/drone-fleet/3d-blender-amaliahaven.jpg)
 
 ## Limits
 
