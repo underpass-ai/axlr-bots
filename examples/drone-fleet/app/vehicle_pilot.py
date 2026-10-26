@@ -845,6 +845,54 @@ class Pilot:
         finally:
             self.busy.release()
 
+    def return_home(self, arguments):
+        """Brings the vehicle home now: RTL to its station, where a quad
+        lands, a rover parks and a plane lines up and lands by itself. It
+        stops the mission in flight; a vehicle at its station stays there.
+        Coming home is always safe, so it needs no plan and no checks."""
+        reason = " ".join(str(arguments.get("reason") or "").split())[:200]
+        if not reason:
+            raise mcp_http.ToolError("reason: say in one line why it comes home")
+        # A mission being started now gets its launch finished first, so
+        # the RTL is not overwritten by the take-off.
+        if not self.busy.acquire(timeout=30):
+            raise mcp_http.ToolError("a mission is still being started on this vehicle; try again in a few seconds")
+        try:
+            s = self.vehicle.snapshot()
+            if not s["connected"]:
+                raise mcp_http.ToolError("the vehicle is offline: its autopilot does not answer")
+            phase = self.phase(s)
+            away = self._distance_home(s)
+            if not s["armed"]:
+                return {"vehicle": self.vehicle_id, "status": "already home", "phase": phase, "reason": reason}
+            if phase in ("returning", "landing", "parking"):
+                self.vehicle.event(f"recall: already coming home ({reason})")
+                return {"vehicle": self.vehicle_id, "status": "already coming home", "phase": phase,
+                        "distance_home_m": away, "reason": reason}
+            self.vehicle.set_mode("RTL")
+            if self.flight:
+                self.flight["recalled"] = reason
+                self.flight["recalled_at"] = now_iso()
+            self.vehicle.event(f"recalled: {reason}")
+            return {
+                "accepted": True, "vehicle": self.vehicle_id, "kind": self.kind, "status": "returning to its station in RTL",
+                "was": phase, "distance_home_m": away, "reason": reason,
+                **({"mission": self.flight["name"]} if self.flight else {}),
+            }
+        except mcp_http.ToolError:
+            raise
+        except Exception as exc:
+            self.vehicle.event(f"recall failed: {exc}")
+            raise mcp_http.ToolError(f"the vehicle did not take RTL: {exc}")
+        finally:
+            self.busy.release()
+
+    def _distance_home(self, s):
+        home = s.get("home")
+        if not home or s.get("lat") is None:
+            return None
+        return round(math.hypot(*geo.offset_m(home["lat"], home["lon"], s["lat"], s["lon"])))
+
     def _approach(self, home):
         """A plane lands on its home runway: two points behind it on final."""
         heading = env_float("RUNWAY_HEADING", 0)
@@ -979,6 +1027,26 @@ def supply_tool(pilot, limits):
                 "speed_m_s": {"type": "number", "description": f"speed in m/s, {limits.min_speed:g} to {limits.max_speed:g}"},
             },
             "required": ["name", "deliveries"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def return_home_tool(kind):
+    """Every vehicle's way home, whatever its role."""
+    how = {"quad": "flies straight back to its pad and lands", "rover": "drives back to its station along the way home and parks",
+           "plane": "flies back to its runway, lines up and lands"}[kind]
+    return {
+        "name": "return_home",
+        "description": (
+            f"Bring this vehicle home now: it stops its mission and {how} by itself (RTL). Coming home is always safe and needs "
+            "no person's approval. Use it when you are recalled or warned: a ship in the zone, the weather, a teammate's warning, "
+            "the operator. A vehicle already at its station stays there. Give the reason in one line; it answers at once."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"reason": {"type": "string", "minLength": 1, "maxLength": 200, "description": "why it comes home, in one line"}},
+            "required": ["reason"],
             "additionalProperties": False,
         },
     }
@@ -1155,6 +1223,7 @@ def main():
     else:
         tool = mission_tool(kind, limits)
     tools.add(tool, pilot.run_mission)
+    tools.add(return_home_tool(kind), pilot.return_home)
     mcp_server = ThreadingHTTPServer(env_listen("MCP_LISTEN", "127.0.0.1:8765"), mcp_http.handler(tools))
     threading.Thread(target=mcp_server.serve_forever, name="mcp", daemon=True).start()
     log.info("%s %s at station %s: %d routes, state on %s, MCP on %s", kind, vehicle_id, station, len(routes), state_server.server_address, mcp_server.server_address)

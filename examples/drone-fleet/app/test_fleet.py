@@ -127,6 +127,62 @@ class PlanTest(unittest.TestCase):
             p.check_deliveries([{"station": "mars", "batteries": 1, "parts": 0}], home)
 
 
+class ReturnHomeTest(unittest.TestCase):
+    class Autopilot(FakeVehicle):
+        def __init__(self, **state):
+            super().__init__(**state)
+            self.modes, self.events = [], []
+
+        def set_mode(self, name, timeout=8.0):
+            self.modes.append(name)
+            self.state["mode"] = name
+
+        def event(self, text):
+            self.events.append(text)
+
+    def pilot(self, kind="quad", **state):
+        v = self.Autopilot(**state)
+        crew = vehicle_pilot.GroundCrew(v, "quad-1", kind, "apm", "", 1, 1)
+        return vehicle_pilot.Pilot("quad-1", kind, v, vehicle_pilot.Limits(kind), crew, [], "/dev/null"), v
+
+    def test_a_vehicle_on_a_mission_turns_home_and_says_why(self):
+        p, v = self.pilot(armed=True, mode="AUTO", lat=51.95, lon=4.0)
+        p.flight = {"name": "north-quay", "status": "flying"}
+        out = p.return_home({"reason": "  a ship\nis entering the zone "})
+        self.assertEqual(v.modes, ["RTL"])
+        self.assertTrue(out["accepted"])
+        self.assertEqual((out["was"], out["mission"], out["reason"]), ("mission", "north-quay", "a ship is entering the zone"))
+        self.assertGreater(out["distance_home_m"], 0)
+        self.assertEqual(p.flight["recalled"], "a ship is entering the zone")
+        self.assertIn("recalled: a ship is entering the zone", v.events)
+
+    def test_a_vehicle_at_home_or_already_coming_stays_as_it_is(self):
+        p, v = self.pilot()
+        self.assertEqual(p.return_home({"reason": "x"})["status"], "already home")
+        p, v = self.pilot(armed=True, mode="RTL")
+        self.assertEqual(p.return_home({"reason": "x"})["status"], "already coming home")
+        self.assertEqual(v.modes, [])
+
+    def test_a_recall_needs_a_reason_and_an_autopilot(self):
+        p, v = self.pilot(armed=True, mode="AUTO")
+        with self.assertRaisesRegex(mcp_http.ToolError, "reason"):
+            p.return_home({})
+        p, v = self.pilot(connected=False)
+        with self.assertRaisesRegex(mcp_http.ToolError, "offline"):
+            p.return_home({"reason": "x"})
+        p, v = self.pilot(armed=True, mode="AUTO")
+        v.set_mode = lambda name, timeout=8.0: (_ for _ in ()).throw(RuntimeError("no ack"))
+        with self.assertRaisesRegex(mcp_http.ToolError, "did not take RTL"):
+            p.return_home({"reason": "x"})
+
+    def test_the_tool_is_for_every_kind(self):
+        for kind in ("quad", "rover", "plane"):
+            tool = vehicle_pilot.return_home_tool(kind)
+            self.assertEqual(tool["name"], "return_home")
+            self.assertEqual(tool["inputSchema"]["required"], ["reason"])
+            self.assertIn("no person", tool["description"])
+
+
 class RouteTest(unittest.TestCase):
     """A rover drives precomputed routes; its bot names one, never waypoints."""
 

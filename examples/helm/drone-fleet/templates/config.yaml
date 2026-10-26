@@ -26,9 +26,11 @@ data:
     {{- end }}
   {{- end }}
   {{- end }}
-  # AXLR's MCP configuration for each vehicle's sidecar: the pilot's tool on
-  # loopback, every call asking a person (approval manual).
+  # AXLR's MCP configuration for each vehicle's sidecar: the pilot's tools on
+  # loopback, every call asking a person (approval manual); the control
+  # plane approves return_home itself when the bot's approvals.autoApprove
+  # names it.
   mcp.json: |
     {"version": 1, "plugins": [{"manifest": "/var/lib/axlr-node/home/.config/axlr/plugins/vehicle.json", "name": "vehicle", "description": "the vehicle's companion computer", "purpose": "tools", "approval": "manual"}]}
   vehicle.json: |
-    {"manifest_version": 1, "id": "vehicle", "url": "http://127.0.0.1:8765/mcp", "allow_tools": ["run_mission"]}
+    {"manifest_version": 1, "id": "vehicle", "url": "http://127.0.0.1:8765/mcp", "allow_tools": ["run_mission", "return_home"]}

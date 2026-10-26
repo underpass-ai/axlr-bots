@@ -132,3 +132,42 @@ func TestDelegationExampleBotsFormAPair(t *testing.T) {
 		t.Errorf("bot-b = %+v triggers %+v", b.Snapshot().Delegation, b.Snapshot().Triggers)
 	}
 }
+
+// TestTheFleetPilotsAreATeamThatComesHome registers the port fleet's
+// pilot definitions as the runbook does: each is in team port, may call
+// return_home and lets the control plane approve it.
+func TestTheFleetPilotsAreATeamThatComesHome(t *testing.T) {
+	c := cli{t: t, state: t.TempDir(), axlr: fakeAXLR(t, "completed"), socket: ""}
+	dir := t.TempDir()
+	for i, name := range []string{"pilot.json", "rover-pilot.json", "supply-pilot.json"} {
+		raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "drone-fleet", "bots", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := strings.ReplaceAll(string(raw), "VEHICLE", []string{"quad-1", "rover-0", "supply-0"}[i])
+		var definition application.BotDefinition
+		decoder := json.NewDecoder(strings.NewReader(text))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&definition); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		approvals, err := domain.NewApprovals(definition.Approvals)
+		if err != nil || !approvals.AutoApproves("axlr_call_tool", []byte(`{"name": "vehicle/return_home", "arguments": {"reason": "a ship"}}`)) || approvals.AutoApproves("run_mission", nil) {
+			t.Errorf("%s: approvals %+v %v", name, definition.Approvals, err)
+		}
+		if len(definition.Groups) != 1 || definition.Groups[0] != "port" || !strings.Contains(definition.Mission, "return_home") {
+			t.Errorf("%s: groups %v", name, definition.Groups)
+		}
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if code, _, errText := c.run("bot", "register", "--file", path); code != exitOK {
+			t.Fatalf("%s: %s", name, errText)
+		}
+	}
+	code, out, _ := c.run("group", "get", "port")
+	if code != exitOK || strings.Count(out, `"botId"`) != 3 {
+		t.Errorf("group port = %d %s", code, out)
+	}
+}
