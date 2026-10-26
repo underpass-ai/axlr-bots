@@ -263,6 +263,12 @@ The map, the 3D view and the phone page share one stylesheet, [`app/static/theme
 
 ![The same search in 3D by day](../assets/drone-fleet/ui-3d-day.jpg)
 
+![The same search in 3D at night, and the phone page with a takeoff waiting for a person](../assets/drone-fleet/ui-3d-night.jpg)
+
+![The phone page in the same theme: the incident's numbers, the pending takeoff, its route on the imagery with the imagery's attribution, Approve or Deny](../assets/drone-fleet/ui-phone.jpg)
+
+These four pictures are a replay of a captured `/api/fleet` with a synthetic incident, taken to show the theme; the pictures of the recorded run below are the run itself.
+
 ## Limits
 
 - The vehicles are SITL: the sensors are SITL's backends (rangefinders, optical flow, camera trigger), RTK is SITL's fix 6 with no correction link, and the map's hardware labels describe what the vehicles stand for.
