@@ -157,6 +157,16 @@ func (l *Local) FireTrigger(ctx context.Context, request FireRequest) (FireRespo
 	return FireResponse{Created: result.Created, Task: result.Task.Snapshot(), Trigger: result.Trigger, IdempotencyKey: result.IdempotencyKey.String()}, nil
 }
 
+// SendTaskMessage records the operator's message for the task's running
+// execution.
+func (l *Local) SendTaskMessage(ctx context.Context, id string, request MessageRequest) (application.SentTaskMessage, error) {
+	taskID, err := domain.NewTaskID(id)
+	if err != nil {
+		return application.SentTaskMessage{}, err
+	}
+	return application.NewSendTaskMessage(l.deps).Execute(ctx, taskID, request.Text)
+}
+
 // CancelTask ends the task and, when the control plane itself is
 // running it, interrupts the run.
 func (l *Local) CancelTask(ctx context.Context, id string) (CancelResponse, error) {

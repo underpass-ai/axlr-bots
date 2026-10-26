@@ -179,6 +179,11 @@ func (c *Client) CancelTask(ctx context.Context, id string) (CancelResponse, err
 	return response, c.call(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/cancel", nil, &response)
 }
 
+func (c *Client) SendTaskMessage(ctx context.Context, id string, request MessageRequest) (application.SentTaskMessage, error) {
+	var response application.SentTaskMessage
+	return response, c.call(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/messages", request, &response)
+}
+
 func (c *Client) ListExecutions(ctx context.Context, id string) ([]domain.ExecutionSnapshot, error) {
 	executions := []domain.ExecutionSnapshot{}
 	return executions, c.call(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(id)+"/executions", nil, &executions)
@@ -441,6 +446,17 @@ func (c *Client) AwaitDelegation(ctx context.Context, node domain.NodeID, execut
 		return application.DelegationAnswer{}, err
 	}
 	return nodeproto.ToDelegation(message)
+}
+
+// ExecutionMessages reads the operator's messages for an execution the
+// node runs, after the one named by after.
+func (c *Client) ExecutionMessages(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, after string) ([]application.RelayedMessage, error) {
+	var message nodeproto.MessagesMessage
+	path := "/v1/nodes/" + url.PathEscape(node.String()) + "/executions/" + url.PathEscape(execution.String()) + "/messages?after=" + url.QueryEscape(after)
+	if err := c.call(ctx, http.MethodGet, path, nil, &message); err != nil {
+		return nil, err
+	}
+	return message.Messages, nil
 }
 
 // request builds a request to the control plane with the bearer token.

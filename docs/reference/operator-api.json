@@ -744,6 +744,48 @@
         }
       }
     },
+    "/v1/tasks/{id}/messages": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "task id"
+        }
+      ],
+      "post": {
+        "operationId": "sendTaskMessage",
+        "description": "Writes to a Running task: the node running it hands the text to the run between model steps, and the task's timeline gets bot.task.message. Any other task is refused with the kind state: send it a new task instead.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SentTaskMessage"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/tasks/{id}/run": {
       "parameters": [
         {
@@ -1897,6 +1939,7 @@
           "bot.task.preempted",
           "bot.task.expired",
           "bot.task.delegated",
+          "bot.task.message",
           "bot.delegation.refused",
           "bot.event.emitted",
           "bot.event.refused",
@@ -2130,6 +2173,18 @@
           "takesDelegation",
           "tools",
           "where"
+        ]
+      },
+      "MessageRequest": {
+        "type": "object",
+        "x-go-type": "unixapi.MessageRequest",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
         ]
       },
       "ModelPolicyDefinition": {
@@ -2509,6 +2564,27 @@
         "required": [
           "task",
           "execution"
+        ]
+      },
+      "SentTaskMessage": {
+        "type": "object",
+        "x-go-type": "application.SentTaskMessage",
+        "properties": {
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "executionId": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId",
+          "executionId",
+          "createdAt"
         ]
       },
       "StopRefusal": {

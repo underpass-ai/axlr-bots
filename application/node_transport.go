@@ -21,6 +21,9 @@ type NodeTransport interface {
 	// NextAssignment waits up to wait for an execution; false when none.
 	NextAssignment(ctx context.Context, node domain.NodeID, wait time.Duration) (Assignment, bool, error)
 	RenewLease(ctx context.Context, node domain.NodeID, execution domain.ExecutionID) (time.Time, error)
+	// ExecutionMessages reads the operator's messages for an execution
+	// the node runs, oldest first, after the one named by after.
+	ExecutionMessages(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, after string) ([]RelayedMessage, error)
 	// UploadArtifact hands over the bytes of an artifact the execution
 	// delivered, before the report; the control plane keeps them only
 	// when they match the artifact's size and SHA-256.

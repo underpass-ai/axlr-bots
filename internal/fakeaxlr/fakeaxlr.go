@@ -15,9 +15,9 @@ import (
 // Options choose what the stand-in does.
 type Options struct {
 	// Scenario is one of completed, slow (completed after a second),
-	// decision, failed, approval-flow or delivered (two artifacts written
+	// decision, failed, approval-flow, delivered (two artifacts written
 	// to the workspace, one of them changed after its delivery, and a
-	// receipt).
+	// receipt) or steered (answers the first message of its --steer-file).
 	Scenario string
 	// NoPolicy makes --help omit -policy, like a build older than the
 	// execution policy.
@@ -28,6 +28,9 @@ type Options struct {
 	// Marker is a file the approval-flow scenario creates when, and only
 	// when, it runs the write after --decide approve.
 	Marker string
+	// Steer makes --help advertise -steer-file, like a build that reads
+	// what a person writes to a run while it works.
+	Steer bool
 }
 
 const resultCompleted = `{"type":"result","session":"sess-1","result":{"schema":"axlr.execution-result/v1","status":"completed","session_id":"sess-1","sessions":["sess-1"],"answer":"%s","tool_calls":[%s],"usage":{"requests":1,"prompt_tokens":10,"completion_tokens":1,"cost_usd":0.001},"artifacts":[]}}`
@@ -55,7 +58,7 @@ exit 0`
 func Write(dir string, options Options) (bin, argsFile string, err error) {
 	argsFile = filepath.Join(dir, "args.txt")
 	script := "#!/bin/sh\n" +
-		"for a in \"$@\"; do if [ \"$a\" = --help ]; then echo '  -exec string' >&2; " + helpPolicy(options.NoPolicy) + helpCorrelation(options.Correlation) + "exit 0; fi; " +
+		"for a in \"$@\"; do if [ \"$a\" = --help ]; then echo '  -exec string' >&2; " + helpPolicy(options.NoPolicy) + helpCorrelation(options.Correlation) + helpSteer(options.Steer) + "exit 0; fi; " +
 		"if [ \"$a\" = --version ]; then echo 'axlr-tui 0.0.0-fake'; exit 0; fi; done\n" +
 		"printf '%s\\n' \"$@\" > '" + argsFile + "'\n" +
 		body(options) + "\n"
@@ -77,6 +80,26 @@ func helpCorrelation(correlation bool) string {
 	return "echo '  -correlation string' >&2; echo '  -budget string' >&2; "
 }
 
+func helpSteer(steer bool) string {
+	if !steer {
+		return ""
+	}
+	return "echo '  -steer-file string' >&2; "
+}
+
+// steered waits up to five seconds for the first line of its --steer-file
+// and answers what it read, as a run steered between model steps would.
+const steered = `steer=""
+prev=""
+for a in "$@"; do if [ "$prev" = --steer-file ]; then steer="$a"; fi; prev="$a"; done
+printf '%s\n' '{"type":"session","session":"sess-1"}'
+i=0
+while [ $i -lt 100 ] && [ ! -s "$steer" ]; do sleep 0.05; i=$((i+1)); done
+heard=$(head -n 1 "$steer" 2>/dev/null | sed 's/^{"text":"\(.*\)"}$/\1/')
+printf '%s\n' "{\"type\":\"steered\",\"text\":\"$heard\"}"
+printf '%s\n' "{\"type\":\"result\",\"session\":\"sess-1\",\"result\":{\"schema\":\"axlr.execution-result/v1\",\"status\":\"completed\",\"session_id\":\"sess-1\",\"sessions\":[\"sess-1\"],\"answer\":\"Heard: $heard\",\"tool_calls\":[],\"usage\":{\"requests\":2},\"artifacts\":[]}}"
+exit 0`
+
 func body(options Options) string {
 	completed := func(answer, calls string) string {
 		return `printf '%s\n' '{"type":"session","session":"sess-1"}' '{"type":"text","text":"` + answer + `"}' '{"type":"completed","session":"sess-1"}' '` + fmt.Sprintf(resultCompleted, answer, calls) + `'
@@ -93,6 +116,8 @@ exit 3`
 exit 1`
 	case "delivered":
 		return delivered()
+	case "steered":
+		return steered
 	case "approval-flow":
 		return `decide=""
 prev=""

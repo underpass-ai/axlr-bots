@@ -105,6 +105,8 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 	args = append(args, policy.args...)
 	args = append(args, policy.plugin...)
 	args = append(args, correlation.args...)
+	args = append(args, e.steerArgs(ctx, request.ExecutionID)...)
+	defer e.dropSteer(request.ExecutionID)
 	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout)
 	report.Policy = &policy.record
 	correlate(&report, correlation)
@@ -137,6 +139,8 @@ func (e *Executor) Decide(ctx context.Context, request application.DecisionReque
 	args = append(args, policy.args...)
 	args = append(args, policy.plugin...)
 	args = append(args, correlation.args...)
+	args = append(args, e.steerArgs(ctx, request.ExecutionID)...)
+	defer e.dropSteer(request.ExecutionID)
 	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout)
 	report.Policy = &policy.record
 	correlate(&report, correlation)

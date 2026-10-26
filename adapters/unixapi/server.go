@@ -103,6 +103,7 @@ func (s *Server) operatorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/tasks/{id}/events", s.listTaskEvents)
 	mux.HandleFunc("GET /v1/tasks/{id}/executions", s.listExecutions)
 	mux.HandleFunc("POST /v1/tasks/{id}/cancel", s.cancelTask)
+	mux.HandleFunc("POST /v1/tasks/{id}/messages", s.sendTaskMessage)
 	mux.HandleFunc("POST /v1/tasks/{id}/run", s.runTask)
 	mux.HandleFunc("POST /v1/tasks/{id}/decide", s.decideTask)
 	mux.HandleFunc("POST /v1/tasks/{id}/approve", s.decideAs(application.DecisionApprove))
@@ -135,6 +136,7 @@ func (s *Server) nodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/delegations", s.authenticated(s.delegate))
 	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/delegations/{task}", s.authenticated(s.awaitDelegation))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/events", s.authenticated(s.emit))
+	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/messages", s.authenticated(s.executionMessages))
 }
 
 // ServeTLS serves the node protocol on the listener with the TLS
@@ -409,6 +411,32 @@ func querySince(r *http.Request) (time.Time, error) {
 func (s *Server) listExecutions(w http.ResponseWriter, r *http.Request) {
 	value, err := s.service.ListExecutions(r.Context(), r.PathValue("id"))
 	respond(w, http.StatusOK, value, err)
+}
+
+// sendTaskMessage is POST /v1/tasks/{id}/messages: the operator writes to
+// a running task.
+func (s *Server) sendTaskMessage(w http.ResponseWriter, r *http.Request) {
+	var request MessageRequest
+	if !readJSON(w, r, &request) {
+		return
+	}
+	value, err := s.service.SendTaskMessage(r.Context(), r.PathValue("id"), request)
+	respond(w, http.StatusOK, value, err)
+}
+
+// executionMessages is GET .../executions/{exec}/messages?after=<id>: the
+// operator's messages for the node's running execution.
+func (s *Server) executionMessages(w http.ResponseWriter, r *http.Request) {
+	id, executionID, ok := nodeExecution(w, r)
+	if !ok {
+		return
+	}
+	messages, err := application.NewExecutionMessages(s.service.Dependencies()).Execute(r.Context(), id, executionID, r.URL.Query().Get("after"))
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	respond(w, http.StatusOK, nodeproto.MessagesMessage{Messages: messages}, nil)
 }
 
 func (s *Server) cancelTask(w http.ResponseWriter, r *http.Request) {
