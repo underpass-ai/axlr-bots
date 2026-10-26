@@ -3,6 +3,7 @@
 mod bot_detail;
 mod bots;
 mod decide;
+mod levels;
 mod nodes;
 mod overview;
 mod settings;

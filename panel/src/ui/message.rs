@@ -49,6 +49,8 @@ pub enum Message {
     RegisterTools(String),
     RegisterModel(String),
     RegisterNode(NodeChoice),
+    /// Show or hide the New bot form's Advanced part.
+    RegisterAdvanced(bool),
     RegisterSubmit,
     PickFile,
     FilePicked(Result<Option<PathBuf>, PanelError>),

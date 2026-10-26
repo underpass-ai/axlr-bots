@@ -3,8 +3,9 @@
 use iced::widget::{Space, column, container, pick_list, row, scrollable, table, text};
 use iced::{Alignment, Length};
 
+use super::levels;
 use super::widgets::{
-    El, SMALL, action, bold, card, chip, empty, field, icon_button, muted, pill, section_title, title,
+    El, SMALL, action, bold, card, chip, empty, field, icon, icon_button, muted, pill, section_title, title,
 };
 use crate::domain::{AutonomyLevel, Bot};
 use crate::ui::styles::Kind;
@@ -133,70 +134,125 @@ fn register_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             .cloned()
     };
     let busy = app.register.busy;
-    card(
+    let mut body = column![
+        row![
+            section_title(Icon::Plus, "New bot", tokens),
+            Space::new().width(Length::Fill),
+            icon_button(Icon::Cross, "Close", Some(Message::RegisterClose), tokens)
+        ]
+        .align_y(Alignment::Center),
+        container(field(
+            "Name",
+            "harbour-watch",
+            &form.name,
+            Message::RegisterName,
+            None,
+            tokens
+        ))
+        .width(360),
+        field(
+            "What should it do?",
+            "In your words: what it watches, what it does, what it tells you",
+            &form.mission,
+            Message::RegisterMission,
+            None,
+            tokens
+        ),
         column![
-            row![
-                section_title(Icon::Plus, "New bot", tokens),
-                Space::new().width(Length::Fill),
-                icon_button(Icon::Cross, "Close", Some(Message::RegisterClose), tokens)
-            ]
-            .align_y(Alignment::Center),
-            row![
-                container(field("Name", "helper", &form.name, Message::RegisterName, None, tokens))
-                    .width(Length::FillPortion(1)),
-                container(field(
-                    "Mission",
-                    "What the bot is for, in one line",
-                    &form.mission,
-                    Message::RegisterMission,
-                    None,
-                    tokens
-                ))
-                .width(Length::FillPortion(3)),
-            ]
-            .spacing(14),
-            row![
-                column![
-                    bold("Level").size(SMALL),
-                    pick_list(&AutonomyLevel::ALL[..], Some(form.level), Message::RegisterLevel).padding(10)
-                ]
-                .spacing(6),
-                container(field(
-                    "Tools",
-                    "local_read, local_list",
-                    &form.tools,
-                    Message::RegisterTools,
-                    None,
-                    tokens
-                ))
-                .width(Length::FillPortion(2)),
-                container(field(
-                    "Model",
-                    "provider/model",
-                    &form.model,
-                    Message::RegisterModel,
-                    None,
-                    tokens
-                ))
-                .width(Length::FillPortion(2)),
-                column![
-                    bold("Runs on").size(SMALL),
-                    pick_list(nodes, selected, Message::RegisterNode).padding(10)
-                ]
-                .spacing(6),
-            ]
-            .spacing(14)
-            .align_y(Alignment::End),
-            row![action(
+            bold("Where does it run?").size(SMALL),
+            pick_list(nodes, selected, Message::RegisterNode).padding(10).width(360)
+        ]
+        .spacing(6),
+        row![
+            icon(Icon::Check, 14.0, tokens.good),
+            muted(
+                format!(
+                    "{}: it works on its own and {}.",
+                    levels::plain(form.level).0,
+                    level_promise(form.level)
+                ),
+                tokens
+            )
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center),
+        row![
+            action(
                 Kind::Primary,
                 Icon::Plus,
                 if busy { "Adding…" } else { "Add bot" },
                 (!busy).then_some(Message::RegisterSubmit),
                 tokens
-            )],
+            ),
+            action(
+                Kind::Ghost,
+                if app.register.advanced {
+                    Icon::Cross
+                } else {
+                    Icon::Settings
+                },
+                if app.register.advanced {
+                    "Hide advanced"
+                } else {
+                    "Advanced"
+                },
+                Some(Message::RegisterAdvanced(!app.register.advanced)),
+                tokens
+            ),
         ]
-        .spacing(14),
-        tokens,
-    )
-    .into()
+        .spacing(12)
+        .align_y(Alignment::Center),
+    ]
+    .spacing(14);
+    if app.register.advanced {
+        let mut choices = column![bold("How much may it do alone?")].spacing(10);
+        for level in levels::CHOICES {
+            let picked = level == form.level;
+            choices = choices.push(levels::choice(
+                level,
+                picked,
+                (!picked).then_some(Message::RegisterLevel(level)),
+                tokens,
+            ));
+        }
+        body = body.push(
+            row![
+                container(choices).width(Length::FillPortion(1)),
+                column![
+                    field(
+                        "Tools",
+                        "local_read, local_list",
+                        &form.tools,
+                        Message::RegisterTools,
+                        None,
+                        tokens
+                    ),
+                    field(
+                        "Model",
+                        "provider/model",
+                        &form.model,
+                        Message::RegisterModel,
+                        None,
+                        tokens
+                    ),
+                    muted("It starts when you give it a task.", tokens),
+                ]
+                .spacing(14)
+                .width(Length::FillPortion(1)),
+            ]
+            .spacing(24),
+        );
+    }
+    card(body, tokens).into()
+}
+
+/// What the picked level promises, after "it works on its own and".
+fn level_promise(level: AutonomyLevel) -> &'static str {
+    match level {
+        AutonomyLevel::ActWithApproval => "asks you first before anything that changes the world",
+        AutonomyLevel::ActWithinPolicy => "acts within its rules without asking",
+        AutonomyLevel::Observe => "only watches and reports",
+        AutonomyLevel::Propose => "only proposes",
+        AutonomyLevel::Unknown => "follows a level this panel does not know",
+    }
 }

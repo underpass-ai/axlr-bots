@@ -2,14 +2,15 @@
 //! what it does, its events and recent work; its definition under
 //! Advanced, closed by default.
 
-use iced::widget::{Space, button, column, container, mouse_area, row, scrollable, text};
+use iced::widget::{Space, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Length, mouse};
 
+use super::levels;
 use super::widgets::{
     El, SMALL, action, bold, chip, copy_button, empty, fact, icon, muted, pill, section, section_title, section_with,
-    semibold, title,
+    title,
 };
-use crate::domain::{AutonomyLevel, Bot, BotId, TaskId};
+use crate::domain::{Bot, BotId, TaskId};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
 use crate::ui::{App, Icon, Message, Screen, Tokens, Tone};
@@ -160,11 +161,14 @@ fn asking<'a>(app: &'a App, bot: &BotId, tokens: Tokens) -> Option<El<'a>> {
 /// triggers, placement, tools, model and budgets.
 fn advanced<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
     let mut choices = column![bold("How much may it do alone?")].spacing(10);
-    for level in CHOICES {
-        choices = choices.push(choice(app, bot, level, tokens));
+    let mut offered = levels::CHOICES.to_vec();
+    if !offered.contains(&bot.level) {
+        offered.push(bot.level);
     }
-    if !CHOICES.contains(&bot.level) {
-        choices = choices.push(choice(app, bot, bot.level, tokens));
+    for level in offered {
+        let current = level == bot.level;
+        let pick = (!current && !app.switching).then(|| Message::SetLevel(bot.id.clone(), level));
+        choices = choices.push(levels::choice(level, current, pick, tokens));
     }
     choices = choices.push(muted("A change counts from its next step.", tokens));
 
@@ -222,55 +226,7 @@ fn advanced<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
     )
 }
 
-/// The levels offered in plain words; Propose shows only on a bot that
-/// has it.
-const CHOICES: [AutonomyLevel; 3] = [
-    AutonomyLevel::ActWithApproval,
-    AutonomyLevel::ActWithinPolicy,
-    AutonomyLevel::Observe,
-];
-
-/// One level as a card to pick: its name in plain words and what it
-/// means; the bot's own is lit.
-fn choice<'a>(app: &'a App, bot: &'a Bot, level: AutonomyLevel, tokens: Tokens) -> El<'a> {
-    let current = level == bot.level;
-    let (name, words) = plain(level);
-    button(
-        row![
-            icon(
-                if current { Icon::Check } else { Icon::Dot },
-                16.0,
-                if current { tokens.accent } else { tokens.muted }
-            ),
-            column![semibold(name), text(words).size(SMALL).color(tokens.muted)].spacing(2),
-        ]
-        .spacing(10)
-        .align_y(Alignment::Center),
-    )
-    .padding(12)
-    .width(Length::Fill)
-    .style(styles::choice(tokens, current))
-    .on_press_maybe((!current && !app.switching).then(|| Message::SetLevel(bot.id.clone(), level)))
-    .into()
-}
-
-/// A level as a person says it.
-fn plain(level: AutonomyLevel) -> (&'static str, &'static str) {
-    match level {
-        AutonomyLevel::ActWithApproval => (
-            "Ask me before acting",
-            "It reads and plans alone. Anything that changes the world waits for your OK.",
-        ),
-        AutonomyLevel::ActWithinPolicy => (
-            "Act on its own within its rules",
-            "It acts alone. Its tool rules still forbid what you forbade.",
-        ),
-        AutonomyLevel::Observe => ("Only watch and report", "It never acts. It tells you what it sees."),
-        AutonomyLevel::Propose => ("Propose only", "It reads and proposes. A person acts."),
-        AutonomyLevel::Unknown => ("A level this panel does not know", "Pick one of the others to set it."),
-    }
-}
-
+/// A budget, or `default` when the bot leaves it to the control plane.
 fn limit(value: u32) -> String {
     if value == 0 {
         "default".to_string()
