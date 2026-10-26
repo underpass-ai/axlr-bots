@@ -2,8 +2,9 @@ use iced::{Color, Theme, color, theme::Palette};
 
 use super::ThemeMode;
 
-/// The colours of one theme: the brand's copper, gold, brown and sand on
-/// a warm page, and one strong colour per status.
+/// The colours of one theme: ink on a warm white page (graphite on near
+/// black in the dark theme), the brand's copper as the one accent, and
+/// one strong colour per status.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Tokens {
     pub page: Color,
@@ -24,12 +25,12 @@ pub struct Tokens {
 
 impl Tokens {
     pub const LIGHT: Tokens = Tokens {
-        page: color!(0xFAF5EC),
+        page: color!(0xFAFAF8),
         surface: color!(0xFFFFFF),
-        raised: color!(0xF2E8D8),
-        border: color!(0xE0D2BC),
-        text: color!(0x1B1411),
-        muted: color!(0x6B4A2E),
+        raised: color!(0xF4F4F2),
+        border: color!(0xE2E2DD),
+        text: color!(0x111111),
+        muted: color!(0x5B5B57),
         accent: color!(0xB85C38),
         on_accent: color!(0xFFFFFF),
         good: color!(0x2E7D4F),
@@ -41,19 +42,19 @@ impl Tokens {
     };
 
     pub const DARK: Tokens = Tokens {
-        page: color!(0x14100D),
-        surface: color!(0x1E1713),
-        raised: color!(0x2A201A),
-        border: color!(0x3D3027),
-        text: color!(0xF1E6D2),
-        muted: color!(0xC9B08C),
-        accent: color!(0xD97B2D),
-        on_accent: color!(0x1B1411),
+        page: color!(0x0F0F10),
+        surface: color!(0x161618),
+        raised: color!(0x1B1B1E),
+        border: color!(0x2E2E33),
+        text: color!(0xF4F4F2),
+        muted: color!(0xA5A5A0),
+        accent: color!(0xE08A5A),
+        on_accent: color!(0x111111),
         good: color!(0x6CC28C),
         busy: color!(0xE59A5C),
-        wait: color!(0xF2B34C),
+        wait: color!(0xE8B45A),
         bad: color!(0xF07B6B),
-        idle: color!(0xA89886),
+        idle: color!(0xA3A39E),
         dark: true,
     };
 
@@ -89,6 +90,8 @@ impl Tokens {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::Tone;
+    use crate::ui::styles::{pill_fill, pill_ink};
 
     /// WCAG relative luminance contrast.
     fn contrast(a: Color, b: Color) -> f32 {
@@ -112,12 +115,27 @@ mod tests {
             assert!(contrast(tokens.text, tokens.page) >= 7.0);
             assert!(contrast(tokens.text, tokens.surface) >= 7.0);
             assert!(contrast(tokens.muted, tokens.surface) >= 4.5);
+            assert!(contrast(tokens.muted, tokens.raised) >= 4.5);
             assert!(contrast(tokens.on_accent, tokens.accent) >= 4.5);
             for status in [tokens.good, tokens.busy, tokens.wait, tokens.bad, tokens.idle] {
                 assert!(
                     contrast(status, tokens.surface) >= 4.5,
                     "{status:?} on {:?}",
                     tokens.surface
+                );
+            }
+        }
+    }
+
+    /// A pill's word is read on the pill's own tint, not on the surface.
+    #[test]
+    fn pill_words_read_on_their_tint() {
+        for tokens in [Tokens::LIGHT, Tokens::DARK] {
+            for tone in [Tone::Good, Tone::Busy, Tone::Wait, Tone::Bad, Tone::Idle] {
+                assert!(
+                    contrast(pill_ink(tokens, tone), pill_fill(tokens, tone)) >= 4.5,
+                    "{tone:?} dark={}",
+                    tokens.dark
                 );
             }
         }

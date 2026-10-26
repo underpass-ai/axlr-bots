@@ -1,9 +1,10 @@
 //! Home: the fleet at a glance and what needs a person.
 
+use iced::widget::text::Wrapping;
 use iced::widget::{Space, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Length, mouse};
 
-use super::widgets::{BODY, El, NUMBER, SMALL, action, bold, card, empty, icon, muted, pill, section, title};
+use super::widgets::{El, SMALL, action, bold, card, empty, icon, muted, pill, section, title};
 use crate::domain::{BotStatus, NodeStatus, TaskStatus};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
@@ -98,7 +99,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
                 row![
                     pill(Tone::Wait, "Needs OK", tokens),
                     bold(task.bot_id.to_string()),
-                    text(task.headline(70)).width(Length::Fill),
+                    text(task.headline(70)).wrapping(Wrapping::None).width(Length::Fill),
                     muted(format::age(task.created_at, app.now), tokens),
                     action(
                         Kind::Primary,
@@ -126,9 +127,9 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             row![
                 pill(Tone::of_node(node.status), node.status.name(), tokens),
                 bold(node.id.to_string()),
-                muted(node.host_name.clone(), tokens),
+                muted(node.host_name.clone(), tokens).wrapping(Wrapping::None),
                 Space::new().width(Length::Fill),
-                muted(format!("seen {}", format::age(node.last_seen_at, app.now)), tokens),
+                muted(format!("seen {}", format::age(node.last_seen_at, app.now)), tokens).wrapping(Wrapping::None),
             ]
             .spacing(12)
             .align_y(Alignment::Center),
@@ -145,7 +146,10 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
                 row![
                     pill(Tone::of_task(task.status), task.status.label(), tokens),
                     bold(task.bot_id.to_string()).size(SMALL),
-                    text(task.headline(48)).size(SMALL).width(Length::Fill),
+                    text(task.headline(48))
+                        .size(SMALL)
+                        .wrapping(Wrapping::None)
+                        .width(Length::Fill),
                     muted(format::age(task.created_at, app.now), tokens),
                 ]
                 .spacing(10)
@@ -174,8 +178,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     .into()
 }
 
-/// A big number in a card: an icon, the number, two words. A click goes
-/// where the number comes from.
+/// A big number in a card; see `widgets::stat`.
 fn stat<'a>(
     glyph: Icon,
     value: String,
@@ -184,22 +187,7 @@ fn stat<'a>(
     on_press: Option<Message>,
     tokens: Tokens,
 ) -> El<'a> {
-    let body = card(
-        column![
-            row![icon(glyph, 22.0, tone.color(&tokens)), Space::new().width(Length::Fill)],
-            bold(value).size(NUMBER).color(tone.color(&tokens)),
-            text(label).size(BODY).color(tokens.muted),
-        ]
-        .spacing(6),
-        tokens,
-    );
-    let area = mouse_area(body);
-    match on_press {
-        Some(message) => container(area.on_press(message).interaction(mouse::Interaction::Pointer))
-            .width(Length::Fill)
-            .into(),
-        None => container(area).width(Length::Fill).into(),
-    }
+    super::widgets::stat(glyph, value, label, tone, on_press, tokens)
 }
 
 /// Before the first answer: connecting, or why not.

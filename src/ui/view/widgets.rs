@@ -1,26 +1,50 @@
-//! The panel's building blocks: icons, pills, cards, buttons, fields.
+//! The panel's building blocks: fonts, icons, pills, cards, buttons, fields.
 
-use iced::font::Weight;
-use iced::widget::{button, column, container, row, svg, text, text_input, tooltip};
-use iced::{Alignment, Color, Element, Font, Length, Padding};
+use iced::font::{Family, Weight};
+use iced::widget::{Space, button, column, container, mouse_area, row, svg, text, text_input, tooltip};
+use iced::{Alignment, Color, Element, Font, Length, Padding, mouse};
 
 use crate::ui::styles::{self, Kind};
 use crate::ui::{Icon, Message, Tokens, Tone};
 
 pub type El<'a> = Element<'a, Message>;
 
-/// The weight that carries a heading or a number.
+/// The panel's typeface for words: Lexend, made for reading fluency,
+/// embedded with the binary (`assets/fonts`).
+pub const REGULAR: Font = Font {
+    family: Family::Name("Lexend"),
+    weight: Weight::Normal,
+    ..Font::DEFAULT
+};
+
+/// The weight of a name or a label.
+pub const SEMIBOLD: Font = Font {
+    family: Family::Name("Lexend"),
+    weight: Weight::Semibold,
+    ..Font::DEFAULT
+};
+
+/// The weight that carries a heading.
 pub const BOLD: Font = Font {
+    family: Family::Name("Lexend"),
     weight: Weight::Bold,
+    ..Font::DEFAULT
+};
+
+/// The typeface of a big number: DotGothic16, a thin pixel face in the
+/// spirit of the emblem.
+pub const NUMERAL: Font = Font {
+    family: Family::Name("DotGothic16"),
+    weight: Weight::Normal,
     ..Font::DEFAULT
 };
 
 /// The text sizes: body, small, section title, page title, big number.
 pub const BODY: f32 = 16.0;
 pub const SMALL: f32 = 14.0;
-pub const SECTION: f32 = 19.0;
-pub const TITLE: f32 = 27.0;
-pub const NUMBER: f32 = 34.0;
+pub const SECTION: f32 = 15.0;
+pub const TITLE: f32 = 26.0;
+pub const NUMBER: f32 = 40.0;
 
 pub fn icon<'a>(glyph: Icon, size: f32, color: Color) -> El<'a> {
     svg(glyph.handle())
@@ -34,37 +58,47 @@ pub fn bold<'a>(words: impl text::IntoFragment<'a>) -> text::Text<'a> {
     text(words).font(BOLD)
 }
 
+pub fn semibold<'a>(words: impl text::IntoFragment<'a>) -> text::Text<'a> {
+    text(words).font(SEMIBOLD)
+}
+
 pub fn muted<'a>(words: impl text::IntoFragment<'a>, tokens: Tokens) -> text::Text<'a> {
     text(words).color(tokens.muted).size(SMALL)
 }
 
+/// A number in the pixel face.
+pub fn number<'a>(words: impl text::IntoFragment<'a>) -> text::Text<'a> {
+    text(words).font(NUMERAL).size(NUMBER)
+}
+
 /// A page title with its icon.
 pub fn title<'a>(glyph: Icon, words: impl text::IntoFragment<'a>, tokens: Tokens) -> El<'a> {
-    row![icon(glyph, 28.0, tokens.accent), bold(words).size(TITLE)]
+    row![icon(glyph, 26.0, tokens.accent), bold(words).size(TITLE)]
         .spacing(12)
         .align_y(Alignment::Center)
         .into()
 }
 
-/// A section title with its icon.
+/// A section title with its icon: small and bold, in the muted ink.
 pub fn section_title<'a>(glyph: Icon, words: impl text::IntoFragment<'a>, tokens: Tokens) -> El<'a> {
-    row![icon(glyph, 20.0, tokens.muted), bold(words).size(SECTION)]
-        .spacing(10)
-        .align_y(Alignment::Center)
-        .into()
+    row![
+        icon(glyph, 16.0, tokens.muted),
+        bold(words).size(SECTION).color(tokens.muted)
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center)
+    .into()
 }
 
 /// A status in a pill: the tone's icon, colour and a word or two.
 pub fn pill<'a>(tone: Tone, label: impl text::IntoFragment<'a>, tokens: Tokens) -> El<'a> {
+    let ink = styles::pill_ink(tokens, tone);
     container(
-        row![
-            icon(tone.icon(), 14.0, tone.color(&tokens)),
-            bold(label).size(SMALL).color(tone.color(&tokens))
-        ]
-        .spacing(6)
-        .align_y(Alignment::Center),
+        row![icon(tone.icon(), 13.0, ink), semibold(label).size(SMALL).color(ink)]
+            .spacing(5)
+            .align_y(Alignment::Center),
     )
-    .padding(Padding::from([3, 10]))
+    .padding(Padding::from([2, 8]))
     .style(styles::pill(tokens, tone))
     .into()
 }
@@ -94,6 +128,44 @@ pub fn section<'a>(glyph: Icon, words: impl text::IntoFragment<'a>, body: impl I
     .into()
 }
 
+/// A big number in a card: two words and the icon on top, the number in
+/// the pixel face under them. A number that needs a person (amber) or
+/// says something failed (red) tints the whole card. A click goes where
+/// the number comes from.
+pub fn stat<'a>(
+    glyph: Icon,
+    value: String,
+    label: &'a str,
+    tone: Tone,
+    on_press: Option<Message>,
+    tokens: Tokens,
+) -> El<'a> {
+    let color = tone.color(&tokens);
+    let body = column![
+        row![
+            text(label).size(SMALL).color(tokens.muted),
+            Space::new().width(Length::Fill),
+            icon(glyph, 16.0, color)
+        ]
+        .align_y(Alignment::Center),
+        number(value).color(color),
+    ]
+    .spacing(4);
+    let card = container(body).padding(Padding::from([12, 16])).width(Length::Fill);
+    let card = if matches!(tone, Tone::Wait | Tone::Bad) {
+        card.style(styles::tone_card(tokens, tone))
+    } else {
+        card.style(styles::card(tokens))
+    };
+    let area = mouse_area(card);
+    match on_press {
+        Some(message) => container(area.on_press(message).interaction(mouse::Interaction::Pointer))
+            .width(Length::Fill)
+            .into(),
+        None => container(area).width(Length::Fill).into(),
+    }
+}
+
 /// A button with an icon and a word or two; disabled without a message.
 pub fn action<'a>(
     kind: Kind,
@@ -109,11 +181,11 @@ pub fn action<'a>(
         _ => tokens.text,
     };
     button(
-        row![icon(glyph, 16.0, color), bold(label).size(BODY)]
+        row![icon(glyph, 16.0, color), semibold(label).size(BODY)]
             .spacing(8)
             .align_y(Alignment::Center),
     )
-    .padding(Padding::from([9, 16]))
+    .padding(Padding::from([8, 14]))
     .style(styles::button_style(tokens, kind))
     .on_press_maybe(on_press)
     .into()
@@ -148,7 +220,7 @@ pub fn field<'a>(
         .padding(10)
         .size(BODY)
         .style(styles::field(tokens));
-    column![bold(label).size(SMALL), input].spacing(6).into()
+    column![semibold(label).size(SMALL), input].spacing(6).into()
 }
 
 /// A line of a fact list: a label, then the value.

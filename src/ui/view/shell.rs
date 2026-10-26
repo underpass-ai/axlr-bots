@@ -1,23 +1,36 @@
-//! The window around every screen: the header with the emblem, the side
-//! bar, the banner, and the dialog of an act to confirm.
+//! The window around every screen: the side bar with the emblem, the thin
+//! header with the connection, the banner, and the dialog of an act to
+//! confirm.
 
 use iced::widget::{Space, button, center, column, container, opaque, row, stack, svg, text};
-use iced::{Alignment, Element, Length, Padding};
+use iced::{Alignment, Color, Element, Length, Padding};
 
-use super::widgets::{BODY, BOLD, El, SMALL, action, bold, icon, icon_button, muted};
+use super::widgets::{BODY, El, SEMIBOLD, SMALL, action, bold, icon, icon_button, muted};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
 use crate::ui::{App, Icon, Message, Screen, Section, ThemeMode, Tokens, Tone, brand};
 
-/// The emblem's height in the header; its width keeps the 848 × 128 ratio.
-const EMBLEM_HEIGHT: f32 = 30.0;
+/// The emblem's width in the side bar; its height keeps the 50 × 34 ratio
+/// of the two-line mark.
+const EMBLEM_WIDTH: f32 = 100.0;
+/// The side bar's width.
+const SIDEBAR_WIDTH: f32 = 196.0;
 
 pub fn frame<'a>(app: &'a App, content: El<'a>, tokens: Tokens) -> Element<'a, Message> {
-    let body = row![sidebar(app, tokens), main(app, content, tokens)].height(Length::Fill);
-    let page = container(column![header(app, tokens), body])
-        .style(styles::page(tokens))
-        .width(Length::Fill)
-        .height(Length::Fill);
+    let body = row![
+        sidebar(app, tokens),
+        container(Space::new().width(1).height(Length::Fill)).style(styles::rule(tokens)),
+        main(app, content, tokens)
+    ]
+    .height(Length::Fill);
+    let page = container(column![
+        header(app, tokens),
+        container(Space::new().width(Length::Fill).height(1)).style(styles::rule(tokens)),
+        body
+    ])
+    .style(styles::page(tokens))
+    .width(Length::Fill)
+    .height(Length::Fill);
     match &app.confirm {
         Some(confirm) => {
             let lines = confirm.lines();
@@ -51,10 +64,9 @@ pub fn frame<'a>(app: &'a App, content: El<'a>, tokens: Tokens) -> Element<'a, M
     }
 }
 
+/// The thin strip over everything: the connection, when it was last read,
+/// the theme.
 fn header<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
-    let emblem = svg(brand::emblem(tokens.dark))
-        .height(EMBLEM_HEIGHT)
-        .width(EMBLEM_HEIGHT * 848.0 / 128.0);
     let (tone, status) = connection(app);
     let refreshed = match app.last_refresh {
         Some(at) => format!("updated {}", format::clock(at)),
@@ -70,19 +82,20 @@ fn header<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     };
     container(
         row![
-            emblem,
-            text("Control panel").size(BODY).color(tokens.muted),
             Space::new().width(Length::Fill),
-            row![icon(Icon::Dot, 18.0, tone.color(&tokens)), bold(status).size(SMALL)]
-                .spacing(4)
-                .align_y(Alignment::Center),
+            row![
+                icon(Icon::Dot, 16.0, tone.color(&tokens)),
+                text(status).font(SEMIBOLD).size(SMALL)
+            ]
+            .spacing(4)
+            .align_y(Alignment::Center),
             muted(refreshed, tokens),
             icon_button(theme_icon, theme_tip, Some(Message::ToggleTheme), tokens),
         ]
         .spacing(16)
         .align_y(Alignment::Center),
     )
-    .padding(Padding::from([12, 20]))
+    .padding(Padding::from([4, 16]))
     .width(Length::Fill)
     .style(styles::raised(tokens))
     .into()
@@ -117,6 +130,9 @@ fn connection(app: &App) -> (Tone, String) {
     }
 }
 
+/// The side bar: the two-line emblem, then the places. The current one
+/// reads in the accent with a bar beside it; a count that needs a person
+/// sits at the end of its line.
 fn sidebar<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let current = app.screen.section();
     let waiting = app.waiting_count();
@@ -124,8 +140,8 @@ fn sidebar<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         let selected = current == section;
         let color = if selected { tokens.accent } else { tokens.text };
         let mut line = row![
-            icon(glyph, 20.0, color),
-            text(label).font(BOLD).size(BODY).color(tokens.text)
+            icon(glyph, 18.0, color),
+            text(label).font(SEMIBOLD).size(BODY).color(color)
         ]
         .spacing(12)
         .align_y(Alignment::Center);
@@ -133,30 +149,50 @@ fn sidebar<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             line = line.push(Space::new().width(Length::Fill)).push(
                 container(
                     text(badge.to_string())
-                        .font(BOLD)
+                        .font(SEMIBOLD)
                         .size(SMALL)
                         .color(styles::on(tokens.wait)),
                 )
-                .padding(Padding::from([1, 8]))
+                .padding(Padding::from([1, 7]))
                 .style(move |_| container::Style {
                     background: Some(tokens.wait.into()),
                     border: iced::Border {
-                        radius: 999.0.into(),
+                        radius: styles::RADIUS_PILL.into(),
                         ..Default::default()
                     },
                     ..Default::default()
                 }),
             );
         }
-        button(line)
-            .width(Length::Fill)
-            .padding(Padding::from([11, 14]))
-            .style(styles::button_style(tokens, Kind::Nav(selected)))
-            .on_press(Message::Go(screen))
-            .into()
+        let bar = container(Space::new().width(3).height(22)).style(move |_| container::Style {
+            background: Some(if selected { tokens.accent } else { Color::TRANSPARENT }.into()),
+            border: iced::Border {
+                radius: 2.0.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        row![
+            bar,
+            button(line)
+                .width(Length::Fill)
+                .padding(Padding::from([10, 12]))
+                .style(styles::button_style(tokens, Kind::Nav(selected)))
+                .on_press(Message::Go(screen))
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center)
+        .into()
     };
+    let emblem = container(
+        svg(brand::emblem(tokens.dark))
+            .width(EMBLEM_WIDTH)
+            .height(EMBLEM_WIDTH * 34.0 / 50.0),
+    )
+    .padding(Padding::from([10, 12]).bottom(18));
     container(
         column![
+            emblem,
             entry(Icon::Overview, "Home", Section::Overview, Screen::Overview, 0),
             entry(Icon::Nodes, "Nodes", Section::Nodes, Screen::Nodes, 0),
             entry(Icon::Bots, "Bots", Section::Bots, Screen::Bots, 0),
@@ -164,10 +200,10 @@ fn sidebar<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             Space::new().height(Length::Fill),
             entry(Icon::Settings, "Settings", Section::Settings, Screen::Settings, 0),
         ]
-        .spacing(4),
+        .spacing(2),
     )
-    .padding(12)
-    .width(200)
+    .padding(Padding::from([10, 8]))
+    .width(SIDEBAR_WIDTH)
     .height(Length::Fill)
     .style(styles::raised(tokens))
     .into()

@@ -110,9 +110,9 @@ pub mod brand {
     /// The one-line emblem for the header, in the version for the theme.
     pub fn emblem(dark: bool) -> Handle {
         if dark {
-            Handle::from_memory(include_bytes!("../../assets/brand/axlr-bots-emblem-dark.svg").as_slice())
+            Handle::from_memory(include_bytes!("../../assets/brand/axlr-bots-emblem-stacked-ink-dark.svg").as_slice())
         } else {
-            Handle::from_memory(include_bytes!("../../assets/brand/axlr-bots-emblem-light.svg").as_slice())
+            Handle::from_memory(include_bytes!("../../assets/brand/axlr-bots-emblem-stacked-ink-light.svg").as_slice())
         }
     }
 

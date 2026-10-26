@@ -6,6 +6,7 @@ use std::time::Duration;
 use chrono::Utc;
 use iced::{Size, Subscription, Task, Theme, window};
 
+use super::view::widgets;
 use super::{App, Effect, Message, Tokens, brand, view};
 
 /// How often the panel reads the control plane again.
@@ -44,8 +45,8 @@ pub fn title(app: &App) -> String {
     }
 }
 
-/// Starts the window: the brand's icon, a size that fits the tables, the
-/// state the boot function builds.
+/// Starts the window: the brand's icon, the embedded typefaces, a size
+/// that fits the tables, the state the boot function builds.
 pub fn launch(boot: impl Fn() -> (App, Vec<Effect>) + 'static) -> iced::Result {
     let icon = window::icon::from_file_data(brand::WINDOW_ICON_PNG, None).ok();
     iced::application(
@@ -60,6 +61,11 @@ pub fn launch(boot: impl Fn() -> (App, Vec<Effect>) + 'static) -> iced::Result {
     .title(title)
     .theme(theme)
     .subscription(subscription)
+    .font(include_bytes!("../../assets/fonts/Lexend-Regular.ttf").as_slice())
+    .font(include_bytes!("../../assets/fonts/Lexend-SemiBold.ttf").as_slice())
+    .font(include_bytes!("../../assets/fonts/Lexend-Bold.ttf").as_slice())
+    .font(include_bytes!("../../assets/fonts/DotGothic16-Latin.ttf").as_slice())
+    .default_font(widgets::REGULAR)
     .window(window::Settings {
         size: Size::new(1360.0, 860.0),
         min_size: Some(Size::new(1040.0, 640.0)),

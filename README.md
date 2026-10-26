@@ -1,4 +1,4 @@
-<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/brand/axlr-bots-emblem-stacked-dark.svg"><img src="assets/brand/axlr-bots-emblem-stacked-light.svg" alt="AXLR Bots" width="300"></picture></p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/brand/axlr-bots-emblem-stacked-ink-dark.svg"><img src="assets/brand/axlr-bots-emblem-stacked-ink-light.svg" alt="AXLR Bots" width="300"></picture></p>
 
 <p align="center"><strong>The control panel of AXLR Bots: see the fleet, send tasks, say yes or no to a bot, from one window.</strong></p>
 
@@ -28,7 +28,7 @@ The first run opens **Settings** with three values read from this host's install
 
 | Flag or variable | Does |
 |---|---|
-| `--theme light\|dark` | start in that theme (the sun and moon button switches it) |
+| `--theme light\|dark` | start in that theme; light is the default (the sun and moon button switches it) |
 | `--screen overview\|nodes\|bots\|bot:<id>\|tasks\|task:<id>\|settings` | open that screen once connected |
 | `ICED_BACKEND=tiny-skia` | draw on the CPU, for a host without a working GPU driver |
 
@@ -47,11 +47,13 @@ The panel reads the control plane every 3 seconds, in the background; the window
 | **Task, done**: the answer, every run with its node, outcome, tool calls and their decisions, usage and cost, trace and policy; the timeline | <img src="docs/screenshots/task-light.png" width="300"> | <img src="docs/screenshots/task-dark.png" width="300"> |
 | **Settings**: the API address, the CA and the token file; the theme | <img src="docs/screenshots/settings-light.png" width="300"> | <img src="docs/screenshots/settings-dark.png" width="300"> |
 
-The screenshots are a live control plane with three nodes: `gx10-ff95` (the panel's host, aarch64), `wrx80` (x86_64, enrolled over mutual TLS) and `demo-log-service-0` (a node agent beside a service in a pod). [The live run](docs/live-run.md) shows a task sent to `wrx80` and a write approved, both from the panel.
+The screenshots are the live control plane of the [port fleet](https://github.com/underpass-ai/axlr-bots/blob/main/docs/runbooks/drone-fleet.md): eight nodes (the fleet base, three quadcopters, two rovers, a supply rover and a plane, each a node agent beside its autopilot in a pod), nine bots, and four pilots waiting for a person before they take off. [The live run](docs/live-run.md) shows a task sent to a node and a write approved, both from the panel.
 
 ## Made to be read fast
 
-Every status is a pill with a colour, an icon and one or two words: green ✓ done or on, copper ▶ working, amber ⚠ needs a person, red ✕ failed or off, grey ⏸ stopped or waiting its turn. Body text is 16 px and secondary text 14 px, left-aligned, never italic; numbers are big. The two themes keep every text colour at 4.5:1 or more against its background (a test checks it). The icons are 16 × 16 pixel glyphs in the house style of the AXLR Bots emblem (`assets/icons/make_icons.py` draws them).
+Ink on a warm white page, graphite at night; the emblem's copper is the one accent, and it marks the place you are in and the main act of a screen. Every status is a pill with a colour, an icon and one or two words: green ✓ done or on, copper ▶ working, amber ⚠ needs a person, red ✕ failed or off, grey ⏸ stopped or waiting its turn. A count that needs a person or says something failed tints its whole card.
+
+Words are set in [Lexend](https://www.lexend.com) (made for reading fluency) and big numbers in [DotGothic16](https://github.com/fontworks-fonts/DotGothic16), a thin pixel face in the spirit of the emblem; both are embedded with the binary (`assets/fonts`, SIL Open Font License, the licences beside them). Body text is 16 px and secondary text 14 px, left-aligned, never italic; a number is 40 px. The two themes keep every text colour at 4.5:1 or more against its background, and a pill's word against the pill's own tint (tests check it). Lines are 1 px, corners slightly rounded, nothing casts a shadow. The icons are 16 × 16 pixel glyphs in the house style of the emblem (`assets/icons/make_icons.py` draws them).
 
 ## How it works
 
