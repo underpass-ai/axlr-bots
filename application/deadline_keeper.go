@@ -7,9 +7,9 @@ import (
 )
 
 // deadlineKeeper fails a delegated task whose deadline came before it
-// ended: one still Pending, one waiting for a person, or one whose next
-// execution would start too late. The execution in flight, if any, ends
-// with it.
+// ended: one still Pending, one waiting for a person (it ends Expired),
+// or one whose next execution would start too late. The execution in
+// flight, if any, ends with it.
 type deadlineKeeper struct {
 	deps Dependencies
 	rec  recorder
@@ -43,7 +43,7 @@ func (k deadlineKeeper) miss(ctx context.Context, bot domain.Bot, task *domain.T
 	if executionID != "" {
 		payload["executionId"] = executionID.String()
 	}
-	if err := k.rec.executionEvent(ctx, domain.EventTaskFailed, bot, task.ID(), executionID, task.CorrelationID(), payload); err != nil {
+	if err := k.rec.executionEvent(ctx, endEvent(*task), bot, task.ID(), executionID, task.CorrelationID(), payload); err != nil {
 		return err
 	}
 	return k.rec.audit(ctx, "task.deadline", task.ID().String(), domain.AuditOK, map[string]string{"parentTask": lineage.ParentTaskID})

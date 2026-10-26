@@ -123,13 +123,14 @@ func (t Task) DeadlinePassed(now time.Time) bool {
 
 // MissDeadline fails a delegated task that has not finished when its
 // deadline came: Pending (it never ran), WaitingApproval (nobody decided
-// in time) or Running (its node never reported).
+// in time) or Running (its node never reported). A task that waited, or
+// whose last wait had already expired, ends Expired.
 func (t *Task) MissDeadline(now time.Time) error {
 	if t.lineage == nil || t.status.IsTerminal() || !t.DeadlinePassed(now) {
 		return t.refuse("miss its deadline")
 	}
 	t.closeApproval(ApprovalExpired, now)
-	t.status = TaskFailed
+	t.status = t.failedStatus()
 	t.failureReason = "deadline: the delegation's deadline " + t.lineage.Grant.Deadline.UTC().Format(time.RFC3339) + " passed before the task ended"
 	t.updatedAt = now
 	return nil
@@ -174,7 +175,7 @@ func (t Task) CurrentExecutionID() ExecutionID {
 	return t.executionIDs[len(t.executionIDs)-1]
 }
 
-// FailureReason says why the task failed, when it did.
+// FailureReason says why the task failed or expired, when it did.
 func (t Task) FailureReason() string { return t.failureReason }
 
 // CreatedAt is when the task was submitted.
@@ -207,7 +208,10 @@ func (t *Task) Complete(now time.Time) error {
 	return nil
 }
 
-// Fail moves a Running task to Failed with a reason.
+// Fail moves a Running task to Failed with a reason. A task whose last
+// approval expired ends Expired instead: it went on with the denial of
+// the call nobody decided in time, the call never ran, and the reason
+// says what ended the run.
 func (t *Task) Fail(reason string, now time.Time) error {
 	if t.status != TaskRunning {
 		return t.refuse("fail")
@@ -215,10 +219,19 @@ func (t *Task) Fail(reason string, now time.Time) error {
 	if reason == "" {
 		return invalid("failure reason", "must not be empty")
 	}
-	t.status = TaskFailed
+	t.status = t.failedStatus()
 	t.failureReason = reason
 	t.updatedAt = now
 	return nil
+}
+
+// failedStatus is how a task that did not complete ends: Expired when
+// its last wait for a person expired, Failed otherwise.
+func (t Task) failedStatus() TaskStatus {
+	if t.approval != nil && t.approval.Outcome == ApprovalExpired {
+		return TaskExpired
+	}
+	return TaskFailed
 }
 
 // AwaitApproval parks a Running task until a person decides a tool
@@ -276,6 +289,26 @@ func (t *Task) ExpireApproval(now time.Time) error {
 		return t.refuse("expire its approval")
 	}
 	t.closeApproval(ApprovalExpired, now)
+	return nil
+}
+
+// EndExpired ends a WaitingApproval task whose wait expired without
+// handing the session a denial (onExpire cancel, or a paused bot that
+// cannot carry one): the task is Expired, the deadline its reason.
+func (t *Task) EndExpired(now time.Time) error {
+	if t.status != TaskWaitingApproval || t.approval == nil || t.approval.Outcome != ApprovalExpired {
+		return t.refuse("end expired")
+	}
+	call := ""
+	if t.approval.CallID != "" {
+		call = " " + t.approval.CallID
+		if t.approval.Tool != "" {
+			call += " (" + t.approval.Tool + ")"
+		}
+	}
+	t.status = TaskExpired
+	t.failureReason = "approval expired: nobody decided the call" + call + " by " + t.approval.Deadline.UTC().Format(time.RFC3339)
+	t.updatedAt = now
 	return nil
 }
 
@@ -415,8 +448,11 @@ func RestoreTask(s TaskSnapshot) (Task, error) {
 		}
 		task.executionIDs = append(task.executionIDs, exec)
 	}
-	if status == TaskFailed && s.FailureReason == "" {
-		return Task{}, invalid("failure reason", "is required by a Failed task")
+	if (status == TaskFailed || status == TaskExpired) && s.FailureReason == "" {
+		return Task{}, invalid("failure reason", "is required by a Failed or Expired task")
+	}
+	if status == TaskExpired && (s.Approval == nil || s.Approval.Outcome != ApprovalExpired) {
+		return Task{}, invalid("approval", "an Expired task needs an expired wait")
 	}
 	if s.Approval != nil {
 		if err := s.Approval.Validate(); err != nil {

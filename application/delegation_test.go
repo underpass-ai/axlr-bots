@@ -490,15 +490,24 @@ func TestDelegatedTasksPastTheirDeadlineAreFailedWhereTheyWait(t *testing.T) {
 	if err != nil || !containsTask(result.Failed, pending.TaskID) {
 		t.Errorf("reconcile = %+v %v", result, err)
 	}
-	for _, id := range []domain.TaskID{waiting.TaskID, pending.TaskID} {
+	// Nobody decided the waiting one in time: it ends Expired, apart
+	// from the one that never ran.
+	for id, want := range map[domain.TaskID]domain.TaskStatus{waiting.TaskID: domain.TaskExpired, pending.TaskID: domain.TaskFailed} {
 		task, _ := h.tasks.Get(ctx, id)
-		if task.Status() != domain.TaskFailed || !strings.HasPrefix(task.FailureReason(), "deadline:") {
+		if task.Status() != want || !strings.HasPrefix(task.FailureReason(), "deadline:") {
 			t.Errorf("%s = %s %q", id, task.Status(), task.FailureReason())
 		}
+	}
+	if !h.log.has("bot.task.expired", waiting.TaskID) || !h.log.has("bot.task.failed", pending.TaskID) {
+		t.Errorf("events = %v", h.log.eventTypes())
 	}
 	read, err := NewGetDelegation(h.deps).Execute(ctx, "web-1", parent.ExecutionID, pending.TaskID)
 	if err != nil || !read.Done || read.Status != domain.TaskFailed || !strings.HasPrefix(read.FailureReason, "deadline:") {
 		t.Errorf("read = %+v %v", read, err)
+	}
+	read, err = NewGetDelegation(h.deps).Execute(ctx, "web-1", parent.ExecutionID, waiting.TaskID)
+	if err != nil || !read.Done || read.Status != domain.TaskExpired || !strings.HasPrefix(read.FailureReason, "deadline:") {
+		t.Errorf("read waiting = %+v %v", read, err)
 	}
 }
 

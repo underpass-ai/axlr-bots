@@ -65,7 +65,7 @@ A call the policy leaves to a person stops the task in `WaitingApproval` ([runbo
 | Field | What it says |
 |---|---|
 | `ttl` | a duration from `1m` to `720h`; the wait's deadline is when the task stopped plus the `ttl`, kept on the task (`approval.deadline`) so a restart keeps it |
-| `onExpire` | `deny`: at the deadline the call is denied as a person's deny would (a new execution hands the denial to the session, which goes on without the call); `cancel`: the task ends `Cancelled` and the session stays where it is. A paused bot's expired task is cancelled either way |
+| `onExpire` | `deny`: at the deadline the call is denied as a person's deny would (a new execution hands the denial to the session, which goes on without the call); `cancel`: the task ends `Expired` and the session stays where it is. A denial whose run fails ends the task `Expired` too, and a paused bot's expired task ends `Expired` either way ([expiry](../runbooks/approvals.md#expiry)) |
 | `notify` | up to 8 targets, names unique (the type when not given). A `webhook` takes an absolute `http`/`https` `url` without credentials and the `secret` its deliveries are signed with; a `command` takes the program by its absolute path and its arguments |
 
 A decision that arrives after the deadline authorises nothing (vision §14): it is refused with `409 approval_expired`, whether the daemon has carried out the expiry yet or not, and the call never runs. The secret is stored with the bot and redacted in every answer, as a trigger's is; a `PATCH` of `approvals` replaces the whole value, secrets included. A bot defined before approvals waits an hour and then denies.
@@ -149,7 +149,7 @@ A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolR
 
 ## Tasks
 
-A task is one objective for one bot. It is created by a manual submission or a trigger, under an idempotency key, and runs as one or more executions (a new one after each approval). Its states are `Pending`, `Running`, `WaitingApproval`, `Completed`, `Failed` and `Cancelled`; every task carries a trace id (`correlationId`) that every execution and event repeats.
+A task is one objective for one bot. It is created by a manual submission or a trigger, under an idempotency key, and runs as one or more executions (a new one after each approval). Its states are `Pending`, `Running`, `WaitingApproval`, `Completed`, `Failed`, `Expired` (nobody decided its call in time) and `Cancelled`; every task carries a trace id (`correlationId`) that every execution and event repeats.
 
 ```bash
 axlr-bots task submit bot --objective "List the files in your workspace" --key list-1

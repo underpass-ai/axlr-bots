@@ -308,7 +308,8 @@ stateDiagram-v2
     Pending --> Running
     Running --> WaitingApproval
     WaitingApproval --> Running: Approved
-    WaitingApproval --> Cancelled: Denied / Expired
+    WaitingApproval --> Expired: Expired, onExpire cancel
+    Running --> Expired: Denial after expiry fails
     Running --> WaitingDependency
     WaitingDependency --> Running: Completed dependency
     Running --> Completed
@@ -316,6 +317,7 @@ stateDiagram-v2
     Failed --> Pending: Eligible retry
     Running --> Cancelled
     Completed --> [*]
+    Expired --> [*]
     Cancelled --> [*]
 ```
 

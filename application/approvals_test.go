@@ -181,20 +181,121 @@ func TestExpiryQueuesTheDenialForTheNode(t *testing.T) {
 	}
 }
 
-func TestExpiryCancelsWhenTheBotSaysSo(t *testing.T) {
+// The port fleet's patrol (26 Oct 2026): nobody approved a pilot's
+// mission, the expiry handed the session a denial, and the node's
+// denial run failed. The task is Expired, apart from a real failure,
+// and the overview and the task list count it apart.
+func TestAnExpiredApprovalWhoseDenialFailsEndsExpiredNotFailed(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	bot := governBot(t, h, enabledBot(t, h), domain.ApprovalsSnapshot{TTL: "5m"})
+	node := onlineNode(t, h, "quad-0")
+	pending := ExecutionReport{Outcome: domain.ExecutionDecisionRequired, Result: domain.Result{SessionID: "sess-1", PendingDecision: &domain.PendingDecision{Tool: "axlr_call_tool", CallID: "c1", SessionID: "sess-1"}}}
+	reason := "exit code 1: axlr-tui: open /tmp/axlr-state/axlr/sessions/sess-1.json: no such file or directory"
+	failed := ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: reason}
+	waitOn := func(key string) domain.TaskID {
+		task := submit(t, h, bot, key).Task
+		run, _, err := NewNextAssignment(h.deps).Execute(ctx, node.ID())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewReportExecution(h.deps).Execute(ctx, node.ID(), run.ExecutionID, pending); err != nil {
+			t.Fatal(err)
+		}
+		return task.ID()
+	}
+	expired := waitOn("patrol-1")
+	// A person approves the other one, and its run fails: a real failure.
+	approved := waitOn("patrol-2")
+	if _, err := NewApproveTask(h.deps).Execute(ctx, approved, DecisionApprove, ""); err != nil {
+		t.Fatal(err)
+	}
+	run, _, _ := NewNextAssignment(h.deps).Execute(ctx, node.ID())
+	if _, err := NewReportExecution(h.deps).Execute(ctx, node.ID(), run.ExecutionID, failed); err != nil {
+		t.Fatal(err)
+	}
+	h.clock.now = t0.Add(6 * time.Minute)
+	if done, err := NewSerialRunner(h.deps).ExpireApprovals(ctx); err != nil || len(done) != 1 || done[0].Action != domain.ExpireDeny {
+		t.Fatalf("expire: %v %+v", err, done)
+	}
+	denial, _, _ := NewNextAssignment(h.deps).Execute(ctx, node.ID())
+	if denial.Decide == nil || denial.Decide.TaskID != expired || denial.Decide.Decision != DecisionDeny {
+		t.Fatalf("denial = %+v", denial)
+	}
+	h.log.events = nil
+	if _, err := NewReportExecution(h.deps).Execute(ctx, node.ID(), denial.ExecutionID, failed); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := h.tasks.Get(ctx, expired)
+	if after.Status() != domain.TaskExpired || after.FailureReason() != reason {
+		t.Fatalf("expired task = %s %q", after.Status(), after.FailureReason())
+	}
+	if other, _ := h.tasks.Get(ctx, approved); other.Status() != domain.TaskFailed {
+		t.Errorf("approved task = %s", other.Status())
+	}
+	if !h.log.has("bot.task.expired", expired) || h.log.has("bot.task.failed", expired) {
+		t.Errorf("events = %v", h.log.eventTypes())
+	}
+	overview, err := NewGetOverview(h.deps).Execute(ctx, time.Time{})
+	if err != nil || overview.TasksSince["Expired"] != 1 || overview.TasksSince["Failed"] != 1 || overview.Tasks["Expired"] != 1 {
+		t.Errorf("overview = %+v %v", overview, err)
+	}
+	for status, want := range map[string]domain.TaskID{"Expired": expired, "Failed": approved} {
+		listed, err := NewListTasks(h.deps).Execute(ctx, TaskQuery{Status: status})
+		if err != nil || len(listed) != 1 || listed[0].ID() != want {
+			t.Errorf("list %s = %v %v", status, ids(listed), err)
+		}
+	}
+}
+
+// A denial whose node never reports is reconciled Expired too.
+func TestALostDenialRunIsReconciledExpired(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	bot := governBot(t, h, enabledBot(t, h), domain.ApprovalsSnapshot{TTL: "5m"})
+	node := onlineNode(t, h, "web-1")
+	task := submit(t, h, bot, "k").Task
+	first, _, _ := NewNextAssignment(h.deps).Execute(ctx, node.ID())
+	pending := ExecutionReport{Outcome: domain.ExecutionDecisionRequired, Result: domain.Result{SessionID: "sess-1", PendingDecision: &domain.PendingDecision{Tool: "local_write", CallID: "c1", SessionID: "sess-1"}}}
+	if _, err := NewReportExecution(h.deps).Execute(ctx, node.ID(), first.ExecutionID, pending); err != nil {
+		t.Fatal(err)
+	}
+	h.clock.now = t0.Add(6 * time.Minute)
+	if _, err := NewSerialRunner(h.deps).ExpireApprovals(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if denial, found, err := NewNextAssignment(h.deps).Execute(ctx, node.ID()); err != nil || !found || denial.Decide == nil {
+		t.Fatalf("denial = %+v %v", denial, err)
+	}
+	h.clock.now = t0.Add(3 * time.Hour)
+	result, err := NewReconcileTasks(h.deps).Execute(ctx, time.Hour)
+	if err != nil || !containsTask(result.Failed, task.ID()) {
+		t.Fatalf("reconcile = %+v %v", result, err)
+	}
+	after, _ := h.tasks.Get(ctx, task.ID())
+	if after.Status() != domain.TaskExpired || !h.log.has("bot.task.expired", task.ID()) {
+		t.Errorf("task = %s, events %v", after.Status(), h.log.eventTypes())
+	}
+}
+
+func TestExpiryEndsTheTaskExpiredWhenTheBotSaysCancel(t *testing.T) {
 	h := newHarness()
 	_, task := waitingWith(t, h, domain.ApprovalsSnapshot{TTL: "1m", OnExpire: "cancel"})
 	ctx := context.Background()
 	h.clock.now = t0.Add(time.Hour)
 	done, err := NewSerialRunner(h.deps).ExpireApprovals(ctx)
-	if err != nil || len(done) != 1 || done[0].Action != domain.ExpireCancel || done[0].Task.Status() != domain.TaskCancelled {
+	if err != nil || len(done) != 1 || done[0].Action != domain.ExpireCancel || done[0].Task.Status() != domain.TaskExpired {
 		t.Fatalf("expire: %v %+v", err, done)
 	}
-	if got := h.log.eventTypes(); strings.Join(got, ",") != "bot.approval.expired,bot.task.cancelled" {
+	if got := h.log.eventTypes(); strings.Join(got, ",") != "bot.approval.expired,bot.task.expired" {
 		t.Errorf("events = %v", got)
 	}
+	ended := h.log.events[len(h.log.events)-1].Payload
+	if ended["action"] != "cancel" || ended["reason"] != "approval expired: nobody decided the call c1 (local_exec) by 2026-10-23T15:01:00Z" {
+		t.Errorf("expired event = %+v", ended)
+	}
 	if len(h.decider.requests) != 0 {
-		t.Error("a cancelled task's session was asked to decide")
+		t.Error("an expired task's session was asked to decide")
 	}
 	if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, ""); !domain.IsApprovalExpired(err) {
 		t.Errorf("late approve: %v", err)
@@ -205,7 +306,7 @@ func TestExpiryCancelsWhenTheBotSaysSo(t *testing.T) {
 	}
 }
 
-func TestAPausedBotsExpiredTaskIsCancelled(t *testing.T) {
+func TestAPausedBotsExpiredTaskEndsExpired(t *testing.T) {
 	h := newHarness()
 	bot, task := waitingWith(t, h, domain.ApprovalsSnapshot{TTL: "1m"})
 	ctx := context.Background()
@@ -222,7 +323,7 @@ func TestAPausedBotsExpiredTaskIsCancelled(t *testing.T) {
 		t.Errorf("expired event = %+v", h.log.events[0].Payload)
 	}
 	after, _ := h.tasks.Get(ctx, task.ID())
-	if after.Status() != domain.TaskCancelled {
+	if after.Status() != domain.TaskExpired {
 		t.Errorf("task = %s", after.Status())
 	}
 }

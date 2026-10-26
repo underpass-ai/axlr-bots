@@ -243,6 +243,114 @@ func TestCancelClosesTheWait(t *testing.T) {
 	}
 }
 
+func TestATaskWhoseApprovalExpiredEndsExpired(t *testing.T) {
+	if status, err := ParseTaskStatus("Expired"); err != nil || status != TaskExpired || !status.IsTerminal() {
+		t.Fatalf("Expired = %v %v", status, err)
+	}
+	// Nobody decided; the denial ran and failed: the task is Expired,
+	// and keeps what ended the run.
+	task := sampleTask(t)
+	_ = task.Start("exec-1", t0)
+	_ = task.AwaitApproval(sampleWait(t0), t0)
+	_ = task.ExpireApproval(t0.Add(2 * time.Hour))
+	if err := task.Resume("exec-2", ApprovalExpired, t0.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	reason := "exit code 1: axlr-tui: open sessions/s.json: no such file or directory"
+	if err := task.Fail(reason, t0.Add(3*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if task.Status() != TaskExpired || task.FailureReason() != reason {
+		t.Fatalf("task = %s %q", task.Status(), task.FailureReason())
+	}
+	snapshot := task.Snapshot()
+	if restored, err := RestoreTask(snapshot); err != nil || restored.Status() != TaskExpired {
+		t.Fatalf("restored = %v %v", restored.Status(), err)
+	}
+	for name, broken := range map[string]func(*TaskSnapshot){
+		"no reason":       func(s *TaskSnapshot) { s.FailureReason = "" },
+		"no wait":         func(s *TaskSnapshot) { s.Approval = nil },
+		"a decided wait":  func(s *TaskSnapshot) { s.Approval.Outcome = ApprovalApproved },
+		"a cancelled one": func(s *TaskSnapshot) { s.Approval.Outcome = ApprovalCancelled },
+	} {
+		bad := task.Snapshot()
+		broken(&bad)
+		if _, err := RestoreTask(bad); err == nil {
+			t.Errorf("an Expired task with %s was restored", name)
+		}
+	}
+
+	// A decided call that then fails is a real failure.
+	approved := sampleTask(t)
+	_ = approved.Start("exec-1", t0)
+	_ = approved.AwaitApproval(sampleWait(t0), t0)
+	_ = approved.Resume("exec-2", ApprovalApproved, t0)
+	_ = approved.Fail("boom", t0)
+	if approved.Status() != TaskFailed {
+		t.Errorf("approved then failed = %s", approved.Status())
+	}
+
+	// Only the last wait counts: an expiry, then a call a person approved.
+	later := sampleTask(t)
+	_ = later.Start("exec-1", t0)
+	_ = later.AwaitApproval(sampleWait(t0), t0)
+	_ = later.ExpireApproval(t0.Add(2 * time.Hour))
+	_ = later.Resume("exec-2", ApprovalExpired, t0.Add(2*time.Hour))
+	_ = later.AwaitApproval(sampleWait(t0.Add(2*time.Hour)), t0.Add(2*time.Hour))
+	_ = later.Resume("exec-3", ApprovalApproved, t0.Add(2*time.Hour))
+	_ = later.Fail("boom", t0.Add(3*time.Hour))
+	if later.Status() != TaskFailed {
+		t.Errorf("failed after a later approval = %s", later.Status())
+	}
+
+	// A denial the session finished without the call is Completed.
+	done := sampleTask(t)
+	_ = done.Start("exec-1", t0)
+	_ = done.AwaitApproval(sampleWait(t0), t0)
+	_ = done.ExpireApproval(t0.Add(2 * time.Hour))
+	_ = done.Resume("exec-2", ApprovalExpired, t0.Add(2*time.Hour))
+	if err := done.Complete(t0.Add(3 * time.Hour)); err != nil || done.Status() != TaskCompleted {
+		t.Errorf("completed after the denial = %s %v", done.Status(), err)
+	}
+}
+
+func TestEndExpiredEndsAWaitThatExpiredWithoutADenial(t *testing.T) {
+	task := sampleTask(t)
+	if err := task.EndExpired(t0); err == nil {
+		t.Error("a Pending task ended expired")
+	}
+	_ = task.Start("exec-1", t0)
+	_ = task.AwaitApproval(sampleWait(t0), t0)
+	if err := task.EndExpired(t0); err == nil {
+		t.Error("an open wait ended expired")
+	}
+	_ = task.ExpireApproval(t0.Add(2 * time.Hour))
+	if err := task.EndExpired(t0.Add(2 * time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if task.Status() != TaskExpired || task.FailureReason() != "approval expired: nobody decided the call call-1 (local_write) by 2026-10-23T16:00:00Z" || !task.UpdatedAt().Equal(t0.Add(2*time.Hour)) {
+		t.Errorf("task = %s %q", task.Status(), task.FailureReason())
+	}
+	if err := task.EndExpired(t0.Add(2 * time.Hour)); err == nil {
+		t.Error("ended expired twice")
+	}
+	if _, err := RestoreTask(task.Snapshot()); err != nil {
+		t.Errorf("restore: %v", err)
+	}
+	for wait, want := range map[ApprovalWait]string{
+		{Since: t0, Deadline: t0.Add(time.Hour), OnExpire: ExpireCancel}:                "approval expired: nobody decided the call by 2026-10-23T16:00:00Z",
+		{CallID: "c-9", Since: t0, Deadline: t0.Add(time.Hour), OnExpire: ExpireCancel}: "approval expired: nobody decided the call c-9 by 2026-10-23T16:00:00Z",
+	} {
+		other := sampleTask(t)
+		_ = other.Start("exec-1", t0)
+		_ = other.AwaitApproval(wait, t0)
+		_ = other.ExpireApproval(t0.Add(2 * time.Hour))
+		if err := other.EndExpired(t0.Add(2 * time.Hour)); err != nil || other.FailureReason() != want {
+			t.Errorf("reason = %q %v", other.FailureReason(), err)
+		}
+	}
+}
+
 func TestApprovalExpiredError(t *testing.T) {
 	err := error(ApprovalExpiredError{TaskID: "task-1", CallID: "call-1", Deadline: t0})
 	if !IsApprovalExpired(err) || !strings.Contains(err.Error(), "call-1") || !strings.Contains(err.Error(), "authorises nothing") {

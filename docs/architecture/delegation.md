@@ -103,9 +103,9 @@ A cycle A→B→A is cut twice: with A's `maxDepth: 1`, the second hop is at dep
 ### 4. How the result returns
 
 - `wait: false` answers at once with the child's task id and status.
-- `wait: true` (the default) blocks the tool call while the agent long-polls the child's state (20 s at a time) until the child is Completed, Failed or Cancelled, or until the parent's deadline less 10 seconds; it then answers with the child's status, its answer, its failure reason and its task id. A child still running at that point is not cancelled: the answer says so, and the parent ends at its own deadline.
+- `wait: true` (the default) blocks the tool call while the agent long-polls the child's state (20 s at a time) until the child is Completed, Failed, Expired or Cancelled, or until the parent's deadline less 10 seconds; it then answers with the child's status, its answer, its failure reason and its task id. A child still running at that point is not cancelled: the answer says so, and the parent ends at its own deadline.
 - A child that stops on a person's approval waits there; the parent's wait ends at its deadline as above.
-- **A child's deadline holds wherever it is.** A child still Pending when its deadline passes (its bot's node is offline), or waiting for a person past it (an approval's `ttl` is longer than the grant), or whose decision would be assigned after it, is not run: it fails with the reason `deadline` (`bot.task.failed`, `"reason": "deadline"`), at assignment, at the decision, or when the reconciler finds it.
+- **A child's deadline holds wherever it is.** A child still Pending when its deadline passes (its bot's node is offline), or waiting for a person past it (an approval's `ttl` is longer than the grant), or whose decision would be assigned after it, is not run: it fails with the reason `deadline` (`bot.task.failed`, `"reason": "deadline"`), at assignment, at the decision, or when the reconciler finds it. One that was waiting for a person, or whose last wait had already expired, ends `Expired` instead (`bot.task.expired`): nobody decided its call in time.
 
 ### 5. The node keeps running while a parent waits
 

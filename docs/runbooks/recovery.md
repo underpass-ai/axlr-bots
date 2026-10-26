@@ -15,7 +15,7 @@ axlr-bots task reconcile                # {"failed": ["task-…"], "skipped": []
 axlr-bots task reconcile --grace 30s
 ```
 
-Check: the task and its execution are `Failed` with the diagnosis (`reconciled: … node web-1 stopped renewing its lease at …`, or `…; the process that ran it is gone`); `bot events <bot>` has a `bot.task.failed` event with `"reason": "reconciled"`; `<state>/audit.jsonl` has a `task.reconcile` entry. Running it again is harmless. Submit the task again with a new key if it should run.
+Check: the task and its execution are `Failed` (the task is `Expired` when the lost run was the denial of an approval nobody decided in time; [approvals](approvals.md#expiry)) with the diagnosis (`reconciled: … node web-1 stopped renewing its lease at …`, or `…; the process that ran it is gone`); `bot events <bot>` has a `bot.task.failed` event with `"reason": "reconciled"`; `<state>/audit.jsonl` has a `task.reconcile` entry. Running it again is harmless. Submit the task again with a new key if it should run.
 
 ## A node went silent
 

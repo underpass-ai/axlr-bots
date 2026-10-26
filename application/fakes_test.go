@@ -274,6 +274,16 @@ func (c *collector) ListTaskEvents(_ context.Context, task domain.TaskID, limit 
 	return out, nil
 }
 
+// has reports an event of the type about the task.
+func (c *collector) has(kind string, task domain.TaskID) bool {
+	for _, e := range c.events {
+		if e.Type.String() == kind && e.TaskID == task {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *collector) eventTypes() []string {
 	out := make([]string, len(c.events))
 	for i, e := range c.events {

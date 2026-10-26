@@ -3,6 +3,7 @@ package domain
 import (
 	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -228,7 +229,7 @@ func TestADelegatedTaskKeepsItsLineageChildrenAndDeadline(t *testing.T) {
 	}
 }
 
-func TestAWaitingTaskThatMissesItsDeadlineClosesItsWait(t *testing.T) {
+func TestAWaitingTaskThatMissesItsDeadlineClosesItsWaitAndEndsExpired(t *testing.T) {
 	task, _ := NewTask("task-2", "bot-c", "Do it", "k", "trace-1", t0)
 	_ = task.Link(lineage())
 	_ = task.Start("exec-2", t0)
@@ -238,7 +239,7 @@ func TestAWaitingTaskThatMissesItsDeadlineClosesItsWait(t *testing.T) {
 	if err := task.MissDeadline(t0.Add(2 * time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if wait, _ := task.Approval(); wait.Outcome != ApprovalExpired || task.Status() != TaskFailed {
+	if wait, _ := task.Approval(); wait.Outcome != ApprovalExpired || task.Status() != TaskExpired || !strings.HasPrefix(task.FailureReason(), "deadline:") {
 		t.Errorf("wait %+v, status %s", wait, task.Status())
 	}
 }
