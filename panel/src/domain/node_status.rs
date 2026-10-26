@@ -8,6 +8,10 @@ pub enum NodeStatus {
     Online,
     Offline,
     Revoked,
+    /// A value this panel does not know: the control plane is newer. Read,
+    /// shown as unknown, never refused.
+    #[serde(other)]
+    Unknown,
 }
 
 impl NodeStatus {
@@ -20,6 +24,7 @@ impl NodeStatus {
             Self::Online => "Online",
             Self::Offline => "Offline",
             Self::Revoked => "Revoked",
+            Self::Unknown => "Unknown",
         }
     }
 
@@ -39,7 +44,10 @@ mod tests {
             let json = serde_json::to_string(&status).unwrap();
             assert_eq!(json, format!("\"{}\"", status.name()));
         }
-        assert!(serde_json::from_str::<NodeStatus>("\"Lost\"").is_err());
+        assert_eq!(
+            serde_json::from_str::<NodeStatus>("\"Lost\"").unwrap(),
+            NodeStatus::Unknown
+        );
         assert!(NodeStatus::Online.can_revoke());
         assert!(!NodeStatus::Revoked.can_revoke());
     }

@@ -159,6 +159,7 @@ fn level_words(level: AutonomyLevel) -> &'static str {
         AutonomyLevel::Propose => "Reads and proposes. A person acts.",
         AutonomyLevel::ActWithApproval => "Writes only after a person says OK.",
         AutonomyLevel::ActWithinPolicy => "Acts alone inside its tool rules.",
+        AutonomyLevel::Unknown => "A level this panel does not know yet.",
     }
 }
 
