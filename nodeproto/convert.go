@@ -17,6 +17,7 @@ func FromAssignment(a application.Assignment) AssignmentMessage {
 			TaskID: r.TaskID.String(), BotID: r.BotID.String(), TenantID: r.TenantID.String(), CorrelationID: r.CorrelationID.String(),
 			Objective: r.PromptText(), Model: r.Model, Level: r.Level.String(), AllowedTools: r.AllowedTools,
 			ToolRules: r.ToolRules.Snapshot(), TimeoutSeconds: int(r.Timeout / time.Second), Delegation: fromOffer(r.Delegation),
+			Events: fromEventsOffer(r.Events),
 		}
 		if model, tools := r.Budgets.MaxModelCallsPerTask(), r.Budgets.MaxToolCallsPerTask(); model > 0 || tools > 0 {
 			m.Run.Budgets = &BudgetsMessage{MaxModelCalls: model, MaxToolCalls: tools}
@@ -27,6 +28,7 @@ func FromAssignment(a application.Assignment) AssignmentMessage {
 		m.Decide = &DecideMessage{
 			TaskID: d.TaskID.String(), BotID: d.BotID.String(), CorrelationID: d.CorrelationID.String(), SessionID: d.SessionID, CallID: d.CallID, Decision: d.Decision, Level: d.Level.String(),
 			AllowedTools: d.AllowedTools, ToolRules: d.ToolRules.Snapshot(), TimeoutSeconds: int(d.Timeout / time.Second), Delegation: fromOffer(d.Delegation),
+			Events: fromEventsOffer(d.Events),
 		}
 	}
 	return m
@@ -62,7 +64,7 @@ func ToAssignment(m AssignmentMessage) (application.Assignment, error) {
 		a.Run = &application.ExecutionRequest{
 			ExecutionID: executionID, TaskID: domain.TaskID(r.TaskID), BotID: botID, TenantID: domain.TenantID(r.TenantID), CorrelationID: domain.CorrelationID(r.CorrelationID),
 			Objective: objective, Model: r.Model, Level: level, AllowedTools: tools.Names(), ToolRules: rules, Timeout: time.Duration(r.TimeoutSeconds) * time.Second,
-			Delegation: toOffer(r.Delegation),
+			Delegation: toOffer(r.Delegation), Events: toEventsOffer(r.Events),
 		}
 		if r.Budgets != nil {
 			budgets, err := domain.NewBudgets(r.Budgets.MaxModelCalls, r.Budgets.MaxToolCalls, 0, a.Run.Timeout)
@@ -84,7 +86,7 @@ func ToAssignment(m AssignmentMessage) (application.Assignment, error) {
 		a.Decide = &application.DecisionRequest{
 			ExecutionID: executionID, TaskID: domain.TaskID(d.TaskID), BotID: botID, CorrelationID: domain.CorrelationID(d.CorrelationID), SessionID: d.SessionID, CallID: d.CallID, Decision: d.Decision,
 			Level: level, AllowedTools: tools.Names(), ToolRules: rules, Timeout: time.Duration(d.TimeoutSeconds) * time.Second,
-			Delegation: toOffer(d.Delegation),
+			Delegation: toOffer(d.Delegation), Events: toEventsOffer(d.Events),
 		}
 		if err := a.Decide.Validate(); err != nil {
 			return application.Assignment{}, err
@@ -107,6 +109,30 @@ func toOffer(m *DelegationOfferMessage) *application.DelegationOffer {
 		return nil
 	}
 	return &application.DelegationOffer{Targets: append([]string(nil), m.Targets...), Depth: m.Depth, MaxDepth: m.MaxDepth}
+}
+
+func fromEventsOffer(o *application.EventsOffer) *EventsOfferMessage {
+	if o == nil {
+		return nil
+	}
+	return &EventsOfferMessage{Names: append([]string{}, o.Names...), MaxSeverity: o.MaxSeverity, Teammates: append([]string{}, o.Teammates...)}
+}
+
+func toEventsOffer(m *EventsOfferMessage) *application.EventsOffer {
+	if m == nil {
+		return nil
+	}
+	return &application.EventsOffer{Names: append([]string(nil), m.Names...), MaxSeverity: m.MaxSeverity, Teammates: append([]string(nil), m.Teammates...)}
+}
+
+// FromEmitted renders an emit's answer as a message.
+func FromEmitted(a application.EmitAnswer) EmittedMessage {
+	return EmittedMessage{EventID: a.EventID, Name: a.Name, Severity: a.Severity.String(), Deliveries: a.Deliveries, Skipped: a.Skipped, Deduplicated: a.Deduplicated, Refused: a.Refused}
+}
+
+// ToEmitted reads an emit's answer back.
+func ToEmitted(m EmittedMessage) application.EmitAnswer {
+	return application.EmitAnswer{EventID: m.EventID, Name: m.Name, Severity: domain.Severity(m.Severity), Deliveries: m.Deliveries, Skipped: m.Skipped, Deduplicated: m.Deduplicated, Refused: m.Refused}
 }
 
 // FromDelegation renders a delegation answer as a message.

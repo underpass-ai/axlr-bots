@@ -5,15 +5,17 @@ package domain
 // template over the event (text/template, `{{.type}}`) for a webhook or
 // a timer. A webhook authenticates with Secret (a header) or SigningKey
 // (an HMAC over the body); a timer runs Every (a duration) or on Cron
-// (five fields, the host's time zone).
+// (five fields, the host's time zone). An event trigger hears the
+// event names or patterns Events lists.
 type TriggerSnapshot struct {
-	Type       string `json:"type"`
-	Name       string `json:"name,omitempty"`
-	Objective  string `json:"objective,omitempty"`
-	Secret     string `json:"secret,omitempty"`
-	SigningKey string `json:"signingKey,omitempty"`
-	Every      string `json:"every,omitempty"`
-	Cron       string `json:"cron,omitempty"`
+	Type       string   `json:"type"`
+	Name       string   `json:"name,omitempty"`
+	Objective  string   `json:"objective,omitempty"`
+	Secret     string   `json:"secret,omitempty"`
+	SigningKey string   `json:"signingKey,omitempty"`
+	Every      string   `json:"every,omitempty"`
+	Cron       string   `json:"cron,omitempty"`
+	Events     []string `json:"events,omitempty"`
 }
 
 // Redacted is the snapshot with its credentials hidden: what the API

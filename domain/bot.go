@@ -21,6 +21,7 @@ type Bot struct {
 	approvals    Approvals
 	delegation   Delegation
 	teams        Teams
+	events       EventPolicy
 	status       BotStatus
 	createdAt    time.Time
 	updatedAt    time.Time
@@ -111,6 +112,26 @@ func (b Bot) Teams() Teams { return b.teams }
 
 // JoinTeams replaces the teams the bot belongs to.
 func (b *Bot) JoinTeams(teams Teams) { b.teams = teams }
+
+// Events says what the bot may emit to its teams.
+func (b Bot) Events() EventPolicy { return b.events }
+
+// SetEvents replaces what the bot may emit to its teams.
+func (b *Bot) SetEvents(events EventPolicy) { b.events = events }
+
+// Hears says whether a teammate's event becomes a task of the bot, and
+// under which trigger: the first event trigger whose names fit or, when
+// the bot declares none, the team's default, which takes the events
+// addressed to the bot and the team's warnings and criticals.
+func (b Bot) Hears(name EventName, severity Severity, addressed bool) (Trigger, bool) {
+	if b.triggers.Has(TriggerEvent) {
+		return b.triggers.Hearing(name)
+	}
+	if addressed || severity.AtLeast(SeverityWarning) {
+		return TeamEventTrigger(), true
+	}
+	return Trigger{}, false
+}
 
 // IsTeammateOf reports whether the bot and other are different bots of
 // one tenant that share a team.
@@ -244,6 +265,7 @@ func (b Bot) Snapshot() BotSnapshot {
 		Approvals:  b.approvals.Snapshot(),
 		Delegation: b.delegation.Snapshot(),
 		Groups:     b.teams.Snapshot(),
+		Events:     b.events.Snapshot(),
 		Status:     b.status.String(),
 		CreatedAt:  b.createdAt,
 		UpdatedAt:  b.updatedAt,
@@ -331,6 +353,13 @@ func RestoreBot(s BotSnapshot) (Bot, error) {
 		return Bot{}, err
 	}
 	bot.JoinTeams(teams)
+	if s.Events != nil {
+		events, err := NewEventPolicy(*s.Events)
+		if err != nil {
+			return Bot{}, err
+		}
+		bot.SetEvents(events)
+	}
 	if s.UpdatedAt.IsZero() {
 		return Bot{}, invalid("updated at", "must not be zero")
 	}

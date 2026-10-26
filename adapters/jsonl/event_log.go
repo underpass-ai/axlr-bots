@@ -48,6 +48,16 @@ func (l *EventLog) ListTaskEvents(_ context.Context, task domain.TaskID, limit i
 	return l.tail(limit, func(event domain.Event) bool { return event.TaskID == task })
 }
 
+// ListBotsEvents answers the newest limit events of any of the bots,
+// oldest first: a team's timeline.
+func (l *EventLog) ListBotsEvents(_ context.Context, bots []domain.BotID, limit int) ([]domain.Event, error) {
+	wanted := make(map[domain.BotID]bool, len(bots))
+	for _, bot := range bots {
+		wanted[bot] = true
+	}
+	return l.tail(limit, func(event domain.Event) bool { return wanted[event.BotID] })
+}
+
 // tail reads the log and keeps the newest limit events that match. A
 // line that is not an event is skipped: the log is append-only and a
 // torn last line must not hide the rest.

@@ -104,6 +104,10 @@ func (l *Local) GetGroup(ctx context.Context, name, tenant string) (application.
 	return application.NewGetGroup(l.deps).Execute(ctx, name, tenant)
 }
 
+func (l *Local) ListGroupEvents(ctx context.Context, query application.GroupEventsQuery) ([]domain.Event, error) {
+	return application.NewListGroupEvents(l.deps).Execute(ctx, query)
+}
+
 func (l *Local) ListEvents(ctx context.Context, id string, limit int) ([]domain.Event, error) {
 	botID, err := domain.NewBotID(id)
 	if err != nil {

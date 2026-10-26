@@ -138,14 +138,36 @@ func runTimeout(bot domain.Bot, task domain.Task, now time.Time) time.Duration {
 	return timeout
 }
 
-// allowedTools is the execution's tool allow-list: the bot's, and the
-// delegation tool when the bot may ask other bots.
-func allowedTools(bot domain.Bot, offer *DelegationOffer) []string {
+// allowedTools is the execution's tool allow-list: the bot's, the
+// delegation tool when the bot may ask other bots, and the emit tool
+// when it is in a team.
+func allowedTools(bot domain.Bot, offer *DelegationOffer, events *EventsOffer) []string {
 	tools := bot.AllowedTools().Names()
 	if offer != nil && !bot.AllowedTools().Allows(DelegateToolName) {
 		tools = append(tools, DelegateToolName)
 	}
+	if events != nil && !bot.AllowedTools().Allows(EmitEventToolName) {
+		tools = append(tools, EmitEventToolName)
+	}
 	return tools
+}
+
+// eventsOffer tells the node the bot may emit events to its teams, or
+// nil when it is in none.
+func eventsOffer(bot domain.Bot, mates []domain.Bot) *EventsOffer {
+	if bot.Teams().Empty() {
+		return nil
+	}
+	offer := &EventsOffer{MaxSeverity: bot.Events().Highest().String(), Teammates: []string{}}
+	for _, rule := range bot.Events().Rules() {
+		offer.Names = append(offer.Names, rule.Pattern().String())
+	}
+	for _, mate := range mates {
+		if mate.AcceptsTasks() {
+			offer.Teammates = append(offer.Teammates, mate.ID().String())
+		}
+	}
+	return offer
 }
 
 // delegationOffer tells the node the bot may delegate, to the bots its

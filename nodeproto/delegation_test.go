@@ -70,3 +70,31 @@ func TestDelegationAnswersRoundTrip(t *testing.T) {
 		t.Errorf("no grant = %+v %v", back, err)
 	}
 }
+
+func TestTheEventsOfferAndTheEmitAnswerTravel(t *testing.T) {
+	offer := &application.EventsOffer{Names: []string{"recall"}, MaxSeverity: "warning", Teammates: []string{"quad-1"}}
+	a := application.Assignment{ExecutionID: "exec-1", Kind: domain.ExecutionRun, Run: &application.ExecutionRequest{BotID: "plane", Objective: "o", Level: domain.AutonomyObserve, Events: offer}}
+	data, _ := json.Marshal(FromAssignment(a))
+	var decoded AssignmentMessage
+	_ = json.Unmarshal(data, &decoded)
+	back, err := ToAssignment(decoded)
+	if err != nil || back.Run.Events == nil || back.Run.Events.Teammates[0] != "quad-1" || back.Run.Events.MaxSeverity != "warning" {
+		t.Fatalf("run events = %+v %v", back.Run, err)
+	}
+	decide := application.Assignment{ExecutionID: "exec-2", Kind: domain.ExecutionDecide, Decide: &application.DecisionRequest{BotID: "plane", SessionID: "s", Decision: "approve", Level: domain.AutonomyObserve, Events: offer}}
+	if back, err := ToAssignment(FromAssignment(decide)); err != nil || back.Decide.Events == nil || back.Decide.Events.Names[0] != "recall" {
+		t.Errorf("decide events = %+v %v", back.Decide, err)
+	}
+	a.Run.Events = nil
+	if plain := FromAssignment(a); plain.Run.Events != nil {
+		t.Errorf("plain = %+v", plain.Run)
+	}
+	answer := application.EmitAnswer{EventID: "evt-1", Name: "recall", Severity: domain.SeverityWarning, Deliveries: []application.EventDelivery{{BotID: "quad-1", TaskID: "task-2", Trigger: "team", Created: true}}, Skipped: []application.EventSkip{{BotID: "quad-3", Reason: "cycle"}}}
+	if got := ToEmitted(FromEmitted(answer)); got.EventID != "evt-1" || got.Severity != domain.SeverityWarning || got.Deliveries[0].TaskID != "task-2" || got.Skipped[0].Reason != "cycle" {
+		t.Errorf("answer = %+v", got)
+	}
+	refused := application.EmitAnswer{Name: "recall", Refused: &domain.EventRefusal{Reason: domain.RefusedRateLimited, Message: "wait"}}
+	if got := ToEmitted(FromEmitted(refused)); got.Refused == nil || got.Refused.Reason != domain.RefusedRateLimited {
+		t.Errorf("refused = %+v", got)
+	}
+}

@@ -129,5 +129,12 @@ func buildBot(d BotDefinition, now time.Time) (domain.Bot, error) {
 		return domain.Bot{}, err
 	}
 	bot.JoinTeams(teams)
+	if d.Events != nil {
+		events, err := domain.NewEventPolicy(*d.Events)
+		if err != nil {
+			return domain.Bot{}, err
+		}
+		bot.SetEvents(events)
+	}
 	return bot, nil
 }

@@ -29,6 +29,9 @@ type Service interface {
 	// GetGroup returns one team; tenant may be empty when only one tenant
 	// has a team of that name.
 	GetGroup(ctx context.Context, name, tenant string) (application.Group, error)
+	// ListGroupEvents answers a team's timeline after the caller's last
+	// event; over the operator address the route may wait for one.
+	ListGroupEvents(ctx context.Context, query application.GroupEventsQuery) ([]domain.Event, error)
 	// ListEvents returns the newest limit events of the bot, oldest first.
 	ListEvents(ctx context.Context, id string, limit int) ([]domain.Event, error)
 	SubmitTask(ctx context.Context, request SubmitRequest) (SubmitResponse, error)

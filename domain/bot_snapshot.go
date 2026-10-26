@@ -20,6 +20,7 @@ type BotSnapshot struct {
 	Approvals    ApprovalsSnapshot   `json:"approvals"`
 	Delegation   *DelegationSnapshot `json:"delegation,omitempty"`
 	Groups       []string            `json:"groups,omitempty"`
+	Events       *EventsSnapshot     `json:"events,omitempty"`
 	Status       string              `json:"status"`
 	CreatedAt    time.Time           `json:"createdAt"`
 	UpdatedAt    time.Time           `json:"updatedAt"`

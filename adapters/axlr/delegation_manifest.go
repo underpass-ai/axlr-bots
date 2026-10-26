@@ -7,17 +7,17 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // delegationPluginID is the MCP registration id AXLR gives the node's
-// delegation server; its tool is application.DelegateToolName.
+// server; its tools are application.DelegateToolName and
+// application.EmitEventToolName.
 const delegationPluginID = "axlr-bots"
 
 // delegationManifest is the MCP manifest `axlr-tui --plugin` reads
 // (AXLR docs/plugins.md): the node's relay to the execution's socket,
-// with the one tool it serves.
+// with the tools it serves.
 type delegationManifest struct {
 	ManifestVersion int      `json:"manifest_version"`
 	ID              string   `json:"id"`
@@ -27,21 +27,22 @@ type delegationManifest struct {
 }
 
 // wireDelegation writes <state>/mcp/<execution>.json for an execution
-// whose bot may delegate and whose node serves the tool, and gives the
-// run the flag that loads it. The tool is wired only under an enforced
+// whose bot may delegate or emit events and whose node serves the
+// tools, and gives the run the flag that loads it. The tools are wired
+// only under an enforced
 // policy, where the run's approval level is raised to all: AXLR
 // registers a --plugin server with manual approval, the policy's allow
 // list still forbids every tool the bot does not name, and
 // act-with-approval still asks a person for every allowed call
 // (docs/architecture/delegation.md).
-func (e *Executor) wireDelegation(execution domain.ExecutionID, offer *application.DelegationOffer, socket string, policy *preparedPolicy) error {
-	if offer == nil || socket == "" || e.Relay == "" || !policy.record.Enforced {
+func (e *Executor) wireDelegation(execution domain.ExecutionID, tools []string, socket string, policy *preparedPolicy) error {
+	if len(tools) == 0 || socket == "" || e.Relay == "" || !policy.record.Enforced {
 		return nil
 	}
 	if strings.ContainsAny(execution.String(), `/\`) || strings.Contains(execution.String(), "..") {
 		return errors.New("the execution id is not a file name")
 	}
-	manifest := delegationManifest{ManifestVersion: 1, ID: delegationPluginID, Command: e.Relay, Args: []string{"mcp-relay", "--socket", socket}, AllowTools: []string{application.DelegateToolName}}
+	manifest := delegationManifest{ManifestVersion: 1, ID: delegationPluginID, Command: e.Relay, Args: []string{"mcp-relay", "--socket", socket}, AllowTools: tools}
 	folder := filepath.Join(e.StateDir, "mcp")
 	if err := os.MkdirAll(folder, 0o700); err != nil {
 		return err

@@ -112,10 +112,11 @@ func (a Agent) sweepSockets() {
 	}
 }
 
-// serveDelegation opens the execution's delegation socket when its bot
-// may delegate, and says where it is; "" when the tool is not served.
-func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, offer *application.DelegationOffer) (string, func()) {
-	if offer == nil || a.Options.SocketDir == "" || a.slots == nil {
+// serveDelegation opens the execution's socket when its bot may
+// delegate or emit events, and says where it is; "" when no tool is
+// served.
+func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, offer *application.DelegationOffer, events *application.EventsOffer) (string, func()) {
+	if (offer == nil && events == nil) || a.Options.SocketDir == "" || a.slots == nil {
 		return "", func() {}
 	}
 	if strings.ContainsAny(execution.String(), `/\`) || strings.Contains(execution.String(), "..") {
@@ -126,13 +127,26 @@ func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution 
 		a.Options.log().Printf("node: execution %s: socket path %s is too long; the delegation tool is off", execution, path)
 		return "", func() {}
 	}
-	d := delegator{transport: a.Transport, node: id, execution: execution, slots: a.slots, pollWait: a.Options.pollWait(), log: a.Options.log()}
-	server, err := serveMCP(ctx, path, delegateTool(*offer), a.Executor.Version(ctx), d.call)
+	var handlers []mcpHandler
+	if offer != nil {
+		d := delegator{transport: a.Transport, node: id, execution: execution, slots: a.slots, pollWait: a.Options.pollWait(), log: a.Options.log()}
+		handlers = append(handlers, mcpHandler{tool: delegateTool(*offer), call: d.call})
+	}
+	if events != nil {
+		e := emitter{transport: a.Transport, node: id, execution: execution, log: a.Options.log()}
+		handlers = append(handlers, mcpHandler{tool: emitTool(*events), call: e.call})
+	}
+	server, err := serveMCP(ctx, path, a.Executor.Version(ctx), handlers...)
 	if err != nil {
-		a.Options.log().Printf("node: execution %s: delegation socket: %v; the delegation tool is off", execution, err)
+		a.Options.log().Printf("node: execution %s: delegation socket: %v; the delegation and emit tools are off", execution, err)
 		return "", func() {}
 	}
-	a.Options.log().Printf("node: execution %s may delegate to %s (depth %d of %d)", execution, strings.Join(offer.Targets, ", "), offer.Depth, offer.MaxDepth)
+	if offer != nil {
+		a.Options.log().Printf("node: execution %s may delegate to %s (depth %d of %d)", execution, strings.Join(offer.Targets, ", "), offer.Depth, offer.MaxDepth)
+	}
+	if events != nil {
+		a.Options.log().Printf("node: execution %s may emit events to %s", execution, strings.Join(events.Teammates, ", "))
+	}
 	return path, server.Close
 }
 
@@ -204,14 +218,14 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	case assignment.Run != nil:
 		bot = assignment.Run.BotID
 		request := *assignment.Run
-		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation)
+		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events)
 		request.DelegationSocket = socket
 		report, err = a.Executor.Execute(runCtx, request)
 		closeSocket()
 	case assignment.Decide != nil:
 		bot = assignment.Decide.BotID
 		request := *assignment.Decide
-		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation)
+		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events)
 		request.DelegationSocket = socket
 		report, err = a.Executor.Decide(runCtx, request)
 		closeSocket()

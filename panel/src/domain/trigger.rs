@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use super::TriggerType;
 
 /// What starts a bot's task: by hand, a webhook (credentials redacted by
-/// the control plane) or a timer.
+/// the control plane), a timer, another bot, or the events of a
+/// teammate it hears (`events`, names or patterns).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Trigger {
@@ -21,6 +22,8 @@ pub struct Trigger {
     pub every: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub cron: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub events: Vec<String>,
 }
 
 impl Trigger {
@@ -53,6 +56,19 @@ impl Trigger {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keeps_the_events_an_event_trigger_hears() {
+        let trigger: Trigger = serde_json::from_str(r#"{"type":"event","name":"ships","events":["ship.*"]}"#).unwrap();
+        assert_eq!(trigger.trigger_type, TriggerType::Event);
+        assert_eq!(trigger.events, vec!["ship.*".to_string()]);
+        assert!(
+            serde_json::to_string(&trigger)
+                .unwrap()
+                .contains(r#""events":["ship.*"]"#)
+        );
+        assert!(!serde_json::to_string(&Trigger::manual()).unwrap().contains("events"));
+    }
 
     #[test]
     fn names_and_schedules() {

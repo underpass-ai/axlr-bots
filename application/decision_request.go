@@ -28,9 +28,10 @@ type DecisionRequest struct {
 	AllowedTools  []string
 	ToolRules     domain.ToolRules
 	Timeout       time.Duration
-	// Delegation and DelegationSocket are as on an ExecutionRequest: the
-	// session goes on with the tool it had.
+	// Delegation, Events and DelegationSocket are as on an
+	// ExecutionRequest: the session goes on with the tools it had.
 	Delegation       *DelegationOffer
+	Events           *EventsOffer
 	DelegationSocket string
 }
 
@@ -49,3 +50,6 @@ func (r DecisionRequest) Validate() error {
 func IsDecision(word string) bool {
 	return word == DecisionApprove || word == DecisionDeny
 }
+
+// NodeTools names the tools the node serves the decision's execution.
+func (r DecisionRequest) NodeTools() []string { return nodeTools(r.Delegation, r.Events) }

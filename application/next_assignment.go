@@ -149,7 +149,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 	if err != nil {
 		return Assignment{}, err
 	}
-	offer := delegationOffer(bot, task, mates)
+	offer, events := delegationOffer(bot, task, mates), eventsOffer(bot, mates)
 	if execution.Kind() == domain.ExecutionDecide {
 		previous, decision, err := decisionOf(ctx, uc.deps, task, execution)
 		if err != nil {
@@ -162,7 +162,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 		}
 		assignment.Decide = &DecisionRequest{
 			ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), CorrelationID: task.CorrelationID(), SessionID: sessionID, CallID: pending.CallID, Decision: decision,
-			Level: bot.Level(), AllowedTools: allowedTools(bot, offer), ToolRules: bot.ToolRules(), Timeout: timeout, Delegation: offer,
+			Level: bot.Level(), AllowedTools: allowedTools(bot, offer, events), ToolRules: bot.ToolRules(), Timeout: timeout, Delegation: offer, Events: events,
 		}
 		return assignment, nil
 	}
@@ -172,8 +172,8 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 	}
 	assignment.Run = &ExecutionRequest{
 		ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), TenantID: bot.TenantID(), CorrelationID: task.CorrelationID(),
-		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: bot.Level(), AllowedTools: allowedTools(bot, offer),
-		ToolRules: bot.ToolRules(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer,
+		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: bot.Level(), AllowedTools: allowedTools(bot, offer, events),
+		ToolRules: bot.ToolRules(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer, Events: events,
 	}
 	return assignment, nil
 }

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-/// What starts a bot's task: a person, a webhook, a timer or another bot
-/// that delegates to it.
+/// What starts a bot's task: a person, a webhook, a timer, another bot
+/// that delegates to it, or a teammate's event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TriggerType {
@@ -10,6 +10,7 @@ pub enum TriggerType {
     Webhook,
     Timer,
     Delegation,
+    Event,
     /// A value this panel does not know: the control plane is newer. Read,
     /// shown as unknown, never refused.
     #[serde(other)]
@@ -23,6 +24,7 @@ impl TriggerType {
             Self::Webhook => "webhook",
             Self::Timer => "timer",
             Self::Delegation => "delegation",
+            Self::Event => "event",
             Self::Unknown => "unknown",
         }
     }
@@ -33,6 +35,7 @@ impl TriggerType {
             Self::Webhook => "Webhook",
             Self::Timer => "Timer",
             Self::Delegation => "Another bot",
+            Self::Event => "A teammate's event",
             Self::Unknown => "Unknown",
         }
     }
@@ -64,5 +67,15 @@ mod tests {
         );
         assert_eq!(TriggerType::Delegation.name(), "delegation");
         assert_eq!(TriggerType::Delegation.label(), "Another bot");
+    }
+
+    #[test]
+    fn reads_a_teammate_s_event() {
+        assert_eq!(
+            serde_json::from_str::<TriggerType>("\"event\"").unwrap(),
+            TriggerType::Event
+        );
+        assert_eq!(TriggerType::Event.name(), "event");
+        assert_eq!(TriggerType::Event.label(), "A teammate's event");
     }
 }

@@ -127,6 +127,25 @@ func (c *Client) GetGroup(ctx context.Context, name, tenant string) (application
 	return group, c.call(ctx, http.MethodGet, path, nil, &group)
 }
 
+func (c *Client) ListGroupEvents(ctx context.Context, query application.GroupEventsQuery) ([]domain.Event, error) {
+	events := []domain.Event{}
+	values := url.Values{}
+	if query.Tenant != "" {
+		values.Set("tenant", query.Tenant)
+	}
+	if query.After != "" {
+		values.Set("after", query.After)
+	}
+	if query.Limit != 0 {
+		values.Set("limit", strconv.Itoa(query.Limit))
+	}
+	path := "/v1/groups/" + url.PathEscape(query.Name) + "/events"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	return events, c.call(ctx, http.MethodGet, path, nil, &events)
+}
+
 // SubmitTask posts to the bot's tasks with the key in the
 // Idempotency-Key header, as any client of the operator API would.
 func (c *Client) SubmitTask(ctx context.Context, request SubmitRequest) (SubmitResponse, error) {
@@ -393,6 +412,19 @@ func (c *Client) Delegate(ctx context.Context, node domain.NodeID, execution dom
 		return application.DelegationAnswer{}, err
 	}
 	return nodeproto.ToDelegation(message)
+}
+
+// Emit tells the execution's teams an event
+// (application.NodeTransport); a refusal comes back as the answer's
+// Refused.
+func (c *Client) Emit(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, command application.EmitEventCommand) (application.EmitAnswer, error) {
+	var message nodeproto.EmittedMessage
+	path := "/v1/nodes/" + url.PathEscape(node.String()) + "/executions/" + url.PathEscape(execution.String()) + "/events"
+	request := nodeproto.EmitMessage{Name: command.Name, Message: command.Message, Severity: command.Severity, Data: command.Data, To: command.To}
+	if err := c.call(ctx, http.MethodPost, path, request, &message); err != nil {
+		return application.EmitAnswer{}, err
+	}
+	return nodeproto.ToEmitted(message), nil
 }
 
 // AwaitDelegation waits up to wait for the child to end and answers its

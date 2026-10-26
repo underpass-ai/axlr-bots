@@ -261,6 +261,26 @@ func (c *collector) ListEvents(_ context.Context, bot domain.BotID, limit int) (
 	return out, nil
 }
 
+// ListBotsEvents is the EventReader of a team over what was published.
+func (c *collector) ListBotsEvents(_ context.Context, bots []domain.BotID, limit int) ([]domain.Event, error) {
+	if c.fail != nil {
+		return nil, c.fail
+	}
+	var out []domain.Event
+	for _, e := range c.events {
+		for _, bot := range bots {
+			if e.BotID == bot {
+				out = append(out, e)
+				break
+			}
+		}
+	}
+	if len(out) > limit {
+		out = out[len(out)-limit:]
+	}
+	return out, nil
+}
+
 // ListTaskEvents is the EventReader of a task over what was published.
 func (c *collector) ListTaskEvents(_ context.Context, task domain.TaskID, limit int) ([]domain.Event, error) {
 	if c.fail != nil {
