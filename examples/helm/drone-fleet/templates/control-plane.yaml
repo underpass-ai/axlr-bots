@@ -1,0 +1,78 @@
+{{- if .Values.controlPlane.enabled }}
+{{- $cp := include "fleet.cp" . }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $cp }}
+  labels:
+    {{- include "fleet.labels" . | nindent 4 }}
+spec:
+  selector: {app: {{ $cp }}}
+  ports:
+    - {name: nodes, port: 7878, targetPort: nodes}
+    - {name: api, port: 7879, targetPort: api}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $cp }}
+  labels:
+    {{- include "fleet.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ $cp }}
+  replicas: 1
+  selector:
+    matchLabels: {app: {{ $cp }}}
+  template:
+    metadata:
+      labels:
+        app: {{ $cp }}
+        {{- include "fleet.labels" . | nindent 8 }}
+    spec:
+      {{- include "fleet.podSpecCommon" . | nindent 6 }}
+      initContainers:
+        # The fleet CA, once: nodes enroll against it and the operator API uses it.
+        - name: ca-init
+          image: {{ .Values.images.controlPlane }}
+          command: ["/busybox/sh", "-c", "test -f /var/lib/axlr-bots/ca/ca.crt || /usr/local/bin/axlr-bots --state /var/lib/axlr-bots ca init"]
+          securityContext:
+            {{- include "fleet.restricted" . | nindent 12 }}
+          volumeMounts:
+            - {name: state, mountPath: /var/lib/axlr-bots}
+      containers:
+        - name: control-plane
+          image: {{ .Values.images.controlPlane }}
+          args:
+            - serve
+            - --listen=0.0.0.0:7878
+            # 127.0.0.1 and localhost: the panel through kubectl port-forward.
+            - --server-names={{ $cp }},{{ $cp }}.{{ .Release.Namespace }}.svc,{{ $cp }}.{{ .Release.Namespace }}.svc.cluster.local,127.0.0.1,localhost
+            - --api-listen=0.0.0.0:7879
+          ports:
+            - {name: nodes, containerPort: 7878}
+            - {name: api, containerPort: 7879}
+          readinessProbe:
+            tcpSocket: {port: nodes}
+            periodSeconds: 10
+          securityContext:
+            {{- include "fleet.restricted" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources.controlPlane | nindent 12 }}
+          volumeMounts:
+            - {name: state, mountPath: /var/lib/axlr-bots}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+  volumeClaimTemplates:
+    - metadata:
+        name: state
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.controlPlane.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.controlPlane.storage | quote }}
+{{- end }}

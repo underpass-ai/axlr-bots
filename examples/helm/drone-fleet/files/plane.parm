@@ -1,0 +1,12 @@
+# Plane on a Cube Orange+: a landing lidar, a camera on a trigger, a 10 Ah
+# pack. SITL backends of each sensor.
+RNGFND1_TYPE 100
+RNGFND1_ORIENT 25
+RNGFND1_MIN 0.2
+RNGFND1_MAX 40
+RNGFND_LANDING 1
+CAM1_TYPE 1
+SERVO9_FUNCTION 10
+BATT_CAPACITY 10000
+# A mission with a landing sequence (DO_LAND_START) needs RTL to use it.
+RTL_AUTOLAND 2

@@ -1,0 +1,127 @@
+# A port's fleet operated by AXLR Bots: its own control plane, a fleet base
+# (the maintenance stations' stock, the RTK base, the live map, the node of
+# the dispatcher and logistics bots) and the vehicles. Each vehicle is a
+# StatefulSet replica: ArduPilot SITL, mavlink-router, the vehicle pilot
+# (the companion computer: telemetry, the safety limits, the run_mission MCP
+# tool) and the AXLR Bots node agent as its sidecar.
+# The runbook is docs/runbooks/drone-fleet.md.
+
+images:
+  app: container-registry.underpassai.com/axlr-bots/fleet-app@sha256:4ea977c741674ed0f0e36fa05710b8f7005cb39fd6f66daf00210c260ba23387
+  sitl: container-registry.underpassai.com/axlr-bots/fleet-sitl@sha256:9d0ddd377ac6a5d5dca13feb0a7ef1311725dcc45c58b7e369034e44c5adfd9a
+  controlPlane: container-registry.underpassai.com/axlr-bots/control-plane@sha256:d09779eb9d91916df11ffdf988ee7d96ae12b71b60ebbfe845c3d1c7723be257
+
+# The fleet's own control plane, in the namespace. Nodes dial it by its
+# Service's name; the operator API (the panel, the CLI, webhooks) is the
+# same Service's port 7879.
+controlPlane:
+  enabled: true
+  storage: 1Gi
+  storageClassName: ""
+
+base:
+  inspectionSeconds: 30
+  swapSeconds: 10
+  ingress:
+    enabled: false
+    className: nginx
+    host: ""
+    clusterIssuer: ""
+  # The ops centre: the supply rover loads and unloads here.
+  depot: {name: depot, label: "Depot", lat: 51.94020, lon: 4.00485}
+  # The RTK base station the vehicles' corrections come from (shown on the map).
+  rtk: {label: "RTK base · NTRIP", lat: 51.94035, lon: 4.00465}
+  stations:
+    - {name: apm, label: "APM station", lat: 51.94550, lon: 3.99720, bays: 2, batteries: 3, parts: 4}
+    - {name: rwg, label: "RWG station", lat: 51.94100, lon: 3.98440, bays: 2, batteries: 2, parts: 3}
+    - {name: euromax, label: "Euromax station", lat: 51.94700, lon: 4.02720, bays: 2, batteries: 3, parts: 4}
+    - {name: airstrip, label: "Beach airstrip", lat: 51.93350, lon: 3.97280, bays: 1, batteries: 2, parts: 2}
+
+# The ground station analyses one photo in `every` (at most maxPerFlight a
+# flight): the aerial imagery of its footprint, read by a vision model
+# through the model provider (the key of axlr-bots-node.model.apiKey).
+vision:
+  enabled: true
+  model: anthropic/claude-haiku-5.5
+  every: 4
+  maxPerFlight: 12
+
+# What the vehicles inspect. `for` lists the kinds that may go there.
+zones:
+  - {name: apm-cranes, lat: 51.9545, lon: 4.0017, radius_m: 200, for: [quad], about: "APM Terminals quay cranes: booms, spreaders, cable reels"}
+  - {name: rwg-cranes, lat: 51.9500, lon: 3.9883, radius_m: 250, for: [quad], about: "Rotterdam World Gateway quay cranes"}
+  - {name: amaliahaven, lat: 51.9523, lon: 3.9939, radius_m: 300, for: [quad, plane], about: "the basin between the terminals: oil sheen, floating debris"}
+  - {name: rwg-yard, lat: 51.9485, lon: 3.9828, radius_m: 250, for: [rover, quad], about: "RWG container yard lanes"}
+  - {name: euromax-yard, lat: 51.9500, lon: 4.0372, radius_m: 250, for: [rover, quad], about: "Euromax container yard lanes"}
+  - {name: distripark, lat: 51.9425, lon: 4.0172, radius_m: 300, for: [rover, quad], about: "Distripark warehouses and roads: security round"}
+  - {name: coal-terminal, lat: 51.9400, lon: 4.0383, radius_m: 300, for: [quad], about: "EMO coal and ore piles: thermal watch for self-heating"}
+  - {name: slufter, lat: 51.9261, lon: 4.0032, radius_m: 500, for: [plane], about: "the Slufter depot's dike: erosion and seepage"}
+  - {name: coastline, lat: 51.9463, lon: 3.9706, radius_m: 600, for: [plane, quad], about: "the Maasvlakte 2 sea defence and beach"}
+
+# What every vehicle carries unless its group says otherwise (shown on the
+# map; the sensors themselves are SITL's).
+hardware:
+  autopilot: "CubePilot Cube Orange+"
+  gnss: "u-blox ZED-F9P RTK"
+
+# One StatefulSet per group; replica i gets pads[i] (lat,lon,alt,heading)
+# and stations[i]. Node ids are the pod names; the bot of replica i is
+# pilot-<pod name>.
+vehicles:
+  - name: quad
+    kind: quad
+    role: patrol
+    replicas: 3
+    pads: ["51.94550,3.99735,5,0", "51.94100,3.98455,5,0", "51.94700,4.02735,5,0"]
+    stations: [apm, rwg, euromax]
+    hardware: {lidar: "down + forward + aft lidar", camera: "gimbal RGB camera", flow: "optical flow"}
+    env: {}
+  - name: rover
+    kind: rover
+    role: patrol
+    replicas: 2
+    pads: ["51.94700,4.02705,5,0", "51.94100,3.98425,5,0"]
+    stations: [euromax, rwg]
+    hardware: {lidar: "forward + aft lidar", camera: "Intel RealSense D455 depth + RGB"}
+    env: {}
+  - name: supply
+    kind: rover
+    role: supply
+    replicas: 1
+    pads: ["51.94020,4.00500,5,0"]
+    stations: [depot]
+    hardware: {lidar: "forward + aft lidar", camera: "Intel RealSense D455 depth + RGB"}
+    env: {MAX_RADIUS_M: "2600", MAX_SPEED_M_S: "10", CARRY_BATTERIES: "8", CARRY_PARTS: "10"}
+  - name: plane
+    kind: plane
+    role: patrol
+    replicas: 1
+    pads: ["51.93350,3.97280,5,345"]
+    stations: [airstrip]
+    hardware: {lidar: "landing lidar", camera: "survey camera"}
+    env: {RUNWAY_HEADING: "345"}
+
+resources:
+  sitl: {requests: {cpu: 300m, memory: 256Mi}, limits: {memory: 1Gi}}
+  router: {requests: {cpu: 20m, memory: 32Mi}, limits: {memory: 128Mi}}
+  app: {requests: {cpu: 50m, memory: 96Mi}, limits: {cpu: "1", memory: 256Mi}}
+  controlPlane: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: "1", memory: 512Mi}}
+
+nodeSelector: {}
+tolerations: []
+
+# The node agent's values, read by the axlr-bots-node.inject.* templates.
+axlr-bots-node:
+  image:
+    repository: container-registry.underpassai.com/underpass-ai/axlr-bots-node
+    digest: sha256:ed20916591ad9697707545fa0624e41ec365fed42478864bab76802a55bc9b3d
+  controlPlane:
+    url: https://fleet-cp:7878
+  enrollment:
+    existingSecret: fleet-enrollment
+  model:
+    apiKey:
+      existingSecret: fleet-model
+  networkPolicy:
+    # The control plane is a pod: its address is in the pod CIDR.
+    controlPlaneCIDR: 10.244.0.0/16
