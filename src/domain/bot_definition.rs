@@ -28,6 +28,12 @@ pub struct BotDefinition {
     pub model: ModelPolicy,
     #[serde(default)]
     pub budgets: Budgets,
+    /// How a pending call waits for a person; passed through as written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approvals: Option<serde_json::Value>,
+    /// The bots this bot may delegate to; passed through as written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delegation: Option<serde_json::Value>,
 }
 
 /// The few fields of the register form.
@@ -93,6 +99,8 @@ impl BotDefinition {
                 max_context_tokens: 0,
             },
             budgets: Budgets::default(),
+            approvals: None,
+            delegation: None,
         };
         definition.validate()?;
         Ok(definition)
@@ -119,6 +127,19 @@ impl BotDefinition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keeps_the_approvals_and_the_delegation_of_a_definition() {
+        let text = r#"{"tenant": "default", "name": "dispatcher", "owner": "ops", "mission": "Send the vehicles.",
+          "triggers": [{"type": "manual"}, {"type": "delegation"}],
+          "approvals": {"ttl": "20m", "onExpire": "deny"},
+          "delegation": {"to": ["pilot-quad-0"], "maxDepth": 1}}"#;
+        let definition = BotDefinition::from_json(text).unwrap();
+        assert_eq!(definition.triggers[1].trigger_type, super::super::TriggerType::Delegation);
+        assert_eq!(definition.delegation.as_ref().unwrap()["to"][0], "pilot-quad-0");
+        let out = serde_json::to_value(&definition).unwrap();
+        assert_eq!(out["approvals"]["ttl"], "20m");
+    }
 
     const EXAMPLE: &str = r#"{
       "id": "bot-act-with-approval", "tenant": "default", "name": "bot-act-with-approval", "owner": "operator",
