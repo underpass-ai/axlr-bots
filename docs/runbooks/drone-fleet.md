@@ -33,9 +33,9 @@ The safety limits live in the companion computer, not in the model: a refused ro
 - The images in a registry the cluster pulls from. On wrx80 they were built with podman and pushed to the lab registry:
 
 ```bash
-podman build -t $R/fleet-app:0.4.0 examples/drone-fleet                                         # vehicle_pilot.py, fleet_base.py, the map, the 3D view, the search
+podman build -t $R/fleet-app:0.5.1 examples/drone-fleet                                         # vehicle_pilot.py, fleet_base.py, the map, the 3D view, the search
 podman build -t $R/fleet-sitl:4.7.2 examples/drone-fleet/sitl                                    # SITL (checked sha256) + mavlink-router
-podman build -f examples/drone-fleet/control-plane.Dockerfile -t $R/control-plane:0.1.0-fleet .  # axlr-bots
+podman build -f examples/drone-fleet/control-plane.Dockerfile -t $R/control-plane:0.2.0-fleet .  # axlr-bots
 ```
 
 - The node image of [the sidecar runbook](sidecar.md) and a model provider key.
@@ -123,8 +123,8 @@ Overpass ─▶ fetch_osm.py ─▶ prepare.py (shapely) ─▶ build_scene.py (
 To rebuild it, follow the [port3d README](../../examples/drone-fleet/port3d/README.md), then the fleet-app image and the digest in `values.yaml`:
 
 ```bash
-podman build -t $R/fleet-app:0.4.0 examples/drone-fleet
-podman push --digestfile /tmp/digest $R/fleet-app:0.4.0
+podman build -t $R/fleet-app:0.5.1 examples/drone-fleet
+podman push --digestfile /tmp/digest $R/fleet-app:0.5.1
 helm upgrade fleet examples/helm/drone-fleet -n port-fleet -f values-in-use.yaml   # helm get values fleet -n port-fleet -o yaml
 ```
 
@@ -248,7 +248,7 @@ The same call, recorded with OBS. Every takeoff waited on the phone page (`/m`);
 | photos | 418 analysed |
 | cost | $0.048 of bot models (dispatcher, pilots, logistics, reporter) and $0.081 of vision: $0.129 |
 | report | `incident-report.md` through `axlr_deliver`, 45 seconds after the end |
-| AIS | off: no aisstream.io key yet, so the pages said "real imagery" only |
+| AIS | off during this run (no aisstream.io key yet), so the pages said "real imagery" only. With the key added afterwards (Secret `fleet-ais`), the base had 93 ships around Maasvlakte within minutes, names first and sizes after the next static reports (every ~6 minutes) |
 
 ![The search at night in 3D: the plane's track across the drift, the quads' squares, the containers and their drift arrows](../assets/drone-fleet/sar-3d-night.jpg)
 
