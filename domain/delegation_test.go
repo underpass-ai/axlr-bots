@@ -33,6 +33,42 @@ func TestDelegationValidatesItsTargetsDepthAndShare(t *testing.T) {
 	}
 }
 
+func TestDelegationValidatesItsSplitAndMaxChildren(t *testing.T) {
+	var none Delegation
+	if none.Split() != SplitGeometric || none.MaxChildren() != 0 {
+		t.Errorf("zero value: %s %d", none.Split(), none.MaxChildren())
+	}
+	even, err := NewDelegation(DelegationSnapshot{To: []string{"bot-b"}, Split: "even", MaxChildren: 4})
+	if err != nil || even.Split() != SplitEven || even.MaxChildren() != 4 {
+		t.Fatalf("even = %+v %v", even, err)
+	}
+	if s := even.Snapshot(); s == nil || s.Split != "even" || s.MaxChildren != 4 {
+		t.Errorf("snapshot = %+v", s)
+	}
+	geometric, err := NewDelegation(DelegationSnapshot{To: []string{"bot-b"}, Split: "geometric", MaxChildren: 32})
+	if err != nil || geometric.Split() != SplitGeometric || geometric.MaxChildren() != 32 || geometric.Snapshot().Split != "geometric" {
+		t.Fatalf("geometric = %+v %v", geometric, err)
+	}
+	// A split named alone is kept, so the definition reads back as given.
+	if alone, _ := NewDelegation(DelegationSnapshot{Split: "geometric"}); alone.Snapshot() == nil || alone.Snapshot().Split != "geometric" {
+		t.Errorf("split alone = %+v", alone.Snapshot())
+	}
+	if limit, _ := NewDelegation(DelegationSnapshot{MaxChildren: 2}); limit.Snapshot() == nil || limit.Snapshot().MaxChildren != 2 || limit.Split() != SplitGeometric {
+		t.Errorf("maxChildren alone = %+v", limit.Snapshot())
+	}
+	for _, bad := range []DelegationSnapshot{
+		{Split: "fair", MaxChildren: 4}, {Split: "Even", MaxChildren: 4}, {Split: "even"}, {Split: "even", MaxChildren: 33},
+		{MaxChildren: -1}, {MaxChildren: 33},
+	} {
+		if _, err := NewDelegation(bad); err == nil {
+			t.Errorf("accepted %+v", bad)
+		}
+	}
+	if split, err := ParseDelegationSplit(""); err != nil || split != SplitGeometric || split.String() != "geometric" {
+		t.Errorf("empty split = %q %v", split, err)
+	}
+}
+
 func TestBotDelegationDepthAndSnapshot(t *testing.T) {
 	bot := sampleBot(t)
 	if bot.DelegationDepth() != 2 {
@@ -50,10 +86,21 @@ func TestBotDelegationDepthAndSnapshot(t *testing.T) {
 	if err != nil || !restored.Delegation().Allows("bot-b") || restored.DelegationDepth() != 4 {
 		t.Errorf("restored: %v %+v", err, restored.Snapshot().Delegation)
 	}
+	even, _ := NewDelegation(DelegationSnapshot{To: []string{"bot-b"}, Split: "even", MaxChildren: 4})
+	if err := bot.SetDelegation(even); err != nil {
+		t.Fatal(err)
+	}
+	if restored, err := RestoreBot(bot.Snapshot()); err != nil || restored.Delegation().Split() != SplitEven || restored.Delegation().MaxChildren() != 4 {
+		t.Errorf("restored even: %v %+v", err, restored.Snapshot().Delegation)
+	}
 	broken := bot.Snapshot()
 	broken.Delegation = &DelegationSnapshot{MaxDepth: 12}
 	if _, err := RestoreBot(broken); err == nil {
 		t.Error("restored a bad delegation")
+	}
+	broken.Delegation = &DelegationSnapshot{To: []string{"bot-b"}, Split: "even"}
+	if _, err := RestoreBot(broken); err == nil {
+		t.Error("restored an even split without maxChildren")
 	}
 	broken.Delegation = &DelegationSnapshot{To: []string{bot.ID().String()}}
 	if _, err := RestoreBot(broken); err == nil {

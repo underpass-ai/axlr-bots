@@ -296,6 +296,137 @@ func TestDelegationBudgetShareIsEnforced(t *testing.T) {
 	}
 }
 
+// askFour asks bot-b four tasks from one execution of bot-a, whose
+// budgets are a pool of 20 model calls, and returns the grants.
+func askFour(t *testing.T, delegation *domain.DelegationSnapshot) (*harness, Assignment, []DelegationAnswer) {
+	t.Helper()
+	h := newHarness()
+	onlineNode(t, h, "web-1")
+	a := delegationBot(t, h, "bot-a", delegation, BudgetsDefinition{MaxModelCallsPerTask: 20, TaskTimeoutSeconds: 600})
+	delegationBot(t, h, "bot-b", nil, BudgetsDefinition{MaxModelCallsPerTask: 10, MaxToolCallsPerTask: 6, TaskTimeoutSeconds: 900})
+	parent := runOnNode(t, h, a, "web-1", "ask-1")
+	var answers []DelegationAnswer
+	for _, objective := range []string{"One", "Two", "Three", "Four"} {
+		answers = append(answers, delegate(t, h, "web-1", parent.ExecutionID, "bot-b", objective))
+	}
+	return h, parent, answers
+}
+
+func modelCallsOf(answers []DelegationAnswer) []int {
+	grants := make([]int, len(answers))
+	for i, answer := range answers {
+		grants[i] = answer.Grant.MaxModelCalls
+	}
+	return grants
+}
+
+func TestTheGeometricSplitGivesLaterChildrenLess(t *testing.T) {
+	// The issue's table: 0.5 of 20 model calls, children of 10.
+	_, _, answers := askFour(t, &domain.DelegationSnapshot{To: []string{"bot-b"}, BudgetShare: 0.5})
+	if got := modelCallsOf(answers); got[0] != 10 || got[1] != 5 || got[2] != 2 || got[3] != 1 {
+		t.Errorf("geometric grants = %v, want [10 5 2 1]", got)
+	}
+}
+
+func TestTheEvenSplitGivesEveryChildTheSameGrant(t *testing.T) {
+	ctx := context.Background()
+	h, parent, answers := askFour(t, &domain.DelegationSnapshot{To: []string{"bot-b"}, BudgetShare: 0.5, Split: "even", MaxChildren: 4})
+	// floor(0.5 × 20 / 4) = 2 for each, under bot-b's own 10. bot-a has
+	// no tool-call limit, so each has bot-b's own 6. The time is still
+	// the share of what is left: half of 600 s, under bot-b's 900 s.
+	for i, answer := range answers {
+		if answer.Refused != nil || !answer.Created || answer.Grant.MaxModelCalls != 2 || answer.Grant.MaxToolCalls != 6 || !answer.Grant.Deadline.Equal(t0.Add(300*time.Second)) {
+			t.Errorf("child %d = %+v", i+1, answer)
+		}
+	}
+	parentTask, _ := h.tasks.Get(ctx, parent.Run.TaskID)
+	if model, _ := parentTask.Granted(); model != 8 || len(parentTask.Children()) != 4 {
+		t.Errorf("granted %d to %v", model, parentTask.Children())
+	}
+
+	// A fifth ask in the same task is refused, and says why.
+	fifth := delegate(t, h, "web-1", parent.ExecutionID, "bot-b", "Five")
+	if fifth.Refused == nil || fifth.Refused.Reason != domain.RefusedBudgetExhausted || !strings.Contains(fifth.Refused.Message, "maxChildren reached") {
+		t.Errorf("fifth = %+v", fifth)
+	}
+	if event, ok := lastEvent(h, domain.EventDelegationRefused); !ok || event.Payload["reason"] != domain.RefusedBudgetExhausted || !strings.Contains(event.Payload["message"].(string), "maxChildren reached") {
+		t.Errorf("refused event = %+v", event)
+	}
+
+	// Asking the fourth again, at the cap, is the same child: no second
+	// grant and no refusal.
+	again := delegate(t, h, "web-1", parent.ExecutionID, "bot-b", "Four")
+	if again.Refused != nil || again.Created || again.TaskID != answers[3].TaskID || again.Grant.MaxModelCalls != 2 {
+		t.Errorf("again = %+v", again)
+	}
+	parentTask, _ = h.tasks.Get(ctx, parent.Run.TaskID)
+	if model, _ := parentTask.Granted(); model != 8 || len(parentTask.Children()) != 4 {
+		t.Errorf("granted twice: %d to %v", model, parentTask.Children())
+	}
+}
+
+func TestTheEvenSplitIsCappedByTheChildsOwnBudgetAndRefusesUnderOne(t *testing.T) {
+	h := newHarness()
+	onlineNode(t, h, "web-1")
+	// The port fleet's dispatcher: 0.5 of 80 model calls and 48 tool
+	// calls over 4 pilots of 10 and 6 is exactly each pilot's own.
+	a := delegationBot(t, h, "bot-a", &domain.DelegationSnapshot{To: []string{"bot-b"}, BudgetShare: 0.5, Split: "even", MaxChildren: 4}, BudgetsDefinition{MaxModelCallsPerTask: 80, MaxToolCallsPerTask: 48, TaskTimeoutSeconds: 3600})
+	delegationBot(t, h, "bot-b", nil, BudgetsDefinition{MaxModelCallsPerTask: 10, MaxToolCallsPerTask: 6, TaskTimeoutSeconds: 1500})
+	parent := runOnNode(t, h, a, "web-1", "ask-1")
+	for _, objective := range []string{"Plane", "Quad 0", "Quad 1", "Quad 2"} {
+		if answer := delegate(t, h, "web-1", parent.ExecutionID, "bot-b", objective); answer.Grant.MaxModelCalls != 10 || answer.Grant.MaxToolCalls != 6 || !answer.Grant.Deadline.Equal(t0.Add(1500*time.Second)) {
+			t.Errorf("%s = %+v", objective, answer)
+		}
+	}
+
+	// A larger pool still gives no child more than its own budget:
+	// floor(0.5 × 100 / 4) = 12, capped at 10 and 6.
+	big := newHarness()
+	onlineNode(t, big, "web-1")
+	rich := delegationBot(t, big, "bot-a", &domain.DelegationSnapshot{To: []string{"bot-b"}, Split: "even", MaxChildren: 4}, BudgetsDefinition{MaxModelCallsPerTask: 100, MaxToolCallsPerTask: 100, TaskTimeoutSeconds: 600})
+	delegationBot(t, big, "bot-b", nil, BudgetsDefinition{MaxModelCallsPerTask: 10, MaxToolCallsPerTask: 6})
+	if answer := delegate(t, big, "web-1", runOnNode(t, big, rich, "web-1", "ask-1").ExecutionID, "bot-b", "One"); answer.Grant.MaxModelCalls != 10 || answer.Grant.MaxToolCalls != 6 {
+		t.Errorf("capped = %+v", answer.Grant)
+	}
+
+	// With a pool of 3 model calls, 0.5 of them over 4 children is under
+	// one each: refused before any child. The same for 3 tool calls over 2.
+	for _, c := range []struct {
+		budgets  BudgetsDefinition
+		children int
+		message  string
+	}{
+		{BudgetsDefinition{MaxModelCallsPerTask: 3, TaskTimeoutSeconds: 600}, 4, "3 model calls, and 0.50 of them split among 4 children"},
+		{BudgetsDefinition{MaxModelCallsPerTask: 40, MaxToolCallsPerTask: 3, TaskTimeoutSeconds: 600}, 2, "3 tool calls, and 0.50 of them split among 2 children"},
+	} {
+		h := newHarness()
+		onlineNode(t, h, "web-1")
+		a := delegationBot(t, h, "bot-a", &domain.DelegationSnapshot{To: []string{"bot-b"}, Split: "even", MaxChildren: c.children}, c.budgets)
+		delegationBot(t, h, "bot-b", nil, BudgetsDefinition{})
+		parent := runOnNode(t, h, a, "web-1", "ask-1")
+		if answer := delegate(t, h, "web-1", parent.ExecutionID, "bot-b", "One"); answer.Refused == nil || answer.Refused.Reason != domain.RefusedBudgetExhausted || !strings.Contains(answer.Refused.Message, c.message) {
+			t.Errorf("under one = %+v", answer)
+		}
+	}
+}
+
+func TestMaxChildrenAlsoCapsTheGeometricSplit(t *testing.T) {
+	h := newHarness()
+	onlineNode(t, h, "web-1")
+	a := delegationBot(t, h, "bot-a", &domain.DelegationSnapshot{To: []string{"bot-b"}, MaxChildren: 2}, BudgetsDefinition{MaxModelCallsPerTask: 40, TaskTimeoutSeconds: 600})
+	delegationBot(t, h, "bot-b", nil, BudgetsDefinition{MaxModelCallsPerTask: 10})
+	parent := runOnNode(t, h, a, "web-1", "ask-1")
+	first := delegate(t, h, "web-1", parent.ExecutionID, "bot-b", "One")
+	second := delegate(t, h, "web-1", parent.ExecutionID, "bot-b", "Two")
+	third := delegate(t, h, "web-1", parent.ExecutionID, "bot-b", "Three")
+	if first.Grant.MaxModelCalls != 10 || second.Grant.MaxModelCalls != 10 {
+		t.Errorf("grants = %+v %+v", first.Grant, second.Grant)
+	}
+	if third.Refused == nil || third.Refused.Reason != domain.RefusedBudgetExhausted || !strings.Contains(third.Refused.Message, "maxChildren reached") {
+		t.Errorf("third = %+v", third)
+	}
+}
+
 func TestDelegationRespectsTheParentsDeadline(t *testing.T) {
 	h := newHarness()
 	ctx := context.Background()
@@ -435,6 +566,13 @@ func TestADelegatingBotIsDefinedAndPatched(t *testing.T) {
 	}
 	if _, err := NewUpdateBot(h.deps).Execute(ctx, "bot-a", BotPatch{Delegation: &domain.DelegationSnapshot{BudgetShare: 2}}); err == nil {
 		t.Error("a share of 2 was taken")
+	}
+	even, err := NewUpdateBot(h.deps).Execute(ctx, "bot-a", BotPatch{Delegation: &domain.DelegationSnapshot{To: []string{"bot-b"}, Split: "even", MaxChildren: 4}})
+	if err != nil || even.Delegation().Split() != domain.SplitEven || even.Delegation().MaxChildren() != 4 {
+		t.Fatalf("even patch: %v %+v", err, even.Snapshot().Delegation)
+	}
+	if _, err := NewUpdateBot(h.deps).Execute(ctx, "bot-a", BotPatch{Delegation: &domain.DelegationSnapshot{To: []string{"bot-b"}, Split: "even"}}); err == nil {
+		t.Error("an even split without maxChildren was taken")
 	}
 }
 

@@ -55,7 +55,9 @@ Deny by default, on both sides:
 |---|---|
 | `delegation.to` | the bots this bot may ask, by id (at most 16, not itself); absent or empty: it may ask none and is not offered the tool |
 | `delegation.maxDepth` | how deep a chain through this bot may go, 1 to 8; absent: `budgets.maxDelegationDepth` when that is set, else 1 |
-| `delegation.budgetShare` | the share of what is left of this bot's task that a child may take, in (0, 1]; absent: 0.5 |
+| `delegation.budgetShare` | the share of this bot's task that a child may take, in (0, 1]; absent: 0.5 |
+| `delegation.split` | how that share is taken: `geometric`, of what the task has not granted yet, or `even`, of the whole pool divided by `maxChildren`; absent: `geometric` (§3) |
+| `delegation.maxChildren` | the most children one task may ask for, 1 to 32; needed by `even`; with `geometric` it only caps the count |
 | trigger `delegation` | the target's consent: a bot takes delegated tasks only when it declares this trigger, as it takes webhooks only when it declares one |
 
 A child must belong to the delegator's tenant and be Enabled.
@@ -71,15 +73,32 @@ Each task created by a delegation records its **lineage**: the parent task, the 
 | 3 | *C* exists, in *B*'s tenant, Enabled, with a `delegation` trigger | `target_unavailable` |
 | 4 | `depth(T) + 1 ≤ limit`, where `limit = min(T's chain limit, B's maxDepth)` and a root task's chain limit is its own bot's `maxDepth` | `depth_exceeded` |
 | 5 | *C* is not *B* and not on *T*'s chain (the visited set of the trace) | `cycle` |
-| 6 | the grant below leaves at least one model call, one tool call and 30 seconds wherever *T* is limited | `budget_exhausted` |
+| 6 | *T* has asked fewer children than `maxChildren`, where set, and the grant below leaves at least one model call, one tool call and 30 seconds wherever *T* is limited | `budget_exhausted` ("maxChildren reached" when it is the count) |
 
-**The grant.** *T*'s pool is its own grant (a root task's is its bot's budgets); for each limit *T* has, the child gets `floor(share × (pool − already granted to T's other children))`, never more than *C*'s own budget; where *T* has no limit, the child has *C*'s. The child's deadline is `now + share × (T's deadline − now)`, never later than *C*'s own timeout allows, and *T*'s deadline is when its execution started plus its timeout, or its own grant's deadline when earlier. So a child always ends before its parent, the children of one task together get at most that task's pool, and every hop shrinks what is left: a loop that escaped the depth and the visited set would still run out of budget. The parent also spends its own pool, so a whole tree is bounded by the root's budgets times its depth plus one, not by the root's budgets alone. The control plane does not know how much the parent has spent so far (the node reports usage at the end, and that number is the node's), so "what is left" is what the control plane granted minus what it has already handed down, never a figure from the node.
+**The grant.** *T*'s pool is its own grant (a root task's is its bot's budgets). For each limit *T* has, the child gets a share of the pool by *B*'s `split`, never more than *C*'s own budget; where *T* has no limit, the child has *C*'s.
+
+- `geometric` (the default): `floor(share × (pool − already granted to T's other children))`. The first child gets the most and each later one less.
+- `even`: `floor(share × pool / maxChildren)`. Every child gets the same, and the ask after `maxChildren` children is refused `budget_exhausted` with the message "maxChildren reached".
+
+With `budgetShare: 0.5`, a pool of 20 model calls and children whose own budget is 10:
+
+| Child | `geometric`: pool left → grant | `even`, `maxChildren: 4` |
+|---|---|---|
+| 1st | 20 → min(10, 10) = 10 | min(10, floor(0.5 × 20 / 4)) = 2 |
+| 2nd | 10 → 5 | 2 |
+| 3rd | 5 → 2 | 2 |
+| 4th | 3 → 1 | 2 |
+| 5th | 2 → 1 | refused: maxChildren reached |
+
+Order decides the geometric grants, and the parent does not choose that order on purpose; the even grants depend only on the definition. To give *N* children their whole budget *c*, a pool needs `(N − 1 + 1/share) × c` under `geometric` and `N × c / share` under `even`: the same at `budgetShare: 1`, more for `even` below it. The port fleet's dispatcher (`budgetShare: 0.5`, 4 pilots of 10 model calls and 6 tool calls) gets 10 and 6 for every pilot from a pool of 80 and 48 under `even`.
+
+The child's deadline is `now + share × (T's deadline − now)` under either split, never later than *C*'s own timeout allows: children run in parallel, so they share the parent's deadline rather than split it. *T*'s deadline is when its execution started plus its timeout, or its own grant's deadline when earlier. *T*'s pool, its count of children and what it has granted belong to the task, not to one execution, so an execution that goes on after a person's decision asks within the same limits. So a child always ends before its parent, the children of one task together get at most that task's pool (under `even`, `maxChildren × floor(share × pool / maxChildren) ≤ share × pool`), and every hop shrinks what is left: a loop that escaped the depth and the visited set would still run out of budget. The parent also spends its own pool, so a whole tree is bounded by the root's budgets times its depth plus one, not by the root's budgets alone. The control plane does not know how much the parent has spent so far (the node reports usage at the end, and that number is the node's), so "what is left" is what the control plane granted minus what it has already handed down, never a figure from the node.
 
 The child's executions run with its grant: the requests and tool calls go to AXLR in `--budget`, and its timeout is the time left to its deadline when it is assigned.
 
 A cycle A→B→A is cut twice: with A's `maxDepth: 1`, the second hop is at depth 2 (`depth_exceeded`); with a deeper limit, A is on the chain (`cycle`). Every refusal is a `bot.delegation.refused` event and an audit entry, and the model reads the reason as the tool's error result; the parent's task goes on.
 
-**Idempotency.** The child's key is `delegation:<parent task>:<hash of bot and objective>`: the same ask twice from one task (a retry, or a second call to wait for it) returns the same child, and is granted once.
+**Idempotency.** The child's key is `delegation:<parent task>:<hash of bot and objective>`: the same ask twice from one task (a retry, or a second call to wait for it) returns the same child, is granted once and counts once toward `maxChildren`, even when the task is at its `maxChildren`.
 
 ### 4. How the result returns
 

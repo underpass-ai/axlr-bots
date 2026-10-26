@@ -153,20 +153,26 @@ func (uc DelegateTask) targetOf(ctx context.Context, d delegation) (domain.Bot, 
 	return target, "", nil
 }
 
-// grant shares what the parent has left with the child, or says why
-// there is not enough.
+// grant shares the parent's pool with the child, or says why there is
+// not enough: under the geometric split the share of what the parent
+// has not granted yet, under the even split the share of the whole pool
+// over the most children the parent may ask for.
 func (uc DelegateTask) grant(d delegation, target domain.Bot, now time.Time) (domain.DelegationGrant, string) {
-	share := d.bot.Delegation().BudgetShare()
+	policy := d.bot.Delegation()
+	share := policy.BudgetShare()
+	if limit, asked := policy.MaxChildren(), len(d.task.Children()); limit > 0 && asked >= limit {
+		return domain.DelegationGrant{}, fmt.Sprintf("maxChildren reached: this task has asked %d bots, the most bot %s may ask in one task; wait for their answers instead", asked, d.bot.ID())
+	}
 	pool := taskBudgets(d.bot, d.task)
 	grantedModel, grantedTools := d.task.Granted()
 	own := target.Budgets()
-	model, ok := shareOf(pool.MaxModelCallsPerTask(), grantedModel, share, own.MaxModelCallsPerTask())
+	model, ok := limitOf(policy, pool.MaxModelCallsPerTask(), grantedModel, own.MaxModelCallsPerTask())
 	if !ok {
-		return domain.DelegationGrant{}, fmt.Sprintf("this task has %d of its %d model calls left to share, and %.2f of them is under one", pool.MaxModelCallsPerTask()-grantedModel, pool.MaxModelCallsPerTask(), share)
+		return domain.DelegationGrant{}, underOne(policy, "model calls", pool.MaxModelCallsPerTask(), grantedModel)
 	}
-	tools, ok := shareOf(pool.MaxToolCallsPerTask(), grantedTools, share, own.MaxToolCallsPerTask())
+	tools, ok := limitOf(policy, pool.MaxToolCallsPerTask(), grantedTools, own.MaxToolCallsPerTask())
 	if !ok {
-		return domain.DelegationGrant{}, fmt.Sprintf("this task has %d of its %d tool calls left to share, and %.2f of them is under one", pool.MaxToolCallsPerTask()-grantedTools, pool.MaxToolCallsPerTask(), share)
+		return domain.DelegationGrant{}, underOne(policy, "tool calls", pool.MaxToolCallsPerTask(), grantedTools)
 	}
 	left := executionDeadline(d.bot, d.task, d.execution).Sub(now)
 	span := time.Duration(share * float64(left))
