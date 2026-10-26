@@ -5,8 +5,8 @@
 
 Reads run.json, track.csv and SITL's newest dataflash log (logs/*.BIN) in the
 directory and writes run.png: the whole route, the stretch round the box with
-where BendyRuler was steering (OABR, Act 1), and the speed against the
-distance to the box.
+where BendyRuler was steering (OABR, Act 1), the speed along the box's leg, and
+the avoidance parameters the log says the rover had.
 """
 
 import csv
@@ -33,15 +33,21 @@ def enu(lat, lon):
     return east, north
 
 
-def oa_points(path):
-    """Where the rover was while BendyRuler steered: POS samples during OABR Act 1."""
+SHOWN = ("PRX1_TYPE", "AVOID_MARGIN", "OA_TYPE", "OA_BR_LOOKAHEAD", "OA_MARGIN_MAX")
+
+
+def read_log(path):
+    """Where the rover was while BendyRuler steered (POS samples during OABR Act 1), and the parameters."""
     log = mavutil.mavlink_connection(path)
-    active, out = False, []
+    active, out, params = False, [], {}
     while True:
-        m = log.recv_match(type=["OABR", "POS"])
+        m = log.recv_match(type=["OABR", "POS", "PARM"])
         if m is None:
-            return out
-        if m.get_type() == "OABR":
+            return out, params
+        if m.get_type() == "PARM":
+            if m.Name in SHOWN:
+                params[m.Name] = m.Value
+        elif m.get_type() == "OABR":
             active = bool(m.Act)
         elif active:
             out.append(enu(m.Lat, m.Lng))
@@ -56,7 +62,7 @@ def main():
     tx = [float(r["east_m"]) for r in rows]
     ty = [float(r["north_m"]) for r in rows]
     logs = sorted(glob.glob(os.path.join(d, "logs", "*.BIN")))
-    oa = oa_points(logs[-1]) if logs else []
+    oa, params = read_log(logs[-1]) if logs else ([], {})
     bx, by = s["box_enu"]
     a, b = route[s["leg"]], route[s["leg"] + 1]
     h = math.atan2(b[1] - a[1], b[0] - a[0])
@@ -102,8 +108,8 @@ def main():
     speed.set_ylabel("speed (m/s)")
     speed.grid(color="#e4e1dc", lw=0.6)
 
-    fig.suptitle("ArduRover's own obstacle avoidance in gz sim, Maasvlakte 2: PRX1_TYPE 4, AVOID_MARGIN 2, "
-                 "OA_TYPE 1 (BendyRuler), OA_BR_LOOKAHEAD 15, OA_MARGIN_MAX 2.5", fontsize=11)
+    fig.suptitle("ArduRover's own obstacle avoidance in gz sim, Maasvlakte 2: "
+                 + ", ".join(f"{k} {params[k]:g}" for k in SHOWN if k in params), fontsize=11)
     fig.tight_layout()
     fig.savefig(os.path.join(d, "run.png"))
     print(os.path.join(d, "run.png"))
