@@ -10,6 +10,9 @@ pub enum AutonomyLevel {
     Propose,
     ActWithApproval,
     ActWithinPolicy,
+    /// A value this panel does not know: the control plane is newer. Read,
+    /// shown as unknown, never refused.
+    Unknown,
 }
 
 impl AutonomyLevel {
@@ -27,6 +30,7 @@ impl AutonomyLevel {
             Self::Propose => "propose",
             Self::ActWithApproval => "act-with-approval",
             Self::ActWithinPolicy => "act-within-policy",
+            Self::Unknown => "unknown",
         }
     }
 
@@ -37,6 +41,7 @@ impl AutonomyLevel {
             Self::Propose => "Propose",
             Self::ActWithApproval => "Ask first",
             Self::ActWithinPolicy => "Act",
+            Self::Unknown => "Unknown",
         }
     }
 
@@ -57,13 +62,10 @@ impl AutonomyLevel {
 impl TryFrom<String> for AutonomyLevel {
     type Error = super::DomainError;
 
+    /// The control plane may name a level this panel does not know yet.
+    /// A bot definition refuses it when it is checked.
     fn try_from(raw: String) -> Result<Self, Self::Error> {
-        Self::parse(&raw).ok_or_else(|| {
-            super::DomainError::new(
-                "autonomy level",
-                "must be observe, propose, act-with-approval or act-within-policy",
-            )
-        })
+        Ok(Self::parse(&raw).unwrap_or(Self::Unknown))
     }
 }
 
@@ -90,7 +92,10 @@ mod tests {
             assert_eq!(serde_json::to_string(&level).unwrap(), format!("\"{}\"", level.name()));
         }
         assert_eq!(AutonomyLevel::parse(""), Some(AutonomyLevel::Observe));
-        assert!(serde_json::from_str::<AutonomyLevel>("\"yolo\"").is_err());
+        assert_eq!(
+            serde_json::from_str::<AutonomyLevel>("\"yolo\"").unwrap(),
+            AutonomyLevel::Unknown
+        );
         assert!(AutonomyLevel::ActWithApproval.writes());
         assert!(!AutonomyLevel::Propose.writes());
         assert_eq!(AutonomyLevel::ActWithApproval.to_string(), "Ask first");

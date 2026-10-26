@@ -8,6 +8,10 @@ pub enum ExecutionOutcome {
     Failed,
     DecisionRequired,
     Cancelled,
+    /// A value this panel does not know: the control plane is newer. Read,
+    /// shown as unknown, never refused.
+    #[serde(other)]
+    Unknown,
 }
 
 impl ExecutionOutcome {
@@ -18,6 +22,7 @@ impl ExecutionOutcome {
             Self::Failed => "Failed",
             Self::DecisionRequired => "DecisionRequired",
             Self::Cancelled => "Cancelled",
+            Self::Unknown => "Unknown",
         }
     }
 

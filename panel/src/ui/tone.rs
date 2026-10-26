@@ -53,7 +53,7 @@ impl Tone {
     pub fn of_node(status: NodeStatus) -> Self {
         match status {
             NodeStatus::Online => Self::Good,
-            NodeStatus::Registered => Self::Idle,
+            NodeStatus::Registered | NodeStatus::Unknown => Self::Idle,
             NodeStatus::Offline | NodeStatus::Revoked => Self::Bad,
         }
     }
@@ -62,7 +62,7 @@ impl Tone {
         match status {
             BotStatus::Enabled => Self::Good,
             BotStatus::Paused => Self::Wait,
-            BotStatus::Draft | BotStatus::Registered => Self::Idle,
+            BotStatus::Draft | BotStatus::Registered | BotStatus::Unknown => Self::Idle,
         }
     }
 
@@ -73,7 +73,7 @@ impl Tone {
             TaskStatus::WaitingApproval => Self::Wait,
             TaskStatus::Failed => Self::Bad,
             TaskStatus::Expired => Self::Late,
-            TaskStatus::Pending | TaskStatus::Cancelled => Self::Idle,
+            TaskStatus::Pending | TaskStatus::Cancelled | TaskStatus::Unknown => Self::Idle,
         }
     }
 
@@ -83,7 +83,7 @@ impl Tone {
             ExecutionOutcome::Running => Self::Busy,
             ExecutionOutcome::DecisionRequired => Self::Wait,
             ExecutionOutcome::Failed => Self::Bad,
-            ExecutionOutcome::Cancelled => Self::Idle,
+            ExecutionOutcome::Cancelled | ExecutionOutcome::Unknown => Self::Idle,
         }
     }
 
