@@ -50,6 +50,22 @@ func TestAnOperatorMessageReachesTheRunningExecution(t *testing.T) {
 	if err != nil || len(executions) != 1 || executions[0].Result.Answer != "Heard: check row F too" {
 		t.Fatalf("%+v %v\n%s", executions, err, f.logs.String())
 	}
+	events, err := f.client.ListTaskEvents(ctx, task, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	said := 0
+	for _, event := range events {
+		if event.Type == "bot.task.said" {
+			said++
+			if event.Payload["text"] != "Heard: check row F too" || event.Payload["inReplyTo"] != "check row F too" || event.ExecutionID.String() != sent.ExecutionID.String() {
+				t.Fatalf("%+v", event)
+			}
+		}
+	}
+	if said != 1 {
+		t.Fatalf("said %d times: %+v", said, events)
+	}
 	args, _ := os.ReadFile(argsFile)
 	if !strings.Contains(string(args), "--steer-file\n"+filepath.Join(f.nodeDir, "steer")) {
 		t.Fatalf("args = %s", args)

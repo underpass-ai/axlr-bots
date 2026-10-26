@@ -24,6 +24,9 @@ type NodeTransport interface {
 	// ExecutionMessages reads the operator's messages for an execution
 	// the node runs, oldest first, after the one named by after.
 	ExecutionMessages(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, after string) ([]RelayedMessage, error)
+	// Said hands over what the run said back to an operator's message,
+	// before the run ends.
+	Said(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, reply SaidReply) error
 	// UploadArtifact hands over the bytes of an artifact the execution
 	// delivered, before the report; the control plane keeps them only
 	// when they match the artifact's size and SHA-256.

@@ -220,6 +220,7 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 		request := *assignment.Run
 		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events)
 		request.DelegationSocket = socket
+		request.OnSaid = a.say(runCtx, id, assignment.ExecutionID)
 		report, err = a.Executor.Execute(runCtx, request)
 		closeSocket()
 	case assignment.Decide != nil:
@@ -227,6 +228,7 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 		request := *assignment.Decide
 		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events)
 		request.DelegationSocket = socket
+		request.OnSaid = a.say(runCtx, id, assignment.ExecutionID)
 		report, err = a.Executor.Decide(runCtx, request)
 		closeSocket()
 	default:
@@ -299,6 +301,19 @@ func (a Agent) renew(ctx context.Context, id domain.NodeID, execution domain.Exe
 					return
 				}
 			}
+		}
+	}
+}
+
+// say hands what the run says back to an operator's message to the
+// control plane as the run says it; one that does not go is logged, and
+// the words still end in the run's answer.
+func (a Agent) say(ctx context.Context, id domain.NodeID, execution domain.ExecutionID) func(application.SaidReply) {
+	return func(reply application.SaidReply) {
+		sayCtx, cancel := context.WithTimeout(ctx, a.Options.uploadTimeout())
+		defer cancel()
+		if err := a.Transport.Said(sayCtx, id, execution, reply); err != nil {
+			a.Options.log().Printf("node: execution %s: a reply to the operator not handed over: %v", execution, err)
 		}
 	}
 }

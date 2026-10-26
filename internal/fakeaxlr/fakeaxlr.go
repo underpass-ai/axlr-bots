@@ -97,6 +97,7 @@ i=0
 while [ $i -lt 100 ] && [ ! -s "$steer" ]; do sleep 0.05; i=$((i+1)); done
 heard=$(head -n 1 "$steer" 2>/dev/null | sed 's/^{"text":"\(.*\)"}$/\1/')
 printf '%s\n' "{\"type\":\"steered\",\"text\":\"$heard\"}"
+printf '%s\n' "{\"type\":\"text\",\"text\":\"Heard: $heard\"}"
 printf '%s\n' "{\"type\":\"result\",\"session\":\"sess-1\",\"result\":{\"schema\":\"axlr.execution-result/v1\",\"status\":\"completed\",\"session_id\":\"sess-1\",\"sessions\":[\"sess-1\"],\"answer\":\"Heard: $heard\",\"tool_calls\":[],\"usage\":{\"requests\":2},\"artifacts\":[]}}"
 exit 0`
 

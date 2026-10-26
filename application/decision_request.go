@@ -33,6 +33,8 @@ type DecisionRequest struct {
 	Delegation       *DelegationOffer
 	Events           *EventsOffer
 	DelegationSocket string
+	// OnSaid is as on an ExecutionRequest.
+	OnSaid func(SaidReply) `json:"-"`
 }
 
 // Validate checks the request names a session and a known decision.

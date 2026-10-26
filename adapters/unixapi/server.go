@@ -137,6 +137,7 @@ func (s *Server) nodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/delegations/{task}", s.authenticated(s.awaitDelegation))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/events", s.authenticated(s.emit))
 	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/messages", s.authenticated(s.executionMessages))
+	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/said", s.authenticated(s.said))
 }
 
 // ServeTLS serves the node protocol on the listener with the TLS
@@ -437,6 +438,21 @@ func (s *Server) executionMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusOK, nodeproto.MessagesMessage{Messages: messages}, nil)
+}
+
+// said is POST .../executions/{exec}/said: what the node's run said back
+// to the operator's message.
+func (s *Server) said(w http.ResponseWriter, r *http.Request) {
+	id, executionID, ok := nodeExecution(w, r)
+	if !ok {
+		return
+	}
+	var reply application.SaidReply
+	if !readJSON(w, r, &reply) {
+		return
+	}
+	err := application.NewRecordSaid(s.service.Dependencies()).Execute(r.Context(), id, executionID, reply)
+	respond(w, http.StatusOK, map[string]bool{"recorded": err == nil}, err)
 }
 
 func (s *Server) cancelTask(w http.ResponseWriter, r *http.Request) {

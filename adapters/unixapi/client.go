@@ -459,6 +459,12 @@ func (c *Client) ExecutionMessages(ctx context.Context, node domain.NodeID, exec
 	return message.Messages, nil
 }
 
+// Said hands over what the run said back to an operator's message.
+func (c *Client) Said(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, reply application.SaidReply) error {
+	path := "/v1/nodes/" + url.PathEscape(node.String()) + "/executions/" + url.PathEscape(execution.String()) + "/said"
+	return c.call(ctx, http.MethodPost, path, reply, nil)
+}
+
 // request builds a request to the control plane with the bearer token.
 func (c *Client) request(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {
 	request, err := http.NewRequestWithContext(ctx, method, c.base+path, body)
