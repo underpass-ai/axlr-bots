@@ -132,6 +132,34 @@ The image is the vehicles' too: an upgrade restarts every vehicle, and a task pa
 
 ![The same port rendered in Blender: the Prinses Amaliahaven, quay cranes, a ship alongside, the stacking blocks](../assets/drone-fleet/3d-blender-amaliahaven.jpg)
 
+## 7. The rovers' routes
+
+A rover's bot does not plan a route: it picks one its rover's companion computer has precomputed, by name, and the vehicle pilot drives it. The routes keep to the roads and yards, clear of sheds, container blocks, tanks, coal piles and water, with corners a car can drive; a supply run is the route through its stations in the order the deliveries name, turning round in a loop at each.
+
+![The rover routes over the drivable map of the port](../assets/drone-fleet/rover-routes.jpg)
+
+| Who | Routes | The bot sends |
+|---|---|---|
+| rover-0 (Euromax) | `euromax:euromax-yard`, `euromax:distripark` | `{name, route, speed_m_s, photo_every_m}` |
+| rover-1 (RWG) | `rwg:rwg-yard` | the same |
+| supply-0 (depot) | `supply:<station>>…`, every order of the four stations | `{name, deliveries, speed_m_s}`, as before |
+
+`examples/drone-fleet/port3d/routes.py` writes them into `app/routes.json` (in the image) from the port model and `values.yaml`; run it again when a station or a zone moves (the [port3d README](../../examples/drone-fleet/port3d/README.md) has the method). A zone beyond a rover's 1500 m geofence gets no route from that rover. Each route says the tightest corner it keeps and how much of it passes within the clearance of an obstacle.
+
+Live, on a first run: rover-1 drove `rwg:rwg-yard` (3.9 km) at most 0.1 m off the route, supply-0 drove `supply:apm>rwg` (3.5 km) at most 1.3 m off it and unloaded at both stations.
+
+![rover-1 on its route along the RWG quay](../assets/drone-fleet/3d-rover-route.jpg)
+
+The rover pilots' bot is `bots/rover-pilot.json`. On a running fleet, change their mission in place:
+
+```bash
+python3 -c 'import json; print(json.dumps({"mission": json.load(open("rover-pilot.json"))["mission"]}))' > /tmp/patch.json
+for v in rover-0 rover-1; do kubectl -n port-fleet exec -i fleet-cp-0 -c control-plane -- /busybox/sh -c \
+  "cat > /tmp/patch.json && axlr-bots --state /var/lib/axlr-bots bot update pilot-$v --file /tmp/patch.json" < /tmp/patch.json; done
+```
+
+The rovers avoid what the map knows. What it does not (a truck, a person) is for ArduPilot's own avoidance with the depth camera and the lidars, which needs a world the sensors can see: the Gazebo world in `port3d/gazebo` is the step for that.
+
 ## Limits
 
 - The vehicles are SITL: the sensors are SITL's backends (rangefinders, optical flow, camera trigger), RTK is SITL's fix 6 with no correction link, and the map's hardware labels describe what the vehicles stand for.
