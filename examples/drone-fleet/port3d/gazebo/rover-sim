@@ -1,0 +1,44 @@
+#!/bin/sh
+# Run the Maasvlakte 2 world in gz sim (server only, headless rendering), put
+# the port rover on a pad and start ArduRover 4.7.2 against it.
+#
+#   rover-sim [east north yaw_deg]     the pad in metres from the world's
+#                                      origin, yaw from east; default: the
+#                                      RWG rover pad, facing north
+#
+# Expects the gazebo directory at /gazebo, the chart's files at /chart and
+# writes gz.log, sitl.log and the chase camera's pictures to /out; SITL's
+# eeprom and logs/ go to the working directory.
+set -eu
+east="${1:--940.79}"
+north="${2:--374.03}"
+yaw="${3:-90}"
+export GZ_SIM_RESOURCE_PATH=/gazebo/models
+set +u
+. /opt/ros/jazzy/setup.sh
+set -u
+mkdir -p /out/chase
+
+gz sim -s -r --headless-rendering -v 3 /gazebo/worlds/maasvlakte2.sdf >/out/gz.log 2>&1 &
+gz_pid=$!
+trap 'kill $gz_pid $(jobs -p) 2>/dev/null' EXIT INT TERM
+
+i=0
+until gz service -l 2>/dev/null | grep -q '^/world/maasvlakte2/create$'; do
+  i=$((i + 1))
+  [ $i -lt 120 ] || { echo "rover-sim: gz sim did not start" >&2; exit 1; }
+  sleep 1
+done
+
+# The quays are at 5 m; the model's origin is at wheel-centre height.
+yaw_rad=$(python3 -c "import math; print(math.radians($yaw))")
+gz service -s /world/maasvlakte2/create --reqtype gz.msgs.EntityFactory --reptype gz.msgs.Boolean --timeout 10000 \
+  --req "sdf_filename: \"model://port_rover\" name: \"rover\" pose: {position: {x: $east, y: $north, z: 5.4} orientation: {z: $(python3 -c "import math; print(math.sin($yaw_rad / 2))"), w: $(python3 -c "import math; print(math.cos($yaw_rad / 2))")}}"
+echo "rover-sim: rover at $east E $north N, yaw $yaw"
+# gz renders a camera only while something listens to it; then it saves its pictures too.
+gz topic -e -t /world/maasvlakte2/model/rover/link/chassis/sensor/chase_camera/image >/dev/null &
+
+# JSON SITL places the vehicle at --home plus its gz position, so home is the
+# world's origin, not the pad.
+/opt/sitl/ardurover --model=JSON:127.0.0.1 --speedup=1 --instance=0 --home=51.944,3.999,0,0 \
+  --defaults=/opt/sitl/rover.parm,/chart/rover.parm,/gazebo/rover-gz.parm --wipe >/out/sitl.log 2>&1
