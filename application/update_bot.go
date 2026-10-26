@@ -153,6 +153,14 @@ func applyPatch(bot *domain.Bot, patch BotPatch) ([]string, error) {
 		bot.JoinTeams(teams)
 		changed = append(changed, "groups")
 	}
+	if patch.Events != nil {
+		events, err := domain.NewEventPolicy(*patch.Events)
+		if err != nil {
+			return nil, err
+		}
+		bot.SetEvents(events)
+		changed = append(changed, "events")
+	}
 	return changed, nil
 }
 

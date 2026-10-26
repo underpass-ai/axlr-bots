@@ -158,3 +158,22 @@ func TestEventLogListsATasksEvents(t *testing.T) {
 		t.Errorf("task-2 = %+v", other)
 	}
 }
+
+func TestEventLogListsATeamsEvents(t *testing.T) {
+	ctx := context.Background()
+	log := NewEventLog(t.TempDir())
+	for i, bot := range []domain.BotID{"plane", "stranger", "quad-1", "plane"} {
+		event, _ := domain.NewEvent(domain.EventID("evt-"+string(rune('a'+i))), domain.EventTaskSubmitted, "underpass", bot, "task-1", "trace", t0, nil)
+		_ = log.Publish(ctx, event)
+	}
+	events, err := log.ListBotsEvents(ctx, []domain.BotID{"plane", "quad-1"}, 10)
+	if err != nil || len(events) != 3 || events[0].ID != "evt-a" || events[1].ID != "evt-c" || events[2].ID != "evt-d" {
+		t.Errorf("team = %+v %v", events, err)
+	}
+	if newest, _ := log.ListBotsEvents(ctx, []domain.BotID{"plane", "quad-1"}, 2); len(newest) != 2 || newest[0].ID != "evt-c" {
+		t.Errorf("newest = %+v", newest)
+	}
+	if none, _ := log.ListBotsEvents(ctx, nil, 10); len(none) != 0 {
+		t.Errorf("nobody = %+v", none)
+	}
+}

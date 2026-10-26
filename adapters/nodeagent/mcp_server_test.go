@@ -15,7 +15,7 @@ func TestMCPServerAnswersTheProtocol(t *testing.T) {
 	started := make(chan struct{}, 1)
 	cancelled := make(chan struct{}, 1)
 	tool := delegateTool(application.DelegationOffer{Targets: []string{"bot-b"}, Depth: 0, MaxDepth: 1})
-	server, err := serveMCP(context.Background(), path, tool, "v1", func(ctx context.Context, raw json.RawMessage) mcpToolResult {
+	server, err := serveMCP(context.Background(), path, "v1", mcpHandler{tool: tool, call: func(ctx context.Context, raw json.RawMessage) mcpToolResult {
 		if strings.Contains(string(raw), "block") {
 			started <- struct{}{}
 			<-ctx.Done()
@@ -23,7 +23,7 @@ func TestMCPServerAnswersTheProtocol(t *testing.T) {
 			return textResult("late", true)
 		}
 		return textResult("echo "+string(raw), false)
-	})
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,26 +99,26 @@ func TestMCPServerAnswersTheProtocol(t *testing.T) {
 func TestMCPServerReplacesAStaleSocketAndRemovesItsOwn(t *testing.T) {
 	dir := shortDir(t)
 	path := dir + "/x.sock"
-	first, err := serveMCP(context.Background(), path, mcpTool{Name: "t"}, "v", func(context.Context, json.RawMessage) mcpToolResult { return textResult("", false) })
+	first, err := serveMCP(context.Background(), path, "v", mcpHandler{tool: mcpTool{Name: "t"}, call: func(context.Context, json.RawMessage) mcpToolResult { return textResult("", false) }})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := serveMCP(context.Background(), path, mcpTool{Name: "t"}, "v", func(context.Context, json.RawMessage) mcpToolResult { return textResult("", false) })
+	second, err := serveMCP(context.Background(), path, "v", mcpHandler{tool: mcpTool{Name: "t"}, call: func(context.Context, json.RawMessage) mcpToolResult { return textResult("", false) }})
 	if err != nil {
 		t.Fatalf("stale socket: %v", err)
 	}
 	second.Close()
 	first.Close()
-	if _, err := serveMCP(context.Background(), dir+"/missing/x.sock", mcpTool{}, "v", nil); err == nil {
+	if _, err := serveMCP(context.Background(), dir+"/missing/x.sock", "v"); err == nil {
 		t.Error("listened in a missing directory")
 	}
 	for _, bad := range []string{dir + "/../x.sock", dir + "/x.json"} {
-		if _, err := serveMCP(context.Background(), bad, mcpTool{}, "v", nil); err == nil {
+		if _, err := serveMCP(context.Background(), bad, "v"); err == nil {
 			t.Errorf("listened on %s", bad)
 		}
 	}
 	agent := Agent{Options: Options{SocketDir: dir}, slots: newSlots(1)}
-	if socket, closeSocket := agent.serveDelegation(context.Background(), "web-1", "exec-..", &application.DelegationOffer{Targets: []string{"b"}}); socket != "" {
+	if socket, closeSocket := agent.serveDelegation(context.Background(), "web-1", "exec-..", &application.DelegationOffer{Targets: []string{"b"}}, nil); socket != "" {
 		closeSocket()
 		t.Errorf("served %s", socket)
 	}

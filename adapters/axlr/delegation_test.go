@@ -121,7 +121,7 @@ func TestAnExecutionIDThatIsNotAFileNameWiresNoManifest(t *testing.T) {
 	e, _ := fake(t, "result-completed")
 	e.Relay = "/usr/local/bin/axlr-node"
 	policy := preparedPolicy{record: domain.PolicyRecord{Enforced: true}}
-	if err := e.wireDelegation("exec-..", &application.DelegationOffer{Targets: []string{"bot-b"}}, "/x.sock", &policy); err == nil || len(policy.plugin) != 0 {
+	if err := e.wireDelegation("exec-..", []string{application.DelegateToolName}, "/x.sock", &policy); err == nil || len(policy.plugin) != 0 {
 		t.Errorf("wired %v: %v", policy.plugin, err)
 	}
 }

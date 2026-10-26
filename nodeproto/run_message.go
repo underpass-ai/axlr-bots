@@ -16,4 +16,5 @@ type RunMessage struct {
 	TimeoutSeconds int                      `json:"timeoutSeconds"`
 	Budgets        *BudgetsMessage          `json:"budgets,omitempty"`
 	Delegation     *DelegationOfferMessage  `json:"delegation,omitempty"`
+	Events         *EventsOfferMessage      `json:"events,omitempty"`
 }

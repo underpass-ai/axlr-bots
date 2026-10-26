@@ -3,7 +3,8 @@ package domain
 // TaskLineage is where a delegated task came from: the task, execution
 // and bot that asked for it, its depth (1 for a child of a task nobody
 // delegated), the depth limit of its chain, the bots above it (the
-// chain, root first, its parent's bot last) and what it was granted.
+// chain, root first, its parent's bot last) and what it was granted. A
+// task a teammate's event made has the same lineage and names the event.
 type TaskLineage struct {
 	ParentTaskID      string          `json:"parentTaskId"`
 	ParentExecutionID string          `json:"parentExecutionId"`
@@ -12,6 +13,7 @@ type TaskLineage struct {
 	MaxDepth          int             `json:"maxDepth"`
 	Chain             []string        `json:"chain"`
 	Grant             DelegationGrant `json:"grant"`
+	EventID           string          `json:"eventId,omitempty"`
 }
 
 // Validate checks the lineage's invariants.

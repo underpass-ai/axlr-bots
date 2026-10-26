@@ -140,6 +140,14 @@ func (r *SerialRunner) RevokeNode(ctx context.Context, node domain.NodeID) (Revo
 	return NewRevokeNode(r.deps).Execute(ctx, node)
 }
 
+// Emit delivers an execution's event to its teammates, as EmitEvent
+// does, under the same lock as the assignments and the reports.
+func (r *SerialRunner) Emit(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, command EmitEventCommand) (EmitAnswer, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return NewEmitEvent(r.deps).Execute(ctx, node, execution, command)
+}
+
 // Delegate creates the task an execution asks another bot for, as
 // DelegateTask does, under the same lock as the assignments and the
 // reports: the parent task is never changed by two of them at once.

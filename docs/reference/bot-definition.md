@@ -27,11 +27,12 @@ A bot has no role baked in: its definition is what an operator writes, and the s
 | `level` | the autonomy level ([below](#autonomy-levels)); default `observe` |
 | `allowedTools` | AXLR's tool names (`local_read`, `local_search`, `local_list`, `local_write`, `local_exec`, …); nothing else may be called |
 | `toolRules` | narrows the allowed tools by their arguments ([below](#tool-rules)) |
-| `triggers` | how tasks reach the bot: `manual` (the default), `webhook`, `timer`, `delegation`; a bot that declares triggers takes only those ([below](#triggers)) |
+| `triggers` | how tasks reach the bot: `manual` (the default), `webhook`, `timer`, `delegation`, `event`; a bot that declares triggers takes only those ([below](#triggers)) |
 | `placement` | where the bot's tasks run: `{"nodes": ["web-1"]}`, `{"selector": {"zone": "eu"}}`, or nothing for any node but a dedicated one, such as a sidecar ([nodes](node-protocol.md)) |
 | `approvals` | how a pending call waits for a person: `ttl` (default `1h`), `onExpire` (`deny`, the default, or `cancel`) and the `notify` targets told when a task starts to wait ([below](#approvals)) |
 | `delegation` | the bots outside its teams this bot may ask to do a task, how deep a chain through it may go and the share of its task a child may take; absent: it asks only its teammates ([below](#delegation)) |
 | `groups` | the teams the bot belongs to, up to 8; the panel calls each a Team. Teammates know each other and may ask each other to do a task ([below](#teams)) |
+| `events` | what the bot may tell its teams: the names it may emit and how serious, and how many a minute; absent: any name up to `warning`, 6 a minute ([below](#events)) |
 | `model` | the model policy: `model` is passed to AXLR as `--model`; `routingPolicy`, `allowRemoteProviders` and `maxContextTokens` are validated and stored with the bot |
 | `budgets` | `taskTimeoutSeconds` bounds every execution (15 minutes when absent); `maxModelCallsPerTask` and `maxToolCallsPerTask` go to AXLR as the execution's budget when the build takes `--budget` ([runtime contract](../architecture/runtime-contract.md)); `maxDelegationDepth` is the depth limit of a [delegation](#delegation) that names none |
 
@@ -107,6 +108,17 @@ A team is a name bots share: `"groups": ["port"]`. Nothing else needs to be writ
 
 [`examples/bot-team-a.json`](../../examples/bot-team-a.json) asks [`examples/bot-team-b.json`](../../examples/bot-team-b.json), its teammate in `releases`, with no `delegation` block and no `delegation` trigger. Teams belong to a tenant: two tenants may use one name, and their bots are not teammates.
 
+## Events
+
+A bot in a team may tell it that something happened with the tool `axlr_bots_emit_event` (`name`, `message`, `severity`, `data`, `to`), which the node serves next to `axlr_bots_delegate`: a warning, a recall, a sighting. It does not wait. The control plane gives a task to each teammate that hears the event, and records it as `bot.event.emitted` on the bot's stream, with who got a task and who did not and why; the team's timeline (`GET /v1/groups/{name}/events`, `group events`) shows it.
+
+| By default | Change it with |
+|---|---|
+| a bot may emit any name, severity up to `warning`, 6 a minute | `"events": {"emit": [{"name": "recall", "maxSeverity": "warning"}, {"name": "ship.*", "maxSeverity": "critical"}], "perMinute": 12}`: only those names (`*` one dot-separated segment, `**` any), each up to its severity; at most 60 a minute |
+| a teammate hears the events addressed to it (`to`) and the team's broadcasts of `warning` or `critical`; `info` broadcasts are for the record | an `event` trigger, `{"type": "event", "name": "ships", "events": ["ship.*"], "objective": "Look at {{.data.where}}: {{.message}}"}`: a bot that declares event triggers hears only what they name |
+
+The teammate's task runs under its own mission, policy and budgets, until its own timeout, with the emitter's trace id; its objective says who said what (`Your teammate plane says (warning, event recall): …`, or the trigger's template over `name`, `from`, `severity`, `message`, `data`, `dataJSON`, `to`, `teams`, `eventId`), and its `delegation` lineage names the event (`eventId`). A chain is cut as a delegation's is: a teammate already on the chain is skipped (`cycle`), and so is one that would be deeper than the chain allows (`depth_exceeded`, at the least `maxDepth` along it; 1 by default, so a task an event made tells the team but makes no new task). The same call made twice (a retry) is the same event and makes no task twice. A whole event is refused, as `bot.event.refused`, when the bot is in no team (`no_team`), may not emit the name (`not_allowed`) or not at that severity (`severity_not_allowed`), addresses a bot outside its teams (`not_member`) or passed its rate (`rate_limited`).
+
 ## Tool rules
 
 `toolRules` narrow the allowed tools by their arguments in the runtime contract's words: a glob over each argument's value as text (`*` within a path segment, `**` across segments, `?` one character; an array such as `args` is matched as its compact JSON). A tool with allow rules may only be called as a rule says; a tool without rules is allowed as a whole; a deny rule wins. A rule that names a tool outside `allowedTools` is refused, so a narrower tool list cannot strand a rule.
@@ -142,7 +154,8 @@ Every fire creates a task through the same path as a manual submission, under an
 | `manual` | `task submit --key`, `POST /v1/bots/{id}/tasks` with `Idempotency-Key` | the caller's key | the socket, or the operator bearer token |
 | `webhook` | `POST /v1/triggers/{bot}/{trigger}` with a JSON object as the body | `webhook:<name>:<hash>` of the `Idempotency-Key` header (the delivery id) when the sender set one, else of the body | the trigger's `secret` in `X-Axlr-Secret`, or the HMAC-SHA256 of the body under its `signingKey` in `X-Axlr-Signature: sha256=<hex>` (`X-Hub-Signature-256` is read too); never the bearer token. Over the socket the caller is trusted, as for every route |
 | `timer` | the daemon, on every tick | `timer:<name>:<unix seconds of the slot>` | none: it is the control plane's own |
-| `delegation` | another bot's execution, through its node ([delegation](#delegation)) | `delegation:<asking task>:<hash of the bot and the objective>` | the asking node's certificate, and the asking bot's `delegation.to` |
+| `delegation` | another bot's execution, through its node ([delegation](#delegation)) | `delegation:<asking task>:<hash of the bot and the objective>` | the asking node's certificate, and the asking bot's `delegation.to` or a shared team |
+| `event` | a teammate's event, through its node ([events](#events)) | `event:<event id>:<bot>` | the emitting node's certificate, a shared team and the emitter's `events` |
 
 **Webhook.** A webhook is fired from outside with the trigger's own credential: the shared `secret` compared in constant time, or a signature over the body under the `signingKey` (what GitHub and most senders produce). An unknown bot or trigger, a missing or wrong credential and a tampered body are all `403`, so the route tells a stranger nothing; a body past 256 KiB is `413`. The secret and the signing key are stored with the bot (file mode 0600) and redacted in every answer of the API and the CLI. The body is stored on the task as its `input`; only the rendered objective reaches AXLR.
 
@@ -162,7 +175,7 @@ axlr-bots bot get bot                                # credentials redacted
 axlr-bots bot events bot --limit 100                 # the bot's newest events, oldest first
 ```
 
-A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `delegation`, `groups`, `model`, `budgets`) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`examples/bot-triggers-patch.json`](../../examples/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`examples/bot-act-with-approval.json`](../../examples/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
+A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `delegation`, `groups`, `events`, `model`, `budgets`) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`examples/bot-triggers-patch.json`](../../examples/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`examples/bot-act-with-approval.json`](../../examples/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
 
 ## Tasks
 

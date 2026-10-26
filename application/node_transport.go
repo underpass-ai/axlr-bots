@@ -34,6 +34,9 @@ type NodeTransport interface {
 	// AwaitDelegation waits up to wait for a child the execution's task
 	// delegated to end, and answers its state.
 	AwaitDelegation(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, child domain.TaskID, wait time.Duration) (DelegationAnswer, error)
+	// Emit tells the execution's teams an event; a refusal is an
+	// answer, not an error.
+	Emit(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, command EmitEventCommand) (EmitAnswer, error)
 }
 
 // ReportAck is the control plane's answer to a report.

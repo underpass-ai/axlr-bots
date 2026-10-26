@@ -25,6 +25,7 @@ type BotDefinition struct {
 	Approvals    domain.ApprovalsSnapshot   `json:"approvals"`
 	Delegation   *domain.DelegationSnapshot `json:"delegation,omitempty"`
 	Groups       []string                   `json:"groups,omitempty"`
+	Events       *domain.EventsSnapshot     `json:"events,omitempty"`
 	Model        ModelPolicyDefinition      `json:"model"`
 	Budgets      BudgetsDefinition          `json:"budgets"`
 }

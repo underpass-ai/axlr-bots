@@ -13,6 +13,7 @@ axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>]
   bot register --file <bot.json> | bot enable <bot-id> | bot pause <bot-id> | bot list | bot get <bot-id>
   bot update <bot-id> --file <patch.json> | bot events <bot-id> [--limit 100]
   group list | group get <group> [--tenant <id>]   the teams the bots name, with their members
+  group events <group> [--after <event-id>] [--limit 100] [--tenant <id>]   the team's timeline
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>]
   trigger fire <bot-id> <trigger> --body '<json>' | --file <event.json> [--delivery <id>]
   task run <task-id>                           in process (exit 0 completed, 3 decision required, 1 failed)

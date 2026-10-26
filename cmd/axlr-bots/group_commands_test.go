@@ -35,3 +35,27 @@ func TestGroupCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestGroupEventsCommand(t *testing.T) {
+	c := cli{t: t, state: t.TempDir(), axlr: fakeAXLR(t, "completed"), socket: ""}
+	if code, _, errText := c.run("bot", "register", "--file", filepath.Join("..", "..", "examples", "bot-team-a.json")); code != exitOK {
+		t.Fatalf("register: %s", errText)
+	}
+	code, out, errText := c.run("group", "events", "releases", "--limit", "10")
+	var events []map[string]any
+	if code != exitOK || json.Unmarshal([]byte(out), &events) != nil || len(events) != 1 || events[0]["type"] != "bot.registered" {
+		t.Fatalf("group events: %d %s %s", code, out, errText)
+	}
+	code, out, _ = c.run("group", "events", "releases", "--after", events[0]["eventId"].(string))
+	if code != exitOK || strings.TrimSpace(out) != "[]" {
+		t.Errorf("after = %d %s", code, out)
+	}
+	for _, args := range [][]string{{"group", "events"}, {"group", "events", "releases", "--bogus"}} {
+		if code, _, _ := c.run(args...); code != exitUsage {
+			t.Errorf("%v: exit %d", args, code)
+		}
+	}
+	if code, _, _ := c.run("group", "events", "missing"); code == exitOK {
+		t.Error("a missing team answered")
+	}
+}

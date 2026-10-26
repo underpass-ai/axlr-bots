@@ -8,10 +8,11 @@ import (
 	"strings"
 )
 
-// Limits of a trigger's credentials.
+// Limits of a trigger's credentials and of the events it hears.
 const (
 	minCredentialLength = 16
 	maxCredentialLength = 256
+	maxTriggerEvents    = 16
 )
 
 // Trigger is one way tasks reach the bot, as its definition declares it:
@@ -25,6 +26,7 @@ type Trigger struct {
 	secret     string
 	signingKey string
 	schedule   Schedule
+	events     []EventPattern
 }
 
 // NewTrigger validates a trigger from its definition.
@@ -42,6 +44,9 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 		return Trigger{}, err
 	}
 	t := Trigger{kind: kind, name: name}
+	if len(s.Events) > 0 && kind != TriggerEvent {
+		return Trigger{}, invalid("trigger "+name, "only an event trigger takes events")
+	}
 	switch kind {
 	case TriggerManual, TriggerDelegation:
 		if s.Objective != "" || s.Secret != "" || s.SigningKey != "" || s.Every != "" || s.Cron != "" {
@@ -60,6 +65,23 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 		}
 		if t.signingKey, err = validateCredential("trigger "+name+" signingKey", s.SigningKey); err != nil {
 			return Trigger{}, err
+		}
+	case TriggerEvent:
+		if s.Secret != "" || s.SigningKey != "" || s.Every != "" || s.Cron != "" {
+			return Trigger{}, invalid("trigger "+name, "an event trigger takes no credentials or schedule")
+		}
+		if len(s.Events) == 0 || len(s.Events) > maxTriggerEvents {
+			return Trigger{}, invalid("trigger "+name, "an event trigger names 1 to 16 events or patterns")
+		}
+		for _, raw := range s.Events {
+			pattern, err := NewEventPattern(raw)
+			if err != nil {
+				return Trigger{}, invalid("trigger "+name, err.Error())
+			}
+			t.events = append(t.events, pattern)
+		}
+		if s.Objective == "" {
+			return t, nil
 		}
 	case TriggerTimer:
 		if s.Secret != "" || s.SigningKey != "" {
@@ -103,7 +125,8 @@ func (t Trigger) Name() string { return t.name }
 func (t Trigger) Ref() TriggerRef { return TriggerRef{Type: t.kind, Name: t.name} }
 
 // ObjectiveTemplate is the template each fire renders into the task's
-// objective; empty for a manual trigger.
+// objective; empty for a manual or delegation trigger, and for an event
+// trigger that keeps the default (DefaultEventObjective).
 func (t Trigger) ObjectiveTemplate() string { return t.objective }
 
 // Schedule is when a timer fires; zero for the other types.
@@ -132,12 +155,29 @@ func (t Trigger) Authenticates(presentedSecret, signature string, body []byte) b
 	return false
 }
 
+// TeamEventTrigger is the trigger a bot hears its team by when it
+// declares no event trigger of its own.
+func TeamEventTrigger() Trigger { return Trigger{kind: TriggerEvent, name: "team"} }
+
+// Hears reports whether an event trigger takes the event.
+func (t Trigger) Hears(name EventName) bool {
+	for _, pattern := range t.events {
+		if pattern.Matches(name) {
+			return true
+		}
+	}
+	return false
+}
+
 // Snapshot returns the trigger as plain data, credentials included: what
 // the repository stores. Redact it before printing.
 func (t Trigger) Snapshot() TriggerSnapshot {
 	s := TriggerSnapshot{Type: t.kind.String(), Name: t.name, Objective: t.objective, Secret: t.secret, SigningKey: t.signingKey}
 	if t.kind == TriggerTimer {
 		s.Every, s.Cron = t.schedule.Snapshot()
+	}
+	for _, pattern := range t.events {
+		s.Events = append(s.Events, pattern.String())
 	}
 	return s
 }

@@ -44,6 +44,13 @@ const (
 	// and the control plane refused: the payload names the target and
 	// the check that refused it.
 	EventDelegationRefused EventType = "bot.delegation.refused"
+	// EventEventEmitted says a bot told its team something happened: the
+	// payload names the event, its severity, message and data, and who
+	// got a task from it and who did not, and why.
+	EventEventEmitted EventType = "bot.event.emitted"
+	// EventEventRefused says a bot tried to emit an event and the control
+	// plane refused: the payload names the event and the check.
+	EventEventRefused EventType = "bot.event.refused"
 	// EventApprovalExpired says nobody decided a pending call by its
 	// deadline: the call was denied or the task ended Expired, as the
 	// bot's approvals say.
@@ -70,6 +77,7 @@ func ParseEventType(raw string) (EventType, error) {
 	switch EventType(raw) {
 	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
 		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskExpired, EventApprovalExpired, EventTaskDelegated, EventDelegationRefused,
+		EventEventEmitted, EventEventRefused,
 		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked,
 		EventExecutionAssigned, EventExecutionReported:
 		return EventType(raw), nil

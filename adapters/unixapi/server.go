@@ -50,6 +50,10 @@ const pollInterval = 250 * time.Millisecond
 // maxPollWait bounds a long poll.
 const maxPollWait = 30 * time.Second
 
+// groupPollInterval is how often a waiting read of a team's timeline
+// looks again: each look reads the event log.
+const groupPollInterval = time.Second
+
 // Handler is the API's routes, all of them: what the socket serves.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -91,6 +95,7 @@ func (s *Server) operatorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/bots/{id}/events", s.listEvents)
 	mux.HandleFunc("GET /v1/groups", s.listGroups)
 	mux.HandleFunc("GET /v1/groups/{name}", s.getGroup)
+	mux.HandleFunc("GET /v1/groups/{name}/events", s.listGroupEvents)
 	mux.HandleFunc("POST /v1/tasks", s.submitTask)
 	mux.HandleFunc("GET /v1/tasks", s.listTasks)
 	mux.HandleFunc("GET /v1/tasks/{id}", s.getTask)
@@ -128,6 +133,7 @@ func (s *Server) nodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/report", s.authenticated(s.report))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/delegations", s.authenticated(s.delegate))
 	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/delegations/{task}", s.authenticated(s.awaitDelegation))
+	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/events", s.authenticated(s.emit))
 }
 
 // ServeTLS serves the node protocol on the listener with the TLS
@@ -233,6 +239,41 @@ func (s *Server) listGroups(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getGroup(w http.ResponseWriter, r *http.Request) {
 	value, err := s.service.GetGroup(r.Context(), r.PathValue("name"), r.URL.Query().Get("tenant"))
 	respond(w, http.StatusOK, value, err)
+}
+
+// listGroupEvents is GET /v1/groups/{name}/events?after=&limit=&wait=:
+// the team's timeline after the caller's last event; with wait, it
+// answers as soon as there is a new one, or empty when wait passes.
+func (s *Server) listGroupEvents(w http.ResponseWriter, r *http.Request) {
+	limit, err := queryLimit(r)
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	wait := time.Duration(0)
+	if raw := r.URL.Query().Get("wait"); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil || parsed < 0 {
+			respond(w, 0, nil, domain.ValidationError{Field: "wait", Reason: "must be a duration"})
+			return
+		}
+		wait = min(parsed, maxPollWait)
+	}
+	query := application.GroupEventsQuery{Name: r.PathValue("name"), Tenant: r.URL.Query().Get("tenant"), After: r.URL.Query().Get("after"), Limit: limit}
+	deadline := time.Now().Add(wait)
+	for {
+		events, err := s.service.ListGroupEvents(r.Context(), query)
+		if err != nil || len(events) > 0 || !time.Now().Before(deadline) {
+			respond(w, http.StatusOK, events, err)
+			return
+		}
+		select {
+		case <-r.Context().Done():
+			respond(w, http.StatusOK, events, nil)
+			return
+		case <-time.After(groupPollInterval):
+		}
+	}
 }
 
 func (s *Server) enableBot(w http.ResponseWriter, r *http.Request) {
@@ -637,6 +678,25 @@ func (s *Server) delegate(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusCreated
 	}
 	respond(w, status, nodeproto.FromDelegation(answer), nil)
+}
+
+// emit is POST .../events: the execution tells its teams an event.
+func (s *Server) emit(w http.ResponseWriter, r *http.Request) {
+	id, executionID, ok := nodeExecution(w, r)
+	if !ok {
+		return
+	}
+	var message nodeproto.EmitMessage
+	if !readJSON(w, r, &message) {
+		return
+	}
+	command := application.EmitEventCommand{Name: message.Name, Message: message.Message, Severity: message.Severity, Data: message.Data, To: message.To}
+	answer, err := s.service.Runner().Emit(r.Context(), id, executionID, command)
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	respond(w, http.StatusOK, nodeproto.FromEmitted(answer), nil)
 }
 
 // awaitDelegation is GET .../delegations/{task}?wait=20s: it answers the

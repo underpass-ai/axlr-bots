@@ -84,7 +84,7 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 	if err != nil {
 		return application.ExecutionReport{}, err
 	}
-	if err := e.wireDelegation(request.ExecutionID, request.Delegation, request.DelegationSocket, &policy); err != nil {
+	if err := e.wireDelegation(request.ExecutionID, request.NodeTools(), request.DelegationSocket, &policy); err != nil {
 		return application.ExecutionReport{}, fmt.Errorf("axlr: delegation manifest: %w", err)
 	}
 	args := []string{"--exec", request.PromptText(), "--json", "--approve", policy.approve}
@@ -123,7 +123,7 @@ func (e *Executor) Decide(ctx context.Context, request application.DecisionReque
 	if err != nil {
 		return application.ExecutionReport{}, err
 	}
-	if err := e.wireDelegation(request.ExecutionID, request.Delegation, request.DelegationSocket, &policy); err != nil {
+	if err := e.wireDelegation(request.ExecutionID, request.NodeTools(), request.DelegationSocket, &policy); err != nil {
 		return application.ExecutionReport{}, fmt.Errorf("axlr: delegation manifest: %w", err)
 	}
 	args := []string{"--session", request.SessionID, "--decide", request.Decision, "--json", "--approve", policy.approve}

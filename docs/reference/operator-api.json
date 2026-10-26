@@ -388,6 +388,79 @@
         }
       }
     },
+    "/v1/groups/{name}/events": {
+      "parameters": [
+        {
+          "name": "name",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "team name"
+        }
+      ],
+      "get": {
+        "operationId": "listGroupEvents",
+        "description": "the team's timeline: every event of its members, oldest first, after the caller's last one",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "the tenant, needed when several have a team of that name"
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "the id of the last event the caller has; absent or older than the window: the newest limit"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "at most this many (100 by default, at most 1000)"
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "a duration up to 30s: wait for a new event and answer as soon as there is one, or empty"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Event"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/tasks": {
       "get": {
         "operationId": "listTasks",
@@ -1288,6 +1361,9 @@
             },
             "type": "array",
             "description": "the teams the bot belongs to (at most 8); the panel calls them Team"
+          },
+          "events": {
+            "$ref": "#/components/schemas/EventsSnapshot"
           }
         },
         "required": [
@@ -1350,6 +1426,9 @@
             },
             "type": "array",
             "description": "the teams the bot belongs to (at most 8); the panel calls them Team"
+          },
+          "events": {
+            "$ref": "#/components/schemas/EventsSnapshot"
           }
         }
       },
@@ -1427,6 +1506,9 @@
             },
             "type": "array",
             "description": "the teams the bot belongs to (at most 8); the panel calls them Team"
+          },
+          "events": {
+            "$ref": "#/components/schemas/EventsSnapshot"
           }
         },
         "required": [
@@ -1614,6 +1696,23 @@
           }
         }
       },
+      "EmitRuleSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.EmitRuleSnapshot",
+        "description": "one rule of what a bot may emit: a name or pattern (* one segment, ** any) and the highest severity",
+        "properties": {
+          "maxSeverity": {
+            "type": "string",
+            "description": "info, warning or critical; absent: warning"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
       "EnrollTokenRequest": {
         "type": "object",
         "x-go-type": "unixapi.EnrollTokenRequest",
@@ -1759,6 +1858,8 @@
           "bot.task.expired",
           "bot.task.delegated",
           "bot.delegation.refused",
+          "bot.event.emitted",
+          "bot.event.refused",
           "bot.approval.expired",
           "execution.assigned",
           "execution.reported",
@@ -1769,6 +1870,22 @@
           "node.revoked"
         ],
         "description": "A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
+      },
+      "EventsSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.EventsSnapshot",
+        "description": "what a bot may emit to its teams; absent: any name up to warning, 6 a minute",
+        "properties": {
+          "emit": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EmitRuleSnapshot"
+            }
+          },
+          "perMinute": {
+            "type": "integer"
+          }
+        }
       },
       "ExecutionKind": {
         "type": "string",
@@ -2416,6 +2533,10 @@
           },
           "parentTaskId": {
             "type": "string"
+          },
+          "eventId": {
+            "type": "string",
+            "description": "set on a task a teammate's event made"
           }
         },
         "required": [
@@ -2657,6 +2778,13 @@
           },
           "type": {
             "$ref": "#/components/schemas/TriggerType"
+          },
+          "events": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "description": "an event trigger: the event names or patterns it hears"
           }
         },
         "required": [
@@ -2671,7 +2799,8 @@
           "manual",
           "webhook",
           "timer",
-          "delegation"
+          "delegation",
+          "event"
         ],
         "description": "A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
       },

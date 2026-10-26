@@ -78,7 +78,7 @@ func (c *mcpConnection) dispatch(ctx context.Context, request rpcRequest) {
 	case "ping":
 		c.reply(request, map[string]any{})
 	case "tools/list":
-		c.reply(request, map[string]any{"tools": []mcpTool{c.server.tool}})
+		c.reply(request, map[string]any{"tools": c.server.tools()})
 	case "tools/call":
 		c.startCall(ctx, request)
 	case "notifications/cancelled":
@@ -102,7 +102,12 @@ func (c *mcpConnection) startCall(ctx context.Context, request rpcRequest) {
 		Name      string          `json:"name"`
 		Arguments json.RawMessage `json:"arguments"`
 	}
-	if err := json.Unmarshal(request.Params, &params); err != nil || params.Name != c.server.tool.Name {
+	if err := json.Unmarshal(request.Params, &params); err != nil {
+		c.fail(request, rpcInvalidParams, "unknown tool "+params.Name)
+		return
+	}
+	handler, ok := c.server.handler(params.Name)
+	if !ok {
 		c.fail(request, rpcInvalidParams, "unknown tool "+params.Name)
 		return
 	}
@@ -115,7 +120,7 @@ func (c *mcpConnection) startCall(ctx context.Context, request rpcRequest) {
 	go func() {
 		defer c.calls.Done()
 		defer c.cancelCall(key)
-		result := c.server.call(callCtx, params.Arguments)
+		result := handler.call(callCtx, params.Arguments)
 		if callCtx.Err() != nil {
 			// Cancelled or disconnected: nobody reads an answer.
 			return

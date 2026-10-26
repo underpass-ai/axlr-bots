@@ -2,7 +2,6 @@ package nodeagent
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net"
 	"os"
@@ -10,7 +9,7 @@ import (
 	"sync"
 )
 
-// mcpServer serves one tool to one execution over a Unix socket, as an
+// mcpServer serves the node's tools to one execution over a Unix socket, as an
 // MCP server speaks over stdio: one JSON-RPC message per line. AXLR
 // reaches it through `axlr-node mcp-relay`, a pipe between the relay's
 // stdin and stdout and the socket, so the socket stands for the
@@ -18,8 +17,7 @@ import (
 type mcpServer struct {
 	path     string
 	listener net.Listener
-	tool     mcpTool
-	call     func(ctx context.Context, arguments json.RawMessage) mcpToolResult
+	handlers []mcpHandler
 	version  string
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -28,7 +26,7 @@ type mcpServer struct {
 
 // serveMCP listens on path (a stale socket there is replaced) and
 // serves every connection until Close.
-func serveMCP(ctx context.Context, path string, tool mcpTool, version string, call func(context.Context, json.RawMessage) mcpToolResult) (*mcpServer, error) {
+func serveMCP(ctx context.Context, path string, version string, handlers ...mcpHandler) (*mcpServer, error) {
 	if strings.Contains(path, "..") || !strings.HasSuffix(path, ".sock") {
 		return nil, errors.New("a socket path ends in .sock and holds no ..")
 	}
@@ -44,7 +42,7 @@ func serveMCP(ctx context.Context, path string, tool mcpTool, version string, ca
 		return nil, err
 	}
 	serverCtx, cancel := context.WithCancel(ctx)
-	s := &mcpServer{path: path, listener: listener, tool: tool, call: call, version: version, ctx: serverCtx, cancel: cancel}
+	s := &mcpServer{path: path, listener: listener, handlers: handlers, version: version, ctx: serverCtx, cancel: cancel}
 	s.wg.Add(1)
 	go s.accept()
 	return s, nil
@@ -64,6 +62,25 @@ func (s *mcpServer) accept() {
 			c.serve(s.ctx)
 		}()
 	}
+}
+
+// tools lists what tools/list describes.
+func (s *mcpServer) tools() []mcpTool {
+	tools := make([]mcpTool, len(s.handlers))
+	for i, h := range s.handlers {
+		tools[i] = h.tool
+	}
+	return tools
+}
+
+// handler finds the tool a tools/call names.
+func (s *mcpServer) handler(name string) (mcpHandler, bool) {
+	for _, h := range s.handlers {
+		if h.tool.Name == name {
+			return h, true
+		}
+	}
+	return mcpHandler{}, false
 }
 
 // Close stops listening, ends every call in flight and removes the

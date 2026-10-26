@@ -30,7 +30,25 @@ type ExecutionRequest struct {
 	// Delegation is set when the bot may ask other bots: the node then
 	// serves the delegation tool to the execution.
 	Delegation *DelegationOffer
-	// DelegationSocket is where the node serves that tool for this
+	// Events is set when the bot is in a team: the node then serves the
+	// emit tool to the execution.
+	Events *EventsOffer
+	// DelegationSocket is where the node serves those tools for this
 	// execution; the node sets it, it never travels.
 	DelegationSocket string
+}
+
+// NodeTools names the tools the node serves the execution on its
+// socket: the delegation tool and the emit tool, as offered.
+func (r ExecutionRequest) NodeTools() []string { return nodeTools(r.Delegation, r.Events) }
+
+func nodeTools(delegation *DelegationOffer, events *EventsOffer) []string {
+	var tools []string
+	if delegation != nil {
+		tools = append(tools, DelegateToolName)
+	}
+	if events != nil {
+		tools = append(tools, EmitEventToolName)
+	}
+	return tools
 }
