@@ -33,6 +33,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CARGO_TERM_COLOR: always
+      # panel/.cargo/config.toml keeps gx10 at two jobs; a runner has four cores.
+      CARGO_BUILD_JOBS: 4
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
