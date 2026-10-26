@@ -7,7 +7,7 @@
 # The runbook is docs/runbooks/drone-fleet.md.
 
 images:
-  app: container-registry.underpassai.com/axlr-bots/fleet-app@sha256:6a010e4bcb6dfc04accea29c7d36c200d4e2b8cb0205fd4cd52ad3b2782711d7
+  app: container-registry.underpassai.com/axlr-bots/fleet-app@sha256:731f511dad6f2dcd0d07c2a2479ebd35c09d27b629fe5ec9976bc2b6013f31d5
   sitl: container-registry.underpassai.com/axlr-bots/fleet-sitl@sha256:9d0ddd377ac6a5d5dca13feb0a7ef1311725dcc45c58b7e369034e44c5adfd9a
   controlPlane: container-registry.underpassai.com/axlr-bots/control-plane@sha256:d09779eb9d91916df11ffdf988ee7d96ae12b71b60ebbfe845c3d1c7723be257
 
@@ -35,9 +35,9 @@ base:
   rtk: {label: "RTK base · NTRIP", lat: 51.94035, lon: 4.00465}
   stations:
     - {name: apm, label: "APM station", lat: 51.94550, lon: 3.99720, bays: 2, batteries: 3, parts: 4}
-    - {name: rwg, label: "RWG station", lat: 51.94100, lon: 3.98440, bays: 2, batteries: 2, parts: 3}
+    - {name: rwg, label: "RWG station", lat: 51.94064, lon: 3.98544, bays: 2, batteries: 2, parts: 3}
     - {name: euromax, label: "Euromax station", lat: 51.94700, lon: 4.02720, bays: 2, batteries: 3, parts: 4}
-    - {name: airstrip, label: "Beach airstrip", lat: 51.93350, lon: 3.97280, bays: 1, batteries: 2, parts: 2}
+    - {name: airstrip, label: "Beach airstrip", lat: 51.93417, lon: 3.97509, bays: 1, batteries: 2, parts: 2}
 
 # The ground station analyses one photo in `every` (at most maxPerFlight a
 # flight): the aerial imagery of its footprint, read by a vision model
@@ -102,7 +102,7 @@ vehicles:
     kind: quad
     role: patrol
     replicas: 3
-    pads: ["51.94550,3.99735,5,0", "51.94100,3.98455,5,0", "51.94700,4.02735,5,0"]
+    pads: ["51.94550,3.99735,5,0", "51.94064,3.98559,5,0", "51.94700,4.02735,5,0"]
     stations: [apm, rwg, euromax]
     hardware: {lidar: "down + forward + aft lidar", camera: "gimbal RGB camera", flow: "optical flow"}
     env: {}
@@ -110,7 +110,7 @@ vehicles:
     kind: rover
     role: patrol
     replicas: 2
-    pads: ["51.94700,4.02705,5,0", "51.94100,3.98425,5,0"]
+    pads: ["51.94700,4.02705,5,0", "51.94064,3.98529,5,0"]
     stations: [euromax, rwg]
     hardware: {lidar: "forward + aft lidar", camera: "Intel RealSense D455 depth + RGB"}
     env: {}
@@ -126,7 +126,7 @@ vehicles:
     kind: plane
     role: patrol
     replicas: 1
-    pads: ["51.93350,3.97280,5,345"]
+    pads: ["51.93417,3.97509,5,345"]
     stations: [airstrip]
     hardware: {lidar: "landing lidar", camera: "survey camera"}
     env: {RUNWAY_HEADING: "345"}

@@ -95,7 +95,7 @@ if (PARAMS.get("hud") === "0") document.body.classList.add("nohud");
 let night = PARAMS.get("night") === "1", touring = PARAMS.get("tour") === "1";
 
 // The model's frame (port3d/area.py): metres east, up, -north of ORIGIN.
-const ORIGIN = [51.9440, 3.9990], GROUND = 5.0, R = 6378137.0;
+const ORIGIN = [51.9440, 3.9990], GROUND = 5.0, R = 6378137.0, LIFT = 1.5;
 const COS0 = Math.cos(ORIGIN[0] * Math.PI / 180);
 function local(lat, lon, alt = 0) {
   const north = (lat - ORIGIN[0]) * Math.PI / 180 * R;
@@ -342,7 +342,9 @@ function updateVehicle(v, now) {
   // trail: while it is out; cleared when it is ready again
   if (OUT.has(v.phase) && s.to) {
     const last = s.trailPts[s.trailPts.length - 1];
-    if (!last || last.distanceTo(s.to) > 1.5) { s.trailPts.push(s.to.clone()); if (s.trailPts.length > 3000) s.trailPts.shift(); }
+    // lines on the ground are lifted LIFT metres so the quay does not hide them
+    const at = s.to.clone(); at.y = Math.max(at.y, GROUND + LIFT);
+    if (!last || last.distanceTo(at) > 1.5) { s.trailPts.push(at); if (s.trailPts.length > 3000) s.trailPts.shift(); }
     setFat(s.trail, s.trailPts);
   } else if (v.phase === "ready" && s.trailPts.length) { s.trailPts = []; setFat(s.trail, []); }
   // the planned route, at its altitudes, with a line down from each waypoint
@@ -352,11 +354,11 @@ function updateVehicle(v, now) {
   if (key !== s.routeKey) {
     s.routeKey = key;
     if (show) {
-      const pts = fl.route.map(p => local(p.lat, p.lon, Math.max(0, p.alt_m || 0)));
+      const pts = fl.route.map(p => local(p.lat, p.lon, Math.max(LIFT, p.alt_m || 0)));
       pts.push(pts[0].clone());
       setFat(s.route, pts);
       const seg = [];
-      for (const p of pts) if (p.y > GROUND + 1) seg.push(p.x, p.y, p.z, p.x, GROUND, p.z);
+      for (const p of pts) if (p.y > GROUND + 2 * LIFT) seg.push(p.x, p.y, p.z, p.x, GROUND, p.z);
       s.drops.geometry.setAttribute("position", new THREE.Float32BufferAttribute(seg, 3));
     } else {
       setFat(s.route, []);

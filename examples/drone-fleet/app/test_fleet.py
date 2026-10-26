@@ -125,6 +125,59 @@ class PlanTest(unittest.TestCase):
             p.check_deliveries([{"station": "mars", "batteries": 1, "parts": 0}], home)
 
 
+class RouteTest(unittest.TestCase):
+    """A rover drives precomputed routes; its bot names one, never waypoints."""
+
+    ROUTE = {"id": "apm:yard", "kind": "patrol", "from": "apm", "zone": "yard", "about": "lanes", "length_m": 120,
+             "points": [[51.9456, 3.9972], [51.9460, 3.9978], [51.9455, 3.9973]]}
+
+    def rover(self, role="patrol", routes=None):
+        v = FakeVehicle()
+        crew = vehicle_pilot.GroundCrew(v, "rover-0", "rover", "apm", "", 1, 1)
+        return vehicle_pilot.Pilot("rover-0", "rover", v, vehicle_pilot.Limits("rover"), crew, [], "/dev/null", role=role,
+                                   routes=routes if routes is not None else {"apm:yard": self.ROUTE})
+
+    def test_the_bot_picks_a_route_by_name_and_the_tool_lists_them(self):
+        p = self.rover()
+        tool = vehicle_pilot.route_tool(p, p.limits)
+        self.assertEqual(tool["inputSchema"]["properties"]["route"]["enum"], ["apm:yard"])
+        self.assertNotIn("waypoints", tool["inputSchema"]["properties"])
+        self.assertEqual(p.route_menu(), [{"route": "apm:yard", "zone": "yard", "about": "lanes", "length_m": 120}])
+        with self.assertRaisesRegex(mcp_http.ToolError, "route: one of apm:yard"):
+            p.run_mission({"name": "round", "route": "rwg:yard"})
+
+    def test_a_route_is_checked_against_the_geofence_and_the_speed(self):
+        p = self.rover()
+        home = {"lat": 51.9455, "lon": 3.9972}
+        self.assertEqual(len(p.check_route("round", self.ROUTE["points"], 4, home)), 3)
+        with self.assertRaisesRegex(mcp_http.ToolError, "geofence"):
+            p.check_route("far", [[51.99, 3.9972]], 4, home)
+        with self.assertRaisesRegex(mcp_http.ToolError, "speed"):
+            p.check_route("fast", self.ROUTE["points"], 30, home)
+
+    def test_a_supply_run_needs_a_route_through_its_stations_in_order(self):
+        p = self.rover("supply", routes={("apm",): dict(self.ROUTE, kind="supply", stations=["apm"])})
+        p.stations = {"apm": {"name": "apm", "lat": 51.946, "lon": 3.998}, "rwg": {"name": "rwg", "lat": 51.941, "lon": 3.984}}
+        with self.assertRaisesRegex(mcp_http.ToolError, "no route through rwg; it can reach apm"):
+            p.run_mission({"name": "restock", "deliveries": [{"station": "rwg", "batteries": 1, "parts": 1}]})
+
+    def test_a_rover_parks_when_its_mission_s_rtl_is_done_in_auto(self):
+        p = self.rover()
+        p._last_item = 9
+        self.assertFalse(p._rover_done({"mode": "AUTO", "mission_seq": 5}))
+        self.assertTrue(p._rover_done({"mode": "AUTO", "mission_seq": 9}))
+        self.assertTrue(p._rover_done({"mode": "HOLD", "mission_seq": 0}))
+
+    def test_the_library_gives_each_rover_its_station_s_routes(self):
+        path = os.path.join(tempfile.mkdtemp(), "routes.json")
+        with open(path, "w") as f:
+            json.dump({"routes": [self.ROUTE, dict(self.ROUTE, id="rwg:yard", **{"from": "rwg"}),
+                                  dict(self.ROUTE, id="supply:apm", kind="supply", stations=["apm"], **{"from": "depot"})]}, f)
+        self.assertEqual(list(vehicle_pilot.load_routes(path, "rover", "patrol", "apm")), ["apm:yard"])
+        self.assertEqual(list(vehicle_pilot.load_routes(path, "rover", "supply", "depot")), [("apm",)])
+        self.assertEqual(vehicle_pilot.load_routes(path, "quad", "patrol", "apm"), {})
+
+
 class BaseTest(unittest.TestCase):
     def base(self):
         layout = {"depot": {"name": "depot", "lat": 51.9402, "lon": 4.005},
