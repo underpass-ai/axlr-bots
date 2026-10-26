@@ -84,6 +84,31 @@ const maxAutoApproveRules = 16
 // name and its own arguments are inside the call's arguments.
 const MCPCallTool = "axlr_call_tool"
 
+// UnwrapCall is the tool a pending call runs and its own arguments: an
+// MCP call AXLR wraps in axlr_call_tool {name, arguments} is the tool it
+// names; any other call is itself. False when a wrapped call names no
+// tool.
+func UnwrapCall(tool string, arguments []byte) (string, []byte, bool) {
+	if tool != MCPCallTool {
+		return tool, arguments, true
+	}
+	var wrapped struct {
+		Name      string          `json:"name"`
+		Arguments json.RawMessage `json:"arguments"`
+	}
+	if json.Unmarshal(arguments, &wrapped) != nil || wrapped.Name == "" {
+		return "", nil, false
+	}
+	if len(wrapped.Arguments) == 0 {
+		return wrapped.Name, []byte("{}"), true
+	}
+	return wrapped.Name, wrapped.Arguments, true
+}
+
+// ToolBaseName is a tool's own name without the <plugin>/ AXLR may put
+// before an MCP tool's.
+func ToolBaseName(tool string) string { return tool[strings.LastIndex(tool, "/")+1:] }
+
 // AutoApproves reports whether the control plane approves the call
 // without a person: a rule of autoApprove fits it. An MCP call AXLR
 // wraps in axlr_call_tool is judged by the tool it names (by its own
@@ -91,20 +116,11 @@ const MCPCallTool = "axlr_call_tool"
 // operator writes the rules; a call the policy forbids never reaches a
 // decision.
 func (a Approvals) AutoApproves(tool string, arguments []byte) bool {
-	if tool == MCPCallTool {
-		var wrapped struct {
-			Name      string          `json:"name"`
-			Arguments json.RawMessage `json:"arguments"`
-		}
-		if json.Unmarshal(arguments, &wrapped) != nil || wrapped.Name == "" {
-			return false
-		}
-		tool, arguments = wrapped.Name, wrapped.Arguments
-		if len(arguments) == 0 {
-			arguments = []byte("{}")
-		}
+	tool, arguments, ok := UnwrapCall(tool, arguments)
+	if !ok {
+		return false
 	}
-	short := tool[strings.LastIndex(tool, "/")+1:]
+	short := ToolBaseName(tool)
 	for _, rule := range a.autoApprove {
 		if rule.Matches(tool, arguments) || rule.Matches(short, arguments) {
 			return true

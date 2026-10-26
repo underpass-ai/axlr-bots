@@ -246,3 +246,20 @@ func TestCancelKeepsWhoCancelled(t *testing.T) {
 		t.Errorf("cancel = %+v %v", result.Task.Snapshot(), err)
 	}
 }
+
+func TestTellingTheTeamNeedsNoPerson(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	onlineNode(t, h, "web-1")
+	teamBot(t, h, "plane", []string{"port"}, func(d *BotDefinition) { d.Level = "act-with-approval" })
+	task := submitWith(t, h, "plane", "warn", "")
+	run := nextFor(t, h, "web-1")
+	call := pendingCall(domain.MCPCallTool, `{"name": "axlr-bots/axlr_bots_emit_event", "arguments": {"name": "recall", "message": "a ship"}}`)
+	if _, err := NewReportExecution(h.deps).Execute(ctx, "web-1", run.ExecutionID, call); err != nil {
+		t.Fatal(err)
+	}
+	decided, ok := lastEvent(h, domain.EventTaskDecided)
+	if !ok || decided.Payload["decidedBy"] != TeamEventActor || taskOf(t, h, task.ID()).Status() != domain.TaskRunning {
+		t.Errorf("decided = %+v", decided)
+	}
+}

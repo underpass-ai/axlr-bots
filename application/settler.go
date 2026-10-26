@@ -103,8 +103,8 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 		return err
 	}
 	if waiting {
-		if pending := execution.Result().PendingDecision; pending != nil && bot.Approvals().AutoApproves(pending.Tool, pending.Arguments) {
-			if approved := s.autoApprove(ctx, *task, pending.CallID); approved {
+		if pending := execution.Result().PendingDecision; pending != nil {
+			if actor, ok := approvedByPolicy(bot, *pending); ok && s.autoApprove(ctx, *task, pending.CallID, actor) {
 				return nil
 			}
 		}
@@ -117,14 +117,33 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 // names: the operator's rule, not a person at the moment.
 const PolicyActor = "policy:autoApprove"
 
-// autoApprove decides the call the task stopped on as the operator's
-// rule says, without a person; false when it could not (the bot was
-// paused meanwhile), and then a person is asked as usual.
-func (s settler) autoApprove(ctx context.Context, task domain.Task, callID string) bool {
+// TeamEventActor is who decides a call of the emit tool: the control
+// plane checks every event itself (the team, the name, the severity, the
+// rate, the chain), so a person is never asked to approve telling the
+// team.
+const TeamEventActor = "policy:team-event"
+
+// approvedByPolicy says whether the call runs without a person, and as
+// whom: the emit tool always, any other call when the bot's
+// approvals.autoApprove names it.
+func approvedByPolicy(bot domain.Bot, pending domain.PendingDecision) (string, bool) {
+	if tool, _, ok := domain.UnwrapCall(pending.Tool, pending.Arguments); ok && domain.ToolBaseName(tool) == EmitEventToolName {
+		return TeamEventActor, true
+	}
+	if bot.Approvals().AutoApproves(pending.Tool, pending.Arguments) {
+		return PolicyActor, true
+	}
+	return "", false
+}
+
+// autoApprove decides the call the task stopped on as the policy says,
+// without a person; false when it could not (the bot was paused
+// meanwhile), and then a person is asked as usual.
+func (s settler) autoApprove(ctx context.Context, task domain.Task, callID, actor string) bool {
 	deps := s.deps
-	deps.Actor = PolicyActor
+	deps.Actor = actor
 	if _, err := NewApproveTask(deps).Execute(ctx, task.ID(), DecisionApprove, callID); err != nil {
-		_ = s.rec.audit(ctx, "task.decide", task.ID().String(), domain.AuditFailed, map[string]string{"actor": PolicyActor, "reason": err.Error()})
+		_ = s.rec.audit(ctx, "task.decide", task.ID().String(), domain.AuditFailed, map[string]string{"actor": actor, "reason": err.Error()})
 		return false
 	}
 	return true

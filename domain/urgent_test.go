@@ -130,3 +130,15 @@ func TestWhatInterruptsABot(t *testing.T) {
 		t.Error("a manual trigger took interrupt")
 	}
 }
+
+func TestUnwrapCall(t *testing.T) {
+	if tool, args, ok := UnwrapCall("local_read", []byte(`{"path": "x"}`)); !ok || tool != "local_read" || string(args) != `{"path": "x"}` {
+		t.Errorf("direct = %s %s %v", tool, args, ok)
+	}
+	if tool, _, ok := UnwrapCall(MCPCallTool, []byte(`{"name": "axlr-bots/axlr_bots_emit_event", "arguments": {"name": "recall"}}`)); !ok || ToolBaseName(tool) != "axlr_bots_emit_event" {
+		t.Errorf("wrapped = %s %v", tool, ok)
+	}
+	if _, _, ok := UnwrapCall(MCPCallTool, []byte(`{}`)); ok {
+		t.Error("a call without a name unwrapped")
+	}
+}
