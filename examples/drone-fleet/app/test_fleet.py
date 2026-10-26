@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -11,10 +12,17 @@ from http.server import ThreadingHTTPServer
 
 os.environ.setdefault("PHOTOS_DIR", tempfile.mkdtemp())
 
+import ais
+import approvals
+import drift
 import fleet_base
 import geo
+import incident
 import mcp_http
+import patterns
+import sprites
 import vehicle_pilot
+import vision
 
 
 class GeoTest(unittest.TestCase):
@@ -166,6 +174,182 @@ class PagesTest(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as e:
             urllib.request.urlopen(url + "/../fleet_base.py")
         self.assertEqual(e.exception.code, 404)
+
+
+COAST = [(51.925, 3.976), (51.935, 3.9715), (51.945, 3.967), (51.955, 3.9645), (51.965, 3.9616), (51.975, 3.958)]
+REPORT = {"vessel": "MV TEST", "count": 6, "lat": 51.951, "lon": 3.937, "lost_minutes_ago": 20}
+
+
+class DriftTest(unittest.TestCase):
+    def test_leeway_falls_with_immersion(self):
+        self.assertAlmostEqual(drift.leeway_rate(0.4), 0.05)
+        self.assertAlmostEqual(drift.leeway_rate(1.0), 0.0)
+        self.assertAlmostEqual(drift.leeway_rate(0.1), 0.05)
+
+    def test_containers_drift_downwind_with_the_current_and_stop_ashore(self):
+        sea = drift.Drift(51.951, 3.937, 270, 10, 90, 0.3, COAST, seed=1)
+        sea.spill(5, 0, 200)
+        start = [(c.north, c.east) for c in sea.containers]
+        sea.advance(600)
+        for (n0, e0), c in zip(start, sea.containers):
+            self.assertGreater(c.east - e0, 600 * 0.3)       # eastwards: current plus leeway
+        d = sea.datum()
+        self.assertEqual(round(d["drift"]["to_deg"] / 10), 9)
+        self.assertGreaterEqual(d["radius_m"], 150)
+        sea.advance(3 * 3600)
+        self.assertTrue(all(c.ashore for c in sea.containers))
+        lat, lon = sea.position(sea.containers[0].north, sea.containers[0].east)
+        self.assertGreaterEqual(lon, sea.coast_lon(lat))
+
+
+class PatternTest(unittest.TestCase):
+    def test_an_expanding_square_grows_by_one_spacing_every_two_legs(self):
+        pts = patterns.expanding_square(40, 4)
+        self.assertEqual([(round(n), round(e)) for n, e in pts], [(0, 0), (40, 0), (40, 40), (-40, 40), (-40, -40)])
+
+    def test_a_parallel_track_alternates_its_legs(self):
+        pts = patterns.parallel_track(1000, 400, 200, 90)
+        self.assertEqual(len(pts), 6)
+        self.assertAlmostEqual(pts[0][1], -500)               # legs run east-west
+        self.assertAlmostEqual(pts[1][1], 500)
+        self.assertAlmostEqual(pts[2][1], 500)
+
+    def test_a_target_is_led_by_its_drift_and_bad_patterns_are_refused(self):
+        targets = {"S1": {"north_m": 0, "east_m": -1000, "drift_n": 0.0, "drift_e": 0.5}}
+        wps, centre = patterns.expand({"kind": "expanding_square", "target": "S1", "spacing_m": 30, "legs": 6, "alt_m": 30}, targets, 10, 20)
+        self.assertAlmostEqual(centre[1], -1000 + 0.5 * 100)
+        self.assertEqual(len(wps), 7)
+        with self.assertRaisesRegex(patterns.PatternError, "targets"):
+            patterns.expand({"kind": "expanding_square", "target": "S9"}, targets, 10, 20)
+        with self.assertRaisesRegex(patterns.PatternError, "waypoints"):
+            patterns.expand({"kind": "parallel_track", "centre_north_m": 0, "centre_east_m": 0, "width_m": 5000, "spacing_m": 100}, {}, 10, 20)
+
+    def test_the_pilot_flies_a_pattern_within_its_limits(self):
+        p = PlanTest.pilot(PlanTest(), "quad")
+        p.targets = {"datum": {"north_m": 300, "east_m": -400, "drift_n": 0, "drift_e": 0}}
+        p.check_ready = lambda: (_ for _ in ()).throw(mcp_http.ToolError("stop here"))
+        with self.assertRaisesRegex(mcp_http.ToolError, "stop here"):
+            p.run_mission({"name": "sq", "pattern": {"kind": "expanding_square", "target": "datum", "spacing_m": 40, "alt_m": 30}})
+        with self.assertRaisesRegex(mcp_http.ToolError, "geofence"):
+            p.run_mission({"name": "far", "pattern": {"kind": "expanding_square", "centre_north_m": 1490, "centre_east_m": 0, "spacing_m": 100, "legs": 6, "alt_m": 30}})
+        with self.assertRaisesRegex(mcp_http.ToolError, "not both"):
+            p.run_mission({"name": "x", "waypoints": [{"north_m": 1, "east_m": 1, "alt_m": 20}], "pattern": {"kind": "expanding_square", "target": "datum"}})
+
+
+class IncidentTest(unittest.TestCase):
+    def test_a_report_needs_a_vessel_and_a_position(self):
+        with self.assertRaisesRegex(ValueError, "vessel"):
+            incident.Incident({"lat": 51.9, "lon": 3.9}, COAST)
+        with self.assertRaisesRegex(ValueError, "lat, lon"):
+            incident.Incident({"vessel": "X"}, COAST)
+        with self.assertRaisesRegex(ValueError, "count"):
+            incident.Incident(dict(REPORT, count=500), COAST)
+
+    def frame_on(self, inc, cid, alt):
+        c = next(c for c in inc.sea.containers if c.id == cid)
+        lat, lon = inc.sea.position(c.north, c.east)
+        return vision.frame(lat, lon, alt)
+
+    def test_the_plane_sights_a_quad_confirms_and_the_dispatcher_is_called_once(self):
+        now = 1_800_000_000.0
+        inc = incident.Incident(REPORT, COAST, now=now, seed=3)
+        self.assertEqual(inc.found(), 0)
+        bbox = self.frame_on(inc, "C02", 100)
+        seen = inc.observe("plane-0", "plane", 100, now + 1, [{"x": 0.5, "y": 0.5}, {"x": 0.02, "y": 0.02}], bbox, "plane-0-1-1")
+        self.assertEqual(seen[0]["container"], "C02")
+        self.assertEqual(inc.state["C02"]["state"], "sighted")
+        self.assertEqual(len(inc.sightings), 2)               # one matched, one false
+        self.assertIsNone(inc.due_dispatch(now + 5))           # too fresh: a quad nearby may confirm it
+        due = inc.due_dispatch(now + 100)
+        self.assertEqual(due["count"], 2)
+        self.assertIsNone(inc.due_dispatch(now + 200))         # both just tasked
+        self.assertIn("S1", inc.targets(now + 200))
+        bbox = self.frame_on(inc, "C02", 30)
+        inc.observe("quad-0", "quad", 30, now + 300, [{"x": 0.5, "y": 0.5}], bbox, "quad-0-1-1")
+        self.assertEqual(inc.state["C02"]["state"], "confirmed")
+        self.assertEqual(inc.found(), 1)
+        view = inc.bot_view(now + 300)
+        self.assertNotIn("containers", view)                   # no truth for the bots
+        self.assertEqual([s["id"] for s in view["open_sightings"]], ["S2"])
+
+    def test_the_search_ends_at_its_time_limit_with_a_report(self):
+        now = 1_800_000_000.0
+        inc = incident.Incident(dict(REPORT, max_minutes=5), COAST, now=now, seed=3)
+        self.assertFalse(inc.tick(now + 60))
+        self.assertTrue(inc.tick(now + 301))
+        self.assertEqual(inc.status, "ended")
+        event = inc.report_event(now + 301)
+        self.assertEqual(event["missing"] + event["found"] + event["ashore"], 6)
+        self.assertIn("C01", event["log"])
+        snap = inc.snapshot(now + 400)
+        self.assertEqual(snap["elapsed_s"], 301)
+
+    def test_the_sprites_land_where_the_frame_says(self):
+        from PIL import Image
+        import io
+        blank = io.BytesIO()
+        Image.new("RGB", (640, 480), (20, 60, 50)).save(blank, "JPEG")
+        bbox = vision.frame(51.95, 3.94, 100)
+        lat, lon = geo.point_at(51.95, 3.94, 20, -30)
+        _, placed = sprites.compose(blank.getvalue(), bbox, [("C01", lat, lon, 45, 12.2, "#b03a2e"), ("C02", 52.5, 3.94, 0, 6.1, "#1f5fa8")])
+        self.assertEqual(len(placed), 1)
+        _, x, y = placed[0]
+        mlat, mlon = incident.merc_to_latlon(bbox[0] + x * (bbox[2] - bbox[0]), bbox[3] - y * (bbox[3] - bbox[1]))
+        self.assertLess(abs(geo.offset_m(lat, lon, mlat, mlon)[0]), 1)
+
+
+class IncidentBaseTest(unittest.TestCase):
+    def test_the_dispatcher_reads_how_far_each_quad_is_from_each_target(self):
+        layout = {"depot": {"name": "depot", "lat": 51.94, "lon": 4.0}, "stations": [], "coast": [list(p) for p in COAST]}
+        b = fleet_base.Base({"quad-0": ""}, layout, [], os.path.join(tempfile.mkdtemp(), "fleet.json"))
+        b.states["quad-0"] = {"vehicle": "quad-0", "kind": "quad", "home": {"lat": 51.957, "lon": 3.967}}
+        b.incident = incident.Incident(REPORT, COAST, seed=3)
+        c = b.incident.sea.containers[0]
+        lat, lon = b.incident.sea.position(c.north, c.east)
+        b.incident.observe("plane-0", "plane", 100, time.time() - 60, [{"x": 0.5, "y": 0.5}], vision.frame(lat, lon, 100), "p")
+        view = b._bot_view(b._snapshot())["incident"]
+        self.assertIn("quad-0", view["datum"]["distance_from_home_m"])
+        self.assertGreater(view["open_sightings"][0]["distance_from_home_m"]["quad-0"], 500)
+        self.assertNotIn("containers", view)
+
+
+class VisionParseTest(unittest.TestCase):
+    def test_the_answer_is_bounded_whatever_comes_around_it(self):
+        out = vision.parse('```json\n{"containers": [{"x": 0.2, "y": 0.4}, {"x": 7, "y": 0}, {"y": 1}], "summary": "two boxes"}\n```')
+        self.assertEqual(out["containers"], [{"x": 0.2, "y": 0.4}])
+        self.assertEqual(vision.parse("no json")["containers"], [])
+
+
+class AisTest(unittest.TestCase):
+    def test_positions_and_static_data_make_one_ship(self):
+        a = ais.AIS("", [[51.9, 3.8], [52.05, 4.15]])
+        a.handle({"MessageType": "PositionReport", "MetaData": {"MMSI": 244123456, "ShipName": "NORDIC  ", "latitude": 51.96, "longitude": 4.01},
+                  "Message": {"PositionReport": {"Sog": 11.5, "Cog": 284.1, "TrueHeading": 511}}})
+        a.handle({"MessageType": "ShipStaticData", "MetaData": {"MMSI": 244123456},
+                  "Message": {"ShipStaticData": {"Type": 71, "Dimension": {"A": 200, "B": 100, "C": 24, "D": 24}, "Name": "NORDIC"}}})
+        a.handle({"MessageType": "PositionReport", "MetaData": {"MMSI": 1, "latitude": 91, "longitude": 0}, "Message": {"PositionReport": {}}})
+        ships = a.ships()
+        self.assertEqual(len(ships), 1)
+        ship = ships[0]
+        self.assertEqual((ship["name"], ship["type_name"], ship["length_m"], ship["beam_m"], ship["heading"]), ("NORDIC", "cargo", 300, 48, None))
+        self.assertEqual(a.summary()["status"], "live")
+
+
+class ApprovalsTest(unittest.TestCase):
+    def test_the_code_is_needed_and_compared_whole(self):
+        path = os.path.join(tempfile.mkdtemp(), "code")
+        with open(path, "w") as f:
+            f.write("4711\n")
+
+        class CP:
+            enabled = True
+        a = approvals.Approvals(CP(), path, lambda v, args: (None, 0))
+        self.assertTrue(a.authorised("4711"))
+        self.assertFalse(a.authorised("471"))
+        self.assertFalse(a.authorised(""))
+        self.assertFalse(approvals.Approvals(None, path, None).authorised("4711"))
+        with self.assertRaises(ValueError):
+            a.decide("../etc", "approve", "")
 
 
 if __name__ == "__main__":

@@ -18,6 +18,12 @@ station's stock (the fleet base hands them out), is inspected, and gets a
 fresh battery pack; only then is it ready again, so the dispatcher sends the
 spares in the meantime. A supply rover (ROLE=supply) takes no waypoints: it
 drives from the depot to the stations its mission names, with their cargo.
+
+During a search the fleet base names targets (the datum, each sighting);
+the pilot keeps them in telemetry.json in metres from home, and run_mission
+takes a search pattern aimed at one of them instead of waypoints
+(patterns.py): the companion computer draws the pattern, leads the drift,
+and checks it against the same limits.
 """
 
 import collections
@@ -35,6 +41,7 @@ from pymavlink import mavutil
 
 import geo
 import mcp_http
+import patterns
 
 log = logging.getLogger("vehicle-pilot")
 mav = mavutil.mavlink
@@ -443,6 +450,8 @@ class Pilot:
         self._stopped_since = None
         self._camera = 0
         self._photos_at_start = 0
+        self.targets = {}
+        self._targets_at = 0.0
 
     # -- the state ---------------------------------------------------------
 
@@ -517,7 +526,38 @@ class Pilot:
         if self.role == "supply":
             out["stations"] = stations
             out["capacity"] = {"batteries": self.capacity[0], "parts": self.capacity[1]}
+        if self.targets and self.role != "supply":
+            out["targets"] = {k: {"north_m": round(v["north_m"]), "east_m": round(v["east_m"]), "distance_m": round(math.hypot(v["north_m"], v["east_m"])),
+                                  "about": v.get("about", ""), **({"radius_m": v["radius_m"]} if "radius_m" in v else {})}
+                              for k, v in self.targets.items()}
         return out
+
+    def refresh_targets(self, home):
+        """The fleet base's search targets, in metres from home, every 2 s."""
+        if not self.crew.crew_url or not home or time.monotonic() - self._targets_at < 2:
+            return
+        self._targets_at = time.monotonic()
+        try:
+            with urllib.request.urlopen(f"{self.crew.crew_url}/api/targets", timeout=1.5) as response:
+                raw = json.load(response)
+        except Exception:
+            return
+        targets = {}
+        for name, t in (raw or {}).items():
+            try:
+                north, east = geo.offset_m(home["lat"], home["lon"], float(t["lat"]), float(t["lon"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+            drift = t.get("drift") or raw.get("datum", {}).get("drift") or {}
+            dn = de = 0.0
+            if isinstance(drift.get("to_deg"), (int, float)) and isinstance(drift.get("speed_m_s"), (int, float)):
+                a = math.radians(drift["to_deg"])
+                dn, de = drift["speed_m_s"] * math.cos(a), drift["speed_m_s"] * math.sin(a)
+            entry = {"north_m": north, "east_m": east, "drift_n": dn, "drift_e": de, "about": str(t.get("about", ""))[:120]}
+            if isinstance(t.get("radius_m"), (int, float)):
+                entry["radius_m"] = round(t["radius_m"])
+            targets[str(name)[:20]] = entry
+        self.targets = targets
 
     def tick(self):
         """Once a second: distance flown, the mission's end, the crew, the file."""
@@ -537,6 +577,7 @@ class Pilot:
             self._watch_flight(s)
         if not s["armed"]:
             self.crew.tick(s["battery_pct"])
+        self.refresh_targets(s["home"])
         state = self.state()
         bot_view = {k: v for k, v in state.items() if k != "events"}
         os.makedirs(os.path.dirname(self.telemetry_file), exist_ok=True)
@@ -631,6 +672,7 @@ class Pilot:
         name = arguments.get("name")
         speed = arguments.get("speed_m_s", round((self.limits.min_speed + self.limits.max_speed) / 2))
         deliveries = None
+        pattern = None
         photo_every = arguments.get("photo_every_m", 0) or 0
         if isinstance(photo_every, bool) or not isinstance(photo_every, (int, float)) or not 0 <= photo_every <= 500:
             raise mcp_http.ToolError("photo_every_m: 0 (no photos) to 500")
@@ -640,6 +682,16 @@ class Pilot:
                 raise mcp_http.ToolError("the rover has no home yet; try again in a minute")
             waypoints, deliveries = self.check_deliveries(arguments.get("deliveries"), home)
             plan = self.check_plan(name, waypoints, speed)
+        elif arguments.get("pattern") is not None:
+            if arguments.get("waypoints"):
+                raise mcp_http.ToolError("give waypoints or a pattern, not both")
+            try:
+                waypoints, centre = patterns.expand(arguments["pattern"], self.targets, speed if isinstance(speed, (int, float)) else 10,
+                                                    self.limits.max_waypoints, self.limits.min_alt_m)
+            except patterns.PatternError as exc:
+                raise mcp_http.ToolError(str(exc))
+            plan = self.check_plan(name, waypoints, speed)
+            pattern = dict(arguments["pattern"], centre_north_m=round(centre[0]), centre_east_m=round(centre[1]))
         else:
             plan = self.check_plan(name, arguments.get("waypoints"), speed)
         if not self.busy.acquire(blocking=False):
@@ -661,6 +713,8 @@ class Pilot:
             }
             if deliveries:
                 self.flight["deliveries"] = deliveries
+            if pattern:
+                self.flight["pattern"] = pattern
             self.flown_m = 0.0
             self.flight["photo_every_m"] = photo_every
             self._photos_at_start = s["photos"]
@@ -670,7 +724,7 @@ class Pilot:
             self.flight["status"] = "flying"
             return {
                 "accepted": True, "vehicle": self.vehicle_id, "kind": self.kind, "mission": name,
-                "waypoints": len(plan), "distance_m": round(legs), "eta_s": eta,
+                "waypoints": len(plan), "distance_m": round(legs), "eta_s": eta, **({"pattern": pattern["kind"]} if pattern else {}),
                 "status": "on its way in AUTO; it comes back to its station by itself",
             }
         except mcp_http.ToolError:
@@ -840,8 +894,9 @@ def mission_tool(kind, limits):
         "description": (
             f"{what} Waypoints are metres north and east of the vehicle's home. "
             f"Limits: within {lim['max_radius_m']:g} m of home, at most {lim['max_waypoints']} waypoints, "
-            f"speed {limits.min_speed:g} to {limits.max_speed:g} m/s. The service refuses a route outside "
-            "the limits and a vehicle that is not ready (at its station, low battery). "
+            f"speed {limits.min_speed:g} to {limits.max_speed:g} m/s. Instead of waypoints, a search pattern: the service draws it "
+            "around a target named in telemetry.json's targets (the datum, a sighting), leads the target's drift, and checks it like a route. "
+            "The service refuses a route outside the limits and a vehicle that is not ready (at its station, low battery). "
             "One call per mission; it answers once the vehicle is on its way."
         ),
         "inputSchema": {
@@ -854,8 +909,27 @@ def mission_tool(kind, limits):
                 },
                 "speed_m_s": {"type": "number", "description": f"cruise speed in m/s, {limits.min_speed:g} to {limits.max_speed:g}"},
                 "photo_every_m": {"type": "number", "minimum": 0, "maximum": 500, "description": "camera: one photo every so many metres along the route; 0 or absent: none"},
+                "pattern": {
+                    "type": "object",
+                    "description": "a search pattern instead of waypoints",
+                    "properties": {
+                        "kind": {"type": "string", "enum": list(patterns.KINDS),
+                                 "description": "expanding_square: from a point where something was seen, outwards; parallel_track: straight legs across an area"},
+                        "target": {"type": "string", "description": "a name from telemetry.json's targets, e.g. 'datum' or 'S3'"},
+                        "centre_north_m": {"type": "number", "description": "without a target: the centre, metres north of home"},
+                        "centre_east_m": {"type": "number", "description": "without a target: the centre, metres east of home"},
+                        "spacing_m": {"type": "number", "description": "track spacing in metres, 10 to 1000"},
+                        "legs": {"type": "integer", "description": f"expanding_square: legs, 2 to {limits.max_waypoints - 1}"},
+                        "length_m": {"type": "number", "description": "parallel_track: leg length in metres"},
+                        "width_m": {"type": "number", "description": "parallel_track: width of the area across the legs, in metres"},
+                        "heading_deg": {"type": "number", "description": "direction of the first leg (parallel_track: of the legs), 0 north, 90 east"},
+                        **({"alt_m": {"type": "number", "description": f"metres above home, {limits.min_alt_m:g} to {limits.max_alt_m:g}"}} if limits.max_alt_m > 0 else {}),
+                    },
+                    "required": ["kind"],
+                    "additionalProperties": False,
+                },
             },
-            "required": ["name", "waypoints"],
+            "required": ["name"],
             "additionalProperties": False,
         },
     }
