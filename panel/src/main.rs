@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use axlr_bots_panel::adapters::config::{InstallDiscovery, TomlConfigStore};
 use axlr_bots_panel::adapters::http::HttpConnector;
-use axlr_bots_panel::adapters::system::{DialogFilePicker, FsDefinitionReader, SystemClock, UuidKeys};
+use axlr_bots_panel::adapters::system::{DesktopNotifier, DialogFilePicker, FsDefinitionReader, SystemClock, UuidKeys};
 use axlr_bots_panel::application::Connect;
 use axlr_bots_panel::ui::{App, Command, Services, USAGE, launch};
 
@@ -42,6 +42,7 @@ fn main() -> std::process::ExitCode {
             picker: Arc::new(DialogFilePicker),
             reader: Arc::new(FsDefinitionReader),
             connect: connect.clone(),
+            notifier: Arc::new(DesktopNotifier),
         };
         App::new(services, launch_options.clone(), &config, saved)
     });

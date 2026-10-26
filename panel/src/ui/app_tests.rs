@@ -742,3 +742,69 @@ fn a_new_bot_joins_a_team_from_the_form() {
     assert_eq!(bot.groups, vec!["port"]);
     assert!(bot.can_return_home());
 }
+
+#[test]
+fn a_task_that_starts_waiting_raises_a_notice_that_opens_it() {
+    use crate::adapters::fake::{FakeControlPlane, RecordingNotifier};
+    let fake = std::sync::Arc::new(FakeControlPlane::sample("2026-10-25T10:00:00Z".parse().unwrap()));
+    let notices = std::sync::Arc::new(RecordingNotifier::default());
+    let mut app = super::view::tests::app_over(fake.clone());
+    app.services.notifier = notices.clone();
+    send(&mut app, Message::SettingsSave);
+    assert!(
+        notices.shown().is_empty(),
+        "the first read only learns what already waits"
+    );
+    assert_eq!(app.noticed.len(), 1);
+
+    // A running task starts waiting: one notice, with the control plane.
+    let running = task_in(&app, TaskStatus::Running);
+    fake.finish_task(&running, TaskStatus::WaitingApproval);
+    let tick = app.now + Duration::seconds(30);
+    send(&mut app, Message::Tick(tick));
+    let shown = notices.shown();
+    assert_eq!(shown.len(), 1);
+    assert_eq!(shown[0].title, "bot asks for your OK");
+    assert!(shown[0].body.ends_with("127.0.0.1:7879"), "{}", shown[0].body);
+    // The next read tells nothing new.
+    send(&mut app, Message::Tick(tick + Duration::seconds(30)));
+    assert_eq!(notices.shown().len(), 1);
+
+    // A click opens the task and brings the window forward.
+    let effects = app.apply(Message::NoticeClicked(Screen::Task(running.clone())));
+    assert_eq!(app.screen, Screen::Task(running.clone()));
+    assert!(effects.contains(&Effect::FocusWindow));
+    notices.click(true);
+    let clicked = futures::executor::block_on(app.services.clone().execute(Effect::Notify {
+        notice: crate::application::Notice {
+            title: "t".into(),
+            body: "b".into(),
+        },
+        open: Screen::Tasks,
+    }));
+    assert!(matches!(clicked, Some(Message::NoticeClicked(Screen::Tasks))));
+    assert!(futures::executor::block_on(app.services.clone().execute(Effect::FocusWindow)).is_none());
+
+    // A task no longer waiting leaves the set; waiting again, it is told again.
+    fake.finish_task(&running, TaskStatus::Running);
+    send(&mut app, Message::Tick(tick + Duration::seconds(60)));
+    assert!(!app.noticed.contains(&running));
+}
+
+#[test]
+fn a_teammates_warning_raises_a_notice_that_opens_the_teams() {
+    let (mut app, fake) = with_a_team();
+    let notices = std::sync::Arc::new(crate::adapters::fake::RecordingNotifier::default());
+    app.services.notifier = notices.clone();
+    fake.publish(
+        "bot.event.emitted",
+        "bot",
+        serde_json::json!({"name": "recall", "severity": "warning", "message": "a ship is entering", "to": ["bot-wrx80"]}),
+    );
+    let tick = app.now + Duration::seconds(6);
+    send(&mut app, Message::Tick(tick));
+    let shown = notices.shown();
+    assert_eq!(shown.len(), 1);
+    assert_eq!(shown[0].title, "Warning to the team · team port");
+    assert!(shown[0].body.starts_with("bot → bot-wrx80: a ship is entering"));
+}

@@ -39,7 +39,7 @@ pub(crate) mod tests {
     use std::sync::Arc;
 
     use crate::adapters::fake::{
-        CountingKeys, FakeConnector, FakeControlPlane, FixedClock, MemoryConfigStore, MemoryFiles,
+        CountingKeys, FakeConnector, FakeControlPlane, FixedClock, MemoryConfigStore, MemoryFiles, RecordingNotifier,
     };
     use crate::application::{Connect, PanelConfig};
     use crate::ui::{App, Launch, Services};
@@ -72,6 +72,7 @@ pub(crate) mod tests {
             picker: files.clone(),
             reader: files,
             connect: Arc::new(Connect::new(connector, store, clock)),
+            notifier: Arc::new(RecordingNotifier::default()),
         };
         App::new(services, Launch::default(), &config(), false).0
     }

@@ -56,12 +56,15 @@ impl App {
             Err(_) => return Vec::new(),
         };
         let first = !self.watch.feeds.contains_key(&name);
+        let mut effects = Vec::new();
         if !first {
             let fresh = &feed.events[feed.events.len() - feed.new..];
             if let Some(alert) = fresh.iter().rev().find(|e| e.needs_attention()) {
+                let title = format!("{} · team {name}", alert.label());
+                effects.push(self.notice_warning(title.clone(), alert.detail()));
                 self.banner = Some(Banner {
                     tone: Tone::Wait,
-                    title: format!("{} · team {name}", alert.label()),
+                    title,
                     detail: alert.detail(),
                     at: self.now,
                 });
@@ -70,9 +73,10 @@ impl App {
         let brought = feed.new > 0;
         self.watch.feeds.insert(name.clone(), feed);
         if !brought || !self.teams().iter().any(|t| t.name == name) {
-            return Vec::new();
+            return effects;
         }
-        self.follow_teams()
+        effects.extend(self.follow_teams());
+        effects
     }
 
     /// Opens a bot's team field with what it has now.
