@@ -9,9 +9,22 @@ itself (AIS_KEY_FILE). The key is read from a file (a Secret) at each
 connection, never logged. Without a key file the layer is off and the map
 says so.
 
-  GET /ships    {"ships": [...], "summary": {...}}
-  GET /stream   the same as server-sent events, every 2 s
+Its API, version 1 (ais-openapi.json beside this file):
+
+  GET /v1/ships                  {"ships": [...], "summary": {...}}; filters
+                                 bbox=lat1,lon1,lat2,lon2, type (a type name
+                                 or code), name (part of it, any case)
+  GET /v1/ships/{mmsi}           one ship
+  GET /v1/ships/{mmsi}/track     its recent positions; since= (RFC 3339 or
+                                 epoch seconds)
+  GET /v1/stream                 server-sent events: `position` and `static`,
+                                 each carrying the ship as it is now
   GET /healthz
+
+A ship: mmsi, name, callsign, imo, type, type_name, length_m, beam_m, dim
+(a, b, c, d), draught_m, destination, lat, lon, sog, cog, heading,
+nav_status, last_seen. What AIS sends for "not available" (102.3 kn, 360
+degrees, heading 511, status 15, type 0) comes back as null.
 
 Messages kept: PositionReport and StandardClassBPositionReport (position,
 speed and course over ground, heading) and ShipStaticData (name, IMO, call
@@ -20,11 +33,15 @@ starboard, so length, beam and where the hull lies around the position,
 draught, destination). A ship not heard from for MAX_AGE seconds is dropped.
 """
 
+import calendar
+import collections
 import json
 import logging
 import os
+import queue
 import threading
 import time
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -32,10 +49,25 @@ log = logging.getLogger("ais")
 
 URL = "wss://stream.aisstream.io/v0/stream"
 MAX_AGE = 900
+TRACK_POINTS = 240                 # a ship's recent positions kept for /track
+FIELDS = ("mmsi", "name", "callsign", "imo", "type", "type_name", "length_m", "beam_m", "dim", "draught_m", "destination",
+          "lat", "lon", "sog", "cog", "heading", "nav_status", "last_seen")
 TYPES = [(20, 29, "wing in ground"), (30, 30, "fishing"), (31, 32, "towing"), (33, 34, "dredging or diving"), (35, 35, "military"),
          (36, 36, "sailing"), (37, 37, "pleasure craft"), (40, 49, "high speed craft"), (50, 50, "pilot"), (51, 51, "search and rescue"),
          (52, 52, "tug"), (53, 53, "port tender"), (55, 55, "law enforcement"), (58, 58, "medical"), (60, 69, "passenger"),
          (70, 79, "cargo"), (80, 89, "tanker"), (90, 99, "other")]
+
+
+def iso(t):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+
+
+def view(ship):
+    """A ship as the API gives it: every field, null where AIS gave nothing."""
+    out = {k: ship.get(k) for k in FIELDS}
+    out["type_name"] = ship.get("type_name") or None
+    out["last_seen"] = iso(ship["updated"]) if ship.get("updated") else None
+    return out
 
 
 def type_name(code):
@@ -55,6 +87,8 @@ class AIS:
         self.error = ""
         self.updated = 0.0
         self.messages = 0
+        self.tracks = {}                  # mmsi -> deque of [t, lat, lon, sog, cog]
+        self.subscribers = []             # queues of the /v1/stream readers
 
     def start(self):
         if not self.key_file:
@@ -111,6 +145,7 @@ class AIS:
         if not mmsi:
             return
         now = time.time()
+        event = None
         with self.lock:
             self.status, self.error = "live", ""
             self.messages += 1
@@ -133,10 +168,13 @@ class AIS:
                 heading = body.get("TrueHeading")
                 ship["heading"] = heading if isinstance(heading, (int, float)) and 0 <= heading < 360 else None
                 status = body.get("NavigationalStatus")
-                if isinstance(status, int):
-                    ship["nav_status"] = status
+                ship["nav_status"] = status if isinstance(status, int) and 0 <= status < 15 else None
+                track = self.tracks.setdefault(mmsi, collections.deque(maxlen=TRACK_POINTS))
+                track.append([now, lat, lon, ship["sog"], ship["cog"]])
+                event = ("position", view(ship))
             elif kind == "ShipStaticData":
                 code = body.get("Type")
+                code = code if isinstance(code, int) and 0 < code < 100 else None
                 dim = body.get("Dimension") or {}
                 ship.update(type=code, type_name=type_name(code), destination=(body.get("Destination") or "").strip()[:30])
                 a, b, c, d = (dim.get(k) if isinstance(dim.get(k), int) and dim.get(k) >= 0 else 0 for k in "ABCD")
@@ -153,13 +191,58 @@ class AIS:
                     ship["callsign"] = callsign[:10]
                 if (body.get("Name") or "").strip():
                     ship["name"] = body["Name"].strip()
+                event = ("static", view(ship)) if "lat" in ship else None
+        if event:
+            self._publish(*event)
+
+    def _publish(self, kind, ship):
+        with self.lock:
+            readers = list(self.subscribers)
+        for q in readers:
+            try:
+                q.put_nowait((kind, ship))
+            except queue.Full:
+                pass                      # a slow reader misses updates, never blocks the stream
+
+    def subscribe(self):
+        q = queue.Queue(maxsize=500)
+        with self.lock:
+            self.subscribers.append(q)
+        return q
+
+    def unsubscribe(self, q):
+        with self.lock:
+            if q in self.subscribers:
+                self.subscribers.remove(q)
 
     def ships(self):
         now = time.time()
         with self.lock:
             for mmsi in [m for m, s in self.vessels.items() if now - s.get("updated", now) > MAX_AGE]:
                 del self.vessels[mmsi]
-            return [dict(s) for s in self.vessels.values() if "lat" in s]
+                self.tracks.pop(mmsi, None)
+            return [view(s) for s in self.vessels.values() if "lat" in s]
+
+    def ship(self, mmsi):
+        return next((s for s in self.ships() if s["mmsi"] == mmsi), None)
+
+    def track(self, mmsi, since=0.0):
+        with self.lock:
+            points = list(self.tracks.get(mmsi) or [])
+        return [{"t": iso(t), "lat": lat, "lon": lon, "sog": sog, "cog": cog} for t, lat, lon, sog, cog in points if t >= since]
+
+    def query(self, bbox=None, kind=None, name=None):
+        """The ships in a box, of a type (name or code), whose name holds a part."""
+        out = []
+        for s in self.ships():
+            if bbox and not (bbox[0] <= s["lat"] <= bbox[2] and bbox[1] <= s["lon"] <= bbox[3]):
+                continue
+            if kind and kind.lower() != (s["type_name"] or "").lower() and kind != str(s["type"]):
+                continue
+            if name and name.upper() not in (s["name"] or "").upper():
+                continue
+            out.append(s)
+        return out
 
     def summary(self):
         ships = self.ships()
@@ -182,7 +265,7 @@ class Remote:
     def _run(self):
         while True:
             try:
-                with urllib.request.urlopen(self.url + "/ships", timeout=3) as r:
+                with urllib.request.urlopen(self.url + "/v1/ships", timeout=3) as r:
                     data = json.load(r)
                 with self.lock:
                     self._ships = [s for s in data.get("ships") or [] if isinstance(s, dict)]
@@ -213,8 +296,31 @@ def from_env():
     return AIS(os.environ.get("AIS_KEY_FILE", ""), bbox_from_env())
 
 
+def _since(raw):
+    if not raw:
+        return 0.0
+    try:
+        return float(raw)
+    except ValueError:
+        pass
+    try:
+        return calendar.timegm(time.strptime(raw.replace("Z", "+0000")[:24], "%Y-%m-%dT%H:%M:%S%z"))
+    except ValueError:
+        raise ValueError("since: RFC 3339 (2026-10-26T18:00:00Z) or epoch seconds") from None
+
+
+def _bbox(raw):
+    if not raw:
+        return None
+    try:
+        lat1, lon1, lat2, lon2 = (float(x) for x in raw.split(","))
+    except ValueError:
+        raise ValueError("bbox: lat1,lon1,lat2,lon2") from None
+    return [min(lat1, lat2), min(lon1, lon2), max(lat1, lat2), max(lon1, lon2)]
+
+
 class Handler(BaseHTTPRequestHandler):
-    """The ais service's port: the ships, as JSON or as a stream."""
+    """The ais service's API, version 1."""
 
     ais = None
     protocol_version = "HTTP/1.1"
@@ -222,40 +328,59 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
-    def _body(self):
-        return json.dumps({"ships": self.ais.ships(), "summary": self.ais.summary()})
-
-    def do_GET(self):
-        if self.path == "/healthz":
-            body = b"ok\n"
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
-        elif self.path == "/ships":
-            body = self._body().encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-        elif self.path == "/stream":
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Connection", "close")
-            self.end_headers()
-            self.close_connection = True
-            try:
-                while True:
-                    self.wfile.write(f"data: {self._body()}\n\n".encode())
-                    self.wfile.flush()
-                    time.sleep(2)
-            except (BrokenPipeError, ConnectionResetError, OSError):
-                return
-        else:
-            body = b"not found\n"
-            self.send_response(404)
-            self.send_header("Content-Type", "text/plain")
+    def _send(self, status, value, ctype="application/json"):
+        body = value if isinstance(value, bytes) else json.dumps(value).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    def do_GET(self):
+        url = urllib.parse.urlparse(self.path)
+        q = {k: v[0] for k, v in urllib.parse.parse_qs(url.query).items()}
+        parts = url.path.strip("/").split("/")
+        try:
+            if url.path == "/healthz":
+                return self._send(200, b"ok\n", "text/plain")
+            if parts[:2] == ["v1", "ships"] and len(parts) == 2:
+                ships = self.ais.query(_bbox(q.get("bbox")), q.get("type"), q.get("name"))
+                return self._send(200, {"ships": ships, "summary": self.ais.summary()})
+            if parts[:2] == ["v1", "ships"] and len(parts) in (3, 4) and parts[2].isdigit():
+                ship = self.ais.ship(parts[2])
+                if ship is None:
+                    return self._send(404, {"error": f"no ship {parts[2]} heard in the last {MAX_AGE // 60} minutes"})
+                if len(parts) == 3:
+                    return self._send(200, ship)
+                if parts[3] == "track":
+                    return self._send(200, {"mmsi": parts[2], "points": self.ais.track(parts[2], _since(q.get("since")))})
+            if url.path == "/v1/stream":
+                return self._stream()
+        except ValueError as exc:
+            return self._send(400, {"error": str(exc)})
+        return self._send(404, {"error": "not found"})
+
+    def _stream(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+        q = self.ais.subscribe()
+        try:
+            while True:
+                try:
+                    kind, ship = q.get(timeout=15)
+                    self.wfile.write(f"event: {kind}\ndata: {json.dumps(ship)}\n\n".encode())
+                except queue.Empty:
+                    self.wfile.write(b": keep-alive\n\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            return
+        finally:
+            self.ais.unsubscribe(q)
 
 
 def main():

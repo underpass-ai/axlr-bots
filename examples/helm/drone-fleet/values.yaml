@@ -13,7 +13,7 @@
 # The runbook is docs/runbooks/drone-fleet.md.
 
 images:
-  app: container-registry.underpassai.com/axlr-bots/fleet-app@sha256:2370bee4b37a368d8eeab18900c875fada35f71e5d18b3fee3cf8d5e3034df58
+  app: container-registry.underpassai.com/axlr-bots/fleet-app@sha256:b66e704cbdfb15a71522236c2de9074ffc2e9ab1db529d1d919ea3fe8a4c00e6
   sitl: container-registry.underpassai.com/axlr-bots/fleet-sitl@sha256:9d0ddd377ac6a5d5dca13feb0a7ef1311725dcc45c58b7e369034e44c5adfd9a
   controlPlane: container-registry.underpassai.com/axlr-bots/control-plane@sha256:ba05aba27c395ef8ea791332159a0ad8c812d315b7c1a674fee464b130a0ec8a
 

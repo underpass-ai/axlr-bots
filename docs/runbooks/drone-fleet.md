@@ -25,7 +25,7 @@ A fleet of simulated autonomous vehicles at the Port of Rotterdam (Maasvlakte 2)
 | `pilot-<vehicle>` bots | read `telemetry.json`; a quad's or the plane's plans the route in metres from home, a rover's picks one of its precomputed routes; call `run_mission` once: that call waits for a person |
 | `vehicle_pilot.py` | refuses a route outside the geofence, the altitude band or the speed range, and a vehicle that is not ready; uploads the mission over MAVLink, launches it, and after landing queues the vehicle at its station: inspection, then a fresh battery pack |
 | `fleet_base.py` | polls every vehicle, hands out the bays (a service takes a pack and a part from the station), moves the supply rover's cargo when it reaches a station, writes `fleet.json` for the base's bots and serves the map |
-| `ais` service | the one connection to aisstream.io; serves the ships to the base, which shows them and hands them to the bots and the vehicles |
+| `ais` service | the one connection to aisstream.io; an HTTP API, version 1 ([`ais-openapi.json`](../../examples/drone-fleet/app/ais-openapi.json)): `/v1/ships` (filters `bbox`, `type`, `name`), `/v1/ships/{mmsi}`, `/v1/ships/{mmsi}/track`, `/v1/stream`; the base reads it and hands the ships to the map, the bots and the vehicles |
 
 The safety limits live in the companion computer, not in the model: a refused route is the tool's error, which the model reads, and nothing moved.
 
@@ -35,7 +35,7 @@ The safety limits live in the companion computer, not in the model: a refused ro
 - The images in a registry the cluster pulls from. On wrx80 they were built with podman and pushed to the lab registry:
 
 ```bash
-podman build -t $R/fleet-app:0.6.0 examples/drone-fleet                                         # vehicle_pilot.py, fleet_base.py, ais.py, the map, the 3D view, the search
+podman build -t $R/fleet-app:0.7.0 examples/drone-fleet                                         # vehicle_pilot.py, fleet_base.py, ais.py, the map, the 3D view, the search
 podman build -t $R/fleet-sitl:4.7.2 examples/drone-fleet/sitl                                    # SITL (checked sha256) + mavlink-router
 podman build -f examples/drone-fleet/control-plane.Dockerfile -t $R/control-plane:0.2.0-fleet .  # axlr-bots
 ```
@@ -127,8 +127,8 @@ Overpass ─▶ fetch_osm.py ─▶ prepare.py (shapely) ─▶ build_scene.py (
 To rebuild it, follow the [port3d README](../../examples/drone-fleet/port3d/README.md), then the fleet-app image and the digest in `values.yaml`:
 
 ```bash
-podman build -t $R/fleet-app:0.6.0 examples/drone-fleet
-podman push --digestfile /tmp/digest $R/fleet-app:0.6.0
+podman build -t $R/fleet-app:0.7.0 examples/drone-fleet
+podman push --digestfile /tmp/digest $R/fleet-app:0.7.0
 helm upgrade fleet examples/helm/drone-fleet -n port-fleet -f values-in-use.yaml   # helm get values fleet -n port-fleet -o yaml
 ```
 
