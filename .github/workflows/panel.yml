@@ -1,7 +1,8 @@
 name: Panel
 
 # The desktop panel in panel/ (Rust). It runs when the panel changes, or when
-# what it reads changes: the operator API's server and its reference.
+# what it reads changes: the operator API's server, its reference and its
+# contract.
 on:
   push:
     branches: [main]
@@ -9,12 +10,14 @@ on:
       - panel/**
       - adapters/unixapi/**
       - docs/reference/operator-api.md
+      - docs/reference/operator-api.json
       - .github/workflows/panel.yml
   pull_request:
     paths:
       - panel/**
       - adapters/unixapi/**
       - docs/reference/operator-api.md
+      - docs/reference/operator-api.json
       - .github/workflows/panel.yml
 
 concurrency:

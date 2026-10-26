@@ -7,6 +7,10 @@ pub enum BotStatus {
     Registered,
     Enabled,
     Paused,
+    /// A value this panel does not know: the control plane is newer. Read,
+    /// shown as unknown, never refused.
+    #[serde(other)]
+    Unknown,
 }
 
 impl BotStatus {
@@ -18,6 +22,7 @@ impl BotStatus {
             Self::Registered => "Registered",
             Self::Enabled => "Enabled",
             Self::Paused => "Paused",
+            Self::Unknown => "Unknown",
         }
     }
 

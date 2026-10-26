@@ -11,6 +11,10 @@ pub enum TaskStatus {
     /// Nobody decided the call it waited on in time; the call never ran.
     Expired,
     Cancelled,
+    /// A value this panel does not know: the control plane is newer. Read,
+    /// shown as unknown, never refused.
+    #[serde(other)]
+    Unknown,
 }
 
 impl TaskStatus {
@@ -34,6 +38,7 @@ impl TaskStatus {
             Self::Failed => "Failed",
             Self::Expired => "Expired",
             Self::Cancelled => "Cancelled",
+            Self::Unknown => "Unknown",
         }
     }
 

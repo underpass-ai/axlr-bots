@@ -1,0 +1,2547 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AXLR Bots operator API",
+    "version": "1",
+    "license": {
+      "name": "Apache-2.0",
+      "identifier": "Apache-2.0"
+    },
+    "description": "The routes the operator address serves (axlr-bots serve --api-listen), behind the bearer token. The prose reference is operator-api.md. adapters/unixapi/contract_test.go checks this file against the server; panel/tests/operator_contract.rs checks that the panel reads every answer it describes."
+  },
+  "servers": [
+    {
+      "url": "https://127.0.0.1:7879"
+    }
+  ],
+  "security": [
+    {
+      "bearer": []
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "health",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/bots": {
+      "get": {
+        "operationId": "listBots",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BotSnapshot"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "registerBot",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BotDefinition"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotSnapshot"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/bots/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "bot id"
+        }
+      ],
+      "get": {
+        "operationId": "getBot",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotSnapshot"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patchBot",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BotPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotSnapshot"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/bots/{id}/enable": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "bot id"
+        }
+      ],
+      "post": {
+        "operationId": "enableBot",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotSnapshot"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/bots/{id}/pause": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "bot id"
+        }
+      ],
+      "post": {
+        "operationId": "pauseBot",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotSnapshot"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/bots/{id}/tasks": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "bot id"
+        }
+      ],
+      "post": {
+        "operationId": "submitBotTask",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "One task per key; a retry with the same key names the same task."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The key named a task that already exists: that task, created false",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/bots/{id}/events": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "bot id"
+        }
+      ],
+      "get": {
+        "operationId": "listBotEvents",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "newest events to return, oldest first"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Event"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/tasks": {
+      "get": {
+        "operationId": "listTasks",
+        "parameters": [
+          {
+            "name": "bot",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "one bot"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "one TaskStatus"
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "RFC 3339; tasks created at or after"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "at most this many, newest first"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskSnapshot"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "submitTask",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "One task per key; a retry with the same key names the same task."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The key named a task that already exists: that task, created false",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/tasks/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "task id"
+        }
+      ],
+      "get": {
+        "operationId": "getTask",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskSnapshot"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/tasks/{id}/events": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "task id"
+        }
+      ],
+      "get": {
+        "operationId": "listTaskEvents",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "newest events to return, oldest first"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Event"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/tasks/{id}/executions": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "task id"
+        }
+      ],
+      "get": {
+        "operationId": "listExecutions",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ExecutionSnapshot"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/tasks/{id}/cancel": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "task id"
+        }
+      ],
+      "post": {
+        "operationId": "cancelTask",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/tasks/{id}/run": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "task id"
+        }
+      ],
+      "post": {
+        "operationId": "runTask",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/tasks/{id}/decide": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "task id"
+        }
+      ],
+      "post": {
+        "operationId": "decideTask",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/tasks/{id}/approve": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "task id"
+        }
+      ],
+      "post": {
+        "operationId": "approveTask",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/tasks/{id}/deny": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "task id"
+        }
+      ],
+      "post": {
+        "operationId": "denyTask",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/tasks/{id}/report": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "task id"
+        }
+      ],
+      "get": {
+        "operationId": "getReport",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/executions/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "execution id"
+        }
+      ],
+      "get": {
+        "operationId": "getExecution",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionSnapshot"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/executions/{id}/artifacts/{name}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "execution id"
+        },
+        {
+          "name": "name",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "artifact name"
+        }
+      ],
+      "get": {
+        "operationId": "getArtifact",
+        "responses": {
+          "200": {
+            "description": "The artifact, with its media type",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/triggers/{bot}/{trigger}": {
+      "parameters": [
+        {
+          "name": "bot",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "bot id"
+        },
+        {
+          "name": "trigger",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "trigger name"
+        }
+      ],
+      "post": {
+        "operationId": "fireTrigger",
+        "security": [],
+        "description": "Authenticates with the trigger's own secret or signature, not the bearer token.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "One task per key; a retry with the same key names the same task."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "*/*": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FireResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The key named a task that already exists: that task, created false",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FireResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/overview": {
+      "get": {
+        "operationId": "getOverview",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "RFC 3339; the start of the counts that say since"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Overview"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/nodes": {
+      "get": {
+        "operationId": "listNodes",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NodeSnapshot"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/nodes/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "node id"
+        }
+      ],
+      "get": {
+        "operationId": "getNode",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeSnapshot"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/enrollments": {
+      "post": {
+        "operationId": "createEnrollmentToken",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollTokenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollTokenResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/nodes/{id}/revoke": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "node id"
+        }
+      ],
+      "post": {
+        "operationId": "revokeNode",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "The token in <state>/api.token."
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "The error, with its kind",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ApprovalExpiry": {
+        "type": "string",
+        "x-go-enum": "domain.ApprovalExpiry",
+        "x-extensible-enum": true,
+        "enum": [
+          "deny",
+          "cancel"
+        ],
+        "description": "A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
+      },
+      "ApprovalWait": {
+        "type": "object",
+        "x-go-type": "domain.ApprovalWait",
+        "properties": {
+          "callId": {
+            "type": "string"
+          },
+          "closedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deadline": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "onExpire": {
+            "$ref": "#/components/schemas/ApprovalExpiry"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "since": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "tool": {
+            "type": "string",
+            "example": "local_write"
+          }
+        },
+        "required": [
+          "since",
+          "deadline",
+          "onExpire"
+        ]
+      },
+      "ApprovalsSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.ApprovalsSnapshot",
+        "properties": {
+          "notify": {
+            "items": {
+              "$ref": "#/components/schemas/NotifyTargetSnapshot"
+            },
+            "type": "array"
+          },
+          "onExpire": {
+            "type": "string"
+          },
+          "ttl": {
+            "type": "string"
+          }
+        }
+      },
+      "Artifact": {
+        "type": "object",
+        "x-go-type": "domain.Artifact",
+        "properties": {
+          "callId": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "mediaType": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          },
+          "stored": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "AutonomyLevel": {
+        "type": "string",
+        "x-go-enum": "domain.AutonomyLevel",
+        "x-extensible-enum": true,
+        "enum": [
+          "observe",
+          "propose",
+          "act-with-approval",
+          "act-within-policy"
+        ],
+        "description": "A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
+      },
+      "BotDefinition": {
+        "type": "object",
+        "x-go-type": "application.BotDefinition",
+        "properties": {
+          "allowedTools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "approvals": {
+            "$ref": "#/components/schemas/ApprovalsSnapshot"
+          },
+          "budgets": {
+            "$ref": "#/components/schemas/BudgetsDefinition"
+          },
+          "delegation": {
+            "$ref": "#/components/schemas/DelegationSnapshot"
+          },
+          "id": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string"
+          },
+          "mission": {
+            "type": "string"
+          },
+          "model": {
+            "$ref": "#/components/schemas/ModelPolicyDefinition"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "placement": {
+            "$ref": "#/components/schemas/PlacementSnapshot"
+          },
+          "tenant": {
+            "type": "string"
+          },
+          "toolRules": {
+            "$ref": "#/components/schemas/ToolRulesSnapshot"
+          },
+          "triggers": {
+            "items": {
+              "$ref": "#/components/schemas/TriggerSnapshot"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "tenant",
+          "name",
+          "owner",
+          "mission",
+          "allowedTools",
+          "toolRules",
+          "triggers",
+          "placement",
+          "approvals",
+          "model",
+          "budgets"
+        ]
+      },
+      "BotPatch": {
+        "type": "object",
+        "x-go-type": "application.BotPatch",
+        "properties": {
+          "allowedTools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "approvals": {
+            "$ref": "#/components/schemas/ApprovalsSnapshot"
+          },
+          "budgets": {
+            "$ref": "#/components/schemas/BudgetsDefinition"
+          },
+          "delegation": {
+            "$ref": "#/components/schemas/DelegationSnapshot"
+          },
+          "level": {
+            "type": "string"
+          },
+          "mission": {
+            "type": "string"
+          },
+          "model": {
+            "$ref": "#/components/schemas/ModelPolicyDefinition"
+          },
+          "placement": {
+            "$ref": "#/components/schemas/PlacementSnapshot"
+          },
+          "toolRules": {
+            "$ref": "#/components/schemas/ToolRulesSnapshot"
+          },
+          "triggers": {
+            "items": {
+              "$ref": "#/components/schemas/TriggerSnapshot"
+            },
+            "type": "array"
+          }
+        }
+      },
+      "BotSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.BotSnapshot",
+        "properties": {
+          "allowedTools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "approvals": {
+            "$ref": "#/components/schemas/ApprovalsSnapshot"
+          },
+          "budgets": {
+            "$ref": "#/components/schemas/BudgetsSnapshot"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "delegation": {
+            "$ref": "#/components/schemas/DelegationSnapshot"
+          },
+          "id": {
+            "type": "string",
+            "example": "bot-one"
+          },
+          "level": {
+            "$ref": "#/components/schemas/AutonomyLevel"
+          },
+          "mission": {
+            "type": "string",
+            "example": "Do what each task asks."
+          },
+          "model": {
+            "$ref": "#/components/schemas/ModelPolicySnapshot"
+          },
+          "name": {
+            "type": "string",
+            "example": "One"
+          },
+          "owner": {
+            "type": "string",
+            "example": "ops"
+          },
+          "placement": {
+            "$ref": "#/components/schemas/PlacementSnapshot"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BotStatus"
+          },
+          "tenantId": {
+            "type": "string",
+            "example": "default"
+          },
+          "toolRules": {
+            "$ref": "#/components/schemas/ToolRulesSnapshot"
+          },
+          "triggers": {
+            "items": {
+              "$ref": "#/components/schemas/TriggerSnapshot"
+            },
+            "type": "array"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tenantId",
+          "name",
+          "owner",
+          "mission",
+          "allowedTools",
+          "model",
+          "budgets",
+          "level",
+          "toolRules",
+          "triggers",
+          "placement",
+          "approvals",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "BotStatus": {
+        "type": "string",
+        "x-go-enum": "domain.BotStatus",
+        "x-extensible-enum": true,
+        "enum": [
+          "Draft",
+          "Registered",
+          "Enabled",
+          "Paused"
+        ],
+        "description": "A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
+      },
+      "BudgetsDefinition": {
+        "type": "object",
+        "x-go-type": "application.BudgetsDefinition",
+        "properties": {
+          "maxDelegationDepth": {
+            "type": "integer"
+          },
+          "maxModelCallsPerTask": {
+            "type": "integer"
+          },
+          "maxToolCallsPerTask": {
+            "type": "integer"
+          },
+          "taskTimeoutSeconds": {
+            "type": "integer"
+          }
+        }
+      },
+      "BudgetsSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.BudgetsSnapshot",
+        "properties": {
+          "maxDelegationDepth": {
+            "type": "integer"
+          },
+          "maxModelCallsPerTask": {
+            "type": "integer"
+          },
+          "maxToolCallsPerTask": {
+            "type": "integer"
+          },
+          "taskTimeoutSeconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "maxModelCallsPerTask",
+          "maxToolCallsPerTask",
+          "maxDelegationDepth",
+          "taskTimeoutSeconds"
+        ]
+      },
+      "CancelResponse": {
+        "type": "object",
+        "x-go-type": "unixapi.CancelResponse",
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "execution": {
+            "$ref": "#/components/schemas/ExecutionSnapshot"
+          },
+          "task": {
+            "$ref": "#/components/schemas/TaskSnapshot"
+          }
+        },
+        "required": [
+          "task",
+          "changed"
+        ]
+      },
+      "CorrelationRecord": {
+        "type": "object",
+        "x-go-type": "domain.CorrelationRecord",
+        "properties": {
+          "botId": {
+            "type": "string"
+          },
+          "carried": {
+            "type": "boolean"
+          },
+          "executionId": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "botId",
+          "taskId",
+          "executionId",
+          "traceId",
+          "carried"
+        ]
+      },
+      "DecideRequest": {
+        "type": "object",
+        "x-go-type": "unixapi.DecideRequest",
+        "properties": {
+          "callId": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision"
+        ]
+      },
+      "DelegationGrant": {
+        "type": "object",
+        "x-go-type": "domain.DelegationGrant",
+        "properties": {
+          "deadline": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "maxModelCalls": {
+            "type": "integer"
+          },
+          "maxToolCalls": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "deadline"
+        ]
+      },
+      "DelegationSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.DelegationSnapshot",
+        "properties": {
+          "budgetShare": {
+            "type": "number"
+          },
+          "maxChildren": {
+            "type": "integer"
+          },
+          "maxDepth": {
+            "type": "integer"
+          },
+          "split": {
+            "type": "string"
+          },
+          "to": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        }
+      },
+      "EnrollTokenRequest": {
+        "type": "object",
+        "x-go-type": "unixapi.EnrollTokenRequest",
+        "properties": {
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "ttl": {
+            "type": "string"
+          }
+        }
+      },
+      "EnrollTokenResponse": {
+        "type": "object",
+        "x-go-type": "unixapi.EnrollTokenResponse",
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "example": "enr-1"
+          },
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "nodeId": {
+            "type": "string",
+            "example": "node-two"
+          },
+          "token": {
+            "type": "string",
+            "example": "axlr1.example"
+          }
+        },
+        "required": [
+          "token",
+          "id",
+          "nodeId",
+          "expiresAt"
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "x-go-type": "unixapi.ErrorResponse",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "resource": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "error"
+        ]
+      },
+      "Event": {
+        "type": "object",
+        "x-go-type": "domain.Event",
+        "properties": {
+          "botId": {
+            "type": "string",
+            "example": "bot-one"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "eventId": {
+            "type": "string",
+            "example": "evt-one"
+          },
+          "executionId": {
+            "type": "string"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object"
+          },
+          "schemaVersion": {
+            "type": "string",
+            "example": "1"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string",
+            "example": "default"
+          },
+          "type": {
+            "$ref": "#/components/schemas/EventType"
+          }
+        },
+        "required": [
+          "eventId",
+          "schemaVersion",
+          "type",
+          "tenantId",
+          "createdAt"
+        ]
+      },
+      "EventType": {
+        "type": "string",
+        "x-go-enum": "domain.EventType",
+        "x-extensible-enum": true,
+        "enum": [
+          "bot.registered",
+          "bot.enabled",
+          "bot.updated",
+          "bot.paused",
+          "bot.trigger.fired",
+          "bot.task.submitted",
+          "bot.task.started",
+          "bot.task.completed",
+          "bot.task.failed",
+          "bot.task.waiting_approval",
+          "bot.task.decided",
+          "bot.task.cancelled",
+          "bot.task.expired",
+          "bot.task.delegated",
+          "bot.delegation.refused",
+          "bot.approval.expired",
+          "execution.assigned",
+          "execution.reported",
+          "node.registered",
+          "node.heartbeat",
+          "node.offline",
+          "node.enrolled",
+          "node.revoked"
+        ],
+        "description": "A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
+      },
+      "ExecutionKind": {
+        "type": "string",
+        "x-go-enum": "domain.ExecutionKind",
+        "x-extensible-enum": true,
+        "enum": [
+          "run",
+          "decide"
+        ],
+        "description": "A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
+      },
+      "ExecutionOutcome": {
+        "type": "string",
+        "x-go-enum": "domain.ExecutionOutcome",
+        "x-extensible-enum": true,
+        "enum": [
+          "Running",
+          "Completed",
+          "Failed",
+          "DecisionRequired",
+          "Cancelled"
+        ],
+        "description": "A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
+      },
+      "ExecutionSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.ExecutionSnapshot",
+        "properties": {
+          "botId": {
+            "type": "string",
+            "example": "bot-one"
+          },
+          "correlation": {
+            "$ref": "#/components/schemas/CorrelationRecord"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "endedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "example": "exec-one"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ExecutionKind"
+          },
+          "leaseUntil": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "nodeId": {
+            "type": "string",
+            "example": "node-one"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/ExecutionOutcome"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/PolicyRecord"
+          },
+          "receipt": {
+            "items": {
+              "x-unknown": "uint8"
+            },
+            "type": "array"
+          },
+          "result": {
+            "$ref": "#/components/schemas/Result"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string",
+            "example": "task-one"
+          },
+          "tracePath": {
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/Usage"
+          }
+        },
+        "required": [
+          "id",
+          "taskId",
+          "botId",
+          "startedAt",
+          "outcome",
+          "result",
+          "usage"
+        ]
+      },
+      "FireResponse": {
+        "type": "object",
+        "x-go-type": "unixapi.FireResponse",
+        "properties": {
+          "created": {
+            "type": "boolean"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "task": {
+            "$ref": "#/components/schemas/TaskSnapshot"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/TriggerRef"
+          }
+        },
+        "required": [
+          "created",
+          "task",
+          "trigger",
+          "idempotencyKey"
+        ]
+      },
+      "ModelPolicyDefinition": {
+        "type": "object",
+        "x-go-type": "application.ModelPolicyDefinition",
+        "properties": {
+          "allowRemoteProviders": {
+            "type": "boolean"
+          },
+          "maxContextTokens": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "routingPolicy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "allowRemoteProviders"
+        ]
+      },
+      "ModelPolicySnapshot": {
+        "type": "object",
+        "x-go-type": "domain.ModelPolicySnapshot",
+        "properties": {
+          "allowRemoteProviders": {
+            "type": "boolean"
+          },
+          "maxContextTokens": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string",
+            "example": "openai/gpt-5-mini"
+          },
+          "routingPolicy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "routingPolicy",
+          "allowRemoteProviders",
+          "maxContextTokens"
+        ]
+      },
+      "NodeCapabilities": {
+        "type": "object",
+        "x-go-type": "domain.NodeCapabilities",
+        "properties": {
+          "axlrVersion": {
+            "type": "string"
+          },
+          "correlationSupported": {
+            "type": "boolean"
+          },
+          "dedicated": {
+            "type": "boolean"
+          },
+          "policySupported": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "policySupported",
+          "correlationSupported"
+        ]
+      },
+      "NodeSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.NodeSnapshot",
+        "properties": {
+          "capabilities": {
+            "$ref": "#/components/schemas/NodeCapabilities"
+          },
+          "certificateNotAfter": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "certificateSerial": {
+            "type": "string"
+          },
+          "hostName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "example": "node-one"
+          },
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "lastSeenAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "registeredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "revokedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/NodeStatus"
+          }
+        },
+        "required": [
+          "id",
+          "hostName",
+          "capabilities",
+          "status",
+          "registeredAt",
+          "lastSeenAt"
+        ]
+      },
+      "NodeStatus": {
+        "type": "string",
+        "x-go-enum": "domain.NodeStatus",
+        "x-extensible-enum": true,
+        "enum": [
+          "Registered",
+          "Online",
+          "Offline",
+          "Revoked"
+        ],
+        "description": "A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
+      },
+      "NotifyTargetSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.NotifyTargetSnapshot",
+        "properties": {
+          "command": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "secret": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "Overview": {
+        "type": "object",
+        "x-go-type": "application.Overview",
+        "properties": {
+          "bots": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "propertyNames": {
+              "$ref": "#/components/schemas/BotStatus"
+            }
+          },
+          "costUsdSince": {
+            "type": "number"
+          },
+          "executionsSince": {
+            "type": "integer"
+          },
+          "nodes": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "propertyNames": {
+              "$ref": "#/components/schemas/NodeStatus"
+            }
+          },
+          "since": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "tasks": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "propertyNames": {
+              "$ref": "#/components/schemas/TaskStatus"
+            }
+          },
+          "tasksSince": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "propertyNames": {
+              "$ref": "#/components/schemas/TaskStatus"
+            }
+          }
+        },
+        "required": [
+          "since",
+          "nodes",
+          "bots",
+          "tasks",
+          "tasksSince",
+          "executionsSince",
+          "costUsdSince"
+        ]
+      },
+      "PendingDecision": {
+        "type": "object",
+        "x-go-type": "domain.PendingDecision",
+        "properties": {
+          "arguments": {
+            "items": {
+              "x-unknown": "uint8"
+            },
+            "type": "array"
+          },
+          "callId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string",
+            "example": "local_write"
+          }
+        },
+        "required": [
+          "tool",
+          "callId",
+          "sessionId"
+        ]
+      },
+      "PlacementSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.PlacementSnapshot",
+        "properties": {
+          "nodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "selector": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        }
+      },
+      "PolicyRecord": {
+        "type": "object",
+        "x-go-type": "domain.PolicyRecord",
+        "properties": {
+          "delegation": {
+            "type": "string"
+          },
+          "enforced": {
+            "type": "boolean"
+          },
+          "level": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "runtimeLevel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "level",
+          "enforced"
+        ]
+      },
+      "ReportResponse": {
+        "type": "object",
+        "x-go-type": "unixapi.ReportResponse",
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId",
+          "content"
+        ]
+      },
+      "Result": {
+        "type": "object",
+        "x-go-type": "domain.Result",
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/Artifact"
+            },
+            "type": "array"
+          },
+          "pendingDecision": {
+            "$ref": "#/components/schemas/PendingDecision"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "sessions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "toolCalls": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCall"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "answer"
+        ]
+      },
+      "RevokeResponse": {
+        "type": "object",
+        "x-go-type": "unixapi.RevokeResponse",
+        "properties": {
+          "failedTasks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "node": {
+            "$ref": "#/components/schemas/NodeSnapshot"
+          }
+        },
+        "required": [
+          "node",
+          "failedTasks"
+        ]
+      },
+      "RunResponse": {
+        "type": "object",
+        "x-go-type": "unixapi.RunResponse",
+        "properties": {
+          "execution": {
+            "$ref": "#/components/schemas/ExecutionSnapshot"
+          },
+          "task": {
+            "$ref": "#/components/schemas/TaskSnapshot"
+          }
+        },
+        "required": [
+          "task",
+          "execution"
+        ]
+      },
+      "SubmitRequest": {
+        "type": "object",
+        "x-go-type": "unixapi.SubmitRequest",
+        "properties": {
+          "botId": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "objective": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "botId",
+          "objective",
+          "idempotencyKey"
+        ]
+      },
+      "SubmitResponse": {
+        "type": "object",
+        "x-go-type": "unixapi.SubmitResponse",
+        "properties": {
+          "created": {
+            "type": "boolean"
+          },
+          "task": {
+            "$ref": "#/components/schemas/TaskSnapshot"
+          }
+        },
+        "required": [
+          "created",
+          "task"
+        ]
+      },
+      "TaskLineage": {
+        "type": "object",
+        "x-go-type": "domain.TaskLineage",
+        "properties": {
+          "chain": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "depth": {
+            "type": "integer"
+          },
+          "grant": {
+            "$ref": "#/components/schemas/DelegationGrant"
+          },
+          "maxDepth": {
+            "type": "integer"
+          },
+          "parentBotId": {
+            "type": "string"
+          },
+          "parentExecutionId": {
+            "type": "string"
+          },
+          "parentTaskId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "parentTaskId",
+          "parentExecutionId",
+          "parentBotId",
+          "depth",
+          "maxDepth",
+          "chain",
+          "grant"
+        ]
+      },
+      "TaskRequest": {
+        "type": "object",
+        "x-go-type": "unixapi.TaskRequest",
+        "properties": {
+          "correlationId": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "objective": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "objective"
+        ]
+      },
+      "TaskSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.TaskSnapshot",
+        "properties": {
+          "approval": {
+            "$ref": "#/components/schemas/ApprovalWait"
+          },
+          "botId": {
+            "type": "string",
+            "example": "bot-one"
+          },
+          "children": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "delegation": {
+            "$ref": "#/components/schemas/TaskLineage"
+          },
+          "executionIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "grantedModelCalls": {
+            "type": "integer"
+          },
+          "grantedToolCalls": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string",
+            "example": "task-one"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "example": "key-1"
+          },
+          "input": {
+            "items": {
+              "x-unknown": "uint8"
+            },
+            "type": "array"
+          },
+          "objective": {
+            "type": "string",
+            "example": "Say hello."
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/TriggerRefSnapshot"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "botId",
+          "objective",
+          "status",
+          "idempotencyKey",
+          "trigger",
+          "executionIds",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "TaskStatus": {
+        "type": "string",
+        "x-go-enum": "domain.TaskStatus",
+        "x-extensible-enum": true,
+        "enum": [
+          "Pending",
+          "Running",
+          "WaitingApproval",
+          "Completed",
+          "Failed",
+          "Expired",
+          "Cancelled"
+        ],
+        "description": "A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
+      },
+      "ToolCall": {
+        "type": "object",
+        "x-go-type": "domain.ToolCall",
+        "properties": {
+          "callId": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "example": "local_read"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "callId"
+        ]
+      },
+      "ToolRuleSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.ToolRuleSnapshot",
+        "properties": {
+          "arguments": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "tool": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool"
+        ]
+      },
+      "ToolRulesSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.ToolRulesSnapshot",
+        "properties": {
+          "allow": {
+            "items": {
+              "$ref": "#/components/schemas/ToolRuleSnapshot"
+            },
+            "type": "array"
+          },
+          "deny": {
+            "items": {
+              "$ref": "#/components/schemas/ToolRuleSnapshot"
+            },
+            "type": "array"
+          }
+        }
+      },
+      "TriggerRef": {
+        "type": "object",
+        "x-go-type": "domain.TriggerRef",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/TriggerType"
+          }
+        },
+        "required": [
+          "type",
+          "name"
+        ]
+      },
+      "TriggerRefSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.TriggerRefSnapshot",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "by-hand"
+          },
+          "type": {
+            "$ref": "#/components/schemas/TriggerType"
+          }
+        }
+      },
+      "TriggerSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.TriggerSnapshot",
+        "properties": {
+          "cron": {
+            "type": "string"
+          },
+          "every": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "example": "by-hand"
+          },
+          "objective": {
+            "type": "string"
+          },
+          "secret": {
+            "type": "string"
+          },
+          "signingKey": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/TriggerType"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "TriggerType": {
+        "type": "string",
+        "x-go-enum": "domain.TriggerType",
+        "x-extensible-enum": true,
+        "enum": [
+          "manual",
+          "webhook",
+          "timer",
+          "delegation"
+        ],
+        "description": "A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
+      },
+      "Usage": {
+        "type": "object",
+        "x-go-type": "domain.Usage",
+        "properties": {
+          "cachedTokens": {
+            "type": "integer"
+          },
+          "completionTokens": {
+            "type": "integer"
+          },
+          "costUsd": {
+            "type": "number"
+          },
+          "promptTokens": {
+            "type": "integer"
+          },
+          "reasoningTokens": {
+            "type": "integer"
+          },
+          "requests": {
+            "type": "integer"
+          },
+          "toolCalls": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "requests",
+          "promptTokens",
+          "cachedTokens",
+          "completionTokens",
+          "reasoningTokens",
+          "toolCalls",
+          "costUsd"
+        ]
+      }
+    }
+  }
+}

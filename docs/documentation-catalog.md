@@ -10,6 +10,7 @@ The maintained documentation surface: every page, what it is for, and the code i
 | [Bot definition](reference/bot-definition.md) | the fields of a bot, the autonomy levels, the approvals, the tool rules, the triggers, update semantics, tasks | `application/bot_definition.go`, `domain/` | `bot-delegation`, 25 Oct 2026 |
 | [Command reference](reference/cli.md) | every command and flag, defaults and environment, reports, logs | `axlr-bots --help`, `axlr-node --help`, `cmd/axlr-bots/run.go` | `bot-delegation`, 25 Oct 2026 |
 | [Operator API](reference/operator-api.md) | the listeners, the routes, the idempotency key, the artifacts, the errors | `adapters/unixapi/server.go` | `bot-delegation`, 25 Oct 2026 |
+| [Operator API contract](reference/operator-api.json) | the operator address as OpenAPI 3.1, open enums | `adapters/unixapi/contract_test.go`, `panel/tests/operator_contract.rs` | `panel-contract`, 26 Oct 2026 |
 | [Node protocol](reference/node-protocol.md) | node identity, the messages, leases, artifact uploads, events, revocation, what travels | `nodeproto/`, `adapters/unixapi`, `adapters/nodeagent`, `adapters/pki` | `bot-delegation`, 25 Oct 2026 |
 | [Install](runbooks/install.md) | install user-level or system-wide, the files written, linger, uninstall | `adapters/systemd/`, `cmd/axlr-bots/install_commands.go` | `91dc705` |
 | [Add a host](runbooks/add-a-host.md) | token, `install --node-only`, enroll, rotate, revoke | `cmd/axlr-node/enroll.go`, `application/enroll_node.go`, `application/revoke_node.go` | `91dc705` |

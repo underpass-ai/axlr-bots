@@ -222,6 +222,7 @@ fn execution_card<'a>(app: &'a App, execution: &'a Execution, tokens: Tokens) ->
     let kind = match execution.kind {
         ExecutionKind::Run => "Run".to_string(),
         ExecutionKind::Decide => format!("After {}", if execution.decision == "deny" { "deny" } else { "OK" }),
+        ExecutionKind::Unknown => "Unknown".to_string(),
     };
     let head = row![
         pill(Tone::of_outcome(execution.outcome), execution.outcome.label(), tokens),

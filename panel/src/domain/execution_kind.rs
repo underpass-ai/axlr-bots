@@ -7,6 +7,9 @@ pub enum ExecutionKind {
     #[default]
     Run,
     Decide,
+    /// A value this panel does not know: the control plane is newer. Read,
+    /// shown as unknown, never refused.
+    Unknown,
 }
 
 impl ExecutionKind {
@@ -14,6 +17,7 @@ impl ExecutionKind {
         match self {
             Self::Run => "run",
             Self::Decide => "decide",
+            Self::Unknown => "unknown",
         }
     }
 }
@@ -25,7 +29,7 @@ impl TryFrom<String> for ExecutionKind {
         match raw.as_str() {
             "" | "run" => Ok(Self::Run),
             "decide" => Ok(Self::Decide),
-            _ => Err(super::DomainError::new("execution kind", "must be run or decide")),
+            _ => Ok(Self::Unknown),
         }
     }
 }
@@ -50,7 +54,10 @@ mod tests {
             serde_json::from_str::<ExecutionKind>("\"decide\"").unwrap(),
             ExecutionKind::Decide
         );
-        assert!(serde_json::from_str::<ExecutionKind>("\"other\"").is_err());
+        assert_eq!(
+            serde_json::from_str::<ExecutionKind>("\"other\"").unwrap(),
+            ExecutionKind::Unknown
+        );
         assert_eq!(serde_json::to_string(&ExecutionKind::Decide).unwrap(), "\"decide\"");
     }
 }
