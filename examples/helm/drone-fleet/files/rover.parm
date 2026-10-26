@@ -1,17 +1,40 @@
-# Rover on a Cube Orange+: forward lidar, lidars forward and aft, a camera on a
-# trigger, a 20 Ah pack. SITL backends of each sensor.
+# Rover on a Cube Orange+: a forward lidar, an Intel RealSense D455 depth
+# camera, an aft lidar, a camera on a trigger, a 20 Ah pack. SITL backends of
+# each sensor.
+# Rangefinders 1, 2 and 4 look forward: the D455's 87 degrees in three columns
+# of 29 (centre, left, right), the forward lidar in the centre one. ArduPilot
+# files each at the 45-degree sector it faces. 3 is the aft lidar. The D455
+# sees 16 m at most.
 RNGFND1_TYPE 100
 RNGFND1_ORIENT 0
-RNGFND1_MIN 0.2
-RNGFND1_MAX 40
+RNGFND1_MIN 0.3
+RNGFND1_MAX 16
 RNGFND2_TYPE 100
-RNGFND2_ORIENT 0
-RNGFND2_MIN 0.2
-RNGFND2_MAX 40
+RNGFND2_ORIENT 7
+RNGFND2_MIN 0.3
+RNGFND2_MAX 16
 RNGFND3_TYPE 100
 RNGFND3_ORIENT 4
 RNGFND3_MIN 0.2
 RNGFND3_MAX 40
+RNGFND4_TYPE 100
+RNGFND4_ORIENT 1
+RNGFND4_MIN 0.3
+RNGFND4_MAX 16
+# Obstacle avoidance from those rangefinders, for a car of 3.6 x 1.8 m at
+# 4 m/s on lanes the routes keep 1.5 m clear of what the map knows:
+# AVOID: slow down and stop 2 m short of what is ahead (fence and proximity).
+# OA (BendyRuler): steer round what is within 15 m ahead, about what the D455
+# sees well, keeping 2.5 m from it: half the car's width and 1.6 m to spare; a
+# wider margin would swerve from every stack beside a lane. In gz, round a box,
+# the rover swung 6.5 to 12 m off the route with a lookahead of 8, 10 or 15 m
+# alike, so it keeps ArduPilot's default.
+PRX1_TYPE 4
+AVOID_ENABLE 3
+AVOID_MARGIN 2
+OA_TYPE 1
+OA_BR_LOOKAHEAD 15
+OA_MARGIN_MAX 2.5
 CAM1_TYPE 1
 SERVO9_FUNCTION 10
 BATT_CAPACITY 20000
