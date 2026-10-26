@@ -2,6 +2,17 @@
 
 The vision's minimal API (§11.1) plus the routes the CLI uses. Everything is HTTP+JSON; the JSON is the same the CLI prints.
 
+## The contract
+
+[`operator-api.json`](operator-api.json) is the operator address as OpenAPI 3.1: every route, every request and answer, every enum. Two tests hold it:
+
+| Test | Checks |
+|---|---|
+| `adapters/unixapi/contract_test.go` | the routes are the server's; each schema has its Go type's JSON fields, required ones and kinds; each enum is the domain's constants |
+| `panel/tests/operator_contract.rs` | the panel reads every answer it asks for: with every field, with the required ones only, and with every enum a value it does not know |
+
+The enums are open (`x-extensible-enum`): a client reads a status, a trigger or an event type it does not know as unknown and goes on. A new status in `domain` fails the Go test until it is in the contract; the contract's change runs the panel's test.
+
 ## Listeners
 
 | Listener | Flag | Serves | Credential |

@@ -10,6 +10,10 @@ pub enum TriggerType {
     Webhook,
     Timer,
     Delegation,
+    /// A value this panel does not know: the control plane is newer. Read,
+    /// shown as unknown, never refused.
+    #[serde(other)]
+    Unknown,
 }
 
 impl TriggerType {
@@ -19,6 +23,7 @@ impl TriggerType {
             Self::Webhook => "webhook",
             Self::Timer => "timer",
             Self::Delegation => "delegation",
+            Self::Unknown => "unknown",
         }
     }
 
@@ -28,6 +33,7 @@ impl TriggerType {
             Self::Webhook => "Webhook",
             Self::Timer => "Timer",
             Self::Delegation => "Another bot",
+            Self::Unknown => "Unknown",
         }
     }
 }
@@ -42,7 +48,10 @@ mod tests {
             serde_json::from_str::<TriggerType>("\"timer\"").unwrap(),
             TriggerType::Timer
         );
-        assert!(serde_json::from_str::<TriggerType>("\"cron\"").is_err());
+        assert_eq!(
+            serde_json::from_str::<TriggerType>("\"cron\"").unwrap(),
+            TriggerType::Unknown
+        );
         assert_eq!(TriggerType::Manual.label(), "By hand");
         assert_eq!(TriggerType::Webhook.name(), "webhook");
     }

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::identifier::{validate_identifier, validate_text};
-use super::{AutonomyLevel, Budgets, DomainError, ModelPolicy, NodeId, Placement, ToolRules, Trigger};
+use super::{AutonomyLevel, Budgets, DomainError, ModelPolicy, NodeId, Placement, ToolRules, Trigger, TriggerType};
 
 /// A bot to register, as a definition file writes it. The panel checks
 /// what it can before the control plane checks the rest.
@@ -120,6 +120,18 @@ impl BotDefinition {
                 return Err(DomainError::new("allowed tools", "must be names without spaces"));
             }
         }
+        if self.level == AutonomyLevel::Unknown {
+            return Err(DomainError::new(
+                "autonomy level",
+                "must be observe, propose, act-with-approval or act-within-policy",
+            ));
+        }
+        if self.triggers.iter().any(|t| t.trigger_type == TriggerType::Unknown) {
+            return Err(DomainError::new(
+                "trigger type",
+                "must be manual, webhook, timer or delegation",
+            ));
+        }
         Ok(())
     }
 }
@@ -166,6 +178,8 @@ mod tests {
     #[test]
     fn refuses_bad_files() {
         assert!(BotDefinition::from_json("{").is_err());
+        assert!(BotDefinition::from_json(&EXAMPLE.replace("act-with-approval", "act-boldly")).is_err());
+        assert!(BotDefinition::from_json(&EXAMPLE.replace(r#"{"type": "manual"}"#, r#"{"type": "cron"}"#)).is_err());
         assert!(BotDefinition::from_json(&EXAMPLE.replace("\"owner\"", "\"ownerx\"")).is_err());
         assert!(
             BotDefinition::from_json(&EXAMPLE.replace("\"tenant\": \"default\"", "\"tenant\": \"Bad Tenant\""))
