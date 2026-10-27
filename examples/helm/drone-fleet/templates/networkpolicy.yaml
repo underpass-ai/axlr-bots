@@ -25,6 +25,15 @@ spec:
         - podSelector: {matchLabels: {app: {{ $base }}}}
       ports:
         - {protocol: TCP, port: 8081}
+    {{- if .Values.gz.enabled }}
+    # The gz world: the FDM over UDP, the last picture over HTTP. The
+    # plugin's answers come back on the same flow (conntrack).
+    - to:
+        - podSelector: {matchLabels: {app: {{ include "fleet.gz" . }}}}
+      ports:
+        - {protocol: UDP, port: 9002, endPort: 9072}
+        - {protocol: TCP, port: 8081}
+    {{- end }}
 ---
 # The base: the ingress controller and the vehicles reach its port; it reads
 # the vehicles, and its sidecar reaches the control plane and the model.
@@ -47,6 +56,13 @@ spec:
         - podSelector: {matchLabels: {fleet.underpass.ai/vehicle: "true"}}
       ports:
         - {protocol: TCP, port: 8081}
+    {{- if .Values.gz.enabled }}
+    # ais-bridge reads /api/fleet.
+    - from:
+        - podSelector: {matchLabels: {app: {{ include "fleet.gz" . }}}}
+      ports:
+        - {protocol: TCP, port: 8080}
+    {{- end }}
   egress:
     {{- $egress | nindent 4 }}
     - to:
@@ -88,4 +104,34 @@ spec:
         - {protocol: TCP, port: 7878}
         - {protocol: TCP, port: 7879}
   egress: []
+{{- end }}
+{{- if .Values.gz.enabled }}
+---
+# The gz world: the vehicles reach it; it reaches the base (/api/fleet) and DNS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fleet.gz" . }}
+  labels:
+    {{- include "fleet.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {app: {{ include "fleet.gz" . }}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {fleet.underpass.ai/vehicle: "true"}}
+      ports:
+        - {protocol: UDP, port: 9002, endPort: 9072}
+        - {protocol: TCP, port: 8081}
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app: {{ $base }}}}
+      ports:
+        - {protocol: TCP, port: 8080}
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
 {{- end }}

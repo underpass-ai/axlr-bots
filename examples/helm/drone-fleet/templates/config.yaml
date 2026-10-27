@@ -17,6 +17,8 @@ data:
     {{- .Files.Get "files/rover.parm" | nindent 4 }}
   plane.parm: |
     {{- .Files.Get "files/plane.parm" | nindent 4 }}
+  rover-gz.parm: |
+    {{- .Files.Get "files/rover-gz.parm" | nindent 4 }}
   {{- range .Values.vehicles }}
   {{- if .params }}
   # The {{ .name }} group's own parameters, after its kind's.

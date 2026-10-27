@@ -14,8 +14,10 @@
 
 images:
   app: container-registry.underpassai.com/axlr-bots/fleet-app@sha256:b8830da10536310e96e820e1c591f293ff4f0503e3b28c075ad35006a51d836e
-  sitl: container-registry.underpassai.com/axlr-bots/fleet-sitl@sha256:9d0ddd377ac6a5d5dca13feb0a7ef1311725dcc45c58b7e369034e44c5adfd9a
+  sitl: container-registry.underpassai.com/axlr-bots/fleet-sitl@sha256:4e1ba656f01a4a5b87d956d172263c3da5bbdcb2dd6dfa28799535a95c890eab
   controlPlane: container-registry.underpassai.com/axlr-bots/control-plane@sha256:ba05aba27c395ef8ea791332159a0ad8c812d315b7c1a674fee464b130a0ec8a
+  # examples/drone-fleet/gz: gz sim, the world, fleet-sim, fpv-server, ais-bridge.
+  gz: container-registry.underpassai.com/axlr-bots/fleet-gz@sha256:ca6abb10d806af4a3ae47f200f8c8bb3b937f3648b3def32bd13f2d27660374f
 
 # The fleet's own control plane, in the namespace. Nodes dial it by its
 # Service's name; the operator API (the panel, the CLI, webhooks) is the
@@ -163,7 +165,25 @@ vehicles:
     env: {MAX_RADIUS_M: "2000"}
     params: {BATT_CAPACITY: 10000, SIM_BATT_CAP_AH: 10}
 
+# One gz sim world for the fleet (templates/gz.yaml, examples/drone-fleet/gz):
+# the groups in `vehicles` fly and drive in it, their SITL on JSON against
+# the pod fleet-gz, one UDP port each (portBase of the group + 10 x replica);
+# their cameras are the world's (fpv-server on 8081). The rest keep SITL's
+# own physics. Upgrading with it on or off restarts every vehicle.
+gz:
+  enabled: false
+  # On CPU (llvmpipe) six vehicles run at 0.06 x real time: true gives the
+  # pod a GPU (nvidia.com/gpu: 1 with the runtime class below).
+  gpu: false
+  runtimeClassName: nvidia
+  vehicles: [quad, rover, supply]
+  portBase: {quad: 9002, rover: 9032, supply: 9052, plane: 9062}
+  frames: {sizeLimit: 2Gi}
+  ships: true           # ais-bridge: the AIS ships as models (PR D)
+  containers: true      # ais-bridge: the incident's containers (PR D)
+
 resources:
+  gz: {requests: {cpu: "6", memory: 4Gi}, limits: {memory: 12Gi}}
   sitl: {requests: {cpu: 300m, memory: 256Mi}, limits: {memory: 1Gi}}
   router: {requests: {cpu: 20m, memory: 32Mi}, limits: {memory: 128Mi}}
   app: {requests: {cpu: 50m, memory: 96Mi}, limits: {cpu: "1", memory: 256Mi}}

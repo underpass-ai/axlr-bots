@@ -11,7 +11,8 @@ would override quad.parm), connects as the vehicle pilot does (its own
 Vehicle class, /app), waits for the EKF to navigate on GPS, arms in GUIDED,
 takes off, holds, lands. Writes to /out:
 
-  sitl.log   the SITL's output
+  sitl.log   the SITL's output (not with --no-sitl: --url reaches a SITL
+             that runs elsewhere, as in a vehicle's pod)
   run.json   the highest altitude, home against the pad, the SITL's
              warnings (STATUSTEXT, severity warning or worse) after take-off,
              the nadir photo taken at the top of the climb
@@ -62,26 +63,31 @@ def main():
     ap.add_argument("--hold", type=float, default=10.0)
     ap.add_argument("--frames", default="/frames")
     ap.add_argument("--out", default="/out")
+    ap.add_argument("--url", default="tcp:127.0.0.1:5760", help="the SITL's MAVLink")
+    ap.add_argument("--no-sitl", action="store_true", help="the SITL runs elsewhere (its own pod or container)")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
     pad = tuple(float(x) for x in args.pad.split(","))
 
-    sitl = subprocess.Popen(
-        ["/opt/sitl/arducopter", "--model=JSON:127.0.0.1", f"--sim-port-out={args.port}", f"--home={HOME}",
-         "--defaults=/opt/sitl/copter.parm,/opt/sitl/copter-X.parm,/chart/quad.parm", "--speedup=1",
-         "--instance=0", "--wipe"],
-        cwd=args.out, stdout=open(os.path.join(args.out, "sitl.log"), "w"), stderr=subprocess.STDOUT)
-    try:
+    if args.no_sitl:
         result = fly(args, pad)
-    finally:
-        sitl.terminate()
+    else:
+        sitl = subprocess.Popen(
+            ["/opt/sitl/arducopter", "--model=JSON:127.0.0.1", f"--sim-port-out={args.port}", f"--home={HOME}",
+             "--defaults=/opt/sitl/copter.parm,/opt/sitl/copter-X.parm,/chart/quad.parm", "--speedup=1",
+             "--instance=0", "--wipe"],
+            cwd=args.out, stdout=open(os.path.join(args.out, "sitl.log"), "w"), stderr=subprocess.STDOUT)
+        try:
+            result = fly(args, pad)
+        finally:
+            sitl.terminate()
     with open(os.path.join(args.out, "run.json"), "w") as f:
         json.dump(result, f, indent=1)
     print(json.dumps(result, indent=1))
 
 
 def fly(args, pad):
-    v = vehicle_pilot.Vehicle("tcp:127.0.0.1:5760")
+    v = vehicle_pilot.Vehicle(args.url)
     v.start()
     if not v.wait_state(lambda s: s["connected"], 120):
         raise SystemExit("no heartbeat from the SITL")

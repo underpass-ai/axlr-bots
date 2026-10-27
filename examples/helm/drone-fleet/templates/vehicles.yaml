@@ -6,6 +6,7 @@
 {{- $_ := set $v.node "labels" (dict "kind" $group.kind "role" $group.role "fleet" $root.Release.Name) }}
 {{- $bots := dict "values" $v "root" $root }}
 {{- $hw := mergeOverwrite (deepCopy $root.Values.hardware) (default dict $group.hardware) }}
+{{- $inGz := and $root.Values.gz.enabled (has $group.name $root.Values.gz.vehicles) }}
 ---
 apiVersion: v1
 kind: Service
@@ -60,7 +61,12 @@ spec:
           env:
             - {name: VEHICLE_KIND, value: {{ $group.kind | quote }}}
             - {name: HOMES, value: {{ join ";" $group.pads | quote }}}
-            - {name: EXTRA_DEFAULTS, value: "/etc/sitl/{{ $group.kind }}.parm{{ if $group.params }},/etc/sitl/group.parm{{ end }}"}
+            - {name: EXTRA_DEFAULTS, value: "/etc/sitl/{{ $group.kind }}.parm{{ if $group.params }},/etc/sitl/group.parm{{ end }}{{ if and $inGz (eq $group.kind "rover") }},/etc/sitl/rover-gz.parm{{ end }}"}
+            {{- if $inGz }}
+            # The vehicle flies in the fleet's gz world: SITL on JSON against it.
+            - {name: GZ_HOST, value: {{ include "fleet.gz" $root }}}
+            - {name: GZ_PORT_BASE, value: {{ index $root.Values.gz.portBase $group.name | quote }}}
+            {{- end }}
             - name: POD_INDEX
               valueFrom: {fieldRef: {fieldPath: "metadata.labels['apps.kubernetes.io/pod-index']"}}
           securityContext:
@@ -75,6 +81,9 @@ spec:
             - {name: config, mountPath: /etc/sitl/{{ $group.kind }}.parm, subPath: {{ $group.kind }}.parm, readOnly: true}
             {{- if $group.params }}
             - {name: config, mountPath: /etc/sitl/group.parm, subPath: {{ $group.name }}-group.parm, readOnly: true}
+            {{- end }}
+            {{- if and $inGz (eq $group.kind "rover") }}
+            - {name: config, mountPath: /etc/sitl/rover-gz.parm, subPath: rover-gz.parm, readOnly: true}
             {{- end }}
         - name: router
           image: {{ $root.Values.images.sitl }}

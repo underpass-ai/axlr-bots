@@ -1,0 +1,115 @@
+{{- if .Values.gz.enabled }}
+{{- $gz := include "fleet.gz" . }}
+{{- $vehicles := include "fleet.gzVehicles" . | fromJsonArray }}
+# The fleet's one gz sim world (examples/drone-fleet/gz): gz with the
+# vehicles' models, fpv-server with their cameras' pictures, ais-bridge with
+# the ships and the incident's containers. One pod: gz-transport finds its
+# services by multicast, so the bridges are its containers.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $gz }}
+  labels:
+    {{- include "fleet.labels" . | nindent 4 }}
+data:
+  vehicles.json: |
+    {{- toPrettyJson $vehicles | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $gz }}
+  labels:
+    {{- include "fleet.labels" . | nindent 4 }}
+spec:
+  selector: {app: {{ $gz }}}
+  ports:
+    {{- range $vehicles }}
+    - {name: fdm-{{ .name }}, port: {{ .port }}, targetPort: {{ .port }}, protocol: UDP}
+    {{- end }}
+    - {name: http, port: 8081, targetPort: http}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $gz }}
+  labels:
+    {{- include "fleet.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: {{ $gz }}}
+  template:
+    metadata:
+      labels:
+        app: {{ $gz }}
+        {{- include "fleet.labels" . | nindent 8 }}
+      annotations:
+        checksum/vehicles: {{ toJson $vehicles | sha256sum }}
+    spec:
+      {{- include "fleet.podSpecCommon" . | nindent 6 }}
+      {{- if not .Values.nodeSelector }}
+      nodeSelector: {kubernetes.io/hostname: wrx80-node1}
+      {{- end }}
+      {{- if .Values.gz.gpu }}
+      runtimeClassName: {{ .Values.gz.runtimeClassName }}
+      {{- end }}
+      containers:
+        - name: gz
+          image: {{ .Values.images.gz }}
+          command: ["bash", "-lc", ". /opt/ros/jazzy/setup.sh && exec python3 /gz/fleet-sim --vehicles /config/vehicles.json"]
+          env:
+            # gz writes ~/.gz.
+            - {name: HOME, value: /tmp}
+            # Without graphics EGL falls back to llvmpipe without a word.
+            - {name: NVIDIA_DRIVER_CAPABILITIES, value: "graphics,compute,utility"}
+          ports:
+            {{- range $vehicles }}
+            - {name: fdm-{{ .name }}, containerPort: {{ .port }}, protocol: UDP}
+            {{- end }}
+          securityContext:
+            {{- include "fleet.restricted" . | nindent 12 }}
+          resources:
+            requests:
+              {{- toYaml .Values.resources.gz.requests | nindent 14 }}
+            limits:
+              {{- toYaml .Values.resources.gz.limits | nindent 14 }}
+              {{- if .Values.gz.gpu }}
+              nvidia.com/gpu: 1
+              {{- end }}
+          volumeMounts:
+            - {name: frames, mountPath: /frames}
+            - {name: gz-config, mountPath: /config, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+        - name: fpv
+          image: {{ .Values.images.gz }}
+          command: ["python3", "/gz/fpv-server.py", "--frames", "/frames", "--listen", "0.0.0.0:8081"]
+          ports:
+            - {name: http, containerPort: 8081}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          securityContext:
+            {{- include "fleet.restricted" . | nindent 12 }}
+          resources: {requests: {cpu: 100m, memory: 64Mi}, limits: {cpu: "2", memory: 512Mi}}
+          volumeMounts:
+            - {name: frames, mountPath: /frames}
+        - name: ais-bridge
+          image: {{ .Values.images.gz }}
+          command: ["bash", "-lc", ". /opt/ros/jazzy/setup.sh && exec python3 /gz/ais-bridge.py --fleet http://{{ include "fleet.base" . }}:8080/api/fleet --idle"]
+          env:
+            - {name: HOME, value: /tmp}
+          securityContext:
+            {{- include "fleet.restricted" . | nindent 12 }}
+          resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: "1", memory: 256Mi}}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: frames
+          emptyDir: {sizeLimit: {{ .Values.gz.frames.sizeLimit }}}
+        - name: tmp
+          emptyDir: {}
+        - name: gz-config
+          configMap: {name: {{ $gz }}}
+{{- end }}

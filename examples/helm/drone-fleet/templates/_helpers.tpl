@@ -36,3 +36,22 @@ allowPrivilegeEscalation: false
 readOnlyRootFilesystem: true
 capabilities: {drop: ["ALL"]}
 {{- end -}}
+
+{{- define "fleet.gz" -}}{{ .Release.Name }}-gz{{- end -}}
+
+{{/* The vehicles in the gz world, as JSON: each replica of each group in
+     gz.vehicles on its pad, its UDP port the group's base + 10 x replica. */}}
+{{- define "fleet.gzVehicles" -}}
+{{- $out := list }}
+{{- range $group := .Values.vehicles }}
+{{- if has $group.name $.Values.gz.vehicles }}
+{{- if not (hasKey $.Values.gz.portBase $group.name) }}{{ fail (printf "gz.portBase has no port for the group %s" $group.name) }}{{ end }}
+{{- if not (has $group.kind (list "quad" "rover")) }}{{ fail (printf "gz: the group %s is a %s; only quads and rovers fly in gz" $group.name $group.kind) }}{{ end }}
+{{- range $i := until (int $group.replicas) }}
+{{- $pad := splitList "," (index $group.pads $i) }}
+{{- $out = append $out (dict "name" (printf "%s-%d" $group.name $i) "kind" $group.kind "lat" (float64 (index $pad 0)) "lon" (float64 (index $pad 1)) "heading" (float64 (index $pad 3)) "port" (add (index $.Values.gz.portBase $group.name) (mul 10 $i))) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- toJson $out }}
+{{- end -}}

@@ -1,6 +1,8 @@
 #!/bin/sh
 # Start this replica's vehicle: VEHICLE_KIND picks the ArduPilot binary and
 # its defaults, POD_INDEX picks its pad from HOMES (lat,lon,alt,heading;...).
+# With GZ_HOST the vehicle flies in the fleet's gz world (pod fleet-gz): SITL
+# on JSON against it, on port GZ_PORT_BASE + 10 x POD_INDEX.
 set -eu
 i="${POD_INDEX:-0}"
 home=$(printf '%s\n' "${HOMES:-}" | tr ';' '\n' | sed -n "$((i + 1))p" | tr -d ' ')
@@ -17,5 +19,17 @@ esac
 if [ -n "${EXTRA_DEFAULTS:-}" ]; then
   defaults="$defaults,$EXTRA_DEFAULTS"
 fi
-echo "sitl-run: $bin --model=$model --home=$home --defaults=$defaults"
-exec "/opt/sitl/$bin" --model="$model" --speedup=1 --instance=0 --home="$home" --defaults="$defaults" --wipe
+extra=""
+if [ -n "${GZ_HOST:-}" ]; then
+  # SITL's JSON backend wants an address, not a name.
+  ip=$(getent hosts "$GZ_HOST" | awk '{print $1; exit}')
+  [ -n "$ip" ] || { echo "sitl-run: cannot resolve $GZ_HOST" >&2; exit 1; }
+  port=$(( ${GZ_PORT_BASE:-9002} + 10 * i ))
+  model="JSON:$ip"
+  # JSON SITL puts the vehicle at --home plus its position in gz: home is
+  # the world's origin, the pose in gz puts it on its pad.
+  home="51.944,3.999,0,0"
+  extra="--sim-port-out=$port"
+fi
+echo "sitl-run: $bin --model=$model --home=$home --defaults=$defaults $extra"
+exec "/opt/sitl/$bin" --model="$model" --speedup=1 --instance=0 --home="$home" --defaults="$defaults" --wipe $extra
