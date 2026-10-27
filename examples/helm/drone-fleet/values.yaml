@@ -179,8 +179,8 @@ gz:
   vehicles: [quad, rover, supply]
   portBase: {quad: 9002, rover: 9032, supply: 9052, plane: 9062}
   frames: {sizeLimit: 2Gi}
-  ships: true           # ais-bridge: the AIS ships as models (PR D)
-  containers: true      # ais-bridge: the incident's containers (PR D)
+  ships: true           # ais-bridge: the AIS ships as models
+  containers: true      # ais-bridge: the incident's containers
 
 resources:
   gz: {requests: {cpu: "6", memory: 4Gi}, limits: {memory: 12Gi}}
