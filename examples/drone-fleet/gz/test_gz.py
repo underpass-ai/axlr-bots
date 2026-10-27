@@ -26,6 +26,7 @@ def load(name, filename):
 
 
 fleet_sim = load("fleet_sim", "fleet-sim")
+port_iris = load("port_iris", "port_iris.py")
 fpv_server = load("fpv_server", "fpv-server.py")
 MODELS = os.path.join(HERE, "models")
 VEHICLES = os.path.join(HERE, "vehicles.example.json")
@@ -109,6 +110,77 @@ class FleetSimTest(unittest.TestCase):
     def test_parse_rtf(self):
         self.assertEqual(fleet_sim.parse_rtf("sim_time {\n}\nreal_time_factor: 0.9731\n"), 0.9731)
         self.assertIsNone(fleet_sim.parse_rtf(""))
+
+
+class PortModelTest(unittest.TestCase):
+    """What a vehicle stands on is the sea and the land's top, never the port's mesh."""
+
+    def test_collisions_are_simple(self):
+        link = ET.parse(os.path.join(MODELS, "maasvlakte2", "model.sdf")).find("model/link")
+        self.assertIn("port.glb", link.find("visual/geometry/mesh/uri").text)
+        cols = {c.get("name"): c for c in link.findall("collision")}
+        self.assertEqual(set(cols), {"sea", "ground"})
+        self.assertIsNotNone(cols["sea"].find("geometry/box"))
+        sea_top = float(cols["sea"].findtext("pose").split()[2]) + float(cols["sea"].findtext("geometry/box/size").split()[2]) / 2
+        self.assertEqual(sea_top, 0)
+        self.assertTrue(cols["ground"].findtext("geometry/mesh/uri").endswith("ground.obj"))
+
+    def test_ground_is_the_land_top_facing_up(self):
+        verts, faces = [], []
+        with open(os.path.join(MODELS, "maasvlakte2", "meshes", "ground.obj")) as f:
+            for line in f:
+                kind, *rest = line.split()
+                if kind == "v":
+                    verts.append(tuple(map(float, rest)))
+                elif kind == "f":
+                    faces.append([int(r.split("/")[0]) - 1 for r in rest])
+        self.assertTrue(all(z == area.GROUND_M for _, _, z in verts))
+        self.assertLess(len(faces), 5000)
+        x0, y0, x1, y1 = area.bounds_local()
+        self.assertTrue(all(x0 - 1 <= x <= x1 + 1 and y0 - 1 <= y <= y1 + 1 for x, y, _ in verts))
+        for a, b, c in faces:
+            (ax, ay, _), (bx, by, _), (cx, cy, _) = verts[a], verts[b], verts[c]
+            self.assertGreater((bx - ax) * (cy - ay) - (by - ay) * (cx - ax), 0)
+
+
+class PortIrisTest(unittest.TestCase):
+    IRIS = """<model name='iris_with_standoffs'><link name='base_link'>
+      <collision name='base_collision'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <uri>model://iris_with_standoffs/meshes/iris_collision.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>""" + "".join(f"""
+      <collision name='{leg}_leg_collision'>
+        <pose>{x} {y} -0.11 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.005</radius>
+            <length>0.17</length>
+          </cylinder>
+        </geometry>
+      </collision>""" for leg, x, y in (("front_left", 0.123, 0.22), ("front_right", 0.123, -0.22),
+                                         ("rear_left", -0.140, 0.21), ("rear_right", -0.140, -0.21))) + "</link></model>"
+
+    def test_box_body_sphere_feet(self):
+        link = ET.fromstring(port_iris.simplify(self.IRIS)).find("link")
+        shapes = {c.get("name"): c.find("geometry")[0].tag for c in link.findall("collision")}
+        self.assertEqual(shapes.pop("base_collision"), "box")
+        self.assertEqual(set(shapes.values()), {"sphere"})
+        for c in link.findall("collision")[1:]:
+            z = float(c.findtext("pose").split()[2])
+            self.assertAlmostEqual(z - float(c.findtext("geometry/sphere/radius")), -0.195)
+
+    def test_refuses_another_iris(self):
+        with self.assertRaises(ValueError):
+            port_iris.simplify(self.IRIS.replace("0.17", "0.2"))
+
+    def test_quad_includes_it_under_its_name(self):
+        inc = ET.fromstring(fleet_sim.model_sdf(fleet_sim.load_vehicles(VEHICLES)[0], MODELS)).find("model/include")
+        self.assertEqual(inc.findtext("uri"), "model://port_iris")
+        self.assertEqual(inc.findtext("name"), "iris_with_standoffs")
 
 
 class FpvServerTest(unittest.TestCase):

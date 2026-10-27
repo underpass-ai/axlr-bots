@@ -4,7 +4,7 @@
 # fpv-server.py, ais-bridge.py) and, for the benches, the ArduCopter and
 # ArduRover 4.7.2 SITL the fleet runs.
 #
-#   podman build -t localhost/fleet-gz:0.2.1 examples/drone-fleet/gz
+#   podman build -t localhost/fleet-gz:0.3.0 examples/drone-fleet/gz
 FROM docker.io/osrf/ros:jazzy-desktop-full@sha256:ae7ad3ac243da1dfd8bd402a2fa08e149ffbf7a385013bd8ef798d0800accdc8
 
 ARG FW=https://firmware.ardupilot.org
@@ -54,8 +54,12 @@ RUN mkdir -p /opt/sitl && cd /opt/sitl \
 RUN pip install --no-cache-dir --break-system-packages pymavlink==2.4.50
 RUN pip install --no-cache-dir --break-system-packages pillow==12.0.0
 
-# The fleet's world and models, and the scripts.
+# The fleet's world and models, and the scripts. port_iris is the plugin's
+# iris with a box body and sphere feet (port_iris.py): what the contact
+# solver can keep up with for six vehicles.
 COPY models /gz/models
+COPY port_iris.py /gz/
+RUN python3 /gz/port_iris.py /opt/ardupilot_gazebo/share/ardupilot_gazebo/models /gz/models
 COPY worlds /gz/worlds
 COPY fleet-sim fpv-server.py ais-bridge.py quad_test.py vehicles.example.json rover-sim oa_test.py plot_run.py /gz/
 

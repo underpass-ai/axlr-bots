@@ -544,7 +544,7 @@ class Plan:
             "about": "Maasvlakte 2, Port of Rotterdam: OpenStreetMap data (c) OpenStreetMap contributors, ODbL. Metres east/north/up from origin.",
             "osm_timestamp": self.timestamp,
             "origin": list(area.ORIGIN), "bbox": list(area.BBOX), "bounds": [rnd(x0), rnd(y0), rnd(x1), rnd(y1)], "ground_m": area.GROUND_M,
-            "land": polys(self.land),
+            "land": polys(self.land, tri=True),
             "surface": {k: polys(v, tri=True) for k, v in self.patches.items()},
             "buildings": self.blds,
             "tanks": self.tanks,
