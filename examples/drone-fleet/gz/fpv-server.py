@@ -113,7 +113,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _picture(self, vehicle, camera, label=None):
-        path = newest_stable(os.path.join(self.frames, vehicle, camera))
+        root = os.path.realpath(self.frames)
+        folder = os.path.realpath(os.path.join(root, vehicle, camera))
+        if not NAME.fullmatch(vehicle) or not folder.startswith(root + os.sep):
+            return None
+        path = newest_stable(folder)
         if path is None:
             return None
         try:
