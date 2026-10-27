@@ -4,7 +4,7 @@
 # fpv-server.py, ais-bridge.py) and, for the benches, the ArduCopter and
 # ArduRover 4.7.2 SITL the fleet runs.
 #
-#   podman build -t localhost/fleet-gz:0.1.0 examples/drone-fleet/gz
+#   podman build -t localhost/fleet-gz:0.1.1 examples/drone-fleet/gz
 FROM docker.io/osrf/ros:jazzy-desktop-full@sha256:ae7ad3ac243da1dfd8bd402a2fa08e149ffbf7a385013bd8ef798d0800accdc8
 
 ARG FW=https://firmware.ardupilot.org

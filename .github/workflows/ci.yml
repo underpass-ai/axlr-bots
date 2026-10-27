@@ -128,6 +128,18 @@ jobs:
           # Without the search and AIS: no operator API in the base, no receiver.
           helm template fleet examples/helm/drone-fleet --set incident.enabled=false --set ais.enabled=false > plain.yaml
           ! grep -q -E 'CP_URL|AIS_URL|^kind: Deployment$' plain.yaml
+          # The gz world: off by default; on, one pod, its Service, its policy, SITL on JSON.
+          ! grep -q -E 'fleet-gz|GZ_HOST' fleet.yaml
+          helm template fleet examples/helm/drone-fleet -n port-fleet --set gz.enabled=true > gz.yaml
+          test "$(grep -c '^kind: Deployment$' gz.yaml)" = 2
+          grep -q 'name: fdm-supply-0, port: 9052' gz.yaml
+          test "$(grep -c 'name: GZ_HOST, value: fleet-gz' gz.yaml)" = 3
+          grep -q '/etc/sitl/rover.parm,/etc/sitl/rover-gz.parm' gz.yaml
+          grep -q 'name: fleet-gz$' gz.yaml
+          ! grep -q 'nvidia.com/gpu' gz.yaml
+          helm template fleet examples/helm/drone-fleet -n port-fleet --set gz.enabled=true --set gz.gpu=true > gpu.yaml
+          grep -q 'nvidia.com/gpu: 1' gpu.yaml
+          grep -q 'runtimeClassName: nvidia' gpu.yaml
 
   fleet-app:
     runs-on: ubuntu-latest

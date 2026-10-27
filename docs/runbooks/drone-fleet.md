@@ -121,7 +121,7 @@ The model is `examples/drone-fleet/app/static/port.glb` (3 MB), built from OpenS
 
 ```text
 Overpass ─▶ fetch_osm.py ─▶ prepare.py (shapely) ─▶ build_scene.py (Blender, on wrx80) ─┬─▶ app/static/port.glb  (/3d)
-                                                                                       └─▶ port3d/gazebo/…     (gz sim)
+                                                                                       └─▶ gz/…                (gz sim)
 ```
 
 To rebuild it, follow the [port3d README](../../examples/drone-fleet/port3d/README.md), then the fleet-app image and the digest in `values.yaml`:
@@ -389,6 +389,35 @@ Every vehicle's companion computer serves a second tool, `return_home {reason}`:
 | **Recall** on quad-1's page | the same, from the operator |
 
 The chart's `vehicle.json` lets the sidecar's AXLR call both tools (`allow_tools`); a `fleet-app` image older than `return_home` answers it as an unknown tool.
+
+## 12. The simulator's camera (gz)
+
+With `gz.enabled` the quads, the rovers and the supply rover fly and drive in one gz sim world of the port, the pod `fleet-gz` ([`examples/drone-fleet/gz`](../../examples/drone-fleet/gz/README.md)). Each SITL stays in its vehicle's pod and runs on JSON against that pod; the plane keeps SITL's own physics.
+
+| Group | `fdm_port_in` (UDP on `fleet-gz`) |
+|---|---|
+| quad-0 / 1 / 2 | 9002 / 9012 / 9022 |
+| rover-0 / 1 | 9032 / 9042 |
+| supply-0 | 9052 |
+
+On CPU six vehicles run at 0.06 × real time, so the pod takes a GPU (`gz.gpu: true`). wrx80's four are all assigned; the user chose to free Jupyter's (`mind-creation/jupyter`, 1 replica on 27 Oct 2026) while the fleet runs gz:
+
+```bash
+kubectl -n mind-creation scale deploy/jupyter --replicas=0     # before the upgrade
+helm upgrade fleet examples/helm/drone-fleet -n port-fleet -f port-fleet-values.yaml \
+  --set gz.enabled=true --set gz.gpu=true --force-conflicts
+kubectl -n port-fleet get pods -l app=fleet-gz                 # 3/3 Running
+kubectl -n port-fleet logs deploy/fleet-gz -c gz | grep 'real time factor'
+```
+
+The upgrade restarts every vehicle: never with a task waiting for approval.
+
+Back to SITL's own physics, and Jupyter's GPU back:
+
+```bash
+helm upgrade fleet examples/helm/drone-fleet -n port-fleet -f port-fleet-values.yaml --set gz.enabled=false --force-conflicts
+kubectl -n mind-creation scale deploy/jupyter --replicas=1
+```
 
 ## The look
 
