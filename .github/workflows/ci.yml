@@ -141,6 +141,9 @@ jobs:
         run: |
           pip install pymavlink==2.4.50 pillow==12.0.0 websockets==15.0.1
           PHOTOS_DIR=$(mktemp -d) python -m unittest -v test_fleet
+      - name: Test the fleet's gz scripts
+        working-directory: examples/drone-fleet/gz
+        run: python -m unittest -v test_gz
 
   node-image:
     runs-on: ubuntu-latest

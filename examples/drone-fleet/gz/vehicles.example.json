@@ -1,0 +1,8 @@
+[
+  {"name": "quad-0", "kind": "quad", "lat": 51.94550, "lon": 3.99735, "heading": 0, "port": 9002},
+  {"name": "quad-1", "kind": "quad", "lat": 51.94064, "lon": 3.98559, "heading": 0, "port": 9012},
+  {"name": "quad-2", "kind": "quad", "lat": 51.94700, "lon": 4.02735, "heading": 0, "port": 9022},
+  {"name": "rover-0", "kind": "rover", "lat": 51.94700, "lon": 4.02705, "heading": 0, "port": 9032},
+  {"name": "rover-1", "kind": "rover", "lat": 51.94064, "lon": 3.98529, "heading": 0, "port": 9042},
+  {"name": "supply-0", "kind": "rover", "lat": 51.94020, "lon": 4.00500, "heading": 0, "port": 9052}
+]

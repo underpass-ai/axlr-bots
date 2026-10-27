@@ -2,7 +2,7 @@
 
     blender -b --factory-startup -P build_scene.py -- \
         --features build/features.json --web ../app/static/port.glb \
-        --gazebo gazebo/models/maasvlakte2/meshes/port.glb --blend build/port.blend
+        --gazebo ../gz/models/maasvlakte2/meshes/port.glb --blend build/port.blend
 
 The scene is in metres: X east, Y north, Z up, from area.ORIGIN; the sea at
 0, the quays and yards at GROUND_M. Two exports of the same scene:

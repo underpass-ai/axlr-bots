@@ -1,0 +1,282 @@
+<?xml version="1.0"?>
+<!-- A car-sized port rover for ArduRover 4.7.2 SITL (Ackermann: SERVO1 steering,
+     SERVO3 throttle) through ArduPilot's gz plugin. X forward, Y left, Z up; the
+     model's origin is midway between the axles at wheel-centre height.
+
+       body 3.6 x 1.4 m, 1.82 m over the wheels; wheelbase 2.4 m; wheels 0.35 m
+       steering +-30 degrees: the tightest turn is 2.4 / tan 30 = 4.2 m
+       full throttle 10 m/s (rear wheels at 28.6 rad/s)
+
+     Rangefinders, in ArduPilot's order (RNGFNDn_TYPE 100 reads the plugin's rng_n):
+       1  the D455's centre column, 29 degrees wide      RNGFND1_ORIENT 0
+       2  the D455's left column, 29 degrees to the left  RNGFND2_ORIENT 7
+       3  the aft lidar                                   RNGFND3_ORIENT 4
+       4  the D455's right column                         RNGFND4_ORIENT 1
+     The D455's 87 degrees split in three because the plugin reports the nearest
+     return of each sensor: one number per column.
+
+     The fleet's rover: a template, fleet-sim puts the vehicle's name for {NAME}
+     and its UDP port for {PORT}. Its FPV camera (960x540 at 5 Hz, saved to
+     /frames/{NAME}/fpv) is on the bumper, 0.9 m above the origin. -->
+<sdf version="1.9">
+  <model name="{NAME}">
+    <link name="chassis">
+      <pose>0 0 0.25 0 0 0</pose>
+      <inertial>
+        <mass>700</mass>
+        <inertia><ixx>126</ixx><iyy>770</iyy><izz>870</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
+      </inertial>
+      <collision name="body">
+        <geometry><box><size>3.6 1.4 0.5</size></box></geometry>
+      </collision>
+      <visual name="body">
+        <geometry><box><size>3.6 1.4 0.5</size></box></geometry>
+        <material><ambient>0.72 0.45 0.2 1</ambient><diffuse>0.72 0.45 0.2 1</diffuse></material>
+      </visual>
+      <visual name="cab">
+        <pose>0.6 0 0.5 0 0 0</pose>
+        <geometry><box><size>1.4 1.3 0.5</size></box></geometry>
+        <material><ambient>0.15 0.15 0.17 1</ambient><diffuse>0.15 0.15 0.17 1</diffuse></material>
+      </visual>
+      <visual name="d455">
+        <pose>1.82 0 0.2 0 0 0</pose>
+        <geometry><box><size>0.04 0.124 0.029</size></box></geometry>
+        <material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material>
+      </visual>
+
+      <sensor name="imu_sensor" type="imu">
+        <always_on>1</always_on>
+        <update_rate>1000</update_rate>
+      </sensor>
+
+      <!-- The D455 on the front bumper, 0.8 m above the ground: 87 degrees in three
+           columns of 29, 0.3 to 16 m (past 16 m its depth is noise). -->
+      <sensor name="d455_centre" type="gpu_lidar">
+        <pose>1.82 0 0.2 0 0 0</pose>
+        <topic>/{NAME}/rng1</topic>
+        <update_rate>10</update_rate>
+        <lidar>
+          <scan><horizontal><samples>15</samples><resolution>1</resolution><min_angle>-0.2531</min_angle><max_angle>0.2531</max_angle></horizontal></scan>
+          <range><min>0.3</min><max>16</max><resolution>0.01</resolution></range>
+          <noise><type>gaussian</type><mean>0</mean><stddev>0.02</stddev></noise>
+        </lidar>
+        <always_on>1</always_on>
+      </sensor>
+      <sensor name="d455_left" type="gpu_lidar">
+        <pose>1.82 0 0.2 0 0 0.5061</pose>
+        <topic>/{NAME}/rng2</topic>
+        <update_rate>10</update_rate>
+        <lidar>
+          <scan><horizontal><samples>15</samples><resolution>1</resolution><min_angle>-0.2531</min_angle><max_angle>0.2531</max_angle></horizontal></scan>
+          <range><min>0.3</min><max>16</max><resolution>0.01</resolution></range>
+          <noise><type>gaussian</type><mean>0</mean><stddev>0.02</stddev></noise>
+        </lidar>
+        <always_on>1</always_on>
+      </sensor>
+      <sensor name="lidar_aft" type="gpu_lidar">
+        <pose>-1.82 0 0.2 0 0 3.14159</pose>
+        <topic>/{NAME}/rng3</topic>
+        <update_rate>10</update_rate>
+        <lidar>
+          <scan><horizontal><samples>5</samples><resolution>1</resolution><min_angle>-0.0873</min_angle><max_angle>0.0873</max_angle></horizontal></scan>
+          <range><min>0.2</min><max>40</max><resolution>0.01</resolution></range>
+        </lidar>
+        <always_on>1</always_on>
+      </sensor>
+      <sensor name="d455_right" type="gpu_lidar">
+        <pose>1.82 0 0.2 0 0 -0.5061</pose>
+        <topic>/{NAME}/rng4</topic>
+        <update_rate>10</update_rate>
+        <lidar>
+          <scan><horizontal><samples>15</samples><resolution>1</resolution><min_angle>-0.2531</min_angle><max_angle>0.2531</max_angle></horizontal></scan>
+          <range><min>0.3</min><max>16</max><resolution>0.01</resolution></range>
+          <noise><type>gaussian</type><mean>0</mean><stddev>0.02</stddev></noise>
+        </lidar>
+        <always_on>1</always_on>
+      </sensor>
+
+      <!-- The FPV: on the front bumper, looking down the road. -->
+      <sensor name="fpv" type="camera">
+        <pose>1.9 0 0.9 0 0.05 0</pose>
+        <topic>/{NAME}/fpv/image</topic>
+        <update_rate>5</update_rate>
+        <camera>
+          <horizontal_fov>1.5</horizontal_fov>
+          <image><width>960</width><height>540</height></image>
+          <clip><near>0.5</near><far>3000</far></clip>
+          <save enabled="true"><path>/frames/{NAME}/fpv</path></save>
+        </camera>
+        <always_on>1</always_on>
+      </sensor>
+    </link>
+
+    <!-- Front wheels: a steering knuckle on a vertical hinge, the wheel free on it. -->
+    <link name="knuckle_fl">
+      <pose>1.2 0.8 0 0 0 0</pose>
+      <inertial><mass>5</mass><inertia><ixx>0.05</ixx><iyy>0.05</iyy><izz>0.05</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+    </link>
+    <link name="knuckle_fr">
+      <pose>1.2 -0.8 0 0 0 0</pose>
+      <inertial><mass>5</mass><inertia><ixx>0.05</ixx><iyy>0.05</iyy><izz>0.05</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+    </link>
+    <joint name="steer_fl" type="revolute">
+      <parent>chassis</parent><child>knuckle_fl</child>
+      <axis><xyz>0 0 1</xyz><limit><lower>-0.5236</lower><upper>0.5236</upper><effort>3000</effort><velocity>2</velocity></limit></axis>
+    </joint>
+    <joint name="steer_fr" type="revolute">
+      <parent>chassis</parent><child>knuckle_fr</child>
+      <axis><xyz>0 0 1</xyz><limit><lower>-0.5236</lower><upper>0.5236</upper><effort>3000</effort><velocity>2</velocity></limit></axis>
+    </joint>
+
+    <link name="wheel_fl">
+      <pose>1.2 0.8 0 -1.5707963 0 0</pose>
+      <inertial><mass>20</mass><inertia><ixx>0.69</ixx><iyy>0.69</iyy><izz>1.23</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+      <collision name="tyre">
+        <geometry><cylinder><radius>0.35</radius><length>0.22</length></cylinder></geometry>
+        <surface><friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction></surface>
+      </collision>
+      <visual name="tyre">
+        <geometry><cylinder><radius>0.35</radius><length>0.22</length></cylinder></geometry>
+        <material><ambient>0.08 0.08 0.08 1</ambient><diffuse>0.08 0.08 0.08 1</diffuse></material>
+      </visual>
+    </link>
+    <link name="wheel_fr">
+      <pose>1.2 -0.8 0 -1.5707963 0 0</pose>
+      <inertial><mass>20</mass><inertia><ixx>0.69</ixx><iyy>0.69</iyy><izz>1.23</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+      <collision name="tyre">
+        <geometry><cylinder><radius>0.35</radius><length>0.22</length></cylinder></geometry>
+        <surface><friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction></surface>
+      </collision>
+      <visual name="tyre">
+        <geometry><cylinder><radius>0.35</radius><length>0.22</length></cylinder></geometry>
+        <material><ambient>0.08 0.08 0.08 1</ambient><diffuse>0.08 0.08 0.08 1</diffuse></material>
+      </visual>
+    </link>
+    <link name="wheel_rl">
+      <pose>-1.2 0.8 0 -1.5707963 0 0</pose>
+      <inertial><mass>20</mass><inertia><ixx>0.69</ixx><iyy>0.69</iyy><izz>1.23</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+      <collision name="tyre">
+        <geometry><cylinder><radius>0.35</radius><length>0.22</length></cylinder></geometry>
+        <surface><friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction></surface>
+      </collision>
+      <visual name="tyre">
+        <geometry><cylinder><radius>0.35</radius><length>0.22</length></cylinder></geometry>
+        <material><ambient>0.08 0.08 0.08 1</ambient><diffuse>0.08 0.08 0.08 1</diffuse></material>
+      </visual>
+    </link>
+    <link name="wheel_rr">
+      <pose>-1.2 -0.8 0 -1.5707963 0 0</pose>
+      <inertial><mass>20</mass><inertia><ixx>0.69</ixx><iyy>0.69</iyy><izz>1.23</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+      <collision name="tyre">
+        <geometry><cylinder><radius>0.35</radius><length>0.22</length></cylinder></geometry>
+        <surface><friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction></surface>
+      </collision>
+      <visual name="tyre">
+        <geometry><cylinder><radius>0.35</radius><length>0.22</length></cylinder></geometry>
+        <material><ambient>0.08 0.08 0.08 1</ambient><diffuse>0.08 0.08 0.08 1</diffuse></material>
+      </visual>
+    </link>
+
+    <!-- The wheels turn about the model's Y: forward is a positive turn. -->
+    <joint name="wheel_fl_spin" type="revolute">
+      <parent>knuckle_fl</parent><child>wheel_fl</child>
+      <axis><xyz expressed_in="__model__">0 1 0</xyz><dynamics><damping>0.5</damping></dynamics></axis>
+    </joint>
+    <joint name="wheel_fr_spin" type="revolute">
+      <parent>knuckle_fr</parent><child>wheel_fr</child>
+      <axis><xyz expressed_in="__model__">0 1 0</xyz><dynamics><damping>0.5</damping></dynamics></axis>
+    </joint>
+    <joint name="wheel_rl_drive" type="revolute">
+      <parent>chassis</parent><child>wheel_rl</child>
+      <axis><xyz expressed_in="__model__">0 1 0</xyz></axis>
+    </joint>
+    <joint name="wheel_rr_drive" type="revolute">
+      <parent>chassis</parent><child>wheel_rr</child>
+      <axis><xyz expressed_in="__model__">0 1 0</xyz></axis>
+    </joint>
+
+    <!-- The plugin steers by the steering joints' positions, which gz only keeps
+         when a system asks for them: without this the wheels never turn. -->
+    <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">
+      <joint_name>steer_fl</joint_name>
+      <joint_name>steer_fr</joint_name>
+    </plugin>
+
+    <plugin filename="ArduPilotPlugin" name="ArduPilotPlugin">
+      <!-- Any address: the vehicle's SITL is in its own pod. The plugin answers
+           wherever the last packet came from. -->
+      <fdm_addr>0.0.0.0</fdm_addr>
+      <fdm_port_in>{PORT}</fdm_port_in>
+      <connectionTimeoutMaxCount>5</connectionTimeoutMaxCount>
+      <!-- Off: a stopped SITL must not stop the world the others drive in. -->
+      <lock_step>0</lock_step>
+      <have_32_channels>0</have_32_channels>
+      <!-- The model is X forward, Y left, Z up; the world is ENU. -->
+      <modelXYZToAirplaneXForwardZDown degrees="true">0 0 0 180 0 0</modelXYZToAirplaneXForwardZDown>
+      <gazeboXYZToNED degrees="true">0 0 0 180 0 90</gazeboXYZToNED>
+      <imuName>chassis::imu_sensor</imuName>
+
+      <!-- SERVO1 (GroundSteering, 1000 to 2000 us): 2000 is full right, a negative
+           turn about Z, so -30 to +30 degrees is a multiplier of -1.0472 on -0.5..0.5. -->
+      <control channel="0">
+        <jointName>steer_fl</jointName>
+        <useForce>1</useForce>
+        <multiplier>-1.0472</multiplier>
+        <offset>-0.5</offset>
+        <servo_min>1000</servo_min>
+        <servo_max>2000</servo_max>
+        <type>POSITION</type>
+        <p_gain>3000</p_gain>
+        <i_gain>0</i_gain>
+        <d_gain>60</d_gain>
+        <i_max>0</i_max>
+        <i_min>0</i_min>
+        <cmd_max>3000</cmd_max>
+        <cmd_min>-3000</cmd_min>
+      </control>
+      <control channel="0">
+        <jointName>steer_fr</jointName>
+        <useForce>1</useForce>
+        <multiplier>-1.0472</multiplier>
+        <offset>-0.5</offset>
+        <servo_min>1000</servo_min>
+        <servo_max>2000</servo_max>
+        <type>POSITION</type>
+        <p_gain>3000</p_gain>
+        <i_gain>0</i_gain>
+        <d_gain>60</d_gain>
+        <i_max>0</i_max>
+        <i_min>0</i_min>
+        <cmd_max>3000</cmd_max>
+        <cmd_min>-3000</cmd_min>
+      </control>
+
+      <!-- SERVO3 (Throttle, 1000 to 2000 us, stopped at 1500): the rear wheels'
+           speed, -28.6 to +28.6 rad/s, 10 m/s at full throttle. -->
+      <control channel="2">
+        <jointName>wheel_rl_drive</jointName>
+        <useForce>0</useForce>
+        <multiplier>57.14</multiplier>
+        <offset>-0.5</offset>
+        <servo_min>1000</servo_min>
+        <servo_max>2000</servo_max>
+        <type>VELOCITY</type>
+      </control>
+      <control channel="2">
+        <jointName>wheel_rr_drive</jointName>
+        <useForce>0</useForce>
+        <multiplier>57.14</multiplier>
+        <offset>-0.5</offset>
+        <servo_min>1000</servo_min>
+        <servo_max>2000</servo_max>
+        <type>VELOCITY</type>
+      </control>
+
+      <!-- rng_1 to rng_4: the nearest return of each sensor, in metres. -->
+      <sensor><type>lidar</type><index>1</index><topic>/{NAME}/rng1</topic></sensor>
+      <sensor><type>lidar</type><index>2</index><topic>/{NAME}/rng2</topic></sensor>
+      <sensor><type>lidar</type><index>3</index><topic>/{NAME}/rng3</topic></sensor>
+      <sensor><type>lidar</type><index>4</index><topic>/{NAME}/rng4</topic></sensor>
+    </plugin>
+  </model>
+</sdf>
