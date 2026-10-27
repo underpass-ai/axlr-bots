@@ -43,21 +43,31 @@ podman run --rm -v /tmp/gz-frames:/frames localhost/fleet-gz:0.1.0 bash -lc '
 # A quad flies (the app and the chart's files mounted):
 podman run --rm -v /tmp/out:/out -v $PWD/examples/drone-fleet/app:/app:ro \
   -v $PWD/examples/helm/drone-fleet/files:/chart:ro localhost/fleet-gz:0.1.0 bash -lc '
-  . /opt/ros/jazzy/setup.sh; echo "[$(sed -n 2p /gz/vehicles.example.json | tr -d ,)]" > /tmp/q.json
+  . /opt/ros/jazzy/setup.sh
+  python3 -c "import json; json.dump(json.load(open(\"/gz/vehicles.example.json\"))[:1], open(\"/tmp/q.json\", \"w\"))"
   python3 /gz/fleet-sim --spawn-only --vehicles /tmp/q.json; python3 /gz/quad_test.py'
 ```
 
-Measured 27 Oct 2026 on wrx80, CPU only (llvmpipe), `--cpus 12`:
+Measured 27 Oct 2026 on wrx80, CPU only (llvmpipe), `--cpus 12`, real time factor:
 
-| Scene | Real time factor |
-|---|---|
-| the world alone | 1.00 |
-| one quad (3 lidars, 2 cameras) | 0.40 |
-| six vehicles (3 quads, 3 rovers) | 0.06 |
+| Scene | Plugin as released | With `nonblocking.patch` |
+|---|---|---|
+| the world alone | 1.00 | 1.00 |
+| one quad, no sensors, no SITL | 0.43 | 0.97 |
+| one quad, D9 cameras and lidars | 0.40 | 0.79 |
+| six quads on the quays, no sensors | 0.06 | 0.07 |
+| six quads falling at 400 m, no sensors | | 0.98 |
 
-On CPU the fleet is too slow, so the chart's `gz.gpu: true` gives the pod a
-GPU. `quad_test.py` with one quad: 10.02 m at the top, home 0.01 m from the
-pad, no warnings.
+The plugin waited for a servo packet on every 1 ms step (1 ms without a
+SITL, up to 10 ms with one), per vehicle, in series, even with `lock_step 0`:
+the patch does not wait. What is left is the port's collision mesh (74,546
+triangles in 442 nodes): every vehicle on it, or inside its bounds, costs
+dartsim more than the one before. Bullet's collision detector is cheap but
+drives the rover off the quay; ODE flies the quad but is as slow.
+
+`quad_test.py` with one quad: 10.02 m at the top, home 0.01 m from the pad,
+no warnings. The rover on its template (`lock_step 0`, the patch, its SITL in
+another container as in the pods): 4.06 m/s along `rwg:rwg-yard`.
 
 ## The rover that avoids what the map does not know
 

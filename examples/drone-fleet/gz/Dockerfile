@@ -4,7 +4,7 @@
 # fpv-server.py, ais-bridge.py) and, for the benches, the ArduCopter and
 # ArduRover 4.7.2 SITL the fleet runs.
 #
-#   podman build -t localhost/fleet-gz:0.1.1 examples/drone-fleet/gz
+#   podman build -t localhost/fleet-gz:0.2.1 examples/drone-fleet/gz
 FROM docker.io/osrf/ros:jazzy-desktop-full@sha256:ae7ad3ac243da1dfd8bd402a2fa08e149ffbf7a385013bd8ef798d0800accdc8
 
 ARG FW=https://firmware.ardupilot.org
@@ -16,14 +16,17 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # The plugin that couples a gz model to ArduPilot's JSON SITL backend, built
-# against the gz Harmonic of the ROS 2 Jazzy vendor packages. The patch sends
-# the Euler angles beside the quaternion: ArduPilot 4.7.2 drops rng_1 without
-# them (master tests the right bits).
-COPY ardupilot_gazebo-attitude.patch /src/
+# against the gz Harmonic of the ROS 2 Jazzy vendor packages. Two patches:
+# attitude sends the Euler angles beside the quaternion (ArduPilot 4.7.2
+# drops rng_1 without them; master tests the right bits); nonblocking stops
+# the plugin waiting for a servo packet on every step when lock_step is off
+# (1 ms without a SITL, up to 10 ms with one, per vehicle and in series: one
+# quad ran at 0.40 x real time, six at 0.06).
+COPY ardupilot_gazebo-attitude.patch ardupilot_gazebo-nonblocking.patch /src/
 RUN git clone https://github.com/ArduPilot/ardupilot_gazebo /src/ardupilot_gazebo \
  && cd /src/ardupilot_gazebo \
  && git checkout -q "$ARDUPILOT_GAZEBO_COMMIT" \
- && git apply /src/ardupilot_gazebo-attitude.patch \
+ && git apply /src/ardupilot_gazebo-attitude.patch /src/ardupilot_gazebo-nonblocking.patch \
  && . /opt/ros/jazzy/setup.sh \
  && GZ_VERSION=harmonic cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_INSTALL_PREFIX=/opt/ardupilot_gazebo \
  && cmake --build build -j"$(nproc)" \

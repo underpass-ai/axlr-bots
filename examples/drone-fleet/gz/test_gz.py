@@ -67,6 +67,7 @@ class FleetSimTest(unittest.TestCase):
             self.assertEqual(plugin.findtext("fdm_addr"), "0.0.0.0")
             self.assertEqual(plugin.findtext("fdm_port_in"), str(v["port"]))
             self.assertEqual(plugin.findtext("lock_step"), "0")
+            self.assertEqual(plugin.findtext("connectionTimeoutMaxCount"), "1000")
             topics = {s.findtext("topic") for s in model.iter("sensor") if s.get("type") == "camera"}
             self.assertEqual(topics, set(fleet_sim.camera_topics(v)))
             for s in model.iter("sensor"):
