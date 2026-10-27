@@ -340,7 +340,7 @@ function render(f) {
     const a = p.analysis || {};
     const rings = (p.detections || []).map(d => `<i class="${d.container ? "" : "miss"}" style="left:${(100 * d.x).toFixed(1)}%;top:${(100 * d.y).toFixed(1)}%" title="${esc(d.container || "no container")}"></i>`).join("");
     const html = `<div style="width:300px"><div class="shot"><img src="photos/${esc(p.id)}.jpg">${rings}</div>
-      <b>${esc(p.vehicle)}</b> · ${esc(p.mission)} · ${Math.round(p.alt_m)} m<br>${esc(a.summary)}${p.imagery === "simulator" ? "<br><small>simulator camera · rendered port model</small>" : ""}${p.credit ? `<br><small>${esc(p.credit)}</small>` : ""}
+      <b>${esc(p.vehicle)}</b> · ${esc(p.mission)} · ${Math.round(p.alt_m)} m<br>${esc(a.summary)}<br><small>${p.imagery === "simulator" ? "simulator camera · rendered port model" : `real aerial photo (${p.imagery === "esri" ? "Esri" : "PDOK"})`}</small>${p.credit ? `<br><small>${esc(p.credit)}</small>` : ""}
       ${(a.findings || []).length ? "<ul>" + a.findings.map(x => `<li>${esc(x)}</li>`).join("") + "</ul>" : ""}
       <small>${(a.objects || []).map(esc).join(" · ")}</small></div>`;
     photoPins[p.id] = L.circleMarker([p.lat, p.lon], { radius: a.alert ? 8 : 5, color: a.alert ? "#f85149" : "#e3b341", weight: 2, fillOpacity: 0.8 })
