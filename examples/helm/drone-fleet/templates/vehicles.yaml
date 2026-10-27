@@ -140,6 +140,12 @@ spec:
             {{- range $key, $value := $group.env }}
             - {name: {{ $key }}, value: {{ $value | quote }}}
             {{- end }}
+            {{- if and $inGz (eq $group.kind "quad") }}
+            # The photos are the gz world's nadir camera's, fetched on each
+            # CAMERA_FEEDBACK. A rover has no nadir camera: its photos stay aerial.
+            - {name: PHOTO_URL, value: "http://{{ include "fleet.gz" $root }}:8081/latest/$(POD_NAME).jpg"}
+            - {name: PHOTOS_DIR, value: /var/lib/vehicle/photos}
+            {{- end }}
           readinessProbe:
             httpGet: {path: /healthz, port: state}
             periodSeconds: 10
@@ -150,10 +156,17 @@ spec:
           volumeMounts:
             - {name: config, mountPath: /etc/fleet, readOnly: true}
             - {name: axlr-node-workspaces, mountPath: /workspaces}
+            {{- if and $inGz (eq $group.kind "quad") }}
+            - {name: photos, mountPath: /var/lib/vehicle/photos}
+            {{- end }}
         {{- include "axlr-bots-node.inject.container" $bots | nindent 8 }}
       volumes:
         - name: sitl-data
           emptyDir: {sizeLimit: 256Mi}
+        {{- if and $inGz (eq $group.kind "quad") }}
+        - name: photos
+          emptyDir: {sizeLimit: 256Mi}
+        {{- end }}
         - name: config
           configMap: {name: {{ $root.Release.Name }}-config}
         {{- include "axlr-bots-node.inject.volumes" $bots | nindent 8 }}

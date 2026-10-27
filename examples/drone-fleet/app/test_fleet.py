@@ -531,6 +531,91 @@ class ImageryTest(unittest.TestCase):
         self.assertIn("Beeldmateriaal Nederland", vision.CREDITS["pdok"])
 
 
+class SimulatorCameraTest(unittest.TestCase):
+    """PR C: the photo is the gz world's camera's, fetched by the vehicle."""
+
+    def test_the_pilot_keeps_and_serves_each_photo(self):
+        folder = tempfile.mkdtemp()
+        cond = threading.Condition()
+        photos = vehicle_pilot.PhotoFetcher("http://fleet-gz:8081/latest/quad-0.jpg", folder, cond, get=lambda url: b"jpeg-bytes")
+        shot = {"n": 7, "photo": None}
+        photos.fetch(shot)
+        self.assertEqual(shot["photo"], "/photos/7.jpg")
+        with open(photos.path(7), "rb") as f:
+            self.assertEqual(f.read(), b"jpeg-bytes")
+        def down(url):
+            raise OSError("refused")
+        failed = {"n": 8, "photo": None}
+        vehicle_pilot.PhotoFetcher("http://x", folder, cond, get=down).fetch(failed)
+        self.assertEqual(failed["photo"], "")                # no photo: the station uses the aerial one
+        # Only the newest 200 are kept.
+        photos.fetch({"n": 207, "photo": None})
+        self.assertFalse(os.path.exists(photos.path(7)))
+        vehicle_pilot.StateHandler.photos = photos
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), vehicle_pilot.StateHandler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+        try:
+            r = urllib.request.urlopen(base + "/photos/207.jpg")
+            self.assertEqual(r.headers["Content-Type"], "image/jpeg")
+            self.assertEqual(vision.fetch_vehicle_photo(base + "/state", "/photos/207.jpg"), b"jpeg-bytes")
+            for path in ("/photos/7.jpg", "/photos/..%2F207.jpg", "/photos/x.jpg"):
+                with self.assertRaises(urllib.error.HTTPError):
+                    urllib.request.urlopen(base + path)
+        finally:
+            srv.shutdown()
+            vehicle_pilot.StateHandler.photos = None
+        with self.assertRaises(ValueError):
+            vision.fetch_vehicle_photo(base + "/state", "/etc/passwd")
+
+    def test_the_station_waits_for_the_vehicle_s_photo(self):
+        v = vision.Vision(tempfile.mkdtemp(), "m", "", 1, 12, workers=0)
+        v.jobs = __import__("queue").Queue()
+        now = time.time()
+        flight = {"started_at": 1, "shots": [{"n": 1, "lat": 51.95, "lon": 3.99, "alt_m": 35, "yaw": 90, "t": now, "photo": None}]}
+        v.offer("quad-0", "quad", flight)
+        self.assertTrue(v.jobs.empty())                       # still fetching
+        flight["shots"][0]["photo"] = "/photos/1.jpg"
+        v.offer("quad-0", "quad", flight)
+        job = v.jobs.get_nowait()
+        self.assertEqual((job["photo"], job["yaw"]), ("/photos/1.jpg", 90))
+
+    def test_the_lens_frame_has_no_floor(self):
+        x1, _, x2, _ = vision.frame(51.95, 3.99, 35, min_width=0)
+        self.assertAlmostEqual((x2 - x1) * math.cos(math.radians(51.95)), 63, delta=0.5)
+        x1, _, x2, _ = vision.frame(51.95, 3.99, 35)
+        self.assertAlmostEqual((x2 - x1) * math.cos(math.radians(51.95)), 120, delta=0.5)
+
+    def test_a_detection_turns_with_the_heading(self):
+        lat, lon = 51.95, 3.99
+        bbox = vision.frame(lat, lon, 35, min_width=0)       # 63 x 47 m
+        # The top centre of the image is the bow: 23.6 m ahead.
+        for yaw, north, east in ((0, 23.6, 0), (90, 0, 23.6), (180, -23.6, 0), (270, 0, -23.6)):
+            plat, plon = incident.Incident._turned(0.5, 0, bbox, yaw)
+            n, e = geo.offset_m(lat, lon, plat, plon)
+            self.assertAlmostEqual(n, north, delta=0.3)
+            self.assertAlmostEqual(e, east, delta=0.3)
+        # The right edge is starboard: heading east, that is south.
+        n, e = geo.offset_m(lat, lon, *incident.Incident._turned(1, 0.5, bbox, 90))
+        self.assertAlmostEqual(n, -31.5, delta=0.3)
+        self.assertAlmostEqual(e, 0, delta=0.3)
+
+    def test_a_turned_photo_finds_its_container(self):
+        now = 1_800_000_000.0
+        inc = incident.Incident(REPORT, COAST, now=now, seed=3)
+        c = next(c for c in inc.sea.containers if c.id == "C02")
+        clat, clon = inc.sea.position(c.north, c.east)
+        # The quad is 15 m west of the container heading east: it is 15 m ahead, above centre.
+        qlat, qlon = geo.point_at(clat, clon, 0, -15)
+        bbox = vision.frame(qlat, qlon, 30, min_width=0)
+        fy = 0.5 - 15 / ((bbox[3] - bbox[1]) * math.cos(math.radians(qlat)))
+        seen = inc.observe("quad-0", "quad", 30, now + 1, [{"x": 0.5, "y": fy}], bbox, "q", yaw=90)
+        self.assertEqual(seen[0]["container"], "C02")
+        # Without the turn the same detection lands over 20 m off.
+        n, e = geo.offset_m(clat, clon, *incident.merc_to_latlon((bbox[0] + bbox[2]) / 2, bbox[3] - fy * (bbox[3] - bbox[1])))
+        self.assertGreater(math.hypot(n, e), 20)
+
+
 class VisionParseTest(unittest.TestCase):
     def test_the_answer_is_bounded_whatever_comes_around_it(self):
         out = vision.parse('```json\n{"containers": [{"x": 0.2, "y": 0.4}, {"x": 7, "y": 0}, {"y": 1}], "summary": "two boxes"}\n```')

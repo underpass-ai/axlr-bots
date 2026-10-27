@@ -258,7 +258,10 @@ function drawStatic(f) {
 
 function render(f) {
   // Say "live AIS" only while the ships really are live.
-  document.getElementById("simnote").textContent = "simulated vehicles and containers · real imagery" + ((f.ais || {}).status === "live" ? " and live AIS" : "");
+  // The photos come from the simulator's cameras when the vehicles fly in gz.
+  const simCamera = (f.photos || []).some(p => p.imagery === "simulator");
+  document.getElementById("simnote").textContent = "simulated vehicles and containers · " +
+    (simCamera ? "simulator camera · rendered port model" : "real imagery") + ((f.ais || {}).status === "live" ? " and live AIS" : "");
   drawStatic(f);
   live("live · " + new Date(f.updated).toLocaleTimeString(), "var(--ok)");
   const counts = { out: 0, ready: 0, station: 0, off: 0 };
@@ -337,7 +340,7 @@ function render(f) {
     const a = p.analysis || {};
     const rings = (p.detections || []).map(d => `<i class="${d.container ? "" : "miss"}" style="left:${(100 * d.x).toFixed(1)}%;top:${(100 * d.y).toFixed(1)}%" title="${esc(d.container || "no container")}"></i>`).join("");
     const html = `<div style="width:300px"><div class="shot"><img src="photos/${esc(p.id)}.jpg">${rings}</div>
-      <b>${esc(p.vehicle)}</b> · ${esc(p.mission)} · ${Math.round(p.alt_m)} m<br>${esc(a.summary)}${p.credit ? `<br><small>${esc(p.credit)}</small>` : ""}
+      <b>${esc(p.vehicle)}</b> · ${esc(p.mission)} · ${Math.round(p.alt_m)} m<br>${esc(a.summary)}${p.imagery === "simulator" ? "<br><small>simulator camera · rendered port model</small>" : ""}${p.credit ? `<br><small>${esc(p.credit)}</small>` : ""}
       ${(a.findings || []).length ? "<ul>" + a.findings.map(x => `<li>${esc(x)}</li>`).join("") + "</ul>" : ""}
       <small>${(a.objects || []).map(esc).join(" · ")}</small></div>`;
     photoPins[p.id] = L.circleMarker([p.lat, p.lon], { radius: a.alert ? 8 : 5, color: a.alert ? "#f85149" : "#e3b341", weight: 2, fillOpacity: 0.8 })

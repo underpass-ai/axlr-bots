@@ -136,8 +136,13 @@ class Incident:
 
     # -- what the photos saw -------------------------------------------------
 
-    def observe(self, vehicle, kind, alt_m, t, detections, bbox_merc, photo_id):
-        """Map the model's containers in one photo to the sea. Returns them annotated."""
+    def observe(self, vehicle, kind, alt_m, t, detections, bbox_merc, photo_id, yaw=None):
+        """Map the model's containers in one photo to the sea. Returns them annotated.
+
+        yaw None: the photo is north up (an aerial photo of the frame). A
+        number: the camera is fixed to the vehicle, the image's top is its bow
+        at that heading (degrees from north, clockwise), so a detection is
+        turned by it about the frame's centre."""
         if self.status != "searching":
             return []
         self.photos += 1
@@ -147,8 +152,11 @@ class Incident:
         confirms = kind == "quad" and alt_m < HIGH_M
         out = []
         for det in detections:
-            mx, my = x1 + det["x"] * (x2 - x1), y2 - det["y"] * (y2 - y1)
-            lat, lon = merc_to_latlon(mx, my)
+            if yaw is None:
+                mx, my = x1 + det["x"] * (x2 - x1), y2 - det["y"] * (y2 - y1)
+                lat, lon = merc_to_latlon(mx, my)
+            else:
+                lat, lon = self._turned(det["x"], det["y"], bbox_merc, yaw)
             best, best_d = None, radius
             for c in self.sea.containers:
                 clat, clon = self.sea.position(c.north, c.east)
@@ -161,6 +169,20 @@ class Incident:
                 continue   # something on the beach or the quay: not a container afloat
             self._sighting(best, lat, lon, t, vehicle, photo_id, confirms)
         return out
+
+    @staticmethod
+    def _turned(fx, fy, bbox_merc, yaw):
+        """(lat, lon) of a point at fractions (fx, fy) of a photo whose top is at heading yaw."""
+        x1, y1, x2, y2 = bbox_merc
+        clat, clon = merc_to_latlon((x1 + x2) / 2, (y1 + y2) / 2)
+        k = math.cos(math.radians(clat))
+        width_m, height_m = (x2 - x1) * k, (y2 - y1) * k
+        right_m = (fx - 0.5) * width_m
+        up_m = (0.5 - fy) * height_m
+        psi = math.radians(yaw)
+        east = right_m * math.cos(psi) + up_m * math.sin(psi)
+        north = -right_m * math.sin(psi) + up_m * math.cos(psi)
+        return geo.point_at(clat, clon, north, east)
 
     def _sighting(self, container, lat, lon, t, vehicle, photo_id, confirms):
         if container is None:

@@ -147,6 +147,7 @@ class Vehicle:
         }
         self.events = collections.deque(maxlen=30)
         self.shots = collections.deque(maxlen=300)
+        self.photos = None    # a PhotoFetcher when the camera is the gz world's
 
     def event(self, text):
         log.info("%s", text)
@@ -256,8 +257,13 @@ class Vehicle:
             elif kind == "CAMERA_FEEDBACK":
                 s["photos"] += 1
                 # Where each photo was taken: the ground station analyses them.
-                self.shots.append({"n": s["photos"], "lat": msg.lat / 1e7, "lon": msg.lng / 1e7,
-                                   "alt_m": round(msg.alt_rel, 1), "yaw": round(msg.yaw), "t": time.time()})
+                shot = {"n": s["photos"], "lat": msg.lat / 1e7, "lon": msg.lng / 1e7,
+                        "alt_m": round(msg.alt_rel, 1), "yaw": round(msg.yaw), "t": time.time()}
+                if self.photos is not None:
+                    # Taken by the simulator's camera: fetched in a moment ("" if it fails).
+                    shot["photo"] = None
+                    self.photos.take(shot)
+                self.shots.append(shot)
             elif kind == "HOME_POSITION":
                 s["home"] = {"lat": msg.latitude / 1e7, "lon": msg.longitude / 1e7}
             elif kind == "MISSION_CURRENT":
@@ -357,6 +363,58 @@ class Vehicle:
                 int(item.get("lat", 0) * 1e7), int(item.get("lon", 0) * 1e7), float(item.get("alt", 0)),
                 mav.MAV_MISSION_TYPE_MISSION)
         raise RuntimeError("the mission upload timed out")
+
+
+class PhotoFetcher:
+    """The camera's pictures: on each CAMERA_FEEDBACK the latest nadir frame of
+    the gz world (PHOTO_URL), kept as photos/<n>.jpg for the ground station."""
+
+    KEEP = 200
+
+    def __init__(self, url, folder, cond, get=None):
+        self.url = url
+        self.folder = folder
+        self.cond = cond
+        self.get = get or self._get
+        self.queue = collections.deque()
+        self.wake = threading.Event()
+        os.makedirs(folder, exist_ok=True)
+
+    def start(self):
+        threading.Thread(target=self._run, name="photos", daemon=True).start()
+
+    def take(self, shot):
+        self.queue.append(shot)
+        self.wake.set()
+
+    def _get(self, url):
+        with urllib.request.urlopen(url, timeout=1.5) as r:
+            return r.read()
+
+    def path(self, n):
+        return os.path.join(self.folder, f"{int(n)}.jpg")
+
+    def fetch(self, shot):
+        try:
+            image = self.get(self.url)
+            with open(self.path(shot["n"]), "wb") as f:
+                f.write(image)
+            photo = f"/photos/{shot['n']}.jpg"
+        except Exception as exc:
+            log.warning("photo %d: %s", shot["n"], exc)
+            photo = ""
+        with self.cond:
+            shot["photo"] = photo
+        stale = self.path(shot["n"] - self.KEEP)
+        if shot["n"] > self.KEEP and os.path.exists(stale):
+            os.unlink(stale)
+
+    def _run(self):
+        while True:
+            self.wake.wait()
+            self.wake.clear()
+            while self.queue:
+                self.fetch(self.queue.popleft())
 
 
 class GroundCrew:
@@ -1158,6 +1216,7 @@ def mission_tool(kind, limits):
 
 class StateHandler(BaseHTTPRequestHandler):
     pilot = None
+    photos = None
 
     def log_message(self, fmt, *args):
         pass
@@ -1167,6 +1226,12 @@ class StateHandler(BaseHTTPRequestHandler):
             body, status, ctype = json.dumps(self.pilot.state()).encode(), 200, "application/json"
         elif self.path == "/healthz":
             body, status, ctype = b"ok\n", 200, "text/plain"
+        elif self.photos is not None and re.fullmatch(r"/photos/[0-9]{1,9}\.jpg", self.path):
+            try:
+                with open(self.photos.path(int(self.path[8:-4])), "rb") as f:
+                    body, status, ctype = f.read(), 200, "image/jpeg"
+            except FileNotFoundError:
+                body, status, ctype = b"no such photo\n", 404, "text/plain"
         else:
             body, status, ctype = b"not found\n", 404, "text/plain"
         self.send_response(status)
@@ -1209,9 +1274,13 @@ def main():
                       env_float("INSPECTION_S", 30), env_float("SWAP_S", 10))
     pilot = Pilot(vehicle_id, kind, vehicle, limits, crew, zones, os.environ.get("TELEMETRY_FILE", "/var/lib/vehicle/telemetry.json"),
                   role=role, stations=stations, capacity=capacity, routes=routes, telemetry_dir=os.environ.get("TELEMETRY_DIR", ""))
+    if os.environ.get("PHOTO_URL"):
+        vehicle.photos = PhotoFetcher(os.environ["PHOTO_URL"], os.environ.get("PHOTOS_DIR", "/var/lib/vehicle/photos"), vehicle.cond)
+        vehicle.photos.start()
     vehicle.start()
 
     StateHandler.pilot = pilot
+    StateHandler.photos = vehicle.photos
     state_server = ThreadingHTTPServer(env_listen("STATE_LISTEN", "0.0.0.0:8080"), StateHandler)
     threading.Thread(target=state_server.serve_forever, name="state", daemon=True).start()
 
