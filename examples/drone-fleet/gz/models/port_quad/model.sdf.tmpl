@@ -1,8 +1,9 @@
 <?xml version="1.0"?>
 <!-- A port quad for ArduCopter 4.7.2 SITL (frame X, copter-X.parm and the
      chart's files/quad.parm) through ArduPilot's gz plugin: the plugin's
-     iris_with_ardupilot (model://iris_with_standoffs, its rotors' lift and
-     drag, its four motors) with the fleet's sensors. A template: fleet-sim
+     iris_with_ardupilot (model://port_iris: iris_with_standoffs with a box
+     body and sphere feet, port_iris.py; its rotors' lift and drag, its four
+     motors) with the fleet's sensors. A template: fleet-sim
      puts the vehicle's name for {NAME} and its UDP port for {PORT}.
 
      Rangefinders, in quad.parm's order (RNGFNDn_TYPE 100 reads the plugin's rng_n):
@@ -15,7 +16,8 @@
 <sdf version="1.9">
   <model name="{NAME}">
     <include>
-      <uri>model://iris_with_standoffs</uri>
+      <uri>model://port_iris</uri>
+      <name>iris_with_standoffs</name>
     </include>
 
     <!-- The fleet's sensors, fixed to the airframe. X forward, Y left, Z up. -->

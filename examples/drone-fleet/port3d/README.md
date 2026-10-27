@@ -8,7 +8,7 @@ Overpass API ─ fetch_osm.py ─▶ build/osm.json ─ prepare.py (shapely) ─
                                      build_scene.py (Blender, headless) ◀─────┘
                                        ├─▶ ../app/static/port.glb                     the browser: GPU instances
                                        └─▶ ../gz/models/maasvlakte2/meshes/port.glb   gz sim: plain nodes
-                       gazebo_world.py ─▶ ../gz/models/maasvlakte2/model.sdf, ../gz/worlds/maasvlakte2.sdf
+                       gazebo_world.py ─▶ ../gz/models/maasvlakte2/model.sdf, meshes/ground.obj, ../gz/worlds/maasvlakte2.sdf
                              routes.py ─▶ ../app/routes.json                            the rovers' routes
 ```
 
@@ -17,7 +17,7 @@ Overpass API ─ fetch_osm.py ─▶ build/osm.json ─ prepare.py (shapely) ─
 | `fetch_osm.py` | the OSM data of lon 3.965–4.045, lat 51.920–51.965 | Python, the network |
 | `prepare.py` | land (the bbox minus the sea and the harbours), the land's top as disjoint patches, buildings with heights, cranes, container stacks, ships, turbines; triangulated | `uv run` (shapely) |
 | `build_scene.py` | the scene, `build/port.blend` and the two glb files | Blender 4.2 or later |
-| `gazebo_world.py` | the world and the model around the gz glb | Python |
+| `gazebo_world.py` | the world, the model around the gz glb, and what vehicles stand on: the land's top (`meshes/ground.obj`) and the sea | Python |
 | `routes.py` | the rovers' routes: patrols from each rover station, supply runs from the depot | `uv run` (shapely, PyYAML) |
 
 ## Build
@@ -72,6 +72,6 @@ Only the zones within a rover's geofence (1500 m) get a route: from Euromax the 
 GZ_SIM_RESOURCE_PATH=../gz/models gz sim ../gz/worlds/maasvlakte2.sdf
 ```
 
-The world sets `spherical_coordinates` to the same origin (ENU), so a NavSat sensor reads the port's real latitude and longitude. gz sim loads glTF Y-up as it is, so the model turns the mesh +90° about X. Checked with gz sim 8.11 (`osrf/ros:jazzy-desktop-full`), server only: a ball dropped at the origin rests on the quay at 5 m, one dropped on the Prinses Amaliahaven at 0, with bullet-featherstone and dartsim. The mesh is the visual and the collision; the rendering has not been looked at in the gz GUI.
+The world sets `spherical_coordinates` to the same origin (ENU), so a NavSat sensor reads the port's real latitude and longitude. gz sim loads glTF Y-up as it is, so the model turns the mesh +90° about X. Checked with gz sim 8.11 (`osrf/ros:jazzy-desktop-full`), server only: a ball dropped at the origin rests on the quay at 5 m, one dropped on the Prinses Amaliahaven at 0, with dartsim. The glb is only what the cameras and lidars see: a vehicle stands on the sea (a box, its top at 0) and the land's top (`meshes/ground.obj`, prepare.py's land triangulated, 1,413 triangles, at 5 m). With the whole port's mesh as the collision, six quads ran at 0.07 × real time; cranes and buildings stop no vehicle now. The rendering has not been looked at in the gz GUI.
 
 The world, the fleet's vehicle models, the fleet-gz image and the benches (the rover that avoids what the map does not know, a quad that flies) are in [`../gz/`](../gz/README.md).
