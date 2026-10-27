@@ -17,7 +17,7 @@ images:
   sitl: container-registry.underpassai.com/axlr-bots/fleet-sitl@sha256:4e1ba656f01a4a5b87d956d172263c3da5bbdcb2dd6dfa28799535a95c890eab
   controlPlane: container-registry.underpassai.com/axlr-bots/control-plane@sha256:ba05aba27c395ef8ea791332159a0ad8c812d315b7c1a674fee464b130a0ec8a
   # examples/drone-fleet/gz: gz sim, the world, fleet-sim, fpv-server, ais-bridge.
-  gz: container-registry.underpassai.com/axlr-bots/fleet-gz@sha256:ca6abb10d806af4a3ae47f200f8c8bb3b937f3648b3def32bd13f2d27660374f
+  gz: container-registry.underpassai.com/axlr-bots/fleet-gz@sha256:173836f2a4a0fc0f1d99f339a26be326d917d940d1a8eecb547242e99ac7b2fe0
 
 # The fleet's own control plane, in the namespace. Nodes dial it by its
 # Service's name; the operator API (the panel, the CLI, webhooks) is the

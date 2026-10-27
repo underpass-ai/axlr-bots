@@ -207,7 +207,9 @@
            wherever the last packet came from. -->
       <fdm_addr>0.0.0.0</fdm_addr>
       <fdm_port_in>{PORT}</fdm_port_in>
-      <connectionTimeoutMaxCount>5</connectionTimeoutMaxCount>
+      <!-- The plugin no longer waits for a packet (lock_step off): a step
+           without one is not a lost link; a second of them is. -->
+      <connectionTimeoutMaxCount>1000</connectionTimeoutMaxCount>
       <!-- Off: a stopped SITL must not stop the world the others drive in. -->
       <lock_step>0</lock_step>
       <have_32_channels>0</have_32_channels>
