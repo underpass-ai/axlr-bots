@@ -158,6 +158,12 @@ func TestTheFleetPilotsAreATeamThatComesHome(t *testing.T) {
 		if len(definition.Groups) != 1 || definition.Groups[0] != "port" || !strings.Contains(definition.Mission, "return_home") {
 			t.Errorf("%s: groups %v", name, definition.Groups)
 		}
+		// The pilots recall with stop.recall and show the three modes:
+		// warnings as messages, info as notes, stop and danger as tasks.
+		if !strings.Contains(definition.Mission, "stop.recall") || strings.Contains(definition.Mission, "severity") || len(definition.Subscriptions) != 2 ||
+			definition.Subscriptions[0].Topic != "warn.*" || definition.Subscriptions[0].Mode != "message" || definition.Subscriptions[1].Mode != "note" {
+			t.Errorf("%s: subscriptions %+v", name, definition.Subscriptions)
+		}
 		path := filepath.Join(dir, name)
 		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 			t.Fatal(err)
