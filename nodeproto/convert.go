@@ -115,14 +115,14 @@ func fromEventsOffer(o *application.EventsOffer) *EventsOfferMessage {
 	if o == nil {
 		return nil
 	}
-	return &EventsOfferMessage{Names: append([]string{}, o.Names...), MaxSeverity: o.MaxSeverity, Teammates: append([]string{}, o.Teammates...)}
+	return &EventsOfferMessage{Names: append([]string{}, o.Names...), MaxSeverity: legacyMaxSeverity, Teammates: append([]string{}, o.Teammates...)}
 }
 
 func toEventsOffer(m *EventsOfferMessage) *application.EventsOffer {
 	if m == nil {
 		return nil
 	}
-	return &application.EventsOffer{Names: append([]string(nil), m.Names...), MaxSeverity: m.MaxSeverity, Teammates: append([]string(nil), m.Teammates...)}
+	return &application.EventsOffer{Names: append([]string(nil), m.Names...), Teammates: append([]string(nil), m.Teammates...)}
 }
 
 // FromEmitted renders an emit's answer as a message.

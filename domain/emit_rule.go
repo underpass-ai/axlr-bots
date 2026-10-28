@@ -1,34 +1,25 @@
 package domain
 
-// EmitRule lets a bot emit the events whose names fit a pattern, up to a
-// severity.
+// EmitRule lets a bot emit the events whose names fit a pattern; the
+// name's kind fixes the severity.
 type EmitRule struct {
-	pattern     EventPattern
-	maxSeverity Severity
+	pattern EventPattern
 }
 
-// NewEmitRule validates a rule; the severity defaults to warning.
+// NewEmitRule validates a rule; a maxSeverity in it is accepted and
+// ignored, since the kind decides.
 func NewEmitRule(s EmitRuleSnapshot) (EmitRule, error) {
 	pattern, err := NewEventPattern(s.Name)
 	if err != nil {
 		return EmitRule{}, err
 	}
-	severity := SeverityWarning
-	if s.MaxSeverity != "" {
-		if severity, err = ParseSeverity(s.MaxSeverity); err != nil {
-			return EmitRule{}, invalid("events emit "+s.Name, err.Error())
-		}
-	}
-	return EmitRule{pattern: pattern, maxSeverity: severity}, nil
+	return EmitRule{pattern: pattern}, nil
 }
 
 // Pattern is the names the rule lets the bot emit.
 func (r EmitRule) Pattern() EventPattern { return r.pattern }
 
-// MaxSeverity is the highest severity the rule allows.
-func (r EmitRule) MaxSeverity() Severity { return r.maxSeverity }
-
 // Snapshot returns the rule as plain data.
 func (r EmitRule) Snapshot() EmitRuleSnapshot {
-	return EmitRuleSnapshot{Name: r.pattern.String(), MaxSeverity: r.maxSeverity.String()}
+	return EmitRuleSnapshot{Name: r.pattern.String()}
 }

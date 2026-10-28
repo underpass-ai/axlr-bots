@@ -11,7 +11,7 @@ const (
 )
 
 // EventPolicy is what a bot may emit to its teams. The zero value is the
-// team's default: any name, severity up to warning, 6 a minute.
+// team's default: any name but the control plane's kinds, 6 a minute.
 type EventPolicy struct {
 	rules     []EmitRule
 	perMinute int
@@ -38,11 +38,10 @@ func NewEventPolicy(s EventsSnapshot) (EventPolicy, error) {
 	return p, nil
 }
 
-// Rules are what the bot may emit: its definition's, or any name up to
-// warning.
+// Rules are what the bot may emit: its definition's, or any name.
 func (p EventPolicy) Rules() []EmitRule {
 	if len(p.rules) == 0 {
-		return []EmitRule{{pattern: AnyEvent, maxSeverity: SeverityWarning}}
+		return []EmitRule{{pattern: AnyEvent}}
 	}
 	return append([]EmitRule(nil), p.rules...)
 }
@@ -55,31 +54,19 @@ func (p EventPolicy) PerMinute() int {
 	return p.perMinute
 }
 
-// MaxSeverity is the highest severity the bot may give the event, and
-// false when no rule lets it emit the name at all.
-func (p EventPolicy) MaxSeverity(name EventName) (Severity, bool) {
-	best, found := SeverityInfo, false
+// MayEmit reports whether the bot may emit the name: a bot never
+// publishes the control plane's kinds (error, done), and otherwise a
+// rule must fit the name.
+func (p EventPolicy) MayEmit(name EventName) bool {
+	if !KindOf(name).PublishedBy(PublisherBot) {
+		return false
+	}
 	for _, rule := range p.Rules() {
 		if rule.Pattern().Matches(name) {
-			if !found || rule.MaxSeverity().AtLeast(best) {
-				best = rule.MaxSeverity()
-			}
-			found = true
+			return true
 		}
 	}
-	return best, found
-}
-
-// Highest is the highest severity any rule allows: what the emit tool
-// offers the model.
-func (p EventPolicy) Highest() Severity {
-	best := SeverityInfo
-	for _, rule := range p.Rules() {
-		if rule.MaxSeverity().AtLeast(best) {
-			best = rule.MaxSeverity()
-		}
-	}
-	return best
+	return false
 }
 
 // Interruptible reports whether a teammate's warning may interrupt the

@@ -15,7 +15,7 @@ func TestATeamRunLoadsTheEmitToolToo(t *testing.T) {
 	e, argsFile := fake(t, "result-completed")
 	e.Relay = "/usr/local/bin/axlr-node"
 	request := delegatingRequest()
-	request.Events = &application.EventsOffer{Names: []string{"**"}, MaxSeverity: "warning", Teammates: []string{"quad-1"}}
+	request.Events = &application.EventsOffer{Names: []string{"**"}, Teammates: []string{"quad-1"}}
 	request.AllowedTools = append(request.AllowedTools, application.EmitEventToolName)
 	if _, err := e.Execute(context.Background(), request); err != nil {
 		t.Fatal(err)

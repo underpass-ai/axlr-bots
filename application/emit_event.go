@@ -25,7 +25,7 @@ const eventHistory = 500
 // EmitEvent is a running execution telling its bot's teams that
 // something happened, through its node. The control plane derives the
 // emitter from the execution the node holds, checks that the bot is in a
-// team, may emit that name at that severity, addresses only teammates
+// team, may emit that name (whose kind fixes the severity), addresses only teammates
 // and is under its rate, and then makes a task for every teammate that
 // hears the event, under the emitter's trace id and lineage, so depth
 // and the chain cut a loop as they cut a delegation's. Each receiver
@@ -66,12 +66,11 @@ func (uc EmitEvent) Execute(ctx context.Context, node domain.NodeID, executionID
 	if e.bot.Teams().Empty() {
 		return uc.refuse(ctx, e, domain.RefusedNoTeam, "bot "+e.bot.ID().String()+" is in no team: there is nobody to tell")
 	}
-	highest, ok := e.bot.Events().MaxSeverity(e.name)
-	if !ok {
-		return uc.refuse(ctx, e, domain.RefusedNotAllowed, fmt.Sprintf("bot %s may not emit %s; it may emit: %s", e.bot.ID(), e.name, joinNames(emitNames(e.bot))))
+	if kind := domain.KindOf(e.name); !kind.PublishedBy(domain.PublisherBot) {
+		return uc.refuse(ctx, e, domain.RefusedNotAllowed, fmt.Sprintf("%s.* is the control plane's own: a bot may not emit %s", kind, e.name))
 	}
-	if !highest.AtLeast(e.severity) {
-		return uc.refuse(ctx, e, domain.RefusedSeverityNotAllowed, fmt.Sprintf("bot %s may emit %s up to %s, not %s", e.bot.ID(), e.name, highest, e.severity))
+	if !e.bot.Events().MayEmit(e.name) {
+		return uc.refuse(ctx, e, domain.RefusedNotAllowed, fmt.Sprintf("bot %s may not emit %s; it may emit: %s", e.bot.ID(), e.name, joinNames(emitNames(e.bot))))
 	}
 	mates, err := teammatesOf(ctx, uc.deps, e.bot)
 	if err != nil {
@@ -138,10 +137,6 @@ func (uc EmitEvent) load(ctx context.Context, node domain.NodeID, executionID do
 	if err != nil {
 		return emission{}, err
 	}
-	severity, err := domain.ParseSeverity(command.Severity)
-	if err != nil {
-		return emission{}, err
-	}
 	data, dataJSON, err := eventData(command.Data)
 	if err != nil {
 		return emission{}, err
@@ -160,7 +155,9 @@ func (uc EmitEvent) load(ctx context.Context, node domain.NodeID, executionID do
 		}
 	}
 	slices.Sort(to)
-	e := emission{node: node, execution: execution, task: task, bot: bot, name: name, severity: severity, message: message, data: data, dataJSON: dataJSON, to: to}
+	// The kind of the name fixes the severity; an older node's severity
+	// is ignored.
+	e := emission{node: node, execution: execution, task: task, bot: bot, name: name, severity: domain.KindOf(name).Severity(), message: message, data: data, dataJSON: dataJSON, to: to}
 	e.id = eventID(task.ID(), e)
 	return e, nil
 }
@@ -282,7 +279,7 @@ func eventID(task domain.TaskID, e emission) string {
 	for i, id := range e.to {
 		to[i] = id.String()
 	}
-	sum := sha256.Sum256([]byte(strings.Join([]string{task.String(), e.name.String(), e.severity.String(), e.message.String(), e.dataJSON, strings.Join(to, ",")}, "\x00")))
+	sum := sha256.Sum256([]byte(strings.Join([]string{task.String(), e.name.String(), e.message.String(), e.dataJSON, strings.Join(to, ",")}, "\x00")))
 	return "evt-" + hex.EncodeToString(sum[:12])
 }
 
@@ -326,11 +323,12 @@ func emittedBefore(events []domain.Event, id string, now time.Time) (bool, int) 
 	return seen, len(inWindow)
 }
 
-// emitNames lists what the bot may emit, for a refusal's message.
+// emitNames lists what the bot may emit, for a refusal's message; never
+// error.* or done.*, whatever the rules say.
 func emitNames(bot domain.Bot) []string {
 	var names []string
 	for _, rule := range bot.Events().Rules() {
-		names = append(names, rule.Pattern().String()+" (up to "+rule.MaxSeverity().String()+")")
+		names = append(names, rule.Pattern().String())
 	}
 	return names
 }

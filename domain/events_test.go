@@ -39,17 +39,8 @@ func TestEventNamesAndPatterns(t *testing.T) {
 }
 
 func TestSeverities(t *testing.T) {
-	if s, err := ParseSeverity(""); err != nil || s != SeverityInfo {
-		t.Errorf("empty = %q %v", s, err)
-	}
-	if _, err := ParseSeverity("loud"); err == nil {
-		t.Error("an unknown severity was accepted")
-	}
 	if !SeverityCritical.AtLeast(SeverityWarning) || SeverityInfo.AtLeast(SeverityWarning) || !SeverityWarning.AtLeast(SeverityWarning) {
 		t.Error("order is wrong")
-	}
-	if got := SeverityWarning.UpTo(); len(got) != 2 || got[1] != SeverityWarning {
-		t.Errorf("up to warning = %v", got)
 	}
 }
 
@@ -68,27 +59,35 @@ func TestEventMessage(t *testing.T) {
 
 func TestEventPolicy(t *testing.T) {
 	var team EventPolicy
-	if max, ok := team.MaxSeverity("anything"); !ok || max != SeverityWarning || team.PerMinute() != DefaultEventsPerMinute || team.Highest() != SeverityWarning || team.Snapshot() != nil {
-		t.Errorf("default = %v %v", max, ok)
+	if !team.MayEmit("anything") || !team.MayEmit("stop.recall") || team.PerMinute() != DefaultEventsPerMinute || team.Snapshot() != nil {
+		t.Errorf("default = %+v", team)
 	}
-	p, err := NewEventPolicy(EventsSnapshot{Emit: []EmitRuleSnapshot{{Name: "recall"}, {Name: "ship.*", MaxSeverity: "critical"}, {Name: "ship.sighted", MaxSeverity: "info"}}, PerMinute: 12})
+	for _, name := range []EventName{"error.bot", "done.task"} {
+		if team.MayEmit(name) {
+			t.Errorf("a bot may emit %s", name)
+		}
+	}
+	// maxSeverity is read from an older definition and ignored: the kind
+	// decides.
+	p, err := NewEventPolicy(EventsSnapshot{Emit: []EmitRuleSnapshot{{Name: "recall"}, {Name: "warn.*", MaxSeverity: "critical"}, {Name: "**", MaxSeverity: "loud"}}, PerMinute: 12})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if max, ok := p.MaxSeverity("ship.sighted"); !ok || max != SeverityCritical {
-		t.Errorf("ship.sighted = %v %v", max, ok)
+	if !p.MayEmit("warn.x") || KindOf("warn.x").Severity() != SeverityWarning || p.MayEmit("error.bot") {
+		t.Errorf("policy = %+v", p)
 	}
-	if _, ok := p.MaxSeverity("weather"); ok {
-		t.Error("an unnamed event is allowed")
+	narrow, _ := NewEventPolicy(EventsSnapshot{Emit: []EmitRuleSnapshot{{Name: "warn.*", MaxSeverity: "critical"}}})
+	if narrow.MayEmit("info.x") || !narrow.MayEmit("warn.x") {
+		t.Errorf("narrow = %+v", narrow)
 	}
-	if p.PerMinute() != 12 || p.Highest() != SeverityCritical || len(p.Rules()) != 3 {
+	if p.PerMinute() != 12 || len(p.Rules()) != 3 {
 		t.Errorf("policy = %+v", p)
 	}
 	s := p.Snapshot()
-	if s == nil || len(s.Emit) != 3 || s.Emit[0].MaxSeverity != "warning" || s.PerMinute != 12 {
+	if s == nil || len(s.Emit) != 3 || s.Emit[1].MaxSeverity != "" || s.Emit[1].Name != "warn.*" || s.PerMinute != 12 {
 		t.Errorf("snapshot = %+v", s)
 	}
-	bad := []EventsSnapshot{{PerMinute: 61}, {PerMinute: -1}, {Emit: []EmitRuleSnapshot{{Name: "Bad"}}}, {Emit: []EmitRuleSnapshot{{Name: "x", MaxSeverity: "loud"}}}, {Emit: make([]EmitRuleSnapshot, 17)}}
+	bad := []EventsSnapshot{{PerMinute: 61}, {PerMinute: -1}, {Emit: []EmitRuleSnapshot{{Name: "Bad"}}}, {Emit: make([]EmitRuleSnapshot, 17)}}
 	for _, b := range bad {
 		if _, err := NewEventPolicy(b); err == nil {
 			t.Errorf("%+v accepted", b)

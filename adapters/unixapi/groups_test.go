@@ -68,12 +68,12 @@ func TestEventsOverTheSocket(t *testing.T) {
 		t.Fatalf("timeline = %v %v", len(before), err)
 	}
 	last := before[len(before)-1].ID.String()
-	answer, err := client.Emit(ctx, "web-1", assignment.ExecutionID, application.EmitEventCommand{Name: "recall", Message: "a ship", Severity: "warning", To: []string{"quad-1"}})
+	answer, err := client.Emit(ctx, "web-1", assignment.ExecutionID, application.EmitEventCommand{Name: "warn.ship-near", Message: "a ship", Severity: "info", To: []string{"quad-1"}})
 	if err != nil || answer.Refused != nil || len(answer.Deliveries) != 1 || answer.Severity != domain.SeverityWarning {
 		t.Fatalf("emit = %+v %v", answer, err)
 	}
-	if refused, err := client.Emit(ctx, "web-1", assignment.ExecutionID, application.EmitEventCommand{Name: "recall", Message: "x", Severity: "critical"}); err != nil || refused.Refused == nil {
-		t.Errorf("critical = %+v %v", refused, err)
+	if refused, err := client.Emit(ctx, "web-1", assignment.ExecutionID, application.EmitEventCommand{Name: "error.bot", Message: "x"}); err != nil || refused.Refused == nil || refused.Refused.Reason != domain.RefusedNotAllowed {
+		t.Errorf("error.bot = %+v %v", refused, err)
 	}
 	if _, err := client.Emit(ctx, "web-1", assignment.ExecutionID, application.EmitEventCommand{Name: "Bad", Message: "x"}); err == nil {
 		t.Error("a bad name was taken")

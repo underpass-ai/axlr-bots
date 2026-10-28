@@ -18,9 +18,9 @@ import (
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
-// callTool initializes, lists the tools and calls one; the names
+// callTool initializes, lists the tools and calls one; the tools
 // tools/list gave, the text of the result and whether it is an error.
-func callTool(socket, name string, arguments map[string]any) ([]string, string, bool, error) {
+func callTool(socket, name string, arguments map[string]any) ([]map[string]any, string, bool, error) {
 	conn, err := net.Dial("unix", socket)
 	if err != nil {
 		return nil, "", false, err
@@ -35,9 +35,9 @@ func callTool(socket, name string, arguments map[string]any) ([]string, string, 
 	if err != nil {
 		return nil, "", false, err
 	}
-	var names []string
+	var tools []map[string]any
 	for _, tool := range listed["result"].(map[string]any)["tools"].([]any) {
-		names = append(names, fmt.Sprint(tool.(map[string]any)["name"]))
+		tools = append(tools, tool.(map[string]any))
 	}
 	answer, err := c.request("tools/call", map[string]any{"name": name, "arguments": arguments})
 	if err != nil {
@@ -45,10 +45,10 @@ func callTool(socket, name string, arguments map[string]any) ([]string, string, 
 	}
 	result, _ := answer["result"].(map[string]any)
 	if result == nil {
-		return names, "", false, fmt.Errorf("no result: %v", answer)
+		return tools, "", false, fmt.Errorf("no result: %v", answer)
 	}
 	first := result["content"].([]any)[0].(map[string]any)
-	return names, fmt.Sprint(first["text"]), result["isError"] == true, nil
+	return tools, fmt.Sprint(first["text"]), result["isError"] == true, nil
 }
 
 // emittingExecutor stands in for AXLR: the bot its script names calls
@@ -57,6 +57,7 @@ type emittingExecutor struct {
 	mu     sync.Mutex
 	script map[domain.BotID]map[string]any
 	tools  map[domain.BotID][]string
+	listed map[domain.BotID][]map[string]any
 	seen   []application.ExecutionRequest
 }
 
@@ -67,12 +68,20 @@ func (s *emittingExecutor) Execute(ctx context.Context, request application.Exec
 	s.mu.Unlock()
 	answer := "I am " + request.BotID.String() + ": " + request.Objective.String()
 	if emits {
-		names, text, isError, err := callTool(request.DelegationSocket, application.EmitEventToolName, arguments)
+		tools, text, isError, err := callTool(request.DelegationSocket, application.EmitEventToolName, arguments)
 		if err != nil {
 			return application.ExecutionReport{}, err
 		}
+		var names []string
+		for _, tool := range tools {
+			names = append(names, fmt.Sprint(tool["name"]))
+		}
 		s.mu.Lock()
 		s.tools[request.BotID] = names
+		if s.listed == nil {
+			s.listed = map[domain.BotID][]map[string]any{}
+		}
+		s.listed[request.BotID] = tools
 		s.mu.Unlock()
 		answer = fmt.Sprintf("emitted: error=%v %s", isError, text)
 	}
@@ -131,6 +140,12 @@ func TestThePlaneWarnsQuadOneThroughTheNode(t *testing.T) {
 	if tools := executor.tools["plane"]; len(tools) != 2 || tools[1] != application.EmitEventToolName {
 		t.Errorf("tools/list = %v", tools)
 	}
+	// The emit tool over the socket offers no severity and names the kinds.
+	emitListed := executor.listed["plane"][1]
+	properties := emitListed["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	if _, ok := properties["severity"]; ok || !strings.Contains(fmt.Sprint(emitListed["description"]), "stop. and danger. are critical") {
+		t.Errorf("emit tool = %v", emitListed)
+	}
 	events, err := f.client.ListGroupEvents(ctx, application.GroupEventsQuery{Name: "port"})
 	if err != nil {
 		t.Fatal(err)
@@ -180,15 +195,20 @@ func TestTheEmitterHandsTheModelWhatHappened(t *testing.T) {
 }
 
 func TestTheEmitToolDescribesWhatTheBotMayDo(t *testing.T) {
-	tool := emitTool(application.EventsOffer{Names: []string{"recall", "ship.*"}, MaxSeverity: "warning", Teammates: []string{"quad-1"}})
+	tool := emitTool(application.EventsOffer{Names: []string{"recall", "ship.*"}, Teammates: []string{"quad-1"}})
 	var schema struct {
 		Properties map[string]map[string]any `json:"properties"`
 	}
 	if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
 		t.Fatal(err)
 	}
-	if severities := fmt.Sprint(schema.Properties["severity"]["enum"]); severities != "[info warning]" {
-		t.Errorf("severities = %s", severities)
+	if _, ok := schema.Properties["severity"]; ok {
+		t.Errorf("the schema offers a severity: %s", tool.InputSchema)
+	}
+	for _, kind := range []string{"stop.", "danger.", "warn.", "info.", "error.", "done."} {
+		if !strings.Contains(tool.Description, kind) {
+			t.Errorf("the description does not name the kind %s", kind)
+		}
 	}
 	if items := schema.Properties["to"]["items"].(map[string]any); fmt.Sprint(items["enum"]) != "[quad-1]" {
 		t.Errorf("to = %v", items)
@@ -196,7 +216,7 @@ func TestTheEmitToolDescribesWhatTheBotMayDo(t *testing.T) {
 	if !strings.Contains(tool.Description, "recall, ship.*") || !strings.Contains(tool.Description, "Your teammates: quad-1") {
 		t.Errorf("description = %s", tool.Description)
 	}
-	alone := emitTool(application.EventsOffer{Names: []string{"**"}, MaxSeverity: "info"})
+	alone := emitTool(application.EventsOffer{Names: []string{"**"}})
 	if !strings.Contains(alone.Description, "none Enabled now") || strings.Contains(string(alone.InputSchema), `"enum":["quad`) {
 		t.Errorf("alone = %s %s", alone.Description, alone.InputSchema)
 	}

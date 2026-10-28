@@ -23,7 +23,7 @@ Over the TLS address a node **is** its certificate: the server takes the node id
 | report `{outcome, result, usage, failureReason, traceReference, policy, correlation, receipt}` | `POST /v1/nodes/{id}/executions/{exec}/report` | node → control plane (at most 8 MiB) | **accepted once**: a repeat answers `accepted: false` with the stored outcome |
 | delegate `{bot, objective, wait}` | `POST /v1/nodes/{id}/executions/{exec}/delegations` | node → control plane, while the execution runs | per asking task, bot and objective: a repeat answers the same child, `201` when created, `200` otherwise; a refusal is `200` with `refused: {reason, message}` ([below](#delegation)) |
 | read a delegation | `GET /v1/nodes/{id}/executions/{exec}/delegations/{task}?wait=20s` | node → control plane (long poll, at most 30 s) | yes; only a child of the execution's own task |
-| emit `{name, message, severity?, data?, to?}` | `POST /v1/nodes/{id}/executions/{exec}/events` | node → control plane, while the execution runs | per task and call: the same call again is the same event (`deduplicated: true`) and makes no task twice; a refusal is `200` with `refused: {reason, message}` ([below](#team-events)) |
+| emit `{name, message, data?, to?}` (an older node's `severity` is ignored: the name's kind fixes it) | `POST /v1/nodes/{id}/executions/{exec}/events` | node → control plane, while the execution runs | per task and call: the same call again is the same event (`deduplicated: true`) and makes no task twice; a refusal is `200` with `refused: {reason, message}` ([below](#team-events)) |
 
 The node address serves only these routes and `/healthz`; a node certificate opens no operator route ([API](operator-api.md)).
 
@@ -45,7 +45,7 @@ A run (or a decision) of a bot that may delegate carries `delegation: {targets, 
 
 ## Team events
 
-A run (or a decision) of a bot in a team carries `events: {names, maxSeverity, teammates}`, and its allowed tools include `axlr_bots_emit_event`; the agent serves it on the same socket and the manifest's `allow_tools` names every tool the socket serves. The model's call reaches the agent through the relay and the agent sends **emit** at once; it waits for nobody. The control plane takes the emitter, its task, its teams, its chain and its rate from the execution the node holds and answers which teammates got a task (`deliveries: [{botId, taskId, trigger, created}]`) and which were skipped and why (`skipped: [{botId, reason, message}]`) ([teams and events](bot-definition.md#events)). A node older than the field ignores `events` and never offers the tool.
+A run (or a decision) of a bot in a team carries `events: {names, teammates}` (and `maxSeverity: critical`, only for a node older than topic kinds, which still offers a severity), and its allowed tools include `axlr_bots_emit_event`; the agent serves it on the same socket and the manifest's `allow_tools` names every tool the socket serves. The model's call reaches the agent through the relay and the agent sends **emit** at once; it waits for nobody. The control plane takes the emitter, its task, its teams, its chain and its rate from the execution the node holds and answers which teammates got a task (`deliveries: [{botId, taskId, trigger, created}]`) and which were skipped and why (`skipped: [{botId, reason, message}]`) ([teams and events](bot-definition.md#events)). A node older than the field ignores `events` and never offers the tool.
 
 ## Artifacts
 

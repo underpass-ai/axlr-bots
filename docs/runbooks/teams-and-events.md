@@ -6,7 +6,7 @@ Bots that share a **Team** know each other, ask each other to do a task and warn
 |---|---|---|
 | 1. Put bots in a team | **Bots → New bot → Team**: `port`; or a bot's page → **Team → Change** | the bot is in `port`; its teammates read it in their next task's directory |
 | 2. Check the team | **Teams → port** | each member with what it is for, its tools and where it runs; "only one bot: a typo?" when a name was typed differently |
-| 3. Give the order | **Tasks → New task**, bot `pilot-plane-0`: «Dile al quad-1 que se retire: hay un barco entrando en su zona» | the plane's bot calls `axlr_bots_emit_event` with a `warning` for `pilot-quad-1`; no person approves telling the team |
+| 3. Give the order | **Tasks → New task**, bot `pilot-plane-0`: «Dile al quad-1 que se retire: hay un barco entrando en su zona» | the plane's bot calls `axlr_bots_emit_event` with `recall` (read as `stop.recall`: critical) for `pilot-quad-1`; no person approves telling the team |
 | 4. Watch it | the banner **Warning to the team · team port** wherever you are; **Teams → port → What happens** | quad-1's bot gets an **urgent** task: what it was doing ends **Stopped for urgent**, `return_home` is **Approved by its policy**, the vehicle flies home, the task is **Done** with the reason |
 | 5. See why | open quad-1's task | **Told by** `pilot-plane-0: …`, the urgent pill, the tool call and who approved it (`policy:autoApprove`) |
 | 6. Recall it yourself | a bot's page or the team's page → **Recall** | an urgent task «Return home now»: one click, no approval |
@@ -27,7 +27,7 @@ Everything else has a default; a bot's definition file (**Bots → From file**) 
 
 | Field | Default | Example |
 |---|---|---|
-| `events.emit` | any name, up to `warning` | `[{"name": "recall"}, {"name": "ship.*", "maxSeverity": "critical"}]` |
+| `events.emit` | any name but `error.*` and `done.*`; the first segment (`stop`, `danger`, `warn`, `info`) fixes the severity | `[{"name": "stop.recall"}, {"name": "warn.*"}]` |
 | `events.perMinute` | 6 | `12` |
 | `events.interruptible` | a teammate's addressed `warning` interrupts | `false` |
 | `triggers` of type `event` | hears what is addressed to it and the team's warnings | `{"type": "event", "events": ["ship.*"], "interrupt": true}` |
