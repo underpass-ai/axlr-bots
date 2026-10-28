@@ -42,7 +42,7 @@ func TestTheAssignmentOffersTheEmitTool(t *testing.T) {
 	if run.Events == nil || !contains(run.AllowedTools, EmitEventToolName) || strings.Join(run.Events.Teammates, ",") != "quad-1,quad-2" || run.Events.Names[0] != "**" {
 		t.Fatalf("events offer = %+v tools %v", run.Events, run.AllowedTools)
 	}
-	if got := run.NodeTools(); len(got) != 2 || got[1] != EmitEventToolName {
+	if got := run.NodeTools(); len(got) != 3 || got[1] != EmitEventToolName || got[2] != SubscribeToolName || !contains(run.AllowedTools, SubscribeToolName) {
 		t.Errorf("node tools = %v", got)
 	}
 }

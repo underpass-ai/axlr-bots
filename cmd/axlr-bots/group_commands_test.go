@@ -83,3 +83,45 @@ func TestStopAndUrgentCommands(t *testing.T) {
 		t.Error("a missing bot was stopped")
 	}
 }
+
+func TestGroupPublishAndTopicsCommands(t *testing.T) {
+	c := cli{t: t, state: t.TempDir(), axlr: fakeAXLR(t, "completed"), socket: ""}
+	for _, name := range []string{"bot-team-a.json", "bot-team-b.json"} {
+		if code, _, errText := c.run("bot", "register", "--file", filepath.Join("..", "..", "examples", name)); code != exitOK {
+			t.Fatalf("register %s: %s", name, errText)
+		}
+	}
+	for _, bot := range []string{"team-a", "team-b"} {
+		if code, _, errText := c.run("bot", "enable", bot); code != exitOK {
+			t.Fatalf("enable: %s", errText)
+		}
+	}
+	code, answer := c.json("group", "publish", "releases", "stop.all", "--message", "Everyone stop", "--key", "p-1", "--data", `{"why": "a storm"}`)
+	if code != exitOK || answer["created"] != true || len(answer["deliveries"].([]any)) != 2 {
+		t.Fatalf("publish = %d %v", code, answer)
+	}
+	if code, again := c.json("group", "publish", "releases", "stop.all", "--message", "Everyone stop", "--key", "p-1", "--data", `{"why": "a storm"}`); code != exitOK || again["created"] != false {
+		t.Errorf("again = %d %v", code, again)
+	}
+	if code, note := c.json("group", "publish", "releases", "info.turno", "--message", "shift", "--to", "team-a"); code != exitOK || note["deliveries"].([]any)[0].(map[string]any)["mode"] != "note" {
+		t.Errorf("note = %d %v", code, note)
+	}
+	if code, _, errText := c.run("group", "publish", "releases", "error.bot", "--message", "x"); code == exitOK || !strings.Contains(errText, "not_allowed") {
+		t.Errorf("error.bot = %d %s", code, errText)
+	}
+	code, out, errText := c.run("group", "topics", "releases", "--tenant", "default")
+	var topics []map[string]any
+	if code != exitOK || json.Unmarshal([]byte(out), &topics) != nil || len(topics) != 2 || topics[0]["name"] != "info.turno" || topics[1]["publishers"].([]any)[0] != "operator" {
+		t.Fatalf("topics = %d %s %s", code, out, errText)
+	}
+	for _, args := range [][]string{{"group", "topics"}, {"group", "topics", "--bogus"}, {"group", "publish", "releases", "x"}, {"group", "publish", "releases", "x", "--message", "y", "--data", "[1]"}, {"group", "publish", "--bogus"}} {
+		if code, _, _ := c.run(args...); code != exitUsage {
+			t.Errorf("%v: exit %d", args, code)
+		}
+	}
+	for _, args := range [][]string{{"group", "topics", "missing"}, {"group", "publish", "missing", "x", "--message", "y"}} {
+		if code, _, _ := c.run(args...); code == exitOK {
+			t.Errorf("%v answered", args)
+		}
+	}
+}

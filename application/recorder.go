@@ -38,6 +38,19 @@ func (r recorder) executionEventID(ctx context.Context, kind domain.EventType, b
 	return id, r.deps.Events.Publish(ctx, event)
 }
 
+// groupEvent publishes an event about a team.
+func (r recorder) groupEvent(ctx context.Context, kind domain.EventType, tenant domain.TenantID, team domain.TeamName, payload map[string]any) error {
+	id, err := domain.NewEventID(r.deps.IDs.NewID("evt-"))
+	if err != nil {
+		return err
+	}
+	event, err := domain.NewGroupEvent(id, kind, tenant, team, r.deps.Clock.Now(), payload)
+	if err != nil {
+		return err
+	}
+	return r.deps.Events.Publish(ctx, event)
+}
+
 // nodeEvent publishes an event about a node.
 func (r recorder) nodeEvent(ctx context.Context, kind domain.EventType, node domain.NodeID, payload map[string]any) error {
 	id, err := domain.NewEventID(r.deps.IDs.NewID("evt-"))

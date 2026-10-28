@@ -91,7 +91,7 @@ func (p platformPublisher) publish(ctx context.Context, bot domain.Bot, task dom
 	if err != nil {
 		return err
 	}
-	e := emission{execution: execution, by: domain.PublisherControlPlane, task: task, bot: bot, name: name, severity: domain.KindOf(name).Severity(), message: message, data: decoded, dataJSON: dataJSON}
+	e := emission{execution: execution, by: domain.PublisherControlPlane, from: bot.ID().String(), teams: teamNamesOf(bot), task: task, bot: bot, name: name, severity: domain.KindOf(name).Severity(), message: message, data: decoded, dataJSON: dataJSON}
 	e.id = eventID(task.ID(), e)
 	recent, err := p.deps.EventReader.ListEvents(ctx, bot.ID(), eventHistory)
 	if err != nil {

@@ -65,6 +65,14 @@ const (
 	// EventSubscriptionChanged says the topics a bot listens to changed:
 	// the payload holds the list after the change and who changed it.
 	EventSubscriptionChanged EventType = "bot.subscription.changed"
+	// EventSubscriptionAsked says a bot asked to listen to a topic: the
+	// payload names the topic and why; the subscription waits pending
+	// for a person.
+	EventSubscriptionAsked EventType = "bot.subscription.asked"
+	// EventGroupEventPublished says the operator published an event on a
+	// team: the payload names the event, whom it was addressed to and
+	// who heard it and how. It names the team, not a bot.
+	EventGroupEventPublished EventType = "group.event.published"
 	// EventEventRefused says a bot tried to emit an event and the control
 	// plane refused: the payload names the event and the check.
 	EventEventRefused EventType = "bot.event.refused"
@@ -94,7 +102,7 @@ func ParseEventType(raw string) (EventType, error) {
 	switch EventType(raw) {
 	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
 		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventTaskDelegated, EventTaskMessage, EventTaskSaid, EventDelegationRefused,
-		EventEventEmitted, EventEventRefused, EventEventHeard, EventSubscriptionChanged,
+		EventEventEmitted, EventEventRefused, EventEventHeard, EventSubscriptionChanged, EventSubscriptionAsked, EventGroupEventPublished,
 		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked,
 		EventExecutionAssigned, EventExecutionReported:
 		return EventType(raw), nil
@@ -103,6 +111,9 @@ func ParseEventType(raw string) (EventType, error) {
 }
 
 func (t EventType) String() string { return string(t) }
+
+// AboutGroup reports an event about a team rather than a bot.
+func (t EventType) AboutGroup() bool { return t == EventGroupEventPublished }
 
 // AboutNode reports an event about a node rather than a bot.
 func (t EventType) AboutNode() bool {

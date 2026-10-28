@@ -43,6 +43,9 @@ type NodeTransport interface {
 	// Emit tells the execution's teams an event; a refusal is an
 	// answer, not an error.
 	Emit(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, command EmitEventCommand) (EmitAnswer, error)
+	// Subscribe asks the operator, for the execution's bot, to hear a
+	// topic of its teams; a refusal is an answer, not an error.
+	Subscribe(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, command SubscribeCommand) (SubscribeAnswer, error)
 }
 
 // ReportAck is the control plane's answer to a report.

@@ -1,5 +1,10 @@
 package domain
 
+import (
+	"strings"
+	"time"
+)
+
 // MaxSubscriptions is the most topics a bot may listen to.
 const MaxSubscriptions = 16
 
@@ -116,4 +121,34 @@ func SubscriptionsFromTriggers(triggers []TriggerSnapshot, given []SubscriptionS
 		}
 	}
 	return rest, subs
+}
+
+// Reasons a bot's ask for a subscription is refused.
+const (
+	// RefusedAlreadySubscribed: the bot listens to the pattern, or asked
+	// for it already.
+	RefusedAlreadySubscribed = "already_subscribed"
+	// RefusedTooMany: the bot listens to 16 topics.
+	RefusedTooMany = "too_many"
+)
+
+// Ask adds the subscription a bot asks for, pending until a person
+// approves it; it answers why not when the bot has the pattern already
+// or has 16.
+func (s Subscriptions) Ask(topic string, bot BotID, why string, at time.Time) (Subscriptions, string, error) {
+	at = at.UTC()
+	asked, err := NewSubscription(SubscriptionSnapshot{Topic: topic, Status: SubscriptionPending.String(), AskedBy: bot.String(), Why: why, AskedAt: &at})
+	if err != nil {
+		return Subscriptions{}, "", err
+	}
+	if strings.TrimSpace(why) == "" {
+		return Subscriptions{}, "", invalid("why", "must not be empty")
+	}
+	if _, found := s.Find(asked.Topic()); found {
+		return s, RefusedAlreadySubscribed, nil
+	}
+	if len(s.list) >= MaxSubscriptions {
+		return s, RefusedTooMany, nil
+	}
+	return Subscriptions{list: append(s.List(), asked)}, "", nil
 }

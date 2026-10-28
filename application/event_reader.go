@@ -13,7 +13,8 @@ type EventReader interface {
 	// ListTaskEvents answers the newest limit events about the task,
 	// oldest first: the task's timeline.
 	ListTaskEvents(ctx context.Context, task domain.TaskID, limit int) ([]domain.Event, error)
-	// ListBotsEvents answers the newest limit events of any of the bots,
-	// oldest first, in the order they were published: a team's timeline.
-	ListBotsEvents(ctx context.Context, bots []domain.BotID, limit int) ([]domain.Event, error)
+	// ListTeamEvents answers the newest limit events of any of the bots
+	// and the events about the tenant's team, oldest first, in the order
+	// they were published: a team's timeline.
+	ListTeamEvents(ctx context.Context, tenant domain.TenantID, team domain.TeamName, bots []domain.BotID, limit int) ([]domain.Event, error)
 }

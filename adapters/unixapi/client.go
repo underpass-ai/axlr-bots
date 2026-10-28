@@ -132,6 +132,24 @@ func (c *Client) GetGroup(ctx context.Context, name, tenant string) (application
 	return group, c.call(ctx, http.MethodGet, path, nil, &group)
 }
 
+func (c *Client) ListGroupTopics(ctx context.Context, name, tenant string) ([]application.GroupTopic, error) {
+	topics := []application.GroupTopic{}
+	path := "/v1/groups/" + url.PathEscape(name) + "/topics"
+	if tenant != "" {
+		path += "?tenant=" + url.QueryEscape(tenant)
+	}
+	return topics, c.call(ctx, http.MethodGet, path, nil, &topics)
+}
+
+func (c *Client) PublishGroupEvent(ctx context.Context, command application.PublishGroupEventCommand) (application.PublishAnswer, error) {
+	var answer application.PublishAnswer
+	path := "/v1/groups/" + url.PathEscape(command.Group) + "/events"
+	if command.Tenant != "" {
+		path += "?tenant=" + url.QueryEscape(command.Tenant)
+	}
+	return answer, c.call(ctx, http.MethodPost, path, command, &answer)
+}
+
 func (c *Client) ListGroupEvents(ctx context.Context, query application.GroupEventsQuery) ([]domain.Event, error) {
 	events := []domain.Event{}
 	values := url.Values{}
@@ -435,6 +453,18 @@ func (c *Client) Emit(ctx context.Context, node domain.NodeID, execution domain.
 		return application.EmitAnswer{}, err
 	}
 	return nodeproto.ToEmitted(message), nil
+}
+
+// Subscribe asks, for the execution's bot, to hear a topic of its teams
+// (application.NodeTransport); a refusal comes back as the answer's
+// Refused.
+func (c *Client) Subscribe(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, command application.SubscribeCommand) (application.SubscribeAnswer, error) {
+	var message nodeproto.SubscribedMessage
+	path := "/v1/nodes/" + url.PathEscape(node.String()) + "/executions/" + url.PathEscape(execution.String()) + "/subscriptions"
+	if err := c.call(ctx, http.MethodPost, path, nodeproto.SubscribeMessage{Topic: command.Topic, Why: command.Why}, &message); err != nil {
+		return application.SubscribeAnswer{}, err
+	}
+	return nodeproto.ToSubscribed(message), nil
 }
 
 // AwaitDelegation waits up to wait for the child to end and answers its

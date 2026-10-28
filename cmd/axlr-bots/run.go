@@ -101,6 +101,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return groupGet(ctx, service, rest, stdout, stderr)
 	case "group events":
 		return groupEvents(ctx, service, rest, stdout, stderr)
+	case "group topics":
+		return groupTopics(ctx, service, rest, stdout, stderr)
+	case "group publish":
+		return groupPublish(ctx, service, rest, stdout, stderr)
 	case "task submit":
 		return taskSubmit(ctx, service, rest, stdout, stderr)
 	case "task list":
@@ -225,6 +229,10 @@ func printUsage(w io.Writer) {
   group get <group> [--tenant <id>]   show one team: each member's purpose, tools, where it runs
   group events <group> [--after <event-id>] [--limit 100] [--tenant <id>]
                                       the team's timeline: its members' events, oldest first
+  group topics <group> [--tenant <id>]
+                                      the team's topics: who publishes, who listens, nobody listens
+  group publish <group> <name> --message "<text>" [--data '{…}'] [--to a,b] [--key <k>] [--tenant <id>]
+                                      publish the operator's event on the team; stop.all recalls everyone
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>] [--urgent]
                                       accept a task; the same key names the same task; --urgent
                                       goes first and cancels the bot's work in progress

@@ -151,7 +151,7 @@ A bot listens to the topics of its teams it subscribes to ([ADR](../architecture
 | `from` | only the events of these teammates, `operator` or `control-plane`; absent: anyone in the team. A `PATCH` that names a bot outside the teams is `400` |
 | `urgent` | `true`: a `warn.*` it hears makes an urgent task. A critical is urgent anyway |
 | `objective` | the template of the task it makes, over the event's fields; absent: `Your teammate <from> says (<name>): <message>` |
-| `status` | `active` (absent) or `pending`: a bot's ask a person has not approved; it hears nothing. A `PATCH` may keep a pending entry as it is, make it `active` or drop it, never add or edit one |
+| `status` | `active` (absent) or `pending`: a bot's ask a person has not approved; it hears nothing. A bot asks with the tool `axlr_bots_subscribe {topic, why}`, served next to the emit tool; a second ask for a pattern it has is `already_subscribed`, a 17th `too_many`; the ask records `bot.subscription.asked` and carries `askedBy`, `why` and `askedAt`. A `PATCH` may keep a pending entry as it is, make it `active` or drop it, never add or edit one |
 
 Who hears an event: every Enabled teammate of the emitter but the emitter. An event addressed to it (`to`) is always heard, by its matching subscription or else by the implicit one (`team`); an event not addressed to it is heard only by an active subscription whose topic and `from` fit; every bot also hears the team's `danger.*` and `stop.*`, whatever it subscribes to, so a Stop always lands. The receiver records `bot.event.heard` (`eventId`, `name`, `from`, `by`, `mode`, `taskId` or `messageId`); a `PATCH` of the list records `bot.subscription.changed`.
 

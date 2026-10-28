@@ -48,14 +48,20 @@ func (l *EventLog) ListTaskEvents(_ context.Context, task domain.TaskID, limit i
 	return l.tail(limit, func(event domain.Event) bool { return event.TaskID == task })
 }
 
-// ListBotsEvents answers the newest limit events of any of the bots,
+// ListTeamEvents answers the newest limit events of any of the bots, and
+// of the tenant's team itself,
 // oldest first: a team's timeline.
-func (l *EventLog) ListBotsEvents(_ context.Context, bots []domain.BotID, limit int) ([]domain.Event, error) {
+func (l *EventLog) ListTeamEvents(_ context.Context, tenant domain.TenantID, team domain.TeamName, bots []domain.BotID, limit int) ([]domain.Event, error) {
 	wanted := make(map[domain.BotID]bool, len(bots))
 	for _, bot := range bots {
 		wanted[bot] = true
 	}
-	return l.tail(limit, func(event domain.Event) bool { return wanted[event.BotID] })
+	return l.tail(limit, func(event domain.Event) bool {
+		if event.BotID == "" {
+			return event.GroupName != "" && event.GroupName == team.String() && event.TenantID == tenant
+		}
+		return wanted[event.BotID]
+	})
 }
 
 // tail reads the log and keeps the newest limit events that match. A

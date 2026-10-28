@@ -97,6 +97,8 @@ func (s *Server) operatorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/groups", s.listGroups)
 	mux.HandleFunc("GET /v1/groups/{name}", s.getGroup)
 	mux.HandleFunc("GET /v1/groups/{name}/events", s.listGroupEvents)
+	mux.HandleFunc("POST /v1/groups/{name}/events", s.publishGroupEvent)
+	mux.HandleFunc("GET /v1/groups/{name}/topics", s.listGroupTopics)
 	mux.HandleFunc("POST /v1/tasks", s.submitTask)
 	mux.HandleFunc("GET /v1/tasks", s.listTasks)
 	mux.HandleFunc("GET /v1/tasks/{id}", s.getTask)
@@ -136,6 +138,7 @@ func (s *Server) nodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/delegations", s.authenticated(s.delegate))
 	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/delegations/{task}", s.authenticated(s.awaitDelegation))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/events", s.authenticated(s.emit))
+	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/subscriptions", s.authenticated(s.subscribe))
 	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/messages", s.authenticated(s.executionMessages))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/said", s.authenticated(s.said))
 }
@@ -278,6 +281,28 @@ func (s *Server) listGroupEvents(w http.ResponseWriter, r *http.Request) {
 		case <-time.After(groupPollInterval):
 		}
 	}
+}
+
+// publishGroupEvent is POST /v1/groups/{name}/events?tenant=: the
+// operator publishes on the team, the key in the Idempotency-Key header
+// or the body; 201 for a new event, 200 for the one the key published.
+func (s *Server) publishGroupEvent(w http.ResponseWriter, r *http.Request) {
+	var command application.PublishGroupEventCommand
+	if !readJSON(w, r, &command) {
+		return
+	}
+	command.Group, command.Tenant = r.PathValue("name"), r.URL.Query().Get("tenant")
+	if key := r.Header.Get(IdempotencyKeyHeader); key != "" {
+		command.IdempotencyKey = key
+	}
+	answer, err := s.service.PublishGroupEvent(r.Context(), command)
+	respond(w, createdStatus(answer.Created), answer, err)
+}
+
+// listGroupTopics is GET /v1/groups/{name}/topics?tenant=.
+func (s *Server) listGroupTopics(w http.ResponseWriter, r *http.Request) {
+	value, err := s.service.ListGroupTopics(r.Context(), r.PathValue("name"), r.URL.Query().Get("tenant"))
+	respond(w, http.StatusOK, value, err)
 }
 
 func (s *Server) enableBot(w http.ResponseWriter, r *http.Request) {
@@ -747,6 +772,25 @@ func (s *Server) emit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusOK, nodeproto.FromEmitted(answer), nil)
+}
+
+// subscribe is POST .../subscriptions: the execution's bot asks to hear
+// a topic of its teams; the answer is 200, a refusal included.
+func (s *Server) subscribe(w http.ResponseWriter, r *http.Request) {
+	id, executionID, ok := nodeExecution(w, r)
+	if !ok {
+		return
+	}
+	var message nodeproto.SubscribeMessage
+	if !readJSON(w, r, &message) {
+		return
+	}
+	answer, err := s.service.Runner().Subscribe(r.Context(), id, executionID, application.SubscribeCommand{Topic: message.Topic, Why: message.Why})
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	respond(w, http.StatusOK, nodeproto.FromSubscribed(answer), nil)
 }
 
 // awaitDelegation is GET .../delegations/{task}?wait=20s: it answers the

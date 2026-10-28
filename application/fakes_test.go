@@ -261,13 +261,17 @@ func (c *collector) ListEvents(_ context.Context, bot domain.BotID, limit int) (
 	return out, nil
 }
 
-// ListBotsEvents is the EventReader of a team over what was published.
-func (c *collector) ListBotsEvents(_ context.Context, bots []domain.BotID, limit int) ([]domain.Event, error) {
+// ListTeamEvents is the EventReader of a team over what was published.
+func (c *collector) ListTeamEvents(_ context.Context, tenant domain.TenantID, team domain.TeamName, bots []domain.BotID, limit int) ([]domain.Event, error) {
 	if c.fail != nil {
 		return nil, c.fail
 	}
 	var out []domain.Event
 	for _, e := range c.events {
+		if e.BotID == "" && e.GroupName == team.String() && e.TenantID == tenant {
+			out = append(out, e)
+			continue
+		}
 		for _, bot := range bots {
 			if e.BotID == bot {
 				out = append(out, e)

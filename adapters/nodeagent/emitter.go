@@ -32,7 +32,7 @@ type emittedView struct {
 func (e emitter) call(ctx context.Context, raw json.RawMessage) mcpToolResult {
 	var command application.EmitEventCommand
 	if err := json.Unmarshal(raw, &command); err != nil || command.Name == "" || command.Message == "" {
-		return textResult("axlr_bots_emit_event takes {\"name\": \"<event>\", \"message\": \"<one line>\", \"severity\": \"info|warning\", \"to\": [\"<teammate>\"], \"data\": {}}", true)
+		return textResult(`axlr_bots_emit_event takes {"name": "<kind.event>", "message": "<one line>", "to": ["<teammate>"], "data": {}}`, true)
 	}
 	answer, err := e.transport.Emit(ctx, e.node, e.execution, command)
 	if err != nil {
@@ -47,7 +47,7 @@ func (e emitter) call(ctx context.Context, raw json.RawMessage) mcpToolResult {
 	view := emittedView{Event: answer.EventID, Name: answer.Name, Severity: answer.Severity.String(), Deliveries: answer.Deliveries, Skipped: answer.Skipped}
 	if view.Deliveries == nil {
 		view.Deliveries = []application.EventDelivery{}
-		view.Note = "no teammate took it as a task; it is recorded for the people watching"
+		view.Note = "no teammate heard it; it is recorded for the people watching"
 	}
 	return jsonResult(view, false)
 }

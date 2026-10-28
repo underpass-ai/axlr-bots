@@ -46,15 +46,19 @@ type emission struct {
 	node      domain.NodeID
 	execution domain.ExecutionID
 	by        domain.Publisher
-	task      domain.Task
-	bot       domain.Bot
-	id        string
-	name      domain.EventName
-	severity  domain.Severity
-	message   domain.EventMessage
-	data      map[string]any
-	dataJSON  string
-	to        []domain.BotID
+	// from is who the receivers read the event from: the bot's id, or
+	// operator; teams are the teams it was told to.
+	from     string
+	teams    []string
+	task     domain.Task
+	bot      domain.Bot
+	id       string
+	name     domain.EventName
+	severity domain.Severity
+	message  domain.EventMessage
+	data     map[string]any
+	dataJSON string
+	to       []domain.BotID
 }
 
 // Execute delivers the event, finds the delivery the same call made, or
@@ -162,7 +166,7 @@ func (uc EmitEvent) load(ctx context.Context, node domain.NodeID, executionID do
 	slices.Sort(to)
 	// The kind of the name fixes the severity; an older node's severity
 	// is ignored.
-	e := emission{node: node, execution: execution.ID(), by: domain.PublisherBot, task: task, bot: bot, name: name, severity: domain.KindOf(name).Severity(), message: message, data: data, dataJSON: dataJSON, to: to}
+	e := emission{node: node, execution: execution.ID(), by: domain.PublisherBot, from: bot.ID().String(), teams: teamNamesOf(bot), task: task, bot: bot, name: name, severity: domain.KindOf(name).Severity(), message: message, data: data, dataJSON: dataJSON, to: to}
 	e.id = eventID(task.ID(), e)
 	return e, nil
 }
@@ -180,7 +184,7 @@ func (uc EmitEvent) deliver(ctx context.Context, e emission, mate domain.Bot) (*
 	if len(e.to) > 0 && !addressed {
 		return nil, nil, nil
 	}
-	sub, hears := mate.Hears(e.name, e.bot.ID().String(), e.by, addressed)
+	sub, hears := mate.Hears(e.name, e.from, e.by, addressed)
 	if !hears {
 		return nil, nil, nil
 	}
@@ -209,7 +213,7 @@ func skipped(mate domain.Bot, reason, message string) (*EventDelivery, *EventSki
 // and what the event did to it.
 func (uc EmitEvent) recordHeard(ctx context.Context, e emission, mate domain.Bot, d EventDelivery) error {
 	payload := map[string]any{
-		"eventId": e.id, "name": e.name.String(), "from": e.bot.ID().String(), "by": string(e.by),
+		"eventId": e.id, "name": e.name.String(), "from": e.from, "by": string(e.by),
 		"severity": e.severity.String(), "message": e.message.String(), "mode": d.Mode, "subscription": d.Trigger,
 	}
 	if d.TaskID != "" {
@@ -234,15 +238,37 @@ func (e emission) fields() map[string]any {
 	for i, id := range e.to {
 		to[i] = id.String()
 	}
-	teams := make([]string, 0)
-	for _, team := range e.bot.Teams().Names() {
-		teams = append(teams, team.String())
-	}
+	teams := append([]string{}, e.teams...)
 	return map[string]any{
-		"eventId": e.id, "name": e.name.String(), "from": e.bot.ID().String(), "severity": e.severity.String(),
+		"eventId": e.id, "name": e.name.String(), "from": e.from, "severity": e.severity.String(),
 		"message": e.message.String(), "data": e.data, "dataJSON": e.dataJSON, "to": to, "teams": teams,
 		"taskId": e.task.ID().String(),
 	}
+}
+
+// says is how a receiver reads who told it: a teammate or the operator.
+func (e emission) says() string {
+	if e.by == domain.PublisherOperator {
+		return "Your operator says"
+	}
+	return "Your teammate " + e.from + " says"
+}
+
+// sender names who told the receiver, for why its task is urgent.
+func (e emission) sender() string {
+	if e.by == domain.PublisherOperator {
+		return "the operator"
+	}
+	return "its teammate " + e.from
+}
+
+// teamNamesOf lists the bot's teams.
+func teamNamesOf(bot domain.Bot) []string {
+	teams := []string{}
+	for _, team := range bot.Teams().Names() {
+		teams = append(teams, team.String())
+	}
+	return teams
 }
 
 func (uc EmitEvent) recordEmitted(ctx context.Context, e emission, answer EmitAnswer) error {

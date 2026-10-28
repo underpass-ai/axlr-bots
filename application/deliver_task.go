@@ -33,17 +33,31 @@ func (uc EmitEvent) deliverTask(ctx context.Context, e emission, mate domain.Bot
 			return uc.deliverNote(ctx, e, mate, sub, DegradedIntakeRate, "")
 		}
 	}
-	limit := eventChainDepthLimit(e.bot, e.task)
-	depth := e.task.Depth() + 1
-	if depth > limit {
-		return skipped(mate, domain.RefusedDepthExceeded, fmt.Sprintf("a task of %s would be at depth %d; this chain allows %d", mate.ID(), depth, limit))
-	}
-	lineage, _ := e.task.Lineage()
-	if lineage.Visited(mate.ID()) {
-		return skipped(mate, domain.RefusedCycle, fmt.Sprintf("bot %s is already on this chain (%s): telling it would loop", mate.ID(), strings.Join(append(lineage.Chain, e.bot.ID().String()), " → ")))
+	// The operator's event starts no chain: its tasks are the operator's,
+	// as a submission's are.
+	var child *domain.TaskLineage
+	if e.by != domain.PublisherOperator {
+		limit := eventChainDepthLimit(e.bot, e.task)
+		depth := e.task.Depth() + 1
+		if depth > limit {
+			return skipped(mate, domain.RefusedDepthExceeded, fmt.Sprintf("a task of %s would be at depth %d; this chain allows %d", mate.ID(), depth, limit))
+		}
+		lineage, _ := e.task.Lineage()
+		if lineage.Visited(mate.ID()) {
+			return skipped(mate, domain.RefusedCycle, fmt.Sprintf("bot %s is already on this chain (%s): telling it would loop", mate.ID(), strings.Join(append(lineage.Chain, e.bot.ID().String()), " → ")))
+		}
+		child = &domain.TaskLineage{
+			ParentTaskID: e.task.ID().String(), ParentExecutionID: e.execution.String(), ParentBotID: e.bot.ID().String(),
+			Depth: depth, MaxDepth: limit, Chain: append(lineage.Chain, e.bot.ID().String()),
+			Grant: domain.DelegationGrant{Deadline: uc.deps.Clock.Now().Add(mate.Budgets().TaskTimeoutOr(DefaultTaskTimeout))}, EventID: e.id,
+		}
 	}
 	template := sub.ObjectiveTemplate()
-	if template == "" {
+	switch {
+	case template != "":
+	case e.by == domain.PublisherOperator:
+		template = domain.DefaultOperatorEventObjective
+	default:
 		template = domain.DefaultEventObjective
 	}
 	objective, err := domain.RenderObjective(template, e.fields())
@@ -58,22 +72,16 @@ func (uc EmitEvent) deliverTask(ctx context.Context, e emission, mate domain.Bot
 	if err != nil {
 		return nil, nil, err
 	}
-	now := uc.deps.Clock.Now()
-	child := domain.TaskLineage{
-		ParentTaskID: e.task.ID().String(), ParentExecutionID: e.execution.String(), ParentBotID: e.bot.ID().String(),
-		Depth: depth, MaxDepth: limit, Chain: append(lineage.Chain, e.bot.ID().String()),
-		Grant: domain.DelegationGrant{Deadline: now.Add(mate.Budgets().TaskTimeoutOr(DefaultTaskTimeout))}, EventID: e.id,
-	}
 	input, err := json.Marshal(e.fields())
 	if err != nil {
 		return nil, nil, err
 	}
 	s := submission{
 		action: "task.event", bot: mate, trigger: trigger, objective: objective,
-		key: key, correlation: e.task.CorrelationID(), input: input, lineage: &child,
+		key: key, correlation: e.task.CorrelationID(), input: input, lineage: child,
 	}
 	if urgent {
-		s.priority, s.why = domain.PriorityUrgent, "a "+e.severity.String()+" from its teammate "+e.bot.ID().String()+", event "+e.name.String()
+		s.priority, s.why = domain.PriorityUrgent, "a "+e.severity.String()+" from "+e.sender()+", event "+e.name.String()
 	}
 	created, err := submitTask(ctx, uc.deps, s)
 	if err != nil {

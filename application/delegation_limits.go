@@ -149,6 +149,9 @@ func allowedTools(bot domain.Bot, offer *DelegationOffer, events *EventsOffer) [
 	if events != nil && !bot.AllowedTools().Allows(EmitEventToolName) {
 		tools = append(tools, EmitEventToolName)
 	}
+	if events != nil && !bot.AllowedTools().Allows(SubscribeToolName) {
+		tools = append(tools, SubscribeToolName)
+	}
 	return tools
 }
 

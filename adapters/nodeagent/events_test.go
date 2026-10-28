@@ -137,7 +137,7 @@ func TestThePlaneWarnsQuadOneThroughTheNode(t *testing.T) {
 	if quad.Delegation == nil || quad.Delegation.EventID == "" || quad.CorrelationID != plane.CorrelationID {
 		t.Errorf("quad-1's task = %+v", quad)
 	}
-	if tools := executor.tools["plane"]; len(tools) != 2 || tools[1] != application.EmitEventToolName {
+	if tools := executor.tools["plane"]; len(tools) != 3 || tools[1] != application.EmitEventToolName || tools[2] != application.SubscribeToolName {
 		t.Errorf("tools/list = %v", tools)
 	}
 	// The emit tool over the socket offers no severity and names the kinds.
@@ -189,7 +189,7 @@ func TestTheEmitterHandsTheModelWhatHappened(t *testing.T) {
 		t.Errorf("refusal = %+v", result)
 	}
 	transport.answer = application.EmitAnswer{EventID: "evt-1", Name: "recall", Severity: domain.SeverityInfo}
-	if result := e.call(context.Background(), json.RawMessage(`{"name": "recall", "message": "x"}`)); result.IsError || !strings.Contains(result.Content[0].Text, "no teammate took it") {
+	if result := e.call(context.Background(), json.RawMessage(`{"name": "recall", "message": "x"}`)); result.IsError || !strings.Contains(result.Content[0].Text, "no teammate heard it") {
 		t.Errorf("nobody = %+v", result)
 	}
 }

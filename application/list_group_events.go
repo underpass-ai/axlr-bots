@@ -12,8 +12,9 @@ const (
 	MaxGroupEvents     = 1000
 )
 
-// ListGroupEvents reads a team's timeline: every event of its members,
-// in the order they were published, after the caller's last one.
+// ListGroupEvents reads a team's timeline: every event of its members
+// and the operator's events on it, in the order they were published,
+// after the caller's last one.
 type ListGroupEvents struct {
 	deps Dependencies
 }
@@ -41,7 +42,7 @@ func (uc ListGroupEvents) Execute(ctx context.Context, query GroupEventsQuery) (
 	for i, member := range group.Members {
 		bots[i] = domain.BotID(member.BotID)
 	}
-	events, err := uc.deps.EventReader.ListBotsEvents(ctx, bots, limit)
+	events, err := uc.deps.EventReader.ListTeamEvents(ctx, domain.TenantID(group.TenantID), domain.TeamName(group.Name), bots, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -491,6 +491,65 @@
             "$ref": "#/components/responses/Error"
           }
         }
+      },
+      "post": {
+        "operationId": "publishGroupEvent",
+        "description": "the operator publishes an event on the team: the same checks and deliveries as a bot's event, as operator, less the rate and the chain; error.* and done.* are refused (400, not_allowed); stop.all recalls every member",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "the tenant, needed when several have a team of that name"
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "One event per key; a retry with the same key answers the same event and delivers nothing twice. The body's idempotencyKey when absent; one of them is required."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishGroupEventCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishAnswer"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The key named an event published before: that event, created false",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishAnswer"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
       }
     },
     "/v1/tasks": {
@@ -1239,6 +1298,52 @@
           }
         }
       }
+    },
+    "/v1/groups/{name}/topics": {
+      "parameters": [
+        {
+          "name": "name",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "team name"
+        }
+      ],
+      "get": {
+        "operationId": "listGroupTopics",
+        "description": "the team's topics, derived: the names its events used, the patterns its members subscribe to or may emit; who publishes, who listens and how, the last event, and nobodyListens",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "the tenant, needed when several have a team of that name"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GroupTopic"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1911,6 +2016,10 @@
           "executionId": {
             "type": "string"
           },
+          "groupName": {
+            "type": "string",
+            "description": "the team an event about a team names (group.event.published); such an event names no bot"
+          },
           "nodeId": {
             "type": "string"
           },
@@ -1967,9 +2076,11 @@
           "bot.event.refused",
           "bot.event.heard",
           "bot.subscription.changed",
+          "bot.subscription.asked",
           "bot.approval.expired",
           "execution.assigned",
           "execution.reported",
+          "group.event.published",
           "node.registered",
           "node.heartbeat",
           "node.offline",
@@ -2205,6 +2316,54 @@
           "takesDelegation",
           "tools",
           "where"
+        ]
+      },
+      "GroupTopic": {
+        "type": "object",
+        "x-go-type": "application.GroupTopic",
+        "description": "one topic of a team: who publishes it, who listens and how, the last event",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "a name the team's events used, or a pattern its members subscribe to or may emit"
+          },
+          "publishers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "who published it, seen in the newest 1000 events: bots, operator, control-plane"
+          },
+          "declaredPublishers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "members whose events.emit rules name it"
+          },
+          "listeners": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TopicListener"
+            }
+          },
+          "lastAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "nobodyListens": {
+            "type": "boolean",
+            "description": "a name published and no member listens to it now, and the last event was not addressed"
+          }
+        },
+        "required": [
+          "count",
+          "listeners",
+          "name",
+          "publishers"
         ]
       },
       "MessageRequest": {
@@ -2506,6 +2665,135 @@
         "required": [
           "level",
           "enforced"
+        ]
+      },
+      "PublishAnswer": {
+        "type": "object",
+        "x-go-type": "application.PublishAnswer",
+        "description": "who heard the operator's event and how, who was skipped and why",
+        "properties": {
+          "eventId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "description": "info, warning or critical, fixed by the kind"
+          },
+          "deliveries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "botId": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string",
+                  "description": "task, message or note"
+                },
+                "taskId": {
+                  "type": "string"
+                },
+                "messageId": {
+                  "type": "string"
+                },
+                "trigger": {
+                  "type": "string",
+                  "description": "the subscription it heard the event by, or team"
+                },
+                "created": {
+                  "type": "boolean"
+                },
+                "urgent": {
+                  "type": "boolean"
+                },
+                "degraded": {
+                  "type": "string",
+                  "description": "intake_rate: a task or message that became a note"
+                },
+                "coalescedInto": {
+                  "type": "string",
+                  "description": "the Pending task the event joined as a note"
+                }
+              },
+              "required": [
+                "botId",
+                "created",
+                "mode",
+                "trigger"
+              ]
+            }
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "botId": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "botId",
+                "message",
+                "reason"
+              ]
+            }
+          },
+          "created": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "created",
+          "deliveries",
+          "eventId",
+          "name",
+          "severity",
+          "skipped"
+        ]
+      },
+      "PublishGroupEventCommand": {
+        "type": "object",
+        "x-go-type": "application.PublishGroupEventCommand",
+        "description": "the operator's event on a team",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "a dotted name whose first segment is its kind: stop, danger, warn, info or any other (info)"
+          },
+          "message": {
+            "type": "string",
+            "description": "one line: what happened and why"
+          },
+          "data": {
+            "type": "object",
+            "description": "facts for the receivers, at most 8 KiB as JSON"
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "only these members; absent: the whole team"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "description": "the key, when the header carries none"
+          }
+        },
+        "required": [
+          "message",
+          "name"
         ]
       },
       "ReportResponse": {
@@ -2976,6 +3264,32 @@
             "type": "array"
           }
         }
+      },
+      "TopicListener": {
+        "type": "object",
+        "x-go-type": "application.TopicListener",
+        "description": "a member that listens to a topic",
+        "properties": {
+          "botId": {
+            "type": "string"
+          },
+          "topic": {
+            "type": "string",
+            "description": "its subscription's pattern"
+          },
+          "mode": {
+            "type": "string",
+            "description": "task, message or note; absent: by the severity"
+          },
+          "status": {
+            "type": "string",
+            "description": "pending: a bot's ask a person has not approved"
+          }
+        },
+        "required": [
+          "botId",
+          "topic"
+        ]
       },
       "TriggerRef": {
         "type": "object",
