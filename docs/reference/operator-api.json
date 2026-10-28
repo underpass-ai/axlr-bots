@@ -1448,7 +1448,7 @@
           },
           "subscriptions": {
             "type": "array",
-            "description": "the topics the bot listens to in its teams, at most 16, one per pattern; absent: it hears what is addressed to it and the team's danger.* and stop.*",
+            "description": "the topics the bot listens to in its teams, at most 16, one per pattern; with or without them the bot hears what is addressed to it and the team's danger.* and stop.*",
             "items": {
               "$ref": "#/components/schemas/SubscriptionSnapshot"
             }
@@ -1520,7 +1520,7 @@
           },
           "subscriptions": {
             "type": "array",
-            "description": "the topics the bot listens to in its teams, at most 16, one per pattern; absent: it hears what is addressed to it and the team's danger.* and stop.*",
+            "description": "the topics the bot listens to in its teams, at most 16, one per pattern; with or without them the bot hears what is addressed to it and the team's danger.* and stop.*",
             "items": {
               "$ref": "#/components/schemas/SubscriptionSnapshot"
             }
@@ -1607,7 +1607,7 @@
           },
           "subscriptions": {
             "type": "array",
-            "description": "the topics the bot listens to in its teams, at most 16, one per pattern; absent: it hears what is addressed to it and the team's danger.* and stop.*",
+            "description": "the topics the bot listens to in its teams, at most 16, one per pattern; with or without them the bot hears what is addressed to it and the team's danger.* and stop.*",
             "items": {
               "$ref": "#/components/schemas/SubscriptionSnapshot"
             }

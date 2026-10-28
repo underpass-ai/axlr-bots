@@ -55,15 +55,16 @@ func (s Subscriptions) HasActive() bool {
 
 // Hearing finds the bot's way of hearing the event: the first active
 // subscription whose topic and from fit; else, when the event is
-// addressed to the bot or is the team's default (danger, stop), the
-// implicit subscription. False: the bot does not hear it.
+// addressed to the bot or is the team's default (danger, stop: every
+// bot hears them, whatever it subscribes to, so a Stop always lands),
+// the implicit subscription. False: the bot does not hear it.
 func (s Subscriptions) Hearing(name EventName, from string, by Publisher, addressed bool) (Subscription, bool) {
 	for _, sub := range s.list {
 		if sub.Matches(name, from, by) {
 			return sub, true
 		}
 	}
-	if addressed || teamDefault(name) && !s.HasActive() {
+	if addressed || teamDefault(name) {
 		return implicitSubscription(name), true
 	}
 	return Subscription{}, false

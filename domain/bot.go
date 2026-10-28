@@ -129,7 +129,7 @@ func (b *Bot) SetSubscriptions(subs Subscriptions) { b.subs = subs }
 // Hears says whether a teammate's event reaches the bot, and by which
 // subscription: the first active one whose topic and from fit; else
 // the implicit one when the event is addressed to the bot, or is the
-// team's default (danger, stop) and the bot subscribes to nothing.
+// team's default (danger, stop), which every bot hears.
 func (b Bot) Hears(name EventName, from string, by Publisher, addressed bool) (Subscription, bool) {
 	return b.subs.Hearing(name, from, by, addressed)
 }

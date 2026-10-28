@@ -93,9 +93,8 @@ func TestSubscriptionsHearByTopicThenByDefault(t *testing.T) {
 	if _, ok := subs.Find("**"); !ok || len(subs.List()) != 2 || !subs.HasActive() {
 		t.Error("the list is wrong")
 	}
-	only, _ := NewSubscriptions([]SubscriptionSnapshot{{Topic: "**", Status: "pending"}})
-	if sub, ok := only.Hearing("stop.all", "x", PublisherOperator, false); !ok || !sub.Implicit() {
-		t.Error("a pending ask removed the team's default")
+	if sub, ok := subs.Hearing("stop.all", "x", PublisherOperator, false); !ok || !sub.Implicit() {
+		t.Error("a subscription to something else removed the team's default")
 	}
 	if _, ok := (Subscriptions{}).Hearing("info.turno", "x", PublisherBot, false); ok {
 		t.Error("an info broadcast was heard without a subscription")
@@ -131,6 +130,9 @@ func TestRecallIsReadAsStopRecall(t *testing.T) {
 	ref, err := NewTriggerRef("event", "pedido.*")
 	if err != nil || ref.Name != "pedido.*" {
 		t.Errorf("ref = %+v %v", ref, err)
+	}
+	if old, err := NewTriggerRef("event", "ship_watch"); err != nil || old.Name != "ship_watch" {
+		t.Errorf("an event trigger's name from before = %+v %v", old, err)
 	}
 	if _, err := NewTriggerRef("event", "Bad"); err == nil {
 		t.Error("a bad event trigger name was accepted")

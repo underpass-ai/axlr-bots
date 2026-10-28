@@ -104,9 +104,9 @@ func TestTheTeamsDefaultAndAddressedEvents(t *testing.T) {
 	for _, d := range fire.Deliveries {
 		urgent[d.BotID] = d.Urgent
 	}
-	// Supervisor subscribes to something else: the team's default is for
-	// bots that subscribe to nothing.
-	if len(fire.Deliveries) != 2 || !urgent["almacen"] || urgent["caja"] {
+	// Supervisor subscribes to something else and hears it anyway: every
+	// bot hears the team's danger and stop.
+	if len(fire.Deliveries) != 3 || !urgent["almacen"] || !urgent["supervisor"] || urgent["caja"] {
 		t.Errorf("danger.fire = %+v", fire)
 	}
 	recall := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "stop.recall", Message: "back", To: []string{"supervisor"}})
