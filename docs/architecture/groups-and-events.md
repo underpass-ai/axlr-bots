@@ -131,7 +131,7 @@ The same bot with every *Advanced* field:
 
 ## Left out
 
-- Events from the operator (`POST /v1/groups/{name}/events`) and from webhooks; urgent webhooks and timers.
+- Events from the operator (`POST /v1/groups/{name}/events`) and from webhooks; urgent webhooks and timers. The operator's events, subscriptions by topic and the three delivery modes are in [publish/subscribe events](pubsub-events.md).
 - Cancelling a preempted task's Pending queue and its delegated children.
 - Teams with their own settings (description, notify targets): a team aggregate can come later without changing the bots' `groups`.
 - Approval without the extra execution: needs a per-tool rule in AXLR.
