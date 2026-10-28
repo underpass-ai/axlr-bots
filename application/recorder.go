@@ -19,16 +19,23 @@ func (r recorder) event(ctx context.Context, kind domain.EventType, bot domain.B
 // the bot, the task, the execution and the trace, the ids an execution
 // is reconstructed by (vision §14.8).
 func (r recorder) executionEvent(ctx context.Context, kind domain.EventType, bot domain.Bot, task domain.TaskID, execution domain.ExecutionID, correlation domain.CorrelationID, payload map[string]any) error {
+	_, err := r.executionEventID(ctx, kind, bot, task, execution, correlation, payload)
+	return err
+}
+
+// executionEventID publishes an event about an execution and answers
+// its id.
+func (r recorder) executionEventID(ctx context.Context, kind domain.EventType, bot domain.Bot, task domain.TaskID, execution domain.ExecutionID, correlation domain.CorrelationID, payload map[string]any) (domain.EventID, error) {
 	id, err := domain.NewEventID(r.deps.IDs.NewID("evt-"))
 	if err != nil {
-		return err
+		return "", err
 	}
 	event, err := domain.NewEvent(id, kind, bot.TenantID(), bot.ID(), task, correlation, r.deps.Clock.Now(), payload)
 	if err != nil {
-		return err
+		return "", err
 	}
 	event.ExecutionID = execution
-	return r.deps.Events.Publish(ctx, event)
+	return id, r.deps.Events.Publish(ctx, event)
 }
 
 // nodeEvent publishes an event about a node.

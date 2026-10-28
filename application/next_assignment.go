@@ -126,6 +126,9 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 	if err := uc.deps.Executions.Save(ctx, execution); err != nil {
 		return Assignment{}, false, err
 	}
+	if err := keepNotes(ctx, uc.deps, bot, &task); err != nil {
+		return Assignment{}, false, err
+	}
 	if err := uc.deps.Tasks.Save(ctx, task); err != nil {
 		return Assignment{}, false, err
 	}
@@ -176,7 +179,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 		}
 		return assignment, nil
 	}
-	prompt, err := domain.NewTeamPrompt(bot.Mission(), task.Objective(), directoryOf(bot, mates))
+	prompt, err := domain.NewTeamPrompt(bot.Mission(), task.Objective(), directoryOf(bot, mates), task.Notes())
 	if err != nil {
 		return Assignment{}, err
 	}

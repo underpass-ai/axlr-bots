@@ -85,11 +85,16 @@ func (uc EmitEvent) Execute(ctx context.Context, node domain.NodeID, executionID
 	if err != nil {
 		return EmitAnswer{}, err
 	}
-	seen, count := emittedBefore(recent, e.id, uc.deps.Clock.Now())
-	if !seen && count >= e.bot.Events().PerMinute() {
+	before, seen, count := emittedBefore(recent, e.id, uc.deps.Clock.Now())
+	if seen {
+		// The same call again (a retry): what it delivered then, nothing
+		// new; a note or a message is not given twice.
+		return repeatedAnswer(e, before), nil
+	}
+	if count >= e.bot.Events().PerMinute() {
 		return uc.refuse(ctx, e, domain.RefusedRateLimited, fmt.Sprintf("bot %s emitted %d events in the last minute, its most; wait before the next", e.bot.ID(), count))
 	}
-	answer := EmitAnswer{EventID: e.id, Name: e.name.String(), Severity: e.severity, Deduplicated: seen}
+	answer := EmitAnswer{EventID: e.id, Name: e.name.String(), Severity: e.severity}
 	for _, mate := range mates {
 		delivery, skip, err := uc.deliver(ctx, e, mate)
 		if err != nil {
@@ -101,9 +106,6 @@ func (uc EmitEvent) Execute(ctx context.Context, node domain.NodeID, executionID
 		if skip != nil {
 			answer.Skipped = append(answer.Skipped, *skip)
 		}
-	}
-	if seen {
-		return answer, nil
 	}
 	if err := uc.recordEmitted(ctx, e, answer); err != nil {
 		return EmitAnswer{}, err
@@ -167,77 +169,39 @@ func (uc EmitEvent) load(ctx context.Context, node domain.NodeID, executionID do
 // MaxEventTargets is the most teammates one event may be addressed to.
 const MaxEventTargets = 16
 
-// deliver makes the teammate's task, or says why it gets none; neither
-// when the teammate simply does not hear the event. Every delivery is a
-// task for now; the subscription's mode is recorded as task.
+// deliver gives the teammate the event in the mode its subscription
+// says (by the severity when it names none): a task, a message into its
+// running task, or a note for its next prompt; or says why it gets
+// none; neither when the teammate simply does not hear the event. An
+// urgent event is always a task.
 func (uc EmitEvent) deliver(ctx context.Context, e emission, mate domain.Bot) (*EventDelivery, *EventSkip, error) {
 	addressed := slices.Contains(e.to, mate.ID())
 	if len(e.to) > 0 && !addressed {
 		return nil, nil, nil
 	}
-	skip := func(reason, message string) (*EventDelivery, *EventSkip, error) {
-		return nil, &EventSkip{BotID: mate.ID().String(), Reason: reason, Message: message}, nil
-	}
 	sub, hears := mate.Hears(e.name, e.bot.ID().String(), domain.PublisherBot, addressed)
-	switch {
-	case !hears:
+	if !hears {
 		return nil, nil, nil
-	case !mate.AcceptsTasks():
-		return skip(domain.RefusedTargetUnavailable, "bot "+mate.ID().String()+" is "+mate.Status().String()+" and takes no task")
 	}
-	limit := chainDepthLimit(e.bot, e.task)
-	depth := e.task.Depth() + 1
-	if depth > limit {
-		return skip(domain.RefusedDepthExceeded, fmt.Sprintf("a task of %s would be at depth %d; this chain allows %d", mate.ID(), depth, limit))
+	urgent := mate.InterruptedBy(sub, domain.KindOf(e.name))
+	mode := sub.ModeFor(e.severity)
+	if urgent {
+		mode = domain.ModeTask
 	}
-	lineage, _ := e.task.Lineage()
-	if lineage.Visited(mate.ID()) {
-		return skip(domain.RefusedCycle, fmt.Sprintf("bot %s is already on this chain (%s): telling it would loop", mate.ID(), strings.Join(append(lineage.Chain, e.bot.ID().String()), " → ")))
-	}
-	template := sub.ObjectiveTemplate()
-	if template == "" {
-		template = domain.DefaultEventObjective
-	}
-	objective, err := domain.RenderObjective(template, e.fields())
-	if err != nil {
-		return skip("objective", "the objective of "+mate.ID().String()+"'s subscription "+sub.TriggerName()+" does not render: "+err.Error())
-	}
-	trigger, err := domain.NewTriggerRef(domain.TriggerEvent.String(), sub.TriggerName())
-	if err != nil {
-		return nil, nil, err
-	}
-	key, err := domain.NewIdempotencyKey("event:" + e.id + ":" + mate.ID().String())
-	if err != nil {
-		return nil, nil, err
-	}
-	now := uc.deps.Clock.Now()
-	child := domain.TaskLineage{
-		ParentTaskID: e.task.ID().String(), ParentExecutionID: e.execution.ID().String(), ParentBotID: e.bot.ID().String(),
-		Depth: depth, MaxDepth: limit, Chain: append(lineage.Chain, e.bot.ID().String()),
-		Grant: domain.DelegationGrant{Deadline: now.Add(mate.Budgets().TaskTimeoutOr(DefaultTaskTimeout))}, EventID: e.id,
-	}
-	input, err := json.Marshal(e.fields())
-	if err != nil {
-		return nil, nil, err
-	}
-	s := submission{
-		action: "task.event", bot: mate, trigger: trigger, objective: objective,
-		key: key, correlation: e.task.CorrelationID(), input: input, lineage: &child,
-	}
-	if mate.InterruptedBy(sub, domain.KindOf(e.name)) {
-		s.priority, s.why = domain.PriorityUrgent, "a "+e.severity.String()+" from its teammate "+e.bot.ID().String()+", event "+e.name.String()
-	}
-	created, err := submitTask(ctx, uc.deps, s)
-	if err != nil {
-		return nil, nil, err
-	}
-	delivery := &EventDelivery{BotID: mate.ID().String(), Mode: domain.ModeTask.String(), TaskID: created.Task.ID().String(), Trigger: sub.TriggerName(), Created: created.Created, Urgent: created.Task.IsUrgent()}
-	if created.Created {
-		if err := uc.recordHeard(ctx, e, mate, *delivery); err != nil {
-			return nil, nil, err
+	switch mode {
+	case domain.ModeNote:
+		return uc.deliverNote(ctx, e, mate, sub)
+	case domain.ModeMessage:
+		if delivery, skip, handled, err := uc.deliverMessage(ctx, e, mate, sub); handled || err != nil {
+			return delivery, skip, err
 		}
 	}
-	return delivery, nil, nil
+	return uc.deliverTask(ctx, e, mate, sub, urgent)
+}
+
+// skipped says why the teammate gets nothing.
+func skipped(mate domain.Bot, reason, message string) (*EventDelivery, *EventSkip, error) {
+	return nil, &EventSkip{BotID: mate.ID().String(), Reason: reason, Message: message}, nil
 }
 
 // recordHeard records on the receiver's stream that it heard the event
@@ -245,7 +209,13 @@ func (uc EmitEvent) deliver(ctx context.Context, e emission, mate domain.Bot) (*
 func (uc EmitEvent) recordHeard(ctx context.Context, e emission, mate domain.Bot, d EventDelivery) error {
 	payload := map[string]any{
 		"eventId": e.id, "name": e.name.String(), "from": e.bot.ID().String(), "by": string(domain.PublisherBot),
-		"severity": e.severity.String(), "message": e.message.String(), "mode": d.Mode, "subscription": d.Trigger, "taskId": d.TaskID, "urgent": d.Urgent,
+		"severity": e.severity.String(), "message": e.message.String(), "mode": d.Mode, "subscription": d.Trigger,
+	}
+	if d.TaskID != "" {
+		payload["taskId"], payload["urgent"] = d.TaskID, d.Urgent
+	}
+	if d.MessageID != "" {
+		payload["messageId"] = d.MessageID
 	}
 	return uc.rec.event(ctx, domain.EventEventHeard, mate, domain.TaskID(d.TaskID), e.task.CorrelationID(), payload)
 }
@@ -325,10 +295,11 @@ func eventData(raw json.RawMessage) (map[string]any, string, error) {
 	return data, compact.String(), nil
 }
 
-// emittedBefore reads the bot's newest events: whether this event was
-// recorded already, and how many distinct events it emitted in the
-// last minute.
-func emittedBefore(events []domain.Event, id string, now time.Time) (bool, int) {
+// emittedBefore reads the bot's newest events: the record of this event
+// when it was emitted already, and how many distinct events the bot
+// emitted in the last minute.
+func emittedBefore(events []domain.Event, id string, now time.Time) (domain.Event, bool, int) {
+	var before domain.Event
 	seen := false
 	inWindow := map[string]bool{}
 	for _, event := range events {
@@ -336,12 +307,32 @@ func emittedBefore(events []domain.Event, id string, now time.Time) (bool, int) 
 			continue
 		}
 		eventID, _ := event.Payload["eventId"].(string)
-		seen = seen || eventID == id
+		if eventID == id {
+			before, seen = event, true
+		}
 		if now.Sub(event.CreatedAt) < eventRateWindow {
 			inWindow[eventID] = true
 		}
 	}
-	return seen, len(inWindow)
+	return before, seen, len(inWindow)
+}
+
+// repeatedAnswer answers a repeat with the deliveries and skips the
+// event's record names, none of them created now.
+func repeatedAnswer(e emission, before domain.Event) EmitAnswer {
+	answer := EmitAnswer{EventID: e.id, Name: e.name.String(), Severity: e.severity, Deduplicated: true}
+	// The record is read back from memory or from the event log: through
+	// JSON, it reads the same either way.
+	if raw, err := json.Marshal(before.Payload["deliveries"]); err == nil {
+		_ = json.Unmarshal(raw, &answer.Deliveries)
+	}
+	if raw, err := json.Marshal(before.Payload["skipped"]); err == nil {
+		_ = json.Unmarshal(raw, &answer.Skipped)
+	}
+	for i := range answer.Deliveries {
+		answer.Deliveries[i].Created = false
+	}
+	return answer
 }
 
 // emitNames lists what the bot may emit, for a refusal's message; never
@@ -365,7 +356,14 @@ func botIDs(bots []domain.Bot) []string {
 func deliveriesPayload(deliveries []EventDelivery) []map[string]any {
 	out := make([]map[string]any, 0, len(deliveries))
 	for _, d := range deliveries {
-		out = append(out, map[string]any{"botId": d.BotID, "mode": d.Mode, "taskId": d.TaskID, "trigger": d.Trigger, "created": d.Created, "urgent": d.Urgent})
+		item := map[string]any{"botId": d.BotID, "mode": d.Mode, "trigger": d.Trigger, "created": d.Created, "urgent": d.Urgent}
+		if d.TaskID != "" {
+			item["taskId"] = d.TaskID
+		}
+		if d.MessageID != "" {
+			item["messageId"] = d.MessageID
+		}
+		out = append(out, item)
 	}
 	return out
 }
