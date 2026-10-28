@@ -26,6 +26,14 @@ func NewTriggerRef(kind, name string) (TriggerRef, error) {
 	if name == "" {
 		name = parsed.String()
 	}
+	if parsed == TriggerEvent {
+		// A task an event made names the subscription's pattern.
+		pattern, err := NewEventPattern(name)
+		if err != nil {
+			return TriggerRef{}, invalid("trigger name", err.Error())
+		}
+		return TriggerRef{Type: parsed, Name: pattern.String()}, nil
+	}
 	name, err = validateIdentifier("trigger name", name)
 	if err != nil {
 		return TriggerRef{}, err

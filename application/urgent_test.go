@@ -97,23 +97,25 @@ func TestAnUrgentTaskPreemptsTheWorkInProgress(t *testing.T) {
 	}
 }
 
-func TestATeammatesAddressedWarningInterrupts(t *testing.T) {
+func TestATeammatesStopInterruptsAndAWarningDoesNot(t *testing.T) {
 	h := newHarness()
 	parent := portTeam(t, h)
 	busy := submitWith(t, h, "quad-1", "patrol", "")
 	nextFor(t, h, "web-1")
-	recall := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "warn.ship-near", Message: "a ship", To: []string{"quad-1"}})
+	warning := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "warn.ship-near", Message: "a ship", To: []string{"quad-1"}})
+	if len(warning.Deliveries) != 1 || warning.Deliveries[0].Urgent || taskOf(t, h, busy.ID()).Status() != domain.TaskRunning {
+		t.Fatalf("an addressed warning interrupted: %+v", warning)
+	}
+	recall := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "stop.recall", Message: "a ship", To: []string{"quad-1"}})
 	if len(recall.Deliveries) != 1 || !recall.Deliveries[0].Urgent {
 		t.Fatalf("recall = %+v", recall)
 	}
-	if task := taskOf(t, h, busy.ID()); task.Status() != domain.TaskCancelled || !strings.Contains(task.FailureReason(), "a warning from its teammate plane, event warn.ship-near") {
+	if task := taskOf(t, h, busy.ID()); task.Status() != domain.TaskCancelled || !strings.Contains(task.FailureReason(), "a critical from its teammate plane, event stop.recall") {
 		t.Errorf("busy = %s %q", task.Status(), task.FailureReason())
 	}
 	broadcast := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "warn.ship-sighted", Message: "a ship"})
-	for _, d := range broadcast.Deliveries {
-		if d.Urgent {
-			t.Errorf("a broadcast interrupted %s", d.BotID)
-		}
+	if len(broadcast.Deliveries) != 0 {
+		t.Errorf("a warning broadcast reached a bot that subscribes to nothing: %+v", broadcast)
 	}
 }
 

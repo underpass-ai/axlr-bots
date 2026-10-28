@@ -58,6 +58,13 @@ const (
 	// payload names the event, its severity, message and data, and who
 	// got a task from it and who did not, and why.
 	EventEventEmitted EventType = "bot.event.emitted"
+	// EventEventHeard says a bot heard a teammate's event: the payload
+	// names the event, who sent it and by what (a bot, the operator, the
+	// control plane), the mode of the delivery and the task it made.
+	EventEventHeard EventType = "bot.event.heard"
+	// EventSubscriptionChanged says the topics a bot listens to changed:
+	// the payload holds the list after the change and who changed it.
+	EventSubscriptionChanged EventType = "bot.subscription.changed"
 	// EventEventRefused says a bot tried to emit an event and the control
 	// plane refused: the payload names the event and the check.
 	EventEventRefused EventType = "bot.event.refused"
@@ -87,7 +94,7 @@ func ParseEventType(raw string) (EventType, error) {
 	switch EventType(raw) {
 	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
 		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventTaskDelegated, EventTaskMessage, EventTaskSaid, EventDelegationRefused,
-		EventEventEmitted, EventEventRefused,
+		EventEventEmitted, EventEventRefused, EventEventHeard, EventSubscriptionChanged,
 		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked,
 		EventExecutionAssigned, EventExecutionReported:
 		return EventType(raw), nil

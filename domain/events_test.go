@@ -100,7 +100,7 @@ func TestEventTriggers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !trigger.Hears("ship.sighted") || trigger.Hears("recall") || trigger.ObjectiveTemplate() != "" {
+	if trigger.ObjectiveTemplate() != "" {
 		t.Errorf("trigger = %+v", trigger)
 	}
 	if s := trigger.Snapshot(); len(s.Events) != 1 || s.Events[0] != "ship.*" {
@@ -119,46 +119,45 @@ func TestEventTriggers(t *testing.T) {
 			t.Errorf("%+v accepted", b)
 		}
 	}
-	triggers, _ := NewTriggers([]TriggerSnapshot{{Type: "manual"}, {Type: "event", Name: "ships", Events: []string{"ship.*"}}, {Type: "event", Name: "all", Events: []string{"**"}}})
-	if got, ok := triggers.Hearing("ship.lost"); !ok || got.Name() != "ships" {
-		t.Errorf("hearing = %+v %v", got, ok)
-	}
-	if got, ok := triggers.Hearing("recall"); !ok || got.Name() != "all" {
-		t.Errorf("hearing recall = %+v %v", got, ok)
-	}
-	if _, ok := DefaultTriggers().Hearing("recall"); ok {
-		t.Error("manual hears an event")
-	}
 }
 
 func TestBotHearsItsTeam(t *testing.T) {
 	quad := teamTestBot(t, "quad-1", "default", []string{"port"})
-	if trigger, ok := quad.Hears("recall", SeverityInfo, true); !ok || trigger.Name() != "team" || trigger.Type() != TriggerEvent {
-		t.Errorf("addressed info = %+v %v", trigger, ok)
+	if sub, ok := quad.Hears("info.x", "plane", PublisherBot, true); !ok || !sub.Implicit() || sub.TriggerName() != "team" {
+		t.Errorf("addressed info = %+v %v", sub, ok)
 	}
-	if _, ok := quad.Hears("ship.sighted", SeverityInfo, false); ok {
-		t.Error("an info broadcast was heard by default")
+	if _, ok := quad.Hears("warn.ship", "plane", PublisherBot, false); ok {
+		t.Error("a warning broadcast was heard without a subscription")
 	}
-	if _, ok := quad.Hears("ship.sighted", SeverityWarning, false); !ok {
-		t.Error("a warning broadcast was not heard by default")
+	if _, ok := quad.Hears("danger.fire", "plane", PublisherBot, false); !ok {
+		t.Error("a danger broadcast was not heard by default")
 	}
-	triggers, _ := NewTriggers([]TriggerSnapshot{{Type: "event", Name: "ships", Events: []string{"ship.*"}}})
-	quad.Wire(triggers, Placement{})
-	if _, ok := quad.Hears("recall", SeverityCritical, true); ok {
-		t.Error("declared triggers still take the default")
+	subs, _ := NewSubscriptions([]SubscriptionSnapshot{{Topic: "ship.*", From: []string{"plane"}}})
+	quad.SetSubscriptions(subs)
+	if sub, ok := quad.Hears("ship.sighted", "plane", PublisherBot, false); !ok || sub.TriggerName() != "ship.*" {
+		t.Errorf("subscribed = %+v %v", sub, ok)
 	}
-	if trigger, ok := quad.Hears("ship.sighted", SeverityInfo, false); !ok || trigger.Name() != "ships" {
-		t.Errorf("declared = %+v %v", trigger, ok)
+	if _, ok := quad.Hears("ship.sighted", "quad-2", PublisherBot, false); ok {
+		t.Error("a sender outside from was heard")
+	}
+	if sub, ok := quad.Hears("stop.recall", "plane", PublisherBot, true); !ok || !sub.Implicit() {
+		t.Errorf("addressed stop = %+v %v", sub, ok)
 	}
 	policy, _ := NewEventPolicy(EventsSnapshot{PerMinute: 3})
 	quad.SetEvents(policy)
 	s := quad.Snapshot()
+	s.Triggers = append(s.Triggers, TriggerSnapshot{Type: "event", Events: []string{"a.*", "ship.*"}, Interrupt: true})
 	s.Model = ModelPolicySnapshot{Model: "m", RoutingPolicy: "cost-optimized"}
 	s.Budgets = BudgetsSnapshot{MaxModelCallsPerTask: 1, MaxToolCallsPerTask: 1, TaskTimeoutSeconds: 60}
 	s.Level, s.Status = "observe", "Registered"
 	restored, err := RestoreBot(s)
 	if err != nil || restored.Events().PerMinute() != 3 {
 		t.Fatalf("restored = %v", err)
+	}
+	// A stored event trigger is read as a subscription; a pattern the bot
+	// already listens to stays as it was.
+	if got := restored.Snapshot(); len(got.Subscriptions) != 2 || got.Subscriptions[1].Topic != "a.*" || got.Subscriptions[1].Mode != "task" || !got.Subscriptions[1].Urgent || got.Subscriptions[0].Urgent || len(got.Triggers) != 1 {
+		t.Errorf("restored subscriptions = %+v triggers %+v", got.Subscriptions, got.Triggers)
 	}
 	s.Events = &EventsSnapshot{PerMinute: 99}
 	if _, err := RestoreBot(s); err == nil {

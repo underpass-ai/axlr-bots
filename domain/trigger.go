@@ -161,20 +161,6 @@ func (t Trigger) Authenticates(presentedSecret, signature string, body []byte) b
 // declares no event trigger of its own.
 func TeamEventTrigger() Trigger { return Trigger{kind: TriggerEvent, name: "team"} }
 
-// Interrupts reports whether the warnings and criticals an event
-// trigger hears make urgent tasks.
-func (t Trigger) Interrupts() bool { return t.interrupt }
-
-// Hears reports whether an event trigger takes the event.
-func (t Trigger) Hears(name EventName) bool {
-	for _, pattern := range t.events {
-		if pattern.Matches(name) {
-			return true
-		}
-	}
-	return false
-}
-
 // Snapshot returns the trigger as plain data, credentials included: what
 // the repository stores. Redact it before printing.
 func (t Trigger) Snapshot() TriggerSnapshot {

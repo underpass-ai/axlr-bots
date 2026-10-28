@@ -101,10 +101,16 @@ func buildBot(d BotDefinition, now time.Time) (domain.Bot, error) {
 	if err := bot.Govern(level, rules); err != nil {
 		return domain.Bot{}, err
 	}
-	triggers, err := domain.NewTriggers(d.Triggers)
+	plain, subscriptions := domain.SubscriptionsFromTriggers(d.Triggers, d.Subscriptions)
+	triggers, err := domain.NewTriggers(plain)
 	if err != nil {
 		return domain.Bot{}, err
 	}
+	subs, err := domain.NewSubscriptions(subscriptions)
+	if err != nil {
+		return domain.Bot{}, err
+	}
+	bot.SetSubscriptions(subs)
 	placement, err := domain.NewPlacement(d.Placement.Nodes, d.Placement.Selector)
 	if err != nil {
 		return domain.Bot{}, err

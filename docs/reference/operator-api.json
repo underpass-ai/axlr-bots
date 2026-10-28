@@ -1445,6 +1445,13 @@
           },
           "events": {
             "$ref": "#/components/schemas/EventsSnapshot"
+          },
+          "subscriptions": {
+            "type": "array",
+            "description": "the topics the bot listens to in its teams, at most 16, one per pattern; absent: it hears what is addressed to it and the team's danger.* and stop.*",
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionSnapshot"
+            }
           }
         },
         "required": [
@@ -1510,6 +1517,13 @@
           },
           "events": {
             "$ref": "#/components/schemas/EventsSnapshot"
+          },
+          "subscriptions": {
+            "type": "array",
+            "description": "the topics the bot listens to in its teams, at most 16, one per pattern; absent: it hears what is addressed to it and the team's danger.* and stop.*",
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionSnapshot"
+            }
           }
         }
       },
@@ -1590,6 +1604,13 @@
           },
           "events": {
             "$ref": "#/components/schemas/EventsSnapshot"
+          },
+          "subscriptions": {
+            "type": "array",
+            "description": "the topics the bot listens to in its teams, at most 16, one per pattern; absent: it hears what is addressed to it and the team's danger.* and stop.*",
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionSnapshot"
+            }
           }
         },
         "required": [
@@ -1944,6 +1965,8 @@
           "bot.delegation.refused",
           "bot.event.emitted",
           "bot.event.refused",
+          "bot.event.heard",
+          "bot.subscription.changed",
           "bot.approval.expired",
           "execution.assigned",
           "execution.reported",
@@ -1958,7 +1981,7 @@
       "EventsSnapshot": {
         "type": "object",
         "x-go-type": "domain.EventsSnapshot",
-        "description": "what a bot may emit to its teams; absent: any name up to warning, 6 a minute",
+        "description": "what a bot may emit to its teams; absent: any name but error.* and done.*, 6 a minute",
         "properties": {
           "emit": {
             "type": "array",
@@ -1971,7 +1994,7 @@
           },
           "interruptible": {
             "type": "boolean",
-            "description": "false: no teammate's event interrupts the bot; absent: an addressed warning does"
+            "description": "false: no teammate's event interrupts the bot; absent: a critical (danger.*, stop.*) does, and a warning heard by an urgent subscription"
           }
         }
       },
@@ -2671,6 +2694,53 @@
         "required": [
           "created",
           "task"
+        ]
+      },
+      "SubscriptionSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.SubscriptionSnapshot",
+        "description": "one topic a bot listens to in its teams",
+        "properties": {
+          "topic": {
+            "type": "string",
+            "description": "a name or pattern (* one segment, ** any)"
+          },
+          "mode": {
+            "type": "string",
+            "description": "task, message or note; absent: by the event's severity (info note, warning message, critical task)"
+          },
+          "from": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "only events of these teammates, operator or control-plane; absent: anyone in the team"
+          },
+          "urgent": {
+            "type": "boolean",
+            "description": "true: a warning it hears makes an urgent task"
+          },
+          "objective": {
+            "type": "string",
+            "description": "the template of the task it makes; absent: who said what"
+          },
+          "status": {
+            "type": "string",
+            "description": "active (absent) or pending: a bot's ask a person has not approved; a pending subscription hears nothing"
+          },
+          "askedBy": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          },
+          "askedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "topic"
         ]
       },
       "TaskLineage": {

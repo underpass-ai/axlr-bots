@@ -56,17 +56,6 @@ func (t Triggers) Named(name string) (Trigger, bool) {
 // List returns the triggers, copied.
 func (t Triggers) List() []Trigger { return append([]Trigger(nil), t.list...) }
 
-// Hearing finds the first event trigger that takes the event; false when
-// none does.
-func (t Triggers) Hearing(name EventName) (Trigger, bool) {
-	for _, trigger := range t.list {
-		if trigger.Type() == TriggerEvent && trigger.Hears(name) {
-			return trigger, true
-		}
-	}
-	return Trigger{}, false
-}
-
 // Timers returns the timer triggers.
 func (t Triggers) Timers() []Trigger {
 	var out []Trigger

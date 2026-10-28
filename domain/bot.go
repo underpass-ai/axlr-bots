@@ -22,6 +22,7 @@ type Bot struct {
 	delegation   Delegation
 	teams        Teams
 	events       EventPolicy
+	subs         Subscriptions
 	status       BotStatus
 	createdAt    time.Time
 	updatedAt    time.Time
@@ -119,32 +120,35 @@ func (b Bot) Events() EventPolicy { return b.events }
 // SetEvents replaces what the bot may emit to its teams.
 func (b *Bot) SetEvents(events EventPolicy) { b.events = events }
 
-// Hears says whether a teammate's event becomes a task of the bot, and
-// under which trigger: the first event trigger whose names fit or, when
-// the bot declares none, the team's default, which takes the events
-// addressed to the bot and the team's warnings and criticals.
-func (b Bot) Hears(name EventName, severity Severity, addressed bool) (Trigger, bool) {
-	if b.triggers.Has(TriggerEvent) {
-		return b.triggers.Hearing(name)
-	}
-	if addressed || severity.AtLeast(SeverityWarning) {
-		return TeamEventTrigger(), true
-	}
-	return Trigger{}, false
+// Subscriptions are the topics the bot listens to in its teams.
+func (b Bot) Subscriptions() Subscriptions { return b.subs }
+
+// SetSubscriptions replaces the topics the bot listens to.
+func (b *Bot) SetSubscriptions(subs Subscriptions) { b.subs = subs }
+
+// Hears says whether a teammate's event reaches the bot, and by which
+// subscription: the first active one whose topic and from fit; else
+// the implicit one when the event is addressed to the bot, or is the
+// team's default (danger, stop) and the bot subscribes to nothing.
+func (b Bot) Hears(name EventName, from string, by Publisher, addressed bool) (Subscription, bool) {
+	return b.subs.Hearing(name, from, by, addressed)
 }
 
-// InterruptedBy reports whether the event the bot heard by the trigger
-// makes an urgent task: only a warning or a critical, only when the bot
-// is interruptible, and then when it was addressed to the bot (the
-// team's default) or the bot's own event trigger says interrupt.
-func (b Bot) InterruptedBy(trigger Trigger, severity Severity, addressed bool) bool {
-	if !b.events.Interruptible() || !severity.AtLeast(SeverityWarning) {
+// InterruptedBy reports whether an event of the kind heard by the
+// subscription makes an urgent task: never when the bot is not
+// interruptible; always for a critical (error, danger, stop); for a
+// warning only when the subscription says urgent.
+func (b Bot) InterruptedBy(sub Subscription, kind TopicKind) bool {
+	if !b.events.Interruptible() {
 		return false
 	}
-	if b.triggers.Has(TriggerEvent) {
-		return trigger.Interrupts()
+	switch kind.Severity() {
+	case SeverityCritical:
+		return true
+	case SeverityWarning:
+		return sub.Urgent()
 	}
-	return addressed
+	return false
 }
 
 // IsTeammateOf reports whether the bot and other are different bots of
@@ -272,17 +276,18 @@ func (b Bot) Snapshot() BotSnapshot {
 			MaxDelegationDepth:   b.budgets.MaxDelegationDepth(),
 			TaskTimeoutSeconds:   int(b.budgets.TaskTimeout() / time.Second),
 		},
-		Level:      b.level.String(),
-		ToolRules:  b.toolRules.Snapshot(),
-		Triggers:   b.triggers.Snapshot(),
-		Placement:  b.placement.Snapshot(),
-		Approvals:  b.approvals.Snapshot(),
-		Delegation: b.delegation.Snapshot(),
-		Groups:     b.teams.Snapshot(),
-		Events:     b.events.Snapshot(),
-		Status:     b.status.String(),
-		CreatedAt:  b.createdAt,
-		UpdatedAt:  b.updatedAt,
+		Level:         b.level.String(),
+		ToolRules:     b.toolRules.Snapshot(),
+		Triggers:      b.triggers.Snapshot(),
+		Placement:     b.placement.Snapshot(),
+		Approvals:     b.approvals.Snapshot(),
+		Delegation:    b.delegation.Snapshot(),
+		Groups:        b.teams.Snapshot(),
+		Events:        b.events.Snapshot(),
+		Subscriptions: b.subs.Snapshot(),
+		Status:        b.status.String(),
+		CreatedAt:     b.createdAt,
+		UpdatedAt:     b.updatedAt,
 	}
 }
 
@@ -339,10 +344,17 @@ func RestoreBot(s BotSnapshot) (Bot, error) {
 	if err := bot.Govern(level, rules); err != nil {
 		return Bot{}, err
 	}
-	triggers, err := NewTriggers(s.Triggers)
+	// Event triggers stored before subscriptions are read as these.
+	plain, subscriptions := SubscriptionsFromTriggers(s.Triggers, s.Subscriptions)
+	triggers, err := NewTriggers(plain)
 	if err != nil {
 		return Bot{}, err
 	}
+	subs, err := NewSubscriptions(subscriptions)
+	if err != nil {
+		return Bot{}, err
+	}
+	bot.SetSubscriptions(subs)
 	placement, err := NewPlacement(s.Placement.Nodes, s.Placement.Selector)
 	if err != nil {
 		return Bot{}, err

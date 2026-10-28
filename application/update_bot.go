@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -38,6 +39,13 @@ func (uc UpdateBot) Execute(ctx context.Context, id domain.BotID, patch BotPatch
 	if len(changed) == 0 {
 		return domain.Bot{}, domain.ValidationError{Field: "patch", Reason: "names no field to change"}
 	}
+	subscribed := slices.Contains(changed, "subscriptions")
+	if subscribed {
+		if err := checkSubscriptionSenders(ctx, uc.deps, bot); err != nil {
+			_ = uc.rec.audit(ctx, "bot.update", id.String(), domain.AuditDenied, map[string]string{"reason": err.Error()})
+			return domain.Bot{}, err
+		}
+	}
 	bot.Touch(uc.deps.Clock.Now())
 	if err := uc.deps.Bots.Save(ctx, bot); err != nil {
 		return domain.Bot{}, err
@@ -49,6 +57,15 @@ func (uc UpdateBot) Execute(ctx context.Context, id domain.BotID, patch BotPatch
 	}
 	if err := uc.rec.event(ctx, domain.EventBotUpdated, bot, "", "", payload); err != nil {
 		return domain.Bot{}, err
+	}
+	if subscribed {
+		list := bot.Subscriptions().Snapshot()
+		if list == nil {
+			list = []domain.SubscriptionSnapshot{}
+		}
+		if err := uc.rec.event(ctx, domain.EventSubscriptionChanged, bot, "", "", map[string]any{"subscriptions": list, "by": domain.FromOperator}); err != nil {
+			return domain.Bot{}, err
+		}
 	}
 	if err := uc.rec.audit(ctx, "bot.update", id.String(), domain.AuditOK, map[string]string{"fields": joinStrings(changed)}); err != nil {
 		return domain.Bot{}, err
@@ -111,10 +128,20 @@ func applyPatch(bot *domain.Bot, patch BotPatch) ([]string, error) {
 			return nil, err
 		}
 	}
+	subscriptions := bot.Subscriptions().Snapshot()
+	subscribed := patch.Subscriptions != nil
+	if subscribed {
+		subscriptions = *patch.Subscriptions
+	}
 	if patch.Triggers != nil || patch.Placement != nil {
 		triggers, placement := bot.Triggers(), bot.Placement()
 		if patch.Triggers != nil {
-			if triggers, err = domain.NewTriggers(*patch.Triggers); err != nil {
+			// Event triggers are read as subscriptions, for one release.
+			var plain []domain.TriggerSnapshot
+			before := len(subscriptions)
+			plain, subscriptions = domain.SubscriptionsFromTriggers(*patch.Triggers, subscriptions)
+			subscribed = subscribed || len(subscriptions) != before
+			if triggers, err = domain.NewTriggers(plain); err != nil {
 				return nil, err
 			}
 			changed = append(changed, "triggers")
@@ -160,6 +187,17 @@ func applyPatch(bot *domain.Bot, patch BotPatch) ([]string, error) {
 		}
 		bot.SetEvents(events)
 		changed = append(changed, "events")
+	}
+	if subscribed {
+		subs, err := domain.NewSubscriptions(subscriptions)
+		if err != nil {
+			return nil, err
+		}
+		if err := keepsPendingAsks(bot.Subscriptions(), subs); err != nil {
+			return nil, err
+		}
+		bot.SetSubscriptions(subs)
+		changed = append(changed, "subscriptions")
 	}
 	return changed, nil
 }
