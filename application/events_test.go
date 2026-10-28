@@ -39,7 +39,7 @@ func portTeam(t *testing.T, h *harness) Assignment {
 func TestTheAssignmentOffersTheEmitTool(t *testing.T) {
 	h := newHarness()
 	run := portTeam(t, h).Run
-	if run.Events == nil || !contains(run.AllowedTools, EmitEventToolName) || strings.Join(run.Events.Teammates, ",") != "quad-1,quad-2" || run.Events.MaxSeverity != "warning" || run.Events.Names[0] != "**" {
+	if run.Events == nil || !contains(run.AllowedTools, EmitEventToolName) || strings.Join(run.Events.Teammates, ",") != "quad-1,quad-2" || run.Events.Names[0] != "**" {
 		t.Fatalf("events offer = %+v tools %v", run.Events, run.AllowedTools)
 	}
 	if got := run.NodeTools(); len(got) != 2 || got[1] != EmitEventToolName {
@@ -52,7 +52,7 @@ func TestAWarningAddressedToATeammateBecomesItsTask(t *testing.T) {
 	ctx := context.Background()
 	parent := portTeam(t, h)
 	h.clock.now = t0.Add(10 * time.Second)
-	answer := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "recall", Message: "Ship 244 is entering\nyour zone", Severity: "warning", To: []string{"quad-1"}, Data: json.RawMessage(`{"mmsi": 244}`)})
+	answer := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "warn.ship-near", Message: "Ship 244 is entering\nyour zone", To: []string{"quad-1"}, Data: json.RawMessage(`{"mmsi": 244}`)})
 	if answer.Refused != nil || len(answer.Deliveries) != 1 || answer.Deliveries[0].BotID != "quad-1" || !answer.Deliveries[0].Created || answer.Deliveries[0].Trigger != "team" || len(answer.Skipped) != 0 {
 		t.Fatalf("answer = %+v", answer)
 	}
@@ -61,7 +61,7 @@ func TestAWarningAddressedToATeammateBecomesItsTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	objective := task.Objective().String()
-	for _, want := range []string{"Your teammate plane says (warning, event recall): Ship 244 is entering your zone", `The facts it gave: {"mmsi":244}`} {
+	for _, want := range []string{"Your teammate plane says (warning, event warn.ship-near): Ship 244 is entering your zone", `The facts it gave: {"mmsi":244}`} {
 		if !strings.Contains(objective, want) {
 			t.Errorf("objective lacks %q: %s", want, objective)
 		}
@@ -81,8 +81,9 @@ func TestAWarningAddressedToATeammateBecomesItsTask(t *testing.T) {
 	if audit := h.log.audits[len(h.log.audits)-1]; audit.Action != "event.emit" || audit.Outcome != domain.AuditOK {
 		t.Errorf("audit = %+v", audit)
 	}
-	// The node retries the same call: the same event, nothing new.
-	again := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "recall", Message: "Ship 244 is entering your zone", Severity: "warning", To: []string{"quad-1"}, Data: json.RawMessage(`{ "mmsi" : 244 }`)})
+	// The node retries the same call: the same event, nothing new, even
+	// when an older node sends a severity, which is ignored.
+	again := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "warn.ship-near", Message: "Ship 244 is entering your zone", Severity: "critical", To: []string{"quad-1"}, Data: json.RawMessage(`{ "mmsi" : 244 }`)})
 	if !again.Deduplicated || again.EventID != answer.EventID || again.Deliveries[0].Created || again.Deliveries[0].TaskID != answer.Deliveries[0].TaskID {
 		t.Errorf("again = %+v", again)
 	}
@@ -104,7 +105,7 @@ func TestBroadcastsReachWhoHearsThem(t *testing.T) {
 	if info.Refused != nil || len(info.Deliveries) != 0 || len(info.Skipped) != 0 {
 		t.Errorf("info broadcast = %+v", info)
 	}
-	warning := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "ship.sighted", Message: "a ship in the lane", Severity: "warning"})
+	warning := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "warn.ship-sighted", Message: "a ship in the lane"})
 	if len(warning.Deliveries) != 2 || len(warning.Skipped) != 1 || warning.Skipped[0].BotID != "quad-3" || warning.Skipped[0].Reason != domain.RefusedTargetUnavailable {
 		t.Errorf("warning broadcast = %+v", warning)
 	}
@@ -144,7 +145,7 @@ func TestEventRefusals(t *testing.T) {
 	onlineNode(t, h, "web-1")
 	alone := teamBot(t, h, "alone", nil, nil)
 	strict := teamBot(t, h, "strict", []string{"port"}, func(d *BotDefinition) {
-		d.Events = &domain.EventsSnapshot{Emit: []domain.EmitRuleSnapshot{{Name: "recall", MaxSeverity: "info"}}, PerMinute: 1}
+		d.Events = &domain.EventsSnapshot{Emit: []domain.EmitRuleSnapshot{{Name: "recall", MaxSeverity: "info"}, {Name: "**.bot"}}, PerMinute: 1}
 	})
 	teamBot(t, h, "quad-1", []string{"port"}, nil)
 	teamBot(t, h, "stranger", []string{"other"}, nil)
@@ -161,7 +162,8 @@ func TestEventRefusals(t *testing.T) {
 		reason  string
 	}{
 		{EmitEventCommand{Name: "weather", Message: "rain"}, domain.RefusedNotAllowed},
-		{EmitEventCommand{Name: "recall", Message: "x", Severity: "warning"}, domain.RefusedSeverityNotAllowed},
+		{EmitEventCommand{Name: "error.bot", Message: "x"}, domain.RefusedNotAllowed},
+		{EmitEventCommand{Name: "done.bot", Message: "x"}, domain.RefusedNotAllowed},
 		{EmitEventCommand{Name: "recall", Message: "x", To: []string{"stranger"}}, domain.RefusedNotMember},
 	}
 	for _, c := range cases {
@@ -188,7 +190,7 @@ func TestEventCallsAreValidated(t *testing.T) {
 	h := newHarness()
 	parent := portTeam(t, h)
 	bad := []EmitEventCommand{
-		{Name: "Bad", Message: "x"}, {Name: "recall"}, {Name: "recall", Message: "x", Severity: "loud"},
+		{Name: "Bad", Message: "x"}, {Name: "recall"},
 		{Name: "recall", Message: "x", Data: json.RawMessage(`[1]`)}, {Name: "recall", Message: "x", Data: json.RawMessage(`{`)},
 		{Name: "recall", Message: "x", Data: json.RawMessage(`{"a":"` + strings.Repeat("x", MaxEventData) + `"}`)},
 		{Name: "recall", Message: "x", To: []string{"Bad Id"}}, {Name: "recall", Message: "x", To: make([]string, 17)},
@@ -215,7 +217,7 @@ func TestEventChainsAreCutByDepthAndCycle(t *testing.T) {
 	teamBot(t, h, "quad-1", []string{"port"}, deep)
 	teamBot(t, h, "quad-2", []string{"port"}, deep)
 	parent := runOnNode(t, h, plane, "web-1", "ask-1")
-	first := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "recall", Message: "x", Severity: "warning", To: []string{"quad-1"}})
+	first := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "warn.recall", Message: "x", To: []string{"quad-1"}})
 	if _, err := NewReportExecution(h.deps).Execute(ctx, "web-1", parent.ExecutionID, ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "told"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +225,7 @@ func TestEventChainsAreCutByDepthAndCycle(t *testing.T) {
 	if child.Run == nil || child.Run.TaskID.String() != first.Deliveries[0].TaskID {
 		t.Fatalf("child = %+v", child.Run)
 	}
-	back := emit(t, h, "web-1", child.ExecutionID, EmitEventCommand{Name: "ack", Message: "going home", Severity: "warning"})
+	back := emit(t, h, "web-1", child.ExecutionID, EmitEventCommand{Name: "warn.ack", Message: "going home"})
 	reasons := map[string]string{}
 	for _, s := range back.Skipped {
 		reasons[s.BotID] = s.Reason
@@ -235,7 +237,7 @@ func TestEventChainsAreCutByDepthAndCycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	grandchild := nextFor(t, h, "web-1")
-	tooDeep := emit(t, h, "web-1", grandchild.ExecutionID, EmitEventCommand{Name: "ack", Message: "and me", Severity: "warning", To: []string{"plane"}})
+	tooDeep := emit(t, h, "web-1", grandchild.ExecutionID, EmitEventCommand{Name: "warn.ack", Message: "and me", To: []string{"plane"}})
 	if len(tooDeep.Skipped) != 1 || tooDeep.Skipped[0].Reason != domain.RefusedDepthExceeded {
 		t.Errorf("too deep = %+v", tooDeep)
 	}

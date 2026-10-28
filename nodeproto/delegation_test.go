@@ -72,13 +72,17 @@ func TestDelegationAnswersRoundTrip(t *testing.T) {
 }
 
 func TestTheEventsOfferAndTheEmitAnswerTravel(t *testing.T) {
-	offer := &application.EventsOffer{Names: []string{"recall"}, MaxSeverity: "warning", Teammates: []string{"quad-1"}}
+	offer := &application.EventsOffer{Names: []string{"recall"}, Teammates: []string{"quad-1"}}
 	a := application.Assignment{ExecutionID: "exec-1", Kind: domain.ExecutionRun, Run: &application.ExecutionRequest{BotID: "plane", Objective: "o", Level: domain.AutonomyObserve, Events: offer}}
-	data, _ := json.Marshal(FromAssignment(a))
+	message := FromAssignment(a)
+	if message.Run.Events.MaxSeverity != "critical" {
+		t.Errorf("an older node is offered %q", message.Run.Events.MaxSeverity)
+	}
+	data, _ := json.Marshal(message)
 	var decoded AssignmentMessage
 	_ = json.Unmarshal(data, &decoded)
 	back, err := ToAssignment(decoded)
-	if err != nil || back.Run.Events == nil || back.Run.Events.Teammates[0] != "quad-1" || back.Run.Events.MaxSeverity != "warning" {
+	if err != nil || back.Run.Events == nil || back.Run.Events.Teammates[0] != "quad-1" {
 		t.Fatalf("run events = %+v %v", back.Run, err)
 	}
 	decide := application.Assignment{ExecutionID: "exec-2", Kind: domain.ExecutionDecide, Decide: &application.DecisionRequest{BotID: "plane", SessionID: "s", Decision: "approve", Level: domain.AutonomyObserve, Events: offer}}

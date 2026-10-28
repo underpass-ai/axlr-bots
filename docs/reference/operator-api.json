@@ -1780,11 +1780,11 @@
       "EmitRuleSnapshot": {
         "type": "object",
         "x-go-type": "domain.EmitRuleSnapshot",
-        "description": "one rule of what a bot may emit: a name or pattern (* one segment, ** any) and the highest severity",
+        "description": "one rule of what a bot may emit: a name or pattern (* one segment, ** any); the name's kind (its first segment) fixes the severity",
         "properties": {
           "maxSeverity": {
             "type": "string",
-            "description": "info, warning or critical; absent: warning"
+            "description": "accepted from older definitions and ignored: the kind decides"
           },
           "name": {
             "type": "string"

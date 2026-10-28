@@ -9,11 +9,10 @@ const EmitEventToolName = "axlr_bots_emit_event"
 const MaxEventData = 8 << 10
 
 // EventsOffer tells the node that the execution's bot may emit events to
-// its teams: the names or patterns it may use, the highest severity, and
-// the teammates an event may be addressed to. The control plane checks
+// its teams: the names or patterns it may use and the teammates an
+// event may be addressed to. The control plane checks
 // every call again; the offer only describes the tool.
 type EventsOffer struct {
-	Names       []string
-	MaxSeverity string
-	Teammates   []string
+	Names     []string
+	Teammates []string
 }

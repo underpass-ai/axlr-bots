@@ -158,7 +158,7 @@ func eventsOffer(bot domain.Bot, mates []domain.Bot) *EventsOffer {
 	if bot.Teams().Empty() {
 		return nil
 	}
-	offer := &EventsOffer{MaxSeverity: bot.Events().Highest().String(), Teammates: []string{}}
+	offer := &EventsOffer{Teammates: []string{}}
 	for _, rule := range bot.Events().Rules() {
 		offer.Names = append(offer.Names, rule.Pattern().String())
 	}
