@@ -98,7 +98,7 @@ A subscription is one entry of the bot's `subscriptions` (at most 16):
 
 | Rule | Decision |
 |---|---|
-| who hears an event | every Enabled teammate of the emitter, never the emitter: **addressed** (in `to`) → heard, by its matching active subscription when it has one, else by the implicit subscription (mode by severity); **not addressed** → heard only by a matching active subscription whose `from` allows the emitter; **no subscriptions and not addressed** → heard only when the kind is `danger` or `stop` (the team's default) |
+| who hears an event | every Enabled teammate of the emitter, never the emitter: **addressed** (in `to`), or a **`danger.*` or `stop.*` broadcast** → always heard (the implicit subscription, mode by severity); a matching active subscription only adds its `from`, `objective` and `urgent`, and a subscription whose `from` excludes the emitter does not block the implicit one; **any other event not addressed** → heard only by a matching active subscription whose `from` allows the emitter. A pending subscription counts as none |
 | `to` | at most 16 teammates; a bot outside the emitter's teams refuses the whole event (`not_member`), as today. `not_listening` disappears: an addressed event is always heard |
 | mode `task` | a task of the receiver with trigger `event` (name: the subscription's topic, or `team` for the implicit one), objective from the template, key `event:<event id>:<receiver>`, lineage as today (`EventID`, depth + 1, chain), on the receiver's own budgets and timeout; urgent as the `urgent` rule says. Preemption as today |
 | mode `message` | when the receiver has a Running task with a leased execution: a `bot.task.message` on that task, `from: event:<event id>`, text `Your teammate <from> says (<name>): <message>` plus the data as compact JSON on a second line; the node relays it as the operator's messages ([mid-run chat](../reference/node-protocol.md)). Otherwise the delivery is a `task` |
@@ -207,6 +207,7 @@ Domain `TopicKind`, severity derived, default emit rules by kind, `error.*`/`don
 | another teammate without subscriptions | no delivery, no skip (a broadcast `info`) |
 | the same event from a bot not in `from` | not heard; no skip |
 | a bot with no subscriptions; a teammate emits `danger.fire` | an urgent task (team default); with `events.interruptible: false` a normal task |
+| a bot subscribed only to `pedido.*` from `recepcion`; `almacen` emits `stop.all` | an urgent task: `danger.*` and `stop.*` broadcasts reach every Enabled teammate whatever its subscriptions |
 | `stop.recall` addressed to a bot whose subscriptions do not match `stop.*` | heard anyway (implicit subscription), urgent |
 | a teammate emits `recall` addressed to a bot | read as `stop.recall`: an urgent task |
 | a teammate emits `warn.x` addressed to a bot with no matching subscription | a task, **not** urgent |

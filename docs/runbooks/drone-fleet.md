@@ -380,13 +380,17 @@ Then Tasks → New task on that bot: "go to the ship CONESTE". The call waits in
 
 ## 11. A team that warns and recalls
 
-Every vehicle's companion computer serves a second tool, `return_home {reason}`: RTL to its station, where a quad lands, a rover parks and the plane lines up and lands by itself; a vehicle at its station stays there. Coming home is safe, so the pilots' definitions let the control plane approve it (`approvals.autoApprove`), while `run_mission` still waits for a person. The pilots are in team `port` (`groups`), so each knows the others and may warn or recall them with an event ([teams and events](teams-and-events.md)).
+Every vehicle's companion computer serves a second tool, `return_home {reason}`: RTL to its station, where a quad lands, a rover parks and the plane lines up and lands by itself; a vehicle at its station stays there. Coming home is safe, so the pilots' definitions let the control plane approve it (`approvals.autoApprove`), while `run_mission` still waits for a person. The pilots are in team `port` (`groups`), so each knows the others and may warn or recall them with an event ([teams and events](teams-and-events.md)). Their definitions show the three ways an event lands ([publish/subscribe](../architecture/pubsub-events.md)): `stop.*` and `danger.*` reach every pilot as an urgent task; each listens to `warn.*` as a **message** into its running task and to `info.*` as a **note** for its next task (`subscriptions`). A pilot recalls a teammate with `stop.recall`; one registered before still emits `recall`, which the control plane reads as `stop.recall` for one release.
 
 | From the panel | What the vehicle does |
 |---|---|
 | a bot in `port` with `return_home` in its Tools (New bot: Team `port`) | the panel adds `autoApprove` for `return_home` |
-| New task on the plane's bot: «Dile al quad-1 que se retire: hay un barco» | the plane emits a `warning` to `pilot-quad-1`; quad-1's bot gets an urgent task, calls `return_home`, the quad flies home; the banner and **Teams → port** say why |
+| New task on the plane's bot: «Dile al quad-1 que se retire: hay un barco» | the plane emits `stop.recall` to `pilot-quad-1`; quad-1's bot gets an urgent task, `return_home` by `policy:autoApprove`, the quad flies home; the banner and **Teams → port** say why, with the mode of each delivery |
 | **Recall** on quad-1's page | the same, from the operator |
+| **Teams → port → Publish an event**: `stop.all`, «Storm coming» | every pilot gets an urgent task and comes home: the generalised Recall |
+| the plane emits `info.ship-seen` | no task: each quad notes it, and its next task's prompt carries it (**Knew**) |
+
+To move a running fleet's pilots to these definitions, patch each pilot's `mission` and `subscriptions` (`bot update pilot-quad-1 --file patch.json`, the patch built from the file as for the rovers' mission above); this needs a control plane with publish/subscribe.
 
 The chart's `vehicle.json` lets the sidecar's AXLR call both tools (`allow_tools`); a `fleet-app` image older than `return_home` answers it as an unknown tool.
 
