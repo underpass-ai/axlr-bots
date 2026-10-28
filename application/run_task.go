@@ -64,6 +64,9 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 	if err := uc.deps.Executions.Save(ctx, execution); err != nil {
 		return RunTaskResult{}, err
 	}
+	if err := keepNotes(ctx, uc.deps, bot, &task); err != nil {
+		return RunTaskResult{}, err
+	}
 	if err := uc.deps.Tasks.Save(ctx, task); err != nil {
 		return RunTaskResult{}, err
 	}
@@ -75,7 +78,7 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 	if err != nil {
 		return RunTaskResult{}, err
 	}
-	prompt, err := domain.NewTeamPrompt(bot.Mission(), task.Objective(), directoryOf(bot, mates))
+	prompt, err := domain.NewTeamPrompt(bot.Mission(), task.Objective(), directoryOf(bot, mates), task.Notes())
 	if err != nil {
 		return RunTaskResult{}, err
 	}

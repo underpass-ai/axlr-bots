@@ -1,5 +1,7 @@
 package domain
 
+import "strings"
+
 // Prompt is what the runtime receives for one execution: the bot's
 // mission, which says what the bot is for and where its remit ends, and
 // the task's objective. Without the mission in the prompt the model never
@@ -25,22 +27,32 @@ func NewPrompt(mission Mission, objective Objective) (Prompt, error) {
 	return Prompt(value), nil
 }
 
-// NewTeamPrompt composes the mission, the team directory and the
-// objective. The directory takes what the mission and the objective
-// leave of the prompt's limit and is cut from the end to fit; it never
-// cuts them, and a directory that does not fit at all is left out.
-func NewTeamPrompt(mission Mission, objective Objective, directory TeamDirectory) (Prompt, error) {
+// NewTeamPrompt composes the mission, the team directory, the notes of
+// what the bot heard and the objective. The directory and the notes
+// take what the mission and the objective leave of the prompt's limit:
+// the notes are cut first (the oldest), then the directory (from the
+// end); neither ever cuts the mission or the objective, and what does
+// not fit at all is left out.
+func NewTeamPrompt(mission Mission, objective Objective, directory TeamDirectory, notes EventNotes) (Prompt, error) {
 	plain, err := NewPrompt(mission, objective)
-	if err != nil || directory.Empty() {
+	if err != nil || directory.Empty() && notes.Empty() {
 		return plain, err
 	}
 	head := "You are a bot. Your mission, set by your operator:\n" + mission.String() + "\n\n"
 	tail := "\n\nThe task:\n" + objective.String()
-	rendered := directory.Render(MaxPromptLength - len(head) - len(tail))
-	if rendered == "" {
+	room := MaxPromptLength - len(head) - len(tail)
+	var blocks []string
+	if rendered := directory.Render(room); rendered != "" {
+		blocks = append(blocks, rendered)
+		room -= len(rendered) + len("\n\n")
+	}
+	if rendered := notes.Render(room); rendered != "" {
+		blocks = append(blocks, rendered)
+	}
+	if len(blocks) == 0 {
 		return plain, nil
 	}
-	return newPromptText(head + rendered + tail)
+	return newPromptText(head + strings.Join(blocks, "\n\n") + tail)
 }
 
 // newPromptText validates a composed prompt.

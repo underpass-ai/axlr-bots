@@ -181,17 +181,17 @@ func TestTeamPromptFitsTheLimit(t *testing.T) {
 	mission, _ := NewMission("Fly the plane.")
 	objective, _ := NewObjective("Warn quad-1.")
 	plain, _ := NewPrompt(mission, objective)
-	if got, err := NewTeamPrompt(mission, objective, TeamDirectory{}); err != nil || got != plain {
+	if got, err := NewTeamPrompt(mission, objective, TeamDirectory{}, EventNotes{}); err != nil || got != plain {
 		t.Errorf("no directory = %q %v", got, err)
 	}
 	directory := NewTeamDirectory([]TeamName{"port"}, []Teammate{{ID: "quad-1", Purpose: "Pilot.", Where: "any node"}})
-	got, err := NewTeamPrompt(mission, objective, directory)
+	got, err := NewTeamPrompt(mission, objective, directory, EventNotes{})
 	if err != nil || !strings.Contains(got.String(), "Fly the plane.\n\nYour teammates (team port)") || !strings.HasSuffix(got.String(), "- quad-1: Pilot. Runs on any node.\n\nThe task:\nWarn quad-1.") {
 		t.Errorf("prompt = %q %v", got, err)
 	}
 	big, _ := NewMission(strings.Repeat("m", 2000))
 	huge, _ := NewObjective(strings.Repeat("o", 5900))
-	got, err = NewTeamPrompt(big, huge, directory)
+	got, err = NewTeamPrompt(big, huge, directory, EventNotes{})
 	if err != nil || strings.Contains(got.String(), "teammates") || !strings.HasSuffix(got.String(), "o") {
 		t.Errorf("full prompt keeps mission and objective, drops the directory: %v", err)
 	}
