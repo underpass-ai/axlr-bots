@@ -21,6 +21,16 @@ func NewEventName(raw string) (EventName, error) {
 
 func (n EventName) String() string { return string(n) }
 
+// Canonical is the name as the bus reads it: the kindless recall the
+// deployed pilots emit is stop.recall, for one release; any other name
+// is itself.
+func (n EventName) Canonical() EventName {
+	if n == recallAlias {
+		return EventName(KindStop.String() + "." + recallAlias)
+	}
+	return n
+}
+
 // validateEventSegments checks a name or, with wildcards, a pattern:
 // segments of [a-z0-9-], or * and ** in a pattern.
 func validateEventSegments(field, value string, wildcards bool) error {

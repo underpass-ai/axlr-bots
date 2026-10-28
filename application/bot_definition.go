@@ -10,22 +10,25 @@ import "github.com/underpass-ai/axlr-bots/domain"
 // which nodes run them (any when absent), Approvals how a pending
 // call waits for a person (an hour, then deny, when absent),
 // Delegation which bots outside its teams it may ask to do a task (none
-// when absent) and Groups the teams it belongs to (none when absent).
+// when absent), Groups the teams it belongs to (none when absent) and
+// Subscriptions the topics it listens to in them (none when absent; an
+// event trigger is read as one, for one release).
 type BotDefinition struct {
-	ID           string                     `json:"id,omitempty"`
-	Tenant       string                     `json:"tenant"`
-	Name         string                     `json:"name"`
-	Owner        string                     `json:"owner"`
-	Mission      string                     `json:"mission"`
-	AllowedTools []string                   `json:"allowedTools"`
-	Level        string                     `json:"level,omitempty"`
-	ToolRules    domain.ToolRulesSnapshot   `json:"toolRules"`
-	Triggers     []domain.TriggerSnapshot   `json:"triggers"`
-	Placement    domain.PlacementSnapshot   `json:"placement"`
-	Approvals    domain.ApprovalsSnapshot   `json:"approvals"`
-	Delegation   *domain.DelegationSnapshot `json:"delegation,omitempty"`
-	Groups       []string                   `json:"groups,omitempty"`
-	Events       *domain.EventsSnapshot     `json:"events,omitempty"`
-	Model        ModelPolicyDefinition      `json:"model"`
-	Budgets      BudgetsDefinition          `json:"budgets"`
+	ID            string                        `json:"id,omitempty"`
+	Tenant        string                        `json:"tenant"`
+	Name          string                        `json:"name"`
+	Owner         string                        `json:"owner"`
+	Mission       string                        `json:"mission"`
+	AllowedTools  []string                      `json:"allowedTools"`
+	Level         string                        `json:"level,omitempty"`
+	ToolRules     domain.ToolRulesSnapshot      `json:"toolRules"`
+	Triggers      []domain.TriggerSnapshot      `json:"triggers"`
+	Placement     domain.PlacementSnapshot      `json:"placement"`
+	Approvals     domain.ApprovalsSnapshot      `json:"approvals"`
+	Delegation    *domain.DelegationSnapshot    `json:"delegation,omitempty"`
+	Groups        []string                      `json:"groups,omitempty"`
+	Events        *domain.EventsSnapshot        `json:"events,omitempty"`
+	Subscriptions []domain.SubscriptionSnapshot `json:"subscriptions,omitempty"`
+	Model         ModelPolicyDefinition         `json:"model"`
+	Budgets       BudgetsDefinition             `json:"budgets"`
 }

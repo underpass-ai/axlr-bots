@@ -89,6 +89,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return botUpdate(ctx, service, rest, stdout, stderr)
 	case "bot events":
 		return botEvents(ctx, service, rest, stdout, stderr)
+	case "bot subscribe":
+		return botSubscribe(ctx, service, rest, stdout, stderr)
+	case "bot unsubscribe":
+		return botUnsubscribe(ctx, service, rest, stdout, stderr)
+	case "bot subscriptions":
+		return botSubscriptions(ctx, service, rest, stdout, stderr)
 	case "group list":
 		return groupList(ctx, service, rest, stdout, stderr)
 	case "group get":
@@ -209,8 +215,12 @@ func printUsage(w io.Writer) {
   bot update <bot-id> --file <patch.json>
                                       replace the fields the patch names (mission, level,
                                       allowedTools, toolRules, triggers, placement, approvals,
-                                      delegation, groups, events, model, budgets)
+                                      delegation, groups, events, subscriptions, model, budgets)
   bot events <bot-id> [--limit 100]   the bot's newest events, oldest first
+  bot subscribe <bot-id> <topic> [--mode task|message|note] [--from a,b]
+                                      make the bot listen to a topic of its teams
+  bot unsubscribe <bot-id> <topic>    stop it listening, or drop its pending ask
+  bot subscriptions <bot-id>          the topics it listens to; a pending ask is marked
   group list                          list the teams the bots name, with their members
   group get <group> [--tenant <id>]   show one team: each member's purpose, tools, where it runs
   group events <group> [--after <event-id>] [--limit 100] [--tenant <id>]

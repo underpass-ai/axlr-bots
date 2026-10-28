@@ -62,14 +62,16 @@ func (p EventPolicy) MayEmit(name EventName) bool {
 		return false
 	}
 	for _, rule := range p.Rules() {
-		if rule.Pattern().Matches(name) {
+		// A rule written for the kindless recall still lets the bot emit
+		// it, now read as stop.recall.
+		if rule.Pattern().Matches(name) || name == EventName(recallAlias).Canonical() && rule.Pattern().Matches(recallAlias) {
 			return true
 		}
 	}
 	return false
 }
 
-// Interruptible reports whether a teammate's warning may interrupt the
+// Interruptible reports whether a teammate's event may interrupt the
 // bot; true unless its definition says interruptible false.
 func (p EventPolicy) Interruptible() bool { return !p.steady }
 

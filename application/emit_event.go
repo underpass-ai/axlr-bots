@@ -133,6 +133,8 @@ func (uc EmitEvent) load(ctx context.Context, node domain.NodeID, executionID do
 	if err != nil {
 		return emission{}, err
 	}
+	// The kindless recall is stop.recall, for one release.
+	name = name.Canonical()
 	message, err := domain.NewEventMessage(command.Message)
 	if err != nil {
 		return emission{}, err
@@ -166,7 +168,8 @@ func (uc EmitEvent) load(ctx context.Context, node domain.NodeID, executionID do
 const MaxEventTargets = 16
 
 // deliver makes the teammate's task, or says why it gets none; neither
-// when the teammate simply does not hear the event.
+// when the teammate simply does not hear the event. Every delivery is a
+// task for now; the subscription's mode is recorded as task.
 func (uc EmitEvent) deliver(ctx context.Context, e emission, mate domain.Bot) (*EventDelivery, *EventSkip, error) {
 	addressed := slices.Contains(e.to, mate.ID())
 	if len(e.to) > 0 && !addressed {
@@ -175,10 +178,8 @@ func (uc EmitEvent) deliver(ctx context.Context, e emission, mate domain.Bot) (*
 	skip := func(reason, message string) (*EventDelivery, *EventSkip, error) {
 		return nil, &EventSkip{BotID: mate.ID().String(), Reason: reason, Message: message}, nil
 	}
-	trigger, hears := mate.Hears(e.name, e.severity, addressed)
+	sub, hears := mate.Hears(e.name, e.bot.ID().String(), domain.PublisherBot, addressed)
 	switch {
-	case !hears && addressed:
-		return skip("not_listening", "bot "+mate.ID().String()+" does not listen to "+e.name.String()+": its event triggers do not name it")
 	case !hears:
 		return nil, nil, nil
 	case !mate.AcceptsTasks():
@@ -193,13 +194,17 @@ func (uc EmitEvent) deliver(ctx context.Context, e emission, mate domain.Bot) (*
 	if lineage.Visited(mate.ID()) {
 		return skip(domain.RefusedCycle, fmt.Sprintf("bot %s is already on this chain (%s): telling it would loop", mate.ID(), strings.Join(append(lineage.Chain, e.bot.ID().String()), " → ")))
 	}
-	template := trigger.ObjectiveTemplate()
+	template := sub.ObjectiveTemplate()
 	if template == "" {
 		template = domain.DefaultEventObjective
 	}
 	objective, err := domain.RenderObjective(template, e.fields())
 	if err != nil {
-		return skip("objective", "the objective of "+mate.ID().String()+"'s trigger "+trigger.Name()+" does not render: "+err.Error())
+		return skip("objective", "the objective of "+mate.ID().String()+"'s subscription "+sub.TriggerName()+" does not render: "+err.Error())
+	}
+	trigger, err := domain.NewTriggerRef(domain.TriggerEvent.String(), sub.TriggerName())
+	if err != nil {
+		return nil, nil, err
 	}
 	key, err := domain.NewIdempotencyKey("event:" + e.id + ":" + mate.ID().String())
 	if err != nil {
@@ -216,17 +221,33 @@ func (uc EmitEvent) deliver(ctx context.Context, e emission, mate domain.Bot) (*
 		return nil, nil, err
 	}
 	s := submission{
-		action: "task.event", bot: mate, trigger: trigger.Ref(), objective: objective,
+		action: "task.event", bot: mate, trigger: trigger, objective: objective,
 		key: key, correlation: e.task.CorrelationID(), input: input, lineage: &child,
 	}
-	if mate.InterruptedBy(trigger, e.severity, addressed) {
+	if mate.InterruptedBy(sub, domain.KindOf(e.name)) {
 		s.priority, s.why = domain.PriorityUrgent, "a "+e.severity.String()+" from its teammate "+e.bot.ID().String()+", event "+e.name.String()
 	}
 	created, err := submitTask(ctx, uc.deps, s)
 	if err != nil {
 		return nil, nil, err
 	}
-	return &EventDelivery{BotID: mate.ID().String(), TaskID: created.Task.ID().String(), Trigger: trigger.Name(), Created: created.Created, Urgent: created.Task.IsUrgent()}, nil, nil
+	delivery := &EventDelivery{BotID: mate.ID().String(), Mode: domain.ModeTask.String(), TaskID: created.Task.ID().String(), Trigger: sub.TriggerName(), Created: created.Created, Urgent: created.Task.IsUrgent()}
+	if created.Created {
+		if err := uc.recordHeard(ctx, e, mate, *delivery); err != nil {
+			return nil, nil, err
+		}
+	}
+	return delivery, nil, nil
+}
+
+// recordHeard records on the receiver's stream that it heard the event
+// and what the event did to it.
+func (uc EmitEvent) recordHeard(ctx context.Context, e emission, mate domain.Bot, d EventDelivery) error {
+	payload := map[string]any{
+		"eventId": e.id, "name": e.name.String(), "from": e.bot.ID().String(), "by": string(domain.PublisherBot),
+		"severity": e.severity.String(), "message": e.message.String(), "mode": d.Mode, "subscription": d.Trigger, "taskId": d.TaskID, "urgent": d.Urgent,
+	}
+	return uc.rec.event(ctx, domain.EventEventHeard, mate, domain.TaskID(d.TaskID), e.task.CorrelationID(), payload)
 }
 
 // fields are what an event trigger's objective template reads and what
@@ -344,7 +365,7 @@ func botIDs(bots []domain.Bot) []string {
 func deliveriesPayload(deliveries []EventDelivery) []map[string]any {
 	out := make([]map[string]any, 0, len(deliveries))
 	for _, d := range deliveries {
-		out = append(out, map[string]any{"botId": d.BotID, "taskId": d.TaskID, "trigger": d.Trigger, "created": d.Created, "urgent": d.Urgent})
+		out = append(out, map[string]any{"botId": d.BotID, "mode": d.Mode, "taskId": d.TaskID, "trigger": d.Trigger, "created": d.Created, "urgent": d.Urgent})
 	}
 	return out
 }

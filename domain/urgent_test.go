@@ -103,28 +103,24 @@ func TestAutoApprove(t *testing.T) {
 
 func TestWhatInterruptsABot(t *testing.T) {
 	quad := teamTestBot(t, "quad-1", "default", []string{"port"})
-	team := TeamEventTrigger()
-	if !quad.InterruptedBy(team, SeverityWarning, true) || quad.InterruptedBy(team, SeverityWarning, false) || quad.InterruptedBy(team, SeverityInfo, true) {
+	team := implicitSubscription("warn.x")
+	if !quad.InterruptedBy(team, KindStop) || !quad.InterruptedBy(team, KindDanger) || quad.InterruptedBy(team, KindWarn) || quad.InterruptedBy(team, KindInfo) {
 		t.Error("the team's default is wrong")
+	}
+	loud, err := NewSubscription(SubscriptionSnapshot{Topic: "warn.*", Urgent: true})
+	if err != nil || !loud.Urgent() || !loud.Snapshot().Urgent {
+		t.Fatalf("loud = %+v %v", loud, err)
+	}
+	if !quad.InterruptedBy(loud, KindWarn) || quad.InterruptedBy(loud, KindInfo) {
+		t.Error("an urgent subscription is wrong")
 	}
 	steady, _ := NewEventPolicy(EventsSnapshot{Interruptible: new(bool)})
 	quad.SetEvents(steady)
-	if quad.InterruptedBy(team, SeverityCritical, true) || quad.Events().Interruptible() {
+	if quad.InterruptedBy(team, KindStop) || quad.InterruptedBy(loud, KindWarn) || quad.Events().Interruptible() {
 		t.Error("interruptible false still interrupts")
 	}
 	if s := quad.Events().Snapshot(); s == nil || s.Interruptible == nil || *s.Interruptible {
 		t.Errorf("snapshot = %+v", s)
-	}
-	quad.SetEvents(EventPolicy{})
-	loud, err := NewTrigger(TriggerSnapshot{Type: "event", Name: "ships", Events: []string{"ship.*"}, Interrupt: true})
-	if err != nil || !loud.Interrupts() || !loud.Snapshot().Interrupt {
-		t.Fatalf("loud = %+v %v", loud, err)
-	}
-	quiet, _ := NewTrigger(TriggerSnapshot{Type: "event", Name: "news", Events: []string{"news"}})
-	triggers, _ := NewTriggers([]TriggerSnapshot{loud.Snapshot(), quiet.Snapshot()})
-	quad.Wire(triggers, Placement{})
-	if !quad.InterruptedBy(loud, SeverityWarning, false) || quad.InterruptedBy(quiet, SeverityCritical, true) || quad.InterruptedBy(loud, SeverityInfo, true) {
-		t.Error("declared triggers are wrong")
 	}
 	if _, err := NewTrigger(TriggerSnapshot{Type: "manual", Interrupt: true}); err == nil {
 		t.Error("a manual trigger took interrupt")
