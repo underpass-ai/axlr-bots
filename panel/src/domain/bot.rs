@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{AutonomyLevel, BotId, BotStatus, Budgets, ModelPolicy, Placement, ToolRules, Trigger};
+use super::{AutonomyLevel, BotId, BotStatus, Budgets, ModelPolicy, Placement, Subscription, ToolRules, Trigger};
 
 /// A bot as the control plane reports it: a durable resource with a
 /// mission, a model, tools, a level, triggers, budgets and a placement.
@@ -32,6 +32,9 @@ pub struct Bot {
     /// The teams it belongs to.
     #[serde(default)]
     pub groups: Vec<String>,
+    /// The topics it listens to; a bot's asks are pending.
+    #[serde(default)]
+    pub subscriptions: Vec<Subscription>,
     pub status: BotStatus,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -46,6 +49,11 @@ impl Bot {
     /// Its teams, `port, sea`, or empty.
     pub fn team_summary(&self) -> String {
         self.groups.join(", ")
+    }
+
+    /// Its asks to hear a topic that wait for a person.
+    pub fn pending_asks(&self) -> impl Iterator<Item = &Subscription> {
+        self.subscriptions.iter().filter(|s| s.is_pending())
     }
 
     /// The trigger types, `manual · timer · webhook`.

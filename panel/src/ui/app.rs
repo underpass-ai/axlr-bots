@@ -1,9 +1,10 @@
 use chrono::{DateTime, Duration, Utc};
 
 use super::{
-    Answer, Banner, BotChoice, BotView, Confirm, Effect, Launch, Message, MintForm, NodeChoice, RegisterForm, Screen,
-    Services, SettingsForm, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode,
+    Answer, Banner, BotChoice, BotView, Confirm, Effect, Launch, ListenForm, Message, MintForm, NodeChoice,
+    PublishForm, RegisterForm, Screen, Services, SettingsForm, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode,
 };
+use crate::application::SubscriptionChange;
 use crate::application::{EventFeed, Fleet, PanelConfig, PanelError, TaskDetail};
 use crate::domain::{Decision, TaskId, TaskStatus};
 use crate::ui::format;
@@ -54,6 +55,10 @@ pub struct App {
     pub switching: bool,
     /// The teams' timelines and a bot's team being edited.
     pub watch: TeamWatch,
+    /// Making a bot listen to a topic.
+    pub listen: ListenForm,
+    /// Publishing an event on a team.
+    pub publish: PublishForm,
     /// Where to go once connected.
     target: Screen,
 }
@@ -93,6 +98,8 @@ impl App {
             advanced: false,
             switching: false,
             watch: TeamWatch::default(),
+            listen: ListenForm::default(),
+            publish: PublishForm::default(),
             target: if launch.screen == Screen::Settings {
                 Screen::Overview
             } else {
@@ -128,12 +135,14 @@ impl App {
         }
     }
 
-    /// Tasks waiting for a person, from the last refresh.
+    /// What waits for a person, from the last refresh: tasks waiting
+    /// for a decision and bots' asks to listen to a topic.
     pub fn waiting_count(&self) -> u32 {
         self.fleet
             .as_ref()
             .map(|f| f.overview.tasks_in(TaskStatus::WaitingApproval))
             .unwrap_or(0)
+            + self.pending_asks()
     }
 
     pub fn apply(&mut self, message: Message) -> Vec<Effect> {
@@ -441,6 +450,51 @@ impl App {
             }
             Message::TeamSaved(result) => self.team_saved(result),
             Message::TeamLoaded(name, result) => self.team_loaded(name, result),
+            Message::TopicsLoaded(name, result) => self.topics_loaded(name, result),
+            Message::ListenOpen(bot) => {
+                self.listen = ListenForm::opened(bot);
+                Vec::new()
+            }
+            Message::ListenTopic(value) => {
+                self.listen.topic = value;
+                Vec::new()
+            }
+            Message::ListenMode(mode) => {
+                self.listen.mode = mode;
+                Vec::new()
+            }
+            Message::ListenFrom(value) => {
+                self.listen.from = value;
+                Vec::new()
+            }
+            Message::ListenSave => self.listen_save(),
+            Message::ListenClose => {
+                self.listen = ListenForm::default();
+                Vec::new()
+            }
+            Message::Unsubscribe(bot, topic) => self.change_subscriptions(bot, SubscriptionChange::Remove(topic)),
+            Message::ApproveAsk(bot, topic) => self.change_subscriptions(bot, SubscriptionChange::Approve(topic)),
+            Message::DenyAsk(bot, topic) => self.change_subscriptions(bot, SubscriptionChange::Deny(topic)),
+            Message::SubscriptionsSaved(change, result) => self.subscriptions_saved(change, result),
+            Message::PublishOpen(team) => self.publish_open(team),
+            Message::PublishName(value) => {
+                self.publish.name = value;
+                Vec::new()
+            }
+            Message::PublishMessage(value) => {
+                self.publish.message = value;
+                Vec::new()
+            }
+            Message::PublishTo(value) => {
+                self.publish.to = value;
+                Vec::new()
+            }
+            Message::PublishSend => self.publish_send(),
+            Message::PublishClose => {
+                self.publish = PublishForm::default();
+                Vec::new()
+            }
+            Message::Published(result) => self.published(result),
             Message::NoticeClicked(screen) => self.notice_clicked(screen),
             Message::AskStopBot(id) => {
                 self.confirm = Some(Confirm::StopBot(id));
@@ -700,6 +754,10 @@ impl App {
                     .unwrap_or_default();
                 vec![Effect::FollowBot(id.clone(), feed)]
             }
+            Screen::Team(name) if !self.watch.loading_topics.contains(name) => {
+                self.watch.loading_topics.insert(name.clone());
+                vec![Effect::LoadTopics(name.clone())]
+            }
             _ => Vec::new(),
         }
     }
@@ -720,6 +778,8 @@ impl App {
             self.advanced = false;
             self.chat_draft.clear();
             self.watch.editing = None;
+            self.listen = ListenForm::default();
+            self.publish = PublishForm::default();
             self.task_loading = false;
             self.bot_loading = false;
         }

@@ -7,8 +7,9 @@ use crate::application::{ControlPlane, PanelError, PortFuture};
 use crate::domain::{
     Bot, BotDefinition, BotId, BotPatch, BotStatus, Budgets, CancelledTask, DecidedTask, Decision, EnrollmentRequest,
     EnrollmentToken, Event, Execution, ExecutionId, ExecutionKind, ExecutionOutcome, ExecutionResult, Node,
-    NodeCapabilities, NodeId, NodeStatus, Overview, PendingDecision, RevokedNode, Secret, SentTaskMessage,
-    StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId, TaskStatus, TaskSubmission, ToolCall, TriggerRef, Usage,
+    NodeCapabilities, NodeId, NodeStatus, Overview, PendingDecision, Publication, Published, RevokedNode, Secret,
+    SentTaskMessage, StoppedBotAnswer, SubmittedTask, Subscription, Task, TaskFilter, TaskId, TaskStatus,
+    TaskSubmission, ToolCall, Topic, TopicListener, TriggerRef, Usage,
 };
 
 /// The control plane in memory: what the use cases and the interface are
@@ -159,6 +160,15 @@ impl FakeControlPlane {
         }
     }
 
+    /// Sets the topics a bot listens to, as a patch or a bot's ask
+    /// would, without an event.
+    pub fn set_subscriptions(&self, id: &str, subscriptions: Vec<Subscription>) {
+        let mut state = self.state.lock().unwrap();
+        if let Some(bot) = state.bots.get_mut(&BotId::new(id).unwrap()) {
+            bot.subscriptions = subscriptions;
+        }
+    }
+
     /// Records an event of a bot, as the control plane would publish it.
     pub fn publish(&self, kind: &str, bot: &str, payload: serde_json::Value) {
         let mut state = self.state.lock().unwrap();
@@ -178,6 +188,35 @@ impl FakeControlPlane {
             .map(|t| t.bot_id.to_string())
             .unwrap();
         state.event("bot.task.said", &bot, task, now, serde_json::json!({ "text": text }));
+    }
+
+    /// A teammate's event heard as a message by a running task, as the
+    /// control plane records it.
+    pub fn tell(&self, task: &TaskId, text: &str, event: &str) {
+        let mut state = self.state.lock().unwrap();
+        let now = state.clock();
+        let bot = state
+            .tasks
+            .iter()
+            .find(|t| &t.id == task)
+            .map(|t| t.bot_id.to_string())
+            .unwrap();
+        let from = format!("event:{event}");
+        state.event(
+            "bot.task.message",
+            &bot,
+            task,
+            now,
+            serde_json::json!({ "text": text, "from": from }),
+        );
+    }
+
+    /// Sets what made a task: the event's fields and the notes it knew.
+    pub fn set_input(&self, task: &TaskId, input: serde_json::Value) {
+        let mut state = self.state.lock().unwrap();
+        if let Some(t) = state.tasks.iter_mut().find(|t| &t.id == task) {
+            t.input = Some(input);
+        }
     }
 
     /// Finishes a task as a node's report would.
@@ -266,6 +305,7 @@ impl FakeState {
                 ..Default::default()
             },
             groups: Vec::new(),
+            subscriptions: Vec::new(),
             status: BotStatus::Enabled,
             created_at: now - Duration::days(1),
             updated_at: now - Duration::days(1),
@@ -421,6 +461,7 @@ impl FakeState {
             tenant_id: "default".into(),
             bot_id: bot.into(),
             node_id: String::new(),
+            group_name: String::new(),
             task_id: task.to_string(),
             execution_id: String::new(),
             correlation_id: format!("trace-{task}"),
@@ -442,6 +483,7 @@ impl FakeState {
             tenant_id: "default".into(),
             bot_id: bot.to_string(),
             node_id: String::new(),
+            group_name: String::new(),
             task_id: String::new(),
             execution_id: String::new(),
             correlation_id: String::new(),
@@ -613,6 +655,7 @@ impl ControlPlane for FakeControlPlane {
                 triggers: definition.triggers,
                 placement: definition.placement,
                 groups: definition.groups,
+                subscriptions: Vec::new(),
                 status: BotStatus::Registered,
                 created_at: now,
                 updated_at: now,
@@ -651,9 +694,18 @@ impl ControlPlane for FakeControlPlane {
             if let Some(groups) = patch.groups {
                 bot.groups = groups;
             }
+            let subscribed = patch.subscriptions.is_some();
+            if let Some(subscriptions) = patch.subscriptions {
+                bot.subscriptions = subscriptions;
+            }
             bot.updated_at = now;
             let bot = bot.clone();
             s.bot_event_with("bot.updated", &id, (!payload.is_empty()).then_some(payload));
+            if subscribed {
+                let list = serde_json::to_value(&bot.subscriptions).unwrap();
+                let changed = serde_json::json!({"subscriptions": list, "by": "operator"});
+                s.bot_event_with("bot.subscription.changed", &id, changed.as_object().cloned());
+            }
             Ok(bot)
         })
     }
@@ -689,7 +741,7 @@ impl ControlPlane for FakeControlPlane {
             let events: Vec<Event> = s
                 .events
                 .iter()
-                .filter(|e| members.contains(&e.bot_id))
+                .filter(|e| members.contains(&e.bot_id) || e.group_name == name)
                 .cloned()
                 .collect();
             let start = after
@@ -697,6 +749,125 @@ impl ControlPlane for FakeControlPlane {
                 .map(|i| i + 1)
                 .unwrap_or(0);
             Ok(events.into_iter().skip(start).collect())
+        })
+    }
+
+    fn group_topics(&self, name: String) -> PortFuture<'_, Vec<Topic>> {
+        self.call(format!("group_topics {name}"), move |s| {
+            if s.older {
+                return Err(PanelError::NotFound("404 page not found".into()));
+            }
+            let members: Vec<Bot> = s.bots.values().filter(|b| b.groups.contains(&name)).cloned().collect();
+            if members.is_empty() {
+                return Err(PanelError::NotFound(format!("group {name} not found")));
+            }
+            let mut topics: BTreeMap<String, Topic> = BTreeMap::new();
+            let blank = |name: &str| Topic {
+                name: name.to_string(),
+                publishers: Vec::new(),
+                declared_publishers: Vec::new(),
+                listeners: Vec::new(),
+                last_at: None,
+                count: 0,
+                nobody_listens: false,
+            };
+            for event in &s.events {
+                let ours = members.iter().any(|m| m.id.as_str() == event.bot_id) || event.group_name == name;
+                if !ours || !matches!(event.event_type.as_str(), "bot.event.emitted" | "group.event.published") {
+                    continue;
+                }
+                let Some(topic) = event.payload_text("name") else {
+                    continue;
+                };
+                let from = event.payload_text("from").unwrap_or_default();
+                let entry = topics.entry(topic.clone()).or_insert_with(|| blank(&topic));
+                if !from.is_empty() && !entry.publishers.contains(&from) {
+                    entry.publishers.push(from);
+                }
+                entry.count += 1;
+                entry.last_at = Some(event.created_at);
+            }
+            for member in &members {
+                for sub in &member.subscriptions {
+                    topics.entry(sub.topic.clone()).or_insert_with(|| blank(&sub.topic));
+                }
+            }
+            for topic in topics.values_mut() {
+                for member in &members {
+                    for sub in &member.subscriptions {
+                        let fits =
+                            sub.topic == topic.name || (topic.count > 0 && pattern_fits(&sub.topic, &topic.name));
+                        if fits {
+                            topic.listeners.push(TopicListener {
+                                bot_id: member.id.to_string(),
+                                topic: sub.topic.clone(),
+                                mode: sub.mode().name().to_string(),
+                                status: sub.status.clone(),
+                            });
+                        }
+                    }
+                }
+                let kind = topic.name.split('.').next().unwrap_or_default();
+                topic.nobody_listens = topic.count > 0
+                    && !topic.listeners.iter().any(|l| l.status != "pending")
+                    && kind != "stop"
+                    && kind != "danger";
+            }
+            Ok(topics.into_values().collect())
+        })
+    }
+
+    fn publish_event(&self, team: String, publication: Publication) -> PortFuture<'_, Published> {
+        self.call(format!("publish_event {team} {}", publication.name), move |s| {
+            if s.older {
+                return Err(PanelError::NotFound("404 page not found".into()));
+            }
+            let kind = publication.name.split('.').next().unwrap_or_default();
+            if kind == "error" || kind == "done" {
+                return Err(PanelError::Invalid(format!(
+                    "name: not_allowed: {kind}.* is the control plane's own"
+                )));
+            }
+            let members: Vec<String> = s
+                .bots
+                .values()
+                .filter(|b| b.groups.contains(&team))
+                .map(|b| b.id.to_string())
+                .collect();
+            if members.is_empty() {
+                return Err(PanelError::NotFound(format!("group {team} not found")));
+            }
+            let id = s.next("evt");
+            let now = s.clock();
+            let deliveries: Vec<serde_json::Value> = members
+                .iter()
+                .filter(|m| publication.to.is_empty() || publication.to.contains(m))
+                .map(|m| serde_json::json!({"botId": m, "mode": "task", "created": true}))
+                .collect();
+            let payload = serde_json::json!({
+                "name": publication.name, "message": publication.message, "from": "operator", "by": "operator",
+                "to": publication.to, "group": team, "deliveries": deliveries, "eventId": id,
+            });
+            s.events.push(Event {
+                event_id: id.clone(),
+                event_type: "group.event.published".into(),
+                tenant_id: "default".into(),
+                bot_id: String::new(),
+                node_id: String::new(),
+                group_name: team.clone(),
+                task_id: String::new(),
+                execution_id: String::new(),
+                correlation_id: String::new(),
+                created_at: now,
+                payload: payload.as_object().cloned(),
+            });
+            Ok(Published {
+                event_id: id,
+                name: publication.name,
+                deliveries,
+                skipped: Vec::new(),
+                created: true,
+            })
         })
     }
 
@@ -892,4 +1063,19 @@ impl ControlPlane for FakeControlPlane {
             Ok(events.into_iter().skip(skip).collect())
         })
     }
+}
+
+/// Whether a pattern (`*` one segment, `**` any) fits a name.
+fn pattern_fits(pattern: &str, name: &str) -> bool {
+    fn fits(p: &[&str], n: &[&str]) -> bool {
+        match p.first() {
+            None => n.is_empty(),
+            Some(&"**") => (0..=n.len()).any(|i| fits(&p[1..], &n[i..])),
+            Some(&"*") => !n.is_empty() && fits(&p[1..], &n[1..]),
+            Some(segment) => n.first() == Some(segment) && fits(&p[1..], &n[1..]),
+        }
+    }
+    let p: Vec<&str> = pattern.split('.').collect();
+    let n: Vec<&str> = name.split('.').collect();
+    fits(&p, &n)
 }

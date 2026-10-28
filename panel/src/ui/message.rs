@@ -2,11 +2,12 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 
+use super::ModeChoice;
 use super::{BotChoice, BotView, Connection, NodeChoice, Screen, ThemeMode};
-use crate::application::{ChatSent, EventFeed, Fleet, PanelError, StoppedBot, TaskDetail};
+use crate::application::{ChatSent, EventFeed, Fleet, PanelError, StoppedBot, SubscriptionChange, TaskDetail};
 use crate::domain::{
-    AutonomyLevel, Bot, BotId, CancelledTask, DecidedTask, EnrollmentToken, NodeId, RevokedNode, SubmittedTask, TaskId,
-    TaskStatus,
+    AutonomyLevel, Bot, BotId, CancelledTask, DecidedTask, EnrollmentToken, NodeId, Published, RevokedNode,
+    SubmittedTask, TaskId, TaskStatus, Topic,
 };
 
 /// Everything that happens in the panel: what the operator does, the
@@ -82,6 +83,31 @@ pub enum Message {
     TeamSaved(Result<Bot, PanelError>),
     /// What a team's read of its timeline brought.
     TeamLoaded(String, Result<EventFeed, PanelError>),
+    /// A team's topics; `None` from a control plane older than the route.
+    TopicsLoaded(String, Result<Option<Vec<Topic>>, PanelError>),
+
+    /// Make a bot listen to a topic: open the form, fill it, save.
+    ListenOpen(BotId),
+    ListenTopic(String),
+    ListenMode(ModeChoice),
+    ListenFrom(String),
+    ListenSave,
+    ListenClose,
+    /// Stop a bot listening to a topic.
+    Unsubscribe(BotId, String),
+    /// Answer a bot's ask to listen.
+    ApproveAsk(BotId, String),
+    DenyAsk(BotId, String),
+    SubscriptionsSaved(SubscriptionChange, Result<Bot, PanelError>),
+
+    /// Publish an event on a team: open the form, fill it, send.
+    PublishOpen(String),
+    PublishName(String),
+    PublishMessage(String),
+    PublishTo(String),
+    PublishSend,
+    PublishClose,
+    Published(Result<Published, PanelError>),
 
     FilterStatus(Option<TaskStatus>),
     FilterBot(BotChoice),

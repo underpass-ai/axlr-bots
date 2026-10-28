@@ -17,6 +17,9 @@ pub struct Event {
     pub bot_id: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub node_id: String,
+    /// The team an event about a team names: the operator published on it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub group_name: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub task_id: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -56,6 +59,9 @@ impl Event {
             "bot.task.waiting_approval" => "Needs OK".into(),
             "bot.task.decided" => self.decision_label(),
             "bot.task.cancelled" => "Cancelled".into(),
+            "bot.task.message" if self.payload_text("from").is_some_and(|f| f.starts_with("event:")) => {
+                "A teammate told it".into()
+            }
             "bot.task.message" => "You wrote".into(),
             "bot.task.said" => "It answered".into(),
             "bot.task.expired" => "Expired".into(),
@@ -66,6 +72,14 @@ impl Event {
                 _ => "Told the team".into(),
             },
             "bot.event.refused" => "Event refused".into(),
+            "bot.event.heard" => match self.payload_text("mode").as_deref() {
+                Some("message") => "Told while working".into(),
+                Some("note") => "Noted".into(),
+                _ => "Got a task".into(),
+            },
+            "bot.subscription.asked" => "Asks to listen".into(),
+            "bot.subscription.changed" => "Listening changed".into(),
+            "group.event.published" => "You published".into(),
             "bot.task.preempted" => "Stopped for urgent".into(),
             "bot.task.delegated" => "Asked a bot".into(),
             "bot.delegation.refused" => "Ask refused".into(),
@@ -98,10 +112,12 @@ impl Event {
             | "bot.event.refused"
             | "bot.delegation.refused" => EventTone::Bad,
             "bot.task.preempted" => EventTone::Waiting,
-            "bot.event.emitted" => match self.payload_text("severity").as_deref() {
+            "bot.event.emitted" | "group.event.published" => match self.payload_text("severity").as_deref() {
                 Some("warning") | Some("critical") => EventTone::Waiting,
                 _ => EventTone::Neutral,
             },
+            "bot.event.heard" if self.payload_text("degraded").is_some() => EventTone::Waiting,
+            "bot.subscription.asked" => EventTone::Waiting,
             "bot.task.waiting_approval" | "bot.paused" | "bot.task.expired" | "bot.approval.expired" => {
                 EventTone::Waiting
             }
@@ -132,13 +148,36 @@ impl Event {
         Some((before, after))
     }
 
-    /// Whether people should see it now: a teammate's warning or alarm.
+    /// Whether people should see it now: a teammate's warning or alarm,
+    /// or a bot's ask to listen, which waits for a person.
     pub fn needs_attention(&self) -> bool {
-        self.event_type == "bot.event.emitted"
+        (self.event_type == "bot.event.emitted"
             && matches!(
                 self.payload_text("severity").as_deref(),
                 Some("warning") | Some("critical")
-            )
+            ))
+            || self.event_type == "bot.subscription.asked"
+    }
+
+    /// What a heard event did, in the team's words: `almacen got a
+    /// task`, `told recepcion while it worked`, `noted for supervisor`.
+    fn heard(&self) -> String {
+        let bot = &self.bot_id;
+        let what = match self.payload_text("mode").as_deref() {
+            Some("message") => format!("told {bot} while it worked"),
+            Some("note") => format!("noted for {bot}"),
+            _ => format!("{bot} got a task"),
+        };
+        let from = self.payload_text("from").unwrap_or_default();
+        let name = self.payload_text("name").unwrap_or_default();
+        let why = if self.payload_text("degraded").is_some() {
+            " (too many this minute)"
+        } else if self.payload_text("coalescedInto").is_some() {
+            " (joined its waiting task)"
+        } else {
+            ""
+        };
+        format!("{what}: {from} · {name}{why}")
     }
 
     /// Who an event was for: `quad-1, quad-2`, or `the team`.
@@ -162,9 +201,28 @@ impl Event {
         if let Some((before, after)) = self.level_change() {
             return format!("{} → {}", before.label(), after.label());
         }
-        if self.event_type == "bot.event.emitted" {
-            let message = self.payload_text("message").unwrap_or_default();
-            return format!("{} → {}: {message}", self.bot_id, self.addressed_to());
+        match self.event_type.as_str() {
+            "bot.event.emitted" => {
+                let message = self.payload_text("message").unwrap_or_default();
+                let from = if self.payload_text("by").as_deref() == Some("control-plane") {
+                    "control plane"
+                } else {
+                    self.bot_id.as_str()
+                };
+                return format!("{from} → {}: {message}", self.addressed_to());
+            }
+            "group.event.published" => {
+                let name = self.payload_text("name").unwrap_or_default();
+                let message = self.payload_text("message").unwrap_or_default();
+                return format!("you → {}: {name} · {message}", self.addressed_to());
+            }
+            "bot.event.heard" => return self.heard(),
+            "bot.subscription.asked" => {
+                let topic = self.payload_text("topic").unwrap_or_default();
+                let why = self.payload_text("why").unwrap_or_default();
+                return format!("{} asks to listen to {topic}: {why}", self.bot_id);
+            }
+            _ => {}
         }
         if self.event_type == "bot.task.decided"
             && self
@@ -300,6 +358,56 @@ mod tests {
         ] {
             assert!(!event(kind, "{}").label().contains('.'), "{kind}");
         }
+        let heard = event(
+            "bot.event.heard",
+            r#"{"mode":"task","from":"recepcion","name":"pedido.nuevo"}"#,
+        );
+        assert_eq!(
+            (heard.label(), heard.detail()),
+            ("Got a task".into(), "bot got a task: recepcion · pedido.nuevo".into())
+        );
+        let told = event(
+            "bot.event.heard",
+            r#"{"mode":"message","from":"recepcion","name":"warn.stock"}"#,
+        );
+        assert_eq!(
+            (told.label(), told.detail()),
+            (
+                "Told while working".into(),
+                "told bot while it worked: recepcion · warn.stock".into()
+            )
+        );
+        let noted = event(
+            "bot.event.heard",
+            r#"{"mode":"note","from":"recepcion","name":"info.turno","degraded":"intake_rate"}"#,
+        );
+        assert_eq!(noted.label(), "Noted");
+        assert_eq!(
+            noted.detail(),
+            "noted for bot: recepcion · info.turno (too many this minute)"
+        );
+        assert_eq!(noted.tone(), EventTone::Waiting);
+        let joined = event(
+            "bot.event.heard",
+            r#"{"mode":"note","from":"r","name":"p","coalescedInto":"task-1"}"#,
+        );
+        assert!(joined.detail().ends_with("(joined its waiting task)"));
+        let asked = event("bot.subscription.asked", r#"{"topic":"error.*","why":"to retry"}"#);
+        assert_eq!(asked.detail(), "bot asks to listen to error.*: to retry");
+        assert!(asked.needs_attention() && asked.tone() == EventTone::Waiting);
+        let published = event(
+            "group.event.published",
+            r#"{"name":"stop.all","message":"stop","severity":"critical"}"#,
+        );
+        assert_eq!(published.detail(), "you → the team: stop.all · stop");
+        assert_eq!(published.tone(), EventTone::Waiting);
+        let platform = event("bot.event.emitted", r#"{"by":"control-plane","message":"task failed"}"#);
+        assert_eq!(platform.detail(), "control plane → the team: task failed");
+        assert_eq!(
+            event("bot.task.message", r#"{"from":"event:evt-1"}"#).label(),
+            "A teammate told it"
+        );
+        assert_eq!(event("bot.subscription.changed", "{}").label(), "Listening changed");
         let mut on_node = event("node.offline", "{}");
         on_node.node_id = "wrx80".into();
         assert_eq!(on_node.detail(), "wrx80");

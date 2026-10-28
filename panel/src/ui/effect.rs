@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use super::Screen;
-use crate::application::{ChatTurn, EventFeed, Notice, PanelConfig};
+use crate::application::{ChatTurn, EventFeed, Notice, PanelConfig, SubscriptionChange};
 use crate::domain::{AutonomyLevel, BotForm, BotId, Decision, IdempotencyKey, NodeId, TaskId};
 
 /// What the panel asks the outside world to do after a message: a call
@@ -25,6 +25,16 @@ pub enum Effect {
         key: IdempotencyKey,
     },
     SetTeams(BotId, Vec<String>),
+    /// A change of a bot's topics: one PATCH of the whole list.
+    SaveSubscriptions(BotId, SubscriptionChange),
+    LoadTopics(String),
+    Publish {
+        team: String,
+        name: String,
+        message: String,
+        to: String,
+        key: IdempotencyKey,
+    },
     Mint {
         node_id: String,
         labels: String,

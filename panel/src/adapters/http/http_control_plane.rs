@@ -9,8 +9,8 @@ use super::api_error::ApiError;
 use crate::application::{ControlPlane, PanelConfig, PanelError, PortFuture};
 use crate::domain::{
     Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, EnrollmentRequest, EnrollmentToken,
-    Event, Execution, Node, NodeId, Overview, RevokedNode, Secret, SentTaskMessage, StoppedBotAnswer, SubmittedTask,
-    Task, TaskFilter, TaskId, TaskSubmission,
+    Event, Execution, Node, NodeId, Overview, Publication, Published, RevokedNode, Secret, SentTaskMessage,
+    StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId, TaskSubmission, Topic,
 };
 
 /// How long a read may take.
@@ -228,6 +228,14 @@ impl ControlPlane for HttpControlPlane {
             .request(Method::GET, &format!("/v1/groups/{name}/events"), timeout)
             .query(&query);
         Box::pin(send(request))
+    }
+
+    fn group_topics(&self, name: String) -> PortFuture<'_, Vec<Topic>> {
+        self.get(format!("/v1/groups/{name}/topics"))
+    }
+
+    fn publish_event(&self, team: String, publication: Publication) -> PortFuture<'_, Published> {
+        self.post(format!("/v1/groups/{team}/events"), Some(publication))
     }
 
     fn list_tasks(&self, filter: TaskFilter) -> PortFuture<'_, Vec<Task>> {

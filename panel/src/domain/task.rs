@@ -37,13 +37,38 @@ impl Task {
         self.priority == "urgent"
     }
 
-    /// Who said what, for a task a teammate's event made: `plane: a ship
-    /// is entering your zone`.
+    /// Who said what, for a task an event made: `plane · stop.recall: a
+    /// ship is entering your zone`.
     pub fn told_by(&self) -> Option<String> {
         let input = self.input.as_ref()?;
         let from = input.get("from")?.as_str()?;
         let message = input.get("message")?.as_str()?;
-        Some(format!("{from}: {message}"))
+        match input.get("name").and_then(|n| n.as_str()) {
+            Some(name) => Some(format!("{from} · {name}: {message}")),
+            None => Some(format!("{from}: {message}")),
+        }
+    }
+
+    /// What the task knew when it started: the notes of the events its
+    /// bot heard, oldest first, as `recepcion · info.turno: shift at six`.
+    pub fn knew(&self) -> Vec<String> {
+        let Some(notes) = self
+            .input
+            .as_ref()
+            .and_then(|i| i.get("notes"))
+            .and_then(|n| n.as_array())
+        else {
+            return Vec::new();
+        };
+        notes
+            .iter()
+            .filter_map(|note| {
+                let from = note.get("from")?.as_str()?;
+                let name = note.get("name")?.as_str()?;
+                let message = note.get("message")?.as_str()?;
+                Some(format!("{from} · {name}: {message}"))
+            })
+            .collect()
     }
 
     /// The objective's first line, cut to `max` characters with an ellipsis.
@@ -79,6 +104,13 @@ mod tests {
         task.input = Some(serde_json::json!({"from": "plane", "message": "a ship"}));
         assert!(task.is_urgent());
         assert_eq!(task.told_by().as_deref(), Some("plane: a ship"));
+        task.input = Some(
+            serde_json::json!({"from": "plane", "name": "stop.recall", "message": "a ship",
+            "notes": [{"from": "recepcion", "name": "info.turno", "message": "shift", "at": "2026-10-28T10:00:00Z"}, {"bad": 1}]}),
+        );
+        assert_eq!(task.told_by().as_deref(), Some("plane · stop.recall: a ship"));
+        assert_eq!(task.knew(), vec!["recepcion · info.turno: shift"]);
+        assert!(sample().knew().is_empty());
     }
 
     #[test]

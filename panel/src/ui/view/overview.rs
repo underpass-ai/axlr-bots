@@ -16,7 +16,12 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     };
     let o = &fleet.overview;
     let online = o.nodes_in(NodeStatus::Online);
-    let waiting = o.tasks_in(TaskStatus::WaitingApproval);
+    let waiting = app.waiting_count();
+    // Asks to listen and no waiting task: the count opens the bot that asks.
+    let need_you = match fleet.bots.iter().find(|b| b.pending_asks().next().is_some()) {
+        Some(bot) if o.tasks_in(TaskStatus::WaitingApproval) == 0 => Message::Go(Screen::Bot(bot.id.clone())),
+        _ => Message::FilterStatus(Some(TaskStatus::WaitingApproval)),
+    };
     let failed_today = o.tasks_since_in(TaskStatus::Failed);
     let expired_today = o.tasks_since_in(TaskStatus::Expired);
     let stats = row![
@@ -53,7 +58,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             waiting.to_string(),
             "need you",
             if waiting > 0 { Tone::Wait } else { Tone::Idle },
-            Some(Message::FilterStatus(Some(TaskStatus::WaitingApproval))),
+            Some(need_you),
             tokens
         ),
         stat(

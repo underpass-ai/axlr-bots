@@ -2,7 +2,7 @@
 //! what it does, its events and recent work; its definition under
 //! Advanced, closed by default.
 
-use iced::widget::{Space, column, container, mouse_area, row, scrollable, text, text_input};
+use iced::widget::{Space, column, container, mouse_area, pick_list, row, scrollable, text, text_input};
 use iced::{Alignment, Length, mouse};
 
 use super::levels;
@@ -14,7 +14,7 @@ use crate::application::{BotNow, ChatLine};
 use crate::domain::{Bot, BotId, BotStatus, TaskId};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
-use crate::ui::{App, BotView, Icon, Message, Screen, Tokens, Tone};
+use crate::ui::{App, BotView, Icon, Message, ModeChoice, Screen, Tokens, Tone};
 
 pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
     let back = action(Kind::Ghost, Icon::Back, "Bots", Some(Message::Go(Screen::Bots)), tokens);
@@ -77,9 +77,13 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
     if let Some(asking) = asking(app, &bot.id, tokens) {
         left = left.push(asking);
     }
+    for card in asks(app, bot, tokens) {
+        left = left.push(card);
+    }
     left = left
         .push(section(Icon::Play, "Now", now(app, bot, tokens), tokens))
-        .push(section(Icon::Bolt, "Talk to it", chat(app, view, tokens), tokens));
+        .push(section(Icon::Bolt, "Talk to it", chat(app, view, tokens), tokens))
+        .push(listens(app, bot, tokens));
     let new_task = action(
         Kind::Ghost,
         Icon::Plus,
@@ -309,6 +313,131 @@ fn team<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
         }
     };
     section(Icon::Team, "Team", body, tokens)
+}
+
+/// The bot's asks to hear a topic, each a card a person answers in one
+/// click: «almacen asks to listen to error.*: "para reintentar"».
+fn asks<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> Vec<El<'a>> {
+    bot.pending_asks()
+        .map(|ask| {
+            let words = format!("{} asks to listen to {}", bot.id, ask.topic);
+            let why = if ask.why.is_empty() {
+                String::new()
+            } else {
+                format!("\u{201c}{}\u{201d}", ask.why)
+            };
+            let line = row![
+                column![bold(words), muted(why, tokens)].spacing(2).width(Length::Fill),
+                action(
+                    Kind::Good,
+                    Icon::Check,
+                    "Approve",
+                    (!app.switching).then(|| Message::ApproveAsk(bot.id.clone(), ask.topic.clone())),
+                    tokens,
+                ),
+                action(
+                    Kind::Secondary,
+                    Icon::Cross,
+                    "Deny",
+                    (!app.switching).then(|| Message::DenyAsk(bot.id.clone(), ask.topic.clone())),
+                    tokens,
+                ),
+            ]
+            .spacing(12)
+            .align_y(Alignment::Center);
+            container(line)
+                .padding(18)
+                .width(Length::Fill)
+                .style(styles::tone_card(tokens, Tone::Wait))
+                .into()
+        })
+        .collect()
+}
+
+/// What the bot listens to: one line per topic with its mode and whom
+/// from, Remove on each, and the form to listen to one more.
+fn listens<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
+    let mut body = column![].spacing(8);
+    let active: Vec<_> = bot.subscriptions.iter().filter(|s| !s.is_pending()).collect();
+    if active.is_empty() {
+        body = body.push(muted(
+            "Hears what is addressed to it and the team's stop and danger",
+            tokens,
+        ));
+    }
+    for sub in active {
+        let mut line = row![
+            bold(sub.topic.clone()),
+            chip(sub.mode().name(), tokens),
+            muted(format!("from {}", sub.senders()), tokens),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center);
+        if sub.urgent {
+            line = line.push(pill(Tone::Wait, "urgent", tokens));
+        }
+        line = line.push(Space::new().width(Length::Fill)).push(action(
+            Kind::Ghost,
+            Icon::Cross,
+            "Remove",
+            (!app.switching).then(|| Message::Unsubscribe(bot.id.clone(), sub.topic.clone())),
+            tokens,
+        ));
+        body = body.push(line);
+    }
+    if app.listen.is_open_for(&bot.id) {
+        let form = &app.listen;
+        body = body.push(
+            column![
+                super::widgets::field(
+                    "Topic",
+                    "pedido.* or warn.stock",
+                    &form.topic,
+                    Message::ListenTopic,
+                    Some(Message::ListenSave),
+                    tokens
+                ),
+                row![
+                    column![
+                        bold("Mode").size(SMALL),
+                        pick_list(ModeChoice::ALL, Some(form.mode), Message::ListenMode).padding(8),
+                        muted(form.default_label(), tokens),
+                    ]
+                    .spacing(6),
+                    container(super::widgets::field(
+                        "From",
+                        "anyone",
+                        &form.from,
+                        Message::ListenFrom,
+                        Some(Message::ListenSave),
+                        tokens
+                    ))
+                    .width(Length::Fill),
+                ]
+                .spacing(10),
+                row![
+                    action(
+                        Kind::Primary,
+                        Icon::Check,
+                        "Listen",
+                        (!form.busy && !form.topic.trim().is_empty()).then_some(Message::ListenSave),
+                        tokens
+                    ),
+                    action(Kind::Ghost, Icon::Cross, "Cancel", Some(Message::ListenClose), tokens),
+                ]
+                .spacing(10),
+            ]
+            .spacing(10),
+        );
+    }
+    let open = action(
+        Kind::Ghost,
+        Icon::Plus,
+        "Listen to a topic",
+        (!app.listen.is_open_for(&bot.id)).then(|| Message::ListenOpen(bot.id.clone())),
+        tokens,
+    );
+    section_with(Icon::Bolt, "Listens to", vec![open], body, tokens)
 }
 
 /// The calls of this bot waiting for a person, each answered in one

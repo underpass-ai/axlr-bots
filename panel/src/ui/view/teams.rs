@@ -1,10 +1,10 @@
 //! Teams: who is in each, what each member is for, and the team's
 //! timeline as it happens.
 
-use iced::widget::{Space, column, mouse_area, row, scrollable, text};
+use iced::widget::{Space, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Length, mouse};
 
-use super::widgets::{El, SMALL, action, bold, card, chip, empty, icon, muted, pill, section, title};
+use super::widgets::{El, SMALL, action, bold, card, chip, empty, field, icon, muted, pill, section, title};
 use crate::domain::{Event, TaskId, Team};
 use crate::ui::format;
 use crate::ui::styles::Kind;
@@ -89,6 +89,14 @@ pub fn detail<'a>(app: &'a App, name: &'a str, tokens: Tokens) -> El<'a> {
         back,
         title(Icon::Team, format!("Team {name}"), tokens),
         chip(format!("{} bots", team.members.len()), tokens),
+        Space::new().width(Length::Fill),
+        action(
+            Kind::Primary,
+            Icon::Bolt,
+            "Publish an event",
+            (!app.publish.is_open_for(name)).then(|| Message::PublishOpen(name.to_string())),
+            tokens,
+        ),
     ]
     .spacing(12)
     .align_y(Alignment::Center);
@@ -136,21 +144,120 @@ pub fn detail<'a>(app: &'a App, name: &'a str, tokens: Tokens) -> El<'a> {
             tokens,
         ),
     };
-    let page = column![
-        header,
+    let mut page = column![header].spacing(18);
+    if app.publish.is_open_for(name) {
+        page = page.push(publish(app, tokens));
+    }
+    let page = page.push(
         row![
-            column![section(Icon::Bots, "Who is in it", members, tokens)].width(Length::FillPortion(2)),
+            column![
+                section(Icon::Bots, "Who is in it", members, tokens),
+                section(Icon::Bolt, "Topics", topics(app, name, tokens), tokens),
+            ]
+            .spacing(14)
+            .width(Length::FillPortion(2)),
             column![section(Icon::Clock, "What happens", timeline, tokens)].width(Length::FillPortion(3)),
         ]
         .spacing(14),
-    ]
-    .spacing(18);
+    );
     scrollable(page.padding(iced::Padding {
         right: 12.0,
         ..Default::default()
     }))
     .height(Length::Fill)
     .into()
+}
+
+/// The team's topics: who publishes, who listens and how, the last
+/// event; nobody listens in red.
+fn topics<'a>(app: &'a App, name: &str, tokens: Tokens) -> El<'a> {
+    match app.watch.topics.get(name) {
+        None => muted("Reading the topics…", tokens).into(),
+        Some(None) => muted(
+            "This control plane is older: it has no topics yet. Update it to see them.",
+            tokens,
+        )
+        .into(),
+        Some(Some(list)) if list.is_empty() => {
+            muted("No topic yet: what the bots publish and listen to shows here", tokens).into()
+        }
+        Some(Some(list)) => {
+            let mut rows = column![].spacing(10);
+            for topic in list {
+                let mut head = row![bold(topic.name.clone())].spacing(10).align_y(Alignment::Center);
+                if topic.nobody_listens {
+                    head = head.push(pill(Tone::Bad, "nobody listens", tokens));
+                }
+                if let Some(at) = topic.last_at {
+                    head = head
+                        .push(Space::new().width(Length::Fill))
+                        .push(muted(format::clock(at), tokens));
+                }
+                rows = rows.push(
+                    column![
+                        head,
+                        muted(format!("publishes {}", topic.publishers_text()), tokens),
+                        muted(format!("listens {}", topic.listeners_text()), tokens),
+                    ]
+                    .spacing(2),
+                );
+            }
+            rows.into()
+        }
+    }
+}
+
+/// The form that publishes the operator's event on the team.
+fn publish<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
+    let form = &app.publish;
+    let body = column![
+        row![
+            container(field(
+                "Name",
+                "stop.all, warn.storm, info.shift",
+                &form.name,
+                Message::PublishName,
+                Some(Message::PublishSend),
+                tokens
+            ))
+            .width(Length::FillPortion(2)),
+            container(field(
+                "To",
+                "the whole team",
+                &form.to,
+                Message::PublishTo,
+                Some(Message::PublishSend),
+                tokens
+            ))
+            .width(Length::FillPortion(2)),
+        ]
+        .spacing(10),
+        field(
+            "Message",
+            "one line: what happened and why",
+            &form.message,
+            Message::PublishMessage,
+            Some(Message::PublishSend),
+            tokens
+        ),
+        muted(
+            "stop. and danger. stop the bots that hear them; warn. reaches them while they work; info. is a note for their next task.",
+            tokens
+        ),
+        row![
+            action(
+                Kind::Primary,
+                Icon::Bolt,
+                "Publish",
+                form.ready().then_some(Message::PublishSend),
+                tokens
+            ),
+            action(Kind::Ghost, Icon::Cross, "Cancel", Some(Message::PublishClose), tokens),
+        ]
+        .spacing(10),
+    ]
+    .spacing(10);
+    section(Icon::Bolt, "Publish an event", body, tokens)
 }
 
 /// One event of a team: when, who, what, why; a click opens its task.
@@ -163,7 +270,10 @@ fn line<'a>(event: &'a Event, tokens: Tokens) -> El<'a> {
     ]
     .spacing(10)
     .align_y(Alignment::Center);
-    if event.event_type != "bot.event.emitted" {
+    if !matches!(
+        event.event_type.as_str(),
+        "bot.event.emitted" | "bot.event.heard" | "group.event.published" | "bot.subscription.asked"
+    ) {
         words = words.push(muted(event.bot_id.clone(), tokens));
     }
     words = words.push(text(event.detail()).size(SMALL).width(Length::Fill));

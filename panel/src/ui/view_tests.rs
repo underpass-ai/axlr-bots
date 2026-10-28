@@ -666,3 +666,181 @@ fn the_chat_writes_to_a_running_task_and_shows_its_answer() {
         [Message::Go(Screen::Task(id))] if *id == running
     ));
 }
+
+fn subscribed_fleet() -> (std::sync::Arc<crate::adapters::fake::FakeControlPlane>, App) {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    fake.set_groups("bot", &["tienda"]);
+    fake.set_groups("bot-wrx80", &["tienda"]);
+    let ask: crate::domain::Subscription = serde_json::from_str(
+        r#"{"topic":"error.*","status":"pending","askedBy":"bot","why":"para reintentar si recepcion falla","askedAt":"2026-10-25T09:00:00Z"}"#,
+    )
+    .unwrap();
+    let active =
+        crate::domain::Subscription::new("pedido.*", Some(crate::domain::DeliveryMode::Task), "bot-wrx80").unwrap();
+    fake.set_subscriptions("bot", vec![active, ask]);
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    (fake, app)
+}
+
+#[test]
+fn a_bot_page_shows_what_it_listens_to_and_its_asks() {
+    let (fake, mut app) = subscribed_fleet();
+    let waiting_before = app.waiting_count();
+    assert_eq!(app.pending_asks(), 1);
+    send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
+    shows(
+        &app,
+        &[
+            "Listens to",
+            "pedido.*",
+            "from bot-wrx80",
+            "bot asks to listen to error.*",
+            "\u{201c}para reintentar si recepcion falla\u{201d}",
+            "Approve",
+            "Deny",
+            "Listen to a topic",
+            "Remove",
+        ],
+    );
+    let sent = messages_of_click(&app, "Listen to a topic");
+    assert!(matches!(sent.as_slice(), [Message::ListenOpen(id)] if id.as_str() == "bot"));
+    app.apply(Message::ListenOpen(BotId::new("bot").unwrap()));
+    app.apply(Message::ListenTopic("warn.stock".into()));
+    shows(&app, &["Topic", "Mode", "by kind: message", "From", "Listen"]);
+    // Approve: one PATCH with the ask active; the card leaves; the count drops.
+    let patches = |fake: &crate::adapters::fake::FakeControlPlane| {
+        fake.calls().iter().filter(|c| c.starts_with("patch_bot")).count()
+    };
+    let before = patches(&fake);
+    send(
+        &mut app,
+        Message::ApproveAsk(BotId::new("bot").unwrap(), "error.*".into()),
+    );
+    assert_eq!(patches(&fake), before + 1);
+    let bot = &app.bot.as_ref().unwrap().bot;
+    assert!(bot.subscriptions.iter().all(|s| !s.is_pending()));
+    assert!(simulator_misses(&app, "bot asks to listen to error.*"));
+    assert_eq!(app.waiting_count(), waiting_before - 1);
+    // Listen to one more, then remove it.
+    app.apply(Message::ListenOpen(BotId::new("bot").unwrap()));
+    app.apply(Message::ListenTopic("warn.stock".into()));
+    app.apply(Message::ListenMode(ModeChoice::Mode(crate::domain::DeliveryMode::Note)));
+    send(&mut app, Message::ListenSave);
+    shows(&app, &["warn.stock", "note"]);
+    send(
+        &mut app,
+        Message::Unsubscribe(BotId::new("bot").unwrap(), "warn.stock".into()),
+    );
+    assert!(simulator_misses(&app, "warn.stock"));
+    send(&mut app, Message::Go(Screen::Bot(BotId::new("bot-wrx80").unwrap())));
+    shows(&app, &["Hears what is addressed to it and the team's stop and danger"]);
+}
+
+#[test]
+fn a_bad_topic_is_refused_before_the_call() {
+    let (fake, mut app) = subscribed_fleet();
+    send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
+    app.apply(Message::ListenOpen(BotId::new("bot").unwrap()));
+    app.apply(Message::ListenTopic("Bad Topic".into()));
+    let before = fake.calls().len();
+    assert!(app.apply(Message::ListenSave).is_empty());
+    assert_eq!(fake.calls().len(), before);
+    assert!(app.banner.is_some());
+    app.apply(Message::ListenClose);
+    assert!(!app.listen.is_open_for(&BotId::new("bot").unwrap()));
+}
+
+#[test]
+fn a_team_shows_its_topics_and_the_operator_publishes() {
+    let (fake, mut app) = subscribed_fleet();
+    fake.publish(
+        "bot.event.emitted",
+        "bot-wrx80",
+        serde_json::json!({"name": "pedido.nuevo", "from": "bot-wrx80", "message": "table 4"}),
+    );
+    fake.publish(
+        "bot.event.emitted",
+        "bot-wrx80",
+        serde_json::json!({"name": "info.turno", "from": "bot-wrx80", "message": "shift"}),
+    );
+    send(&mut app, Message::Go(Screen::Team("tienda".into())));
+    shows(
+        &app,
+        &[
+            "Topics",
+            "pedido.nuevo",
+            "publishes bot-wrx80",
+            "listens bot (task)",
+            "info.turno",
+            "nobody listens",
+            "Publish an event",
+        ],
+    );
+    let sent = messages_of_click(&app, "Publish an event");
+    assert!(matches!(sent.as_slice(), [Message::PublishOpen(team)] if team == "tienda"));
+    send(&mut app, Message::PublishOpen("tienda".into()));
+    app.apply(Message::PublishName("stop.all".into()));
+    app.apply(Message::PublishMessage("Everyone stop".into()));
+    shows(&app, &["Name", "To", "Message", "Publish"]);
+    send(&mut app, Message::PublishSend);
+    assert!(fake.calls().iter().any(|c| c == "publish_event tienda stop.all"));
+    assert!(app.publish.team.is_none());
+    let tick = app.now + chrono::Duration::seconds(3);
+    send(&mut app, Message::Tick(tick));
+    shows(&app, &["You published", "you → the team: stop.all · Everyone stop"]);
+}
+
+#[test]
+fn an_older_control_plane_has_no_topics_and_nothing_else_breaks() {
+    let (fake, mut app) = subscribed_fleet();
+    fake.without_newer_routes();
+    send(&mut app, Message::Go(Screen::Team("tienda".into())));
+    shows(
+        &app,
+        &[
+            "This control plane is older: it has no topics yet. Update it to see them.",
+            "Who is in it",
+        ],
+    );
+}
+
+#[test]
+fn a_task_an_event_made_says_who_told_it_and_what_it_knew() {
+    let (fake, mut app) = subscribed_fleet();
+    let tasks = futures::executor::block_on(crate::application::ControlPlane::list_tasks(
+        fake.as_ref(),
+        crate::domain::TaskFilter::default(),
+    ))
+    .unwrap();
+    let running = tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::Running)
+        .unwrap()
+        .id
+        .clone();
+    fake.set_input(
+        &running,
+        serde_json::json!({"from": "bot-wrx80", "name": "pedido.nuevo", "message": "table 4",
+            "notes": [{"from": "bot-wrx80", "name": "info.turno", "message": "shift at six", "at": "2026-10-25T09:00:00Z"}]}),
+    );
+    fake.tell(
+        &running,
+        "Your teammate bot-wrx80 says (warn.stock): low on boxes",
+        "evt-9",
+    );
+    send(&mut app, Message::Go(Screen::Task(running)));
+    shows(
+        &app,
+        &[
+            "Told by",
+            "bot-wrx80 · pedido.nuevo: table 4",
+            "Knew",
+            "bot-wrx80 · info.turno: shift at six",
+        ],
+    );
+    send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
+    shows(&app, &["Your teammate bot-wrx80 says (warn.stock): low on boxes"]);
+}
