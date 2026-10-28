@@ -14,4 +14,9 @@ type EventDelivery struct {
 	Trigger   string `json:"trigger"`
 	Created   bool   `json:"created"`
 	Urgent    bool   `json:"urgent,omitempty"`
+	// Degraded says why a task or message became a note: intake_rate.
+	Degraded string `json:"degraded,omitempty"`
+	// CoalescedInto names the receiver's Pending task the event joined
+	// as a note.
+	CoalescedInto string `json:"coalescedInto,omitempty"`
 }
