@@ -46,5 +46,8 @@ func (k deadlineKeeper) miss(ctx context.Context, bot domain.Bot, task *domain.T
 	if err := k.rec.executionEvent(ctx, endEvent(*task), bot, task.ID(), executionID, task.CorrelationID(), payload); err != nil {
 		return err
 	}
+	if err := newPlatformPublisher(k.deps).taskEnded(ctx, bot, *task, domain.Execution{}); err != nil {
+		return err
+	}
 	return k.rec.audit(ctx, "task.deadline", task.ID().String(), domain.AuditOK, map[string]string{"parentTask": lineage.ParentTaskID})
 }

@@ -108,9 +108,12 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 				return nil
 			}
 		}
+		if err := newPlatformPublisher(s.deps).taskWaiting(ctx, bot, *task, execution.ID(), wait.Tool); err != nil {
+			return err
+		}
 		return s.notes.queue(ctx, bot, *task, *execution, wait)
 	}
-	return nil
+	return newPlatformPublisher(s.deps).taskEnded(ctx, bot, *task, *execution)
 }
 
 // PolicyActor is who decides a call the bot's approvals.autoApprove

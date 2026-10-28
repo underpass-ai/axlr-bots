@@ -141,6 +141,9 @@ func (uc ExpireApprovals) Expire(ctx context.Context, id domain.TaskID) (Expired
 		if err := uc.rec.executionEvent(ctx, domain.EventTaskExpired, bot, task.ID(), "", task.CorrelationID(), payload); err != nil {
 			return ExpiredApproval{}, err
 		}
+		if err := newPlatformPublisher(uc.deps).taskEnded(ctx, bot, task, domain.Execution{}); err != nil {
+			return ExpiredApproval{}, err
+		}
 		return ExpiredApproval{TaskID: id, Action: action, Task: task}, nil
 	}
 	previous, err := uc.deps.Executions.Get(ctx, task.CurrentExecutionID())
