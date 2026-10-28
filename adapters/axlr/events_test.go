@@ -25,7 +25,7 @@ func TestATeamRunLoadsTheEmitToolToo(t *testing.T) {
 		t.Fatal(err)
 	}
 	var manifest delegationManifest
-	if err := json.Unmarshal(raw, &manifest); err != nil || strings.Join(manifest.AllowTools, ",") != application.DelegateToolName+","+application.EmitEventToolName {
+	if err := json.Unmarshal(raw, &manifest); err != nil || strings.Join(manifest.AllowTools, ",") != application.DelegateToolName+","+application.EmitEventToolName+","+application.SubscribeToolName {
 		t.Errorf("manifest = %s", raw)
 	}
 	// Only the emit tool: a bot in a team with nobody to ask.
@@ -34,7 +34,7 @@ func TestATeamRunLoadsTheEmitToolToo(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _ = os.ReadFile(filepath.Join(e.StateDir, "mcp", "exec-1.json"))
-	if err := json.Unmarshal(raw, &manifest); err != nil || strings.Join(manifest.AllowTools, ",") != application.EmitEventToolName {
+	if err := json.Unmarshal(raw, &manifest); err != nil || strings.Join(manifest.AllowTools, ",") != application.EmitEventToolName+","+application.SubscribeToolName {
 		t.Errorf("emit only = %s", raw)
 	}
 	if args := strings.Join(readArgs(t, argsFile), " "); !strings.Contains(args, "--approve all") {

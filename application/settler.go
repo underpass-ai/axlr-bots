@@ -130,7 +130,9 @@ const TeamEventActor = "policy:team-event"
 // whom: the emit tool always, any other call when the bot's
 // approvals.autoApprove names it.
 func approvedByPolicy(bot domain.Bot, pending domain.PendingDecision) (string, bool) {
-	if tool, _, ok := domain.UnwrapCall(pending.Tool, pending.Arguments); ok && domain.ToolBaseName(tool) == EmitEventToolName {
+	// Asking for a subscription waits for a person anyway: the ask is
+	// what the person decides, in the panel.
+	if tool, _, ok := domain.UnwrapCall(pending.Tool, pending.Arguments); ok && (domain.ToolBaseName(tool) == EmitEventToolName || domain.ToolBaseName(tool) == SubscribeToolName) {
 		return TeamEventActor, true
 	}
 	if bot.Approvals().AutoApproves(pending.Tool, pending.Arguments) {

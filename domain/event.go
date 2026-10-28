@@ -5,13 +5,16 @@ import "time"
 // Event is a fact the control plane publishes about a bot, a task, an
 // execution or a node (vision §11.2), with the schema version a real
 // implementation needs and the correlation ids (bot, task, execution,
-// trace) an execution is reconstructed by. A node event names no bot.
+// trace) an execution is reconstructed by. A node event names no bot;
+// an event about a team (the operator published on it) names the team
+// and no bot.
 type Event struct {
 	ID            EventID        `json:"eventId"`
 	SchemaVersion SchemaVersion  `json:"schemaVersion"`
 	Type          EventType      `json:"type"`
 	TenantID      TenantID       `json:"tenantId"`
 	BotID         BotID          `json:"botId,omitempty"`
+	GroupName     string         `json:"groupName,omitempty"`
 	NodeID        NodeID         `json:"nodeId,omitempty"`
 	TaskID        TaskID         `json:"taskId,omitempty"`
 	ExecutionID   ExecutionID    `json:"executionId,omitempty"`
@@ -48,6 +51,18 @@ func NewNodeEvent(id EventID, kind EventType, node NodeID, createdAt time.Time, 
 	return event, nil
 }
 
+// NewGroupEvent builds an event about a team of the tenant.
+func NewGroupEvent(id EventID, kind EventType, tenant TenantID, group TeamName, createdAt time.Time, payload map[string]any) (Event, error) {
+	event := Event{ID: id, SchemaVersion: EventSchemaV1, Type: kind, TenantID: tenant, GroupName: group.String(), CreatedAt: createdAt, Payload: payload}
+	if !kind.AboutGroup() {
+		return Event{}, invalid("event type", "is not a team event")
+	}
+	if err := event.Validate(); err != nil {
+		return Event{}, err
+	}
+	return event, nil
+}
+
 // Validate checks the fields every event must carry.
 func (e Event) Validate() error {
 	switch {
@@ -57,7 +72,9 @@ func (e Event) Validate() error {
 		return invalid("schema version", "must not be empty")
 	case e.TenantID == "":
 		return invalid("tenant id", "must not be empty")
-	case e.BotID == "" && !e.Type.AboutNode():
+	case e.GroupName == "" && e.Type.AboutGroup():
+		return invalid("group name", "must not be empty")
+	case e.BotID == "" && !e.Type.AboutNode() && !e.Type.AboutGroup():
 		return invalid("bot id", "must not be empty")
 	case e.NodeID == "" && e.Type.AboutNode():
 		return invalid("node id", "must not be empty")

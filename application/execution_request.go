@@ -51,7 +51,7 @@ func nodeTools(delegation *DelegationOffer, events *EventsOffer) []string {
 		tools = append(tools, DelegateToolName)
 	}
 	if events != nil {
-		tools = append(tools, EmitEventToolName)
+		tools = append(tools, EmitEventToolName, SubscribeToolName)
 	}
 	return tools
 }

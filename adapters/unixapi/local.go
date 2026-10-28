@@ -125,6 +125,14 @@ func (l *Local) ListGroupEvents(ctx context.Context, query application.GroupEven
 	return application.NewListGroupEvents(l.deps).Execute(ctx, query)
 }
 
+func (l *Local) ListGroupTopics(ctx context.Context, name, tenant string) ([]application.GroupTopic, error) {
+	return application.NewListGroupTopics(l.deps).Execute(ctx, name, tenant)
+}
+
+func (l *Local) PublishGroupEvent(ctx context.Context, command application.PublishGroupEventCommand) (application.PublishAnswer, error) {
+	return l.runner.Publish(ctx, command)
+}
+
 func (l *Local) ListEvents(ctx context.Context, id string, limit int) ([]domain.Event, error) {
 	botID, err := domain.NewBotID(id)
 	if err != nil {

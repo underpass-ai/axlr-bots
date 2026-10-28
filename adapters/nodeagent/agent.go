@@ -135,6 +135,8 @@ func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution 
 	if events != nil {
 		e := emitter{transport: a.Transport, node: id, execution: execution, log: a.Options.log()}
 		handlers = append(handlers, mcpHandler{tool: emitTool(*events), call: e.call})
+		ask := subscriber{transport: a.Transport, node: id, execution: execution, log: a.Options.log()}
+		handlers = append(handlers, mcpHandler{tool: subscribeTool(), call: ask.call})
 	}
 	server, err := serveMCP(ctx, path, a.Executor.Version(ctx), handlers...)
 	if err != nil {

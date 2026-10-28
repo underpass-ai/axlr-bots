@@ -34,6 +34,12 @@ type Service interface {
 	// ListGroupEvents answers a team's timeline after the caller's last
 	// event; over the operator address the route may wait for one.
 	ListGroupEvents(ctx context.Context, query application.GroupEventsQuery) ([]domain.Event, error)
+	// ListGroupTopics answers a team's topics: who publishes, who
+	// listens, the last event.
+	ListGroupTopics(ctx context.Context, name, tenant string) ([]application.GroupTopic, error)
+	// PublishGroupEvent publishes the operator's event on a team; the
+	// same key again answers the same event, Created false.
+	PublishGroupEvent(ctx context.Context, command application.PublishGroupEventCommand) (application.PublishAnswer, error)
 	// ListEvents returns the newest limit events of the bot, oldest first.
 	ListEvents(ctx context.Context, id string, limit int) ([]domain.Event, error)
 	SubmitTask(ctx context.Context, request SubmitRequest) (SubmitResponse, error)

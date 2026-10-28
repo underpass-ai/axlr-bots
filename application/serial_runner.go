@@ -148,6 +148,22 @@ func (r *SerialRunner) Emit(ctx context.Context, node domain.NodeID, execution d
 	return NewEmitEvent(r.deps).Execute(ctx, node, execution, command)
 }
 
+// Publish delivers the operator's event on a team, as
+// PublishGroupEvent does, under the same lock as the assignments.
+func (r *SerialRunner) Publish(ctx context.Context, command PublishGroupEventCommand) (PublishAnswer, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return NewPublishGroupEvent(r.deps).Execute(ctx, command)
+}
+
+// Subscribe adds the subscription an execution's bot asks for, as
+// AskSubscription does, under the same lock as the assignments.
+func (r *SerialRunner) Subscribe(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, command SubscribeCommand) (SubscribeAnswer, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return NewAskSubscription(r.deps).Execute(ctx, node, execution, command)
+}
+
 // Delegate creates the task an execution asks another bot for, as
 // DelegateTask does, under the same lock as the assignments and the
 // reports: the parent task is never changed by two of them at once.

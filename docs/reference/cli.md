@@ -15,6 +15,8 @@ axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>]
   bot subscribe <bot-id> <topic> [--mode task|message|note] [--from a,b] | bot unsubscribe <bot-id> <topic> | bot subscriptions <bot-id>
   group list | group get <group> [--tenant <id>]   the teams the bots name, with their members
   group events <group> [--after <event-id>] [--limit 100] [--tenant <id>]   the team's timeline
+  group topics <group> [--tenant <id>]   who publishes, who listens, nobody listens
+  group publish <group> <name> --message "<text>" [--data '{…}'] [--to a,b] [--key <k>] [--tenant <id>]   the operator's event; stop.all recalls everyone
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>] [--urgent]
   trigger fire <bot-id> <trigger> --body '<json>' | --file <event.json> [--delivery <id>]
   task run <task-id>                           in process (exit 0 completed, 3 decision required, 1 failed)

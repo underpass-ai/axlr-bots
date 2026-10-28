@@ -26,7 +26,7 @@ func (uc EmitEvent) deliverMessage(ctx context.Context, e emission, mate domain.
 		delivery, skip, err := uc.deliverNote(ctx, e, mate, sub, DegradedIntakeRate, "")
 		return delivery, skip, true, err
 	}
-	text := "Your teammate " + e.bot.ID().String() + " says (" + e.name.String() + "): " + e.message.String()
+	text := e.says() + " (" + e.name.String() + "): " + e.message.String()
 	if e.dataJSON != "" {
 		text += "\n" + e.dataJSON
 	}

@@ -291,6 +291,9 @@ func (f *fakeTransport) AwaitDelegation(context.Context, domain.NodeID, domain.E
 func (f *fakeTransport) Emit(context.Context, domain.NodeID, domain.ExecutionID, application.EmitEventCommand) (application.EmitAnswer, error) {
 	return application.EmitAnswer{}, errors.New("not served")
 }
+func (f *fakeTransport) Subscribe(context.Context, domain.NodeID, domain.ExecutionID, application.SubscribeCommand) (application.SubscribeAnswer, error) {
+	return application.SubscribeAnswer{}, errors.New("not served")
+}
 func (f *fakeTransport) Register(context.Context, application.NodeRegistration) (domain.NodeSnapshot, error) {
 	return domain.NodeSnapshot{}, nil
 }

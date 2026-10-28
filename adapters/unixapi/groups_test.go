@@ -85,6 +85,36 @@ func TestEventsOverTheSocket(t *testing.T) {
 	if _, err := client.ListGroupEvents(ctx, application.GroupEventsQuery{Name: "sea"}); !domain.IsNotFound(err) {
 		t.Errorf("missing team: %v", err)
 	}
+	// The bot asks to hear errors; it is pending.
+	asked, err := client.Subscribe(ctx, "web-1", assignment.ExecutionID, application.SubscribeCommand{Topic: "error.*", Why: "to retry"})
+	if err != nil || asked.Status != "pending" || asked.Refused != nil {
+		t.Errorf("ask = %+v %v", asked, err)
+	}
+	if again, err := client.Subscribe(ctx, "web-1", assignment.ExecutionID, application.SubscribeCommand{Topic: "error.*", Why: "to retry"}); err != nil || again.Refused == nil || again.Refused.Reason != domain.RefusedAlreadySubscribed {
+		t.Errorf("again = %+v %v", again, err)
+	}
+	if bot, _ := client.GetBot(ctx, "plane"); len(bot.Subscriptions) != 1 || bot.Subscriptions[0].Status != "pending" {
+		t.Errorf("plane = %+v", bot.Subscriptions)
+	}
+	// The operator publishes; a repeat with the key is the same event.
+	stop, err := client.PublishGroupEvent(ctx, application.PublishGroupEventCommand{Group: "port", Tenant: "ops", Name: "stop.all", Message: "Everyone stop", IdempotencyKey: "p-1", Data: map[string]any{"why": "a storm"}})
+	if err != nil || !stop.Created || len(stop.Deliveries) != 2 {
+		t.Fatalf("publish = %+v %v", stop, err)
+	}
+	if again, err := client.PublishGroupEvent(ctx, application.PublishGroupEventCommand{Group: "port", Name: "stop.all", Message: "Everyone stop", IdempotencyKey: "p-1", Data: map[string]any{"why": "a storm"}}); err != nil || again.Created || again.EventID != stop.EventID {
+		t.Errorf("again = %+v %v", again, err)
+	}
+	if _, err := client.PublishGroupEvent(ctx, application.PublishGroupEventCommand{Group: "port", Name: "error.bot", Message: "x", IdempotencyKey: "p-2"}); err == nil || !strings.Contains(err.Error(), domain.RefusedNotAllowed) {
+		t.Errorf("error.bot: %v", err)
+	}
+	topics, err := client.ListGroupTopics(ctx, "port", "ops")
+	names := []string{}
+	for _, topic := range topics {
+		names = append(names, topic.Name)
+	}
+	if err != nil || strings.Join(names, ",") != "error.*,stop.all,warn.ship-near" {
+		t.Errorf("topics = %v %v", names, err)
+	}
 }
 
 func TestTheTeamTimelineWaitsForTheNextEvent(t *testing.T) {

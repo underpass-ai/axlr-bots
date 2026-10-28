@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -178,6 +179,25 @@ func TestSubscriptionsArePatchedWithinTheirRules(t *testing.T) {
 	}
 	if got, _ := h.bots.Get(ctx, "almacen"); !got.Subscriptions().List()[0].Active() {
 		t.Error("the ask is not active")
+	}
+	// The panel approves one of two asks and sends the other back as it
+	// read it, through JSON: the kept ask is still the same.
+	other := domain.SubscriptionSnapshot{Topic: "done.*", Status: "pending", AskedBy: "almacen", Why: "to count", AskedAt: &asked}
+	both, _ := domain.NewSubscriptions([]domain.SubscriptionSnapshot{ask, other})
+	bot, _ = h.bots.Get(ctx, "almacen")
+	bot.SetSubscriptions(both)
+	if err := h.bots.Save(ctx, bot); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := h.bots.Get(ctx, "almacen")
+	raw, _ := json.Marshal(stored.Snapshot().Subscriptions)
+	var read []domain.SubscriptionSnapshot
+	if err := json.Unmarshal(raw, &read); err != nil {
+		t.Fatal(err)
+	}
+	read[0].Status = "active"
+	if err := patch(read...); err != nil {
+		t.Errorf("one approved, one kept through JSON: %v", err)
 	}
 }
 
