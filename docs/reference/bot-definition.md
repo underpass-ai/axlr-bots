@@ -157,7 +157,17 @@ Who hears an event: every Enabled teammate of the emitter but the emitter. An ev
 
 A message reads `Your teammate <from> says (<name>): <message>`, with the facts as compact JSON on a second line, and comes `from: event:<event id>`. A note waits for the bot's next task: when a task starts, its prompt carries the bot's last 8 notes of the last 24 hours, newest last, at most 1200 characters, under "Recent events in your team", between the directory and the task; the notes are cut before the directory, and the mission and the objective never. The task keeps them as `input.notes` (`from`, `name`, `message`, `at`), so its detail shows what it knew and a later execution of it is given the same. A Paused bot's notes are recorded too; it reads them when it is enabled. A repeat of the same event gives nothing twice.
 
-An event that would make a second task while the bot's task from an event of the **same name** is still Pending (not started) makes none: it is recorded as a note with `coalescedInto: <task id>`, and that task's prompt, built when it starts, carries it. A critical is never coalesced: a second `stop.*` is a second urgent task. A trigger `{"type": "event", "events": ["a.*"], "interrupt": true}` in a definition is read as `{"topic": "a.*", "mode": "task", "urgent": true}`, and `bot get` shows it so; the next release refuses it.
+An event that would make a second task while the bot's task from an event of the **same name** is still Pending (not started) makes none: it is recorded as a note with `coalescedInto: <task id>`, and that task's prompt, built when it starts, carries it. A critical is never coalesced: a second `stop.*` is a second urgent task.
+
+The control plane publishes its own facts about a bot's task on the bot's teams, as that bot and `by: control-plane`, only when a teammate subscribes to the name; the bot itself never hears its own:
+
+| Name | When | `data` |
+|---|---|---|
+| `error.bot` (critical) | the task failed or expired | `taskId`, `reason` |
+| `warn.approval` (warning) | the task waits for a person to approve a call | `taskId`, `tool` |
+| `done.task` (info) | the task completed | `taskId`, `answer` (the task's result, cut at 280 characters) |
+
+A supervisor that subscribes to `error.*` gets an urgent task for each teammate's failure; a task an `error.bot` made is on the failed task's chain, so a chain of failures is cut at `events.maxDepth`. With nobody subscribed, the history keeps only `bot.task.failed`. A trigger `{"type": "event", "events": ["a.*"], "interrupt": true}` in a definition is read as `{"topic": "a.*", "mode": "task", "urgent": true}`, and `bot get` shows it so; the next release refuses it.
 
 ```bash
 axlr-bots bot subscribe almacen 'pedido.*' --from recepcion [--mode task]

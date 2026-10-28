@@ -60,7 +60,7 @@ func (uc EmitEvent) deliverTask(ctx context.Context, e emission, mate domain.Bot
 	}
 	now := uc.deps.Clock.Now()
 	child := domain.TaskLineage{
-		ParentTaskID: e.task.ID().String(), ParentExecutionID: e.execution.ID().String(), ParentBotID: e.bot.ID().String(),
+		ParentTaskID: e.task.ID().String(), ParentExecutionID: e.execution.String(), ParentBotID: e.bot.ID().String(),
 		Depth: depth, MaxDepth: limit, Chain: append(lineage.Chain, e.bot.ID().String()),
 		Grant: domain.DelegationGrant{Deadline: now.Add(mate.Budgets().TaskTimeoutOr(DefaultTaskTimeout))}, EventID: e.id,
 	}

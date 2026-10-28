@@ -136,6 +136,9 @@ func (uc ReconcileTasks) reconcile(ctx context.Context, task domain.Task, grace 
 	if err := uc.rec.executionEvent(ctx, endEvent(task), bot, task.ID(), execution.ID(), task.CorrelationID(), payload); err != nil {
 		return false, err
 	}
+	if err := newPlatformPublisher(uc.deps).taskEnded(ctx, bot, task, execution); err != nil {
+		return false, err
+	}
 	details := map[string]string{"execution": execution.ID().String(), "age": age.Round(time.Second).String()}
 	if err := uc.rec.audit(ctx, "task.reconcile", task.ID().String(), domain.AuditOK, details); err != nil {
 		return false, err

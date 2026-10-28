@@ -44,7 +44,8 @@ func NewEmitEvent(deps Dependencies) EmitEvent {
 // emission is one event being checked and delivered.
 type emission struct {
 	node      domain.NodeID
-	execution domain.Execution
+	execution domain.ExecutionID
+	by        domain.Publisher
 	task      domain.Task
 	bot       domain.Bot
 	id        string
@@ -161,7 +162,7 @@ func (uc EmitEvent) load(ctx context.Context, node domain.NodeID, executionID do
 	slices.Sort(to)
 	// The kind of the name fixes the severity; an older node's severity
 	// is ignored.
-	e := emission{node: node, execution: execution, task: task, bot: bot, name: name, severity: domain.KindOf(name).Severity(), message: message, data: data, dataJSON: dataJSON, to: to}
+	e := emission{node: node, execution: execution.ID(), by: domain.PublisherBot, task: task, bot: bot, name: name, severity: domain.KindOf(name).Severity(), message: message, data: data, dataJSON: dataJSON, to: to}
 	e.id = eventID(task.ID(), e)
 	return e, nil
 }
@@ -179,7 +180,7 @@ func (uc EmitEvent) deliver(ctx context.Context, e emission, mate domain.Bot) (*
 	if len(e.to) > 0 && !addressed {
 		return nil, nil, nil
 	}
-	sub, hears := mate.Hears(e.name, e.bot.ID().String(), domain.PublisherBot, addressed)
+	sub, hears := mate.Hears(e.name, e.bot.ID().String(), e.by, addressed)
 	if !hears {
 		return nil, nil, nil
 	}
@@ -208,7 +209,7 @@ func skipped(mate domain.Bot, reason, message string) (*EventDelivery, *EventSki
 // and what the event did to it.
 func (uc EmitEvent) recordHeard(ctx context.Context, e emission, mate domain.Bot, d EventDelivery) error {
 	payload := map[string]any{
-		"eventId": e.id, "name": e.name.String(), "from": e.bot.ID().String(), "by": string(domain.PublisherBot),
+		"eventId": e.id, "name": e.name.String(), "from": e.bot.ID().String(), "by": string(e.by),
 		"severity": e.severity.String(), "message": e.message.String(), "mode": d.Mode, "subscription": d.Trigger,
 	}
 	if d.TaskID != "" {
@@ -249,20 +250,23 @@ func (uc EmitEvent) recordEmitted(ctx context.Context, e emission, answer EmitAn
 	delete(payload, "dataJSON")
 	delete(payload, "taskId")
 	payload["deliveries"], payload["skipped"] = deliveriesPayload(answer.Deliveries), skipsPayload(answer.Skipped)
-	if err := uc.rec.executionEvent(ctx, domain.EventEventEmitted, e.bot, e.task.ID(), e.execution.ID(), e.task.CorrelationID(), payload); err != nil {
+	if e.by != domain.PublisherBot {
+		payload["by"] = string(e.by)
+	}
+	if err := uc.rec.executionEvent(ctx, domain.EventEventEmitted, e.bot, e.task.ID(), e.execution, e.task.CorrelationID(), payload); err != nil {
 		return err
 	}
-	details := map[string]string{"node": e.node.String(), "execution": e.execution.ID().String(), "event": e.id, "name": e.name.String(), "severity": e.severity.String(), "deliveries": strconv.Itoa(len(answer.Deliveries))}
+	details := map[string]string{"node": e.node.String(), "by": string(e.by), "execution": e.execution.String(), "event": e.id, "name": e.name.String(), "severity": e.severity.String(), "deliveries": strconv.Itoa(len(answer.Deliveries))}
 	return uc.rec.audit(ctx, "event.emit", e.task.ID().String(), domain.AuditOK, details)
 }
 
 // refuse records the refusal and answers it.
 func (uc EmitEvent) refuse(ctx context.Context, e emission, reason, message string) (EmitAnswer, error) {
 	payload := map[string]any{"name": e.name.String(), "severity": e.severity.String(), "message": e.message.String(), "reason": reason, "refusal": message}
-	if err := uc.rec.executionEvent(ctx, domain.EventEventRefused, e.bot, e.task.ID(), e.execution.ID(), e.task.CorrelationID(), payload); err != nil {
+	if err := uc.rec.executionEvent(ctx, domain.EventEventRefused, e.bot, e.task.ID(), e.execution, e.task.CorrelationID(), payload); err != nil {
 		return EmitAnswer{}, err
 	}
-	details := map[string]string{"node": e.node.String(), "execution": e.execution.ID().String(), "name": e.name.String(), "reason": reason}
+	details := map[string]string{"node": e.node.String(), "execution": e.execution.String(), "name": e.name.String(), "reason": reason}
 	if err := uc.rec.audit(ctx, "event.emit", e.task.ID().String(), domain.AuditDenied, details); err != nil {
 		return EmitAnswer{}, err
 	}
@@ -315,6 +319,11 @@ func emittedBefore(events []domain.Event, id string, now time.Time) (domain.Even
 		eventID, _ := event.Payload["eventId"].(string)
 		if eventID == id {
 			before, seen = event, true
+		}
+		// What the control plane published about the bot is not the bot's
+		// own emitting.
+		if by, _ := event.Payload["by"].(string); by == string(domain.PublisherControlPlane) {
+			continue
 		}
 		if now.Sub(event.CreatedAt) < eventRateWindow {
 			inWindow[eventID] = true
