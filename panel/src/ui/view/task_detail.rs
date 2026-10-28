@@ -99,6 +99,14 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
         page = page.push(section(Icon::Tasks, "Task", text(task.objective.clone()), tokens));
     }
     page = page.push(facts);
+    let knew = task.knew();
+    if !knew.is_empty() {
+        let mut notes = column![muted("What its bot had heard, given to it when it started", tokens)].spacing(6);
+        for note in knew {
+            notes = notes.push(text(note).size(SMALL));
+        }
+        page = page.push(section(Icon::Clock, "Knew", notes, tokens));
+    }
     if let Some(waiting) = approval(app, detail, tokens) {
         page = page.push(waiting);
     }

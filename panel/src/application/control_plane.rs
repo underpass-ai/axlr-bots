@@ -3,8 +3,8 @@ use chrono::{DateTime, Utc};
 use super::PortFuture;
 use crate::domain::{
     Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, EnrollmentRequest, EnrollmentToken,
-    Event, Execution, Node, NodeId, Overview, RevokedNode, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task,
-    TaskFilter, TaskId, TaskSubmission,
+    Event, Execution, Node, NodeId, Overview, Publication, Published, RevokedNode, SentTaskMessage, StoppedBotAnswer,
+    SubmittedTask, Task, TaskFilter, TaskId, TaskSubmission, Topic,
 };
 
 /// The control plane as the panel needs it: the operator API's routes.
@@ -33,6 +33,11 @@ pub trait ControlPlane: Send + Sync {
     /// with `wait_seconds`, the control plane answers as soon as there is
     /// a new one.
     fn group_events(&self, name: String, after: Option<String>, wait_seconds: u32) -> PortFuture<'_, Vec<Event>>;
+    /// A team's topics: who publishes, who listens, nobody listens. A
+    /// control plane older than the route answers not found.
+    fn group_topics(&self, name: String) -> PortFuture<'_, Vec<Topic>>;
+    /// Publishes the operator's event on a team.
+    fn publish_event(&self, team: String, publication: Publication) -> PortFuture<'_, Published>;
 
     /// Tasks across bots, newest first.
     fn list_tasks(&self, filter: TaskFilter) -> PortFuture<'_, Vec<Task>>;

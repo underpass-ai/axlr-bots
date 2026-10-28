@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::application::EventFeed;
-use crate::domain::BotId;
+use crate::domain::{BotId, Topic};
 
 /// The panel's watch over the teams: each team's timeline as read so
 /// far, the teams with a read on its way, and a bot's team being edited.
@@ -11,6 +11,11 @@ pub struct TeamWatch {
     pub following: BTreeSet<String>,
     /// The bot whose team is being changed, and the words typed so far.
     pub editing: Option<(BotId, String)>,
+    /// Each team's topics as last read; `None` when the control plane is
+    /// older than the topics route.
+    pub topics: BTreeMap<String, Option<Vec<Topic>>>,
+    /// The teams whose topics are on their way.
+    pub loading_topics: BTreeSet<String>,
 }
 
 impl TeamWatch {

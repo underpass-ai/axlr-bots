@@ -102,6 +102,13 @@ async fn route(
         ),
         ("GET", "/v1/bots/bot-wrx80/events") => ok(format!("[{EVENT}]")),
         ("GET", "/v1/groups/port/events") => ok(format!("[{EVENT}]")),
+        ("GET", "/v1/groups/port/topics") => ok(
+            r#"[{"name":"info.turno","publishers":["plane"],"listeners":[],"count":1,"nobodyListens":true}]"#.into(),
+        ),
+        ("POST", "/v1/groups/port/events") => json(
+            StatusCode::CREATED,
+            r#"{"eventId":"evt-7","name":"stop.all","severity":"critical","deliveries":[{"botId":"quad-1","mode":"task","trigger":"team","created":true}],"skipped":[],"created":true}"#,
+        ),
         ("GET", "/v1/tasks") => ok(format!("[{TASK}]")),
         ("GET", "/v1/tasks/task-1") => ok(TASK.into()),
         ("POST", "/v1/bots/bot-wrx80/tasks") => json(
@@ -266,6 +273,24 @@ async fn reads_every_route_with_the_token_over_tls() {
     );
     api.group_events("port".into(), None, 0).await.unwrap();
     assert_eq!(server.last().path, "/v1/groups/port/events?limit=200");
+    let topics = api.group_topics("port".into()).await.unwrap();
+    assert!(topics[0].nobody_listens && topics[0].publishers == vec!["plane"]);
+    assert_eq!(server.last().path, "/v1/groups/port/topics");
+    let publication = axlr_bots_panel::domain::Publication {
+        name: "stop.all".into(),
+        message: "Everyone stop".into(),
+        to: Vec::new(),
+        idempotency_key: "k-1".into(),
+    };
+    let published = api.publish_event("port".into(), publication).await.unwrap();
+    assert!(published.created && published.deliveries.len() == 1);
+    assert_eq!(
+        (server.last().method, server.last().body),
+        (
+            Method::POST,
+            r#"{"name":"stop.all","message":"Everyone stop","idempotencyKey":"k-1"}"#.to_string()
+        )
+    );
 }
 
 #[tokio::test]

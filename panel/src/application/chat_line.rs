@@ -38,8 +38,10 @@ impl ChatLine {
             });
         }
         for event in events {
+            // A teammate's event heard as a message comes from:
+            // event:<id>; it is the teammate's line, not the person's.
             let mine = match event.event_type.as_str() {
-                "bot.task.message" => true,
+                "bot.task.message" => !event.payload_text("from").is_some_and(|f| f.starts_with("event:")),
                 "bot.task.said" => false,
                 _ => continue,
             };

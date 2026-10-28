@@ -1,7 +1,7 @@
 use serde::Serialize;
 
 use super::identifier::{validate_identifier, validate_text};
-use super::{AutonomyLevel, DomainError, Placement};
+use super::{AutonomyLevel, DomainError, MAX_SUBSCRIPTIONS, Placement, Subscription};
 
 /// The fields of a bot to replace; the others stay. Each named field is
 /// the whole new value.
@@ -19,6 +19,9 @@ pub struct BotPatch {
     /// The bot's teams, the whole new list.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub groups: Option<Vec<String>>,
+    /// The topics it listens to, the whole new list.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subscriptions: Option<Vec<Subscription>>,
 }
 
 impl BotPatch {
@@ -28,6 +31,7 @@ impl BotPatch {
             && self.allowed_tools.is_none()
             && self.placement.is_none()
             && self.groups.is_none()
+            && self.subscriptions.is_none()
     }
 
     /// A patch must name a field, and a new mission must be valid.
@@ -37,6 +41,11 @@ impl BotPatch {
         }
         if let Some(mission) = &self.mission {
             validate_text("mission", mission, 2000)?;
+        }
+        if let Some(subscriptions) = &self.subscriptions
+            && subscriptions.len() > MAX_SUBSCRIPTIONS
+        {
+            return Err(DomainError::new("subscriptions", "a bot listens to at most 16 topics"));
         }
         if let Some(groups) = &self.groups {
             if groups.len() > 8 {

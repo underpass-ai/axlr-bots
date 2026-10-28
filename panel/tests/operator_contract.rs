@@ -184,3 +184,44 @@ fn filters_by_every_task_status_the_contract_lists() {
     let offered: Vec<String> = TaskStatus::ALL.iter().map(|s| s.name().to_string()).collect();
     assert_eq!(offered, listed, "the Tasks filter offers what the control plane has");
 }
+
+/// Every event type the contract lists has the panel's own words, and one
+/// from a newer control plane shows as itself, never as an error.
+#[test]
+fn says_every_event_type_in_its_own_words() {
+    let spec = contract();
+    for kind in values(&spec, "EventType") {
+        let event: Event = serde_json::from_value(json!({
+            "eventId": "evt-1", "type": kind, "tenantId": "default", "createdAt": "2026-10-28T10:00:00Z", "payload": {}
+        }))
+        .unwrap_or_else(|e| panic!("{kind}: {e}"));
+        assert_ne!(
+            event.label(),
+            kind,
+            "{kind} is in the contract and the panel has no words for it"
+        );
+    }
+    for kind in [
+        "bot.event.heard",
+        "bot.subscription.asked",
+        "bot.subscription.changed",
+        "group.event.published",
+    ] {
+        assert!(
+            values(&spec, "EventType").iter().any(|v| v == kind),
+            "{kind} is not in the contract"
+        );
+    }
+    let future: Event = serde_json::from_value(json!({
+        "eventId": "evt-1", "type": FUTURE, "tenantId": "default", "createdAt": "2026-10-28T10:00:00Z"
+    }))
+    .unwrap();
+    assert_eq!(future.label(), FUTURE);
+}
+
+#[test]
+fn reads_a_teams_topics_and_the_answer_to_a_publication() {
+    let spec = contract();
+    reads::<axlr_bots_panel::domain::Topic>(&spec, "GroupTopic");
+    reads::<axlr_bots_panel::domain::Published>(&spec, "PublishAnswer");
+}

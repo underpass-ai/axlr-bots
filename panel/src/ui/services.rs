@@ -3,8 +3,9 @@ use std::sync::Arc;
 use super::{BotView, Connection, Effect, Message};
 use crate::application::{
     CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader, FilePicker, FollowBotEvents,
-    FollowTeamEvents, KeySource, LoadChat, LoadTaskDetail, MintEnrollmentToken, Notifier, PanelError, PatchBot,
-    RefreshFleet, RegisterBot, RevokeNode, SendChat, StopBot, SubmitTask, SwitchBot,
+    FollowTeamEvents, KeySource, ListTopics, LoadChat, LoadTaskDetail, MintEnrollmentToken, Notifier, PanelError,
+    PatchBot, PublishEvent, RefreshFleet, RegisterBot, RevokeNode, SaveSubscriptions, SendChat, StopBot, SubmitTask,
+    SwitchBot,
 };
 use crate::domain::BotPatch;
 
@@ -174,6 +175,30 @@ impl Services {
                     };
                     PatchBot::new(cp).execute(id, patch).await
                 }
+                Err(e) => Err(e),
+            }),
+            Effect::SaveSubscriptions(id, change) => {
+                let result = match self.control_plane() {
+                    Ok(cp) => SaveSubscriptions::new(cp).execute(id, change.clone()).await,
+                    Err(e) => Err(e),
+                };
+                Message::SubscriptionsSaved(change, result)
+            }
+            Effect::LoadTopics(team) => {
+                let result = match self.control_plane() {
+                    Ok(cp) => ListTopics::new(cp).execute(team.clone()).await,
+                    Err(e) => Err(e),
+                };
+                Message::TopicsLoaded(team, result)
+            }
+            Effect::Publish {
+                team,
+                name,
+                message,
+                to,
+                key,
+            } => Message::Published(match self.control_plane() {
+                Ok(cp) => PublishEvent::new(cp).execute(team, &name, &message, &to, key).await,
                 Err(e) => Err(e),
             }),
             Effect::Cancel(id) => Message::Cancelled(match self.control_plane() {
