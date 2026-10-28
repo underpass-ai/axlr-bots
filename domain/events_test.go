@@ -87,7 +87,14 @@ func TestEventPolicy(t *testing.T) {
 	if s == nil || len(s.Emit) != 3 || s.Emit[1].MaxSeverity != "" || s.Emit[1].Name != "warn.*" || s.PerMinute != 12 {
 		t.Errorf("snapshot = %+v", s)
 	}
-	bad := []EventsSnapshot{{PerMinute: 61}, {PerMinute: -1}, {Emit: []EmitRuleSnapshot{{Name: "Bad"}}}, {Emit: make([]EmitRuleSnapshot, 17)}}
+	if team.IntakePerMinute() != DefaultIntakePerMinute || team.MaxDepth() != DefaultEventChainDepth {
+		t.Errorf("default intake %d depth %d", team.IntakePerMinute(), team.MaxDepth())
+	}
+	hearing, _ := NewEventPolicy(EventsSnapshot{IntakePerMinute: 3, MaxDepth: 4})
+	if hearing.IntakePerMinute() != 3 || hearing.MaxDepth() != 4 || hearing.Snapshot().IntakePerMinute != 3 || hearing.Snapshot().MaxDepth != 4 {
+		t.Errorf("hearing = %+v", hearing.Snapshot())
+	}
+	bad := []EventsSnapshot{{PerMinute: 61}, {PerMinute: -1}, {IntakePerMinute: 61}, {MaxDepth: 9}, {MaxDepth: -1}, {Emit: []EmitRuleSnapshot{{Name: "Bad"}}}, {Emit: make([]EmitRuleSnapshot, 17)}}
 	for _, b := range bad {
 		if _, err := NewEventPolicy(b); err == nil {
 			t.Errorf("%+v accepted", b)

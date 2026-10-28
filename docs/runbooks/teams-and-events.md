@@ -29,6 +29,8 @@ Everything else has a default; a bot's definition file (**Bots → From file**) 
 |---|---|---|
 | `events.emit` | any name but `error.*` and `done.*`; the first segment (`stop`, `danger`, `warn`, `info`) fixes the severity | `[{"name": "stop.recall"}, {"name": "warn.*"}]` |
 | `events.perMinute` | 6 | `12` |
+| `events.intakePerMinute` | 10 events a minute taken as tasks or messages; past it, notes | `20` |
+| `events.maxDepth` | an event's chain goes 2 deep | `3` |
 | `events.interruptible` | a critical a teammate emits (`stop.*`, `danger.*`) interrupts | `false` |
 | `subscriptions` | hears what is addressed to it and the team's `danger.*` and `stop.*` | `[{"topic": "ship.*", "urgent": true}]` (`bot subscribe <bot> 'ship.*'`); a trigger of type `event` is read as one |
 | `delegation.fromTeam` | takes its teammates' tasks | `false` |

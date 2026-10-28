@@ -7,6 +7,16 @@ const (
 	DefaultEventsPerMinute = 6
 	// MaxEventsPerMinute is the highest rate a definition may name.
 	MaxEventsPerMinute = 60
+	// DefaultIntakePerMinute is how many events a bot takes as tasks or
+	// messages in a minute when its definition names no rate; past it, a
+	// delivery is a note.
+	DefaultIntakePerMinute = 10
+	// DefaultEventChainDepth is how deep a chain an event starts may go
+	// when the emitter's definition names no depth: a reaction may react
+	// once.
+	DefaultEventChainDepth = 2
+	// MaxEventChainDepth is the deepest a definition may name.
+	MaxEventChainDepth = 8
 	maxEmitRules       = 16
 )
 
@@ -15,6 +25,8 @@ const (
 type EventPolicy struct {
 	rules     []EmitRule
 	perMinute int
+	intake    int
+	maxDepth  int
 	steady    bool
 }
 
@@ -27,7 +39,13 @@ func NewEventPolicy(s EventsSnapshot) (EventPolicy, error) {
 	if s.PerMinute < 0 || s.PerMinute > MaxEventsPerMinute {
 		return EventPolicy{}, invalid("events perMinute", "must be from 1 to 60")
 	}
-	p := EventPolicy{perMinute: s.PerMinute, steady: s.Interruptible != nil && !*s.Interruptible}
+	if s.IntakePerMinute < 0 || s.IntakePerMinute > MaxEventsPerMinute {
+		return EventPolicy{}, invalid("events intakePerMinute", "must be from 1 to 60")
+	}
+	if s.MaxDepth < 0 || s.MaxDepth > MaxEventChainDepth {
+		return EventPolicy{}, invalid("events maxDepth", "must be from 1 to 8")
+	}
+	p := EventPolicy{perMinute: s.PerMinute, intake: s.IntakePerMinute, maxDepth: s.MaxDepth, steady: s.Interruptible != nil && !*s.Interruptible}
 	for _, raw := range s.Emit {
 		rule, err := NewEmitRule(raw)
 		if err != nil {
@@ -54,6 +72,23 @@ func (p EventPolicy) PerMinute() int {
 	return p.perMinute
 }
 
+// IntakePerMinute is how many events the bot takes as tasks or messages
+// in a minute.
+func (p EventPolicy) IntakePerMinute() int {
+	if p.intake == 0 {
+		return DefaultIntakePerMinute
+	}
+	return p.intake
+}
+
+// MaxDepth is how deep a chain an event of the bot starts may go.
+func (p EventPolicy) MaxDepth() int {
+	if p.maxDepth == 0 {
+		return DefaultEventChainDepth
+	}
+	return p.maxDepth
+}
+
 // MayEmit reports whether the bot may emit the name: a bot never
 // publishes the control plane's kinds (error, done), and otherwise a
 // rule must fit the name.
@@ -77,10 +112,10 @@ func (p EventPolicy) Interruptible() bool { return !p.steady }
 
 // Snapshot returns the policy as plain data, nil when it is the default.
 func (p EventPolicy) Snapshot() *EventsSnapshot {
-	if len(p.rules) == 0 && p.perMinute == 0 && !p.steady {
+	if len(p.rules) == 0 && p.perMinute == 0 && p.intake == 0 && p.maxDepth == 0 && !p.steady {
 		return nil
 	}
-	s := &EventsSnapshot{PerMinute: p.perMinute}
+	s := &EventsSnapshot{PerMinute: p.perMinute, IntakePerMinute: p.intake, MaxDepth: p.maxDepth}
 	if p.steady {
 		steady := false
 		s.Interruptible = &steady

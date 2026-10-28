@@ -19,6 +19,13 @@ func (uc EmitEvent) deliverMessage(ctx context.Context, e emission, mate domain.
 	if err != nil || !running {
 		return nil, nil, false, err
 	}
+	if full, err := intakeFull(ctx, uc.deps, mate); err != nil || full {
+		if err != nil {
+			return nil, nil, true, err
+		}
+		delivery, skip, err := uc.deliverNote(ctx, e, mate, sub, DegradedIntakeRate, "")
+		return delivery, skip, true, err
+	}
 	text := "Your teammate " + e.bot.ID().String() + " says (" + e.name.String() + "): " + e.message.String()
 	if e.dataJSON != "" {
 		text += "\n" + e.dataJSON

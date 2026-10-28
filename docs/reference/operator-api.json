@@ -1981,7 +1981,7 @@
       "EventsSnapshot": {
         "type": "object",
         "x-go-type": "domain.EventsSnapshot",
-        "description": "what a bot may emit to its teams; absent: any name but error.* and done.*, 6 a minute",
+        "description": "what a bot may emit to its teams and how it hears them; absent: any name but error.* and done.*, 6 a minute out, 10 a minute in, chains 2 deep",
         "properties": {
           "emit": {
             "type": "array",
@@ -1991,6 +1991,14 @@
           },
           "perMinute": {
             "type": "integer"
+          },
+          "intakePerMinute": {
+            "type": "integer",
+            "description": "how many events the bot takes as tasks or messages in a minute, 1 to 60; past it a delivery is a note; absent: 10"
+          },
+          "maxDepth": {
+            "type": "integer",
+            "description": "how deep a chain an event of the bot starts may go, 1 to 8; absent: 2"
           },
           "interruptible": {
             "type": "boolean",

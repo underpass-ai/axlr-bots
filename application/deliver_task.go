@@ -16,7 +16,24 @@ func (uc EmitEvent) deliverTask(ctx context.Context, e emission, mate domain.Bot
 	if !mate.AcceptsTasks() {
 		return skipped(mate, domain.RefusedTargetUnavailable, "bot "+mate.ID().String()+" is "+mate.Status().String()+" and takes no task")
 	}
-	limit := chainDepthLimit(e.bot, e.task)
+	// A critical always lands: it is never coalesced and never degraded.
+	if e.severity != domain.SeverityCritical {
+		pending, found, err := pendingTaskOf(ctx, uc.deps, mate, e.name)
+		if err != nil {
+			return nil, nil, err
+		}
+		if found {
+			return uc.deliverNote(ctx, e, mate, sub, "", pending.ID().String())
+		}
+		full, err := intakeFull(ctx, uc.deps, mate)
+		if err != nil {
+			return nil, nil, err
+		}
+		if full {
+			return uc.deliverNote(ctx, e, mate, sub, DegradedIntakeRate, "")
+		}
+	}
+	limit := eventChainDepthLimit(e.bot, e.task)
 	depth := e.task.Depth() + 1
 	if depth > limit {
 		return skipped(mate, domain.RefusedDepthExceeded, fmt.Sprintf("a task of %s would be at depth %d; this chain allows %d", mate.ID(), depth, limit))

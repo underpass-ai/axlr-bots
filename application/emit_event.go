@@ -190,7 +190,7 @@ func (uc EmitEvent) deliver(ctx context.Context, e emission, mate domain.Bot) (*
 	}
 	switch mode {
 	case domain.ModeNote:
-		return uc.deliverNote(ctx, e, mate, sub)
+		return uc.deliverNote(ctx, e, mate, sub, "", "")
 	case domain.ModeMessage:
 		if delivery, skip, handled, err := uc.deliverMessage(ctx, e, mate, sub); handled || err != nil {
 			return delivery, skip, err
@@ -216,6 +216,12 @@ func (uc EmitEvent) recordHeard(ctx context.Context, e emission, mate domain.Bot
 	}
 	if d.MessageID != "" {
 		payload["messageId"] = d.MessageID
+	}
+	if d.Degraded != "" {
+		payload["degraded"] = d.Degraded
+	}
+	if d.CoalescedInto != "" {
+		payload["coalescedInto"] = d.CoalescedInto
 	}
 	return uc.rec.event(ctx, domain.EventEventHeard, mate, domain.TaskID(d.TaskID), e.task.CorrelationID(), payload)
 }
@@ -362,6 +368,12 @@ func deliveriesPayload(deliveries []EventDelivery) []map[string]any {
 		}
 		if d.MessageID != "" {
 			item["messageId"] = d.MessageID
+		}
+		if d.Degraded != "" {
+			item["degraded"] = d.Degraded
+		}
+		if d.CoalescedInto != "" {
+			item["coalescedInto"] = d.CoalescedInto
 		}
 		out = append(out, item)
 	}
