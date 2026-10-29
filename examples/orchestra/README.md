@@ -1,14 +1,14 @@
 # The orchestra
 
-36 bots, one chair each, play the first movement of Mozart's Symphony No. 40; the operator conducts with a hand in front of a webcam. Each chair is a real AXLR bot with a mission, a policy and a budget: it decides when it enters, how loud, and when it stops. The notes are Mozart's, the clock is a sequencer, the sound is a synthesizer.
+36 bots, one chair each, play the first movement of Mozart's Symphony No. 25 in G minor (public domain, [why not No. 40](score-service/score/README.md)); the operator conducts with a hand in front of a webcam. Each chair is a real AXLR bot with a mission, a policy and a budget: it decides when it enters, how loud, and when it stops. The notes are Mozart's, the clock is a sequencer, the sound is a synthesizer.
 
 > **SIMULATION.** Each chair is one LLM bot. The notes come from a score, the sound from a synthesizer; the bots decide only when to enter, how loud, and when to stop.
 
 | Piece | Where | State |
 |---|---|---|
-| 1. The stage: nodes and a team, beside the control plane | [`stage/`](stage/) | here |
-| 2. What `stop.all` does to a long task | [`stage/measure_stop.py`](stage/measure_stop.py) | here, [measured](#2-stopall-on-a-long-task) |
-| 3. `score-service`: the parts, the clock, the synthesizer | `score-service/` | next |
+| 1. The stage: nodes and a team, beside the control plane | [`stage/`](stage/) | done |
+| 2. What `stop.all` does to a long task | [`stage/measure_stop.py`](stage/measure_stop.py) | done, [measured](#2-stopall-on-a-long-task) |
+| 3. `score-service`: the parts, the clock, the synthesizer | [`score-service/`](score-service/README.md) | here: `stop.all` silences it in 0.4 s |
 | 4. 36 chairs in the team `orchestra` | `chairs/` | |
 | 5. `/stage`: the view | `score-service/static/` | |
 | 6. `conductor-cam` and the phone's three buttons | `conductor-cam/` | |
