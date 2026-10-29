@@ -36,6 +36,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | What the control plane, the node and AXLR each keep, decide and trust; what is next and what is left out | [Control plane, node and AXLR](architecture/control-plane-node-axlr.md) |
 | The packages, the state directory, how to build and test | [Layout](architecture/layout.md) |
 | How a node runs AXLR, the policy it passes, how it reads the result | [Runtime contract](architecture/runtime-contract.md) |
+| How a world (a simulation, a camera, a sensor, an operator's hand) reaches the bots as text, through the tools, the bus and the notes that exist | [Input adapters](architecture/input-adapters.md) |
 | The product and architecture vision this implements | [Vision](architecture/vision.md) |
 
 ## Documentation status and evidence

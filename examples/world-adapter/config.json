@@ -1,0 +1,8 @@
+{
+  "team": "anthill",
+  "world": {"url": "", "things": 12, "seed": 7, "fence": 0.9, "mark": [0.5, 0.5], "step": 0.03},
+  "rate": {"perMinute": 6},
+  "period": 1.0,
+  "controlPlane": {"url": "", "caFile": "", "tokenFile": ""},
+  "label": "Simulated world. Each creature is one LLM bot; it sees only what this adapter reports, as text."
+}

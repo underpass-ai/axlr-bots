@@ -156,6 +156,9 @@ jobs:
       - name: Test the fleet's gz scripts
         working-directory: examples/drone-fleet/gz
         run: python -m unittest -v test_gz
+      - name: Test the world adapter template
+        working-directory: examples/world-adapter
+        run: python -m unittest -v test_adapter
 
   node-image:
     runs-on: ubuntu-latest

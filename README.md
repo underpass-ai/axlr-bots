@@ -83,6 +83,7 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | Look up a command, read a report | [Command reference](docs/reference/cli.md) |
 | Recover after a crash, a silent node or a lost control plane | [Recovery](docs/runbooks/recovery.md) |
 | Understand who keeps, decides and trusts what; what is next and left out | [Control plane, node and AXLR](docs/architecture/control-plane-node-axlr.md) |
+| Bring a world of your own to the bots (a simulation, a camera, a sensor, a hand) as text, with an adapter beside it and nothing new in the control plane | [Input adapters](docs/architecture/input-adapters.md), [template](examples/world-adapter/README.md) |
 | Read the live run on a real host and the demo script | [Live run](docs/live-run.md) |
 
 [Documentation home](docs/index.md) lists every guide.
