@@ -9,7 +9,7 @@ chair's node ── AXLR ── POST /mcp/vn1-3 ──▶ score-service ──�
                          enter · dynamics · stop · listen     │ clock, parts, chairs
 operator ─ POST /v1/groups/orchestra/events ─▶ control plane ─┘ the service long-polls the team's timeline:
                                                                  stop.all → silence; info.tempo {bpm} → the clock
-/stage (piece 5) ──────── GET /api/state?version=N&wait=20 ────▶ take, bar, tempo, each chair, the facts
+/stage ────────────────── GET /api/state?version=N&wait=20 ────▶ take, bar, tempo, each chair, the facts, the last bus event
 ```
 
 | File | What it is |
@@ -18,7 +18,8 @@ operator ─ POST /v1/groups/orchestra/events ─▶ control plane ─┘ the se
 | [`orchestra.py`](orchestra.py) | the clock and the chairs: `enter`, `dynamics`, `stop`, `listen`, `stop_all`, `set_tempo`, `render` |
 | [`synth.py`](synth.py) | FluidSynth rendering into memory, the live WAV stream, the render loop paced by the wall clock |
 | [`bus.py`](bus.py) | the service's own subscription: the team's timeline, the operator's `stop.all` and `info.tempo` |
-| [`server.py`](server.py) | HTTP on loopback: `/mcp/<chair>`, `/api/state`, `/audio.wav` |
+| [`server.py`](server.py) | HTTP on loopback: `/mcp/<chair>`, `/api/state`, `/api/score`, `/audio.wav`, `/stage` |
+| [`static/`](static/) | the stage page: `stage.html`, `stage.js`, `stage.css`, Lexend and DotGothic16 (OFL, licences beside them) |
 | [`mcp_http.py`](mcp_http.py) | the MCP tool table, copied from [the fleet](../../drone-fleet/app/mcp_http.py) as the [adapter template](../../world-adapter/README.md) says |
 | [`check_take.py`](check_take.py) | piece 3's check by hand: two parts, a `stop.all`, how long the sound took to go |
 | [`config.json`](config.json) | the sections and their chairs, the dynamics, the tempo range, the soundfonts, the team, the control plane |
@@ -90,3 +91,24 @@ python3 check_take.py --team stage --wav take.wav                               
 | 3 | 0.30 s | ≤ 0.1 s | ≤ 0.40 s | yes |
 
 The cut is measured from the event's `createdAt` on the control plane to the service's cut on the same host's clock; the sound in the WAV is read from the cut's frame. That is the stop's latency, not the audio path's: OBS adds its own buffer, labelled apart. All 36 chairs at `f` peak at −1.8 dBFS, unclipped.
+
+## The stage
+
+`http://127.0.0.1:8790/stage` on the host the service runs on: one SVG, nothing from the network.
+
+| Part | What it shows | From |
+|---|---|---|
+| the chairs | 36 dots in their sections around the podium: an outline waiting, dashed when an entry is scheduled, copper while playing (fainter at `p`), grey once stopped; each section's count playing | each chair's state in `/api/state`: what the chair's own `enter` and `stop` did, never a guess |
+| the score strip | each part's notes per bar over 32 bars, copper for a section that sounds, the playhead | `/api/score`; the playhead moves on at the service's tempo between two answers and snaps back at each |
+| the bus | the operator's last event, as published: name, message, data | the service's own subscription |
+| the cut | «silence 0.14 s after stop.all from operator, at bar 40»: the sound's clock; the bots stop on their own | the service's cut |
+| the ribbon | SIMULATION, always, and the label under the stage | `label` in the config |
+
+`?hud=0` keeps the stage, the strip and the ribbon only, for a recording with OBS; `?theme=dark` or `light`, else the system's.
+
+![The stage while it plays: the strings and the winds in, the winds' cue on the bus as published](../../../docs/assets/orchestra/stage-playing.jpg)
+
+![The same stage after stop.all: every chair off, the silence 0.14 s after the event](../../../docs/assets/orchestra/stage-stopped.jpg)
+
+Checked on gx10, 29 Oct 2026: 24 chairs entered by hand lit at once; `info.cue.winds` published on the bus lit the four winds as their bots entered; `stop.all` turned every chair grey and the page showed the silence at 0.14 s.
+

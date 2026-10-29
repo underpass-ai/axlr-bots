@@ -7,7 +7,8 @@
   GET  /api/state        the orchestra now: take, bar, tempo, every chair's state,
                          the last facts; ?version=N&wait=20 answers when it changes
   GET  /audio.wav        the sound, live, as an open-ended WAV (OBS, ffplay, a browser)
-  GET  /                 the label; the stage page comes with piece 5
+  GET  /api/score        each part's notes per bar, for the page's score strip
+  GET  /stage            the stage: 36 chairs, the score with its playhead, the conductor (?hud=0 for the recording)
 
 It listens on loopback only. With controlPlane.url it follows the team's
 bus and cuts the sound on stop.all itself.
@@ -32,6 +33,9 @@ from orchestra import Orchestra, Refused
 from score import Score
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+STATIC = os.path.realpath(os.path.join(HERE, "static"))
+TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml",
+         ".ttf": "font/ttf", ".txt": "text/plain; charset=utf-8"}
 log = logging.getLogger("score")
 
 TOOLS = [
@@ -67,6 +71,7 @@ def chair_tools(orchestra, chair, max_seconds):
 def make_handler(orchestra, stream, config):
     label = config["label"]
     rate = config["audio"]["rate"]
+    score_json = json.dumps(orchestra.density()).encode()
     per_chair = {c: chair_tools(orchestra, c, config["listen"]["maxSeconds"]) for c in orchestra.chairs}
 
     class Handler(BaseHTTPRequestHandler):
@@ -118,11 +123,22 @@ def make_handler(orchestra, stream, config):
                     state = orchestra.snapshot()
                 state["label"] = label
                 return self._send(200, json.dumps(state).encode())
+            if url.path == "/api/score":
+                return self._send(200, score_json)
             if url.path == "/audio.wav":
                 return self._audio()
-            if url.path == "/":
-                return self._send(200, (label + "\n").encode(), "text/plain; charset=utf-8")
+            if url.path in ("/", "/stage"):
+                return self._file("stage.html")
+            if url.path.startswith("/static/"):
+                return self._file(url.path[len("/static/"):])
             self._send(404, b'{"error":"not found"}')
+
+        def _file(self, name):
+            path = os.path.realpath(os.path.join(STATIC, name))
+            if not path.startswith(STATIC + os.sep) or not os.path.isfile(path):
+                return self._send(404, b'{"error":"not found"}')
+            with open(path, "rb") as f:
+                self._send(200, f.read(), TYPES.get(os.path.splitext(path)[1], "application/octet-stream"))
 
         def _audio(self):
             q = stream.listen()
