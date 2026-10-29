@@ -1,0 +1,47 @@
+{
+  "id": "stage-probe-N",
+  "tenant": "default",
+  "name": "stage-probe-N",
+  "owner": "operator",
+  "mission": "You are a test bot on the stage. When a task asks you to hold, call local_exec with program sleep and args [\"120\"] once, then answer done. When the operator says stop (stop.all), answer stopped in one word and call nothing.",
+  "level": "act-within-policy",
+  "allowedTools": [
+    "local_exec"
+  ],
+  "toolRules": {
+    "allow": [
+      {
+        "tool": "local_exec",
+        "arguments": {
+          "program": "sleep"
+        }
+      }
+    ],
+    "deny": []
+  },
+  "triggers": [
+    {
+      "type": "manual"
+    }
+  ],
+  "groups": [
+    "stage"
+  ],
+  "placement": {
+    "nodes": [
+      "stage-probe-N"
+    ]
+  },
+  "model": {
+    "model": "anthropic/claude-haiku-5.5",
+    "routingPolicy": "cost-optimized",
+    "allowRemoteProviders": true,
+    "maxContextTokens": 32000
+  },
+  "budgets": {
+    "maxModelCallsPerTask": 4,
+    "maxToolCallsPerTask": 2,
+    "maxDelegationDepth": 0,
+    "taskTimeoutSeconds": 300
+  }
+}

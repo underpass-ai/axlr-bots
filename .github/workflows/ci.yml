@@ -159,6 +159,9 @@ jobs:
       - name: Test the world adapter template
         working-directory: examples/world-adapter
         run: python -m unittest -v test_adapter
+      - name: Test the orchestra's stop measurement
+        working-directory: examples/orchestra/stage
+        run: python -m unittest -v test_measure_stop
 
   node-image:
     runs-on: ubuntu-latest
