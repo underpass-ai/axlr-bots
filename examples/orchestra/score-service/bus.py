@@ -38,6 +38,7 @@ def apply(orchestra, event, clock=time.time):
     payload = event.get("payload") or {}
     name, data = payload.get("name", ""), payload.get("data") or {}
     at = parse_time(event["createdAt"]) if event.get("createdAt") else None
+    orchestra.heard(name, payload.get("message", ""), data, at)
     if name == "stop.all" or name.startswith("stop."):
         cut = orchestra.stop_all(f"{name} from {payload.get('from', 'operator')}", event_at=at)
         return "cut" if cut else "already stopped"

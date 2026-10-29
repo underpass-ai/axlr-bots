@@ -207,6 +207,29 @@ class OrchestraTest(unittest.TestCase):
         self.assertGreater(o.wait_change(-1, 0.1)["version"], 0)
 
 
+class StagePageTest(unittest.TestCase):
+    def test_density_is_one_strip_per_section(self):
+        o, _, _ = orchestra()
+        d = o.density()
+        self.assertEqual((d["bars"], d["beatsPerBar"], len(d["sections"])), (414, 4, 7))
+        horns = next(s for s in d["sections"] if s["id"] == "hn")["density"]
+        self.assertEqual(horns[:4], [0, 0, 0, 0])
+        self.assertTrue(all(0 <= x <= 1 for s in d["sections"] for x in s["density"]))
+
+    def test_the_last_bus_event_is_kept_as_published(self):
+        o, _, _ = orchestra()
+        o.heard("info.cue.strings", "Strings, come in.", {"dynamics": "f"}, 1000.0)
+        o.enter("vn1-1")
+        last = o.snapshot()["lastBus"]
+        self.assertEqual((last["name"], last["message"], last["data"]), ("info.cue.strings", "Strings, come in.", {"dynamics": "f"}))
+
+    def test_the_page_and_its_files_are_there(self):
+        for name in ("stage.html", "stage.js", "stage.css", "fonts/Lexend-Regular.ttf", "fonts/OFL-Lexend.txt"):
+            self.assertTrue(os.path.isfile(os.path.join(HERE, "static", name)), name)
+        with open(os.path.join(HERE, "static", "stage.html")) as f:
+            self.assertIn("SIMULATION", f.read())
+
+
 class BusTest(unittest.TestCase):
     def published(self, name, data=None):
         return {"type": "group.event.published", "createdAt": "2026-10-29T15:00:00.25Z",

@@ -119,6 +119,23 @@ class Orchestra:
             self._fact("stop.all", None, why=why, afterEventSeconds=self.cut["afterEventSeconds"])
             return self.cut
 
+    def heard(self, name, message, data, at):
+        """An operator's event on the bus, kept for the page as it was published."""
+        with self.cond:
+            self._fact("bus", None, name=name, message=message, data=data, eventAt=at)
+
+    def density(self):
+        """Each part's note-ons per bar, scaled to its own busiest bar: the score strip of the page."""
+        out = []
+        for sid, s in self.sections.items():
+            counts = [0] * self.score.bars
+            for tick, on, _, _ in self.score.parts[sid]:
+                if on:
+                    counts[min(self.score.bar_of(tick), self.score.bars) - 1] += 1
+            top = max(counts) or 1
+            out.append({"id": sid, "name": s["name"], "density": [round(c / top, 2) for c in counts]})
+        return {"bars": self.score.bars, "beatsPerBar": self.score.beats_per_bar, "sections": out}
+
     def set_tempo(self, bpm):
         with self.cond:
             low, high = self.tempo_range
@@ -162,7 +179,8 @@ class Orchestra:
                                  "playing": sum(1 for c in chairs if c["state"] == PLAYING)})
             return {"version": self.version, "status": self.status, "take": self.take, "bar": self.score.bar_of(self.tick),
                     "bars": self.score.bars, "beat": round((self.tick % self.score.ticks_per_bar) / self.score.ticks_per_beat, 2),
-                    "bpm": self.bpm, "sections": sections, "cut": self.cut, "facts": self.facts[-30:]}
+                    "bpm": self.bpm, "sections": sections, "cut": self.cut, "facts": self.facts[-30:],
+                    "lastBus": next((f for f in reversed(self.facts) if f["what"] == "bus"), None)}
 
     def wait_change(self, version, seconds):
         with self.cond:
