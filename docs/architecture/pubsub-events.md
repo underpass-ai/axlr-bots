@@ -312,3 +312,4 @@ The pilots emit `stop.recall` instead of `recall` with a severity; `examples/dro
 - A message delivery into a Pending task (only Running tasks take messages; a Pending task gets the event as a note).
 - `warn.budget` and other control plane facts beyond the three named; add a kind entry and a publisher call each.
 - Deleting a bot's subscriptions when it leaves a team: they stay, inert, until the operator removes them (the topics view shows them as listeners of no team).
+- A signal from outside the team (a simulation, a camera, a sensor) on the bus: the operator's publish route is its door, and [input adapters](input-adapters.md) is the pattern around it.
