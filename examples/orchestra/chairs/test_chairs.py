@@ -101,6 +101,8 @@ class JevChairsTest(unittest.TestCase):
         program = runtime["jev"]
         self.assertEqual((program["server"], program["start"], program["wait"], program["stop"]), ("score", "phrases", "listen", "stop"))
         self.assertEqual(program["act"], {"tool": "play", "choice": "phrase", "verdict": "judge", "pass": ["dynamics"]})
+        self.assertEqual(program["tell"], {"name": "info.chair.played", "fields": ["phrase", "probability"]})
+        self.assertIn({"topic": "info.chair.*", "mode": "message"}, self.template["subscriptions"])
         self.assertEqual(sorted(self.template["allowedTools"]), ["listen", "phrases", "play", "stop"])
         self.assertNotIn("axlr_judge", self.template["allowedTools"])
         self.assertEqual(self.template["model"]["model"], "")
@@ -110,8 +112,9 @@ class JevChairsTest(unittest.TestCase):
         _, axlr = chairs.load("axlr")
         section = next(s for s in self.config["sections"] if s["id"] == "ob")
         jev, model = chairs.definition(self.template, section, 1), chairs.definition(axlr, section, 1)
-        for key in ("id", "name", "placement", "subscriptions", "groups", "events", "tenant", "owner"):
+        for key in ("id", "name", "placement", "groups", "events", "tenant", "owner"):
             self.assertEqual(jev[key], model[key], key)
+        self.assertEqual(jev["subscriptions"][:3], model["subscriptions"])
         for placeholder in ("CHAIR", "SECTION", "TOTAL", "FAMILY", "chair N of", "SECTIONKEY"):
             self.assertNotIn(placeholder, str(jev), placeholder)
         self.assertTrue(jev["mission"].startswith("Oboes, chair 1 of 2: a Jev bot."))

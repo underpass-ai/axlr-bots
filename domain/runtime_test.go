@@ -81,6 +81,31 @@ func TestAJevProgramIsValidated(t *testing.T) {
 			t.Errorf("%s: accepted", name)
 		}
 	}
+	for name, tell := range map[string]*JevTellSnapshot{
+		"no name":         {Name: ""},
+		"not a bot's":     {Name: "error.chair"},
+		"unknown field":   {Name: "info.chair.played", Fields: []string{"tempo"}},
+		"field twice":     {Name: "info.chair.played", Fields: []string{"choice", "choice"}},
+		"the verdict arg": {Name: "info.chair.played", Fields: []string{"judge"}},
+	} {
+		s := jevSnapshot()
+		s.Jev.Tell = tell
+		if _, err := NewRuntime(s); err == nil {
+			t.Errorf("tell %s: accepted", name)
+		}
+	}
+	telling := jevSnapshot()
+	telling.Jev.Tell = &JevTellSnapshot{Name: "info.chair.played", Fields: []string{"phrase", "probability", "dynamics"}}
+	told, err := NewRuntime(telling)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if program, _ := told.Jev(); true {
+		name, fields, ok := program.Tell()
+		if !ok || name != "info.chair.played" || len(fields) != 3 || told.Snapshot().Jev.Tell == nil || told.Snapshot().Jev.Tell.Fields[2] != "dynamics" {
+			t.Errorf("tell = %v %v %v", name, fields, ok)
+		}
+	}
 	minimal := &RuntimeSnapshot{Kind: "jev", Jev: &JevProgramSnapshot{Server: "w", Start: "a", Wait: "c", Act: JevActSnapshot{Tool: "b", Choice: "x"}}}
 	runtime, err := NewRuntime(minimal)
 	if err != nil {

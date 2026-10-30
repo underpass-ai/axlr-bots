@@ -196,6 +196,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprint(w, `usage: axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>] <command>
 
   serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--api-token-file <path>]
+        [--bus direct|nats] [--nats-url <url>] [--nats-creds <file>]
         [--tick 2s] [--reconcile-every 1m]
                                       run the control plane: the API on the socket, the node
                                       protocol over TLS on --listen (nodes on other hosts), the

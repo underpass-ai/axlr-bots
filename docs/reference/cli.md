@@ -6,6 +6,7 @@ Two commands come out of this module: `axlr-bots`, the control plane and the ope
 axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>] <command>
 
   serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--api-token-file <path>] [--api-url <url>]
+        [--bus direct|nats] [--nats-url <url>] [--nats-creds <file>]              pushes to the nodes also over a broker ([bus port](../architecture/bus-port.md))
         [--tick 2s] [--reconcile-every 1m] [--grace <duration>]
   ca init | ca show
   node list | node get <node-id>
@@ -35,6 +36,8 @@ axlr-node --control unix:///path/to/axlr-bots.sock | https://host:7878
           [--node-id <id>] [--labels k=v,k=v] [--state <dir>] [--axlr-bin <path>] [--heartbeat 15s] [--poll 20s]
           [--token-file <path> [--ca-file <pem>] [--enroll-retry 10s]]     over https: enroll first if not enrolled
           [--dedicated]                                                    only the bots placed on this node by name or selector
+          [--bus direct|nats] [--nats-url <url>] [--nats-creds <file>]    read the control plane's pushes from a broker
+          [--mcp-config <mcp.json>] [--jev-model <version>]                the jev runtime (on when TYPESAFE_API_KEY is set)
 axlr-node enroll --control https://host:7878 --token <token> | --token-file <path> [--ca-file <pem>] [--state <dir>] [--host-name <name>]
 axlr-node check --control https://host:7878 [--ca-file <pem> | --token-file <path> | --state <dir>] [--timeout 10s]
 axlr-node mcp-relay --socket <path>
@@ -53,6 +56,8 @@ axlr-node mcp-relay --socket <path>
 | node: control plane, id, labels, state, token | `--control`, `--node-id`, `--labels`, `--state`, `--token` | `AXLR_NODE_CONTROL`, `AXLR_NODE_ID`, `AXLR_NODE_LABELS`, `AXLR_NODE_STATE`, `AXLR_NODE_TOKEN` | over the socket the id is the host name; over `https://` it is the certificate's, and a `--node-id` that disagrees is refused |
 | node: token file, pinned CA | `--token-file`, `--ca-file` | `AXLR_NODE_TOKEN_FILE`, `AXLR_NODE_CA_FILE` | none |
 | node: dedicated | `--dedicated` | `AXLR_NODE_DEDICATED=true` | off: the node also runs bots placed on any node |
+| node: bus | `--bus direct\|nats`, `--nats-url`, `--nats-creds` | `AXLR_NODE_BUS`, `AXLR_NODE_NATS_URL`, `AXLR_NODE_NATS_CREDS` | `direct`: the control plane's pushes over the node's own stream; `nats`: read from the broker ([bus port](../architecture/bus-port.md)) |
+| node: Jev | `--mcp-config`, `--jev-model` | `AXLR_NODE_MCP_CONFIG`, `AXLR_NODE_JEV_MODEL` | the jev runtime is on when `TYPESAFE_API_KEY` is set ([bot definition](bot-definition.md#runtime)) |
 
 `axlr-node --token-file` is a sidecar's first start ([sidecar](../runbooks/sidecar.md)): with no certificate under its state the node enrolls with the token in the file, refusing a token whose node id is not `--node-id` before sending it; with a certificate it keeps it, unless the file holds a token other than the one the certificate came from (`pki/enrollment.json` records its id), which rotates it; a rotation that fails keeps the certificate. Until it has a certificate it retries every `--enroll-retry`, reading the file again each time, and never exits for it. `axlr-node mcp-relay` is not run by hand: AXLR starts it as the stdio MCP server of an execution whose bot may delegate, and it pipes its stdin and stdout to the agent's socket for that execution, `<state>/run/<execution>.sock` ([delegation](../architecture/delegation.md)). `axlr-node check` asks the node address's `/healthz` over TLS 1.3, verifying the control plane against the CA in `--ca-file`, the token's, or the one enrollment stored, and presents no certificate; it changes nothing.
 

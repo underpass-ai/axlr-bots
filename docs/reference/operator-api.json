@@ -1920,11 +1920,31 @@
           "stop": {
             "type": "string"
           },
+          "tell": {
+            "$ref": "#/components/schemas/JevTellSnapshot"
+          },
           "model": {
             "type": "string"
           }
         },
         "required": ["server", "start", "act", "wait"]
+      },
+      "JevTellSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.JevTellSnapshot",
+        "description": "what a Jev bot tells its teams after each act: the event's name and the fields of the decision that ride as its data (choice, probability, confidence, the act's choice argument, a field passed on; all when none)",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["name"]
       },
       "JevActSnapshot": {
         "type": "object",

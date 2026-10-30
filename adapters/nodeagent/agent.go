@@ -37,6 +37,9 @@ type Agent struct {
 	Transport application.NodeTransport
 	Executor  Executor
 	Options   Options
+	// Streamer hears the control plane's pushes when they come by another
+	// way than the transport (a broker); nil hears them on the transport.
+	Streamer Streamer
 
 	slots *slots
 	wg    *sync.WaitGroup
@@ -234,6 +237,11 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events)
 		request.DelegationSocket = socket
 		request.OnSaid = a.say(runCtx, id, assignment.ExecutionID)
+		if request.Events != nil {
+			request.OnEmit = func(command application.EmitEventCommand) (application.EmitAnswer, error) {
+				return a.Transport.Emit(runCtx, id, assignment.ExecutionID, command)
+			}
+		}
 		report, err = a.Executor.Execute(runCtx, request)
 		closeSocket()
 	case assignment.Decide != nil:
@@ -353,9 +361,12 @@ func (a Agent) unpoked(execution domain.ExecutionID) {
 // preemption or a message reaches the run at once instead of at its
 // next renewal. A control plane that serves no stream is left alone.
 func (a Agent) listen(ctx context.Context, id domain.NodeID) {
-	streamer, ok := a.Transport.(Streamer)
-	if !ok {
-		return
+	streamer := a.Streamer
+	if streamer == nil {
+		var ok bool
+		if streamer, ok = a.Transport.(Streamer); !ok {
+			return
+		}
 	}
 	logger := a.Options.log()
 	for ctx.Err() == nil {
@@ -375,9 +386,12 @@ func (a Agent) listen(ctx context.Context, id domain.NodeID) {
 		for push := range pushes {
 			if push.All {
 				a.pokes.pokeAll()
-				continue
+			} else {
+				a.pokes.poke(push.Execution)
 			}
-			a.pokes.poke(push.Execution)
+			if push.Ack != nil {
+				push.Ack()
+			}
 		}
 		a.pause(ctx, time.Second)
 	}

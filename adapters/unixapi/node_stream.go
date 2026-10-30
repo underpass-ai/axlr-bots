@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
 	"github.com/underpass-ai/axlr-bots/nodeproto"
 )
@@ -62,21 +63,21 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 			}
 		case <-changed:
 			changed, _ = s.service.changes.next()
-			var hinted []domain.ExecutionID
+			var pushes []application.NodePush
 			var complete bool
-			hinted, seq, complete = s.service.changes.since(seq)
+			pushes, seq, complete = s.service.changes.since(id, seq)
 			if !complete {
 				if !send(nodeproto.StreamMessage{Type: nodeproto.StreamResync}) {
 					return
 				}
 				continue
 			}
-			for _, execution := range hinted {
-				record, err := deps.Executions.Get(r.Context(), execution)
-				if err != nil || record.NodeID() != id {
-					continue
+			for _, push := range pushes {
+				message := nodeproto.StreamMessage{Type: nodeproto.StreamExecution, ExecutionID: push.Execution.String()}
+				if push.All {
+					message = nodeproto.StreamMessage{Type: nodeproto.StreamResync}
 				}
-				if !send(nodeproto.StreamMessage{Type: nodeproto.StreamExecution, ExecutionID: execution.String()}) {
+				if !send(message) {
 					return
 				}
 			}
