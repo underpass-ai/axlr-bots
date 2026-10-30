@@ -416,7 +416,7 @@ if (preview) {
   addEventListener("resize", () => { if (!renderer.xr.isPresenting) fit(); });
   fit();
   camera.position.set(0, 1.75, 0.7);
-  camera.lookAt(0, 0.9, -1.6);
+  camera.lookAt(0, 0.9 + (Number(params.get("tilt")) || 0), -1.6);  // ?tilt= raises the preview's eyes, to see what is around
   placeAround({ position: { x: 0, y: 1.6, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 } });
   setWorld($("world").value);
   $("world").addEventListener("change", () => setWorld($("world").value));
