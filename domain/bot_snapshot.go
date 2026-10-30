@@ -22,6 +22,7 @@ type BotSnapshot struct {
 	Groups        []string               `json:"groups,omitempty"`
 	Events        *EventsSnapshot        `json:"events,omitempty"`
 	Subscriptions []SubscriptionSnapshot `json:"subscriptions,omitempty"`
+	Runtime       *RuntimeSnapshot       `json:"runtime,omitempty"`
 	Status        string                 `json:"status"`
 	CreatedAt     time.Time              `json:"createdAt"`
 	UpdatedAt     time.Time              `json:"updatedAt"`

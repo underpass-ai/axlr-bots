@@ -164,3 +164,10 @@ adb reverse tcp:8790 tcp:8790               # the headset's localhost:8790 is gx
 ```
 
 In the headset's Quest Browser: `http://localhost:8790/hands`, then look ahead and press *Enter*: the orchestra is placed ahead of where you look. `?scale=` sizes it to the room (default 0.6: the front row 1.5 m away). The page plays the orchestra's sound (`/audio.wav`) in the headset when its box is ticked, so the headset's own recording has the sound. `server.py --hands-dry-run` reads the hands without publishing. On gx10, `http://127.0.0.1:8790/hands?sim=1&view=1` tries the path and shows the hall without the headset. A sleeping headset drops the Wi-Fi link: the page says "Failed to fetch" until `adb connect` and `adb reverse` again.
+
+## 7. Jev bots, and a bus that pushes
+
+Measured on 30 Oct 2026 with the AXLR chairs: a cue took 1.9–3.1 s to publish and a chair heard `stop.ob` 7 s before its `stop` call (the assignment, AXLR's start, Haiku through OpenRouter). Two changes:
+
+- **The bus pushes** (PR #71): the control plane wakes the nodes' long polls as it records a change and pushes a cancel or a message to the node that runs the execution over a stream it holds open, instead of the node asking every 250 ms and renewing every 10 s. The event log is indexed; listings skip the files that did not change. On a copy of gx10's state with the 36 chairs: `info.cue.all` published in 313 ms and reached the last of 36 nodes in 760 ms (12.98 s and 16.80 s before); `stop.all` 230 ms and 656 ms (9.16 s and 12.87 s).
+- **Jev bots** (this PR): the chairs as `runtime.kind: jev` ([the chairs](chairs/README.md#jev-bots-the-same-chairs-without-a-language-model)). No model, no OpenRouter: the node runs `phrases` → Jev → `play` → `listen` itself, each decision one call to Jev (~0.2 s), and `stop` once on `stop.*`. Cost per phrase: Jev's input tokens at $0.042 per million, about $0.0001.

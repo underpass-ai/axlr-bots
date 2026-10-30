@@ -29,6 +29,9 @@ type Options struct {
 	// Dedicated registers a node that runs only the bots placed on it by
 	// name or selector, never those placed on any node.
 	Dedicated bool
+	// Runtimes names the runtimes the node has beside AXLR (jev): the
+	// control plane assigns it a bot of another runtime only when named.
+	Runtimes []string
 	// Heartbeat is how often the agent reports it is alive.
 	Heartbeat time.Duration
 	// PollWait is how long one long poll for an assignment waits.

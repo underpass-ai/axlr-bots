@@ -1,10 +1,11 @@
 # The chairs
 
-36 bots in the team `orchestra`, one per chair, each on its own node of the [stage](../stage/stage.sh), each with the [score service](../score-service/README.md)'s four tools for its own line and Jev's `axlr_judge` to choose each phrase.
+36 bots in the team `orchestra`, one per chair, each on its own node of the [stage](../stage/stage.sh), each with the [score service](../score-service/README.md)'s four tools for its own line and Jev to choose each phrase: as AXLR bots on Haiku that call `axlr_judge` ([`chair.json`](chair.json)), or as **Jev bots** with no language model, whose node runs the fixed program itself ([`chair-jev.json`](chair-jev.json), `ORCHESTRA_RUNTIME=jev`).
 
 | | |
 |---|---|
 | [`chair.json`](chair.json) | the template: mission, level `act-within-policy`, the four tools and `axlr_judge`, the team, the subscriptions, the budgets |
+| [`chair-jev.json`](chair-jev.json) | the same chair as a Jev bot: `runtime.kind: jev`, the program `phrases` → Jev → `play` → `listen`, `stop` on `stop.*`; the four tools, no model ([bot definition](../../../docs/reference/bot-definition.md#runtime)) |
 | [`chairs.py`](chairs.py) | `render <dir>`, `up [chair…]`, `down [chair…]`, `list` |
 | [`measure_take.py`](measure_take.py) | one take measured: the cue, the phrases, Jev's calls and latency, what the bots reported against Jev's answers, the cost, the estimate for 36 |
 | [`test_chairs.py`](test_chairs.py) | the 36 definitions, no control plane |
@@ -28,6 +29,16 @@ Each node's AXLR reads its own `settings.json` (`stage.sh settings <chair>`, whi
 `stop.*` needs no subscription: every member hears it, as an urgent task.
 
 The tempo is not the chairs' business: the score service reads `info.tempo` from the bus itself, so a conductor's hand that beats 30 times a minute never fills the chairs' intake.
+
+## Jev bots: the same chairs without a language model
+
+With `chair.json` the model only shuffles the tool calls: Jev already makes every musical choice. `chair-jev.json` drops the model. The node runs the program: on a cue, `phrases`; each `ask` to Jev; `play` with the phrase number from Jev's choice, Jev's verdict as `judge` and the cue's `dynamics`; `listen`; until the score says `done`. On `stop.*`, `stop` once. A cue heard while the chair plays changes the dynamics of its next phrase.
+
+```bash
+ORCHESTRA_RUNTIME=jev python3 chairs.py up ob-1 vc-1
+```
+
+The node needs `TYPESAFE_API_KEY` in `~/.config/axlr-bots/env` (it is: the AXLR chairs read it there too); it registers the runtime `jev` and the control plane assigns the chair to no node without it. `chairs.py up` registers a chair anew or updates it, so a chair moves between the two templates with one `up`. The score service is the same: it answers the fixed program with `done` where it answers a model with a note.
 
 ## Up, down, list
 

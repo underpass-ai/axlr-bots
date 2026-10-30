@@ -12,6 +12,11 @@ A chair's id is the score service's: <section>-<n> (vn1-1 … hn-2). Its node is
 stage-<id>, dedicated; its MCP URL http://127.0.0.1:8790/mcp/<id>, so the score
 knows who calls. Without chair names, every chair.
 
+ORCHESTRA_RUNTIME=jev renders the chairs from chair-jev.json: Jev bots, whose
+node runs the fixed program phrases → Jev → play → listen with no language
+model (the node needs TYPESAFE_API_KEY in its environment file). Anything
+else, or nothing, is chair.json: AXLR bots on Haiku that call the same tools.
+
 Test: python3 -m unittest -v test_chairs
 """
 
@@ -25,6 +30,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG = os.path.join(HERE, "..", "score-service", "config.json")
 STAGE = os.path.join(HERE, "..", "stage", "stage.sh")
 SCORE_URL = os.environ.get("ORCHESTRA_SCORE_URL", "http://127.0.0.1:8790")
+RUNTIME = os.environ.get("ORCHESTRA_RUNTIME", "axlr")
+TEMPLATES = {"axlr": "chair.json", "jev": "chair-jev.json"}
 
 
 def chairs(config):
@@ -44,10 +51,14 @@ def definition(template, section, n):
     return bot
 
 
-def load():
+def load(runtime=None):
+    """The score's sections and the chair template of the runtime (ORCHESTRA_RUNTIME when None)."""
+    runtime = RUNTIME if runtime is None else runtime
+    if runtime not in TEMPLATES:
+        raise SystemExit(f"ORCHESTRA_RUNTIME must be one of {', '.join(TEMPLATES)}, not {runtime!r}")
     with open(CONFIG) as f:
         config = json.load(f)
-    with open(os.path.join(HERE, "chair.json")) as f:
+    with open(os.path.join(HERE, TEMPLATES[runtime])) as f:
         template = json.load(f)
     return config, template
 
@@ -90,7 +101,7 @@ def up(config, template, names):
         finally:
             os.unlink(f.name)
         cli("bot", "enable", chair, check=False)
-        print(f"{chair} up")
+        print(f"{chair} up ({(bot.get('runtime') or {}).get('kind', 'axlr')})")
 
 
 def down(config, names):

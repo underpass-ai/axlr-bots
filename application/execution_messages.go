@@ -44,7 +44,12 @@ func (uc ExecutionMessages) Execute(ctx context.Context, node domain.NodeID, id 
 			continue
 		}
 		text, _ := event.Payload["text"].(string)
-		messages = append(messages, RelayedMessage{ID: event.ID.String(), Text: text, CreatedAt: event.CreatedAt})
+		message := RelayedMessage{ID: event.ID.String(), Text: text, CreatedAt: event.CreatedAt}
+		if name, ok := event.Payload["event"].(string); ok && name != "" {
+			data, _ := event.Payload["data"].(map[string]any)
+			message.Event = &RelayedEvent{Name: name, Data: data}
+		}
+		messages = append(messages, message)
 	}
 	return messages, nil
 }

@@ -203,13 +203,13 @@ func (a Agent) register(ctx context.Context, id domain.NodeID) error {
 	}
 	registration := application.NodeRegistration{
 		ID: id.String(), HostName: host, Labels: a.Options.Labels,
-		Capabilities: domain.NodeCapabilities{AXLRVersion: a.Executor.Version(ctx), PolicySupported: a.Executor.SupportsPolicy(ctx), CorrelationSupported: a.Executor.SupportsCorrelation(ctx), Dedicated: a.Options.Dedicated},
+		Capabilities: domain.NodeCapabilities{AXLRVersion: a.Executor.Version(ctx), PolicySupported: a.Executor.SupportsPolicy(ctx), CorrelationSupported: a.Executor.SupportsCorrelation(ctx), Dedicated: a.Options.Dedicated, Runtimes: a.Options.Runtimes},
 	}
 	node, err := a.Transport.Register(ctx, registration)
 	if err != nil {
 		return err
 	}
-	a.Options.log().Printf("node: registered as %s (%s), axlr %q policy %v correlation %v dedicated %v", node.ID, node.HostName, registration.Capabilities.AXLRVersion, registration.Capabilities.PolicySupported, registration.Capabilities.CorrelationSupported, registration.Capabilities.Dedicated)
+	a.Options.log().Printf("node: registered as %s (%s), axlr %q policy %v correlation %v dedicated %v runtimes %v", node.ID, node.HostName, registration.Capabilities.AXLRVersion, registration.Capabilities.PolicySupported, registration.Capabilities.CorrelationSupported, registration.Capabilities.Dedicated, append([]string{"axlr"}, registration.Capabilities.Runtimes...))
 	return nil
 }
 
@@ -405,10 +405,12 @@ type Steerer interface {
 // relay reads the operator's messages after the cursor and hands them to
 // the run; it returns the new cursor. A read that fails leaves the
 // cursor, so the next renewal tries again; messages the run cannot take
-// (an axlr-tui without --steer-file) are logged and dropped.
+// (an axlr-tui without --steer-file) are logged and dropped. A runtime
+// that hears events takes them whole; one that steers takes the text.
 func (a Agent) relay(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, after string) string {
-	steerer, ok := a.Executor.(Steerer)
-	if !ok {
+	hearer, hears := a.Executor.(Hearer)
+	steerer, steers := a.Executor.(Steerer)
+	if !hears && !steers {
 		return after
 	}
 	messages, err := a.Transport.ExecutionMessages(ctx, id, execution, after)
@@ -423,7 +425,12 @@ func (a Agent) relay(ctx context.Context, id domain.NodeID, execution domain.Exe
 		texts = append(texts, message.Text)
 	}
 	last := messages[len(messages)-1].ID
-	if err := steerer.Steer(ctx, execution, texts); err != nil {
+	if hears {
+		err = hearer.Hear(ctx, execution, messages)
+	} else {
+		err = steerer.Steer(ctx, execution, texts)
+	}
+	if err != nil {
 		a.Options.log().Printf("node: execution %s: %d message(s) not handed to the run: %v", execution, len(texts), err)
 		return last
 	}
