@@ -150,7 +150,7 @@ class Orchestra:
             c["stopped"], c["plan"] = True, []
             self.synth.all_off(c["channel"])
             self._fact("stop", chair)
-            return {"chair": chair, "state": STOPPED, "was": was, "bar": self.score.bar_of(self.tick)}
+            return {"chair": chair, "state": STOPPED, "was": was, "bar": self.score.bar_of(self.tick), "done": True}
 
     def listen(self, chair, bars=8, max_seconds=20):
         """Wait until the chair's fork opens, bars pass, the chair is stopped or the music ends; then say where things are.
@@ -169,7 +169,8 @@ class Orchestra:
                 if left <= 0:
                     break
                 self.cond.wait(min(left, 0.5))
-            return self._reading(chair, ask=self._fork_open(c))
+            # Stopped, or the movement over: the reading says so, and done. Paused is not stopped.
+            return self._reading(chair, ask=self._fork_open(c) or self.status != "playing" or (c["stopped"] and not c["held"]))
 
     # --- the operator's events (from the bus) ---------------------------------
 
@@ -534,10 +535,17 @@ class Orchestra:
                "playing": view["phrase"]["playing"], "next": view["phrase"]["next"]}
         if self.status == "playing" and not c["stopped"] and not self._fork_open(c):
             out["fork"] = f"your next choice opens at bar {self._fork_bar(c)}"
+        # done: nothing more for this chair to choose in this take. A fixed
+        # program (a Jev bot) reads it; a model reads the note. A paused chair
+        # is never done: its run listens again until the cue that names it.
         if ask and self.status in ("stopped", "ended"):
             out["note"] = "the conductor stopped the music: wait for the next cue" if self.status == "stopped" else "the movement has ended"
+            out["done"] = True
         elif c["held"]:
             out["note"] = f"the conductor paused your section ({c['held']}): call listen again; you choose again at your next cue"
+        elif ask and c["stopped"]:
+            out["note"] = "you stopped: wait for the next cue"
+            out["done"] = True
         elif ask:
             candidates = self._candidates(c, bar)
             out["candidates"] = candidates if full else [{k: v for k, v in p.items() if k in ("phrase", "bars", "startsInBars", "late")} for p in candidates]
@@ -545,6 +553,7 @@ class Orchestra:
                 out["ask"] = self._ask(chair, candidates)
             else:
                 out["note"] = "no phrase left to play"
+                out["done"] = True
         return out
 
     def _chair(self, chair):

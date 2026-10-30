@@ -553,3 +553,49 @@ class BusTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DoneForAFixedProgram(unittest.TestCase):
+    """A Jev bot's program reads done, where a model reads the note."""
+
+    def test_a_reading_with_a_choice_to_make_is_not_done(self):
+        o, _, _ = orchestra()
+        o.cue("info.cue.all", {})
+        out = o.phrases("vn1-1")
+        self.assertIn("ask", out)
+        self.assertNotIn("done", out)
+
+    def test_stop_all_and_a_chairs_own_stop_are_done(self):
+        o, _, _ = orchestra()
+        o.play("vn1-1", 1)
+        o.stop_all("stop")
+        out = o.listen("vn1-1", bars=1, max_seconds=1)
+        self.assertEqual((out["status"], out.get("done")), ("stopped", True))
+        o, _, _ = orchestra()
+        o.play("va-1", 1)
+        self.assertTrue(o.stop("va-1")["done"])
+        out = o.phrases("va-1")
+        self.assertEqual((out.get("done"), "ask" in out), (True, False))
+        self.assertIn("you stopped", out["note"])
+
+    def test_no_phrase_left_is_done(self):
+        o, _, _ = orchestra()
+        o.cue("info.cue.all", {})
+        out = o.phrases("vn1-1", bar=o.score.bars)
+        if "ask" in out:
+            self.skipTest("the last bar still offers a phrase")
+        self.assertEqual((out.get("done"), out["note"]), (True, "no phrase left to play"))
+
+    def test_a_paused_chair_is_never_done(self):
+        o, _, clock = orchestra()
+        o.play("ob-1", 1)
+        play_until(o, 2)
+        o.hold(["ob-1"], "fist from the conductor's hands")
+        self.assertNotIn("done", o.phrases("ob-1"))
+        heard = {}
+        t = threading.Thread(target=lambda: heard.update(o.listen("ob-1")))
+        t.start()
+        t.join(0.2)
+        clock.now += 30
+        t.join(2)
+        self.assertEqual(("done" in heard, "ask" in heard, heard["state"]), (False, False, "paused"))
