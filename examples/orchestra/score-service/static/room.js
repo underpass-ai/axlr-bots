@@ -31,6 +31,7 @@ const LOOK = {
   scheduled: { h: 0.22, glow: 0.35, body: 0.9, color: C.warn, label: 1.0 },
   playing: { h: 0.7, glow: 1.0, body: 1.0, color: C.accent, label: 0.9 },
   stopped: { h: 0.07, glow: 0.0, body: 0.05, color: C.muted, label: 0.45 },
+  paused: { h: 0.1, glow: 0.0, body: 0.35, color: C.bad, label: 1.0 },
 };
 const DYN = { p: 0.55, mf: 0.78, f: 1.0 };
 

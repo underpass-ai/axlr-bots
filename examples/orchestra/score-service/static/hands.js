@@ -48,6 +48,11 @@ function draw() {
   });
   ctx.font = "26px Lexend, sans-serif";
   let y = 312;
+  if (last?.applied) {
+    ctx.fillStyle = last.applied.startsWith("paused") ? red : copper;
+    ctx.fillText(`done: ${last.applied}`, 24, y);
+    y += 36;
+  }
   for (const e of last?.sent || []) {
     ctx.fillStyle = copper;
     ctx.fillText(`sent ${e.name}${e.data?.dynamics ? " " + e.data.dynamics : ""}${e.to ? ` → ${e.to.length} chairs` : ""}${e.note ? " (dry run)" : ""}${e.error ? " FAILED" : ""}`, 24, y);
@@ -112,6 +117,7 @@ const waved = {};
 function heard(record) {
   last = record;
   for (const e of last.sent || []) { hall.wave(e.name.startsWith("stop.")); waved[e.name] = performance.now(); }
+  if ((last.applied || "").startsWith("paused")) hall.wave(true);  // a pause is the service's: no event, the ring still runs
   if ((last.sent || []).length) setTimeout(() => recheck(last.at), 1500);
   draw();
 }

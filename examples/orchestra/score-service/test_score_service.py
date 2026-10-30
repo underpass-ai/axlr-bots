@@ -378,13 +378,21 @@ class StopTest(unittest.TestCase):
         self.assertGreater(synth.ons_on(o.chairs["vn1-1"]["channel"]), before[0])
         self.assertEqual(synth.ons_on(o.chairs["ob-1"]["channel"]), before[1])
         with self.assertRaises(Refused) as refused:
-            o.play("ob-1", 2)  # a run still alive after the stop
-        self.assertIn("stopped your section", str(refused.exception))
-        reading = o.listen("ob-1")
+            o.play("ob-1", 2)  # a run still alive after the pause
+        self.assertIn("paused your section", str(refused.exception))
+        heard = {}
+        t = threading.Thread(target=lambda: heard.update(o.listen("ob-1")))
+        t.start()  # a paused run listens until the cue, or its time is up
+        t.join(0.2)
+        self.assertTrue(t.is_alive())
+        clock.now += 30
+        t.join(2)
+        reading = heard
         self.assertNotIn("ask", reading)
-        self.assertIn("wait for your next cue", o.phrases("ob-1")["note"])
+        self.assertNotIn("stopped", reading["note"])  # the mission ends a run that hears it stopped
+        self.assertIn("call listen again", o.phrases("ob-1")["note"])
         chair = next(c for s in o.snapshot()["sections"] for c in s["chairs"] if c["id"] == "ob-1")
-        self.assertEqual((chair["state"], chair["held"]), ("stopped", "stop.ob from operator"))
+        self.assertEqual((chair["state"], chair["held"]), ("paused", "stop.ob from operator"))
 
     def test_a_cue_that_names_held_chairs_lets_them_play_again(self):
         o, _, _ = orchestra()

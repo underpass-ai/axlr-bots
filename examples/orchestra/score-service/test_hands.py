@@ -119,23 +119,16 @@ class SendTest(unittest.TestCase):
         h.observe(posture(left=OPEN, right=OPEN))
         self.assertEqual([e[0] for e in publish.events], ["info.cue.strings", "info.cue.winds"])
 
-    def test_a_fist_stops_each_section_of_its_group_addressed_to_its_chairs(self):
-        h, o, _, publish, _ = hands(right=("fist", 0.95))
-        o.play("ob-1", 1)
-        o.play("vn1-1", 1)
-        play_until(o, 2)
-        h.observe(posture(right=FIST))
-        self.assertEqual(publish.events, [("stop.ob", None, ["ob-1", "ob-2"]), ("stop.hn", None, ["hn-1", "hn-2"])])
-
-    def test_the_service_does_what_the_gesture_means_at_once(self):
+    def test_a_fist_pauses_its_group_and_sends_no_stop(self):
         h, o, _, publish, _ = hands(right=("fist", 0.95))
         o.play("ob-1", 1)
         o.play("vn1-1", 1)
         play_until(o, 2)
         record = h.observe(posture(right=FIST))
-        self.assertEqual(record["applied"], "held 4 chairs")
+        self.assertEqual((record["applied"], record["sent"], publish.events), ("paused 4 chairs", [], []))
         self.assertEqual((o.chairs["ob-1"]["held"], o.chairs["vn1-1"]["held"], o.status), ("fist from the conductor's hands", None, "playing"))
-        self.assertTrue(all("publishMs" in e for e in record["sent"]))
+
+    def test_the_service_does_what_the_gesture_means_at_once(self):
         h2, o2, _, _, _ = hands(left=("open", 0.95))
         self.assertEqual(h2.observe(posture(left=OPEN))["applied"], "count-in")
         self.assertEqual((o2.status, o2.take), ("playing", 1))
@@ -157,22 +150,35 @@ class SendTest(unittest.TestCase):
             threading.Event().wait(0.01)
         self.assertEqual(h.view()["last"]["sent"][0]["eventId"], "ev-slow")
 
-    def test_the_strings_fist_is_five_events_none_over_sixteen_chairs(self):
-        h, o, _, publish, _ = hands(left=("fist", 0.95))
-        o.play("vc-1", 1)
-        h.observe(posture(left=FIST))
-        self.assertEqual([e[0] for e in publish.events], ["stop.vn1", "stop.vn2", "stop.va", "stop.vc", "stop.cb"])
-        self.assertTrue(all(len(e[2]) <= 16 for e in publish.events))
-
-    def test_two_fists_are_stop_all(self):
+    def test_two_fists_pause_everyone_and_the_music_goes_on(self):
         h, o, _, publish, _ = hands(left=("fist", 0.9), right=("fist", 0.9))
         o.play("vc-1", 1)
+        o.play("ob-1", 1)
+        record = h.observe(posture(left=FIST, right=FIST))
+        self.assertEqual((record["applied"], publish.events, o.status), ("paused 36 chairs", [], "playing"))
+        self.assertTrue(all(c["held"] for c in o.chairs.values()))
+
+    def test_open_hands_after_a_pause_bring_the_listening_bots_back(self):
+        h, o, _, publish, clock = hands(left=("fist", 0.9), right=("fist", 0.9))
+        o.play("vc-1", 1)
+        play_until(o, 2)
         h.observe(posture(left=FIST, right=FIST))
-        self.assertEqual(publish.events, [("stop.all", None, None)])
+        heard = {}
+        t = threading.Thread(target=lambda: heard.update(o.listen("vc-1")))
+        t.start()  # the bot's run, still alive, waits
+        t.join(0.3)
+        self.assertTrue(t.is_alive())
+        h.judge.reads = {"left": ("open", 0.95), "right": ("open", 0.95)}
+        clock.now += 1
+        record = h.observe(posture(left=OPEN, right=OPEN))
+        t.join(2)
+        self.assertEqual(record["sent"][0]["name"], "info.cue.all")
+        self.assertIn("ask", heard)
+        self.assertEqual(o.play("vc-1", 2)["phrase"], 2)
 
-    def test_a_stop_when_nothing_of_the_group_plays_is_not_sent(self):
+    def test_a_pause_when_nothing_of_the_group_plays_does_nothing(self):
         h, o, _, publish, _ = hands(left=("fist", 0.9), right=("fist", 0.9))
-        record = h.observe(posture(left=FIST, right=FIST))  # idle: stop.all would still wake every bot
+        record = h.observe(posture(left=FIST, right=FIST))
         self.assertEqual((publish.events, record["notSent"][0]["why"]), ([], "nothing of the group plays"))
         o.play("vc-1", 1)
         h2, o2, _, publish2, _ = hands(right=("fist", 0.9))

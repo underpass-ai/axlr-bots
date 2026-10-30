@@ -8,13 +8,17 @@ hand, palm down or fist. Nothing is the default: a hand Jev does not read as a
 gesture with at least the threshold's probability gives no signal.
 
 A gesture acts on a group: the left hand on the strings, the right hand on the
-winds, both hands showing the same gesture on everyone. It becomes the events
-the operator's panel already publishes (orchestra 6b), as the operator:
+winds, both hands showing the same gesture on everyone:
 
   open hand   info.cue.<group> {"dynamics": "f"}   come in, or play loud
   palm down   info.cue.<group> {"dynamics": "p"}   come in, or play soft
-  fist        stop.<section> to its chairs, one per section of the group;
-              stop.all for everyone
+  fist        pause the group (both fists: everyone), no event
+
+A cue is the event the operator's panel already publishes (orchestra 6b), as
+the operator; it reaches a bot's running task as a message. A pause is the
+service's alone: a stop on the bus would end each bot's run, and a bot back
+from a stop has to start a new one (seconds). Paused, a chair is silent and
+may not play, and its run keeps listening until the cue that names it.
 
 The service is the orchestra, so it does what a gesture means at once (holds
 the group, sets the level, starts the count-in) and publishes the events in
@@ -23,10 +27,9 @@ hear them, the service does not apply its own echo (bus.Bus.publish). The
 page's answer does not wait for the control plane either: each event's id,
 or why it failed, is filled in when the publish answers (GET /api/hands).
 
-An event that would change nothing is not sent, and why is kept: a stop when
-nothing of the group plays (a stop.all while idle would still wake 36 bots),
-a cue when every chair it names already plays at that level, the same
-gesture again within the cooldown. Everything read and sent is kept for the
+An event that would change nothing is not sent, and why is kept: a pause when
+nothing of the group plays, a cue when every chair it names already plays at
+that level, the same gesture again within the cooldown. Everything read and sent is kept for the
 page.
 """
 
@@ -147,7 +150,7 @@ class Hands:
         with self.lock:
             return {"last": self.history[-1] if self.history else None, "history": self.history[-12:], "calls": self.calls,
                     "threshold": self.threshold, "cooldownSeconds": self.cooldown, "groups": self.groups,
-                    "gestures": {"open": "info.cue.<group> f", "down": "info.cue.<group> p", "fist": "stop.<section> / stop.all"},
+                    "gestures": {"open": "info.cue.<group> f", "down": "info.cue.<group> p", "fist": "pause the group (the service's, no event)"},
                     "dryRun": self.dry_run, "source": JEV_SOURCE}
 
     # --- inside -------------------------------------------------------------
@@ -164,14 +167,9 @@ class Hands:
         if gesture == "fist":
             sounding = [k for k in named if chairs[k]["state"] in ("playing", "scheduled")]
             if snap["status"] != "playing" or not sounding:
-                record["notSent"].append({"what": f"stop {group}", "why": "nothing of the group plays"})
+                record["notSent"].append({"what": f"pause {group}", "why": "nothing of the group plays"})
                 return []
-            if group == "all":
-                events = [("stop.all", "Stop.", None, None)]
-            else:
-                sections = [sid for sid in o.sections if any(o.chairs[k]["section"] == sid for k in named)]
-                events = [(f"stop.{sid}", f"{o.sections[sid]['name']}, stop.", None, [k for k in named if o.chairs[k]["section"] == sid])
-                          for sid in sections]
+            events = []  # the bots keep their runs: no stop reaches them
         else:
             level = LEVELS[gesture]
             if snap["status"] == "playing" and all(chairs[k]["dynamics"] == level and not chairs[k]["held"] for k in named) \
@@ -183,8 +181,8 @@ class Hands:
         self.sent_at[(gesture, group)] = now
         why = f"{gesture} from the conductor's hands"
         if gesture == "fist":
-            done = o.stop_all(why) if group == "all" else o.hold(named, why)
-            record["applied"] = "cut" if group == "all" and done else (f"held {len(done['held'])} chairs" if done else "nothing plays")
+            done = o.hold(named, why)
+            record["applied"] = f"paused {len(done['held'])} chairs" if done else "nothing plays"
         else:
             record["applied"] = o.cue(f"info.cue.{group}", {"dynamics": LEVELS[gesture]}) or "cue kept"
         threads = []
