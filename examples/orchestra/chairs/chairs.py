@@ -3,7 +3,8 @@
 
   chairs.py render <dir>    write the 36 definitions, from chair.json and the score service's sections
   chairs.py up [chair...]   start each chair's node (../stage/stage.sh), point its mcp.json at its
-                            own URL of the score service, register the bot (or update it) and enable it
+                            own URL of the score service, turn on Jev's tool in its settings.json,
+                            register the bot (or update it) and enable it
   chairs.py down [chair...] stop each bot (paused, its tasks cancelled) and its node
   chairs.py list            the team as the control plane has it, by section
 
@@ -35,7 +36,7 @@ def definition(template, section, n):
     """One chair's bot, from the template."""
     chair = f"{section['id']}-{n}"
     text = json.dumps(template)
-    for key, value in (("stage-CHAIR", f"stage-{chair}"), ("CHAIR", chair), ("SECTION", section["name"]),
+    for key, value in (("stage-CHAIR", f"stage-{chair}"), ("CHAIR", chair), ("SECTIONKEY", section["id"]), ("SECTION", section["name"]),
                        ("TOTAL", str(section["chairs"])), ("FAMILY", section["family"]), ("chair N of", f"chair {n} of")):
         text = text.replace(key, value)
     bot = json.loads(text)
@@ -74,6 +75,7 @@ def up(config, template, names):
     subprocess.run([STAGE, "start", *[c[0] for c in picked]], check=True, stdout=subprocess.DEVNULL)
     for chair, section, n in picked:
         subprocess.run([STAGE, "mcp", chair, f"{SCORE_URL}/mcp/{chair}"], check=True, stdout=subprocess.DEVNULL)
+        subprocess.run([STAGE, "settings", chair], check=True, stdout=subprocess.DEVNULL)
         bot = definition(template, section, n)
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
             json.dump(bot, f)

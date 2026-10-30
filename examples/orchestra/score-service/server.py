@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """score-service: the orchestra's world.
 
-  POST /mcp/<chair>      MCP over HTTP for one chair: enter, dynamics, stop, listen.
+  POST /mcp/<chair>      MCP over HTTP for one chair: phrases, play, listen, stop.
                          Each chair's node names its own URL, so the chair is who
                          calls; a chair may only speak for itself
   GET  /api/state        the orchestra now: take, bar, tempo, every chair's state,
-                         the last facts; ?version=N&wait=20 answers when it changes
+                         its phrase playing and next, Jev's pick as the bot
+                         reported it, the last facts; ?version=N&wait=20 answers
+                         when it changes
   GET  /audio.wav        the sound, live, as an open-ended WAV (OBS, ffplay, a browser)
-  GET  /api/score        each part's notes per bar, for the page's score strip
+  GET  /api/score        each part's notes per bar, for the page's score strip, and
+                         each line's phrases
+  GET  /api/take         every play and every phrase begun in this take (the measurement)
   GET  /stage            the stage: 36 chairs, the score with its playhead, the conductor (?hud=0 for the recording)
 
 It listens on loopback only. With controlPlane.url it follows the team's
@@ -38,20 +42,24 @@ TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/j
          ".ttf": "font/ttf", ".txt": "text/plain; charset=utf-8"}
 log = logging.getLogger("score")
 
+JUDGE = {"type": "object", "description": "What axlr_judge answered, as you read it: its choice, the probability it gave that choice, its confidence",
+         "properties": {"choice": {"type": "string", "maxLength": 200}, "probability": {"type": "number", "minimum": 0, "maximum": 1},
+                        "confidence": {"type": "number", "minimum": 0, "maximum": 1}}}
 TOOLS = [
-    {"name": "enter", "description": "Come in: your part starts sounding at the start of a bar. Without bar, the next bar. When nothing plays yet, your entry starts the music at bar 1. Answers the bar you come in at.",
-     "inputSchema": {"type": "object", "properties": {"bar": {"type": "integer", "minimum": 1}, "dynamics": {"type": "string", "enum": ["p", "mf", "f"]}}}},
-    {"name": "dynamics", "description": "Play softer or louder from now on: p, mf or f.",
-     "inputSchema": {"type": "object", "properties": {"level": {"type": "string", "enum": ["p", "mf", "f"]}}, "required": ["level"]}},
+    {"name": "phrases", "description": "Your line's phrases you may play next (a phrase is 8 bars), from the playhead or from bar, and ask: the question to pass to axlr_judge as it is (state, question, options).",
+     "inputSchema": {"type": "object", "properties": {"bar": {"type": "integer", "minimum": 1}}}},
+    {"name": "play", "description": "Play one phrase of your line: it sounds at its own bars. A phrase already begun is joined at the next bar. When nothing plays yet, it starts the music with a count-in. Pass judge: what axlr_judge answered.",
+     "inputSchema": {"type": "object", "properties": {"phrase": {"type": "integer", "minimum": 1}, "dynamics": {"type": "string", "enum": ["p", "mf", "f"]}, "judge": JUDGE},
+                     "required": ["phrase"]}},
+    {"name": "listen", "description": "Play on and wait (at most 20 seconds) until it is time to choose your next phrase, a few bars pass, you stop or the music stops. Answers where the music is, your phrases and, when it is time to choose, candidates and ask.",
+     "inputSchema": {"type": "object", "properties": {"bars": {"type": "integer", "minimum": 1, "maximum": 32}}}},
     {"name": "stop", "description": "Stop playing at once. Your section goes on with the chairs still playing.",
      "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "listen", "description": "Play on and listen for a few bars (at most 20 seconds); answers where the music is, your state and your section's.",
-     "inputSchema": {"type": "object", "properties": {"bars": {"type": "integer", "minimum": 1, "maximum": 32}}}},
 ]
 
 
 def chair_tools(orchestra, chair, max_seconds):
-    tools = mcp_http.Tools("score-service", "0.1.0")
+    tools = mcp_http.Tools("score-service", "0.2.0")
 
     def guard(fn):
         def call(args):
@@ -61,10 +69,10 @@ def chair_tools(orchestra, chair, max_seconds):
                 raise mcp_http.ToolError(str(exc))
         return call
 
-    tools.add(TOOLS[0], guard(lambda a: orchestra.enter(chair, a.get("bar"), a.get("dynamics"))))
-    tools.add(TOOLS[1], guard(lambda a: orchestra.dynamics(chair, a.get("level"))))
-    tools.add(TOOLS[2], guard(lambda a: orchestra.stop(chair)))
-    tools.add(TOOLS[3], guard(lambda a: orchestra.listen(chair, a.get("bars", 8), max_seconds)))
+    tools.add(TOOLS[0], guard(lambda a: orchestra.phrases(chair, a.get("bar"))))
+    tools.add(TOOLS[1], guard(lambda a: orchestra.play(chair, a.get("phrase"), a.get("dynamics"), a.get("judge"))))
+    tools.add(TOOLS[2], guard(lambda a: orchestra.listen(chair, a.get("bars", 8), max_seconds)))
+    tools.add(TOOLS[3], guard(lambda a: orchestra.stop(chair)))
     return tools
 
 
@@ -86,7 +94,10 @@ def make_handler(orchestra, stream, config):
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                self.close_connection = True  # a run its node stopped while it listened
 
         def _loopback(self):
             host = (self.headers.get("Host") or "")
@@ -125,6 +136,8 @@ def make_handler(orchestra, stream, config):
                 return self._send(200, json.dumps(state).encode())
             if url.path == "/api/score":
                 return self._send(200, score_json)
+            if url.path == "/api/take":
+                return self._send(200, json.dumps(orchestra.take_log(query.get("take"))).encode())
             if url.path == "/audio.wav":
                 return self._audio()
             if url.path in ("/", "/stage"):
@@ -178,9 +191,11 @@ def main(argv=None):
     config["controlPlane"]["url"] = a.control_plane or config["controlPlane"]["url"]
     config["team"] = a.team or config["team"]
 
-    score = Score(os.path.join(os.path.dirname(os.path.abspath(a.config)), config["score"]["file"]), config["sections"])
+    score = Score(os.path.join(os.path.dirname(os.path.abspath(a.config)), config["score"]["file"]), config["sections"],
+                  config.get("phrases", {}).get("bars", 8))
     font = synth.soundfont(config["audio"]["soundfonts"])
-    orchestra = Orchestra(score, config, synth.FluidSynth(font, config["audio"]["rate"]))
+    audio = config["audio"]
+    orchestra = Orchestra(score, config, synth.FluidSynth(font, audio["rate"], audio.get("gain", 0.2), audio.get("polyphony", 1024)))
     stream = synth.Stream()
     log.info("%s: %d bars, %s bpm, %d chairs, soundfont %s", config["score"]["title"], score.bars, score.bpm, len(orchestra.chairs), font)
 

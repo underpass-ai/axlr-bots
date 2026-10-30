@@ -2,8 +2,9 @@
 """Piece 3's check, by hand: two parts enter, the operator stops them, the sound goes.
 
 With score-service running with --record and following a team's bus, this
-script plays two chairs by calling their MCP tools as a bot would (one at
-bar 1, the other at the next bar a few seconds later), publishes stop.all on
+script plays two chairs by calling their MCP tools as a bot would (one plays
+phrase 1, which starts the music with its count-in; the other phrase 1 a few
+seconds later, and both their next phrases), publishes stop.all on
 the team as the operator (the axlr-bots CLI, over the socket), then reads
 the recording and says:
 
@@ -63,13 +64,15 @@ def main(argv=None):
     p.add_argument("--team", required=True)
     p.add_argument("--wav", required=True, help="the file score-service --record writes")
     p.add_argument("--chairs", nargs=2, default=["vn1-1", "ob-1"])
-    p.add_argument("--play", type=float, default=12, help="seconds to play before the stop")
+    p.add_argument("--play", type=float, default=20, help="seconds to play before the stop (the count-in is 9.5 s)")
     a = p.parse_args(argv)
 
     first, second = a.chairs
-    print("enter", first, call(first, "enter", {"dynamics": "f"}))
+    print("play", first, call(first, "play", {"phrase": 1, "dynamics": "f"}))
     time.sleep(3)
-    print("enter", second, call(second, "enter", {"dynamics": "f"}))
+    print("play", second, call(second, "play", {"phrase": 1, "dynamics": "f"}))
+    for chair in a.chairs:
+        print("play", chair, call(chair, "play", {"phrase": 2, "dynamics": "f"}))
     time.sleep(a.play)
     before = state()
     run = uuid.uuid4().hex[:8]

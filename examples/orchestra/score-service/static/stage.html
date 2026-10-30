@@ -8,7 +8,9 @@
 </head>
 <body>
 <!-- The stage: 36 chairs, each one bot, lit from what the score service
-     says each chair did (enter, stop), never from a guess; the score strip
+     says each chair did (play, stop), never from a guess: under each chair
+     its phrase now and next (3→4), and in its tooltip Jev's pick as the bot
+     reported it; the last play below the stage; the score strip
      with its playhead; the conductor's last event on the bus, as published.
      ?hud=0 keeps only the stage and the SIMULATION ribbon, for a recording;
      ?theme=dark or light. It reads GET /api/state by long-poll. -->
@@ -30,6 +32,7 @@
 </svg>
 <footer class="hud" id="bottom">
   <div id="event" class="event"><span class="muted">the conductor's last event on the bus appears here, as published</span></div>
+  <div id="pick" class="pick"><span class="muted">each chair's phrase, and Jev's pick as the bot reported it, appear here</span></div>
   <div id="cut" class="cut"></div>
   <div class="label muted" id="label"></div>
 </footer>
