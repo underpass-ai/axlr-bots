@@ -51,6 +51,14 @@ def definition(template, section, n):
     return bot
 
 
+def patch_of(bot):
+    """The update that makes a registered chair this definition: every field but the identity, and the
+    runtime even when the template names none, so a chair moved to Jev comes back to AXLR with one up."""
+    patch = {k: v for k, v in bot.items() if k not in ("id", "tenant", "name", "owner")}
+    patch.setdefault("runtime", {"kind": "axlr"})
+    return patch
+
+
 def load(runtime=None):
     """The score's sections and the chair template of the runtime (ORCHESTRA_RUNTIME when None)."""
     runtime = RUNTIME if runtime is None else runtime
@@ -92,9 +100,8 @@ def up(config, template, names):
             json.dump(bot, f)
         try:
             if cli("bot", "get", chair, check=False).returncode == 0:
-                patch = {k: v for k, v in bot.items() if k not in ("id", "tenant", "name", "owner")}
                 with open(f.name, "w") as g:
-                    json.dump(patch, g)
+                    json.dump(patch_of(bot), g)
                 cli("bot", "update", chair, "--file", f.name)
             else:
                 cli("bot", "register", "--file", f.name)

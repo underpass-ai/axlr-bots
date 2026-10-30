@@ -116,6 +116,13 @@ class JevChairsTest(unittest.TestCase):
             self.assertNotIn(placeholder, str(jev), placeholder)
         self.assertTrue(jev["mission"].startswith("Oboes, chair 1 of 2: a Jev bot."))
 
+    def test_an_update_from_either_template_sets_the_runtime(self):
+        _, axlr = chairs.load("axlr")
+        section = self.config["sections"][0]
+        self.assertEqual(chairs.patch_of(chairs.definition(axlr, section, 1))["runtime"], {"kind": "axlr"})
+        self.assertEqual(chairs.patch_of(chairs.definition(self.template, section, 1))["runtime"]["kind"], "jev")
+        self.assertNotIn("id", chairs.patch_of(chairs.definition(axlr, section, 1)))
+
     def test_an_unknown_runtime_is_refused(self):
         with self.assertRaises(SystemExit):
             chairs.load("haiku")
