@@ -18,11 +18,18 @@ type Local struct {
 	deps    application.Dependencies
 	runner  *application.SerialRunner
 	submits sync.Mutex
+	changes *changes
 }
 
-// NewLocal wires the service over the dependencies.
+// NewLocal wires the service over the dependencies. Every event the use
+// cases record also wakes the long polls and the node streams waiting
+// on the service.
 func NewLocal(deps application.Dependencies) *Local {
-	return &Local{deps: deps, runner: application.NewSerialRunner(deps)}
+	hub := newChanges()
+	if deps.Events != nil {
+		deps.Events = tappedEvents{inner: deps.Events, changes: hub}
+	}
+	return &Local{deps: deps, runner: application.NewSerialRunner(deps), changes: hub}
 }
 
 // Runner is the serial runner the service shares with the daemon's worker.
@@ -378,5 +385,6 @@ func (l *Local) RevokeNode(ctx context.Context, id string) (RevokeResponse, erro
 	return RevokeResponse{Node: result.Node.Snapshot(), FailedTasks: failed}, nil
 }
 
-// Dependencies are the use cases' dependencies, for the node routes.
+// Dependencies are the use cases' dependencies, for the node routes and
+// the daemon's loops: what they record wakes the waiters too.
 func (l *Local) Dependencies() application.Dependencies { return l.deps }

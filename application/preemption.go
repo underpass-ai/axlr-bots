@@ -13,9 +13,13 @@ import (
 // closed so a late decision authorises nothing. Pending tasks wait
 // behind the urgent one; another urgent task is never cancelled.
 func preemptFor(ctx context.Context, deps Dependencies, bot domain.Bot, urgent domain.Task, why string) error {
-	tasks, err := deps.Tasks.List(ctx)
-	if err != nil {
-		return err
+	var tasks []domain.Task
+	for _, status := range []domain.TaskStatus{domain.TaskRunning, domain.TaskWaitingApproval} {
+		inProgress, err := deps.Tasks.ListByStatus(ctx, status)
+		if err != nil {
+			return err
+		}
+		tasks = append(tasks, inProgress...)
 	}
 	reason := "preempted by the urgent task " + urgent.ID().String()
 	if why != "" {
@@ -23,9 +27,6 @@ func preemptFor(ctx context.Context, deps Dependencies, bot domain.Bot, urgent d
 	}
 	for _, task := range tasks {
 		if task.BotID() != bot.ID() || task.ID() == urgent.ID() || task.IsUrgent() {
-			continue
-		}
-		if task.Status() != domain.TaskRunning && task.Status() != domain.TaskWaitingApproval {
 			continue
 		}
 		extra := map[string]any{"preemptedBy": urgent.ID().String(), "why": why}

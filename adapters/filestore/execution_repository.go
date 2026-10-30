@@ -13,12 +13,13 @@ type ExecutionRepository struct {
 	files collection
 	// mu makes Save's check and write one step: copies of the repository
 	// share it.
-	mu *sync.Mutex
+	mu       *sync.Mutex
+	outcomes *statusStamps
 }
 
 // NewExecutionRepository stores executions under the state directory.
 func NewExecutionRepository(stateDir string) ExecutionRepository {
-	return ExecutionRepository{files: collection{dir: filepath.Join(stateDir, "executions"), kind: "execution"}, mu: &sync.Mutex{}}
+	return ExecutionRepository{files: collection{dir: filepath.Join(stateDir, "executions"), kind: "execution"}, mu: &sync.Mutex{}, outcomes: newStatusStamps()}
 }
 
 // Save writes the execution atomically. An execution that has ended
@@ -49,18 +50,24 @@ func (r ExecutionRepository) Get(_ context.Context, id domain.ExecutionID) (doma
 	return domain.RestoreExecution(snapshot)
 }
 
-// ListRunning scans every execution and keeps the Running ones, in id order.
+// ListRunning answers the Running executions, in id order. An execution
+// whose file has not changed since a listing found it ended is not read
+// again.
 func (r ExecutionRepository) ListRunning(ctx context.Context) ([]domain.Execution, error) {
-	ids, err := r.files.ids()
+	entries, err := r.files.entries()
 	if err != nil {
 		return nil, err
 	}
 	running := make([]domain.Execution, 0)
-	for _, id := range ids {
-		execution, err := r.Get(ctx, domain.ExecutionID(id))
+	for _, entry := range entries {
+		if r.outcomes.skip(entry, string(domain.ExecutionRunning)) {
+			continue
+		}
+		execution, err := r.Get(ctx, domain.ExecutionID(entry.id))
 		if err != nil {
 			return nil, err
 		}
+		r.outcomes.remember(entry, string(execution.Outcome()))
 		if execution.Outcome() == domain.ExecutionRunning {
 			running = append(running, execution)
 		}

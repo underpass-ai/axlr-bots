@@ -189,3 +189,62 @@ func TestEventLogListsATeamsEvents(t *testing.T) {
 		t.Errorf("with the operator's = %+v", team)
 	}
 }
+
+// The index a read keeps follows the log: lines another process
+// appends, a torn line once it is whole, a line longer than the read
+// buffer, a line that is not an event, and a log that was replaced.
+func TestEventLogIndexFollowsTheLog(t *testing.T) {
+	ctx := context.Background()
+	state := t.TempDir()
+	log := NewEventLog(state)
+	publish := func(l *EventLog, id string, payload map[string]any) {
+		t.Helper()
+		event, _ := domain.NewEvent(domain.EventID(id), domain.EventTaskSubmitted, "underpass", "bot-1", "task-1", "trace", t0, payload)
+		if err := l.Publish(ctx, event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ids := func() []string {
+		t.Helper()
+		events, err := log.ListEvents(ctx, "bot-1", 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := make([]string, len(events))
+		for i, event := range events {
+			out[i] = string(event.ID)
+		}
+		return out
+	}
+	publish(log, "evt-a", nil)
+	if got := ids(); strings.Join(got, ",") != "evt-a" {
+		t.Fatalf("first = %v", got)
+	}
+	// Another process appends: the next read sees it.
+	publish(NewEventLog(state), "evt-b", map[string]any{"long": strings.Repeat("x", 600*1024)})
+	f, _ := os.OpenFile(log.Path(), os.O_APPEND|os.O_WRONLY, 0o644)
+	_, _ = f.WriteString("not an event\n")
+	_, _ = f.WriteString(`{"eventId": "evt-c", "schemaVersion": "underpass.ai/events/v1", "type": "bot.task.submitted", "tenantId": "underpass", "botId": "bot-1", `)
+	_ = f.Close()
+	if got := ids(); strings.Join(got, ",") != "evt-a,evt-b" {
+		t.Fatalf("with a long line, a bad one and a torn one = %v", got)
+	}
+	// The torn line is finished: it is read now.
+	f, _ = os.OpenFile(log.Path(), os.O_APPEND|os.O_WRONLY, 0o644)
+	_, _ = f.WriteString(`"createdAt": "2026-10-23T15:00:00Z"}` + "\n")
+	_ = f.Close()
+	if got := ids(); strings.Join(got, ",") != "evt-a,evt-b,evt-c" {
+		t.Fatalf("finished = %v", got)
+	}
+	if events, _ := log.ListEvents(ctx, "bot-1", 3); len(events[1].Payload["long"].(string)) != 600*1024 {
+		t.Error("the long line is not read whole")
+	}
+	// The log is replaced by a shorter one: it is indexed again.
+	if err := os.WriteFile(log.Path(), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	publish(log, "evt-z", nil)
+	if got := ids(); strings.Join(got, ",") != "evt-z" {
+		t.Fatalf("after the log was replaced = %v", got)
+	}
+}

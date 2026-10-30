@@ -1,20 +1,25 @@
 package jsonl
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"sync"
 
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // EventLog publishes events by appending them to <state>/events.jsonl,
-// and reads them back for one bot.
+// and reads them back for a bot, a task or a team through an index of
+// where their lines are, so a read does not decode the whole log.
 type EventLog struct {
 	file *appender
+	// mu guards the index the reads share.
+	mu    sync.Mutex
+	index eventIndex
 }
 
 // NewEventLog writes to events.jsonl under the state directory.
@@ -36,38 +41,35 @@ const maxEventLineBytes = 4 << 20
 // eventBatch is the first capacity of a read's result.
 const eventBatch = 64
 
-// ListEvents scans the log for the bot's events and returns the newest
-// limit of them, oldest first.
+// ListEvents answers the bot's newest limit events, oldest first.
 func (l *EventLog) ListEvents(_ context.Context, bot domain.BotID, limit int) ([]domain.Event, error) {
-	return l.tail(limit, func(event domain.Event) bool { return event.BotID == bot })
+	return l.tail(limit, func(x *eventIndex) []int32 { return x.byBot[bot] })
 }
 
 // ListTaskEvents answers the task's newest limit events, oldest first:
 // its timeline.
 func (l *EventLog) ListTaskEvents(_ context.Context, task domain.TaskID, limit int) ([]domain.Event, error) {
-	return l.tail(limit, func(event domain.Event) bool { return event.TaskID == task })
+	return l.tail(limit, func(x *eventIndex) []int32 { return x.byTask[task] })
 }
 
 // ListTeamEvents answers the newest limit events of any of the bots, and
 // of the tenant's team itself,
 // oldest first: a team's timeline.
 func (l *EventLog) ListTeamEvents(_ context.Context, tenant domain.TenantID, team domain.TeamName, bots []domain.BotID, limit int) ([]domain.Event, error) {
-	wanted := make(map[domain.BotID]bool, len(bots))
-	for _, bot := range bots {
-		wanted[bot] = true
-	}
-	return l.tail(limit, func(event domain.Event) bool {
-		if event.BotID == "" {
-			return event.GroupName != "" && event.GroupName == team.String() && event.TenantID == tenant
+	return l.tail(limit, func(x *eventIndex) []int32 {
+		lists := [][]int32{x.byTeam[teamKey{tenant: tenant, team: team.String()}]}
+		for _, bot := range slices.Compact(slices.Sorted(slices.Values(bots))) {
+			lists = append(lists, x.byBot[bot])
 		}
-		return wanted[event.BotID]
+		return merged(lists...)
 	})
 }
 
-// tail reads the log and keeps the newest limit events that match. A
-// line that is not an event is skipped: the log is append-only and a
-// torn last line must not hide the rest.
-func (l *EventLog) tail(limit int, match func(domain.Event) bool) ([]domain.Event, error) {
+// tail brings the index up to the log's end and decodes the newest
+// limit events of the lines found, oldest first. A line that is not an
+// event is skipped: the log is append-only and a torn line must not
+// hide the rest.
+func (l *EventLog) tail(limit int, found func(*eventIndex) []int32) ([]domain.Event, error) {
 	f, err := os.Open(l.file.path)
 	if errors.Is(err, os.ErrNotExist) {
 		return []domain.Event{}, nil
@@ -79,24 +81,29 @@ func (l *EventLog) tail(limit int, match func(domain.Event) bool) ([]domain.Even
 	if limit <= 0 {
 		limit = 1
 	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.index.refresh(f); err != nil {
+		return nil, err
+	}
+	positions := found(&l.index)
 	// The first capacity is fixed, not the caller's limit: the slice grows
 	// only with the events the log holds.
-	kept := make([]domain.Event, 0, eventBatch)
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), maxEventLineBytes)
-	for scanner.Scan() {
+	kept := make([]domain.Event, 0, min(limit, eventBatch))
+	var buf []byte
+	for i := len(positions) - 1; i >= 0 && len(kept) < limit; i-- {
+		line := l.index.lines[positions[i]]
+		buf = slices.Grow(buf[:0], int(line.len))[:line.len]
+		if _, err := f.ReadAt(buf, line.at); err != nil {
+			return nil, err
+		}
 		var event domain.Event
-		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil || !match(event) {
+		if err := json.Unmarshal(buf, &event); err != nil {
 			continue
 		}
 		kept = append(kept, event)
-		if len(kept) > limit {
-			kept = kept[1:]
-		}
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
+	slices.Reverse(kept)
 	return kept, nil
 }
 

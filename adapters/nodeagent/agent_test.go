@@ -498,3 +498,43 @@ func TestAgentUploadsOnlyVerifiableArtifacts(t *testing.T) {
 		t.Error("upload timeout")
 	}
 }
+
+// With the stream, a cancel stops the run at once: the lease is renewed
+// when the control plane pushes it, not at the next tick (an hour here).
+func TestAPushedCancelStopsTheRunAtOnce(t *testing.T) {
+	f := control(t, "completed")
+	ctx := context.Background()
+	agent := f.agent(t, "slow")
+	agent.Options.Renew = time.Hour
+	agentCtx, stop := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- agent.Run(agentCtx) }()
+	defer func() { stop(); <-done }()
+	if _, err := f.client.RegisterBot(ctx, application.BotDefinition{Tenant: "t", Name: "bot", Owner: "o", Mission: "do what each task asks", AllowedTools: []string{"local_read"}, Budgets: application.BudgetsDefinition{TaskTimeoutSeconds: 30}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.client.EnableBot(ctx, "bot"); err != nil {
+		t.Fatal(err)
+	}
+	submitted, err := f.client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "take a while", IdempotencyKey: "k-slow"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	running := waitFor(t, f.client, submitted.Task.ID, "Running")
+	assigned := "execution " + running.ExecutionIDs[0] + " (run) assigned"
+	for deadline := time.Now().Add(5 * time.Second); !strings.Contains(f.logs.String(), assigned) || !strings.Contains(f.logs.String(), "stream open"); time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the node never took the run or opened its stream:\n%s", f.logs.String())
+		}
+	}
+	cancelled := time.Now()
+	if _, err := f.client.CancelTask(ctx, submitted.Task.ID); err != nil {
+		t.Fatal(err)
+	}
+	for !strings.Contains(f.logs.String(), "the lease is lost, stopping the run") {
+		if time.Since(cancelled) > 3*time.Second {
+			t.Fatalf("the run was not stopped at once:\n%s", f.logs.String())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
