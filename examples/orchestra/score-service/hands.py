@@ -10,10 +10,10 @@ gesture with at least the threshold's probability gives no signal.
 A gesture acts on a group: the left hand on the strings, the right hand on the
 winds, both hands showing the same gesture on everyone:
 
-  open hand   info.cue.<group> {"dynamics": "f"}   come in, or play loud
+  palm up     info.cue.<group> {"dynamics": "f"}   come in, or play loud
   palm down   info.cue.<group> {"dynamics": "p"}   come in, or play soft
   fist        fade the group out (both fists: everyone), no event
-  the hand's height, while it holds an open hand or a palm down: the group's
+  the hand's height, while it holds a palm up or a palm down: the group's
               gain, higher louder, lower softer, a fade, no event
 
 A cue is the event the operator's panel already publishes (orchestra 6b), as
@@ -22,8 +22,9 @@ service's alone: a stop on the bus would end each bot's run, and a bot back
 from a stop has to start a new one (seconds). Faded out, a chair keeps its
 phrases and its bot goes on choosing; the cue that names it fades it back in.
 The height is read many times a second without Jev: it is a measurement, not
-a sign, and it only acts while Jev's last reading of that hand is an open hand
-or a palm down, so a hand at rest or a fist moves nothing.
+a sign, and it only acts while Jev's last reading of that hand is a palm up or
+a palm down, so a hand at rest or a fist moves nothing. Both are open hands
+held flat: the conductor raises and lowers them for the fades.
 
 The service is the orchestra, so it does what a gesture means at once (holds
 the group, sets the level, starts the count-in) and publishes the events in
@@ -43,7 +44,7 @@ import time
 
 GESTURES = {
     "nothing": "nothing: no signal (a hand at rest, relaxed, half-closed, moving, or none of the others)",
-    "open": "open hand: fingers straight and apart, the palm facing forward, away from the conductor",
+    "open": "palm up: fingers straight, the hand flat, the palm facing the ceiling",
     "down": "palm down: fingers straight, the palm facing the floor",
     "fist": "fist: all four fingers curled tight into the palm",
 }
@@ -122,7 +123,7 @@ class Hands:
         return record
 
     def height(self, message):
-        """Each hand's height, many times a second: the gain of its group while the hand holds an open hand or a palm down."""
+        """Each hand's height, many times a second: the gain of its group while the hand holds a palm up or a palm down."""
         gains = {}
         for side, h in ((message or {}).get("hands") or {}).items():
             height = (h or {}).get("height") if isinstance(h, dict) else None

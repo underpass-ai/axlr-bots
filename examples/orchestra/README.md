@@ -114,7 +114,7 @@ The first take showed two faults, fixed before this one: each bot spent four mod
 
 ## 6. The conductor's hands
 
-The conductor wears a Meta Quest 3S and sees the room (passthrough). The headset's Quest Browser opens [`/hands`](score-service/static/hands.html). It reads each hand's 25 joints in every frame (WebXR hand input) and turns them into measurements: how far each finger bends, where the palm faces, where the hand is from the head. When a posture holds still for 0.3 s and differs from the last one sent, the page sends the measurements to the score service over one WebSocket ([`ws.py`](score-service/ws.py)). The service asks Jev, one choice per hand: nothing, open hand, palm down or fist. It does what the gesture means at once, and publishes a cue on the team's bus as the operator, with the events the panel's buttons already use (6b).
+The conductor wears a Meta Quest 3S and sees the room (passthrough). The headset's Quest Browser opens [`/hands`](score-service/static/hands.html). It reads each hand's 25 joints in every frame (WebXR hand input) and turns them into measurements: how far each finger bends, where the palm faces, where the hand is from the head. When a posture holds still for 0.3 s and differs from the last one sent, the page sends the measurements to the score service over one WebSocket ([`ws.py`](score-service/ws.py)). The service asks Jev, one choice per hand: nothing, palm up, palm down or fist. It does what the gesture means at once, and publishes a cue on the team's bus as the operator, with the events the panel's buttons already use (6b).
 
 The orchestra stands on the room's floor around the conductor ([`room.js`](score-service/static/room.js), the hall of the podium view): one lantern per bot, lit by what the service says its bot did. What the hands sent runs across the floor as a ring. A panel floats above it with what each hand holds, Jev's reading, what was done and sent, and each posture's round trip.
 
@@ -127,9 +127,10 @@ hands ─ Quest 3S (WebXR, 25 joints a hand) ─ /hands: bends, palm, place ─ 
 
 | Gesture | Left hand | Right hand | Both hands |
 |---|---|---|---|
-| open hand | `info.cue.strings` `{"dynamics": "f"}` | `info.cue.winds` `f` | `info.cue.all` `f` |
+| palm up, hand flat | `info.cue.strings` `{"dynamics": "f"}` | `info.cue.winds` `f` | `info.cue.all` `f` |
 | palm down | `info.cue.strings` `p` | `info.cue.winds` `p` | `info.cue.all` `p` |
-| fist | pause the strings | pause the winds | pause everyone |
+| fist | fade the strings out (1.5 s) | fade the winds out | fade everyone out |
+| a palm up or down, raised or lowered | the strings louder or softer, a fade | the winds | — |
 | anything else | nothing | nothing | nothing |
 
 | Rule | Why |
@@ -137,7 +138,7 @@ hands ─ Quest 3S (WebXR, 25 joints a hand) ─ /hands: bends, palm, place ─ 
 | **Nothing is the default**: a hand Jev does not read as a gesture with probability 0.80 or more gives no signal; Jev failing is no signal | a hand in the air is not a command |
 | A posture is read once it holds still 0.3 s and has changed; readings are at least 0.5 s apart | the two-frame rule of the design, on hand tracking instead of photos; at most two Jev calls a second |
 | The service does what a gesture means before anything reaches the bus, and answers the page at once; the events are published in parallel, and the service does not apply its own echo | a publish takes 2–3 s on the control plane today; the sound and the lanterns must not wait for it |
-| A pause is the service's alone: no event. It mutes the chairs and nothing else: they keep their phrases, their bots go on choosing (state `paused`, never `done`), and the cue that names them sounds again at their next note | a `stop.*` ended each bot's run (a new one took about 7 s with a model); a pause that dropped the phrases made each chair wait for its next phrase, 3–12 s, measured with 36 Jev bots |
+| A fade is the service's alone: no event. A fist fades its chairs to nothing over 1.5 s; they keep their phrases and their bots go on choosing (never `done`), and the cue that names them fades them back in over 0.5 s. A flat hand's height, read ten times a second over the WebSocket without Jev, is its group's gain while Jev's last reading of that hand is a palm up or a palm down | a `stop.*` ended each bot's run (a new one took about 7 s with a model); a pause that dropped the phrases made each chair wait for its next phrase, 3–12 s, measured with 36 Jev bots; the conductor asked for fades, never a jump, and for the vertical open hand to become a flat one |
 | An event that changes nothing is not sent, and the panel says why: a pause when nothing of the group plays, a cue when the group already plays at that level, the same gesture again within 3 s | a gesture held is not a command repeated |
 
 What changed in the service for this, and why:

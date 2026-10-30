@@ -178,7 +178,7 @@ async function follow() {
 // --- made-up postures, to try the path without a headset ----------------------
 
 const MADE_UP = {
-  open: { fingers: { thumb: 30, index: 8, middle: 6, ring: 10, little: 12 }, palm: { away: 0.88, toward: -0.88, floor: 0.15, up: -0.15, side: 0.1 }, spread: 0.12 },
+  open: { fingers: { thumb: 25, index: 8, middle: 6, ring: 10, little: 12 }, palm: { away: 0.1, toward: -0.1, floor: -0.93, up: 0.93, side: 0.05 }, spread: 0.1 },
   down: { fingers: { thumb: 25, index: 10, middle: 8, ring: 9, little: 12 }, palm: { away: 0.1, toward: -0.1, floor: 0.93, up: -0.93, side: 0.05 }, spread: 0.1 },
   fist: { fingers: { thumb: 90, index: 195, middle: 210, ring: 205, little: 200 }, palm: { away: 0.3, toward: -0.3, floor: 0.2, up: -0.2, side: 0.85 }, spread: 0.04 },
   rest: { fingers: { thumb: 40, index: 70, middle: 80, ring: 85, little: 90 }, palm: { away: 0.3, toward: -0.3, floor: 0.2, up: -0.2, side: 0.85 }, spread: 0.05 },
@@ -294,7 +294,7 @@ function readHands(t, xrFrame) {
     if (all) live[source.handedness] = measure(joints, source.handedness, head);
   }
   // Each hand's height, ten times a second: the service makes it its group's
-  // gain while Jev's last reading of that hand is an open hand or a palm down.
+  // gain while Jev's last reading of that hand is a palm up or a palm down.
   if (sock && t - heightAt > 100) {
     heightAt = t;
     const heights = {};
