@@ -34,6 +34,9 @@ type world struct {
 	// afterFirstPlay runs once, inside the first listen after a play,
 	// without the lock: what the test does while the run waits.
 	afterFirstPlay func()
+	// quiet is how many listens answer with neither an ask nor done
+	// before the next question: a paused world.
+	quiet int
 }
 
 func (w *world) serve(t *testing.T) *httptest.Server {
@@ -84,6 +87,11 @@ func (w *world) serve(t *testing.T) *httptest.Server {
 		}
 		switch request.Params.Name {
 		case "phrases", "listen":
+			if request.Params.Name == "listen" && w.quiet > 0 {
+				w.quiet--
+				text(map[string]any{"state": "paused", "note": "the conductor holds the orchestra"}, false)
+				return
+			}
 			if w.left == 0 {
 				text(map[string]any{"note": "no phrase left to play", "done": true}, false)
 				return
@@ -173,6 +181,7 @@ func fixture(t *testing.T, w *world, pick func([]string) string) (*Executor, app
 		t.Fatal(err)
 	}
 	executor := NewExecutor(judge, MCPConfig{Path: config}, filepath.Join(dir, "node"))
+	executor.IdleBackoff = time.Millisecond
 	budgets, _ := domain.NewBudgets(16, 32, 0, time.Minute)
 	input, _ := json.Marshal(map[string]any{"name": "info.cue.winds", "data": map[string]any{"dynamics": "f"}, "message": "winds"})
 	request := application.ExecutionRequest{
@@ -235,6 +244,31 @@ func TestACueIsPlayedPhraseByPhraseAsJevChooses(t *testing.T) {
 	}
 	if w.sessions != 1 {
 		t.Errorf("sessions = %d", w.sessions)
+	}
+}
+
+// A world that answers listen with neither an ask nor done (a pause) is
+// waited on again, a little later each time, and the run goes on when the
+// next question comes: a pause never ends a run.
+func TestAPausedWorldHoldsTheRun(t *testing.T) {
+	w := &world{left: 2, quiet: 12}
+	executor, request := fixture(t, w, first)
+	report, err := executor.Execute(context.Background(), request)
+	if err != nil || report.Outcome != domain.ExecutionCompleted || len(w.plays) != 2 {
+		t.Fatalf("report = %+v %v plays %d", report, err, len(w.plays))
+	}
+	if got := strings.Count(strings.Join(w.calls, " "), "listen"); got != 14 {
+		t.Errorf("listens = %d", got)
+	}
+	// A world that never asks again is ended by the budgets or the task's
+	// timeout, whichever comes first, never completed by itself, and Jev
+	// is not asked meanwhile.
+	w = &world{left: 2, quiet: 1 << 20}
+	executor, request = fixture(t, w, first)
+	request.Timeout = 300 * time.Millisecond
+	report, err = executor.Execute(context.Background(), request)
+	if err != nil || report.Outcome != domain.ExecutionFailed || report.Usage.Requests != 1 || !(strings.HasPrefix(report.FailureReason, "interrupted") || strings.HasPrefix(report.FailureReason, "budget_exceeded")) {
+		t.Fatalf("report = %+v %v", report, err)
 	}
 }
 

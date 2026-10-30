@@ -27,17 +27,22 @@ const ReceiptSchema = "axlr-bots.jev-receipt/v1"
 // Defaults of a run.
 const (
 	DefaultTimeout = 10 * time.Minute
-	// toolTimeout bounds one tool call: the wait tool of a world may hold
-	// a call for a while (the score service holds listen up to 20 s).
+	// toolTimeout bounds one tool call: a world's wait tool may hold a
+	// call for a while before it answers.
 	toolTimeout = 60 * time.Second
 	// maxJevFailures ends a task whose questions Jev keeps not answering.
 	maxJevFailures = 3
-	// maxIdleWaits ends a task whose wait tool keeps answering with
-	// neither an ask nor done: the world has nothing more for it.
-	maxIdleWaits = 8
-	// maxRefusals ends a task whose act the world keeps refusing: the
-	// program has no other move to make.
+	// maxSameRefused ends a task whose world keeps asking the question
+	// whose answer it refused: the program has no other move to make.
+	maxSameRefused = 8
+	// maxRefusals ends a task whose act the world keeps refusing in a row.
 	maxRefusals = 3
+	// DefaultIdleBackoff is the pause after a wait that answered with
+	// neither an ask nor done, grown with each such wait up to
+	// idleBackoffCap: a paused world holds the run without a tight loop
+	// of waits eating the tool budget.
+	DefaultIdleBackoff = time.Second
+	idleBackoffCap     = 5
 )
 
 // Version is what the node reports as this runtime's.
@@ -58,6 +63,9 @@ type Executor struct {
 	StateDir string
 	// Now is the clock; nil is time.Now.
 	Now func() time.Time
+	// IdleBackoff is the pause after an idle wait; zero is
+	// DefaultIdleBackoff.
+	IdleBackoff time.Duration
 
 	mu      sync.Mutex
 	running map[domain.ExecutionID]*run
@@ -338,11 +346,14 @@ func (r *run) steps(ctx context.Context) (domain.ExecutionOutcome, string) {
 		default:
 			idle++
 		}
-		if idle > maxIdleWaits {
-			if r.refused != "" {
-				return domain.ExecutionFailed, fmt.Sprintf("%s was refused and the world asked the same question %d times", r.program.Act(), idle)
-			}
-			return domain.ExecutionCompleted, ""
+		if r.refused != "" && idle > maxSameRefused {
+			return domain.ExecutionFailed, fmt.Sprintf("%s was refused and the world asked the same question %d times", r.program.Act(), idle)
+		}
+		// Neither an ask nor done: the world is paused, or between
+		// questions. Wait again, a little later each time; the budgets and
+		// the timeout end a run the world never ends.
+		if idle > 0 && !r.pause(ctx, time.Duration(min(idle, idleBackoffCap))*r.executor.idleBackoff()) {
+			return domain.ExecutionFailed, "interrupted: " + ctx.Err().Error()
 		}
 		if result, err = r.call(ctx, r.program.Wait(), nil); err != nil {
 			if isToolError(err) {
@@ -352,6 +363,25 @@ func (r *run) steps(ctx context.Context) (domain.ExecutionOutcome, string) {
 			return r.failed(ctx, err)
 		}
 	}
+}
+
+// pause sleeps unless ctx ends first; false means it ended.
+func (r *run) pause(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func (e *Executor) idleBackoff() time.Duration {
+	if e.IdleBackoff > 0 {
+		return e.IdleBackoff
+	}
+	return DefaultIdleBackoff
 }
 
 // failed is how a run ends on an error that is not a tool's refusal: an
