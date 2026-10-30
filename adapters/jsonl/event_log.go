@@ -87,13 +87,16 @@ func (l *EventLog) tail(limit int, found func(*eventIndex) []int32) ([]domain.Ev
 		return nil, err
 	}
 	positions := found(&l.index)
-	// The first capacity is fixed, not the caller's limit: the slice grows
-	// only with the events the log holds.
-	kept := make([]domain.Event, 0, min(limit, eventBatch))
+	// The first capacity is a constant, never the caller's limit: the
+	// slice grows only with the events the log holds.
+	kept := make([]domain.Event, 0, eventBatch)
 	var buf []byte
 	for i := len(positions) - 1; i >= 0 && len(kept) < limit; i-- {
 		line := l.index.lines[positions[i]]
-		buf = slices.Grow(buf[:0], int(line.len))[:line.len]
+		// A line's length comes from the file; the index keeps none past
+		// maxEventLineBytes, and the buffer never grows past it either.
+		n := min(int(line.len), maxEventLineBytes)
+		buf = slices.Grow(buf[:0], n)[:n]
 		if _, err := f.ReadAt(buf, line.at); err != nil {
 			return nil, err
 		}

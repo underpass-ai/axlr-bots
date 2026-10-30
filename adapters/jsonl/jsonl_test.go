@@ -190,6 +190,27 @@ func TestEventLogListsATeamsEvents(t *testing.T) {
 	}
 }
 
+// A line longer than a read takes is skipped, as before the index, and
+// a caller's limit never sizes an allocation: a huge limit reads what
+// the log holds.
+func TestEventLogBoundsItsAllocations(t *testing.T) {
+	ctx := context.Background()
+	log := NewEventLog(t.TempDir())
+	event, _ := domain.NewEvent("evt-a", domain.EventTaskSubmitted, "underpass", "bot-1", "task-1", "trace", t0, nil)
+	if err := log.Publish(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	f, _ := os.OpenFile(log.Path(), os.O_APPEND|os.O_WRONLY, 0o644)
+	_, _ = f.WriteString(`{"eventId": "evt-long", "schemaVersion": "underpass.ai/events/v1", "type": "bot.task.submitted", "tenantId": "underpass", "botId": "bot-1", "createdAt": "2026-10-23T15:00:00Z", "payload": {"x": "` + strings.Repeat("x", maxEventLineBytes) + `"}}` + "\n")
+	_ = f.Close()
+	event, _ = domain.NewEvent("evt-b", domain.EventTaskSubmitted, "underpass", "bot-1", "task-1", "trace", t0, nil)
+	_ = log.Publish(ctx, event)
+	events, err := log.ListEvents(ctx, "bot-1", 1<<30)
+	if err != nil || len(events) != 2 || events[0].ID != "evt-a" || events[1].ID != "evt-b" {
+		t.Fatalf("events = %v %v", events, err)
+	}
+}
+
 // The index a read keeps follows the log: lines another process
 // appends, a torn line once it is whole, a line longer than the read
 // buffer, a line that is not an event, and a log that was replaced.
