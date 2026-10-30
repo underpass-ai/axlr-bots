@@ -39,9 +39,27 @@ pub(crate) mod tests {
     use std::sync::Arc;
 
     use crate::adapters::fake::{
-        CountingKeys, FakeConnector, FakeControlPlane, FixedClock, MemoryConfigStore, MemoryFiles, RecordingNotifier,
+        CountingKeys, FakeConnector, FakeControlPlane, FixedClock, FixedShortcuts, MemoryConfigStore, MemoryFiles,
+        RecordingNotifier,
     };
     use crate::application::{Connect, PanelConfig};
+    use crate::domain::ShortcutFile;
+
+    /// A conductor's buttons on the team `tienda` of the sample fleet.
+    pub(crate) const SHORTCUTS: &str = r#"
+[[shortcut]]
+team = "tienda"
+label = "Strings"
+name = "info.cue.strings"
+message = "Strings, come in."
+data = { dynamics = "f" }
+
+[[shortcut]]
+team = "tienda"
+label = "Stop all"
+name = "stop.all"
+message = "Stop."
+"#;
     use crate::ui::{App, Launch, Services};
 
     pub(crate) fn config() -> PanelConfig {
@@ -73,6 +91,7 @@ pub(crate) mod tests {
             reader: files,
             connect: Arc::new(Connect::new(connector, store, clock)),
             notifier: Arc::new(RecordingNotifier::default()),
+            shortcuts: Arc::new(FixedShortcuts(ShortcutFile::parse(SHORTCUTS).unwrap())),
         };
         App::new(services, Launch::default(), &config(), false).0
     }

@@ -6,7 +6,7 @@ use super::{
 };
 use crate::application::SubscriptionChange;
 use crate::application::{EventFeed, Fleet, PanelConfig, PanelError, TaskDetail};
-use crate::domain::{Decision, TaskId, TaskStatus};
+use crate::domain::{Decision, Shortcut, TaskId, TaskStatus};
 use crate::ui::format;
 
 /// How long a refresh may stay unanswered before the next tick tries again.
@@ -59,6 +59,8 @@ pub struct App {
     pub listen: ListenForm,
     /// Publishing an event on a team.
     pub publish: PublishForm,
+    /// The operator's one-press buttons, read at start.
+    pub shortcuts: Vec<Shortcut>,
     /// Where to go once connected.
     target: Screen,
 }
@@ -100,12 +102,17 @@ impl App {
             watch: TeamWatch::default(),
             listen: ListenForm::default(),
             publish: PublishForm::default(),
+            shortcuts: Vec::new(),
             target: if launch.screen == Screen::Settings {
                 Screen::Overview
             } else {
                 launch.screen
             },
         };
+        match app.services.shortcuts.load() {
+            Ok(list) => app.shortcuts = list,
+            Err(error) => app.banner = Some(Banner::error(&error, now)),
+        }
         let effects = if saved {
             app.settings.busy = true;
             vec![Effect::Connect {
@@ -495,6 +502,8 @@ impl App {
                 Vec::new()
             }
             Message::Published(result) => self.published(result),
+            Message::Shortcut(index) => self.shortcut(index),
+            Message::ShortcutPublished(result) => self.shortcut_published(result),
             Message::NoticeClicked(screen) => self.notice_clicked(screen),
             Message::AskStopBot(id) => {
                 self.confirm = Some(Confirm::StopBot(id));

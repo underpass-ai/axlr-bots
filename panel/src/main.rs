@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use axlr_bots_panel::adapters::config::{InstallDiscovery, TomlConfigStore};
+use axlr_bots_panel::adapters::config::{InstallDiscovery, TomlConfigStore, TomlShortcuts};
 use axlr_bots_panel::adapters::http::HttpConnector;
 use axlr_bots_panel::adapters::system::{DesktopNotifier, DialogFilePicker, FsDefinitionReader, SystemClock, UuidKeys};
 use axlr_bots_panel::application::Connect;
@@ -31,6 +31,9 @@ fn main() -> std::process::ExitCode {
         discovery.config_dir().join("axlr-bots-panel/config.toml"),
         discovery.discover(),
     ));
+    let shortcuts = Arc::new(TomlShortcuts::new(
+        discovery.config_dir().join("axlr-bots-panel/shortcuts.toml"),
+    ));
     let clock = Arc::new(SystemClock);
     let connect = Arc::new(Connect::new(Arc::new(HttpConnector), store, clock.clone()));
     let result = launch(move || {
@@ -43,6 +46,7 @@ fn main() -> std::process::ExitCode {
             reader: Arc::new(FsDefinitionReader),
             connect: connect.clone(),
             notifier: Arc::new(DesktopNotifier),
+            shortcuts: shortcuts.clone(),
         };
         App::new(services, launch_options.clone(), &config, saved)
     });

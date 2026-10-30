@@ -279,6 +279,7 @@ async fn reads_every_route_with_the_token_over_tls() {
     let publication = axlr_bots_panel::domain::Publication {
         name: "stop.all".into(),
         message: "Everyone stop".into(),
+        data: Some(serde_json::json!({"bpm": 108})),
         to: Vec::new(),
         idempotency_key: "k-1".into(),
     };
@@ -288,7 +289,7 @@ async fn reads_every_route_with_the_token_over_tls() {
         (server.last().method, server.last().body),
         (
             Method::POST,
-            r#"{"name":"stop.all","message":"Everyone stop","idempotencyKey":"k-1"}"#.to_string()
+            r#"{"name":"stop.all","message":"Everyone stop","data":{"bpm":108},"idempotencyKey":"k-1"}"#.to_string()
         )
     );
 }
