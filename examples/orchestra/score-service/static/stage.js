@@ -51,9 +51,12 @@ function drawSeats(state) {
         const p = polar(r, deg);
         const chair = section.chairs[i];
         const seat = el("g", { class: "seat waiting", transform: `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})` }, g);
-        el("title", {}, seat).textContent = `${section.name} ${i + 1}: bot ${chair.id}`;
+        seat.tip = el("title", {}, seat);
+        seat.tip.textContent = `${section.name} ${i + 1}: bot ${chair.id}`;
         el("circle", { r: 17 }, seat);
         el("text", {}, seat).textContent = String(i + 1);
+        seat.phrase = el("text", { class: "phrase", y: 27 }, seat);
+        seat.label = `${section.name} ${i + 1}: bot ${chair.id}`;
         seats[chair.id] = seat;
       }
     });
@@ -103,8 +106,9 @@ function paintWindow(first) {
 }
 
 function position() {
-  // bars from the start, as a fraction, moved on since the last answer at its tempo
+  // bars from the start, as a fraction, moved on since the last answer at its tempo; still in a count-in
   if (!last) return 0;
+  if (last.countIn) return last.bar - 1;
   let pos = last.bar - 1 + last.beat / score.beatsPerBar;
   if (last.status === "playing") pos += ((performance.now() - lastAt) / 1000) * (last.bpm / 60) / score.beatsPerBar;
   return Math.min(pos, score.bars);
@@ -119,7 +123,7 @@ function frame() {
     const ph = document.getElementById("playhead");
     ph.setAttribute("x1", x.toFixed(1));
     ph.setAttribute("x2", x.toFixed(1));
-    document.getElementById("bar").textContent = String(Math.floor(pos) + 1);
+    if (!last.countIn) document.getElementById("bar").textContent = String(Math.floor(pos) + 1);
   }
   requestAnimationFrame(frame);
 }
@@ -135,6 +139,18 @@ function apply(state) {
       if (!seat) continue;
       seat.setAttribute("class", `seat ${chair.state} ${chair.dynamics}`);
       if (chair.state === "playing") playing++;
+      // The phrase playing and the next, as the score service saw the chair play them;
+      // Jev's pick only as the bot reported it.
+      const ph = chair.phrase || {};
+      const now = ph.playing ? `${ph.playing.phrase}` : "";
+      const next = ph.next ? `→${ph.next.phrase}` : "";
+      seat.phrase.textContent = now + next;
+      const judge = chair.judge;
+      seat.tip.textContent = [seat.label + (chair.line ? ` · ${chair.line}` : ""),
+        ph.playing ? `playing phrase ${ph.playing.phrase} (bars ${ph.playing.bars[0]}–${ph.playing.bars[1]})` : "",
+        ph.next ? `next phrase ${ph.next.phrase} in ${ph.next.startsInBars} bars` : "",
+        judge && judge.probability != null ? `Jev ${Math.round(judge.probability * 100)} % for phrase ${judge.phrase} (reported by the bot)` : ""]
+        .filter(Boolean).join("\n");
     }
     if (counts[section.id]) counts[section.id].textContent = `${section.playing}/${section.chairs.length}`;
     if (lanes[section.id]) lanes[section.id].g.setAttribute("class", section.playing ? "lane live" : "lane");
@@ -144,7 +160,7 @@ function apply(state) {
   document.getElementById("bpm").textContent = Math.round(state.bpm);
   document.getElementById("playing").textContent = playing;
   const status = document.getElementById("status");
-  status.textContent = state.status;
+  status.textContent = state.countIn ? `count-in ${state.countIn}` : state.status;
   status.className = `pill ${state.status}`;
   document.getElementById("label").textContent = state.label || "";
   const bus = state.lastBus;
@@ -156,6 +172,16 @@ function apply(state) {
     b.textContent = "operator → bus  ";
     document.getElementById("event").append(b, JSON.stringify(body));
   }
+  const play = (state.facts || []).filter((f) => f.what === "play").pop();
+  const pick = document.getElementById("pick");
+  if (play) {
+    pick.innerHTML = "";
+    const b = document.createElement("b");
+    b.textContent = `${play.chair} → phrase ${play.phrase}`;
+    const j = play.judge && play.judge.probability != null ? ` · Jev ${Math.round(play.judge.probability * 100)} %, as the bot reported it` : " · no pick reported";
+    pick.append(b, ` (bars ${play.bars[0]}–${play.bars[1]}${play.lateBars ? `, ${play.lateBars} bars late` : ""})${j}`);
+  }
+  if (state.countIn) document.getElementById("bar").textContent = String(state.bar);
   const cut = document.getElementById("cut");
   if (state.cut && state.cut.afterEventSeconds != null) {
     cut.innerHTML = "";

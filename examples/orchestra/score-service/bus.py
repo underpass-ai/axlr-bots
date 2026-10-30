@@ -3,7 +3,9 @@
 The service long-polls the team's timeline (GET /v1/groups/<team>/events
 ?after=&wait=25s) with the operator token, and reads the operator's own
 events in it (group.event.published): stop.all cuts every part at once,
-before any bot has stopped; info.tempo with data.bpm sets the clock. This
+before any bot has stopped; info.tempo with data.bpm sets the clock; a cue
+(info.cue.*) when nothing plays starts a take with a count-in, from bar 1 or
+data.bar, so the chairs cued choose their first phrase before it. This
 is the service's own subscription, apart from the bots': the audio does
 not wait for 36 urgent tasks. The token is read from its file on each call
 and never logged.
@@ -42,6 +44,8 @@ def apply(orchestra, event, clock=time.time):
     if name == "stop.all" or name.startswith("stop."):
         cut = orchestra.stop_all(f"{name} from {payload.get('from', 'operator')}", event_at=at)
         return "cut" if cut else "already stopped"
+    if name.startswith("info.cue."):
+        return orchestra.cue(name, data, at)
     if name == "info.tempo" and isinstance(data.get("bpm"), (int, float)):
         orchestra.set_tempo(data["bpm"])
         return "tempo"

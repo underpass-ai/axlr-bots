@@ -22,10 +22,12 @@ def soundfont(candidates):
 
 
 class FluidSynth:
-    def __init__(self, path, rate):
+    """One channel per chair (256 here): its instrument, its pan, its few cents of tuning, its volume."""
+
+    def __init__(self, path, rate, gain=0.2, polyphony=1024):
         import fluidsynth
 
-        self.fs = fluidsynth.Synth(samplerate=float(rate), gain=0.2)
+        self.fs = fluidsynth.Synth(samplerate=float(rate), gain=gain, channels=256, **{"synth.polyphony": polyphony})
         self.font = self.fs.sfload(path)
         if self.font < 0:
             raise RuntimeError(f"FluidSynth could not load {path}")
@@ -39,6 +41,12 @@ class FluidSynth:
 
     def note_off(self, channel, key):
         self.fs.noteoff(channel, key)
+
+    def pan(self, channel, value):
+        self.fs.cc(channel, 10, max(0, min(127, round(64 + 63 * value))))  # -1 left … 1 right
+
+    def bend(self, channel, cents):
+        self.fs.pitch_bend(channel, round(cents * 8192 / 200))  # the wheel spans ±2 semitones
 
     def volume(self, channel, value):
         self.fs.cc(channel, 7, max(0, min(127, value)))
