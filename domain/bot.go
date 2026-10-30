@@ -23,6 +23,7 @@ type Bot struct {
 	teams        Teams
 	events       EventPolicy
 	subs         Subscriptions
+	runtime      Runtime
 	status       BotStatus
 	createdAt    time.Time
 	updatedAt    time.Time
@@ -192,6 +193,24 @@ func (b *Bot) Redefine(mission Mission, tools AllowedTools, model ModelPolicy, b
 	return nil
 }
 
+// Runtime is what runs the bot's tasks on its node.
+func (b Bot) Runtime() Runtime { return b.runtime }
+
+// SetRuntime sets what runs the bot's tasks; a Jev program must fit the
+// bot's allowed tools and level (CheckRuntime).
+func (b *Bot) SetRuntime(runtime Runtime) error {
+	if err := runtime.fits(b.allowedTools, b.level); err != nil {
+		return err
+	}
+	b.runtime = runtime
+	return nil
+}
+
+// CheckRuntime refuses a bot whose tools or level no longer carry its
+// Jev program: a change that narrows them is checked with it once all
+// of it is applied.
+func (b Bot) CheckRuntime() error { return b.runtime.fits(b.allowedTools, b.level) }
+
 // Touch records that the bot's definition changed.
 func (b *Bot) Touch(now time.Time) { b.updatedAt = now }
 
@@ -285,6 +304,7 @@ func (b Bot) Snapshot() BotSnapshot {
 		Groups:        b.teams.Snapshot(),
 		Events:        b.events.Snapshot(),
 		Subscriptions: b.subs.Snapshot(),
+		Runtime:       b.runtime.Snapshot(),
 		Status:        b.status.String(),
 		CreatedAt:     b.createdAt,
 		UpdatedAt:     b.updatedAt,
@@ -385,6 +405,13 @@ func RestoreBot(s BotSnapshot) (Bot, error) {
 			return Bot{}, err
 		}
 		bot.SetEvents(events)
+	}
+	runtime, err := NewRuntime(s.Runtime)
+	if err != nil {
+		return Bot{}, err
+	}
+	if err := bot.SetRuntime(runtime); err != nil {
+		return Bot{}, err
 	}
 	if s.UpdatedAt.IsZero() {
 		return Bot{}, invalid("updated at", "must not be zero")

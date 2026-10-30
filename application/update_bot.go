@@ -188,6 +188,20 @@ func applyPatch(bot *domain.Bot, patch BotPatch) ([]string, error) {
 		bot.SetEvents(events)
 		changed = append(changed, "events")
 	}
+	if patch.Runtime != nil {
+		runtime, err := domain.NewRuntime(patch.Runtime)
+		if err != nil {
+			return nil, err
+		}
+		if err := bot.SetRuntime(runtime); err != nil {
+			return nil, err
+		}
+		changed = append(changed, "runtime")
+	}
+	// Narrower tools or a lower level may no longer carry a Jev program.
+	if err := bot.CheckRuntime(); err != nil {
+		return nil, err
+	}
 	if subscribed {
 		subs, err := domain.NewSubscriptions(subscriptions)
 		if err != nil {

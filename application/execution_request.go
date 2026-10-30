@@ -1,6 +1,7 @@
 package application
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -27,6 +28,12 @@ type ExecutionRequest struct {
 	ToolRules    domain.ToolRules
 	Budgets      domain.Budgets
 	Timeout      time.Duration
+	// Runtime is what runs the task on the node: AXLR, or a Jev program.
+	Runtime domain.Runtime
+	// Input is the task's input as it was created: the event's fields for
+	// a task an event made. A Jev program reads the event's name and data
+	// from it; AXLR reads the objective.
+	Input json.RawMessage
 	// Delegation is set when the bot may ask other bots: the node then
 	// serves the delegation tool to the execution.
 	Delegation *DelegationOffer

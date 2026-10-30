@@ -12,6 +12,11 @@ A chair's id is the score service's: <section>-<n> (vn1-1 … hn-2). Its node is
 stage-<id>, dedicated; its MCP URL http://127.0.0.1:8790/mcp/<id>, so the score
 knows who calls. Without chair names, every chair.
 
+ORCHESTRA_RUNTIME=jev renders the chairs from chair-jev.json: Jev bots, whose
+node runs the fixed program phrases → Jev → play → listen with no language
+model (the node needs TYPESAFE_API_KEY in its environment file). Anything
+else, or nothing, is chair.json: AXLR bots on Haiku that call the same tools.
+
 Test: python3 -m unittest -v test_chairs
 """
 
@@ -25,6 +30,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG = os.path.join(HERE, "..", "score-service", "config.json")
 STAGE = os.path.join(HERE, "..", "stage", "stage.sh")
 SCORE_URL = os.environ.get("ORCHESTRA_SCORE_URL", "http://127.0.0.1:8790")
+RUNTIME = os.environ.get("ORCHESTRA_RUNTIME", "axlr")
+TEMPLATES = {"axlr": "chair.json", "jev": "chair-jev.json"}
 
 
 def chairs(config):
@@ -44,10 +51,22 @@ def definition(template, section, n):
     return bot
 
 
-def load():
+def patch_of(bot):
+    """The update that makes a registered chair this definition: every field but the identity, and the
+    runtime even when the template names none, so a chair moved to Jev comes back to AXLR with one up."""
+    patch = {k: v for k, v in bot.items() if k not in ("id", "tenant", "name", "owner")}
+    patch.setdefault("runtime", {"kind": "axlr"})
+    return patch
+
+
+def load(runtime=None):
+    """The score's sections and the chair template of the runtime (ORCHESTRA_RUNTIME when None)."""
+    runtime = RUNTIME if runtime is None else runtime
+    if runtime not in TEMPLATES:
+        raise SystemExit(f"ORCHESTRA_RUNTIME must be one of {', '.join(TEMPLATES)}, not {runtime!r}")
     with open(CONFIG) as f:
         config = json.load(f)
-    with open(os.path.join(HERE, "chair.json")) as f:
+    with open(os.path.join(HERE, TEMPLATES[runtime])) as f:
         template = json.load(f)
     return config, template
 
@@ -81,16 +100,15 @@ def up(config, template, names):
             json.dump(bot, f)
         try:
             if cli("bot", "get", chair, check=False).returncode == 0:
-                patch = {k: v for k, v in bot.items() if k not in ("id", "tenant", "name", "owner")}
                 with open(f.name, "w") as g:
-                    json.dump(patch, g)
+                    json.dump(patch_of(bot), g)
                 cli("bot", "update", chair, "--file", f.name)
             else:
                 cli("bot", "register", "--file", f.name)
         finally:
             os.unlink(f.name)
         cli("bot", "enable", chair, check=False)
-        print(f"{chair} up")
+        print(f"{chair} up ({(bot.get('runtime') or {}).get('kind', 'axlr')})")
 
 
 def down(config, names):

@@ -16,10 +16,12 @@ import (
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/adapters/axlr"
+	"github.com/underpass-ai/axlr-bots/adapters/jev"
 	"github.com/underpass-ai/axlr-bots/adapters/nodeagent"
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // Exit codes of the command.
@@ -61,6 +63,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	caFile := flags.String("ca-file", envOr("AXLR_NODE_CA_FILE", ""), "with --token-file, the fleet CA in PEM instead of the one the token carries (also AXLR_NODE_CA_FILE)")
 	retry := flags.Duration("enroll-retry", 10*time.Second, "with --token-file, how long to wait between enrollment attempts")
 	dedicated := flags.Bool("dedicated", envOr("AXLR_NODE_DEDICATED", "") == "true", "run only the bots whose placement names this node or selects its labels, never those placed on any node (also AXLR_NODE_DEDICATED=true): a sidecar")
+	mcpConfig := flags.String("mcp-config", envOr("AXLR_NODE_MCP_CONFIG", ""), "the mcp.json a Jev bot's program finds its MCP server in (also AXLR_NODE_MCP_CONFIG; default: ~/.config/axlr/mcp.json, the node's AXLR's)")
+	jevModel := flags.String("jev-model", envOr("AXLR_NODE_JEV_MODEL", jev.DefaultModel), "the pinned Jev version the jev runtime asks (also AXLR_NODE_JEV_MODEL)")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exitOK
@@ -113,10 +117,24 @@ func run(args []string, stdout, stderr io.Writer) int {
 	} else {
 		logger.Printf("node: own path unknown (%v): no delegation tool", err)
 	}
+	runtimes := nodeagent.NewRuntimes(executor)
+	// The jev runtime is there when the host has Jev's key: a Jev bot is
+	// never assigned to a node that cannot ask Jev.
+	if key := os.Getenv("TYPESAFE_API_KEY"); key != "" {
+		judge, err := jev.NewClient(jev.ClientConfig{APIKey: key, Model: *jevModel})
+		if err != nil {
+			fmt.Fprintln(stderr, "axlr-node:", err)
+			return exitUsage
+		}
+		runtimes.Add(domain.RuntimeJev, jev.NewExecutor(judge, jev.MCPConfig{Path: *mcpConfig}, *stateDir))
+		logger.Printf("node: jev runtime on (%s)", *jevModel)
+	} else {
+		logger.Printf("node: TYPESAFE_API_KEY is not set: Jev bots are not run here")
+	}
 	agent := nodeagent.Agent{
 		Transport: transport,
-		Executor:  executor,
-		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Dedicated: *dedicated, Heartbeat: *heartbeat, PollWait: *poll, Log: logger, SocketDir: filepath.Join(*stateDir, "run")},
+		Executor:  runtimes,
+		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Dedicated: *dedicated, Runtimes: runtimes.Kinds(), Heartbeat: *heartbeat, PollWait: *poll, Log: logger, SocketDir: filepath.Join(*stateDir, "run")},
 	}
 	if err := agent.Run(ctx); err != nil {
 		fmt.Fprintln(stderr, "axlr-node:", err)

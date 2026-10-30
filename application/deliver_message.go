@@ -30,7 +30,11 @@ func (uc EmitEvent) deliverMessage(ctx context.Context, e emission, mate domain.
 	if e.dataJSON != "" {
 		text += "\n" + e.dataJSON
 	}
-	id, err := uc.rec.executionEventID(ctx, domain.EventTaskMessage, mate, task.ID(), execution.ID(), task.CorrelationID(), map[string]any{"text": text, "from": "event:" + e.id})
+	payload := map[string]any{"text": text, "from": "event:" + e.id, "event": e.name.String()}
+	if e.data != nil {
+		payload["data"] = e.data
+	}
+	id, err := uc.rec.executionEventID(ctx, domain.EventTaskMessage, mate, task.ID(), execution.ID(), task.CorrelationID(), payload)
 	if err != nil {
 		return nil, nil, true, err
 	}

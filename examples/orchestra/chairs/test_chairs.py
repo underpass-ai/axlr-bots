@@ -87,3 +87,42 @@ class MeasureTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class JevChairsTest(unittest.TestCase):
+    """The same 36 chairs as Jev bots: a fixed program on the node, no model."""
+
+    def setUp(self):
+        self.config, self.template = chairs.load("jev")
+
+    def test_the_template_is_a_jev_program_over_the_scores_tools(self):
+        runtime = self.template["runtime"]
+        self.assertEqual(runtime["kind"], "jev")
+        program = runtime["jev"]
+        self.assertEqual((program["server"], program["start"], program["wait"], program["stop"]), ("score", "phrases", "listen", "stop"))
+        self.assertEqual(program["act"], {"tool": "play", "choice": "phrase", "verdict": "judge", "pass": ["dynamics"]})
+        self.assertEqual(sorted(self.template["allowedTools"]), ["listen", "phrases", "play", "stop"])
+        self.assertNotIn("axlr_judge", self.template["allowedTools"])
+        self.assertEqual(self.template["model"]["model"], "")
+        self.assertEqual(self.template["level"], "act-within-policy")
+
+    def test_a_jev_chair_is_placed_and_cued_like_an_axlr_one(self):
+        _, axlr = chairs.load("axlr")
+        section = next(s for s in self.config["sections"] if s["id"] == "ob")
+        jev, model = chairs.definition(self.template, section, 1), chairs.definition(axlr, section, 1)
+        for key in ("id", "name", "placement", "subscriptions", "groups", "events", "tenant", "owner"):
+            self.assertEqual(jev[key], model[key], key)
+        for placeholder in ("CHAIR", "SECTION", "TOTAL", "FAMILY", "chair N of", "SECTIONKEY"):
+            self.assertNotIn(placeholder, str(jev), placeholder)
+        self.assertTrue(jev["mission"].startswith("Oboes, chair 1 of 2: a Jev bot."))
+
+    def test_an_update_from_either_template_sets_the_runtime(self):
+        _, axlr = chairs.load("axlr")
+        section = self.config["sections"][0]
+        self.assertEqual(chairs.patch_of(chairs.definition(axlr, section, 1))["runtime"], {"kind": "axlr"})
+        self.assertEqual(chairs.patch_of(chairs.definition(self.template, section, 1))["runtime"]["kind"], "jev")
+        self.assertNotIn("id", chairs.patch_of(chairs.definition(axlr, section, 1)))
+
+    def test_an_unknown_runtime_is_refused(self):
+        with self.assertRaises(SystemExit):
+            chairs.load("haiku")
