@@ -110,10 +110,18 @@ class LinkTest(unittest.TestCase):
         self.assertIn("101", status)
         self.assertEqual(self.message(f, "state")["state"]["status"], "idle")
         s.sendall(ws.frame(ws.TEXT, json.dumps({"type": "posture", "id": 7, "hands": {"left": OPEN}, "heldMs": 300}).encode(), MASK))
-        answer = self.message(f, "hands")
+        # The reading and the state it changed come down in either order:
+        # the state is pushed as soon as the cue is applied, the reading once Jev's answer is kept.
+        answer, playing = None, False
+        while answer is None or not playing:
+            opcode, payload = read_frame(f)
+            m = json.loads(payload)
+            if m["type"] == "hands":
+                answer = m
+            elif m["type"] == "state" and m["state"]["status"] == "playing":
+                playing = True  # pushed, not asked for
         self.assertEqual((answer["id"], answer["record"]["read"], answer["record"]["applied"]), (7, {"left": "open"}, "count-in"))
         self.assertEqual(self.publish.events, [("info.cue.strings", {"dynamics": "f"}, None)])
-        self.assertEqual(self.message(f, "state")["state"]["status"], "playing")  # pushed, not asked for
         s.close()
 
     def test_a_page_from_elsewhere_may_not_conduct(self):
