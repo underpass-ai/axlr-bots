@@ -19,12 +19,12 @@ from the conductor, or the first play, starts a take with a count-in, so every
 chair cued can choose its first phrase before the music reaches it.
 
 The conductor may also pause one group, or everyone, while the music goes on
-(hold): its chairs fall silent at once and are paused, so a run still alive
-cannot play until a cue names them. A paused chair's run is not told to stop:
-listen keeps it waiting, and the cue that names it opens its next choice, so
-the bot comes back in without starting a new run. A cue with dynamics while
-the music plays sets that level on its chairs at once, and on the phrases they
-already asked for.
+(hold): its chairs fall silent at once, and that is all. A paused chair keeps
+its phrases and its bot goes on choosing the next ones; only its notes are not
+sounded. The cue that names it brings its sound back at its next note, where
+the score is then: no new phrase to wait for, no new run. A cue with dynamics
+while the music plays sets that level on its chairs at once, and on the
+phrases they already asked for.
 
 Nothing here talks to the network: the server calls phrases, play, listen,
 stop and snapshot for the bots and the page, and the bus calls cue, hold,
@@ -109,8 +109,6 @@ class Orchestra:
                 raise Refused("the conductor stopped the music (stop.all): play nothing until the next cue")
             if self.status == "ended":
                 raise Refused("the movement has ended")
-            if c["held"]:
-                raise Refused(f"the conductor paused your section ({c['held']}): play nothing; call listen and wait for your next cue")
             if self.status == "idle":
                 self._start_take(first, why=f"{chair} played phrase {phrase}")
             if any(p["phrase"] == phrase for p in c["plan"]):
@@ -153,24 +151,22 @@ class Orchestra:
             return {"chair": chair, "state": STOPPED, "was": was, "bar": self.score.bar_of(self.tick), "done": True}
 
     def listen(self, chair, bars=8, max_seconds=20):
-        """Wait until the chair's fork opens, bars pass, the chair is stopped or the music ends; then say where things are.
-
-        A paused chair waits for the cue that names it, or the time given."""
+        """Wait until the chair's fork opens, bars pass, the chair is stopped or the music ends; then say where things are."""
         deadline = self.clock() + max(1, min(max_seconds, 60))
         with self.cond:
             c = self._chair(chair)
             take, start = self.take, self.score.bar_of(self.tick)
             while not self._fork_open(c):
-                if self.take != take or self.status != "playing" or (c["stopped"] and not c["held"]):
+                if self.take != take or self.status != "playing" or c["stopped"]:
                     break
-                if not c["held"] and self.score.bar_of(self.tick) >= start + max(1, int(bars)):
+                if self.score.bar_of(self.tick) >= start + max(1, int(bars)):
                     break
                 left = deadline - self.clock()
                 if left <= 0:
                     break
                 self.cond.wait(min(left, 0.5))
-            # Stopped, or the movement over: the reading says so, and done. Paused is not stopped.
-            return self._reading(chair, ask=self._fork_open(c) or self.status != "playing" or (c["stopped"] and not c["held"]))
+            # Stopped, or the movement over: the reading says so, and done.
+            return self._reading(chair, ask=self._fork_open(c) or self.status != "playing" or c["stopped"])
 
     # --- the operator's events (from the bus) ---------------------------------
 
@@ -185,10 +181,7 @@ class Orchestra:
             if self.status == "playing":
                 named = self.chairs_of(target)
                 for chair in named:
-                    c = self.chairs[chair]
-                    if c["held"]:  # paused: its run, still listening, may choose again
-                        c["held"], c["stopped"] = None, False
-                self.cond.notify_all()
+                    self.chairs[chair]["held"] = None  # its next note sounds
                 level = (data or {}).get("dynamics")
                 if level in self.levels and named:
                     for chair in named:
@@ -214,7 +207,7 @@ class Orchestra:
         return [k for k, c in self.chairs.items() if target in (c["section"], self.sections[c["section"]]["family"])]
 
     def hold(self, chairs, why, event_at=None):
-        """The conductor pauses some chairs, or all, while the music goes on: silent at once, paused until a cue names them."""
+        """The conductor pauses some chairs, or all, while the music goes on: silent at once, their phrases kept, until a cue names them."""
         with self.cond:
             if self.status != "playing":
                 return None
@@ -222,7 +215,7 @@ class Orchestra:
             for chair in named:
                 c = self.chairs[chair]
                 self.synth.silence(c["channel"])
-                c["stopped"], c["held"], c["plan"] = True, why, []
+                c["held"] = why
             at = self.clock()
             self._fact("hold", None, why=why, chairs=named,
                        afterEventSeconds=None if event_at is None else round(at - event_at, 3))
@@ -349,7 +342,7 @@ class Orchestra:
         c["cursor"] = cursor
 
     def _gate(self, c, tick):
-        return not c["stopped"] and any(p["fromTick"] <= tick < p["endTick"] for p in c["plan"])
+        return not c["stopped"] and not c["held"] and any(p["fromTick"] <= tick < p["endTick"] for p in c["plan"])
 
     def _state(self, c):
         if c["held"]:
@@ -535,14 +528,14 @@ class Orchestra:
                "playing": view["phrase"]["playing"], "next": view["phrase"]["next"]}
         if self.status == "playing" and not c["stopped"] and not self._fork_open(c):
             out["fork"] = f"your next choice opens at bar {self._fork_bar(c)}"
+        if c["held"]:
+            out["paused"] = f"the conductor paused your section ({c['held']}): you are silent; go on as usual, you sound again at the cue that names you"
         # done: nothing more for this chair to choose in this take. A fixed
         # program (a Jev bot) reads it; a model reads the note. A paused chair
-        # is never done: its run listens again until the cue that names it.
+        # is not done: it goes on choosing, silent.
         if ask and self.status in ("stopped", "ended"):
             out["note"] = "the conductor stopped the music: wait for the next cue" if self.status == "stopped" else "the movement has ended"
             out["done"] = True
-        elif c["held"]:
-            out["note"] = f"the conductor paused your section ({c['held']}): call listen again; you choose again at your next cue"
         elif ask and c["stopped"]:
             out["note"] = "you stopped: wait for the next cue"
             out["done"] = True

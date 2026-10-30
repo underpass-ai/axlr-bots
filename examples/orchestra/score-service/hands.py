@@ -17,8 +17,9 @@ winds, both hands showing the same gesture on everyone:
 A cue is the event the operator's panel already publishes (orchestra 6b), as
 the operator; it reaches a bot's running task as a message. A pause is the
 service's alone: a stop on the bus would end each bot's run, and a bot back
-from a stop has to start a new one (seconds). Paused, a chair is silent and
-may not play, and its run keeps listening until the cue that names it.
+from a stop has to start a new one (seconds). Paused, a chair is only muted:
+it keeps its phrases and its bot goes on choosing, and the cue that names it
+sounds again at its next note.
 
 The service is the orchestra, so it does what a gesture means at once (holds
 the group, sets the level, starts the count-in) and publishes the events in

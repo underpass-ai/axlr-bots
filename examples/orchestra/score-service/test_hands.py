@@ -158,23 +158,21 @@ class SendTest(unittest.TestCase):
         self.assertEqual((record["applied"], publish.events, o.status), ("paused 36 chairs", [], "playing"))
         self.assertTrue(all(c["held"] for c in o.chairs.values()))
 
-    def test_open_hands_after_a_pause_bring_the_listening_bots_back(self):
+    def test_open_hands_after_a_pause_sound_the_chairs_again_at_once(self):
         h, o, _, publish, clock = hands(left=("fist", 0.9), right=("fist", 0.9))
+        synth = o.synth
         o.play("vc-1", 1)
-        play_until(o, 2)
+        play_until(o, 3)
         h.observe(posture(left=FIST, right=FIST))
-        heard = {}
-        t = threading.Thread(target=lambda: heard.update(o.listen("vc-1")))
-        t.start()  # the bot's run, still alive, waits
-        t.join(0.3)
-        self.assertTrue(t.is_alive())
+        silent = synth.ons_on(o.chairs["vc-1"]["channel"])
+        play_until(o, 4)
+        self.assertEqual(synth.ons_on(o.chairs["vc-1"]["channel"]), silent)
         h.judge.reads = {"left": ("open", 0.95), "right": ("open", 0.95)}
         clock.now += 1
         record = h.observe(posture(left=OPEN, right=OPEN))
-        t.join(2)
-        self.assertEqual(record["sent"][0]["name"], "info.cue.all")
-        self.assertIn("ask", heard)
-        self.assertEqual(o.play("vc-1", 2)["phrase"], 2)
+        self.assertEqual((record["sent"][0]["name"], record["applied"]), ("info.cue.all", "f for 36 chairs"))
+        play_until(o, 5)
+        self.assertGreater(synth.ons_on(o.chairs["vc-1"]["channel"]), silent)  # the phrase it had, from where the score is
 
     def test_a_pause_when_nothing_of_the_group_plays_does_nothing(self):
         h, o, _, publish, _ = hands(left=("fist", 0.9), right=("fist", 0.9))

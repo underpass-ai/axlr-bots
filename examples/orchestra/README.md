@@ -137,7 +137,7 @@ hands ─ Quest 3S (WebXR, 25 joints a hand) ─ /hands: bends, palm, place ─ 
 | **Nothing is the default**: a hand Jev does not read as a gesture with probability 0.80 or more gives no signal; Jev failing is no signal | a hand in the air is not a command |
 | A posture is read once it holds still 0.3 s and has changed; readings are at least 0.5 s apart | the two-frame rule of the design, on hand tracking instead of photos; at most two Jev calls a second |
 | The service does what a gesture means before anything reaches the bus, and answers the page at once; the events are published in parallel, and the service does not apply its own echo | a publish takes 2–3 s on the control plane today; the sound and the lanterns must not wait for it |
-| A pause is the service's alone: no event. The chairs fall silent and their `play` is refused; their state is `paused`; `listen` keeps a paused run waiting, and the cue that names the chairs opens their next choice | a `stop.*` ended each bot's run, and a bot back from it needs a new run (about 7 s with a model) |
+| A pause is the service's alone: no event. It mutes the chairs and nothing else: they keep their phrases, their bots go on choosing (state `paused`, never `done`), and the cue that names them sounds again at their next note | a `stop.*` ended each bot's run (a new one took about 7 s with a model); a pause that dropped the phrases made each chair wait for its next phrase, 3–12 s, measured with 36 Jev bots |
 | An event that changes nothing is not sent, and the panel says why: a pause when nothing of the group plays, a cue when the group already plays at that level, the same gesture again within 3 s | a gesture held is not a command repeated |
 
 What changed in the service for this, and why:
