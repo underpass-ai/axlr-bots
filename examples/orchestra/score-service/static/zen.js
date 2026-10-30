@@ -143,7 +143,7 @@ export function zen(scene, { flat = 7 } = {}) {
   // the meadow's light reaches it
   const treeAt = V(8, 0, -18), capR = V(34, 24, 34), capY = 14, cut = 0.55 * Math.PI;
   const rimY = capY + capR.y * Math.cos(cut), rimR = capR.x * Math.sin(cut);
-  const leaf = { dark: { value: col(0x08221a) }, light: { value: col(0x6fa634) }, ax: { value: treeAt.x }, az: { value: treeAt.z }, rim: { value: rimR } };
+  const leaf = { dark: { value: col(0x0b2a1f) }, light: { value: col(0x6fa634) }, ax: { value: treeAt.x }, az: { value: treeAt.z }, rim: { value: rimR } };
   const cap = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 32, 0, Math.PI * 2, 0, cut), painted(leaf, `
       float d = distance(vW.xz, vec2(ax, az)) / rim;
       c = mix(dark, light, 0.35 * smoothstep(0.75, 1.0, d) * clamp(-vN.y + 0.3, 0.0, 1.0));
@@ -152,7 +152,7 @@ export function zen(scene, { flat = 7 } = {}) {
   cap.scale.copy(capR);
   const underside = new THREE.Mesh(new THREE.ConeGeometry(rimR, 4.5, 64, 1, true), painted(leaf, `
       float d = distance(vW.xz, vec2(ax, az)) / rim;
-      c = mix(dark, light, 0.8 * pow(smoothstep(0.35, 1.0, d), 1.6));
+      c = mix(dark, light, 0.13 + 0.72 * pow(smoothstep(0.15, 1.0, d), 1.7));  // never void: the grain reads even by the trunk
       c *= 1.0 + 0.10 * grain(vW, 2.5) + 0.06 * grain(vW + 7.1, 11.0);`, { side: THREE.DoubleSide }));
   underside.position.set(treeAt.x, rimY + 2.25, treeAt.z);
   const canopy = new THREE.Group();
