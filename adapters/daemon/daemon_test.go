@@ -319,8 +319,14 @@ func TestDaemonLeavesNodeBackedTasksToTheNodeAndMarksItOffline(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	if !strings.Contains(f.logs.String(), "nodes offline: [web-1]") {
-		t.Errorf("logs = %s", f.logs.String())
+	// The node is saved Offline before the daemon logs it: wait for the
+	// line rather than read the logs once (30 Oct 2026, full suite under
+	// -race).
+	for !strings.Contains(f.logs.String(), "nodes offline: [web-1]") {
+		if time.Now().After(deadline) {
+			t.Fatalf("logs = %s", f.logs.String())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	next, _ := client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "o2", IdempotencyKey: "k2"})
 	waitFor(t, client, next.Task.ID, "Completed")

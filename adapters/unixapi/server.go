@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/application"
@@ -37,22 +38,24 @@ const (
 // TLS address behind a bearer token.
 type Server struct {
 	service *Local
+	// closing ends the node streams when the server shuts down: a
+	// stream is never idle, so a graceful shutdown would wait for it.
+	closing   chan struct{}
+	closeOnce sync.Once
 }
 
 // NewServer serves the local service.
 func NewServer(service *Local) *Server {
-	return &Server{service: service}
+	return &Server{service: service, closing: make(chan struct{})}
 }
 
-// pollInterval is how often a long poll looks again for an assignment.
-const pollInterval = 250 * time.Millisecond
+// recheckEvery is how often a long poll looks again when nothing woke
+// it: a change the control plane records wakes it at once, so this is
+// for what changes without one (a deadline passing).
+const recheckEvery = 5 * time.Second
 
 // maxPollWait bounds a long poll.
 const maxPollWait = 30 * time.Second
-
-// groupPollInterval is how often a waiting read of a team's timeline
-// looks again: each look reads the event log.
-const groupPollInterval = time.Second
 
 // Handler is the API's routes, all of them: what the socket serves.
 func (s *Server) Handler() http.Handler {
@@ -132,6 +135,7 @@ func (s *Server) nodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/nodes", s.authenticated(s.registerNode))
 	mux.HandleFunc("POST /v1/nodes/{id}/heartbeat", s.authenticated(s.heartbeat))
 	mux.HandleFunc("GET /v1/nodes/{id}/assignments/next", s.authenticated(s.nextAssignment))
+	mux.HandleFunc("GET /v1/nodes/{id}/stream", s.authenticated(s.stream))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/lease", s.authenticated(s.renewLease))
 	mux.HandleFunc("PUT /v1/nodes/{id}/executions/{exec}/artifacts/{name}", s.authenticated(s.uploadArtifact))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/report", s.authenticated(s.report))
@@ -204,6 +208,7 @@ func (s *Server) run(ctx context.Context, server *http.Server, start func() erro
 	go func() { done <- start() }()
 	select {
 	case <-ctx.Done():
+		s.closeOnce.Do(func() { close(s.closing) })
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)
@@ -269,16 +274,15 @@ func (s *Server) listGroupEvents(w http.ResponseWriter, r *http.Request) {
 	query := application.GroupEventsQuery{Name: r.PathValue("name"), Tenant: r.URL.Query().Get("tenant"), After: r.URL.Query().Get("after"), Limit: limit}
 	deadline := time.Now().Add(wait)
 	for {
+		changed, _ := s.service.changes.next()
 		events, err := s.service.ListGroupEvents(r.Context(), query)
 		if err != nil || len(events) > 0 || !time.Now().Before(deadline) {
 			respond(w, http.StatusOK, events, err)
 			return
 		}
-		select {
-		case <-r.Context().Done():
+		if !awaitChange(r.Context(), changed, min(recheckEvery, time.Until(deadline))) {
 			respond(w, http.StatusOK, events, nil)
 			return
-		case <-time.After(groupPollInterval):
 		}
 	}
 }
@@ -643,8 +647,10 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, node.Snapshot(), nil)
 }
 
-// nextAssignment long-polls: it looks for an assignment every
-// pollInterval until one appears or wait passes, then answers 204.
+// nextAssignment long-polls: it looks for an assignment, and again each
+// time the control plane records a change that may give the node one (at
+// least every recheckEvery), until one appears or wait passes, then
+// answers 204.
 func (s *Server) nextAssignment(w http.ResponseWriter, r *http.Request) {
 	id, err := domain.NewNodeID(r.PathValue("id"))
 	if err != nil {
@@ -662,6 +668,7 @@ func (s *Server) nextAssignment(w http.ResponseWriter, r *http.Request) {
 	}
 	deadline := time.Now().Add(wait)
 	for {
+		changed := s.service.changes.nextWork()
 		assignment, found, err := s.service.Runner().NextAssignment(r.Context(), id)
 		if err != nil {
 			respond(w, 0, nil, err)
@@ -671,15 +678,9 @@ func (s *Server) nextAssignment(w http.ResponseWriter, r *http.Request) {
 			respond(w, http.StatusOK, nodeproto.FromAssignment(assignment), nil)
 			return
 		}
-		if time.Now().After(deadline) || r.Context().Err() != nil {
+		if !time.Now().Before(deadline) || !awaitChange(r.Context(), changed, min(recheckEvery, time.Until(deadline))) {
 			w.WriteHeader(http.StatusNoContent)
 			return
-		}
-		select {
-		case <-r.Context().Done():
-			w.WriteHeader(http.StatusNoContent)
-			return
-		case <-time.After(pollInterval):
 		}
 	}
 }
@@ -817,20 +818,15 @@ func (s *Server) awaitDelegation(w http.ResponseWriter, r *http.Request) {
 	deadline := time.Now().Add(wait)
 	read := application.NewGetDelegation(s.service.Dependencies())
 	for {
+		changed, _ := s.service.changes.next()
 		answer, err := read.Execute(r.Context(), id, executionID, child)
 		if err != nil {
 			respond(w, 0, nil, err)
 			return
 		}
-		if answer.Done || time.Now().After(deadline) || r.Context().Err() != nil {
+		if answer.Done || !time.Now().Before(deadline) || !awaitChange(r.Context(), changed, min(recheckEvery, time.Until(deadline))) {
 			respond(w, http.StatusOK, nodeproto.FromDelegation(answer), nil)
 			return
-		}
-		select {
-		case <-r.Context().Done():
-			respond(w, http.StatusOK, nodeproto.FromDelegation(answer), nil)
-			return
-		case <-time.After(pollInterval):
 		}
 	}
 }

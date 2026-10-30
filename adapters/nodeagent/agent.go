@@ -40,6 +40,14 @@ type Agent struct {
 
 	slots *slots
 	wg    *sync.WaitGroup
+	pokes *pokes
+}
+
+// Streamer is a transport that hears the control plane push: which
+// running execution to renew now. Without it (or with a control plane
+// that pushes nothing) a lease is renewed on its tick only.
+type Streamer interface {
+	Stream(ctx context.Context, node domain.NodeID) (<-chan application.NodePush, error)
 }
 
 // Run registers and serves until ctx ends. A control plane that is not
@@ -58,13 +66,14 @@ func (a Agent) Run(ctx context.Context) error {
 		return err
 	}
 	a.sweepSockets()
-	a.slots, a.wg = newSlots(1), &sync.WaitGroup{}
+	a.slots, a.wg, a.pokes = newSlots(1), &sync.WaitGroup{}, newPokes()
 	// Every execution in flight is reported before Run returns, as when
 	// the agent ran one at a time.
 	defer a.wg.Wait()
 	// Heartbeats run on their own, so a long execution does not make the
 	// node look dead to the control plane.
 	go a.heartbeat(ctx, id)
+	go a.listen(ctx, id)
 	for ctx.Err() == nil {
 		// One execution works at a time; one that waits for a child it
 		// delegated lends its slot, so the child may run here too.
@@ -212,7 +221,9 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	logger.Printf("node: execution %s (%s) assigned, lease until %s", assignment.ExecutionID, assignment.Kind, assignment.LeaseUntil.Format(time.RFC3339))
 	runCtx, stopRun := context.WithCancel(ctx)
 	defer stopRun()
-	go a.renew(runCtx, id, assignment.ExecutionID, stopRun)
+	poke := a.poked(assignment.ExecutionID)
+	defer a.unpoked(assignment.ExecutionID)
+	go a.renew(runCtx, id, assignment.ExecutionID, stopRun, poke)
 	var report application.ExecutionReport
 	var err error
 	var bot domain.BotID
@@ -278,10 +289,12 @@ func (a Agent) uploadOne(id domain.NodeID, execution domain.ExecutionID, bot dom
 	return a.Transport.UploadArtifact(ctx, id, execution, artifact, file)
 }
 
-// renew extends the lease until ctx ends, and with each renewal hands the
-// operator's new messages to the run; a lease the control plane refuses
-// for good (application.ErrLeaseLost) stops the run.
-func (a Agent) renew(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, stopRun context.CancelFunc) {
+// renew extends the lease until ctx ends, on its tick and whenever the
+// control plane pushes that something happened to the execution, and
+// with each renewal hands the operator's new messages to the run; a
+// lease the control plane refuses for good (application.ErrLeaseLost)
+// stops the run.
+func (a Agent) renew(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, stopRun context.CancelFunc, poke <-chan struct{}) {
 	ticker := time.NewTicker(a.Options.renew())
 	defer ticker.Stop()
 	after := ""
@@ -289,21 +302,84 @@ func (a Agent) renew(ctx context.Context, id domain.NodeID, execution domain.Exe
 		select {
 		case <-ctx.Done():
 			return
+		case <-poke:
+			ticker.Reset(a.Options.renew())
 		case <-ticker.C:
-			_, err := a.Transport.RenewLease(ctx, id, execution)
-			if err == nil {
-				after = a.relay(ctx, id, execution, after)
-			}
-			if err != nil && ctx.Err() == nil {
-				a.Options.log().Printf("node: renew lease of %s: %v", execution, err)
-				if errors.Is(err, application.ErrLeaseLost) {
-					logger := a.Options.log()
-					logger.Printf("node: execution %s: the lease is lost, stopping the run", execution)
-					stopRun()
-					return
-				}
-			}
 		}
+		var lost bool
+		if after, lost = a.renewOnce(ctx, id, execution, after); lost {
+			stopRun()
+			return
+		}
+	}
+}
+
+// renewOnce renews the lease and relays the messages after the cursor;
+// it answers the new cursor, and true when the lease is lost for good.
+func (a Agent) renewOnce(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, after string) (string, bool) {
+	_, err := a.Transport.RenewLease(ctx, id, execution)
+	if err == nil {
+		return a.relay(ctx, id, execution, after), false
+	}
+	if ctx.Err() != nil {
+		return after, false
+	}
+	logger := a.Options.log()
+	logger.Printf("node: renew lease of %s: %v", execution, err)
+	if errors.Is(err, application.ErrLeaseLost) {
+		logger.Printf("node: execution %s: the lease is lost, stopping the run", execution)
+		return after, true
+	}
+	return after, false
+}
+
+// poked registers a running execution for the control plane's pushes;
+// an agent run without Run (a test) has none.
+func (a Agent) poked(execution domain.ExecutionID) <-chan struct{} {
+	if a.pokes == nil {
+		return nil
+	}
+	return a.pokes.add(execution)
+}
+
+func (a Agent) unpoked(execution domain.ExecutionID) {
+	if a.pokes != nil {
+		a.pokes.remove(execution)
+	}
+}
+
+// listen keeps the node's stream open while the agent runs, and wakes
+// the renewal of each execution the control plane pushes: a cancel, a
+// preemption or a message reaches the run at once instead of at its
+// next renewal. A control plane that serves no stream is left alone.
+func (a Agent) listen(ctx context.Context, id domain.NodeID) {
+	streamer, ok := a.Transport.(Streamer)
+	if !ok {
+		return
+	}
+	logger := a.Options.log()
+	for ctx.Err() == nil {
+		pushes, err := streamer.Stream(ctx, id)
+		if errors.Is(err, application.ErrNoStream) {
+			logger.Printf("node: the control plane pushes nothing; leases are renewed every %s", a.Options.renew())
+			return
+		}
+		if err != nil {
+			if ctx.Err() == nil {
+				logger.Printf("node: stream: %v (retrying)", err)
+			}
+			a.pause(ctx, 2*time.Second)
+			continue
+		}
+		logger.Printf("node: stream open: the control plane pushes cancels and messages")
+		for push := range pushes {
+			if push.All {
+				a.pokes.pokeAll()
+				continue
+			}
+			a.pokes.poke(push.Execution)
+		}
+		a.pause(ctx, time.Second)
 	}
 }
 
