@@ -6,6 +6,7 @@ import { measure, signature, Steady, Beats, flatHand, pointing } from "/static/p
 import { Hall, THREE } from "/static/room.js";
 import { meadow, drawnHands } from "/static/meadow.js";
 import { zen } from "/static/zen.js";
+import { aurora } from "/static/aurora.js";
 
 const $ = (id) => document.getElementById(id);
 const panel = $("panel"), ctx = panel.getContext("2d");
@@ -258,14 +259,17 @@ panelMesh.visible = false;
 scene.add(panelMesh);
 const SCALE = Number(params.get("scale")) || 0.6; // the hall's 2.5–4.2 m rows, brought into a room
 // The worlds around the orchestra, made when first wanted: the room itself
-// (passthrough), the cartoon meadow, the zen garden at dusk; and the drawn
-// hands, needed anywhere but the room. Each world brings its fog and exposure.
-const WORLDS = { meadow, zen };
+// (passthrough), the mirror lake under the aurora (the default), the cartoon
+// meadow, the zen night; and the drawn hands, needed anywhere but the room.
+// Each world brings its fog and exposure, and gets the hall and the camera:
+// what the orchestra does reaches the world (the lake mirrors the lanterns,
+// the aurora burns with the music).
+const WORLDS = { aurora, meadow, zen };
 const worlds = {};
 let world = null, worldName = "room", drawn = null;
 function setWorld(name) {
   worldName = WORLDS[name] ? name : "room";
-  if (WORLDS[worldName] && !worlds[worldName]) worlds[worldName] = WORLDS[worldName](scene);
+  if (WORLDS[worldName] && !worlds[worldName]) worlds[worldName] = WORLDS[worldName](scene, { hall, camera });
   if (worldName !== "room" && !drawn) drawn = drawnHands(scene);
   world = worlds[worldName] || null;
   for (const [n, w] of Object.entries(worlds)) w.group.visible = n === worldName;
