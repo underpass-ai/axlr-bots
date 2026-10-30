@@ -51,6 +51,9 @@ class FluidSynth:
     def volume(self, channel, value):
         self.fs.cc(channel, 7, max(0, min(127, value)))
 
+    def expression(self, channel, value):
+        self.fs.cc(channel, 11, max(0, min(127, value)))  # on top of the volume: the conductor's fades
+
     def all_off(self, channel):
         self.fs.cc(channel, 123, 0)  # all notes off: each note's own release
 

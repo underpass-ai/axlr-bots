@@ -1,8 +1,8 @@
 # The orchestra
 
-36 bots, one chair each, play the first movement of Mozart's Symphony No. 25 in G minor (public domain, [why not No. 40](score-service/score/README.md)); the operator conducts with a hand in front of a webcam. Each chair is a real AXLR bot with a mission, a policy and a budget, and a voice of its own: it plays its own line of the score on its own instrument, one phrase of eight bars at a time, and asks Jev, AXLR's external judge, which phrase to play next. The notes are Mozart's, the clock is a sequencer, the sound is a synthesizer.
+36 bots, one chair each, play the first movement of Mozart's Symphony No. 25 in G minor (public domain, [why not No. 40](score-service/score/README.md)); the operator conducts with their hands, in a Meta Quest 3S. Each chair is a real AXLR bot with a mission, a policy and a budget, and a voice of its own: it plays its own line of the score on its own instrument, one phrase of eight bars at a time, and asks Jev, AXLR's external judge, which phrase to play next. The notes are Mozart's, the clock is a sequencer, the sound is a synthesizer.
 
-> **SIMULATION.** Each chair is one LLM bot that plays its own line of the score, phrase by phrase, as Jev picks them. The notes come from the score, the sound from a synthesizer.
+> **SIMULATION.** Each chair is one LLM bot that plays its own line of the score, phrase by phrase, as Jev picks them. The conductor's hands are read by Jev from the headset's hand tracking. The notes come from the score, the sound from a synthesizer.
 
 | Piece | Where | State |
 |---|---|---|
@@ -12,8 +12,8 @@
 | 4. 36 chairs in the team `orchestra` | [`chairs/`](chairs/README.md) | done: 36 Enabled, one cue, 36 playing |
 | 5. `/stage`: the view | [`score-service/static/`](score-service/README.md#the-stage) | done: 36 dots on at entry, off at the stop |
 | 6b. The backup: three buttons in the desktop panel | [`panel/shortcuts.toml`](panel/shortcuts.toml) | done: Strings, Winds, Stop all on the team's page |
-| 6c. Each chair plays its own line; Jev picks each phrase | [below](#6c-each-chair-plays-its-own-line-jev-picks-the-phrase) | here: two chairs measured live |
-| 6. `conductor-cam` | `conductor-cam/` | |
+| 6c. Each chair plays its own line; Jev picks each phrase | [below](#6c-each-chair-plays-its-own-line-jev-picks-the-phrase) | done: two chairs measured live |
+| 6. The conductor's hands: a Quest 3S, Jev reads each gesture | [below](#6-the-conductors-hands) | here: the path checked with made-up postures; the headset not yet |
 | 7. Dress rehearsal and the latency table | this file | |
 
 ## 1. The stage
@@ -111,3 +111,56 @@ Jev's probability for the phrase it picked: 0.69–0.75 for the first (in the co
 The first take showed two faults, fixed before this one: each bot spent four model calls searching for its tools (5.5 s; the first entry came 1–2 bars late with a 6-bar count-in), and a run still alive after `stop.all` asked for phrase 7 and its `play` started the music again.
 
 **36 chairs, the video's first 40 bars** (this take, 18 times over; an estimate, not measured): about 250 Jev calls, 650 model requests, **$0.24 of model** for the playing and $0.02 for the 36 stops. At the fork's spread, up to about 11 Jev calls a second for 3 s in each phrase. What two chairs cannot show: Jev's and the model's latency with 36 asking at once; the margin is the 8 s a chair had left before each phrase.
+
+## 6. The conductor's hands
+
+The conductor wears a Meta Quest 3S and sees the room (passthrough). The headset's Quest Browser opens [`/hands`](score-service/static/hands.html). It reads each hand's 25 joints in every frame (WebXR hand input) and turns them into measurements: how far each finger bends, where the palm faces, where the hand is from the head. When a posture holds still for 0.3 s and differs from the last one sent, the page sends the measurements to the score service over one WebSocket ([`ws.py`](score-service/ws.py)). The service asks Jev, one choice per hand: nothing, palm up, palm down or fist. It does what the gesture means at once, and publishes a cue on the team's bus as the operator, with the events the panel's buttons already use (6b).
+
+The orchestra stands on the room's floor around the conductor ([`room.js`](score-service/static/room.js), the hall of the podium view): one lantern per bot, lit by what the service says its bot did. What the hands sent runs across the floor as a ring. A panel floats above it with what each hand holds, Jev's reading, what was done and sent, and each posture's round trip.
+
+```text
+hands ─ Quest 3S (WebXR, 25 joints a hand) ─ /hands: bends, palm, place ─ held 0.3 s ─▶ WebSocket /ws/hands
+   score-service ─▶ Jev (TypeSafe, jev-1.13.0): "which signal does the left hand give?" ─▶ nothing / open / palm down / fist
+   score-service ─▶ the sound at once ─▶ POST /v1/groups/orchestra/events (a cue, as the operator) ─▶ the chairs
+   score-service ─▶ WebSocket: the state as soon as it changes ─▶ the lanterns and the panel
+```
+
+| Gesture | Left hand | Right hand | Both hands |
+|---|---|---|---|
+| palm up, hand flat | `info.cue.strings` `{"dynamics": "f"}` | `info.cue.winds` `f` | `info.cue.all` `f` |
+| palm down | `info.cue.strings` `p` | `info.cue.winds` `p` | `info.cue.all` `p` |
+| fist | fade the strings out (1.5 s) | fade the winds out | fade everyone out |
+| a palm up or down, raised or lowered | the strings louder or softer, a fade | the winds | — |
+| anything else | nothing | nothing | nothing |
+
+| Rule | Why |
+|---|---|
+| **Nothing is the default**: a hand Jev does not read as a gesture with probability 0.80 or more gives no signal; Jev failing is no signal | a hand in the air is not a command |
+| A posture is read once it holds still 0.3 s and has changed; readings are at least 0.5 s apart | the two-frame rule of the design, on hand tracking instead of photos; at most two Jev calls a second |
+| The service does what a gesture means before anything reaches the bus, and answers the page at once; the events are published in parallel, and the service does not apply its own echo | a publish takes 2–3 s on the control plane today; the sound and the lanterns must not wait for it |
+| A fade is the service's alone: no event. A fist fades its chairs to nothing over 1.5 s; they keep their phrases and their bots go on choosing (never `done`), and the cue that names them fades them back in over 0.5 s. A flat hand's height, read ten times a second over the WebSocket without Jev, is its group's gain while Jev's last reading of that hand is a palm up or a palm down | a `stop.*` ended each bot's run (a new one took about 7 s with a model); a pause that dropped the phrases made each chair wait for its next phrase, 3–12 s, measured with 36 Jev bots; the conductor asked for fades, never a jump, and for the vertical open hand to become a flat one |
+| An event that changes nothing is not sent, and the panel says why: a pause when nothing of the group plays, a cue when the group already plays at that level, the same gesture again within 3 s | a gesture held is not a command repeated |
+
+What changed in the service for this, and why:
+
+| Change | Why |
+|---|---|
+| A `stop.*` other than `stop.all` (from the panel) pauses only the chairs it is addressed to, or the section or family its name ends with; the others play on | the operator may still stop one group from the panel |
+| A cue with `dynamics` while the music plays sets that level on its chairs at once, and on the phrases they already asked for | a gesture answered 12 s later, at the next phrase, is not conducting |
+| Jev is called by the service itself ([`jev.py`](score-service/jev.py)), not through `axlr_judge` | `axlr_judge` takes text from a bot's run; no bot is behind the hands. The bots still ask Jev for their phrases through `axlr_judge` |
+| `/ws/hands`: postures up, the state and Jev's readings down, on one connection; only a page served from loopback may open it | a request per posture over the headset's Wi-Fi was slow; no other site the headset opens may conduct |
+
+No image leaves the headset: Jev reads the measurements as text. Image input to Jev's API exists (`TypeSafe-Danger-Zone-Images`, not production-ready) and was tried before this design with drawn frames (180–200 ms, about 760 tokens a frame); the Quest Browser gives no web page the headset's camera, so the hand joints are the input.
+
+**Checked, 30 Oct 2026, gx10, with made-up postures** (the page's `?sim=1` buttons, marked `simulated`; Jev live, nothing published): open hand → `open` 1.00 → `info.cue.strings f` (dry run); a hand at rest → `nothing` 0.93; two fists → `fist` 0.95 and 0.90 → not sent, nothing played. Jev answered in 150–200 ms; one hand is about 600 input tokens, two about 820: **$0.000035 a reading** at $0.042 per million, at most two readings a second.
+
+**Live in the headset, 30 Oct 2026, two chairs** (`vc-1`, `ob-1`; the other 34 paused): real hands read as gestures (a fist 0.88–0.99, a palm down 0.94–0.99); relaxed hands read below 0.80 and gave nothing. In the first version, the strings' fist took about 7 s to silence: five stops were published one after another, and the sound waited for the bus's echo. Applying the gesture in the service, the parallel publish and the WebSocket fixed it. The bots still answer a cue seconds later: a publish takes 2–3 s, and a model's run about 7 s to come in.
+
+### Run it on the headset
+
+```bash
+adb connect 192.168.1.86:5555               # the Quest over Wi-Fi (adb tcpip 5555 once on USB); accept "Always allow" in the headset
+adb reverse tcp:8790 tcp:8790               # the headset's localhost:8790 is gx10's score service: no port opened on the LAN
+```
+
+In the headset's Quest Browser: `http://localhost:8790/hands`, then look ahead and press *Enter*: the orchestra is placed ahead of where you look. `?scale=` sizes it to the room (default 0.6: the front row 1.5 m away). The page plays the orchestra's sound (`/audio.wav`) in the headset when its box is ticked, so the headset's own recording has the sound. `server.py --hands-dry-run` reads the hands without publishing. On gx10, `http://127.0.0.1:8790/hands?sim=1&view=1` tries the path and shows the hall without the headset. A sleeping headset drops the Wi-Fi link: the page says "Failed to fetch" until `adb connect` and `adb reverse` again.

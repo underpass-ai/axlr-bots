@@ -32,6 +32,12 @@ class FakeSynth:
     def pan(self, channel, value):
         self.calls.append(("pan", channel, value))
 
+    def expression(self, channel, value):
+        self.calls.append(("expression", channel, value))
+
+    def last_expression(self, channel):
+        return [c[2] for c in self.calls if c[0] == "expression" and c[1] == channel][-1]
+
     def bend(self, channel, cents):
         self.calls.append(("bend", channel, cents))
 
@@ -362,6 +368,72 @@ class StopTest(unittest.TestCase):
         out = o.play("vn2-1", 1)
         self.assertEqual((out["fromBar"], o.take, o.take_log(1)["cut"]["why"]), (1, 2, "stop"))
 
+    def test_a_group_stop_fades_its_chairs_out_and_the_others_play_on(self):
+        o, synth, clock = orchestra()
+        for chair in ("ob-1", "ob-2", "hn-1", "vn1-1"):
+            o.play(chair, 1)
+        play_until(o, 3)
+        clock.now = 1000.5
+        held = o.hold(o.chairs_of("winds"), "stop.ob from operator", event_at=1000.25)
+        self.assertEqual((held["held"], held["afterEventSeconds"]), (["ob-1", "ob-2", "hn-1", "hn-2"], 0.25))
+        self.assertEqual(o.status, "playing")
+        ob, vn = o.chairs["ob-1"]["channel"], o.chairs["vn1-1"]["channel"]
+        o.render(4410)  # 0.1 s: on the way down, not at a jump
+        self.assertLess(synth.last_expression(ob), 127)
+        self.assertGreater(synth.last_expression(ob), 0)
+        play_until(o, 6)  # more than fadeSeconds
+        self.assertEqual((synth.last_expression(ob), synth.last_expression(vn)), (0, 127))
+        self.assertTrue(o.chairs["ob-1"]["plan"])  # its phrases kept: only the sound went
+        chair = next(c for s in o.snapshot()["sections"] for c in s["chairs"] if c["id"] == "ob-1")
+        self.assertEqual((chair["held"], chair["gain"]), ("stop.ob from operator", 0.0))
+        reading = o.phrases("ob-1")
+        self.assertIn("faded your section out", reading["faded"])
+        self.assertNotIn("done", reading)
+
+    def test_a_cue_that_names_faded_chairs_fades_them_back_in(self):
+        o, synth, _ = orchestra()
+        o.play("ob-1", 1)
+        o.play("vn1-1", 1)
+        play_until(o, 3)
+        o.hold(["ob-1"], "fist")
+        self.assertEqual(o.play("ob-1", 2)["phrase"], 2)  # its bot goes on choosing
+        play_until(o, 5)
+        ob = o.chairs["ob-1"]["channel"]
+        self.assertEqual(synth.last_expression(ob), 0)
+        self.assertIsNone(o.cue("info.cue.strings", {}))  # a cue that names other chairs keeps it out
+        o.cue("info.cue.winds", {})
+        play_until(o, 6)
+        self.assertEqual(synth.last_expression(ob), 127)  # no new phrase, no new run
+
+    def test_a_hand_fades_a_group_at_a_steady_rate(self):
+        o, synth, _ = orchestra()
+        o.play("vc-1", 1)
+        play_until(o, 2)
+        vc = o.chairs["vc-1"]["channel"]
+        self.assertEqual(o.fade(o.chairs_of("strings"), 0.25, 0.2), 32)
+        o.render(441 * 5)  # 0.05 s of 0.2
+        middle = synth.last_expression(vc)
+        self.assertTrue(round(127 * 0.25 ** 0.5) < middle < 127)
+        o.render(441 * 20)
+        self.assertEqual(synth.last_expression(vc), round(127 * 0.25 ** 0.5))
+        self.assertEqual(o.fade(o.chairs_of("strings"), 0.255, 0.2), 0)  # a hair's change changes nothing
+
+    def test_a_cue_with_dynamics_changes_the_level_at_once_and_on_the_phrases_asked_for(self):
+        o, synth, _ = orchestra()
+        o.play("vc-1", 1, "f")
+        o.play("vc-1", 2, "f")
+        o.play("ob-1", 1, "f")
+        play_until(o, 3)
+        loud = synth.last_volume(o.chairs["vc-1"]["channel"])
+        self.assertEqual(o.cue("info.cue.strings", {"dynamics": "p"}), "p for 32 chairs")
+        soft = synth.last_volume(o.chairs["vc-1"]["channel"])
+        self.assertLess(soft, loud)
+        self.assertEqual(synth.last_volume(o.chairs["ob-1"]["channel"]), round(127 * o.levels["f"] ** 0.5))
+        play_until(o, 10)  # phrase 2 begins: it keeps the cue's level, not the one it was asked with
+        self.assertEqual(synth.last_volume(o.chairs["vc-1"]["channel"]), soft)
+        self.assertEqual(o.snapshot()["sections"][3]["chairs"][0]["dynamics"], "p")
+        self.assertIn("cue", o.snapshot()["dynamicsSource"])
+
     def test_tempo_is_clamped_and_moves_the_clock(self):
         o, _, _ = orchestra()
         self.assertEqual(o.set_tempo(500), 200.0)
@@ -421,10 +493,11 @@ class StagePageTest(unittest.TestCase):
         self.assertEqual((len(violins["chairs"]), len(violins["phrases"])), (10, 52))
 
     def test_the_page_and_its_files_are_there(self):
-        for name in ("stage.html", "stage.js", "stage.css", "fonts/Lexend-Regular.ttf", "fonts/OFL-Lexend.txt"):
+        for name in ("stage.html", "stage.js", "stage.css", "hands.html", "hands.js", "posture.js", "room.js", "stage3d-3.three.module.min.js", "stage3d-3.three.core.min.js", "fonts/Lexend-Regular.ttf", "fonts/OFL-Lexend.txt"):
             self.assertTrue(os.path.isfile(os.path.join(HERE, "static", name)), name)
-        with open(os.path.join(HERE, "static", "stage.html")) as f:
-            self.assertIn("SIMULATION", f.read())
+        for page in ("stage.html", "hands.html"):
+            with open(os.path.join(HERE, "static", page)) as f:
+                self.assertIn("SIMULATION", f.read())
 
 
 class BusTest(unittest.TestCase):
@@ -454,6 +527,33 @@ class BusTest(unittest.TestCase):
         self.assertEqual(o.take, 1)
         self.assertEqual(set(o.cues), {"strings", "winds"})
 
+    def test_a_stop_addressed_to_chairs_holds_only_them(self):
+        o, _, _ = orchestra()
+        o.play("ob-1", 1)
+        o.play("vn1-1", 1)
+        event = self.published("stop.ob")
+        event["payload"]["to"] = ["ob-1", "ob-2", "someone-else"]
+        self.assertEqual(bus.apply(o, event), "held 2 chairs")
+        self.assertEqual((o.status, o.chairs["ob-1"]["held"], o.chairs["vn1-1"]["held"]), ("playing", "stop.ob from operator", None))
+
+    def test_a_stop_named_for_a_family_holds_it_and_an_unknown_stop_cuts_all(self):
+        o, _, _ = orchestra()
+        o.play("vn1-1", 1)
+        self.assertEqual(bus.apply(o, self.published("stop.strings")), "held 32 chairs")
+        self.assertEqual(o.status, "playing")
+        self.assertEqual(bus.apply(o, self.published("stop.everything")), "cut")
+        self.assertEqual(o.status, "stopped")
+        self.assertEqual(bus.apply(o, self.published("stop.winds")), "nothing plays")
+
+    def test_the_services_own_events_are_heard_not_applied_again(self):
+        b = bus.Bus.__new__(bus.Bus)  # no control plane: only the record of what it published
+        b.own, b.own_lock = [bus.own_mark("stop.ob", "Oboes, stop.", ["ob-2", "ob-1"])], threading.Lock()
+        mine = self.published("stop.ob")
+        mine["payload"].update(message="Oboes, stop.", to=["ob-1", "ob-2"])
+        self.assertTrue(b.is_own(mine))
+        self.assertFalse(b.is_own(mine))  # once: the same event from the panel later is applied
+        self.assertFalse(b.is_own(self.published("stop.ob")))
+
     def test_other_events_change_nothing(self):
         o, _, _ = orchestra()
         self.assertIsNone(bus.apply(o, self.published("info.note")))
@@ -463,3 +563,44 @@ class BusTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DoneForAFixedProgram(unittest.TestCase):
+    """A Jev bot's program reads done, where a model reads the note."""
+
+    def test_a_reading_with_a_choice_to_make_is_not_done(self):
+        o, _, _ = orchestra()
+        o.cue("info.cue.all", {})
+        out = o.phrases("vn1-1")
+        self.assertIn("ask", out)
+        self.assertNotIn("done", out)
+
+    def test_stop_all_and_a_chairs_own_stop_are_done(self):
+        o, _, _ = orchestra()
+        o.play("vn1-1", 1)
+        o.stop_all("stop")
+        out = o.listen("vn1-1", bars=1, max_seconds=1)
+        self.assertEqual((out["status"], out.get("done")), ("stopped", True))
+        o, _, _ = orchestra()
+        o.play("va-1", 1)
+        self.assertTrue(o.stop("va-1")["done"])
+        out = o.phrases("va-1")
+        self.assertEqual((out.get("done"), "ask" in out), (True, False))
+        self.assertIn("you stopped", out["note"])
+
+    def test_no_phrase_left_is_done(self):
+        o, _, _ = orchestra()
+        o.cue("info.cue.all", {})
+        out = o.phrases("vn1-1", bar=o.score.bars)
+        if "ask" in out:
+            self.skipTest("the last bar still offers a phrase")
+        self.assertEqual((out.get("done"), out["note"]), (True, "no phrase left to play"))
+
+    def test_a_faded_chair_is_never_done(self):
+        o, _, _ = orchestra()
+        o.play("ob-1", 1)
+        play_until(o, 2)
+        o.hold(["ob-1"], "fist from the conductor's hands")
+        out = o.listen("ob-1", bars=8, max_seconds=1)
+        self.assertEqual(("done" in out, "faded" in out), (False, True))
+        self.assertNotIn("done", o.phrases("ob-1"))

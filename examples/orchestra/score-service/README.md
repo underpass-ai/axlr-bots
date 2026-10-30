@@ -2,7 +2,7 @@
 
 The orchestra's world: the score by lines and phrases, the clock, the phrases each chair asked for, a voice per chair and the sound. Each chair's bot reaches it as four MCP tools on loopback; the operator reaches it only through the team's bus.
 
-> SIMULATION. Each chair is one LLM bot that plays its own line of the score, phrase by phrase, as Jev picks them. The notes come from the score, the sound from a synthesizer.
+> SIMULATION. Each chair is one LLM bot that plays its own line of the score, phrase by phrase, as Jev picks them. The conductor's hands are read by Jev from the headset's hand tracking. The notes come from the score, the sound from a synthesizer.
 
 ```text
 chair's node ── AXLR ─┬─ POST /mcp/vn1-3 ──▶ score-service ──▶ FluidSynth (in memory, a channel per chair) ──▶ GET /audio.wav ──▶ OBS / ffplay
@@ -13,6 +13,7 @@ operator ─ POST /v1/groups/orchestra/events ─▶ control plane ─┘ the se
                                                                  info.tempo {bpm} → the clock
 /stage ────────────────── GET /api/state?version=N&wait=20 ────▶ take, bar, tempo, each chair's phrase now and next, Jev's pick
                                                                  as reported, the facts, the last bus event
+/hands (Quest 3S) ─────── WebSocket /ws/hands (a posture) ────▶ Jev reads it ─▶ the service cues or pauses at once, publishes info.cue.* as the operator
 ```
 
 | File | What it is |
@@ -20,9 +21,12 @@ operator ─ POST /v1/groups/orchestra/events ─▶ control plane ─┘ the se
 | [`score.py`](score.py) | the MIDI read into one part per section and one line per chair, cut into 8-bar phrases with what each holds |
 | [`orchestra.py`](orchestra.py) | the clock, the chairs' voices and phrases: `phrases`, `play`, `listen`, `stop`, `cue`, `stop_all`, `set_tempo`, `render` |
 | [`synth.py`](synth.py) | FluidSynth rendering into memory (a channel per chair: program, pan, tuning, volume), the live WAV stream, the render loop paced by the wall clock |
-| [`bus.py`](bus.py) | the service's own subscription: the team's timeline, the conductor's cues, `stop.all` and `info.tempo` |
-| [`server.py`](server.py) | HTTP on loopback: `/mcp/<chair>`, `/api/state`, `/api/score`, `/api/take`, `/audio.wav`, `/stage` |
-| [`static/`](static/) | the stage page: `stage.html`, `stage.js`, `stage.css`, Lexend and DotGothic16 (OFL, licences beside them) |
+| [`bus.py`](bus.py) | the service's own subscription: the team's timeline, the conductor's cues, `stop.all`, a group's `stop.*` and `info.tempo`; and the hands' events, published as the operator |
+| [`hands.py`](hands.py) | the conductor's hands: a posture → Jev's reading per hand → what it means (a cue, or a pause that is the service's alone), done at once, or why nothing was done ([the orchestra's README](../README.md#6-the-conductors-hands)) |
+| [`ws.py`](ws.py) | a WebSocket (RFC 6455) on the service's own HTTP server, standard library only: the headset's one connection |
+| [`jev.py`](jev.py) | Jev called by the service itself: a state, choice questions, a pinned model; the key never shown |
+| [`server.py`](server.py) | HTTP on loopback: `/mcp/<chair>`, `/api/state`, `/api/score`, `/api/take`, `/audio.wav`, `/stage`, `/hands`, `/api/hands`, `/ws/hands` |
+| [`static/`](static/) | the stage page: `stage.html`, `stage.js`, `stage.css`, Lexend and DotGothic16 (OFL, licences beside them); the conductor's page `hands.html`, `hands.js`, its math `posture.js` (tested by `node --test posture.test.mjs`) and the orchestra in the room `room.js`, on three.js r180 (`stage3d-3.three.*`, MIT, licence beside it) |
 | [`mcp_http.py`](mcp_http.py) | the MCP tool table, copied from [the fleet](../../drone-fleet/app/mcp_http.py) as the [adapter template](../../world-adapter/README.md) says |
 | [`check_take.py`](check_take.py) | piece 3's check by hand: two chairs' phrases, a `stop.all`, how long the sound took to go |
 | [`config.json`](config.json) | the sections, their chairs, pans and lines, the phrase length, the count-in, the dynamics, the voices' spread, the tempo range, the soundfonts and gain, the team, the control plane |
@@ -62,7 +66,7 @@ The chair is the URL: each chair's node names `http://127.0.0.1:8790/mcp/<chair>
 
 A refusal (an unknown chair, phrase 0 or 53, a phrase already over or already the chair's, `fff`, a `play` after `stop.all`) is a tool error the model reads, never an exception.
 
-The clock starts with the conductor: the first `info.cue.*` on the bus when nothing plays starts a take with a count-in of 8 bars (`countIn.bars`), from bar 1 or from the cue's `data.bar`, so every chair cued can choose its first phrase before the music reaches it. A `play` when nothing has played yet does the same (for a check without the bus). There is no stop button: the only way to stop everyone is the control plane's `stop.all` on the team. The service hears it on the bus and silences every chair at once (all sound off, no release), drops every chair's phrases and refuses any `play` until the next cue; the bots hear it as an urgent task each and call `stop` seconds later ([piece 2](../README.md#2-stopall-on-a-long-task)).
+The clock starts with the conductor: the first `info.cue.*` on the bus when nothing plays starts a take with a count-in of 8 bars (`countIn.bars`), from bar 1 or from the cue's `data.bar`, so every chair cued can choose its first phrase before the music reaches it. A `play` when nothing has played yet does the same (for a check without the bus). There is no stop button: the only way to stop everyone is the control plane's `stop.all` on the team. The service hears it on the bus and silences every chair at once (all sound off, no release), drops every chair's phrases and refuses any `play` until the next cue; the bots hear it as an urgent task each and call `stop` seconds later ([piece 2](../README.md#2-stopall-on-a-long-task)). Another `stop.*` stops a group and the others play on: the chairs it is addressed to (`to`), or else the section or family its name ends with (`stop.vn1`, `stop.winds`); they are silent at once and paused: muted, nothing else. A paused chair keeps its phrases and its bot goes on choosing; the cue that names it sounds again at its next note, where the score is. The conductor's fist pauses this way with no event at all. A `stop.*` that names neither is read as `stop.all`. A cue with `dynamics` while the music plays sets that level on the chairs it names at once, and on the phrases they already asked for.
 
 ## What the service saw, and what the bot reported
 
@@ -97,7 +101,8 @@ The soundfont renders the sound; it is not shipped here. It sounds like a Genera
 ## Check
 
 ```bash
-~/.local/share/axlr-stage/venv/bin/python -m unittest -v test_score_service    # no synthesizer, no network
+~/.local/share/axlr-stage/venv/bin/python -m unittest -v test_score_service test_hands test_ws    # no synthesizer, no network, no Jev
+(cd static && node --test posture.test.mjs)                                             # the hands' math
 python3 check_take.py --team stage --wav take.wav                                # with the service running and following team stage
 ```
 

@@ -3,9 +3,13 @@
 The service long-polls the team's timeline (GET /v1/groups/<team>/events
 ?after=&wait=25s) with the operator token, and reads the operator's own
 events in it (group.event.published): stop.all cuts every part at once,
-before any bot has stopped; info.tempo with data.bpm sets the clock; a cue
-(info.cue.*) when nothing plays starts a take with a count-in, from bar 1 or
-data.bar, so the chairs cued choose their first phrase before it. This
+before any bot has stopped; another stop.* stops only the chairs it is
+addressed to (to), or the section or family its name ends with (stop.vn1,
+stop.strings), and the others play on; a stop.* that names neither is read as
+stop.all; info.tempo with data.bpm sets the clock; a cue (info.cue.*) when
+nothing plays starts a take with a count-in, from bar 1 or data.bar, so the
+chairs cued choose their first phrase before it, and while the music plays
+releases the chairs it names and sets their data.dynamics at once. This
 is the service's own subscription, apart from the bots': the audio does
 not wait for 36 urgent tasks. The token is read from its file on each call
 and never logged.
@@ -15,9 +19,11 @@ import json
 import logging
 import os
 import ssl
+import threading
 import time
 import urllib.parse
 import urllib.request
+import uuid
 
 log = logging.getLogger("bus")
 
@@ -41,7 +47,12 @@ def apply(orchestra, event, clock=time.time):
     name, data = payload.get("name", ""), payload.get("data") or {}
     at = parse_time(event["createdAt"]) if event.get("createdAt") else None
     orchestra.heard(name, payload.get("message", ""), data, at)
-    if name == "stop.all" or name.startswith("stop."):
+    if name.startswith("stop.") and name != "stop.all":
+        chairs = [k for k in payload.get("to") or [] if k in orchestra.chairs] or orchestra.chairs_of(name[len("stop."):])
+        if chairs and len(chairs) < len(orchestra.chairs):
+            held = orchestra.hold(chairs, f"{name} from {payload.get('from', 'operator')}", event_at=at)
+            return f"held {len(held['held'])} chairs" if held else "nothing plays"
+    if name.startswith("stop."):
         cut = orchestra.stop_all(f"{name} from {payload.get('from', 'operator')}", event_at=at)
         return "cut" if cut else "already stopped"
     if name.startswith("info.cue."):
@@ -52,9 +63,14 @@ def apply(orchestra, event, clock=time.time):
     return None
 
 
+def own_mark(name, message, to):
+    return (name, message, tuple(sorted(to or ())))
+
+
 class Bus:
     def __init__(self, url, team, token_file, ca_file, wait="25s"):
         self.url, self.team, self.wait = url.rstrip("/"), team, wait
+        self.own, self.own_lock = [], threading.Lock()  # events this service published, whose echo it does not apply
         self.token_file, self.ca_file = os.path.expanduser(token_file), os.path.expanduser(ca_file)
         self.context = ssl.create_default_context(cafile=self.ca_file)
 
@@ -70,6 +86,45 @@ class Bus:
         with urllib.request.urlopen(request, context=self.context, timeout=40) as response:
             return json.load(response)
 
+    def publish(self, name, message, data=None, to=None):
+        """Publish one event on the team as the operator, as the panel's shortcuts do; returns its id.
+
+        The service did what the event means before publishing it: its echo on
+        the bus is heard (the page shows it) but not applied again."""
+        mark = own_mark(name, message, to)
+        with self.own_lock:
+            self.own.append(mark)
+        body = {"name": name, "message": message}
+        if data:
+            body["data"] = data
+        if to:
+            body["to"] = list(to)
+        request = urllib.request.Request(f"{self.url}/v1/groups/{urllib.parse.quote(self.team)}/events",
+                                         data=json.dumps(body).encode(), method="POST")
+        with open(self.token_file) as f:
+            request.add_header("Authorization", "Bearer " + f.read().strip())
+        request.add_header("Content-Type", "application/json")
+        request.add_header("Idempotency-Key", f"hands-{uuid.uuid4().hex[:16]}")
+        try:
+            with urllib.request.urlopen(request, context=self.context, timeout=10) as response:
+                return json.load(response).get("eventId")
+        except Exception:
+            self._take_own(mark)
+            raise
+
+    def _take_own(self, mark):
+        with self.own_lock:
+            if mark in self.own:
+                self.own.remove(mark)
+                return True
+        return False
+
+    def is_own(self, event):
+        payload = event.get("payload") or {}
+        if event.get("type") != "group.event.published":
+            return False
+        return self._take_own(own_mark(payload.get("name", ""), payload.get("message", ""), payload.get("to")))
+
     def follow(self, orchestra, stop=None):
         """Hear the team from now on; a team that does not exist yet is retried."""
         after = None
@@ -82,6 +137,12 @@ class Bus:
                     continue
                 for event in self.events(after=after or None, wait=self.wait):
                     after = event["eventId"]
+                    if self.is_own(event):
+                        payload = event.get("payload") or {}
+                        orchestra.heard(payload.get("name", ""), payload.get("message", ""), payload.get("data") or {},
+                                        parse_time(event["createdAt"]) if event.get("createdAt") else None)
+                        log.info("%s heard back (the service did it already)", payload.get("name"))
+                        continue
                     what = apply(orchestra, event)
                     if what:
                         log.info("%s %s", (event.get("payload") or {}).get("name"), what)
