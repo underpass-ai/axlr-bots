@@ -16,7 +16,7 @@
   GET  /hands            the conductor's page for the headset (WebXR hand input): see hands.py
   POST /api/hands        one posture held still: Jev reads it, the service publishes what it means
   GET  /api/hands        what Jev read and what was sent, the last readings
-  GET  /ws/hands         the same over one WebSocket (ws.py): postures up; the state,
+  GET  /ws/hands         the same over one WebSocket (ws.py): postures and the hands' heights up; the state,
                          as soon as it changes, and Jev's readings down
 
 It listens on loopback only (a headset reaches it through adb reverse). With
@@ -132,6 +132,8 @@ def make_handler(orchestra, stream, config, hands=None):
                 continue
             if isinstance(message, dict) and message.get("type") == "posture":
                 threading.Thread(target=answer, args=(message,), daemon=True).start()
+            elif isinstance(message, dict) and message.get("type") == "height":
+                hands.height(message)  # no Jev, no answer: the state shows the gains
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"

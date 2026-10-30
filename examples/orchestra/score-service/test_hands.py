@@ -119,13 +119,13 @@ class SendTest(unittest.TestCase):
         h.observe(posture(left=OPEN, right=OPEN))
         self.assertEqual([e[0] for e in publish.events], ["info.cue.strings", "info.cue.winds"])
 
-    def test_a_fist_pauses_its_group_and_sends_no_stop(self):
+    def test_a_fist_fades_its_group_out_and_sends_no_stop(self):
         h, o, _, publish, _ = hands(right=("fist", 0.95))
         o.play("ob-1", 1)
         o.play("vn1-1", 1)
         play_until(o, 2)
         record = h.observe(posture(right=FIST))
-        self.assertEqual((record["applied"], record["sent"], publish.events), ("paused 4 chairs", [], []))
+        self.assertEqual((record["applied"], record["sent"], publish.events), ("fading out 4 chairs", [], []))
         self.assertEqual((o.chairs["ob-1"]["held"], o.chairs["vn1-1"]["held"], o.status), ("fist from the conductor's hands", None, "playing"))
 
     def test_the_service_does_what_the_gesture_means_at_once(self):
@@ -150,31 +150,44 @@ class SendTest(unittest.TestCase):
             threading.Event().wait(0.01)
         self.assertEqual(h.view()["last"]["sent"][0]["eventId"], "ev-slow")
 
-    def test_two_fists_pause_everyone_and_the_music_goes_on(self):
+    def test_two_fists_fade_everyone_out_and_the_music_goes_on(self):
         h, o, _, publish, _ = hands(left=("fist", 0.9), right=("fist", 0.9))
         o.play("vc-1", 1)
         o.play("ob-1", 1)
         record = h.observe(posture(left=FIST, right=FIST))
-        self.assertEqual((record["applied"], publish.events, o.status), ("paused 36 chairs", [], "playing"))
+        self.assertEqual((record["applied"], publish.events, o.status), ("fading out 36 chairs", [], "playing"))
         self.assertTrue(all(c["held"] for c in o.chairs.values()))
 
-    def test_open_hands_after_a_pause_sound_the_chairs_again_at_once(self):
+    def test_open_hands_after_a_fade_out_bring_the_sound_back(self):
         h, o, _, publish, clock = hands(left=("fist", 0.9), right=("fist", 0.9))
         synth = o.synth
         o.play("vc-1", 1)
         play_until(o, 3)
         h.observe(posture(left=FIST, right=FIST))
-        silent = synth.ons_on(o.chairs["vc-1"]["channel"])
-        play_until(o, 4)
-        self.assertEqual(synth.ons_on(o.chairs["vc-1"]["channel"]), silent)
+        play_until(o, 5)
+        vc = o.chairs["vc-1"]["channel"]
+        self.assertEqual(synth.last_expression(vc), 0)
         h.judge.reads = {"left": ("open", 0.95), "right": ("open", 0.95)}
         clock.now += 1
         record = h.observe(posture(left=OPEN, right=OPEN))
         self.assertEqual((record["sent"][0]["name"], record["applied"]), ("info.cue.all", "f for 36 chairs"))
-        play_until(o, 5)
-        self.assertGreater(synth.ons_on(o.chairs["vc-1"]["channel"]), silent)  # the phrase it had, from where the score is
+        play_until(o, 6)
+        self.assertEqual(synth.last_expression(vc), 127)
 
-    def test_a_pause_when_nothing_of_the_group_plays_does_nothing(self):
+    def test_the_height_of_a_hand_that_conducts_is_its_groups_gain(self):
+        h, o, _, _, clock = hands(left=("open", 0.95))
+        self.assertEqual(h.height({"hands": {"left": {"height": 0.15}}}), {})  # not read yet: nothing moves
+        h.observe(posture(left=OPEN))
+        self.assertEqual(h.height({"hands": {"left": {"height": -0.2}, "right": {"height": 0.1}}}), {"left": 0.5})
+        self.assertEqual({o.chairs[k]["gain"] for k in o.chairs_of("strings")}, {0.5})
+        self.assertEqual({o.chairs[k]["gain"] for k in o.chairs_of("winds")}, {1.0})
+        self.assertEqual(h.height({"hands": {"left": {"height": 0.5}}}), {"left": 1.0})
+        h.judge.reads = {"left": ("fist", 0.95)}
+        clock.now += 1
+        h.observe(posture(left=FIST))
+        self.assertEqual(h.height({"hands": {"left": {"height": -0.5}}}), {})  # a fist is not conducting
+
+    def test_a_fade_out_when_nothing_of_the_group_plays_does_nothing(self):
         h, o, _, publish, _ = hands(left=("fist", 0.9), right=("fist", 0.9))
         record = h.observe(posture(left=FIST, right=FIST))
         self.assertEqual((publish.events, record["notSent"][0]["why"]), ([], "nothing of the group plays"))

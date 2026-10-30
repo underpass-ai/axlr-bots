@@ -31,7 +31,6 @@ const LOOK = {
   scheduled: { h: 0.22, glow: 0.35, body: 0.9, color: C.warn, label: 1.0 },
   playing: { h: 0.7, glow: 1.0, body: 1.0, color: C.accent, label: 0.9 },
   stopped: { h: 0.07, glow: 0.0, body: 0.05, color: C.muted, label: 0.45 },
-  paused: { h: 0.1, glow: 0.0, body: 0.35, color: C.bad, label: 1.0 },
 };
 const DYN = { p: 0.55, mf: 0.78, f: 1.0 };
 
@@ -198,9 +197,10 @@ export class Hall {
         const dyn = DYN[chair.dynamics] || 0.78;
         const ended = state.status === "ended" ? 0.35 : 1;
         L.state = chair.state;
-        L.target.h = chair.state === "playing" ? 0.3 + 0.4 * dyn : look.h;
-        L.target.glow = look.glow * (chair.state === "playing" ? dyn : 1) * (ended === 1 ? 1 : 0);
-        L.target.body = look.body * (chair.state === "playing" ? 0.6 + 0.4 * dyn : 1) * ended;
+        const gain = chair.gain ?? 1;  // the conductor's hand: the lantern fades with the sound
+        L.target.h = (chair.state === "playing" ? 0.3 + 0.4 * dyn : look.h) * (0.25 + 0.75 * gain);
+        L.target.glow = look.glow * (chair.state === "playing" ? dyn : 1) * (ended === 1 ? 1 : 0) * gain;
+        L.target.body = look.body * (chair.state === "playing" ? 0.6 + 0.4 * dyn : 1) * ended * (0.2 + 0.8 * gain);
         L.target.color = look.color;
         L.target.label = chair.held ? 1 : look.label;
         const sub = chair.state === "scheduled" && chair.enteredBar ? `enters bar ${chair.enteredBar}` : null;

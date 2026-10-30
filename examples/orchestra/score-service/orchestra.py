@@ -18,11 +18,13 @@ by that much audio and hands the synthesizer the notes that fall in it. A cue
 from the conductor, or the first play, starts a take with a count-in, so every
 chair cued can choose its first phrase before the music reaches it.
 
-The conductor may also pause one group, or everyone, while the music goes on
-(hold): its chairs fall silent at once, and that is all. A paused chair keeps
-its phrases and its bot goes on choosing the next ones; only its notes are not
-sounded. The cue that names it brings its sound back at its next note, where
-the score is then: no new phrase to wait for, no new run. A cue with dynamics
+The conductor may also fade one group, or everyone, out while the music goes
+on (hold): its chairs' sound goes down to nothing in a moment (hold.fadeSeconds),
+and that is all. A faded chair keeps its phrases and its bot goes on choosing
+the next ones. The cue that names it fades it back in, where the score is then:
+no new phrase to wait for, no new run. Between the two, the conductor's hand
+sets a group's gain (fade): every chair has one, 0 to 1, on top of its level,
+and the sound follows it at a steady rate, never at a jump. A cue with dynamics
 while the music plays sets that level on its chairs at once, and on the
 phrases they already asked for.
 
@@ -37,7 +39,7 @@ import math
 import threading
 import time
 
-WAITING, SCHEDULED, PLAYING, STOPPED, PAUSED = "waiting", "scheduled", "playing", "stopped", "paused"
+WAITING, SCHEDULED, PLAYING, STOPPED = "waiting", "scheduled", "playing", "stopped"
 JUDGE_SOURCE = "reported by the bot from its axlr_judge call; the service does not see Jev"
 DYNAMICS_SOURCE = "the chair's last play, or the conductor's last cue with dynamics, applied at once"
 
@@ -53,6 +55,8 @@ class Orchestra:
         self.levels = config["dynamics"]
         self.tempo_range = (config["tempo"]["min"], config["tempo"]["max"])
         self.count_in = config.get("countIn", {}).get("bars", 4)
+        self.fade_out = config.get("hold", {}).get("fadeSeconds", 1.5)
+        self.fade_in = config.get("hold", {}).get("fadeInSeconds", 0.5)
         phrases = config.get("phrases", {})
         self.candidates_wanted = phrases.get("candidates", 3)
         self.fork_spread = phrases.get("forkSpreadBeats", 8)
@@ -181,7 +185,10 @@ class Orchestra:
             if self.status == "playing":
                 named = self.chairs_of(target)
                 for chair in named:
-                    self.chairs[chair]["held"] = None  # its next note sounds
+                    c = self.chairs[chair]
+                    if c["held"]:  # faded out: back in from where the score is
+                        c["held"] = None
+                        self._fade_to(c, 1.0, self.fade_in)
                 level = (data or {}).get("dynamics")
                 if level in self.levels and named:
                     for chair in named:
@@ -207,19 +214,35 @@ class Orchestra:
         return [k for k, c in self.chairs.items() if target in (c["section"], self.sections[c["section"]]["family"])]
 
     def hold(self, chairs, why, event_at=None):
-        """The conductor pauses some chairs, or all, while the music goes on: silent at once, their phrases kept, until a cue names them."""
+        """The conductor fades some chairs, or all, out while the music goes on: their phrases kept, until a cue names them."""
         with self.cond:
             if self.status != "playing":
                 return None
             named = [k for k in chairs if k in self.chairs]
             for chair in named:
                 c = self.chairs[chair]
-                self.synth.silence(c["channel"])
                 c["held"] = why
+                self._fade_to(c, 0.0, self.fade_out)
             at = self.clock()
             self._fact("hold", None, why=why, chairs=named,
                        afterEventSeconds=None if event_at is None else round(at - event_at, 3))
             return {"held": named, "bar": self.score.bar_of(self.tick), "afterEventSeconds": None if event_at is None else round(at - event_at, 3)}
+
+    def fade(self, chairs, gain, seconds):
+        """The conductor's hand on some chairs: their gain goes to gain (0 to 1) at a steady rate. Returns how many changed."""
+        with self.cond:
+            gain = max(0.0, min(1.0, float(gain)))
+            changed = 0
+            for chair in chairs:
+                c = self.chairs.get(chair)
+                if c is not None and abs(c["gain"] - gain) >= 0.01:
+                    self._fade_to(c, gain, seconds)
+                    changed += 1
+            if changed and any(abs(c["gain"] - c["gainShown"]) >= 0.05 for c in self.chairs.values()):
+                for c in self.chairs.values():
+                    c["gainShown"] = c["gain"]
+                self._changed()
+            return changed
 
     def stop_all(self, why, event_at=None):
         with self.cond:
@@ -303,6 +326,7 @@ class Orchestra:
     def render(self, frames):
         """Advance the clock by frames of audio; the synthesizer gets the notes of the phrases asked for in them."""
         with self.cond:
+            self._fading(frames / self.rate)
             if self.status == "playing":
                 tps = self._ticks_per_second()
                 start, end = self.tick, self.tick + frames / self.rate * tps
@@ -342,11 +366,25 @@ class Orchestra:
         c["cursor"] = cursor
 
     def _gate(self, c, tick):
-        return not c["stopped"] and not c["held"] and any(p["fromTick"] <= tick < p["endTick"] for p in c["plan"])
+        return not c["stopped"] and any(p["fromTick"] <= tick < p["endTick"] for p in c["plan"])
+
+    def _fade_to(self, c, gain, seconds):
+        c["gain"] = gain
+        c["fadeRate"] = abs(gain - c["gainNow"]) / max(seconds, 0.01)  # the whole way in seconds, whatever the start
+
+    def _fading(self, dt):
+        # The gain moves at its rate, a straight line; the synthesizer's
+        # expression is a square law like its volume, so its value is √gain.
+        for c in self.chairs.values():
+            if c["gainNow"] != c["gain"]:
+                step = c["fadeRate"] * dt
+                c["gainNow"] = c["gain"] if abs(c["gain"] - c["gainNow"]) <= step else c["gainNow"] + (step if c["gain"] > c["gainNow"] else -step)
+            value = round(127 * c["gainNow"] ** 0.5)
+            if value != c["expression"]:
+                self.synth.expression(c["channel"], value)
+                c["expression"] = value
 
     def _state(self, c):
-        if c["held"]:
-            return PAUSED
         if c["stopped"]:
             return STOPPED
         if self.status == "playing":
@@ -483,12 +521,13 @@ class Orchestra:
 
     def _reset_chairs(self):
         for c in self.chairs.values():
-            c.update(stopped=False, held=None, dynamics="mf", plan=[], judge=None, enteredBar=None, cursor=0)
+            c.update(stopped=False, held=None, dynamics="mf", plan=[], judge=None, enteredBar=None, cursor=0,
+                     gain=1.0, gainNow=1.0, gainShown=1.0, fadeRate=0.0, expression=None)
 
     def _chair_view(self, chair, c):
         now = next((p for p in c["plan"] if p["fromTick"] <= self.tick < p["endTick"]), None) if self.status == "playing" and not c["stopped"] else None
         nxt = next((p for p in c["plan"] if p["fromTick"] > self.tick), None) if self.status == "playing" and not c["stopped"] else None
-        return {"id": chair, "state": self._state(c), "dynamics": c["dynamics"], "held": c["held"], "enteredBar": c["enteredBar"],
+        return {"id": chair, "state": self._state(c), "dynamics": c["dynamics"], "held": c["held"], "gain": round(c["gain"], 2), "enteredBar": c["enteredBar"],
                 "line": self.score.line_names[c["line"]],
                 "phrase": {"playing": self._phrase_view(now), "next": self._phrase_view(nxt), "source": "the score service: the phrases the chair played"},
                 "judge": c["judge"]}
@@ -529,10 +568,10 @@ class Orchestra:
         if self.status == "playing" and not c["stopped"] and not self._fork_open(c):
             out["fork"] = f"your next choice opens at bar {self._fork_bar(c)}"
         if c["held"]:
-            out["paused"] = f"the conductor paused your section ({c['held']}): you are silent; go on as usual, you sound again at the cue that names you"
+            out["faded"] = f"the conductor faded your section out ({c['held']}): go on as usual, you sound again at the cue that names you"
         # done: nothing more for this chair to choose in this take. A fixed
-        # program (a Jev bot) reads it; a model reads the note. A paused chair
-        # is not done: it goes on choosing, silent.
+        # program (a Jev bot) reads it; a model reads the note. A faded chair
+        # is not done: it goes on choosing, unheard.
         if ask and self.status in ("stopped", "ended"):
             out["note"] = "the conductor stopped the music: wait for the next cue" if self.status == "stopped" else "the movement has ended"
             out["done"] = True

@@ -22,7 +22,9 @@
   "listen": {"maxSeconds": 20},
   "hands": {"threshold": 0.8, "cooldownSeconds": 3, "minIntervalSeconds": 0.5, "holdMs": 300,
             "groups": {"left": "strings", "right": "winds", "both": "all"},
+            "height": {"low": -0.55, "high": 0.15, "fadeSeconds": 0.2},
             "jev": {"model": "jev-1.13.0", "keyFile": "~/.config/axlr-bots/env", "timeoutSeconds": 10}},
+  "hold": {"fadeSeconds": 1.5, "fadeInSeconds": 0.5},
   "team": "orchestra",
   "controlPlane": {
     "url": "",

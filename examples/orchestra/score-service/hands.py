@@ -12,14 +12,18 @@ winds, both hands showing the same gesture on everyone:
 
   open hand   info.cue.<group> {"dynamics": "f"}   come in, or play loud
   palm down   info.cue.<group> {"dynamics": "p"}   come in, or play soft
-  fist        pause the group (both fists: everyone), no event
+  fist        fade the group out (both fists: everyone), no event
+  the hand's height, while it holds an open hand or a palm down: the group's
+              gain, higher louder, lower softer, a fade, no event
 
 A cue is the event the operator's panel already publishes (orchestra 6b), as
 the operator; it reaches a bot's running task as a message. A pause is the
 service's alone: a stop on the bus would end each bot's run, and a bot back
-from a stop has to start a new one (seconds). Paused, a chair is only muted:
-it keeps its phrases and its bot goes on choosing, and the cue that names it
-sounds again at its next note.
+from a stop has to start a new one (seconds). Faded out, a chair keeps its
+phrases and its bot goes on choosing; the cue that names it fades it back in.
+The height is read many times a second without Jev: it is a measurement, not
+a sign, and it only acts while Jev's last reading of that hand is an open hand
+or a palm down, so a hand at rest or a fist moves nothing.
 
 The service is the orchestra, so it does what a gesture means at once (holds
 the group, sets the level, starts the count-in) and publishes the events in
@@ -64,6 +68,9 @@ class Hands:
         self.groups = config.get("groups", {"left": "strings", "right": "winds", "both": "all"})
         self.dry_run = bool(config.get("dryRun")) or publish is None
         self.publish_wait = config.get("publishWaitSeconds", 0)
+        height = config.get("height", {})
+        self.low, self.high, self.height_fade = height.get("low", -0.55), height.get("high", 0.15), height.get("fadeSeconds", 0.2)
+        self.engaged = {"left": None, "right": None}
         self.lock = threading.Lock()
         self.last_call, self.sent_at, self.history, self.calls = None, {}, [], 0
 
@@ -103,6 +110,7 @@ class Hands:
         for side, a in record["jev"]["answers"].items():
             p = a["probabilities"][a["choice"]]
             record["read"][side] = a["choice"] if a["choice"] != "nothing" and p >= self.threshold else "nothing"
+            self.engaged[side] = record["read"][side] if record["read"][side] in LEVELS else None
         threads = []
         with self.lock:
             for gesture, group in self.meaning(record["read"]):
@@ -112,6 +120,18 @@ class Hands:
         for thread in threads if self.publish_wait > 0 else ():  # the sound changed already; the ids come when the publish answers
             thread.join(timeout=self.publish_wait)
         return record
+
+    def height(self, message):
+        """Each hand's height, many times a second: the gain of its group while the hand holds an open hand or a palm down."""
+        gains = {}
+        for side, h in ((message or {}).get("hands") or {}).items():
+            height = (h or {}).get("height") if isinstance(h, dict) else None
+            if side not in self.engaged or not self.engaged[side] or not isinstance(height, (int, float)):
+                continue
+            gain = max(0.0, min(1.0, (height - self.low) / (self.high - self.low)))
+            self.orchestra.fade(self.orchestra.chairs_of(self.groups[side]), gain, self.height_fade)
+            gains[side] = round(gain, 2)
+        return gains
 
     def meaning(self, read):
         """Each hand's gesture on its group; both hands the same gesture: everyone."""
@@ -151,7 +171,9 @@ class Hands:
         with self.lock:
             return {"last": self.history[-1] if self.history else None, "history": self.history[-12:], "calls": self.calls,
                     "threshold": self.threshold, "cooldownSeconds": self.cooldown, "groups": self.groups,
-                    "gestures": {"open": "info.cue.<group> f", "down": "info.cue.<group> p", "fist": "pause the group (the service's, no event)"},
+                    "gestures": {"open": "info.cue.<group> f", "down": "info.cue.<group> p", "fist": "fade the group out (the service's, no event)",
+                                 "height": "the group's gain while open or palm down (the service's, no event)"},
+                    "engaged": dict(self.engaged),
                     "dryRun": self.dry_run, "source": JEV_SOURCE}
 
     # --- inside -------------------------------------------------------------
@@ -168,7 +190,7 @@ class Hands:
         if gesture == "fist":
             sounding = [k for k in named if chairs[k]["state"] in ("playing", "scheduled")]
             if snap["status"] != "playing" or not sounding:
-                record["notSent"].append({"what": f"pause {group}", "why": "nothing of the group plays"})
+                record["notSent"].append({"what": f"fade out {group}", "why": "nothing of the group plays"})
                 return []
             events = []  # the bots keep their runs: no stop reaches them
         else:
@@ -183,7 +205,7 @@ class Hands:
         why = f"{gesture} from the conductor's hands"
         if gesture == "fist":
             done = o.hold(named, why)
-            record["applied"] = f"paused {len(done['held'])} chairs" if done else "nothing plays"
+            record["applied"] = f"fading out {len(done['held'])} chairs" if done else "nothing plays"
         else:
             record["applied"] = o.cue(f"info.cue.{group}", {"dynamics": LEVELS[gesture]}) or "cue kept"
         threads = []

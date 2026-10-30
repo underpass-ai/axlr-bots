@@ -11,7 +11,9 @@ const HOLD_MS = 300, SIDES = ["left", "right"];
 const GROUP = { left: "strings", right: "winds" };
 const steady = new Steady(HOLD_MS);
 let live = { left: null, right: null }, last = null, orchestra = null, xr = null, dirty = true;
-let soundOn = false, soundAt = -1, soundState = "off";
+let soundOn = false, soundAt = -1, soundState = "off", heightAt = 0;
+const SECTIONS = { strings: ["vn1", "vn2", "va", "vc", "cb"], winds: ["ob", "hn"] };
+let gains = { strings: 1, winds: 1 };
 const params = new URLSearchParams(location.search), preview = params.get("view") === "1";
 if (params.get("sim") === "1") document.body.classList.add("simulate");
 
@@ -32,7 +34,7 @@ function draw() {
     const x = 24 + i * 500, read = last?.read?.[side], jev = last?.jev?.answers?.[side], m = live[side];
     ctx.fillStyle = muted;
     ctx.font = "600 24px Lexend, sans-serif";
-    ctx.fillText(`${side.toUpperCase()} HAND · ${GROUP[side]}`, x, 70);
+    ctx.fillText(`${side.toUpperCase()} HAND · ${GROUP[side]} · ${Math.round(100 * gains[GROUP[side]])}%`, x, 70);
     ctx.font = "600 64px Lexend, sans-serif";
     ctx.fillStyle = read && read !== "nothing" ? copper : ink;
     ctx.fillText(read ? read.toUpperCase() : "—", x, 104);
@@ -49,7 +51,7 @@ function draw() {
   ctx.font = "26px Lexend, sans-serif";
   let y = 312;
   if (last?.applied) {
-    ctx.fillStyle = last.applied.startsWith("paused") ? red : copper;
+    ctx.fillStyle = last.applied.startsWith("fading") ? red : copper;
     ctx.fillText(`done: ${last.applied}`, 24, y);
     y += 36;
   }
@@ -117,7 +119,7 @@ const waved = {};
 function heard(record) {
   last = record;
   for (const e of last.sent || []) { hall.wave(e.name.startsWith("stop.")); waved[e.name] = performance.now(); }
-  if ((last.applied || "").startsWith("paused")) hall.wave(true);  // a pause is the service's: no event, the ring still runs
+  if ((last.applied || "").startsWith("fading")) hall.wave(true);  // a fade out is the service's: no event, the ring still runs
   if ((last.sent || []).length) setTimeout(() => recheck(last.at), 1500);
   draw();
 }
@@ -136,6 +138,10 @@ async function recheck(at) {
 let busAt = null;
 function apply(s) {
   orchestra = { status: s.status, bar: s.bar, countIn: s.countIn, playing: s.sections.reduce((n, x) => n + x.playing, 0) };
+  for (const [group, ids] of Object.entries(SECTIONS)) {  // a group's gain: its chairs', as the service set them
+    const chairs = s.sections.filter((x) => ids.includes(x.id)).flatMap((x) => x.chairs);
+    if (chairs.length) gains[group] = chairs.reduce((n, c) => n + (c.gain ?? 1), 0) / chairs.length;
+  }
   $("label").textContent = s.label;
   const bus = s.lastBus;
   if (bus && bus.at !== busAt) {
@@ -286,6 +292,14 @@ function readHands(t, xrFrame) {
       joints[name] = [p.transform.position.x, p.transform.position.y, p.transform.position.z];
     }
     if (all) live[source.handedness] = measure(joints, source.handedness, head);
+  }
+  // Each hand's height, ten times a second: the service makes it its group's
+  // gain while Jev's last reading of that hand is an open hand or a palm down.
+  if (sock && t - heightAt > 100) {
+    heightAt = t;
+    const heights = {};
+    for (const side of SIDES) if (live[side]) heights[side] = { height: live[side].position.height };
+    if (Object.keys(heights).length) sock.send(JSON.stringify({ type: "height", hands: heights }));
   }
   const sig = live.left || live.right ? `${signature(live.left)}/${signature(live.right)}` : "-|-";
   if (steady.update(sig, t)) {

@@ -32,6 +32,12 @@ class FakeSynth:
     def pan(self, channel, value):
         self.calls.append(("pan", channel, value))
 
+    def expression(self, channel, value):
+        self.calls.append(("expression", channel, value))
+
+    def last_expression(self, channel):
+        return [c[2] for c in self.calls if c[0] == "expression" and c[1] == channel][-1]
+
     def bend(self, channel, cents):
         self.calls.append(("bend", channel, cents))
 
@@ -362,7 +368,7 @@ class StopTest(unittest.TestCase):
         out = o.play("vn2-1", 1)
         self.assertEqual((out["fromBar"], o.take, o.take_log(1)["cut"]["why"]), (1, 2, "stop"))
 
-    def test_a_group_stop_holds_its_chairs_and_the_others_play_on(self):
+    def test_a_group_stop_fades_its_chairs_out_and_the_others_play_on(self):
         o, synth, clock = orchestra()
         for chair in ("ob-1", "ob-2", "hn-1", "vn1-1"):
             o.play(chair, 1)
@@ -370,34 +376,47 @@ class StopTest(unittest.TestCase):
         clock.now = 1000.5
         held = o.hold(o.chairs_of("winds"), "stop.ob from operator", event_at=1000.25)
         self.assertEqual((held["held"], held["afterEventSeconds"]), (["ob-1", "ob-2", "hn-1", "hn-2"], 0.25))
-        self.assertIn(("silence", o.chairs["ob-1"]["channel"]), synth.calls)
-        self.assertNotIn(("silence", o.chairs["vn1-1"]["channel"]), synth.calls)
         self.assertEqual(o.status, "playing")
-        before = synth.ons_on(o.chairs["vn1-1"]["channel"]), synth.ons_on(o.chairs["ob-1"]["channel"])
-        play_until(o, 6)
-        self.assertGreater(synth.ons_on(o.chairs["vn1-1"]["channel"]), before[0])
-        self.assertEqual(synth.ons_on(o.chairs["ob-1"]["channel"]), before[1])
+        ob, vn = o.chairs["ob-1"]["channel"], o.chairs["vn1-1"]["channel"]
+        o.render(4410)  # 0.1 s: on the way down, not at a jump
+        self.assertLess(synth.last_expression(ob), 127)
+        self.assertGreater(synth.last_expression(ob), 0)
+        play_until(o, 6)  # more than fadeSeconds
+        self.assertEqual((synth.last_expression(ob), synth.last_expression(vn)), (0, 127))
+        self.assertTrue(o.chairs["ob-1"]["plan"])  # its phrases kept: only the sound went
         chair = next(c for s in o.snapshot()["sections"] for c in s["chairs"] if c["id"] == "ob-1")
-        self.assertEqual((chair["state"], chair["held"]), ("paused", "stop.ob from operator"))
-        self.assertTrue(o.chairs["ob-1"]["plan"])  # a pause keeps the phrases: only the notes are not sounded
+        self.assertEqual((chair["held"], chair["gain"]), ("stop.ob from operator", 0.0))
         reading = o.phrases("ob-1")
-        self.assertIn("paused your section", reading["paused"])
+        self.assertIn("faded your section out", reading["faded"])
         self.assertNotIn("done", reading)
 
-    def test_a_cue_that_names_paused_chairs_sounds_them_at_their_next_note(self):
+    def test_a_cue_that_names_faded_chairs_fades_them_back_in(self):
         o, synth, _ = orchestra()
         o.play("ob-1", 1)
         o.play("vn1-1", 1)
         play_until(o, 3)
         o.hold(["ob-1"], "fist")
-        self.assertEqual(o.play("ob-1", 2)["phrase"], 2)  # its bot goes on choosing, silent
-        silent = synth.ons_on(o.chairs["ob-1"]["channel"])
+        self.assertEqual(o.play("ob-1", 2)["phrase"], 2)  # its bot goes on choosing
         play_until(o, 5)
-        self.assertEqual(synth.ons_on(o.chairs["ob-1"]["channel"]), silent)
-        self.assertIsNone(o.cue("info.cue.strings", {}))  # a cue that names other chairs keeps it paused
+        ob = o.chairs["ob-1"]["channel"]
+        self.assertEqual(synth.last_expression(ob), 0)
+        self.assertIsNone(o.cue("info.cue.strings", {}))  # a cue that names other chairs keeps it out
         o.cue("info.cue.winds", {})
         play_until(o, 6)
-        self.assertGreater(synth.ons_on(o.chairs["ob-1"]["channel"]), silent)  # no new phrase, no new run
+        self.assertEqual(synth.last_expression(ob), 127)  # no new phrase, no new run
+
+    def test_a_hand_fades_a_group_at_a_steady_rate(self):
+        o, synth, _ = orchestra()
+        o.play("vc-1", 1)
+        play_until(o, 2)
+        vc = o.chairs["vc-1"]["channel"]
+        self.assertEqual(o.fade(o.chairs_of("strings"), 0.25, 0.2), 32)
+        o.render(441 * 5)  # 0.05 s of 0.2
+        middle = synth.last_expression(vc)
+        self.assertTrue(round(127 * 0.25 ** 0.5) < middle < 127)
+        o.render(441 * 20)
+        self.assertEqual(synth.last_expression(vc), round(127 * 0.25 ** 0.5))
+        self.assertEqual(o.fade(o.chairs_of("strings"), 0.255, 0.2), 0)  # a hair's change changes nothing
 
     def test_a_cue_with_dynamics_changes_the_level_at_once_and_on_the_phrases_asked_for(self):
         o, synth, _ = orchestra()
@@ -577,11 +596,11 @@ class DoneForAFixedProgram(unittest.TestCase):
             self.skipTest("the last bar still offers a phrase")
         self.assertEqual((out.get("done"), out["note"]), (True, "no phrase left to play"))
 
-    def test_a_paused_chair_is_never_done(self):
+    def test_a_faded_chair_is_never_done(self):
         o, _, _ = orchestra()
         o.play("ob-1", 1)
         play_until(o, 2)
         o.hold(["ob-1"], "fist from the conductor's hands")
         out = o.listen("ob-1", bars=8, max_seconds=1)
-        self.assertEqual(("done" in out, out["state"]), (False, "paused"))
+        self.assertEqual(("done" in out, "faded" in out), (False, True))
         self.assertNotIn("done", o.phrases("ob-1"))
