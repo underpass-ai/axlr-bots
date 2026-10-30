@@ -158,7 +158,8 @@ func program(t *testing.T) domain.Runtime {
 	t.Helper()
 	runtime, err := domain.NewRuntime(&domain.RuntimeSnapshot{Kind: "jev", Jev: &domain.JevProgramSnapshot{
 		Server: "score", Start: "phrases", Wait: "listen", Stop: "stop",
-		Act: domain.JevActSnapshot{Tool: "play", Choice: "phrase", Verdict: "judge", Pass: []string{"dynamics"}},
+		Act:  domain.JevActSnapshot{Tool: "play", Choice: "phrase", Verdict: "judge", Pass: []string{"dynamics"}},
+		Tell: &domain.JevTellSnapshot{Name: "info.chair.played", Fields: []string{"phrase", "probability"}},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -269,6 +270,45 @@ func TestAPausedWorldHoldsTheRun(t *testing.T) {
 	report, err = executor.Execute(context.Background(), request)
 	if err != nil || report.Outcome != domain.ExecutionFailed || report.Usage.Requests != 1 || !(strings.HasPrefix(report.FailureReason, "interrupted") || strings.HasPrefix(report.FailureReason, "budget_exceeded")) {
 		t.Fatalf("report = %+v %v", report, err)
+	}
+}
+
+// After each act the program tells its teams, through the node's emit,
+// the fields it names; a tell that is refused or fails is logged and
+// the run goes on. Without a team (no OnEmit) nothing is told.
+func TestEachActIsToldToTheTeam(t *testing.T) {
+	w := &world{left: 2}
+	executor, request := fixture(t, w, first)
+	var told []application.EmitEventCommand
+	request.OnEmit = func(command application.EmitEventCommand) (application.EmitAnswer, error) {
+		told = append(told, command)
+		if len(told) == 2 {
+			return application.EmitAnswer{Refused: &domain.EventRefusal{Reason: "rate"}}, nil
+		}
+		return application.EmitAnswer{EventID: "evt-1", Deliveries: []application.EventDelivery{{BotID: "vc-1"}}}, nil
+	}
+	report, err := executor.Execute(context.Background(), request)
+	if err != nil || report.Outcome != domain.ExecutionCompleted || len(told) != 2 {
+		t.Fatalf("report = %+v %v told %d", report, err, len(told))
+	}
+	var data map[string]any
+	_ = json.Unmarshal(told[0].Data, &data)
+	if told[0].Name != "info.chair.played" || told[0].Message != "phrase 1: bars 1–8" || data["phrase"] != float64(1) || data["probability"] != 0.9 || len(data) != 2 {
+		t.Errorf("told = %+v %v", told[0], data)
+	}
+	tells := 0
+	for _, call := range report.Result.ToolCalls {
+		if call.Name == application.EmitEventToolName {
+			tells++
+		}
+	}
+	if tells != 2 || report.Usage.ToolCalls != 7 {
+		t.Errorf("tool calls = %+v", report.Result.ToolCalls)
+	}
+	w = &world{left: 1}
+	executor, request = fixture(t, w, first)
+	if report, _ := executor.Execute(context.Background(), request); report.Usage.ToolCalls != 3 {
+		t.Errorf("without a team: %+v", report.Result.ToolCalls)
 	}
 }
 

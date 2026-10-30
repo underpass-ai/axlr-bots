@@ -339,6 +339,7 @@ func (r *run) steps(ctx context.Context) (domain.ExecutionOutcome, string) {
 				r.refused, r.refusedTimes = "", 0
 				r.decisions[len(r.decisions)-1].Acted = true
 				r.phrases = append(r.phrases, fmt.Sprintf("%s (%.2f)", verdict.Choice, verdict.Probability))
+				r.tell(ctx, verdict, arguments)
 				if done, _ := acted.Object["done"].(bool); done {
 					return domain.ExecutionCompleted, ""
 				}
@@ -382,6 +383,51 @@ func (e *Executor) idleBackoff() time.Duration {
 		return e.IdleBackoff
 	}
 	return DefaultIdleBackoff
+}
+
+// tell tells the bot's teams what was decided, when the program says so
+// and the bot is in a team: the event's data is the decision's fields the
+// program names (all when none). A tell that does not go is logged, never
+// fatal: the act was taken.
+func (r *run) tell(ctx context.Context, verdict Verdict, arguments map[string]any) {
+	name, fields, ok := r.program.Tell()
+	if !ok || r.request.OnEmit == nil {
+		return
+	}
+	all := map[string]any{"choice": verdict.Choice, "probability": verdict.Probability, "confidence": verdict.Confidence}
+	for key, value := range arguments {
+		if key != r.program.Verdict() {
+			all[key] = value
+		}
+	}
+	data := all
+	if len(fields) > 0 {
+		data = map[string]any{}
+		for _, field := range fields {
+			if value, ok := all[field]; ok {
+				data[field] = value
+			}
+		}
+	}
+	raw, _ := json.Marshal(data)
+	r.usage.ToolCalls++
+	id := fmt.Sprintf("tool-%d", r.usage.ToolCalls)
+	started := time.Now()
+	answer, err := r.request.OnEmit(application.EmitEventCommand{Name: name.String(), Message: verdict.Choice, Data: raw})
+	status := "completed"
+	entry := map[string]any{"tool": application.EmitEventToolName, "callId": id, "event": name, "data": json.RawMessage(raw), "ms": time.Since(started).Milliseconds()}
+	switch {
+	case err != nil:
+		status, entry["error"] = "failed", err.Error()
+	case answer.Refused != nil:
+		status, entry["refused"] = "failed", answer.Refused.Reason
+	default:
+		entry["eventId"], entry["deliveries"] = answer.EventID, len(answer.Deliveries)
+	}
+	entry["status"] = status
+	r.calls = append(r.calls, domain.ToolCall{Name: application.EmitEventToolName, CallID: id, Decision: "auto_approve", Status: status})
+	r.log("tell", entry)
+	_ = ctx
 }
 
 // failed is how a run ends on an error that is not a tool's refusal: an

@@ -33,8 +33,13 @@ type JevProgram struct {
 	pass    []string
 	wait    ToolName
 	stop    ToolName
+	tell    EventName
+	tellOf  []string
 	model   string
 }
+
+// jevTellFields are the decision's fields a tell may carry.
+var jevTellFields = map[string]bool{"choice": true, "probability": true, "confidence": true}
 
 // NewJevProgram validates a program.
 func NewJevProgram(s JevProgramSnapshot) (JevProgram, error) {
@@ -74,6 +79,22 @@ func NewJevProgram(s JevProgramSnapshot) (JevProgram, error) {
 		p.pass = append(p.pass, field)
 	}
 	p.choice, p.verdict = s.Act.Choice, s.Act.Verdict
+	if s.Tell != nil {
+		name, err := NewEventName(s.Tell.Name)
+		if err != nil {
+			return JevProgram{}, invalid("jev tell", "must name the event the bot tells after each act: "+err.Error())
+		}
+		if !KindOf(name).PublishedBy(PublisherBot) {
+			return JevProgram{}, invalid("jev tell", KindOf(name).String()+".* is the control plane's own")
+		}
+		p.tell = name.Canonical()
+		for _, field := range s.Tell.Fields {
+			if !jevTellFields[field] && field != s.Act.Choice && !slices.Contains(p.pass, field) || slices.Contains(p.tellOf, field) {
+				return JevProgram{}, invalid("jev tell", "fields are choice, probability, confidence, the act's choice argument or a field passed on, each once")
+			}
+			p.tellOf = append(p.tellOf, field)
+		}
+	}
 	p.model = s.Model
 	if p.model == "" {
 		p.model = DefaultJevModel
@@ -108,6 +129,13 @@ func (p JevProgram) Wait() ToolName { return p.wait }
 // Stop is the tool a stop.* task calls, or "" when the program has none.
 func (p JevProgram) Stop() ToolName { return p.stop }
 
+// Tell is the event the bot tells its teams after each act, with the
+// fields of the decision it carries (all when none); false when the
+// program tells nothing.
+func (p JevProgram) Tell() (EventName, []string, bool) {
+	return p.tell, append([]string(nil), p.tellOf...), p.tell != ""
+}
+
 // Model is the pinned Jev version the program asks.
 func (p JevProgram) Model() string { return p.model }
 
@@ -122,8 +150,12 @@ func (p JevProgram) Tools() []ToolName {
 
 // Snapshot is the program as it is stored.
 func (p JevProgram) Snapshot() JevProgramSnapshot {
-	return JevProgramSnapshot{
+	snapshot := JevProgramSnapshot{
 		Server: p.server, Start: p.start.String(), Wait: p.wait.String(), Stop: p.stop.String(), Model: p.model,
 		Act: JevActSnapshot{Tool: p.act.String(), Choice: p.choice, Verdict: p.verdict, Pass: p.Pass()},
 	}
+	if p.tell != "" {
+		snapshot.Tell = &JevTellSnapshot{Name: p.tell.String(), Fields: append([]string(nil), p.tellOf...)}
+	}
+	return snapshot
 }

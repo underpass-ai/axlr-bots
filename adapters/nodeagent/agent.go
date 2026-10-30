@@ -234,6 +234,11 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events)
 		request.DelegationSocket = socket
 		request.OnSaid = a.say(runCtx, id, assignment.ExecutionID)
+		if request.Events != nil {
+			request.OnEmit = func(command application.EmitEventCommand) (application.EmitAnswer, error) {
+				return a.Transport.Emit(runCtx, id, assignment.ExecutionID, command)
+			}
+		}
 		report, err = a.Executor.Execute(runCtx, request)
 		closeSocket()
 	case assignment.Decide != nil:

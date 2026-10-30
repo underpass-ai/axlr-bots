@@ -12,12 +12,23 @@ type RuntimeSnapshot struct {
 // on each of Jev's choices, the tool that waits for the next question,
 // the tool a stop.* task calls, and the Jev model.
 type JevProgramSnapshot struct {
-	Server string         `json:"server"`
-	Start  string         `json:"start"`
-	Act    JevActSnapshot `json:"act"`
-	Wait   string         `json:"wait"`
-	Stop   string         `json:"stop,omitempty"`
-	Model  string         `json:"model,omitempty"`
+	Server string           `json:"server"`
+	Start  string           `json:"start"`
+	Act    JevActSnapshot   `json:"act"`
+	Wait   string           `json:"wait"`
+	Stop   string           `json:"stop,omitempty"`
+	Tell   *JevTellSnapshot `json:"tell,omitempty"`
+	Model  string           `json:"model,omitempty"`
+}
+
+// JevTellSnapshot is what a Jev bot tells its teams after each act: the
+// event's name (one the bot may emit) and which fields of the decision
+// ride as the event's data: choice, probability, confidence, the act's
+// choice argument and the fields passed on; all of them when none is
+// named. The message is Jev's choice.
+type JevTellSnapshot struct {
+	Name   string   `json:"name"`
+	Fields []string `json:"fields,omitempty"`
 }
 
 // JevActSnapshot is how a Jev bot acts on a choice: the tool, the
