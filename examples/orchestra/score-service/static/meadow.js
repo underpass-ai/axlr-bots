@@ -155,6 +155,7 @@ export function drawnHands(scene) {
   scene.add(mesh);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
   return {
+    mesh,
     // each hand's joints as [name, [x, y, z], radius]
     update(hands) {
       let n = 0;

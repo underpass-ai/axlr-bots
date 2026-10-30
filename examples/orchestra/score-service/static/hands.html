@@ -24,10 +24,15 @@
      what Jev read and what the service sent. A posture is sent
      to POST /api/hands once it holds still; the service asks Jev and
      publishes the team's events. No image leaves the headset: only the
-     measurements. ?sim=1 adds buttons that send made-up postures, marked
-     simulated, to try the path without a headset; ?view=1 shows the
-     orchestra and the panel on this screen; ?scale= sizes the orchestra to
-     the room (default 0.6: the front row 1.5 m away). Reached from the headset
+     measurements. Around the orchestra: the room, a cartoon meadow
+     (meadow.js) or a zen garden at dusk (zen.js, the default). The
+     headset's own gestures (pinch, microgestures) and where the head looks
+     are read and shown on the panel, not acted on. ?sim=1 adds buttons
+     that send made-up postures, marked simulated, to try the path without
+     a headset; ?view=1 shows the orchestra and the panel on this screen; ?world=zen|meadow|room
+     picks what is around the orchestra;
+     ?scale= sizes the orchestra to the room (default 0.6: the front row
+     1.5 m away). Reached from the headset
      as http://localhost:8790/hands through adb reverse. -->
 <div class="sim">SIMULATION</div>
 <main>
@@ -39,11 +44,20 @@
     <tr><td>fist</td><td>fade the group out; two fists fade everyone out (the bots play on)</td></tr>
     <tr><td>hand high / low</td><td>while palm up or palm down: louder / softer, a fade</td></tr>
     <tr><td>anything else</td><td>nothing</td></tr>
+    <tr><th>The headset's own</th><th>Shown on the panel, not acted on</th></tr>
+    <tr><td>pinch (index to thumb)</td><td>the Quest's select; shown with the hand</td></tr>
+    <tr><td>thumb tap, thumb swipe on the index finger</td><td>the Quest's microgestures (Browser 38.1 and later); shown as they come</td></tr>
+    <tr><td>where you look</td><td>the instrument ahead of your eyes</td></tr>
+    <tr><td class="muted">pinch while looking at your palm</td><td class="muted">the system's: the left hand opens the menu and ends the session. Avoid it.</td></tr>
   </table>
   <div class="row">
     <button class="go" id="enter" disabled>Checking WebXR…</button>
     <label><input type="checkbox" id="sound" checked> the orchestra's sound in the headset</label>
-    <label><input type="checkbox" id="meadow" checked> a cartoon meadow instead of the room</label>
+    <label>around you: <select id="world">
+      <option value="zen" selected>a zen garden at dusk</option>
+      <option value="meadow">a cartoon meadow</option>
+      <option value="room">your room (passthrough)</option>
+    </select></label>
   </div>
   <div class="row" id="sim-buttons">
     <span class="muted">simulated:</span>

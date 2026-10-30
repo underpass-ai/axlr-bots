@@ -5,6 +5,7 @@
 import { measure, signature, Steady } from "/static/posture.js";
 import { Hall, THREE } from "/static/room.js";
 import { meadow, drawnHands } from "/static/meadow.js";
+import { zen } from "/static/zen.js";
 
 const $ = (id) => document.getElementById(id);
 const panel = $("panel"), ctx = panel.getContext("2d");
@@ -23,6 +24,7 @@ fetch("/api/hands").then((r) => r.json()).then((v) => {
 const instrumentAt = (aim) => (aim == null ? null : instruments.find((i) => i.from <= aim && aim < i.to) || null);
 const params = new URLSearchParams(location.search), preview = params.get("view") === "1";
 if (params.get("sim") === "1") document.body.classList.add("simulate");
+if (params.get("world")) $("world").value = params.get("world");  // ?world=zen|meadow|room picks what is around the orchestra
 
 // --- the panel ------------------------------------------------------------
 
@@ -69,13 +71,19 @@ function draw() {
     y += 36;
   }
   for (const e of last?.notSent || []) {
-    if (y > h - 70) break;
+    if (y > h - 130) break;
     ctx.fillStyle = muted;
     ctx.fillText(`not sent: ${e.why}`, 24, y);
     y += 36;
   }
   ctx.fillStyle = muted;
   ctx.font = "20px Lexend, sans-serif";
+  const pinch = SIDES.filter((s) => quest.pinch[s]).map((s) => s[0].toUpperCase()).join("") || "–";
+  const seen = quest.events.map((e) => `${e.what} ${((performance.now() - e.at) / 1000).toFixed(1)} s`).join(" · ");
+  ctx.fillText(`headset${quest.browser ? ` Browser ${quest.browser}` : ""}: ${quest.profiles === null ? "no hand yet" : `${quest.profiles[0] || "?"} · ${quest.buttons} buttons${quest.buttons >= 10 ? " · microgestures" : ""}`} · pinch ${pinch} · looking at ${quest.gaze ? quest.gaze.name : "–"}`, 24, h - 92);
+  ctx.fillStyle = copper;
+  ctx.fillText(seen ? `headset recognised: ${seen}` : "headset recognised: nothing yet (pinch, thumb tap, thumb swipes: shown, not acted on)", 24, h - 64);
+  ctx.fillStyle = muted;
   if (last?.jev?.ms) ctx.fillText(`Jev ${last.jev.ms} ms${roundTrip !== null ? ` · round trip ${roundTrip} ms` : ""}${last.simulated ? " · simulated posture" : ""}`, 24, h - 36);
   dirty = true;
 }
@@ -244,10 +252,51 @@ panelMesh.matrixAutoUpdate = false;
 panelMesh.visible = false;
 scene.add(panelMesh);
 const SCALE = Number(params.get("scale")) || 0.6; // the hall's 2.5–4.2 m rows, brought into a room
-let field = null, drawn = null;  // the cartoon meadow and the drawn hands, made when first wanted
-function outdoors(on) {
-  if (on && !field) { field = meadow(scene); drawn = drawnHands(scene); }
-  if (field) { field.group.visible = on; scene.fog = on ? field.group.userData.fog || scene.fog : null; }
+// The worlds around the orchestra, made when first wanted: the room itself
+// (passthrough), the cartoon meadow, the zen garden at dusk; and the drawn
+// hands, needed anywhere but the room. Each world brings its fog and exposure.
+const WORLDS = { meadow, zen };
+const worlds = {};
+let world = null, worldName = "room", drawn = null;
+function setWorld(name) {
+  worldName = WORLDS[name] ? name : "room";
+  if (WORLDS[worldName] && !worlds[worldName]) worlds[worldName] = WORLDS[worldName](scene);
+  if (worldName !== "room" && !drawn) drawn = drawnHands(scene);
+  world = worlds[worldName] || null;
+  for (const [n, w] of Object.entries(worlds)) w.group.visible = n === worldName;
+  scene.fog = world ? world.group.userData.fog || null : null;
+  renderer.toneMappingExposure = world ? world.group.userData.exposure || 1.15 : 1.15;
+  if (drawn) drawn.mesh.visible = !!world;
+}
+
+// --- what the headset itself recognises (shown, not acted on) -----------------
+
+// The Quest Browser gives each hand an emulated gamepad (profile oculus-hand):
+// button 0 is the pinch (the session's select events too), and since Browser
+// 38.1 buttons 5–9 are the thumb's microgestures on the side of the index
+// finger: swipe left, right, forward, backward, and a tap. Button 4 on the
+// left hand is the system's menu. A palm pinch (pinching while looking at the
+// palm) is the system's on both hands: on the left it ends the session. Here
+// they are only read and shown, with the instrument the head looks at, so the
+// conductor can see what the headset recognises before any of it conducts.
+const NATIVE = { 0: "pinch", 4: "menu", 5: "swipe-left", 6: "swipe-right", 7: "swipe-forward", 8: "swipe-backward", 9: "tap-thumb" };
+const quest = { profiles: null, buttons: null, pressed: { left: {}, right: {} }, pinch: { left: false, right: false }, events: [], gaze: null,
+  browser: (navigator.userAgent.match(/OculusBrowser\/([\d.]+)/) || [])[1] || null };
+function native(what) {
+  quest.events.unshift({ what, at: performance.now() });
+  quest.events.length = Math.min(quest.events.length, 4);
+  draw();
+}
+function readNative(source, side) {
+  if (quest.profiles === null) { quest.profiles = source.profiles || []; quest.buttons = source.gamepad ? source.gamepad.buttons.length : 0; }
+  const g = source.gamepad;
+  if (!g) return;
+  g.buttons.forEach((b, i) => {
+    const was = quest.pressed[side][i] || false;
+    if (i === 0) quest.pinch[side] = b.pressed;
+    if (b.pressed && !was && NATIVE[i]) native(`${NATIVE[i]} ${side}`);
+    quest.pressed[side][i] = b.pressed;
+  });
 }
 
 // Where the panel floats: 1.4 m ahead of where the head first looked, a
@@ -292,7 +341,7 @@ renderer.setAnimationLoop((t, xrFrame) => {
   if (xrFrame) readHands(t, xrFrame);
   else if (!preview) return;
   if (dirty) { panelTex.needsUpdate = true; dirty = false; }
-  if (field && field.group.visible) field.frame(dt);
+  if (world) world.frame(dt);
   hall.frame(dt);
   renderer.render(scene, camera);
 });
@@ -303,10 +352,12 @@ function readHands(t, xrFrame) {
   if (!pose) return;
   if (!placed) { placeAround(pose.transform); placed = true; }
   const head = { position: [pose.transform.position.x, pose.transform.position.y, pose.transform.position.z], forward: forwardOf(pose.transform.orientation) };
+  quest.gaze = instrumentAt(aimOf([head.position[0] + head.forward[0], head.position[1], head.position[2] + head.forward[2]], head.position));
   live = { left: null, right: null };
   const shown = [];
   for (const source of xrFrame.session.inputSources) {
     if (!source.hand || !SIDES.includes(source.handedness)) continue;
+    readNative(source, source.handedness);
     const joints = {}, drawnJoints = [];
     let all = true;
     for (const [name, jointSpace] of source.hand) {
@@ -322,7 +373,7 @@ function readHands(t, xrFrame) {
       live[source.handedness] = m;
     }
   }
-  if (drawn && field.group.visible) drawn.update(shown);
+  if (drawn && world) drawn.update(shown);
   for (const side of SIDES) {  // the instrument each hand points at, lit in the hall
     const now = live[side] ? instrumentAt(live[side].aim) : null;
     if ((now && now.id) !== (aimed[side] && aimed[side].id)) { aimed[side] = now; hall.aim(side, now ? now.sections : []); }
@@ -347,10 +398,10 @@ function readHands(t, xrFrame) {
 
 async function enter() {
   if ($("sound").checked) startSound();
-  const outside = $("meadow").checked;
-  outdoors(outside);
-  const mode = xr.ar && !outside ? "immersive-ar" : "immersive-vr";
+  setWorld($("world").value);
+  const mode = xr.ar && worldName === "room" ? "immersive-ar" : "immersive-vr";
   const session = await navigator.xr.requestSession(mode, { requiredFeatures: ["hand-tracking", "local-floor"] });
+  for (const kind of ["selectstart", "selectend"]) session.addEventListener(kind, (e) => native(`${kind} ${e.inputSource.handedness}`));
   session.addEventListener("end", () => { placed = false; $("enter").textContent = "Enter again"; });
   await renderer.xr.setSession(session);
 }
@@ -367,8 +418,8 @@ if (preview) {
   camera.position.set(0, 1.75, 0.7);
   camera.lookAt(0, 0.9, -1.6);
   placeAround({ position: { x: 0, y: 1.6, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 } });
-  outdoors($("meadow").checked);
-  $("meadow").addEventListener("change", () => outdoors($("meadow").checked));
+  setWorld($("world").value);
+  $("world").addEventListener("change", () => setWorld($("world").value));
 }
 
 async function check() {
