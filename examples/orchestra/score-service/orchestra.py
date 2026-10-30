@@ -18,9 +18,14 @@ by that much audio and hands the synthesizer the notes that fall in it. A cue
 from the conductor, or the first play, starts a take with a count-in, so every
 chair cued can choose its first phrase before the music reaches it.
 
+The conductor may also stop one group while the others play on (hold): its
+chairs fall silent at once and are held, so a run still alive cannot play
+again until a cue names them. A cue with dynamics while the music plays sets
+that level on its chairs at once, and on the phrases they already asked for.
+
 Nothing here talks to the network: the server calls phrases, play, listen,
-stop and snapshot for the bots and the page, and the bus calls cue, stop_all
-and set_tempo for the operator's events.
+stop and snapshot for the bots and the page, and the bus calls cue, hold,
+stop_all and set_tempo for the operator's events.
 """
 
 import bisect
@@ -31,6 +36,7 @@ import time
 
 WAITING, SCHEDULED, PLAYING, STOPPED = "waiting", "scheduled", "playing", "stopped"
 JUDGE_SOURCE = "reported by the bot from its axlr_judge call; the service does not see Jev"
+DYNAMICS_SOURCE = "the chair's last play, or the conductor's last cue with dynamics, applied at once"
 
 
 class Refused(Exception):
@@ -100,6 +106,8 @@ class Orchestra:
                 raise Refused("the conductor stopped the music (stop.all): play nothing until the next cue")
             if self.status == "ended":
                 raise Refused("the movement has ended")
+            if c["held"]:
+                raise Refused(f"the conductor stopped your section ({c['held']}): play nothing until your next cue")
             if self.status == "idle":
                 self._start_take(first, why=f"{chair} played phrase {phrase}")
             if any(p["phrase"] == phrase for p in c["plan"]):
@@ -148,7 +156,7 @@ class Orchestra:
             c = self._chair(chair)
             take, start = self.take, self.score.bar_of(self.tick)
             while not self._fork_open(c):
-                if self.take != take or self.status != "playing" or c["stopped"]:
+                if self.take != take or self.status != "playing" or c["stopped"] or c["held"]:
                     break
                 if self.score.bar_of(self.tick) >= start + max(1, int(bars)):
                     break
@@ -161,16 +169,55 @@ class Orchestra:
     # --- the operator's events (from the bus) ---------------------------------
 
     def cue(self, name, data, at=None):
-        """A conductor's cue: kept for the chairs' questions; when nothing plays, it starts a take with a count-in."""
+        """A conductor's cue: kept for the chairs' questions; when nothing plays, it starts a take with a count-in.
+
+        While the music plays, it releases the chairs it names that a hold
+        stopped, and a level in data.dynamics is theirs at once."""
         with self.cond:
             target = name[len("info.cue."):] if name.startswith("info.cue.") else name
             self.cues[target] = {"name": name, "data": data or {}, "heardAt": self.clock()}
             if self.status == "playing":
+                named = self.chairs_of(target)
+                for chair in named:
+                    self.chairs[chair]["held"] = None
+                level = (data or {}).get("dynamics")
+                if level in self.levels and named:
+                    for chair in named:
+                        c = self.chairs[chair]
+                        c["dynamics"] = level
+                        for p in c["plan"]:
+                            if p["endTick"] > self.tick:
+                                p["dynamics"] = level
+                        if self._state(c) == PLAYING:
+                            self._apply_volume(c, level)
+                    self._fact("dynamics", None, target=target, dynamics=level, chairs=len(named))
+                    return f"{level} for {len(named)} chairs"
                 return None
             bar = (data or {}).get("bar")
             first = int(bar) if isinstance(bar, int) and 1 <= bar <= self.score.bars else 1
             self._start_take(first, why=name)
             return "count-in"
+
+    def chairs_of(self, target):
+        """The chairs a cue or a stop names: all, a family (strings, winds) or a section (vn1, ob…)."""
+        if target == "all":
+            return list(self.chairs)
+        return [k for k, c in self.chairs.items() if target in (c["section"], self.sections[c["section"]]["family"])]
+
+    def hold(self, chairs, why, event_at=None):
+        """The conductor stops some chairs while the others play on: silent at once, held until a cue names them."""
+        with self.cond:
+            if self.status != "playing":
+                return None
+            named = [k for k in chairs if k in self.chairs]
+            for chair in named:
+                c = self.chairs[chair]
+                self.synth.silence(c["channel"])
+                c["stopped"], c["held"], c["plan"] = True, why, []
+            at = self.clock()
+            self._fact("hold", None, why=why, chairs=named,
+                       afterEventSeconds=None if event_at is None else round(at - event_at, 3))
+            return {"held": named, "bar": self.score.bar_of(self.tick), "afterEventSeconds": None if event_at is None else round(at - event_at, 3)}
 
     def stop_all(self, why, event_at=None):
         with self.cond:
@@ -233,7 +280,7 @@ class Orchestra:
                     "bars": self.score.bars, "beat": round((shown % self.score.ticks_per_bar) / self.score.ticks_per_beat, 2),
                     "countIn": self._count_in_left() if counting else 0,
                     "phraseBars": self.score.phrase_bars, "bpm": self.bpm, "sections": sections, "cut": self.cut,
-                    "facts": self.facts[-30:], "lastBus": self.last_bus, "judgeSource": JUDGE_SOURCE}
+                    "facts": self.facts[-30:], "lastBus": self.last_bus, "judgeSource": JUDGE_SOURCE, "dynamicsSource": DYNAMICS_SOURCE}
 
     def take_log(self, take=None):
         """Every play and every phrase that began in a take (this one by default), for the measurement."""
@@ -432,12 +479,12 @@ class Orchestra:
 
     def _reset_chairs(self):
         for c in self.chairs.values():
-            c.update(stopped=False, dynamics="mf", plan=[], judge=None, enteredBar=None, cursor=0)
+            c.update(stopped=False, held=None, dynamics="mf", plan=[], judge=None, enteredBar=None, cursor=0)
 
     def _chair_view(self, chair, c):
         now = next((p for p in c["plan"] if p["fromTick"] <= self.tick < p["endTick"]), None) if self.status == "playing" and not c["stopped"] else None
         nxt = next((p for p in c["plan"] if p["fromTick"] > self.tick), None) if self.status == "playing" and not c["stopped"] else None
-        return {"id": chair, "state": self._state(c), "dynamics": c["dynamics"], "enteredBar": c["enteredBar"],
+        return {"id": chair, "state": self._state(c), "dynamics": c["dynamics"], "held": c["held"], "enteredBar": c["enteredBar"],
                 "line": self.score.line_names[c["line"]],
                 "phrase": {"playing": self._phrase_view(now), "next": self._phrase_view(nxt), "source": "the score service: the phrases the chair played"},
                 "judge": c["judge"]}
@@ -479,6 +526,8 @@ class Orchestra:
             out["fork"] = f"your next choice opens at bar {self._fork_bar(c)}"
         if ask and self.status in ("stopped", "ended"):
             out["note"] = "the conductor stopped the music: wait for the next cue" if self.status == "stopped" else "the movement has ended"
+        elif ask and c["held"]:
+            out["note"] = f"the conductor stopped your section ({c['held']}): wait for your next cue"
         elif ask:
             candidates = self._candidates(c, bar)
             out["candidates"] = candidates if full else [{k: v for k, v in p.items() if k in ("phrase", "bars", "startsInBars", "late")} for p in candidates]

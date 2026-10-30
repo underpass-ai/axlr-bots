@@ -20,6 +20,9 @@
   "tempo": {"min": 60, "max": 200},
   "audio": {"rate": 44100, "block": 441, "soundfonts": ["/usr/share/sounds/sf2/FluidR3_GM.sf2", "/usr/share/sounds/sf2/TimGM6mb.sf2"], "gain": 0.14, "polyphony": 1024},
   "listen": {"maxSeconds": 20},
+  "hands": {"threshold": 0.8, "cooldownSeconds": 3, "minIntervalSeconds": 0.5, "holdMs": 300,
+            "groups": {"left": "strings", "right": "winds", "both": "all"},
+            "jev": {"model": "jev-1.13.0", "keyFile": "~/.config/axlr-bots/env", "timeoutSeconds": 10}},
   "team": "orchestra",
   "controlPlane": {
     "url": "",
@@ -27,5 +30,5 @@
     "caFile": "~/.local/state/axlr-bots/ca/ca.crt"
   },
   "listenAddress": "127.0.0.1:8790",
-  "label": "SIMULATION. Each chair is one LLM bot that plays its own line of the score, phrase by phrase, as Jev picks them. The notes come from the score, the sound from a synthesizer."
+  "label": "SIMULATION. Each chair is one LLM bot that plays its own line of the score, phrase by phrase, as Jev picks them. The conductor's hands are read by Jev from the headset's hand tracking. The notes come from the score, the sound from a synthesizer."
 }

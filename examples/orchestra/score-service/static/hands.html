@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conductor's hands</title>
+<link rel="stylesheet" href="/static/stage.css">
+<style>
+  body { overflow: auto; }
+  main { padding: 16px; display: grid; gap: 16px; max-width: 1100px; margin: 0 auto; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  button { font: 600 18px var(--font); padding: 12px 20px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; }
+  button.go { background: var(--accent); color: #fff; border-color: var(--accent); }
+  canvas#panel { width: 100%; max-width: 1024px; aspect-ratio: 2 / 1; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  table { border-collapse: collapse; } td, th { padding: 4px 12px; text-align: left; border-bottom: 1px solid var(--line); }
+  #sim-buttons { display: none; } body.simulate #sim-buttons { display: flex; }
+</style>
+</head>
+<body>
+<!-- The conductor's page, for the Quest Browser (WebXR hand input). In the
+     headset it shows the room (passthrough) and one floating panel: what each
+     hand holds, what Jev read and what the service sent. A posture is sent
+     to POST /api/hands once it holds still; the service asks Jev and
+     publishes the team's events. No image leaves the headset: only the
+     measurements. ?sim=1 adds buttons that send made-up postures, marked
+     simulated, to try the path without a headset. Reached from the headset
+     as http://localhost:8790/hands through adb reverse. -->
+<div class="sim">SIMULATION</div>
+<main>
+  <div class="title"><b>Conduct with your hands.</b> <span class="muted">Left hand: strings. Right hand: winds. Both: everyone.</span></div>
+  <table>
+    <tr><th>Gesture</th><th>Does</th></tr>
+    <tr><td>open hand</td><td>come in, loud (f)</td></tr>
+    <tr><td>palm down</td><td>soft (p)</td></tr>
+    <tr><td>fist</td><td>stop the group; two fists stop everyone</td></tr>
+    <tr><td>anything else</td><td>nothing</td></tr>
+  </table>
+  <div class="row">
+    <button class="go" id="enter" disabled>Checking WebXR…</button>
+    <label><input type="checkbox" id="sound" checked> the orchestra's sound in the headset</label>
+  </div>
+  <div class="row" id="sim-buttons">
+    <span class="muted">simulated:</span>
+    <button data-sim="left:open">left open</button><button data-sim="left:down">left palm down</button><button data-sim="left:fist">left fist</button>
+    <button data-sim="right:open">right open</button><button data-sim="right:fist">right fist</button>
+    <button data-sim="both:fist">two fists</button><button data-sim="left:rest">left at rest</button>
+  </div>
+  <canvas id="panel" width="1024" height="512"></canvas>
+  <div class="label muted" id="label"></div>
+</main>
+<audio id="audio" preload="none"></audio>
+<script type="module" src="/static/hands.js"></script>
+</body>
+</html>
