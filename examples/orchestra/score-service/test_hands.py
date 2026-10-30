@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import threading
 import unittest
 import urllib.error
 
@@ -45,7 +46,7 @@ class FakePublish:
 def hands(config=None, **reads):
     o, synth, clock = orchestra()
     judge, publish = FakeJev(**reads), FakePublish()
-    h = Hands(o, dict({"threshold": 0.8, "cooldownSeconds": 3, "minIntervalSeconds": 0.5}, **(config or {})), judge, publish, clock)
+    h = Hands(o, dict({"threshold": 0.8, "cooldownSeconds": 3, "minIntervalSeconds": 0.5, "publishWaitSeconds": 3}, **(config or {})), judge, publish, clock)
     return h, o, judge, publish, clock
 
 
@@ -138,6 +139,23 @@ class SendTest(unittest.TestCase):
         h2, o2, _, _, _ = hands(left=("open", 0.95))
         self.assertEqual(h2.observe(posture(left=OPEN))["applied"], "count-in")
         self.assertEqual((o2.status, o2.take), ("playing", 1))
+
+    def test_the_answer_does_not_wait_for_the_control_plane(self):
+        o, _, clock = orchestra()
+        gate = threading.Event()
+
+        def slow(name, message, data, to):
+            gate.wait(5)
+            return "ev-slow"
+        h = Hands(o, {"threshold": 0.8}, FakeJev(left=("open", 0.95)), slow, clock)
+        record = h.observe(posture(left=OPEN))
+        self.assertEqual((record["applied"], o.status, record["sent"][0]["eventId"]), ("count-in", "playing", None))
+        gate.set()
+        for _ in range(100):
+            if h.view()["last"]["sent"][0]["eventId"]:
+                break
+            threading.Event().wait(0.01)
+        self.assertEqual(h.view()["last"]["sent"][0]["eventId"], "ev-slow")
 
     def test_the_strings_fist_is_five_events_none_over_sixteen_chairs(self):
         h, o, _, publish, _ = hands(left=("fist", 0.95))

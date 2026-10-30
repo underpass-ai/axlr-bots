@@ -19,7 +19,9 @@ the operator's panel already publishes (orchestra 6b), as the operator:
 The service is the orchestra, so it does what a gesture means at once (holds
 the group, sets the level, starts the count-in) and publishes the events in
 parallel, without waiting for them to come back on its own bus: the bots
-hear them, the service does not apply its own echo (bus.Bus.publish).
+hear them, the service does not apply its own echo (bus.Bus.publish). The
+page's answer does not wait for the control plane either: each event's id,
+or why it failed, is filled in when the publish answers (GET /api/hands).
 
 An event that would change nothing is not sent, and why is kept: a stop when
 nothing of the group plays (a stop.all while idle would still wake 36 bots),
@@ -57,7 +59,7 @@ class Hands:
         self.min_interval = config.get("minIntervalSeconds", 0.5)
         self.groups = config.get("groups", {"left": "strings", "right": "winds", "both": "all"})
         self.dry_run = bool(config.get("dryRun")) or publish is None
-        self.publish_wait = config.get("publishWaitSeconds", 3.0)
+        self.publish_wait = config.get("publishWaitSeconds", 0)
         self.lock = threading.Lock()
         self.last_call, self.sent_at, self.history, self.calls = None, {}, [], 0
 
@@ -103,7 +105,7 @@ class Hands:
                 record["decision"].append({"gesture": gesture, "group": group})
                 threads += self._act(gesture, group, record)
             self._keep(record)
-        for thread in threads:  # the sound changed already; the answer waits a little for the events' ids
+        for thread in threads if self.publish_wait > 0 else ():  # the sound changed already; the ids come when the publish answers
             thread.join(timeout=self.publish_wait)
         return record
 

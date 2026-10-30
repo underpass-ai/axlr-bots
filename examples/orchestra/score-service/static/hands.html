@@ -11,19 +11,23 @@
   .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
   button { font: 600 18px var(--font); padding: 12px 20px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; }
   button.go { background: var(--accent); color: #fff; border-color: var(--accent); }
-  canvas#panel { width: 100%; max-width: 1024px; aspect-ratio: 2 / 1; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  canvas#panel, canvas#view { width: 100%; max-width: 1024px; aspect-ratio: 2 / 1; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  canvas#view { background: #0f0f10; }
   table { border-collapse: collapse; } td, th { padding: 4px 12px; text-align: left; border-bottom: 1px solid var(--line); }
   #sim-buttons { display: none; } body.simulate #sim-buttons { display: flex; }
 </style>
 </head>
 <body>
 <!-- The conductor's page, for the Quest Browser (WebXR hand input). In the
-     headset it shows the room (passthrough) and one floating panel: what each
-     hand holds, what Jev read and what the service sent. A posture is sent
+     headset it shows the room (passthrough), the orchestra on its floor (one
+     lantern per bot, room.js) and one floating panel: what each hand holds,
+     what Jev read and what the service sent. A posture is sent
      to POST /api/hands once it holds still; the service asks Jev and
      publishes the team's events. No image leaves the headset: only the
      measurements. ?sim=1 adds buttons that send made-up postures, marked
-     simulated, to try the path without a headset. Reached from the headset
+     simulated, to try the path without a headset; ?view=1 shows the
+     orchestra and the panel on this screen; ?scale= sizes the orchestra to
+     the room (default 0.6: the front row 1.5 m away). Reached from the headset
      as http://localhost:8790/hands through adb reverse. -->
 <div class="sim">SIMULATION</div>
 <main>

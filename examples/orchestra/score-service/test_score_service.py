@@ -475,7 +475,7 @@ class StagePageTest(unittest.TestCase):
         self.assertEqual((len(violins["chairs"]), len(violins["phrases"])), (10, 52))
 
     def test_the_page_and_its_files_are_there(self):
-        for name in ("stage.html", "stage.js", "stage.css", "hands.html", "hands.js", "posture.js", "fonts/Lexend-Regular.ttf", "fonts/OFL-Lexend.txt"):
+        for name in ("stage.html", "stage.js", "stage.css", "hands.html", "hands.js", "posture.js", "room.js", "stage3d-3.three.module.min.js", "stage3d-3.three.core.min.js", "fonts/Lexend-Regular.ttf", "fonts/OFL-Lexend.txt"):
             self.assertTrue(os.path.isfile(os.path.join(HERE, "static", name)), name)
         for page in ("stage.html", "hands.html"):
             with open(os.path.join(HERE, "static", page)) as f:

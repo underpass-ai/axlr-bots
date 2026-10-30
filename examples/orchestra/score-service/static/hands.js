@@ -1,7 +1,9 @@
-// The conductor's page: WebXR hand input → postures → POST /api/hands, and
-// one floating panel that says what each hand holds, what Jev read and what
-// the service sent. See hands.html.
+// The conductor's page: WebXR hand input → postures → POST /api/hands; the
+// orchestra in the room (room.js), lit by the service's state; and one
+// floating panel that says what each hand holds, what Jev read and what the
+// service sent. See hands.html.
 import { measure, signature, Steady } from "/static/posture.js";
+import { Hall, THREE } from "/static/room.js";
 
 const $ = (id) => document.getElementById(id);
 const panel = $("panel"), ctx = panel.getContext("2d");
@@ -10,7 +12,8 @@ const GROUP = { left: "strings", right: "winds" };
 const steady = new Steady(HOLD_MS);
 let live = { left: null, right: null }, last = null, orchestra = null, xr = null, dirty = true;
 let soundOn = false, soundAt = -1, soundState = "off";
-if (new URLSearchParams(location.search).get("sim") === "1") document.body.classList.add("simulate");
+const params = new URLSearchParams(location.search), preview = params.get("view") === "1";
+if (params.get("sim") === "1") document.body.classList.add("simulate");
 
 // --- the panel ------------------------------------------------------------
 
@@ -64,29 +67,64 @@ function draw() {
 
 // --- the service ------------------------------------------------------------
 
+// The service answers at once, before the events reach the bus: what it sent
+// runs across the floor now; a second later the answer is read again for the
+// events' ids or a failure.
+const waved = {};
 async function send(hands, heldMs, simulated = false) {
   try {
     const r = await fetch("/api/hands", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ hands, heldMs, simulated }) });
     last = await r.json();
+    for (const e of last.sent || []) { hall.wave(e.name.startsWith("stop.")); waved[e.name] = performance.now(); }
+    if ((last.sent || []).length) setTimeout(() => recheck(last.at), 1500);
   } catch (e) {
     last = { notSent: [{ why: `the service did not answer: ${e}` }] };
   }
   draw();
 }
 
-async function poll() {
+async function recheck(at) {
   try {
-    const s = await (await fetch("/api/state")).json();
-    orchestra = { status: s.status, bar: s.bar, countIn: s.countIn, playing: s.sections.reduce((n, x) => n + x.playing, 0) };
-    $("label").textContent = s.label;
-  } catch (e) {
-    orchestra = null;
+    const v = await (await fetch("/api/hands")).json();
+    const again = (v.history || []).find((r) => r.at === at);
+    if (again && last && last.at === at) { last = again; draw(); }
+  } catch (e) { /* the next answer will say */ }
+}
+
+// One state source for the panel and the lanterns: GET /api/state, long-polled.
+// An event on the bus runs across the floor too, unless it is one this page
+// sent and already showed.
+let busAt = null;
+function apply(s) {
+  orchestra = { status: s.status, bar: s.bar, countIn: s.countIn, playing: s.sections.reduce((n, x) => n + x.playing, 0) };
+  $("label").textContent = s.label;
+  const bus = s.lastBus;
+  if (bus && bus.at !== busAt) {
+    const mine = waved[bus.name] && performance.now() - waved[bus.name] < 8000;
+    if (busAt !== null && !mine) hall.wave(bus.name.startsWith("stop."));
+    busAt = bus.at;
   }
+  hall.apply(s);
   draw();
 }
-setInterval(poll, 1000);
-poll();
+
+async function follow() {
+  let version = null;
+  for (;;) {
+    try {
+      const r = await fetch(version === null ? "/api/state" : `/api/state?version=${version}&wait=20`, { cache: "no-store" });
+      if (!r.ok) throw new Error(`state ${r.status}`);
+      const s = await r.json();
+      version = s.version;
+      apply(s);
+    } catch (e) {
+      orchestra = null;
+      draw();
+      await new Promise((ok) => setTimeout(ok, 2000));
+    }
+  }
+}
 
 // --- made-up postures, to try the path without a headset ----------------------
 
@@ -126,109 +164,115 @@ setInterval(() => {
   soundState = "on";
 }, 2000);
 
-// --- WebXR ------------------------------------------------------------------
+// --- WebXR: the orchestra in the room, the panel above it ----------------------
 
-const VERT = `#version 300 es
-in vec2 p; uniform mat4 P, V, M; out vec2 uv;
-void main() { uv = p + 0.5; gl_Position = P * V * M * vec4(p, 0.0, 1.0); }`;
-const FRAG = `#version 300 es
-precision mediump float; in vec2 uv; uniform sampler2D t; out vec4 c;
-void main() { c = texture(t, vec2(uv.x, 1.0 - uv.y)); }`;
-
-function glSetup(gl) {
-  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
-  const prog = gl.createProgram();
-  gl.attachShader(prog, sh(gl.VERTEX_SHADER, VERT));
-  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FRAG));
-  gl.linkProgram(prog);
-  const buf = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5]), gl.STATIC_DRAW);
-  const tex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  return { prog, buf, tex, loc: (n) => gl.getUniformLocation(prog, n), attr: gl.getAttribLocation(prog, "p") };
-}
+// three.js owns the session; the hands are read in its reference space
+// (local-floor: y = 0 is the room's floor), so the joints, the head, the
+// lanterns and the panel share one frame.
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType("local-floor");
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, 2, 0.05, 50);
+const hall = new Hall(scene);
+const panelTex = new THREE.CanvasTexture(panel);
+panelTex.colorSpace = THREE.SRGBColorSpace;
+const panelMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
+  new THREE.MeshBasicMaterial({ map: panelTex, transparent: true, depthTest: false, toneMapped: false }));
+panelMesh.renderOrder = 100;
+panelMesh.matrixAutoUpdate = false;
+panelMesh.visible = false;
+scene.add(panelMesh);
+const SCALE = Number(params.get("scale")) || 0.6; // the hall's 2.5–4.2 m rows, brought into a room
 
 // Where the panel floats: 1.4 m ahead of where the head first looked, a
 // little above the eyes, facing the conductor, 0.9 m wide.
 function panelMatrix(head) {
-  const q = head.orientation, v = [0, 0, -1];
-  const fx = 2 * (q.x * q.z + q.w * q.y) * v[2], fz = (1 - 2 * (q.x * q.x + q.y * q.y)) * v[2];
-  const l = Math.hypot(fx, fz) || 1, f = [fx / l, 0, fz / l], r = [-f[2], 0, f[0]];
-  const c = [head.position.x + f[0] * 1.4, head.position.y + 0.25, head.position.z + f[2] * 1.4];
+  const f = flatForward(head.orientation), r = [-f.z, 0, f.x];
+  const c = [head.position.x + f.x * 1.4, head.position.y + 0.3, head.position.z + f.z * 1.4];
   const W = 0.9, H = 0.45;
-  return new Float32Array([r[0] * W, 0, r[2] * W, 0, 0, H, 0, 0, -f[0], 0, -f[2], 0, c[0], c[1], c[2], 1]);
+  return [r[0] * W, 0, r[2] * W, 0, 0, H, 0, 0, -f.x, 0, -f.z, 0, c[0], c[1], c[2], 1];
+}
+
+function flatForward(q) {  // where the head looks, on the floor's plane
+  const fx = -(2 * (q.x * q.z + q.w * q.y)), fz = -(1 - 2 * (q.x * q.x + q.y * q.y));
+  const l = Math.hypot(fx, fz) || 1;
+  return { x: fx / l, z: fz / l };
 }
 
 function forwardOf(q) {  // the head's -z, rotated by its orientation
   return [-(2 * (q.x * q.z + q.w * q.y)), -(2 * (q.y * q.z - q.w * q.x)), -(1 - 2 * (q.x * q.x + q.y * q.y))];
 }
 
+// The first frame puts the podium at the conductor's feet, the orchestra
+// ahead of where they look and the panel above it.
+function placeAround(head) {
+  hall.place(head.position, flatForward(head.orientation), SCALE);
+  panelMesh.matrix.fromArray(panelMatrix(head));
+  panelMesh.visible = true;
+}
+
+let placed = false, drawnAt = 0;
+const clock = new THREE.Clock();
+renderer.setAnimationLoop((t, xrFrame) => {
+  const dt = Math.min(clock.getDelta(), 0.1);
+  if (xrFrame) readHands(t, xrFrame);
+  else if (!preview) return;
+  if (dirty) { panelTex.needsUpdate = true; dirty = false; }
+  hall.frame(dt);
+  renderer.render(scene, camera);
+});
+
+function readHands(t, xrFrame) {
+  const space = renderer.xr.getReferenceSpace();
+  const pose = xrFrame.getViewerPose(space);
+  if (!pose) return;
+  if (!placed) { placeAround(pose.transform); placed = true; }
+  const head = { position: [pose.transform.position.x, pose.transform.position.y, pose.transform.position.z], forward: forwardOf(pose.transform.orientation) };
+  live = { left: null, right: null };
+  for (const source of xrFrame.session.inputSources) {
+    if (!source.hand || !SIDES.includes(source.handedness)) continue;
+    const joints = {};
+    let all = true;
+    for (const [name, jointSpace] of source.hand) {
+      const p = xrFrame.getJointPose(jointSpace, space);
+      if (!p) { all = false; break; }
+      joints[name] = [p.transform.position.x, p.transform.position.y, p.transform.position.z];
+    }
+    if (all) live[source.handedness] = measure(joints, source.handedness, head);
+  }
+  const sig = live.left || live.right ? `${signature(live.left)}/${signature(live.right)}` : "-|-";
+  if (steady.update(sig, t)) {
+    const hands = {};
+    for (const side of SIDES) if (live[side]) hands[side] = live[side];
+    send(hands, steady.heldMs(t));
+  }
+  if (t - drawnAt > 200) { drawnAt = t; draw(); }
+}
+
 async function enter() {
   if ($("sound").checked) startSound();
   const mode = xr.ar ? "immersive-ar" : "immersive-vr";
-  const session = await navigator.xr.requestSession(mode, { requiredFeatures: ["hand-tracking"] });
-  const canvas = document.createElement("canvas");
-  const gl = canvas.getContext("webgl2", { xrCompatible: true, alpha: true });
-  session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
-  const space = await session.requestReferenceSpace("local");
-  const g = glSetup(gl);
-  let model = null, drawnAt = 0;
-  session.addEventListener("end", () => { $("enter").textContent = "Enter again"; });
+  const session = await navigator.xr.requestSession(mode, { requiredFeatures: ["hand-tracking", "local-floor"] });
+  session.addEventListener("end", () => { placed = false; $("enter").textContent = "Enter again"; });
+  await renderer.xr.setSession(session);
+}
 
-  session.requestAnimationFrame(function frame(t, xrFrame) {
-    session.requestAnimationFrame(frame);
-    const pose = xrFrame.getViewerPose(space);
-    if (!pose) return;
-    const head = { position: [pose.transform.position.x, pose.transform.position.y, pose.transform.position.z], forward: forwardOf(pose.transform.orientation) };
-    if (!model) model = panelMatrix(pose.transform);
-    live = { left: null, right: null };
-    for (const source of session.inputSources) {
-      if (!source.hand || !SIDES.includes(source.handedness)) continue;
-      const joints = {};
-      let all = true;
-      for (const [name, jointSpace] of source.hand) {
-        const p = xrFrame.getJointPose(jointSpace, space);
-        if (!p) { all = false; break; }
-        joints[name] = [p.transform.position.x, p.transform.position.y, p.transform.position.z];
-      }
-      if (all) live[source.handedness] = measure(joints, source.handedness, head);
-    }
-    const sig = live.left || live.right ? `${signature(live.left)}/${signature(live.right)}` : "-|-";
-    if (steady.update(sig, t)) {
-      const hands = {};
-      for (const side of SIDES) if (live[side]) hands[side] = live[side];
-      send(hands, steady.heldMs(t));
-    }
-    if (t - drawnAt > 200) { drawnAt = t; draw(); }
-
-    const layer = session.renderState.baseLayer;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    gl.useProgram(g.prog);
-    gl.bindTexture(gl.TEXTURE_2D, g.tex);
-    if (dirty) {
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, panel);
-      dirty = false;
-    }
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    gl.bindBuffer(gl.ARRAY_BUFFER, g.buf);
-    gl.enableVertexAttribArray(g.attr);
-    gl.vertexAttribPointer(g.attr, 2, gl.FLOAT, false, 0, 0);
-    gl.uniformMatrix4fv(g.loc("M"), false, model);
-    for (const view of pose.views) {
-      const vp = layer.getViewport(view);
-      gl.viewport(vp.x, vp.y, vp.width, vp.height);
-      gl.uniformMatrix4fv(g.loc("P"), false, view.projectionMatrix);
-      gl.uniformMatrix4fv(g.loc("V"), false, view.transform.inverse.matrix);
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    }
-  });
+// ?view=1: the same hall and panel on a flat screen, seen from behind the
+// conductor, to check the page without a headset.
+if (preview) {
+  const view = renderer.domElement;
+  view.id = "view";
+  $("panel").after(view);
+  const fit = () => { const w = view.clientWidth || 1024; renderer.setSize(w, w / 2, false); camera.aspect = 2; camera.updateProjectionMatrix(); };
+  addEventListener("resize", () => { if (!renderer.xr.isPresenting) fit(); });
+  fit();
+  camera.position.set(0, 1.75, 0.7);
+  camera.lookAt(0, 0.9, -1.6);
+  placeAround({ position: { x: 0, y: 1.6, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 } });
 }
 
 async function check() {
@@ -244,3 +288,7 @@ async function check() {
 }
 check();
 draw();
+Promise.all([document.fonts.load("30px DotGothic16"), document.fonts.load("30px Lexend"), fetch("/api/score").then((r) => r.json())])
+  .then(([, , score]) => { hall.score = score; })
+  .catch(() => {})
+  .finally(follow);
