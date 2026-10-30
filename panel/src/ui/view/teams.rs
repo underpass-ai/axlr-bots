@@ -145,6 +145,9 @@ pub fn detail<'a>(app: &'a App, name: &'a str, tokens: Tokens) -> El<'a> {
         ),
     };
     let mut page = column![header].spacing(18);
+    if let Some(buttons) = shortcuts(app, name, tokens) {
+        page = page.push(buttons);
+    }
     if app.publish.is_open_for(name) {
         page = page.push(publish(app, tokens));
     }
@@ -205,6 +208,40 @@ fn topics<'a>(app: &'a App, name: &str, tokens: Tokens) -> El<'a> {
             rows.into()
         }
     }
+}
+
+/// The operator's one-press buttons for this team (`shortcuts.toml`):
+/// each press publishes its event at once, a stop in red.
+fn shortcuts<'a>(app: &'a App, name: &str, tokens: Tokens) -> Option<El<'a>> {
+    let mut buttons = row![].spacing(10).align_y(Alignment::Center);
+    let mut any = false;
+    for (index, shortcut) in app.shortcuts.iter().enumerate().filter(|(_, s)| s.team == name) {
+        let (kind, glyph) = if shortcut.stops() {
+            (Kind::Danger, Icon::Stop)
+        } else {
+            (Kind::Secondary, Icon::Bolt)
+        };
+        buttons = buttons.push(action(
+            kind,
+            glyph,
+            shortcut.label.as_str(),
+            Some(Message::Shortcut(index)),
+            tokens,
+        ));
+        any = true;
+    }
+    any.then(|| {
+        section(
+            Icon::Bolt,
+            "Shortcuts",
+            column![
+                buttons,
+                muted("each press publishes its event on the team at once", tokens)
+            ]
+            .spacing(8),
+            tokens,
+        )
+    })
 }
 
 /// The form that publishes the operator's event on the team.

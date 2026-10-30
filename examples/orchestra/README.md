@@ -10,8 +10,9 @@
 | 2. What `stop.all` does to a long task | [`stage/measure_stop.py`](stage/measure_stop.py) | done, [measured](#2-stopall-on-a-long-task) |
 | 3. `score-service`: the parts, the clock, the synthesizer | [`score-service/`](score-service/README.md) | done: `stop.all` silences it in 0.4 s |
 | 4. 36 chairs in the team `orchestra` | [`chairs/`](chairs/README.md) | done: 36 Enabled, one cue, 36 playing |
-| 5. `/stage`: the view | [`score-service/static/`](score-service/README.md#the-stage) | here: 36 dots on at entry, off at the stop |
-| 6. `conductor-cam` and the phone's three buttons | `conductor-cam/` | |
+| 5. `/stage`: the view | [`score-service/static/`](score-service/README.md#the-stage) | done: 36 dots on at entry, off at the stop |
+| 6b. The backup: three buttons in the desktop panel | [`panel/shortcuts.toml`](panel/shortcuts.toml) | here: Strings, Winds, Stop all on the team's page |
+| 6. `conductor-cam` | `conductor-cam/` | |
 | 7. Dress rehearsal and the latency table | this file | |
 
 ## 1. The stage

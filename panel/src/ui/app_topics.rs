@@ -98,12 +98,38 @@ impl App {
             name: self.publish.name.clone(),
             message: self.publish.message.clone(),
             to: self.publish.to.clone(),
+            data: None,
             key,
+            shortcut: false,
+        }]
+    }
+
+    /// One press of a shortcut: a new event, with a key of its own.
+    pub(super) fn shortcut(&mut self, index: usize) -> Vec<Effect> {
+        let Some(s) = self.shortcuts.get(index).cloned() else {
+            return Vec::new();
+        };
+        vec![Effect::Publish {
+            team: s.team,
+            name: s.name,
+            message: s.message,
+            to: String::new(),
+            data: s.data,
+            key: self.services.keys.next_key(),
+            shortcut: true,
         }]
     }
 
     pub(super) fn published(&mut self, result: Result<Published, PanelError>) -> Vec<Effect> {
         self.publish.busy = false;
+        if result.is_ok() {
+            self.publish = PublishForm::default();
+        }
+        self.shortcut_published(result)
+    }
+
+    /// The banner an event's answer gives, and the reloads after it.
+    pub(super) fn shortcut_published(&mut self, result: Result<Published, PanelError>) -> Vec<Effect> {
         match result {
             Ok(published) => {
                 let heard = match published.deliveries.len() {
@@ -117,7 +143,6 @@ impl App {
                     format!("Already published {}", published.name)
                 };
                 self.banner = Some(Banner::good(title, heard, self.now));
-                self.publish = PublishForm::default();
             }
             Err(error) => self.banner = Some(Banner::error(&error, self.now)),
         }

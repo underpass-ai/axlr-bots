@@ -108,6 +108,9 @@ pub enum Message {
     PublishSend,
     PublishClose,
     Published(Result<Published, PanelError>),
+    /// Press one of the operator's shortcuts (its place in the list), and its answer.
+    Shortcut(usize),
+    ShortcutPublished(Result<Published, PanelError>),
 
     FilterStatus(Option<TaskStatus>),
     FilterBot(BotChoice),
