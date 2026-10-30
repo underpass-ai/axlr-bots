@@ -4,6 +4,7 @@
 // service sent. See hands.html.
 import { measure, signature, Steady } from "/static/posture.js";
 import { Hall, THREE } from "/static/room.js";
+import { meadow, drawnHands } from "/static/meadow.js";
 
 const $ = (id) => document.getElementById(id);
 const panel = $("panel"), ctx = panel.getContext("2d");
@@ -232,7 +233,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.15;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(70, 2, 0.05, 50);
+const camera = new THREE.PerspectiveCamera(70, 2, 0.05, 220);  // far enough for the meadow's sky
 const hall = new Hall(scene);
 const panelTex = new THREE.CanvasTexture(panel);
 panelTex.colorSpace = THREE.SRGBColorSpace;
@@ -243,6 +244,11 @@ panelMesh.matrixAutoUpdate = false;
 panelMesh.visible = false;
 scene.add(panelMesh);
 const SCALE = Number(params.get("scale")) || 0.6; // the hall's 2.5–4.2 m rows, brought into a room
+let field = null, drawn = null;  // the cartoon meadow and the drawn hands, made when first wanted
+function outdoors(on) {
+  if (on && !field) { field = meadow(scene); drawn = drawnHands(scene); }
+  if (field) { field.group.visible = on; scene.fog = on ? field.group.userData.fog || scene.fog : null; }
+}
 
 // Where the panel floats: 1.4 m ahead of where the head first looked, a
 // little above the eyes, facing the conductor, 0.9 m wide.
@@ -286,6 +292,7 @@ renderer.setAnimationLoop((t, xrFrame) => {
   if (xrFrame) readHands(t, xrFrame);
   else if (!preview) return;
   if (dirty) { panelTex.needsUpdate = true; dirty = false; }
+  if (field && field.group.visible) field.frame(dt);
   hall.frame(dt);
   renderer.render(scene, camera);
 });
@@ -297,21 +304,25 @@ function readHands(t, xrFrame) {
   if (!placed) { placeAround(pose.transform); placed = true; }
   const head = { position: [pose.transform.position.x, pose.transform.position.y, pose.transform.position.z], forward: forwardOf(pose.transform.orientation) };
   live = { left: null, right: null };
+  const shown = [];
   for (const source of xrFrame.session.inputSources) {
     if (!source.hand || !SIDES.includes(source.handedness)) continue;
-    const joints = {};
+    const joints = {}, drawnJoints = [];
     let all = true;
     for (const [name, jointSpace] of source.hand) {
       const p = xrFrame.getJointPose(jointSpace, space);
       if (!p) { all = false; break; }
       joints[name] = [p.transform.position.x, p.transform.position.y, p.transform.position.z];
+      drawnJoints.push([name, joints[name], p.radius]);
     }
+    if (all) shown.push(drawnJoints);
     if (all) {
       const m = measure(joints, source.handedness, head);
       m.aim = aimOf(joints["middle-finger-metacarpal"], head.position);
       live[source.handedness] = m;
     }
   }
+  if (drawn && field.group.visible) drawn.update(shown);
   for (const side of SIDES) {  // the instrument each hand points at, lit in the hall
     const now = live[side] ? instrumentAt(live[side].aim) : null;
     if ((now && now.id) !== (aimed[side] && aimed[side].id)) { aimed[side] = now; hall.aim(side, now ? now.sections : []); }
@@ -336,7 +347,9 @@ function readHands(t, xrFrame) {
 
 async function enter() {
   if ($("sound").checked) startSound();
-  const mode = xr.ar ? "immersive-ar" : "immersive-vr";
+  const outside = $("meadow").checked;
+  outdoors(outside);
+  const mode = xr.ar && !outside ? "immersive-ar" : "immersive-vr";
   const session = await navigator.xr.requestSession(mode, { requiredFeatures: ["hand-tracking", "local-floor"] });
   session.addEventListener("end", () => { placed = false; $("enter").textContent = "Enter again"; });
   await renderer.xr.setSession(session);
@@ -354,6 +367,8 @@ if (preview) {
   camera.position.set(0, 1.75, 0.7);
   camera.lookAt(0, 0.9, -1.6);
   placeAround({ position: { x: 0, y: 1.6, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+  outdoors($("meadow").checked);
+  $("meadow").addEventListener("change", () => outdoors($("meadow").checked));
 }
 
 async function check() {
