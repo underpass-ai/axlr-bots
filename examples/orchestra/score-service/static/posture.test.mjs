@@ -1,7 +1,7 @@
 // node --test posture.test.mjs: the posture math on hands built by hand.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { bend, FINGERS, measure, palmNormal, signature, Steady } from "./posture.js";
+import { bend, Beats, FINGERS, flatHand, measure, palmNormal, pointing, signature, Steady } from "./posture.js";
 
 // A right hand in front of the head, fingers up (+y), palm away from the
 // conductor (-z), thumb on the left (-x). curl bends every finger joint by
@@ -71,4 +71,41 @@ test("a posture is sent once it holds still, once", () => {
   assert.equal(s.update("ccccc|x", 1400), true);
   assert.equal(s.update("-|-", 1500), false);
   assert.equal(s.update("-|-", 2500), false);
+});
+
+test("a flat hand has its four fingers straight; a pointing hand only the index", () => {
+  const open = hand("right"), fist = hand("right", 70);
+  assert.ok(flatHand(measure(open, "right", HEAD)));
+  assert.ok(!flatHand(measure(fist, "right", HEAD)));
+  const baton = { ...fist };
+  for (const joint of FINGERS.index) baton[joint] = open[joint];
+  const m = measure(baton, "right", HEAD);
+  assert.ok(pointing(m), signature(m));
+  assert.ok(!flatHand(m));
+  assert.ok(!pointing(measure(open, "right", HEAD)));
+  assert.ok(!flatHand(null) && !pointing(null));
+});
+
+test("beats: three even falls and rises make a tempo; a still hand none; a change of three or more is answered again", () => {
+  const beats = new Beats();
+  const at = (bpm, seconds, from = 0) => {  // the hand bobbing: lowest at each beat
+    const out = [];
+    for (let t = from; t < from + seconds; t += 1 / 72) {
+      const bpmNow = beats.update(-0.3 + 0.12 * Math.cos((t * bpm / 60) * Math.PI * 2 + Math.PI), t);
+      if (bpmNow) out.push(bpmNow);
+    }
+    return out;
+  };
+  const found = at(150, 3);
+  assert.equal(found.length, 1, `answered ${found}`);
+  assert.ok(Math.abs(found[0] - 150) <= 2, `bpm ${found[0]}`);
+  assert.deepEqual(at(150, 3, 3), []);  // the same tempo again is not news
+  const faster = at(170, 4, 6);
+  assert.ok(faster.length >= 1 && Math.abs(faster[faster.length - 1] - 170) <= 3, `bpm ${faster}`);
+  const still = new Beats();
+  for (let t = 0; t < 3; t += 1 / 72) assert.equal(still.update(-0.3 + 0.002 * Math.sin(t * 9), t), null);
+  const slow = new Beats();  // 40 bpm is below the range
+  let answered = null;
+  for (let t = 0; t < 8; t += 1 / 72) answered = slow.update(-0.3 + 0.2 * Math.cos((t * 40 / 60) * Math.PI * 2 + Math.PI), t) || answered;
+  assert.equal(answered, null);
 });

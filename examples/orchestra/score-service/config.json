@@ -23,6 +23,7 @@
   "hands": {"threshold": 0.8, "cooldownSeconds": 3, "minIntervalSeconds": 0.5, "holdMs": 300,
             "groups": {"left": "strings", "right": "winds", "both": "all"},
             "height": {"low": -0.55, "high": 0.15, "fadeSeconds": 0.2},
+            "tempoStep": 4, "tempoPublishSeconds": 3, "pinchSpan": 0.35, "hush": {"gain": 0.55}, "nativeCooldownSeconds": 1.0,
             "instruments": [{"id": "violins", "name": "Violins", "sections": ["vn1", "vn2"], "from": 108, "to": 180},
                             {"id": "oboes", "name": "Oboes", "sections": ["ob"], "from": 90, "to": 108},
                             {"id": "horns", "name": "Horns", "sections": ["hn"], "from": 72, "to": 90},
