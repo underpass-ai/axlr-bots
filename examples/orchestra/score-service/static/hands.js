@@ -27,7 +27,7 @@ function draw() {
   ctx.fillText("SIMULATION", 24, 18);
   ctx.fillStyle = muted;
   const o = orchestra;
-  ctx.fillText((o ? `${o.status}${o.status === "playing" ? ` · bar ${o.bar}${o.countIn ? ` · count-in ${o.countIn}` : ""} · ${o.playing}/36 playing` : ""}` : "orchestra: …") + ` · sound ${soundState}`, 210, 18);
+  ctx.fillText((o ? `${o.status}${o.status === "playing" ? ` · bar ${o.bar}${o.countIn ? ` · count-in ${o.countIn}` : ""} · ${o.playing}/36 playing` : ""}` : "orchestra: …") + ` · sound ${soundState} · ${link}`, 210, 18);
   SIDES.forEach((side, i) => {
     const x = 24 + i * 500, read = last?.read?.[side], jev = last?.jev?.answers?.[side], m = live[side];
     ctx.fillStyle = muted;
@@ -61,26 +61,58 @@ function draw() {
   }
   ctx.fillStyle = muted;
   ctx.font = "20px Lexend, sans-serif";
-  if (last?.jev?.ms) ctx.fillText(`Jev ${last.jev.ms} ms${last.simulated ? " · simulated posture" : ""}`, 24, h - 36);
+  if (last?.jev?.ms) ctx.fillText(`Jev ${last.jev.ms} ms${roundTrip !== null ? ` · round trip ${roundTrip} ms` : ""}${last.simulated ? " · simulated posture" : ""}`, 24, h - 36);
   dirty = true;
 }
 
 // --- the service ------------------------------------------------------------
 
+// The link to the service: one WebSocket, postures up, the state and Jev's
+// readings down as soon as they change. While it is down: POST and long poll.
+let sock = null, link = "http", roundTrip = null, nextId = 1;
+const sentAt = {};
+function connect() {
+  const s = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/hands`);
+  s.onopen = () => { sock = s; link = "websocket"; draw(); };
+  s.onmessage = (m) => {
+    const msg = JSON.parse(m.data);
+    if (msg.type === "state") apply(msg.state);
+    if (msg.type === "hands") {
+      if (sentAt[msg.id]) { roundTrip = Math.round(performance.now() - sentAt[msg.id]); delete sentAt[msg.id]; }
+      heard(msg.record);
+    }
+  };
+  s.onclose = () => { if (sock === s) { sock = null; link = "http"; draw(); } setTimeout(connect, 1000); };
+}
+
+async function send(hands, heldMs, simulated = false) {
+  if (sock) {
+    const id = nextId++;
+    sentAt[id] = performance.now();
+    sock.send(JSON.stringify({ type: "posture", id, hands, heldMs, simulated }));
+    return;
+  }
+  const t0 = performance.now();
+  try {
+    const r = await fetch("/api/hands", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hands, heldMs, simulated }) });
+    const record = await r.json();
+    roundTrip = Math.round(performance.now() - t0);
+    heard(record);
+  } catch (e) {
+    last = { notSent: [{ why: `the service did not answer: ${e}` }] };
+    draw();
+  }
+}
+
 // The service answers at once, before the events reach the bus: what it sent
 // runs across the floor now; a second later the answer is read again for the
 // events' ids or a failure.
 const waved = {};
-async function send(hands, heldMs, simulated = false) {
-  try {
-    const r = await fetch("/api/hands", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ hands, heldMs, simulated }) });
-    last = await r.json();
-    for (const e of last.sent || []) { hall.wave(e.name.startsWith("stop.")); waved[e.name] = performance.now(); }
-    if ((last.sent || []).length) setTimeout(() => recheck(last.at), 1500);
-  } catch (e) {
-    last = { notSent: [{ why: `the service did not answer: ${e}` }] };
-  }
+function heard(record) {
+  last = record;
+  for (const e of last.sent || []) { hall.wave(e.name.startsWith("stop.")); waved[e.name] = performance.now(); }
+  if ((last.sent || []).length) setTimeout(() => recheck(last.at), 1500);
   draw();
 }
 
@@ -112,6 +144,11 @@ function apply(s) {
 async function follow() {
   let version = null;
   for (;;) {
+    if (sock) {  // the WebSocket brings the state
+      version = null;
+      await new Promise((ok) => setTimeout(ok, 1000));
+      continue;
+    }
     try {
       const r = await fetch(version === null ? "/api/state" : `/api/state?version=${version}&wait=20`, { cache: "no-store" });
       if (!r.ok) throw new Error(`state ${r.status}`);
@@ -291,4 +328,4 @@ draw();
 Promise.all([document.fonts.load("30px DotGothic16"), document.fonts.load("30px Lexend"), fetch("/api/score").then((r) => r.json())])
   .then(([, , score]) => { hall.score = score; })
   .catch(() => {})
-  .finally(follow);
+  .finally(() => { connect(); follow(); });

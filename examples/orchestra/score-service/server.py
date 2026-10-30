@@ -16,13 +16,15 @@
   GET  /hands            the conductor's page for the headset (WebXR hand input): see hands.py
   POST /api/hands        one posture held still: Jev reads it, the service publishes what it means
   GET  /api/hands        what Jev read and what was sent, the last readings
+  GET  /ws/hands         the same over one WebSocket (ws.py): postures up; the state,
+                         as soon as it changes, and Jev's readings down
 
 It listens on loopback only (a headset reaches it through adb reverse). With
 controlPlane.url it follows the team's bus and cuts the sound on stop.all
 itself, and publishes the hands' events as the operator.
 
 Run:  python3 server.py [config.json] [--record take.wav]
-Test: python3 -m unittest -v test_score_service test_hands; node --test static/posture.test.mjs
+Test: python3 -m unittest -v test_score_service test_hands test_ws; node --test static/posture.test.mjs
 """
 
 import argparse
@@ -39,6 +41,7 @@ import hands as hands_module
 import jev
 import mcp_http
 import synth
+import ws
 from orchestra import Orchestra, Refused
 from score import Score
 
@@ -88,6 +91,48 @@ def make_handler(orchestra, stream, config, hands=None):
     score_json = json.dumps(orchestra.density()).encode()
     per_chair = {c: chair_tools(orchestra, c, config["listen"]["maxSeconds"]) for c in orchestra.chairs}
 
+    def state_now(version=None, wait=20):
+        state = orchestra.snapshot() if version is None else orchestra.wait_change(version, wait)
+        state["label"] = label
+        if hands is not None:
+            view = hands.view()
+            state["hands"] = {"last": view["last"], "source": view["source"], "dryRun": view["dryRun"]}
+        return state
+
+    def conduct(sock):
+        """One headset on one WebSocket: each state as soon as it changes goes
+        down; each posture that comes up is read (Jev) and its record goes down."""
+        def push():
+            version = None
+            while sock.open:
+                state = state_now(version)
+                if state["version"] == version:
+                    continue
+                version = state["version"]
+                try:
+                    sock.send_json({"type": "state", "state": state})
+                except ws.Closed:
+                    return
+
+        def answer(message):
+            record = hands.observe(message)
+            try:
+                sock.send_json({"type": "hands", "id": message.get("id"), "record": record})
+            except ws.Closed:
+                pass
+
+        threading.Thread(target=push, daemon=True).start()
+        while True:
+            text = sock.recv()
+            if text is None:
+                return
+            try:
+                message = json.loads(text)
+            except ValueError:
+                continue
+            if isinstance(message, dict) and message.get("type") == "posture":
+                threading.Thread(target=answer, args=(message,), daemon=True).start()
+
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -136,15 +181,10 @@ def make_handler(orchestra, stream, config, hands=None):
             url = urllib.parse.urlparse(self.path)
             query = dict(urllib.parse.parse_qsl(url.query))
             if url.path == "/api/state":
-                if "version" in query:
-                    state = orchestra.wait_change(int(query["version"]), min(float(query.get("wait", 20)), 25))
-                else:
-                    state = orchestra.snapshot()
-                state["label"] = label
-                if hands is not None:
-                    view = hands.view()
-                    state["hands"] = {"last": view["last"], "source": view["source"], "dryRun": view["dryRun"]}
-                return self._send(200, json.dumps(state).encode())
+                version = int(query["version"]) if "version" in query else None
+                return self._send(200, json.dumps(state_now(version, min(float(query.get("wait", 20)), 25))).encode())
+            if url.path == "/ws/hands":
+                return self._ws_hands()
             if url.path == "/api/hands":
                 if hands is None:
                     return self._send(404, b'{"error":"no hands: the service runs without them"}')
@@ -162,6 +202,23 @@ def make_handler(orchestra, stream, config, hands=None):
             if url.path.startswith("/static/"):
                 return self._file(url.path[len("/static/"):])
             self._send(404, b'{"error":"not found"}')
+
+        def _ws_hands(self):
+            if hands is None:
+                return self._send(404, b'{"error":"no hands: the service runs without them"}')
+            origin = self.headers.get("Origin")
+            if origin and urllib.parse.urlparse(origin).netloc.rsplit(":", 1)[0] not in mcp_http.LOOPBACK_HOSTS:
+                return self._send(403, b'{"error":"only a page served here may conduct"}')
+            key = self.headers.get("Sec-WebSocket-Key")
+            if (self.headers.get("Upgrade") or "").lower() != "websocket" or not key:
+                return self._send(400, b'{"error":"a WebSocket upgrade"}')
+            self.send_response(101)
+            self.send_header("Upgrade", "websocket")
+            self.send_header("Connection", "Upgrade")
+            self.send_header("Sec-WebSocket-Accept", ws.accept_key(key))
+            self.end_headers()
+            self.close_connection = True
+            conduct(ws.Socket(self.rfile, self.wfile))
 
         def _hands(self):
             if hands is None:
