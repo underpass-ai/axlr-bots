@@ -166,7 +166,7 @@ jobs:
         working-directory: examples/orchestra/score-service
         run: |
           pip install mido==1.3.3
-          python -m unittest -v test_score_service test_hands
+          python -m unittest -v test_score_service test_hands test_ws
       - name: Test the conductor page's posture math
         working-directory: examples/orchestra/score-service/static
         run: node --test posture.test.mjs
