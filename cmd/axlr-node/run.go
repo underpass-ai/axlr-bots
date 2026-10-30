@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/adapters/axlr"
+	natsbus "github.com/underpass-ai/axlr-bots/adapters/bus/nats"
 	"github.com/underpass-ai/axlr-bots/adapters/jev"
 	"github.com/underpass-ai/axlr-bots/adapters/nodeagent"
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
@@ -65,6 +66,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	dedicated := flags.Bool("dedicated", envOr("AXLR_NODE_DEDICATED", "") == "true", "run only the bots whose placement names this node or selects its labels, never those placed on any node (also AXLR_NODE_DEDICATED=true): a sidecar")
 	mcpConfig := flags.String("mcp-config", envOr("AXLR_NODE_MCP_CONFIG", ""), "the mcp.json a Jev bot's program finds its MCP server in (also AXLR_NODE_MCP_CONFIG; default: ~/.config/axlr/mcp.json, the node's AXLR's)")
 	jevModel := flags.String("jev-model", envOr("AXLR_NODE_JEV_MODEL", jev.DefaultModel), "the pinned Jev version the jev runtime asks (also AXLR_NODE_JEV_MODEL)")
+	bus := flags.String("bus", envOr("AXLR_NODE_BUS", "direct"), "how the control plane's pushes reach this node: direct (a stream over the node's own connection) or nats (also AXLR_NODE_BUS)")
+	natsURL := flags.String("nats-url", envOr("AXLR_NODE_NATS_URL", ""), "with --bus nats, the broker, nats://host:4222 (also AXLR_NODE_NATS_URL)")
+	natsCreds := flags.String("nats-creds", envOr("AXLR_NODE_NATS_CREDS", ""), "with --bus nats, a NATS credentials file (also AXLR_NODE_NATS_CREDS)")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exitOK
@@ -82,6 +86,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	parsedLabels, err := parseLabels(*labels)
 	if err != nil {
 		fmt.Fprintln(stderr, "axlr-node:", err)
+		return exitUsage
+	}
+	if *bus != "direct" && *bus != "nats" {
+		fmt.Fprintln(stderr, "axlr-node: --bus is direct or nats")
+		return exitUsage
+	}
+	if *bus == "nats" && *natsURL == "" {
+		fmt.Fprintln(stderr, "axlr-node: --bus nats needs --nats-url (or AXLR_NODE_NATS_URL)")
 		return exitUsage
 	}
 	if *tokenFile != "" && !strings.HasPrefix(*control, "https://") {
@@ -135,6 +147,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		Transport: transport,
 		Executor:  runtimes,
 		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Dedicated: *dedicated, Runtimes: runtimes.Kinds(), Heartbeat: *heartbeat, PollWait: *poll, Log: logger, SocketDir: filepath.Join(*stateDir, "run")},
+	}
+	if *bus == "nats" {
+		agent.Streamer = natsbus.NewSubscriber(natsbus.Config{URL: *natsURL, Credentials: *natsCreds, Name: "axlr-node " + id, Log: logger})
+		logger.Printf("node: bus nats at %s", *natsURL)
 	}
 	if err := agent.Run(ctx); err != nil {
 		fmt.Fprintln(stderr, "axlr-node:", err)

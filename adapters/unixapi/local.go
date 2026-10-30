@@ -19,18 +19,32 @@ type Local struct {
 	runner  *application.SerialRunner
 	submits sync.Mutex
 	changes *changes
+	pushers *pushers
 }
 
 // NewLocal wires the service over the dependencies. Every event the use
 // cases record also wakes the long polls and the node streams waiting
-// on the service.
+// on the service, and a push about an execution goes to its node through
+// the direct adapter and every pusher added.
 func NewLocal(deps application.Dependencies) *Local {
-	hub := newChanges()
+	hub, extra := newChanges(), &pushers{}
 	if deps.Events != nil {
-		deps.Events = tappedEvents{inner: deps.Events, changes: hub}
+		deps.Events = tappedEvents{inner: deps.Events, changes: hub, executions: deps.Executions, pushers: extra}
 	}
-	return &Local{deps: deps, runner: application.NewSerialRunner(deps), changes: hub}
+	return &Local{deps: deps, runner: application.NewSerialRunner(deps), changes: hub, pushers: extra}
 }
+
+// AddPusher adds a bus adapter the pushes to nodes also go through (a
+// broker), beside the direct stream; log hears a push the adapter
+// refused.
+func (l *Local) AddPusher(pusher application.NodePusher, log func(string, ...any)) {
+	l.pushers.log = log
+	l.pushers.add(pusher)
+}
+
+// Pusher is the direct bus adapter: what the control plane pushes to a
+// node's stream, for a test of the stream against the bus contract.
+func (l *Local) Pusher() application.NodePusher { return l.changes }
 
 // Runner is the serial runner the service shares with the daemon's worker.
 func (l *Local) Runner() *application.SerialRunner { return l.runner }

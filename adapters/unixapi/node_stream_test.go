@@ -87,8 +87,11 @@ func TestAnOlderControlPlaneServesNoStream(t *testing.T) {
 	}
 }
 
-// A stream further behind than the hints kept is told to resync.
+// The hub keeps each node's pushes in order; a stream further behind
+// than the pushes kept is told to resync; another node's pushes are not
+// its own.
 func TestChangesKeepTheLastHints(t *testing.T) {
+	ctx := context.Background()
 	hub := newChanges()
 	signal, seq := hub.next()
 	hub.saw(domain.Event{Type: domain.EventNodeHeartbeat})
@@ -97,19 +100,25 @@ func TestChangesKeepTheLastHints(t *testing.T) {
 		t.Fatal("a heartbeat woke the waiters")
 	default:
 	}
-	hub.saw(domain.Event{Type: domain.EventTaskPreempted, ExecutionID: "exec-1"})
+	_ = hub.Push(ctx, "web-1", application.NodePush{Execution: "exec-1"})
 	<-signal
-	hinted, next, complete := hub.since(seq)
-	if !complete || len(hinted) != 1 || hinted[0] != "exec-1" {
-		t.Fatalf("since = %v %v", hinted, complete)
+	pushes, next, complete := hub.since("web-1", seq)
+	if !complete || len(pushes) != 1 || pushes[0].Execution != "exec-1" {
+		t.Fatalf("since = %v %v", pushes, complete)
 	}
-	if hinted, _, complete := hub.since(next); !complete || len(hinted) != 0 {
-		t.Fatalf("nothing new = %v %v", hinted, complete)
+	if pushes, _, complete := hub.since("web-2", seq); !complete || len(pushes) != 0 {
+		t.Fatalf("another node = %v %v", pushes, complete)
+	}
+	if pushes, _, complete := hub.since("web-1", next); !complete || len(pushes) != 0 {
+		t.Fatalf("nothing new = %v %v", pushes, complete)
 	}
 	for range maxHints + 1 {
-		hub.saw(domain.Event{Type: domain.EventTaskMessage, ExecutionID: "exec-2"})
+		_ = hub.Push(ctx, "web-1", application.NodePush{Execution: "exec-2"})
 	}
-	if _, _, complete := hub.since(next); complete {
-		t.Error("dropped hints not reported")
+	if pushes, _, complete := hub.since("web-1", next); complete || len(pushes) != maxHints {
+		t.Errorf("dropped pushes not reported: %d %v", len(pushes), complete)
+	}
+	if _, _, complete := hub.since("web-2", next); !complete {
+		t.Error("another node's drops reported")
 	}
 }

@@ -16,6 +16,9 @@ One Go module, hexagonal: the domain depends on nothing, the application holds t
 | `adapters/axlr` | Runs `axlr-tui --exec --json [--policy <file>] [--correlation <file> --budget <file>]` as a subprocess and reads the execution result object; keeps the raw lines as the trace and the policy and correlation files as evidence. Used by the node, and by the control plane in single-process mode |
 | `adapters/unixapi` | The API: a `Service` interface with `Local` (in process) and `Client` (HTTP) implementations; the `Server` serves everything on the Unix socket, the node protocol alone on the node TLS address and the operator routes alone on the operator TLS address; the `Client` is also the node's `NodeTransport` |
 | `adapters/daemon` | The control plane as a service: the API on the socket and the two TLS addresses, in-process runs for bots no node may run, the timer triggers on every tick, reconciliation and offline nodes on a timer |
+| `adapters/jev` | The jev runtime on the node: a bot's fixed program over its MCP server, each decision one question to Jev through TypeSafe's API; the receipt of each decision ([bot definition](../reference/bot-definition.md#runtime)) |
+| `adapters/bus/nats` | The bus port over a NATS broker: the control plane's publisher with its outbox, the node's subscriber with its durable consumer ([bus port](bus-port.md)) |
+| `adapters/bus/bustest` | The bus port's contract, run against the direct stream and against NATS |
 | `adapters/nodeagent` | The node agent's loop: register, heartbeat, poll, run, renew, report; one working slot, lent by an execution that waits on a child; the delegation tool's MCP server (newline JSON-RPC over `<node-state>/run/<execution>.sock`) and its calls to the control plane |
 | `adapters/systemd` | Renders and installs the two units and the environment file (or the node's alone, for a host that joins a control plane elsewhere); removes them |
 | `adapters/system` | Wall clock, random ids |

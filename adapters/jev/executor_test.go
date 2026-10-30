@@ -293,7 +293,7 @@ func TestEachActIsToldToTheTeam(t *testing.T) {
 	}
 	var data map[string]any
 	_ = json.Unmarshal(told[0].Data, &data)
-	if told[0].Name != "info.chair.played" || told[0].Message != "phrase 1: bars 1–8" || data["phrase"] != float64(1) || data["probability"] != 0.9 || len(data) != 2 {
+	if told[0].Name != "info.chair.played" || told[0].Message != "phrase 2: bars 1–8" || data["phrase"] != float64(2) || data["probability"] != 0.9 || len(data) != 2 {
 		t.Errorf("told = %+v %v", told[0], data)
 	}
 	tells := 0
