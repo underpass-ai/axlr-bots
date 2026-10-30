@@ -134,6 +134,7 @@ impl BotDefinition {
             delegation: None,
             groups: team_names(&form.team),
             events: None,
+            runtime: None,
         };
         definition.validate()?;
         Ok(definition)
