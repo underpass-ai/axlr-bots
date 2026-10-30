@@ -180,7 +180,7 @@ export class Hall {
       const s = makeLabel(section.name, 40, HEX.text, `${section.playing}/${section.chairs.length}`, 1.6);
       s.position.set(mid.x, 0.85, mid.z);
       this.root.add(s);
-      this.sections[section.id] = { sprite: s, name: section.name, total: section.chairs.length, playing: -1, by: null };
+      this.sections[section.id] = { sprite: s, name: section.name, total: section.chairs.length, playing: -1, by: null, lit: null, subText: null };
     }
   }
 
@@ -241,7 +241,8 @@ export class Hall {
       S.subText = sub;
       S.sprite.material.map = labelTexture(S.name, 40, by || (S.playing ? HEX.text : HEX.muted), sub);
       S.sprite.material.needsUpdate = true;
-      if (by !== S.lit) { S.sprite.scale.multiplyScalar(by ? 1.35 : 1 / 1.35); S.lit = by; }
+      if (!!by !== !!S.lit) S.sprite.scale.multiplyScalar(by ? 1.35 : 1 / 1.35);  // grown once while lit, back once when not
+      S.lit = by;
     }
   }
 

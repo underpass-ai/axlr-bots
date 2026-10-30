@@ -70,6 +70,7 @@ function draw() {
     y += 36;
   }
   for (const e of last?.sent || []) {
+    if (y > h - 130) break;
     ctx.fillStyle = copper;
     ctx.fillText(`sent ${e.name}${e.data?.dynamics ? " " + e.data.dynamics : ""}${e.to ? ` → ${e.to.length} chairs` : ""}${e.note ? " (dry run)" : ""}${e.error ? " FAILED" : ""}`, 24, y);
     y += 36;
