@@ -16,6 +16,11 @@ the operator's panel already publishes (orchestra 6b), as the operator:
   fist        stop.<section> to its chairs, one per section of the group;
               stop.all for everyone
 
+The service is the orchestra, so it does what a gesture means at once (holds
+the group, sets the level, starts the count-in) and publishes the events in
+parallel, without waiting for them to come back on its own bus: the bots
+hear them, the service does not apply its own echo (bus.Bus.publish).
+
 An event that would change nothing is not sent, and why is kept: a stop when
 nothing of the group plays (a stop.all while idle would still wake 36 bots),
 a cue when every chair it names already plays at that level, the same
@@ -52,6 +57,7 @@ class Hands:
         self.min_interval = config.get("minIntervalSeconds", 0.5)
         self.groups = config.get("groups", {"left": "strings", "right": "winds", "both": "all"})
         self.dry_run = bool(config.get("dryRun")) or publish is None
+        self.publish_wait = config.get("publishWaitSeconds", 3.0)
         self.lock = threading.Lock()
         self.last_call, self.sent_at, self.history, self.calls = None, {}, [], 0
 
@@ -91,11 +97,15 @@ class Hands:
         for side, a in record["jev"]["answers"].items():
             p = a["probabilities"][a["choice"]]
             record["read"][side] = a["choice"] if a["choice"] != "nothing" and p >= self.threshold else "nothing"
+        threads = []
         with self.lock:
             for gesture, group in self.meaning(record["read"]):
                 record["decision"].append({"gesture": gesture, "group": group})
-                self._act(gesture, group, record)
-            return self._keep(record)
+                threads += self._act(gesture, group, record)
+            self._keep(record)
+        for thread in threads:  # the sound changed already; the answer waits a little for the events' ids
+            thread.join(timeout=self.publish_wait)
+        return record
 
     def meaning(self, read):
         """Each hand's gesture on its group; both hands the same gesture: everyone."""
@@ -145,7 +155,7 @@ class Hands:
         last = self.sent_at.get((gesture, group))
         if last is not None and now - last < self.cooldown:
             record["notSent"].append({"what": f"{gesture} {group}", "why": f"the same gesture was sent {now - last:.1f} s ago"})
-            return
+            return []
         snap = o.snapshot()
         chairs = {c["id"]: c for s in snap["sections"] for c in s["chairs"]}
         named = o.chairs_of(group)
@@ -153,7 +163,7 @@ class Hands:
             sounding = [k for k in named if chairs[k]["state"] in ("playing", "scheduled")]
             if snap["status"] != "playing" or not sounding:
                 record["notSent"].append({"what": f"stop {group}", "why": "nothing of the group plays"})
-                return
+                return []
             if group == "all":
                 events = [("stop.all", "Stop.", None, None)]
             else:
@@ -165,21 +175,37 @@ class Hands:
             if snap["status"] == "playing" and all(chairs[k]["dynamics"] == level and not chairs[k]["held"] for k in named) \
                     and any(chairs[k]["state"] in ("playing", "scheduled") for k in named):
                 record["notSent"].append({"what": f"{level} {group}", "why": f"the group already plays {level}"})
-                return
+                return []
             loud = "loud" if level == "f" else "soft"
             events = [(f"info.cue.{group}", f"{'Everyone' if group == 'all' else group.capitalize()}, play {loud}.", {"dynamics": level}, None)]
         self.sent_at[(gesture, group)] = now
+        why = f"{gesture} from the conductor's hands"
+        if gesture == "fist":
+            done = o.stop_all(why) if group == "all" else o.hold(named, why)
+            record["applied"] = "cut" if group == "all" and done else (f"held {len(done['held'])} chairs" if done else "nothing plays")
+        else:
+            record["applied"] = o.cue(f"info.cue.{group}", {"dynamics": LEVELS[gesture]}) or "cue kept"
+        threads = []
         for name, message, data, to in events:
             entry = {"name": name, "message": message, "data": data, "to": to}
+            record["sent"].append(entry)
             if self.dry_run:
                 entry["eventId"] = None
                 entry["note"] = "dry run: not published"
-            else:
-                try:
-                    entry["eventId"] = self.publish(name, message, data, to)
-                except Exception as exc:
-                    entry["error"] = str(exc)
-            record["sent"].append(entry)
+                continue
+            entry["eventId"] = None
+            thread = threading.Thread(target=self._publish, args=(entry,), daemon=True)
+            thread.start()
+            threads.append(thread)
+        return threads
+
+    def _publish(self, entry):
+        started = self.clock()
+        try:
+            entry["eventId"] = self.publish(entry["name"], entry["message"], entry["data"], entry["to"])
+        except Exception as exc:
+            entry["error"] = str(exc)
+        entry["publishMs"] = round((self.clock() - started) * 1000)
 
     def _compact(self, h):
         fingers = h.get("fingers") or {}

@@ -126,6 +126,19 @@ class SendTest(unittest.TestCase):
         h.observe(posture(right=FIST))
         self.assertEqual(publish.events, [("stop.ob", None, ["ob-1", "ob-2"]), ("stop.hn", None, ["hn-1", "hn-2"])])
 
+    def test_the_service_does_what_the_gesture_means_at_once(self):
+        h, o, _, publish, _ = hands(right=("fist", 0.95))
+        o.play("ob-1", 1)
+        o.play("vn1-1", 1)
+        play_until(o, 2)
+        record = h.observe(posture(right=FIST))
+        self.assertEqual(record["applied"], "held 4 chairs")
+        self.assertEqual((o.chairs["ob-1"]["held"], o.chairs["vn1-1"]["held"], o.status), ("fist from the conductor's hands", None, "playing"))
+        self.assertTrue(all("publishMs" in e for e in record["sent"]))
+        h2, o2, _, _, _ = hands(left=("open", 0.95))
+        self.assertEqual(h2.observe(posture(left=OPEN))["applied"], "count-in")
+        self.assertEqual((o2.status, o2.take), ("playing", 1))
+
     def test_the_strings_fist_is_five_events_none_over_sixteen_chairs(self):
         h, o, _, publish, _ = hands(left=("fist", 0.95))
         o.play("vc-1", 1)

@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import ssl
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -62,9 +63,14 @@ def apply(orchestra, event, clock=time.time):
     return None
 
 
+def own_mark(name, message, to):
+    return (name, message, tuple(sorted(to or ())))
+
+
 class Bus:
     def __init__(self, url, team, token_file, ca_file, wait="25s"):
         self.url, self.team, self.wait = url.rstrip("/"), team, wait
+        self.own, self.own_lock = [], threading.Lock()  # events this service published, whose echo it does not apply
         self.token_file, self.ca_file = os.path.expanduser(token_file), os.path.expanduser(ca_file)
         self.context = ssl.create_default_context(cafile=self.ca_file)
 
@@ -81,7 +87,13 @@ class Bus:
             return json.load(response)
 
     def publish(self, name, message, data=None, to=None):
-        """Publish one event on the team as the operator, as the panel's shortcuts do; returns its id."""
+        """Publish one event on the team as the operator, as the panel's shortcuts do; returns its id.
+
+        The service did what the event means before publishing it: its echo on
+        the bus is heard (the page shows it) but not applied again."""
+        mark = own_mark(name, message, to)
+        with self.own_lock:
+            self.own.append(mark)
         body = {"name": name, "message": message}
         if data:
             body["data"] = data
@@ -93,8 +105,25 @@ class Bus:
             request.add_header("Authorization", "Bearer " + f.read().strip())
         request.add_header("Content-Type", "application/json")
         request.add_header("Idempotency-Key", f"hands-{uuid.uuid4().hex[:16]}")
-        with urllib.request.urlopen(request, context=self.context, timeout=10) as response:
-            return json.load(response).get("eventId")
+        try:
+            with urllib.request.urlopen(request, context=self.context, timeout=10) as response:
+                return json.load(response).get("eventId")
+        except Exception:
+            self._take_own(mark)
+            raise
+
+    def _take_own(self, mark):
+        with self.own_lock:
+            if mark in self.own:
+                self.own.remove(mark)
+                return True
+        return False
+
+    def is_own(self, event):
+        payload = event.get("payload") or {}
+        if event.get("type") != "group.event.published":
+            return False
+        return self._take_own(own_mark(payload.get("name", ""), payload.get("message", ""), payload.get("to")))
 
     def follow(self, orchestra, stop=None):
         """Hear the team from now on; a team that does not exist yet is retried."""
@@ -108,6 +137,12 @@ class Bus:
                     continue
                 for event in self.events(after=after or None, wait=self.wait):
                     after = event["eventId"]
+                    if self.is_own(event):
+                        payload = event.get("payload") or {}
+                        orchestra.heard(payload.get("name", ""), payload.get("message", ""), payload.get("data") or {},
+                                        parse_time(event["createdAt"]) if event.get("createdAt") else None)
+                        log.info("%s heard back (the service did it already)", payload.get("name"))
+                        continue
                     what = apply(orchestra, event)
                     if what:
                         log.info("%s %s", (event.get("payload") or {}).get("name"), what)

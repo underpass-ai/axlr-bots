@@ -9,6 +9,7 @@ const HOLD_MS = 300, SIDES = ["left", "right"];
 const GROUP = { left: "strings", right: "winds" };
 const steady = new Steady(HOLD_MS);
 let live = { left: null, right: null }, last = null, orchestra = null, xr = null, dirty = true;
+let soundOn = false, soundAt = -1, soundState = "off";
 if (new URLSearchParams(location.search).get("sim") === "1") document.body.classList.add("simulate");
 
 // --- the panel ------------------------------------------------------------
@@ -23,7 +24,7 @@ function draw() {
   ctx.fillText("SIMULATION", 24, 18);
   ctx.fillStyle = muted;
   const o = orchestra;
-  ctx.fillText(o ? `${o.status}${o.status === "playing" ? ` · bar ${o.bar}${o.countIn ? ` · count-in ${o.countIn}` : ""} · ${o.playing}/36 playing` : ""}` : "orchestra: …", 210, 18);
+  ctx.fillText((o ? `${o.status}${o.status === "playing" ? ` · bar ${o.bar}${o.countIn ? ` · count-in ${o.countIn}` : ""} · ${o.playing}/36 playing` : ""}` : "orchestra: …") + ` · sound ${soundState}`, 210, 18);
   SIDES.forEach((side, i) => {
     const x = 24 + i * 500, read = last?.read?.[side], jev = last?.jev?.answers?.[side], m = live[side];
     ctx.fillStyle = muted;
@@ -103,6 +104,28 @@ for (const b of document.querySelectorAll("[data-sim]")) {
   });
 }
 
+// --- the orchestra's sound in the headset -------------------------------------
+
+// /audio.wav is an open-ended stream: it may drop (the headset's link to gx10
+// changes, the browser stalls) and it may fall behind. Every 2 s: no progress
+// means connect again; more than a second buffered means jump to the live edge.
+function startSound() {
+  const audio = $("audio");
+  audio.src = `/audio.wav?t=${Date.now()}`;
+  audio.play().catch(() => {});
+  soundOn = true;
+  soundAt = -1;
+}
+setInterval(() => {
+  const audio = $("audio");
+  if (!soundOn || !$("sound").checked) { soundState = "off"; if (soundOn && !audio.paused) audio.pause(); return; }
+  if (audio.paused || audio.error || audio.ended || audio.currentTime === soundAt) { soundState = "reconnecting"; startSound(); return; }
+  const end = audio.buffered.length ? audio.buffered.end(audio.buffered.length - 1) : audio.currentTime;
+  if (end - audio.currentTime > 1.0) audio.currentTime = end - 0.25;
+  soundAt = audio.currentTime;
+  soundState = "on";
+}, 2000);
+
 // --- WebXR ------------------------------------------------------------------
 
 const VERT = `#version 300 es
@@ -145,11 +168,7 @@ function forwardOf(q) {  // the head's -z, rotated by its orientation
 }
 
 async function enter() {
-  if ($("sound").checked) {
-    const audio = $("audio");
-    audio.src = "/audio.wav";
-    audio.play().catch(() => {});
-  }
+  if ($("sound").checked) startSound();
   const mode = xr.ar ? "immersive-ar" : "immersive-vr";
   const session = await navigator.xr.requestSession(mode, { requiredFeatures: ["hand-tracking"] });
   const canvas = document.createElement("canvas");

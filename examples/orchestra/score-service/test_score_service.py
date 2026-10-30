@@ -527,6 +527,15 @@ class BusTest(unittest.TestCase):
         self.assertEqual(o.status, "stopped")
         self.assertEqual(bus.apply(o, self.published("stop.winds")), "nothing plays")
 
+    def test_the_services_own_events_are_heard_not_applied_again(self):
+        b = bus.Bus.__new__(bus.Bus)  # no control plane: only the record of what it published
+        b.own, b.own_lock = [bus.own_mark("stop.ob", "Oboes, stop.", ["ob-2", "ob-1"])], threading.Lock()
+        mine = self.published("stop.ob")
+        mine["payload"].update(message="Oboes, stop.", to=["ob-1", "ob-2"])
+        self.assertTrue(b.is_own(mine))
+        self.assertFalse(b.is_own(mine))  # once: the same event from the panel later is applied
+        self.assertFalse(b.is_own(self.published("stop.ob")))
+
     def test_other_events_change_nothing(self):
         o, _, _ = orchestra()
         self.assertIsNone(bus.apply(o, self.published("info.note")))
