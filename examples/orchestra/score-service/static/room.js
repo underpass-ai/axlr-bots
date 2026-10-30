@@ -180,7 +180,7 @@ export class Hall {
       const s = makeLabel(section.name, 40, HEX.text, `${section.playing}/${section.chairs.length}`, 1.6);
       s.position.set(mid.x, 0.85, mid.z);
       this.root.add(s);
-      this.sections[section.id] = { sprite: s, name: section.name, total: section.chairs.length, playing: -1 };
+      this.sections[section.id] = { sprite: s, name: section.name, total: section.chairs.length, playing: -1, by: null };
     }
   }
 
@@ -221,11 +221,25 @@ export class Hall {
       const S = this.sections[section.id];
       if (S && S.playing !== section.playing) {
         S.playing = section.playing;
-        S.sprite.material.map = labelTexture(S.name, 40, section.playing ? HEX.text : HEX.muted, `${section.playing}/${S.total}`);
+        S.sprite.material.map = labelTexture(S.name, 40, S.by || (section.playing ? HEX.text : HEX.muted), `${section.playing}/${S.total}`);
         S.sprite.material.needsUpdate = true;
       }
     }
     if (state.cut && state.cut.cutAt !== this.lastCutAt) { this.lastCutAt = state.cut.cutAt; this.snap = performance.now(); }
+  }
+
+  // The sections a hand points at: their names lit, the left hand's copper, the right's amber.
+  aim(side, sections) {
+    this.aimed = this.aimed || { left: [], right: [] };
+    this.aimed[side] = sections;
+    for (const [id, S] of Object.entries(this.sections)) {
+      const by = this.aimed.left.includes(id) ? HEX.accent : this.aimed.right.includes(id) ? HEX.warn : null;
+      if (by === S.by) continue;
+      S.by = by;
+      S.sprite.material.map = labelTexture(S.name, 40, by || (S.playing ? HEX.text : HEX.muted), `${Math.max(S.playing, 0)}/${S.total}`);
+      S.sprite.material.needsUpdate = true;
+      S.sprite.scale.multiplyScalar(by ? 1.35 : 1 / 1.35);
+    }
   }
 
   // An event leaves the podium and runs across the floor to the chairs.

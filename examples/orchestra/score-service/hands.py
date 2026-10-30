@@ -7,8 +7,13 @@ hand is. When a posture has held still for a moment it sends it here (POST
 hand, palm down or fist. Nothing is the default: a hand Jev does not read as a
 gesture with at least the threshold's probability gives no signal.
 
-A gesture acts on a group: the left hand on the strings, the right hand on the
-winds, both hands showing the same gesture on everyone:
+A gesture acts on the instrument the hand points at: the page measures where
+the hand is from the eyes on the hall's floor plan (aim, degrees: 0 to the
+conductor's right, 90 ahead, 180 to the left), and each instrument has its
+slice of the arc (hands.instruments: violins, oboes, horns, violas, cellos,
+basses). A hand that gives no aim acts on its old group: the left hand on the
+strings, the right on the winds. Both hands showing the same gesture act on
+everyone:
 
   palm up     info.cue.<group> {"dynamics": "f"}   come in, or play loud
   palm down   info.cue.<group> {"dynamics": "p"}   come in, or play soft
@@ -71,7 +76,8 @@ class Hands:
         self.publish_wait = config.get("publishWaitSeconds", 0)
         height = config.get("height", {})
         self.low, self.high, self.height_fade = height.get("low", -0.55), height.get("high", 0.15), height.get("fadeSeconds", 0.2)
-        self.engaged = {"left": None, "right": None}
+        self.engaged = {"left": None, "right": None}  # the gesture and the group a flat hand conducts
+        self.instruments = {i["id"]: i for i in config.get("instruments", [])}
         self.lock = threading.Lock()
         self.last_call, self.sent_at, self.history, self.calls = None, {}, [], 0
 
@@ -111,10 +117,15 @@ class Hands:
         for side, a in record["jev"]["answers"].items():
             p = a["probabilities"][a["choice"]]
             record["read"][side] = a["choice"] if a["choice"] != "nothing" and p >= self.threshold else "nothing"
-            self.engaged[side] = record["read"][side] if record["read"][side] in LEVELS else None
+        aims = {side: self.aimed(h.get("aim")) for side, h in hands.items()}
+        record["aim"] = {side: group for side, group in aims.items() if group}
         threads = []
         with self.lock:
-            for gesture, group in self.meaning(record["read"]):
+            meant = self.meaning(record["read"], aims)
+            for side in record["read"]:  # a flat hand conducts the group its gesture went to
+                g = record["read"][side]
+                self.engaged[side] = (g, next(grp for gg, grp in meant if gg == g)) if g in LEVELS else None
+            for gesture, group in meant:
                 record["decision"].append({"gesture": gesture, "group": group})
                 threads += self._act(gesture, group, record)
             self._keep(record)
@@ -130,16 +141,32 @@ class Hands:
             if side not in self.engaged or not self.engaged[side] or not isinstance(height, (int, float)):
                 continue
             gain = max(0.0, min(1.0, (height - self.low) / (self.high - self.low)))
-            self.orchestra.fade(self.orchestra.chairs_of(self.groups[side]), gain, self.height_fade)
+            self.orchestra.fade(self.chairs_of(self.engaged[side][1]), gain, self.height_fade)
             gains[side] = round(gain, 2)
         return gains
 
-    def meaning(self, read):
-        """Each hand's gesture on its group; both hands the same gesture: everyone."""
+    def aimed(self, aim):
+        """The instrument whose slice of the arc an aim (degrees) falls in, or None."""
+        if not isinstance(aim, (int, float)):
+            return None
+        return next((i for i, x in self.instruments.items() if x["from"] <= aim < x["to"]), None)
+
+    def chairs_of(self, group):
+        if group in self.instruments:
+            return [k for sid in self.instruments[group]["sections"] for k in self.orchestra.chairs_of(sid)]
+        return self.orchestra.chairs_of(group)
+
+    def meaning(self, read, aims=None):
+        """Each hand's gesture on the instrument it points at (or its old group); both hands the same gesture: everyone."""
         gestures = {side: g for side, g in read.items() if g != "nothing"}
         if len(gestures) == 2 and gestures["left"] == gestures["right"]:
             return [(gestures["left"], self.groups["both"])]
-        return [(g, self.groups[side]) for side, g in sorted(gestures.items())]
+        meant = []
+        for side, g in sorted(gestures.items()):
+            group = (aims or {}).get(side) or self.groups[side]
+            if (g, group) not in meant:  # two hands on one instrument: one gesture
+                meant.append((g, group))
+        return meant
 
     def state(self, hands, held):
         """The measurements as Jev reads them: one paragraph per hand tracked."""
@@ -174,7 +201,7 @@ class Hands:
                     "threshold": self.threshold, "cooldownSeconds": self.cooldown, "groups": self.groups,
                     "gestures": {"open": "info.cue.<group> f", "down": "info.cue.<group> p", "fist": "fade the group out (the service's, no event)",
                                  "height": "the group's gain while open or palm down (the service's, no event)"},
-                    "engaged": dict(self.engaged),
+                    "engaged": dict(self.engaged), "instruments": list(self.instruments.values()),
                     "dryRun": self.dry_run, "source": JEV_SOURCE}
 
     # --- inside -------------------------------------------------------------
@@ -187,7 +214,7 @@ class Hands:
             return []
         snap = o.snapshot()
         chairs = {c["id"]: c for s in snap["sections"] for c in s["chairs"]}
-        named = o.chairs_of(group)
+        named = self.chairs_of(group)
         if gesture == "fist":
             sounding = [k for k in named if chairs[k]["state"] in ("playing", "scheduled")]
             if snap["status"] != "playing" or not sounding:
@@ -201,14 +228,18 @@ class Hands:
                 record["notSent"].append({"what": f"{level} {group}", "why": f"the group already plays {level}"})
                 return []
             loud = "loud" if level == "f" else "soft"
-            events = [(f"info.cue.{group}", f"{'Everyone' if group == 'all' else group.capitalize()}, play {loud}.", {"dynamics": level}, None)]
+            # an instrument is cued section by section: the bots hear info.cue.<section>
+            cues = [f"info.cue.{sid}" for sid in self.instruments[group]["sections"]] if group in self.instruments else [f"info.cue.{group}"]
+            title = self.instruments[group]["name"] if group in self.instruments else "Everyone" if group == "all" else group.capitalize()
+            events = [(name, f"{title}, play {loud}.", {"dynamics": level}, None) for name in cues]
         self.sent_at[(gesture, group)] = now
         why = f"{gesture} from the conductor's hands"
         if gesture == "fist":
             done = o.hold(named, why)
             record["applied"] = f"fading out {len(done['held'])} chairs" if done else "nothing plays"
         else:
-            record["applied"] = o.cue(f"info.cue.{group}", {"dynamics": LEVELS[gesture]}) or "cue kept"
+            applied = [o.cue(name, {"dynamics": LEVELS[gesture]}) for name, _, _, _ in events]
+            record["applied"] = "; ".join(a for a in applied if a) or "cue kept"
         threads = []
         for name, message, data, to in events:
             entry = {"name": name, "message": message, "data": data, "to": to}

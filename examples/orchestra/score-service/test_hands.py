@@ -9,7 +9,7 @@ import urllib.error
 
 import jev
 from hands import GESTURES, Hands
-from test_score_service import Clock, orchestra, play_until
+from test_score_service import CONFIG, Clock, orchestra, play_until
 
 OPEN = {"fingers": {"thumb": 30, "index": 8, "middle": 6, "ring": 10, "little": 12}, "spread": 0.12,
         "palm": {"away": 0.88, "floor": 0.15, "toward": -0.88, "up": -0.15, "side": 0.1},
@@ -46,7 +46,8 @@ class FakePublish:
 def hands(config=None, **reads):
     o, synth, clock = orchestra()
     judge, publish = FakeJev(**reads), FakePublish()
-    h = Hands(o, dict({"threshold": 0.8, "cooldownSeconds": 3, "minIntervalSeconds": 0.5, "publishWaitSeconds": 3}, **(config or {})), judge, publish, clock)
+    h = Hands(o, dict({"threshold": 0.8, "cooldownSeconds": 3, "minIntervalSeconds": 0.5, "publishWaitSeconds": 3,
+                       "instruments": CONFIG["hands"]["instruments"]}, **(config or {})), judge, publish, clock)
     return h, o, judge, publish, clock
 
 
@@ -173,6 +174,33 @@ class SendTest(unittest.TestCase):
         self.assertEqual((record["sent"][0]["name"], record["applied"]), ("info.cue.all", "f for 36 chairs"))
         play_until(o, 6)
         self.assertEqual(synth.last_expression(vc), 127)
+
+    def test_a_hand_cues_the_instrument_it_points_at_section_by_section(self):
+        h, o, _, publish, _ = hands(left=("open", 0.95))
+        record = h.observe(posture(left=dict(OPEN, aim=150)))  # far left: the violins, I and II
+        self.assertEqual((record["aim"], record["decision"]), ({"left": "violins"}, [{"gesture": "open", "group": "violins"}]))
+        self.assertEqual(publish.events, [("info.cue.vn1", {"dynamics": "f"}, None), ("info.cue.vn2", {"dynamics": "f"}, None)])
+        h2, _, _, publish2, _ = hands(right=("open", 0.95))
+        h2.observe(posture(right=dict(OPEN, aim=40)))
+        self.assertEqual(publish2.events, [("info.cue.vc", {"dynamics": "f"}, None)])
+        h3, _, _, publish3, _ = hands(right=("open", 0.95))
+        h3.observe(posture(right=OPEN))  # no aim: the hand's old group
+        self.assertEqual(publish3.events, [("info.cue.winds", {"dynamics": "f"}, None)])
+
+    def test_a_fist_at_the_horns_fades_only_the_horns(self):
+        h, o, _, _, _ = hands(right=("fist", 0.95))
+        o.play("hn-1", 1)
+        o.play("ob-1", 1)
+        record = h.observe(posture(right=dict(FIST, aim=80)))
+        self.assertEqual(record["applied"], "fading out 2 chairs")
+        self.assertEqual((o.chairs["hn-1"]["held"] is not None, o.chairs["ob-1"]["held"]), (True, None))
+
+    def test_the_height_fades_the_instrument_the_hand_conducts(self):
+        h, o, _, _, _ = hands(left=("down", 0.95))
+        h.observe(posture(left=dict(OPEN, aim=60)))  # the violas
+        h.height({"hands": {"left": {"height": -0.2, "aim": 150}}})  # moving the hand does not change the instrument
+        self.assertEqual({o.chairs[k]["gain"] for k in o.chairs_of("va")}, {0.5})
+        self.assertEqual({o.chairs[k]["gain"] for k in o.chairs_of("vn1")}, {1.0})
 
     def test_the_height_of_a_hand_that_conducts_is_its_groups_gain(self):
         h, o, _, _, clock = hands(left=("open", 0.95))

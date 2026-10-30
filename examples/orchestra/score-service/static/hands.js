@@ -13,7 +13,13 @@ const steady = new Steady(HOLD_MS);
 let live = { left: null, right: null }, last = null, orchestra = null, xr = null, dirty = true;
 let soundOn = false, soundAt = -1, soundState = "off", heightAt = 0;
 const SECTIONS = { strings: ["vn1", "vn2", "va", "vc", "cb"], winds: ["ob", "hn"] };
-let gains = { strings: 1, winds: 1 };
+let gains = { strings: 1, winds: 1 }, instruments = [], aimed = { left: null, right: null };
+// The instruments and their slices of the arc, as the service has them.
+fetch("/api/hands").then((r) => r.json()).then((v) => {
+  instruments = v.instruments || [];
+  for (const i of instruments) { SECTIONS[i.id] = i.sections; gains[i.id] = 1; }
+}).catch(() => {});
+const instrumentAt = (aim) => (aim == null ? null : instruments.find((i) => i.from <= aim && aim < i.to) || null);
 const params = new URLSearchParams(location.search), preview = params.get("view") === "1";
 if (params.get("sim") === "1") document.body.classList.add("simulate");
 
@@ -34,7 +40,8 @@ function draw() {
     const x = 24 + i * 500, read = last?.read?.[side], jev = last?.jev?.answers?.[side], m = live[side];
     ctx.fillStyle = muted;
     ctx.font = "600 24px Lexend, sans-serif";
-    ctx.fillText(`${side.toUpperCase()} HAND · ${GROUP[side]} · ${Math.round(100 * gains[GROUP[side]])}%`, x, 70);
+    const group = aimed[side] ? aimed[side].id : GROUP[side];
+    ctx.fillText(`${side.toUpperCase()} HAND · ${aimed[side] ? aimed[side].name : GROUP[side]} · ${Math.round(100 * (gains[group] ?? 1))}%`, x, 70);
     ctx.font = "600 64px Lexend, sans-serif";
     ctx.fillStyle = read && read !== "nothing" ? copper : ink;
     ctx.fillText(read ? read.toUpperCase() : "—", x, 104);
@@ -252,6 +259,14 @@ function flatForward(q) {  // where the head looks, on the floor's plane
   return { x: fx / l, z: fz / l };
 }
 
+// Where a hand points, on the hall's floor plan: the direction from the eyes
+// to the hand, in degrees, 0 to the conductor's right, 90 ahead, 180 left.
+function aimOf(point, eyes) {
+  const dx = point[0] - eyes[0], dz = point[2] - eyes[2], t = hall.root.rotation.y;
+  const x = dx * Math.cos(t) - dz * Math.sin(t), z = dx * Math.sin(t) + dz * Math.cos(t);
+  return Math.round((Math.atan2(-z, x) * 180) / Math.PI);
+}
+
 function forwardOf(q) {  // the head's -z, rotated by its orientation
   return [-(2 * (q.x * q.z + q.w * q.y)), -(2 * (q.y * q.z - q.w * q.x)), -(1 - 2 * (q.x * q.x + q.y * q.y))];
 }
@@ -291,7 +306,15 @@ function readHands(t, xrFrame) {
       if (!p) { all = false; break; }
       joints[name] = [p.transform.position.x, p.transform.position.y, p.transform.position.z];
     }
-    if (all) live[source.handedness] = measure(joints, source.handedness, head);
+    if (all) {
+      const m = measure(joints, source.handedness, head);
+      m.aim = aimOf(joints["middle-finger-metacarpal"], head.position);
+      live[source.handedness] = m;
+    }
+  }
+  for (const side of SIDES) {  // the instrument each hand points at, lit in the hall
+    const now = live[side] ? instrumentAt(live[side].aim) : null;
+    if ((now && now.id) !== (aimed[side] && aimed[side].id)) { aimed[side] = now; hall.aim(side, now ? now.sections : []); }
   }
   // Each hand's height, ten times a second: the service makes it its group's
   // gain while Jev's last reading of that hand is a palm up or a palm down.
@@ -301,7 +324,8 @@ function readHands(t, xrFrame) {
     for (const side of SIDES) if (live[side]) heights[side] = { height: live[side].position.height };
     if (Object.keys(heights).length) sock.send(JSON.stringify({ type: "height", hands: heights }));
   }
-  const sig = live.left || live.right ? `${signature(live.left)}/${signature(live.right)}` : "-|-";
+  // a hand moved to another instrument with the same posture is a new posture
+  const sig = live.left || live.right ? `${signature(live.left)}~${aimed.left?.id}/${signature(live.right)}~${aimed.right?.id}` : "-|-";
   if (steady.update(sig, t)) {
     const hands = {};
     for (const side of SIDES) if (live[side]) hands[side] = live[side];
