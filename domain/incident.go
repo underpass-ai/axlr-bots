@@ -79,7 +79,8 @@ func NewIncident(id IncidentID, tenant TenantID, bot BotID, groupKey, source, ti
 	return i, nil
 }
 
-// addFingerprints keeps the alerts not seen yet, in the order given.
+// addFingerprints keeps the alerts not seen yet, in the order given, up
+// to maxIncidentFingerprints.
 func (i *Incident) addFingerprints(fingerprints []string) error {
 	for _, raw := range fingerprints {
 		fingerprint := strings.TrimSpace(raw)
@@ -89,11 +90,11 @@ func (i *Incident) addFingerprints(fingerprints []string) error {
 		if len(fingerprint) > maxIdentifierLength*2 {
 			return invalid("fingerprint", "is too long")
 		}
-		if slices.Contains(i.fingerprints, fingerprint) {
+		if slices.Contains(i.fingerprints, fingerprint) || len(i.fingerprints) >= maxIncidentFingerprints {
+			// The first 64 alerts are kept; a group that grows past them
+			// (a node down takes a hundred pods with it) is still one
+			// incident, never a refused delivery.
 			continue
-		}
-		if len(i.fingerprints) >= maxIncidentFingerprints {
-			return invalid("fingerprints", "an incident keeps at most 64 alerts")
 		}
 		i.fingerprints = append(i.fingerprints, fingerprint)
 	}

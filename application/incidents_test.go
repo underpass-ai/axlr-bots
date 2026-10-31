@@ -115,6 +115,19 @@ func TestOpenIncidentRefusals(t *testing.T) {
 		t.Error("something was saved for a refused incident")
 	}
 	triage := triageBot(t, h, "triage", "")
+	// A paused bot refuses the open and nothing is saved.
+	if _, err := NewPauseBot(h.deps).Execute(ctx, triage.ID()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := uc.Execute(ctx, alert(triage, "fp")); !errors.As(err, &serr) {
+		t.Errorf("a paused bot took an incident: %v", err)
+	}
+	if len(h.incs.incidents) != 0 || len(h.tasks.tasks) != 0 {
+		t.Error("something was saved for a paused bot")
+	}
+	if _, err := NewEnableBot(h.deps).Execute(ctx, triage.ID()); err != nil {
+		t.Fatal(err)
+	}
 	bad := []OpenIncidentCommand{
 		{Tenant: "", BotID: "triage", GroupKey: "g", Title: "t"},
 		{Tenant: "engineering", BotID: "", GroupKey: "g", Title: "t"},

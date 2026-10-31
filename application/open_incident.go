@@ -115,6 +115,12 @@ func (uc OpenIncident) start(ctx context.Context, bot domain.Bot, incident domai
 		_ = uc.rec.audit(ctx, "incident.open", incident.ID().String(), domain.AuditDenied, map[string]string{"reason": "bot takes no incidents"})
 		return OpenIncidentResult{}, domain.StateError{Subject: "bot " + bot.ID().String(), Current: "without an incident trigger", Attempted: "take an incident"}
 	}
+	// Checked here, before the incident is saved, so a refusal saves
+	// nothing; submitTask checks it again and refuses the same way.
+	if !bot.AcceptsTasks() {
+		_ = uc.rec.audit(ctx, "incident.open", incident.ID().String(), domain.AuditDenied, map[string]string{"reason": "bot is " + bot.Status().String()})
+		return OpenIncidentResult{}, domain.StateError{Subject: "bot " + bot.ID().String(), Current: bot.Status().String(), Attempted: "take an incident"}
+	}
 	if err := uc.deps.Incidents.Save(ctx, incident); err != nil {
 		return OpenIncidentResult{}, err
 	}

@@ -4,7 +4,7 @@ import "time"
 
 // IncidentSnapshot is an incident as plain data. GroupKey is what the
 // source groups alerts by (Alertmanager's groupKey); Fingerprints are the
-// alerts seen in it. Cycle counts the opens: 1 for the first, one more
+// alerts seen in it, the first 64. Cycle counts the opens: 1 for the first, one more
 // for each reopening; TaskIDs lists the triage tasks, one per cycle,
 // oldest first. Diagnosis is the answer of the last completed triage
 // task; Reason says why it was escalated or resolved. Repeats counts the

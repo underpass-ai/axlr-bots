@@ -134,8 +134,8 @@ func TestIncidentValidation(t *testing.T) {
 	for n := range many {
 		many[n] = "fp-" + string(rune('a'+n%26)) + string(rune('a'+n/26))
 	}
-	if _, err := NewIncident("inc-1", "ops", "triage", "g", "manual", "t", Sev3, many, t0); err == nil {
-		t.Error("65 alerts accepted")
+	if big, err := NewIncident("inc-1", "ops", "triage", "g", "manual", "t", Sev3, many, t0); err != nil || len(big.Fingerprints()) != maxIncidentFingerprints {
+		t.Errorf("a big group: %v, %d alerts kept", err, len(big.Fingerprints()))
 	}
 	if severity, err := ParseIncidentSeverity(""); err != nil || severity != Sev3 {
 		t.Errorf("default severity = %q %v", severity, err)
