@@ -20,7 +20,7 @@ class FakeSynth:
         self.calls.append(("program", channel, program))
 
     def note_on(self, channel, key, velocity):
-        self.calls.append(("on", channel, key))
+        self.calls.append(("on", channel, key, velocity))
         self.ons += 1
 
     def note_off(self, channel, key):
@@ -40,6 +40,20 @@ class FakeSynth:
 
     def bend(self, channel, cents):
         self.calls.append(("bend", channel, cents))
+
+    def modulation(self, channel, value):
+        self.calls.append(("modulation", channel, value))
+
+    def brightness(self, channel, cents):
+        self.calls.append(("brightness", channel, cents))
+        return True
+
+    def last(self, what, channel):
+        values = [c[2] for c in self.calls if c[0] == what and c[1] == channel]
+        return values[-1] if values else None
+
+    def velocities(self, channel):
+        return [c[3] for c in self.calls if c[0] == "on" and c[1] == channel]
 
     def all_off(self, channel):
         self.calls.append(("all_off", channel))
@@ -604,3 +618,61 @@ class DoneForAFixedProgram(unittest.TestCase):
         out = o.listen("ob-1", bars=8, max_seconds=1)
         self.assertEqual(("done" in out, "faded" in out), (False, True))
         self.assertNotIn("done", o.phrases("ob-1"))
+
+
+class CharacterTest(unittest.TestCase):
+    """The conductor's expression on a chair's voice: velocity, brightness and vibrato, never the level or the gain."""
+
+    def test_without_a_character_the_voice_is_the_plain_one(self):
+        o, synth, _ = orchestra()
+        o.cue("info.cue.all", {})
+        o.play("vn1-1", 1, "f")
+        play_until(o, 3)
+        ch = o.chairs["vn1-1"]["channel"]
+        self.assertTrue(synth.velocities(ch) and all(v == 127 for v in synth.velocities(ch)))
+        self.assertIsNone(synth.last("brightness", ch))
+        self.assertIsNone(synth.last("modulation", ch))
+        self.assertIsNone(o.snapshot()["sections"][0]["chairs"][0]["character"])
+
+    def test_dolce_strikes_softer_darker_and_warmer_at_once_and_the_level_stays(self):
+        o, synth, _ = orchestra()
+        o.cue("info.cue.all", {})
+        o.play("vn1-1", 1, "f")
+        play_until(o, 2)
+        ch = o.chairs["vn1-1"]["channel"]
+        before, level = len(synth.velocities(ch)), synth.last_volume(ch)
+        self.assertEqual(o.character(o.chairs_of("all"), "dolce"), 36)
+        self.assertEqual((synth.last("brightness", ch), synth.last("modulation", ch)), (-2400, 20))
+        play_until(o, 3)
+        after = synth.velocities(ch)[before:]
+        self.assertTrue(after and all(v == 102 for v in after), after)
+        self.assertEqual(synth.last_volume(ch), level)  # the dynamics are the cue's business
+        self.assertEqual(o.chairs["vn1-1"]["gain"], 1.0)
+        view = next(c for s in o.snapshot()["sections"] for c in s["chairs"] if c["id"] == "vn1-1")
+        self.assertEqual(view["character"], "dolce")
+        self.assertEqual(o.character(o.chairs_of("all"), "dolce"), 0)  # the same again changes nothing
+
+    def test_brillante_is_brighter_and_a_bot_may_ask_for_it_in_play(self):
+        o, synth, _ = orchestra()
+        o.cue("info.cue.all", {})
+        answer = o.play("ob-1", 1, "f", character="brillante")
+        ch = o.chairs["ob-1"]["channel"]
+        self.assertEqual(answer["character"], "brillante")
+        self.assertEqual((synth.last("brightness", ch), synth.last("modulation", ch)), (1200, 45))
+        with self.assertRaises(Refused):
+            o.play("ob-2", 1, character="dolcissimo")
+        self.assertIn("The conductor's expression now: brillante (bright and lively)", o.phrases("ob-1")["ask"]["state"])
+        self.assertNotIn("expression now", o.phrases("ob-2")["ask"]["state"])
+
+    def test_a_new_take_starts_with_the_plain_voice(self):
+        o, synth, _ = orchestra()
+        o.cue("info.cue.all", {})
+        o.play("vc-1", 1)
+        o.character(["vc-1"], "appassionato")
+        ch = o.chairs["vc-1"]["channel"]
+        self.assertEqual(synth.last("modulation", ch), 80)
+        play_until(o, 2)
+        o.stop_all("the conductor")
+        o.cue("info.cue.all", {})
+        self.assertIsNone(o.chairs["vc-1"]["character"])
+        self.assertEqual((synth.last("brightness", ch), synth.last("modulation", ch)), (0, 0))

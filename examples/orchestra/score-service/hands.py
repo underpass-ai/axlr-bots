@@ -39,6 +39,21 @@ not by Jev, and act on the target (native):
   beat            the tempo the conductor beats with a pointing hand, the
                   clock at once, published as the swipes are
 
+The conductor's expression is read from how the hands move, not from what
+they hold (motion): every couple of seconds the page sums up each hand's last
+seconds (speed, how far it rose and swept, how often it turned, how open, how
+high) and the service asks Jev one choice: dolce, cantabile, brillante,
+appassionato or nothing. Nothing is the default, as with the gestures: a
+reading under expression.threshold changes nothing, and nothing is read
+while nothing plays (an event would reach each idle chair as a task, and a
+Jev chair's task starts the music). A character read goes on
+the locked target's chairs, else on everyone, at once (orchestra.character):
+their voices darker or brighter, never their level or gain, which the cues
+and the hands' heights own. It is published as info.expression {"character"}
+when it changes, at most every expression.publishSeconds, so a chair's bot
+hears the conductor and asks for it in its next play; the sound does not
+wait for the bus.
+
 A cue is the event the operator's panel already publishes (orchestra 6b), as
 the operator; it reaches a bot's running task as a message. A pause is the
 service's alone: a stop on the bus would end each bot's run, and a bot back
@@ -75,6 +90,20 @@ GESTURES = {
             "just below the eyes, within 25 cm of the head",
 }
 LEVELS = {"open": "f", "down": "p"}
+CHARACTERS = {
+    "nothing": "nothing: no character to read (the hands barely move, or the motion says nothing in particular)",
+    "dolce": "dolce: tender and soft; slow, small, smooth motions, the hands low, the fingers relaxed",
+    "cantabile": "cantabile: singing and even; moderate, flowing, continuous motion, no sharp accents",
+    "brillante": "brillante: bright and lively; quick, light, crisp motions, the hands high and open",
+    "appassionato": "appassionato: fiery and intense; big, fast, forceful motions with sharp accents",
+}
+MOTION_HEAD = ("A conductor wearing a mixed-reality headset conducts an orchestra with their hands. The headset tracked each hand's "
+               "position for the last {seconds} s; these are the sums of that motion, not a single posture. The orchestra: {music}.\n"
+               "For scale: a tender passage is conducted slowly, under about 0.25 m/s, with rises under 12 cm and the hands low; "
+               "an even, singing one at a moderate, flowing 0.3–0.7 m/s with no sharp accents (peaks about twice the average); "
+               "a bright, lively one quickly and lightly, 0.7–1.2 m/s, small quick turns, the hands high and open; "
+               "a fiery one over about 1.2 m/s with rises over 40 cm and sharp accents (peaks three times the average or more). "
+               "A hand that barely moves (under 0.05 m/s) says nothing.")
 NATIVE = ("tap-thumb", "swipe-forward", "swipe-backward", "pinch-start", "pinch-move", "pinch-end", "beat")
 FINGERS = ("thumb", "index", "middle", "ring", "little")
 FACING = (("away", "away from the conductor, toward the orchestra"), ("floor", "the floor"),
@@ -107,6 +136,11 @@ class Hands:
         self.native_cooldown = float(config.get("nativeCooldownSeconds", 1.0))
         self.pinch = {"left": None, "right": None}  # where a held pinch began: the hand's height, the target's gain
         self.tempo_sent_at = None
+        expression = config.get("expression") or {}
+        self.character_threshold = float(expression.get("threshold", 0.55))
+        self.motion_every = float(expression.get("everySeconds", 2.0))
+        self.character_every = float(expression.get("publishSeconds", 6.0))
+        self.motion_at, self.character_sent_at, self.character = None, None, None  # the last character read, for the page
         self.lock = threading.Lock()
         self.last_call, self.sent_at, self.history, self.calls = None, {}, [], 0
 
@@ -248,6 +282,101 @@ class Hands:
             thread.join(timeout=self.publish_wait)
         return record
 
+    # --- the conductor's expression, from how the hands move -------------------
+
+    def motion(self, message):
+        """The hands' last seconds, summed up by the page: Jev reads the expression; a character read goes on the target's chairs, else everyone."""
+        message = message if isinstance(message, dict) else {}
+        hands = {side: h for side, h in (message.get("hands") or {}).items() if side in ("left", "right") and isinstance(h, dict)}
+        target, locked = self.target_of(message.get("target")), bool(message.get("locked"))
+        now = self.clock()
+        record = {"at": round(now, 3), "motion": {side: self._compact_motion(h) for side, h in hands.items()}, "target": target, "locked": locked,
+                  "read": {}, "decision": [], "sent": [], "notSent": [], "dryRun": self.dry_run, "simulated": bool(message.get("simulated"))}
+        with self.lock:
+            if not hands:
+                record["notSent"].append({"what": "expression", "why": "no hand tracked"})
+                return self._keep(record)
+            if self.motion_at is not None and now - self.motion_at < self.motion_every:
+                record["notSent"].append({"what": "expression", "why": f"too soon after the last reading ({self.motion_every:g} s apart at most)"})
+                return self._keep(record)
+            self.motion_at = now
+            self.calls += 1
+        options = list(CHARACTERS.values())
+        try:
+            answer = self.judge(self.motion_state(hands), {"expression": ("Which expression does the conductor ask of the orchestra?", options)})
+        except Exception as exc:  # Jev failing means no change, never a guess
+            record["jev"] = {"error": str(exc), "source": JEV_SOURCE}
+            record["notSent"].append({"what": "expression", "why": "Jev did not answer"})
+            with self.lock:
+                return self._keep(record)
+        by_text = {v: k for k, v in CHARACTERS.items()}
+        a = answer["answers"]["expression"]
+        probabilities = {by_text[o]: round(p, 3) for o, p in a["probabilities"].items()}
+        record["jev"] = {"model": answer["model"], "ms": answer["ms"], "inputTokens": answer.get("inputTokens"), "source": JEV_SOURCE,
+                         "answers": {"expression": {"choice": by_text[a["choice"]], "confidence": a.get("confidence"), "probabilities": probabilities}}}
+        choice, p = by_text[a["choice"]], probabilities[by_text[a["choice"]]]
+        read = choice if choice != "nothing" and p >= self.character_threshold else "nothing"
+        record["read"] = {"expression": read, "probability": p}
+        threads = []
+        with self.lock:
+            if read == "nothing":
+                record["notSent"].append({"what": "expression", "why": f"Jev read {choice} at {p:.2f}" + ("" if choice == "nothing" else f", under {self.character_threshold:g}")})
+                return self._keep(record)
+            # Only while the music plays: a message reaches an idle chair as a task, and a Jev chair's task
+            # plays its first phrase, which starts the music. Hands warming up before the downbeat cue nobody.
+            if self.orchestra.snapshot()["status"] != "playing":
+                record["notSent"].append({"what": f"{read}", "why": "nothing plays: a palm up starts the music"})
+                return self._keep(record)
+            group = target if locked and target else "all"
+            record["decision"].append({"gesture": read, "group": group})
+            named = self.chairs_of(group)
+            changed = self.orchestra.character(named, read)
+            self.character = {"character": read, "probability": p, "group": group, "at": round(now, 3)}
+            title = self.instruments[group]["name"] if group in self.instruments else "Everyone"
+            record["applied"] = f"{title}: {read}" + ("" if changed else " already")
+            if not changed:
+                record["notSent"].append({"what": f"{read} {group}", "why": f"the group already plays {read}"})
+            elif self.character_sent_at is not None and now - self.character_sent_at < self.character_every:
+                record["notSent"].append({"what": f"{read} {group}", "why": f"the expression was published {now - self.character_sent_at:.1f} s ago; the voices follow already"})
+            else:
+                self.character_sent_at = now
+                threads = self._send([("info.expression", f"{title}, {read}.", {"character": read, "target": group}, None)], record)
+            self._keep(record)
+        for thread in threads if self.publish_wait > 0 else ():
+            thread.join(timeout=self.publish_wait)
+        return record
+
+    def motion_state(self, hands):
+        """The motion sums as Jev reads them: one sentence per hand tracked, and where the music is."""
+        snap = self.orchestra.snapshot()
+        music = (f"playing bar {snap['bar']} of {snap['bars']} at {round(snap['bpm'])} bpm, {sum(s['playing'] for s in snap['sections'])} chairs sounding"
+                 if snap["status"] == "playing" else "nothing plays yet")
+        seconds = max((float(h.get("seconds") or 0) for h in hands.values()), default=0)
+        lines = [MOTION_HEAD.format(seconds=f"{seconds:.1f}", music=music)]
+        for side in ("left", "right"):
+            h = hands.get(side)
+            if h is None:
+                lines.append(f"{side.capitalize()} hand: not tracked.")
+                continue
+            num = lambda k: float(h[k]) if isinstance(h.get(k), (int, float)) else None  # noqa: E731
+            speed, peak, rise, sweep, turns, open_, height = (num(k) for k in ("speed", "peak", "rise", "sweep", "turns", "open", "height"))
+            text = [f"{side.capitalize()} hand:"]
+            if speed is not None:
+                text.append(f"moved at {speed:.2f} m/s on average" + (f", peaks of {peak:.2f} m/s ({peak / speed:.1f} times the average)" if peak and speed > 0.01 else "") + ";")
+            if rise is not None and sweep is not None:
+                text.append(f"rose and fell over {rise * 100:.0f} cm and swept {sweep * 100:.0f} cm sideways;")
+            if turns is not None:
+                text.append(f"turned from rising to falling {turns:.1f} times a second;")
+            if height is not None:
+                text.append(f"was {abs(height) * 100:.0f} cm {'above' if height >= 0 else 'below'} the eyes on average;")
+            if open_ is not None:
+                text.append(f"fingers {open_:.2f} open (1 straight, 0 curled into the palm).")
+            lines.append(" ".join(text))
+        return "\n".join(lines)
+
+    def _compact_motion(self, h):
+        return {k: round(float(h[k]), 2) for k in ("seconds", "speed", "peak", "rise", "sweep", "turns", "open", "height") if isinstance(h.get(k), (int, float))}
+
     def _entrance(self, target, locked, record):
         """A thumb tap: the target's entrance, a cue with no level, while the music plays and the target is locked."""
         o = self.orchestra
@@ -350,7 +479,10 @@ class Hands:
                                  "tap-thumb": "the locked target's entrance: info.cue.<section>, no level, while the music plays",
                                  "swipe-forward / swipe-backward": f"tempo ±{self.tempo_step:g}, info.tempo at most every {self.tempo_every:g} s",
                                  "pinch held": f"the target's gain from where it was, over {self.pinch_span:g} m, no event",
-                                 "beat": "the tempo as beaten with a pointing hand, published as the swipes are"},
+                                 "beat": "the tempo as beaten with a pointing hand, published as the swipes are",
+                                 "motion": f"how the hands move, read by Jev as the expression (dolce, cantabile, brillante, appassionato) of the locked section, else everyone: "
+                                           f"the voices' timbre at once, info.expression when it changes, at most every {self.character_every:g} s"},
+                    "character": self.character, "characters": CHARACTERS,
                     "engaged": dict(self.engaged), "instruments": list(self.instruments.values()),
                     "dryRun": self.dry_run, "source": JEV_SOURCE}
 

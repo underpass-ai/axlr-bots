@@ -137,3 +137,53 @@ export class Beats {
     return bpm;
   }
 }
+
+// How a hand moves over the last seconds, summed up for Jev to read the
+// conductor's expression (dolce, cantabile, brillante, appassionato): its
+// speed, how far it rose and swept, how often it turned from rising to
+// falling, how high it was, how open. Positions are the hand's from the head
+// (side, height, ahead, metres), times in seconds; open is 0 (fingers curled)
+// to 1 (straight). Nothing to do with what the hand holds: a baton, a flat
+// hand and a fist move alike.
+export class Motion {
+  constructor({ window = 2.5, still = 0.05 } = {}) { this.window = window; this.still = still; this.samples = []; }
+  reset() { this.samples = []; }
+  update(position, open, now) {
+    this.samples.push({ p: [position.side, position.height, position.ahead], open, t: now });
+    while (this.samples.length && now - this.samples[0].t > this.window) this.samples.shift();
+  }
+  // null until the window holds 0.8 s of motion; moving says whether the hand moved at all.
+  summary() {
+    const s = this.samples;
+    if (s.length < 4 || s[s.length - 1].t - s[0].t < 0.8) return null;
+    const seconds = s[s.length - 1].t - s[0].t;
+    let path = 0, peak = 0, turns = 0, wasRising = null;
+    for (let i = 1; i < s.length; i++) {
+      const dt = s[i].t - s[i - 1].t;
+      if (dt <= 0) continue;
+      const d = Math.hypot(...sub(s[i].p, s[i - 1].p));
+      path += d;
+      peak = Math.max(peak, d / dt);
+      const vy = (s[i].p[1] - s[i - 1].p[1]) / dt;
+      if (Math.abs(vy) > 0.15) {  // a clear rise or fall; a turn is a change between the two
+        const rising = vy > 0;
+        if (wasRising !== null && rising !== wasRising) turns++;
+        wasRising = rising;
+      }
+    }
+    const heights = s.map((x) => x.p[1]), sides = s.map((x) => x.p[0]);
+    const speed = path / seconds;
+    return {
+      seconds: r2(seconds), speed: r2(speed), peak: r2(peak),
+      rise: r2(Math.max(...heights) - Math.min(...heights)), sweep: r2(Math.max(...sides) - Math.min(...sides)),
+      turns: r2(turns / seconds), height: r2(heights.reduce((a, b) => a + b, 0) / heights.length),
+      open: r2(s.reduce((a, x) => a + x.open, 0) / s.length), moving: speed > this.still,
+    };
+  }
+}
+
+// How open a measured hand is: the four fingers' bend, 0° straight to 180° curled, as 1 to 0.
+export function openness(m) {
+  const f = m.fingers;
+  return r2(Math.max(0, Math.min(1, 1 - (f.index + f.middle + f.ring + f.little) / 4 / 180)));
+}

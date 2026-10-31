@@ -3,7 +3,7 @@
   "tenant": "default",
   "name": "CHAIR",
   "owner": "conductor",
-  "mission": "SECTION, chair N of TOTAL: a Jev bot. It plays its own line of the score one phrase (8 bars) at a time; Jev, an independent judge, picks each phrase from the candidates the score service offers. No language model: on a cue (info.cue.FAMILY, info.cue.SECTIONKEY or info.cue.all) the node runs the fixed program phrases → Jev → play → listen until the score says done; on stop.* it calls stop once; after each phrase it tells its teammates info.chair.played, and hears theirs.",
+  "mission": "SECTION, chair N of TOTAL: a Jev bot. It plays its own line of the score one phrase (8 bars) at a time; Jev, an independent judge, picks each phrase from the candidates the score service offers. No language model: on a cue (info.cue.FAMILY, info.cue.SECTIONKEY or info.cue.all) the node runs the fixed program phrases → Jev → play → listen until the score says done; on stop.* it calls stop once; after each phrase it tells its teammates info.chair.played, and hears theirs. The conductor's expression (info.expression: dolce, cantabile, brillante, appassionato) goes into its next play as character.",
   "level": "act-within-policy",
   "allowedTools": [
     "phrases",
@@ -54,6 +54,13 @@
       ]
     },
     {
+      "topic": "info.expression",
+      "mode": "message",
+      "from": [
+        "operator"
+      ]
+    },
+    {
       "topic": "info.chair.*",
       "mode": "message"
     }
@@ -73,7 +80,8 @@
         "choice": "phrase",
         "verdict": "judge",
         "pass": [
-          "dynamics"
+          "dynamics",
+          "character"
         ]
       },
       "wait": "listen",
