@@ -993,7 +993,7 @@
         "orientation": "horizontal",
         "valueMode": "color",
         "showUnfilled": true,
-        "namePlacement": "left",
+        "namePlacement": "top",
         "sizing": "auto",
         "minVizHeight": 12,
         "maxVizHeight": 28,
@@ -1262,7 +1262,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(increase(orchestra_hands_native_total{job=\"$job\", gesture=\"pinch-double\"}[$__range])) or vector(0)",
+          "expr": "sum(increase(orchestra_hands_native_total{job=\"$job\", gesture=\"pinch-double\", outcome=\"acted\"}[$__range])) or vector(0)",
           "legendFormat": "in the range",
           "instant": true,
           "range": false,

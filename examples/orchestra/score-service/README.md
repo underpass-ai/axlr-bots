@@ -101,7 +101,7 @@ The soundfont renders the sound; it is not shipped here. It sounds like a Genera
 ## Check
 
 ```bash
-~/.local/share/axlr-stage/venv/bin/python -m unittest -v test_score_service test_hands test_ws    # no synthesizer, no network, no Jev
+~/.local/share/axlr-stage/venv/bin/python -m unittest discover -v    # no synthesizer, no network, no Jev (metrics and exporter included)
 (cd static && node --test posture.test.mjs)                                             # the hands' math
 python3 check_take.py --team stage --wav take.wav                                # with the service running and following team stage
 ```
@@ -115,6 +115,15 @@ python3 check_take.py --team stage --wav take.wav                               
 | 3 | 0.30 s | ≤ 0.1 s | ≤ 0.40 s | yes |
 
 The cut is measured from the event's `createdAt` on the control plane to the service's cut on the same host's clock; the sound in the WAV is read from the cut's frame. That is the stop's latency, not the audio path's: OBS adds its own buffer, labelled apart. All 36 chairs at `f` peak at −1.8 dBFS, unclipped.
+
+## Metrics
+
+`GET /metrics` answers Prometheus (text format 0.0.4) on loopback and the internal names, never on a public one: the take, the chairs' calls, the hands, Jev, the bus, the WebSocket and the render loop (`telemetry.py`; the registry, standard library only, in `metrics.py`). `--jev-log PATH` appends each question to Jev and its answer (or error) as a JSON line; a directory gets one file per run. `team_exporter.py` turns the control plane's records for a team into metrics on 127.0.0.1:8797. Prometheus, Grafana and the dashboards: [`../observability`](../observability/README.md).
+
+```bash
+curl -s http://127.0.0.1:8790/metrics | grep '^orchestra_bar '
+python3 team_exporter.py --team orchestra          # then curl -s http://127.0.0.1:8797/metrics
+```
 
 ## The stage
 

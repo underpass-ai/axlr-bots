@@ -24,7 +24,7 @@ import time
 CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 # Seconds, from a millisecond to half a minute: an HTTP round trip, a Jev
 # reading, a chair's listen (it waits up to 20 s).
-SECONDS = (0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 20, 30)
+SECONDS = (0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.75, 1, 1.5, 2, 2.5, 5, 10, 20, 30)
 
 
 _NUMBER = re.compile(r"[-+]?\d+(?:[.,]\d+)?")

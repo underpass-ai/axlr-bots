@@ -121,7 +121,8 @@
             "mode": "fixed",
             "fixedColor": "#B85C38"
           },
-          "mappings": []
+          "mappings": [],
+          "noValue": "none yet"
         },
         "overrides": []
       },
@@ -178,7 +179,8 @@
             "mode": "fixed",
             "fixedColor": "#D97B2D"
           },
-          "mappings": []
+          "mappings": [],
+          "noValue": "none yet"
         },
         "overrides": []
       },
@@ -235,7 +237,8 @@
             "mode": "fixed",
             "fixedColor": "#C9B08C"
           },
-          "mappings": []
+          "mappings": [],
+          "noValue": "none yet"
         },
         "overrides": []
       },
@@ -292,7 +295,8 @@
             "mode": "fixed",
             "fixedColor": "#5FA8A0"
           },
-          "mappings": []
+          "mappings": [],
+          "noValue": "none yet"
         },
         "overrides": []
       },
@@ -1248,9 +1252,9 @@
       }
     },
     {
-      "type": "bargauge",
+      "type": "stat",
       "title": "Jev's errors",
-      "description": "",
+      "description": "Jev not answering, or answering out of the question: no signal, never a guess. The reasons: orchestra_jev_errors_total by reason.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1262,8 +1266,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (kind, reason) (increase(orchestra_jev_errors_total{job=\"$job\"}[$__range]))",
-          "legendFormat": "{{kind}}: {{reason}}",
+          "expr": "sum(increase(orchestra_jev_errors_total{job=\"$job\"}[$__range])) or vector(0)",
+          "legendFormat": "in the range",
           "instant": true,
           "range": false,
           "editorMode": "code"
@@ -1272,31 +1276,42 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "min": 0,
           "color": {
-            "mode": "fixed",
-            "fixedColor": "#D9534F"
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#5FA8A0",
+                "value": null
+              },
+              {
+                "color": "#D9534F",
+                "value": 1
+              }
+            ]
           },
           "decimals": 0
         },
         "overrides": []
       },
       "options": {
-        "displayMode": "basic",
-        "orientation": "horizontal",
-        "valueMode": "color",
-        "showUnfilled": true,
-        "namePlacement": "left",
-        "sizing": "auto",
-        "minVizHeight": 12,
-        "maxVizHeight": 28,
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ],
           "fields": "",
           "values": false
-        }
+        },
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "showPercentChange": false,
+        "wideLayout": true
       },
       "id": 18,
       "gridPos": {

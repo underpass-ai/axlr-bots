@@ -2361,7 +2361,7 @@
         "orientation": "horizontal",
         "valueMode": "color",
         "showUnfilled": true,
-        "namePlacement": "left",
+        "namePlacement": "top",
         "sizing": "auto",
         "minVizHeight": 12,
         "maxVizHeight": 28,

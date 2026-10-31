@@ -63,7 +63,7 @@ ENDED = {"bot.task.completed": "completed", "bot.task.failed": "failed", "bot.ta
 STATES = dict(ENDED, **{"bot.task.submitted": "submitted", "bot.task.started": "started", "bot.task.waiting_approval": "waiting_approval",
                         "bot.task.decided": "decided", "bot.task.delegated": "delegated"})
 BUDGETS = {"tool_calls": "maxToolCallsPerTask", "model_calls": "maxModelCallsPerTask", "seconds": "taskTimeoutSeconds"}
-QUICK = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 300)
+QUICK = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 1, 1.5, 2, 5, 10, 30, 60, 300)
 LONG = (1, 5, 10, 30, 60, 120, 300, 600, 900, 1200, 1800, 3600)
 CALLS = (8, 16, 32, 64, 96, 128, 160, 192, 256, 400, 512)
 

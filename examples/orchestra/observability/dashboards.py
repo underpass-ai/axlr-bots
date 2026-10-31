@@ -107,13 +107,15 @@ def timeseries(title, queries=(), unit="short", description="", stack=False, bar
 
 
 def stat(title, queries, unit="short", description="", color=COPPER, text="value", mappings=None, decimals=None, graph=False, thresholds=None,
-         overrides=None, size=None):
+         overrides=None, size=None, none=None):
     defaults = {"unit": unit, "color": {"mode": "fixed", "fixedColor": color} if not thresholds else {"mode": "thresholds"},
                 "mappings": mappings or []}
     if thresholds:
         defaults["thresholds"] = {"mode": "absolute", "steps": [{"color": c, "value": v} for v, c in thresholds]}
     if decimals is not None:
         defaults["decimals"] = decimals
+    if none:
+        defaults["noValue"] = none
     return {"type": "stat", "title": title, "description": description, "datasource": DS, "targets": targets(queries, instant=not graph),
             "fieldConfig": {"defaults": defaults, "overrides": overrides or []},
             "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False}, "textMode": text,
@@ -122,7 +124,7 @@ def stat(title, queries, unit="short", description="", color=COPPER, text="value
                         "showPercentChange": False, "wideLayout": True}}
 
 
-def bargauge(title, queries, unit="short", description="", maximum=None, overrides=None, color=COPPER, decimals=None):
+def bargauge(title, queries, unit="short", description="", maximum=None, overrides=None, color=COPPER, decimals=None, names="left"):
     defaults = {"unit": unit, "min": 0, "color": {"mode": "fixed", "fixedColor": color}}
     if decimals is not None:
         defaults["decimals"] = decimals
@@ -130,7 +132,7 @@ def bargauge(title, queries, unit="short", description="", maximum=None, overrid
         defaults["max"] = maximum
     return {"type": "bargauge", "title": title, "description": description, "datasource": DS, "targets": targets(queries, instant=True),
             "fieldConfig": {"defaults": defaults, "overrides": overrides or []},
-            "options": {"displayMode": "basic", "orientation": "horizontal", "valueMode": "color", "showUnfilled": True, "namePlacement": "left",
+            "options": {"displayMode": "basic", "orientation": "horizontal", "valueMode": "color", "showUnfilled": True, "namePlacement": names,
                         "sizing": "auto", "minVizHeight": 12, "maxVizHeight": 28,
                         "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False}}}
 
@@ -208,7 +210,7 @@ def conductor():
         (f"histogram_quantile(0.5, sum by (le, choice) (rate(orchestra_hands_choice_probability_bucket{{{J}}}[$__rate_interval])))", "p50 {{choice}}")],
         unit="percentunit", minimum=0, maximum=1), 8, 7)
     b.add(bargauge("Why nothing was sent", [(f"topk(8, sum by (source, why) (increase(orchestra_hands_not_sent_total{{{J}}}[$__range])))",
-                                             "{{source}}: {{why}}")], description="In the time range: readings that sent nothing, and why.", decimals=0), 8, 7)
+                                             "{{source}}: {{why}}")], description="In the time range: readings that sent nothing, and why.", decimals=0, names="top"), 8, 7)
     b.row("Levels: a flat hand's level is provisional until a double pinch keeps it")
     b.add(timeseries("Levels pending, kept, reverted", [(f"sum by (kind, reason) (increase(orchestra_hands_levels_total{{{J}}}[$__rate_interval]))",
                                                           "{{kind}} · {{reason}}")], bars=True, stack=True,
@@ -216,7 +218,7 @@ def conductor():
     b.add(timeseries("Provisional and kept level per group", step=True, queries=[(f"orchestra_hands_level_pending{{{J}}}", "pending {{group}} ({{side}})"),
                                                                (f"orchestra_hands_level_kept{{{J}}}", "kept {{group}}")],
                      unit="percentunit", minimum=0, maximum=1, overrides=colors({"pending": GOLD, "kept": PATINA})), 8, 8)
-    b.add(stat("Double pinches", [(f"sum(increase(orchestra_hands_native_total{{{J}, gesture=\"pinch-double\"}}[$__range])) or vector(0)", "in the range")],
+    b.add(stat("Double pinches", [(f"sum(increase(orchestra_hands_native_total{{{J}, gesture=\"pinch-double\", outcome=\"acted\"}}[$__range])) or vector(0)", "in the range")],
                decimals=0, color=PATINA, description="Double pinches in the time range (each keeps the levels waiting)."), 4, 4)
     b.add(stat("Kept · reverted", [(f"sum(increase(orchestra_hands_levels_total{{{J}, kind=\"kept\"}}[$__range])) or vector(0)", "kept"),
                                    (f"sum(increase(orchestra_hands_levels_total{{{J}, kind=\"reverted\"}}[$__range])) or vector(0)", "reverted")],
@@ -280,7 +282,7 @@ def orchestra():
                      description="inSeconds of each play: under a bar, and the chair risks coming in late."), 12, 7)
     b.row("The chairs' tasks, from the control plane")
     b.add(bargauge("Task failures by reason", [(f"sum by (reason) (axlr_team_task_failures_total{{{TEAM}}})", "{{reason}}")], color=RED, decimals=0,
-                   description="Since the exporter started, with the timeline's newest 1,000 records it read then."), 8, 8)
+                   description="Since the exporter started, with the timeline's newest 1,000 records it read then.", names="top"), 8, 8)
     b.add(timeseries("Task events per minute", [(per_minute("axlr_team_tasks_total", "state", TEAM), "{{state}}")], bars=True,
                      overrides=colors({"submitted": SAND, "started": GOLD, "completed": PATINA, "failed": RED, "cancelled": GREY})), 8, 8)
     b.add(stat("Tasks open", [(f"axlr_team_tasks_open{{{TEAM}}}", "{{state}}")], text="value_and_name", decimals=0, color=GOLD), 4, 4)
@@ -299,13 +301,13 @@ def orchestra():
 
 def pipeline():
     b = Board()
-    b.add(stat("Publish p50", [(p50("orchestra_bus_publish_seconds"), "publish")], unit="s", color=COPPER,
+    b.add(stat("Publish p50", [(p50("orchestra_bus_publish_seconds"), "publish")], unit="s", none="none yet", color=COPPER,
                description="From the decision to the control plane's answer (the last 5 min)."), 4, 4)
-    b.add(stat("Echo p50", [(p50("orchestra_bus_echo_seconds"), "echo")], unit="s", color=GOLD,
+    b.add(stat("Echo p50", [(p50("orchestra_bus_echo_seconds"), "echo")], unit="s", none="none yet", color=GOLD,
                description="From a publish's start to its echo on the service's long poll."), 4, 4)
-    b.add(stat("Delivery p50", [(p50("orchestra_bus_delivery_seconds"), "delivery")], unit="s", color=SAND,
+    b.add(stat("Delivery p50", [(p50("orchestra_bus_delivery_seconds"), "delivery")], unit="s", none="none yet", color=SAND,
                description="From a publish's start to its delivery to a chair (the control plane's createdAt)."), 4, 4)
-    b.add(stat("Jev p50", [(p50("orchestra_jev_seconds"), "Jev")], unit="s", color=PATINA), 4, 4)
+    b.add(stat("Jev p50", [(p50("orchestra_jev_seconds"), "Jev")], unit="s", none="none yet", color=PATINA), 4, 4)
     b.add(stat("Headsets connected", [(f"orchestra_ws_connections{{{J}}}", "now")], decimals=0, color=CREAM), 4, 4)
     b.add(stat("Targets up", [('up{job=~"score.*|team"}', "{{job}}")], text="value_and_name", mappings=UP, color=PATINA, size=20,
                description="score: the live service (8790); score-test: the test instance (8795); team: the exporter (8797)."), 4, 4)
@@ -339,7 +341,9 @@ def pipeline():
                text="value_and_name", unit="currencyUSD", decimals=4, color=PATINA, size=26,
                overrides=[{"matcher": {"id": "byName", "options": "input tokens"},
                            "properties": [{"id": "unit", "value": "short"}, {"id": "decimals", "value": 0}]}]), 4, 7)
-    b.add(bargauge("Jev's errors", [(f"sum by (kind, reason) (increase(orchestra_jev_errors_total{{{J}}}[$__range]))", "{{kind}}: {{reason}}")], color=RED, decimals=0), 4, 7)
+    b.add(stat("Jev's errors", [(f"sum(increase(orchestra_jev_errors_total{{{J}}}[$__range])) or vector(0)", "in the range")], decimals=0,
+               thresholds=[(None, PATINA), (1, RED)], description="Jev not answering, or answering out of the question: no signal, never a guess. "
+                                                                 "The reasons: orchestra_jev_errors_total by reason."), 4, 7)
     b.row("The headset's link and the sound")
     b.add(timeseries("WebSocket messages per second", [(f"sum by (direction, type) (rate(orchestra_ws_messages_total{{{J}}}[$__rate_interval]))",
                                                         "{{direction}} {{type}}")], unit="reqps"), 8, 7)
