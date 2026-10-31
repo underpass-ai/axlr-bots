@@ -1344,6 +1344,171 @@
           }
         }
       }
+    },
+    "/v1/incidents": {
+      "get": {
+        "operationId": "listIncidents",
+        "description": "the incidents the query selects, the last seen first",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "one tenant"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "one IncidentStatus"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "at most this many (100 when absent, up to 1000)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IncidentSnapshot"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "openIncident",
+        "description": "report an alert group: a new incident and its triage task, or a repeat of the one already open for that tenant and group key, or a reopening of one resolved less than 30 minutes ago",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenIncidentCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenIncidentResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The group already had an incident: a repeat (no task) or a reopening (a new task), created false",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenIncidentResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/incidents/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "incident id"
+        }
+      ],
+      "get": {
+        "operationId": "getIncident",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentSnapshot"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/incidents/{id}/resolve": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "incident id"
+        }
+      ],
+      "post": {
+        "operationId": "resolveIncident",
+        "description": "close the incident; a resolved one is 409",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentSnapshot"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2039,6 +2204,10 @@
           },
           "type": {
             "$ref": "#/components/schemas/EventType"
+          },
+          "incidentId": {
+            "type": "string",
+            "description": "the incident an event about an incident names (incident.*); such an event also names the bot that triages it"
           }
         },
         "required": [
@@ -2085,7 +2254,13 @@
           "node.heartbeat",
           "node.offline",
           "node.enrolled",
-          "node.revoked"
+          "node.revoked",
+          "incident.opened",
+          "incident.repeated",
+          "incident.reopened",
+          "incident.diagnosed",
+          "incident.escalated",
+          "incident.resolved"
         ],
         "description": "A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
       },
@@ -3177,6 +3352,10 @@
           "priority": {
             "type": "string",
             "description": "urgent for a task that went first; absent for normal"
+          },
+          "incidentId": {
+            "type": "string",
+            "description": "the incident a triage task works on"
           }
         },
         "required": [
@@ -3371,7 +3550,8 @@
           "webhook",
           "timer",
           "delegation",
-          "event"
+          "event",
+          "incident"
         ],
         "description": "A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
       },
@@ -3410,6 +3590,206 @@
           "toolCalls",
           "costUsd"
         ]
+      },
+      "IncidentStatus": {
+        "type": "string",
+        "x-go-enum": "domain.IncidentStatus",
+        "x-extensible-enum": true,
+        "enum": [
+          "Open",
+          "Diagnosed",
+          "Resolved",
+          "Escalated"
+        ],
+        "description": "A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
+      },
+      "IncidentSeverity": {
+        "type": "string",
+        "x-go-enum": "domain.IncidentSeverity",
+        "x-extensible-enum": true,
+        "enum": [
+          "sev1",
+          "sev2",
+          "sev3",
+          "sev4"
+        ],
+        "description": "sev1 the worst; absent is sev3. A client must read a value not listed here as unknown."
+      },
+      "IncidentSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.IncidentSnapshot",
+        "description": "one grouped fault: what the alerts say, the bot that triages it, the tasks that worked on it and where it stands",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "inc-one"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "botId": {
+            "type": "string",
+            "description": "the bot that triages it"
+          },
+          "groupKey": {
+            "type": "string",
+            "description": "what the source groups the alerts by (Alertmanager's groupKey); the newest incident of a tenant and group key is the one an alert repeats or reopens"
+          },
+          "source": {
+            "type": "string",
+            "example": "alertmanager"
+          },
+          "title": {
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/IncidentSeverity"
+          },
+          "status": {
+            "$ref": "#/components/schemas/IncidentStatus"
+          },
+          "fingerprints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the alerts seen, oldest first"
+          },
+          "cycle": {
+            "type": "integer",
+            "description": "1 for the first opening, one more per reopening"
+          },
+          "taskIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the triage tasks, one per cycle, oldest first"
+          },
+          "diagnosis": {
+            "type": "string",
+            "description": "the answer of the last completed triage task"
+          },
+          "reason": {
+            "type": "string",
+            "description": "why it was escalated or resolved"
+          },
+          "repeats": {
+            "type": "integer",
+            "description": "alerts received while it was already open"
+          },
+          "costUsd": {
+            "type": "number",
+            "description": "what its tasks' executions reported"
+          },
+          "openedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastSeenAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resolvedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "tenantId",
+          "botId",
+          "groupKey",
+          "source",
+          "title",
+          "severity",
+          "status",
+          "cycle",
+          "openedAt",
+          "updatedAt",
+          "lastSeenAt"
+        ]
+      },
+      "OpenIncidentCommand": {
+        "type": "object",
+        "x-go-type": "application.OpenIncidentCommand",
+        "description": "an alert group reported to the control plane",
+        "properties": {
+          "tenant": {
+            "type": "string"
+          },
+          "botId": {
+            "type": "string",
+            "description": "the bot that triages it; it must declare the incident trigger"
+          },
+          "groupKey": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "description": "absent: manual"
+          },
+          "title": {
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/IncidentSeverity"
+          },
+          "fingerprints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "objective": {
+            "type": "string",
+            "description": "what the triage task asks for; absent: the trigger's template, or the default, rendered over the incident"
+          }
+        },
+        "required": [
+          "tenant",
+          "botId",
+          "groupKey",
+          "title"
+        ]
+      },
+      "OpenIncidentResponse": {
+        "type": "object",
+        "x-go-type": "unixapi.OpenIncidentResponse",
+        "properties": {
+          "incident": {
+            "$ref": "#/components/schemas/IncidentSnapshot"
+          },
+          "task": {
+            "$ref": "#/components/schemas/TaskSnapshot"
+          },
+          "created": {
+            "type": "boolean"
+          },
+          "reopened": {
+            "type": "boolean",
+            "description": "a new cycle of an incident resolved less than 30 minutes ago"
+          }
+        },
+        "required": [
+          "incident",
+          "created",
+          "reopened"
+        ]
+      },
+      "ResolveRequest": {
+        "type": "object",
+        "x-go-type": "unixapi.ResolveRequest",
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": []
       }
     }
   }

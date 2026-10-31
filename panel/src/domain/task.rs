@@ -27,6 +27,9 @@ pub struct Task {
     /// `urgent` for a task that went first; empty for normal.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub priority: String,
+    /// The incident a triage task works on; empty for any other task.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub incident_id: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

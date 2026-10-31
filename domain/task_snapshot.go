@@ -12,6 +12,7 @@ import (
 // Delegation is where a delegated task came from; Children are the
 // tasks this one delegated, and the granted counts what it handed them.
 // Priority is urgent for a task that goes first; empty for normal.
+// IncidentID names the incident a triage task works on.
 type TaskSnapshot struct {
 	ID             string             `json:"id"`
 	BotID          string             `json:"botId"`
@@ -29,6 +30,7 @@ type TaskSnapshot struct {
 	GrantedModel   int                `json:"grantedModelCalls,omitempty"`
 	GrantedTools   int                `json:"grantedToolCalls,omitempty"`
 	Priority       string             `json:"priority,omitempty"`
+	IncidentID     string             `json:"incidentId,omitempty"`
 	CreatedAt      time.Time          `json:"createdAt"`
 	UpdatedAt      time.Time          `json:"updatedAt"`
 }

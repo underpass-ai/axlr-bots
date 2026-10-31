@@ -59,6 +59,14 @@ type Service interface {
 	ListTasks(ctx context.Context, query application.TaskQuery) ([]domain.TaskSnapshot, error)
 	ListTaskEvents(ctx context.Context, id string, limit int) ([]domain.Event, error)
 	GetOverview(ctx context.Context, since time.Time) (application.Overview, error)
+	// OpenIncident reports an alert group: it opens an incident and its
+	// triage task, repeats one already open, or reopens one resolved
+	// less than the window ago.
+	OpenIncident(ctx context.Context, command application.OpenIncidentCommand) (OpenIncidentResponse, error)
+	ListIncidents(ctx context.Context, query application.IncidentQuery) ([]domain.IncidentSnapshot, error)
+	GetIncident(ctx context.Context, id string) (domain.IncidentSnapshot, error)
+	// ResolveIncident closes an incident; a resolved one is refused.
+	ResolveIncident(ctx context.Context, id string, request ResolveRequest) (domain.IncidentSnapshot, error)
 	// ListExecutions returns the task's executions, oldest first.
 	ListExecutions(ctx context.Context, id string) ([]domain.ExecutionSnapshot, error)
 	GetReport(ctx context.Context, id string) (ReportResponse, error)

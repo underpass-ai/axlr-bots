@@ -113,6 +113,9 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 		}
 		return s.notes.queue(ctx, bot, *task, *execution, wait)
 	}
+	if err := newIncidentAdvancer(s.deps).taskEnded(ctx, bot, *task, *execution); err != nil {
+		return err
+	}
 	return newPlatformPublisher(s.deps).taskEnded(ctx, bot, *task, *execution)
 }
 

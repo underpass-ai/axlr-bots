@@ -22,6 +22,9 @@ pub struct Event {
     pub group_name: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub task_id: String,
+    /// The incident an event about an incident names (incident.*).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub incident_id: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub execution_id: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -83,6 +86,12 @@ impl Event {
             "bot.task.preempted" => "Stopped for urgent".into(),
             "bot.task.delegated" => "Asked a bot".into(),
             "bot.delegation.refused" => "Ask refused".into(),
+            "incident.opened" => "Incident opened".into(),
+            "incident.repeated" => "Alert again".into(),
+            "incident.reopened" => "Incident reopened".into(),
+            "incident.diagnosed" => "Cause found".into(),
+            "incident.escalated" => "Needs a person".into(),
+            "incident.resolved" => "Incident resolved".into(),
             "execution.assigned" => "Sent to node".into(),
             "execution.reported" => "Node reported".into(),
             "node.registered" => "Node joined".into(),
@@ -104,14 +113,14 @@ impl Event {
 
     pub fn tone(&self) -> EventTone {
         match self.event_type.as_str() {
-            "bot.task.completed" | "bot.enabled" | "node.registered" | "node.enrolled" => EventTone::Good,
+            "bot.task.completed" | "bot.enabled" | "node.registered" | "node.enrolled" | "incident.diagnosed" | "incident.resolved" => EventTone::Good,
             "bot.task.failed"
             | "node.offline"
             | "node.revoked"
             | "bot.task.cancelled"
             | "bot.event.refused"
             | "bot.delegation.refused" => EventTone::Bad,
-            "bot.task.preempted" => EventTone::Waiting,
+            "bot.task.preempted" | "incident.opened" | "incident.reopened" | "incident.escalated" => EventTone::Waiting,
             "bot.event.emitted" | "group.event.published" => match self.payload_text("severity").as_deref() {
                 Some("warning") | Some("critical") => EventTone::Waiting,
                 _ => EventTone::Neutral,
@@ -321,6 +330,9 @@ mod tests {
         assert_eq!(denied.label(), "Denied");
         assert_eq!(denied.tone(), EventTone::Bad);
         assert_eq!(event("bot.task.decided", "{}").label(), "Decided");
+        assert_eq!(event("incident.escalated", "{}").label(), "Needs a person");
+        assert_eq!(event("incident.escalated", "{}").tone(), EventTone::Waiting);
+        assert_eq!(event("incident.resolved", "{}").tone(), EventTone::Good);
         assert_eq!(event("something.new", "{}").label(), "something.new");
         assert_eq!(event("something.new", "{}").tone(), EventTone::Neutral);
         assert_eq!(

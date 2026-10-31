@@ -15,6 +15,7 @@ import (
 var (
 	_ application.BotRepository        = BotRepository{}
 	_ application.TaskRepository       = TaskRepository{}
+	_ application.IncidentRepository   = IncidentRepository{}
 	_ application.ExecutionRepository  = ExecutionRepository{}
 	_ application.ArtifactStore        = ArtifactStore{}
 	_ application.NodeRepository       = NodeRepository{}
@@ -502,5 +503,49 @@ func TestCollectionRefusesIDsThatAreNotFileNames(t *testing.T) {
 	}
 	if path, err := files.path("task-1"); err != nil || path != filepath.Join(state, "tasks", "task-1.json") {
 		t.Errorf("task-1 = %q %v", path, err)
+	}
+}
+
+func TestIncidentRepositoryFindsTheNewestOfAGroup(t *testing.T) {
+	ctx := context.Background()
+	repo := NewIncidentRepository(t.TempDir())
+	if _, found, err := repo.FindNewestByGroupKey(ctx, "ops", "g"); err != nil || found {
+		t.Fatalf("empty store: %v %v", found, err)
+	}
+	for n, opened := range []time.Time{t0, t0.Add(time.Hour), t0.Add(30 * time.Minute)} {
+		incident, err := domain.NewIncident(domain.IncidentID("inc-"+string(rune('a'+n))), "ops", "triage", "g", "manual", "fire", domain.Sev3, []string{"fp"}, opened)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.Save(ctx, incident); err != nil {
+			t.Fatal(err)
+		}
+	}
+	other, _ := domain.NewIncident("inc-z", "eng", "triage", "g", "manual", "fire", domain.Sev3, nil, t0.Add(2*time.Hour))
+	_ = repo.Save(ctx, other)
+	newest, found, err := repo.FindNewestByGroupKey(ctx, "ops", "g")
+	if err != nil || !found || newest.ID() != "inc-b" {
+		t.Errorf("newest = %v %v %v", newest.ID(), found, err)
+	}
+	if _, found, _ := repo.FindNewestByGroupKey(ctx, "ops", "h"); found {
+		t.Error("another group found")
+	}
+	got, err := NewIncidentRepository(filepath.Dir(repo.files.dir)).Get(ctx, "inc-a")
+	if err != nil || got.GroupKey() != "g" || !got.OpenedAt().Equal(t0) {
+		t.Errorf("reopened: %+v %v", got.Snapshot(), err)
+	}
+	if _, err := repo.Get(ctx, "missing"); !domain.IsNotFound(err) {
+		t.Errorf("missing: %v", err)
+	}
+	list, err := repo.List(ctx)
+	if err != nil || len(list) != 4 {
+		t.Errorf("list: %d %v", len(list), err)
+	}
+	_ = os.WriteFile(filepath.Join(repo.files.dir, "inc-bad.json"), []byte("{"), 0o600)
+	if _, err := repo.List(ctx); err == nil {
+		t.Error("a corrupt incident listed")
+	}
+	if _, _, err := repo.FindNewestByGroupKey(ctx, "ops", "g"); err == nil {
+		t.Error("a corrupt incident searched")
 	}
 }

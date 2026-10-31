@@ -120,6 +120,58 @@ func (m *memoryTasks) FindByIdempotencyKey(_ context.Context, bot domain.BotID, 
 	return domain.Task{}, false, nil
 }
 
+type memoryIncidents struct {
+	incidents map[domain.IncidentID]domain.Incident
+	fail      error
+	listFail  error
+	saves     int
+}
+
+func (m *memoryIncidents) Save(_ context.Context, incident domain.Incident) error {
+	if m.fail != nil {
+		return m.fail
+	}
+	if m.incidents == nil {
+		m.incidents = map[domain.IncidentID]domain.Incident{}
+	}
+	m.incidents[incident.ID()] = incident
+	m.saves++
+	return nil
+}
+
+func (m *memoryIncidents) Get(_ context.Context, id domain.IncidentID) (domain.Incident, error) {
+	incident, ok := m.incidents[id]
+	if !ok {
+		return domain.Incident{}, domain.NotFoundError{Kind: "incident", ID: id.String()}
+	}
+	return incident, nil
+}
+
+func (m *memoryIncidents) FindNewestByGroupKey(_ context.Context, tenant domain.TenantID, groupKey string) (domain.Incident, bool, error) {
+	if m.listFail != nil {
+		return domain.Incident{}, false, m.listFail
+	}
+	var newest domain.Incident
+	found := false
+	for _, incident := range m.incidents {
+		if incident.TenantID() == tenant && incident.GroupKey() == groupKey && (!found || incident.OpenedAt().After(newest.OpenedAt())) {
+			newest, found = incident, true
+		}
+	}
+	return newest, found, nil
+}
+
+func (m *memoryIncidents) List(context.Context) ([]domain.Incident, error) {
+	if m.listFail != nil {
+		return nil, m.listFail
+	}
+	out := make([]domain.Incident, 0, len(m.incidents))
+	for _, incident := range m.incidents {
+		out = append(out, incident)
+	}
+	return out, nil
+}
+
 type memoryExecutions struct {
 	executions map[domain.ExecutionID]domain.Execution
 	fail       error
@@ -580,6 +632,7 @@ type harness struct {
 	deps    Dependencies
 	bots    *memoryBots
 	tasks   *memoryTasks
+	incs    *memoryIncidents
 	execs   *memoryExecutions
 	timers  *memoryTimers
 	nodes   *memoryNodes
@@ -601,6 +654,7 @@ func newHarness() *harness {
 	h := &harness{
 		bots:    &memoryBots{},
 		tasks:   &memoryTasks{},
+		incs:    &memoryIncidents{},
 		execs:   &memoryExecutions{},
 		timers:  &memoryTimers{},
 		nodes:   &memoryNodes{},
@@ -618,7 +672,7 @@ func newHarness() *harness {
 		clock:   &fixedClock{now: t0},
 	}
 	h.deps = Dependencies{
-		Bots: h.bots, Tasks: h.tasks, Executions: h.execs, Timers: h.timers, Nodes: h.nodes, Enrollments: h.enrol, Certifier: h.ca, Denylist: h.deny, Events: h.log, EventReader: h.log, Audit: h.log,
+		Bots: h.bots, Tasks: h.tasks, Incidents: h.incs, Executions: h.execs, Timers: h.timers, Nodes: h.nodes, Enrollments: h.enrol, Certifier: h.ca, Denylist: h.deny, Events: h.log, EventReader: h.log, Audit: h.log,
 		Runtime: h.runtime, Decisions: h.decider, Traces: h.traces, Artifacts: h.store, Workspace: h.work, Deliveries: h.outbox, Notifier: h.notify,
 		Clock: h.clock, IDs: &sequentialIDs{}, Actor: "test:operator",
 	}
