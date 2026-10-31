@@ -17,8 +17,10 @@
   POST /api/hands        one posture held still: Jev reads it, the service publishes what it means
   GET  /api/hands        what Jev read and what was sent, the last readings
   GET  /ws/hands         the same over one WebSocket (ws.py): postures, the hands' heights and the headset's own
-                         gestures (native: tap, swipes, a pinch held, a beat) up; the state,
+                         gestures (native: tap, swipes, a pinch held, a beat) and the hands' motion
+                         sums (motion: Jev reads the conductor's expression) up; the state,
                          as soon as it changes, and Jev's readings down
+  POST /api/motion       the same motion sums over HTTP, for a check without the page
 
 It listens on loopback only (a headset reaches it through adb reverse). With
 controlPlane.url it follows the team's bus and cuts the sound on stop.all
@@ -58,8 +60,9 @@ JUDGE = {"type": "object", "description": "What axlr_judge answered, as you read
 TOOLS = [
     {"name": "phrases", "description": "Your line's phrases you may play next (a phrase is 8 bars), from the playhead or from bar, and ask: the question to pass to axlr_judge as it is (state, question, options).",
      "inputSchema": {"type": "object", "properties": {"bar": {"type": "integer", "minimum": 1}}}},
-    {"name": "play", "description": "Play one phrase of your line: it sounds at its own bars. A phrase already begun is joined at the next bar. When nothing plays yet, it starts the music with a count-in. Pass judge: what axlr_judge answered.",
-     "inputSchema": {"type": "object", "properties": {"phrase": {"type": "integer", "minimum": 1}, "dynamics": {"type": "string", "enum": ["p", "mf", "f"]}, "judge": JUDGE},
+    {"name": "play", "description": "Play one phrase of your line: it sounds at its own bars. A phrase already begun is joined at the next bar. When nothing plays yet, it starts the music with a count-in. Pass judge: what axlr_judge answered. Pass character: the conductor's expression you last heard (info.expression), if any; your voice keeps it.",
+     "inputSchema": {"type": "object", "properties": {"phrase": {"type": "integer", "minimum": 1}, "dynamics": {"type": "string", "enum": ["p", "mf", "f"]},
+                                                     "character": {"type": "string", "enum": ["dolce", "cantabile", "brillante", "appassionato"]}, "judge": JUDGE},
                      "required": ["phrase"]}},
     {"name": "listen", "description": "Play on and wait (at most 20 seconds) until it is time to choose your next phrase, a few bars pass, you stop or the music stops. Answers where the music is, your phrases and, when it is time to choose, candidates and ask.",
      "inputSchema": {"type": "object", "properties": {"bars": {"type": "integer", "minimum": 1, "maximum": 32}}}},
@@ -80,7 +83,7 @@ def chair_tools(orchestra, chair, max_seconds):
         return call
 
     tools.add(TOOLS[0], guard(lambda a: orchestra.phrases(chair, a.get("bar"))))
-    tools.add(TOOLS[1], guard(lambda a: orchestra.play(chair, a.get("phrase"), a.get("dynamics"), a.get("judge"))))
+    tools.add(TOOLS[1], guard(lambda a: orchestra.play(chair, a.get("phrase"), a.get("dynamics"), a.get("judge"), a.get("character"))))
     tools.add(TOOLS[2], guard(lambda a: orchestra.listen(chair, a.get("bars", 8), max_seconds)))
     tools.add(TOOLS[3], guard(lambda a: orchestra.stop(chair)))
     return tools
@@ -129,6 +132,13 @@ def make_handler(orchestra, stream, config, hands=None):
             except ws.Closed:
                 pass
 
+        def answer_motion(message):
+            record = hands.motion(message)
+            try:
+                sock.send_json({"type": "motion", "id": message.get("id"), "record": record})
+            except ws.Closed:
+                pass
+
         threading.Thread(target=push, daemon=True).start()
         while True:
             text = sock.recv()
@@ -144,6 +154,8 @@ def make_handler(orchestra, stream, config, hands=None):
                 hands.height(message)  # no Jev, no answer: the state shows the gains
             elif isinstance(message, dict) and message.get("type") == "native":
                 threading.Thread(target=answer_native, args=(message,), daemon=True).start()  # the headset read it: no Jev
+            elif isinstance(message, dict) and message.get("type") == "motion":
+                threading.Thread(target=answer_motion, args=(message,), daemon=True).start()  # Jev reads the expression
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -172,6 +184,8 @@ def make_handler(orchestra, stream, config, hands=None):
                 return self._send(403, b'{"error":"loopback only"}')
             if self.path.split("?")[0] == "/api/hands":
                 return self._hands()
+            if self.path.split("?")[0] == "/api/motion":
+                return self._hands(hands.motion if hands is not None else None)  # the motion sums: Jev reads the expression
             parts = self.path.split("?")[0].strip("/").split("/")
             if len(parts) != 2 or parts[0] != "mcp" or parts[1] not in per_chair:
                 return self._send(404, b'{"error":"no such chair"}')
@@ -232,7 +246,7 @@ def make_handler(orchestra, stream, config, hands=None):
             self.close_connection = True
             conduct(ws.Socket(self.rfile, self.wfile))
 
-        def _hands(self):
+        def _hands(self, read=None):
             if hands is None:
                 return self._send(404, b'{"error":"no hands: the service runs without them"}')
             length = int(self.headers.get("Content-Length") or 0)
@@ -242,7 +256,7 @@ def make_handler(orchestra, stream, config, hands=None):
                 posture = json.loads(self.rfile.read(length))
             except ValueError:
                 return self._send(400, b'{"error":"not JSON"}')
-            self._send(200, json.dumps(hands.observe(posture)).encode())
+            self._send(200, json.dumps((read or hands.observe)(posture)).encode())
 
         def _file(self, name):
             path = os.path.realpath(os.path.join(STATIC, name))

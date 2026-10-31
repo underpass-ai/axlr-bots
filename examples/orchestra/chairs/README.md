@@ -28,6 +28,8 @@ Each node's AXLR reads its own `settings.json` (`stage.sh settings <chair>`, whi
 
 `stop.*` needs no subscription: every member hears it, as an urgent task.
 
+Both templates also subscribe to `info.expression` (the conductor's expression, read by Jev from how the hands move: `dolce`, `cantabile`, `brillante`, `appassionato`); a Jev chair passes the last one it heard into its next `play` as `character` (`pass: ["dynamics", "character"]`), a model chair is told to. The service has applied it to the voices already; the chair's `play` keeps it on the phrases it asks for.
+
 The tempo is not the chairs' business: the score service reads `info.tempo` from the bus itself, so a conductor's hand that beats 30 times a minute never fills the chairs' intake.
 
 ## Jev bots: the same chairs without a language model

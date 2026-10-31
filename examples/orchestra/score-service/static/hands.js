@@ -2,7 +2,7 @@
 // orchestra in the room (room.js), lit by the service's state; and one
 // floating panel that says what each hand holds, what Jev read and what the
 // service sent. See hands.html.
-import { measure, signature, Steady, Beats, flatHand, pointing } from "/static/posture.js";
+import { measure, signature, Steady, Beats, flatHand, pointing, Motion, openness } from "/static/posture.js";
 import { Hall, THREE } from "/static/room.js";
 import { meadow, drawnHands } from "/static/meadow.js";
 import { zen } from "/static/zen.js";
@@ -16,6 +16,11 @@ const GROUP = { left: "strings", right: "winds" };
 const steady = new Steady(HOLD_MS);
 let live = { left: null, right: null }, last = null, orchestra = null, xr = null, dirty = true;
 let soundOn = false, soundAt = -1, soundState = "off", heightAt = 0;
+// The hands' motion over the last seconds, summed up for Jev every MOTION_MS
+// while a hand moves: the conductor's expression, read from how the hands
+// move, not from what they hold (posture.js Motion).
+const MOTION_MS = 2000, motion = { left: new Motion(), right: new Motion() };
+let motionAt = 0, expression = null;
 const SECTIONS = { strings: ["vn1", "vn2", "va", "vc", "cb"], winds: ["ob", "hn"] };
 let gains = { strings: 1, winds: 1 }, instruments = [];
 // The instruments and their slices of the arc, as the service has them.
@@ -66,6 +71,14 @@ function draw() {
   ctx.fillText(tgt ? `CONDUCTING ${tgt.name.toUpperCase()}${sel.locked ? " · LOCKED (pinch to free)" : " · as you look (pinch to lock)"}` : "CONDUCTING strings + winds · look at a section", 24, 290);
   ctx.font = "26px Lexend, sans-serif";
   let y = 326;
+  if (expression) {
+    const r = expression.read || {}, jev = expression.jev?.answers?.expression;
+    const chosen = r.expression && r.expression !== "nothing";
+    ctx.fillStyle = chosen ? copper : muted;
+    ctx.fillText(chosen ? `EXPRESSION ${r.expression.toUpperCase()} ${r.probability.toFixed(2)} · ${expression.applied || ""}`
+      : `expression: ${jev ? `Jev read ${jev.choice} ${jev.probabilities[jev.choice].toFixed(2)}` : expression.notSent?.[0]?.why || "…"}${expression.simulated ? " · simulated motion" : ""}`, 24, y);
+    y += 36;
+  }
   if (last?.applied) {
     ctx.fillStyle = last.applied.startsWith("fading") ? red : copper;
     ctx.fillText(`done: ${last.applied}`, 24, y);
@@ -111,6 +124,7 @@ function connect() {
       if (sentAt[msg.id]) { roundTrip = Math.round(performance.now() - sentAt[msg.id]); delete sentAt[msg.id]; }
       heard(msg.record);
     }
+    if (msg.type === "motion") { delete sentAt[msg.id]; heardMotion(msg.record); }
   };
   s.onclose = () => { if (sock === s) { sock = null; link = "http"; draw(); } setTimeout(connect, 1000); };
 }
@@ -145,6 +159,31 @@ function heard(record) {
   if ((last.applied || "").startsWith("fading")) hall.wave(true);  // a fade out is the service's: no event, the ring still runs
   if ((last.sent || []).length) setTimeout(() => recheck(last.at), 1500);
   draw();
+}
+
+// The conductor's expression, as Jev read it from the hands' motion: shown on
+// the panel; a character applied runs across the floor like a cue.
+function heardMotion(record) {
+  expression = record;
+  if ((record.sent || []).length) { hall.wave(false); for (const e of record.sent) waved[e.name] = performance.now(); }
+  draw();
+}
+
+async function sendMotion(hands, simulated = false) {
+  const body = { hands, simulated, target: sel.id, locked: sel.locked };
+  if (sock) {
+    const id = nextId++;
+    sentAt[id] = performance.now();
+    sock.send(JSON.stringify({ type: "motion", id, ...body }));
+    return;
+  }
+  try {
+    const r = await fetch("/api/motion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    heardMotion(await r.json());
+  } catch (e) {
+    expression = { notSent: [{ why: `the service did not answer: ${e}` }] };
+    draw();
+  }
 }
 
 async function recheck(at) {
@@ -212,6 +251,17 @@ for (const b of document.querySelectorAll("[data-sim]")) {
     const at = (s) => ({ ...MADE_UP[g], position: { side: s === "left" ? -0.25 : 0.25, height: -0.25, ahead: 0.4 } });
     send(side === "both" ? { left: at("left"), right: at("right") } : { [side]: at(side) }, HOLD_MS, true);
   });
+}
+
+// Made-up motion sums too: what a slow tender hand, an even one, a quick light one and a forceful one would send.
+const MADE_UP_MOTION = {
+  dolce: { seconds: 2.4, speed: 0.12, peak: 0.3, rise: 0.08, sweep: 0.06, turns: 0.4, height: -0.3, open: 0.85, moving: true },
+  cantabile: { seconds: 2.4, speed: 0.45, peak: 0.9, rise: 0.22, sweep: 0.3, turns: 1.2, height: -0.15, open: 0.8, moving: true },
+  brillante: { seconds: 2.4, speed: 0.9, peak: 2.2, rise: 0.25, sweep: 0.2, turns: 2.6, height: 0.1, open: 0.9, moving: true },
+  appassionato: { seconds: 2.4, speed: 1.6, peak: 4.5, rise: 0.6, sweep: 0.5, turns: 2.4, height: 0.05, open: 0.4, moving: true },
+};
+for (const b of document.querySelectorAll("[data-motion]")) {
+  b.addEventListener("click", () => sendMotion({ right: MADE_UP_MOTION[b.dataset.motion], left: { ...MADE_UP_MOTION[b.dataset.motion], side: -1 } }, true));
 }
 
 // --- the orchestra's sound in the headset -------------------------------------
@@ -459,6 +509,18 @@ function readHands(t, xrFrame) {
     const heights = {};
     for (const side of SIDES) if (live[side] && flatHand(live[side]) && !quest.pinch[side]) heights[side] = { height: live[side].position.height };
     if (Object.keys(heights).length) sock.send(JSON.stringify({ type: "height", hands: heights }));
+  }
+  // How each hand moves, for the expression: fed every frame, summed up and
+  // sent every MOTION_MS while a hand moves; a hand not tracked forgets.
+  for (const side of SIDES) {
+    if (live[side]) motion[side].update(live[side].position, openness(live[side]), t / 1000);
+    else motion[side].reset();
+  }
+  if (t - motionAt > MOTION_MS) {
+    motionAt = t;
+    const sums = {};
+    for (const side of SIDES) { const sum = motion[side].summary(); if (sum) sums[side] = sum; }
+    if (Object.values(sums).some((x) => x.moving)) sendMotion(sums);
   }
   // A pointing hand beats time, a baton: its beats set the tempo.
   for (const side of SIDES) {

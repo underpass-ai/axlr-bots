@@ -447,3 +447,128 @@ class NativeTest(unittest.TestCase):
         h, _, _, _, _ = hands()
         self.assertEqual(h.native({"gesture": "wave"})["notSent"][0]["why"], "not a gesture the headset gives")
         self.assertIn("tap-thumb", h.view()["gestures"])
+
+
+MOVED = {"seconds": 2.4, "speed": 0.12, "peak": 0.3, "rise": 0.08, "sweep": 0.06, "turns": 0.4, "height": -0.3, "open": 0.85, "moving": True}
+FORCEFUL = {"seconds": 2.4, "speed": 1.6, "peak": 4.5, "rise": 0.6, "sweep": 0.5, "turns": 2.4, "height": 0.05, "open": 0.4, "moving": True}
+
+
+class FakeExpressionJev:
+    """Answers the one expression question with the character named, at the probability given."""
+
+    def __init__(self, character="nothing", p=0.9):
+        self.character, self.p, self.asked = character, p, []
+
+    def __call__(self, state, questions):
+        from hands import CHARACTERS
+        self.asked.append((state, questions))
+        (key, (_, options)), = questions.items()
+        rest = (1 - self.p) / (len(options) - 1)
+        return {"model": "jev-1.13.0", "ms": 160, "inputTokens": 500, "answers": {key: {
+            "choice": CHARACTERS[self.character], "confidence": self.p,
+            "probabilities": {o: (self.p if o == CHARACTERS[self.character] else rest) for o in options}}}}
+
+
+def expression(character="nothing", p=0.9, config=None):
+    o, synth, clock = orchestra()
+    judge, publish = FakeExpressionJev(character, p), FakePublish()
+    h = Hands(o, dict({"threshold": 0.8, "publishWaitSeconds": 3, "instruments": CONFIG["hands"]["instruments"],
+                       "expression": {"threshold": 0.55, "everySeconds": 2.0, "publishSeconds": 6.0}}, **(config or {})), judge, publish, clock)
+    o.cue("info.cue.all", {})
+    o.play("vn1-1", 1, "f")
+    o.play("ob-1", 1, "f")
+    return h, o, synth, judge, publish, clock
+
+
+class MotionTest(unittest.TestCase):
+    """The conductor's expression, read by Jev from how the hands move."""
+
+    def test_jev_reads_the_sums_as_text_one_question_for_both_hands(self):
+        h, o, synth, judge, publish, _ = expression("dolce", 0.9)
+        record = h.motion({"hands": {"right": MOVED}, "target": None})
+        state, questions = judge.asked[0]
+        self.assertEqual(list(questions), ["expression"])
+        self.assertEqual(len(questions["expression"][1]), 5)
+        for text in ("Right hand: moved at 0.12 m/s", "peaks of 0.30 m/s (2.5 times the average)", "rose and fell over 8 cm and swept 6 cm",
+                     "turned from rising to falling 0.4 times a second", "30 cm below the eyes", "fingers 0.85 open", "Left hand: not tracked",
+                     "playing bar", "the last 2.4 s"):
+            self.assertIn(text, state)
+        self.assertEqual(record["read"], {"expression": "dolce", "probability": 0.9})
+        self.assertEqual(record["jev"]["answers"]["expression"]["choice"], "dolce")
+
+    def test_a_character_read_goes_on_everyone_at_once_and_is_published_once(self):
+        h, o, synth, judge, publish, clock = expression("dolce", 0.9)
+        record = h.motion({"hands": {"right": MOVED, "left": MOVED}})
+        self.assertEqual(record["decision"], [{"gesture": "dolce", "group": "all"}])
+        self.assertEqual(record["applied"], "Everyone: dolce")
+        self.assertTrue(all(c["character"] == "dolce" for c in o.chairs.values()))
+        self.assertEqual(synth.last("brightness", o.chairs["ob-1"]["channel"]), -2400)
+        self.assertEqual(publish.events, [("info.expression", {"character": "dolce", "target": "all"}, None)])
+        self.assertEqual(record["sent"][0]["eventId"], "ev-1")
+        self.assertEqual(h.character["character"], "dolce")
+        clock.now += 2.5
+        again = h.motion({"hands": {"right": MOVED}})  # the same character: nothing changes, nothing is sent
+        self.assertEqual(again["applied"], "Everyone: dolce already")
+        self.assertEqual(again["sent"], [])
+        self.assertEqual(again["notSent"][0]["why"], "the group already plays dolce")
+
+    def test_under_the_threshold_or_nothing_changes_nothing(self):
+        h, o, synth, judge, publish, _ = expression("appassionato", 0.5)
+        record = h.motion({"hands": {"right": FORCEFUL}})
+        self.assertEqual(record["read"], {"expression": "nothing", "probability": 0.5})
+        self.assertEqual(record["notSent"], [{"what": "expression", "why": "Jev read appassionato at 0.50, under 0.55"}])
+        self.assertTrue(all(c["character"] is None for c in o.chairs.values()))
+        self.assertEqual(publish.events, [])
+        h2, o2, _, _, publish2, _ = expression("nothing", 0.8)
+        record = h2.motion({"hands": {"right": MOVED}})
+        self.assertEqual(record["notSent"], [{"what": "expression", "why": "Jev read nothing at 0.80"}])
+        self.assertEqual(publish2.events, [])
+
+    def test_the_locked_section_takes_the_character_the_others_keep_theirs(self):
+        h, o, synth, judge, publish, _ = expression("brillante", 0.8)
+        record = h.motion({"hands": {"right": FORCEFUL}, "target": "oboes", "locked": True})
+        self.assertEqual(record["decision"], [{"gesture": "brillante", "group": "oboes"}])
+        self.assertEqual(record["applied"], "Oboes: brillante")
+        self.assertEqual({c["character"] for k, c in o.chairs.items() if k.startswith("ob-")}, {"brillante"})
+        self.assertTrue(all(c["character"] is None for k, c in o.chairs.items() if not k.startswith("ob-")))
+        self.assertEqual(publish.events, [("info.expression", {"character": "brillante", "target": "oboes"}, None)])
+        record = h.motion({"hands": {"right": FORCEFUL}, "target": "oboes", "locked": False})  # not locked: everyone
+        self.assertEqual(record["notSent"][0]["why"], "too soon after the last reading (2 s apart at most)")
+
+    def test_readings_are_spaced_and_a_change_is_published_at_most_every_publish_seconds(self):
+        h, o, synth, judge, publish, clock = expression("dolce", 0.9)
+        h.motion({"hands": {"right": MOVED}})
+        clock.now += 1.0
+        soon = h.motion({"hands": {"right": MOVED}})
+        self.assertEqual(soon["notSent"][0]["why"], "too soon after the last reading (2 s apart at most)")
+        self.assertEqual(len(judge.asked), 1)
+        clock.now += 2.0
+        judge.character = "appassionato"
+        changed = h.motion({"hands": {"right": FORCEFUL}})
+        self.assertEqual(changed["applied"], "Everyone: appassionato")
+        self.assertTrue(all(c["character"] == "appassionato" for c in o.chairs.values()))  # the sound changed
+        self.assertEqual(changed["sent"], [])  # the bus hears it later
+        self.assertIn("was published 3.0 s ago", changed["notSent"][0]["why"])
+        self.assertEqual(len(publish.events), 1)
+
+    def test_while_nothing_plays_nothing_is_applied_or_sent(self):
+        o, synth, clock = orchestra()
+        h = Hands(o, {"publishWaitSeconds": 3, "instruments": CONFIG["hands"]["instruments"]}, FakeExpressionJev("dolce", 0.95), FakePublish(), clock)
+        record = h.motion({"hands": {"right": MOVED}})
+        self.assertEqual(record["read"], {"expression": "dolce", "probability": 0.95})
+        self.assertEqual(record["notSent"], [{"what": "dolce", "why": "nothing plays: a palm up starts the music"}])
+        self.assertEqual((record["decision"], record["sent"], h.publish.events), ([], [], []))
+        self.assertTrue(all(c["character"] is None for c in o.chairs.values()))
+        self.assertEqual(o.snapshot()["status"], "idle")
+
+    def test_jev_failing_or_no_hand_is_no_change(self):
+        h, o, synth, judge, publish, _ = expression("dolce", 0.9)
+        self.assertEqual(h.motion({"hands": {}})["notSent"], [{"what": "expression", "why": "no hand tracked"}])
+
+        def boom(state, questions):
+            raise jev.JevError("TypeSafe HTTP 503")
+        h.judge = boom
+        record = h.motion({"hands": {"right": MOVED}})
+        self.assertEqual((record["jev"]["error"], record["notSent"][0]["why"]), ("TypeSafe HTTP 503", "Jev did not answer"))
+        self.assertTrue(all(c["character"] is None for c in o.chairs.values()))
+        self.assertIn("motion", h.view()["gestures"])

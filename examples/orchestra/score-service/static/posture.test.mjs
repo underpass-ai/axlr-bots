@@ -109,3 +109,44 @@ test("beats: three even falls and rises make a tempo; a still hand none; a chang
   for (let t = 0; t < 8; t += 1 / 72) answered = slow.update(-0.3 + 0.2 * Math.cos((t * 40 / 60) * Math.PI * 2 + Math.PI), t) || answered;
   assert.equal(answered, null);
 });
+
+// --- the motion sums for the expression ---------------------------------------
+import { Motion, openness } from "./posture.js";
+
+// A hand moving for seconds: height a sine of amplitude a at f Hz, drifting sideways; sampled at 72 Hz like the headset.
+function moved(motion, { a, f, side = 0, open = 0.9, seconds = 2.4, h0 = -0.2 }) {
+  for (let t = 0; t <= seconds; t += 1 / 72) motion.update({ side: side * Math.sin(2 * Math.PI * f * t / 2), height: h0 + a * Math.sin(2 * Math.PI * f * t), ahead: 0.4 }, open, t);
+  return motion.summary();
+}
+
+test("nothing to sum before 0.8 s of samples", () => {
+  const m = new Motion();
+  for (let t = 0; t < 0.5; t += 1 / 72) m.update({ side: 0, height: -0.2, ahead: 0.4 }, 0.9, t);
+  assert.equal(m.summary(), null);
+});
+
+test("a slow small sweep and a fast big beat sum up apart", () => {
+  const slow = moved(new Motion(), { a: 0.04, f: 0.4, side: 0.05 });
+  const fast = moved(new Motion(), { a: 0.25, f: 2.0, side: 0.2, open: 0.3, h0: 0.1 });
+  assert.ok(slow.speed < 0.2 && fast.speed > 1.0, `speeds ${slow.speed} ${fast.speed}`);
+  assert.ok(slow.rise < 0.1 && fast.rise > 0.45, `rises ${slow.rise} ${fast.rise}`);
+  assert.ok(slow.turns < 1 && fast.turns >= 3, `turns ${slow.turns} ${fast.turns}`);
+  assert.ok(slow.height < 0 && fast.height > 0, `heights ${slow.height} ${fast.height}`);
+  assert.ok(slow.open > fast.open);
+  assert.ok(slow.moving && fast.moving);
+  assert.ok(Math.abs(slow.seconds - 2.4) < 0.05);
+});
+
+test("a hand at rest is not moving, and the window forgets what is older than it", () => {
+  const m = new Motion({ window: 1.0 });
+  moved(m, { a: 0.25, f: 2.0, seconds: 2.0 });
+  for (let t = 2.0; t <= 3.5; t += 1 / 72) m.update({ side: 0, height: -0.2, ahead: 0.4 }, 0.9, t);
+  const sum = m.summary();
+  assert.equal(sum.moving, false);
+  assert.ok(sum.speed < 0.05 && sum.rise < 0.01, `still: ${JSON.stringify(sum)}`);
+});
+
+test("openness: straight fingers 1, a fist about 0", () => {
+  assert.equal(openness({ fingers: { thumb: 30, index: 0, middle: 0, ring: 0, little: 0 } }), 1);
+  assert.ok(openness({ fingers: { thumb: 90, index: 195, middle: 210, ring: 205, little: 200 } }) < 0.05);
+});

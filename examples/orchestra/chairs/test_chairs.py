@@ -24,7 +24,7 @@ class ChairsTest(unittest.TestCase):
         bot = chairs.definition(self.template, section, 2)
         self.assertEqual((bot["id"], bot["name"]), ("hn-2", "Horns 2"))
         self.assertEqual(bot["placement"], {"nodes": ["stage-hn-2"]})
-        self.assertEqual([s["topic"] for s in bot["subscriptions"]], ["info.cue.winds", "info.cue.hn", "info.cue.all"])
+        self.assertEqual([s["topic"] for s in bot["subscriptions"]], ["info.cue.winds", "info.cue.hn", "info.cue.all", "info.expression"])
         self.assertTrue(all(s["mode"] == "message" and s["from"] == ["operator"] for s in bot["subscriptions"]))
         self.assertTrue(bot["mission"].startswith("Horns, chair 2 of 2. "))
         self.assertEqual(bot["groups"], ["orchestra"])
@@ -100,7 +100,7 @@ class JevChairsTest(unittest.TestCase):
         self.assertEqual(runtime["kind"], "jev")
         program = runtime["jev"]
         self.assertEqual((program["server"], program["start"], program["wait"], program["stop"]), ("score", "phrases", "listen", "stop"))
-        self.assertEqual(program["act"], {"tool": "play", "choice": "phrase", "verdict": "judge", "pass": ["dynamics"]})
+        self.assertEqual(program["act"], {"tool": "play", "choice": "phrase", "verdict": "judge", "pass": ["dynamics", "character"]})
         self.assertEqual(program["tell"], {"name": "info.chair.played", "fields": ["phrase", "probability"]})
         self.assertIn({"topic": "info.chair.*", "mode": "message"}, self.template["subscriptions"])
         self.assertEqual(sorted(self.template["allowedTools"]), ["listen", "phrases", "play", "stop"])
@@ -114,7 +114,7 @@ class JevChairsTest(unittest.TestCase):
         jev, model = chairs.definition(self.template, section, 1), chairs.definition(axlr, section, 1)
         for key in ("id", "name", "placement", "groups", "events", "tenant", "owner"):
             self.assertEqual(jev[key], model[key], key)
-        self.assertEqual(jev["subscriptions"][:3], model["subscriptions"])
+        self.assertEqual(jev["subscriptions"][:4], model["subscriptions"])  # the cues and the conductor's expression; the Jev chair also hears its teammates
         for placeholder in ("CHAIR", "SECTION", "TOTAL", "FAMILY", "chair N of", "SECTIONKEY"):
             self.assertNotIn(placeholder, str(jev), placeholder)
         self.assertTrue(jev["mission"].startswith("Oboes, chair 1 of 2: a Jev bot."))

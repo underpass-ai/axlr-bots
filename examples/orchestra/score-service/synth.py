@@ -25,6 +25,8 @@ class FluidSynth:
     """One channel per chair (256 here): its instrument, its pan, its few cents of tuning, its volume."""
 
     def __init__(self, path, rate, gain=0.2, polyphony=1024):
+        import ctypes
+
         import fluidsynth
 
         self.fs = fluidsynth.Synth(samplerate=float(rate), gain=gain, channels=256, **{"synth.polyphony": polyphony})
@@ -32,6 +34,9 @@ class FluidSynth:
         if self.font < 0:
             raise RuntimeError(f"FluidSynth could not load {path}")
         self.path = path
+        # pyfluidsynth 1.3 does not wrap fluid_synth_set_gen; FluidSynth 2.x has it: a generator offset on a channel's voices.
+        self._set_gen = fluidsynth.cfunc("fluid_synth_set_gen", ctypes.c_int, ("synth", ctypes.c_void_p, 1), ("chan", ctypes.c_int, 1),
+                                         ("param", ctypes.c_int, 1), ("value", ctypes.c_float, 1))
 
     def program(self, channel, program):
         self.fs.program_select(channel, self.font, 0, program)
@@ -53,6 +58,17 @@ class FluidSynth:
 
     def expression(self, channel, value):
         self.fs.cc(channel, 11, max(0, min(127, value)))  # on top of the volume: the conductor's fades
+
+    def modulation(self, channel, value):
+        self.fs.cc(channel, 1, max(0, min(127, value)))  # the vibrato wheel: the voice's warmth, from the conductor's character
+
+    def brightness(self, channel, cents):
+        """The filter cutoff of the channel's voices, as an offset in cents on the instrument's own (SoundFont generator 8);
+        -2400 is two octaves darker. Without fluid_synth_set_gen (FluidSynth 1.x) the timbre stays and this answers False."""
+        if self._set_gen is None:
+            return False
+        self._set_gen(self.fs.synth, channel, 8, float(cents))
+        return True
 
     def all_off(self, channel):
         self.fs.cc(channel, 123, 0)  # all notes off: each note's own release

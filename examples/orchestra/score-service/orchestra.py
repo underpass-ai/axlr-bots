@@ -28,6 +28,14 @@ and the sound follows it at a steady rate, never at a jump. A cue with dynamics
 while the music plays sets that level on its chairs at once, and on the
 phrases they already asked for.
 
+The conductor's expression is a character on each chair's voice, on top of
+its dynamics and its gain: dolce, cantabile, brillante or appassionato
+(character). It touches the timbre, never the level the dynamics set nor the
+gain the hand sets: the note velocity (every note of the score is written at
+127), the filter cutoff of the voice (brightness) and the vibrato. A chair
+may also ask for it in play, as its bot heard it from the conductor
+(info.expression); without any, the voice is the plain one.
+
 Nothing here talks to the network: the server calls phrases, play, listen,
 stop and snapshot for the bots and the page, and the bus calls cue, hold,
 stop_all and set_tempo for the operator's events.
@@ -42,6 +50,18 @@ import time
 WAITING, SCHEDULED, PLAYING, STOPPED = "waiting", "scheduled", "playing", "stopped"
 JUDGE_SOURCE = "reported by the bot from its axlr_judge call; the service does not see Jev"
 DYNAMICS_SOURCE = "the chair's last play, or the conductor's last cue with dynamics, applied at once"
+CHARACTER_SOURCE = "the conductor's expression, read by Jev from how the hands move, or the chair's own play; applied at once"
+# What each character does to a voice: the velocity its notes are struck at
+# (a share of the score's 127), the filter cutoff offset in cents (measured on
+# TimGM6mb: -2400 takes a third of the spectral centroid off the strings, +1200
+# adds a tenth) and the vibrato wheel. No character is the plain voice.
+CHARACTERS = {
+    "dolce": {"velocity": 0.8, "brightness": -2400, "vibrato": 20, "words": "tender and soft"},
+    "cantabile": {"velocity": 1.0, "brightness": 0, "vibrato": 35, "words": "singing and even"},
+    "brillante": {"velocity": 1.0, "brightness": 1200, "vibrato": 45, "words": "bright and lively"},
+    "appassionato": {"velocity": 1.0, "brightness": 1200, "vibrato": 80, "words": "fiery and intense"},
+}
+PLAIN = {"velocity": 1.0, "brightness": 0, "vibrato": 0}
 
 
 class Refused(Exception):
@@ -77,7 +97,7 @@ class Orchestra:
                     "pan": round(low + (high - low) * spread, 3),
                     "cents": round(voices.get("cents", 0) * (2 * spread - 1), 2),
                     "onset": voices.get("onsetMs", 0) / 1000.0 * (((n - 1) * 3) % 5) / 4,
-                    "forkBeats": (index * 5) % self.fork_spread if self.fork_spread else 0,
+                    "forkBeats": (index * 5) % self.fork_spread if self.fork_spread else 0, "character": None,
                 }
                 synth.program(channel, s["program"])
                 synth.pan(channel, self.chairs[chair]["pan"])
@@ -100,12 +120,17 @@ class Orchestra:
                 raise Refused(f"the movement has {self.score.bars} bars")
             return self._reading(chair, ask=True, bar=bar, full=True)
 
-    def play(self, chair, phrase, dynamics=None, judge=None):
-        """Schedule one phrase of the chair's line at its own bars; late, it is joined at the next bar."""
+    def play(self, chair, phrase, dynamics=None, judge=None, character=None):
+        """Schedule one phrase of the chair's line at its own bars; late, it is joined at the next bar.
+
+        character is the conductor's expression as the bot heard it (info.expression): it is the
+        chair's voice from now on, this phrase and the next ones."""
         with self.cond:
             c = self._chair(chair)
             if dynamics is not None:
                 self._level(dynamics)
+            if character is not None and character not in CHARACTERS:
+                raise Refused(f"character is one of {', '.join(CHARACTERS)}")
             if not isinstance(phrase, int) or not 1 <= phrase <= self.score.phrase_count:
                 raise Refused(f"phrase is a number from 1 to {self.score.phrase_count}")
             first, last = self.score.phrase_span(phrase)
@@ -130,6 +155,9 @@ class Orchestra:
             c["plan"].sort(key=lambda p: p["fromTick"])
             c["stopped"] = False
             c["dynamics"] = entry["dynamics"]
+            if character is not None and character != c["character"]:
+                self._apply_character(c, character)
+                self._fact("character", chair, character=character)
             if c["enteredBar"] is None:
                 c["enteredBar"] = join
             report = self._judge_report(judge, phrase)
@@ -142,7 +170,7 @@ class Orchestra:
             self._fact("play", chair, phrase=phrase, bars=[first, last], fromBar=join, lateBars=late, dynamics=entry["dynamics"], judge=report)
             when = f"in {lead:.1f} s" if late == 0 else f"{late} bar{'s' if late > 1 else ''} late, from bar {join}"
             return {"chair": chair, "phrase": phrase, "bars": [first, last], "fromBar": join, "lateBars": late,
-                    "inSeconds": round(max(0.0, lead), 1), "dynamics": entry["dynamics"],
+                    "inSeconds": round(max(0.0, lead), 1), "dynamics": entry["dynamics"], "character": c["character"],
                     "note": f"phrase {phrase} sounds {when}; call listen: your fork for the next phrase opens at bar {self._fork_bar(c)}"}
 
     def stop(self, chair):
@@ -244,6 +272,18 @@ class Orchestra:
                 self._changed()
             return changed
 
+    def character(self, chairs, name):
+        """The conductor's expression on some chairs: their voices take that character at once (None: the plain voice). Returns how many changed."""
+        with self.cond:
+            if name is not None and name not in CHARACTERS:
+                raise Refused(f"character is one of {', '.join(CHARACTERS)}")
+            changed = [k for k in chairs if k in self.chairs and self.chairs[k]["character"] != name]
+            for k in changed:
+                self._apply_character(self.chairs[k], name)
+            if changed:
+                self._fact("character", None, character=name, chairs=len(changed))
+            return len(changed)
+
     def stop_all(self, why, event_at=None):
         with self.cond:
             if self.status != "playing":
@@ -305,7 +345,8 @@ class Orchestra:
                     "bars": self.score.bars, "beat": round((shown % self.score.ticks_per_bar) / self.score.ticks_per_beat, 2),
                     "countIn": self._count_in_left() if counting else 0,
                     "phraseBars": self.score.phrase_bars, "bpm": self.bpm, "sections": sections, "cut": self.cut,
-                    "facts": self.facts[-30:], "lastBus": self.last_bus, "judgeSource": JUDGE_SOURCE, "dynamicsSource": DYNAMICS_SOURCE}
+                    "facts": self.facts[-30:], "lastBus": self.last_bus, "judgeSource": JUDGE_SOURCE, "dynamicsSource": DYNAMICS_SOURCE,
+                    "characterSource": CHARACTER_SOURCE, "characters": {k: v["words"] for k, v in CHARACTERS.items()}}
 
     def take_log(self, take=None):
         """Every play and every phrase that began in a take (this one by default), for the measurement."""
@@ -361,7 +402,7 @@ class Orchestra:
             if not on:
                 self.synth.note_off(c["channel"], key)
             elif tick + shift >= start and self._gate(c, tick):
-                self.synth.note_on(c["channel"], key, velocity)
+                self.synth.note_on(c["channel"], key, max(1, min(127, round(velocity * self._recipe(c)["velocity"]))))
             cursor += 1
         c["cursor"] = cursor
 
@@ -469,7 +510,8 @@ class Orchestra:
             + (f", counting in ({self._count_in_left()} bars before bar {self.score.bar_of(self.start_tick)})" if self.tick < self.start_tick else "")
             + f". This chair has: {doing or 'no phrase scheduled'}.",
             f"Section: {s['name']}, {sum(1 for x in self.chairs.values() if x['section'] == c['section'] and self._state(x) == PLAYING)} of {s['chairs']} playing.",
-            f"The conductor's last cue for this chair: {cue}.",
+            f"The conductor's last cue for this chair: {cue}."
+            + (f" The conductor's expression now: {c['character']} ({CHARACTERS[c['character']]['words']})." if c["character"] else ""),
             "A chair plays its line in order, each phrase at its own bars; a phrase it does not play is a rest. "
             "A phrase already begun is joined at the next bar, missing its first bars.",
             "Candidates:",
@@ -523,11 +565,23 @@ class Orchestra:
         for c in self.chairs.values():
             c.update(stopped=False, held=None, dynamics="mf", plan=[], judge=None, enteredBar=None, cursor=0,
                      gain=1.0, gainNow=1.0, gainShown=1.0, fadeRate=0.0, expression=None)
+            if c.get("character") is not None:  # a new take starts with the plain voice
+                self._apply_character(c, None)
+
+    def _recipe(self, c):
+        return CHARACTERS[c["character"]] if c["character"] else PLAIN
+
+    def _apply_character(self, c, name):
+        c["character"] = name
+        recipe = self._recipe(c)
+        self.synth.brightness(c["channel"], recipe["brightness"])
+        self.synth.modulation(c["channel"], recipe["vibrato"])
+        self._changed()
 
     def _chair_view(self, chair, c):
         now = next((p for p in c["plan"] if p["fromTick"] <= self.tick < p["endTick"]), None) if self.status == "playing" and not c["stopped"] else None
         nxt = next((p for p in c["plan"] if p["fromTick"] > self.tick), None) if self.status == "playing" and not c["stopped"] else None
-        return {"id": chair, "state": self._state(c), "dynamics": c["dynamics"], "held": c["held"], "gain": round(c["gain"], 2), "enteredBar": c["enteredBar"],
+        return {"id": chair, "state": self._state(c), "dynamics": c["dynamics"], "character": c["character"], "held": c["held"], "gain": round(c["gain"], 2), "enteredBar": c["enteredBar"],
                 "line": self.score.line_names[c["line"]],
                 "phrase": {"playing": self._phrase_view(now), "next": self._phrase_view(nxt), "source": "the score service: the phrases the chair played"},
                 "judge": c["judge"]}
@@ -560,7 +614,7 @@ class Orchestra:
         s = self.sections[c["section"]]
         playing = sum(1 for x in self.chairs.values() if x["section"] == c["section"] and self._state(x) == PLAYING)
         view = self._chair_view(chair, c)
-        out = {"chair": chair, "line": view["line"], "state": view["state"], "dynamics": c["dynamics"], "status": self.status,
+        out = {"chair": chair, "line": view["line"], "state": view["state"], "dynamics": c["dynamics"], "character": c["character"], "status": self.status,
                "bar": self.score.bar_of(max(self.tick, self.start_tick)) if self.status == "playing" else self.score.bar_of(self.tick),
                "countIn": self._count_in_left() if self.status == "playing" and self.tick < self.start_tick else 0,
                "bars": self.score.bars, "bpm": self.bpm, "section": f"{s['name']}: {playing} of {s['chairs']} playing",
