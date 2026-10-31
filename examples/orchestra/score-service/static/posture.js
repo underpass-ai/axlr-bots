@@ -88,6 +88,11 @@ const fingersOf = (sig) => sig.split("|")[0];
 // hand's height conducts a group's gain.
 export function flatHand(m) { return !!m && fingersOf(signature(m)).slice(1) === "ssss"; }
 
+// A hand whose four fingers are not curled: straight or half bent. Its height
+// is sent while it conducts a level, so a hand that relaxes a little does not
+// count as gone; a fist does.
+export function uncurled(m) { return !!m && !fingersOf(signature(m)).slice(1).includes("c"); }
+
 // A pointing hand, a baton: the index straight, the other three not. It
 // beats time; it gives no signal by itself.
 export function pointing(m) {
@@ -136,6 +141,50 @@ export class Beats {
     this.bpm = bpm;
     return bpm;
   }
+}
+
+// The headset's pinch on one hand, frame by frame: a tap or a hold. A pinch
+// is a hold only once it has lasted tapMs, however the hand moved before
+// (the tracking jumps as the fingers meet); released earlier it is a tap.
+// The hold starts from the hand's height when it begins, then moves every
+// moveMs; a move more than glitchM from the last one sent is the tracking's,
+// skipped, unless the next sample, moveMs later, agrees with it. update() answers null,
+// "tap", "end", { start: height } or { move: height }. Times in ms, heights
+// in metres (null: the hand is not tracked this frame).
+export class Pinch {
+  constructor({ tapMs = 350, moveMs = 100, glitchM = 0.15 } = {}) {
+    Object.assign(this, { tapMs, moveMs, glitchM });
+    this.p = null;
+  }
+  update(pressed, h, t) {
+    const p = this.p;
+    if (pressed && !p) { this.p = { t0: t, holding: false, sentAt: 0, last: null, skipped: null }; return null; }
+    if (!pressed) {
+      this.p = null;
+      return !p ? null : p.holding ? "end" : t - p.t0 < this.tapMs ? "tap" : null;
+    }
+    if (h === null) return null;
+    if (!p.holding) {
+      if (t - p.t0 < this.tapMs) return null;
+      Object.assign(p, { holding: true, sentAt: t, last: h });
+      return { start: h };
+    }
+    if (t - p.sentAt <= this.moveMs) return null;
+    if (Math.abs(h - p.last) > this.glitchM && (p.skipped === null || Math.abs(h - p.skipped) > this.glitchM)) { Object.assign(p, { sentAt: t, skipped: h }); return null; }
+    Object.assign(p, { sentAt: t, last: h, skipped: null });
+    return { move: h };
+  }
+}
+
+// The instrument the head looks at, sticky: once one is looked at, another
+// takes over only when the aim (degrees) sits margin degrees inside its slice
+// of the arc, so a narrow slice does not flicker at its edges. No instrument
+// there (the sky, behind) is null.
+export function gazeOn(instruments, aim, current, margin = 4) {
+  if (aim == null) return null;
+  const at = instruments.find((i) => i.from <= aim && aim < i.to) || null;
+  if (!at || !current || at.id === current) return at;
+  return aim >= at.from + margin && aim < at.to - margin ? at : instruments.find((i) => i.id === current) || at;
 }
 
 // How a hand moves over the last seconds, summed up for Jev to read the

@@ -22,20 +22,27 @@ showing the same gesture act on everyone:
   finger on the lips   info.cue.all {"dynamics": "p"} and everyone's gain
               to hush.gain: pianissimo
   pointing    a baton hand: no signal by itself; the page measures its beats
-  the hand's height, while it holds a palm up or a palm down: the group's
-              gain, higher louder, lower softer, a fade, no event
+  the hand's height, after a palm up or a palm down: a provisional level
+              for the group, from where the hand began over height.span
+              metres, heard at once; a double pinch keeps it, else it comes
+              back where it was when the hand drops, leaves (no height for
+              height.silentSeconds), waits height.pendingSeconds unconfirmed
+              or Jev reads it as another gesture; no event
 
 The headset's own gestures come as native messages, read by the headset,
 not by Jev, and act on the target (native):
 
-  tap-thumb       the target's entrance: info.cue.<section> with no level,
-                  while the music plays and the target is locked
+  tap-thumb       the entrance of the section the conductor looks at, locked
+                  or not: info.cue.<section> with no level, while the music plays
   swipe-forward   the tempo up by tempoStep; swipe-backward: down; the clock
                   at once, info.tempo {"bpm"} published at most every
                   tempoPublishSeconds
-  pinch-start / pinch-move / pinch-end   the target's gain, from where it was
-                  when the pinch began, by the hand's rise or fall over
-                  pinchSpan metres; no event
+  pinch-start / pinch-move / pinch-end   a pinch held 350 ms or more (the
+                  page's; shorter is a tap): the target's gain, from where it
+                  was when the hold began, by the hand's rise or fall over
+                  pinchSpan metres; released, the level stays; no event
+  pinch-double    two taps within 350 ms (the page's): keeps the level a flat
+                  hand set (either hand); one tap locks or frees the section
   beat            the tempo the conductor beats with a pointing hand, the
                   clock at once, published as the swipes are
 
@@ -43,13 +50,15 @@ The conductor's expression is read from how the hands move, not from what
 they hold (motion): every couple of seconds the page sums up each hand's last
 seconds (speed, how far it rose and swept, how often it turned, how open, how
 high) and the service asks Jev one choice: dolce, cantabile, brillante,
-appassionato or nothing. Nothing is the default, as with the gestures: a
-reading under expression.threshold changes nothing, and nothing is read
-while nothing plays (an event would reach each idle chair as a task, and a
-Jev chair's task starts the music). A character read goes on
-the locked target's chairs, else on everyone, at once (orchestra.character):
-their voices darker or brighter, never their level or gain, which the cues
-and the hands' heights own. It is published as info.expression {"character"}
+appassionato or nothing, with the scale of this conductor's own motion.
+Nothing is the default, as with the gestures: a reading under
+expression.threshold changes nothing, and nothing is read while nothing
+plays (an event would reach each idle chair as a task, and a Jev chair's
+task starts the music). A character read expression.agreeReads times in a
+row (2) goes on the chairs of the section looked at, else on everyone, at
+once (orchestra.character): their voices darker or brighter (dolce also
+struck softer), never their dynamics or gain, which the cues and the hands'
+heights own. It is published as info.expression {"character"}
 when it changes, at most every expression.publishSeconds, so a chair's bot
 hears the conductor and asks for it in its next play; the sound does not
 wait for the bus.
@@ -60,9 +69,16 @@ service's alone: a stop on the bus would end each bot's run, and a bot back
 from a stop has to start a new one (seconds). Faded out, a chair keeps its
 phrases and its bot goes on choosing; the cue that names it fades it back in.
 The height is read many times a second without Jev: it is a measurement, not
-a sign, and it only acts while Jev's last reading of that hand is a palm up or
-a palm down, so a hand at rest or a fist moves nothing. Both are open hands
-held flat: the conductor raises and lowers them for the fades.
+a sign, and it only acts while the hand conducts a level: from Jev's reading
+of a palm up or a palm down until Jev reads another gesture (a fist, a
+pointing hand, a finger on the lips, or the other level; the same one read
+on another section keeps the level where it began). A reading of nothing, or one under the threshold, keeps it:
+a flat hand that relaxes is still the conductor's. The page sends the height
+while the four fingers are not curled. What the height sets is provisional:
+a double pinch keeps it; a hand lowered to rest (a fast drop, a fist, or a
+hand gone for height.silentSeconds, 1.5 s) brings the level back where it
+was, so resting the arm never turns a section down. A pinch held takes the level
+over and keeps it when released; the height then starts again from there.
 
 The service is the orchestra, so it does what a gesture means at once (holds
 the group, sets the level, starts the count-in) and publishes the events in
@@ -77,6 +93,7 @@ that level, the same gesture again within the cooldown. Everything read and sent
 page.
 """
 
+import json
 import threading
 import time
 
@@ -93,18 +110,21 @@ LEVELS = {"open": "f", "down": "p"}
 CHARACTERS = {
     "nothing": "nothing: no character to read (the hands barely move, or the motion says nothing in particular)",
     "dolce": "dolce: tender and soft; slow, small, smooth motions, the hands low, the fingers relaxed",
-    "cantabile": "cantabile: singing and even; moderate, flowing, continuous motion, no sharp accents",
-    "brillante": "brillante: bright and lively; quick, light, crisp motions, the hands high and open",
-    "appassionato": "appassionato: fiery and intense; big, fast, forceful motions with sharp accents",
+    "cantabile": "cantabile: singing and even; moderate, flowing, continuous motion",
+    "brillante": "brillante: bright and lively; quick, light motions with small rises, the hands open",
+    "appassionato": "appassionato: fiery and intense; fast, big, forceful motions, the hands rising and falling far",
 }
 MOTION_HEAD = ("A conductor wearing a mixed-reality headset conducts an orchestra with their hands. The headset tracked each hand's "
                "position for the last {seconds} s; these are the sums of that motion, not a single posture. The orchestra: {music}.\n"
-               "For scale: a tender passage is conducted slowly, under about 0.25 m/s, with rises under 12 cm and the hands low; "
-               "an even, singing one at a moderate, flowing 0.3–0.7 m/s with no sharp accents (peaks about twice the average); "
-               "a bright, lively one quickly and lightly, 0.7–1.2 m/s, small quick turns, the hands high and open; "
-               "a fiery one over about 1.2 m/s with rises over 40 cm and sharp accents (peaks three times the average or more). "
+               "For scale, from this conductor's own hands: half the time they move under 0.4 m/s and nine times in ten under 1 m/s, "
+               "rise and fall over about 25 cm and turn about twice a second. Beating time always gives peaks of 3 to 8 times the "
+               "average speed: that is the beat, normal in every character, not an accent; judge by the average speed and the rise. "
+               "A tender passage is conducted slowly, under about 0.2 m/s, with small rises; "
+               "an even, singing one at a moderate 0.2–0.5 m/s; "
+               "a bright, lively one quickly and lightly, about 0.5–0.9 m/s with small rises, under about 40 cm; "
+               "a fiery one fast and big, over about 0.9 m/s with rises over about 50 cm. "
                "A hand that barely moves (under 0.05 m/s) says nothing.")
-NATIVE = ("tap-thumb", "swipe-forward", "swipe-backward", "pinch-start", "pinch-move", "pinch-end", "beat")
+NATIVE = ("tap-thumb", "swipe-forward", "swipe-backward", "pinch-start", "pinch-move", "pinch-end", "pinch-double", "beat")
 FINGERS = ("thumb", "index", "middle", "ring", "little")
 FACING = (("away", "away from the conductor, toward the orchestra"), ("floor", "the floor"),
           ("toward", "the conductor"), ("up", "the ceiling"), ("side", "sideways"))
@@ -117,8 +137,9 @@ STATE_HEAD = ("A conductor wearing a mixed-reality headset signals an orchestra 
 
 
 class Hands:
-    def __init__(self, orchestra, config, judge, publish=None, clock=time.time):
+    def __init__(self, orchestra, config, judge, publish=None, clock=time.time, log=None, watch=None):
         self.orchestra, self.judge, self.publish, self.clock = orchestra, judge, publish, clock
+        self.log_path = log  # one JSON line per record and per level kept or reverted: the session, for reading afterwards
         self.threshold = config.get("threshold", 0.8)
         self.cooldown = config.get("cooldownSeconds", 3.0)
         self.min_interval = config.get("minIntervalSeconds", 0.5)
@@ -126,8 +147,15 @@ class Hands:
         self.dry_run = bool(config.get("dryRun")) or publish is None
         self.publish_wait = config.get("publishWaitSeconds", 0)
         height = config.get("height", {})
-        self.low, self.high, self.height_fade = height.get("low", -0.55), height.get("high", 0.15), height.get("fadeSeconds", 0.2)
-        self.engaged = {"left": None, "right": None}  # the gesture and the group a flat hand conducts
+        self.height_span, self.height_fade = float(height.get("span", 0.7)), float(height.get("fadeSeconds", 0.2))
+        self.drop_speed = float(height.get("dropSpeed", 0.8))  # m/s downward: the hand is dropping, not conducting
+        self.pending_seconds = float(height.get("pendingSeconds", 5.0))  # a level held still this long unconfirmed comes back
+        self.silent_seconds = float(height.get("silentSeconds", 1.5))  # no height for this long: the hand left
+        self.engaged = {"left": None, "right": None}  # the flat hand that conducts a group: gesture, group, the height and gain it began from
+        self.pending = {"left": None, "right": None}  # a provisional level: group, gain, the level it came from, when it moved, when last heard
+        self.confirmed = {}  # each group's last level kept, for the page
+        self.last_height = {"left": None, "right": None}
+        self.last_gain = None  # the last level kept or reverted, for the page
         self.instruments = {i["id"]: i for i in config.get("instruments", [])}
         self.tempo_step = float(config.get("tempoStep", 4))
         self.tempo_every = float(config.get("tempoPublishSeconds", 3.0))
@@ -140,9 +168,13 @@ class Hands:
         self.character_threshold = float(expression.get("threshold", 0.55))
         self.motion_every = float(expression.get("everySeconds", 2.0))
         self.character_every = float(expression.get("publishSeconds", 6.0))
+        self.agree_reads = max(1, int(expression.get("agreeReads", 2)))  # a character is applied once this many readings in a row agree
+        self.streak = (None, 0)  # the last character read and how many readings in a row read it
         self.motion_at, self.character_sent_at, self.character = None, None, None  # the last character read, for the page
         self.lock = threading.Lock()
         self.last_call, self.sent_at, self.history, self.calls = None, {}, [], 0
+        if (watch if watch is not None else clock is time.time):  # the wall clock: a thread reverts what waits too long; tests tick by hand
+            threading.Thread(target=self._watch, daemon=True).start()
 
     # --- the page's posture ---------------------------------------------------
 
@@ -187,9 +219,18 @@ class Hands:
         threads = []
         with self.lock:
             meant = self.meaning(record["read"], aims, target)
-            for side in record["read"]:  # a flat hand conducts the group its gesture went to
-                g = record["read"][side]
-                self.engaged[side] = (g, next(grp for gg, grp in meant if gg == g)) if g in LEVELS else None
+            for side in record["read"]:  # a flat hand conducts the group its gesture went to, from where it is now
+                g, e = record["read"][side], self.engaged[side]
+                if g == "nothing":
+                    continue  # a hand that relaxes, or that Jev is unsure of, goes on conducting its level
+                if g in LEVELS:
+                    group = next(grp for gg, grp in meant if gg == g)
+                    if e and e["gesture"] == g:
+                        continue  # a glance at another section: the level in progress stays with the one it began on
+                    self._disengage(side, now)  # the other level gesture: what the hand held comes back
+                    self.engaged[side] = {"gesture": g, "group": group, "height": None, "gain": None}
+                else:
+                    self._disengage(side, now)  # a hand that closes, points or hushes conducts no level: what it held comes back
             for gesture, group in meant:
                 record["decision"].append({"gesture": gesture, "group": group})
                 threads += self._act(gesture, group, record)
@@ -199,16 +240,94 @@ class Hands:
         return record
 
     def height(self, message):
-        """Each hand's height, many times a second: the gain of its group while the hand holds a palm up or a palm down."""
+        """Each hand's height, many times a second, while it holds a palm up or a palm down: a provisional level for its
+        group, from where the hand began over height.span metres, heard at once. A double pinch keeps it; else it comes
+        back where it was when the hand drops (dropSpeed), leaves (silentSeconds) or waits unconfirmed (pendingSeconds).
+        A height marked pinch only says the hand is still there. Returns each hand's provisional gain."""
+        now = self.clock()
         gains = {}
-        for side, h in ((message or {}).get("hands") or {}).items():
-            height = (h or {}).get("height") if isinstance(h, dict) else None
-            if side not in self.engaged or not self.engaged[side] or not isinstance(height, (int, float)):
-                continue
-            gain = max(0.0, min(1.0, (height - self.low) / (self.high - self.low)))
-            self.orchestra.fade(self.chairs_of(self.engaged[side][1]), gain, self.height_fade)
-            gains[side] = round(gain, 2)
+        with self.lock:
+            for side, h in ((message or {}).get("hands") or {}).items():
+                if side not in self.engaged or not isinstance(h, dict) or not isinstance(h.get("height"), (int, float)):
+                    continue
+                height, e, p = float(h["height"]), self.engaged[side], self.pending[side]
+                if h.get("pinch"):
+                    if p:
+                        p["at"] = now
+                    continue
+                if not e or self.pinch[side]:
+                    continue
+                before, self.last_height[side] = self.last_height[side], (height, now)
+                if before and now > before[1] and (before[0] - height) / (now - before[1]) > self.drop_speed:
+                    self._revert(side, "the hand dropped", now)
+                    continue
+                if e["height"] is None:
+                    e["height"], e["gain"] = height, self._gain_of(e["group"])
+                gain = round(max(0.0, min(1.0, e["gain"] + (height - e["height"]) / self.height_span)), 4)
+                if p is None:
+                    p = self.pending[side] = {"group": e["group"], "gain": gain, "from": e["gain"], "since": now, "moved": now, "at": now}
+                    self._log({"at": round(now, 3), "gain": {"kind": "pending", "side": side, "group": e["group"], "from": round(e["gain"], 2)}})
+                else:
+                    if abs(gain - p["gain"]) >= 0.02:
+                        p["moved"] = now
+                    p["gain"], p["at"] = gain, now
+                self.orchestra.fade(self.chairs_of(e["group"]), gain, self.height_fade)
+                gains[side] = round(gain, 2)
         return gains
+
+    def tick(self, now=None):
+        """Four times a second: a provisional level whose hand left (no height for silentSeconds) or that waited
+        unconfirmed for pendingSeconds comes back where it was. Returns the records of what came back."""
+        now = self.clock() if now is None else now
+        done = []
+        with self.lock:
+            for side, p in list(self.pending.items()):
+                if not p:
+                    continue
+                if now - p["at"] > self.silent_seconds:
+                    done.append(self._revert(side, "the hand left", now))
+                elif now - p["moved"] > self.pending_seconds:
+                    done.append(self._revert(side, f"not kept within {self.pending_seconds:g} s", now))
+        return done
+
+    def _watch(self):
+        while True:
+            time.sleep(0.25)
+            try:
+                self.tick()
+            except Exception:  # noqa: BLE001  a watchdog never dies
+                pass
+
+    def _gain_of(self, group):
+        chairs = {c["id"]: c for s in self.orchestra.snapshot()["sections"] for c in s["chairs"]}
+        named = self.chairs_of(group)
+        return sum(chairs[k].get("gain", 1.0) for k in named) / len(named) if named else 1.0
+
+    def _title(self, group):
+        return self.instruments[group]["name"] if group in self.instruments else "Everyone" if group == "all" else group.capitalize()
+
+    def _confirm(self, side, now):
+        """The level a flat hand set stays: the double pinch. Under the lock."""
+        p, self.pending[side], self.engaged[side], self.last_height[side] = self.pending[side], None, None, None
+        self.confirmed[p["group"]] = p["gain"]
+        self.orchestra.fade(self.chairs_of(p["group"]), p["gain"], 0)
+        self.last_gain = {"kind": "kept", "side": side, "group": p["group"], "gain": round(p["gain"], 2), "from": round(p["from"], 2), "at": round(now, 3)}
+        self._keep({"at": round(now, 3), "gain": self.last_gain})
+        return self.last_gain
+
+    def _revert(self, side, why, now):
+        """A provisional level comes back where it was; the hand conducts no level until Jev reads it again. Under the lock."""
+        p, self.pending[side], self.engaged[side], self.last_height[side] = self.pending[side], None, None, None
+        self.orchestra.fade(self.chairs_of(p["group"]), p["from"], self.height_fade)
+        self.last_gain = {"kind": "reverted", "side": side, "group": p["group"], "gain": round(p["from"], 2), "from": round(p["gain"], 2),
+                          "why": why, "at": round(now, 3)}
+        self._keep({"at": round(now, 3), "gain": self.last_gain})
+        return self.last_gain
+
+    def _disengage(self, side, now):
+        if self.pending[side]:
+            self._revert(side, "the hand changed", now)
+        self.engaged[side], self.last_height[side] = None, None
 
     def aimed(self, aim):
         """The instrument whose slice of the arc an aim (degrees) falls in, or None."""
@@ -270,13 +389,30 @@ class Hands:
                 else:
                     record["notSent"].append({"what": "beat", "why": "no tempo in the beat"})
             elif gesture == "pinch-start":
+                if side:  # the pinch takes the level over from the flat hand: no jump, nothing comes back
+                    self.pending[side], self.engaged[side], self.last_height[side] = None, None, None
                 self._pinch_start(side, target, message.get("height"), record)
             elif gesture == "pinch-move":
                 self._pinch_move(side, message.get("height"), record)
             elif gesture == "pinch-end":
+                p = self.pinch.get(side) if side else None
                 if side:
                     self.pinch[side] = None
-                record["applied"] = "pinch released"
+                if p:  # released: the level stays, kept
+                    gain = round(self._gain_of(p["target"]), 4)
+                    self.confirmed[p["target"]] = gain
+                    self.last_gain = {"kind": "kept", "side": side, "group": p["target"], "gain": round(gain, 2), "from": round(p["gain"], 2), "at": round(now, 3)}
+                    record["gain"] = self.last_gain
+                    record["applied"] = f"{self._title(p['target'])} kept at {round(100 * gain)}%"
+                else:
+                    record["applied"] = "pinch released"
+            elif gesture == "pinch-double":
+                kept = [self._confirm(s, now) for s in ("left", "right") if self.pending[s]]
+                if kept:
+                    record["decision"] += [{"gesture": "pinch-double", "group": k["group"]} for k in kept]
+                    record["applied"] = "; ".join(f"{self._title(k['group'])} kept at {round(100 * k['gain'])}%" for k in kept)
+                else:
+                    record["notSent"].append({"what": "keep", "why": "no level waiting: raise or lower a flat hand first"})
             self._keep(record)
         for thread in threads if self.publish_wait > 0 else ():
             thread.join(timeout=self.publish_wait)
@@ -285,7 +421,8 @@ class Hands:
     # --- the conductor's expression, from how the hands move -------------------
 
     def motion(self, message):
-        """The hands' last seconds, summed up by the page: Jev reads the expression; a character read goes on the target's chairs, else everyone."""
+        """The hands' last seconds, summed up by the page: Jev reads the expression; a character read expression.agreeReads times in
+        a row goes on the section looked at, else everyone."""
         message = message if isinstance(message, dict) else {}
         hands = {side: h for side, h in (message.get("hands") or {}).items() if side in ("left", "right") and isinstance(h, dict)}
         target, locked = self.target_of(message.get("target")), bool(message.get("locked"))
@@ -320,14 +457,21 @@ class Hands:
         threads = []
         with self.lock:
             if read == "nothing":
+                self.streak = (None, 0)
                 record["notSent"].append({"what": "expression", "why": f"Jev read {choice} at {p:.2f}" + ("" if choice == "nothing" else f", under {self.character_threshold:g}")})
                 return self._keep(record)
             # Only while the music plays: a message reaches an idle chair as a task, and a Jev chair's task
             # plays its first phrase, which starts the music. Hands warming up before the downbeat cue nobody.
             if self.orchestra.snapshot()["status"] != "playing":
+                self.streak = (None, 0)
                 record["notSent"].append({"what": f"{read}", "why": "nothing plays: a palm up starts the music"})
                 return self._keep(record)
-            group = target if locked and target else "all"
+            # One reading is not enough: the conductor's hands read differently from one beat to the next.
+            self.streak = (read, self.streak[1] + 1 if self.streak[0] == read else 1)
+            if self.streak[1] < self.agree_reads:
+                record["notSent"].append({"what": f"{read}", "why": f"read {read} {self.streak[1]} of {self.agree_reads} times in a row: waits for the next reading to agree"})
+                return self._keep(record)
+            group = target or "all"
             record["decision"].append({"gesture": read, "group": group})
             named = self.chairs_of(group)
             changed = self.orchestra.character(named, read)
@@ -378,13 +522,13 @@ class Hands:
         return {k: round(float(h[k]), 2) for k in ("seconds", "speed", "peak", "rise", "sweep", "turns", "open", "height") if isinstance(h.get(k), (int, float))}
 
     def _entrance(self, target, locked, record):
-        """A thumb tap: the target's entrance, a cue with no level, while the music plays and the target is locked."""
+        """A thumb tap: the entrance of the section the conductor looks at (locked or not), a cue with no level, while the music plays."""
         o = self.orchestra
         if o.snapshot()["status"] != "playing":
             record["notSent"].append({"what": "entrance", "why": "nothing plays: a palm up starts the music"})
             return []
-        if not target or not locked:
-            record["notSent"].append({"what": "entrance", "why": "no section locked: look at one and pinch"})
+        if not target:
+            record["notSent"].append({"what": "entrance", "why": "no section: look at one"})
             return []
         now = self.clock()
         last = self.sent_at.get(("entrance", target))
@@ -412,9 +556,7 @@ class Hands:
         if not side or not target or not isinstance(height, (int, float)):
             record["notSent"].append({"what": "pinch", "why": "no section to hold" if side and not target else "no hand or height in the pinch"})
             return
-        chairs = {c["id"]: c for s in self.orchestra.snapshot()["sections"] for c in s["chairs"]}
-        named = self.chairs_of(target)
-        gain = sum(chairs[k].get("gain", 1.0) for k in named) / len(named) if named else 1.0
+        gain = self._gain_of(target)
         self.pinch[side] = {"target": target, "height": float(height), "gain": gain}
         record["applied"] = f"holding {self.instruments[target]['name']} at {round(100 * gain)}%"
 
@@ -423,7 +565,7 @@ class Hands:
         if not p or not isinstance(height, (int, float)):
             record["notSent"].append({"what": "pinch", "why": "no pinch began"})
             return
-        gain = max(0.0, min(1.0, p["gain"] + (float(height) - p["height"]) / self.pinch_span))
+        gain = round(max(0.0, min(1.0, p["gain"] + (float(height) - p["height"]) / self.pinch_span)), 4)
         self.orchestra.fade(self.chairs_of(p["target"]), gain, self.height_fade)
         record["decision"].append({"gesture": "pinch", "group": p["target"]})
         record["applied"] = f"{self.instruments[p['target']]['name']} {round(100 * gain)}%"
@@ -475,15 +617,19 @@ class Hands:
                     "threshold": self.threshold, "cooldownSeconds": self.cooldown, "groups": self.groups,
                     "gestures": {"open": "info.cue.<group> f", "down": "info.cue.<group> p", "fist": "fade the group out (the service's, no event)",
                                  "hush": f"info.cue.all p and everyone's gain to {self.hush_gain}", "point": "a baton: no signal, its beats are the tempo",
-                                 "height": "the group's gain while open or palm down (the service's, no event)",
-                                 "tap-thumb": "the locked target's entrance: info.cue.<section>, no level, while the music plays",
+                                 "height": f"a provisional level for the group after a palm up or down, from where the hand began over {self.height_span:g} m; "
+                                           f"kept by a double pinch, else back where it was when the hand drops, leaves for {self.silent_seconds:g} s, "
+                                           f"waits {self.pending_seconds:g} s or Jev reads another gesture (the service's, no event)",
+                                 "pinch twice": "keeps the level a flat hand set",
+                                 "tap-thumb": "the entrance of the section looked at: info.cue.<section>, no level, while the music plays",
                                  "swipe-forward / swipe-backward": f"tempo ±{self.tempo_step:g}, info.tempo at most every {self.tempo_every:g} s",
-                                 "pinch held": f"the target's gain from where it was, over {self.pinch_span:g} m, no event",
+                                 "pinch held": f"350 ms or more: the target's gain from where it was, over {self.pinch_span:g} m, kept when released, no event",
                                  "beat": "the tempo as beaten with a pointing hand, published as the swipes are",
-                                 "motion": f"how the hands move, read by Jev as the expression (dolce, cantabile, brillante, appassionato) of the locked section, else everyone: "
-                                           f"the voices' timbre at once, info.expression when it changes, at most every {self.character_every:g} s"},
+                                 "motion": f"how the hands move, read by Jev as the expression (dolce, cantabile, brillante, appassionato) of the section looked at, else everyone: "
+                                           f"read {self.agree_reads} times in a row: the voices' timbre at once, info.expression when it changes, at most every {self.character_every:g} s"},
                     "character": self.character, "characters": CHARACTERS,
-                    "engaged": dict(self.engaged), "instruments": list(self.instruments.values()),
+                    "engaged": dict(self.engaged), "pending": {k: v for k, v in self.pending.items() if v}, "confirmed": dict(self.confirmed),
+                    "lastGain": self.last_gain, "instruments": list(self.instruments.values()),
                     "dryRun": self.dry_run, "source": JEV_SOURCE}
 
     # --- inside -------------------------------------------------------------
@@ -550,4 +696,14 @@ class Hands:
     def _keep(self, record):
         self.history.append(record)
         del self.history[:-200]
+        self._log(record)
         return record
+
+    def _log(self, record):
+        if not self.log_path:
+            return
+        try:
+            with open(self.log_path, "a") as f:
+                f.write(json.dumps(record, default=str) + "\n")
+        except OSError:
+            pass

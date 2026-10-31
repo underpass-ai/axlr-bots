@@ -52,14 +52,17 @@ JUDGE_SOURCE = "reported by the bot from its axlr_judge call; the service does n
 DYNAMICS_SOURCE = "the chair's last play, or the conductor's last cue with dynamics, applied at once"
 CHARACTER_SOURCE = "the conductor's expression, read by Jev from how the hands move, or the chair's own play; applied at once"
 # What each character does to a voice: the velocity its notes are struck at
-# (a share of the score's 127), the filter cutoff offset in cents (measured on
-# TimGM6mb: -2400 takes a third of the spectral centroid off the strings, +1200
-# adds a tenth) and the vibrato wheel. No character is the plain voice.
+# (a share of the score's 127), the filter cutoff offset in cents and the
+# vibrato wheel. Measured on TimGM6mb, notes held 2 s, spectral centroid
+# against the plain voice: dolce halves it on the violins and violas (-35 % on
+# the cellos, -14 % on the oboes) and is about 8-10 dB softer; brillante adds
+# 44-80 % on the strings, appassionato 40-97 %; the oboes' filter is open, so
+# only dolce changes them. No character is the plain voice.
 CHARACTERS = {
-    "dolce": {"velocity": 0.8, "brightness": -2400, "vibrato": 20, "words": "tender and soft"},
+    "dolce": {"velocity": 0.65, "brightness": -3600, "vibrato": 20, "words": "tender and soft"},
     "cantabile": {"velocity": 1.0, "brightness": 0, "vibrato": 35, "words": "singing and even"},
-    "brillante": {"velocity": 1.0, "brightness": 1200, "vibrato": 45, "words": "bright and lively"},
-    "appassionato": {"velocity": 1.0, "brightness": 1200, "vibrato": 80, "words": "fiery and intense"},
+    "brillante": {"velocity": 1.0, "brightness": 1800, "vibrato": 45, "words": "bright and lively"},
+    "appassionato": {"velocity": 1.0, "brightness": 2400, "vibrato": 90, "words": "fiery and intense"},
 }
 PLAIN = {"velocity": 1.0, "brightness": 0, "vibrato": 0}
 
