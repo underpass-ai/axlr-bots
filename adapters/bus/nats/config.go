@@ -37,6 +37,14 @@ type Config struct {
 	// Credentials is a NATS credentials file (user JWT and seed); empty
 	// connects without one.
 	Credentials string
+	// CertFile and KeyFile are a client certificate and its key in PEM,
+	// for mutual TLS: a broker with verify_and_map takes the user from
+	// the certificate's subject. Both or neither.
+	CertFile string
+	KeyFile  string
+	// CAFile is the PEM bundle the broker's certificate is checked
+	// against; empty uses the system's roots on a TLS connection.
+	CAFile string
 	// Stream is the JetStream stream; empty is DefaultStream.
 	Stream string
 	// Outbox is the directory the publisher keeps a push in until the

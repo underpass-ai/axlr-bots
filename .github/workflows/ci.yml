@@ -162,11 +162,43 @@ jobs:
       - name: Test the orchestra's stop measurement
         working-directory: examples/orchestra/stage
         run: python -m unittest -v test_measure_stop
+      - name: Render the orchestra at home
+        shell: bash
+        run: |
+          set -euo pipefail
+          helm dependency update examples/helm/orchestra
+          values=examples/helm/orchestra/values.example.yaml
+          helm lint examples/helm/orchestra -f $values
+          # values.yaml holds no cluster's values: without a file it renders nothing.
+          if helm template orchestra examples/helm/orchestra >/dev/null 2>&1; then exit 1; fi
+          helm template orchestra examples/helm/orchestra -n orchestra -f $values > orchestra.yaml
+          # The broker, the control plane and one StatefulSet per section.
+          test "$(grep -c '^kind: StatefulSet$' orchestra.yaml)" = 9
+          # Mutual TLS: one broker user per chair's node and the control plane's.
+          grep -q 'verify_and_map: true' orchestra.yaml
+          test "$(grep -c 'user: "CN=stage-' orchestra.yaml)" = 36
+          grep -q 'user: "CN=control-plane,O=axlr-bots clients"' orchestra.yaml
+          grep -q -- '--bus=nats' orchestra.yaml
+          grep -q -- '--nats-url=tls://orchestra-nats:4222' orchestra.yaml
+          grep -q 'value: "tls://orchestra-nats:4222"' orchestra.yaml
+          # Jev chairs: no model key; the public names behind the ingress.
+          ! grep -q OPENROUTER_API_KEY orchestra.yaml
+          grep -q -- '--public-host=orchestra.example.com' orchestra.yaml
+          grep -q -- '--public-host=rave.example.com' orchestra.yaml
+          test "$(grep -c '^kind: Ingress$' orchestra.yaml)" = 2
+          # More running chairs than a section has is refused.
+          if helm template orchestra examples/helm/orchestra -f $values --set 'chairs.sections[0].id=ob,chairs.sections[0].chairs=2,chairs.sections[0].replicas=3' >/dev/null 2>&1; then exit 1; fi
+          # An image not by digest, or no public name, is refused.
+          if helm template orchestra examples/helm/orchestra -f $values --set images.score=score:latest >/dev/null 2>&1; then exit 1; fi
+          if helm template orchestra examples/helm/orchestra -f $values --set rave.host= >/dev/null 2>&1; then exit 1; fi
       - name: Test the orchestra's score service
         working-directory: examples/orchestra/score-service
         run: |
           pip install mido==1.3.3
-          python -m unittest -v test_score_service test_hands test_ws
+          python -m unittest -v test_score_service test_hands test_ws test_hosts
+      - name: Test the rave service's names
+        working-directory: examples/orchestra/rave-service
+        run: python -m unittest -v test_hosts
       - name: Test the conductor page's posture math
         working-directory: examples/orchestra/score-service/static
         run: node --test posture.test.mjs

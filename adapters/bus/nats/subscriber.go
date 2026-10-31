@@ -25,7 +25,7 @@ func NewSubscriber(cfg Config) *Subscriber { return &Subscriber{cfg: cfg} }
 // a resync first; the channel closes when ctx ends or the broker is lost
 // (the agent opens it again).
 func (s *Subscriber) Stream(ctx context.Context, node domain.NodeID) (<-chan application.NodePush, error) {
-	conn, js, err := connect(s.cfg)
+	conn, js, err := connect(s.cfg, false)
 	if err != nil {
 		return nil, err
 	}

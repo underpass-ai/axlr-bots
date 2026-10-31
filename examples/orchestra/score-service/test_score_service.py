@@ -676,3 +676,20 @@ class CharacterTest(unittest.TestCase):
         o.cue("info.cue.all", {})
         self.assertIsNone(o.chairs["vc-1"]["character"])
         self.assertEqual((synth.last("brightness", ch), synth.last("modulation", ch)), (0, 0))
+
+
+class TheScoreForThePage(unittest.TestCase):
+    """GET /api/score: what room.js seats and hands.js groups come from the service, not the page."""
+
+    def test_each_section_has_its_family_and_its_seat(self):
+        o, _, _ = orchestra()
+        d = o.density()
+        chairs = {x["id"]: x["chairs"] for x in CONFIG["sections"]}
+        self.assertEqual({s["id"] for s in d["sections"]}, set(chairs))
+        self.assertEqual({s["id"] for s in d["sections"]}, set(d["seating"]))
+        for s in d["sections"]:
+            self.assertIn(s["family"], ("strings", "winds"))
+            plan = d["seating"][s["id"]]
+            self.assertEqual(len(plan["rows"]), len(plan["per"]))
+            self.assertGreaterEqual(sum(plan["per"]), chairs[s["id"]], s["id"])
+            self.assertEqual(len(plan["label"]), 2)

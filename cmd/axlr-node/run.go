@@ -69,6 +69,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	bus := flags.String("bus", envOr("AXLR_NODE_BUS", "direct"), "how the control plane's pushes reach this node: direct (a stream over the node's own connection) or nats (also AXLR_NODE_BUS)")
 	natsURL := flags.String("nats-url", envOr("AXLR_NODE_NATS_URL", ""), "with --bus nats, the broker, nats://host:4222 (also AXLR_NODE_NATS_URL)")
 	natsCreds := flags.String("nats-creds", envOr("AXLR_NODE_NATS_CREDS", ""), "with --bus nats, a NATS credentials file (also AXLR_NODE_NATS_CREDS)")
+	natsCert := flags.String("nats-cert", envOr("AXLR_NODE_NATS_CERT", ""), "with --bus nats, a client certificate in PEM for mutual TLS (also AXLR_NODE_NATS_CERT; default with a tls:// broker and an https control plane: the node's own, from enrollment)")
+	natsKey := flags.String("nats-key", envOr("AXLR_NODE_NATS_KEY", ""), "with --nats-cert, its key (also AXLR_NODE_NATS_KEY)")
+	natsCA := flags.String("nats-ca", envOr("AXLR_NODE_NATS_CA", ""), "with --bus nats, the CA the broker's certificate is checked against (also AXLR_NODE_NATS_CA; default the system's)")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exitOK
@@ -94,6 +97,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if *bus == "nats" && *natsURL == "" {
 		fmt.Fprintln(stderr, "axlr-node: --bus nats needs --nats-url (or AXLR_NODE_NATS_URL)")
+		return exitUsage
+	}
+	if (*natsCert == "") != (*natsKey == "") {
+		fmt.Fprintln(stderr, "axlr-node: --nats-cert and --nats-key go together")
 		return exitUsage
 	}
 	if *tokenFile != "" && !strings.HasPrefix(*control, "https://") {
@@ -149,8 +156,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Dedicated: *dedicated, Runtimes: runtimes.Kinds(), Heartbeat: *heartbeat, PollWait: *poll, Log: logger, SocketDir: filepath.Join(*stateDir, "run")},
 	}
 	if *bus == "nats" {
-		agent.Streamer = natsbus.NewSubscriber(natsbus.Config{URL: *natsURL, Credentials: *natsCreds, Name: "axlr-node " + id, Log: logger})
-		logger.Printf("node: bus nats at %s", *natsURL)
+		cert, key, how := natsClientCertificate(*natsURL, *control, *stateDir, *natsCert, *natsKey)
+		agent.Streamer = natsbus.NewSubscriber(natsbus.Config{URL: *natsURL, Credentials: *natsCreds, CertFile: cert, KeyFile: key, CAFile: *natsCA, Name: "axlr-node " + id, Log: logger})
+		logger.Printf("node: bus nats at %s, %s", *natsURL, how)
 	}
 	if err := agent.Run(ctx); err != nil {
 		fmt.Fprintln(stderr, "axlr-node:", err)
@@ -247,4 +255,20 @@ func envOr(name, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// natsClientCertificate is the certificate the node shows the broker:
+// the one named by the flags, or, with a tls:// broker and an https
+// control plane, the node's own from enrollment, so a broker that maps
+// certificates to users knows the node by the same identity the control
+// plane does. It says which, for the log.
+func natsClientCertificate(natsURL, control, stateDir, cert, key string) (string, string, string) {
+	if cert != "" {
+		return cert, key, "client certificate " + cert
+	}
+	if strings.HasPrefix(natsURL, "tls://") && strings.HasPrefix(control, "https://") {
+		dir := filepath.Join(stateDir, pki.CredentialsDirName)
+		return filepath.Join(dir, "node.crt"), filepath.Join(dir, "node.key"), "the node's own certificate from enrollment"
+	}
+	return "", "", "no client certificate"
 }
