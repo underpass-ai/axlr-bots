@@ -5,6 +5,11 @@ orchestra for one block at a time, paced by the wall clock, and hands each
 block to every listener of the stream and to the recording, if any. A
 stream is a WAV with an open-ended length, so OBS, ffplay or a browser can
 take it as it comes.
+
+With a meter (telemetry.RenderMeter), the loop says how long each block took
+to render and how far the audio is behind the wall clock (a listener's
+buffer drains when it is), and the stream says how many blocks a slow
+listener lost.
 """
 
 import os
@@ -91,8 +96,8 @@ def wav_header(rate, channels=2, bits=16, frames=None):
 class Stream:
     """Blocks of audio to whoever listens; a listener too slow loses blocks, never the clock."""
 
-    def __init__(self, depth=50):
-        self.depth, self.listeners, self.lock = depth, [], threading.Lock()
+    def __init__(self, depth=50, on_drop=None):
+        self.depth, self.listeners, self.lock, self.on_drop = depth, [], threading.Lock(), on_drop
 
     def listen(self):
         import queue
@@ -107,18 +112,25 @@ class Stream:
             if q in self.listeners:
                 self.listeners.remove(q)
 
+    def count(self):
+        with self.lock:
+            return len(self.listeners)
+
     def publish(self, block):
         import queue
 
+        dropped = 0
         with self.lock:
             for q in self.listeners:
                 try:
                     q.put_nowait(block)
                 except queue.Full:
-                    pass
+                    dropped += 1
+        if dropped and self.on_drop:
+            self.on_drop(dropped)
 
 
-def run(orchestra, stream, rate, block, record=None, stop=None, ahead=0.05):
+def run(orchestra, stream, rate, block, record=None, stop=None, ahead=0.05, meter=None):
     """Render forever (or until stop is set), one block at a time, at the speed of the wall clock."""
     out = None
     if record:
@@ -127,12 +139,17 @@ def run(orchestra, stream, rate, block, record=None, stop=None, ahead=0.05):
     period, due = block / rate, time.monotonic()
     try:
         while not (stop and stop.is_set()):
+            began = time.monotonic()
             data = orchestra.render(block)
+            if meter:
+                meter.rendered(time.monotonic() - began)
             stream.publish(data)
             if out:
                 out.writeframes(data)
             due += period
             delay = due - ahead - time.monotonic()
+            if meter:
+                meter.paced(-delay - ahead, delay < -1)  # lag: how far the audio is behind the wall clock
             if delay > 0:
                 time.sleep(delay)
             elif delay < -1:

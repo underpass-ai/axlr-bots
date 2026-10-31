@@ -21,6 +21,9 @@
                          sums (motion: Jev reads the conductor's expression) up; the state,
                          as soon as it changes, and Jev's readings down
   POST /api/motion       the same motion sums over HTTP, for a check without the page
+  GET  /metrics          Prometheus: the take, the chairs' calls, the hands, Jev, the bus,
+                         the WebSocket and the render loop (telemetry.py); loopback and
+                         internal names only, never the public one
 
 It listens on loopback only (a headset reaches it through adb reverse), or,
 with --public-host (behind an HTTPS ingress: the page, the sound, /ws/hands)
@@ -39,6 +42,7 @@ import logging
 import os
 import sys
 import threading
+import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -46,7 +50,9 @@ import bus
 import hands as hands_module
 import jev
 import mcp_http
+import metrics
 import synth
+import telemetry
 import ws
 from orchestra import Orchestra, Refused
 from score import Score
@@ -77,18 +83,24 @@ TOOLS = [
 def chair_tools(orchestra, chair, max_seconds):
     tools = mcp_http.Tools("score-service", "0.2.0")
 
-    def guard(fn):
+    def guard(tool, fn):
         def call(args):
+            began, outcome, result = time.monotonic(), "error", None
             try:
-                return fn(args)
+                result = fn(args)
+                outcome = "ok"
+                return result
             except Refused as exc:
+                outcome = "refused"
                 raise mcp_http.ToolError(str(exc))
+            finally:
+                telemetry.chair_call(chair, tool, args, time.monotonic() - began, outcome, result)
         return call
 
-    tools.add(TOOLS[0], guard(lambda a: orchestra.phrases(chair, a.get("bar"))))
-    tools.add(TOOLS[1], guard(lambda a: orchestra.play(chair, a.get("phrase"), a.get("dynamics"), a.get("judge"), a.get("character"))))
-    tools.add(TOOLS[2], guard(lambda a: orchestra.listen(chair, a.get("bars", 8), max_seconds)))
-    tools.add(TOOLS[3], guard(lambda a: orchestra.stop(chair)))
+    tools.add(TOOLS[0], guard("phrases", lambda a: orchestra.phrases(chair, a.get("bar"))))
+    tools.add(TOOLS[1], guard("play", lambda a: orchestra.play(chair, a.get("phrase"), a.get("dynamics"), a.get("judge"), a.get("character"))))
+    tools.add(TOOLS[2], guard("listen", lambda a: orchestra.listen(chair, a.get("bars", 8), max_seconds)))
+    tools.add(TOOLS[3], guard("stop", lambda a: orchestra.stop(chair)))
     return tools
 
 
@@ -119,6 +131,7 @@ def make_handler(orchestra, stream, config, hands=None, hosts=None):
                 version = state["version"]
                 try:
                     sock.send_json({"type": "state", "state": state})
+                    telemetry.ws_message("down", "state")
                 except ws.Closed:
                     return
 
@@ -126,6 +139,7 @@ def make_handler(orchestra, stream, config, hands=None, hosts=None):
             record = hands.observe(message)
             try:
                 sock.send_json({"type": "hands", "id": message.get("id"), "record": record})
+                telemetry.ws_message("down", "hands")
             except ws.Closed:
                 pass
 
@@ -133,6 +147,7 @@ def make_handler(orchestra, stream, config, hands=None, hosts=None):
             record = hands.native(message)
             try:
                 sock.send_json({"type": "native", "id": message.get("id"), "record": record})
+                telemetry.ws_message("down", "native")
             except ws.Closed:
                 pass
 
@@ -140,6 +155,7 @@ def make_handler(orchestra, stream, config, hands=None, hosts=None):
             record = hands.motion(message)
             try:
                 sock.send_json({"type": "motion", "id": message.get("id"), "record": record})
+                telemetry.ws_message("down", "motion")
             except ws.Closed:
                 pass
 
@@ -151,7 +167,10 @@ def make_handler(orchestra, stream, config, hands=None, hosts=None):
             try:
                 message = json.loads(text)
             except ValueError:
+                telemetry.ws_message("up", "invalid")
                 continue
+            kind = message.get("type") if isinstance(message, dict) else None
+            telemetry.ws_message("up", kind if kind in ("posture", "height", "native", "motion") else "other")
             if isinstance(message, dict) and message.get("type") == "posture":
                 threading.Thread(target=answer, args=(message,), daemon=True).start()
             elif isinstance(message, dict) and message.get("type") == "height":
@@ -168,6 +187,7 @@ def make_handler(orchestra, stream, config, hands=None, hosts=None):
             pass
 
         def _send(self, status, body=b"", ctype="application/json"):
+            telemetry.http(self.path, status)
             self.send_response(status)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
@@ -213,10 +233,15 @@ def make_handler(orchestra, stream, config, hands=None, hosts=None):
             self._send(200, json.dumps(reply).encode())
 
         def do_GET(self):
-            if self._reach() is None:
+            reach = self._reach()
+            if reach is None:
                 return
             url = urllib.parse.urlparse(self.path)
             query = dict(urllib.parse.parse_qsl(url.query))
+            if url.path == "/metrics":
+                if reach == "public":
+                    return self._send(403, b'{"error":"the metrics are not public"}')
+                return self._send(200, telemetry.REGISTRY.render(), metrics.CONTENT_TYPE)
             if url.path == "/api/state":
                 version = int(query["version"]) if "version" in query else None
                 return self._send(200, json.dumps(state_now(version, min(float(query.get("wait", 20)), 25))).encode())
@@ -248,13 +273,19 @@ def make_handler(orchestra, stream, config, hands=None, hosts=None):
             key = self.headers.get("Sec-WebSocket-Key")
             if (self.headers.get("Upgrade") or "").lower() != "websocket" or not key:
                 return self._send(400, b'{"error":"a WebSocket upgrade"}')
+            telemetry.http(self.path, 101)
+            telemetry.WS_OPENED.inc()
             self.send_response(101)
             self.send_header("Upgrade", "websocket")
             self.send_header("Connection", "Upgrade")
             self.send_header("Sec-WebSocket-Accept", ws.accept_key(key))
             self.end_headers()
             self.close_connection = True
-            conduct(ws.Socket(self.rfile, self.wfile))
+            telemetry.WS_OPEN.inc()
+            try:
+                conduct(ws.Socket(self.rfile, self.wfile))
+            finally:
+                telemetry.WS_OPEN.dec()
 
         def _hands(self, read=None):
             if hands is None:
@@ -277,6 +308,7 @@ def make_handler(orchestra, stream, config, hands=None, hosts=None):
 
         def _audio(self):
             q = stream.listen()
+            telemetry.http(self.path, 200)
             try:
                 self.send_response(200)
                 self.send_header("Content-Type", "audio/wav")
@@ -305,6 +337,8 @@ def main(argv=None):
     p.add_argument("config", nargs="?", default=os.path.join(HERE, "config.json"))
     p.add_argument("--record", help="also write the sound to this WAV file")
     p.add_argument("--listen", help="host:port, default the config's listenAddress")
+    p.add_argument("--jev-log", help="append each question to Jev and its answer (or error) to this JSON-lines file; a directory: one file per run, "
+                                     "jev-<UTC time>-<pid>.jsonl (the hands' own records: --hands-log)")
     p.add_argument("--public-host", action="append", default=[], help="a name a browser reaches this service by, behind an HTTPS ingress: the page, the sound and /ws/hands, never the chairs' MCP (repeatable)")
     p.add_argument("--internal-host", action="append", default=[], help="a name only pods dial, such as the cluster's service name: everything, the chairs' MCP too (repeatable)")
     p.add_argument("--control-plane", help="the operator API, default the config's controlPlane.url")
@@ -325,14 +359,16 @@ def main(argv=None):
     font = synth.soundfont(config["audio"]["soundfonts"])
     audio = config["audio"]
     orchestra = Orchestra(score, config, synth.FluidSynth(font, audio["rate"], audio.get("gain", 0.2), audio.get("polyphony", 1024)))
-    stream = synth.Stream()
+    telemetry.watch_orchestra(orchestra)
+    stream = telemetry.watch_stream(synth.Stream(on_drop=telemetry.RENDER_METER.dropped))
     log.info("%s: %d bars, %s bpm, %d chairs, soundfont %s", config["score"]["title"], score.bars, score.bpm, len(orchestra.chairs), font)
 
-    threading.Thread(target=synth.run, args=(orchestra, stream, config["audio"]["rate"], config["audio"]["block"], a.record), daemon=True).start()
+    threading.Thread(target=synth.run, args=(orchestra, stream, config["audio"]["rate"], config["audio"]["block"], a.record),
+                     kwargs={"meter": telemetry.RENDER_METER}, daemon=True).start()
     cp = config["controlPlane"]
     publish = None
     if cp.get("url"):
-        b = bus.Bus(cp["url"], config["team"], cp["tokenFile"], cp["caFile"])
+        b = bus.Bus(cp["url"], config["team"], cp["tokenFile"], cp["caFile"], meter=telemetry.BUS)
         threading.Thread(target=b.follow, args=(orchestra,), daemon=True).start()
         publish = b.publish
     else:
@@ -344,6 +380,11 @@ def main(argv=None):
                     hc.get("jev", {}).get("timeoutSeconds", 10))
     hands = hands_module.Hands(orchestra, hc, judge.choose, publish)
     log.info("hands at /hands: Jev %s, threshold %s, %s", judge.model, hands.threshold, "dry run" if hands.dry_run else "publishing on " + config["team"])
+    jev_log = telemetry.JsonLines(a.jev_log) if a.jev_log else None
+    hands.judge = telemetry.judged(hands.judge, jev_log, hc.get("jev", {}).get("usdPerMillionInputTokens", telemetry.JEV_USD_PER_MILLION))
+    telemetry.watch_hands(hands)
+    if jev_log:
+        log.info("Jev's questions and answers in %s", jev_log.path)
 
     host, port = (a.listen or config["listenAddress"]).rsplit(":", 1)
     hosts = mcp_http.Hosts(a.public_host, a.internal_host)
