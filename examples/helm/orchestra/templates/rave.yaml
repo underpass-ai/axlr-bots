@@ -35,7 +35,7 @@ spec:
       {{- include "orchestra.podSpecCommon" . | nindent 6 }}
       containers:
         - name: rave
-          image: {{ .Values.images.rave }}
+          image: {{ include "orchestra.image" (list . "rave") }}
           args:
             - --listen=0.0.0.0:8794
             - --public-host={{ .Values.rave.host }}

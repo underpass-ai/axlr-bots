@@ -33,6 +33,14 @@ tolerations:
 {{- end }}
 {{- end -}}
 
+{{/* An image of images.<name>, by digest: (list $ "<name>"). */}}
+{{- define "orchestra.image" -}}
+{{- $root := index . 0 }}{{- $name := index . 1 -}}
+{{- $ref := index $root.Values.images $name | toString -}}
+{{- if not (regexMatch "^[^@ ]+@sha256:[0-9a-f]{64}$" $ref) }}{{ fail (printf "images.%s is required: <repository>@sha256:<64 hex>" $name) }}{{ end -}}
+{{ $ref }}
+{{- end -}}
+
 {{- define "orchestra.restricted" -}}
 allowPrivilegeEscalation: false
 readOnlyRootFilesystem: true
@@ -54,6 +62,7 @@ capabilities: {drop: ["ALL"]}
 {{/* The ingress for one public service: (dict "root" $ "name" <service> "host" <host> "port" <port>). */}}
 {{- define "orchestra.ingress" -}}
 {{- $root := .root }}
+{{- if not (regexMatch "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$" (toString .host)) }}{{ fail (printf "%s: the public host is required (a DNS name)" .name) }}{{ end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -61,7 +70,9 @@ metadata:
   labels:
     {{- include "orchestra.labels" $root | nindent 4 }}
   annotations:
-    cert-manager.io/cluster-issuer: {{ $root.Values.ingress.clusterIssuer }}
+    {{- with $root.Values.ingress.clusterIssuer }}
+    cert-manager.io/cluster-issuer: {{ . }}
+    {{- end }}
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     # /audio.wav is an endless stream and /ws/hands a WebSocket held for
     # the whole concert: no buffering, long reads and writes.

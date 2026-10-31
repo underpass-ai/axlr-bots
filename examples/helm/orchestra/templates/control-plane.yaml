@@ -34,7 +34,7 @@ spec:
         # The fleet CA, once: nodes enroll against it, the operator API uses it,
         # and the broker checks every client's certificate against it.
         - name: ca-init
-          image: {{ .Values.images.controlPlane }}
+          image: {{ include "orchestra.image" (list . "controlPlane") }}
           command: ["/busybox/sh", "-c", "test -f /var/lib/axlr-bots/ca/ca.crt || /usr/local/bin/axlr-bots --state /var/lib/axlr-bots ca init"]
           securityContext:
             {{- include "orchestra.restricted" . | nindent 12 }}
@@ -43,7 +43,7 @@ spec:
         # The control plane's own certificate for the broker, once:
         # CN=control-plane,O=axlr-bots clients, the one user that publishes.
         - name: nats-client
-          image: {{ .Values.images.controlPlane }}
+          image: {{ include "orchestra.image" (list . "controlPlane") }}
           command: ["/busybox/sh", "-c", "test -f /var/lib/axlr-bots/nats-client/client.key || /usr/local/bin/axlr-bots --state /var/lib/axlr-bots ca issue-client --name control-plane --out /var/lib/axlr-bots/nats-client"]
           securityContext:
             {{- include "orchestra.restricted" . | nindent 12 }}
@@ -51,7 +51,7 @@ spec:
             - {name: state, mountPath: /var/lib/axlr-bots}
       containers:
         - name: control-plane
-          image: {{ .Values.images.controlPlane }}
+          image: {{ include "orchestra.image" (list . "controlPlane") }}
           args:
             - serve
             - --listen=0.0.0.0:7878

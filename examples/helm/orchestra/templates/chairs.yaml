@@ -39,7 +39,7 @@ spec:
         # score service's MCP for this chair, the server a Jev bot's program
         # names (score).
         - name: mcp-config
-          image: {{ $root.Values.images.controlPlane }}
+          image: {{ include "orchestra.image" (list $root "controlPlane") }}
           env:
             - name: CHAIR
               valueFrom: {fieldRef: {fieldPath: metadata.name}}

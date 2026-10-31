@@ -1,4 +1,4 @@
-# The orchestra (examples/orchestra) on a cluster, as a production at home:
+# The orchestra (examples/orchestra) on a cluster:
 #
 #   control plane ── tls://nats:4222 (mutual TLS) ── NATS JetStream ── one node per chair
 #        │ :7878 mutual TLS (enrollment)                                   │ http :8790 (MCP)
@@ -6,30 +6,30 @@
 #   browsers, the headset ── HTTPS (ingress, Let's Encrypt) ── score (orquesta), rave
 #
 # README.md has the bootstrap (bootstrap.sh) and the mutual TLS of each leg.
+# This file holds no deployment's values: a cluster's go in a file of its own
+# (-f), values.example.yaml shows one.
 
-# Every image from the lab's registry, by digest.
+# Every image by digest (<repository>@sha256:<64 hex>), from a registry the
+# cluster pulls from: the Dockerfiles are in examples/orchestra and
+# distribution/; NATS is the upstream nats:2.15.0, mirrored.
 images:
-  controlPlane: container-registry.underpassai.com/axlr-bots/control-plane@sha256:2bac7d70a5e93ca881d8bca7f6607775bd603fb58ab996c10b6636e3c9e68202
-  nats: container-registry.underpassai.com/axlr-bots/nats@sha256:cd3fcd4ecdda44e3a66728a5334af0a959bc3979b32810e033d1c547241cd0f4
-  score: container-registry.underpassai.com/axlr-bots/orchestra-score@sha256:220335c36645fd9ec1d2d195900453b7e8a06b4ea6b6acb9bdfbd1857ed25d43
-  rave: container-registry.underpassai.com/axlr-bots/orchestra-rave@sha256:1f4bafdb59e11baa36eb25b12e7927732c04fe5d5545ecc130be2c2ba4b12e96
+  controlPlane: ""
+  nats: ""
+  score: ""
+  rave: ""
 
-# Where everything runs: the inference node (gx10) is tainted for LLMs only.
-nodeSelector:
-  kubernetes.io/hostname: wrx80-node1
+# Where the pods run.
+nodeSelector: {}
 tolerations: []
-
-# The pods' network, for the policies that name the control plane and the
-# broker by address (the node chart's egress is by CIDR).
-podCIDR: 10.244.0.0/16
 
 controlPlane:
   storage: 2Gi
-  storageClassName: local-path
+  # Empty: the cluster's default storage class.
+  storageClassName: ""
 
 nats:
   storage: 2Gi
-  storageClassName: local-path
+  storageClassName: ""
   # The broker's certificate: cert-manager signs it with a CA of the
   # broker's own (a self-signed root it makes here). The clients' certificates
   # are the fleet CA's: the control plane's (ca issue-client) and each
@@ -56,8 +56,7 @@ secrets:
 # is the section's size (the broker's users), replicas how many of its
 # chairs run, from the first (default: all).
 #
-# wrx80's kubelet takes 250 pods (maxPods raised from 110 on 31 Oct 2026):
-# all 36 chairs run.
+# 36 chairs are 36 pods: a node's kubelet takes 110 by default (maxPods).
 chairs:
   enabled: true
   nodePrefix: stage-
@@ -72,20 +71,22 @@ chairs:
 
 ingress:
   className: nginx
-  clusterIssuer: letsencrypt-prod-r53
+  # A cert-manager ClusterIssuer for the hosts' certificates; empty: none
+  # (the TLS Secrets <service>-tls are then yours to make).
+  clusterIssuer: ""
 
 score:
   enabled: true
-  # The public name: the page, the sound, /ws/hands. Route 53 points it at
-  # the ingress's LAN address.
-  host: orquesta.underpassai.com
+  # The public name (required): the page, the sound, /ws/hands. The DNS
+  # points it at the ingress.
+  host: ""
   resources:
     requests: {cpu: 500m, memory: 512Mi}
     limits: {memory: 2Gi}
 
 rave:
   enabled: true
-  host: rave.underpassai.com
+  host: ""
   resources:
     requests: {cpu: 500m, memory: 512Mi}
     limits: {memory: 2Gi}
@@ -100,9 +101,10 @@ resources:
 
 # The node of each chair: the sidecar chart's values.
 axlr-bots-node:
+  # The node image (distribution/node.Dockerfile).
   image:
-    repository: container-registry.underpassai.com/axlr-bots/axlr-bots-node
-    digest: sha256:d2166a86ab1b78fe3c655a98e4202d527575f76d510a6e8627dc89fcdea24b86
+    repository: ""
+    digest: ""
   controlPlane:
     url: https://orchestra-cp:7878
     ca:
@@ -118,7 +120,8 @@ axlr-bots-node:
       url: tls://orchestra-nats:4222
       ca:
         existingSecret: orchestra-nats-tls
-      cidr: 10.244.0.0/16
+      # The pods' network (the broker is a pod): required.
+      cidr: ""
   node:
     idPrefix: stage-
     labels: {team: orchestra}
@@ -133,6 +136,7 @@ axlr-bots-node:
     state:
       persistent: true
       size: 64Mi
-      storageClassName: local-path
+      storageClassName: ""
   networkPolicy:
-    controlPlaneCIDR: 10.244.0.0/16
+    # The pods' network (the control plane is a pod): required.
+    controlPlaneCIDR: ""

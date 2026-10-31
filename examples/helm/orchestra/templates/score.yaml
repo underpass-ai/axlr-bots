@@ -33,7 +33,7 @@ spec:
       {{- include "orchestra.podSpecCommon" . | nindent 6 }}
       containers:
         - name: score
-          image: {{ .Values.images.score }}
+          image: {{ include "orchestra.image" (list . "score") }}
           args:
             - --listen=0.0.0.0:8790
             # The browser's name (the page, the sound, /ws/hands), behind the ingress.

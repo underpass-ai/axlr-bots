@@ -1,7 +1,7 @@
 # The orchestra's score service in a container: Python, FluidSynth and a
 # General MIDI soundfont (FluidR3_GM, MIT). Build from examples/orchestra:
 #
-#   podman build --platform linux/amd64 -f score-service/Dockerfile -t container-registry.underpassai.com/axlr-bots/orchestra-score:<tag> .
+#   podman build --platform linux/amd64 -f score-service/Dockerfile -t <registry>/axlr-bots/orchestra-score:<tag> .
 #
 # It listens on loopback unless it is given its names (server.py
 # --public-host, --internal-host): examples/helm/orchestra does.

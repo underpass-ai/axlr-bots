@@ -1,0 +1,28 @@
+# An example cluster's values for this chart: render or install with
+#   helm template orchestra examples/helm/orchestra -f examples/helm/orchestra/values.example.yaml
+# Replace the registry, the digests, the names and the network with yours.
+images:
+  controlPlane: registry.example.com/axlr-bots/control-plane@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  nats: registry.example.com/axlr-bots/nats@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  score: registry.example.com/axlr-bots/orchestra-score@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  rave: registry.example.com/axlr-bots/orchestra-rave@sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+ingress:
+  className: nginx
+  clusterIssuer: letsencrypt
+
+score:
+  host: orchestra.example.com
+rave:
+  host: rave.example.com
+
+axlr-bots-node:
+  image:
+    repository: registry.example.com/axlr-bots/axlr-bots-node
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  bus:
+    nats:
+      # The pods' network: kubeadm's and Calico's usual default.
+      cidr: 10.244.0.0/16
+  networkPolicy:
+    controlPlaneCIDR: 10.244.0.0/16

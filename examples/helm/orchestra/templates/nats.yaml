@@ -135,7 +135,7 @@ spec:
       {{- include "orchestra.podSpecCommon" . | nindent 6 }}
       containers:
         - name: nats
-          image: {{ .Values.images.nats }}
+          image: {{ include "orchestra.image" (list . "nats") }}
           args: ["--config", "/etc/nats/nats.conf"]
           ports:
             - {name: client, containerPort: 4222}

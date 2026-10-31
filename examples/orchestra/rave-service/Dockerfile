@@ -4,7 +4,7 @@
 # The page is the orchestra's (score-service/static). Build from
 # examples/orchestra:
 #
-#   podman build --platform linux/amd64 -f rave-service/Dockerfile -t container-registry.underpassai.com/axlr-bots/orchestra-rave:<tag> .
+#   podman build --platform linux/amd64 -f rave-service/Dockerfile -t <registry>/axlr-bots/orchestra-rave:<tag> .
 FROM docker.io/library/node:22.23.4-trixie-slim@sha256:2117f713a417f3aff682ac8f5bc2ebbdf1beed51f36e67ab1e0fd3866b6d2d8f
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 ca-certificates libasound2t64 \
