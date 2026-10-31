@@ -164,6 +164,8 @@ No image leaves the headset: Jev reads the measurements as text. Image input to 
 
 ### Run it on the headset
 
+On the cluster ([`examples/helm/orchestra`](../helm/orchestra/README.md)) the headset's Quest Browser opens `https://orquesta.underpassai.com/hands` (and `https://rave.underpassai.com/hands`) on the home Wi-Fi: HTTPS with a Let's Encrypt certificate is a secure context, so WebXR needs no `adb reverse`. The services answer only their own names (`--public-host`, `--internal-host`): the public name gets the page, the sound and `/ws/hands`, never the chairs' MCP. On one host, as before:
+
 ```bash
 adb connect 192.168.1.86:5555               # the Quest over Wi-Fi (adb tcpip 5555 once on USB); accept "Always allow" in the headset
 adb reverse tcp:8790 tcp:8790               # the headset's localhost:8790 is gx10's score service: no port opened on the LAN

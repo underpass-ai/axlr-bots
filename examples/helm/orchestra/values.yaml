@@ -52,18 +52,24 @@ secrets:
 
 # The chairs: one StatefulSet per section, its pods named after the chairs
 # (vn1-1 … vn1-10, ordinals from 1), each pod one node, stage-<chair>, as
-# chairs.py places the bots. The sections are the score service's.
+# chairs.py places the bots. The sections are the score service's: chairs
+# is the section's size (the broker's users), replicas how many of its
+# chairs run, from the first (default: all).
+#
+# wrx80's kubelet takes 110 pods and about 90 were in use before the
+# orchestra: all 36 chairs need its maxPods raised. Until then the two
+# chairs measured live (ob-1, vc-1) run.
 chairs:
   enabled: true
   nodePrefix: stage-
   sections:
-    - {id: vn1, chairs: 10}
-    - {id: vn2, chairs: 8}
-    - {id: va, chairs: 6}
-    - {id: vc, chairs: 5}
-    - {id: cb, chairs: 3}
-    - {id: ob, chairs: 2}
-    - {id: hn, chairs: 2}
+    - {id: vn1, chairs: 10, replicas: 0}
+    - {id: vn2, chairs: 8, replicas: 0}
+    - {id: va, chairs: 6, replicas: 0}
+    - {id: vc, chairs: 5, replicas: 1}
+    - {id: cb, chairs: 3, replicas: 0}
+    - {id: ob, chairs: 2, replicas: 1}
+    - {id: hn, chairs: 2, replicas: 0}
 
 ingress:
   className: nginx

@@ -19,7 +19,9 @@ metadata:
 spec:
   # No Service: nothing dials a chair; the node dials out.
   serviceName: {{ $s.id }}
-  replicas: {{ $s.chairs }}
+  {{- $replicas := ternary $s.chairs $s.replicas (not (hasKey $s "replicas")) }}
+  {{- if gt (int $replicas) (int $s.chairs) }}{{ fail (printf "chairs.sections %s: %d replicas, %d chairs" $s.id (int $replicas) (int $s.chairs)) }}{{ end }}
+  replicas: {{ $replicas }}
   ordinals: {start: 1}
   podManagementPolicy: Parallel
   selector:
