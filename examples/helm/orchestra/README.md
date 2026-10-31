@@ -30,7 +30,7 @@ TYPESAFE_API_KEY=… examples/helm/orchestra/bootstrap.sh --enable ob-1,vc-1
 
 [`bootstrap.sh`](bootstrap.sh) installs the chart and makes what the chart does not hold, from the control plane it started: Jev's key, the fleet CA as a ConfigMap, the operator token, one enrollment token per chair, the 36 chairs as Jev bots, the ones named enabled. Running it again changes only what is missing. The broker waits for the fleet CA, the score service for the token, each node for its enrollment token: they start by themselves once bootstrap made them.
 
-**The chairs that run.** wrx80's kubelet takes 110 pods and held about 90 before the orchestra; all 36 chairs need its `maxPods` raised. Until then `chairs.sections[].replicas` runs the two chairs measured live (`ob-1`, `vc-1`); the broker knows all 36 and every bot is registered. To run all 36: raise `maxPods`, drop the `replicas` (or set them), run `bootstrap.sh` again (it makes new tokens for the nodes not yet enrolled; the first ones last 24 h) and enable the chairs. Before enabling all 36 Jev chairs with `tell`, read the caveat in PR #73 (35 deliveries per tell under the control plane's lock).
+**The chairs that run.** All 36. wrx80's kubelet took 110 pods and held about 90 before the orchestra: on 31 Oct 2026 its `maxPods` went to 250 (`/var/lib/kubelet/config.yaml`, backup `config.yaml.before-maxpods`). A `kubeadm upgrade` rewrites that file from the `kube-system/kubelet-config` ConfigMap: put `maxPods: 250` there before the next upgrade. `chairs.sections[].replicas` still runs fewer chairs of a section when a node is short of room.
 
 ## Mutual TLS, leg by leg
 
@@ -68,6 +68,18 @@ Measured on 31 Oct 2026, cluster on wrx80, chairs `ob-1` and `vc-1` (Jev bots), 
 | NATS consumers `node-stage-ob-1`, `node-stage-vc-1` | delivered = acknowledged, 2–3 pushes per take each (the cue and the teammate's `info.chair.played`) |
 
 The times include `kubectl exec` (about 0.1 s). A node on `--bus nats` holds no stream to the control plane, so a chair that hears the cue heard it through the broker.
+
+**All 36 chairs, two takes, same day:**
+
+| | take 1 | take 2 |
+|---|---|---|
+| chairs that played / late | 36 / 0 | 36 / 0 |
+| `info.cue.all` publish call | 0.96 s | 1.6 s |
+| cue → first `play`, min / median / max | 1.20 / 1.81 / 2.29 s | 1.81 / 2.46 / 3.08 s |
+| pushes through NATS in the take (delivered = acked, 0 pending) | 2124 | 2160 |
+| `stop.all` publish call, and the cut | 10.4 s | 14.9 s |
+
+The broker keeps up; the control plane does not. Each chair tells `info.chair.played` after each phrase and every chair hears every teammate's: 35 deliveries per tell, each under the control plane's lock (PR #73's caveat). The operator's `stop.all` waits its turn behind them, and the score service cuts the sound only when it sees the event recorded. The hands' fades are the service's own and do not wait. Scoping the tells (to section mates, or a `to` on the Jev program's `tell`) is the next step.
 
 ## Checks
 
