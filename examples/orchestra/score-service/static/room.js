@@ -12,17 +12,11 @@ export { THREE };
 const HEX = { text: "#F4F4F2", muted: "#A3A39E", accent: "#E08A5A", warn: "#E8B45A", bad: "#F07B6B", idle: "#A3A39E", line: "#5A5A5E" };
 const C = Object.fromEntries(Object.entries(HEX).map(([k, v]) => [k, new THREE.Color(v)]));
 
-// Where each section sits, in metres before the room's scale: 0° to the
-// conductor's right, 90° straight ahead, rows at radii from the podium.
-const SEATING = {
-  vn1: { from: 166, to: 134, rows: [2.5, 3.3], per: [5, 5], label: [152, 4.15] },
-  vn2: { from: 123, to: 103, rows: [2.5, 3.3], per: [4, 4], label: [118, 4.7] },
-  va: { from: 77, to: 57, rows: [2.5, 3.3], per: [3, 3], label: [62, 4.7] },
-  vc: { from: 50, to: 22, rows: [2.5, 3.3], per: [3, 2], label: [42, 4.25] },
-  cb: { from: 30, to: 8, rows: [4.15], per: [3], label: [22, 4.95] },
-  ob: { from: 105, to: 95, rows: [4.2], per: [2], label: [100, 5.0] },
-  hn: { from: 85, to: 75, rows: [4.2], per: [2], label: [80, 5.0] },
-};
+// Where each section sits comes from the service (GET /api/score, seating):
+// degrees from the podium, 0° to the conductor's right, 90° straight ahead,
+// rows at radii in metres before the room's scale. A section the service
+// gives no seat stands on one arc ahead with the others like it: the band.
+const BAND = { radius: 4.0, span: 80, label: 0.7 };
 const polar = (r, deg) => { const a = (deg * Math.PI) / 180; return new THREE.Vector3(r * Math.cos(a), 0, -r * Math.sin(a)); };
 
 // What a lantern looks like per state: height, how bright, which colour.
@@ -110,14 +104,7 @@ export class Hall {
     this.score = null;
     this.snap = 0;
     this.lastCutAt = null;
-    // the rows as faint arcs on the floor, from 10° to 170°
-    const arc = new THREE.MeshBasicMaterial({ color: C.line, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false });
-    for (const r of [2.5, 3.3, 4.15]) {
-      const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.012, r + 0.012, 160, 1, Math.PI / 18, Math.PI * 16 / 18), arc);
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.y = 0.002;
-      this.root.add(ring);
-    }
+    this.arcMat = new THREE.MeshBasicMaterial({ color: C.line, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false });
     this.ring = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.56, 64), new THREE.MeshBasicMaterial({ color: C.accent, transparent: true, opacity: 0,
       blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
     this.ring.rotation.x = -Math.PI / 2;
@@ -133,10 +120,27 @@ export class Hall {
     this.root.visible = true;
   }
 
+  // The seats: the service's chart where it has one, else one arc ahead for the rest.
+  plans(state) {
+    const chart = (this.score && this.score.seating) || {}, plans = {};
+    const loose = state.sections.filter((s) => !(chart[s.id] && chart[s.id].rows));
+    for (const s of state.sections) if (!loose.includes(s)) plans[s.id] = chart[s.id];
+    const total = loose.reduce((n, s) => n + Math.max(1, s.chairs.length), 0);
+    let at = 90 + BAND.span / 2;
+    for (const s of loose) {
+      const w = (BAND.span * Math.max(1, s.chairs.length)) / total, a = at - w * 0.15, b = at - w * 0.85;
+      plans[s.id] = { from: a, to: b, rows: [BAND.radius], per: [Math.max(1, s.chairs.length)], label: [(a + b) / 2, BAND.radius + BAND.label], loose: true };
+      at -= w;
+    }
+    return plans;
+  }
+
   build(state) {
+    const plans = this.plans(state), radii = [];
     for (const section of state.sections) {
-      const plan = SEATING[section.id];
+      const plan = plans[section.id];
       if (!plan) continue;
+      if (!plan.loose) for (const r of plan.rows) if (!radii.some((x) => Math.abs(x - r) < 0.1)) radii.push(r);
       let i = 0;
       plan.rows.forEach((r, row) => {
         const n = plan.per[row];
@@ -181,6 +185,13 @@ export class Hall {
       s.position.set(mid.x, 0.85, mid.z);
       this.root.add(s);
       this.sections[section.id] = { sprite: s, name: section.name, total: section.chairs.length, playing: -1, by: null, lit: null, subText: null };
+    }
+    // the rows as faint arcs on the floor, from 10° to 170°: the ones the chart seats
+    for (const r of radii) {
+      const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.012, r + 0.012, 160, 1, Math.PI / 18, Math.PI * 16 / 18), this.arcMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.002;
+      this.root.add(ring);
     }
   }
 

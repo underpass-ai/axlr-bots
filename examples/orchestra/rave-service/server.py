@@ -98,12 +98,22 @@ def local_event(rave, body):
     return {"applied": bus.apply(rave, event), "event": event}
 
 
+def hands_view(rave):
+    """What the page asks first (GET /api/hands): no hands here; the groups a hand conducts (the families, left and right),
+    the instruments by section (each a slice of the arc ahead) and the world the page shows when its URL names none."""
+    families = list(dict.fromkeys(s["family"] for s in rave.sections.values()))
+    n = len(rave.sections)
+    return {"last": None, "source": "none: the rave has no hands yet; the page conducts nothing here", "dryRun": True, "history": [],
+            "world": "rave",
+            "groups": {"left": families[0] if families else "all", "right": families[1] if len(families) > 1 else "all", "both": "all"},
+            "instruments": [{"id": sid, "name": s["name"], "sections": [sid], "from": 180 * i // n, "to": 180 * (i + 1) // n}
+                            for i, (sid, s) in enumerate(rave.sections.items())]}
+
+
 def make_handler(rave, stream, config):
     label = config["label"]
     score_json = json.dumps(rave.score()).encode()
-    hands_json = json.dumps({"last": None, "source": "none: the rave has no hands yet; the page conducts nothing here", "dryRun": True, "history": [],
-                             "instruments": [{"id": sid, "name": s["name"], "sections": [sid], "from": 180 * i // len(rave.sections), "to": 180 * (i + 1) // len(rave.sections)}
-                                             for i, (sid, s) in enumerate(rave.sections.items())]}).encode()
+    hands_json = json.dumps(hands_view(rave)).encode()
     per_chair = {c: chair_tools(rave, c, config["listen"]["maxSeconds"]) for c in rave.chairs}
 
     def state_now(version=None, wait=20):

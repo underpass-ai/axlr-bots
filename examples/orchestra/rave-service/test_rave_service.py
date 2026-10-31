@@ -289,6 +289,18 @@ class StateForTheHands(unittest.TestCase):
         self.assertEqual((score["beatsPerBar"], score["phraseBars"], len(score["sections"])), (4, 8, 4))
         self.assertGreater(score["bars"], 1000)
 
+    def test_the_page_gets_the_raves_groups_its_world_and_no_chart(self):
+        import server
+        rave, _ = make()
+        score = rave.score()
+        self.assertEqual(score["seating"], {})  # no chart: the page stands the band on one arc ahead
+        self.assertEqual([s["family"] for s in score["sections"]], ["drums", "synths", "drums", "synths"])
+        view = server.hands_view(rave)
+        self.assertEqual(view["groups"], {"left": "drums", "right": "synths", "both": "all"})
+        self.assertEqual(view["world"], "rave")
+        self.assertEqual([i["id"] for i in view["instruments"]], ["kick", "bass", "hats", "lead"])
+        self.assertEqual((view["instruments"][0]["from"], view["instruments"][-1]["to"]), (0, 180))
+
     def test_the_version_moves_once_a_bar_so_the_page_resyncs(self):
         rave, _ = make()
         rave.play("kick-1", pattern="kick-1")

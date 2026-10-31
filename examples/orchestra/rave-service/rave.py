@@ -262,7 +262,8 @@ class Rave:
     def score(self):
         """What the pages read once: the bars (a set has no end), the beats per bar, the phrase, the sections, the library."""
         return {"bars": 1000000, "beatsPerBar": BEATS_PER_BAR, "phraseBars": self.phrase_bars,
-                "sections": [{"id": sid, "name": s["name"], "density": []} for sid, s in self.sections.items()],
+                "sections": [{"id": sid, "name": s["name"], "family": s["family"], "density": []} for sid, s in self.sections.items()],
+                "seating": {},  # no chart: the page stands the band on one arc ahead, in the order of the sections
                 "lines": [{"id": role, "name": self.sections[role]["name"] if role in self.sections else role,
                            "chairs": [k for k, c in self.chairs.items() if c["role"] == role],
                            "patterns": [{"id": e["id"], "name": e["name"], "energy": e["energy"], "code": e["code"]} for e in entries]}

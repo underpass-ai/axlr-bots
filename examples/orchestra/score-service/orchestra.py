@@ -62,6 +62,7 @@ class Orchestra:
         self.fork_spread = phrases.get("forkSpreadBeats", 8)
         voices = config.get("voices", {})
         self.sections = {s["id"]: s for s in config["sections"]}
+        self.seating = {k: v for k, v in (config.get("seating") or {}).items() if isinstance(v, dict) and "rows" in v}
         self.chairs, channel, index = {}, 0, 0
         for s in config["sections"]:
             total, low, high = s["chairs"], *(s.get("pan") or [0.0, 0.0])
@@ -286,11 +287,11 @@ class Orchestra:
                 if on:
                     counts[min(self.score.bar_of(tick), self.score.bars) - 1] += 1
             top = max(counts) or 1
-            out.append({"id": sid, "name": s["name"], "density": [round(c / top, 2) for c in counts]})
+            out.append({"id": sid, "name": s["name"], "family": s["family"], "density": [round(c / top, 2) for c in counts]})
         lines = [{"id": line, "name": self.score.line_names[line], "chairs": [k for k, c in self.chairs.items() if c["line"] == line],
                   "phrases": table} for line, table in self.score.phrase_table.items()]
         return {"bars": self.score.bars, "beatsPerBar": self.score.beats_per_bar, "phraseBars": self.score.phrase_bars,
-                "sections": out, "lines": lines}
+                "sections": out, "lines": lines, "seating": self.seating}
 
     def snapshot(self):
         with self.cond:

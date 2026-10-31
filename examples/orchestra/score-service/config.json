@@ -38,6 +38,16 @@
     "tokenFile": "~/.local/state/axlr-bots/api.token",
     "caFile": "~/.local/state/axlr-bots/ca/ca.crt"
   },
+  "seating": {
+    "about": "the conductor's page (room.js): where each section sits, in degrees from the podium (0 to the conductor's right, 90 ahead, 180 left) and rows at radii in metres before the room's scale",
+    "vn1": {"from": 166, "to": 134, "rows": [2.5, 3.3], "per": [5, 5], "label": [152, 4.15]},
+    "vn2": {"from": 123, "to": 103, "rows": [2.5, 3.3], "per": [4, 4], "label": [118, 4.7]},
+    "va": {"from": 77, "to": 57, "rows": [2.5, 3.3], "per": [3, 3], "label": [62, 4.7]},
+    "vc": {"from": 50, "to": 22, "rows": [2.5, 3.3], "per": [3, 2], "label": [42, 4.25]},
+    "cb": {"from": 30, "to": 8, "rows": [4.15], "per": [3], "label": [22, 4.95]},
+    "ob": {"from": 105, "to": 95, "rows": [4.2], "per": [2], "label": [100, 5.0]},
+    "hn": {"from": 85, "to": 75, "rows": [4.2], "per": [2], "label": [80, 5.0]}
+  },
   "listenAddress": "127.0.0.1:8790",
   "label": "SIMULATION. Each chair is one LLM bot that plays its own line of the score, phrase by phrase, as Jev picks them. The conductor's hands are read by Jev from the headset's hand tracking. The notes come from the score, the sound from a synthesizer."
 }

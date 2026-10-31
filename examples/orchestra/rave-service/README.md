@@ -76,7 +76,7 @@ python3 demo.py --seconds 60 --rotate               # four bots, a cue, a stop.a
 
 With a control plane: `--control-plane https://127.0.0.1:7879 --team rave` and the chairs registered in the team `rave` (a team exists while a bot names it): the orchestra's [`chairs/`](../chairs/) templates work with the mission's words changed and the URL `/mcp/<chair>` on this port; that run was not made.
 
-Python 3.12 standard library only; Node 24 for the two Strudel processes. The page is the orchestra's, unchanged: `http://127.0.0.1:8794/hands?world=rave` on the headset over `adb reverse`, `&view=1` to look without one.
+Python 3.12 standard library only; Node 24 for the two Strudel processes. The page is the orchestra's: `http://127.0.0.1:8794/hands` on the headset over `adb reverse`, `?view=1` to look without one. What the page shows is the service's: `GET /api/hands` names the world (`rave`) and the groups a hand conducts (`drums`, `synths`), `GET /api/score` seats the band (no chart: one arc ahead, the four lanterns), so nothing of the orchestra (its rows, its strings and winds, its 36) is on the rave's page.
 
 ## Check
 
@@ -112,7 +112,7 @@ The evaluator: 0.1 s for a batch (Node starts, Strudel loads in 40 ms), `bd*1e9`
 | four roles, candidates by energy, Jev's question in the orchestra's shape | works; the choice in the demo is the script's, not Jev's |
 | swap at the next bar, patterns loop, `<a b>` in step | works, measured; a pattern that goes on is extended past its 128-bar horizon (tested with a short horizon) |
 | `info.cue.*`, `info.tempo`, `stop.<role>` (fade), `stop.all` (mute) | works through `/api/event` and in the bus tests; **not run against the control plane** (the team `rave` would need its bots registered) |
-| `/api/state`, `/api/score`, `/ws/hands` for the orchestra's `/hands` page | the fields the page reads are there (tested); the page renders the rave world over it (headless Chromium, swiftshader) |
+| `/api/state`, `/api/score`, `/api/hands`, `/ws/hands` for the orchestra's `/hands` page | the fields the page reads are there (tested); the page renders the rave world over it with the four chairs as the band and none of the orchestra (headless Chromium, swiftshader, 31 Oct) |
 | real AXLR chairs on nodes, Jev choosing | not run: the demo's bots are the script |
 | the conductor's hands (Jev reading postures, gains by height) | not here: `/ws/hands` answers every posture "nothing"; the rave has no hands yet |
 | a pattern's effects (`delay`, `room`) across a `stop.all` | the output stays muted until the next cue, so no tail sounds; a cue within a second of the stop would hear the end of a delay |

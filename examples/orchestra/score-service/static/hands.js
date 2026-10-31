@@ -12,16 +12,21 @@ import { rave } from "/static/rave.js";
 const $ = (id) => document.getElementById(id);
 const panel = $("panel"), ctx = panel.getContext("2d");
 const HOLD_MS = 300, SIDES = ["left", "right"];
-const GROUP = { left: "strings", right: "winds" };
+let groups = { left: "strings", right: "winds", both: "all" };  // the groups a hand conducts: the service's (GET /api/hands), these until it answers
 const steady = new Steady(HOLD_MS);
 let live = { left: null, right: null }, last = null, orchestra = null, xr = null, dirty = true;
 let soundOn = false, soundAt = -1, soundState = "off", heightAt = 0;
-const SECTIONS = { strings: ["vn1", "vn2", "va", "vc", "cb"], winds: ["ob", "hn"] };
-let gains = { strings: 1, winds: 1 }, instruments = [];
+const SECTIONS = {};  // each group's sections: the instruments' (GET /api/hands) and each family's (the state)
+let gains = {}, instruments = [];
 // The instruments and their slices of the arc, as the service has them.
 fetch("/api/hands").then((r) => r.json()).then((v) => {
   instruments = v.instruments || [];
   for (const i of instruments) { SECTIONS[i.id] = i.sections; gains[i.id] = 1; }
+  if (v.groups) groups = { ...groups, ...v.groups };
+  // the service's world when the URL names none (the rave's page is the rave)
+  if (v.world && !params.get("world") && $("world").querySelector(`option[value="${v.world}"]`)) { $("world").value = v.world; if (preview) setWorld(v.world); }
+  hint();
+  draw();
 }).catch(() => {});
 const instrumentAt = (aim) => (aim == null ? null : instruments.find((i) => i.from <= aim && aim < i.to) || null);
 const params = new URLSearchParams(location.search), preview = params.get("view") === "1";
@@ -29,6 +34,10 @@ if (params.get("sim") === "1") document.body.classList.add("simulate");
 if (params.get("world")) $("world").value = params.get("world");  // ?world=zen|meadow|room picks what is around the orchestra
 
 // --- the panel ------------------------------------------------------------
+
+function hint() {
+  $("hint").textContent = `Look at a section: your gestures act on it. A short pinch locks it, another frees it. Nothing selected: left hand ${groups.left}, right hand ${groups.right}. Both hands: everyone.`;
+}
 
 function draw() {
   const w = panel.width, h = panel.height, ink = "#F4F4F2", muted = "#A5A5A0", copper = "#E08A5A", red = "#F07B6B";
@@ -40,13 +49,13 @@ function draw() {
   ctx.fillText("SIMULATION", 24, 18);
   ctx.fillStyle = muted;
   const o = orchestra;
-  ctx.fillText((o ? `${o.status}${o.status === "playing" ? ` · bar ${o.bar}${o.countIn ? ` · count-in ${o.countIn}` : ""} · ${o.playing}/36 playing` : ""}` : "orchestra: …") + ` · sound ${soundState} · ${link}`, 210, 18);
+  ctx.fillText((o ? `${o.status}${o.status === "playing" ? ` · bar ${o.bar}${o.countIn ? ` · count-in ${o.countIn}` : ""} · ${o.playing}/${o.total} playing` : ""}` : "orchestra: …") + ` · sound ${soundState} · ${link}`, 210, 18);
   SIDES.forEach((side, i) => {
     const x = 24 + i * 500, read = last?.read?.[side], jev = last?.jev?.answers?.[side], m = live[side];
     ctx.fillStyle = muted;
     ctx.font = "600 24px Lexend, sans-serif";
-    const tgt = target(), group = tgt ? tgt.id : GROUP[side];
-    ctx.fillText(`${side.toUpperCase()} HAND · ${tgt ? tgt.name : GROUP[side]} · ${Math.round(100 * (gains[group] ?? 1))}%`, x, 70);
+    const tgt = target(), group = tgt ? tgt.id : groups[side];
+    ctx.fillText(`${side.toUpperCase()} HAND · ${tgt ? tgt.name : groups[side]} · ${Math.round(100 * (gains[group] ?? 1))}%`, x, 70);
     ctx.font = "600 64px Lexend, sans-serif";
     ctx.fillStyle = read && read !== "nothing" ? copper : ink;
     ctx.fillText(read ? read.toUpperCase() : "—", x, 104);
@@ -63,7 +72,7 @@ function draw() {
   ctx.font = "600 26px Lexend, sans-serif";
   const tgt = target();
   ctx.fillStyle = tgt ? copper : muted;
-  ctx.fillText(tgt ? `CONDUCTING ${tgt.name.toUpperCase()}${sel.locked ? " · LOCKED (pinch to free)" : " · as you look (pinch to lock)"}` : "CONDUCTING strings + winds · look at a section", 24, 290);
+  ctx.fillText(tgt ? `CONDUCTING ${tgt.name.toUpperCase()}${sel.locked ? " · LOCKED (pinch to free)" : " · as you look (pinch to lock)"}` : `CONDUCTING ${groups.left} + ${groups.right} · look at a section`, 24, 290);
   ctx.font = "26px Lexend, sans-serif";
   let y = 326;
   if (last?.applied) {
@@ -160,7 +169,11 @@ async function recheck(at) {
 // sent and already showed.
 let busAt = null;
 function apply(s) {
-  orchestra = { status: s.status, bar: s.bar, countIn: s.countIn, playing: s.sections.reduce((n, x) => n + x.playing, 0) };
+  orchestra = { status: s.status, bar: s.bar, countIn: s.countIn, playing: s.sections.reduce((n, x) => n + x.playing, 0),
+    total: s.sections.reduce((n, x) => n + x.chairs.length, 0) };
+  const families = {};  // a family's sections, as the state names them: a hand's group
+  for (const x of s.sections) (families[x.family || "all"] = families[x.family || "all"] || []).push(x.id);
+  Object.assign(SECTIONS, families, { all: s.sections.map((x) => x.id) });
   for (const [group, ids] of Object.entries(SECTIONS)) {  // a group's gain: its chairs', as the service set them
     const chairs = s.sections.filter((x) => ids.includes(x.id)).flatMap((x) => x.chairs);
     if (chairs.length) gains[group] = chairs.reduce((n, c) => n + (c.gain ?? 1), 0) / chairs.length;
