@@ -22,9 +22,9 @@
 | `events.intakePerMinute` | 60 | past 10 a minute a delivery would become a note and the chair would miss its cue |
 | `placement` | `{"nodes": ["stage-<id>"]}` | its own node: a node runs one execution at a time |
 | `model.maxContextTokens` | 64,000 | a phrase adds about 1,300 tokens (the question for Jev twice, the answers) |
-| `budgets` | 64 model calls, 64 tool calls, 600 s | the tools at the cue, then about three calls a phrase (Jev, `play`, `listen`): one cue plays about 20 phrases, 160 bars, four minutes |
+| `budgets` | 400 tool calls, 160 model calls (a Jev chair: 128 Jev calls), 1,800 s | one cue, one task, the whole movement: 414 bars are 52 phrases of 8; `phrases` at the cue, then `play`, `listen` and a second `listen` when a slow phrase outlasts `listen.maxSeconds`, about three calls a phrase; a Jev chair asks Jev once a phrase, a model chair spends a model call on each tool call. 1,800 s covers the movement and the count-in at the slowest tempo the conductor may swipe to (60 bpm: 28 min). Until 31 Oct 2026 the budgets were 64 model calls, 128 (Jev) or 64 tool calls and 600 s, sized for one take of 20 phrases: in the first whole movement every chair fell silent before the end, 27 at `budget_exceeded: 128/129 tool calls`, 9 at `interrupted: context deadline exceeded` ([the orchestra's README](../README.md#13-a-whole-movement-in-one-task)) |
 
-Each node's AXLR reads its own `settings.json` (`stage.sh settings <chair>`, which `chairs.py up` runs): `jev.tool` on, `jev-1.13.0`, `final_check` off, and `turn_tool_calls` 128, since a whole take is one turn. Jev's key is `TYPESAFE_API_KEY` in `~/.config/axlr-bots/env`, which the node's shell reads with the model key; nothing prints it. Jev sees only the question the chair sends: the state the score service wrote, the question and the options.
+Each node's AXLR reads its own `settings.json` (`stage.sh settings <chair>`, which `chairs.py up` runs): `jev.tool` on, `jev-1.13.0`, `final_check` off, and `turn_tool_calls` 400, since a whole movement is one turn (128 until 31 Oct 2026, with the budget). Jev's key is `TYPESAFE_API_KEY` in `~/.config/axlr-bots/env`, which the node's shell reads with the model key; nothing prints it. Jev sees only the question the chair sends: the state the score service wrote, the question and the options.
 
 `stop.*` needs no subscription: every member hears it, as an urgent task.
 
@@ -74,3 +74,10 @@ It publishes the cue (`info.cue.all` by default) and later `stop.all` on the tea
 | then `stop.all` | the sound cut by the service; 36 urgent tasks Completed; the last 30 chairs the state lists called `stop` 5.9–9.2 s after the cut |
 
 The rehearsal with the conductor, and the table of latencies, is piece 7. The chairs checked above ran the tools of before phrases (`enter`, `dynamics`); after this change, `chairs.py up` gives every chair the tools and the settings above.
+
+31 Oct 2026, gx10, control plane `main` c5924d0 (binaries of 30 Oct), the 36 chairs as Jev bots, the orchestra playing (a running execution keeps the budgets it was assigned: the take under way, cued at 20:43:37Z, ended as the update ran, 27 chairs at `budget_exceeded: 128/129 tool calls` and 9 at `interrupted: context deadline exceeded` between 20:52:30Z and 20:53:38Z, the same 27 + 9 as the take before; the next cue takes the new budgets):
+
+| Check | Result |
+|---|---|
+| `ORCHESTRA_RUNTIME=jev python3 chairs.py up` | 36 nodes `running` (none restarted), 36 `settings.json` rewritten with `turn_tool_calls` 400, 36 bots updated in place (`PATCH /v1/bots/<id>`) and Enabled |
+| `GET /v1/bots`, the 36 of `orchestra` | 36 Enabled; budgets 128 Jev calls, 400 tool calls, 1,800 s; every mission says `info.expression`; every chair subscribes to `info.expression`; `runtime.jev.act.pass` is `dynamics, character`; `updatedAt` after the update |

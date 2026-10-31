@@ -8,6 +8,9 @@ import unittest
 import chairs
 import measure_take
 
+MOVEMENT_BARS = 414  # Mozart, Symphony No. 25, I: what the score service's /api/state reports as bars
+BEATS_PER_BAR = 4
+
 
 class ChairsTest(unittest.TestCase):
     def setUp(self):
@@ -40,11 +43,18 @@ class ChairsTest(unittest.TestCase):
         self.assertEqual(sorted(self.template["allowedTools"]), ["axlr_judge", "listen", "phrases", "play", "stop"])
         self.assertIn("axlr_judge", self.template["mission"])
 
-    def test_a_take_fits_the_budget(self):
-        budgets = self.template["budgets"]
-        # a cue, the tools found, then three calls a phrase (Jev, play, listen): twenty phrases, 160 bars
-        self.assertGreaterEqual(budgets["maxToolCallsPerTask"], 2 + 3 * 20)
-        self.assertGreaterEqual(budgets["taskTimeoutSeconds"], 160 * 4 * 60 / 152)
+    def test_a_whole_movement_fits_the_budget(self):
+        """One cue, one task, the whole movement: 414 bars in 8-bar phrases, at any tempo the conductor may ask."""
+        phrases = -(-MOVEMENT_BARS // self.config["phrases"]["bars"])  # 52
+        slowest = (MOVEMENT_BARS + self.config["countIn"]["bars"]) * BEATS_PER_BAR * 60 / self.config["tempo"]["min"]  # 28 min at 60 bpm
+        for runtime, jev_calls_a_phrase, model_calls_a_phrase in (("axlr", 0, 3), ("jev", 1, 0)):
+            budgets = chairs.load(runtime)[1]["budgets"]
+            # phrases at the cue; then play, listen and a second listen (a slow phrase outlasts listen.maxSeconds) each phrase
+            self.assertGreaterEqual(budgets["maxToolCallsPerTask"], 1 + 3 * phrases, runtime)
+            # a Jev chair asks Jev once a phrase (and may retry); a model chair spends a model call on each tool call
+            self.assertGreaterEqual(budgets["maxModelCallsPerTask"], (jev_calls_a_phrase + model_calls_a_phrase) * phrases, runtime)
+            self.assertGreaterEqual(budgets["taskTimeoutSeconds"], slowest, runtime)
+            self.assertLessEqual(budgets["taskTimeoutSeconds"], 2 * slowest, runtime)  # a chair the world never ends still ends
 
     def test_an_unknown_chair_is_refused(self):
         with self.assertRaises(SystemExit):
