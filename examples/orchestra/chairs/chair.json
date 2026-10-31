@@ -18,5 +18,5 @@
   ],
   "placement": {"nodes": ["stage-CHAIR"]},
   "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 64000},
-  "budgets": {"maxModelCallsPerTask": 64, "maxToolCallsPerTask": 64, "maxDelegationDepth": 0, "taskTimeoutSeconds": 600}
+  "budgets": {"maxModelCallsPerTask": 160, "maxToolCallsPerTask": 400, "maxDelegationDepth": 0, "taskTimeoutSeconds": 1800}
 }
