@@ -26,15 +26,20 @@ const (
 	// opened: a bot takes them only when it declares this trigger, its
 	// consent, with an optional objective template over the incident.
 	TriggerIncident TriggerType = "incident"
+	// TriggerAlertmanager is a webhook that takes Alertmanager's own
+	// payload: a firing group opens, repeats or reopens an incident of
+	// the bot and a resolved group closes it, instead of one task per
+	// delivery. It authenticates as a webhook does.
+	TriggerAlertmanager TriggerType = "alertmanager"
 )
 
 // ParseTriggerType validates a trigger type.
 func ParseTriggerType(raw string) (TriggerType, error) {
 	switch TriggerType(raw) {
-	case TriggerManual, TriggerWebhook, TriggerTimer, TriggerDelegation, TriggerEvent, TriggerIncident:
+	case TriggerManual, TriggerWebhook, TriggerTimer, TriggerDelegation, TriggerEvent, TriggerIncident, TriggerAlertmanager:
 		return TriggerType(raw), nil
 	}
-	return "", invalid("trigger type", "is not a known trigger type (manual, webhook, timer, delegation, event, incident)")
+	return "", invalid("trigger type", "is not a known trigger type (manual, webhook, timer, delegation, event, incident, alertmanager)")
 }
 
 func (t TriggerType) String() string { return string(t) }

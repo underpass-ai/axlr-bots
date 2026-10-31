@@ -183,7 +183,16 @@ func (l *Local) FireTrigger(ctx context.Context, request FireRequest) (FireRespo
 	if err != nil {
 		return FireResponse{}, err
 	}
-	return FireResponse{Created: result.Created, Task: result.Task.Snapshot(), Trigger: result.Trigger, IdempotencyKey: result.IdempotencyKey.String()}, nil
+	response := FireResponse{Created: result.Created, Trigger: result.Trigger, IdempotencyKey: result.IdempotencyKey.String(), Action: result.Action}
+	if result.Task != nil {
+		task := result.Task.Snapshot()
+		response.Task = &task
+	}
+	if result.Incident != nil {
+		incident := result.Incident.Snapshot()
+		response.Incident = &incident
+	}
+	return response, nil
 }
 
 // SendTaskMessage records the operator's message for the task's running

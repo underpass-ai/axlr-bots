@@ -55,7 +55,7 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 			return Trigger{}, invalid("trigger "+name, "a "+kind.String()+" trigger takes no objective, credentials or schedule")
 		}
 		return t, nil
-	case TriggerWebhook:
+	case TriggerWebhook, TriggerAlertmanager:
 		if s.Every != "" || s.Cron != "" {
 			return Trigger{}, invalid("trigger "+name, "a webhook takes no schedule")
 		}
@@ -67,6 +67,9 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 		}
 		if t.signingKey, err = validateCredential("trigger "+name+" signingKey", s.SigningKey); err != nil {
 			return Trigger{}, err
+		}
+		if kind == TriggerAlertmanager && s.Objective == "" {
+			return t, nil
 		}
 	case TriggerIncident:
 		if s.Secret != "" || s.SigningKey != "" || s.Every != "" || s.Cron != "" {
@@ -146,7 +149,7 @@ func (t Trigger) Schedule() Schedule { return t.schedule }
 // (`sha256=<hex>`, or the hex alone) is the HMAC-SHA256 of the body
 // under the signing key. Comparisons take constant time.
 func (t Trigger) Authenticates(presentedSecret, signature string, body []byte) bool {
-	if t.kind != TriggerWebhook {
+	if t.kind != TriggerWebhook && t.kind != TriggerAlertmanager {
 		return false
 	}
 	if t.secret != "" && presentedSecret != "" && subtle.ConstantTimeCompare([]byte(presentedSecret), []byte(t.secret)) == 1 {
