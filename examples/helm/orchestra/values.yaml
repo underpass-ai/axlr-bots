@@ -45,10 +45,10 @@ secrets:
   fleetCA: orchestra-fleet-ca
   # The operator's API token, key token.
   operator: orchestra-operator
-  # Jev's key, key TYPESAFE_API_KEY: the chairs' program and the hands.
+  # Jev's key, key TYPESAFE_API_KEY: the hands (the chairs read it through
+  # axlr-bots-node.sidecar.env below; their enrollment tokens are
+  # axlr-bots-node.enrollment.existingSecret).
   jev: orchestra-jev
-  # One enrollment token per chair's node id.
-  enrollment: orchestra-enrollment
 
 # The chairs: one StatefulSet per section, its pods named after the chairs
 # (vn1-1 … vn1-10, ordinals from 1), each pod one node, stage-<chair>, as

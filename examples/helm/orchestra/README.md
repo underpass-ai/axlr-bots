@@ -30,7 +30,7 @@ TYPESAFE_API_KEY=… examples/helm/orchestra/bootstrap.sh --enable ob-1,vc-1
 
 [`bootstrap.sh`](bootstrap.sh) installs the chart and makes what the chart does not hold, from the control plane it started: Jev's key, the fleet CA as a ConfigMap, the operator token, one enrollment token per chair, the 36 chairs as Jev bots, the ones named enabled. Running it again changes only what is missing. The broker waits for the fleet CA, the score service for the token, each node for its enrollment token: they start by themselves once bootstrap made them.
 
-**The chairs that run.** wrx80's kubelet takes 110 pods and held about 90 before the orchestra; all 36 chairs need its `maxPods` raised. Until then `chairs.sections[].replicas` runs the two chairs measured live (`ob-1`, `vc-1`); the broker knows all 36 and every bot is registered.
+**The chairs that run.** wrx80's kubelet takes 110 pods and held about 90 before the orchestra; all 36 chairs need its `maxPods` raised. Until then `chairs.sections[].replicas` runs the two chairs measured live (`ob-1`, `vc-1`); the broker knows all 36 and every bot is registered. To run all 36: raise `maxPods`, drop the `replicas` (or set them), run `bootstrap.sh` again (it makes new tokens for the nodes not yet enrolled; the first ones last 24 h) and enable the chairs. Before enabling all 36 Jev chairs with `tell`, read the caveat in PR #73 (35 deliveries per tell under the control plane's lock).
 
 ## Mutual TLS, leg by leg
 
@@ -54,6 +54,7 @@ What is left:
 | the pages have no login | anyone on the LAN can conduct | ingress basic auth or OIDC, once the Quest's browser is checked with it |
 | the fleet CA's key is on the control plane's volume, the broker CA's in a Secret | whoever reads them mints identities | an offline root with an intermediate |
 | certificates rotate by hand: the node's (a year), the control plane's broker certificate (a year, delete `nats-client/` and restart) | expiry stops the bus | renewal before expiry; the broker's own rotates with cert-manager but NATS reads it at start (restart or `--signal reload`) |
+| NATS's monitoring port `:8222` is plain HTTP for the kubelet's probes | the policy admits only `:4222` from pods; the node's host reaches `:8222` | a probe on the TLS port, or bind the monitor to loopback with an exec probe |
 | the control plane on gx10 (systemd) is unchanged, bus `direct` | the home instance is this one | NATS on a LoadBalancer address if gx10 should join |
 
 ## What the bus shows
