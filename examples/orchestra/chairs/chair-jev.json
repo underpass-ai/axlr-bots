@@ -102,9 +102,9 @@
     "allowRemoteProviders": false
   },
   "budgets": {
-    "maxModelCallsPerTask": 64,
-    "maxToolCallsPerTask": 128,
+    "maxModelCallsPerTask": 128,
+    "maxToolCallsPerTask": 400,
     "maxDelegationDepth": 0,
-    "taskTimeoutSeconds": 600
+    "taskTimeoutSeconds": 1800
   }
 }

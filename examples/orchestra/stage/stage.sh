@@ -12,7 +12,7 @@
 #   stage.sh status             each node's pid, or "stopped"
 #   stage.sh mcp    <node> <url> write the node's mcp.json: one plugin, the score
 #   stage.sh settings <node>    write the node's AXLR settings.json: Jev's tool
-#                               (axlr_judge) on, a turn long enough for a take
+#                               (axlr_judge) on, a turn long enough for a movement
 #
 # A node's id is stage-<node>; its labels app=stage,chair=<node>. Its state is
 # $AXLR_STAGE/<node> (default ~/.local/state/axlr-stage), mode 0700: AXLR
@@ -72,7 +72,7 @@ mcp() {
 settings() {
   local n=$1 dir="$STAGE/$1/.config/axlr"
   mkdir -p "$dir"
-  printf '{"jev": {"tool": true, "final_check": false, "model": "jev-1.13.0", "timeout_ms": 20000}, "turn_tool_calls": 128}\n' >"$dir/settings.json"
+  printf '{"jev": {"tool": true, "final_check": false, "model": "jev-1.13.0", "timeout_ms": 20000}, "turn_tool_calls": 400}\n' >"$dir/settings.json"
   chmod 600 "$dir/settings.json"
   echo "$n settings: jev tool on"
 }
