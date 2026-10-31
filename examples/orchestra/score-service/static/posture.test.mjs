@@ -150,3 +150,60 @@ test("openness: straight fingers 1, a fist about 0", () => {
   assert.equal(openness({ fingers: { thumb: 30, index: 0, middle: 0, ring: 0, little: 0 } }), 1);
   assert.ok(openness({ fingers: { thumb: 90, index: 195, middle: 210, ring: 205, little: 200 } }) < 0.05);
 });
+
+import { gazeOn, Pinch, uncurled } from "./posture.js";
+
+test("a hand's height is sent while its fingers are not curled: straight or half bent, not a fist", () => {
+  const m = (index, middle, ring, little) => ({ fingers: { thumb: 30, index, middle, ring, little }, palm: { away: 0, toward: 0, floor: -0.9, up: 0.9, side: 0 } });
+  assert.ok(uncurled(m(8, 6, 10, 12)));
+  assert.ok(uncurled(m(70, 90, 110, 140)));  // relaxed, half bent: still conducting
+  assert.ok(!uncurled(m(8, 6, 10, 160)));
+  assert.ok(!uncurled(m(195, 210, 205, 200)));
+  assert.ok(!uncurled(null));
+});
+
+// A pinch fed frame by frame (72 Hz): pressed from `from` to `to` ms, the hand at height(t).
+function pinch(p, from, to, height, until = to + 100) {
+  const out = [];
+  for (let t = from; t <= until; t += 1000 / 72) {
+    const e = p.update(t < to, height(t), t);
+    if (e) out.push({ t: Math.round(t), e });
+  }
+  return out;
+}
+
+test("a short pinch is a tap however the hand jumps; a hold begins at 350 ms from the height then", () => {
+  const p = new Pinch();
+  const tap = pinch(p, 0, 200, (t) => -0.2 + (t > 50 ? 0.1 : 0));  // the tracking jumps 10 cm as the fingers meet
+  assert.deepEqual(tap.map((x) => x.e), ["tap"]);
+  const hold = pinch(p, 1000, 1800, (t) => -0.2 + (t - 1000) / 2000);  // a slow rise, 0.5 m/s
+  assert.ok(hold[0].t >= 1350 && hold[0].t < 1365, `starts at ${hold[0].t}`);
+  assert.ok(Math.abs(hold[0].e.start - (-0.2 + 0.175)) < 0.01, `from the height at 350 ms: ${hold[0].e.start}`);
+  const moves = hold.filter((x) => x.e.move !== undefined);
+  assert.ok(moves.length >= 3 && moves.every((x, i) => i === 0 || x.t - moves[i - 1].t > 100));
+  assert.equal(hold[hold.length - 1].e, "end");
+  assert.deepEqual(pinch(p, 3000, 3500, () => null), []);  // held, never tracked: neither a tap nor a hold
+});
+
+test("a move more than 15 cm from the last is the tracking's, skipped, unless the next one agrees", () => {
+  const p = new Pinch();
+  const spike = pinch(p, 0, 1200, (t) => (t > 685 && t < 700 ? 0.3 : -0.2));  // one frame 50 cm off, on a move's sample (694 ms)
+  const moves0 = spike.filter((x) => x.e.move !== undefined);
+  assert.ok(moves0.every((x) => x.e.move === -0.2), JSON.stringify(spike));
+  assert.ok(!moves0.some((x) => x.t === 694) && moves0.some((x) => x.t > 694 && x.t < 820), JSON.stringify(moves0));
+  const real = pinch(p, 2000, 3200, (t) => (t > 2600 ? 0.05 : -0.2));  // a real jump that stays
+  const moves = real.filter((x) => x.e.move !== undefined).map((x) => x.e.move);
+  assert.ok(moves.includes(-0.2) && moves.includes(0.05), JSON.stringify(moves));
+});
+
+test("the gaze is sticky: another instrument takes over 4° inside its slice", () => {
+  const arcs = [{ id: "violins", from: 108, to: 180 }, { id: "oboes", from: 90, to: 108 }, { id: "horns", from: 72, to: 90 }];
+  assert.equal(gazeOn(arcs, 95, null).id, "oboes");
+  assert.equal(gazeOn(arcs, 88, "oboes").id, "oboes");  // 2° into the horns: still the oboes
+  assert.equal(gazeOn(arcs, 85, "oboes").id, "horns");
+  assert.equal(gazeOn(arcs, 91, "horns").id, "horns");
+  assert.equal(gazeOn(arcs, 110, "oboes").id, "oboes");
+  assert.equal(gazeOn(arcs, 113, "oboes").id, "violins");
+  assert.equal(gazeOn(arcs, 200, "oboes"), null);  // the sky: nothing looked at
+  assert.equal(gazeOn(arcs, null, "oboes"), null);
+});

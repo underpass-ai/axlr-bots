@@ -642,10 +642,10 @@ class CharacterTest(unittest.TestCase):
         ch = o.chairs["vn1-1"]["channel"]
         before, level = len(synth.velocities(ch)), synth.last_volume(ch)
         self.assertEqual(o.character(o.chairs_of("all"), "dolce"), 36)
-        self.assertEqual((synth.last("brightness", ch), synth.last("modulation", ch)), (-2400, 20))
+        self.assertEqual((synth.last("brightness", ch), synth.last("modulation", ch)), (-3600, 20))
         play_until(o, 3)
         after = synth.velocities(ch)[before:]
-        self.assertTrue(after and all(v == 102 for v in after), after)
+        self.assertTrue(after and all(v == 83 for v in after), after)
         self.assertEqual(synth.last_volume(ch), level)  # the dynamics are the cue's business
         self.assertEqual(o.chairs["vn1-1"]["gain"], 1.0)
         view = next(c for s in o.snapshot()["sections"] for c in s["chairs"] if c["id"] == "vn1-1")
@@ -658,7 +658,7 @@ class CharacterTest(unittest.TestCase):
         answer = o.play("ob-1", 1, "f", character="brillante")
         ch = o.chairs["ob-1"]["channel"]
         self.assertEqual(answer["character"], "brillante")
-        self.assertEqual((synth.last("brightness", ch), synth.last("modulation", ch)), (1200, 45))
+        self.assertEqual((synth.last("brightness", ch), synth.last("modulation", ch)), (1800, 45))
         with self.assertRaises(Refused):
             o.play("ob-2", 1, character="dolcissimo")
         self.assertIn("The conductor's expression now: brillante (bright and lively)", o.phrases("ob-1")["ask"]["state"])
@@ -670,7 +670,7 @@ class CharacterTest(unittest.TestCase):
         o.play("vc-1", 1)
         o.character(["vc-1"], "appassionato")
         ch = o.chairs["vc-1"]["channel"]
-        self.assertEqual(synth.last("modulation", ch), 80)
+        self.assertEqual(synth.last("modulation", ch), 90)
         play_until(o, 2)
         o.stop_all("the conductor")
         o.cue("info.cue.all", {})

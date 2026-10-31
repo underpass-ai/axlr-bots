@@ -468,7 +468,7 @@ class NativeTest(unittest.TestCase):
         clock.now += 0.5
         self.assertEqual(h.height({"hands": {"left": {"height": 0.34}}}), {"left": 0.7})  # 14 cm up over 70 cm
         self.assertEqual(h.view()["pending"]["left"]["from"], 0.5)
-        clock.now += 0.7
+        clock.now += 1.6
         self.assertEqual([r["why"] for r in h.tick()], ["the hand left"])
         self.assertEqual({round(o.chairs[k]["gain"], 2) for k in o.chairs_of("vn1")}, {0.5})
 
@@ -513,12 +513,12 @@ class LevelTest(unittest.TestCase):
 
     def test_a_level_not_kept_comes_back_when_the_hand_leaves(self):
         h, o, _, clock = self.level(0.5)
-        clock.now += 0.5
-        self.assertEqual(h.tick(), [])  # a pinching hand says it is still there
+        clock.now += 1.0
+        self.assertEqual(h.tick(), [])  # 1 s without a height is not gone yet; a pinching hand says it is still there
         h.height({"hands": {"left": {"height": -0.4, "pinch": True}}})
-        clock.now += 0.5
+        clock.now += 1.0
         self.assertEqual(h.tick(), [])
-        clock.now += 0.7
+        clock.now += 0.6
         self.assertEqual([(r["why"], r["gain"]) for r in h.tick()], [("the hand left", 1.0)])
         self.assertEqual({o.chairs[k]["gain"] for k in o.chairs_of("strings")}, {1.0})
         self.assertEqual(h.view()["engaged"]["left"], None)
@@ -540,6 +540,28 @@ class LevelTest(unittest.TestCase):
         self.assertEqual(h.height({"hands": {"left": {"height": -0.45}}}), {})  # 11 cm down in 0.1 s: 1.1 m/s, the arm resting
         self.assertEqual(h.view()["lastGain"]["why"], "the hand dropped")
         self.assertEqual({o.chairs[k]["gain"] for k in o.chairs_of("strings")}, {1.0})
+
+    def test_a_reading_of_nothing_or_an_unsure_one_keeps_the_hand_conducting(self):
+        h, o, _, clock = self.level(0.5)
+        for read in (("nothing", 0.9), ("open", 0.6), ("fist", 0.7)):  # relaxed, or Jev unsure: under the threshold is nothing
+            h.judge.reads = {"left": read}
+            clock.now += 0.6
+            self.assertEqual(h.observe(posture(left=OPEN))["read"], {"left": "nothing"})
+            self.assertEqual(h.view()["pending"]["left"]["group"], "strings")
+        clock.now += 0.1
+        self.assertEqual(h.height({"hands": {"left": {"height": -0.2}}}), {"left": 1.0})  # still conducting, from where it began
+        self.assertEqual(h.view()["lastGain"], None)
+
+    def test_another_level_gesture_brings_the_level_back_and_conducts_anew(self):
+        h, o, _, clock = self.level(0.5)
+        h.judge.reads = {"left": ("down", 0.95)}
+        clock.now += 0.6
+        h.observe(posture(left=OPEN))
+        self.assertEqual((h.view()["lastGain"]["why"], h.view()["lastGain"]["gain"]), ("the hand changed", 1.0))
+        self.assertEqual(h.view()["engaged"]["left"]["gesture"], "down")
+        h.height({"hands": {"left": {"height": -0.5}}})
+        clock.now += 0.3
+        self.assertEqual(h.height({"hands": {"left": {"height": -0.57}}}), {"left": 0.9})  # from the level then, not the old one
 
     def test_a_double_pinch_with_nothing_waiting_says_so(self):
         h, _, _, _, _ = hands()
@@ -582,7 +604,7 @@ def expression(character="nothing", p=0.9, config=None):
     o, synth, clock = orchestra()
     judge, publish = FakeExpressionJev(character, p), FakePublish()
     h = Hands(o, dict({"threshold": 0.8, "publishWaitSeconds": 3, "instruments": CONFIG["hands"]["instruments"],
-                       "expression": {"threshold": 0.55, "everySeconds": 2.0, "publishSeconds": 6.0}}, **(config or {})), judge, publish, clock)
+                       "expression": {"threshold": 0.55, "everySeconds": 2.0, "publishSeconds": 6.0, "agreeReads": 1}}, **(config or {})), judge, publish, clock)
     o.cue("info.cue.all", {})
     o.play("vn1-1", 1, "f")
     o.play("ob-1", 1, "f")
@@ -611,7 +633,7 @@ class MotionTest(unittest.TestCase):
         self.assertEqual(record["decision"], [{"gesture": "dolce", "group": "all"}])
         self.assertEqual(record["applied"], "Everyone: dolce")
         self.assertTrue(all(c["character"] == "dolce" for c in o.chairs.values()))
-        self.assertEqual(synth.last("brightness", o.chairs["ob-1"]["channel"]), -2400)
+        self.assertEqual(synth.last("brightness", o.chairs["ob-1"]["channel"]), -3600)
         self.assertEqual(publish.events, [("info.expression", {"character": "dolce", "target": "all"}, None)])
         self.assertEqual(record["sent"][0]["eventId"], "ev-1")
         self.assertEqual(h.character["character"], "dolce")
@@ -659,6 +681,24 @@ class MotionTest(unittest.TestCase):
         self.assertEqual(changed["sent"], [])  # the bus hears it later
         self.assertIn("was published 3.0 s ago", changed["notSent"][0]["why"])
         self.assertEqual(len(publish.events), 1)
+
+    def test_a_character_is_applied_once_two_readings_in_a_row_agree(self):
+        h, o, synth, judge, publish, clock = expression("brillante", 0.9, config={"expression": {"threshold": 0.55, "everySeconds": 2.0}})
+        first = h.motion({"hands": {"right": MOVED}})
+        self.assertEqual(first["notSent"], [{"what": "brillante", "why": "read brillante 1 of 2 times in a row: waits for the next reading to agree"}])
+        self.assertTrue(all(c["character"] is None for c in o.chairs.values()))
+        for character, applied in (("dolce", None), ("nothing", None), ("dolce", None), ("dolce", "Everyone: dolce")):
+            clock.now += 2.5
+            judge.character = character
+            self.assertEqual(h.motion({"hands": {"right": MOVED}}).get("applied"), applied, character)
+        self.assertEqual(publish.events, [("info.expression", {"character": "dolce", "target": "all"}, None)])
+
+    def test_the_scale_says_beat_peaks_are_the_beat_not_accents(self):
+        h, *_ = expression()
+        state = h.motion_state({"right": FORCEFUL})
+        for text in ("peaks of 3 to 8 times the average speed: that is the beat", "under about 0.2 m/s", "0.2–0.5 m/s", "0.5–0.9 m/s",
+                     "over about 0.9 m/s with rises over about 50 cm"):
+            self.assertIn(text, state)
 
     def test_while_nothing_plays_nothing_is_applied_or_sent(self):
         o, synth, clock = orchestra()

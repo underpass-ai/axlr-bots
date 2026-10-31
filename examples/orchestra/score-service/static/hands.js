@@ -2,7 +2,7 @@
 // orchestra in the room (room.js), lit by the service's state; and one
 // floating panel that says what each hand holds, what Jev read and what the
 // service sent. See hands.html.
-import { measure, signature, Steady, Beats, flatHand, pointing, Motion, openness } from "/static/posture.js";
+import { measure, signature, Steady, Beats, uncurled, pointing, Motion, openness, Pinch, gazeOn } from "/static/posture.js";
 import { Hall, THREE } from "/static/room.js";
 import { meadow, drawnHands } from "/static/meadow.js";
 import { zen } from "/static/zen.js";
@@ -33,7 +33,6 @@ fetch("/api/hands").then((r) => r.json()).then((v) => {
   hint();
   draw();
 }).catch(() => {});
-const instrumentAt = (aim) => (aim == null ? null : instruments.find((i) => i.from <= aim && aim < i.to) || null);
 const params = new URLSearchParams(location.search), preview = params.get("view") === "1";
 if (params.get("sim") === "1") document.body.classList.add("simulate");
 if (params.get("world")) $("world").value = params.get("world");  // ?world=zen|meadow|room picks what is around the orchestra
@@ -41,7 +40,7 @@ if (params.get("world")) $("world").value = params.get("world");  // ?world=zen|
 // --- the panel ------------------------------------------------------------
 
 function hint() {
-  $("hint").textContent = `Look at a section: your gestures act on it. A short pinch locks it, another frees it. A flat hand up or down sets a level: pinch twice to keep it, else it comes back when the hand drops. Nothing selected: left hand ${groups.left}, right hand ${groups.right}. Both hands: everyone.`;
+  $("hint").textContent = `Look at a section: your gestures act on it. A short pinch locks it, another frees it. A flat hand up or down sets a level: pinch twice to keep it, else it comes back when the hand drops or leaves. Nothing selected: left hand ${groups.left}, right hand ${groups.right}. Both hands: everyone.`;
 }
 
 function draw() {
@@ -281,10 +280,10 @@ for (const b of document.querySelectorAll("[data-sim]")) {
 
 // Made-up motion sums too: what a slow tender hand, an even one, a quick light one and a forceful one would send.
 const MADE_UP_MOTION = {
-  dolce: { seconds: 2.4, speed: 0.12, peak: 0.3, rise: 0.08, sweep: 0.06, turns: 0.4, height: -0.3, open: 0.85, moving: true },
-  cantabile: { seconds: 2.4, speed: 0.45, peak: 0.9, rise: 0.22, sweep: 0.3, turns: 1.2, height: -0.15, open: 0.8, moving: true },
-  brillante: { seconds: 2.4, speed: 0.9, peak: 2.2, rise: 0.25, sweep: 0.2, turns: 2.6, height: 0.1, open: 0.9, moving: true },
-  appassionato: { seconds: 2.4, speed: 1.6, peak: 4.5, rise: 0.6, sweep: 0.5, turns: 2.4, height: 0.05, open: 0.4, moving: true },
+  dolce: { seconds: 2.4, speed: 0.12, peak: 0.45, rise: 0.08, sweep: 0.06, turns: 0.8, height: -0.3, open: 0.85, moving: true },
+  cantabile: { seconds: 2.4, speed: 0.35, peak: 1.3, rise: 0.22, sweep: 0.3, turns: 1.6, height: -0.15, open: 0.6, moving: true },
+  brillante: { seconds: 2.4, speed: 0.7, peak: 2.6, rise: 0.25, sweep: 0.2, turns: 2.8, height: 0.1, open: 0.9, moving: true },
+  appassionato: { seconds: 2.4, speed: 1.2, peak: 5.0, rise: 0.65, sweep: 0.5, turns: 2.0, height: 0.05, open: 0.4, moving: true },
 };
 for (const b of document.querySelectorAll("[data-motion]")) {
   b.addEventListener("click", () => sendMotion({ right: MADE_UP_MOTION[b.dataset.motion], left: { ...MADE_UP_MOTION[b.dataset.motion], side: -1 } }, true));
@@ -366,17 +365,16 @@ function setWorld(name) {
 // palm) is the system's on both hands: on the left it ends the session.
 //
 // What they conduct: the section the conductor looks at is the one their
-// gestures act on; a short pinch locks it (and frees it); a pinch held and
-// moved up or down is that section's gain; a thumb tap is its entrance; a
-// swipe forward or backward steps the tempo; a swipe left or right moves
+// gestures act on; a short pinch locks it (and frees it), two lock nothing
+// but keep a flat hand's level; a pinch held 350 ms or more and moved up or
+// down is that section's gain; a thumb tap is its entrance; a swipe forward or backward steps the tempo; a swipe left or right moves
 // the selection to the next section that way. The selection is the page's;
 // the service does what each native gesture means and answers a record.
 const NATIVE = { 0: "pinch", 4: "menu", 5: "swipe-left", 6: "swipe-right", 7: "swipe-forward", 8: "swipe-backward", 9: "tap-thumb" };
-const TAP_MS = 350, TAP_M = 0.03;  // a pinch shorter and stiller than this is a tap
 const DOUBLE_MS = 350, taps = { left: null, right: null };  // two taps within this: a double pinch
 const quest = { profiles: null, buttons: null, pressed: { left: {}, right: {} }, pinch: { left: false, right: false }, events: [], gaze: null,
   browser: (navigator.userAgent.match(/OculusBrowser\/([\d.]+)/) || [])[1] || null };
-const pinches = { left: null, right: null }, beats = { left: new Beats(), right: new Beats() };
+const pinches = { left: new Pinch(), right: new Pinch() }, beats = { left: new Beats(), right: new Beats() };
 function native(what) {
   quest.events.unshift({ what, at: performance.now() });
   quest.events.length = Math.min(quest.events.length, 4);
@@ -404,18 +402,14 @@ function readNative(source, side, m, t) {
   g.buttons.forEach((b, i) => {
     const was = quest.pressed[side][i] || false;
     quest.pressed[side][i] = b.pressed;
-    if (i === 0) {
+    if (i === 0) {  // a tap, or a hold once it has lasted 350 ms (posture.js Pinch)
       quest.pinch[side] = b.pressed;
-      if (b.pressed && !was) { pinches[side] = { t0: t, h0: h, moving: false, sentAt: 0 }; native(`pinch ${side}`); }
-      else if (b.pressed && pinches[side]) {
-        const p = pinches[side];
-        if (!p.moving && h !== null && p.h0 !== null && (t - p.t0 > TAP_MS || Math.abs(h - p.h0) > TAP_M)) { p.moving = true; sendNative("pinch-start", side, { height: p.h0 }); }
-        if (p.moving && h !== null && t - p.sentAt > 100) { p.sentAt = t; sendNative("pinch-move", side, { height: h }); }
-      } else if (!b.pressed && was && pinches[side]) {
-        if (pinches[side].moving) sendNative("pinch-end", side);
-        else tap(side, t);
-        pinches[side] = null;
-      }
+      if (b.pressed && !was) native(`pinch ${side}`);
+      const e = pinches[side].update(b.pressed, h, t);
+      if (e === "tap") tap(side, t);
+      else if (e === "end") sendNative("pinch-end", side);
+      else if (e?.start !== undefined) sendNative("pinch-start", side, { height: e.start });
+      else if (e?.move !== undefined) sendNative("pinch-move", side, { height: e.move });
       return;
     }
     if (!(b.pressed && !was) || !NATIVE[i]) return;
@@ -427,13 +421,16 @@ function readNative(source, side, m, t) {
 
 // --- the section the conductor conducts -----------------------------------------
 
-// The one they look at, after 300 ms on it; a short pinch locks it, and
-// another frees it; a swipe left or right moves to the next section that
-// way, locked. Looking at nothing (the sky, the panel) keeps the last one.
-const SEL_MS = 300;
+// The one they look at, after 200 ms on it, sticky: another takes over only
+// when the head points 4° inside its slice (posture.js gazeOn), so the narrow
+// oboes and horns do not flicker; a short pinch locks it, and another frees
+// it; a swipe left or right moves to the next section that way, locked.
+// Looking at nothing (the sky, the panel) keeps the last one.
+const SEL_MS = 200, GAZE_MARGIN = 4;
 const sel = { gaze: null, gazeSince: 0, id: null, locked: false };
 function target() { return sel.id ? instruments.find((i) => i.id === sel.id) || null : null; }
-function gazeAt(instr, t) {
+function gazeAt(aim, t) {
+  const instr = quest.gaze = gazeOn(instruments, aim, sel.gaze || sel.id, GAZE_MARGIN);
   const id = instr ? instr.id : null;
   if (id !== sel.gaze) { sel.gaze = id; sel.gazeSince = t; }
   if (!sel.locked && id && t - sel.gazeSince > SEL_MS && sel.id !== id) { sel.id = id; shown(); }
@@ -511,7 +508,7 @@ function readHands(t, xrFrame) {
   if (!pose) return;
   if (!placed) { placeAround(pose.transform); placed = true; }
   const head = { position: [pose.transform.position.x, pose.transform.position.y, pose.transform.position.z], forward: forwardOf(pose.transform.orientation) };
-  quest.gaze = instrumentAt(aimOf([head.position[0] + head.forward[0], head.position[1], head.position[2] + head.forward[2]], head.position));
+  const gazeAim = aimOf([head.position[0] + head.forward[0], head.position[1], head.position[2] + head.forward[2]], head.position);
   live = { left: null, right: null };
   const seen = [];
   for (const source of xrFrame.session.inputSources) {
@@ -534,15 +531,16 @@ function readHands(t, xrFrame) {
     readNative(source, source.handedness, m, t);
   }
   if (drawn && world) drawn.update(seen);
-  gazeAt(quest.gaze, t);
-  // Each flat hand's height, ten times a second: the service makes it its
-  // group's provisional level while Jev's last reading of that hand is a palm
-  // up or a palm down; a double pinch keeps it. A hand that points or closes
-  // moves nothing this way; a pinching hand only says it is still there.
+  gazeAt(gazeAim, t);
+  // Each hand's height while its fingers are not curled, ten times a second:
+  // the service makes it its group's provisional level while the hand
+  // conducts one (Jev read a palm up or a palm down, and no other gesture
+  // since); a double pinch keeps it. A fist sends nothing, and after 1.5 s of
+  // silence the level comes back; a pinching hand only says it is still there.
   if (sock && t - heightAt > 100) {
     heightAt = t;
     const heights = {};
-    for (const side of SIDES) if (live[side] && (flatHand(live[side]) || quest.pinch[side])) heights[side] = { height: live[side].position.height, pinch: !!quest.pinch[side] };
+    for (const side of SIDES) if (live[side] && (uncurled(live[side]) || quest.pinch[side])) heights[side] = { height: live[side].position.height, pinch: !!quest.pinch[side] };
     if (Object.keys(heights).length) sock.send(JSON.stringify({ type: "height", hands: heights }));
   }
   // How each hand moves, for the expression: fed every frame, summed up and
