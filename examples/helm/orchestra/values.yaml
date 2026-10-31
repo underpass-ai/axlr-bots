@@ -1,0 +1,133 @@
+# The orchestra (examples/orchestra) on a cluster, as a production at home:
+#
+#   control plane ── tls://nats:4222 (mutual TLS) ── NATS JetStream ── one node per chair
+#        │ :7878 mutual TLS (enrollment)                                   │ http :8790 (MCP)
+#        └──────────── :7879 TLS + operator token ── score ◀──────────────┘
+#   browsers, the headset ── HTTPS (ingress, Let's Encrypt) ── score (orquesta), rave
+#
+# README.md has the bootstrap (bootstrap.sh) and the mutual TLS of each leg.
+
+# Every image from the lab's registry, by digest.
+images:
+  controlPlane: container-registry.underpassai.com/axlr-bots/control-plane@sha256:2bac7d70a5e93ca881d8bca7f6607775bd603fb58ab996c10b6636e3c9e68202
+  nats: container-registry.underpassai.com/axlr-bots/nats@sha256:cd3fcd4ecdda44e3a66728a5334af0a959bc3979b32810e033d1c547241cd0f4
+  score: container-registry.underpassai.com/axlr-bots/orchestra-score@sha256:220335c36645fd9ec1d2d195900453b7e8a06b4ea6b6acb9bdfbd1857ed25d43
+  rave: container-registry.underpassai.com/axlr-bots/orchestra-rave@sha256:1f4bafdb59e11baa36eb25b12e7927732c04fe5d5545ecc130be2c2ba4b12e96
+
+# Where everything runs: the inference node (gx10) is tainted for LLMs only.
+nodeSelector:
+  kubernetes.io/hostname: wrx80-node1
+tolerations: []
+
+# The pods' network, for the policies that name the control plane and the
+# broker by address (the node chart's egress is by CIDR).
+podCIDR: 10.244.0.0/16
+
+controlPlane:
+  storage: 2Gi
+  storageClassName: local-path
+
+nats:
+  storage: 2Gi
+  storageClassName: local-path
+  # The broker's certificate: cert-manager signs it with a CA of the
+  # broker's own (a self-signed root it makes here). The clients' certificates
+  # are the fleet CA's: the control plane's (ca issue-client) and each
+  # node's from enrollment.
+  certManager:
+    duration: 8760h
+  # Pushes kept (bus-port.md: an hour of pushes, then a resync).
+  maxFileStore: 1G
+
+# The secrets bootstrap.sh makes; none is in this chart.
+secrets:
+  # The fleet CA's certificate (axlr-bots ca show), key ca.crt: a ConfigMap.
+  fleetCA: orchestra-fleet-ca
+  # The operator's API token, key token.
+  operator: orchestra-operator
+  # Jev's key, key TYPESAFE_API_KEY: the chairs' program and the hands.
+  jev: orchestra-jev
+  # One enrollment token per chair's node id.
+  enrollment: orchestra-enrollment
+
+# The chairs: one StatefulSet per section, its pods named after the chairs
+# (vn1-1 … vn1-10, ordinals from 1), each pod one node, stage-<chair>, as
+# chairs.py places the bots. The sections are the score service's.
+chairs:
+  enabled: true
+  nodePrefix: stage-
+  sections:
+    - {id: vn1, chairs: 10}
+    - {id: vn2, chairs: 8}
+    - {id: va, chairs: 6}
+    - {id: vc, chairs: 5}
+    - {id: cb, chairs: 3}
+    - {id: ob, chairs: 2}
+    - {id: hn, chairs: 2}
+
+ingress:
+  className: nginx
+  clusterIssuer: letsencrypt-prod-r53
+
+score:
+  enabled: true
+  # The public name: the page, the sound, /ws/hands. Route 53 points it at
+  # the ingress's LAN address.
+  host: orquesta.underpassai.com
+  resources:
+    requests: {cpu: 500m, memory: 512Mi}
+    limits: {memory: 2Gi}
+
+rave:
+  enabled: true
+  host: rave.underpassai.com
+  resources:
+    requests: {cpu: 500m, memory: 512Mi}
+    limits: {memory: 2Gi}
+
+resources:
+  controlPlane:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {memory: 1Gi}
+  nats:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {memory: 512Mi}
+
+# The node of each chair: the sidecar chart's values.
+axlr-bots-node:
+  image:
+    repository: container-registry.underpassai.com/axlr-bots/axlr-bots-node
+    digest: sha256:d2166a86ab1b78fe3c655a98e4202d527575f76d510a6e8627dc89fcdea24b86
+  controlPlane:
+    url: https://orchestra-cp:7878
+    ca:
+      existingConfigMap: orchestra-fleet-ca
+  enrollment:
+    existingSecret: orchestra-enrollment
+  # Jev bots: no language model.
+  model:
+    enabled: false
+  bus:
+    kind: nats
+    nats:
+      url: tls://orchestra-nats:4222
+      ca:
+        existingSecret: orchestra-nats-tls
+      cidr: 10.244.0.0/16
+  node:
+    idPrefix: stage-
+    labels: {team: orchestra}
+    dedicated: true
+  sidecar:
+    env:
+      - name: TYPESAFE_API_KEY
+        valueFrom: {secretKeyRef: {name: orchestra-jev, key: TYPESAFE_API_KEY}}
+    resources:
+      requests: {cpu: 20m, memory: 32Mi}
+      limits: {cpu: 500m, memory: 256Mi}
+    state:
+      persistent: true
+      size: 64Mi
+      storageClassName: local-path
+  networkPolicy:
+    controlPlaneCIDR: 10.244.0.0/16

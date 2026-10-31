@@ -3,6 +3,7 @@ package nats
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -112,6 +113,25 @@ func (p *Publisher) run() {
 	}()
 	sweep := time.NewTicker(sweepEvery)
 	defer sweep.Stop()
+	// Connect at once, so the stream exists before the first push: a
+	// node finds the stream, it does not define it.
+	connected := func() bool {
+		for js == nil {
+			var err error
+			if conn, js, err = connect(p.cfg, true); err != nil {
+				logger.Printf("bus: nats: %v (retrying)", err)
+				if !p.pause(2 * time.Second) {
+					return false
+				}
+				continue
+			}
+			logger.Printf("bus: nats: publishing to %s on %s", p.cfg.stream(), conn.ConnectedUrl())
+		}
+		return true
+	}
+	if !connected() {
+		return
+	}
 	for {
 		var e entry
 		select {
@@ -123,16 +143,8 @@ func (p *Publisher) run() {
 		case e = <-p.queue:
 		}
 		for {
-			if js == nil {
-				var err error
-				if conn, js, err = connect(p.cfg); err != nil {
-					logger.Printf("bus: nats: %v (retrying)", err)
-					if !p.pause(2 * time.Second) {
-						return
-					}
-					continue
-				}
-				logger.Printf("bus: nats: publishing to %s on %s", p.cfg.stream(), conn.ConnectedUrl())
+			if !connected() {
+				return
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			_, err := js.Publish(ctx, subject(e.node), e.payload, jetstream.WithMsgID(e.id))
@@ -162,13 +174,35 @@ func (p *Publisher) pause(d time.Duration) bool {
 	}
 }
 
-// connect opens the connection and makes sure the stream exists.
-func connect(cfg Config) (*natsio.Conn, jetstream.JetStream, error) {
+// options are the connection's: its name, reconnecting for ever, and
+// the credentials or the client certificate the config names.
+func options(cfg Config) ([]natsio.Option, error) {
 	options := []natsio.Option{natsio.Name(cfg.Name), natsio.Timeout(5 * time.Second), natsio.MaxReconnects(-1), natsio.ReconnectWait(time.Second)}
 	if cfg.Credentials != "" {
 		options = append(options, natsio.UserCredentials(cfg.Credentials))
 	}
-	conn, err := natsio.Connect(cfg.URL, options...)
+	if (cfg.CertFile == "") != (cfg.KeyFile == "") {
+		return nil, errors.New("nats: a client certificate needs its key, and a key its certificate")
+	}
+	if cfg.CertFile != "" {
+		options = append(options, natsio.ClientCert(cfg.CertFile, cfg.KeyFile))
+	}
+	if cfg.CAFile != "" {
+		options = append(options, natsio.RootCAs(cfg.CAFile))
+	}
+	return options, nil
+}
+
+// connect opens the connection. With define it makes sure the stream
+// exists (the control plane's); without, it finds the one the control
+// plane defined: a node has no right to define it, and asking would
+// cost it a timeout on every start.
+func connect(cfg Config, define bool) (*natsio.Conn, jetstream.JetStream, error) {
+	opts, err := options(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	conn, err := natsio.Connect(cfg.URL, opts...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -179,16 +213,30 @@ func connect(cfg Config) (*natsio.Conn, jetstream.JetStream, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	if !define {
+		// The control plane defines the stream when it connects; a node
+		// that comes first waits for it a little.
+		for {
+			_, err := js.Stream(ctx, cfg.stream())
+			if err == nil {
+				return conn, js, nil
+			}
+			if !errors.Is(err, jetstream.ErrStreamNotFound) || ctx.Err() != nil {
+				conn.Close()
+				return nil, nil, fmt.Errorf("stream %s: %w", cfg.stream(), err)
+			}
+			select {
+			case <-ctx.Done():
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+	}
 	if _, err := js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
 		Name: cfg.stream(), Subjects: []string{SubjectPrefix + ".>"}, Retention: jetstream.LimitsPolicy, Storage: jetstream.FileStorage,
 		MaxAge: Retention, Duplicates: Duplicates, Discard: jetstream.DiscardOld,
 	}); err != nil {
-		// A connection without the right to define the stream (a node's)
-		// uses the one the control plane defined.
-		if _, lookup := js.Stream(ctx, cfg.stream()); lookup != nil {
-			conn.Close()
-			return nil, nil, err
-		}
+		conn.Close()
+		return nil, nil, err
 	}
 	return conn, js, nil
 }

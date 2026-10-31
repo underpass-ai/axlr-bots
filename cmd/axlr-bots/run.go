@@ -70,6 +70,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return caInit(*stateDir, rest, stdout, stderr)
 	case "ca show":
 		return caShow(*stateDir, rest, stdout, stderr)
+	case "ca issue-client":
+		return caIssueClient(*stateDir, rest, stdout, stderr)
 	}
 	service := newService(ctx, app, socketPath, nil)
 	switch group + " " + verb {
@@ -197,6 +199,7 @@ func printUsage(w io.Writer) {
 
   serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--api-token-file <path>]
         [--bus direct|nats] [--nats-url <url>] [--nats-creds <file>]
+        [--nats-cert <file> --nats-key <file>] [--nats-ca <file>]
         [--tick 2s] [--reconcile-every 1m]
                                       run the control plane: the API on the socket, the node
                                       protocol over TLS on --listen (nodes on other hosts), the
@@ -206,6 +209,9 @@ func printUsage(w io.Writer) {
                                       timer triggers
   ca init                             create the fleet CA under <state>/ca (once per fleet)
   ca show                             print the CA certificate and its fingerprint
+  ca issue-client --name <cn> --out <dir>
+                                      a client certificate of the fleet CA for one of its own services
+                                      (the control plane's broker connection): client.key, client.crt, ca.crt
   node list                           list the nodes (hosts running axlr-node)
   node get <node-id>                  show one node
   node enroll-token [--node-id <id>] [--labels k=v,k=v] [--ttl 1h]

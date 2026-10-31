@@ -9,7 +9,7 @@
       "url": {"type": "string", "pattern": "^(https://[^/ ]+)?$"},
       "ca": {"type": "object", "properties": {"existingConfigMap": {"type": "string"}}}}},
     "enrollment": {"type": "object", "properties": {"existingSecret": {"type": "string"}}},
-    "model": {"type": "object", "properties": {"apiKey": {"type": "object", "properties": {
+    "model": {"type": "object", "properties": {"enabled": {"type": "boolean"}, "apiKey": {"type": "object", "properties": {
       "existingSecret": {"type": "string"}, "key": {"type": "string", "minLength": 1}}}}},
     "node": {"type": "object", "properties": {
       "idPrefix": {"type": "string", "pattern": "^[a-z0-9._-]{0,40}$"},
@@ -27,7 +27,15 @@
         "subPath": {"type": "string"}}}},
       "state": {"type": "object", "properties": {"persistent": {"type": "boolean"}, "size": {"type": "string", "minLength": 1}, "storageClassName": {"type": "string"}}},
       "workspacesSize": {"type": "string", "minLength": 1},
-      "tmpSize": {"type": "string", "minLength": 1}}},
+      "tmpSize": {"type": "string", "minLength": 1},
+      "env": {"type": "array", "items": {"type": "object", "required": ["name"]}}}},
+    "bus": {"type": "object", "properties": {
+      "kind": {"type": "string", "enum": ["direct", "nats"]},
+      "nats": {"type": "object", "properties": {
+        "url": {"type": "string", "pattern": "^((nats|tls)://[^/ ]+)?$"},
+        "ca": {"type": "object", "properties": {"existingConfigMap": {"type": "string"}, "existingSecret": {"type": "string"}}},
+        "cidr": {"type": "string"},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535}}}}},
     "networkPolicy": {"type": "object", "properties": {
       "enabled": {"type": "boolean"},
       "controlPlaneCIDR": {"type": "string"},

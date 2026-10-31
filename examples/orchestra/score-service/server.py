@@ -20,7 +20,10 @@
                          gestures (native: tap, swipes, a pinch held, a beat) up; the state,
                          as soon as it changes, and Jev's readings down
 
-It listens on loopback only (a headset reaches it through adb reverse). With
+It listens on loopback only (a headset reaches it through adb reverse), or,
+with --public-host (behind an HTTPS ingress: the page, the sound, /ws/hands)
+and --internal-host (the cluster's service name: the chairs' MCP too), on
+those names only (mcp_http.Hosts). With
 controlPlane.url it follows the team's bus and cuts the sound on stop.all
 itself, and publishes the hands' events as the operator.
 
@@ -86,7 +89,8 @@ def chair_tools(orchestra, chair, max_seconds):
     return tools
 
 
-def make_handler(orchestra, stream, config, hands=None):
+def make_handler(orchestra, stream, config, hands=None, hosts=None):
+    hosts = hosts or mcp_http.Hosts()
     label = config["label"]
     rate = config["audio"]["rate"]
     score_json = json.dumps(orchestra.density()).encode()
@@ -162,16 +166,23 @@ def make_handler(orchestra, stream, config, hands=None):
             except (BrokenPipeError, ConnectionResetError):
                 self.close_connection = True  # a run its node stopped while it listened
 
-        def _loopback(self):
-            host = (self.headers.get("Host") or "")
-            host = host.split("]")[0] + "]" if host.startswith("[") else host.rsplit(":", 1)[0]
-            return host in mcp_http.LOOPBACK_HOSTS
+        def _reach(self):
+            """loopback, internal or public; None (answered 403) for a name this service does not answer."""
+            kind = hosts.kind(self.headers.get("Host"))
+            if kind is None:
+                self._send(403, b'{"error":"loopback only"}' if not hosts.beyond_loopback() else b'{"error":"not a name this service answers"}')
+            return kind
 
         def do_POST(self):
-            if not self._loopback():
-                return self._send(403, b'{"error":"loopback only"}')
+            reach = self._reach()
+            if reach is None:
+                return
+            if not hosts.origin_ok(self.headers.get("Origin")):
+                return self._send(403, b'{"error":"only a page served here may post"}')
             if self.path.split("?")[0] == "/api/hands":
                 return self._hands()
+            if reach == "public":
+                return self._send(403, b'{"error":"the chairs\' MCP is not public"}')
             parts = self.path.split("?")[0].strip("/").split("/")
             if len(parts) != 2 or parts[0] != "mcp" or parts[1] not in per_chair:
                 return self._send(404, b'{"error":"no such chair"}')
@@ -188,8 +199,8 @@ def make_handler(orchestra, stream, config, hands=None):
             self._send(200, json.dumps(reply).encode())
 
         def do_GET(self):
-            if not self._loopback():
-                return self._send(403, b'{"error":"loopback only"}')
+            if self._reach() is None:
+                return
             url = urllib.parse.urlparse(self.path)
             query = dict(urllib.parse.parse_qsl(url.query))
             if url.path == "/api/state":
@@ -218,8 +229,7 @@ def make_handler(orchestra, stream, config, hands=None):
         def _ws_hands(self):
             if hands is None:
                 return self._send(404, b'{"error":"no hands: the service runs without them"}')
-            origin = self.headers.get("Origin")
-            if origin and urllib.parse.urlparse(origin).netloc.rsplit(":", 1)[0] not in mcp_http.LOOPBACK_HOSTS:
+            if not hosts.origin_ok(self.headers.get("Origin")):
                 return self._send(403, b'{"error":"only a page served here may conduct"}')
             key = self.headers.get("Sec-WebSocket-Key")
             if (self.headers.get("Upgrade") or "").lower() != "websocket" or not key:
@@ -281,14 +291,20 @@ def main(argv=None):
     p.add_argument("config", nargs="?", default=os.path.join(HERE, "config.json"))
     p.add_argument("--record", help="also write the sound to this WAV file")
     p.add_argument("--listen", help="host:port, default the config's listenAddress")
+    p.add_argument("--public-host", action="append", default=[], help="a name a browser reaches this service by, behind an HTTPS ingress: the page, the sound and /ws/hands, never the chairs' MCP (repeatable)")
+    p.add_argument("--internal-host", action="append", default=[], help="a name only pods dial, such as the cluster's service name: everything, the chairs' MCP too (repeatable)")
     p.add_argument("--control-plane", help="the operator API, default the config's controlPlane.url")
     p.add_argument("--team", help="the team whose bus to follow, default the config's team")
+    p.add_argument("--token-file", help="the operator token, default the config's controlPlane.tokenFile")
+    p.add_argument("--ca-file", help="the control plane's CA, default the config's controlPlane.caFile")
     p.add_argument("--hands-dry-run", action="store_true", help="Jev reads the hands, nothing is published")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)s")
     config = load_config(a.config)
     config["controlPlane"]["url"] = a.control_plane or config["controlPlane"]["url"]
     config["team"] = a.team or config["team"]
+    config["controlPlane"]["tokenFile"] = a.token_file or config["controlPlane"]["tokenFile"]
+    config["controlPlane"]["caFile"] = a.ca_file or config["controlPlane"]["caFile"]
 
     score = Score(os.path.join(os.path.dirname(os.path.abspath(a.config)), config["score"]["file"]), config["sections"],
                   config.get("phrases", {}).get("bars", 8))
@@ -316,9 +332,10 @@ def main(argv=None):
     log.info("hands at /hands: Jev %s, threshold %s, %s", judge.model, hands.threshold, "dry run" if hands.dry_run else "publishing on " + config["team"])
 
     host, port = (a.listen or config["listenAddress"]).rsplit(":", 1)
-    if host not in ("127.0.0.1", "localhost", "::1"):
-        sys.exit("score-service listens on loopback only")
-    server = ThreadingHTTPServer((host, int(port)), make_handler(orchestra, stream, config, hands))
+    hosts = mcp_http.Hosts(a.public_host, a.internal_host)
+    if host not in ("127.0.0.1", "localhost", "::1") and not hosts.beyond_loopback():
+        sys.exit("score-service listens beyond loopback only with --public-host or --internal-host")
+    server = ThreadingHTTPServer((host, int(port)), make_handler(orchestra, stream, config, hands, hosts))
     server.daemon_threads = True
     log.info("listening on http://%s:%s (mcp at /mcp/<chair>, state at /api/state, sound at /audio.wav)", host, port)
     try:

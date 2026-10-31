@@ -21,7 +21,8 @@
   GET  /ws/hands         the page's WebSocket (ws.py, copied from the orchestra): the state down as soon
                          as it changes; a posture up is answered "nothing": the rave reads no hands yet
 
-It listens on loopback only. With controlPlane.url it follows the team's bus
+It listens on loopback only, or, with --public-host and --internal-host, on
+those names only, as the score service does (mcp_http.Hosts). With controlPlane.url it follows the team's bus
 and cuts the sound on stop.all itself. The sound is superdough in a Node
 process (strudel/sound.mjs), the patterns are evaluated in another
 (strudel/evaluate.mjs): both need Node.
@@ -110,7 +111,8 @@ def hands_view(rave):
                             for i, (sid, s) in enumerate(rave.sections.items())]}
 
 
-def make_handler(rave, stream, config):
+def make_handler(rave, stream, config, hosts=None):
+    hosts = hosts or mcp_http.Hosts()
     label = config["label"]
     score_json = json.dumps(rave.score()).encode()
     hands_json = json.dumps(hands_view(rave)).encode()
@@ -170,10 +172,12 @@ def make_handler(rave, stream, config):
             except (BrokenPipeError, ConnectionResetError):
                 self.close_connection = True
 
-        def _loopback(self):
-            host = (self.headers.get("Host") or "")
-            host = host.split("]")[0] + "]" if host.startswith("[") else host.rsplit(":", 1)[0]
-            return host in mcp_http.LOOPBACK_HOSTS
+        def _reach(self):
+            """loopback, internal or public; None (answered 403) for a name this service does not answer."""
+            kind = hosts.kind(self.headers.get("Host"))
+            if kind is None:
+                self._send(403, b'{"error":"loopback only"}' if not hosts.beyond_loopback() else b'{"error":"not a name this service answers"}')
+            return kind
 
         def _body(self, limit):
             length = int(self.headers.get("Content-Length") or 0)
@@ -182,10 +186,15 @@ def make_handler(rave, stream, config):
             return self.rfile.read(length)
 
         def do_POST(self):
-            if not self._loopback():
-                return self._send(403, b'{"error":"loopback only"}')
+            reach = self._reach()
+            if reach is None:
+                return
+            if not hosts.origin_ok(self.headers.get("Origin")):
+                return self._send(403, b'{"error":"only a page served here may post"}')
             path = self.path.split("?")[0]
             if path == "/api/event":
+                if reach == "public":
+                    return self._send(403, b'{"error":"the operator\'s local events are not public"}')
                 raw = self._body(16384)
                 if raw is None:
                     return self._send(400, b'{"error":"bad body"}')
@@ -195,6 +204,8 @@ def make_handler(rave, stream, config):
                 except (ValueError, TypeError) as exc:
                     return self._send(400, json.dumps({"error": str(exc)}).encode())
                 return self._send(200, json.dumps(out).encode())
+            if reach == "public":
+                return self._send(403, b'{"error":"the chairs\' MCP is not public"}')
             parts = path.strip("/").split("/")
             if len(parts) != 2 or parts[0] != "mcp" or parts[1] not in per_chair:
                 return self._send(404, b'{"error":"no such chair"}')
@@ -211,8 +222,8 @@ def make_handler(rave, stream, config):
             self._send(200, json.dumps(reply).encode())
 
         def do_GET(self):
-            if not self._loopback():
-                return self._send(403, b'{"error":"loopback only"}')
+            if self._reach() is None:
+                return
             url = urllib.parse.urlparse(self.path)
             query = dict(urllib.parse.parse_qsl(url.query))
             if url.path == "/api/state":
@@ -237,8 +248,7 @@ def make_handler(rave, stream, config):
             self._send(404, b'{"error":"not found"}')
 
         def _ws_hands(self):
-            origin = self.headers.get("Origin")
-            if origin and urllib.parse.urlparse(origin).netloc.rsplit(":", 1)[0] not in mcp_http.LOOPBACK_HOSTS:
+            if not hosts.origin_ok(self.headers.get("Origin")):
                 return self._send(403, b'{"error":"only a page served here may conduct"}')
             key = self.headers.get("Sec-WebSocket-Key")
             if (self.headers.get("Upgrade") or "").lower() != "websocket" or not key:
@@ -288,18 +298,25 @@ def main(argv=None):
     p.add_argument("config", nargs="?", default=os.path.join(HERE, "config.json"))
     p.add_argument("--record", help="also write the sound to this WAV file")
     p.add_argument("--listen", help="host:port, default the config's listenAddress")
+    p.add_argument("--public-host", action="append", default=[], help="a name a browser reaches this service by, behind an HTTPS ingress: the page, the sound and /ws/hands, never the chairs' MCP (repeatable)")
+    p.add_argument("--internal-host", action="append", default=[], help="a name only pods dial, such as the cluster's service name: everything, the chairs' MCP too (repeatable)")
     p.add_argument("--control-plane", help="the operator API, default the config's controlPlane.url")
     p.add_argument("--team", help="the team whose bus to follow, default the config's team")
+    p.add_argument("--token-file", help="the operator token, default the config's controlPlane.tokenFile")
+    p.add_argument("--ca-file", help="the control plane's CA, default the config's controlPlane.caFile")
     p.add_argument("--no-network", action="store_true", help="the sound takes samples from its cache only")
+    p.add_argument("--samples", help="the samples' cache directory, default the config's audio.cache")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)s")
     config = load_json(a.config)
     config["controlPlane"]["url"] = a.control_plane or config["controlPlane"]["url"]
     config["team"] = a.team or config["team"]
+    config["controlPlane"]["tokenFile"] = a.token_file or config["controlPlane"]["tokenFile"]
+    config["controlPlane"]["caFile"] = a.ca_file or config["controlPlane"]["caFile"]
     library = load_json(os.path.join(os.path.dirname(os.path.abspath(a.config)), config["patterns"]["file"]))
 
     audio = config["audio"]
-    sound = synth.Superdough(audio["rate"], audio["block"], audio.get("master", 0.6), audio.get("cache"),
+    sound = synth.Superdough(audio["rate"], audio["block"], audio.get("master", 0.6), a.samples or audio.get("cache"),
                              audio.get("network", True) and not a.no_network)
     ready = sound.start()
     log.info("sound up: %s Hz, blocks of %d, samples %s, %d sounds", ready["rate"], ready["block"], ready["samples"], len(ready["sounds"]))
@@ -323,9 +340,10 @@ def main(argv=None):
         log.info("no controlPlane.url: not following the bus; POST /api/event applies an operator's event locally")
 
     host, port = (a.listen or config["listenAddress"]).rsplit(":", 1)
-    if host not in ("127.0.0.1", "localhost", "::1"):
-        sys.exit("rave-service listens on loopback only")
-    server = ThreadingHTTPServer((host, int(port)), make_handler(rave, stream, config))
+    hosts = mcp_http.Hosts(a.public_host, a.internal_host)
+    if host not in ("127.0.0.1", "localhost", "::1") and not hosts.beyond_loopback():
+        sys.exit("rave-service listens beyond loopback only with --public-host or --internal-host")
+    server = ThreadingHTTPServer((host, int(port)), make_handler(rave, stream, config, hosts))
     server.daemon_threads = True
     log.info("listening on http://%s:%s (mcp at /mcp/<chair>, state at /api/state, sound at /audio.wav, the page at /hands?world=rave)", host, port)
     try:

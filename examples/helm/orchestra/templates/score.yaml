@@ -1,0 +1,80 @@
+{{- if .Values.score.enabled }}
+{{- $score := include "orchestra.score" . }}
+{{- $cp := include "orchestra.cp" . }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $score }}
+  labels:
+    {{- include "orchestra.labels" . | nindent 4 }}
+spec:
+  selector: {app: {{ $score }}}
+  ports:
+    - {name: http, port: 8790, targetPort: http}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $score }}
+  labels:
+    {{- include "orchestra.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  # One clock, one sound: never two at once.
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: {{ $score }}}
+  template:
+    metadata:
+      labels:
+        app: {{ $score }}
+        {{- include "orchestra.labels" . | nindent 8 }}
+    spec:
+      {{- include "orchestra.podSpecCommon" . | nindent 6 }}
+      containers:
+        - name: score
+          image: {{ .Values.images.score }}
+          args:
+            - --listen=0.0.0.0:8790
+            # The browser's name (the page, the sound, /ws/hands), behind the ingress.
+            - --public-host={{ .Values.score.host }}
+            # The chairs' name for its MCP.
+            {{- range splitList "," (include "orchestra.svcNames" (list $score .Release.Namespace)) }}
+            - --internal-host={{ . }}
+            {{- end }}
+            # The team's bus, as the operator: TLS against the fleet CA and the token.
+            - --control-plane=https://{{ $cp }}:7879
+            - --token-file=/etc/orchestra/operator/token
+            - --ca-file=/etc/orchestra/fleet-ca/ca.crt
+          env:
+            - name: TYPESAFE_API_KEY
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.jev }}, key: TYPESAFE_API_KEY}}
+          ports:
+            - {name: http, containerPort: 8790}
+          # A probe's Host is the pod's address, which the service does not
+          # answer (it answers its names only): a TCP check.
+          readinessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 10
+          securityContext:
+            {{- include "orchestra.restricted" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.score.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: operator, mountPath: /etc/orchestra/operator, readOnly: true}
+            - {name: fleet-ca, mountPath: /etc/orchestra/fleet-ca, readOnly: true}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 256Mi}
+        - name: operator
+          secret:
+            secretName: {{ .Values.secrets.operator }}
+            items: [{key: token, path: token}]
+        - name: fleet-ca
+          configMap:
+            name: {{ .Values.secrets.fleetCA }}
+            items: [{key: ca.crt, path: ca.crt}]
+---
+{{ include "orchestra.ingress" (dict "root" . "name" $score "host" .Values.score.host) }}
+{{- end }}

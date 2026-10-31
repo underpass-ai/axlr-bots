@@ -8,7 +8,7 @@ ARG BASE_IMAGE=gcr.io/distroless/static-debian13:debug-nonroot@sha256:c7b8faacc4
 
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS build
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum ./
 COPY adapters ./adapters
 COPY application ./application
 COPY cmd ./cmd
