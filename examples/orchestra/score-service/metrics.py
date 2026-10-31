@@ -258,6 +258,8 @@ class Registry:
             if family.name in self.families:
                 raise ValueError(f"{family.name} is registered already")
             self.families[family.name] = family
+        if not family.label_names and not isinstance(family, Computed):
+            family.labels()  # a family without labels is 0 from the start, not absent until its first event
         return family
 
     def counter(self, name, help_text, labels=()):

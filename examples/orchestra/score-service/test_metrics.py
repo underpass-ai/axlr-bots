@@ -97,6 +97,17 @@ class RegistryTest(unittest.TestCase):
         self.assertIn("# x_broken not collected: ZeroDivisionError", text)
         self.assertIn("x_other 7\n", text)
 
+    def test_a_family_without_labels_is_zero_from_the_start(self):
+        r = metrics.Registry()
+        r.counter("x_total", "Calls.")
+        r.gauge("x_now", "Now.")
+        r.histogram("x_seconds", "Time.", buckets=(1,))
+        r.counter("x_by_total", "Calls by.", ("a",))
+        text = r.render().decode()
+        for line in ("x_total 0", "x_now 0", 'x_seconds_bucket{le="+Inf"} 0', "x_seconds_count 0"):
+            self.assertIn(line + "\n", text)
+        self.assertNotIn("x_by_total{", text)  # a labelled one has no series until it has labels
+
     def test_names_cover_a_histograms_series(self):
         r = metrics.Registry()
         r.histogram("x_seconds", "Time.")

@@ -1,0 +1,12 @@
+# The dashboards are files in the repository (grafana/dashboards, written by
+# dashboards.py): Grafana reads them, nobody saves over them from the UI.
+apiVersion: 1
+providers:
+  - name: orchestra
+    folder: Orchestra
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 10
+    options:
+      path: /etc/grafana/dashboards
