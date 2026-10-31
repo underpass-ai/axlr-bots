@@ -2,9 +2,10 @@
 // orchestra in the room (room.js), lit by the service's state; and one
 // floating panel that says what each hand holds, what Jev read and what the
 // service sent. See hands.html.
-import { measure, signature, Steady } from "/static/posture.js";
+import { measure, signature, Steady, Beats, flatHand, pointing } from "/static/posture.js";
 import { Hall, THREE } from "/static/room.js";
 import { meadow, drawnHands } from "/static/meadow.js";
+import { zen } from "/static/zen.js";
 
 const $ = (id) => document.getElementById(id);
 const panel = $("panel"), ctx = panel.getContext("2d");
@@ -14,7 +15,7 @@ const steady = new Steady(HOLD_MS);
 let live = { left: null, right: null }, last = null, orchestra = null, xr = null, dirty = true;
 let soundOn = false, soundAt = -1, soundState = "off", heightAt = 0;
 const SECTIONS = { strings: ["vn1", "vn2", "va", "vc", "cb"], winds: ["ob", "hn"] };
-let gains = { strings: 1, winds: 1 }, instruments = [], aimed = { left: null, right: null };
+let gains = { strings: 1, winds: 1 }, instruments = [];
 // The instruments and their slices of the arc, as the service has them.
 fetch("/api/hands").then((r) => r.json()).then((v) => {
   instruments = v.instruments || [];
@@ -23,6 +24,7 @@ fetch("/api/hands").then((r) => r.json()).then((v) => {
 const instrumentAt = (aim) => (aim == null ? null : instruments.find((i) => i.from <= aim && aim < i.to) || null);
 const params = new URLSearchParams(location.search), preview = params.get("view") === "1";
 if (params.get("sim") === "1") document.body.classList.add("simulate");
+if (params.get("world")) $("world").value = params.get("world");  // ?world=zen|meadow|room picks what is around the orchestra
 
 // --- the panel ------------------------------------------------------------
 
@@ -41,8 +43,8 @@ function draw() {
     const x = 24 + i * 500, read = last?.read?.[side], jev = last?.jev?.answers?.[side], m = live[side];
     ctx.fillStyle = muted;
     ctx.font = "600 24px Lexend, sans-serif";
-    const group = aimed[side] ? aimed[side].id : GROUP[side];
-    ctx.fillText(`${side.toUpperCase()} HAND · ${aimed[side] ? aimed[side].name : GROUP[side]} · ${Math.round(100 * (gains[group] ?? 1))}%`, x, 70);
+    const tgt = target(), group = tgt ? tgt.id : GROUP[side];
+    ctx.fillText(`${side.toUpperCase()} HAND · ${tgt ? tgt.name : GROUP[side]} · ${Math.round(100 * (gains[group] ?? 1))}%`, x, 70);
     ctx.font = "600 64px Lexend, sans-serif";
     ctx.fillStyle = read && read !== "nothing" ? copper : ink;
     ctx.fillText(read ? read.toUpperCase() : "—", x, 104);
@@ -56,26 +58,37 @@ function draw() {
       ctx.fillText(`palm n ${m.normal.join(" ")}`, x, 256);
     } else ctx.fillText("not tracked", x, 222);
   });
+  ctx.font = "600 26px Lexend, sans-serif";
+  const tgt = target();
+  ctx.fillStyle = tgt ? copper : muted;
+  ctx.fillText(tgt ? `CONDUCTING ${tgt.name.toUpperCase()}${sel.locked ? " · LOCKED (pinch to free)" : " · as you look (pinch to lock)"}` : "CONDUCTING strings + winds · look at a section", 24, 290);
   ctx.font = "26px Lexend, sans-serif";
-  let y = 312;
+  let y = 326;
   if (last?.applied) {
     ctx.fillStyle = last.applied.startsWith("fading") ? red : copper;
     ctx.fillText(`done: ${last.applied}`, 24, y);
     y += 36;
   }
   for (const e of last?.sent || []) {
+    if (y > h - 130) break;
     ctx.fillStyle = copper;
     ctx.fillText(`sent ${e.name}${e.data?.dynamics ? " " + e.data.dynamics : ""}${e.to ? ` → ${e.to.length} chairs` : ""}${e.note ? " (dry run)" : ""}${e.error ? " FAILED" : ""}`, 24, y);
     y += 36;
   }
   for (const e of last?.notSent || []) {
-    if (y > h - 70) break;
+    if (y > h - 130) break;
     ctx.fillStyle = muted;
     ctx.fillText(`not sent: ${e.why}`, 24, y);
     y += 36;
   }
   ctx.fillStyle = muted;
   ctx.font = "20px Lexend, sans-serif";
+  const pinch = SIDES.filter((s) => quest.pinch[s]).map((s) => s[0].toUpperCase()).join("") || "–";
+  const seen = quest.events.map((e) => `${e.what} ${((performance.now() - e.at) / 1000).toFixed(1)} s`).join(" · ");
+  ctx.fillText(`headset${quest.browser ? ` Browser ${quest.browser}` : ""}: ${quest.profiles === null ? "no hand yet" : `${quest.profiles[0] || "?"} · ${quest.buttons} buttons${quest.buttons >= 10 ? " · microgestures" : ""}`} · pinch ${pinch} · looking at ${quest.gaze ? quest.gaze.name : "–"}`, 24, h - 92);
+  ctx.fillStyle = copper;
+  ctx.fillText(seen ? `headset recognised: ${seen}` : "headset recognised: nothing yet (pinch, thumb tap, thumb swipes: shown, not acted on)", 24, h - 64);
+  ctx.fillStyle = muted;
   if (last?.jev?.ms) ctx.fillText(`Jev ${last.jev.ms} ms${roundTrip !== null ? ` · round trip ${roundTrip} ms` : ""}${last.simulated ? " · simulated posture" : ""}`, 24, h - 36);
   dirty = true;
 }
@@ -92,7 +105,7 @@ function connect() {
   s.onmessage = (m) => {
     const msg = JSON.parse(m.data);
     if (msg.type === "state") apply(msg.state);
-    if (msg.type === "hands") {
+    if (msg.type === "hands" || msg.type === "native") {
       if (sentAt[msg.id]) { roundTrip = Math.round(performance.now() - sentAt[msg.id]); delete sentAt[msg.id]; }
       heard(msg.record);
     }
@@ -104,13 +117,13 @@ async function send(hands, heldMs, simulated = false) {
   if (sock) {
     const id = nextId++;
     sentAt[id] = performance.now();
-    sock.send(JSON.stringify({ type: "posture", id, hands, heldMs, simulated }));
+    sock.send(JSON.stringify({ type: "posture", id, hands, heldMs, simulated, target: sel.id, locked: sel.locked }));
     return;
   }
   const t0 = performance.now();
   try {
     const r = await fetch("/api/hands", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ hands, heldMs, simulated }) });
+      body: JSON.stringify({ hands, heldMs, simulated, target: sel.id, locked: sel.locked }) });
     const record = await r.json();
     roundTrip = Math.round(performance.now() - t0);
     heard(record);
@@ -244,10 +257,115 @@ panelMesh.matrixAutoUpdate = false;
 panelMesh.visible = false;
 scene.add(panelMesh);
 const SCALE = Number(params.get("scale")) || 0.6; // the hall's 2.5–4.2 m rows, brought into a room
-let field = null, drawn = null;  // the cartoon meadow and the drawn hands, made when first wanted
-function outdoors(on) {
-  if (on && !field) { field = meadow(scene); drawn = drawnHands(scene); }
-  if (field) { field.group.visible = on; scene.fog = on ? field.group.userData.fog || scene.fog : null; }
+// The worlds around the orchestra, made when first wanted: the room itself
+// (passthrough), the cartoon meadow, the zen garden at dusk; and the drawn
+// hands, needed anywhere but the room. Each world brings its fog and exposure.
+const WORLDS = { meadow, zen };
+const worlds = {};
+let world = null, worldName = "room", drawn = null;
+function setWorld(name) {
+  worldName = WORLDS[name] ? name : "room";
+  if (WORLDS[worldName] && !worlds[worldName]) worlds[worldName] = WORLDS[worldName](scene);
+  if (worldName !== "room" && !drawn) drawn = drawnHands(scene);
+  world = worlds[worldName] || null;
+  for (const [n, w] of Object.entries(worlds)) w.group.visible = n === worldName;
+  scene.fog = world ? world.group.userData.fog || null : null;
+  renderer.toneMappingExposure = world ? world.group.userData.exposure || 1.15 : 1.15;
+  if (drawn) drawn.mesh.visible = !!world;
+}
+
+// --- what the headset itself recognises (shown, not acted on) -----------------
+
+// The Quest Browser gives each hand an emulated gamepad (profile oculus-hand):
+// button 0 is the pinch (the session's select events too), and since Browser
+// 38.1 buttons 5–9 are the thumb's microgestures on the side of the index
+// finger: swipe left, right, forward, backward, and a tap. Button 4 on the
+// left hand is the system's menu. A palm pinch (pinching while looking at the
+// palm) is the system's on both hands: on the left it ends the session.
+//
+// What they conduct: the section the conductor looks at is the one their
+// gestures act on; a short pinch locks it (and frees it); a pinch held and
+// moved up or down is that section's gain; a thumb tap is its entrance; a
+// swipe forward or backward steps the tempo; a swipe left or right moves
+// the selection to the next section that way. The selection is the page's;
+// the service does what each native gesture means and answers a record.
+const NATIVE = { 0: "pinch", 4: "menu", 5: "swipe-left", 6: "swipe-right", 7: "swipe-forward", 8: "swipe-backward", 9: "tap-thumb" };
+const TAP_MS = 350, TAP_M = 0.03;  // a pinch shorter and stiller than this is a tap
+const quest = { profiles: null, buttons: null, pressed: { left: {}, right: {} }, pinch: { left: false, right: false }, events: [], gaze: null,
+  browser: (navigator.userAgent.match(/OculusBrowser\/([\d.]+)/) || [])[1] || null };
+const pinches = { left: null, right: null }, beats = { left: new Beats(), right: new Beats() };
+function native(what) {
+  quest.events.unshift({ what, at: performance.now() });
+  quest.events.length = Math.min(quest.events.length, 4);
+  draw();
+}
+function sendNative(gesture, side, extra = {}) {
+  native(`${gesture} ${side || ""}`.trim());
+  if (!sock) return;
+  const id = nextId++;
+  sentAt[id] = performance.now();
+  sock.send(JSON.stringify({ type: "native", id, gesture, side, target: sel.id, locked: sel.locked, ...extra }));
+}
+function readNative(source, side, m, t) {
+  if (quest.profiles === null) { quest.profiles = source.profiles || []; quest.buttons = source.gamepad ? source.gamepad.buttons.length : 0; }
+  const g = source.gamepad;
+  if (!g) return;
+  const h = m ? m.position.height : null;
+  g.buttons.forEach((b, i) => {
+    const was = quest.pressed[side][i] || false;
+    quest.pressed[side][i] = b.pressed;
+    if (i === 0) {
+      quest.pinch[side] = b.pressed;
+      if (b.pressed && !was) { pinches[side] = { t0: t, h0: h, moving: false, sentAt: 0 }; native(`pinch ${side}`); }
+      else if (b.pressed && pinches[side]) {
+        const p = pinches[side];
+        if (!p.moving && h !== null && p.h0 !== null && (t - p.t0 > TAP_MS || Math.abs(h - p.h0) > TAP_M)) { p.moving = true; sendNative("pinch-start", side, { height: p.h0 }); }
+        if (p.moving && h !== null && t - p.sentAt > 100) { p.sentAt = t; sendNative("pinch-move", side, { height: h }); }
+      } else if (!b.pressed && was && pinches[side]) {
+        if (pinches[side].moving) sendNative("pinch-end", side);
+        else toggleLock();
+        pinches[side] = null;
+      }
+      return;
+    }
+    if (!(b.pressed && !was) || !NATIVE[i]) return;
+    if (i === 5 || i === 6) { native(`${NATIVE[i]} ${side}`); step(i === 5 ? 1 : -1); }
+    else if (i === 7 || i === 8 || i === 9) sendNative(NATIVE[i], side);
+    else native(`${NATIVE[i]} ${side}`);
+  });
+}
+
+// --- the section the conductor conducts -----------------------------------------
+
+// The one they look at, after 300 ms on it; a short pinch locks it, and
+// another frees it; a swipe left or right moves to the next section that
+// way, locked. Looking at nothing (the sky, the panel) keeps the last one.
+const SEL_MS = 300;
+const sel = { gaze: null, gazeSince: 0, id: null, locked: false };
+function target() { return sel.id ? instruments.find((i) => i.id === sel.id) || null : null; }
+function gazeAt(instr, t) {
+  const id = instr ? instr.id : null;
+  if (id !== sel.gaze) { sel.gaze = id; sel.gazeSince = t; }
+  if (!sel.locked && id && t - sel.gazeSince > SEL_MS && sel.id !== id) { sel.id = id; shown(); }
+}
+function toggleLock() {
+  if (sel.locked && (!sel.gaze || sel.gaze === sel.id)) { sel.locked = false; if (sel.gaze) sel.id = sel.gaze; native("free"); }
+  else if (sel.gaze || sel.id) { sel.id = sel.gaze || sel.id; sel.locked = true; native(`locked ${sel.id}`); }
+  shown();
+}
+function step(dir) {  // +1: the next section to the conductor's left (a higher angle), -1: to the right
+  const order = [...instruments].sort((a, b) => a.from - b.from);
+  if (!order.length) return;
+  const at = order.findIndex((i) => i.id === sel.id);
+  const next = order[((at < 0 ? (dir > 0 ? -1 : 0) : at) + dir + order.length) % order.length];
+  sel.id = next.id;
+  sel.locked = true;
+  shown();
+}
+function shown() {
+  const tgt = target();
+  hall.select(tgt ? tgt.sections : [], sel.locked);
+  draw();
 }
 
 // Where the panel floats: 1.4 m ahead of where the head first looked, a
@@ -292,7 +410,7 @@ renderer.setAnimationLoop((t, xrFrame) => {
   if (xrFrame) readHands(t, xrFrame);
   else if (!preview) return;
   if (dirty) { panelTex.needsUpdate = true; dirty = false; }
-  if (field && field.group.visible) field.frame(dt);
+  if (world) world.frame(dt);
   hall.frame(dt);
   renderer.render(scene, camera);
 });
@@ -303,8 +421,9 @@ function readHands(t, xrFrame) {
   if (!pose) return;
   if (!placed) { placeAround(pose.transform); placed = true; }
   const head = { position: [pose.transform.position.x, pose.transform.position.y, pose.transform.position.z], forward: forwardOf(pose.transform.orientation) };
+  quest.gaze = instrumentAt(aimOf([head.position[0] + head.forward[0], head.position[1], head.position[2] + head.forward[2]], head.position));
   live = { left: null, right: null };
-  const shown = [];
+  const seen = [];
   for (const source of xrFrame.session.inputSources) {
     if (!source.hand || !SIDES.includes(source.handedness)) continue;
     const joints = {}, drawnJoints = [];
@@ -315,28 +434,35 @@ function readHands(t, xrFrame) {
       joints[name] = [p.transform.position.x, p.transform.position.y, p.transform.position.z];
       drawnJoints.push([name, joints[name], p.radius]);
     }
-    if (all) shown.push(drawnJoints);
+    if (all) seen.push(drawnJoints);
+    let m = null;
     if (all) {
-      const m = measure(joints, source.handedness, head);
+      m = measure(joints, source.handedness, head);
       m.aim = aimOf(joints["middle-finger-metacarpal"], head.position);
       live[source.handedness] = m;
     }
+    readNative(source, source.handedness, m, t);
   }
-  if (drawn && field.group.visible) drawn.update(shown);
-  for (const side of SIDES) {  // the instrument each hand points at, lit in the hall
-    const now = live[side] ? instrumentAt(live[side].aim) : null;
-    if ((now && now.id) !== (aimed[side] && aimed[side].id)) { aimed[side] = now; hall.aim(side, now ? now.sections : []); }
-  }
-  // Each hand's height, ten times a second: the service makes it its group's
-  // gain while Jev's last reading of that hand is a palm up or a palm down.
+  if (drawn && world) drawn.update(seen);
+  gazeAt(quest.gaze, t);
+  // Each flat hand's height, ten times a second: the service makes it its
+  // group's gain while Jev's last reading of that hand is a palm up or a palm
+  // down. A hand that pinches, points or closes moves nothing this way.
   if (sock && t - heightAt > 100) {
     heightAt = t;
     const heights = {};
-    for (const side of SIDES) if (live[side]) heights[side] = { height: live[side].position.height };
+    for (const side of SIDES) if (live[side] && flatHand(live[side]) && !quest.pinch[side]) heights[side] = { height: live[side].position.height };
     if (Object.keys(heights).length) sock.send(JSON.stringify({ type: "height", hands: heights }));
   }
-  // a hand moved to another instrument with the same posture is a new posture
-  const sig = live.left || live.right ? `${signature(live.left)}~${aimed.left?.id}/${signature(live.right)}~${aimed.right?.id}` : "-|-";
+  // A pointing hand beats time, a baton: its beats set the tempo.
+  for (const side of SIDES) {
+    if (live[side] && pointing(live[side])) {
+      const bpm = beats[side].update(live[side].position.height, t / 1000);
+      if (bpm) sendNative("beat", side, { bpm });
+    } else beats[side].reset();
+  }
+  // a posture with another section selected is a new posture
+  const sig = live.left || live.right ? `${signature(live.left)}/${signature(live.right)}~${sel.id}` : "-|-";
   if (steady.update(sig, t)) {
     const hands = {};
     for (const side of SIDES) if (live[side]) hands[side] = live[side];
@@ -347,10 +473,10 @@ function readHands(t, xrFrame) {
 
 async function enter() {
   if ($("sound").checked) startSound();
-  const outside = $("meadow").checked;
-  outdoors(outside);
-  const mode = xr.ar && !outside ? "immersive-ar" : "immersive-vr";
+  setWorld($("world").value);
+  const mode = xr.ar && worldName === "room" ? "immersive-ar" : "immersive-vr";
   const session = await navigator.xr.requestSession(mode, { requiredFeatures: ["hand-tracking", "local-floor"] });
+  for (const kind of ["selectstart", "selectend"]) session.addEventListener(kind, (e) => native(`${kind} ${e.inputSource.handedness}`));
   session.addEventListener("end", () => { placed = false; $("enter").textContent = "Enter again"; });
   await renderer.xr.setSession(session);
 }
@@ -365,10 +491,10 @@ if (preview) {
   addEventListener("resize", () => { if (!renderer.xr.isPresenting) fit(); });
   fit();
   camera.position.set(0, 1.75, 0.7);
-  camera.lookAt(0, 0.9, -1.6);
+  camera.lookAt(0, 0.9 + (Number(params.get("tilt")) || 0), -1.6);  // ?tilt= raises the preview's eyes, to see what is around
   placeAround({ position: { x: 0, y: 1.6, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 } });
-  outdoors($("meadow").checked);
-  $("meadow").addEventListener("change", () => outdoors($("meadow").checked));
+  setWorld($("world").value);
+  $("world").addEventListener("change", () => setWorld($("world").value));
 }
 
 async function check() {

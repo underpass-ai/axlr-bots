@@ -24,26 +24,46 @@
      what Jev read and what the service sent. A posture is sent
      to POST /api/hands once it holds still; the service asks Jev and
      publishes the team's events. No image leaves the headset: only the
-     measurements. ?sim=1 adds buttons that send made-up postures, marked
-     simulated, to try the path without a headset; ?view=1 shows the
-     orchestra and the panel on this screen; ?scale= sizes the orchestra to
-     the room (default 0.6: the front row 1.5 m away). Reached from the headset
+     measurements. Around the orchestra: the room, a cartoon meadow
+     (meadow.js) or a zen night, one giant tree over a luminous meadow under
+     the stars (zen.js, the default). The section the conductor looks at
+     is the one their gestures act on, locked with a short pinch; the
+     headset's own gestures (a pinch held, thumb tap, thumb swipes) go to
+     the service as native messages and act on it too. ?sim=1 adds buttons
+     that send made-up postures, marked simulated, to try the path without
+     a headset; ?view=1 shows the orchestra and the panel on this screen; ?world=zen|meadow|room
+     picks what is around the orchestra;
+     ?scale= sizes the orchestra to the room (default 0.6: the front row
+     1.5 m away). Reached from the headset
      as http://localhost:8790/hands through adb reverse. -->
 <div class="sim">SIMULATION</div>
 <main>
-  <div class="title"><b>Conduct with your hands.</b> <span class="muted">Left hand: strings. Right hand: winds. Both: everyone.</span></div>
+  <div class="title"><b>Conduct with your hands.</b> <span class="muted">Look at a section: your gestures act on it. A short pinch locks it, another frees it. Nothing selected: left hand strings, right hand winds. Both hands: everyone.</span></div>
   <table>
-    <tr><th>Gesture</th><th>Does</th></tr>
-    <tr><td>palm up, hand flat</td><td>come in, loud (f)</td></tr>
-    <tr><td>palm down</td><td>soft (p)</td></tr>
-    <tr><td>fist</td><td>fade the group out; two fists fade everyone out (the bots play on)</td></tr>
-    <tr><td>hand high / low</td><td>while palm up or palm down: louder / softer, a fade</td></tr>
-    <tr><td>anything else</td><td>nothing</td></tr>
+    <tr><th>Gesture</th><th>Who reads it</th><th>Does</th></tr>
+    <tr><td>palm up, hand flat</td><td>Jev</td><td>come in, loud (f)</td></tr>
+    <tr><td>palm down</td><td>Jev</td><td>soft (p)</td></tr>
+    <tr><td>fist</td><td>Jev</td><td>fade the section out; two fists fade everyone out (the bots play on)</td></tr>
+    <tr><td>finger on the lips</td><td>Jev</td><td>everyone pianissimo</td></tr>
+    <tr><td>hand high / low</td><td>measured</td><td>while flat, palm up or down: louder / softer, a fade</td></tr>
+    <tr><td>index out, beating time (a baton)</td><td>measured</td><td>the tempo you beat, after three even beats</td></tr>
+    <tr><td>where you look</td><td>measured</td><td>selects the section (300 ms on it)</td></tr>
+    <tr><td>short pinch</td><td>the headset</td><td>locks the section you look at; again: frees it</td></tr>
+    <tr><td>pinch held, hand up / down</td><td>the headset</td><td>the section's volume, from where it was</td></tr>
+    <tr><td>thumb tap on the index</td><td>the headset</td><td>the locked section's entrance (while the music plays)</td></tr>
+    <tr><td>thumb swipe forward / back</td><td>the headset</td><td>tempo +4 / −4</td></tr>
+    <tr><td>thumb swipe left / right</td><td>the headset</td><td>select the next section that way, locked</td></tr>
+    <tr><td>anything else</td><td></td><td>nothing</td></tr>
+    <tr><td class="muted">pinch while looking at your palm</td><td class="muted">the system</td><td class="muted">left hand: the menu, and the session ends. Pinch low, below your gaze.</td></tr>
   </table>
   <div class="row">
     <button class="go" id="enter" disabled>Checking WebXR…</button>
     <label><input type="checkbox" id="sound" checked> the orchestra's sound in the headset</label>
-    <label><input type="checkbox" id="meadow" checked> a cartoon meadow instead of the room</label>
+    <label>around you: <select id="world">
+      <option value="zen" selected>a zen night: one giant tree over a meadow</option>
+      <option value="meadow">a cartoon meadow</option>
+      <option value="room">your room (passthrough)</option>
+    </select></label>
   </div>
   <div class="row" id="sim-buttons">
     <span class="muted">simulated:</span>

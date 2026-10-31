@@ -323,3 +323,127 @@ class JevClientTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TargetTest(unittest.TestCase):
+    """The section the conductor looks at, locked with a pinch, is the one a gesture acts on."""
+
+    def test_the_target_wins_over_the_aim_and_the_old_group(self):
+        h, _, _, publish, _ = hands(left=("open", 0.95))
+        record = h.observe(dict(posture(left=dict(OPEN, aim=150)), target="horns", locked=True))
+        self.assertEqual((record["target"], record["locked"], record["decision"]), ("horns", True, [{"gesture": "open", "group": "horns"}]))
+        self.assertEqual(publish.events, [("info.cue.hn", {"dynamics": "f"}, None)])
+
+    def test_a_target_that_is_not_an_instrument_is_none(self):
+        h, _, _, publish, _ = hands(right=("open", 0.95))
+        record = h.observe(dict(posture(right=OPEN), target="piano"))
+        self.assertEqual((record["target"], publish.events), (None, [("info.cue.winds", {"dynamics": "f"}, None)]))
+
+    def test_both_hands_the_same_with_a_target_is_still_everyone(self):
+        h, _, _, publish, _ = hands(left=("fist", 0.9), right=("fist", 0.9))
+        o = h.orchestra
+        o.play("vn1-1", 1)
+        o.play("ob-1", 1)
+        record = h.observe(dict(posture(left=FIST, right=FIST), target="horns"))
+        self.assertEqual(record["decision"], [{"gesture": "fist", "group": "all"}])
+        self.assertTrue(o.chairs["vn1-1"]["held"] and o.chairs["ob-1"]["held"])
+
+
+class HushAndPointTest(unittest.TestCase):
+    def test_a_finger_on_the_lips_is_pianissimo_for_everyone(self):
+        h, o, _, publish, _ = hands(left=("hush", 0.92))
+        o.play("vn1-1", 1, "f")
+        o.play("ob-1", 1, "f")
+        record = h.observe(dict(posture(left=OPEN), target="violins"))
+        self.assertEqual(record["decision"], [{"gesture": "hush", "group": "all"}])
+        self.assertEqual(publish.events, [("info.cue.all", {"dynamics": "p"}, None)])
+        self.assertEqual(record["applied"], "everyone p at 55%")
+        self.assertEqual({o.chairs[k]["dynamics"] for k in ("vn1-1", "ob-1")}, {"p"})
+
+    def test_a_hush_when_nothing_plays_does_nothing(self):
+        h, _, _, publish, _ = hands(right=("hush", 0.92))
+        record = h.observe(posture(right=OPEN))
+        self.assertEqual((publish.events, record["notSent"][0]["why"]), ([], "nothing plays"))
+
+    def test_a_pointing_hand_is_no_signal_and_does_not_conduct_the_gain(self):
+        h, o, _, publish, _ = hands(left=("point", 0.95))
+        record = h.observe(posture(left=OPEN))
+        self.assertEqual((record["read"], record["decision"], publish.events), ({"left": "point"}, [], []))
+        self.assertEqual(h.height({"hands": {"left": {"height": -0.5}}}), {})
+
+
+class NativeTest(unittest.TestCase):
+    """The headset's own gestures: no Jev, the target's entrance, the tempo, a pinch held."""
+
+    def test_a_thumb_tap_is_the_locked_targets_entrance_while_the_music_plays(self):
+        h, o, _, publish, _ = hands()
+        o.play("vn1-1", 1)
+        o.play("vn2-1", 1)
+        play_until(o, 2)
+        o.hold(o.chairs_of("vn1") + o.chairs_of("vn2"), "a fist")
+        record = h.native({"gesture": "tap-thumb", "side": "right", "target": "violins", "locked": True})
+        self.assertEqual(record["decision"], [{"gesture": "tap-thumb", "group": "violins"}])
+        self.assertEqual(publish.events, [("info.cue.vn1", None, None), ("info.cue.vn2", None, None)])
+        self.assertEqual(record["sent"][0]["message"], "Violins, come in.")
+        self.assertEqual((o.chairs["vn1-1"]["held"], o.chairs["vn2-1"]["held"]), (None, None))
+
+    def test_a_thumb_tap_when_nothing_plays_or_nothing_is_locked_does_nothing(self):
+        h, o, _, publish, _ = hands()
+        record = h.native({"gesture": "tap-thumb", "side": "right", "target": "violins", "locked": True})
+        self.assertEqual(record["notSent"][0]["why"], "nothing plays: a palm up starts the music")
+        o.play("vn1-1", 1)
+        record = h.native({"gesture": "tap-thumb", "side": "right", "target": "violins", "locked": False})
+        self.assertEqual(record["notSent"][0]["why"], "no section locked: look at one and pinch")
+        self.assertEqual(publish.events, [])
+
+    def test_the_same_tap_again_waits_a_second(self):
+        h, o, _, publish, clock = hands()
+        o.play("vn1-1", 1)
+        h.native({"gesture": "tap-thumb", "side": "right", "target": "violins", "locked": True})
+        clock.now += 0.5
+        record = h.native({"gesture": "tap-thumb", "side": "right", "target": "violins", "locked": True})
+        self.assertIn("sent 0.5 s ago", record["notSent"][0]["why"])
+        self.assertEqual(len(publish.events), 2)
+
+    def test_swipes_step_the_tempo_and_the_bus_hears_it_seldom(self):
+        h, o, _, publish, clock = hands()
+        record = h.native({"gesture": "swipe-forward", "side": "right"})
+        self.assertEqual((o.bpm, record["applied"], publish.events), (156.0, "tempo 156", [("info.tempo", {"bpm": 156.0}, None)]))
+        clock.now += 1
+        record = h.native({"gesture": "swipe-backward", "side": "right"})
+        self.assertEqual((o.bpm, len(publish.events)), (152.0, 1))
+        self.assertIn("published 1.0 s ago", record["notSent"][0]["why"])
+        clock.now += 3
+        h.native({"gesture": "swipe-backward", "side": "left"})
+        self.assertEqual((o.bpm, publish.events[-1]), (148.0, ("info.tempo", {"bpm": 148.0}, None)))
+
+    def test_a_beat_sets_the_clock_at_once(self):
+        h, o, _, publish, _ = hands()
+        record = h.native({"gesture": "beat", "side": "right", "bpm": 140})
+        self.assertEqual((o.bpm, record["applied"], publish.events[-1]), (140.0, "tempo 140, as beaten", ("info.tempo", {"bpm": 140.0}, None)))
+        self.assertEqual(h.native({"gesture": "beat", "side": "right"})["notSent"][0]["why"], "no tempo in the beat")
+
+    def test_a_pinch_held_moves_the_targets_gain_from_where_it_was(self):
+        h, o, _, publish, _ = hands()
+        o.fade(o.chairs_of("vn1") + o.chairs_of("vn2"), 0.8, 0)
+        record = h.native({"gesture": "pinch-start", "side": "left", "target": "violins", "height": -0.1})
+        self.assertEqual(record["applied"], "holding Violins at 80%")
+        record = h.native({"gesture": "pinch-move", "side": "left", "height": -0.275})  # 17.5 cm down over a 35 cm span: half the way
+        self.assertEqual(record["applied"], "Violins 30%")
+        self.assertEqual({round(o.chairs[k]["gain"], 2) for k in o.chairs_of("vn1")}, {0.3})
+        self.assertEqual({o.chairs[k]["gain"] for k in o.chairs_of("ob")}, {1.0})
+        record = h.native({"gesture": "pinch-move", "side": "left", "height": 0.4})
+        self.assertEqual(record["applied"], "Violins 100%")
+        h.native({"gesture": "pinch-end", "side": "left"})
+        self.assertEqual(h.native({"gesture": "pinch-move", "side": "left", "height": 0.0})["notSent"][0]["why"], "no pinch began")
+        self.assertEqual(publish.events, [])
+
+    def test_a_pinch_with_no_target_holds_nothing(self):
+        h, _, _, _, _ = hands()
+        record = h.native({"gesture": "pinch-start", "side": "left", "height": 0.0})
+        self.assertEqual(record["notSent"][0]["why"], "no section to hold")
+
+    def test_what_the_headset_cannot_give_is_refused(self):
+        h, _, _, _, _ = hands()
+        self.assertEqual(h.native({"gesture": "wave"})["notSent"][0]["why"], "not a gesture the headset gives")
+        self.assertIn("tap-thumb", h.view()["gestures"])

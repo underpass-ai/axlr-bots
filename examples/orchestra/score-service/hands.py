@@ -7,19 +7,37 @@ hand is. When a posture has held still for a moment it sends it here (POST
 hand, palm down or fist. Nothing is the default: a hand Jev does not read as a
 gesture with at least the threshold's probability gives no signal.
 
-A gesture acts on the instrument the hand points at: the page measures where
-the hand is from the eyes on the hall's floor plan (aim, degrees: 0 to the
-conductor's right, 90 ahead, 180 to the left), and each instrument has its
-slice of the arc (hands.instruments: violins, oboes, horns, violas, cellos,
-basses). A hand that gives no aim acts on its old group: the left hand on the
-strings, the right on the winds. Both hands showing the same gesture act on
-everyone:
+A gesture acts on the instrument the conductor looks at: the page keeps the
+selection (the one the head points at, locked with a short pinch) and sends
+it as target; each instrument has its slice of the hall's arc
+(hands.instruments: violins, oboes, horns, violas, cellos, basses). Without a
+target, a hand acts on the instrument it points at (aim, degrees: 0 to the
+conductor's right, 90 ahead, 180 to the left), and without that on its old
+group: the left hand on the strings, the right on the winds. Both hands
+showing the same gesture act on everyone:
 
   palm up     info.cue.<group> {"dynamics": "f"}   come in, or play loud
   palm down   info.cue.<group> {"dynamics": "p"}   come in, or play soft
   fist        fade the group out (both fists: everyone), no event
+  finger on the lips   info.cue.all {"dynamics": "p"} and everyone's gain
+              to hush.gain: pianissimo
+  pointing    a baton hand: no signal by itself; the page measures its beats
   the hand's height, while it holds a palm up or a palm down: the group's
               gain, higher louder, lower softer, a fade, no event
+
+The headset's own gestures come as native messages, read by the headset,
+not by Jev, and act on the target (native):
+
+  tap-thumb       the target's entrance: info.cue.<section> with no level,
+                  while the music plays and the target is locked
+  swipe-forward   the tempo up by tempoStep; swipe-backward: down; the clock
+                  at once, info.tempo {"bpm"} published at most every
+                  tempoPublishSeconds
+  pinch-start / pinch-move / pinch-end   the target's gain, from where it was
+                  when the pinch began, by the hand's rise or fall over
+                  pinchSpan metres; no event
+  beat            the tempo the conductor beats with a pointing hand, the
+                  clock at once, published as the swipes are
 
 A cue is the event the operator's panel already publishes (orchestra 6b), as
 the operator; it reaches a bot's running task as a message. A pause is the
@@ -52,8 +70,12 @@ GESTURES = {
     "open": "palm up: fingers straight, the hand flat, the palm facing the ceiling",
     "down": "palm down: fingers straight, the palm facing the floor",
     "fist": "fist: all four fingers curled tight into the palm",
+    "point": "pointing: the index finger straight, the other fingers curled, the hand away from the face (a baton)",
+    "hush": "finger on the lips: the index finger straight, the other fingers curled, the hand right in front of the face, "
+            "just below the eyes, within 25 cm of the head",
 }
 LEVELS = {"open": "f", "down": "p"}
+NATIVE = ("tap-thumb", "swipe-forward", "swipe-backward", "pinch-start", "pinch-move", "pinch-end", "beat")
 FINGERS = ("thumb", "index", "middle", "ring", "little")
 FACING = (("away", "away from the conductor, toward the orchestra"), ("floor", "the floor"),
           ("toward", "the conductor"), ("up", "the ceiling"), ("side", "sideways"))
@@ -78,6 +100,13 @@ class Hands:
         self.low, self.high, self.height_fade = height.get("low", -0.55), height.get("high", 0.15), height.get("fadeSeconds", 0.2)
         self.engaged = {"left": None, "right": None}  # the gesture and the group a flat hand conducts
         self.instruments = {i["id"]: i for i in config.get("instruments", [])}
+        self.tempo_step = float(config.get("tempoStep", 4))
+        self.tempo_every = float(config.get("tempoPublishSeconds", 3.0))
+        self.pinch_span = float(config.get("pinchSpan", 0.35))
+        self.hush_gain = float((config.get("hush") or {}).get("gain", 0.55))
+        self.native_cooldown = float(config.get("nativeCooldownSeconds", 1.0))
+        self.pinch = {"left": None, "right": None}  # where a held pinch began: the hand's height, the target's gain
+        self.tempo_sent_at = None
         self.lock = threading.Lock()
         self.last_call, self.sent_at, self.history, self.calls = None, {}, [], 0
 
@@ -87,8 +116,10 @@ class Hands:
         """One posture held still: Jev's reading, what it means and what was published. Returns the record."""
         hands = {side: h for side, h in ((posture or {}).get("hands") or {}).items() if side in ("left", "right") and isinstance(h, dict)}
         held = int((posture or {}).get("heldMs") or 0)
+        target = self.target_of((posture or {}).get("target"))
         now = self.clock()
         record = {"at": round(now, 3), "heldMs": held, "hands": {side: self._compact(h) for side, h in hands.items()},
+                  "target": target, "locked": bool((posture or {}).get("locked")),
                   "read": {}, "decision": [], "sent": [], "notSent": [], "dryRun": self.dry_run,
                   "simulated": bool((posture or {}).get("simulated"))}
         with self.lock:
@@ -121,7 +152,7 @@ class Hands:
         record["aim"] = {side: group for side, group in aims.items() if group}
         threads = []
         with self.lock:
-            meant = self.meaning(record["read"], aims)
+            meant = self.meaning(record["read"], aims, target)
             for side in record["read"]:  # a flat hand conducts the group its gesture went to
                 g = record["read"][side]
                 self.engaged[side] = (g, next(grp for gg, grp in meant if gg == g)) if g in LEVELS else None
@@ -151,22 +182,136 @@ class Hands:
             return None
         return next((i for i, x in self.instruments.items() if x["from"] <= aim < x["to"]), None)
 
+    def target_of(self, target):
+        """The instrument the page says the conductor looks at, if it is one."""
+        return target if isinstance(target, str) and target in self.instruments else None
+
     def chairs_of(self, group):
         if group in self.instruments:
             return [k for sid in self.instruments[group]["sections"] for k in self.orchestra.chairs_of(sid)]
         return self.orchestra.chairs_of(group)
 
-    def meaning(self, read, aims=None):
-        """Each hand's gesture on the instrument it points at (or its old group); both hands the same gesture: everyone."""
-        gestures = {side: g for side, g in read.items() if g != "nothing"}
+    def meaning(self, read, aims=None, target=None):
+        """Each hand's gesture on the target (else the instrument it points at, else its old group); both hands the same gesture: everyone.
+
+        A finger on the lips is for everyone whichever hand; a pointing hand is no signal."""
+        gestures = {side: g for side, g in read.items() if g not in ("nothing", "point")}
+        if "hush" in gestures.values():
+            return [("hush", self.groups["both"])]
         if len(gestures) == 2 and gestures["left"] == gestures["right"]:
             return [(gestures["left"], self.groups["both"])]
         meant = []
         for side, g in sorted(gestures.items()):
-            group = (aims or {}).get(side) or self.groups[side]
+            group = target or (aims or {}).get(side) or self.groups[side]
             if (g, group) not in meant:  # two hands on one instrument: one gesture
                 meant.append((g, group))
         return meant
+
+    # --- the headset's own gestures -------------------------------------------
+
+    def native(self, message):
+        """One gesture the headset read itself (tap-thumb, swipes, a pinch held, a beat): what it means on the target, done and sent. Returns the record."""
+        message = message if isinstance(message, dict) else {}
+        gesture, side = message.get("gesture"), message.get("side") if message.get("side") in ("left", "right") else None
+        target, locked = self.target_of(message.get("target")), bool(message.get("locked"))
+        now = self.clock()
+        record = {"at": round(now, 3), "native": gesture, "side": side, "target": target, "locked": locked,
+                  "read": {}, "decision": [], "sent": [], "notSent": [], "dryRun": self.dry_run}
+        threads = []
+        with self.lock:
+            if gesture not in NATIVE:
+                record["notSent"].append({"what": str(gesture), "why": "not a gesture the headset gives"})
+            elif gesture == "tap-thumb":
+                threads = self._entrance(target, locked, record)
+            elif gesture in ("swipe-forward", "swipe-backward"):
+                bpm = self.orchestra.set_tempo(self.orchestra.bpm + (self.tempo_step if gesture == "swipe-forward" else -self.tempo_step))
+                record["applied"] = f"tempo {round(bpm)}"
+                threads = self._tempo(bpm, record)
+            elif gesture == "beat":
+                bpm = message.get("bpm")
+                if isinstance(bpm, (int, float)) and bpm > 0:
+                    bpm = self.orchestra.set_tempo(float(bpm))
+                    record["applied"] = f"tempo {round(bpm)}, as beaten"
+                    threads = self._tempo(bpm, record)
+                else:
+                    record["notSent"].append({"what": "beat", "why": "no tempo in the beat"})
+            elif gesture == "pinch-start":
+                self._pinch_start(side, target, message.get("height"), record)
+            elif gesture == "pinch-move":
+                self._pinch_move(side, message.get("height"), record)
+            elif gesture == "pinch-end":
+                if side:
+                    self.pinch[side] = None
+                record["applied"] = "pinch released"
+            self._keep(record)
+        for thread in threads if self.publish_wait > 0 else ():
+            thread.join(timeout=self.publish_wait)
+        return record
+
+    def _entrance(self, target, locked, record):
+        """A thumb tap: the target's entrance, a cue with no level, while the music plays and the target is locked."""
+        o = self.orchestra
+        if o.snapshot()["status"] != "playing":
+            record["notSent"].append({"what": "entrance", "why": "nothing plays: a palm up starts the music"})
+            return []
+        if not target or not locked:
+            record["notSent"].append({"what": "entrance", "why": "no section locked: look at one and pinch"})
+            return []
+        now = self.clock()
+        last = self.sent_at.get(("entrance", target))
+        if last is not None and now - last < self.native_cooldown:
+            record["notSent"].append({"what": f"entrance {target}", "why": f"the same tap was sent {now - last:.1f} s ago"})
+            return []
+        self.sent_at[("entrance", target)] = now
+        name = self.instruments[target]["name"]
+        events = [(f"info.cue.{sid}", f"{name}, come in.", None, None) for sid in self.instruments[target]["sections"]]
+        applied = [o.cue(ev, {}) for ev, _, _, _ in events]
+        record["decision"].append({"gesture": "tap-thumb", "group": target})
+        record["applied"] = "; ".join(a for a in applied if a) or f"{name}: entrance"
+        return self._send(events, record)
+
+    def _tempo(self, bpm, record):
+        """The clock has the tempo already; the bus hears it at most every tempoPublishSeconds."""
+        now = self.clock()
+        if self.tempo_sent_at is not None and now - self.tempo_sent_at < self.tempo_every:
+            record["notSent"].append({"what": f"tempo {round(bpm)}", "why": f"the tempo was published {now - self.tempo_sent_at:.1f} s ago; the clock follows already"})
+            return []
+        self.tempo_sent_at = now
+        return self._send([("info.tempo", f"Tempo {round(bpm)}.", {"bpm": bpm}, None)], record)
+
+    def _pinch_start(self, side, target, height, record):
+        if not side or not target or not isinstance(height, (int, float)):
+            record["notSent"].append({"what": "pinch", "why": "no section to hold" if side and not target else "no hand or height in the pinch"})
+            return
+        chairs = {c["id"]: c for s in self.orchestra.snapshot()["sections"] for c in s["chairs"]}
+        named = self.chairs_of(target)
+        gain = sum(chairs[k].get("gain", 1.0) for k in named) / len(named) if named else 1.0
+        self.pinch[side] = {"target": target, "height": float(height), "gain": gain}
+        record["applied"] = f"holding {self.instruments[target]['name']} at {round(100 * gain)}%"
+
+    def _pinch_move(self, side, height, record):
+        p = self.pinch.get(side) if side else None
+        if not p or not isinstance(height, (int, float)):
+            record["notSent"].append({"what": "pinch", "why": "no pinch began"})
+            return
+        gain = max(0.0, min(1.0, p["gain"] + (float(height) - p["height"]) / self.pinch_span))
+        self.orchestra.fade(self.chairs_of(p["target"]), gain, self.height_fade)
+        record["decision"].append({"gesture": "pinch", "group": p["target"]})
+        record["applied"] = f"{self.instruments[p['target']]['name']} {round(100 * gain)}%"
+
+    def _send(self, events, record):
+        """Each event kept for the page and published in its own thread, unless this is a dry run."""
+        threads = []
+        for name, message, data, to in events:
+            entry = {"name": name, "message": message, "data": data, "to": to, "eventId": None}
+            record["sent"].append(entry)
+            if self.dry_run:
+                entry["note"] = "dry run: not published"
+                continue
+            thread = threading.Thread(target=self._publish, args=(entry,), daemon=True)
+            thread.start()
+            threads.append(thread)
+        return threads
 
     def state(self, hands, held):
         """The measurements as Jev reads them: one paragraph per hand tracked."""
@@ -200,7 +345,12 @@ class Hands:
             return {"last": self.history[-1] if self.history else None, "history": self.history[-12:], "calls": self.calls,
                     "threshold": self.threshold, "cooldownSeconds": self.cooldown, "groups": self.groups,
                     "gestures": {"open": "info.cue.<group> f", "down": "info.cue.<group> p", "fist": "fade the group out (the service's, no event)",
-                                 "height": "the group's gain while open or palm down (the service's, no event)"},
+                                 "hush": f"info.cue.all p and everyone's gain to {self.hush_gain}", "point": "a baton: no signal, its beats are the tempo",
+                                 "height": "the group's gain while open or palm down (the service's, no event)",
+                                 "tap-thumb": "the locked target's entrance: info.cue.<section>, no level, while the music plays",
+                                 "swipe-forward / swipe-backward": f"tempo ±{self.tempo_step:g}, info.tempo at most every {self.tempo_every:g} s",
+                                 "pinch held": f"the target's gain from where it was, over {self.pinch_span:g} m, no event",
+                                 "beat": "the tempo as beaten with a pointing hand, published as the swipes are"},
                     "engaged": dict(self.engaged), "instruments": list(self.instruments.values()),
                     "dryRun": self.dry_run, "source": JEV_SOURCE}
 
@@ -221,6 +371,11 @@ class Hands:
                 record["notSent"].append({"what": f"fade out {group}", "why": "nothing of the group plays"})
                 return []
             events = []  # the bots keep their runs: no stop reaches them
+        elif gesture == "hush":
+            if snap["status"] != "playing":
+                record["notSent"].append({"what": "hush", "why": "nothing plays"})
+                return []
+            events = [("info.cue.all", "Everyone, pianissimo.", {"dynamics": "p"}, None)]
         else:
             level = LEVELS[gesture]
             if snap["status"] == "playing" and all(chairs[k]["dynamics"] == level and not chairs[k]["held"] for k in named) \
@@ -237,22 +392,14 @@ class Hands:
         if gesture == "fist":
             done = o.hold(named, why)
             record["applied"] = f"fading out {len(done['held'])} chairs" if done else "nothing plays"
+        elif gesture == "hush":
+            o.cue("info.cue.all", {"dynamics": "p"})
+            o.fade(named, self.hush_gain, 1.0)
+            record["applied"] = f"everyone p at {round(100 * self.hush_gain)}%"
         else:
             applied = [o.cue(name, {"dynamics": LEVELS[gesture]}) for name, _, _, _ in events]
             record["applied"] = "; ".join(a for a in applied if a) or "cue kept"
-        threads = []
-        for name, message, data, to in events:
-            entry = {"name": name, "message": message, "data": data, "to": to}
-            record["sent"].append(entry)
-            if self.dry_run:
-                entry["eventId"] = None
-                entry["note"] = "dry run: not published"
-                continue
-            entry["eventId"] = None
-            thread = threading.Thread(target=self._publish, args=(entry,), daemon=True)
-            thread.start()
-            threads.append(thread)
-        return threads
+        return self._send(events, record)
 
     def _publish(self, entry):
         started = self.clock()

@@ -180,7 +180,7 @@ export class Hall {
       const s = makeLabel(section.name, 40, HEX.text, `${section.playing}/${section.chairs.length}`, 1.6);
       s.position.set(mid.x, 0.85, mid.z);
       this.root.add(s);
-      this.sections[section.id] = { sprite: s, name: section.name, total: section.chairs.length, playing: -1, by: null };
+      this.sections[section.id] = { sprite: s, name: section.name, total: section.chairs.length, playing: -1, by: null, lit: null, subText: null };
     }
   }
 
@@ -221,7 +221,8 @@ export class Hall {
       const S = this.sections[section.id];
       if (S && S.playing !== section.playing) {
         S.playing = section.playing;
-        S.sprite.material.map = labelTexture(S.name, 40, S.by || (section.playing ? HEX.text : HEX.muted), `${section.playing}/${S.total}`);
+        S.subText = this.sub(section.id, S);
+        S.sprite.material.map = labelTexture(S.name, 40, S.by || (section.playing ? HEX.text : HEX.muted), S.subText);
         S.sprite.material.needsUpdate = true;
       }
     }
@@ -234,12 +235,28 @@ export class Hall {
     this.aimed[side] = sections;
     for (const [id, S] of Object.entries(this.sections)) {
       const by = this.aimed.left.includes(id) ? HEX.accent : this.aimed.right.includes(id) ? HEX.warn : null;
-      if (by === S.by) continue;
+      const sub = this.sub(id, S);
+      if (by === S.by && sub === S.subText) continue;
       S.by = by;
-      S.sprite.material.map = labelTexture(S.name, 40, by || (S.playing ? HEX.text : HEX.muted), `${Math.max(S.playing, 0)}/${S.total}`);
+      S.subText = sub;
+      S.sprite.material.map = labelTexture(S.name, 40, by || (S.playing ? HEX.text : HEX.muted), sub);
       S.sprite.material.needsUpdate = true;
-      S.sprite.scale.multiplyScalar(by ? 1.35 : 1 / 1.35);
+      if (!!by !== !!S.lit) S.sprite.scale.multiplyScalar(by ? 1.35 : 1 / 1.35);  // grown once while lit, back once when not
+      S.lit = by;
     }
+  }
+
+  // The sections the conductor conducts: the ones they look at, in copper;
+  // locked with a pinch, marked.
+  select(sections, locked) {
+    this.locked = !!locked;
+    this.aim("left", sections);
+  }
+
+  // Under a section's name: how many play, and a mark while the conductor holds it locked.
+  sub(id, S) {
+    const held = this.locked && this.aimed && this.aimed.left.includes(id);
+    return `${Math.max(S.playing, 0)}/${S.total}${held ? " ●" : ""}`;
   }
 
   // An event leaves the podium and runs across the floor to the chairs.

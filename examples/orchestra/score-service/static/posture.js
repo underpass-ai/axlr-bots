@@ -79,3 +79,61 @@ export class Steady {
   }
   heldMs(now) { return Math.round(now - this.since); }
 }
+
+// The fingers of a signature: thumb, index, middle, ring, little; s straight,
+// h half, c curled.
+const fingersOf = (sig) => sig.split("|")[0];
+
+// A flat hand: the four fingers straight (the thumb is free). Only such a
+// hand's height conducts a group's gain.
+export function flatHand(m) { return !!m && fingersOf(signature(m)).slice(1) === "ssss"; }
+
+// A pointing hand, a baton: the index straight, the other three not. It
+// beats time; it gives no signal by itself.
+export function pointing(m) {
+  if (!m) return false;
+  const f = fingersOf(signature(m));
+  return f[1] === "s" && f[2] !== "s" && f[3] !== "s" && f[4] !== "s";
+}
+
+// The beats of a hand that beats time: an ictus is the hand's lowest point
+// after a fast fall. Three even intervals in a row make a tempo; it is
+// answered once, and again when it changes by three beats a minute or more.
+// Heights in metres, times in seconds.
+export class Beats {
+  constructor({ fall = 0.6, minGap = 0.25, maxGap = 1.2, even = 0.15, low = 60, high = 200 } = {}) {
+    Object.assign(this, { fall, minGap, maxGap, even, low, high });
+    this.reset();
+  }
+  reset() { this.prev = null; this.falling = false; this.beats = []; this.bpm = null; }
+  update(height, now) {
+    let out = null;
+    if (this.prev && now > this.prev.t) {
+      const v = (height - this.prev.h) / (now - this.prev.t);
+      if (v < -this.fall) this.falling = true;
+      else if (this.falling && v > 0) {  // the lowest point is behind
+        this.falling = false;
+        const last = this.beats[this.beats.length - 1];
+        if (last == null || now - last >= this.minGap) {
+          if (last != null && now - last > this.maxGap) this.beats = [];
+          this.beats.push(now);
+          if (this.beats.length > 5) this.beats.shift();
+          out = this.tempo();
+        }
+      }
+    }
+    this.prev = { h: height, t: now };
+    return out;
+  }
+  tempo() {
+    if (this.beats.length < 4) return null;
+    const gaps = this.beats.slice(1).map((b, i) => b - this.beats[i]);
+    const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+    if (gaps.some((g) => Math.abs(g - mean) > this.even * mean)) return null;
+    const bpm = Math.round(60 / mean);
+    if (bpm < this.low || bpm > this.high) return null;
+    if (this.bpm !== null && Math.abs(bpm - this.bpm) < 3) return null;
+    this.bpm = bpm;
+    return bpm;
+  }
+}
