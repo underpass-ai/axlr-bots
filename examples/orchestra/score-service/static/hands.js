@@ -14,7 +14,7 @@ const panel = $("panel"), ctx = panel.getContext("2d");
 const HOLD_MS = 300, SIDES = ["left", "right"];
 let groups = { left: "strings", right: "winds", both: "all" };  // the groups a hand conducts: the service's (GET /api/hands), these until it answers
 const steady = new Steady(HOLD_MS);
-let live = { left: null, right: null }, last = null, orchestra = null, xr = null, dirty = true;
+let live = { left: null, right: null }, last = null, orchestra = null, handsNow = null, xr = null, dirty = true;
 let soundOn = false, soundAt = -1, soundState = "off", heightAt = 0;
 // The hands' motion over the last seconds, summed up for Jev every MOTION_MS
 // while a hand moves: the conductor's expression, read from how the hands
@@ -41,7 +41,7 @@ if (params.get("world")) $("world").value = params.get("world");  // ?world=zen|
 // --- the panel ------------------------------------------------------------
 
 function hint() {
-  $("hint").textContent = `Look at a section: your gestures act on it. A short pinch locks it, another frees it. Nothing selected: left hand ${groups.left}, right hand ${groups.right}. Both hands: everyone.`;
+  $("hint").textContent = `Look at a section: your gestures act on it. A short pinch locks it, another frees it. A flat hand up or down sets a level: pinch twice to keep it, else it comes back when the hand drops. Nothing selected: left hand ${groups.left}, right hand ${groups.right}. Both hands: everyone.`;
 }
 
 function draw() {
@@ -77,9 +77,21 @@ function draw() {
   ctx.font = "600 26px Lexend, sans-serif";
   const tgt = target();
   ctx.fillStyle = tgt ? copper : muted;
-  ctx.fillText(tgt ? `CONDUCTING ${tgt.name.toUpperCase()}${sel.locked ? " · LOCKED (pinch to free)" : " · as you look (pinch to lock)"}` : `CONDUCTING ${groups.left} + ${groups.right} · look at a section`, 24, 290);
+  ctx.fillText(tgt ? `CONDUCTING ${tgt.name.toUpperCase()}${sel.locked ? " · LOCKED (pinch to free)" : " · as you look (pinch to lock, twice to keep a level)"}` : `CONDUCTING ${groups.left} + ${groups.right} · look at a section`, 24, 290);
   ctx.font = "26px Lexend, sans-serif";
   let y = 326;
+  const pend = Object.entries(handsNow?.pending || {}), lastGain = handsNow?.lastGain;
+  const named = (g) => instruments.find((i) => i.id === g)?.name || (g === "all" ? "Everyone" : g);
+  if (pend.length) {
+    ctx.fillStyle = copper;
+    ctx.fillText(`LEVEL ${pend.map(([side, p]) => `${named(p.group)} ${Math.round(100 * p.gain)}% (${side})`).join(" · ")} · pinch twice to keep · else back to ${pend.map(([, p]) => `${Math.round(100 * p.from)}%`).join(" · ")}`, 24, y);
+    y += 36;
+  } else if (lastGain && Date.now() / 1000 - lastGain.at < 6) {
+    ctx.fillStyle = lastGain.kind === "kept" ? copper : muted;
+    ctx.fillText(lastGain.kind === "kept" ? `level: ${named(lastGain.group)} kept at ${Math.round(100 * lastGain.gain)}%`
+      : `level: ${named(lastGain.group)} back to ${Math.round(100 * lastGain.gain)}% (${lastGain.why})`, 24, y);
+    y += 36;
+  }
   if (expression) {
     const r = expression.read || {}, jev = expression.jev?.answers?.expression;
     const chosen = r.expression && r.expression !== "nothing";
@@ -217,6 +229,7 @@ function apply(s) {
     const chairs = s.sections.filter((x) => ids.includes(x.id)).flatMap((x) => x.chairs);
     if (chairs.length) gains[group] = chairs.reduce((n, c) => n + (c.gain ?? 1), 0) / chairs.length;
   }
+  handsNow = s.hands || null;
   $("label").textContent = s.label;
   const bus = s.lastBus;
   if (bus && bus.at !== busAt) {
@@ -360,6 +373,7 @@ function setWorld(name) {
 // the service does what each native gesture means and answers a record.
 const NATIVE = { 0: "pinch", 4: "menu", 5: "swipe-left", 6: "swipe-right", 7: "swipe-forward", 8: "swipe-backward", 9: "tap-thumb" };
 const TAP_MS = 350, TAP_M = 0.03;  // a pinch shorter and stiller than this is a tap
+const DOUBLE_MS = 350, taps = { left: null, right: null };  // two taps within this: a double pinch
 const quest = { profiles: null, buttons: null, pressed: { left: {}, right: {} }, pinch: { left: false, right: false }, events: [], gaze: null,
   browser: (navigator.userAgent.match(/OculusBrowser\/([\d.]+)/) || [])[1] || null };
 const pinches = { left: null, right: null }, beats = { left: new Beats(), right: new Beats() };
@@ -374,6 +388,13 @@ function sendNative(gesture, side, extra = {}) {
   const id = nextId++;
   sentAt[id] = performance.now();
   sock.send(JSON.stringify({ type: "native", id, gesture, side, target: sel.id, locked: sel.locked, ...extra }));
+}
+// A tap alone locks or frees the section once DOUBLE_MS have passed; a second
+// tap within them is a double pinch: the level a flat hand set is kept.
+function tap(side, t) {
+  const p = taps[side];
+  if (p && t - p.at < DOUBLE_MS) { clearTimeout(p.timer); taps[side] = null; sendNative("pinch-double", side); return; }
+  taps[side] = { at: t, timer: setTimeout(() => { taps[side] = null; toggleLock(); }, DOUBLE_MS) };
 }
 function readNative(source, side, m, t) {
   if (quest.profiles === null) { quest.profiles = source.profiles || []; quest.buttons = source.gamepad ? source.gamepad.buttons.length : 0; }
@@ -392,7 +413,7 @@ function readNative(source, side, m, t) {
         if (p.moving && h !== null && t - p.sentAt > 100) { p.sentAt = t; sendNative("pinch-move", side, { height: h }); }
       } else if (!b.pressed && was && pinches[side]) {
         if (pinches[side].moving) sendNative("pinch-end", side);
-        else toggleLock();
+        else tap(side, t);
         pinches[side] = null;
       }
       return;
@@ -515,12 +536,13 @@ function readHands(t, xrFrame) {
   if (drawn && world) drawn.update(seen);
   gazeAt(quest.gaze, t);
   // Each flat hand's height, ten times a second: the service makes it its
-  // group's gain while Jev's last reading of that hand is a palm up or a palm
-  // down. A hand that pinches, points or closes moves nothing this way.
+  // group's provisional level while Jev's last reading of that hand is a palm
+  // up or a palm down; a double pinch keeps it. A hand that points or closes
+  // moves nothing this way; a pinching hand only says it is still there.
   if (sock && t - heightAt > 100) {
     heightAt = t;
     const heights = {};
-    for (const side of SIDES) if (live[side] && flatHand(live[side]) && !quest.pinch[side]) heights[side] = { height: live[side].position.height };
+    for (const side of SIDES) if (live[side] && (flatHand(live[side]) || quest.pinch[side])) heights[side] = { height: live[side].position.height, pinch: !!quest.pinch[side] };
     if (Object.keys(heights).length) sock.send(JSON.stringify({ type: "height", hands: heights }));
   }
   // How each hand moves, for the expression: fed every frame, summed up and

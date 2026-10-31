@@ -43,11 +43,11 @@ class FakePublish:
         return f"ev-{len(self.events)}"
 
 
-def hands(config=None, **reads):
+def hands(config=None, log=None, **reads):
     o, synth, clock = orchestra()
     judge, publish = FakeJev(**reads), FakePublish()
     h = Hands(o, dict({"threshold": 0.8, "cooldownSeconds": 3, "minIntervalSeconds": 0.5, "publishWaitSeconds": 3,
-                       "instruments": CONFIG["hands"]["instruments"]}, **(config or {})), judge, publish, clock)
+                       "instruments": CONFIG["hands"]["instruments"]}, **(config or {})), judge, publish, clock, log=log)
     return h, o, judge, publish, clock
 
 
@@ -196,24 +196,32 @@ class SendTest(unittest.TestCase):
         self.assertEqual((o.chairs["hn-1"]["held"] is not None, o.chairs["ob-1"]["held"]), (True, None))
 
     def test_the_height_fades_the_instrument_the_hand_conducts(self):
-        h, o, _, _, _ = hands(left=("down", 0.95))
+        h, o, _, _, clock = hands(left=("down", 0.95))
         h.observe(posture(left=dict(OPEN, aim=60)))  # the violas
-        h.height({"hands": {"left": {"height": -0.2, "aim": 150}}})  # moving the hand does not change the instrument
-        self.assertEqual({o.chairs[k]["gain"] for k in o.chairs_of("va")}, {0.5})
+        h.height({"hands": {"left": {"height": -0.2, "aim": 150}}})  # where the hand is now: the level starts from here
+        clock.now += 0.5
+        h.height({"hands": {"left": {"height": -0.55, "aim": 150}}})  # 35 cm down over 70 cm: half the way; moving the hand does not change the instrument
+        self.assertEqual({round(o.chairs[k]["gain"], 2) for k in o.chairs_of("va")}, {0.5})
         self.assertEqual({o.chairs[k]["gain"] for k in o.chairs_of("vn1")}, {1.0})
 
-    def test_the_height_of_a_hand_that_conducts_is_its_groups_gain(self):
+    def test_the_height_of_a_hand_that_conducts_is_a_provisional_level_from_where_it_began(self):
         h, o, _, _, clock = hands(left=("open", 0.95))
         self.assertEqual(h.height({"hands": {"left": {"height": 0.15}}}), {})  # not read yet: nothing moves
         h.observe(posture(left=OPEN))
-        self.assertEqual(h.height({"hands": {"left": {"height": -0.2}, "right": {"height": 0.1}}}), {"left": 0.5})
+        self.assertEqual(h.height({"hands": {"left": {"height": -0.2}, "right": {"height": 0.1}}}), {"left": 1.0})  # the first height is where it begins
+        clock.now += 0.5
+        self.assertEqual(h.height({"hands": {"left": {"height": -0.55}}}), {"left": 0.5})  # 35 cm down over 70 cm
         self.assertEqual({o.chairs[k]["gain"] for k in o.chairs_of("strings")}, {0.5})
         self.assertEqual({o.chairs[k]["gain"] for k in o.chairs_of("winds")}, {1.0})
-        self.assertEqual(h.height({"hands": {"left": {"height": 0.5}}}), {"left": 1.0})
+        self.assertEqual((h.view()["pending"]["left"]["group"], h.view()["pending"]["left"]["from"]), ("strings", 1.0))
+        clock.now += 0.5
+        self.assertEqual(h.height({"hands": {"left": {"height": 0.5}}}), {"left": 1.0})  # never above 1
         h.judge.reads = {"left": ("fist", 0.95)}
         clock.now += 1
-        h.observe(posture(left=FIST))
-        self.assertEqual(h.height({"hands": {"left": {"height": -0.5}}}), {})  # a fist is not conducting
+        h.observe(posture(left=FIST))  # a fist conducts no level: what the hand held comes back
+        self.assertEqual(h.view()["lastGain"]["why"], "the hand changed")
+        self.assertEqual(h.height({"hands": {"left": {"height": -0.5}}}), {})
+        self.assertEqual({o.chairs[k]["gain"] for k in o.chairs_of("strings")}, {1.0})
 
     def test_a_fade_out_when_nothing_of_the_group_plays_does_nothing(self):
         h, o, _, publish, _ = hands(left=("fist", 0.9), right=("fist", 0.9))
@@ -387,14 +395,17 @@ class NativeTest(unittest.TestCase):
         self.assertEqual(record["sent"][0]["message"], "Violins, come in.")
         self.assertEqual((o.chairs["vn1-1"]["held"], o.chairs["vn2-1"]["held"]), (None, None))
 
-    def test_a_thumb_tap_when_nothing_plays_or_nothing_is_locked_does_nothing(self):
+    def test_a_thumb_tap_when_nothing_plays_or_no_section_is_looked_at_does_nothing(self):
         h, o, _, publish, _ = hands()
         record = h.native({"gesture": "tap-thumb", "side": "right", "target": "violins", "locked": True})
         self.assertEqual(record["notSent"][0]["why"], "nothing plays: a palm up starts the music")
         o.play("vn1-1", 1)
-        record = h.native({"gesture": "tap-thumb", "side": "right", "target": "violins", "locked": False})
-        self.assertEqual(record["notSent"][0]["why"], "no section locked: look at one and pinch")
+        record = h.native({"gesture": "tap-thumb", "side": "right", "target": None, "locked": False})
+        self.assertEqual(record["notSent"][0]["why"], "no section: look at one")
         self.assertEqual(publish.events, [])
+        record = h.native({"gesture": "tap-thumb", "side": "right", "target": "violins", "locked": False})  # looked at, not locked: enough
+        self.assertEqual(record["decision"], [{"gesture": "tap-thumb", "group": "violins"}])
+        self.assertEqual([e[0] for e in publish.events], ["info.cue.vn1", "info.cue.vn2"])
 
     def test_the_same_tap_again_waits_a_second(self):
         h, o, _, publish, clock = hands()
@@ -438,6 +449,29 @@ class NativeTest(unittest.TestCase):
         self.assertEqual(h.native({"gesture": "pinch-move", "side": "left", "height": 0.0})["notSent"][0]["why"], "no pinch began")
         self.assertEqual(publish.events, [])
 
+    def test_a_pinch_released_keeps_its_level_and_the_height_starts_again_from_there(self):
+        h, o, _, _, clock = hands(left=("open", 0.95))
+        h.observe({"hands": {"left": OPEN}, "heldMs": 300, "target": "violins"})
+        h.height({"hands": {"left": {"height": -0.1}}})
+        record = h.native({"gesture": "pinch-start", "side": "left", "target": "violins", "height": -0.1})  # the pinch takes the level over
+        self.assertEqual(h.view()["pending"], {})
+        h.native({"gesture": "pinch-move", "side": "left", "height": -0.275})  # 17.5 cm down over 35 cm: half the way
+        record = h.native({"gesture": "pinch-end", "side": "left"})
+        self.assertEqual(record["applied"], "Violins kept at 50%")
+        self.assertEqual(h.view()["confirmed"], {"violins": 0.5})
+        clock.now += 0.3
+        self.assertEqual(h.height({"hands": {"left": {"height": 0.2}}}), {})  # the open hand after the pinch moves nothing by itself
+        self.assertEqual({round(o.chairs[k]["gain"], 2) for k in o.chairs_of("vn1")}, {0.5})
+        clock.now += 1
+        h.observe({"hands": {"left": OPEN}, "heldMs": 300, "target": "violins"})  # read again: the hand conducts from 50%, from where it is
+        h.height({"hands": {"left": {"height": 0.2}}})
+        clock.now += 0.5
+        self.assertEqual(h.height({"hands": {"left": {"height": 0.34}}}), {"left": 0.7})  # 14 cm up over 70 cm
+        self.assertEqual(h.view()["pending"]["left"]["from"], 0.5)
+        clock.now += 0.7
+        self.assertEqual([r["why"] for r in h.tick()], ["the hand left"])
+        self.assertEqual({round(o.chairs[k]["gain"], 2) for k in o.chairs_of("vn1")}, {0.5})
+
     def test_a_pinch_with_no_target_holds_nothing(self):
         h, _, _, _, _ = hands()
         record = h.native({"gesture": "pinch-start", "side": "left", "height": 0.0})
@@ -451,6 +485,81 @@ class NativeTest(unittest.TestCase):
 
 MOVED = {"seconds": 2.4, "speed": 0.12, "peak": 0.3, "rise": 0.08, "sweep": 0.06, "turns": 0.4, "height": -0.3, "open": 0.85, "moving": True}
 FORCEFUL = {"seconds": 2.4, "speed": 1.6, "peak": 4.5, "rise": 0.6, "sweep": 0.5, "turns": 2.4, "height": 0.05, "open": 0.4, "moving": True}
+
+
+class LevelTest(unittest.TestCase):
+    """A flat hand's height is a provisional level: a double pinch keeps it; dropping, leaving or waiting brings it back."""
+
+    def level(self, gain=0.5, **reads):
+        h, o, judge, publish, clock = hands(**(reads or {"left": ("open", 0.95)}))
+        h.observe(posture(left=OPEN))
+        h.height({"hands": {"left": {"height": -0.2}}})
+        clock.now += 0.5
+        h.height({"hands": {"left": {"height": -0.2 - (1 - gain) * 0.7}}})
+        self.assertEqual({round(o.chairs[k]["gain"], 2) for k in o.chairs_of("strings")}, {gain})
+        return h, o, publish, clock
+
+    def test_a_double_pinch_of_either_hand_keeps_the_level_and_frees_the_hand(self):
+        h, o, publish, clock = self.level(0.5)
+        record = h.native({"gesture": "pinch-double", "side": "right"})
+        self.assertEqual((record["applied"], record["decision"]), ("Strings kept at 50%", [{"gesture": "pinch-double", "group": "strings"}]))
+        self.assertEqual((h.view()["pending"], h.view()["confirmed"], h.view()["lastGain"]["kind"]), ({}, {"strings": 0.5}, "kept"))
+        clock.now += 0.3
+        self.assertEqual(h.height({"hands": {"left": {"height": -0.9}}}), {})  # the hand is free: lowering it changes nothing
+        clock.now += 2
+        self.assertEqual(h.tick(), [])
+        self.assertEqual({o.chairs[k]["gain"] for k in o.chairs_of("strings")}, {0.5})
+        self.assertEqual(publish.events, [("info.cue.strings", {"dynamics": "f"}, None)])  # the palm up's cue; a level is the service's alone
+
+    def test_a_level_not_kept_comes_back_when_the_hand_leaves(self):
+        h, o, _, clock = self.level(0.5)
+        clock.now += 0.5
+        self.assertEqual(h.tick(), [])  # a pinching hand says it is still there
+        h.height({"hands": {"left": {"height": -0.4, "pinch": True}}})
+        clock.now += 0.5
+        self.assertEqual(h.tick(), [])
+        clock.now += 0.7
+        self.assertEqual([(r["why"], r["gain"]) for r in h.tick()], [("the hand left", 1.0)])
+        self.assertEqual({o.chairs[k]["gain"] for k in o.chairs_of("strings")}, {1.0})
+        self.assertEqual(h.view()["engaged"]["left"], None)
+
+    def test_a_level_not_kept_comes_back_when_it_waits_too_long(self):
+        h, o, _, clock = self.level(0.5)
+        for _ in range(10):  # the hand holds still, no double pinch
+            clock.now += 0.5
+            h.height({"hands": {"left": {"height": -0.55}}})
+            self.assertEqual(h.tick(), [])
+        clock.now += 0.5
+        h.height({"hands": {"left": {"height": -0.55}}})
+        self.assertEqual([r["why"] for r in h.tick()], ["not kept within 5 s"])
+        self.assertEqual({o.chairs[k]["gain"] for k in o.chairs_of("strings")}, {1.0})
+
+    def test_a_hand_that_drops_fast_brings_the_level_back_at_once(self):
+        h, o, _, clock = self.level(0.8)
+        clock.now += 0.1
+        self.assertEqual(h.height({"hands": {"left": {"height": -0.45}}}), {})  # 11 cm down in 0.1 s: 1.1 m/s, the arm resting
+        self.assertEqual(h.view()["lastGain"]["why"], "the hand dropped")
+        self.assertEqual({o.chairs[k]["gain"] for k in o.chairs_of("strings")}, {1.0})
+
+    def test_a_double_pinch_with_nothing_waiting_says_so(self):
+        h, _, _, _, _ = hands()
+        record = h.native({"gesture": "pinch-double", "side": "left"})
+        self.assertEqual(record["notSent"], [{"what": "keep", "why": "no level waiting: raise or lower a flat hand first"}])
+
+    def test_the_log_keeps_the_session_line_by_line(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "hands.jsonl")
+            h, o, judge, publish, clock = hands(log=path, left=("open", 0.95))
+            h.observe(posture(left=OPEN))
+            h.height({"hands": {"left": {"height": -0.2}}})
+            clock.now += 0.5
+            h.height({"hands": {"left": {"height": -0.55}}})
+            h.native({"gesture": "pinch-double", "side": "right"})
+            with open(path) as f:
+                lines = [json.loads(line) for line in f]
+        kinds = [("gain", r["gain"]["kind"]) if "gain" in r else ("native", r["native"]) if "native" in r else ("posture", r["read"]) for r in lines]
+        self.assertEqual(kinds, [("posture", {"left": "open"}), ("gain", "pending"), ("gain", "kept"), ("native", "pinch-double")])
 
 
 class FakeExpressionJev:
@@ -524,9 +633,9 @@ class MotionTest(unittest.TestCase):
         self.assertEqual(record["notSent"], [{"what": "expression", "why": "Jev read nothing at 0.80"}])
         self.assertEqual(publish2.events, [])
 
-    def test_the_locked_section_takes_the_character_the_others_keep_theirs(self):
+    def test_the_section_looked_at_takes_the_character_the_others_keep_theirs(self):
         h, o, synth, judge, publish, _ = expression("brillante", 0.8)
-        record = h.motion({"hands": {"right": FORCEFUL}, "target": "oboes", "locked": True})
+        record = h.motion({"hands": {"right": FORCEFUL}, "target": "oboes", "locked": False})  # looked at is enough; a lock only keeps it
         self.assertEqual(record["decision"], [{"gesture": "brillante", "group": "oboes"}])
         self.assertEqual(record["applied"], "Oboes: brillante")
         self.assertEqual({c["character"] for k, c in o.chairs.items() if k.startswith("ob-")}, {"brillante"})

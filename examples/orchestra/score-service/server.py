@@ -104,7 +104,8 @@ def make_handler(orchestra, stream, config, hands=None, hosts=None):
         state["label"] = label
         if hands is not None:
             view = hands.view()
-            state["hands"] = {"last": view["last"], "source": view["source"], "dryRun": view["dryRun"]}
+            state["hands"] = {"last": view["last"], "source": view["source"], "dryRun": view["dryRun"],
+                              "pending": view["pending"], "lastGain": view["lastGain"]}
         return state
 
     def conduct(sock):
@@ -312,6 +313,7 @@ def main(argv=None):
     p.add_argument("--token-file", help="the operator token, default the config's controlPlane.tokenFile")
     p.add_argument("--ca-file", help="the control plane's CA, default the config's controlPlane.caFile")
     p.add_argument("--hands-dry-run", action="store_true", help="Jev reads the hands, nothing is published")
+    p.add_argument("--hands-log", help="append each hand record and each level kept or reverted to this JSON-lines file: the session, for reading afterwards")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)s")
     config = load_config(a.config)
@@ -342,7 +344,7 @@ def main(argv=None):
         hc["dryRun"] = True
     judge = jev.Jev(hc.get("jev", {}).get("model", "jev-1.13.0"), hc.get("jev", {}).get("keyFile", "~/.config/axlr-bots/env"),
                     hc.get("jev", {}).get("timeoutSeconds", 10))
-    hands = hands_module.Hands(orchestra, hc, judge.choose, publish)
+    hands = hands_module.Hands(orchestra, hc, judge.choose, publish, log=a.hands_log)
     log.info("hands at /hands: Jev %s, threshold %s, %s", judge.model, hands.threshold, "dry run" if hands.dry_run else "publishing on " + config["team"])
 
     host, port = (a.listen or config["listenAddress"]).rsplit(":", 1)
