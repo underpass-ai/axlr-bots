@@ -6,6 +6,8 @@ import { measure, signature, Steady, Beats, flatHand, pointing } from "/static/p
 import { Hall, THREE } from "/static/room.js";
 import { meadow, drawnHands } from "/static/meadow.js";
 import { zen } from "/static/zen.js";
+import { aurora } from "/static/aurora.js";
+import { rave } from "/static/rave.js";
 
 const $ = (id) => document.getElementById(id);
 const panel = $("panel"), ctx = panel.getContext("2d");
@@ -258,14 +260,18 @@ panelMesh.visible = false;
 scene.add(panelMesh);
 const SCALE = Number(params.get("scale")) || 0.6; // the hall's 2.5–4.2 m rows, brought into a room
 // The worlds around the orchestra, made when first wanted: the room itself
-// (passthrough), the cartoon meadow, the zen garden at dusk; and the drawn
-// hands, needed anywhere but the room. Each world brings its fog and exposure.
-const WORLDS = { meadow, zen };
+// (passthrough), the mirror lake under the aurora (the default), the rave in
+// an abandoned factory, the cartoon meadow, the zen night; and the drawn
+// hands, needed anywhere but the room.
+// Each world brings its fog and exposure, and gets the hall and the camera:
+// what the orchestra does reaches the world (the lake mirrors the lanterns,
+// the aurora burns with the music).
+const WORLDS = { aurora, rave, meadow, zen };
 const worlds = {};
 let world = null, worldName = "room", drawn = null;
 function setWorld(name) {
   worldName = WORLDS[name] ? name : "room";
-  if (WORLDS[worldName] && !worlds[worldName]) worlds[worldName] = WORLDS[worldName](scene);
+  if (WORLDS[worldName] && !worlds[worldName]) worlds[worldName] = WORLDS[worldName](scene, { hall, camera });
   if (worldName !== "room" && !drawn) drawn = drawnHands(scene);
   world = worlds[worldName] || null;
   for (const [n, w] of Object.entries(worlds)) w.group.visible = n === worldName;
@@ -491,7 +497,8 @@ if (preview) {
   addEventListener("resize", () => { if (!renderer.xr.isPresenting) fit(); });
   fit();
   camera.position.set(0, 1.75, 0.7);
-  camera.lookAt(0, 0.9 + (Number(params.get("tilt")) || 0), -1.6);  // ?tilt= raises the preview's eyes, to see what is around
+  const yaw = ((Number(params.get("yaw")) || 0) * Math.PI) / 180;  // ?yaw= turns the preview's eyes (180: the conductor looks back); ?tilt= raises them
+  camera.lookAt(-Math.sin(yaw) * 2.3, 0.9 + (Number(params.get("tilt")) || 0), 0.7 - Math.cos(yaw) * 2.3);
   placeAround({ position: { x: 0, y: 1.6, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 } });
   setWorld($("world").value);
   $("world").addEventListener("change", () => setWorld($("world").value));
