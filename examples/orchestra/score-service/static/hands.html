@@ -14,7 +14,7 @@
   canvas#panel, canvas#view { width: 100%; max-width: 1024px; aspect-ratio: 2 / 1; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
   canvas#view { background: #0f0f10; }
   table { border-collapse: collapse; } td, th { padding: 4px 12px; text-align: left; border-bottom: 1px solid var(--line); }
-  #sim-buttons { display: none; } body.simulate #sim-buttons { display: flex; }
+  #sim-buttons, #sim-motion { display: none; } body.simulate #sim-buttons, body.simulate #sim-motion { display: flex; }
 </style>
 </head>
 <body>
@@ -33,9 +33,12 @@
      The section the conductor looks at
      is the one their gestures act on, locked with a short pinch; the
      headset's own gestures (a pinch held, thumb tap, thumb swipes) go to
-     the service as native messages and act on it too. ?sim=1 adds buttons
-     that send made-up postures, marked simulated, to try the path without
-     a headset; ?view=1 shows the orchestra and the panel on this screen; ?world=aurora|rave|zen|meadow|room
+     the service as native messages and act on it too. How the hands move
+     over the last seconds (speed, rise, sweep, turns, height, openness) goes
+     up every 2 s as motion sums, and Jev reads the conductor's expression
+     from them: dolce, cantabile, brillante or appassionato, the voices'
+     timbre. ?sim=1 adds buttons that send made-up postures and made-up
+     motion, marked simulated, to try the path without a headset; ?view=1 shows the orchestra and the panel on this screen; ?world=aurora|rave|zen|meadow|room
      picks what is around the orchestra; the groups a hand conducts, the
      seats and the default world come from the service (GET /api/hands,
      GET /api/score): the same page serves the orchestra and the rave;
@@ -53,6 +56,7 @@
     <tr><td>finger on the lips</td><td>Jev</td><td>everyone pianissimo</td></tr>
     <tr><td>hand high / low</td><td>measured</td><td>while flat, palm up or down: louder / softer, a fade</td></tr>
     <tr><td>index out, beating time (a baton)</td><td>measured</td><td>the tempo you beat, after three even beats</td></tr>
+    <tr><td>how your hands move: slow and small, even, quick and light, big and forceful</td><td>Jev</td><td>the expression: dolce, cantabile, brillante or appassionato, for the locked section, else everyone: the voices darker and softer, or brighter and warmer</td></tr>
     <tr><td>where you look</td><td>measured</td><td>selects the section (300 ms on it)</td></tr>
     <tr><td>short pinch</td><td>the headset</td><td>locks the section you look at; again: frees it</td></tr>
     <tr><td>pinch held, hand up / down</td><td>the headset</td><td>the section's volume, from where it was</td></tr>
@@ -78,6 +82,11 @@
     <button data-sim="left:open">left palm up</button><button data-sim="left:down">left palm down</button><button data-sim="left:fist">left fist</button>
     <button data-sim="right:open">right palm up</button><button data-sim="right:fist">right fist</button>
     <button data-sim="both:fist">two fists</button><button data-sim="left:rest">left at rest</button>
+  </div>
+  <div class="row" id="sim-motion">
+    <span class="muted">simulated motion:</span>
+    <button data-motion="dolce">slow and small</button><button data-motion="cantabile">even and flowing</button>
+    <button data-motion="brillante">quick and light</button><button data-motion="appassionato">big and forceful</button>
   </div>
   <canvas id="panel" width="1024" height="512"></canvas>
   <div class="label muted" id="label"></div>

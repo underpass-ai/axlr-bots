@@ -58,7 +58,7 @@ The chair is the URL: each chair's node names `http://127.0.0.1:8790/mcp/<chair>
 | Tool | Arguments | Does |
 |---|---|---|
 | `phrases` | `bar?` | the chair's state and the phrases it may play next, from the playhead or from `bar`: the next three after what it has, or the one already begun if two bars are left (marked `late`), each with its bars, notes, bars of rest and range; and `ask`, the question for Jev |
-| `play` | `phrase`, `dynamics?` (`p`, `mf`, `f`), `judge?` (`choice`, `probability`, `confidence`) | schedules that phrase of the chair's line at its own bars; a phrase already begun is joined at the next bar (`lateBars`). When nothing has played yet, it starts the music with the count-in. `judge` is what `axlr_judge` answered, as the bot read it |
+| `play` | `phrase`, `dynamics?` (`p`, `mf`, `f`), `character?` (`dolce`, `cantabile`, `brillante`, `appassionato`), `judge?` (`choice`, `probability`, `confidence`) | schedules that phrase of the chair's line at its own bars; a phrase already begun is joined at the next bar (`lateBars`). When nothing has played yet, it starts the music with the count-in. `character` is the conductor's expression as the bot heard it (`info.expression`): the chair's voice keeps it. `judge` is what `axlr_judge` answered, as the bot read it |
 | `listen` | `bars?` (8) | blocks until the chair's fork opens, the bars pass, the chair is stopped or the music stops, at most 20 s; answers the bar, the tempo, its state, its phrase now and next, its section's (`Violins I: 7 of 10 playing`), and at the fork the candidates and `ask` |
 | `stop` | — | this chair stops at once and its next phrases are dropped; the section goes on with the others |
 
@@ -70,7 +70,7 @@ The clock starts with the conductor: the first `info.cue.*` on the bus when noth
 
 ## What the service saw, and what the bot reported
 
-`/api/state` has, for each chair, besides `state`, `dynamics` and `enteredBar`:
+`/api/state` has, for each chair, besides `state`, `dynamics`, `character` (the conductor's expression on its voice, or none; `characterSource` at the top) and `enteredBar`:
 
 | Field | What it is | Source |
 |---|---|---|
