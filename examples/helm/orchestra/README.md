@@ -74,7 +74,7 @@ The times include `kubectl exec` (about 0.1 s). A node on `--bus nats` holds no 
 | | take 1 | take 2 |
 |---|---|---|
 | chairs that played / late | 36 / 0 | 36 / 0 |
-| `info.cue.all` publish call | 0.96 s | 1.6 s |
+| cue → the score service starts the take | 0.95 s | 1.63 s |
 | cue → first `play`, min / median / max | 1.20 / 1.81 / 2.29 s | 1.81 / 2.46 / 3.08 s |
 | pushes through NATS in the take (delivered = acked, 0 pending) | 2124 | 2160 |
 | `stop.all` publish call, and the cut | 10.4 s | 14.9 s |
