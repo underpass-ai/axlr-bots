@@ -83,7 +83,7 @@ func (f fleet) node(t *testing.T, node domain.NodeID) {
 
 // nodeUser is the broker's user for a node: its certificate's subject,
 // its own consumer and nothing else (the bus port's rule 6). The same
-// list examples/helm/orchestra renders into its nats.conf.
+// list the orchestra chart (axlr-bots-examples, private) renders into its nats.conf.
 func nodeUser(node domain.NodeID) string {
 	consumer := consumerName(node)
 	return fmt.Sprintf(`{ user: "CN=%s,O=%s", permissions: {

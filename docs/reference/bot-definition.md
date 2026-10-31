@@ -224,7 +224,7 @@ The procedure, with the checks, is the [triggers runbook](../runbooks/triggers.m
 
 ## Runtime
 
-A bot's tasks run as an AXLR session unless its definition says otherwise: a model reads the mission and the objective and calls the tools. A **Jev bot** has no model. Its node runs a fixed program over one MCP server, and every decision in it is one question to [Jev](https://typesafe.ai), TypeSafe's judgement model, which answers a choice among options in about 0.2 s. The world being acted on (the MCP server) writes the questions; the program only carries them to Jev and carries the answer back. It is for a bot whose steps are known and whose only open point is a choice: the orchestra's chairs, which play the phrase Jev picks ([the chairs](../../examples/orchestra/chairs/README.md)).
+A bot's tasks run as an AXLR session unless its definition says otherwise: a model reads the mission and the objective and calls the tools. A **Jev bot** has no model. Its node runs a fixed program over one MCP server, and every decision in it is one question to [Jev](https://typesafe.ai), TypeSafe's judgement model, which answers a choice among options in about 0.2 s. The world being acted on (the MCP server) writes the questions; the program only carries them to Jev and carries the answer back. It is for a bot whose steps are known and whose only open point is a choice: the orchestra's chairs, which play the phrase Jev picks.
 
 ```json
 "runtime": {

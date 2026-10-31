@@ -15,7 +15,7 @@ Bots that share a **Team** know each other, ask each other to do a task and warn
 | 9. Answer a bot's ask | the card «`almacen` asks to listen to `error.*`: "…"» on its page; it counts in **need you** | **Approve**: it hears the topic from now on; **Deny**: the ask is dropped. Until then it hears nothing of it |
 | 10. See the team's topics | **Teams → port → Topics** | each topic: who publishes, who listens and how, the last event; **nobody listens** in red on one nobody hears |
 | 11. Publish an event | **Teams → port → Publish an event**: name `stop.all`, message, optional To | `stop.all` is the generalised Recall: every member gets an urgent task; `warn.*` reaches who listens while it works; `info.*` is a note. The timeline shows it and what it did to each bot within a poll |
-| 12. One press | `~/.config/axlr-bots-panel/shortcuts.toml`: `[[shortcut]]` `team`, `label`, `name`, `message`, `data`; restart the panel → **Teams → orchestra → Shortcuts** | each press publishes its event at once, as the operator, with a new key; a stop is red ([the orchestra's](../../examples/orchestra/panel/shortcuts.toml)) |
+| 12. One press | `~/.config/axlr-bots-panel/shortcuts.toml`: `[[shortcut]]` `team`, `label`, `name`, `message`, `data`; restart the panel → **Teams → orchestra → Shortcuts** | each press publishes its event at once, as the operator, with a new key; a stop is red |
 
 A task can be urgent from the panel too: **New task → Urgent** sends it first and stops what the bot is doing.
 
