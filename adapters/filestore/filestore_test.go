@@ -549,3 +549,62 @@ func TestIncidentRepositoryFindsTheNewestOfAGroup(t *testing.T) {
 		t.Error("a corrupt incident searched")
 	}
 }
+
+// A listing by status skips the files it found in another status and
+// that did not change since, and reads again those that did: a task that
+// started, an execution that ended, a file another process wrote.
+func TestListingsByStatusFollowTheFiles(t *testing.T) {
+	ctx := context.Background()
+	state := t.TempDir()
+	tasks := NewTaskRepository(state)
+	task, _ := domain.NewTask("task-a", "bot-1", "Investigate", "k1", "", t0)
+	if err := tasks.Save(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := tasks.ListByStatus(ctx, domain.TaskRunning); len(list) != 0 {
+		t.Fatalf("running before the start = %d", len(list))
+	}
+	if list, _ := tasks.ListByStatus(ctx, domain.TaskPending); len(list) != 1 {
+		t.Fatalf("pending = %d", len(list))
+	}
+	// Another repository over the same directory (another process) starts it.
+	_ = task.Start("exec-a", t0)
+	if err := NewTaskRepository(state).Save(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := tasks.ListByStatus(ctx, domain.TaskRunning); len(list) != 1 || list[0].ID() != "task-a" {
+		t.Fatalf("running after the start = %d", len(list))
+	}
+	if list, _ := tasks.ListByStatus(ctx, domain.TaskPending); len(list) != 0 {
+		t.Fatalf("pending after the start = %d", len(list))
+	}
+	// A copy of the repository shares what it knows; a removed file is gone.
+	copied := tasks
+	if err := os.Remove(filepath.Join(state, "tasks", "task-a.json")); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := copied.ListByStatus(ctx, domain.TaskRunning); len(list) != 0 {
+		t.Fatalf("running after the removal = %d", len(list))
+	}
+
+	execs := NewExecutionRepository(state)
+	execution, _ := domain.NewExecution("exec-a", "task-a", "bot-1", t0)
+	_ = execs.Save(ctx, execution)
+	if list, _ := execs.ListRunning(ctx); len(list) != 1 {
+		t.Fatalf("running executions = %d", len(list))
+	}
+	_ = execution.Complete(domain.Result{}, domain.Usage{}, "", t0)
+	_ = execs.Save(ctx, execution)
+	if list, _ := execs.ListRunning(ctx); len(list) != 0 {
+		t.Fatalf("running after the end = %d", len(list))
+	}
+	// The ended execution is skipped on its stamp: a garbled copy under
+	// the same stamp would not be read, a changed file is.
+	if list, _ := execs.ListRunning(ctx); len(list) != 0 {
+		t.Fatalf("running, second listing = %d", len(list))
+	}
+	_ = os.WriteFile(filepath.Join(state, "executions", "exec-a.json"), []byte("{"), 0o644)
+	if _, err := execs.ListRunning(ctx); err == nil {
+		t.Error("a changed file was not read again")
+	}
+}

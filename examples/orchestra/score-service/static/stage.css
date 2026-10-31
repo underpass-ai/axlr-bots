@@ -52,6 +52,8 @@ body.nohud .hud { display: none; }
 .seat.stopped circle { stroke: var(--muted); opacity: .45; }
 .seat text { fill: var(--muted); font: 10px var(--num); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
 .seat.playing text { fill: var(--page); }
+.seat text.phrase, .seat.playing text.phrase { fill: var(--muted); font-size: 9px; }
+.pick { font-size: 13px; }
 .section-name { fill: var(--muted); font: 600 15px var(--font); text-anchor: middle; }
 .section-count { fill: var(--text); font: 15px var(--num); text-anchor: middle; }
 .podium circle { fill: var(--text); }

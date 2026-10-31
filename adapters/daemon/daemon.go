@@ -33,6 +33,12 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	}
 	logger := options.log()
 	local := unixapi.NewLocal(deps)
+	for _, pusher := range options.Pushers {
+		local.AddPusher(pusher, logger.Printf)
+	}
+	// The loops record through the service's dependencies, so a task a
+	// timer fires or a reconcile frees wakes the nodes waiting for one.
+	deps = local.Dependencies()
 	runner := local.Runner()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

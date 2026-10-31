@@ -1716,6 +1716,9 @@
           "events": {
             "$ref": "#/components/schemas/EventsSnapshot"
           },
+          "runtime": {
+            "$ref": "#/components/schemas/RuntimeSnapshot"
+          },
           "subscriptions": {
             "type": "array",
             "description": "the topics the bot listens to in its teams, at most 16, one per pattern; with or without them the bot hears what is addressed to it and the team's danger.* and stop.*",
@@ -1787,6 +1790,9 @@
           },
           "events": {
             "$ref": "#/components/schemas/EventsSnapshot"
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/RuntimeSnapshot"
           },
           "subscriptions": {
             "type": "array",
@@ -1874,6 +1880,9 @@
           },
           "events": {
             "$ref": "#/components/schemas/EventsSnapshot"
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/RuntimeSnapshot"
           },
           "subscriptions": {
             "type": "array",
@@ -2039,6 +2048,91 @@
         "required": [
           "deadline"
         ]
+      },
+      "RuntimeSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.RuntimeSnapshot",
+        "description": "what runs the bot's tasks on its node: absent or kind axlr for an AXLR session; kind jev for a fixed program whose every decision is one question to Jev, with no language model",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "x-go-enum": "domain.RuntimeKind",
+            "enum": ["axlr", "jev"]
+          },
+          "jev": {
+            "$ref": "#/components/schemas/JevProgramSnapshot"
+          }
+        },
+        "required": ["kind"]
+      },
+      "JevProgramSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.JevProgramSnapshot",
+        "description": "a Jev bot's program: the node's MCP server that serves its tools, the tool that starts a task, how it acts on each of Jev's choices, the tool that waits for the next question, the tool a stop.* task calls, and the pinned Jev model",
+        "properties": {
+          "server": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          },
+          "act": {
+            "$ref": "#/components/schemas/JevActSnapshot"
+          },
+          "wait": {
+            "type": "string"
+          },
+          "stop": {
+            "type": "string"
+          },
+          "tell": {
+            "$ref": "#/components/schemas/JevTellSnapshot"
+          },
+          "model": {
+            "type": "string"
+          }
+        },
+        "required": ["server", "start", "act", "wait"]
+      },
+      "JevTellSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.JevTellSnapshot",
+        "description": "what a Jev bot tells its teams after each act: the event's name and the fields of the decision that ride as its data (choice, probability, confidence, the act's choice argument, a field passed on; all when none)",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["name"]
+      },
+      "JevActSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.JevActSnapshot",
+        "description": "how a Jev bot acts on a choice: the tool, the argument that takes the choice (its first whole number, else its text), the argument that takes Jev's verdict {choice, probability, confidence}, and the fields of the event's data passed on as they are",
+        "properties": {
+          "tool": {
+            "type": "string"
+          },
+          "choice": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          },
+          "pass": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["tool", "choice"]
       },
       "DelegationSnapshot": {
         "type": "object",
@@ -2610,6 +2704,13 @@
           },
           "dedicated": {
             "type": "boolean"
+          },
+          "runtimes": {
+            "type": "array",
+            "description": "the runtimes the node has beside AXLR (jev); absent: AXLR bots only",
+            "items": {
+              "type": "string"
+            }
           },
           "policySupported": {
             "type": "boolean"

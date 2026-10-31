@@ -82,6 +82,8 @@ impl Topic {
 pub struct Publication {
     pub name: String,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub to: Vec<String>,
     pub idempotency_key: String,
@@ -126,6 +128,7 @@ mod tests {
         let publication = Publication {
             name: "stop.all".into(),
             message: "Everyone stop".into(),
+            data: None,
             to: Vec::new(),
             idempotency_key: "k".into(),
         };

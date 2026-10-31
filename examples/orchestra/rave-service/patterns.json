@@ -1,0 +1,35 @@
+{
+  "about": "The candidates each chair may be offered, by role: Strudel code, one cycle = one bar. energy 1 is the floor, 3 the peak; a chair at p is offered 1-2, at mf 1-3, at f 2-3.",
+  "kick": [
+    {"id": "kick-1", "name": "four on the floor", "energy": 1, "code": "s(\"bd*4\").gain(0.9)"},
+    {"id": "kick-2", "name": "four with a ghost on the last off", "energy": 2, "code": "s(\"bd*4, ~ ~ ~ [~ bd:4]\").gain(\"0.9 0.9 0.9 [0.9 0.5]\")"},
+    {"id": "kick-3", "name": "broken: one, the and of two, four", "energy": 1, "code": "s(\"bd ~ [~ bd] bd\").gain(0.9)"},
+    {"id": "kick-4", "name": "clubkick, four to the floor, harder", "energy": 3, "code": "s(\"clubkick*4\").gain(0.8)"},
+    {"id": "kick-5", "name": "four with a doubled four every fourth bar", "energy": 3, "code": "s(\"bd*4\").every(4, x => x.fast(2)).gain(0.9)"},
+    {"id": "kick-6", "name": "hardkick, four with a roll into the bar", "energy": 3, "code": "s(\"hardkick*4, ~ ~ ~ [~ hardkick*2]\").gain(\"0.8 0.8 0.8 [0.8 0.45]\")"}
+  ],
+  "bass": [
+    {"id": "bass-1", "name": "root pulse, eighths, closed filter", "energy": 1, "code": "note(\"c2*8\").s(\"sawtooth\").lpf(400).decay(0.12).sustain(0).gain(0.6)"},
+    {"id": "bass-2", "name": "offbeat, the filter breathing over four bars", "energy": 2, "code": "note(\"[~ c2]*4\").s(\"sawtooth\").lpf(sine.range(300, 1400).slow(4)).resonance(10).decay(0.15).sustain(0).gain(0.6)"},
+    {"id": "bass-3", "name": "rolling minor line", "energy": 2, "code": "note(\"c2 [c2 eb2] c2 [g1 bb1]\").s(\"square\").lpf(700).decay(0.15).sustain(0).gain(0.55)"},
+    {"id": "bass-4", "name": "sub drone on the root", "energy": 1, "code": "note(\"c1\").s(\"sine\").gain(0.7).release(0.1)"},
+    {"id": "bass-5", "name": "acid line, the filter wandering", "energy": 3, "code": "note(\"c2 c3 [eb2 c2] g2 bb1 c2 [c3 c2] g1\").s(\"sawtooth\").lpf(perlin.range(400, 2600)).resonance(14).decay(0.1).sustain(0).gain(0.55)"},
+    {"id": "bass-6", "name": "sixteenth stabs on the fifth and the root", "energy": 3, "code": "note(\"[c2 c2 g1 c2]*4\").s(\"sawtooth\").lpf(900).decay(0.08).sustain(0).gain(0.5)"}
+  ],
+  "hats": [
+    {"id": "hats-1", "name": "open hat on every off", "energy": 1, "code": "s(\"[~ 808oh]*4\").gain(0.5)"},
+    {"id": "hats-2", "name": "sixteenths, accented", "energy": 2, "code": "s(\"hh*16\").gain(\"0.6 0.3 0.5 0.3\")"},
+    {"id": "hats-3", "name": "clap on two and four, eighth hats", "energy": 2, "code": "s(\"~ cp ~ cp, hh*8\").gain(0.55)"},
+    {"id": "hats-4", "name": "sixteenths with the open hat on the off", "energy": 3, "code": "s(\"hh*16, [~ 808oh]*4\").gain(0.5)"},
+    {"id": "hats-5", "name": "rimshots, syncopated", "energy": 2, "code": "s(\"rs ~ rs rs ~ rs ~ rs\").gain(0.6)"},
+    {"id": "hats-6", "name": "ride cymbal and clap, peak", "energy": 3, "code": "s(\"808cy*8, ~ cp ~ cp\").gain(\"0.4 0.3\").every(2, x => x.fast(2))"}
+  ],
+  "lead": [
+    {"id": "lead-1", "name": "minor stab, two chords alternating", "energy": 2, "code": "note(\"<[c4,eb4,g4] [bb3,d4,f4]>\").s(\"sawtooth\").decay(0.25).sustain(0).lpf(1800).gain(0.4)"},
+    {"id": "lead-2", "name": "arpeggio up and down, with delay", "energy": 2, "code": "note(\"c4 eb4 g4 bb4 c5 bb4 g4 eb4\").s(\"square\").decay(0.1).sustain(0).lpf(2500).gain(0.35).delay(0.3)"},
+    {"id": "lead-3", "name": "hoover, the 90s rave sound", "energy": 3, "code": "note(\"c3 [~ c3] bb2 g2\").s(\"hoover\").gain(0.5)"},
+    {"id": "lead-4", "name": "pad, two chords over two bars", "energy": 1, "code": "note(\"<c3 bb2>\").s(\"supersaw\").attack(0.5).release(1).lpf(1200).gain(0.3)"},
+    {"id": "lead-5", "name": "riff on the top, a little room", "energy": 3, "code": "note(\"c5 ~ bb4 c5 ~ g4 ~ eb4\").s(\"sawtooth\").decay(0.15).sustain(0).lpf(3000).gain(0.4).room(0.3)"},
+    {"id": "lead-6", "name": "offbeat stabs, filter closing", "energy": 2, "code": "note(\"[~ [c4,g4]]*4\").s(\"sawtooth\").decay(0.2).sustain(0).lpf(sine.range(2400, 800).slow(8)).gain(0.4)"}
+  ]
+}

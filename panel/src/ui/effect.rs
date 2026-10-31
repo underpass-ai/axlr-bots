@@ -33,7 +33,10 @@ pub enum Effect {
         name: String,
         message: String,
         to: String,
+        data: Option<serde_json::Value>,
         key: IdempotencyKey,
+        /// Pressed as a shortcut: its answer leaves the form alone.
+        shortcut: bool,
     },
     Mint {
         node_id: String,

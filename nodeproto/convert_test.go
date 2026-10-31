@@ -101,3 +101,48 @@ func TestEnrollTokenRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// A Jev bot's run carries its runtime and the task's input, and reads
+// back as it was; a run without a runtime is AXLR's, as an older control
+// plane's are.
+func TestARunCarriesItsRuntimeAndInput(t *testing.T) {
+	tools, _ := domain.NewAllowedTools([]string{"phrases", "play", "listen", "stop"})
+	runtime, err := domain.NewRuntime(&domain.RuntimeSnapshot{Kind: "jev", Jev: &domain.JevProgramSnapshot{
+		Server: "score", Start: "phrases", Wait: "listen", Stop: "stop", Act: domain.JevActSnapshot{Tool: "play", Choice: "phrase", Verdict: "judge", Pass: []string{"dynamics"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := json.RawMessage(`{"name":"info.cue.winds","data":{"dynamics":"f"}}`)
+	run := application.Assignment{ExecutionID: "exec-1", Kind: domain.ExecutionRun, Run: &application.ExecutionRequest{
+		ExecutionID: "exec-1", TaskID: "task-1", BotID: "ob-1", TenantID: "t", Objective: "play", Level: domain.AutonomyActWithinPolicy, AllowedTools: tools.Names(), Runtime: runtime, Input: input,
+	}}
+	raw, _ := json.Marshal(FromAssignment(run))
+	if !strings.Contains(string(raw), `"runtime":{"kind":"jev"`) || !strings.Contains(string(raw), `"input":{"name":"info.cue.winds"`) {
+		t.Fatalf("wire = %s", raw)
+	}
+	var m AssignmentMessage
+	_ = json.Unmarshal(raw, &m)
+	back, err := ToAssignment(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, ok := back.Run.Runtime.Jev()
+	if !ok || program.Act() != "play" || program.Pass()[0] != "dynamics" || string(back.Run.Input) != string(input) {
+		t.Errorf("back = %+v", back.Run)
+	}
+	m.Run.Runtime = &domain.RuntimeSnapshot{Kind: "jev"}
+	if _, err := ToAssignment(m); err == nil {
+		t.Error("a jev runtime without its program was accepted")
+	}
+	plain := application.Assignment{ExecutionID: "exec-2", Kind: domain.ExecutionRun, Run: &application.ExecutionRequest{ExecutionID: "exec-2", BotID: "bot", Objective: "o", Level: domain.AutonomyObserve, AllowedTools: tools.Names()}}
+	raw, _ = json.Marshal(FromAssignment(plain))
+	if strings.Contains(string(raw), `"runtime"`) || strings.Contains(string(raw), `"input"`) {
+		t.Errorf("an AXLR run names a runtime: %s", raw)
+	}
+	var plainMessage AssignmentMessage
+	_ = json.Unmarshal(raw, &plainMessage)
+	if back, err := ToAssignment(plainMessage); err != nil || back.Run.Runtime.Kind() != domain.RuntimeAXLR {
+		t.Errorf("plain = %v %+v", err, back.Run)
+	}
+}

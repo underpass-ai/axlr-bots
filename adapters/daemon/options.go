@@ -6,6 +6,8 @@ import (
 	"log"
 	"net"
 	"time"
+
+	"github.com/underpass-ai/axlr-bots/application"
 )
 
 // Defaults of the daemon's loop.
@@ -52,6 +54,9 @@ type Options struct {
 	// NodeOfflineAfter is how long without a heartbeat a node is marked
 	// Offline; zero means application.NodeOfflineAfter.
 	NodeOfflineAfter time.Duration
+	// Pushers are the bus adapters the pushes to nodes also go through
+	// (a broker), beside the stream each node holds open to the daemon.
+	Pushers []application.NodePusher
 	// Log receives one line per task run, reconciliation and error;
 	// nil discards them.
 	Log *log.Logger

@@ -40,6 +40,10 @@ pub struct BotDefinition {
     /// What it may tell its teams; passed through as written.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub events: Option<serde_json::Value>,
+    /// What runs its tasks on the node (AXLR when absent, else a Jev
+    /// program); passed through as written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<serde_json::Value>,
 }
 
 /// The few fields of the register form.
@@ -130,6 +134,7 @@ impl BotDefinition {
             delegation: None,
             groups: team_names(&form.team),
             events: None,
+            runtime: None,
         };
         definition.validate()?;
         Ok(definition)

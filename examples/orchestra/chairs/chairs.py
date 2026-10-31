@@ -3,13 +3,19 @@
 
   chairs.py render <dir>    write the 36 definitions, from chair.json and the score service's sections
   chairs.py up [chair...]   start each chair's node (../stage/stage.sh), point its mcp.json at its
-                            own URL of the score service, register the bot (or update it) and enable it
+                            own URL of the score service, turn on Jev's tool in its settings.json,
+                            register the bot (or update it) and enable it
   chairs.py down [chair...] stop each bot (paused, its tasks cancelled) and its node
   chairs.py list            the team as the control plane has it, by section
 
 A chair's id is the score service's: <section>-<n> (vn1-1 … hn-2). Its node is
 stage-<id>, dedicated; its MCP URL http://127.0.0.1:8790/mcp/<id>, so the score
 knows who calls. Without chair names, every chair.
+
+ORCHESTRA_RUNTIME=jev renders the chairs from chair-jev.json: Jev bots, whose
+node runs the fixed program phrases → Jev → play → listen with no language
+model (the node needs TYPESAFE_API_KEY in its environment file). Anything
+else, or nothing, is chair.json: AXLR bots on Haiku that call the same tools.
 
 Test: python3 -m unittest -v test_chairs
 """
@@ -24,6 +30,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG = os.path.join(HERE, "..", "score-service", "config.json")
 STAGE = os.path.join(HERE, "..", "stage", "stage.sh")
 SCORE_URL = os.environ.get("ORCHESTRA_SCORE_URL", "http://127.0.0.1:8790")
+RUNTIME = os.environ.get("ORCHESTRA_RUNTIME", "axlr")
+TEMPLATES = {"axlr": "chair.json", "jev": "chair-jev.json"}
 
 
 def chairs(config):
@@ -35,7 +43,7 @@ def definition(template, section, n):
     """One chair's bot, from the template."""
     chair = f"{section['id']}-{n}"
     text = json.dumps(template)
-    for key, value in (("stage-CHAIR", f"stage-{chair}"), ("CHAIR", chair), ("SECTION", section["name"]),
+    for key, value in (("stage-CHAIR", f"stage-{chair}"), ("CHAIR", chair), ("SECTIONKEY", section["id"]), ("SECTION", section["name"]),
                        ("TOTAL", str(section["chairs"])), ("FAMILY", section["family"]), ("chair N of", f"chair {n} of")):
         text = text.replace(key, value)
     bot = json.loads(text)
@@ -43,10 +51,22 @@ def definition(template, section, n):
     return bot
 
 
-def load():
+def patch_of(bot):
+    """The update that makes a registered chair this definition: every field but the identity, and the
+    runtime even when the template names none, so a chair moved to Jev comes back to AXLR with one up."""
+    patch = {k: v for k, v in bot.items() if k not in ("id", "tenant", "name", "owner")}
+    patch.setdefault("runtime", {"kind": "axlr"})
+    return patch
+
+
+def load(runtime=None):
+    """The score's sections and the chair template of the runtime (ORCHESTRA_RUNTIME when None)."""
+    runtime = RUNTIME if runtime is None else runtime
+    if runtime not in TEMPLATES:
+        raise SystemExit(f"ORCHESTRA_RUNTIME must be one of {', '.join(TEMPLATES)}, not {runtime!r}")
     with open(CONFIG) as f:
         config = json.load(f)
-    with open(os.path.join(HERE, "chair.json")) as f:
+    with open(os.path.join(HERE, TEMPLATES[runtime])) as f:
         template = json.load(f)
     return config, template
 
@@ -74,21 +94,21 @@ def up(config, template, names):
     subprocess.run([STAGE, "start", *[c[0] for c in picked]], check=True, stdout=subprocess.DEVNULL)
     for chair, section, n in picked:
         subprocess.run([STAGE, "mcp", chair, f"{SCORE_URL}/mcp/{chair}"], check=True, stdout=subprocess.DEVNULL)
+        subprocess.run([STAGE, "settings", chair], check=True, stdout=subprocess.DEVNULL)
         bot = definition(template, section, n)
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
             json.dump(bot, f)
         try:
             if cli("bot", "get", chair, check=False).returncode == 0:
-                patch = {k: v for k, v in bot.items() if k not in ("id", "tenant", "name", "owner")}
                 with open(f.name, "w") as g:
-                    json.dump(patch, g)
+                    json.dump(patch_of(bot), g)
                 cli("bot", "update", chair, "--file", f.name)
             else:
                 cli("bot", "register", "--file", f.name)
         finally:
             os.unlink(f.name)
         cli("bot", "enable", chair, check=False)
-        print(f"{chair} up")
+        print(f"{chair} up ({(bot.get('runtime') or {}).get('kind', 'axlr')})")
 
 
 def down(config, names):

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 
+	natsbus "github.com/underpass-ai/axlr-bots/adapters/bus/nats"
 	"github.com/underpass-ai/axlr-bots/adapters/daemon"
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
 	"github.com/underpass-ai/axlr-bots/application"
@@ -60,6 +61,12 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 	tick := flags.Duration("tick", daemon.DefaultTick, "how often to look for Pending tasks")
 	reconcileEvery := flags.Duration("reconcile-every", daemon.DefaultReconcileEvery, "how often to fail the tasks a dead run left Running")
 	grace := flags.Duration("grace", 0, "reconciliation grace (default: the bot's task timeout plus 1m)")
+	bus := flags.String("bus", busDefault(os.Getenv("AXLR_BOTS_BUS")), "how pushes reach the nodes: direct (each node's stream over its own connection, always on) or nats (a broker beside it, for nodes that read it; also AXLR_BOTS_BUS)")
+	natsURL := flags.String("nats-url", os.Getenv("AXLR_BOTS_NATS_URL"), "with --bus nats, the broker, nats://host:4222 (also AXLR_BOTS_NATS_URL)")
+	natsCreds := flags.String("nats-creds", os.Getenv("AXLR_BOTS_NATS_CREDS"), "with --bus nats, a NATS credentials file (also AXLR_BOTS_NATS_CREDS)")
+	natsCert := flags.String("nats-cert", os.Getenv("AXLR_BOTS_NATS_CERT"), "with --bus nats, a client certificate in PEM for mutual TLS, such as one ca issue-client wrote (also AXLR_BOTS_NATS_CERT)")
+	natsKey := flags.String("nats-key", os.Getenv("AXLR_BOTS_NATS_KEY"), "with --nats-cert, its key (also AXLR_BOTS_NATS_KEY)")
+	natsCA := flags.String("nats-ca", os.Getenv("AXLR_BOTS_NATS_CA"), "with --bus nats, the CA the broker's certificate is checked against (also AXLR_BOTS_NATS_CA; default the system's)")
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -69,6 +76,18 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 	}
 	if socketPath == "" {
 		fmt.Fprintln(stderr, "axlr-bots: serve needs a socket (--socket or AXLR_BOTS_SOCKET)")
+		return exitUsage
+	}
+	if *bus != "direct" && *bus != "nats" {
+		fmt.Fprintln(stderr, "axlr-bots: --bus is direct or nats")
+		return exitUsage
+	}
+	if *bus == "nats" && *natsURL == "" {
+		fmt.Fprintln(stderr, "axlr-bots: --bus nats needs --nats-url (or AXLR_BOTS_NATS_URL)")
+		return exitUsage
+	}
+	if (*natsCert == "") != (*natsKey == "") {
+		fmt.Fprintln(stderr, "axlr-bots: --nats-cert and --nats-key go together")
 		return exitUsage
 	}
 	options := daemon.Options{SocketPath: socketPath, Tick: *tick, ReconcileEvery: *reconcileEvery, Grace: *grace}
@@ -98,6 +117,16 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	options.Log = log.New(stderr, "", log.LstdFlags)
+	if *bus == "nats" {
+		publisher, err := natsbus.NewPublisher(natsbus.Config{URL: *natsURL, Credentials: *natsCreds, CertFile: *natsCert, KeyFile: *natsKey, CAFile: *natsCA, Outbox: filepath.Join(stateDir, "outbox", "nats"), Name: "axlr-bots", Log: options.Log})
+		if err != nil {
+			fmt.Fprintln(stderr, "axlr-bots: serve --bus nats:", err)
+			return exitError
+		}
+		defer publisher.Close()
+		options.Pushers = append(options.Pushers, publisher)
+		options.Log.Printf("daemon: bus nats at %s (outbox %s)", *natsURL, filepath.Join(stateDir, "outbox", "nats"))
+	}
 	if *apiListen != "" {
 		path := *apiTokenFile
 		if path == "" {
@@ -124,4 +153,12 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 		return exitError
 	}
 	return exitOK
+}
+
+// busDefault is the bus when the environment names none: direct.
+func busDefault(env string) string {
+	if env == "" {
+		return "direct"
+	}
+	return env
 }

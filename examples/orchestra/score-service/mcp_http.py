@@ -16,6 +16,53 @@ MAX_BODY = 1 << 20
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "[::1]")
 
 
+def host_of(value):
+    """The host of a Host header or a URL's netloc, lowercased, without the port."""
+    value = (value or "").strip().lower()
+    if value.startswith("["):
+        return value.split("]")[0] + "]"
+    return value.rsplit(":", 1)[0]
+
+
+class Hosts:
+    """The names a service answers, against DNS rebinding.
+
+    Loopback always, for everything. Internal names (a cluster's service
+    names, which only pods dial) for everything too: the chairs' MCP and
+    the operator's local events. Public names (behind an HTTPS ingress)
+    for what a browser needs: the page, its API, the sound, /ws/hands;
+    and a page may open /ws/hands or post a posture only from a public
+    name or loopback, so no other site the headset opens may conduct.
+    """
+
+    def __init__(self, public=(), internal=()):
+        self.public = {host_of(h) for h in public if h}
+        self.internal = {host_of(h) for h in internal if h} - self.public
+
+    def kind(self, host_header):
+        """loopback, internal, public, or None for a name this service does not answer."""
+        host = host_of(host_header)
+        if host in LOOPBACK_HOSTS:
+            return "loopback"
+        if host in self.internal:
+            return "internal"
+        if host in self.public:
+            return "public"
+        return None
+
+    def origin_ok(self, origin):
+        """A browser's Origin: none (not a browser), loopback, or a public name."""
+        if not origin:
+            return True
+        from urllib.parse import urlparse
+
+        host = host_of(urlparse(origin).netloc)
+        return host in LOOPBACK_HOSTS or host in self.public
+
+    def beyond_loopback(self):
+        return bool(self.public or self.internal)
+
+
 class ToolError(Exception):
     """A refusal the model reads as the tool's result (isError true)."""
 

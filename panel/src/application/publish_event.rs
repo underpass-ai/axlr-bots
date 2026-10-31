@@ -20,6 +20,7 @@ impl PublishEvent {
         name: &str,
         message: &str,
         to: &str,
+        data: Option<serde_json::Value>,
         key: IdempotencyKey,
     ) -> Result<Published, PanelError> {
         let name = name.trim();
@@ -40,6 +41,7 @@ impl PublishEvent {
         let publication = Publication {
             name: name.to_string(),
             message: message.to_string(),
+            data,
             to,
             idempotency_key: key.as_str().to_string(),
         };
@@ -59,13 +61,13 @@ mod tests {
         control_plane.set_groups("bot-wrx80", &["port"]);
         let key = || IdempotencyKey::new("k-1").unwrap();
         let uc = PublishEvent::new(control_plane.clone());
-        let published = run(uc.execute("port".into(), " stop.all ", "Everyone stop", "", key())).unwrap();
+        let published = run(uc.execute("port".into(), " stop.all ", "Everyone stop", "", None, key())).unwrap();
         assert!(published.created && published.deliveries.len() == 2);
-        let one = run(uc.execute("port".into(), "info.x", "x", "bot", key())).unwrap();
+        let one = run(uc.execute("port".into(), "info.x", "x", "bot", None, key())).unwrap();
         assert_eq!(one.deliveries.len(), 1);
-        assert!(run(uc.execute("port".into(), "error.bot", "x", "", key())).is_err());
-        assert!(run(uc.execute("port".into(), "info.*", "x", "", key())).is_err());
-        assert!(run(uc.execute("port".into(), "info.x", " ", "", key())).is_err());
-        assert!(run(uc.execute("port".into(), "Bad", "x", "", key())).is_err());
+        assert!(run(uc.execute("port".into(), "error.bot", "x", "", None, key())).is_err());
+        assert!(run(uc.execute("port".into(), "info.*", "x", "", None, key())).is_err());
+        assert!(run(uc.execute("port".into(), "info.x", " ", "", None, key())).is_err());
+        assert!(run(uc.execute("port".into(), "Bad", "x", "", None, key())).is_err());
     }
 }

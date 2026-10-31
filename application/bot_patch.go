@@ -18,6 +18,7 @@ type BotPatch struct {
 	Groups        *[]string                      `json:"groups,omitempty"`
 	Events        *domain.EventsSnapshot         `json:"events,omitempty"`
 	Subscriptions *[]domain.SubscriptionSnapshot `json:"subscriptions,omitempty"`
+	Runtime       *domain.RuntimeSnapshot        `json:"runtime,omitempty"`
 	Model         *ModelPolicyDefinition         `json:"model,omitempty"`
 	Budgets       *BudgetsDefinition             `json:"budgets,omitempty"`
 }

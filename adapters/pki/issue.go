@@ -55,7 +55,7 @@ func (a Authority) IssueNode(csrPEM []byte, nodeID domain.NodeID, lifetime time.
 	now := time.Now().UTC().Truncate(time.Second)
 	template := &x509.Certificate{
 		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: nodeID.String(), Organization: []string{"axlr-bots nodes"}},
+		Subject:               pkix.Name{CommonName: nodeID.String(), Organization: []string{NodeOrganization}},
 		NotBefore:             now.Add(-5 * time.Minute),
 		NotAfter:              now.Add(lifetime),
 		KeyUsage:              x509.KeyUsageDigitalSignature,
@@ -110,4 +110,53 @@ func (a Authority) IssueServer(hosts []string, lifetime time.Duration) (tls.Cert
 		return tls.Certificate{}, fmt.Errorf("pki: %w", err)
 	}
 	return tls.Certificate{Certificate: [][]byte{der, a.cert.Raw}, PrivateKey: key, Leaf: leaf}, nil
+}
+
+// ClientOrganization is the organisation of the certificates IssueClient
+// signs: a service of the fleet's own (the control plane before a
+// broker), never a node, whose certificates say NodeOrganization.
+const (
+	ClientOrganization = "axlr-bots clients"
+	NodeOrganization   = "axlr-bots nodes"
+)
+
+// IssueClient signs a client certificate for one of the fleet's own
+// services, such as the control plane's connection to a broker that
+// maps certificates to users, with a fresh key. It is no node's: the
+// control plane accepts a node only with the certificate it issued at
+// enrollment. Returns the key and the certificate in PEM.
+func (a Authority) IssueClient(name string, lifetime time.Duration) (keyPEM, certPEM []byte, err error) {
+	if name == "" {
+		return nil, nil, domain.ValidationError{Field: "name", Reason: "is required"}
+	}
+	key, err := newKey()
+	if err != nil {
+		return nil, nil, err
+	}
+	serial, err := newSerial()
+	if err != nil {
+		return nil, nil, err
+	}
+	if lifetime <= 0 {
+		lifetime = NodeCertificateLifetime
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	template := &x509.Certificate{
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: name, Organization: []string{ClientOrganization}},
+		NotBefore:             now.Add(-5 * time.Minute),
+		NotAfter:              now.Add(lifetime),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, a.cert, &key.PublicKey, a.key)
+	if err != nil {
+		return nil, nil, fmt.Errorf("pki: sign: %w", err)
+	}
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return nil, nil, fmt.Errorf("pki: %w", err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), nil
 }

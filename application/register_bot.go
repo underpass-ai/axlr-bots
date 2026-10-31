@@ -142,5 +142,12 @@ func buildBot(d BotDefinition, now time.Time) (domain.Bot, error) {
 		}
 		bot.SetEvents(events)
 	}
+	runtime, err := domain.NewRuntime(d.Runtime)
+	if err != nil {
+		return domain.Bot{}, err
+	}
+	if err := bot.SetRuntime(runtime); err != nil {
+		return domain.Bot{}, err
+	}
 	return bot, nil
 }

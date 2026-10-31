@@ -1,0 +1,63 @@
+{{- if .Values.rave.enabled }}
+{{- $rave := include "orchestra.rave" . }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $rave }}
+  labels:
+    {{- include "orchestra.labels" . | nindent 4 }}
+spec:
+  selector: {app: {{ $rave }}}
+  ports:
+    - {name: http, port: 8794, targetPort: http}
+---
+# The rave: its own clock and sound, the samples in the image. No team
+# rave exists on the control plane yet (no bots): its four chairs are
+# played through POST /api/event and the chairs' MCP from inside the
+# cluster (rave-service/demo.py), never from the public name.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $rave }}
+  labels:
+    {{- include "orchestra.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: {{ $rave }}}
+  template:
+    metadata:
+      labels:
+        app: {{ $rave }}
+        {{- include "orchestra.labels" . | nindent 8 }}
+    spec:
+      {{- include "orchestra.podSpecCommon" . | nindent 6 }}
+      containers:
+        - name: rave
+          image: {{ include "orchestra.image" (list . "rave") }}
+          args:
+            - --listen=0.0.0.0:8794
+            - --public-host={{ .Values.rave.host }}
+            {{- range splitList "," (include "orchestra.svcNames" (list $rave .Release.Namespace)) }}
+            - --internal-host={{ . }}
+            {{- end }}
+            - --no-network
+            - --samples=/opt/rave/samples
+          ports:
+            - {name: http, containerPort: 8794}
+          readinessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 10
+          securityContext:
+            {{- include "orchestra.restricted" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.rave.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 256Mi}
+---
+{{ include "orchestra.ingress" (dict "root" . "name" $rave "host" .Values.rave.host) }}
+{{- end }}

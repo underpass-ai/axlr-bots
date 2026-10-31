@@ -16,10 +16,13 @@ import (
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/adapters/axlr"
+	natsbus "github.com/underpass-ai/axlr-bots/adapters/bus/nats"
+	"github.com/underpass-ai/axlr-bots/adapters/jev"
 	"github.com/underpass-ai/axlr-bots/adapters/nodeagent"
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // Exit codes of the command.
@@ -61,6 +64,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	caFile := flags.String("ca-file", envOr("AXLR_NODE_CA_FILE", ""), "with --token-file, the fleet CA in PEM instead of the one the token carries (also AXLR_NODE_CA_FILE)")
 	retry := flags.Duration("enroll-retry", 10*time.Second, "with --token-file, how long to wait between enrollment attempts")
 	dedicated := flags.Bool("dedicated", envOr("AXLR_NODE_DEDICATED", "") == "true", "run only the bots whose placement names this node or selects its labels, never those placed on any node (also AXLR_NODE_DEDICATED=true): a sidecar")
+	mcpConfig := flags.String("mcp-config", envOr("AXLR_NODE_MCP_CONFIG", ""), "the mcp.json a Jev bot's program finds its MCP server in (also AXLR_NODE_MCP_CONFIG; default: ~/.config/axlr/mcp.json, the node's AXLR's)")
+	jevModel := flags.String("jev-model", envOr("AXLR_NODE_JEV_MODEL", jev.DefaultModel), "the pinned Jev version the jev runtime asks (also AXLR_NODE_JEV_MODEL)")
+	bus := flags.String("bus", envOr("AXLR_NODE_BUS", "direct"), "how the control plane's pushes reach this node: direct (a stream over the node's own connection) or nats (also AXLR_NODE_BUS)")
+	natsURL := flags.String("nats-url", envOr("AXLR_NODE_NATS_URL", ""), "with --bus nats, the broker, nats://host:4222 (also AXLR_NODE_NATS_URL)")
+	natsCreds := flags.String("nats-creds", envOr("AXLR_NODE_NATS_CREDS", ""), "with --bus nats, a NATS credentials file (also AXLR_NODE_NATS_CREDS)")
+	natsCert := flags.String("nats-cert", envOr("AXLR_NODE_NATS_CERT", ""), "with --bus nats, a client certificate in PEM for mutual TLS (also AXLR_NODE_NATS_CERT; default with a tls:// broker and an https control plane: the node's own, from enrollment)")
+	natsKey := flags.String("nats-key", envOr("AXLR_NODE_NATS_KEY", ""), "with --nats-cert, its key (also AXLR_NODE_NATS_KEY)")
+	natsCA := flags.String("nats-ca", envOr("AXLR_NODE_NATS_CA", ""), "with --bus nats, the CA the broker's certificate is checked against (also AXLR_NODE_NATS_CA; default the system's)")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exitOK
@@ -78,6 +89,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 	parsedLabels, err := parseLabels(*labels)
 	if err != nil {
 		fmt.Fprintln(stderr, "axlr-node:", err)
+		return exitUsage
+	}
+	if *bus != "direct" && *bus != "nats" {
+		fmt.Fprintln(stderr, "axlr-node: --bus is direct or nats")
+		return exitUsage
+	}
+	if *bus == "nats" && *natsURL == "" {
+		fmt.Fprintln(stderr, "axlr-node: --bus nats needs --nats-url (or AXLR_NODE_NATS_URL)")
+		return exitUsage
+	}
+	if (*natsCert == "") != (*natsKey == "") {
+		fmt.Fprintln(stderr, "axlr-node: --nats-cert and --nats-key go together")
 		return exitUsage
 	}
 	if *tokenFile != "" && !strings.HasPrefix(*control, "https://") {
@@ -113,10 +136,29 @@ func run(args []string, stdout, stderr io.Writer) int {
 	} else {
 		logger.Printf("node: own path unknown (%v): no delegation tool", err)
 	}
+	runtimes := nodeagent.NewRuntimes(executor)
+	// The jev runtime is there when the host has Jev's key: a Jev bot is
+	// never assigned to a node that cannot ask Jev.
+	if key := os.Getenv("TYPESAFE_API_KEY"); key != "" {
+		judge, err := jev.NewClient(jev.ClientConfig{APIKey: key, Model: *jevModel})
+		if err != nil {
+			fmt.Fprintln(stderr, "axlr-node:", err)
+			return exitUsage
+		}
+		runtimes.Add(domain.RuntimeJev, jev.NewExecutor(judge, jev.MCPConfig{Path: *mcpConfig}, *stateDir))
+		logger.Printf("node: jev runtime on (%s)", *jevModel)
+	} else {
+		logger.Printf("node: TYPESAFE_API_KEY is not set: Jev bots are not run here")
+	}
 	agent := nodeagent.Agent{
 		Transport: transport,
-		Executor:  executor,
-		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Dedicated: *dedicated, Heartbeat: *heartbeat, PollWait: *poll, Log: logger, SocketDir: filepath.Join(*stateDir, "run")},
+		Executor:  runtimes,
+		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Dedicated: *dedicated, Runtimes: runtimes.Kinds(), Heartbeat: *heartbeat, PollWait: *poll, Log: logger, SocketDir: filepath.Join(*stateDir, "run")},
+	}
+	if *bus == "nats" {
+		cert, key, how := natsClientCertificate(*natsURL, *control, *stateDir, *natsCert, *natsKey)
+		agent.Streamer = natsbus.NewSubscriber(natsbus.Config{URL: *natsURL, Credentials: *natsCreds, CertFile: cert, KeyFile: key, CAFile: *natsCA, Name: "axlr-node " + id, Log: logger})
+		logger.Printf("node: bus nats at %s, %s", *natsURL, how)
 	}
 	if err := agent.Run(ctx); err != nil {
 		fmt.Fprintln(stderr, "axlr-node:", err)
@@ -213,4 +255,20 @@ func envOr(name, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// natsClientCertificate is the certificate the node shows the broker:
+// the one named by the flags, or, with a tls:// broker and an https
+// control plane, the node's own from enrollment, so a broker that maps
+// certificates to users knows the node by the same identity the control
+// plane does. It says which, for the log.
+func natsClientCertificate(natsURL, control, stateDir, cert, key string) (string, string, string) {
+	if cert != "" {
+		return cert, key, "client certificate " + cert
+	}
+	if strings.HasPrefix(natsURL, "tls://") && strings.HasPrefix(control, "https://") {
+		dir := filepath.Join(stateDir, pki.CredentialsDirName)
+		return filepath.Join(dir, "node.crt"), filepath.Join(dir, "node.key"), "the node's own certificate from enrollment"
+	}
+	return "", "", "no client certificate"
 }

@@ -35,7 +35,8 @@ A bot has no role baked in: its definition is what an operator writes, and the s
 | `events` | what the bot may tell its teams: the names it may emit and how many a minute; absent: any name but `error.*` and `done.*`, 6 a minute ([below](#events)) |
 | `subscriptions` | the topics the bot listens to in its teams, at most 16; with or without them it hears what is addressed to it and the team's `danger.*` and `stop.*` ([below](#subscriptions)) |
 | `model` | the model policy: `model` is passed to AXLR as `--model`; `routingPolicy`, `allowRemoteProviders` and `maxContextTokens` are validated and stored with the bot |
-| `budgets` | `taskTimeoutSeconds` bounds every execution (15 minutes when absent); `maxModelCallsPerTask` and `maxToolCallsPerTask` go to AXLR as the execution's budget when the build takes `--budget` ([runtime contract](../architecture/runtime-contract.md)); `maxDelegationDepth` is the depth limit of a [delegation](#delegation) that names none |
+| `budgets` | `taskTimeoutSeconds` bounds every execution (15 minutes when absent); `maxModelCallsPerTask` and `maxToolCallsPerTask` go to AXLR as the execution's budget when the build takes `--budget` ([runtime contract](../architecture/runtime-contract.md)); `maxDelegationDepth` is the depth limit of a [delegation](#delegation) that names none. For a Jev bot the model calls are Jev's and the tool calls the program's |
+| `runtime` | what runs the bot's tasks on its node: absent (or `kind: axlr`) is an AXLR session, a language model planning the run; `kind: jev` with its `jev` program is a fixed sequence of tool calls whose every decision is one question to Jev, with no language model ([below](#runtime)) |
 
 ## Autonomy levels
 
@@ -97,7 +98,7 @@ The target takes delegated tasks when its `triggers` include `{"type": "delegati
 
 ## Urgent tasks
 
-Only the operator makes a task urgent: with `priority: urgent` at submission (`task submit --urgent`, the panel's Urgent switch), or in the definition of the bot that hears a teammate's event (below). An urgent task is assigned before the bot's other tasks, and it cancels the bot's tasks that are Running or WaitingApproval and not urgent: each ends `Cancelled` with the reason `preempted by the urgent task <id> (<why>)` and a `bot.task.preempted` event, a running execution stops at the node's next lease renewal (10 s), and a waiting call never gets its decision (a late approve or deny is `409`). Pending tasks wait behind it; an urgent task never cancels another urgent one. Cancelling stops the model, not what it started: a vehicle on a mission flies on until the urgent task calls, say, `return_home`.
+Only the operator makes a task urgent: with `priority: urgent` at submission (`task submit --urgent`, the panel's Urgent switch), or in the definition of the bot that hears a teammate's event (below). An urgent task is assigned before the bot's other tasks, and it cancels the bot's tasks that are Running or WaitingApproval and not urgent: each ends `Cancelled` with the reason `preempted by the urgent task <id> (<why>)` and a `bot.task.preempted` event, a running execution stops as soon as the control plane pushes the cancel on its node's stream (at the node's next lease renewal, 10 s, without the stream), and a waiting call never gets its decision (a late approve or deny is `409`). Pending tasks wait behind it; an urgent task never cancels another urgent one. Cancelling stops the model, not what it started: a vehicle on a mission flies on until the urgent task calls, say, `return_home`.
 
 **Stop** (`bot stop`, `POST /v1/bots/{id}/stop`) is the operator's brake: it pauses the bot and cancels every task it has not finished, Pending included.
 
@@ -221,6 +222,40 @@ Every fire creates a task through the same path as a manual submission, under an
 Catch-up: a daemon that comes back after a long stop finds the slot in the past, **fires once for it** with that slot's key (so a crash between the fire and the save fires the same slot again and finds the same task) and arms the next slot after now; the slots in between are not replayed. A paused bot's timers are advanced, not fired; a changed schedule re-arms the timer; a removed trigger drops it. The timer's event carries `trigger`, `scheduledAt` and `firedAt`, which the template may use.
 
 The procedure, with the checks, is the [triggers runbook](../runbooks/triggers.md).
+
+## Runtime
+
+A bot's tasks run as an AXLR session unless its definition says otherwise: a model reads the mission and the objective and calls the tools. A **Jev bot** has no model. Its node runs a fixed program over one MCP server, and every decision in it is one question to [Jev](https://typesafe.ai), TypeSafe's judgement model, which answers a choice among options in about 0.2 s. The world being acted on (the MCP server) writes the questions; the program only carries them to Jev and carries the answer back. It is for a bot whose steps are known and whose only open point is a choice: the orchestra's chairs, which play the phrase Jev picks ([the chairs](../../examples/orchestra/chairs/README.md)).
+
+```json
+"runtime": {
+  "kind": "jev",
+  "jev": {
+    "server": "score",
+    "start": "phrases",
+    "act": {"tool": "play", "choice": "phrase", "verdict": "judge", "pass": ["dynamics"]},
+    "wait": "listen",
+    "stop": "stop",
+    "model": "jev-1.13.0"
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `server` | the MCP server that serves the tools, by its name in the node's `~/.config/axlr/mcp.json` (the file the node's AXLR reads): one server per bot |
+| `start` | the tool a task begins with (no arguments) |
+| `act` | how the program acts on a choice: the `tool`, the argument that takes the `choice` (the first whole number in Jev's choice, else its text: «phrase 3: bars 17–24» is 3), the argument that takes Jev's `verdict` as `{choice, probability, confidence}` (optional), and the fields of the event's data to `pass` on as they are (at most 8; a cue's `dynamics`) |
+| `wait` | the tool that waits for the next question |
+| `stop` | the tool a `stop.*` task calls once (optional) |
+| `tell` | what the bot tells its teams after each act (optional): the event's `name` (one the bot may emit) and the `fields` of the decision that ride as its data: `choice`, `probability`, `confidence`, the act's choice argument, a field passed on; all of them when none is named. The message is Jev's choice. Teammates hear it as any event ([subscriptions](#subscriptions)) |
+| `model` | the pinned Jev version; `jev-1.13.0` when absent, never a `-latest` alias |
+
+The program, for a task that an event made (a cue): `start`; then, while a result carries `ask: {state, question, options}`, put it to Jev, call `act` with Jev's choice, call `wait`, which answers with the next `ask`; a result with `done: true` ends the task. A result with neither (a paused world, or between questions) is waited on again, a little later each time (up to 5 s between waits): a pause never ends a task; the budgets and `taskTimeoutSeconds` end a task the world never ends. For a `stop.*` task: `stop` once. An event heard while the task runs (a cue in mode `message`) changes what the next `act` passes on. Jev not answering is retried on the next question, three in a row fail the task; the world refusing `act` three times in a row fails it too; the budgets bound Jev's calls (`maxModelCallsPerTask`) and the tools' (`maxToolCallsPerTask`) and end a task with `budget_exceeded`, as AXLR's do.
+
+The program's tools must be in `allowedTools`, and the level must be `act-within-policy`: the program calls its tools without asking a person. A definition or an update that narrows them past the program is refused. The execution's report carries the tool calls, the usage (Jev's calls and input tokens, the cost at TypeSafe's price) and a receipt, `axlr-bots.jev-receipt/v1`, with each decision: a hash of the question, the choice, its probability, Jev's confidence, the latency and whether the act was taken. The trace stays on the node, as AXLR's does.
+
+A node runs Jev bots only when it has `TYPESAFE_API_KEY` in its environment: it then registers the runtime `jev` in its capabilities, and the control plane assigns a Jev bot to no other node. `axlr-node --mcp-config` names another `mcp.json`; `--jev-model` another pinned version.
 
 ## Register, enable, update
 

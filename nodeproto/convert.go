@@ -17,7 +17,7 @@ func FromAssignment(a application.Assignment) AssignmentMessage {
 			TaskID: r.TaskID.String(), BotID: r.BotID.String(), TenantID: r.TenantID.String(), CorrelationID: r.CorrelationID.String(),
 			Objective: r.PromptText(), Model: r.Model, Level: r.Level.String(), AllowedTools: r.AllowedTools,
 			ToolRules: r.ToolRules.Snapshot(), TimeoutSeconds: int(r.Timeout / time.Second), Delegation: fromOffer(r.Delegation),
-			Events: fromEventsOffer(r.Events),
+			Events: fromEventsOffer(r.Events), Runtime: r.Runtime.Snapshot(), Input: r.Input,
 		}
 		if model, tools := r.Budgets.MaxModelCallsPerTask(), r.Budgets.MaxToolCallsPerTask(); model > 0 || tools > 0 {
 			m.Run.Budgets = &BudgetsMessage{MaxModelCalls: model, MaxToolCalls: tools}
@@ -61,10 +61,14 @@ func ToAssignment(m AssignmentMessage) (application.Assignment, error) {
 		if err != nil {
 			return application.Assignment{}, err
 		}
+		runtime, err := domain.NewRuntime(r.Runtime)
+		if err != nil {
+			return application.Assignment{}, err
+		}
 		a.Run = &application.ExecutionRequest{
 			ExecutionID: executionID, TaskID: domain.TaskID(r.TaskID), BotID: botID, TenantID: domain.TenantID(r.TenantID), CorrelationID: domain.CorrelationID(r.CorrelationID),
 			Objective: objective, Model: r.Model, Level: level, AllowedTools: tools.Names(), ToolRules: rules, Timeout: time.Duration(r.TimeoutSeconds) * time.Second,
-			Delegation: toOffer(r.Delegation), Events: toEventsOffer(r.Events),
+			Delegation: toOffer(r.Delegation), Events: toEventsOffer(r.Events), Runtime: runtime, Input: r.Input,
 		}
 		if r.Budgets != nil {
 			budgets, err := domain.NewBudgets(r.Budgets.MaxModelCalls, r.Budgets.MaxToolCalls, 0, a.Run.Timeout)

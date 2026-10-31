@@ -4,8 +4,8 @@ use super::{BotView, Connection, Effect, Message};
 use crate::application::{
     CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader, FilePicker, FollowBotEvents,
     FollowTeamEvents, KeySource, ListTopics, LoadChat, LoadTaskDetail, MintEnrollmentToken, Notifier, PanelError,
-    PatchBot, PublishEvent, RefreshFleet, RegisterBot, RevokeNode, SaveSubscriptions, SendChat, StopBot, SubmitTask,
-    SwitchBot,
+    PatchBot, PublishEvent, RefreshFleet, RegisterBot, RevokeNode, SaveSubscriptions, SendChat, ShortcutSource,
+    StopBot, SubmitTask, SwitchBot,
 };
 use crate::domain::BotPatch;
 
@@ -21,6 +21,8 @@ pub struct Services {
     pub connect: Arc<Connect>,
     /// Desktop notices.
     pub notifier: Arc<dyn Notifier>,
+    /// The operator's one-press buttons.
+    pub shortcuts: Arc<dyn ShortcutSource>,
 }
 
 impl Services {
@@ -196,11 +198,24 @@ impl Services {
                 name,
                 message,
                 to,
+                data,
                 key,
-            } => Message::Published(match self.control_plane() {
-                Ok(cp) => PublishEvent::new(cp).execute(team, &name, &message, &to, key).await,
-                Err(e) => Err(e),
-            }),
+                shortcut,
+            } => {
+                let result = match self.control_plane() {
+                    Ok(cp) => {
+                        PublishEvent::new(cp)
+                            .execute(team, &name, &message, &to, data, key)
+                            .await
+                    }
+                    Err(e) => Err(e),
+                };
+                if shortcut {
+                    Message::ShortcutPublished(result)
+                } else {
+                    Message::Published(result)
+                }
+            }
             Effect::Cancel(id) => Message::Cancelled(match self.control_plane() {
                 Ok(cp) => CancelTask::new(cp).execute(id).await,
                 Err(e) => Err(e),

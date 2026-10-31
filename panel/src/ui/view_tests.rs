@@ -794,6 +794,23 @@ fn a_team_shows_its_topics_and_the_operator_publishes() {
 }
 
 #[test]
+fn a_shortcut_publishes_its_event_in_one_press() {
+    let (fake, mut app) = subscribed_fleet();
+    send(&mut app, Message::Go(Screen::Team("tienda".into())));
+    shows(&app, &["Shortcuts", "Strings", "Stop all"]);
+    let sent = messages_of_click(&app, "Stop all");
+    assert!(matches!(sent.as_slice(), [Message::Shortcut(1)]));
+    send(&mut app, Message::Shortcut(0));
+    send(&mut app, Message::Shortcut(1));
+    let calls = fake.calls();
+    assert!(calls.iter().any(|c| c == "publish_event tienda info.cue.strings"));
+    assert!(calls.iter().any(|c| c == "publish_event tienda stop.all"));
+    assert!(app.publish.team.is_none());
+    send(&mut app, Message::Go(Screen::Team("port".into())));
+    assert!(simulator_misses(&app, "Stop all"));
+}
+
+#[test]
 fn an_older_control_plane_has_no_topics_and_nothing_else_breaks() {
     let (fake, mut app) = subscribed_fleet();
     fake.without_newer_routes();

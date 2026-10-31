@@ -87,7 +87,7 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 		if err != nil {
 			return Assignment{}, false, err
 		}
-		if !candidate.AcceptsTasks() || !candidate.Placement().Admits(node) {
+		if !candidate.AcceptsTasks() || !candidate.Placement().Admits(node) || !node.Capabilities().Runs(candidate.Runtime().Kind()) {
 			continue
 		}
 		if pending[i].DeadlinePassed(uc.deps.Clock.Now()) {
@@ -187,6 +187,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 		ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), TenantID: bot.TenantID(), CorrelationID: task.CorrelationID(),
 		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: bot.Level(), AllowedTools: allowedTools(bot, offer, events),
 		ToolRules: bot.ToolRules(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer, Events: events,
+		Runtime: bot.Runtime(), Input: task.Input(),
 	}
 	return assignment, nil
 }

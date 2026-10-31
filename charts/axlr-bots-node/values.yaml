@@ -28,10 +28,32 @@ enrollment:
   existingSecret: ""
 
 model:
+  # false for a node that runs only Jev bots: no language model, no key.
+  enabled: true
   apiKey:
     # A Secret holding the model provider's key; the sidecar alone reads it.
     existingSecret: ""
     key: OPENROUTER_API_KEY
+
+# How the control plane's pushes reach the node (docs/architecture/bus-port.md):
+# direct, a stream over the node's own connection, or nats, a broker the
+# control plane publishes to (serve --bus nats).
+bus:
+  kind: direct
+  nats:
+    # tls://host:4222: the node shows the broker its own certificate from
+    # enrollment, so a broker with verify_and_map knows it as
+    # CN=<node id>,O=axlr-bots nodes and lets it read only its consumer.
+    url: ""
+    # The CA of the broker's certificate, as ca.crt: a ConfigMap, or a
+    # Secret such as the one cert-manager writes the broker's certificate
+    # in (only its ca.crt is mounted).
+    ca:
+      existingConfigMap: ""
+      existingSecret: ""
+    # The broker's address as a CIDR and its port, for the egress policy.
+    cidr: ""
+    port: 4222
 
 node:
   # The node id is <idPrefix><pod name>: a StatefulSet's name is stable,
@@ -69,6 +91,9 @@ sidecar:
   workspacesSize: 1Gi
   # AXLR's own state (diagnostics, sessions) lives on a tmpfs.
   tmpSize: 64Mi
+  # More environment for the node, as container env entries: Jev's key
+  # for Jev bots, say ({name: TYPESAFE_API_KEY, valueFrom: {secretKeyRef: …}}).
+  env: []
 
 networkPolicy:
   enabled: true

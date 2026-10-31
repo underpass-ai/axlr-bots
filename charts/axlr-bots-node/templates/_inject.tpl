@@ -64,11 +64,29 @@ including chart's own policy, beside its service's rules.
     - name: AXLR_NODE_CA_FILE
       value: /etc/axlr-node/ca/ca.crt
     {{- end }}
+    {{- if ne (toString $v.model.enabled) "false" }}
     - name: OPENROUTER_API_KEY
       valueFrom:
         secretKeyRef:
-          name: {{ required "model.apiKey.existingSecret is required" $v.model.apiKey.existingSecret }}
+          name: {{ required "model.apiKey.existingSecret is required (or model.enabled false for a node of Jev bots only)" $v.model.apiKey.existingSecret }}
           key: {{ $v.model.apiKey.key }}
+    {{- end }}
+    {{- if eq (toString $v.bus.kind) "nats" }}
+    # The pushes come from the broker; with a tls:// URL the node shows it
+    # its own certificate from enrollment (mutual TLS).
+    - name: AXLR_NODE_BUS
+      value: nats
+    - name: AXLR_NODE_NATS_URL
+      value: {{ required "bus.nats.url is required with bus.kind nats (tls://host:4222)" $v.bus.nats.url | quote }}
+    {{- if or $v.bus.nats.ca.existingConfigMap $v.bus.nats.ca.existingSecret }}
+    - name: AXLR_NODE_NATS_CA
+      value: /etc/axlr-node/nats-ca/ca.crt
+    {{- end }}
+    {{- else if ne (toString $v.bus.kind) "direct" }}{{ fail "bus.kind is direct or nats" }}
+    {{- end }}
+    {{- with $v.sidecar.env }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
   securityContext:
     runAsNonRoot: true
     runAsUser: 65532
@@ -91,6 +109,9 @@ including chart's own policy, beside its service's rules.
     - {name: axlr-node-enroll, mountPath: /etc/axlr-node/enroll, readOnly: true}
     {{- if $v.controlPlane.ca.existingConfigMap }}
     - {name: axlr-node-ca, mountPath: /etc/axlr-node/ca, readOnly: true}
+    {{- end }}
+    {{- if and (eq (toString $v.bus.kind) "nats") (or $v.bus.nats.ca.existingConfigMap $v.bus.nats.ca.existingSecret) }}
+    - {name: axlr-node-nats-ca, mountPath: /etc/axlr-node/nats-ca, readOnly: true}
     {{- end }}
     {{- range $v.sidecar.workspaces }}
     {{- if not (regexMatch "^[a-z0-9._-]{1,64}$" (toString .bot)) }}{{ fail "sidecar.workspaces[].bot must be a bot id" }}{{ end }}
@@ -127,6 +148,21 @@ including chart's own policy, beside its service's rules.
   configMap:
     name: {{ $v.controlPlane.ca.existingConfigMap }}
     items: [{key: ca.crt, path: ca.crt}]
+{{- end }}
+{{- if eq (toString $v.bus.kind) "nats" }}
+{{- if $v.bus.nats.ca.existingConfigMap }}
+- name: axlr-node-nats-ca
+  configMap:
+    name: {{ $v.bus.nats.ca.existingConfigMap }}
+    items: [{key: ca.crt, path: ca.crt}]
+{{- else if $v.bus.nats.ca.existingSecret }}
+# Only the CA's certificate of the Secret (cert-manager's, say): never its key.
+- name: axlr-node-nats-ca
+  secret:
+    secretName: {{ $v.bus.nats.ca.existingSecret }}
+    items: [{key: ca.crt, path: ca.crt}]
+    defaultMode: 292
+{{- end }}
 {{- end }}
 {{- end -}}
 
@@ -176,6 +212,13 @@ including chart's own policy, beside its service's rules.
         cidr: {{ $cidr }}
   ports:
     - {protocol: TCP, port: {{ $port }}}
+{{- if eq (toString $v.bus.kind) "nats" }}
+- to:
+    - ipBlock:
+        cidr: {{ required "bus.nats.cidr is required with bus.kind nats (the broker's address as a CIDR)" $v.bus.nats.cidr }}
+  ports:
+    - {protocol: TCP, port: {{ $v.bus.nats.port }}}
+{{- end }}
 - to:
     {{- range $v.networkPolicy.modelProvider.cidrs }}
     - ipBlock:

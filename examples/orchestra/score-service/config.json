@@ -5,24 +5,50 @@
     "source": "Mutopia Project, piece 1380, public domain"
   },
   "sections": [
-    {"id": "vn1", "name": "Violins I",  "family": "strings", "track": "eight",  "program": 40, "chairs": 10},
-    {"id": "vn2", "name": "Violins II", "family": "strings", "track": "nine",   "program": 40, "chairs": 8},
-    {"id": "va",  "name": "Violas",     "family": "strings", "track": "ten",    "program": 41, "chairs": 6},
-    {"id": "vc",  "name": "Cellos",     "family": "strings", "track": "eleven", "program": 42, "chairs": 5},
-    {"id": "cb",  "name": "Basses",     "family": "strings", "track": "eleven", "program": 43, "chairs": 3, "transpose": -12},
-    {"id": "ob",  "name": "Oboes",      "family": "winds",   "track": "one",    "program": 68, "chairs": 2},
-    {"id": "hn",  "name": "Horns",      "family": "winds",   "track": ["two", "three"], "program": 60, "chairs": 2}
+    {"id": "vn1", "name": "Violins I", "family": "strings", "track": "eight", "program": 40, "chairs": 10, "pan": [-0.9, -0.5]},
+    {"id": "vn2", "name": "Violins II", "family": "strings", "track": "nine", "program": 40, "chairs": 8, "pan": [-0.45, -0.2]},
+    {"id": "va", "name": "Violas", "family": "strings", "track": "ten", "program": 41, "chairs": 6, "pan": [0.15, 0.4]},
+    {"id": "vc", "name": "Cellos", "family": "strings", "track": "eleven", "program": 42, "chairs": 5, "pan": [0.45, 0.75]},
+    {"id": "cb", "name": "Basses", "family": "strings", "track": "eleven", "program": 43, "chairs": 3, "transpose": -12, "pan": [0.6, 0.9]},
+    {"id": "ob", "name": "Oboes", "family": "winds", "track": "one", "program": 68, "chairs": 2, "pan": [-0.15, -0.05], "lines": [{"name": "Oboe I", "voice": "upper"}, {"name": "Oboe II", "voice": "lower"}]},
+    {"id": "hn", "name": "Horns", "family": "winds", "track": ["two", "three"], "program": 60, "chairs": 2, "pan": [0.05, 0.15], "lines": [{"name": "Horns I–II", "track": "two"}, {"name": "Horns III–IV", "track": "three"}]}
   ],
+  "phrases": {"bars": 8, "candidates": 3, "forkSpreadBeats": 8},
+  "countIn": {"bars": 8},
   "dynamics": {"p": 0.45, "mf": 0.7, "f": 1.0},
+  "voices": {"cents": 6, "onsetMs": 15},
   "tempo": {"min": 60, "max": 200},
-  "audio": {"rate": 44100, "block": 441, "soundfonts": ["/usr/share/sounds/sf2/FluidR3_GM.sf2", "/usr/share/sounds/sf2/TimGM6mb.sf2"]},
+  "audio": {"rate": 44100, "block": 441, "soundfonts": ["/usr/share/sounds/sf2/FluidR3_GM.sf2", "/usr/share/sounds/sf2/TimGM6mb.sf2"], "gain": 0.14, "polyphony": 1024},
   "listen": {"maxSeconds": 20},
+  "hands": {"threshold": 0.8, "cooldownSeconds": 3, "minIntervalSeconds": 0.5, "holdMs": 300,
+            "groups": {"left": "strings", "right": "winds", "both": "all"},
+            "height": {"low": -0.55, "high": 0.15, "fadeSeconds": 0.2},
+            "tempoStep": 4, "tempoPublishSeconds": 3, "pinchSpan": 0.35, "hush": {"gain": 0.55}, "nativeCooldownSeconds": 1.0,
+            "expression": {"threshold": 0.55, "everySeconds": 2.0, "publishSeconds": 6.0, "windowSeconds": 2.5},
+            "instruments": [{"id": "violins", "name": "Violins", "sections": ["vn1", "vn2"], "from": 108, "to": 180},
+                            {"id": "oboes", "name": "Oboes", "sections": ["ob"], "from": 90, "to": 108},
+                            {"id": "horns", "name": "Horns", "sections": ["hn"], "from": 72, "to": 90},
+                            {"id": "violas", "name": "Violas", "sections": ["va"], "from": 50, "to": 72},
+                            {"id": "cellos", "name": "Cellos", "sections": ["vc"], "from": 28, "to": 50},
+                            {"id": "basses", "name": "Basses", "sections": ["cb"], "from": 0, "to": 28}],
+            "jev": {"model": "jev-1.13.0", "keyFile": "~/.config/axlr-bots/env", "timeoutSeconds": 10}},
+  "hold": {"fadeSeconds": 1.5, "fadeInSeconds": 0.5},
   "team": "orchestra",
   "controlPlane": {
     "url": "",
     "tokenFile": "~/.local/state/axlr-bots/api.token",
     "caFile": "~/.local/state/axlr-bots/ca/ca.crt"
   },
+  "seating": {
+    "about": "the conductor's page (room.js): where each section sits, in degrees from the podium (0 to the conductor's right, 90 ahead, 180 left) and rows at radii in metres before the room's scale",
+    "vn1": {"from": 166, "to": 134, "rows": [2.5, 3.3], "per": [5, 5], "label": [152, 4.15]},
+    "vn2": {"from": 123, "to": 103, "rows": [2.5, 3.3], "per": [4, 4], "label": [118, 4.7]},
+    "va": {"from": 77, "to": 57, "rows": [2.5, 3.3], "per": [3, 3], "label": [62, 4.7]},
+    "vc": {"from": 50, "to": 22, "rows": [2.5, 3.3], "per": [3, 2], "label": [42, 4.25]},
+    "cb": {"from": 30, "to": 8, "rows": [4.15], "per": [3], "label": [22, 4.95]},
+    "ob": {"from": 105, "to": 95, "rows": [4.2], "per": [2], "label": [100, 5.0]},
+    "hn": {"from": 85, "to": 75, "rows": [4.2], "per": [2], "label": [80, 5.0]}
+  },
   "listenAddress": "127.0.0.1:8790",
-  "label": "SIMULATION. Each chair is one LLM bot. The notes come from a score, the sound from a synthesizer; the bots decide only when to enter, how loud, and when to stop."
+  "label": "SIMULATION. Each chair is one LLM bot that plays its own line of the score, phrase by phrase, as Jev picks them. The conductor's hands are read by Jev from the headset's hand tracking. The notes come from the score, the sound from a synthesizer."
 }
