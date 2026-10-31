@@ -71,8 +71,8 @@ phrases and its bot goes on choosing; the cue that names it fades it back in.
 The height is read many times a second without Jev: it is a measurement, not
 a sign, and it only acts while the hand conducts a level: from Jev's reading
 of a palm up or a palm down until Jev reads another gesture (a fist, a
-pointing hand, a finger on the lips, the other level, or the same one on
-another group). A reading of nothing, or one under the threshold, keeps it:
+pointing hand, a finger on the lips, or the other level; the same one read
+on another section keeps the level where it began). A reading of nothing, or one under the threshold, keeps it:
 a flat hand that relaxes is still the conductor's. The page sends the height
 while the four fingers are not curled. What the height sets is provisional:
 a double pinch keeps it; a hand lowered to rest (a fast drop, a fist, or a
@@ -225,9 +225,9 @@ class Hands:
                     continue  # a hand that relaxes, or that Jev is unsure of, goes on conducting its level
                 if g in LEVELS:
                     group = next(grp for gg, grp in meant if gg == g)
-                    if e and (e["gesture"], e["group"]) == (g, group):
-                        continue
-                    self._disengage(side, now)  # another level gesture, or another group: what the hand held comes back
+                    if e and e["gesture"] == g:
+                        continue  # a glance at another section: the level in progress stays with the one it began on
+                    self._disengage(side, now)  # the other level gesture: what the hand held comes back
                     self.engaged[side] = {"gesture": g, "group": group, "height": None, "gain": None}
                 else:
                     self._disengage(side, now)  # a hand that closes, points or hushes conducts no level: what it held comes back

@@ -563,6 +563,13 @@ class LevelTest(unittest.TestCase):
         clock.now += 0.3
         self.assertEqual(h.height({"hands": {"left": {"height": -0.57}}}), {"left": 0.9})  # from the level then, not the old one
 
+    def test_the_same_level_gesture_on_another_section_keeps_the_level_where_it_began(self):
+        h, o, _, clock = self.level(0.5)
+        clock.now += 0.6
+        h.observe({"hands": {"left": OPEN}, "heldMs": 300, "target": "oboes"})  # a glance at the oboes, the hand still open
+        self.assertEqual((h.view()["pending"]["left"]["group"], h.view()["lastGain"]), ("strings", None))
+        self.assertEqual({round(o.chairs[k]["gain"], 2) for k in o.chairs_of("strings")}, {0.5})
+
     def test_a_double_pinch_with_nothing_waiting_says_so(self):
         h, _, _, _, _ = hands()
         record = h.native({"gesture": "pinch-double", "side": "left"})
