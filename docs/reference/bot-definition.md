@@ -246,7 +246,7 @@ A bot's tasks run as an AXLR session unless its definition says otherwise: a mod
 
 | Field | Meaning |
 |---|---|
-| `server` | the MCP server that serves the tools, by its name in the node's `~/.config/axlr/mcp.json` (the file the node's AXLR reads): one server per bot |
+| `server` | the MCP server that serves the tools, by its name in the node's `~/.config/axlr/mcp.json` (the file the node's AXLR reads): one server per bot, reached over `http(s)` at the `url` of its entry, or of the manifest the entry names |
 | `start` | the tool a task begins with (no arguments) |
 | `act` | how the program acts on a choice: the `tool`, the argument that takes the `choice` (the first whole number in Jev's choice, else its text: «batch 3: rows 17–24» is 3), the argument that takes Jev's `verdict` as `{choice, probability, confidence}` (optional), and the fields of the event's data to `pass` on as they are (at most 8; a notice's `priority`) |
 | `wait` | the tool that waits for the next question |
@@ -258,7 +258,7 @@ The program, for a task that an event made (a notice such as `info.notice.load`)
 
 The program's tools must be in `allowedTools`, and the level must be `act-within-policy`: the program calls its tools without asking a person. A definition or an update that narrows them past the program is refused. The execution's report carries the tool calls, the usage (Jev's calls and input tokens, the cost at TypeSafe's price) and a receipt, `axlr-bots.jev-receipt/v1`, with each decision: a hash of the question, the choice, its probability, Jev's confidence, the latency and whether the act was taken. The trace stays on the node, as AXLR's does.
 
-A node runs Jev bots only when it has `TYPESAFE_API_KEY` in its environment: it then registers the runtime `jev` in its capabilities, and the control plane assigns a Jev bot to no other node. `axlr-node --mcp-config` names another `mcp.json`; `--jev-model` another pinned version.
+A node runs Jev bots only when it has `TYPESAFE_API_KEY` in its environment: it then registers the runtime `jev` in its capabilities, and the control plane assigns a Jev bot to no other node. `axlr-node --mcp-config` names another `mcp.json`; `--jev-model` another pinned version. Where the key goes: the env file on a host ([install](../runbooks/install.md#jev-bots-and-a-broker-on-a-host)), `sidecar.env` in a pod ([sidecar](../runbooks/sidecar.md#jev-bots-and-a-broker-in-a-pod)).
 
 ## Register, enable, update
 

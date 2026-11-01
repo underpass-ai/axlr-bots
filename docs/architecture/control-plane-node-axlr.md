@@ -24,9 +24,9 @@ The control plane decides *when, where, as whom and under which permissions* a u
 
 | | Control plane (`axlr-bots serve`) | Node (`axlr-node`) | AXLR (`axlr-tui --exec`) |
 |---|---|---|---|
-| Keeps | bots, tasks, executions, nodes, timers, enrollments, events, audit, reports | its credentials, the traces, policy files and workspaces of what it ran (on the host, or on its pod's volume) | the session: transcript, tool calls, decisions, usage |
+| Keeps | bots, tasks, executions, incidents, nodes, timers, enrollments, events, audit, reports | its credentials, the traces, policy files and workspaces of what it ran (on the host, or on its pod's volume) | the session: transcript, tool calls, decisions, usage |
 | Decides | which task runs, where, as which bot, with which policy and budget; whether a fire or a report is new | nothing: it runs what it is assigned and reports | each model call and tool call, within the policy; when to stop for a person |
-| Talks to | the CLI (socket), operators and webhooks (TLS, bearer token or the trigger's secret), the nodes (TLS, client certificates) | the control plane only, outbound | the model provider, with the key in the host's environment |
+| Talks to | the CLI (socket), operators and webhooks (TLS, bearer token or the trigger's secret), the nodes (TLS, client certificates); a broker, with `--bus nats` | the control plane only, outbound; a broker too, with `--bus nats` | the model provider, with the key in the host's environment |
 | Trusts | the socket's owner; a certificate the fleet CA signed, for that node id only; the bearer token; a trigger's own credential | the CA the token carried | the policy file and the approval level it was given |
 
 ## The daemon
@@ -56,6 +56,11 @@ A bot whose definition names other bots in `delegation.to` may ask one of them t
         ▲                                                         │
         └────────── the child's answer ◀── node polls ◀───────────┘   bot-b's execution runs on a node, reports
 ```
+
+## Runtimes and pushes
+
+- **Two runtimes, one contract.** A node runs a task on AXLR unless the bot's definition names `runtime.kind: jev`: then the node's Jev runtime runs a fixed program over one MCP server, each decision one question to Jev, with the same request and report ([runtime contract](runtime-contract.md#a-second-runtime-a-jev-program), [bot definition](../reference/bot-definition.md#runtime)). A node offers it only when `TYPESAFE_API_KEY` is in its environment, and the control plane assigns a Jev bot to no other node.
+- **Pushes are hints.** When one of a node's executions is cancelled, preempted, expired or given a message, the control plane tells that node at once: over the stream the node holds open, and with `--bus nats` through a broker too ([bus port](bus-port.md)). The node then renews the lease and reads from the control plane, which keeps the record; a lost push costs one lease renewal (10 s).
 
 ## The node as a sidecar
 

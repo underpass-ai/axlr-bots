@@ -149,6 +149,31 @@ axlr-bots-node:
 
 The workload must be a StatefulSet whose pods carry an `app` label. A NetworkPolicy applies to the whole pod, so the chart cannot add one without restricting your service: put `axlr-bots-node.inject.egress` in your own policy, beside your service's rules. `sidecar.native: true` adds `restartPolicy: Always`, for a native sidecar under `initContainers`.
 
+## Jev bots and a broker in a pod
+
+A sidecar runs [Jev bots](../reference/bot-definition.md#runtime) when Jev's key is in its environment, and reads the control plane's pushes from a broker when `bus.kind` says so ([bus port](../architecture/bus-port.md#deploy-a-broker)). Both are values; the templates stay the same.
+
+```yaml
+model: {enabled: false}            # a node of Jev bots only: no model key is mounted
+sidecar:
+  env:
+    - name: TYPESAFE_API_KEY
+      valueFrom: {secretKeyRef: {name: axlr-bots-jev, key: TYPESAFE_API_KEY}}
+bus:
+  kind: nats
+  nats:
+    url: tls://nats.example.internal:4222
+    cidr: 10.0.0.20/32              # the broker, for the egress rule
+    ca: {existingSecret: nats-tls}  # only its ca.crt is mounted
+```
+
+| Piece | What to know |
+|---|---|
+| Jev's key | the node logs `node: jev runtime on (jev-1.13.0)` and registers the `jev` runtime; without it a Jev bot is never assigned to the pod |
+| The program's MCP server | named in an `mcp.json` the node reads: `AXLR_NODE_MCP_CONFIG`, else `~/.config/axlr/mcp.json`, which the read-only image does not hold. The chart mounts no `mcp.json` and has no value for one yet, so a Jev bot in a pod needs `AXLR_NODE_MCP_CONFIG` (in `sidecar.env`) naming a file one of the sidecar's volumes holds. The server's entry is an `http(s)` URL, such as the service's beside it in the pod |
+| Jev's API | HTTPS to TypeSafe; `networkPolicy.modelProvider` (the public ranges on 443) already lets it out |
+| The broker | the node shows it its own certificate from enrollment, so the broker must list the user `CN=<idPrefix><pod name>,O=axlr-bots nodes` for each replica; the egress rule opens `bus.nats.cidr` on `bus.nats.port` |
+
 ## Values
 
 [`values.yaml`](../../charts/axlr-bots-node/values.yaml) says the same, field by field; `values.schema.json` checks the types.

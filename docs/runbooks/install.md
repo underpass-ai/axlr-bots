@@ -60,6 +60,18 @@ A user service cannot sandbox the filesystem (`ProtectSystem=` and `ProtectHome=
 
 Check: the node's registration line in the journal (`node: registered as … policy true correlation true`) reflects the new build's flags.
 
+## Jev bots and a broker on a host
+
+Both units read the environment file (`EnvironmentFile=-~/.config/axlr-bots/env`, or `/etc/axlr-bots/env` with `--system`), so what the installer has no flag for goes there; then `systemctl --user restart axlr-bots.service axlr-node.service`.
+
+| Line in the env file | Effect |
+|---|---|
+| `TYPESAFE_API_KEY=…` | the node offers the `jev` runtime and is assigned Jev bots ([bot definition](../reference/bot-definition.md#runtime)); `AXLR_NODE_MCP_CONFIG=` names another `mcp.json` than `~/.config/axlr/mcp.json`, `AXLR_NODE_JEV_MODEL=` another pinned version than `jev-1.13.0` |
+| `AXLR_BOTS_BUS=nats`, `AXLR_BOTS_NATS_URL=tls://…:4222`, `AXLR_BOTS_NATS_CERT=`, `AXLR_BOTS_NATS_KEY=`, `AXLR_BOTS_NATS_CA=` | the control plane also publishes its pushes to a broker ([deploy a broker](../architecture/bus-port.md#deploy-a-broker)) |
+| `AXLR_NODE_BUS=nats`, `AXLR_NODE_NATS_URL=tls://…:4222`, `AXLR_NODE_NATS_CA=` | the node reads its pushes from the broker; over `https://` it shows the broker its own certificate from enrollment |
+
+Check: the node's journal says `node: jev runtime on (jev-1.13.0)`, or `node: TYPESAFE_API_KEY is not set: Jev bots are not run here`; `axlr-bots node get <id>` lists `jev` under the capabilities' `runtimes`.
+
 ## Keep it running after logout
 
 ```bash
