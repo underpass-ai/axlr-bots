@@ -97,7 +97,7 @@ spec:
             - {name: frames, mountPath: /frames}
         - name: ais-bridge
           image: {{ .Values.images.gz }}
-          command: ["bash", "-lc", ". /opt/ros/jazzy/setup.sh && exec python3 /gz/ais-bridge.py --fleet http://{{ include "fleet.base" . }}:8080/api/fleet --idle"]
+          command: ["bash", "-lc", ". /opt/ros/jazzy/setup.sh && exec python3 /gz/ais-bridge.py --fleet http://{{ include "fleet.base" . }}:8080/api/fleet{{ if not .Values.gz.ships }} --no-ships{{ end }}{{ if not .Values.gz.containers }} --no-containers{{ end }}"]
           env:
             - {name: HOME, value: /tmp}
           securityContext:

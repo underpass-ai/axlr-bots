@@ -8,6 +8,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -28,6 +29,7 @@ def load(name, filename):
 fleet_sim = load("fleet_sim", "fleet-sim")
 port_iris = load("port_iris", "port_iris.py")
 fpv_server = load("fpv_server", "fpv-server.py")
+ais_bridge = load("ais_bridge", "ais-bridge.py")
 MODELS = os.path.join(HERE, "models")
 VEHICLES = os.path.join(HERE, "vehicles.example.json")
 
@@ -181,6 +183,76 @@ class PortIrisTest(unittest.TestCase):
         inc = ET.fromstring(fleet_sim.model_sdf(fleet_sim.load_vehicles(VEHICLES)[0], MODELS)).find("model/include")
         self.assertEqual(inc.findtext("uri"), "model://port_iris")
         self.assertEqual(inc.findtext("name"), "iris_with_standoffs")
+class AisBridgeTest(unittest.TestCase):
+    NOW = 1_800_000_000
+
+    def fleet(self, **ship):
+        base = {"mmsi": 244123456, "name": "SECRET NAME", "lat": 51.95, "lon": 4.0, "sog": 10, "cog": 90, "heading": 80,
+                "length_m": 200, "beam_m": 30, "type_name": "cargo",
+                "last_seen": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.NOW - 30))}
+        base.update(ship)
+        far = dict(base, mmsi=1, lat=52.02)          # outside the port model
+        return {"ships": [base, far], "incident": {"status": "searching", "containers": [
+            {"id": "C01", "lat": 51.93, "lon": 3.97, "heading_deg": 45, "length_m": 12.2}]}}
+
+    def test_wanted_filters_and_extrapolates(self):
+        want = ais_bridge.wanted(self.fleet(), self.NOW)
+        self.assertEqual(sorted(want), ["box-c01", "ship-244123456"])
+        sdf, (x, y, z, yaw) = want["ship-244123456"]
+        east, north = area.to_local(51.95, 4.0)
+        self.assertAlmostEqual(x - east, 10 * 0.5144 * 30, delta=0.5)     # 30 s east at 10 kn
+        self.assertAlmostEqual(y, north, delta=0.5)
+        self.assertAlmostEqual(z, 0.2 * 12)                                 # H = 0.06 L
+        self.assertAlmostEqual(yaw, math.radians(10))                       # heading 80, not course 90
+        self.assertNotIn("SECRET", sdf)
+        root = ET.fromstring(sdf)
+        self.assertEqual(root.find("model/link/visual/geometry/box/size").text, "200.0 30.0 12.0")
+        old = ais_bridge.wanted(self.fleet(last_seen="2020-01-01T00:00:00Z"), self.NOW)["ship-244123456"][1]
+        self.assertAlmostEqual(old[0] - east, 10 * 0.5144 * 60, delta=0.5)  # at most 60 s
+        box = want["box-c01"][1]
+        self.assertAlmostEqual(box[2], 0.3)
+        self.assertEqual(ais_bridge.wanted(self.fleet(), self.NOW, ships=False, containers=False), {})
+        ended = self.fleet()
+        ended["incident"]["status"] = "ended"
+        self.assertEqual(sorted(ais_bridge.wanted(ended, self.NOW)), ["ship-244123456"])
+
+    def test_ship_without_data(self):
+        sdf, h = ais_bridge.ship_sdf("ship-1", {"heading": 511})
+        self.assertIn("30.0 8.0 3.0", sdf)
+        self.assertIn(ais_bridge.rgb("#56606b"), sdf)
+        sdf, _ = ais_bridge.ship_sdf("ship-2", {"type_name": "passenger", "length_m": 100, "beam_m": 20})
+        house = ET.fromstring(sdf).find("model/link/visual[@name='house']")
+        self.assertEqual(house.find("pose").text, "0.0 0 7.5 0 0 0")         # amidships; H 6, HH 9
+        _, (_, _, _, yaw) = list(ais_bridge.wanted({"ships": [{"mmsi": 3, "lat": 51.95, "lon": 4.0, "cog": 180, "heading": 511}]},
+                                                    self.NOW).values())[0]
+        self.assertAlmostEqual(yaw, math.radians(-90))                      # course when no heading
+
+    def test_one_pose_call_a_tick_and_removal(self):
+        calls = []
+        bridge = ais_bridge.Bridge(lambda s, t, r: calls.append((s, r)) or True)
+        bridge.tick(self.fleet(), self.NOW)
+        services = [s.rsplit("/", 1)[1] for s, _ in calls]
+        self.assertEqual(services, ["create", "create", "set_pose_vector"])
+        self.assertEqual(calls[-1][1].count("pose: {"), 2)
+        self.assertIn('name: "ship-244123456"', calls[-1][1])
+        calls.clear()
+        bridge.tick(self.fleet(), self.NOW + 1)
+        self.assertEqual([s.rsplit("/", 1)[1] for s, _ in calls], ["set_pose_vector"])
+        calls.clear()
+        bridge.tick({"ships": []}, self.NOW + 2)
+        self.assertEqual(sorted(r for s, r in calls), ['name: "box-c01" type: MODEL', 'name: "ship-244123456" type: MODEL'])
+        self.assertEqual(bridge.counts(), (0, 0))
+        # Static data arriving: the ship is made again at its size.
+        bridge.tick(self.fleet(length_m=None), self.NOW)
+        calls.clear()
+        bridge.tick(self.fleet(), self.NOW)
+        self.assertEqual([s.rsplit("/", 1)[1] for s, _ in calls], ["remove", "create", "set_pose_vector"])
+
+    def test_create_request_parses_as_text(self):
+        sdf, pose = ais_bridge.wanted(self.fleet(), self.NOW)["box-c01"]
+        req = ais_bridge.create_request("box-c01", sdf, pose)
+        self.assertTrue(req.startswith("sdf: \""))
+        self.assertIn("allow_renaming: false pose: {position:", req)
 
 
 class FpvServerTest(unittest.TestCase):
