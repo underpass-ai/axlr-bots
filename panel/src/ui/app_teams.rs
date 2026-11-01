@@ -1,13 +1,9 @@
 //! The panel's teams: following each team's timeline in the background,
-//! the warnings it raises, a bot's team, and the recall of a vehicle.
+//! the warnings it raises, and a bot's team.
 
-use super::{App, Banner, Effect, Screen, Tone};
+use super::{App, Banner, Effect, Tone};
 use crate::application::{EventFeed, PanelError, TEAM_WAIT_SECONDS};
-use crate::domain::{Bot, BotId, SubmittedTask, Team, team_names};
-
-/// The objective of a recall: what a vehicle's bot does when the operator
-/// brings it home.
-pub const RECALL_OBJECTIVE: &str = "Return home now with return_home: the operator recalled you from the panel. Stop what you are doing and say where you are.";
+use crate::domain::{Bot, BotId, Team, team_names};
 
 impl App {
     /// The teams the fleet's bots name, as of the last refresh.
@@ -115,32 +111,5 @@ impl App {
         let mut effects = self.reload_screen();
         effects.extend(self.refresh_now());
         effects
-    }
-
-    /// Brings a vehicle's bot home at once: an urgent task that cancels
-    /// what it was doing; return_home runs without a person.
-    pub(super) fn recall(&mut self, bot: BotId) -> Vec<Effect> {
-        let key = self.services.keys.next_key();
-        self.switch(Effect::Recall { bot, key })
-    }
-
-    pub(super) fn recalled(&mut self, result: Result<SubmittedTask, PanelError>) -> Vec<Effect> {
-        self.switching = false;
-        match result {
-            Ok(submitted) => {
-                self.banner = Some(Banner::good(
-                    format!("{} recalled", submitted.task.bot_id),
-                    "It stops what it was doing and comes home",
-                    self.now,
-                ));
-                let mut effects = self.go(Screen::Task(submitted.task.id));
-                effects.extend(self.refresh_now());
-                effects
-            }
-            Err(error) => {
-                self.banner = Some(Banner::error(&error, self.now));
-                Vec::new()
-            }
-        }
     }
 }

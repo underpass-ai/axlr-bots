@@ -119,7 +119,7 @@ impl FakeControlPlane {
             );
             state.add_task(
                 "bot",
-                "Write the patrol report",
+                "Write the weekly report",
                 TaskStatus::Expired,
                 now - Duration::minutes(1),
             );

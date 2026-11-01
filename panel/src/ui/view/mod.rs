@@ -5,6 +5,7 @@ mod bots;
 mod decide;
 mod levels;
 mod nodes;
+mod order;
 mod overview;
 mod settings;
 mod shell;
@@ -45,17 +46,17 @@ pub(crate) mod tests {
     use crate::application::{Connect, PanelConfig};
     use crate::domain::ShortcutFile;
 
-    /// A conductor's buttons on the team `tienda` of the sample fleet.
+    /// An operator's buttons on the team `ops` of the sample bots.
     pub(crate) const SHORTCUTS: &str = r#"
 [[shortcut]]
-team = "tienda"
-label = "Strings"
-name = "info.cue.strings"
-message = "Strings, come in."
-data = { dynamics = "f" }
+team = "ops"
+label = "Notice"
+name = "info.notice"
+message = "A deploy is starting."
+data = { service = "service-1" }
 
 [[shortcut]]
-team = "tienda"
+team = "ops"
 label = "Stop all"
 name = "stop.all"
 message = "Stop."
@@ -70,7 +71,7 @@ message = "Stop."
         }
     }
 
-    /// A panel over the sample fleet, not connected yet.
+    /// A panel over the sample bots, not connected yet.
     pub(crate) fn app() -> App {
         let now = "2026-10-25T10:00:00Z".parse().unwrap();
         app_over(Arc::new(FakeControlPlane::sample(now)))

@@ -1,4 +1,4 @@
-//! What the use cases' tests share: the sample fleet at a fixed moment.
+//! What the use cases' tests share: the sample bots at a fixed moment.
 
 use std::sync::Arc;
 

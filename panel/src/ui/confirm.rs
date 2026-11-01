@@ -60,8 +60,8 @@ mod tests {
         assert!(cancel.lines()[0].contains("stops"));
         let deny = Confirm::Deny(TaskId::new("task-1").unwrap());
         assert_eq!((deny.title().as_str(), deny.act()), ("Deny this call?", "Deny"));
-        let stop = Confirm::StopBot(BotId::new("pilot").unwrap());
-        assert_eq!((stop.title().as_str(), stop.act()), ("Stop pilot?", "Stop"));
+        let stop = Confirm::StopBot(BotId::new("worker-0").unwrap());
+        assert_eq!((stop.title().as_str(), stop.act()), ("Stop worker-0?", "Stop"));
         assert!(stop.lines()[1].contains("cancelled"));
     }
 }

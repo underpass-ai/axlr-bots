@@ -82,9 +82,9 @@ mod tests {
         assert_eq!(Screen::parse("node:x"), None);
         assert_eq!(Screen::parse("home"), None);
         assert_eq!(Screen::parse("teams"), Some(Screen::Teams));
-        assert_eq!(Screen::parse("team:port"), Some(Screen::Team("port".into())));
+        assert_eq!(Screen::parse("team:ops"), Some(Screen::Team("ops".into())));
         assert_eq!(Screen::parse("team:"), None);
-        assert_eq!(Screen::Team("port".into()).section(), Section::Teams);
+        assert_eq!(Screen::Team("ops".into()).section(), Section::Teams);
         assert_eq!(Screen::Task(TaskId::new("t").unwrap()).section(), Section::Tasks);
         assert_eq!(Screen::Bot(BotId::new("b").unwrap()).section(), Section::Bots);
         assert_eq!(Screen::default().section(), Section::Overview);

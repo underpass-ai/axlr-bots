@@ -57,17 +57,17 @@ mod tests {
     #[test]
     fn publishes_on_the_team() {
         let (control_plane, _) = fleet();
-        control_plane.set_groups("bot", &["port"]);
-        control_plane.set_groups("bot-wrx80", &["port"]);
+        control_plane.set_groups("bot", &["ops"]);
+        control_plane.set_groups("bot-wrx80", &["ops"]);
         let key = || IdempotencyKey::new("k-1").unwrap();
         let uc = PublishEvent::new(control_plane.clone());
-        let published = run(uc.execute("port".into(), " stop.all ", "Everyone stop", "", None, key())).unwrap();
+        let published = run(uc.execute("ops".into(), " stop.all ", "Everyone stop", "", None, key())).unwrap();
         assert!(published.created && published.deliveries.len() == 2);
-        let one = run(uc.execute("port".into(), "info.x", "x", "bot", None, key())).unwrap();
+        let one = run(uc.execute("ops".into(), "info.x", "x", "bot", None, key())).unwrap();
         assert_eq!(one.deliveries.len(), 1);
-        assert!(run(uc.execute("port".into(), "error.bot", "x", "", None, key())).is_err());
-        assert!(run(uc.execute("port".into(), "info.*", "x", "", None, key())).is_err());
-        assert!(run(uc.execute("port".into(), "info.x", " ", "", None, key())).is_err());
-        assert!(run(uc.execute("port".into(), "Bad", "x", "", None, key())).is_err());
+        assert!(run(uc.execute("ops".into(), "error.bot", "x", "", None, key())).is_err());
+        assert!(run(uc.execute("ops".into(), "info.*", "x", "", None, key())).is_err());
+        assert!(run(uc.execute("ops".into(), "info.x", " ", "", None, key())).is_err());
+        assert!(run(uc.execute("ops".into(), "Bad", "x", "", None, key())).is_err());
     }
 }

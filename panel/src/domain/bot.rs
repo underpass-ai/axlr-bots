@@ -41,12 +41,7 @@ pub struct Bot {
 }
 
 impl Bot {
-    /// Whether it may fly or drive home: its tools include `return_home`.
-    pub fn can_return_home(&self) -> bool {
-        self.allowed_tools.iter().any(|t| t == super::RETURN_HOME_TOOL)
-    }
-
-    /// Its teams, `port, sea`, or empty.
+    /// Its teams, `ops, lab`, or empty.
     pub fn team_summary(&self) -> String {
         self.groups.join(", ")
     }

@@ -33,7 +33,7 @@ pub(crate) fn send(app: &mut App, message: Message) -> Vec<String> {
     drive(app, effects)
 }
 
-/// The panel connected to the sample fleet, on Home, the fleet loaded.
+/// The panel connected to the sample bots, on Home, the fleet loaded.
 pub(crate) fn connected() -> App {
     let mut app = app();
     send(&mut app, Message::SettingsSave);

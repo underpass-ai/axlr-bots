@@ -62,16 +62,18 @@ mod tests {
 
     #[test]
     fn keeps_the_events_an_event_trigger_hears() {
-        let trigger: Trigger = serde_json::from_str(r#"{"type":"event","name":"ships","events":["ship.*"]}"#).unwrap();
+        let trigger: Trigger =
+            serde_json::from_str(r#"{"type":"event","name":"deploys","events":["deploy.*"]}"#).unwrap();
         assert_eq!(trigger.trigger_type, TriggerType::Event);
-        assert_eq!(trigger.events, vec!["ship.*".to_string()]);
+        assert_eq!(trigger.events, vec!["deploy.*".to_string()]);
         assert!(
             serde_json::to_string(&trigger)
                 .unwrap()
-                .contains(r#""events":["ship.*"]"#)
+                .contains(r#""events":["deploy.*"]"#)
         );
         assert!(!serde_json::to_string(&Trigger::manual()).unwrap().contains("events"));
-        let loud: Trigger = serde_json::from_str(r#"{"type":"event","events":["recall"],"interrupt":true}"#).unwrap();
+        let loud: Trigger =
+            serde_json::from_str(r#"{"type":"event","events":["stop.halt"],"interrupt":true}"#).unwrap();
         assert!(loud.interrupt);
         assert!(!serde_json::to_string(&Trigger::manual()).unwrap().contains("interrupt"));
     }

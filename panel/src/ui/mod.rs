@@ -4,6 +4,7 @@
 mod answer;
 mod app;
 mod app_notices;
+mod app_orders;
 mod app_teams;
 #[cfg(test)]
 mod app_tests;
@@ -20,6 +21,7 @@ mod launch;
 mod listen_form;
 mod message;
 mod mint_form;
+mod order_form;
 mod publish_form;
 mod register_form;
 mod runtime;
@@ -52,6 +54,7 @@ pub use launch::{Command, Launch, USAGE};
 pub use listen_form::{ListenForm, ModeChoice};
 pub use message::Message;
 pub use mint_form::MintForm;
+pub use order_form::OrderForm;
 pub use publish_form::PublishForm;
 pub use register_form::RegisterForm;
 pub use runtime::{REFRESH_EVERY, launch};

@@ -35,7 +35,6 @@ impl DeliveryMode {
         match first {
             "stop" | "danger" | "error" => Self::Task,
             "warn" => Self::Message,
-            _ if topic == "recall" => Self::Task,
             _ => Self::Note,
         }
     }
@@ -53,13 +52,13 @@ mod tests {
 
     #[test]
     fn the_kind_sets_the_default() {
-        assert_eq!(DeliveryMode::by_kind("stop.recall"), DeliveryMode::Task);
+        assert_eq!(DeliveryMode::by_kind("stop.halt"), DeliveryMode::Task);
         assert_eq!(DeliveryMode::by_kind("danger.*"), DeliveryMode::Task);
         assert_eq!(DeliveryMode::by_kind("error.*"), DeliveryMode::Task);
-        assert_eq!(DeliveryMode::by_kind("recall"), DeliveryMode::Task);
         assert_eq!(DeliveryMode::by_kind("warn.stock"), DeliveryMode::Message);
         assert_eq!(DeliveryMode::by_kind("pedido.*"), DeliveryMode::Note);
         assert_eq!(DeliveryMode::by_kind("done.*"), DeliveryMode::Note);
+        assert_eq!(DeliveryMode::by_kind("deploy.*"), DeliveryMode::Note);
         assert_eq!(DeliveryMode::parse("note"), Some(DeliveryMode::Note));
         assert_eq!(DeliveryMode::parse("loud"), None);
         assert_eq!(DeliveryMode::Message.to_string(), "message");

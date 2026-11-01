@@ -101,13 +101,13 @@ async fn route(
             r#"{"kind":"state","error":"bot paused is Paused: cannot pause"}"#,
         ),
         ("GET", "/v1/bots/bot-wrx80/events") => ok(format!("[{EVENT}]")),
-        ("GET", "/v1/groups/port/events") => ok(format!("[{EVENT}]")),
-        ("GET", "/v1/groups/port/topics") => ok(
-            r#"[{"name":"info.turno","publishers":["plane"],"listeners":[],"count":1,"nobodyListens":true}]"#.into(),
+        ("GET", "/v1/groups/ops/events") => ok(format!("[{EVENT}]")),
+        ("GET", "/v1/groups/ops/topics") => ok(
+            r#"[{"name":"info.turno","publishers":["watcher"],"listeners":[],"count":1,"nobodyListens":true}]"#.into(),
         ),
-        ("POST", "/v1/groups/port/events") => json(
+        ("POST", "/v1/groups/ops/events") => json(
             StatusCode::CREATED,
-            r#"{"eventId":"evt-7","name":"stop.all","severity":"critical","deliveries":[{"botId":"quad-1","mode":"task","trigger":"team","created":true}],"skipped":[],"created":true}"#,
+            r#"{"eventId":"evt-7","name":"stop.all","severity":"critical","deliveries":[{"botId":"worker-1","mode":"task","trigger":"team","created":true}],"skipped":[],"created":true}"#,
         ),
         ("GET", "/v1/tasks") => ok(format!("[{TASK}]")),
         ("GET", "/v1/tasks/task-1") => ok(TASK.into()),
@@ -265,17 +265,17 @@ async fn reads_every_route_with_the_token_over_tls() {
     );
     assert_eq!(api.task_events(task_id.clone(), 200).await.unwrap().len(), 1);
     assert_eq!(server.last().path, "/v1/tasks/task-1/events?limit=200");
-    let team = api.group_events("port".into(), Some("evt-9".into()), 20).await.unwrap();
+    let team = api.group_events("ops".into(), Some("evt-9".into()), 20).await.unwrap();
     assert_eq!(team[0].event_type, "bot.task.submitted");
     assert_eq!(
         server.last().path,
-        "/v1/groups/port/events?limit=200&after=evt-9&wait=20s"
+        "/v1/groups/ops/events?limit=200&after=evt-9&wait=20s"
     );
-    api.group_events("port".into(), None, 0).await.unwrap();
-    assert_eq!(server.last().path, "/v1/groups/port/events?limit=200");
-    let topics = api.group_topics("port".into()).await.unwrap();
-    assert!(topics[0].nobody_listens && topics[0].publishers == vec!["plane"]);
-    assert_eq!(server.last().path, "/v1/groups/port/topics");
+    api.group_events("ops".into(), None, 0).await.unwrap();
+    assert_eq!(server.last().path, "/v1/groups/ops/events?limit=200");
+    let topics = api.group_topics("ops".into()).await.unwrap();
+    assert!(topics[0].nobody_listens && topics[0].publishers == vec!["watcher"]);
+    assert_eq!(server.last().path, "/v1/groups/ops/topics");
     let publication = axlr_bots_panel::domain::Publication {
         name: "stop.all".into(),
         message: "Everyone stop".into(),
@@ -283,7 +283,7 @@ async fn reads_every_route_with_the_token_over_tls() {
         to: Vec::new(),
         idempotency_key: "k-1".into(),
     };
-    let published = api.publish_event("port".into(), publication).await.unwrap();
+    let published = api.publish_event("ops".into(), publication).await.unwrap();
     assert!(published.created && published.deliveries.len() == 1);
     assert_eq!(
         (server.last().method, server.last().body),
@@ -340,11 +340,11 @@ async fn sends_the_acts_with_their_bodies() {
         (Method::PATCH, r#"{"mission":"New"}"#.to_string())
     );
     let teams = BotPatch {
-        groups: Some(vec!["port".into()]),
+        groups: Some(vec!["ops".into()]),
         ..Default::default()
     };
     api.patch_bot(bot_id.clone(), teams).await.unwrap();
-    assert_eq!(server.last().body, r#"{"groups":["port"]}"#);
+    assert_eq!(server.last().body, r#"{"groups":["ops"]}"#);
     assert_eq!(api.enable_bot(bot_id.clone()).await.unwrap().status.name(), "Enabled");
     assert_eq!(api.pause_bot(bot_id.clone()).await.unwrap().status.name(), "Paused");
     let refused = api.pause_bot(BotId::new("paused").unwrap()).await.unwrap_err();

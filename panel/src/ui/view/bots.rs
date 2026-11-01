@@ -139,7 +139,7 @@ fn team_field<'a>(app: &'a App, value: &'a str, tokens: Tokens) -> El<'a> {
     column![
         field(
             "Which team is it in?",
-            "port",
+            "ops",
             value,
             Message::RegisterTeam,
             None,

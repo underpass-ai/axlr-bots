@@ -102,29 +102,24 @@ pub fn detail<'a>(app: &'a App, name: &'a str, tokens: Tokens) -> El<'a> {
     .align_y(Alignment::Center);
     let mut members = column![].spacing(12);
     for bot in &team.members {
-        let mut first = row![
+        let first = row![
             pill(Tone::of_bot(bot.status), bot.status.name(), tokens),
             mouse_area(bold(bot.id.to_string()).color(tokens.accent))
                 .on_press(Message::Go(Screen::Bot(bot.id.clone())))
                 .interaction(mouse::Interaction::Pointer),
             muted(bot.placement.describe(), tokens),
-            Space::new().width(Length::Fill),
         ]
         .spacing(10)
         .align_y(Alignment::Center);
-        if bot.can_return_home() {
-            first = first.push(action(
-                Kind::Secondary,
-                Icon::Back,
-                "Recall",
-                (!app.switching && bot.status.accepts_tasks()).then(|| Message::Recall(bot.id.clone())),
-                tokens,
-            ));
-        }
         members = members.push(
             column![
                 first,
-                text(Team::purpose(bot)).size(SMALL),
+                row![
+                    text(Team::purpose(bot)).size(SMALL).width(Length::Fill),
+                    super::order::button(app, bot, tokens),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center),
                 muted(format!("tools: {}", bot.allowed_tools.join(", ")), tokens),
             ]
             .spacing(4),

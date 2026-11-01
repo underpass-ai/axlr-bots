@@ -3,8 +3,8 @@ use serde::Deserialize;
 use super::{DomainError, validate_topic};
 
 /// One button on a team's page that publishes a set event in one press:
-/// a conductor's cue, a recall, a stop. The operator writes them in the
-/// panel's `shortcuts.toml`; each press is a new event with its own key.
+/// a notice, a halt, a stop. The operator writes them in the panel's
+/// `shortcuts.toml`; each press is a new event with its own key.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Shortcut {
@@ -78,26 +78,26 @@ impl ShortcutFile {
 mod tests {
     use super::*;
 
-    const CONDUCTOR: &str = r#"
+    const BUTTONS: &str = r#"
 [[shortcut]]
-team = "orchestra"
-label = "Strings"
-name = "info.cue.strings"
-message = "Strings, come in."
-data = { dynamics = "f" }
+team = "ops"
+label = "Notice"
+name = "info.notice"
+message = "A deploy is starting."
+data = { service = "service-1" }
 
 [[shortcut]]
-team = "orchestra"
+team = "ops"
 label = "Stop all"
 name = "stop.all"
 message = "Stop."
 "#;
 
     #[test]
-    fn reads_the_conductors_buttons() {
-        let list = ShortcutFile::parse(CONDUCTOR).unwrap();
+    fn reads_an_operators_buttons() {
+        let list = ShortcutFile::parse(BUTTONS).unwrap();
         assert_eq!(list.len(), 2);
-        assert_eq!(list[0].data, Some(serde_json::json!({"dynamics": "f"})));
+        assert_eq!(list[0].data, Some(serde_json::json!({"service": "service-1"})));
         assert!(!list[0].stops() && list[1].stops());
         assert_eq!(list[1].data, None);
         assert!(ShortcutFile::parse("").unwrap().is_empty());

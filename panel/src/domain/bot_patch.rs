@@ -66,11 +66,11 @@ mod tests {
     #[test]
     fn a_patch_of_teams() {
         let teams = BotPatch {
-            groups: Some(vec!["port".into()]),
+            groups: Some(vec!["ops".into()]),
             ..BotPatch::default()
         };
         assert!(!teams.is_empty() && teams.validate().is_ok());
-        assert_eq!(serde_json::to_string(&teams).unwrap(), r#"{"groups":["port"]}"#);
+        assert_eq!(serde_json::to_string(&teams).unwrap(), r#"{"groups":["ops"]}"#);
         let none = BotPatch {
             groups: Some(Vec::new()),
             ..BotPatch::default()

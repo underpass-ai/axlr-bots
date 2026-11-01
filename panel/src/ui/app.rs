@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 
 use super::{
-    Answer, Banner, BotChoice, BotView, Confirm, Effect, Launch, ListenForm, Message, MintForm, NodeChoice,
+    Answer, Banner, BotChoice, BotView, Confirm, Effect, Launch, ListenForm, Message, MintForm, NodeChoice, OrderForm,
     PublishForm, RegisterForm, Screen, Services, SettingsForm, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode,
 };
 use crate::application::SubscriptionChange;
@@ -59,6 +59,8 @@ pub struct App {
     pub listen: ListenForm,
     /// Publishing an event on a team.
     pub publish: PublishForm,
+    /// Giving a bot an urgent order.
+    pub order: OrderForm,
     /// The operator's one-press buttons, read at start.
     pub shortcuts: Vec<Shortcut>,
     /// Where to go once connected.
@@ -102,6 +104,7 @@ impl App {
             watch: TeamWatch::default(),
             listen: ListenForm::default(),
             publish: PublishForm::default(),
+            order: OrderForm::default(),
             shortcuts: Vec::new(),
             target: if launch.screen == Screen::Settings {
                 Screen::Overview
@@ -447,8 +450,17 @@ impl App {
                 effects.extend(self.refresh_now());
                 effects
             }
-            Message::Recall(id) => self.recall(id),
-            Message::Recalled(result) => self.recalled(result),
+            Message::OrderOpen(id) => self.order_open(id),
+            Message::OrderText(value) => {
+                self.order.text = value;
+                Vec::new()
+            }
+            Message::OrderSend => self.order_send(),
+            Message::OrderClose => {
+                self.order = OrderForm::default();
+                Vec::new()
+            }
+            Message::Ordered(result) => self.ordered(result),
             Message::TeamEdit(id, words) => self.team_edit(id, words),
             Message::TeamSave => self.team_save(),
             Message::TeamCancel => {
@@ -789,6 +801,7 @@ impl App {
             self.watch.editing = None;
             self.listen = ListenForm::default();
             self.publish = PublishForm::default();
+            self.order = OrderForm::default();
             self.task_loading = false;
             self.bot_loading = false;
         }

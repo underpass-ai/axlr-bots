@@ -42,22 +42,22 @@ mod tests {
     #[test]
     fn reads_what_came_after_the_cursor() {
         let control_plane = Arc::new(FakeControlPlane::sample("2026-10-26T10:00:00Z".parse().unwrap()));
-        control_plane.set_groups("bot", &["port"]);
-        control_plane.set_groups("bot-wrx80", &["port"]);
+        control_plane.set_groups("bot", &["ops"]);
+        control_plane.set_groups("bot-wrx80", &["ops"]);
         let uc = FollowTeamEvents::new(control_plane.clone());
-        let feed = run(uc.execute("port".into(), EventFeed::default(), 0)).unwrap();
+        let feed = run(uc.execute("ops".into(), EventFeed::default(), 0)).unwrap();
         let first = feed.events.len();
         assert!(first > 0 && feed.new == first);
         control_plane.publish(
             "bot.event.emitted",
             "bot",
-            serde_json::json!({"name": "recall", "severity": "warning", "message": "a ship", "to": ["bot-wrx80"]}),
+            serde_json::json!({"name": "stop.halt", "severity": "warning", "message": "a deploy is starting", "to": ["bot-wrx80"]}),
         );
-        let feed = run(uc.execute("port".into(), feed, 0)).unwrap();
+        let feed = run(uc.execute("ops".into(), feed, 0)).unwrap();
         assert_eq!(feed.new, 1);
         assert!(feed.events.last().unwrap().needs_attention());
         assert!(matches!(
-            run(uc.execute("sea".into(), feed, 0)),
+            run(uc.execute("qa".into(), feed, 0)),
             Err(PanelError::NotFound(_))
         ));
     }

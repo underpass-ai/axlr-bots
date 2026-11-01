@@ -62,7 +62,7 @@ mod usage;
 pub use artifact::Artifact;
 pub use autonomy_level::AutonomyLevel;
 pub use bot::Bot;
-pub use bot_definition::{BotDefinition, BotForm, RETURN_HOME_TOOL, team_names};
+pub use bot_definition::{BotDefinition, BotForm, team_names};
 pub use bot_id::BotId;
 pub use bot_patch::BotPatch;
 pub use bot_status::BotStatus;

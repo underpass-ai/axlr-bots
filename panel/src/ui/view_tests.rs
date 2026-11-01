@@ -566,40 +566,45 @@ fn the_teams_screen_shows_who_is_in_each_and_what_happens() {
     send(&mut app, Message::SettingsSave);
     send(&mut app, Message::Go(Screen::Teams));
     shows(&app, &["Teams", "No team yet"]);
-    fake.set_groups("bot", &["port"]);
-    fake.set_groups("bot-wrx80", &["port"]);
+    fake.set_groups("bot", &["ops"]);
+    fake.set_groups("bot-wrx80", &["ops"]);
     fake.set_groups("bot-act-with-approval", &["lab"]);
     let tick = app.now + chrono::Duration::seconds(3);
     send(&mut app, Message::Tick(tick));
     fake.publish(
         "bot.event.emitted",
         "bot",
-        serde_json::json!({"name": "recall", "severity": "warning", "message": "a ship is entering", "to": ["bot-wrx80"]}),
+        serde_json::json!({"name": "stop.halt", "severity": "warning", "message": "a deploy is starting", "to": ["bot-wrx80"]}),
     );
     send(&mut app, Message::Tick(tick + chrono::Duration::seconds(3)));
     shows(
         &app,
-        &["port", "2 bots", "lab", "only one bot: a typo?", "bot · bot-wrx80"],
+        &["ops", "2 bots", "lab", "only one bot: a typo?", "bot · bot-wrx80"],
     );
     let sent = messages_of_click(&app, "Open");
     assert!(matches!(sent.as_slice(), [Message::Go(Screen::Team(name))] if name == "lab"));
-    send(&mut app, Message::Go(Screen::Team("port".into())));
+    send(&mut app, Message::Go(Screen::Team("ops".into())));
     shows(
         &app,
         &[
-            "Team port",
+            "Team ops",
             "Who is in it",
             "What happens",
             "Warning to the team",
-            "bot → bot-wrx80: a ship is entering",
+            "bot → bot-wrx80: a deploy is starting",
+            "Urgent order",
         ],
     );
-    send(&mut app, Message::Go(Screen::Team("sea".into())));
+    assert!(matches!(
+        messages_of_click(&app, "Urgent order").as_slice(),
+        [Message::OrderOpen(_)]
+    ));
+    send(&mut app, Message::Go(Screen::Team("qa".into())));
     shows(&app, &["No bot is in this team now"]);
 }
 
 #[test]
-fn a_bot_page_shows_its_team_and_recalls_a_vehicle() {
+fn a_bot_page_shows_its_team_and_an_urgent_order() {
     let mut app = connected();
     send(&mut app, Message::Go(Screen::Bots));
     app.apply(Message::RegisterOpen);
@@ -607,23 +612,58 @@ fn a_bot_page_shows_its_team_and_recalls_a_vehicle() {
         &app,
         &["Which team is it in?", "a name its teammates share; empty: on its own"],
     );
-    app.apply(Message::RegisterName("pilot-quad-1".into()));
-    app.apply(Message::RegisterMission("Fly quad-1.".into()));
-    app.apply(Message::RegisterTools("local_read, return_home".into()));
-    app.apply(Message::RegisterTeam("port".into()));
+    app.apply(Message::RegisterName("worker-1".into()));
+    app.apply(Message::RegisterMission("Watch service-1.".into()));
+    app.apply(Message::RegisterTools("local_read, rollback".into()));
+    app.apply(Message::RegisterTeam("ops".into()));
     send(&mut app, Message::RegisterSubmit);
-    send(&mut app, Message::Enable(BotId::new("pilot-quad-1").unwrap()));
-    send(&mut app, Message::Go(Screen::Bot(BotId::new("pilot-quad-1").unwrap())));
-    shows(&app, &["Team", "port", "Change", "Recall"]);
-    let sent = messages_of_click(&app, "Recall");
-    assert!(matches!(sent.as_slice(), [Message::Recall(id)] if id.as_str() == "pilot-quad-1"));
+    let id = BotId::new("worker-1").unwrap();
+    send(&mut app, Message::Go(Screen::Bot(id.clone())));
+    shows(&app, &["Team", "ops", "Change", "Urgent order"]);
+    assert!(
+        messages_of_click(&app, "Urgent order").is_empty(),
+        "a bot not switched on takes no order"
+    );
+    send(&mut app, Message::Enable(id.clone()));
+    let sent = messages_of_click(&app, "Urgent order");
+    assert!(matches!(sent.as_slice(), [Message::OrderOpen(to)] if *to == id));
     let sent = messages_of_click(&app, "Change");
-    assert!(matches!(sent.as_slice(), [Message::TeamEdit(_, words)] if words == "port"));
-    app.apply(Message::TeamEdit(BotId::new("pilot-quad-1").unwrap(), "port".into()));
+    assert!(matches!(sent.as_slice(), [Message::TeamEdit(_, words)] if words == "ops"));
+    app.apply(Message::TeamEdit(id.clone(), "ops".into()));
     shows(&app, &["Save", "Cancel"]);
+    app.apply(Message::TeamCancel);
+
+    // The order asks for its words, and goes only with some.
+    send(&mut app, Message::OrderOpen(id.clone()));
+    shows(
+        &app,
+        &[
+            "Order",
+            "It goes first: the bot stops what it is doing and does this.",
+            "Send the order",
+            "Cancel",
+        ],
+    );
+    assert!(messages_of_click(&app, "Send the order").is_empty());
+    assert!(messages_of_click(&app, "Urgent order").is_empty(), "its form is open");
+    app.apply(Message::OrderText("Roll back service-1 now".into()));
+    assert!(matches!(
+        messages_of_click(&app, "Send the order").as_slice(),
+        [Message::OrderSend]
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Cancel").as_slice(),
+        [Message::OrderClose]
+    ));
+
+    // Any bot takes one, in a team or not.
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
-    shows(&app, &["In no team: it knows no other bot"]);
-    assert!(simulator_misses(&app, "Recall"));
+    shows(&app, &["In no team: it knows no other bot", "Urgent order"]);
+    assert!(simulator_misses(&app, "Send the order"));
+    assert!(matches!(
+        messages_of_click(&app, "Urgent order").as_slice(),
+        [Message::OrderOpen(to)] if to.as_str() == "bot"
+    ));
 }
 
 #[test]
@@ -671,8 +711,8 @@ fn subscribed_fleet() -> (std::sync::Arc<crate::adapters::fake::FakeControlPlane
     let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
         "2026-10-25T10:00:00Z".parse().unwrap(),
     ));
-    fake.set_groups("bot", &["tienda"]);
-    fake.set_groups("bot-wrx80", &["tienda"]);
+    fake.set_groups("bot", &["ops"]);
+    fake.set_groups("bot-wrx80", &["ops"]);
     let ask: crate::domain::Subscription = serde_json::from_str(
         r#"{"topic":"error.*","status":"pending","askedBy":"bot","why":"para reintentar si recepcion falla","askedAt":"2026-10-25T09:00:00Z"}"#,
     )
@@ -766,7 +806,7 @@ fn a_team_shows_its_topics_and_the_operator_publishes() {
         "bot-wrx80",
         serde_json::json!({"name": "info.turno", "from": "bot-wrx80", "message": "shift"}),
     );
-    send(&mut app, Message::Go(Screen::Team("tienda".into())));
+    send(&mut app, Message::Go(Screen::Team("ops".into())));
     shows(
         &app,
         &[
@@ -780,13 +820,13 @@ fn a_team_shows_its_topics_and_the_operator_publishes() {
         ],
     );
     let sent = messages_of_click(&app, "Publish an event");
-    assert!(matches!(sent.as_slice(), [Message::PublishOpen(team)] if team == "tienda"));
-    send(&mut app, Message::PublishOpen("tienda".into()));
+    assert!(matches!(sent.as_slice(), [Message::PublishOpen(team)] if team == "ops"));
+    send(&mut app, Message::PublishOpen("ops".into()));
     app.apply(Message::PublishName("stop.all".into()));
     app.apply(Message::PublishMessage("Everyone stop".into()));
     shows(&app, &["Name", "To", "Message", "Publish"]);
     send(&mut app, Message::PublishSend);
-    assert!(fake.calls().iter().any(|c| c == "publish_event tienda stop.all"));
+    assert!(fake.calls().iter().any(|c| c == "publish_event ops stop.all"));
     assert!(app.publish.team.is_none());
     let tick = app.now + chrono::Duration::seconds(3);
     send(&mut app, Message::Tick(tick));
@@ -796,17 +836,17 @@ fn a_team_shows_its_topics_and_the_operator_publishes() {
 #[test]
 fn a_shortcut_publishes_its_event_in_one_press() {
     let (fake, mut app) = subscribed_fleet();
-    send(&mut app, Message::Go(Screen::Team("tienda".into())));
-    shows(&app, &["Shortcuts", "Strings", "Stop all"]);
+    send(&mut app, Message::Go(Screen::Team("ops".into())));
+    shows(&app, &["Shortcuts", "Notice", "Stop all"]);
     let sent = messages_of_click(&app, "Stop all");
     assert!(matches!(sent.as_slice(), [Message::Shortcut(1)]));
     send(&mut app, Message::Shortcut(0));
     send(&mut app, Message::Shortcut(1));
     let calls = fake.calls();
-    assert!(calls.iter().any(|c| c == "publish_event tienda info.cue.strings"));
-    assert!(calls.iter().any(|c| c == "publish_event tienda stop.all"));
+    assert!(calls.iter().any(|c| c == "publish_event ops info.notice"));
+    assert!(calls.iter().any(|c| c == "publish_event ops stop.all"));
     assert!(app.publish.team.is_none());
-    send(&mut app, Message::Go(Screen::Team("port".into())));
+    send(&mut app, Message::Go(Screen::Team("lab".into())));
     assert!(simulator_misses(&app, "Stop all"));
 }
 
@@ -814,7 +854,7 @@ fn a_shortcut_publishes_its_event_in_one_press() {
 fn an_older_control_plane_has_no_topics_and_nothing_else_breaks() {
     let (fake, mut app) = subscribed_fleet();
     fake.without_newer_routes();
-    send(&mut app, Message::Go(Screen::Team("tienda".into())));
+    send(&mut app, Message::Go(Screen::Team("ops".into())));
     shows(
         &app,
         &[

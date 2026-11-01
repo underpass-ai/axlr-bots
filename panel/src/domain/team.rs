@@ -72,22 +72,22 @@ mod tests {
     #[test]
     fn reads_the_teams_from_the_bots() {
         let bots = vec![
-            bot("quad-1", &["port"], "Fly quad-1. Then land."),
-            bot("plane", &["port", "air"], "Fly the coast."),
+            bot("worker-1", &["ops"], "Watch service-1. Then report."),
+            bot("watcher", &["ops", "alerts"], "Watch the deploys."),
             bot("alone", &[], "Nothing."),
         ];
         let teams = Team::from_bots(&bots);
         assert_eq!(
             teams.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
-            vec!["air", "port"]
+            vec!["alerts", "ops"]
         );
         assert_eq!(
             teams[1].members.iter().map(|b| b.id.as_str()).collect::<Vec<_>>(),
-            vec!["plane", "quad-1"]
+            vec!["watcher", "worker-1"]
         );
         assert!(teams[0].lonely() && !teams[1].lonely());
-        assert_eq!(Team::purpose(&bots[0]), "Fly quad-1.");
-        assert_eq!(Team::purpose(&bots[1]), "Fly the coast.");
+        assert_eq!(Team::purpose(&bots[0]), "Watch service-1.");
+        assert_eq!(Team::purpose(&bots[1]), "Watch the deploys.");
         let long = bot("x", &[], &"word ".repeat(40));
         assert_eq!(Team::purpose(&long).chars().count(), 120);
         assert_eq!(
