@@ -11,13 +11,13 @@ import (
 
 func jevDefinition() BotDefinition {
 	d := sampleDefinition()
-	d.Name = "ob-1"
+	d.Name = "worker-1"
 	d.Level = "act-within-policy"
-	d.AllowedTools = []string{"phrases", "play", "listen", "stop"}
+	d.AllowedTools = []string{"batches", "process", "listen", "stop"}
 	d.Budgets.MaxDelegationDepth = 0
 	d.Runtime = &domain.RuntimeSnapshot{Kind: "jev", Jev: &domain.JevProgramSnapshot{
-		Server: "score", Start: "phrases", Wait: "listen", Stop: "stop",
-		Act: domain.JevActSnapshot{Tool: "play", Choice: "phrase", Verdict: "judge", Pass: []string{"dynamics"}},
+		Server: "queue", Start: "batches", Wait: "listen", Stop: "stop",
+		Act: domain.JevActSnapshot{Tool: "process", Choice: "batch", Verdict: "judge", Pass: []string{"priority"}},
 	}}
 	return d
 }
@@ -41,7 +41,7 @@ func TestAJevBotRunsOnlyWhereJevIs(t *testing.T) {
 	if bot.Runtime().Kind() != domain.RuntimeJev || bot.Snapshot().Runtime == nil {
 		t.Fatalf("runtime = %v", bot.Runtime().Kind())
 	}
-	fewer := []string{"phrases", "play"}
+	fewer := []string{"batches", "process"}
 	if _, err := NewUpdateBot(h.deps).Execute(ctx, bot.ID(), BotPatch{AllowedTools: &fewer}); err == nil || !strings.Contains(err.Error(), "listen") {
 		t.Errorf("narrowing the tools past the program: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestAJevBotRunsOnlyWhereJevIs(t *testing.T) {
 	if _, err := NewUpdateBot(h.deps).Execute(ctx, bot.ID(), BotPatch{Level: &observe}); err == nil {
 		t.Error("lowering the level under a program was accepted")
 	}
-	broken := &domain.RuntimeSnapshot{Kind: "jev", Jev: &domain.JevProgramSnapshot{Server: "score", Start: "tune", Wait: "listen", Act: domain.JevActSnapshot{Tool: "play", Choice: "phrase"}}}
+	broken := &domain.RuntimeSnapshot{Kind: "jev", Jev: &domain.JevProgramSnapshot{Server: "queue", Start: "tune", Wait: "listen", Act: domain.JevActSnapshot{Tool: "process", Choice: "batch"}}}
 	if _, err := NewUpdateBot(h.deps).Execute(ctx, bot.ID(), BotPatch{Runtime: broken}); err == nil || !strings.Contains(err.Error(), "tune") {
 		t.Errorf("a program over a tool the bot lacks: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestAJevBotRunsOnlyWhereJevIs(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.clock.now = t0.Add(time.Second)
-	submitted := submit(t, h, bot, "k-cue").Task
+	submitted := submit(t, h, bot, "k-notice").Task
 	if _, found, err := NewNextAssignment(h.deps).Execute(ctx, plain.ID()); err != nil || found {
 		t.Errorf("a node without the runtime was assigned a Jev bot: %v %v", found, err)
 	}
@@ -74,7 +74,7 @@ func TestAJevBotRunsOnlyWhereJevIs(t *testing.T) {
 		t.Fatalf("assignment = %+v %v %v", assignment, found, err)
 	}
 	program, ok := assignment.Run.Runtime.Jev()
-	if !ok || program.Act() != "play" || string(assignment.Run.Input) != string(submitted.Input()) {
+	if !ok || program.Act() != "process" || string(assignment.Run.Input) != string(submitted.Input()) {
 		t.Errorf("run = %+v", assignment.Run)
 	}
 	// Back to AXLR: the runtime is dropped from the snapshot.
@@ -90,13 +90,13 @@ func TestAJevBotRunsOnlyWhereJevIs(t *testing.T) {
 }
 
 // A teammate's or the operator's event delivered as a message carries
-// its name and data, so a Jev program reads the cue without parsing text.
+// its name and data, so a Jev program reads the event without parsing text.
 func TestAMessageCarriesItsEvent(t *testing.T) {
 	h := newHarness()
 	ctx := context.Background()
 	d := jevDefinition()
-	d.Groups = []string{"orchestra"}
-	d.Subscriptions = []domain.SubscriptionSnapshot{{Topic: "info.cue.winds", Mode: "message", From: []string{"operator"}}}
+	d.Groups = []string{"ops"}
+	d.Subscriptions = []domain.SubscriptionSnapshot{{Topic: "info.notice.load", Mode: "message", From: []string{"operator"}}}
 	bot, err := NewRegisterBot(h.deps).Execute(ctx, d)
 	if err != nil {
 		t.Fatal(err)
@@ -110,12 +110,12 @@ func TestAMessageCarriesItsEvent(t *testing.T) {
 	if err != nil || !found {
 		t.Fatal(err, found)
 	}
-	answer, err := NewPublishGroupEvent(h.deps).Execute(ctx, PublishGroupEventCommand{Group: "orchestra", Name: "info.cue.winds", Message: "softer", Data: map[string]any{"dynamics": "p"}, IdempotencyKey: "cue-1"})
+	answer, err := NewPublishGroupEvent(h.deps).Execute(ctx, PublishGroupEventCommand{Group: "ops", Name: "info.notice.load", Message: "lower", Data: map[string]any{"priority": "low"}, IdempotencyKey: "notice-1"})
 	if err != nil || len(answer.Deliveries) != 1 || answer.Deliveries[0].Mode != "message" {
 		t.Fatalf("publish = %+v %v", answer, err)
 	}
 	messages, err := NewExecutionMessages(h.deps).Execute(ctx, node.ID(), assignment.ExecutionID, "")
-	if err != nil || len(messages) != 1 || messages[0].Event == nil || messages[0].Event.Name != "info.cue.winds" || messages[0].Event.Data["dynamics"] != "p" || !strings.Contains(messages[0].Text, "softer") {
+	if err != nil || len(messages) != 1 || messages[0].Event == nil || messages[0].Event.Name != "info.notice.load" || messages[0].Event.Data["priority"] != "low" || !strings.Contains(messages[0].Text, "lower") {
 		t.Errorf("messages = %+v %v", messages, err)
 	}
 }

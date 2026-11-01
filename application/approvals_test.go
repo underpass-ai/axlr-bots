@@ -181,15 +181,14 @@ func TestExpiryQueuesTheDenialForTheNode(t *testing.T) {
 	}
 }
 
-// The port fleet's patrol (26 Oct 2026): nobody approved a pilot's
-// mission, the expiry handed the session a denial, and the node's
-// denial run failed. The task is Expired, apart from a real failure,
-// and the overview and the task list count it apart.
+// Nobody approved a bot's call, the expiry handed the session a denial,
+// and the node's denial run failed. The task is Expired, apart from a
+// real failure, and the overview and the task list count it apart.
 func TestAnExpiredApprovalWhoseDenialFailsEndsExpiredNotFailed(t *testing.T) {
 	h := newHarness()
 	ctx := context.Background()
 	bot := governBot(t, h, enabledBot(t, h), domain.ApprovalsSnapshot{TTL: "5m"})
-	node := onlineNode(t, h, "quad-0")
+	node := onlineNode(t, h, "worker-0")
 	pending := ExecutionReport{Outcome: domain.ExecutionDecisionRequired, Result: domain.Result{SessionID: "sess-1", PendingDecision: &domain.PendingDecision{Tool: "axlr_call_tool", CallID: "c1", SessionID: "sess-1"}}}
 	reason := "exit code 1: axlr-tui: open /tmp/axlr-state/axlr/sessions/sess-1.json: no such file or directory"
 	failed := ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: reason}
@@ -204,9 +203,9 @@ func TestAnExpiredApprovalWhoseDenialFailsEndsExpiredNotFailed(t *testing.T) {
 		}
 		return task.ID()
 	}
-	expired := waitOn("patrol-1")
+	expired := waitOn("watch-1")
 	// A person approves the other one, and its run fails: a real failure.
-	approved := waitOn("patrol-2")
+	approved := waitOn("watch-2")
 	if _, err := NewApproveTask(h.deps).Execute(ctx, approved, DecisionApprove, ""); err != nil {
 		t.Fatal(err)
 	}

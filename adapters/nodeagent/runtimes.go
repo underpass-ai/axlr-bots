@@ -12,7 +12,7 @@ import (
 
 // Hearer is a runtime that takes the operator's and the teammates'
 // messages for a running execution as they were published (the event's
-// name and data), not as text: a Jev program reads a cue's data.
+// name and data), not as text: a Jev program reads an event's data.
 type Hearer interface {
 	Hear(ctx context.Context, execution domain.ExecutionID, messages []application.RelayedMessage) error
 }

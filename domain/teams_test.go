@@ -7,39 +7,39 @@ import (
 )
 
 func TestTeams(t *testing.T) {
-	teams, err := NewTeams([]string{"port", "air"})
+	teams, err := NewTeams([]string{"ops", "infra"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := teams.Snapshot(); len(got) != 2 || got[0] != "air" || got[1] != "port" {
+	if got := teams.Snapshot(); len(got) != 2 || got[0] != "infra" || got[1] != "ops" {
 		t.Errorf("snapshot = %v", got)
 	}
-	if !teams.Has("port") || teams.Has("sea") || teams.Empty() {
+	if !teams.Has("ops") || teams.Has("sre") || teams.Empty() {
 		t.Errorf("teams = %+v", teams)
 	}
-	other, _ := NewTeams([]string{"port", "sea"})
-	if shared := teams.Shared(other); len(shared) != 1 || shared[0] != "port" {
+	other, _ := NewTeams([]string{"ops", "sre"})
+	if shared := teams.Shared(other); len(shared) != 1 || shared[0] != "ops" {
 		t.Errorf("shared = %v", shared)
 	}
 	if none, _ := NewTeams(nil); !none.Empty() || none.Snapshot() != nil {
 		t.Errorf("no teams = %+v", none)
 	}
-	for _, bad := range [][]string{{"Port"}, {"a", "a"}, {"a", "b", "c", "d", "e", "f", "g", "h", "i"}, {""}} {
+	for _, bad := range [][]string{{"Ops"}, {"a", "a"}, {"a", "b", "c", "d", "e", "f", "g", "h", "i"}, {""}} {
 		if _, err := NewTeams(bad); err == nil {
 			t.Errorf("%v accepted", bad)
 		}
 	}
 	names := teams.Names()
 	names[0] = "changed"
-	if teams.Names()[0] != "air" {
+	if teams.Names()[0] != "infra" {
 		t.Error("Names shares its slice")
 	}
 }
 
 func TestMissionPurpose(t *testing.T) {
 	cases := map[string]string{
-		"Fly the coast at dawn. Then land.":      "Fly the coast at dawn.",
-		"Watch the quay!  Report.":               "Watch the quay!",
+		"Watch service-1 at dawn. Then report.":  "Watch service-1 at dawn.",
+		"Watch the queue!  Report.":              "Watch the queue!",
 		"Is the gate open? Say so.":              "Is the gate open?",
 		"Read the files of the workspace":        "Read the files of the workspace",
 		"Version 0.15 is out.\nTell the others.": "Version 0.15 is out.",
@@ -56,9 +56,9 @@ func TestMissionPurpose(t *testing.T) {
 }
 
 func TestPlacementWhere(t *testing.T) {
-	nodes, _ := NewPlacement([]string{"quad-1", "quad-2"}, nil)
+	nodes, _ := NewPlacement([]string{"worker-1", "worker-2"}, nil)
 	labels, _ := NewPlacement(nil, map[string]string{"zone": "eu", "gpu": "yes"})
-	cases := map[string]Placement{"node quad-1, quad-2": nodes, "nodes labelled gpu=yes, zone=eu": labels, "any node": {}}
+	cases := map[string]Placement{"node worker-1, worker-2": nodes, "nodes labelled gpu=yes, zone=eu": labels, "any node": {}}
 	for want, p := range cases {
 		if got := p.Where(); got != want {
 			t.Errorf("where = %q, want %q", got, want)
@@ -68,7 +68,7 @@ func TestPlacementWhere(t *testing.T) {
 
 func teamTestBot(t *testing.T, id, tenant string, teams []string) Bot {
 	t.Helper()
-	bot, err := NewBot(BotID(id), TenantID(tenant), BotName(id), "operator", Mission("You are "+id+". You fly."), AllowedTools{}, ModelPolicy{}, Budgets{}, time.Unix(1, 0))
+	bot, err := NewBot(BotID(id), TenantID(tenant), BotName(id), "operator", Mission("You are "+id+". You watch."), AllowedTools{}, ModelPolicy{}, Budgets{}, time.Unix(1, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,14 +81,14 @@ func teamTestBot(t *testing.T, id, tenant string, teams []string) Bot {
 }
 
 func TestTeammatesAndTheirConsent(t *testing.T) {
-	plane := teamTestBot(t, "plane", "default", []string{"port"})
-	quad := teamTestBot(t, "quad-1", "default", []string{"port", "sea"})
-	stranger := teamTestBot(t, "stranger", "default", []string{"air"})
-	elsewhere := teamTestBot(t, "elsewhere", "harbour", []string{"port"})
-	if !plane.IsTeammateOf(quad) || plane.IsTeammateOf(plane) || plane.IsTeammateOf(stranger) || plane.IsTeammateOf(elsewhere) {
+	watcher := teamTestBot(t, "watcher", "default", []string{"ops"})
+	worker := teamTestBot(t, "worker-1", "default", []string{"ops", "sre"})
+	stranger := teamTestBot(t, "stranger", "default", []string{"infra"})
+	elsewhere := teamTestBot(t, "elsewhere", "staging", []string{"ops"})
+	if !watcher.IsTeammateOf(worker) || watcher.IsTeammateOf(watcher) || watcher.IsTeammateOf(stranger) || watcher.IsTeammateOf(elsewhere) {
 		t.Error("teammates are wrong")
 	}
-	if !quad.TakesDelegationFrom(plane) || stranger.TakesDelegationFrom(plane) {
+	if !worker.TakesDelegationFrom(watcher) || stranger.TakesDelegationFrom(watcher) {
 		t.Error("consent through the team is wrong")
 	}
 	refuse := false
@@ -96,41 +96,41 @@ func TestTeammatesAndTheirConsent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := quad.SetDelegation(delegation); err != nil {
+	if err := worker.SetDelegation(delegation); err != nil {
 		t.Fatal(err)
 	}
-	if quad.TakesDelegationFrom(plane) {
+	if worker.TakesDelegationFrom(watcher) {
 		t.Error("fromTeam false still takes the team's tasks")
 	}
 	triggers, _ := NewTriggers([]TriggerSnapshot{{Type: "manual"}, {Type: "delegation"}})
-	quad.Wire(triggers, Placement{})
-	if !quad.TakesDelegationFrom(plane) || !quad.TakesDelegationFrom(stranger) {
+	worker.Wire(triggers, Placement{})
+	if !worker.TakesDelegationFrom(watcher) || !worker.TakesDelegationFrom(stranger) {
 		t.Error("the delegation trigger is consent for anyone")
 	}
-	if s := quad.Delegation().Snapshot(); s == nil || s.FromTeam == nil || *s.FromTeam {
+	if s := worker.Delegation().Snapshot(); s == nil || s.FromTeam == nil || *s.FromTeam {
 		t.Errorf("snapshot = %+v", s)
 	}
 	if s := (Delegation{}).Snapshot(); s != nil {
 		t.Errorf("empty snapshot = %+v", s)
 	}
-	mate := TeammateOf(plane, quad)
-	if mate.ID != "quad-1" || len(mate.Teams) != 1 || mate.Purpose != "You are quad-1." || mate.Where != "any node" || !mate.TakesDelegation {
+	mate := TeammateOf(watcher, worker)
+	if mate.ID != "worker-1" || len(mate.Teams) != 1 || mate.Purpose != "You are worker-1." || mate.Where != "any node" || !mate.TakesDelegation {
 		t.Errorf("teammate = %+v", mate)
 	}
 }
 
 func TestBotSnapshotKeepsTheTeams(t *testing.T) {
-	bot := teamTestBot(t, "plane", "default", []string{"port"})
+	bot := teamTestBot(t, "watcher", "default", []string{"ops"})
 	bot.Register(time.Unix(2, 0))
 	s := bot.Snapshot()
-	if len(s.Groups) != 1 || s.Groups[0] != "port" {
+	if len(s.Groups) != 1 || s.Groups[0] != "ops" {
 		t.Fatalf("groups = %v", s.Groups)
 	}
 	s.Model = ModelPolicySnapshot{Model: "m", RoutingPolicy: "cost-optimized"}
 	s.Budgets = BudgetsSnapshot{MaxModelCallsPerTask: 1, MaxToolCallsPerTask: 1, TaskTimeoutSeconds: 60}
 	s.Level = "observe"
 	restored, err := RestoreBot(s)
-	if err != nil || !restored.Teams().Has("port") {
+	if err != nil || !restored.Teams().Has("ops") {
 		t.Fatalf("restored = %+v %v", restored.Snapshot().Groups, err)
 	}
 	s.Groups = []string{"Bad"}
@@ -141,22 +141,22 @@ func TestBotSnapshotKeepsTheTeams(t *testing.T) {
 
 func TestTeamDirectoryRenders(t *testing.T) {
 	mates := []Teammate{
-		{ID: "quad-1", Teams: []TeamName{"port"}, Purpose: "Pilot of quad-1.", Tools: []string{"run_mission"}, Where: "node quad-1", TakesDelegation: true},
-		{ID: "quad-2", Teams: []TeamName{"port", "sea"}, Purpose: "Pilot of quad-2.", Where: "any node"},
+		{ID: "worker-1", Teams: []TeamName{"ops"}, Purpose: "Deploys service-1.", Tools: []string{"run_job"}, Where: "node worker-1", TakesDelegation: true},
+		{ID: "worker-2", Teams: []TeamName{"ops", "sre"}, Purpose: "Deploys service-2.", Where: "any node"},
 	}
-	one := NewTeamDirectory([]TeamName{"port"}, mates)
+	one := NewTeamDirectory([]TeamName{"ops"}, mates)
 	text := one.Render(4000)
-	want := "Your teammates (team port), bots of your operator that work with you:\n- quad-1: Pilot of quad-1. Tools: run_mission. Runs on node quad-1. Takes delegated tasks.\n- quad-2: Pilot of quad-2. Runs on any node."
+	want := "Your teammates (team ops), bots of your operator that work with you:\n- worker-1: Deploys service-1. Tools: run_job. Runs on node worker-1. Takes delegated tasks.\n- worker-2: Deploys service-2. Runs on any node."
 	if text != want {
 		t.Errorf("render =\n%s\nwant\n%s", text, want)
 	}
-	many := NewTeamDirectory([]TeamName{"port", "sea"}, mates)
-	if text := many.Render(4000); !strings.Contains(text, "(teams port, sea)") || !strings.Contains(text, "- quad-2 (port, sea): ") {
+	many := NewTeamDirectory([]TeamName{"ops", "sre"}, mates)
+	if text := many.Render(4000); !strings.Contains(text, "(teams ops, sre)") || !strings.Contains(text, "- worker-2 (ops, sre): ") {
 		t.Errorf("many teams =\n%s", text)
 	}
-	heading := len("Your teammates (team port), bots of your operator that work with you:\n")
+	heading := len("Your teammates (team ops), bots of your operator that work with you:\n")
 	cut := one.Render(heading + len("… and 2 more\n"))
-	if cut != "Your teammates (team port), bots of your operator that work with you:\n… and 2 more" {
+	if cut != "Your teammates (team ops), bots of your operator that work with you:\n… and 2 more" {
 		t.Errorf("cut = %q", cut)
 	}
 	if got := one.Render(10); got != "" {
@@ -172,21 +172,21 @@ func TestTeamDirectoryRenders(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		lots = append(lots, Teammate{ID: BotID("bot-" + string(rune('a'+i%26)) + string(rune('a'+i/26))), Purpose: "x.", Where: "any node"})
 	}
-	if text := NewTeamDirectory([]TeamName{"port"}, lots).Render(8000); strings.Count(text, "\n- ") != MaxDirectoryMembers || !strings.HasSuffix(text, "… and 8 more") {
+	if text := NewTeamDirectory([]TeamName{"ops"}, lots).Render(8000); strings.Count(text, "\n- ") != MaxDirectoryMembers || !strings.HasSuffix(text, "… and 8 more") {
 		t.Errorf("capped =\n%s", text)
 	}
 }
 
 func TestTeamPromptFitsTheLimit(t *testing.T) {
-	mission, _ := NewMission("Fly the plane.")
-	objective, _ := NewObjective("Warn quad-1.")
+	mission, _ := NewMission("Watch the services.")
+	objective, _ := NewObjective("Warn worker-1.")
 	plain, _ := NewPrompt(mission, objective)
 	if got, err := NewTeamPrompt(mission, objective, TeamDirectory{}, EventNotes{}); err != nil || got != plain {
 		t.Errorf("no directory = %q %v", got, err)
 	}
-	directory := NewTeamDirectory([]TeamName{"port"}, []Teammate{{ID: "quad-1", Purpose: "Pilot.", Where: "any node"}})
+	directory := NewTeamDirectory([]TeamName{"ops"}, []Teammate{{ID: "worker-1", Purpose: "Deployer.", Where: "any node"}})
 	got, err := NewTeamPrompt(mission, objective, directory, EventNotes{})
-	if err != nil || !strings.Contains(got.String(), "Fly the plane.\n\nYour teammates (team port)") || !strings.HasSuffix(got.String(), "- quad-1: Pilot. Runs on any node.\n\nThe task:\nWarn quad-1.") {
+	if err != nil || !strings.Contains(got.String(), "Watch the services.\n\nYour teammates (team ops)") || !strings.HasSuffix(got.String(), "- worker-1: Deployer. Runs on any node.\n\nThe task:\nWarn worker-1.") {
 		t.Errorf("prompt = %q %v", got, err)
 	}
 	big, _ := NewMission(strings.Repeat("m", 2000))

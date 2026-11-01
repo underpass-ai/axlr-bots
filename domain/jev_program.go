@@ -87,7 +87,7 @@ func NewJevProgram(s JevProgramSnapshot) (JevProgram, error) {
 		if !KindOf(name).PublishedBy(PublisherBot) {
 			return JevProgram{}, invalid("jev tell", KindOf(name).String()+".* is the control plane's own")
 		}
-		p.tell = name.Canonical()
+		p.tell = name
 		for _, field := range s.Tell.Fields {
 			if !jevTellFields[field] && field != s.Act.Choice && !slices.Contains(p.pass, field) || slices.Contains(p.tellOf, field) {
 				return JevProgram{}, invalid("jev tell", "fields are choice, probability, confidence, the act's choice argument or a field passed on, each once")

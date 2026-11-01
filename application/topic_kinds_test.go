@@ -11,7 +11,7 @@ import (
 // older node's severity is ignored.
 func TestTheTopicsKindFixesTheSeverity(t *testing.T) {
 	h := newHarness()
-	parent := portTeam(t, h)
+	parent := opsTeam(t, h)
 	turno := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "info.turno", Message: "shift change"})
 	if turno.Refused != nil || turno.Severity != domain.SeverityInfo || len(turno.Deliveries) != 0 || len(turno.Skipped) != 0 {
 		t.Errorf("info.turno = %+v", turno)
@@ -19,13 +19,10 @@ func TestTheTopicsKindFixesTheSeverity(t *testing.T) {
 	if event, ok := lastEvent(h, domain.EventEventEmitted); !ok || event.Payload["severity"] != "info" || event.Payload["name"] != "info.turno" {
 		t.Errorf("emitted = %+v", event)
 	}
-	for _, name := range []string{"stop.recall", "recall"} {
-		answer := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: name, Message: "come back", To: []string{"quad-1"}})
-		if answer.Severity != domain.SeverityCritical || len(answer.Deliveries) != 1 || !answer.Deliveries[0].Urgent {
-			t.Errorf("%s = %+v", name, answer)
-		}
+	if answer := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "stop.halt", Message: "stop now", To: []string{"worker-1"}}); answer.Severity != domain.SeverityCritical || len(answer.Deliveries) != 1 || !answer.Deliveries[0].Urgent {
+		t.Errorf("stop.halt = %+v", answer)
 	}
-	old := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "info.x", Message: "an older node", Severity: "critical", To: []string{"quad-2"}})
+	old := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "info.x", Message: "an older node", Severity: "critical", To: []string{"worker-2"}})
 	if old.Refused != nil || old.Severity != domain.SeverityInfo || len(old.Deliveries) != 1 || old.Deliveries[0].Urgent {
 		t.Errorf("an older node's severity = %+v", old)
 	}
@@ -41,10 +38,10 @@ func TestTheTopicsKindFixesTheSeverity(t *testing.T) {
 func TestAnEmitRulesMaxSeverityIsIgnored(t *testing.T) {
 	h := newHarness()
 	onlineNode(t, h, "web-1")
-	warner := teamBot(t, h, "warner", []string{"port"}, func(d *BotDefinition) {
+	warner := teamBot(t, h, "warner", []string{"ops"}, func(d *BotDefinition) {
 		d.Events = &domain.EventsSnapshot{Emit: []domain.EmitRuleSnapshot{{Name: "warn.*", MaxSeverity: "critical"}}}
 	})
-	teamBot(t, h, "quad-1", []string{"port"}, nil)
+	teamBot(t, h, "worker-1", []string{"ops"}, nil)
 	run := runOnNode(t, h, warner, "web-1", "ask-1")
 	if names := run.Run.Events.Names; len(names) != 1 || names[0] != "warn.*" {
 		t.Errorf("offered names = %v", names)

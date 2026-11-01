@@ -34,20 +34,13 @@ const (
 	PublisherControlPlane Publisher = "control-plane"
 )
 
-// recallAlias is the kindless name the deployed pilots emit; it is read
-// as stop.recall for one release.
-const recallAlias = "recall"
-
 // KindOf reads the kind of an event's name: its first segment when that
-// is a kind, stop for the kindless recall, and info for anything else.
+// is a kind, and info for anything else.
 func KindOf(name EventName) TopicKind {
 	first, _, _ := strings.Cut(name.String(), ".")
 	switch kind := TopicKind(first); kind {
 	case KindError, KindDanger, KindStop, KindWarn, KindDone, KindInfo:
 		return kind
-	}
-	if name.String() == recallAlias {
-		return KindStop
 	}
 	return KindInfo
 }

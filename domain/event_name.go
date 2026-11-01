@@ -6,8 +6,8 @@ import "strings"
 const MaxEventNameLength = 64
 
 // EventName names what a bot tells its team happened: dot-separated
-// segments of lowercase letters, digits and '-', such as recall or
-// ship.sighted.
+// segments of lowercase letters, digits and '-', such as stop.halt or
+// deploy.started.
 type EventName string
 
 // NewEventName validates an event's name.
@@ -20,16 +20,6 @@ func NewEventName(raw string) (EventName, error) {
 }
 
 func (n EventName) String() string { return string(n) }
-
-// Canonical is the name as the bus reads it: the kindless recall the
-// deployed pilots emit is stop.recall, for one release; any other name
-// is itself.
-func (n EventName) Canonical() EventName {
-	if n == recallAlias {
-		return EventName(KindStop.String() + "." + recallAlias)
-	}
-	return n
-}
 
 // validateEventSegments checks a name or, with wildcards, a pattern:
 // segments of [a-z0-9-], or * and ** in a pattern.

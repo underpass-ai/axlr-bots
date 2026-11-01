@@ -162,15 +162,15 @@ func TestEventLogListsATasksEvents(t *testing.T) {
 func TestEventLogListsATeamsEvents(t *testing.T) {
 	ctx := context.Background()
 	log := NewEventLog(t.TempDir())
-	for i, bot := range []domain.BotID{"plane", "stranger", "quad-1", "plane"} {
+	for i, bot := range []domain.BotID{"watcher", "stranger", "worker-1", "watcher"} {
 		event, _ := domain.NewEvent(domain.EventID("evt-"+string(rune('a'+i))), domain.EventTaskSubmitted, "underpass", bot, "task-1", "trace", t0, nil)
 		_ = log.Publish(ctx, event)
 	}
-	events, err := log.ListTeamEvents(ctx, "default", "port", []domain.BotID{"plane", "quad-1"}, 10)
+	events, err := log.ListTeamEvents(ctx, "default", "ops", []domain.BotID{"watcher", "worker-1"}, 10)
 	if err != nil || len(events) != 3 || events[0].ID != "evt-a" || events[1].ID != "evt-c" || events[2].ID != "evt-d" {
 		t.Errorf("team = %+v %v", events, err)
 	}
-	if newest, _ := log.ListTeamEvents(ctx, "default", "port", []domain.BotID{"plane", "quad-1"}, 2); len(newest) != 2 || newest[0].ID != "evt-c" {
+	if newest, _ := log.ListTeamEvents(ctx, "default", "ops", []domain.BotID{"watcher", "worker-1"}, 2); len(newest) != 2 || newest[0].ID != "evt-c" {
 		t.Errorf("newest = %+v", newest)
 	}
 	if none, _ := log.ListTeamEvents(ctx, "default", "none", nil, 10); len(none) != 0 {
@@ -179,13 +179,13 @@ func TestEventLogListsATeamsEvents(t *testing.T) {
 	// The operator's events on the team are in its timeline; another
 	// tenant's team of that name is not.
 	for i, tenant := range []domain.TenantID{"underpass", "other"} {
-		event, err := domain.NewGroupEvent(domain.EventID("evt-g"+string(rune('a'+i))), domain.EventGroupEventPublished, tenant, "port", t0, nil)
+		event, err := domain.NewGroupEvent(domain.EventID("evt-g"+string(rune('a'+i))), domain.EventGroupEventPublished, tenant, "ops", t0, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		_ = log.Publish(ctx, event)
 	}
-	if team, _ := log.ListTeamEvents(ctx, "underpass", "port", []domain.BotID{"plane"}, 10); len(team) != 3 || team[2].ID != "evt-ga" {
+	if team, _ := log.ListTeamEvents(ctx, "underpass", "ops", []domain.BotID{"watcher"}, 10); len(team) != 3 || team[2].ID != "evt-ga" {
 		t.Errorf("with the operator's = %+v", team)
 	}
 }

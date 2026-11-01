@@ -98,13 +98,13 @@ func (s *emittingExecutor) SupportsPolicy(context.Context) bool      { return tr
 func (s *emittingExecutor) SupportsCorrelation(context.Context) bool { return true }
 func (s *emittingExecutor) Version(context.Context) string           { return "scripted" }
 
-func TestThePlaneWarnsQuadOneThroughTheNode(t *testing.T) {
+func TestTheWatcherWarnsWorkerOneThroughTheNode(t *testing.T) {
 	f := control(t, "completed")
 	ctx := context.Background()
-	for _, id := range []string{"plane", "quad-1"} {
+	for _, id := range []string{"watcher", "worker-1"} {
 		definition := application.BotDefinition{
 			ID: id, Tenant: "t", Name: id, Owner: "o", Mission: "You are " + id + ".", AllowedTools: []string{"local_read"},
-			Groups: []string{"port"}, Budgets: application.BudgetsDefinition{TaskTimeoutSeconds: 120},
+			Groups: []string{"ops"}, Budgets: application.BudgetsDefinition{TaskTimeoutSeconds: 120},
 		}
 		if _, err := f.client.RegisterBot(ctx, definition); err != nil {
 			t.Fatal(err)
@@ -114,18 +114,18 @@ func TestThePlaneWarnsQuadOneThroughTheNode(t *testing.T) {
 		}
 	}
 	executor := &emittingExecutor{tools: map[domain.BotID][]string{}, script: map[domain.BotID]map[string]any{
-		"plane": {"name": "recall", "message": "Ship 244 is entering your zone", "severity": "warning", "to": []string{"quad-1"}},
+		"watcher": {"name": "stop.halt", "message": "Deploy 244 is starting on your service", "severity": "warning", "to": []string{"worker-1"}},
 	}}
 	runAgent(t, f, executor)
-	submitted, err := f.client.SubmitTask(ctx, unixapiSubmit("plane", "Tell quad-1 to pull back: a ship"))
+	submitted, err := f.client.SubmitTask(ctx, unixapiSubmit("watcher", "Tell worker-1 to halt: a deploy is starting"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	plane := waitFor(t, f.client, submitted.Task.ID, "Completed")
-	executions, _ := f.client.ListExecutions(ctx, plane.ID)
+	watcher := waitFor(t, f.client, submitted.Task.ID, "Completed")
+	executions, _ := f.client.ListExecutions(ctx, watcher.ID)
 	answer := executions[0].Result.Answer
-	if !strings.Contains(answer, "emitted: error=false") || !strings.Contains(answer, `"botId":"quad-1"`) {
-		t.Fatalf("plane read = %s", answer)
+	if !strings.Contains(answer, "emitted: error=false") || !strings.Contains(answer, `"botId":"worker-1"`) {
+		t.Fatalf("watcher read = %s", answer)
 	}
 	var view struct {
 		Tasks []application.EventDelivery `json:"tasks"`
@@ -133,31 +133,31 @@ func TestThePlaneWarnsQuadOneThroughTheNode(t *testing.T) {
 	if err := json.Unmarshal([]byte(strings.TrimPrefix(answer, "emitted: error=false ")), &view); err != nil || len(view.Tasks) != 1 {
 		t.Fatalf("view = %+v %v", view, err)
 	}
-	quad := waitFor(t, f.client, view.Tasks[0].TaskID, "Completed")
-	if quad.Delegation == nil || quad.Delegation.EventID == "" || quad.CorrelationID != plane.CorrelationID {
-		t.Errorf("quad-1's task = %+v", quad)
+	worker := waitFor(t, f.client, view.Tasks[0].TaskID, "Completed")
+	if worker.Delegation == nil || worker.Delegation.EventID == "" || worker.CorrelationID != watcher.CorrelationID {
+		t.Errorf("worker-1's task = %+v", worker)
 	}
-	if tools := executor.tools["plane"]; len(tools) != 3 || tools[1] != application.EmitEventToolName || tools[2] != application.SubscribeToolName {
+	if tools := executor.tools["watcher"]; len(tools) != 3 || tools[1] != application.EmitEventToolName || tools[2] != application.SubscribeToolName {
 		t.Errorf("tools/list = %v", tools)
 	}
 	// The emit tool over the socket offers no severity and names the kinds.
-	emitListed := executor.listed["plane"][1]
+	emitListed := executor.listed["watcher"][1]
 	properties := emitListed["inputSchema"].(map[string]any)["properties"].(map[string]any)
 	if _, ok := properties["severity"]; ok || !strings.Contains(fmt.Sprint(emitListed["description"]), "stop. and danger. are critical") {
 		t.Errorf("emit tool = %v", emitListed)
 	}
-	events, err := f.client.ListGroupEvents(ctx, application.GroupEventsQuery{Name: "port"})
+	events, err := f.client.ListGroupEvents(ctx, application.GroupEventsQuery{Name: "ops"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	emitted := false
 	for _, event := range events {
-		emitted = emitted || (event.Type == domain.EventEventEmitted && event.Payload["message"] == "Ship 244 is entering your zone")
+		emitted = emitted || (event.Type == domain.EventEventEmitted && event.Payload["message"] == "Deploy 244 is starting on your service")
 	}
 	if !emitted {
 		t.Errorf("no emitted event among %d", len(events))
 	}
-	if !strings.Contains(f.logs.String(), "may emit events to quad-1") {
+	if !strings.Contains(f.logs.String(), "may emit events to worker-1") {
 		t.Errorf("logs = %s", f.logs.String())
 	}
 }
@@ -180,22 +180,22 @@ func TestTheEmitterHandsTheModelWhatHappened(t *testing.T) {
 		t.Error("an empty name was taken")
 	}
 	transport.err = errors.New("down")
-	if result := e.call(context.Background(), json.RawMessage(`{"name": "recall", "message": "x"}`)); !result.IsError || !strings.Contains(result.Content[0].Text, "down") {
+	if result := e.call(context.Background(), json.RawMessage(`{"name": "halt", "message": "x"}`)); !result.IsError || !strings.Contains(result.Content[0].Text, "down") {
 		t.Errorf("transport error = %+v", result)
 	}
 	transport.err = nil
 	transport.answer = application.EmitAnswer{Refused: &domain.EventRefusal{Reason: domain.RefusedRateLimited, Message: "wait"}}
-	if result := e.call(context.Background(), json.RawMessage(`{"name": "recall", "message": "x"}`)); !result.IsError || !strings.Contains(result.Content[0].Text, domain.RefusedRateLimited) {
+	if result := e.call(context.Background(), json.RawMessage(`{"name": "halt", "message": "x"}`)); !result.IsError || !strings.Contains(result.Content[0].Text, domain.RefusedRateLimited) {
 		t.Errorf("refusal = %+v", result)
 	}
-	transport.answer = application.EmitAnswer{EventID: "evt-1", Name: "recall", Severity: domain.SeverityInfo}
-	if result := e.call(context.Background(), json.RawMessage(`{"name": "recall", "message": "x"}`)); result.IsError || !strings.Contains(result.Content[0].Text, "no teammate heard it") {
+	transport.answer = application.EmitAnswer{EventID: "evt-1", Name: "halt", Severity: domain.SeverityInfo}
+	if result := e.call(context.Background(), json.RawMessage(`{"name": "halt", "message": "x"}`)); result.IsError || !strings.Contains(result.Content[0].Text, "no teammate heard it") {
 		t.Errorf("nobody = %+v", result)
 	}
 }
 
 func TestTheEmitToolDescribesWhatTheBotMayDo(t *testing.T) {
-	tool := emitTool(application.EventsOffer{Names: []string{"recall", "ship.*"}, Teammates: []string{"quad-1"}})
+	tool := emitTool(application.EventsOffer{Names: []string{"halt", "deploy.*"}, Teammates: []string{"worker-1"}})
 	var schema struct {
 		Properties map[string]map[string]any `json:"properties"`
 	}
@@ -210,14 +210,14 @@ func TestTheEmitToolDescribesWhatTheBotMayDo(t *testing.T) {
 			t.Errorf("the description does not name the kind %s", kind)
 		}
 	}
-	if items := schema.Properties["to"]["items"].(map[string]any); fmt.Sprint(items["enum"]) != "[quad-1]" {
+	if items := schema.Properties["to"]["items"].(map[string]any); fmt.Sprint(items["enum"]) != "[worker-1]" {
 		t.Errorf("to = %v", items)
 	}
-	if !strings.Contains(tool.Description, "recall, ship.*") || !strings.Contains(tool.Description, "Your teammates: quad-1") {
+	if !strings.Contains(tool.Description, "halt, deploy.*") || !strings.Contains(tool.Description, "Your teammates: worker-1") {
 		t.Errorf("description = %s", tool.Description)
 	}
 	alone := emitTool(application.EventsOffer{Names: []string{"**"}})
-	if !strings.Contains(alone.Description, "none Enabled now") || strings.Contains(string(alone.InputSchema), `"enum":["quad`) {
+	if !strings.Contains(alone.Description, "none Enabled now") || strings.Contains(string(alone.InputSchema), `"enum":["worker`) {
 		t.Errorf("alone = %s %s", alone.Description, alone.InputSchema)
 	}
 }

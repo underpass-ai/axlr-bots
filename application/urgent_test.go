@@ -35,21 +35,21 @@ func TestAnUrgentTaskPreemptsTheWorkInProgress(t *testing.T) {
 	h := newHarness()
 	ctx := context.Background()
 	onlineNode(t, h, "web-1")
-	teamBot(t, h, "quad-1", nil, nil)
-	running := submitWith(t, h, "quad-1", "patrol", "")
+	teamBot(t, h, "worker-1", nil, nil)
+	running := submitWith(t, h, "worker-1", "watch", "")
 	runningRun := nextFor(t, h, "web-1")
-	waiting := submitWith(t, h, "quad-1", "survey", "")
+	waiting := submitWith(t, h, "worker-1", "backfill", "")
 	waitingRun := nextFor(t, h, "web-1")
 	if _, err := NewReportExecution(h.deps).Execute(ctx, "web-1", waitingRun.ExecutionID, waitingReport); err != nil {
 		t.Fatal(err)
 	}
 	h.clock.now = t0.Add(time.Second)
-	queued := submitWith(t, h, "quad-1", "restock", "")
+	queued := submitWith(t, h, "worker-1", "restock", "")
 	h.clock.now = t0.Add(2 * time.Second)
-	if _, err := NewSubmitTask(h.deps).Execute(ctx, SubmitTaskCommand{BotID: "quad-1", Objective: "x", IdempotencyKey: "bad", Priority: "now"}); err == nil {
+	if _, err := NewSubmitTask(h.deps).Execute(ctx, SubmitTaskCommand{BotID: "worker-1", Objective: "x", IdempotencyKey: "bad", Priority: "now"}); err == nil {
 		t.Error("an unknown priority was taken")
 	}
-	urgent := submitWith(t, h, "quad-1", "recall", "urgent")
+	urgent := submitWith(t, h, "worker-1", "halt", "urgent")
 	if !urgent.IsUrgent() {
 		t.Fatal("the task is not urgent")
 	}
@@ -87,45 +87,45 @@ func TestAnUrgentTaskPreemptsTheWorkInProgress(t *testing.T) {
 	if next := nextFor(t, h, "web-1"); next.Run.TaskID != urgent.ID() {
 		t.Errorf("assigned %s first", next.Run.TaskID)
 	}
-	second := submitWith(t, h, "quad-1", "recall-again", "urgent")
+	second := submitWith(t, h, "worker-1", "halt-again", "urgent")
 	if taskOf(t, h, urgent.ID()).Status() != domain.TaskRunning || taskOf(t, h, second.ID()).Status() != domain.TaskPending {
 		t.Error("an urgent task preempted another urgent one")
 	}
 	h.tasks.listFail = errBoom
-	if _, err := NewSubmitTask(h.deps).Execute(ctx, SubmitTaskCommand{BotID: "quad-1", Objective: "x", IdempotencyKey: "fails", Priority: "urgent"}); !errors.Is(err, errBoom) {
+	if _, err := NewSubmitTask(h.deps).Execute(ctx, SubmitTaskCommand{BotID: "worker-1", Objective: "x", IdempotencyKey: "fails", Priority: "urgent"}); !errors.Is(err, errBoom) {
 		t.Errorf("list failure: %v", err)
 	}
 }
 
 func TestATeammatesStopInterruptsAndAWarningDoesNot(t *testing.T) {
 	h := newHarness()
-	parent := portTeam(t, h)
-	busy := submitWith(t, h, "quad-1", "patrol", "")
+	parent := opsTeam(t, h)
+	busy := submitWith(t, h, "worker-1", "watch", "")
 	nextFor(t, h, "web-1")
-	warning := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "warn.ship-near", Message: "a ship", To: []string{"quad-1"}})
+	warning := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "warn.deploy-slow", Message: "a deploy is starting", To: []string{"worker-1"}})
 	if len(warning.Deliveries) != 1 || warning.Deliveries[0].Urgent || taskOf(t, h, busy.ID()).Status() != domain.TaskRunning {
 		t.Fatalf("an addressed warning interrupted: %+v", warning)
 	}
-	recall := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "stop.recall", Message: "a ship", To: []string{"quad-1"}})
-	if len(recall.Deliveries) != 1 || !recall.Deliveries[0].Urgent {
-		t.Fatalf("recall = %+v", recall)
+	halt := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "stop.halt", Message: "a deploy is starting", To: []string{"worker-1"}})
+	if len(halt.Deliveries) != 1 || !halt.Deliveries[0].Urgent {
+		t.Fatalf("halt = %+v", halt)
 	}
-	if task := taskOf(t, h, busy.ID()); task.Status() != domain.TaskCancelled || !strings.Contains(task.FailureReason(), "a critical from its teammate plane, event stop.recall") {
+	if task := taskOf(t, h, busy.ID()); task.Status() != domain.TaskCancelled || !strings.Contains(task.FailureReason(), "a critical from its teammate watcher, event stop.halt") {
 		t.Errorf("busy = %s %q", task.Status(), task.FailureReason())
 	}
-	broadcast := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "warn.ship-sighted", Message: "a ship"})
+	broadcast := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "warn.deploy-started", Message: "a deploy is starting"})
 	if len(broadcast.Deliveries) != 0 {
 		t.Errorf("a warning broadcast reached a bot that subscribes to nothing: %+v", broadcast)
 	}
 }
 
-// autoBot is a bot whose approvals let return_home run without a
+// autoBot is a bot whose approvals let rollback run without a
 // person and notify a command otherwise.
 func autoBot(t *testing.T, h *harness) domain.Bot {
 	t.Helper()
-	return teamBot(t, h, "quad-1", nil, func(d *BotDefinition) {
+	return teamBot(t, h, "worker-1", nil, func(d *BotDefinition) {
 		d.Level = "act-with-approval"
-		d.Approvals = domain.ApprovalsSnapshot{AutoApprove: []domain.ToolRuleSnapshot{{Tool: "return_home"}}, Notify: []domain.NotifyTargetSnapshot{{Type: "command", Command: []string{"/bin/true"}}}}
+		d.Approvals = domain.ApprovalsSnapshot{AutoApprove: []domain.ToolRuleSnapshot{{Tool: "rollback"}}, Notify: []domain.NotifyTargetSnapshot{{Type: "command", Command: []string{"/bin/true"}}}}
 	})
 }
 
@@ -133,17 +133,17 @@ func pendingCall(tool string, arguments string) ExecutionReport {
 	return ExecutionReport{Outcome: domain.ExecutionDecisionRequired, Result: domain.Result{SessionID: "sess-1", PendingDecision: &domain.PendingDecision{Tool: tool, CallID: "c1", SessionID: "sess-1", Arguments: json.RawMessage(arguments)}}}
 }
 
-func TestReturnHomeRunsWithoutAPerson(t *testing.T) {
+func TestRollbackRunsWithoutAPerson(t *testing.T) {
 	h := newHarness()
 	ctx := context.Background()
 	onlineNode(t, h, "web-1")
 	autoBot(t, h)
-	home := submitWith(t, h, "quad-1", "recall", "urgent")
+	rollback := submitWith(t, h, "worker-1", "rollback", "urgent")
 	run := nextFor(t, h, "web-1")
-	if _, err := NewReportExecution(h.deps).Execute(ctx, "web-1", run.ExecutionID, pendingCall(domain.MCPCallTool, `{"name": "vehicle/return_home", "why": "a ship", "arguments": {"reason": "a ship"}}`)); err != nil {
+	if _, err := NewReportExecution(h.deps).Execute(ctx, "web-1", run.ExecutionID, pendingCall(domain.MCPCallTool, `{"name": "service/rollback", "why": "a failed deploy", "arguments": {"reason": "a failed deploy"}}`)); err != nil {
 		t.Fatal(err)
 	}
-	if task := taskOf(t, h, home.ID()); task.Status() != domain.TaskRunning {
+	if task := taskOf(t, h, rollback.ID()); task.Status() != domain.TaskRunning {
 		t.Fatalf("task = %s", task.Status())
 	}
 	decided, ok := lastEvent(h, domain.EventTaskDecided)
@@ -156,14 +156,14 @@ func TestReturnHomeRunsWithoutAPerson(t *testing.T) {
 	if next := nextFor(t, h, "web-1"); next.Decide == nil || next.Decide.Decision != DecisionApprove {
 		t.Errorf("the decision was not queued: %+v", next)
 	}
-	// Taking off is a person's decision.
-	fly := submitWith(t, h, "quad-1", "fly", "")
-	flyRun := nextFor(t, h, "web-1")
-	if _, err := NewReportExecution(h.deps).Execute(ctx, "web-1", flyRun.ExecutionID, pendingCall(domain.MCPCallTool, `{"name": "run_mission", "arguments": {}}`)); err != nil {
+	// Running a job is a person's decision.
+	job := submitWith(t, h, "worker-1", "job", "")
+	jobRun := nextFor(t, h, "web-1")
+	if _, err := NewReportExecution(h.deps).Execute(ctx, "web-1", jobRun.ExecutionID, pendingCall(domain.MCPCallTool, `{"name": "run_job", "arguments": {}}`)); err != nil {
 		t.Fatal(err)
 	}
-	if task := taskOf(t, h, fly.ID()); task.Status() != domain.TaskWaitingApproval {
-		t.Errorf("fly = %s", task.Status())
+	if task := taskOf(t, h, job.ID()); task.Status() != domain.TaskWaitingApproval {
+		t.Errorf("job = %s", task.Status())
 	}
 	if pending, _ := h.outbox.ListPending(ctx); len(pending) != 1 {
 		t.Errorf("deliveries = %d", len(pending))
@@ -175,15 +175,15 @@ func TestAnAutoApprovalThatCannotRunAsksAPerson(t *testing.T) {
 	ctx := context.Background()
 	onlineNode(t, h, "web-1")
 	bot := autoBot(t, h)
-	home := submitWith(t, h, "quad-1", "recall", "")
+	rollback := submitWith(t, h, "worker-1", "rollback", "")
 	run := nextFor(t, h, "web-1")
 	if _, err := NewPauseBot(h.deps).Execute(ctx, bot.ID()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewReportExecution(h.deps).Execute(ctx, "web-1", run.ExecutionID, pendingCall("return_home", `{}`)); err != nil {
+	if _, err := NewReportExecution(h.deps).Execute(ctx, "web-1", run.ExecutionID, pendingCall("rollback", `{}`)); err != nil {
 		t.Fatal(err)
 	}
-	if task := taskOf(t, h, home.ID()); task.Status() != domain.TaskWaitingApproval {
+	if task := taskOf(t, h, rollback.ID()); task.Status() != domain.TaskWaitingApproval {
 		t.Errorf("task = %s", task.Status())
 	}
 	failed := false
@@ -199,21 +199,21 @@ func TestStopPausesTheBotAndCancelsItsWork(t *testing.T) {
 	h := newHarness()
 	ctx := context.Background()
 	onlineNode(t, h, "web-1")
-	teamBot(t, h, "quad-1", nil, nil)
-	done := submitWith(t, h, "quad-1", "done", "")
+	teamBot(t, h, "worker-1", nil, nil)
+	done := submitWith(t, h, "worker-1", "done", "")
 	doneRun := nextFor(t, h, "web-1")
 	if _, err := NewReportExecution(h.deps).Execute(ctx, "web-1", doneRun.ExecutionID, ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "ok"}}); err != nil {
 		t.Fatal(err)
 	}
-	running := submitWith(t, h, "quad-1", "running", "")
+	running := submitWith(t, h, "worker-1", "running", "")
 	nextFor(t, h, "web-1")
-	waiting := submitWith(t, h, "quad-1", "waiting", "")
+	waiting := submitWith(t, h, "worker-1", "waiting", "")
 	waitingRun := nextFor(t, h, "web-1")
 	if _, err := NewReportExecution(h.deps).Execute(ctx, "web-1", waitingRun.ExecutionID, waitingReport); err != nil {
 		t.Fatal(err)
 	}
-	pending := submitWith(t, h, "quad-1", "pending", "")
-	result, err := NewStopBot(h.deps).Execute(ctx, "quad-1")
+	pending := submitWith(t, h, "worker-1", "pending", "")
+	result, err := NewStopBot(h.deps).Execute(ctx, "worker-1")
 	if err != nil || result.Bot.Status() != domain.BotPaused || len(result.Cancelled) != 3 || len(result.NotCancelled) != 0 {
 		t.Fatalf("stop = %+v %v", result, err)
 	}
@@ -225,7 +225,7 @@ func TestStopPausesTheBotAndCancelsItsWork(t *testing.T) {
 	if taskOf(t, h, done.ID()).Status() != domain.TaskCompleted {
 		t.Error("a finished task changed")
 	}
-	again, err := NewStopBot(h.deps).Execute(ctx, "quad-1")
+	again, err := NewStopBot(h.deps).Execute(ctx, "worker-1")
 	if err != nil || len(again.Cancelled) != 0 || again.Bot.Status() != domain.BotPaused {
 		t.Errorf("again = %+v %v", again, err)
 	}
@@ -233,7 +233,7 @@ func TestStopPausesTheBotAndCancelsItsWork(t *testing.T) {
 		t.Errorf("ghost: %v", err)
 	}
 	h.tasks.listFail = errBoom
-	if _, err := NewStopBot(h.deps).Execute(ctx, "quad-1"); !errors.Is(err, errBoom) {
+	if _, err := NewStopBot(h.deps).Execute(ctx, "worker-1"); !errors.Is(err, errBoom) {
 		t.Errorf("list failure: %v", err)
 	}
 }
@@ -241,8 +241,8 @@ func TestStopPausesTheBotAndCancelsItsWork(t *testing.T) {
 func TestCancelKeepsWhoCancelled(t *testing.T) {
 	h := newHarness()
 	ctx := context.Background()
-	teamBot(t, h, "quad-1", nil, nil)
-	task := submitWith(t, h, "quad-1", "x", "")
+	teamBot(t, h, "worker-1", nil, nil)
+	task := submitWith(t, h, "worker-1", "x", "")
 	result, err := NewCancelTask(h.deps).Execute(ctx, task.ID())
 	if err != nil || result.Task.FailureReason() != "cancelled by test:operator" {
 		t.Errorf("cancel = %+v %v", result.Task.Snapshot(), err)
@@ -253,10 +253,10 @@ func TestTellingTheTeamNeedsNoPerson(t *testing.T) {
 	h := newHarness()
 	ctx := context.Background()
 	onlineNode(t, h, "web-1")
-	teamBot(t, h, "plane", []string{"port"}, func(d *BotDefinition) { d.Level = "act-with-approval" })
-	task := submitWith(t, h, "plane", "warn", "")
+	teamBot(t, h, "watcher", []string{"ops"}, func(d *BotDefinition) { d.Level = "act-with-approval" })
+	task := submitWith(t, h, "watcher", "warn", "")
 	run := nextFor(t, h, "web-1")
-	call := pendingCall(domain.MCPCallTool, `{"name": "axlr-bots/axlr_bots_emit_event", "arguments": {"name": "recall", "message": "a ship"}}`)
+	call := pendingCall(domain.MCPCallTool, `{"name": "axlr-bots/axlr_bots_emit_event", "arguments": {"name": "halt", "message": "a deploy is starting"}}`)
 	if _, err := NewReportExecution(h.deps).Execute(ctx, "web-1", run.ExecutionID, call); err != nil {
 		t.Fatal(err)
 	}

@@ -41,8 +41,8 @@ type PublishAnswer struct {
 // PublishGroupEvent is the operator telling a team that something
 // happened: the same checks and deliveries as a bot's event, as the
 // operator, less the rate and the chain (its tasks start none). error.*
-// and done.* are the control plane's own. stop.all is the generalised
-// Recall: every member hears it as an urgent task.
+// and done.* are the control plane's own. stop.all stops the whole
+// team: every member hears it as an urgent task.
 type PublishGroupEvent struct {
 	deps Dependencies
 	rec  recorder
@@ -71,7 +71,6 @@ func (uc PublishGroupEvent) Execute(ctx context.Context, command PublishGroupEve
 	if err != nil {
 		return PublishAnswer{}, err
 	}
-	name = name.Canonical()
 	if kind := domain.KindOf(name); !kind.PublishedBy(domain.PublisherOperator) {
 		return PublishAnswer{}, domain.ValidationError{Field: "name", Reason: domain.RefusedNotAllowed + ": " + kind.String() + ".* is the control plane's own"}
 	}

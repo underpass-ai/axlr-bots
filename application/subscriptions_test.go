@@ -110,13 +110,9 @@ func TestTheTeamsDefaultAndAddressedEvents(t *testing.T) {
 	if len(fire.Deliveries) != 3 || !urgent["almacen"] || !urgent["supervisor"] || urgent["caja"] {
 		t.Errorf("danger.fire = %+v", fire)
 	}
-	recall := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "stop.recall", Message: "back", To: []string{"supervisor"}})
-	if len(recall.Deliveries) != 1 || !recall.Deliveries[0].Urgent || recall.Deliveries[0].Trigger != "team" {
-		t.Errorf("stop.recall = %+v", recall)
-	}
-	alias := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "recall", Message: "back now", To: []string{"almacen"}})
-	if alias.Name != "stop.recall" || len(alias.Deliveries) != 1 || !alias.Deliveries[0].Urgent {
-		t.Errorf("recall = %+v", alias)
+	halt := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "stop.halt", Message: "back", To: []string{"supervisor"}})
+	if len(halt.Deliveries) != 1 || !halt.Deliveries[0].Urgent || halt.Deliveries[0].Trigger != "team" {
+		t.Errorf("stop.halt = %+v", halt)
 	}
 	warn := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "warn.x", Message: "low stock", To: []string{"almacen"}})
 	if len(warn.Deliveries) != 1 || warn.Deliveries[0].Urgent {
@@ -203,7 +199,7 @@ func TestSubscriptionsArePatchedWithinTheirRules(t *testing.T) {
 
 func TestAnEventTriggerIsReadAsASubscription(t *testing.T) {
 	h := newHarness()
-	bot := teamBot(t, h, "old", []string{"port"}, func(d *BotDefinition) {
+	bot := teamBot(t, h, "old", []string{"ops"}, func(d *BotDefinition) {
 		d.Triggers = []domain.TriggerSnapshot{{Type: "manual"}, {Type: "event", Events: []string{"a.*"}, Interrupt: true}}
 	})
 	got := bot.Snapshot()

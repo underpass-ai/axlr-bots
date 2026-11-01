@@ -140,8 +140,6 @@ func (uc EmitEvent) load(ctx context.Context, node domain.NodeID, executionID do
 	if err != nil {
 		return emission{}, err
 	}
-	// The kindless recall is stop.recall, for one release.
-	name = name.Canonical()
 	message, err := domain.NewEventMessage(command.Message)
 	if err != nil {
 		return emission{}, err

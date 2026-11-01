@@ -368,12 +368,12 @@ func TestTheEvenSplitGivesEveryChildTheSameGrant(t *testing.T) {
 func TestTheEvenSplitIsCappedByTheChildsOwnBudgetAndRefusesUnderOne(t *testing.T) {
 	h := newHarness()
 	onlineNode(t, h, "web-1")
-	// The port fleet's dispatcher: 0.5 of 80 model calls and 48 tool
-	// calls over 4 pilots of 10 and 6 is exactly each pilot's own.
+	// A dispatcher: 0.5 of 80 model calls and 48 tool calls over 4
+	// workers of 10 and 6 is exactly each worker's own.
 	a := delegationBot(t, h, "bot-a", &domain.DelegationSnapshot{To: []string{"bot-b"}, BudgetShare: 0.5, Split: "even", MaxChildren: 4}, BudgetsDefinition{MaxModelCallsPerTask: 80, MaxToolCallsPerTask: 48, TaskTimeoutSeconds: 3600})
 	delegationBot(t, h, "bot-b", nil, BudgetsDefinition{MaxModelCallsPerTask: 10, MaxToolCallsPerTask: 6, TaskTimeoutSeconds: 1500})
 	parent := runOnNode(t, h, a, "web-1", "ask-1")
-	for _, objective := range []string{"Plane", "Quad 0", "Quad 1", "Quad 2"} {
+	for _, objective := range []string{"Watcher", "Worker 0", "Worker 1", "Worker 2"} {
 		if answer := delegate(t, h, "web-1", parent.ExecutionID, "bot-b", objective); answer.Grant.MaxModelCalls != 10 || answer.Grant.MaxToolCalls != 6 || !answer.Grant.Deadline.Equal(t0.Add(1500*time.Second)) {
 			t.Errorf("%s = %+v", objective, answer)
 		}

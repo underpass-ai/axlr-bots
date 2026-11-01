@@ -45,7 +45,7 @@ func TestTheControlPlanePushesToItsNodes(t *testing.T) {
 	<-others
 	go func() {
 		time.Sleep(200 * time.Millisecond)
-		_, _ = client.SubmitTask(context.Background(), SubmitRequest{BotID: "bot-a", Objective: "Patrol", IdempotencyKey: "k-1"})
+		_, _ = client.SubmitTask(context.Background(), SubmitRequest{BotID: "bot-a", Objective: "Watch", IdempotencyKey: "k-1"})
 	}()
 	started := time.Now()
 	assignment, found, err := client.NextAssignment(ctx, "web-1", 20*time.Second)

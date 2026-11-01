@@ -97,13 +97,13 @@ func TestCriticalsAreNeverCoalesced(t *testing.T) {
 	}
 }
 
-// chainTeam is four bots in port, each listening to warn.* as tasks.
+// chainTeam is four bots in ops, each listening to warn.* as tasks.
 func chainTeam(t *testing.T, h *harness, mutate func(*BotDefinition)) Assignment {
 	t.Helper()
 	onlineNode(t, h, "web-1")
 	var a domain.Bot
 	for _, id := range []string{"a", "b", "c", "d"} {
-		bot := teamBot(t, h, id, []string{"port"}, func(d *BotDefinition) {
+		bot := teamBot(t, h, id, []string{"ops"}, func(d *BotDefinition) {
 			d.Subscriptions = []domain.SubscriptionSnapshot{{Topic: "warn." + map[string]string{"a": "z", "b": "a", "c": "b", "d": "c"}[id], Mode: "task"}}
 			if id == "a" && mutate != nil {
 				mutate(d)
