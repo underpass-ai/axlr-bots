@@ -888,6 +888,28 @@ fn a_bot_page_shows_the_task_of_each_event_whole() {
     }
 }
 
+#[test]
+fn a_bot_page_keeps_the_button_that_changes_its_teams_in_sight() {
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
+    let tokens = Tokens::of(app.mode);
+    let none = "In no team: it knows no other bot";
+    for teams in [&[][..], &["ops", "night-shift", "weekly-reports", "storage"]] {
+        app.bot.as_mut().unwrap().bot.groups = teams.iter().map(|t| t.to_string()).collect();
+        for width in [MIN_WINDOW.width, WINDOW.width] {
+            shows_whole(&app, width, "Change", |_| {
+                widgets::semibold("Change").size(widgets::BODY)
+            });
+            if teams.is_empty() {
+                shows_whole(&app, width, none, |_| widgets::muted(none, tokens));
+            }
+            for team in teams {
+                shows_whole(&app, width, team, |_| text(*team).size(widgets::SMALL));
+            }
+        }
+    }
+}
+
 fn subscribed_fleet() -> (std::sync::Arc<crate::adapters::fake::FakeControlPlane>, App) {
     let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
         "2026-10-25T10:00:00Z".parse().unwrap(),

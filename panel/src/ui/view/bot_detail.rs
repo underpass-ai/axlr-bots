@@ -296,26 +296,37 @@ fn team<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
         .spacing(10)
         .align_y(Alignment::End)
         .into(),
+        // Change is laid out first; the words or the teams take what it
+        // leaves, on more lines in a narrow window.
         None => {
-            let mut line = row![].spacing(8).align_y(Alignment::Center);
-            if bot.groups.is_empty() {
-                line = line.push(muted("In no team: it knows no other bot", tokens));
-            }
-            for name in &bot.groups {
-                line = line.push(
-                    mouse_area(chip(name.clone(), tokens))
-                        .on_press(Message::Go(Screen::Team(name.clone())))
-                        .interaction(mouse::Interaction::Pointer),
-                );
-            }
-            line = line.push(Space::new().width(Length::Fill)).push(action(
-                Kind::Ghost,
-                Icon::Team,
-                "Change",
-                Some(Message::TeamEdit(bot.id.clone(), bot.groups.join(", "))),
-                tokens,
-            ));
-            line.into()
+            let names: El<'a> = if bot.groups.is_empty() {
+                muted("In no team: it knows no other bot", tokens)
+                    .width(Length::Fill)
+                    .into()
+            } else {
+                let mut chips = row![].spacing(8);
+                for name in &bot.groups {
+                    chips = chips.push(
+                        mouse_area(chip(name.clone(), tokens))
+                            .on_press(Message::Go(Screen::Team(name.clone())))
+                            .interaction(mouse::Interaction::Pointer),
+                    );
+                }
+                chips.width(Length::Fill).wrap().into()
+            };
+            row![
+                names,
+                action(
+                    Kind::Ghost,
+                    Icon::Team,
+                    "Change",
+                    Some(Message::TeamEdit(bot.id.clone(), bot.groups.join(", "))),
+                    tokens,
+                )
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center)
+            .into()
         }
     };
     section(Icon::Team, "Team", body, tokens)
