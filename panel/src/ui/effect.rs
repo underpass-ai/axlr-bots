@@ -20,8 +20,10 @@ pub enum Effect {
         feed: EventFeed,
         wait: u32,
     },
-    Recall {
+    /// An urgent order: the words become an urgent task.
+    Order {
         bot: BotId,
+        objective: String,
         key: IdempotencyKey,
     },
     SetTeams(BotId, Vec<String>),

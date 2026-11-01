@@ -429,8 +429,9 @@ fn without_a_connection_nothing_is_asked_of_the_control_plane() {
             key: crate::domain::IdempotencyKey::new("k").unwrap(),
             urgent: true,
         },
-        Effect::Recall {
+        Effect::Order {
             bot: BotId::new("b").unwrap(),
+            objective: "x".into(),
             key: crate::domain::IdempotencyKey::new("k").unwrap(),
         },
         Effect::FollowTeam {
@@ -661,8 +662,8 @@ fn the_panel_follows_each_team_and_raises_a_teammates_warning() {
 }
 
 #[test]
-fn a_bot_changes_team_and_a_vehicle_is_recalled() {
-    let (mut app, fake) = with_a_team();
+fn a_bot_changes_team() {
+    let (mut app, _) = with_a_team();
     let bot = BotId::new("bot").unwrap();
     send(&mut app, Message::Go(Screen::Bot(bot.clone())));
     app.apply(Message::TeamEdit(bot.clone(), "port, sea".into()));
@@ -677,9 +678,39 @@ fn a_bot_changes_team_and_a_vehicle_is_recalled() {
     app.apply(Message::TeamCancel);
     assert!(app.watch.editing.is_none());
     assert!(app.team_save().is_empty());
+}
 
-    send(&mut app, Message::Recall(bot.clone()));
-    assert_eq!(app.banner.as_ref().unwrap().title, "bot recalled");
+#[test]
+fn an_urgent_order_stops_the_bot_and_gives_it_the_typed_order() {
+    let (mut app, fake) = with_a_team();
+    let bot = BotId::new("bot").unwrap();
+    send(&mut app, Message::Go(Screen::Team("port".into())));
+
+    // From the team's page the order opens on the bot's page.
+    send(&mut app, Message::OrderOpen(bot.clone()));
+    assert_eq!(app.screen, Screen::Bot(bot.clone()));
+    assert!(app.order.is_open_for(&bot));
+
+    // No words, nothing sent.
+    let calls = fake.calls().len();
+    assert!(app.apply(Message::OrderSend).is_empty());
+    app.apply(Message::OrderText("   ".into()));
+    assert!(app.apply(Message::OrderSend).is_empty());
+    assert_eq!(fake.calls().len(), calls);
+
+    // The words become the objective of an urgent task.
+    let order = "Roll back service-1 now and say what you did.";
+    app.apply(Message::OrderText(order.into()));
+    let effects = app.apply(Message::OrderSend);
+    assert!(
+        matches!(effects.as_slice(), [Effect::Order { bot: to, objective, .. }] if *to == bot && objective == order),
+        "{effects:?}"
+    );
+    assert!(app.apply(Message::OrderSend).is_empty(), "one order at a time");
+    drive(&mut app, effects);
+    let banner = app.banner.clone().unwrap();
+    assert_eq!(banner.title, "bot got an urgent order");
+    assert_eq!(banner.detail, "It stops what it was doing and does it");
     let Screen::Task(id) = app.screen.clone() else {
         panic!("{:?}", app.screen)
     };
@@ -693,10 +724,21 @@ fn a_bot_changes_team_and_a_vehicle_is_recalled() {
         .unwrap()
         .clone();
     assert!(task.is_urgent());
-    assert!(task.objective.contains("return_home"));
+    assert_eq!(task.objective, order);
+    assert_eq!(app.order, OrderForm::default());
+
+    // A refused order keeps the form and its words, and says why.
+    send(&mut app, Message::OrderOpen(bot.clone()));
+    app.apply(Message::OrderText("Stop and wait".into()));
     fake.fail_with(Some(PanelError::Unreachable("down".into())));
-    send(&mut app, Message::Recall(bot));
+    send(&mut app, Message::OrderSend);
     assert_eq!(app.banner.as_ref().unwrap().tone, Tone::Bad);
+    assert!(!app.switching);
+    assert!(app.order.is_open_for(&bot));
+    assert_eq!(app.order.text, "Stop and wait");
+    app.apply(Message::OrderClose);
+    assert_eq!(app.order, OrderForm::default());
+    assert!(app.apply(Message::OrderSend).is_empty());
 }
 
 #[test]
@@ -725,9 +767,9 @@ fn an_urgent_task_is_sent_as_urgent() {
 fn a_new_bot_joins_a_team_from_the_form() {
     let mut app = connected();
     app.apply(Message::RegisterOpen);
-    app.apply(Message::RegisterName("pilot-quad-1".into()));
-    app.apply(Message::RegisterMission("Fly quad-1.".into()));
-    app.apply(Message::RegisterTools("local_read, return_home".into()));
+    app.apply(Message::RegisterName("worker-1".into()));
+    app.apply(Message::RegisterMission("Watch service-1.".into()));
+    app.apply(Message::RegisterTools("local_read, rollback".into()));
     app.apply(Message::RegisterTeam("port".into()));
     send(&mut app, Message::RegisterSubmit);
     let bot = app
@@ -736,11 +778,11 @@ fn a_new_bot_joins_a_team_from_the_form() {
         .unwrap()
         .bots
         .iter()
-        .find(|b| b.id.as_str() == "pilot-quad-1")
+        .find(|b| b.id.as_str() == "worker-1")
         .unwrap()
         .clone();
     assert_eq!(bot.groups, vec!["port"]);
-    assert!(bot.can_return_home());
+    assert_eq!(bot.allowed_tools, vec!["local_read", "rollback"]);
 }
 
 #[test]

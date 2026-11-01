@@ -5,6 +5,7 @@ mod bots;
 mod decide;
 mod levels;
 mod nodes;
+mod order;
 mod overview;
 mod settings;
 mod shell;

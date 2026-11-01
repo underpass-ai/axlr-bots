@@ -73,9 +73,13 @@ pub enum Message {
     ChatSend,
     ChatSent(Result<ChatSent, PanelError>),
     BotStopped(Result<StoppedBot, PanelError>),
-    /// Bring a vehicle's bot home at once: an urgent task.
-    Recall(BotId),
-    Recalled(Result<SubmittedTask, PanelError>),
+    /// Give a bot an urgent order: open the form, type the order, send.
+    /// It runs as an urgent task, which stops what the bot is doing.
+    OrderOpen(BotId),
+    OrderText(String),
+    OrderSend,
+    OrderClose,
+    Ordered(Result<SubmittedTask, PanelError>),
     /// Change a bot's team: open the field, type, save.
     TeamEdit(BotId, String),
     TeamSave,

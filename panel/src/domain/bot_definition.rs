@@ -59,10 +59,6 @@ pub struct BotForm {
     pub team: String,
 }
 
-/// The tool a vehicle's bot calls to fly or drive home; the panel lets it
-/// run without a person, as returning is safe.
-pub const RETURN_HOME_TOOL: &str = "return_home";
-
 /// The team names a form's field holds, without repeats.
 pub fn team_names(raw: &str) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
@@ -104,10 +100,6 @@ impl BotDefinition {
             }
         };
         let model = form.model.trim();
-        let approvals = tools
-            .iter()
-            .any(|t| t == RETURN_HOME_TOOL)
-            .then(|| serde_json::json!({"autoApprove": [{"tool": RETURN_HOME_TOOL}]}));
         let definition = Self {
             id: id.clone(),
             tenant: "default".into(),
@@ -130,7 +122,7 @@ impl BotDefinition {
                 max_context_tokens: 0,
             },
             budgets: Budgets::default(),
-            approvals,
+            approvals: None,
             delegation: None,
             groups: team_names(&form.team),
             events: None,
@@ -236,23 +228,20 @@ mod tests {
     }
 
     #[test]
-    fn a_form_with_a_team_and_return_home() {
+    fn a_form_with_a_team() {
         let form = BotForm {
-            name: "pilot-quad-1".into(),
-            mission: "Fly quad-1.".into(),
+            name: "worker-1".into(),
+            mission: "Watch service-1.".into(),
             level: AutonomyLevel::ActWithApproval,
-            tools: "local_read, run_mission, return_home".into(),
-            team: " port, sea port ".into(),
+            tools: "local_read, run_job, rollback".into(),
+            team: " ops, lab ops ".into(),
             ..BotForm::default()
         };
         let definition = BotDefinition::from_form(&form).unwrap();
-        assert_eq!(definition.groups, vec!["port", "sea"]);
-        assert_eq!(
-            definition.approvals.as_ref().unwrap()["autoApprove"][0]["tool"],
-            "return_home"
-        );
+        assert_eq!(definition.groups, vec!["ops", "lab"]);
+        assert!(definition.approvals.is_none());
         let out = serde_json::to_value(&definition).unwrap();
-        assert_eq!(out["groups"][1], "sea");
+        assert_eq!(out["groups"][1], "lab");
         let plain = BotDefinition::from_form(&BotForm {
             name: "helper".into(),
             mission: "Help.".into(),
@@ -262,7 +251,7 @@ mod tests {
         assert!(plain.groups.is_empty() && plain.approvals.is_none());
         assert!(!serde_json::to_string(&plain).unwrap().contains("groups"));
         let bad = BotForm {
-            team: "Port".into(),
+            team: "Ops".into(),
             ..form
         };
         assert!(BotDefinition::from_form(&bad).is_err());

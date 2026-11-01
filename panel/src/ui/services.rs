@@ -154,10 +154,10 @@ impl Services {
                 }
                 Err(e) => Err(e),
             }),
-            Effect::Recall { bot, key } => Message::Recalled(match self.control_plane() {
+            Effect::Order { bot, objective, key } => Message::Ordered(match self.control_plane() {
                 Ok(cp) => {
                     SubmitTask::new(cp, self.keys.clone())
-                        .urgent(bot.as_str(), super::app_teams::RECALL_OBJECTIVE, key)
+                        .urgent(bot.as_str(), &objective, key)
                         .await
                 }
                 Err(e) => Err(e),

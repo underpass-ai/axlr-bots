@@ -1,6 +1,6 @@
 //! One bot, in plain words: Pause and Stop, what waits for a person,
-//! what it does, its events and recent work; its definition under
-//! Advanced, closed by default.
+//! what it does now and an urgent order, its events and recent work; its
+//! definition under Advanced, closed by default.
 
 use iced::widget::{Space, column, container, mouse_area, pick_list, row, scrollable, text, text_input};
 use iced::{Alignment, Length, mouse};
@@ -44,23 +44,11 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
     } else {
         Space::new().into()
     };
-    let recall: El<'a> = if bot.can_return_home() {
-        action(
-            Kind::Secondary,
-            Icon::Back,
-            "Recall",
-            (!app.switching && bot.status.accepts_tasks()).then(|| Message::Recall(bot.id.clone())),
-            tokens,
-        )
-    } else {
-        Space::new().into()
-    };
     let header = row![
         back,
         title(Icon::Bots, bot.id.to_string(), tokens),
         pill(Tone::of_bot(bot.status), bot.status.name(), tokens),
         Space::new().width(Length::Fill),
-        recall,
         switch,
         action(
             Kind::Danger,
@@ -81,7 +69,13 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
         left = left.push(card);
     }
     left = left
-        .push(section(Icon::Play, "Now", now(app, bot, tokens), tokens))
+        .push(section_with(
+            Icon::Play,
+            "Now",
+            vec![super::order::button(app, bot, tokens)],
+            now_and_order(app, bot, tokens),
+            tokens,
+        ))
         .push(section(Icon::Bolt, "Talk to it", chat(app, view, tokens), tokens))
         .push(listens(app, bot, tokens));
     let new_task = action(
@@ -206,6 +200,17 @@ fn cut(words: &str, max: usize) -> String {
         return words.to_string();
     }
     format!("{}…", words.chars().take(max.saturating_sub(1)).collect::<String>())
+}
+
+/// What the bot is doing now and, once asked for, the urgent order that
+/// stops it.
+fn now_and_order<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
+    if !app.order.is_open_for(&bot.id) {
+        return now(app, bot, tokens);
+    }
+    column![now(app, bot, tokens), super::order::form(app, bot, tokens)]
+        .spacing(14)
+        .into()
 }
 
 /// What the bot is doing right now, in a sentence, and its newest step.

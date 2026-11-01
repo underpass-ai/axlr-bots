@@ -592,14 +592,19 @@ fn the_teams_screen_shows_who_is_in_each_and_what_happens() {
             "What happens",
             "Warning to the team",
             "bot → bot-wrx80: a ship is entering",
+            "Urgent order",
         ],
     );
+    assert!(matches!(
+        messages_of_click(&app, "Urgent order").as_slice(),
+        [Message::OrderOpen(_)]
+    ));
     send(&mut app, Message::Go(Screen::Team("sea".into())));
     shows(&app, &["No bot is in this team now"]);
 }
 
 #[test]
-fn a_bot_page_shows_its_team_and_recalls_a_vehicle() {
+fn a_bot_page_shows_its_team_and_an_urgent_order() {
     let mut app = connected();
     send(&mut app, Message::Go(Screen::Bots));
     app.apply(Message::RegisterOpen);
@@ -607,23 +612,58 @@ fn a_bot_page_shows_its_team_and_recalls_a_vehicle() {
         &app,
         &["Which team is it in?", "a name its teammates share; empty: on its own"],
     );
-    app.apply(Message::RegisterName("pilot-quad-1".into()));
-    app.apply(Message::RegisterMission("Fly quad-1.".into()));
-    app.apply(Message::RegisterTools("local_read, return_home".into()));
+    app.apply(Message::RegisterName("worker-1".into()));
+    app.apply(Message::RegisterMission("Watch service-1.".into()));
+    app.apply(Message::RegisterTools("local_read, rollback".into()));
     app.apply(Message::RegisterTeam("port".into()));
     send(&mut app, Message::RegisterSubmit);
-    send(&mut app, Message::Enable(BotId::new("pilot-quad-1").unwrap()));
-    send(&mut app, Message::Go(Screen::Bot(BotId::new("pilot-quad-1").unwrap())));
-    shows(&app, &["Team", "port", "Change", "Recall"]);
-    let sent = messages_of_click(&app, "Recall");
-    assert!(matches!(sent.as_slice(), [Message::Recall(id)] if id.as_str() == "pilot-quad-1"));
+    let id = BotId::new("worker-1").unwrap();
+    send(&mut app, Message::Go(Screen::Bot(id.clone())));
+    shows(&app, &["Team", "port", "Change", "Urgent order"]);
+    assert!(
+        messages_of_click(&app, "Urgent order").is_empty(),
+        "a bot not switched on takes no order"
+    );
+    send(&mut app, Message::Enable(id.clone()));
+    let sent = messages_of_click(&app, "Urgent order");
+    assert!(matches!(sent.as_slice(), [Message::OrderOpen(to)] if *to == id));
     let sent = messages_of_click(&app, "Change");
     assert!(matches!(sent.as_slice(), [Message::TeamEdit(_, words)] if words == "port"));
-    app.apply(Message::TeamEdit(BotId::new("pilot-quad-1").unwrap(), "port".into()));
+    app.apply(Message::TeamEdit(id.clone(), "port".into()));
     shows(&app, &["Save", "Cancel"]);
+    app.apply(Message::TeamCancel);
+
+    // The order asks for its words, and goes only with some.
+    send(&mut app, Message::OrderOpen(id.clone()));
+    shows(
+        &app,
+        &[
+            "Order",
+            "It goes first: the bot stops what it is doing and does this.",
+            "Send the order",
+            "Cancel",
+        ],
+    );
+    assert!(messages_of_click(&app, "Send the order").is_empty());
+    assert!(messages_of_click(&app, "Urgent order").is_empty(), "its form is open");
+    app.apply(Message::OrderText("Roll back service-1 now".into()));
+    assert!(matches!(
+        messages_of_click(&app, "Send the order").as_slice(),
+        [Message::OrderSend]
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Cancel").as_slice(),
+        [Message::OrderClose]
+    ));
+
+    // Any bot takes one, in a team or not.
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
-    shows(&app, &["In no team: it knows no other bot"]);
-    assert!(simulator_misses(&app, "Recall"));
+    shows(&app, &["In no team: it knows no other bot", "Urgent order"]);
+    assert!(simulator_misses(&app, "Send the order"));
+    assert!(matches!(
+        messages_of_click(&app, "Urgent order").as_slice(),
+        [Message::OrderOpen(to)] if to.as_str() == "bot"
+    ));
 }
 
 #[test]
