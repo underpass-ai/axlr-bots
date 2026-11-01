@@ -107,6 +107,26 @@ func TestExecuteWithoutModelOmitsTheFlag(t *testing.T) {
 	}
 }
 
+// A node with its own mcp.json hands it to every run, so the servers the
+// operator added to ~/.config/axlr/mcp.json do not join the bots'; none
+// leaves AXLR's default.
+func TestExecuteLoadsTheNodesMCPConfig(t *testing.T) {
+	e, argsFile := fake(t, "legacy-completed")
+	if _, err := e.Execute(context.Background(), request(0)); err != nil {
+		t.Fatal(err)
+	}
+	if args := strings.Join(readArgs(t, argsFile), " "); strings.Contains(args, "--mcp-config") {
+		t.Errorf("args = %s", args)
+	}
+	e.MCPConfig = "/etc/axlr-node/mcp.json"
+	if _, err := e.Execute(context.Background(), request(0)); err != nil {
+		t.Fatal(err)
+	}
+	if args := strings.Join(readArgs(t, argsFile), " "); !strings.Contains(args, "--mcp-config /etc/axlr-node/mcp.json") {
+		t.Errorf("args = %s", args)
+	}
+}
+
 func TestExecuteOutcomes(t *testing.T) {
 	cases := []struct {
 		scenario string
