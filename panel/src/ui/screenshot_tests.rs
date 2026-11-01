@@ -3,68 +3,40 @@
 //! Not part of the suite: run it to write `docs/screenshots/*.png` again
 //! (`ICED_TEST_BACKEND=tiny-skia TZ=UTC cargo test screenshots -- --ignored`).
 
-use std::borrow::Cow;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use iced::{Settings, Size};
 use iced_test::Simulator;
 
+use super::runtime::WINDOW;
 use super::test_runtime::{connected, drive, send};
 use super::view::tests::app_over;
-use super::view::widgets;
-use super::view_tests::turn;
+use super::view_tests::{panel_settings, turn};
 use super::*;
 use crate::adapters::fake::FakeControlPlane;
 use crate::domain::{BotId, TaskStatus, ToolRule};
 
-/// The window's size at start (`runtime::launch`); the simulator draws
-/// it at twice the pixels.
-const WINDOW: Size = Size::new(1360.0, 860.0);
-
-const FONTS: [&[u8]; 4] = [
-    include_bytes!("../../assets/fonts/Lexend-Regular.ttf"),
-    include_bytes!("../../assets/fonts/Lexend-SemiBold.ttf"),
-    include_bytes!("../../assets/fonts/Lexend-Bold.ttf"),
-    include_bytes!("../../assets/fonts/DotGothic16-Latin.ttf"),
-];
-
-/// Draws the panel as it stands and writes it as `<name>.png`.
+/// Draws the panel as it stands, in the window's size at start (the
+/// simulator draws it at twice the pixels), and writes it as `<name>.png`.
 struct Camera {
     out: PathBuf,
-    fonts_loaded: bool,
 }
 
 impl Camera {
     fn new() -> Self {
         let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/screenshots");
         fs::create_dir_all(&out).unwrap();
-        Self {
-            out,
-            fonts_loaded: false,
-        }
+        Self { out }
     }
 
     /// Draws the panel without the last act's banner ("Connected", "Task
     /// sent"), which would sit on top of every shot.
-    fn shoot(&mut self, app: &mut App, name: &str) {
+    fn shoot(&self, app: &mut App, name: &str) {
         let _ = app.apply(Message::DismissBanner);
         let _turn = turn();
-        // The typefaces go into the renderer's shared font system once.
-        let fonts = if self.fonts_loaded {
-            Vec::new()
-        } else {
-            FONTS.iter().map(|font| Cow::Borrowed(*font)).collect()
-        };
-        self.fonts_loaded = true;
-        let settings = Settings {
-            fonts,
-            default_font: widgets::REGULAR,
-            ..Settings::default()
-        };
         let theme = Tokens::of(app.mode).theme();
-        let mut ui = Simulator::with_size(settings, WINDOW, view::view(app));
+        let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(app));
         let snapshot = ui.snapshot(&theme).unwrap();
         // `matches_image` writes a new file named after the renderer, so
         // it writes into an empty directory and the file is moved.
@@ -75,7 +47,7 @@ impl Camera {
     }
 
     /// The same state, light and dark.
-    fn both(&mut self, app: &mut App, name: &str) {
+    fn both(&self, app: &mut App, name: &str) {
         for mode in [ThemeMode::Light, ThemeMode::Dark] {
             app.mode = mode;
             let suffix = if mode == ThemeMode::Dark { "dark" } else { "light" };
@@ -97,7 +69,7 @@ fn bot(id: &str) -> BotId {
 #[test]
 #[ignore = "writes docs/screenshots; run it with --ignored"]
 fn screenshots() {
-    let mut camera = Camera::new();
+    let camera = Camera::new();
     let mut app = connected();
 
     camera.both(&mut app, "overview");

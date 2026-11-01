@@ -1,12 +1,16 @@
 //! The screens drawn headless with Iced's simulator: what each shows, and
 //! what a click on it sends.
 
-use std::sync::{Mutex, MutexGuard};
+use std::borrow::Cow;
+use std::sync::{Mutex, MutexGuard, Once};
 
-use iced_test::simulator;
+use iced::{Rectangle, Settings, Size};
+use iced_test::{Simulator, simulator};
 
+use super::runtime::{MIN_WINDOW, WINDOW};
 use super::test_runtime::{connected, send};
 use super::view::tests::app;
+use super::view::widgets::{self, El};
 use super::*;
 use crate::domain::{BotId, NodeId, TaskStatus};
 
@@ -16,6 +20,54 @@ static SIMULATOR: Mutex<()> = Mutex::new(());
 
 pub(super) fn turn() -> MutexGuard<'static, ()> {
     SIMULATOR.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// The panel's typefaces, as `runtime::launch` gives them to the window.
+const FONTS: [&[u8]; 4] = [
+    include_bytes!("../../assets/fonts/Lexend-Regular.ttf"),
+    include_bytes!("../../assets/fonts/Lexend-SemiBold.ttf"),
+    include_bytes!("../../assets/fonts/Lexend-Bold.ttf"),
+    include_bytes!("../../assets/fonts/DotGothic16-Latin.ttf"),
+];
+
+/// A simulator's settings with the panel's typefaces, so its texts are
+/// as wide as in the window. The typefaces go into the renderer's shared
+/// font system with the first simulator built on these; build it on your
+/// turn.
+pub(super) fn panel_settings() -> Settings {
+    static LOADED: Once = Once::new();
+    let mut fonts = Vec::new();
+    LOADED.call_once(|| fonts = FONTS.iter().map(|font| Cow::Borrowed(*font)).collect());
+    Settings {
+        fonts,
+        default_font: widgets::REGULAR,
+        ..Settings::default()
+    }
+}
+
+/// Fails unless `words` show whole on `app` in a window `width` wide
+/// (and tall enough that nothing scrolls away): the layout gives their
+/// text at least the width `alone` takes with room, and no edge cuts it.
+/// The simulator finds boxes, not pixels: a text given less than it
+/// needs keeps the smaller box and is drawn past it, over a neighbour or
+/// cut at the card. `alone` gets the box the text has on the screen.
+fn shows_whole(app: &App, width: f32, words: &str, alone: impl FnOnce(Rectangle) -> El<'static>) {
+    let _turn = turn();
+    let window = Size::new(width, 2000.0);
+    let mut ui = Simulator::with_size(panel_settings(), window, view::view(app));
+    let placed = ui
+        .find(words)
+        .unwrap_or_else(|e| panic!("{words} is not on {:?}: {e:?}", app.screen));
+    let room = placed.bounds();
+    let mut ui = Simulator::with_size(panel_settings(), Size::new(4000.0, 400.0), alone(room));
+    let needs = ui.find(words).unwrap().bounds().width;
+    assert!(
+        room.width >= needs - 0.5,
+        "{words} has {} of the {needs} px it takes, {width} px wide",
+        room.width
+    );
+    let seen = placed.visible_bounds().map_or(0.0, |b| b.width);
+    assert!(seen >= room.width - 0.5, "{words} is cut, {width} px wide");
 }
 
 fn messages_of_click(app: &App, label: &str) -> Vec<Message> {
@@ -96,6 +148,31 @@ fn home_shows_the_counts_and_what_needs_a_person() {
     assert!(matches!(sent.as_slice(), [Message::Go(Screen::Nodes)]));
     app.apply(Message::ToggleTheme);
     shows(&app, &["Home", "cost today"]);
+}
+
+#[test]
+fn the_cost_of_the_day_shows_whole_and_the_short_counts_stay_big() {
+    let mut app = connected();
+    for usd in [0.0036, 12.40, 1234.56] {
+        app.fleet.as_mut().unwrap().overview.cost_usd_since = usd;
+        let cost = format::cost(usd);
+        for width in [MIN_WINDOW.width, WINDOW.width] {
+            // In the pixel face at the size its card gives it, which its
+            // line's height tells.
+            shows_whole(&app, width, &cost, |room| {
+                widgets::number(cost.clone()).size(room.height / 1.3).into()
+            });
+        }
+    }
+    let _turn = turn();
+    for width in [MIN_WINDOW.width, WINDOW.width] {
+        let mut ui = Simulator::with_size(panel_settings(), Size::new(width, 2000.0), view::view(&app));
+        let count = ui.find("2/2").unwrap().bounds();
+        assert!(
+            (count.height - widgets::NUMBER * 1.3).abs() < 0.01,
+            "2/2 is smaller, {width} px wide"
+        );
+    }
 }
 
 #[test]
@@ -705,6 +782,36 @@ fn the_chat_writes_to_a_running_task_and_shows_its_answer() {
         messages_of_click(&app, "OK, row F next.").as_slice(),
         [Message::Go(Screen::Task(id))] if *id == running
     ));
+}
+
+#[test]
+fn a_bot_page_shows_the_task_of_each_event_whole() {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
+    let running = app.running_task(&app.bot.as_ref().unwrap().bot.clone()).unwrap();
+    app.apply(Message::ChatInput("Say the date too, please.".into()));
+    let effects = app.apply(Message::ChatSend);
+    super::test_runtime::drive(&mut app, effects);
+    fake.say(&running, "OK, I will say the date too: 25 October 2026.");
+    let tick = app.now + chrono::Duration::seconds(5);
+    send(&mut app, Message::Tick(tick));
+    // A task id as long as the control plane's, with a long reason.
+    let failed: crate::domain::Event = serde_json::from_str(
+        r#"{"eventId":"evt-long","type":"bot.task.failed","botId":"bot","taskId":"task-68edb0ffeae524e9",
+            "createdAt":"2026-10-25T10:00:06Z","payload":{"reason":"workspace/reports/weekly-summary.txt does not exist on this node"}}"#,
+    )
+    .unwrap();
+    app.bot.as_mut().unwrap().feed.events.push(failed);
+    let tokens = Tokens::of(app.mode);
+    for width in [MIN_WINDOW.width, WINDOW.width] {
+        for id in [running.as_str(), "task-68ed…"] {
+            shows_whole(&app, width, id, |_| widgets::muted(id.to_string(), tokens).into());
+        }
+    }
 }
 
 fn subscribed_fleet() -> (std::sync::Arc<crate::adapters::fake::FakeControlPlane>, App) {
