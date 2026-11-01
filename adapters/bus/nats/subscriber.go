@@ -23,7 +23,8 @@ func NewSubscriber(cfg Config) *Subscriber { return &Subscriber{cfg: cfg} }
 
 // Stream opens the node's consumer and answers its pushes as they come,
 // a resync first; the channel closes when ctx ends or the broker is lost
-// (the agent opens it again).
+// (the agent opens it again). When ctx ends it closes once the broker
+// has let go of the stream.
 func (s *Subscriber) Stream(ctx context.Context, node domain.NodeID) (<-chan application.NodePush, error) {
 	conn, js, err := connect(s.cfg, false)
 	if err != nil {
@@ -49,7 +50,17 @@ func (s *Subscriber) Stream(ctx context.Context, node domain.NodeID) (<-chan app
 	pushes := make(chan application.NodePush, 64)
 	go func() {
 		<-ctx.Done()
-		messages.Stop()
+		// Drained, Next ends only once the broker answered the
+		// unsubscribe, so when the channel closes the broker holds no pull
+		// of this stream and a push made after waits for the node's next
+		// one. Stopped, the channel could close first: the broker handed
+		// such a push to a reader that was gone, and it came back only
+		// after AckWait. A broker that is away has nothing to be told.
+		if conn.IsConnected() {
+			messages.Drain()
+		} else {
+			messages.Stop()
+		}
 	}()
 	go func() {
 		defer close(pushes)
@@ -72,7 +83,9 @@ func (s *Subscriber) Stream(ctx context.Context, node domain.NodeID) (<-chan app
 			select {
 			case pushes <- push:
 			case <-ctx.Done():
-				return
+				// The stream is ending: the broker hands the push to the
+				// node's next stream at once, and the drain goes on.
+				_ = msg.Nak()
 			}
 		}
 	}()
