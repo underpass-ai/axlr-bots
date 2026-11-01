@@ -84,6 +84,11 @@ including chart's own policy, beside its service's rules.
     {{- end }}
     {{- else if ne (toString $v.bus.kind) "direct" }}{{ fail "bus.kind is direct or nats" }}
     {{- end }}
+    {{- if $v.sidecar.mcp.existingConfigMap }}
+    # The mcp.json a Jev bot's program finds its MCP server in.
+    - name: AXLR_NODE_MCP_CONFIG
+      value: /etc/axlr-node/mcp/mcp.json
+    {{- end }}
     {{- with $v.sidecar.env }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
@@ -112,6 +117,9 @@ including chart's own policy, beside its service's rules.
     {{- end }}
     {{- if and (eq (toString $v.bus.kind) "nats") (or $v.bus.nats.ca.existingConfigMap $v.bus.nats.ca.existingSecret) }}
     - {name: axlr-node-nats-ca, mountPath: /etc/axlr-node/nats-ca, readOnly: true}
+    {{- end }}
+    {{- if $v.sidecar.mcp.existingConfigMap }}
+    - {name: axlr-node-mcp, mountPath: /etc/axlr-node/mcp, readOnly: true}
     {{- end }}
     {{- range $v.sidecar.workspaces }}
     {{- if not (regexMatch "^[a-z0-9._-]{1,64}$" (toString .bot)) }}{{ fail "sidecar.workspaces[].bot must be a bot id" }}{{ end }}
@@ -163,6 +171,13 @@ including chart's own policy, beside its service's rules.
     items: [{key: ca.crt, path: ca.crt}]
     defaultMode: 292
 {{- end }}
+{{- end }}
+{{- if $v.sidecar.mcp.existingConfigMap }}
+- name: axlr-node-mcp
+  configMap:
+    name: {{ $v.sidecar.mcp.existingConfigMap }}
+    items: [{key: {{ required "sidecar.mcp.key is required with sidecar.mcp.existingConfigMap" $v.sidecar.mcp.key | quote }}, path: mcp.json}]
+    defaultMode: 292 # 0444: the sidecar runs as 65532 whatever the pod's fsGroup
 {{- end }}
 {{- end -}}
 

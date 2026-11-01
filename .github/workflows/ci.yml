@@ -78,6 +78,13 @@ jobs:
           refused --set-string node.idPrefix=Bad
           refused --set demo.replicas=0
           refused --set 'sidecar.workspaces[0].bot=Bad,sidecar.workspaces[0].volume=v'
+          # A Jev bot's mcp.json from a ConfigMap: read-only, named by AXLR_NODE_MCP_CONFIG.
+          ! grep -q AXLR_NODE_MCP_CONFIG rendered.yaml
+          helm template test $chart -f $example --set sidecar.mcp.existingConfigMap=bots-mcp > mcp.yaml
+          grep -q 'value: /etc/axlr-node/mcp/mcp.json' mcp.yaml
+          grep -q 'mountPath: /etc/axlr-node/mcp, readOnly: true' mcp.yaml
+          grep -q 'items: \[{key: "mcp.json", path: mcp.json}\]' mcp.yaml
+          refused --set sidecar.mcp.existingConfigMap=bots-mcp --set-string sidecar.mcp.key=
           refused --set-string controlPlane.url=https://cp.example.internal:7878
           helm template test $chart -f $example --set-string controlPlane.url=https://cp.example.internal:7878 --set-string networkPolicy.controlPlaneCIDR=10.0.0.5/32 >/dev/null
           ! helm template test $chart -f $example --set networkPolicy.enabled=false | grep -q '^kind: NetworkPolicy$'

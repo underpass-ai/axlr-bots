@@ -28,7 +28,8 @@
       "state": {"type": "object", "properties": {"persistent": {"type": "boolean"}, "size": {"type": "string", "minLength": 1}, "storageClassName": {"type": "string"}}},
       "workspacesSize": {"type": "string", "minLength": 1},
       "tmpSize": {"type": "string", "minLength": 1},
-      "env": {"type": "array", "items": {"type": "object", "required": ["name"]}}}},
+      "env": {"type": "array", "items": {"type": "object", "required": ["name"]}},
+      "mcp": {"type": "object", "additionalProperties": false, "properties": {"existingConfigMap": {"type": "string"}, "key": {"type": "string", "minLength": 1}}}}},
     "bus": {"type": "object", "properties": {
       "kind": {"type": "string", "enum": ["direct", "nats"]},
       "nats": {"type": "object", "properties": {

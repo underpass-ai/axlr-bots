@@ -159,6 +159,7 @@ sidecar:
   env:
     - name: TYPESAFE_API_KEY
       valueFrom: {secretKeyRef: {name: axlr-bots-jev, key: TYPESAFE_API_KEY}}
+  mcp: {existingConfigMap: bots-mcp} # its key mcp.json names the program's MCP server
 bus:
   kind: nats
   nats:
@@ -170,7 +171,7 @@ bus:
 | Piece | What to know |
 |---|---|
 | Jev's key | the node logs `node: jev runtime on (jev-1.13.0)` and registers the `jev` runtime; without it a Jev bot is never assigned to the pod |
-| The program's MCP server | named in an `mcp.json` the node reads: `AXLR_NODE_MCP_CONFIG`, else `~/.config/axlr/mcp.json`, which the read-only image does not hold. The chart mounts no `mcp.json` and has no value for one yet, so a Jev bot in a pod needs `AXLR_NODE_MCP_CONFIG` (in `sidecar.env`) naming a file one of the sidecar's volumes holds. The server's entry is an `http(s)` URL, such as the service's beside it in the pod |
+| The program's MCP server | named in an `mcp.json` the node reads: `AXLR_NODE_MCP_CONFIG`, else `~/.config/axlr/mcp.json`, which the read-only image does not hold. Put it in a ConfigMap and name it in `sidecar.mcp.existingConfigMap` (its key in `sidecar.mcp.key`, `mcp.json` by default): the chart mounts it read-only at `/etc/axlr-node/mcp/mcp.json` and sets `AXLR_NODE_MCP_CONFIG` to it. The server's entry is an `http(s)` URL, such as the service's beside it in the pod |
 | Jev's API | HTTPS to TypeSafe; `networkPolicy.modelProvider` (the public ranges on 443) already lets it out |
 | The broker | the node shows it its own certificate from enrollment, so the broker must list the user `CN=<idPrefix><pod name>,O=axlr-bots nodes` for each replica; the egress rule opens `bus.nats.cidr` on `bus.nats.port` |
 
@@ -192,6 +193,7 @@ bus:
 | `sidecar.state.persistent`, `.size`, `.storageClassName` | `true`, `1Gi`, the cluster's default | the node's state: a PVC per replica, or an emptyDir |
 | `sidecar.workspacesSize`, `sidecar.tmpSize` | `1Gi`, `64Mi` | the scratch workspaces and AXLR's tmpfs |
 | `sidecar.env` | none | more container env entries, such as `TYPESAFE_API_KEY` from a Secret for Jev bots |
+| `sidecar.mcp.existingConfigMap`, `sidecar.mcp.key` | none, `mcp.json` | a ConfigMap key holding the `mcp.json` a Jev bot's program finds its MCP server in; mounted read-only at `/etc/axlr-node/mcp/mcp.json`, named by `AXLR_NODE_MCP_CONFIG` |
 | `networkPolicy.enabled`, `.controlPlaneCIDR`, `.dns`, `.modelProvider` | `true`, `<ip>/32` of `controlPlane.url`, kube-dns, HTTPS to the public ranges | the demo's policy; a chart that includes the templates puts `axlr-bots-node.inject.egress` in its own |
 | `nodeSelector`, `tolerations`, `affinity` | none | where the demo pod and the chart test run |
 | `demo.*` | off | the demo StatefulSet ([above](#4-install-the-demo)) and its HTTPS variant ([below](#the-service-over-https-with-mutual-tls)) |
@@ -206,6 +208,7 @@ bus:
 | `/var/lib/axlr-node/workspaces/<bot>` | the service's volume, read-only (`sidecar.workspaces`), mounted inside the one above | whatever that volume does |
 | `/tmp`: AXLR's `XDG_STATE_HOME` (diagnostics, sessions) | tmpfs (emptyDir, medium Memory) | a container's restart, not the pod's |
 | `/etc/axlr-node/enroll/<node id>` | the token Secret, read-only, optional | read at a first start only |
+| `/etc/axlr-node/mcp/mcp.json` | the ConfigMap in `sidecar.mcp.existingConfigMap`, read-only | read when a Jev bot's execution starts |
 
 Root's filesystem is read-only, the container runs as 65532 without privilege escalation and with every capability dropped, and the pod mounts no service-account token.
 
