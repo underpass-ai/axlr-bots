@@ -4,10 +4,10 @@ Give a bot automatic triggers, fire them, and verify that a redelivery or a rest
 
 ## Add the triggers
 
-[`examples/bot-triggers-patch.json`](../../examples/bot-triggers-patch.json) adds a timer every ten minutes and a webhook to the example bot. Replace the secret (16 to 256 characters) first.
+[`cmd/axlr-bots/testdata/bot-triggers-patch.json`](../../cmd/axlr-bots/testdata/bot-triggers-patch.json) adds a timer every ten minutes and a webhook to the example bot. Replace the secret (16 to 256 characters) first.
 
 ```bash
-axlr-bots bot update bot --file examples/bot-triggers-patch.json
+axlr-bots bot update bot --file cmd/axlr-bots/testdata/bot-triggers-patch.json
 ```
 
 Check: `bot get bot` lists the three triggers with `"secret": "<redacted>"`; a `bot.updated` event; within a tick, `<state>/timers/bot~clock.json` exists with `nextFireAt`, and an interval timer fires at once, so `bot events bot` shows a `bot.trigger.fired` and a new task.

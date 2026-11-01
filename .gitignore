@@ -11,11 +11,5 @@ coverage*.out
 # local memory store
 /.kernel/
 
-# helm dependency build output
-/examples/helm/*/charts/
-/examples/helm/*/Chart.lock
-
-# port3d intermediate data (fetch_osm.py, prepare.py, build_scene.py --blend)
-/examples/drone-fleet/port3d/build/
 __pycache__/
 *.pyc

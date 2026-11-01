@@ -10,7 +10,7 @@ import (
 func TestGroupCommands(t *testing.T) {
 	c := cli{t: t, state: t.TempDir(), axlr: fakeAXLR(t, "completed"), socket: ""}
 	for _, name := range []string{"bot-team-a.json", "bot-team-b.json"} {
-		if code, _, errText := c.run("bot", "register", "--file", filepath.Join("..", "..", "examples", name)); code != exitOK {
+		if code, _, errText := c.run("bot", "register", "--file", filepath.Join("testdata", name)); code != exitOK {
 			t.Fatalf("register %s: %s", name, errText)
 		}
 	}
@@ -38,7 +38,7 @@ func TestGroupCommands(t *testing.T) {
 
 func TestGroupEventsCommand(t *testing.T) {
 	c := cli{t: t, state: t.TempDir(), axlr: fakeAXLR(t, "completed"), socket: ""}
-	if code, _, errText := c.run("bot", "register", "--file", filepath.Join("..", "..", "examples", "bot-team-a.json")); code != exitOK {
+	if code, _, errText := c.run("bot", "register", "--file", filepath.Join("testdata", "bot-team-a.json")); code != exitOK {
 		t.Fatalf("register: %s", errText)
 	}
 	code, out, errText := c.run("group", "events", "releases", "--limit", "10")
@@ -62,7 +62,7 @@ func TestGroupEventsCommand(t *testing.T) {
 
 func TestStopAndUrgentCommands(t *testing.T) {
 	c := cli{t: t, state: t.TempDir(), axlr: fakeAXLR(t, "completed"), socket: ""}
-	if code, _, errText := c.run("bot", "register", "--file", filepath.Join("..", "..", "examples", "bot-team-b.json")); code != exitOK {
+	if code, _, errText := c.run("bot", "register", "--file", filepath.Join("testdata", "bot-team-b.json")); code != exitOK {
 		t.Fatalf("register: %s", errText)
 	}
 	if code, _, errText := c.run("bot", "enable", "team-b"); code != exitOK {
@@ -87,7 +87,7 @@ func TestStopAndUrgentCommands(t *testing.T) {
 func TestGroupPublishAndTopicsCommands(t *testing.T) {
 	c := cli{t: t, state: t.TempDir(), axlr: fakeAXLR(t, "completed"), socket: ""}
 	for _, name := range []string{"bot-team-a.json", "bot-team-b.json"} {
-		if code, _, errText := c.run("bot", "register", "--file", filepath.Join("..", "..", "examples", name)); code != exitOK {
+		if code, _, errText := c.run("bot", "register", "--file", filepath.Join("testdata", name)); code != exitOK {
 			t.Fatalf("register %s: %s", name, errText)
 		}
 	}

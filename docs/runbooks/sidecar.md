@@ -84,10 +84,10 @@ The sidecar's labels come from the Downward API: `namespace`, `app` (the pod's `
 
 ## 5. Register the bot and run the task
 
-[`examples/sidecar/bot-log-summariser.json`](../../examples/sidecar/bot-log-summariser.json) is an observe bot with AXLR's three read tools, `local_read` limited to `**/*.log`, and `"placement": {"selector": {"app": "demo-log-service"}}`: it runs on the demo's sidecar only.
+[`cmd/axlr-bots/testdata/bot-log-summariser.json`](../../cmd/axlr-bots/testdata/bot-log-summariser.json) is an observe bot with AXLR's three read tools, `local_read` limited to `**/*.log`, and `"placement": {"selector": {"app": "demo-log-service"}}`: it runs on the demo's sidecar only.
 
 ```bash
-axlr-bots bot register --file examples/sidecar/bot-log-summariser.json
+axlr-bots bot register --file cmd/axlr-bots/testdata/bot-log-summariser.json
 axlr-bots bot enable log-summariser
 axlr-bots task submit log-summariser --objective "Summarise the last lines of the service log" --key sidecar-1
 axlr-bots task report task-…
@@ -119,7 +119,7 @@ curl --cert client.crt --key client.key https://axlr-bots-demo.example.com/order
 
 ## In your own chart
 
-Depend on this chart with its demo off and include its templates in your pod; [`examples/helm/service-with-bots`](../../examples/helm/service-with-bots) is a complete one:
+Depend on this chart with its demo off and include its templates in your pod; `helm/service-with-bots` in the private repo `axlr-bots-examples` is a complete one:
 
 ```yaml
 # Chart.yaml

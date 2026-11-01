@@ -16,7 +16,7 @@ func TestADecisionNamesItsCall(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := cli{t: t, state: t.TempDir(), axlr: bin}
-	_, _ = c.json("bot", "register", "--file", filepath.Join("..", "..", "examples", "bot-act-with-approval.json"))
+	_, _ = c.json("bot", "register", "--file", filepath.Join("testdata", "bot-act-with-approval.json"))
 	_, _ = c.json("bot", "enable", "bot-act-with-approval")
 	_, submitted := c.json("task", "submit", "bot-act-with-approval", "--objective", "Create hello.txt", "--key", "w-1")
 	taskID := submitted["task"].(map[string]any)["id"].(string)
@@ -54,7 +54,7 @@ func TestExecutionArtifactPrintsWhatTheControlPlaneKeeps(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := cli{t: t, state: t.TempDir(), axlr: bin}
-	_, _ = c.json("bot", "register", "--file", filepath.Join("..", "..", "examples", "bot.json"))
+	_, _ = c.json("bot", "register", "--file", filepath.Join("testdata", "bot.json"))
 	_, _ = c.json("bot", "enable", "bot")
 	_, submitted := c.json("task", "submit", "bot", "--objective", "Write the notes", "--key", "n-1")
 	taskID := submitted["task"].(map[string]any)["id"].(string)

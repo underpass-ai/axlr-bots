@@ -2,7 +2,7 @@ package application
 
 import "github.com/underpass-ai/axlr-bots/domain"
 
-// BotDefinition is a bot as an operator writes it (examples/*.json). It
+// BotDefinition is a bot as an operator writes it (cmd/axlr-bots/testdata/bot*.json). It
 // is plain input; RegisterBot validates it into a domain.Bot. Level is
 // the autonomy level (observe when absent), ToolRules narrows the
 // allowed tools by their arguments in the runtime contract's words,

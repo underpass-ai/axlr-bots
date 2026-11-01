@@ -109,7 +109,7 @@ The same bot with every *Advanced* field:
 
 ### The fleet
 
-`examples/drone-fleet/app/vehicle_pilot.py` gets a second tool, `return_home {reason}`: RTL to the vehicle's station (quad and rover RTL, plane RTL then its autoland), "already home" when it is there. The pilot definitions get `groups: ["port"]` and `autoApprove` for `return_home`. After [#29](https://github.com/underpass-ai/axlr-bots/pull/29) is on main.
+`drone-fleet/app/vehicle_pilot.py` (now in the private repo `axlr-bots-examples`) gets a second tool, `return_home {reason}`: RTL to the vehicle's station (quad and rover RTL, plane RTL then its autoland), "already home" when it is there. The pilot definitions get `groups: ["port"]` and `autoApprove` for `return_home`. After [#29](https://github.com/underpass-ai/axlr-bots/pull/29) is on main.
 
 ## Order of PRs (each from `origin/main`, base `main`)
 

@@ -4,7 +4,7 @@ The demo runs {{ .Values.demo.replicas }} replica(s) of {{ $name }}; replica N i
 
   kubectl -n {{ .Release.Namespace }} logs {{ $name }}-0 -c {{ .Values.sidecar.name }}   # "enrolled as node …", then "registered as …"
   axlr-bots node list                                   # {{ .Values.node.idPrefix }}{{ $name }}-0 Online, labels app={{ $name }}
-  axlr-bots bot register --file examples/sidecar/bot-log-summariser.json
+  axlr-bots bot register --file cmd/axlr-bots/testdata/bot-log-summariser.json
   helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
 
 The bot {{ .Values.demo.bot }} reads the service's log at <state>/workspaces/{{ .Values.demo.bot }} (read-only).

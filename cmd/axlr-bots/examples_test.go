@@ -19,7 +19,7 @@ import (
 // bot allows no write, the act-with-approval bot allows local_write only.
 func TestExampleBotsAreRoleNeutral(t *testing.T) {
 	for name, level := range map[string]string{"bot.json": "observe", "bot-act-with-approval.json": "act-with-approval"} {
-		raw, err := os.ReadFile(filepath.Join("..", "..", "examples", name))
+		raw, err := os.ReadFile(filepath.Join("testdata", name))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -61,7 +61,7 @@ func TestExampleBotsAreRoleNeutral(t *testing.T) {
 // AXLR's read tools only, local_read limited to log files, placed on the
 // demo's app label, its id the workspace the chart mounts the log at.
 func TestSidecarExampleBot(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "sidecar", "bot-log-summariser.json"))
+	raw, err := os.ReadFile(filepath.Join("testdata", "bot-log-summariser.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestDelegationExampleBotsFormAPair(t *testing.T) {
 	}
 	bots := map[string]domain.Bot{}
 	for _, name := range []string{"bot-delegating.json", "bot-delegate-target.json"} {
-		raw, err := os.ReadFile(filepath.Join("..", "..", "examples", name))
+		raw, err := os.ReadFile(filepath.Join("testdata", name))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -130,50 +130,5 @@ func TestDelegationExampleBotsFormAPair(t *testing.T) {
 	}
 	if b.Delegation().Enabled() || !b.AcceptsTrigger(domain.TriggerDelegation) {
 		t.Errorf("bot-b = %+v triggers %+v", b.Snapshot().Delegation, b.Snapshot().Triggers)
-	}
-}
-
-// TestTheFleetPilotsAreATeamThatComesHome registers the port fleet's
-// pilot definitions as the runbook does: each is in team port, may call
-// return_home and lets the control plane approve it.
-func TestTheFleetPilotsAreATeamThatComesHome(t *testing.T) {
-	c := cli{t: t, state: t.TempDir(), axlr: fakeAXLR(t, "completed"), socket: ""}
-	dir := t.TempDir()
-	for i, name := range []string{"pilot.json", "rover-pilot.json", "supply-pilot.json"} {
-		raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "drone-fleet", "bots", name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		text := strings.ReplaceAll(string(raw), "VEHICLE", []string{"quad-1", "rover-0", "supply-0"}[i])
-		var definition application.BotDefinition
-		decoder := json.NewDecoder(strings.NewReader(text))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&definition); err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		approvals, err := domain.NewApprovals(definition.Approvals)
-		if err != nil || !approvals.AutoApproves("axlr_call_tool", []byte(`{"name": "vehicle/return_home", "arguments": {"reason": "a ship"}}`)) || approvals.AutoApproves("run_mission", nil) {
-			t.Errorf("%s: approvals %+v %v", name, definition.Approvals, err)
-		}
-		if len(definition.Groups) != 1 || definition.Groups[0] != "port" || !strings.Contains(definition.Mission, "return_home") {
-			t.Errorf("%s: groups %v", name, definition.Groups)
-		}
-		// The pilots recall with stop.recall and show the three modes:
-		// warnings as messages, info as notes, stop and danger as tasks.
-		if !strings.Contains(definition.Mission, "stop.recall") || strings.Contains(definition.Mission, "severity") || len(definition.Subscriptions) != 2 ||
-			definition.Subscriptions[0].Topic != "warn.*" || definition.Subscriptions[0].Mode != "message" || definition.Subscriptions[1].Mode != "note" {
-			t.Errorf("%s: subscriptions %+v", name, definition.Subscriptions)
-		}
-		path := filepath.Join(dir, name)
-		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if code, _, errText := c.run("bot", "register", "--file", path); code != exitOK {
-			t.Fatalf("%s: %s", name, errText)
-		}
-	}
-	code, out, _ := c.run("group", "get", "port")
-	if code != exitOK || strings.Count(out, `"botId"`) != 3 {
-		t.Errorf("group port = %d %s", code, out)
 	}
 }

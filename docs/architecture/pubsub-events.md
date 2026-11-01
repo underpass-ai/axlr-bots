@@ -287,7 +287,7 @@ Listens to, Listen to a topic, Remove, the pending card with Approve/Deny (and t
 
 ### PR 9 — the fleet and the runbook
 
-The pilots emit `stop.recall` instead of `recall` with a severity; `examples/drone-fleet` definitions get a subscription or two that show the three modes (the plane: `info.*` as notes; a quad: `warn.*` as messages; the operator's `stop.all` as the generalised Recall); `docs/runbooks/teams-and-events.md` extended with "Listen to a topic", "Publish an event" and "When it does not work" rows; `docs/runbooks/drone-fleet.md` updated.
+The pilots emit `stop.recall` instead of `recall` with a severity; the fleet's definitions (`drone-fleet/`, now in the private repo `axlr-bots-examples`) get a subscription or two that show the three modes (the plane: `info.*` as notes; a quad: `warn.*` as messages; the operator's `stop.all` as the generalised Recall); `docs/runbooks/teams-and-events.md` extended with "Listen to a topic", "Publish an event" and "When it does not work" rows; the fleet's runbook updated.
 
 | Check | Expected |
 |---|---|

@@ -50,7 +50,7 @@ exit 1`
 
 func definitionFile(t *testing.T) string {
 	t.Helper()
-	return filepath.Join("..", "..", "examples", "bot.json")
+	return filepath.Join("testdata", "bot.json")
 }
 
 type cli struct {

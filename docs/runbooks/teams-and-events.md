@@ -1,6 +1,6 @@
 # Teams and events from the panel
 
-Bots that share a **Team** know each other, ask each other to do a task and warn each other with events; the operator sets it all up in the desktop panel and writes nothing but the team's name ([ADR](../architecture/groups-and-events.md), [reference](../reference/bot-definition.md#teams)). An event's name says how much it matters by its first word (`stop`, `danger`, `warn`, `info`), and each bot listens to the topics it subscribes to, in the mode it chooses ([publish/subscribe](../architecture/pubsub-events.md), [subscriptions](../reference/bot-definition.md#subscriptions)). The example is the [port fleet](drone-fleet.md): the plane's bot warns quad-1's bot that a ship is coming, quad-1 flies home, and the operator sees why.
+Bots that share a **Team** know each other, ask each other to do a task and warn each other with events; the operator sets it all up in the desktop panel and writes nothing but the team's name ([ADR](../architecture/groups-and-events.md), [reference](../reference/bot-definition.md#teams)). An event's name says how much it matters by its first word (`stop`, `danger`, `warn`, `info`), and each bot listens to the topics it subscribes to, in the mode it chooses ([publish/subscribe](../architecture/pubsub-events.md), [subscriptions](../reference/bot-definition.md#subscriptions)). The example is the port fleet (private repo `axlr-bots-examples`): the plane's bot warns quad-1's bot that a ship is coming, quad-1 flies home, and the operator sees why.
 
 | Step | In the panel | What happens |
 |---|---|---|

@@ -118,7 +118,7 @@ func (i Installer) Install() (Report, error) {
 		report.NextSteps = append(report.NextSteps,
 			ctl+" enable --now "+ServiceName+" "+NodeUnitName,
 			l.BinaryPath()+" --state "+l.StateDir+" node list",
-			l.BinaryPath()+" --state "+l.StateDir+" bot register --file examples/bot.json",
+			l.BinaryPath()+" --state "+l.StateDir+" bot register --file cmd/axlr-bots/testdata/bot.json",
 			l.BinaryPath()+" --state "+l.StateDir+" bot enable bot",
 		)
 	}

@@ -13,7 +13,7 @@ import (
 
 func sreDefinitionFile(t *testing.T) string {
 	t.Helper()
-	return filepath.Join("..", "..", "examples", "bot.json")
+	return filepath.Join("testdata", "bot.json")
 }
 
 // TestServeRunsWhatTheCommandsSendOverTheSocket starts the daemon with
