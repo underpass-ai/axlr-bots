@@ -31,16 +31,13 @@ mod tests {
     #[test]
     fn an_older_control_plane_has_no_topics() {
         let (control_plane, _) = fleet();
-        control_plane.set_groups("bot", &["port"]);
+        control_plane.set_groups("bot", &["ops"]);
         assert_eq!(
-            run(ListTopics::new(control_plane.clone()).execute("port".into())).unwrap(),
+            run(ListTopics::new(control_plane.clone()).execute("ops".into())).unwrap(),
             Some(Vec::new())
         );
-        assert!(run(ListTopics::new(control_plane.clone()).execute("sea".into())).is_err());
+        assert!(run(ListTopics::new(control_plane.clone()).execute("qa".into())).is_err());
         control_plane.without_newer_routes();
-        assert_eq!(
-            run(ListTopics::new(control_plane).execute("port".into())).unwrap(),
-            None
-        );
+        assert_eq!(run(ListTopics::new(control_plane).execute("ops".into())).unwrap(), None);
     }
 }

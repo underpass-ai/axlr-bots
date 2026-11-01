@@ -174,16 +174,16 @@ mod tests {
 
     #[test]
     fn keeps_the_approvals_and_the_delegation_of_a_definition() {
-        let text = r#"{"tenant": "default", "name": "dispatcher", "owner": "ops", "mission": "Send the vehicles.",
+        let text = r#"{"tenant": "default", "name": "dispatcher", "owner": "ops", "mission": "Hand the jobs to the workers.",
           "triggers": [{"type": "manual"}, {"type": "delegation"}],
           "approvals": {"ttl": "20m", "onExpire": "deny"},
-          "delegation": {"to": ["pilot-quad-0"], "maxDepth": 1}}"#;
+          "delegation": {"to": ["worker-0"], "maxDepth": 1}}"#;
         let definition = BotDefinition::from_json(text).unwrap();
         assert_eq!(
             definition.triggers[1].trigger_type,
             super::super::TriggerType::Delegation
         );
-        assert_eq!(definition.delegation.as_ref().unwrap()["to"][0], "pilot-quad-0");
+        assert_eq!(definition.delegation.as_ref().unwrap()["to"][0], "worker-0");
         let out = serde_json::to_value(&definition).unwrap();
         assert_eq!(out["approvals"]["ttl"], "20m");
     }
@@ -259,11 +259,11 @@ mod tests {
 
     #[test]
     fn reads_a_definition_with_teams_and_events() {
-        let text = r#"{"tenant": "default", "name": "plane", "owner": "ops", "mission": "Fly.",
-          "groups": ["port"], "events": {"perMinute": 3},
-          "triggers": [{"type": "manual"}, {"type": "event", "events": ["ship.*"], "interrupt": true}]}"#;
+        let text = r#"{"tenant": "default", "name": "watcher", "owner": "ops", "mission": "Watch.",
+          "groups": ["ops"], "events": {"perMinute": 3},
+          "triggers": [{"type": "manual"}, {"type": "event", "events": ["deploy.*"], "interrupt": true}]}"#;
         let definition = BotDefinition::from_json(text).unwrap();
-        assert_eq!(definition.groups, vec!["port"]);
+        assert_eq!(definition.groups, vec!["ops"]);
         assert_eq!(definition.events.as_ref().unwrap()["perMinute"], 3);
         assert!(definition.triggers[1].interrupt);
         let many = r#"{"tenant": "default", "name": "x", "owner": "o", "mission": "m", "groups": ["a","b","c","d","e","f","g","h","i"]}"#;

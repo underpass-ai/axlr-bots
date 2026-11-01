@@ -40,8 +40,8 @@ impl Task {
         self.priority == "urgent"
     }
 
-    /// Who said what, for a task an event made: `plane · stop.recall: a
-    /// ship is entering your zone`.
+    /// Who said what, for a task an event made: `watcher · stop.halt: a
+    /// deploy is starting`.
     pub fn told_by(&self) -> Option<String> {
         let input = self.input.as_ref()?;
         let from = input.get("from")?.as_str()?;
@@ -104,14 +104,17 @@ mod tests {
         let mut task = sample();
         assert!(!task.is_urgent() && task.told_by().is_none());
         task.priority = "urgent".into();
-        task.input = Some(serde_json::json!({"from": "plane", "message": "a ship"}));
+        task.input = Some(serde_json::json!({"from": "watcher", "message": "a deploy is starting"}));
         assert!(task.is_urgent());
-        assert_eq!(task.told_by().as_deref(), Some("plane: a ship"));
+        assert_eq!(task.told_by().as_deref(), Some("watcher: a deploy is starting"));
         task.input = Some(
-            serde_json::json!({"from": "plane", "name": "stop.recall", "message": "a ship",
+            serde_json::json!({"from": "watcher", "name": "stop.halt", "message": "a deploy is starting",
             "notes": [{"from": "recepcion", "name": "info.turno", "message": "shift", "at": "2026-10-28T10:00:00Z"}, {"bad": 1}]}),
         );
-        assert_eq!(task.told_by().as_deref(), Some("plane · stop.recall: a ship"));
+        assert_eq!(
+            task.told_by().as_deref(),
+            Some("watcher · stop.halt: a deploy is starting")
+        );
         assert_eq!(task.knew(), vec!["recepcion · info.turno: shift"]);
         assert!(sample().knew().is_empty());
     }

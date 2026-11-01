@@ -41,7 +41,7 @@ pub struct Bot {
 }
 
 impl Bot {
-    /// Its teams, `port, sea`, or empty.
+    /// Its teams, `ops, lab`, or empty.
     pub fn team_summary(&self) -> String {
         self.groups.join(", ")
     }

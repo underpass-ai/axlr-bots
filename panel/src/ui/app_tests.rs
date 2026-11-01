@@ -435,11 +435,11 @@ fn without_a_connection_nothing_is_asked_of_the_control_plane() {
             key: crate::domain::IdempotencyKey::new("k").unwrap(),
         },
         Effect::FollowTeam {
-            name: "port".into(),
+            name: "ops".into(),
             feed: Default::default(),
             wait: 0,
         },
-        Effect::SetTeams(BotId::new("b").unwrap(), vec!["port".into()]),
+        Effect::SetTeams(BotId::new("b").unwrap(), vec!["ops".into()]),
         Effect::Cancel(TaskId::new("t").unwrap()),
         Effect::Decide(TaskId::new("t").unwrap(), crate::domain::Decision::Deny),
     ] {
@@ -607,15 +607,15 @@ fn a_chat_message_runs_as_a_task_and_shows_in_the_chat() {
     assert_eq!(app.banner.as_ref().unwrap().tone, Tone::Bad);
 }
 
-/// The sample fleet with bot and bot-wrx80 in team port, refreshed.
+/// The sample bots with bot and bot-wrx80 in team ops, refreshed.
 fn with_a_team() -> (App, std::sync::Arc<crate::adapters::fake::FakeControlPlane>) {
     let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
         "2026-10-25T10:00:00Z".parse().unwrap(),
     ));
     let mut app = super::view::tests::app_over(fake.clone());
     send(&mut app, Message::SettingsSave);
-    fake.set_groups("bot", &["port"]);
-    fake.set_groups("bot-wrx80", &["port"]);
+    fake.set_groups("bot", &["ops"]);
+    fake.set_groups("bot-wrx80", &["ops"]);
     let tick = app.now + Duration::seconds(3);
     send(&mut app, Message::Tick(tick));
     (app, fake)
@@ -625,7 +625,7 @@ fn with_a_team() -> (App, std::sync::Arc<crate::adapters::fake::FakeControlPlane
 fn the_panel_follows_each_team_and_raises_a_teammates_warning() {
     let (mut app, fake) = with_a_team();
     assert_eq!(app.teams().len(), 1);
-    let first = app.watch.feed("port").expect("the team is followed").events.len();
+    let first = app.watch.feed("ops").expect("the team is followed").events.len();
     assert!(first > 0);
     assert!(
         app.watch.following.is_empty(),
@@ -635,15 +635,15 @@ fn the_panel_follows_each_team_and_raises_a_teammates_warning() {
     fake.publish(
         "bot.event.emitted",
         "bot",
-        serde_json::json!({"name": "recall", "severity": "warning", "message": "a ship is entering", "to": ["bot-wrx80"]}),
+        serde_json::json!({"name": "stop.halt", "severity": "warning", "message": "a deploy is starting", "to": ["bot-wrx80"]}),
     );
     let tick = app.now + Duration::seconds(6);
     send(&mut app, Message::Tick(tick));
     let banner = app.banner.clone().unwrap();
     assert_ne!(Some(banner.clone()), banner_before);
-    assert_eq!(banner.title, "Warning to the team · team port");
-    assert_eq!(banner.detail, "bot → bot-wrx80: a ship is entering");
-    assert_eq!(app.watch.feed("port").unwrap().events.len(), first + 1);
+    assert_eq!(banner.title, "Warning to the team · team ops");
+    assert_eq!(banner.detail, "bot → bot-wrx80: a deploy is starting");
+    assert_eq!(app.watch.feed("ops").unwrap().events.len(), first + 1);
     // An info goes to the timeline, not to a banner.
     app.banner = None;
     fake.publish(
@@ -655,10 +655,10 @@ fn the_panel_follows_each_team_and_raises_a_teammates_warning() {
     assert!(app.banner.is_none());
     // A read that fails is started again by the next refresh.
     assert!(
-        app.team_loaded("port".into(), Err(PanelError::Unreachable("down".into())))
+        app.team_loaded("ops".into(), Err(PanelError::Unreachable("down".into())))
             .is_empty()
     );
-    assert!(!app.watch.following.contains("port"));
+    assert!(!app.watch.following.contains("ops"));
 }
 
 #[test]
@@ -666,10 +666,10 @@ fn a_bot_changes_team() {
     let (mut app, _) = with_a_team();
     let bot = BotId::new("bot").unwrap();
     send(&mut app, Message::Go(Screen::Bot(bot.clone())));
-    app.apply(Message::TeamEdit(bot.clone(), "port, sea".into()));
-    assert_eq!(app.watch.editing.as_ref().unwrap().1, "port, sea");
+    app.apply(Message::TeamEdit(bot.clone(), "ops, lab".into()));
+    assert_eq!(app.watch.editing.as_ref().unwrap().1, "ops, lab");
     send(&mut app, Message::TeamSave);
-    assert_eq!(app.banner.as_ref().unwrap().title, "bot is in teams port, sea");
+    assert_eq!(app.banner.as_ref().unwrap().title, "bot is in teams ops, lab");
     assert!(app.watch.editing.is_none());
     assert_eq!(app.teams().len(), 2);
     app.apply(Message::TeamEdit(bot.clone(), "Bad Name".into()));
@@ -684,7 +684,7 @@ fn a_bot_changes_team() {
 fn an_urgent_order_stops_the_bot_and_gives_it_the_typed_order() {
     let (mut app, fake) = with_a_team();
     let bot = BotId::new("bot").unwrap();
-    send(&mut app, Message::Go(Screen::Team("port".into())));
+    send(&mut app, Message::Go(Screen::Team("ops".into())));
 
     // From the team's page the order opens on the bot's page.
     send(&mut app, Message::OrderOpen(bot.clone()));
@@ -770,7 +770,7 @@ fn a_new_bot_joins_a_team_from_the_form() {
     app.apply(Message::RegisterName("worker-1".into()));
     app.apply(Message::RegisterMission("Watch service-1.".into()));
     app.apply(Message::RegisterTools("local_read, rollback".into()));
-    app.apply(Message::RegisterTeam("port".into()));
+    app.apply(Message::RegisterTeam("ops".into()));
     send(&mut app, Message::RegisterSubmit);
     let bot = app
         .fleet
@@ -781,7 +781,7 @@ fn a_new_bot_joins_a_team_from_the_form() {
         .find(|b| b.id.as_str() == "worker-1")
         .unwrap()
         .clone();
-    assert_eq!(bot.groups, vec!["port"]);
+    assert_eq!(bot.groups, vec!["ops"]);
     assert_eq!(bot.allowed_tools, vec!["local_read", "rollback"]);
 }
 
@@ -841,12 +841,12 @@ fn a_teammates_warning_raises_a_notice_that_opens_the_teams() {
     fake.publish(
         "bot.event.emitted",
         "bot",
-        serde_json::json!({"name": "recall", "severity": "warning", "message": "a ship is entering", "to": ["bot-wrx80"]}),
+        serde_json::json!({"name": "stop.halt", "severity": "warning", "message": "a deploy is starting", "to": ["bot-wrx80"]}),
     );
     let tick = app.now + Duration::seconds(6);
     send(&mut app, Message::Tick(tick));
     let shown = notices.shown();
     assert_eq!(shown.len(), 1);
-    assert_eq!(shown[0].title, "Warning to the team · team port");
-    assert!(shown[0].body.starts_with("bot → bot-wrx80: a ship is entering"));
+    assert_eq!(shown[0].title, "Warning to the team · team ops");
+    assert!(shown[0].body.starts_with("bot → bot-wrx80: a deploy is starting"));
 }

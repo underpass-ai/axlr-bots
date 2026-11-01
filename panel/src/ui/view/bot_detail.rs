@@ -273,7 +273,7 @@ fn team<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
         Some((_, words)) => row![
             container(super::widgets::field(
                 "Team",
-                "port",
+                "ops",
                 words,
                 {
                     let id = bot.id.clone();

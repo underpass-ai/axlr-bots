@@ -190,7 +190,7 @@ impl Event {
         format!("{what}: {from} · {name}{why}")
     }
 
-    /// Who an event was for: `quad-1, quad-2`, or `the team`.
+    /// Who an event was for: `worker-1, worker-2`, or `the team`.
     pub fn addressed_to(&self) -> String {
         let to: Vec<&str> = self
             .payload
@@ -268,10 +268,10 @@ mod tests {
     fn a_teams_events_say_who_told_whom_what() {
         let warning = event(
             "bot.event.emitted",
-            r#"{"name":"recall","severity":"warning","message":"a ship","to":["quad-1"]}"#,
+            r#"{"name":"stop.halt","severity":"warning","message":"a deploy is starting","to":["worker-1"]}"#,
         );
         assert_eq!(warning.label(), "Warning to the team");
-        assert_eq!(warning.detail(), "bot → quad-1: a ship");
+        assert_eq!(warning.detail(), "bot → worker-1: a deploy is starting");
         assert!(warning.needs_attention());
         assert_eq!(warning.tone(), EventTone::Waiting);
         let alarm = event("bot.event.emitted", r#"{"severity":"critical","message":"fire"}"#);
