@@ -71,7 +71,6 @@ func (uc PublishGroupEvent) Execute(ctx context.Context, command PublishGroupEve
 	if err != nil {
 		return PublishAnswer{}, err
 	}
-	name = name.Canonical()
 	if kind := domain.KindOf(name); !kind.PublishedBy(domain.PublisherOperator) {
 		return PublishAnswer{}, domain.ValidationError{Field: "name", Reason: domain.RefusedNotAllowed + ": " + kind.String() + ".* is the control plane's own"}
 	}

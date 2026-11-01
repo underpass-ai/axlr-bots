@@ -20,7 +20,6 @@ func TestEveryKindFixesItsSeverityAndItsPublishers(t *testing.T) {
 		{"info.turno", KindInfo, SeverityInfo, true, true, false},
 		{"pedido.nuevo", KindInfo, SeverityInfo, true, true, false},
 		{"errors.bot", KindInfo, SeverityInfo, true, true, false},
-		{"recall", KindStop, SeverityCritical, true, true, false},
 		{"recall.home", KindInfo, SeverityInfo, true, true, false},
 	}
 	for _, c := range cases {

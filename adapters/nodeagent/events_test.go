@@ -114,7 +114,7 @@ func TestThePlaneWarnsQuadOneThroughTheNode(t *testing.T) {
 		}
 	}
 	executor := &emittingExecutor{tools: map[domain.BotID][]string{}, script: map[domain.BotID]map[string]any{
-		"plane": {"name": "recall", "message": "Ship 244 is entering your zone", "severity": "warning", "to": []string{"quad-1"}},
+		"plane": {"name": "stop.recall", "message": "Ship 244 is entering your zone", "severity": "warning", "to": []string{"quad-1"}},
 	}}
 	runAgent(t, f, executor)
 	submitted, err := f.client.SubmitTask(ctx, unixapiSubmit("plane", "Tell quad-1 to pull back: a ship"))

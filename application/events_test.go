@@ -135,8 +135,8 @@ func TestEventTriggersChooseWhatABotHears(t *testing.T) {
 		t.Errorf("objective = %q", task.Objective())
 	}
 	// An addressed event is always heard: by the implicit subscription.
-	addressed := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "recall", Message: "come back", To: []string{"watcher"}})
-	if len(addressed.Deliveries) != 1 || addressed.Deliveries[0].Trigger != "team" || !addressed.Deliveries[0].Urgent || addressed.Name != "stop.recall" {
+	addressed := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "stop.recall", Message: "come back", To: []string{"watcher"}})
+	if len(addressed.Deliveries) != 1 || addressed.Deliveries[0].Trigger != "team" || !addressed.Deliveries[0].Urgent {
 		t.Errorf("addressed = %+v", addressed)
 	}
 	failing := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "ship.lost", Message: "a ship", To: []string{"broken"}})

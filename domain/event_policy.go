@@ -97,9 +97,7 @@ func (p EventPolicy) MayEmit(name EventName) bool {
 		return false
 	}
 	for _, rule := range p.Rules() {
-		// A rule written for the kindless recall still lets the bot emit
-		// it, now read as stop.recall.
-		if rule.Pattern().Matches(name) || name == EventName(recallAlias).Canonical() && rule.Pattern().Matches(recallAlias) {
+		if rule.Pattern().Matches(name) {
 			return true
 		}
 	}

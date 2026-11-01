@@ -123,10 +123,7 @@ func TestEventTriggersAreReadAsSubscriptions(t *testing.T) {
 	}
 }
 
-func TestRecallIsReadAsStopRecall(t *testing.T) {
-	if EventName("recall").Canonical() != "stop.recall" || EventName("warn.recall").Canonical() != "warn.recall" {
-		t.Error("canonical is wrong")
-	}
+func TestEventTriggerRefs(t *testing.T) {
 	ref, err := NewTriggerRef("event", "pedido.*")
 	if err != nil || ref.Name != "pedido.*" {
 		t.Errorf("ref = %+v %v", ref, err)

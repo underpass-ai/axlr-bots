@@ -19,11 +19,8 @@ func TestTheTopicsKindFixesTheSeverity(t *testing.T) {
 	if event, ok := lastEvent(h, domain.EventEventEmitted); !ok || event.Payload["severity"] != "info" || event.Payload["name"] != "info.turno" {
 		t.Errorf("emitted = %+v", event)
 	}
-	for _, name := range []string{"stop.recall", "recall"} {
-		answer := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: name, Message: "come back", To: []string{"quad-1"}})
-		if answer.Severity != domain.SeverityCritical || len(answer.Deliveries) != 1 || !answer.Deliveries[0].Urgent {
-			t.Errorf("%s = %+v", name, answer)
-		}
+	if answer := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "stop.recall", Message: "come back", To: []string{"quad-1"}}); answer.Severity != domain.SeverityCritical || len(answer.Deliveries) != 1 || !answer.Deliveries[0].Urgent {
+		t.Errorf("stop.recall = %+v", answer)
 	}
 	old := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "info.x", Message: "an older node", Severity: "critical", To: []string{"quad-2"}})
 	if old.Refused != nil || old.Severity != domain.SeverityInfo || len(old.Deliveries) != 1 || old.Deliveries[0].Urgent {

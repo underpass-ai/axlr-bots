@@ -114,10 +114,6 @@ func TestTheTeamsDefaultAndAddressedEvents(t *testing.T) {
 	if len(recall.Deliveries) != 1 || !recall.Deliveries[0].Urgent || recall.Deliveries[0].Trigger != "team" {
 		t.Errorf("stop.recall = %+v", recall)
 	}
-	alias := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "recall", Message: "back now", To: []string{"almacen"}})
-	if alias.Name != "stop.recall" || len(alias.Deliveries) != 1 || !alias.Deliveries[0].Urgent {
-		t.Errorf("recall = %+v", alias)
-	}
 	warn := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "warn.x", Message: "low stock", To: []string{"almacen"}})
 	if len(warn.Deliveries) != 1 || warn.Deliveries[0].Urgent {
 		t.Errorf("warn.x = %+v", warn)
