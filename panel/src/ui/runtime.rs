@@ -12,6 +12,12 @@ use super::{App, Effect, Message, Tokens, brand, view};
 /// How often the panel reads the control plane again.
 pub const REFRESH_EVERY: Duration = Duration::from_secs(3);
 
+/// The window's size at start: it fits the tables.
+pub const WINDOW: Size = Size::new(1360.0, 860.0);
+
+/// The smallest window: every screen still shows its words whole.
+pub const MIN_WINDOW: Size = Size::new(1040.0, 640.0);
+
 /// The application's update: apply the message, run its effects.
 pub fn update(app: &mut App, message: Message) -> Task<Message> {
     let effects = app.apply(message);
@@ -65,8 +71,8 @@ pub fn launch(boot: impl Fn() -> (App, Vec<Effect>) + 'static) -> iced::Result {
     .font(include_bytes!("../../assets/fonts/DotGothic16-Latin.ttf").as_slice())
     .default_font(widgets::REGULAR)
     .window(window::Settings {
-        size: Size::new(1360.0, 860.0),
-        min_size: Some(Size::new(1040.0, 640.0)),
+        size: WINDOW,
+        min_size: Some(MIN_WINDOW),
         icon,
         platform_specific: window::settings::PlatformSpecific {
             application_id: "axlr-bots-panel".into(),

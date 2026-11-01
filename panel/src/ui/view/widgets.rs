@@ -1,7 +1,8 @@
 //! The panel's building blocks: fonts, icons, pills, cards, buttons, fields.
 
 use iced::font::{Family, Weight};
-use iced::widget::{Space, button, column, container, mouse_area, row, svg, text, text_input, tooltip};
+use iced::widget::text::{LineHeight, Wrapping};
+use iced::widget::{Space, button, column, container, mouse_area, responsive, row, svg, text, text_input, tooltip};
 use iced::{Alignment, Color, Element, Font, Length, Padding, mouse};
 
 use crate::ui::styles::{self, Kind};
@@ -71,6 +72,33 @@ pub fn number<'a>(words: impl text::IntoFragment<'a>) -> text::Text<'a> {
     text(words).font(NUMERAL).size(NUMBER)
 }
 
+/// The size at which `value` fits `width` in the pixel face, whose every
+/// glyph is half an em wide: `NUMBER` while it fits, smaller for a long
+/// value, a cost of `$1234.56` in a narrow window, never under `SMALL`.
+fn number_size(value: &str, width: f32) -> f32 {
+    let ems = value.chars().count() as f32 * 0.5;
+    // Two pixels to spare, so rounding never pushes the last digit out.
+    ((width - 2.0) / ems).clamp(SMALL, NUMBER)
+}
+
+/// A number in the pixel face as big as its place lets it be, on a line
+/// as high as a big number's, so the cards of a row end level.
+fn fitted_number<'a>(value: String, color: Color) -> El<'a> {
+    responsive(move |space| {
+        container(
+            number(value.clone())
+                .size(number_size(&value, space.width))
+                .color(color)
+                .wrapping(Wrapping::None),
+        )
+        .height(LineHeight::default().to_absolute(NUMBER.into()))
+        .align_y(Alignment::End)
+        .into()
+    })
+    .height(Length::Shrink)
+    .into()
+}
+
 /// A page title with its icon.
 pub fn title<'a>(glyph: Icon, words: impl text::IntoFragment<'a>, tokens: Tokens) -> El<'a> {
     row![icon(glyph, 26.0, tokens.accent), bold(words).size(TITLE)]
@@ -129,9 +157,9 @@ pub fn section<'a>(glyph: Icon, words: impl text::IntoFragment<'a>, body: impl I
 }
 
 /// A big number in a card: two words and the icon on top, the number in
-/// the pixel face under them. A number that needs a person (amber) or
-/// says something failed (red) tints the whole card. A click goes where
-/// the number comes from.
+/// the pixel face under them, smaller only when it would not fit. A
+/// number that needs a person (amber) or says something failed (red)
+/// tints the whole card. A click goes where the number comes from.
 pub fn stat<'a>(
     glyph: Icon,
     value: String,
@@ -148,7 +176,7 @@ pub fn stat<'a>(
             icon(glyph, 16.0, color)
         ]
         .align_y(Alignment::Center),
-        number(value).color(color),
+        fitted_number(value, color),
     ]
     .spacing(4);
     let card = container(body).padding(Padding::from([12, 16])).width(Length::Fill);
