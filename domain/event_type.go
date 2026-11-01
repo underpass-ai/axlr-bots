@@ -80,6 +80,24 @@ const (
 	// deadline: the call was denied or the task ended Expired, as the
 	// bot's approvals say.
 	EventApprovalExpired EventType = "bot.approval.expired"
+	// EventIncidentOpened says the control plane opened an incident on an
+	// alert, and the triage task it made: the payload holds the group
+	// key, the source, the title, the severity and the alerts.
+	EventIncidentOpened EventType = "incident.opened"
+	// EventIncidentRepeated says an alert of an incident already open
+	// arrived: nothing was started; the payload holds the alerts added.
+	EventIncidentRepeated EventType = "incident.repeated"
+	// EventIncidentReopened says an alert came soon after the incident
+	// was resolved: a new cycle and a new triage task.
+	EventIncidentReopened EventType = "incident.reopened"
+	// EventIncidentDiagnosed says the triage task completed: the payload
+	// holds the diagnosis.
+	EventIncidentDiagnosed EventType = "incident.diagnosed"
+	// EventIncidentEscalated says the bots gave the incident to a person:
+	// the payload says why.
+	EventIncidentEscalated EventType = "incident.escalated"
+	// EventIncidentResolved says the incident was closed, by whom and why.
+	EventIncidentResolved EventType = "incident.resolved"
 	// EventNodeRegistered says a node registered (or registered again).
 	EventNodeRegistered EventType = "node.registered"
 	// EventNodeHeartbeat says a node was heard from.
@@ -103,6 +121,7 @@ func ParseEventType(raw string) (EventType, error) {
 	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
 		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventTaskDelegated, EventTaskMessage, EventTaskSaid, EventDelegationRefused,
 		EventEventEmitted, EventEventRefused, EventEventHeard, EventSubscriptionChanged, EventSubscriptionAsked, EventGroupEventPublished,
+		EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentEscalated, EventIncidentResolved,
 		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked,
 		EventExecutionAssigned, EventExecutionReported:
 		return EventType(raw), nil
@@ -111,6 +130,16 @@ func ParseEventType(raw string) (EventType, error) {
 }
 
 func (t EventType) String() string { return string(t) }
+
+// AboutIncident reports an event about an incident: it names the
+// incident and the bot that triages it.
+func (t EventType) AboutIncident() bool {
+	switch t {
+	case EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentEscalated, EventIncidentResolved:
+		return true
+	}
+	return false
+}
 
 // AboutGroup reports an event about a team rather than a bot.
 func (t EventType) AboutGroup() bool { return t == EventGroupEventPublished }

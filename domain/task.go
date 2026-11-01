@@ -27,6 +27,7 @@ type Task struct {
 	grantedModel   int
 	grantedTools   int
 	priority       TaskPriority
+	incident       IncidentID
 	createdAt      time.Time
 	updatedAt      time.Time
 }
@@ -58,6 +59,19 @@ func (t *Task) Attribute(trigger TriggerRef, input []byte) error {
 	t.trigger, t.input = ref, parsed
 	return nil
 }
+
+// ForIncident records the incident the task triages, before the task is
+// first saved.
+func (t *Task) ForIncident(incident IncidentID) error {
+	if incident == "" {
+		return invalid("incident id", "must not be empty")
+	}
+	t.incident = incident
+	return nil
+}
+
+// IncidentID is the incident the task triages; empty for any other task.
+func (t Task) IncidentID() IncidentID { return t.incident }
 
 // Prioritize sets whether the task waits its turn or goes first, before
 // the task is first saved.
@@ -411,6 +425,7 @@ func (t Task) Snapshot() TaskSnapshot {
 		GrantedModel:   t.grantedModel,
 		GrantedTools:   t.grantedTools,
 		Priority:       t.prioritySnapshot(),
+		IncidentID:     t.incident.String(),
 		CreatedAt:      t.createdAt,
 		UpdatedAt:      t.updatedAt,
 	}
@@ -510,6 +525,13 @@ func RestoreTask(s TaskSnapshot) (Task, error) {
 	task.grantedModel, task.grantedTools = s.GrantedModel, s.GrantedTools
 	if task.priority, err = ParseTaskPriority(s.Priority); err != nil {
 		return Task{}, err
+	}
+	if s.IncidentID != "" {
+		incident, err := NewIncidentID(s.IncidentID)
+		if err != nil {
+			return Task{}, err
+		}
+		task.incident = incident
 	}
 	task.status = status
 	task.failureReason = s.FailureReason

@@ -73,6 +73,13 @@ func stopTask(ctx context.Context, deps Dependencies, bot domain.Bot, task domai
 	if err := rec.audit(ctx, action, task.ID().String(), domain.AuditOK, details); err != nil {
 		return CancelTaskResult{}, err
 	}
+	ended := domain.Execution{}
+	if cancelled != nil {
+		ended = *cancelled
+	}
+	if err := newIncidentAdvancer(deps).taskEnded(ctx, bot, task, ended); err != nil {
+		return CancelTaskResult{}, err
+	}
 	return CancelTaskResult{Task: task, Execution: cancelled, Changed: true}, nil
 }
 

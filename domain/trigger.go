@@ -68,6 +68,13 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 		if t.signingKey, err = validateCredential("trigger "+name+" signingKey", s.SigningKey); err != nil {
 			return Trigger{}, err
 		}
+	case TriggerIncident:
+		if s.Secret != "" || s.SigningKey != "" || s.Every != "" || s.Cron != "" {
+			return Trigger{}, invalid("trigger "+name, "an incident trigger takes no credentials or schedule")
+		}
+		if s.Objective == "" {
+			return t, nil
+		}
 	case TriggerEvent:
 		if s.Secret != "" || s.SigningKey != "" || s.Every != "" || s.Cron != "" {
 			return Trigger{}, invalid("trigger "+name, "an event trigger takes no credentials or schedule")

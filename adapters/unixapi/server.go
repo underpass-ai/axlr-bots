@@ -118,6 +118,10 @@ func (s *Server) operatorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/executions/{id}/artifacts/{name}", s.getArtifact)
 	mux.HandleFunc("POST /v1/triggers/{bot}/{trigger}", s.fireTrigger)
 	mux.HandleFunc("GET /v1/overview", s.getOverview)
+	mux.HandleFunc("POST /v1/incidents", s.openIncident)
+	mux.HandleFunc("GET /v1/incidents", s.listIncidents)
+	mux.HandleFunc("GET /v1/incidents/{id}", s.getIncident)
+	mux.HandleFunc("POST /v1/incidents/{id}/resolve", s.resolveIncident)
 	mux.HandleFunc("GET /v1/nodes", s.listNodes)
 	mux.HandleFunc("GET /v1/nodes/{id}", s.getNode)
 	mux.HandleFunc("POST /v1/enrollments", s.createEnrollmentToken)
@@ -482,6 +486,44 @@ func (s *Server) said(w http.ResponseWriter, r *http.Request) {
 	}
 	err := application.NewRecordSaid(s.service.Dependencies()).Execute(r.Context(), id, executionID, reply)
 	respond(w, http.StatusOK, map[string]bool{"recorded": err == nil}, err)
+}
+
+// openIncident is POST /v1/incidents: an alert group. 201 for a new
+// incident, 200 for a repeat or a reopening.
+func (s *Server) openIncident(w http.ResponseWriter, r *http.Request) {
+	var command application.OpenIncidentCommand
+	if !readJSON(w, r, &command) {
+		return
+	}
+	response, err := s.service.OpenIncident(r.Context(), command)
+	respond(w, createdStatus(response.Created), response, err)
+}
+
+func (s *Server) listIncidents(w http.ResponseWriter, r *http.Request) {
+	limit, err := queryLimit(r)
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	query := application.IncidentQuery{Tenant: r.URL.Query().Get("tenant"), Status: r.URL.Query().Get("status"), Limit: limit}
+	value, err := s.service.ListIncidents(r.Context(), query)
+	respond(w, http.StatusOK, value, err)
+}
+
+func (s *Server) getIncident(w http.ResponseWriter, r *http.Request) {
+	value, err := s.service.GetIncident(r.Context(), r.PathValue("id"))
+	respond(w, http.StatusOK, value, err)
+}
+
+// resolveIncident is POST /v1/incidents/{id}/resolve; the body, with
+// the reason, may be empty.
+func (s *Server) resolveIncident(w http.ResponseWriter, r *http.Request) {
+	var request ResolveRequest
+	if r.ContentLength != 0 && !readJSON(w, r, &request) {
+		return
+	}
+	value, err := s.service.ResolveIncident(r.Context(), r.PathValue("id"), request)
+	respond(w, http.StatusOK, value, err)
 }
 
 func (s *Server) cancelTask(w http.ResponseWriter, r *http.Request) {

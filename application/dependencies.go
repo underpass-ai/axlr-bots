@@ -9,6 +9,7 @@ import "errors"
 type Dependencies struct {
 	Bots        BotRepository
 	Tasks       TaskRepository
+	Incidents   IncidentRepository
 	Executions  ExecutionRepository
 	Timers      TimerRepository
 	Nodes       NodeRepository
@@ -38,6 +39,8 @@ func (d Dependencies) Validate() error {
 		return errors.New("application: BotRepository is required")
 	case d.Tasks == nil:
 		return errors.New("application: TaskRepository is required")
+	case d.Incidents == nil:
+		return errors.New("application: IncidentRepository is required")
 	case d.Executions == nil:
 		return errors.New("application: ExecutionRepository is required")
 	case d.Timers == nil:

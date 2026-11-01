@@ -7,7 +7,8 @@ import "time"
 // implementation needs and the correlation ids (bot, task, execution,
 // trace) an execution is reconstructed by. A node event names no bot;
 // an event about a team (the operator published on it) names the team
-// and no bot.
+// and no bot. An event about an incident names the incident and the
+// bot that triages it.
 type Event struct {
 	ID            EventID        `json:"eventId"`
 	SchemaVersion SchemaVersion  `json:"schemaVersion"`
@@ -17,6 +18,7 @@ type Event struct {
 	GroupName     string         `json:"groupName,omitempty"`
 	NodeID        NodeID         `json:"nodeId,omitempty"`
 	TaskID        TaskID         `json:"taskId,omitempty"`
+	IncidentID    IncidentID     `json:"incidentId,omitempty"`
 	ExecutionID   ExecutionID    `json:"executionId,omitempty"`
 	CorrelationID CorrelationID  `json:"correlationId,omitempty"`
 	CreatedAt     time.Time      `json:"createdAt"`
@@ -78,6 +80,8 @@ func (e Event) Validate() error {
 		return invalid("bot id", "must not be empty")
 	case e.NodeID == "" && e.Type.AboutNode():
 		return invalid("node id", "must not be empty")
+	case e.IncidentID == "" && e.Type.AboutIncident():
+		return invalid("incident id", "must not be empty")
 	case e.CreatedAt.IsZero():
 		return invalid("created at", "must not be zero")
 	}

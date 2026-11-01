@@ -297,6 +297,60 @@ func (l *Local) GetOverview(ctx context.Context, since time.Time) (application.O
 	return application.NewGetOverview(l.deps).Execute(ctx, since)
 }
 
+// OpenIncident holds the submissions lock: the lookup by group key and
+// the save are a read then a write, and two deliveries of one alert
+// must make one incident.
+func (l *Local) OpenIncident(ctx context.Context, command application.OpenIncidentCommand) (OpenIncidentResponse, error) {
+	l.submits.Lock()
+	defer l.submits.Unlock()
+	result, err := application.NewOpenIncident(l.deps).Execute(ctx, command)
+	if err != nil {
+		return OpenIncidentResponse{}, err
+	}
+	response := OpenIncidentResponse{Incident: result.Incident.Snapshot(), Created: result.Created, Reopened: result.Reopened}
+	if result.Task != nil {
+		task := result.Task.Snapshot()
+		response.Task = &task
+	}
+	return response, nil
+}
+
+func (l *Local) ListIncidents(ctx context.Context, query application.IncidentQuery) ([]domain.IncidentSnapshot, error) {
+	incidents, err := application.NewListIncidents(l.deps).Execute(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	snapshots := make([]domain.IncidentSnapshot, 0, len(incidents))
+	for _, incident := range incidents {
+		snapshots = append(snapshots, incident.Snapshot())
+	}
+	return snapshots, nil
+}
+
+func (l *Local) GetIncident(ctx context.Context, id string) (domain.IncidentSnapshot, error) {
+	incidentID, err := domain.NewIncidentID(id)
+	if err != nil {
+		return domain.IncidentSnapshot{}, err
+	}
+	incident, err := application.NewGetIncident(l.deps).Execute(ctx, incidentID)
+	if err != nil {
+		return domain.IncidentSnapshot{}, err
+	}
+	return incident.Snapshot(), nil
+}
+
+func (l *Local) ResolveIncident(ctx context.Context, id string, request ResolveRequest) (domain.IncidentSnapshot, error) {
+	incidentID, err := domain.NewIncidentID(id)
+	if err != nil {
+		return domain.IncidentSnapshot{}, err
+	}
+	incident, err := application.NewResolveIncident(l.deps).Execute(ctx, incidentID, request.Reason)
+	if err != nil {
+		return domain.IncidentSnapshot{}, err
+	}
+	return incident.Snapshot(), nil
+}
+
 func (l *Local) GetReport(ctx context.Context, id string) (ReportResponse, error) {
 	taskID, err := domain.NewTaskID(id)
 	if err != nil {

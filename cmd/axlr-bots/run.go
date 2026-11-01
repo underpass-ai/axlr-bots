@@ -107,6 +107,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return groupTopics(ctx, service, rest, stdout, stderr)
 	case "group publish":
 		return groupPublish(ctx, service, rest, stdout, stderr)
+	case "incident open":
+		return incidentOpen(ctx, service, rest, stdout, stderr)
+	case "incident list":
+		return incidentList(ctx, service, rest, stdout, stderr)
+	case "incident get":
+		return incidentGet(ctx, service, rest, stdout, stderr)
+	case "incident resolve":
+		return incidentResolve(ctx, service, rest, stdout, stderr)
 	case "task submit":
 		return taskSubmit(ctx, service, rest, stdout, stderr)
 	case "task list":
@@ -240,6 +248,15 @@ func printUsage(w io.Writer) {
                                       the team's topics: who publishes, who listens, nobody listens
   group publish <group> <name> --message "<text>" [--data '{…}'] [--to a,b] [--key <k>] [--tenant <id>]
                                       publish the operator's event on the team; stop.all recalls everyone
+  incident open --tenant <id> --bot <bot-id> --group-key "<key>" --title "<text>" [--severity sev1..sev4]
+                [--fingerprints a,b] [--source <name>] [--objective "<text>"]
+                                      report an alert group: a new incident and its triage task,
+                                      a repeat of the one open for that key, or a reopening
+  incident list [--tenant <id>] [--status Open|Diagnosed|Resolved|Escalated] [--limit 100]
+                                      the incidents, the last seen first
+  incident get <incident-id>          show one incident: its alerts, tasks, diagnosis, cost
+  incident resolve <incident-id> [--reason "<text>"]
+                                      close it; a new alert within 30 minutes reopens it
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>] [--urgent]
                                       accept a task; the same key names the same task; --urgent
                                       goes first and cancels the bot's work in progress

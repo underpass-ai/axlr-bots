@@ -330,6 +330,7 @@ impl FakeState {
             input: None,
             execution_ids: Vec::new(),
             priority: String::new(),
+            incident_id: String::new(),
             failure_reason: match status {
                 TaskStatus::Failed => "the file does not exist".into(),
                 TaskStatus::Expired => {
@@ -464,6 +465,7 @@ impl FakeState {
             group_name: String::new(),
             task_id: task.to_string(),
             execution_id: String::new(),
+            incident_id: String::new(),
             correlation_id: format!("trace-{task}"),
             created_at: at,
             payload: Some(payload),
@@ -486,6 +488,7 @@ impl FakeState {
             group_name: String::new(),
             task_id: String::new(),
             execution_id: String::new(),
+            incident_id: String::new(),
             correlation_id: String::new(),
             created_at: now,
             payload,
@@ -857,6 +860,7 @@ impl ControlPlane for FakeControlPlane {
                 group_name: team.clone(),
                 task_id: String::new(),
                 execution_id: String::new(),
+                incident_id: String::new(),
                 correlation_id: String::new(),
                 created_at: now,
                 payload: payload.as_object().cloned(),

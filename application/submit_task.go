@@ -68,6 +68,8 @@ type submission struct {
 	input       []byte
 	// lineage links a delegated task to the task that asked for it.
 	lineage *domain.TaskLineage
+	// incident links a triage task to the incident it works on.
+	incident domain.IncidentID
 	// accepts refuses the submission for a reason of its own, after the
 	// idempotency lookup and the bot's status; nil accepts.
 	accepts func() error
@@ -126,6 +128,11 @@ func submitTask(ctx context.Context, deps Dependencies, s submission) (SubmitTas
 	if s.priority == domain.PriorityUrgent {
 		task.Prioritize(domain.PriorityUrgent)
 	}
+	if s.incident != "" {
+		if err := task.ForIncident(s.incident); err != nil {
+			return SubmitTaskResult{}, err
+		}
+	}
 	if err := deps.Tasks.Save(ctx, task); err != nil {
 		return SubmitTaskResult{}, err
 	}
@@ -135,6 +142,9 @@ func submitTask(ctx context.Context, deps Dependencies, s submission) (SubmitTas
 	}
 	if task.IsUrgent() {
 		payload["priority"], payload["why"] = task.Priority().String(), s.why
+	}
+	if s.incident != "" {
+		payload["incidentId"] = s.incident.String()
 	}
 	if err := rec.event(ctx, domain.EventTaskSubmitted, s.bot, taskID, correlation, payload); err != nil {
 		return SubmitTaskResult{}, err

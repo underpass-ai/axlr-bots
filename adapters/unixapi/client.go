@@ -217,6 +217,41 @@ func (c *Client) DecideTask(ctx context.Context, id string, request DecideReques
 	return response, c.call(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/decide", request, &response)
 }
 
+func (c *Client) OpenIncident(ctx context.Context, command application.OpenIncidentCommand) (OpenIncidentResponse, error) {
+	var response OpenIncidentResponse
+	return response, c.call(ctx, http.MethodPost, "/v1/incidents", command, &response)
+}
+
+// ListIncidents asks for the incidents the query selects, last seen first.
+func (c *Client) ListIncidents(ctx context.Context, query application.IncidentQuery) ([]domain.IncidentSnapshot, error) {
+	incidents := []domain.IncidentSnapshot{}
+	values := url.Values{}
+	if query.Tenant != "" {
+		values.Set("tenant", query.Tenant)
+	}
+	if query.Status != "" {
+		values.Set("status", query.Status)
+	}
+	if query.Limit != 0 {
+		values.Set("limit", strconv.Itoa(query.Limit))
+	}
+	path := "/v1/incidents"
+	if len(values) > 0 {
+		path += "?" + values.Encode()
+	}
+	return incidents, c.call(ctx, http.MethodGet, path, nil, &incidents)
+}
+
+func (c *Client) GetIncident(ctx context.Context, id string) (domain.IncidentSnapshot, error) {
+	var incident domain.IncidentSnapshot
+	return incident, c.call(ctx, http.MethodGet, "/v1/incidents/"+url.PathEscape(id), nil, &incident)
+}
+
+func (c *Client) ResolveIncident(ctx context.Context, id string, request ResolveRequest) (domain.IncidentSnapshot, error) {
+	var incident domain.IncidentSnapshot
+	return incident, c.call(ctx, http.MethodPost, "/v1/incidents/"+url.PathEscape(id)+"/resolve", request, &incident)
+}
+
 func (c *Client) GetTask(ctx context.Context, id string) (domain.TaskSnapshot, error) {
 	var task domain.TaskSnapshot
 	return task, c.call(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(id), nil, &task)
