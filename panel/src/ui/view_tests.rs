@@ -14,7 +14,7 @@ use crate::domain::{BotId, NodeId, TaskStatus};
 /// simulators take turns.
 static SIMULATOR: Mutex<()> = Mutex::new(());
 
-fn turn() -> MutexGuard<'static, ()> {
+pub(super) fn turn() -> MutexGuard<'static, ()> {
     SIMULATOR.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
