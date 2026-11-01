@@ -26,6 +26,8 @@ mod publish_form;
 mod register_form;
 mod runtime;
 mod screen;
+#[cfg(test)]
+mod screenshot_tests;
 mod services;
 mod settings_form;
 pub mod styles;
