@@ -4,7 +4,7 @@ A bot has no role baked in: its definition is what an operator writes, and the s
 
 ## The definition
 
-[`examples/bot.json`](../../examples/bot.json) is the example bot: it reads the files of its workspace and does what each task asks.
+[`cmd/axlr-bots/testdata/bot.json`](../../cmd/axlr-bots/testdata/bot.json) is the example bot: it reads the files of its workspace and does what each task asks.
 
 ```json
 {
@@ -94,7 +94,7 @@ A bot may ask another bot to do a task while it runs: the model calls the tool `
 
 The target takes delegated tasks when its `triggers` include `{"type": "delegation"}` (no options, like `manual`) or when the asking bot is its teammate ([teams](#teams)); the asking bot's tenant must be its tenant, and it must be Enabled. An ask is refused, with an event `bot.delegation.refused` and its reason, when the target is neither in `to` nor a teammate (`not_allowed`), cannot take it (`target_unavailable`), the chain would be deeper than allowed (`depth_exceeded`), the target already asked along the chain (`cycle`: A→B→A), or there is too little left to share (`budget_exhausted`: the task already asked `maxChildren` bots, "maxChildren reached", or the grant is under one model or tool call, or under 30 seconds). The child is granted, of each limit the asking task has, the share of what it has not granted yet (`geometric`) or the share of the whole limit over `maxChildren` (`even`), never more than the target's own budgets; its deadline is the share of the asking task's time left, under either split. To give each of *N* children its whole budget *c*, size the pool at `N × c / budgetShare` with `even` ([ADR](../architecture/delegation.md#3-how-depth-and-budget-propagate)). It runs with that grant, under its own mission, level and tools, with the asking task's trace id; a child that cannot end by its deadline (it waited for a node or a person past it) fails with the reason `deadline`.
 
-[`examples/bot-delegating.json`](../../examples/bot-delegating.json) asks [`examples/bot-delegate-target.json`](../../examples/bot-delegate-target.json); the tool's schema and the wiring are in the [ADR](../architecture/delegation.md#1-how-the-model-asks).
+[`cmd/axlr-bots/testdata/bot-delegating.json`](../../cmd/axlr-bots/testdata/bot-delegating.json) asks [`cmd/axlr-bots/testdata/bot-delegate-target.json`](../../cmd/axlr-bots/testdata/bot-delegate-target.json); the tool's schema and the wiring are in the [ADR](../architecture/delegation.md#1-how-the-model-asks).
 
 ## Urgent tasks
 
@@ -115,7 +115,7 @@ A team is a name bots share: `"groups": ["port"]`. Nothing else needs to be writ
 {"id": "plane", "tenant": "default", "name": "plane", "owner": "operator", "mission": "…", "groups": ["port"], "…": "…"}
 ```
 
-[`examples/bot-team-a.json`](../../examples/bot-team-a.json) asks [`examples/bot-team-b.json`](../../examples/bot-team-b.json), its teammate in `releases`, with no `delegation` block and no `delegation` trigger. Teams belong to a tenant: two tenants may use one name, and their bots are not teammates.
+[`cmd/axlr-bots/testdata/bot-team-a.json`](../../cmd/axlr-bots/testdata/bot-team-a.json) asks [`cmd/axlr-bots/testdata/bot-team-b.json`](../../cmd/axlr-bots/testdata/bot-team-b.json), its teammate in `releases`, with no `delegation` block and no `delegation` trigger. Teams belong to a tenant: two tenants may use one name, and their bots are not teammates.
 
 ## Events
 
@@ -262,7 +262,7 @@ A node runs Jev bots only when it has `TYPESAFE_API_KEY` in its environment: it 
 ## Register, enable, update
 
 ```bash
-axlr-bots bot register --file examples/bot.json      # POST /v1/bots; a repeat of the id is 409
+axlr-bots bot register --file cmd/axlr-bots/testdata/bot.json      # POST /v1/bots; a repeat of the id is 409
 axlr-bots bot enable bot                             # the bot accepts tasks from now on
 axlr-bots bot update bot --file patch.json           # PATCH /v1/bots/{id}
 axlr-bots bot get bot                                # credentials redacted
@@ -271,7 +271,7 @@ axlr-bots bot events bot --limit 100                 # the bot's newest events, 
 
 A task's `priority` is `urgent` when it went first ([urgent tasks](#urgent-tasks)), absent otherwise.
 
-A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `delegation`, `groups`, `events`, `subscriptions`, `model`, `budgets`) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`examples/bot-triggers-patch.json`](../../examples/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`examples/bot-act-with-approval.json`](../../examples/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
+A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `delegation`, `groups`, `events`, `subscriptions`, `model`, `budgets`) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`cmd/axlr-bots/testdata/bot-triggers-patch.json`](../../cmd/axlr-bots/testdata/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`cmd/axlr-bots/testdata/bot-act-with-approval.json`](../../cmd/axlr-bots/testdata/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
 
 ## Tasks
 

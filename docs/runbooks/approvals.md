@@ -13,10 +13,10 @@ Running ──needs_decision──▶ WaitingApproval ──approve──▶ Run
 
 ## Run the example
 
-[`examples/bot-act-with-approval.json`](../../examples/bot-act-with-approval.json) is the example bot one level up: `local_write` allowed, level `act-with-approval`, and an `approvals` block that waits 15 minutes, then denies.
+[`cmd/axlr-bots/testdata/bot-act-with-approval.json`](../../cmd/axlr-bots/testdata/bot-act-with-approval.json) is the example bot one level up: `local_write` allowed, level `act-with-approval`, and an `approvals` block that waits 15 minutes, then denies.
 
 ```bash
-axlr-bots bot register --file examples/bot-act-with-approval.json
+axlr-bots bot register --file cmd/axlr-bots/testdata/bot-act-with-approval.json
 axlr-bots bot enable bot-act-with-approval
 axlr-bots task submit bot-act-with-approval --objective "Create hello.txt in your workspace containing hello" --key w-1
 ```

@@ -1,6 +1,6 @@
 # ADR: input adapters
 
-Status: proposed, 29 October 2026 (the product owner: «SI» to a page and a template, in the design conversation of 29 October on the next worlds: an orchestra of 36 chairs conducted by hand, an anthill of 300 bots, a pyramid being built). Principle «no se tiene que trasladar la complejidad al usuario»; builds on [publish/subscribe events](pubsub-events.md), the [sidecar](../runbooks/sidecar.md) and the [port fleet](../runbooks/drone-fleet.md). This page names a pattern over primitives that exist; it adds nothing to the control plane.
+Status: proposed, 29 October 2026 (the product owner: «SI» to a page and a template, in the design conversation of 29 October on the next worlds: an orchestra of 36 chairs conducted by hand, an anthill of 300 bots, a pyramid being built). Principle «no se tiene que trasladar la complejidad al usuario»; builds on [publish/subscribe events](pubsub-events.md), the [sidecar](../runbooks/sidecar.md) and the port fleet (private repo `axlr-bots-examples`, where the files named below live). This page names a pattern over primitives that exist; it adds nothing to the control plane.
 
 ## Context
 
@@ -27,9 +27,9 @@ world (a simulation · a camera · audio · telemetry · physics · an operator'
 
 | Output | When | The primitive it maps to | In the fleet today |
 |---|---|---|---|
-| **Tool result** | the bot decides when to look, and the answer is for this bot, now | an MCP tool the world service serves on loopback, named in the sidecar's `mcp.json` ([`mcp_http.py`](../../examples/drone-fleet/app/mcp_http.py) refuses any other `Host`, so the node runs in the world's pod); or a file the service writes into the bot's read-only workspace, read with AXLR's `local_read` under a tool rule that pins the path ([sidecar](../runbooks/sidecar.md)) | `run_mission` and `return_home` from [`vehicle_pilot.py`](../../examples/drone-fleet/app/vehicle_pilot.py) on `127.0.0.1:8765`; `telemetry.json` per vehicle; `fleet.json` from [`fleet_base.py`](../../examples/drone-fleet/app/fleet_base.py), rewritten every second, with the vision's findings in it |
-| **Event on the bus** | the world changes and the team should hear it now | `POST /v1/groups/{name}/events` `{name, message, data?, to?}` with the operator token and an `Idempotency-Key` ([operator API](../reference/operator-api.md#routes)): the topic's kind fixes the severity, `to` addresses up to 16 teammates, whoever subscribes hears the rest. For one bot's task, a webhook trigger `POST /v1/triggers/{bot}/{trigger}` with the trigger's secret ([triggers](../runbooks/triggers.md)) | the fleet base fires the dispatcher's `sightings` and the logistics bot's `restock` webhooks ([`control_plane.py`](../../examples/drone-fleet/app/control_plane.py)); nothing publishes on the team's bus yet |
-| **Note** | a slow fact a bot should know when its next task starts; no task now | an `info.*` event heard through a subscription of mode `note` (the default for `info`): the bot's next prompt carries its last 8 notes of 24 hours, at most 1200 characters, under "Recent events in your team" ([bot definition](../reference/bot-definition.md#subscriptions)) | the pilots subscribe `info.*` as notes and `warn.*` as messages ([`pilot.json`](../../examples/drone-fleet/bots/pilot.json)) |
+| **Tool result** | the bot decides when to look, and the answer is for this bot, now | an MCP tool the world service serves on loopback, named in the sidecar's `mcp.json` (`mcp_http.py` refuses any other `Host`, so the node runs in the world's pod); or a file the service writes into the bot's read-only workspace, read with AXLR's `local_read` under a tool rule that pins the path ([sidecar](../runbooks/sidecar.md)) | `run_mission` and `return_home` from `vehicle_pilot.py` on `127.0.0.1:8765`; `telemetry.json` per vehicle; `fleet.json` from `fleet_base.py`, rewritten every second, with the vision's findings in it |
+| **Event on the bus** | the world changes and the team should hear it now | `POST /v1/groups/{name}/events` `{name, message, data?, to?}` with the operator token and an `Idempotency-Key` ([operator API](../reference/operator-api.md#routes)): the topic's kind fixes the severity, `to` addresses up to 16 teammates, whoever subscribes hears the rest. For one bot's task, a webhook trigger `POST /v1/triggers/{bot}/{trigger}` with the trigger's secret ([triggers](../runbooks/triggers.md)) | the fleet base fires the dispatcher's `sightings` and the logistics bot's `restock` webhooks (`control_plane.py`); nothing publishes on the team's bus yet |
+| **Note** | a slow fact a bot should know when its next task starts; no task now | an `info.*` event heard through a subscription of mode `note` (the default for `info`): the bot's next prompt carries its last 8 notes of 24 hours, at most 1200 characters, under "Recent events in your team" ([bot definition](../reference/bot-definition.md#subscriptions)) | the pilots subscribe `info.*` as notes and `warn.*` as messages (`pilot.json`) |
 
 Which door "the world tells" goes through follows the topic's kind, as the bus fixes it ([pub/sub](pubsub-events.md#topics-and-kinds)); an adapter chooses the kind, nothing else:
 
@@ -55,14 +55,14 @@ Which door "the world tells" goes through follows the topic's kind, as the bus f
 
 | Adapter | Signal in | Text out | Where |
 |---|---|---|---|
-| State | each vehicle's `/state`: position, battery, phase; the stations' stock; the ships AIS hears | `fleet.json` (flat: vehicles, stations, zones, findings, ships, the incident); `telemetry.json` (metres from home, limits, targets) | [`fleet_base.py`](../../examples/drone-fleet/app/fleet_base.py), [`vehicle_pilot.py`](../../examples/drone-fleet/app/vehicle_pilot.py) |
-| Vision | PDOK's aerial photo of the frame under the vehicle (Esri out at sea), with the simulation's containers drawn in | `findings`: a one-line summary, short observations, an alert flag; during a search the containers' places in the frame as fractions, mapped to sightings | [`vision.py`](../../examples/drone-fleet/app/vision.py); unmerged work adds the simulator's own camera as a source |
+| State | each vehicle's `/state`: position, battery, phase; the stations' stock; the ships AIS hears | `fleet.json` (flat: vehicles, stations, zones, findings, ships, the incident); `telemetry.json` (metres from home, limits, targets) | `fleet_base.py`, `vehicle_pilot.py` |
+| Vision | PDOK's aerial photo of the frame under the vehicle (Esri out at sea), with the simulation's containers drawn in | `findings`: a one-line summary, short observations, an alert flag; during a search the containers' places in the frame as fractions, mapped to sightings | `vision.py`; unmerged work adds the simulator's own camera as a source |
 | Operator's hand | a webcam and a hand tracker | `info.tempo`, `info.cue.<section>`, `stop.all` on the orchestra's bus | planned for the orchestra; not in the repository |
-| Template | a fake world in memory | `observe(bot_id)` as text, `watch()` as events | [`examples/world-adapter`](../../examples/world-adapter/README.md) |
+| Template | a fake world in memory | `observe(bot_id)` as text, `watch()` as events | `world-adapter/` (private repo `axlr-bots-examples`) |
 
 ## The template
 
-[`examples/world-adapter`](../../examples/world-adapter/README.md) is the shape a new adapter starts from: Python, the standard library only, runnable as it is.
+`world-adapter/` in the private repo `axlr-bots-examples` is the shape a new adapter starts from: Python, the standard library only, runnable as it is.
 
 ```text
 world-adapter/
@@ -86,7 +86,7 @@ Acceptance for a new adapter, before a world is announced:
 
 ## Where it goes in the code
 
-Nowhere in `domain/`, `application/` or `adapters/`: the control plane has every primitive. A new world adds `examples/<world>/` with its service, its adapter, a bot definition per creature and a Helm release of its own; the port fleet's files stay as they are.
+Nowhere in `domain/`, `application/` or `adapters/`: the control plane has every primitive. A new world adds `<world>/` to the private repo `axlr-bots-examples` with its service, its adapter, a bot definition per creature and a Helm release of its own; the port fleet's files stay as they are.
 
 ## Consequences
 

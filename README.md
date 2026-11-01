@@ -21,7 +21,7 @@ systemctl --user enable --now axlr-bots.service axlr-node.service
 ## Your first bot
 
 ```bash
-axlr-bots bot register --file examples/bot.json                                  # reads its workspace, manual trigger, any node
+axlr-bots bot register --file cmd/axlr-bots/testdata/bot.json                                  # reads its workspace, manual trigger, any node
 axlr-bots bot enable bot
 axlr-bots task submit bot --objective "List the files in your workspace" --key first-1
 axlr-bots task get task-…                                                        # Pending → Running on this host → Completed
@@ -74,8 +74,6 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | Let a bot warn or recall its teammates with an event, and follow the team's timeline | [Events](docs/reference/bot-definition.md#events), [ADR](docs/architecture/groups-and-events.md) |
 | Add a host: enrollment token, mutual TLS, revocation | [Add a host](docs/runbooks/add-a-host.md) |
 | Run the node agent as a sidecar beside a service in a Kubernetes pod, with Helm | [Sidecar](docs/runbooks/sidecar.md) |
-| Install the demo fleet: autonomous vehicles in a port (ArduPilot SITL quads, rovers, a plane), a dispatcher and a logistics bot, a pilot bot per vehicle whose every launch waits for a person, maintenance stations and a live map, its own control plane in the namespace | [Drone fleet](docs/runbooks/drone-fleet.md) |
-| Run a simulated search for containers lost overboard: drift from wind and current, a plane that sweeps, quads that confirm, real aerial photos (PDOK, CC BY 4.0) with the containers drawn in for the vision model, live AIS ships, every takeoff approved on a phone, a report at the end | [Drone fleet, containers overboard](docs/runbooks/drone-fleet.md#7-containers-overboard) |
 | Watch the fleet and approve calls from a desktop window | [Control panel](panel/README.md) |
 | Call the control plane over HTTP | [Operator API](docs/reference/operator-api.md) |
 | See what a node and the control plane say to each other | [Node protocol](docs/reference/node-protocol.md) |
@@ -83,7 +81,7 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | Look up a command, read a report | [Command reference](docs/reference/cli.md) |
 | Recover after a crash, a silent node or a lost control plane | [Recovery](docs/runbooks/recovery.md) |
 | Understand who keeps, decides and trusts what; what is next and left out | [Control plane, node and AXLR](docs/architecture/control-plane-node-axlr.md) |
-| Bring a world of your own to the bots (a simulation, a camera, a sensor, a hand) as text, with an adapter beside it and nothing new in the control plane | [Input adapters](docs/architecture/input-adapters.md), [template](examples/world-adapter/README.md) |
+| Bring a world of your own to the bots (a simulation, a camera, a sensor, a hand) as text, with an adapter beside it and nothing new in the control plane | [Input adapters](docs/architecture/input-adapters.md) (its template: `world-adapter/` in the private repo `axlr-bots-examples`) |
 | Read the live run on a real host and the demo script | [Live run](docs/live-run.md) |
 
 [Documentation home](docs/index.md) lists every guide.

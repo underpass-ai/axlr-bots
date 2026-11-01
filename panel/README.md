@@ -58,7 +58,7 @@ The panel reads the control plane every 3 seconds, in the background; the window
 | **Desktop notices**: when a task starts waiting for your OK ("bot asks for your OK", what it wants to call) or a teammate warns, the desktop shows a notice with the control plane it comes from; a click opens the task or the teams and brings the panel forward. The first read after connecting stays quiet | | |
 | **Settings**: the API address, the CA and the token file; the theme | <img src="docs/screenshots/settings-light.png" width="300"> | <img src="docs/screenshots/settings-dark.png" width="300"> |
 
-The screenshots are the live control plane of the [port fleet](../docs/runbooks/drone-fleet.md): eight nodes (the fleet base, three quadcopters, two rovers, a supply rover and a plane, each a node agent beside its autopilot in a pod), nine bots, and four pilots waiting for a person before they take off. [The live run](docs/live-run.md) shows a task sent to a node and a write approved, both from the panel.
+The screenshots are the live control plane of the port fleet (private repo `axlr-bots-examples`): eight nodes (the fleet base, three quadcopters, two rovers, a supply rover and a plane, each a node agent beside its autopilot in a pod), nine bots, and four pilots waiting for a person before they take off. [The live run](docs/live-run.md) shows a task sent to a node and a write approved, both from the panel.
 
 ## Made to be read fast
 

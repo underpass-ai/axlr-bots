@@ -10,7 +10,7 @@ import (
 func TestSubscriptionCommands(t *testing.T) {
 	c := cli{t: t, state: t.TempDir(), axlr: fakeAXLR(t, "completed"), socket: ""}
 	for _, name := range []string{"bot-team-a.json", "bot-team-b.json"} {
-		if code, _, errText := c.run("bot", "register", "--file", filepath.Join("..", "..", "examples", name)); code != exitOK {
+		if code, _, errText := c.run("bot", "register", "--file", filepath.Join("testdata", name)); code != exitOK {
 			t.Fatalf("register %s: %s", name, errText)
 		}
 	}

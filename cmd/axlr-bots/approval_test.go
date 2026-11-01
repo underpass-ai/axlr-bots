@@ -23,7 +23,7 @@ func TestTheWriteNeverRunsWithoutTheApproval(t *testing.T) {
 	}
 	state := t.TempDir()
 	c := cli{t: t, state: state, axlr: bin}
-	code, bot := c.json("bot", "register", "--file", filepath.Join("..", "..", "examples", "bot-act-with-approval.json"))
+	code, bot := c.json("bot", "register", "--file", filepath.Join("testdata", "bot-act-with-approval.json"))
 	if code != exitOK || bot["level"] != "act-with-approval" {
 		t.Fatalf("register: %d %v", code, bot)
 	}

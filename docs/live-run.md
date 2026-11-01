@@ -1,12 +1,12 @@
 # Live run
 
-What the whole thing does on one host, user-level, against the real AXLR and a model. The script that runs it is [`examples/demo.sh`](../examples/demo.sh); the output below is from 24 October 2026 with `claude-haiku-5.5` through OpenRouter and an `axlr-tui` built from AXLR's execution-policy branch (the policy flag, not yet the correlation flags). The host is shown as `host-1`, the home directory as `~`.
+What the whole thing does on one host, user-level, against the real AXLR and a model. The script that runs it is `basics/demo.sh` in the private repo `axlr-bots-examples`, next to a clone of this one; the output below is from 24 October 2026 with `claude-haiku-5.5` through OpenRouter and an `axlr-tui` built from AXLR's execution-policy branch (the policy flag, not yet the correlation flags). The host is shown as `host-1`, the home directory as `~`.
 
 ## The demo script
 
 ```bash
 export OPENROUTER_API_KEY=...
-AXLR_TUI=/path/to/axlr-tui sh examples/demo.sh
+AXLR_TUI=/path/to/axlr-tui sh basics/demo.sh   # from axlr-bots-examples
 ```
 
 It builds and installs both commands with the control plane listening for nodes on `127.0.0.1:7878` and for operators on `127.0.0.1:7879`, both TLS, beside its socket; creates the fleet CA; starts the control plane; enrolls this host as a node through the TLS path with a one-time token (so the installed node uses mTLS, as a node on another host would); starts it and shows it Online with its certificate; registers the example bot; submits a generic task and watches the node run it; reads the report; runs the approval path with a harmless write in the bot's workspace; restarts both services and shows the node, the bots and the tasks are still there; then the automatic triggers: a timer every ten minutes and a webhook on the example bot, the webhook fired with `curl` on the operator address with the trigger's secret, delivered twice (one task), refused without the secret, the operator route refused without the bearer token, both tasks and their executions with the trace ids, and a last restart that fires nothing twice. The installation stays running (`DEMO_UNINSTALL=1` removes it); a second run keeps the CA and the node's credentials (`DEMO_REENROLL=1` enrolls the node again, which rotates its certificate).
@@ -217,7 +217,7 @@ $ axlr-bots node list
 demo-log-service-0  Online  {"app": "demo-log-service", "namespace": "underpass-labs", "pod": "demo-log-service-0"}  e9f55a309b14da46be5d6c7a0a054dcf
 host-1              Online  {"host": "host-1"}
 host-2              Online  {"host": "host-2", …}
-$ axlr-bots bot register --file examples/sidecar/bot-log-summariser.json && axlr-bots bot enable log-summariser
+$ axlr-bots bot register --file cmd/axlr-bots/testdata/bot-log-summariser.json && axlr-bots bot enable log-summariser
 $ axlr-bots task submit log-summariser --objective "Summarise the last lines of the service log" --key k8s-sidecar-1
 task-3c30871d5c7287cdb80bea1b Pending trace-eea9af13794c5c730555aef9
 $ axlr-bots task report task-3c30871d5c7287cdb80bea1b
@@ -317,7 +317,7 @@ The temporary node was stopped and revoked and the bot paused afterwards.
 
 ## Delegation between bots (gx10, 25 Oct 2026)
 
-The installed control plane was replaced by this build (the old binary kept as `axlr-bots.before-delegation`); `gx10-ff95`, `wrx80` and `demo-log-service-0` stayed Online and their node binaries were not touched. A temporary dedicated node, `gx10-deleg`, enrolled with a one-time token and ran this build's `axlr-node` with an `axlr-tui` built from AXLR `main` (`81a327a`, 0.14.0 plus #179–#182). The two example bots, [`bot-delegating.json`](../examples/bot-delegating.json) (`bot-a`) and [`bot-delegate-target.json`](../examples/bot-delegate-target.json) (`bot-b`), were placed on it; both `observe`, haiku-5.5.
+The installed control plane was replaced by this build (the old binary kept as `axlr-bots.before-delegation`); `gx10-ff95`, `wrx80` and `demo-log-service-0` stayed Online and their node binaries were not touched. A temporary dedicated node, `gx10-deleg`, enrolled with a one-time token and ran this build's `axlr-node` with an `axlr-tui` built from AXLR `main` (`81a327a`, 0.14.0 plus #179–#182). The two example bots, [`bot-delegating.json`](../cmd/axlr-bots/testdata/bot-delegating.json) (`bot-a`) and [`bot-delegate-target.json`](../cmd/axlr-bots/testdata/bot-delegate-target.json) (`bot-b`), were placed on it; both `observe`, haiku-5.5.
 
 **A task that needs the other bot's answer.** `bot-a` may ask `bot-b`, `maxDepth: 1`:
 
@@ -360,8 +360,8 @@ Three tests run the real binary when asked; everything else runs against the sta
 
 ## The offline demo
 
-[`examples/phase0-demo.sh`](../examples/phase0-demo.sh) runs the single-process flow with no daemon and no node: register, enable, submit, `task run`, read the result, resubmit the same key and see that no second execution happens. Without `AXLR_TUI` it uses [`examples/fake-axlr-tui`](../examples/fake-axlr-tui), a shell stand-in that prints a finished turn and its result object, so it needs no model provider:
+`basics/phase0-demo.sh` in the private repo `axlr-bots-examples` runs the single-process flow with no daemon and no node: register, enable, submit, `task run`, read the result, resubmit the same key and see that no second execution happens. Without `AXLR_TUI` it uses `basics/fake-axlr-tui`, a shell stand-in that prints a finished turn and its result object, so it needs no model provider:
 
 ```bash
-sh examples/phase0-demo.sh
+sh basics/phase0-demo.sh   # from axlr-bots-examples
 ```
