@@ -113,7 +113,8 @@ impl Event {
 
     pub fn tone(&self) -> EventTone {
         match self.event_type.as_str() {
-            "bot.task.completed" | "bot.enabled" | "node.registered" | "node.enrolled" | "incident.diagnosed" | "incident.resolved" => EventTone::Good,
+            "bot.task.completed" | "bot.enabled" | "node.registered" | "node.enrolled" | "incident.diagnosed"
+            | "incident.resolved" => EventTone::Good,
             "bot.task.failed"
             | "node.offline"
             | "node.revoked"
