@@ -4,6 +4,8 @@
 use std::borrow::Cow;
 use std::sync::{Mutex, MutexGuard, Once};
 
+use iced::widget::text::Wrapping;
+use iced::widget::{Text, container, text};
 use iced::{Rectangle, Settings, Size};
 use iced_test::{Simulator, simulator};
 
@@ -47,11 +49,12 @@ pub(super) fn panel_settings() -> Settings {
 
 /// Fails unless `words` show whole on `app` in a window `width` wide
 /// (and tall enough that nothing scrolls away): the layout gives their
-/// text at least the width `alone` takes with room, and no edge cuts it.
+/// text at least the width `alone` takes with room or, once it wraps,
+/// the height its lines take in its width, and no edge cuts it.
 /// The simulator finds boxes, not pixels: a text given less than it
 /// needs keeps the smaller box and is drawn past it, over a neighbour or
 /// cut at the card. `alone` gets the box the text has on the screen.
-fn shows_whole(app: &App, width: f32, words: &str, alone: impl FnOnce(Rectangle) -> El<'static>) {
+fn shows_whole(app: &App, width: f32, words: &str, alone: impl Fn(Rectangle) -> Text<'static>) {
     let _turn = turn();
     let window = Size::new(width, 2000.0);
     let mut ui = Simulator::with_size(panel_settings(), window, view::view(app));
@@ -59,15 +62,36 @@ fn shows_whole(app: &App, width: f32, words: &str, alone: impl FnOnce(Rectangle)
         .find(words)
         .unwrap_or_else(|e| panic!("{words} is not on {:?}: {e:?}", app.screen));
     let room = placed.bounds();
-    let mut ui = Simulator::with_size(panel_settings(), Size::new(4000.0, 400.0), alone(room));
-    let needs = ui.find(words).unwrap().bounds().width;
-    assert!(
-        room.width >= needs - 0.5,
-        "{words} has {} of the {needs} px it takes, {width} px wide",
-        room.width
-    );
+    let line = box_alone(words, alone(room));
+    if room.height < line.height * 1.5 {
+        assert!(
+            room.width >= line.width - 0.5,
+            "{words} has {} of the {} px it takes, {width} px wide",
+            room.width,
+            line.width
+        );
+    } else {
+        // Broken anywhere in its box's width: a word longer than the box
+        // takes more lines than the box holds.
+        let lines = box_alone(
+            words,
+            container(alone(room).wrapping(Wrapping::WordOrGlyph)).width(room.width + 0.5),
+        );
+        assert!(
+            room.height >= lines.height - 0.5,
+            "{words} has {} of the {} px high its lines take, {width} px wide",
+            room.height,
+            lines.height
+        );
+    }
     let seen = placed.visible_bounds().map_or(0.0, |b| b.width);
     assert!(seen >= room.width - 0.5, "{words} is cut, {width} px wide");
+}
+
+/// The box `words` take drawn alone in a wide window.
+fn box_alone<'a>(words: &str, alone: impl Into<El<'a>>) -> Rectangle {
+    let mut ui = Simulator::with_size(panel_settings(), Size::new(4000.0, 2000.0), alone.into());
+    ui.find(words).unwrap().bounds()
 }
 
 fn messages_of_click(app: &App, label: &str) -> Vec<Message> {
@@ -160,7 +184,7 @@ fn the_cost_of_the_day_shows_whole_and_the_short_counts_stay_big() {
             // In the pixel face at the size its card gives it, which its
             // line's height tells.
             shows_whole(&app, width, &cost, |room| {
-                widgets::number(cost.clone()).size(room.height / 1.3).into()
+                widgets::number(cost.clone()).size(room.height / 1.3)
             });
         }
     }
@@ -172,6 +196,56 @@ fn the_cost_of_the_day_shows_whole_and_the_short_counts_stay_big() {
             (count.height - widgets::NUMBER * 1.3).abs() < 0.01,
             "2/2 is smaller, {width} px wide"
         );
+    }
+}
+
+/// Objectives longer than Home shows: one with a path, one with a name
+/// no line can break between its words.
+const LONG_OBJECTIVES: [&str; 2] = [
+    "Write the weekly report of every node into workspace/reports/weekly-summary.txt and tell the team",
+    "Read weekly_summary_of_every_node_and_every_bot_in_the_fleet.txt and say what changed",
+];
+
+/// Gives the first task in `status` the objective `words`.
+fn set_objective(app: &mut App, status: TaskStatus, words: &str) {
+    let tasks = &mut app.fleet.as_mut().unwrap().tasks;
+    tasks.iter_mut().find(|t| t.status == status).unwrap().objective = words.to_string();
+}
+
+#[test]
+fn home_shows_what_a_waiting_task_asks_whole_beside_its_age_and_buttons() {
+    let mut app = connected();
+    let tokens = Tokens::of(app.mode);
+    for objective in ["Write hello into hello.txt"].iter().chain(&LONG_OBJECTIVES) {
+        set_objective(&mut app, TaskStatus::WaitingApproval, objective);
+        let fleet = app.fleet.as_ref().unwrap();
+        let task = fleet.waiting()[0];
+        let headline = task.headline(70);
+        let wants = format!("wants {}", fleet.call_of(&task.id).unwrap().summary(40));
+        for width in [MIN_WINDOW.width, WINDOW.width] {
+            shows_whole(&app, width, &headline, |_| text(headline.clone()));
+            shows_whole(&app, width, &wants, |_| widgets::muted(wants.clone(), tokens));
+            for button in ["Approve", "Deny", "Review"] {
+                shows_whole(&app, width, button, |_| widgets::semibold(button).size(widgets::BODY));
+            }
+        }
+    }
+}
+
+#[test]
+fn home_shows_the_latest_tasks_whole_beside_their_ages() {
+    let mut app = connected();
+    for objective in ["List the files in your workspace"].iter().chain(&LONG_OBJECTIVES) {
+        set_objective(&mut app, TaskStatus::Completed, objective);
+        let tasks = &app.fleet.as_ref().unwrap().tasks;
+        let headline = tasks
+            .iter()
+            .find(|t| t.status == TaskStatus::Completed)
+            .unwrap()
+            .headline(48);
+        for width in [MIN_WINDOW.width, WINDOW.width] {
+            shows_whole(&app, width, &headline, |_| text(headline.clone()).size(widgets::SMALL));
+        }
     }
 }
 
@@ -809,7 +883,29 @@ fn a_bot_page_shows_the_task_of_each_event_whole() {
     let tokens = Tokens::of(app.mode);
     for width in [MIN_WINDOW.width, WINDOW.width] {
         for id in [running.as_str(), "task-68ed…"] {
-            shows_whole(&app, width, id, |_| widgets::muted(id.to_string(), tokens).into());
+            shows_whole(&app, width, id, |_| widgets::muted(id.to_string(), tokens));
+        }
+    }
+}
+
+#[test]
+fn a_bot_page_keeps_the_button_that_changes_its_teams_in_sight() {
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
+    let tokens = Tokens::of(app.mode);
+    let none = "In no team: it knows no other bot";
+    for teams in [&[][..], &["ops", "night-shift", "weekly-reports", "storage"]] {
+        app.bot.as_mut().unwrap().bot.groups = teams.iter().map(|t| t.to_string()).collect();
+        for width in [MIN_WINDOW.width, WINDOW.width] {
+            shows_whole(&app, width, "Change", |_| {
+                widgets::semibold("Change").size(widgets::BODY)
+            });
+            if teams.is_empty() {
+                shows_whole(&app, width, none, |_| widgets::muted(none, tokens));
+            }
+            for team in teams {
+                shows_whole(&app, width, team, |_| text(*team).size(widgets::SMALL));
+            }
         }
     }
 }
