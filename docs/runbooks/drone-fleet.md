@@ -416,6 +416,41 @@ kubectl -n port-fleet logs deploy/fleet-gz -c gz | grep 'real time factor'
 
 The upgrade restarts every vehicle: never with a task waiting for approval.
 
+What changes with `gz.enabled`:
+
+| | SITL's own physics | gz |
+|---|---|---|
+| where a quad or rover is | SITL alone | the gz world (its pose there, `--home` = the world's origin) |
+| rangefinders | SITL's backends | the gz lidars (`rng_1..3`, the rover's four) |
+| a quad's photo | the aerial photo of its frame (PDOK/Esri), containers drawn in | its nadir camera, taken by the vehicle (`/photos/<n>.jpg`), turned by its heading |
+| ships, containers | on the maps only | also in the world (`ais-bridge`: inside the port model's bounds) |
+| the plane | SITL's own physics, the aerial photo | the same (phase 2) |
+
+The labels say which is which, in the picture itself or beside it:
+
+| What | Label |
+|---|---|
+| FPV (MJPEG) | `FPV: simulator camera · rendered port model` |
+| a quad's photo | `simulator camera · rendered port model` |
+| the plane's photo | its PDOK credit (`real aerial photo`) |
+| `/3d` | `3D view` |
+
+### The FPV in OBS
+
+From gx10, the same way as the other tunnels:
+
+```bash
+ssh -L 127.0.0.1:18081:127.0.0.1:18081 wrx80 kubectl -n port-fleet port-forward svc/fleet-gz 18081:8081
+```
+
+In OBS a **Browser Source** per vehicle: URL `http://127.0.0.1:18081/fpv/quad-0`, 960 × 540. The label is drawn inside each frame, so OBS cannot lose it. `http://127.0.0.1:18081/latest/quad-0.jpg` is the latest photo, `/latest/quad-0-fpv.jpg` the latest FPV frame.
+
+### Phase 2 (not done)
+
+- The plane in gz: `zephyr` with `gazebo-zephyr.parm`, UDP 9062; its missions land on a runway, the zephyr is a flying wing, so they need retuning.
+- A gimbal on the quads (the nadir camera is fixed: ±10° of roll is ~6 m at 35 m).
+- The RealSense D455 as a `depth_camera` instead of three lidar columns.
+
 Back to SITL's own physics, and Jupyter's GPU back:
 
 ```bash
