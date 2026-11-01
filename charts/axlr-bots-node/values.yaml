@@ -94,6 +94,14 @@ sidecar:
   # More environment for the node, as container env entries: Jev's key
   # for Jev bots, say ({name: TYPESAFE_API_KEY, valueFrom: {secretKeyRef: …}}).
   env: []
+  # The mcp.json a Jev bot's program finds its MCP server in: one key of a
+  # ConfigMap in the release's namespace, mounted read-only at
+  # /etc/axlr-node/mcp/mcp.json and named to the node by
+  # AXLR_NODE_MCP_CONFIG. Empty: the node looks in its HOME's
+  # .config/axlr/mcp.json, which the image does not hold.
+  mcp:
+    existingConfigMap: ""
+    key: mcp.json
 
 networkPolicy:
   enabled: true
