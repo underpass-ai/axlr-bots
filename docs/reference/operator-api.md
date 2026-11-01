@@ -18,7 +18,7 @@ The enums are open (`x-extensible-enum`): a client reads a status, a trigger or 
 | Listener | Flag | Serves | Credential |
 |---|---|---|---|
 | Unix socket `<state>/axlr-bots.sock` (mode 0660) | always | every route: the CLI's path | the socket's permissions (same host, same user); the caller is trusted |
-| node address (TLS 1.3) | `serve --listen <addr>` | `/healthz`, enrollment and the six node routes only ([protocol](node-protocol.md)) | the node's client certificate |
+| node address (TLS 1.3) | `serve --listen <addr>` | `/healthz`, enrollment and the node routes only ([protocol](node-protocol.md#messages)) | the node's client certificate |
 | operator address (TLS 1.3) | `serve --api-listen <addr>` | the operator routes below and `/healthz`; no node route | `Authorization: Bearer <token>`; a webhook its own secret or signature |
 
 The TLS certificate of both addresses is issued by the fleet CA (`ca init`; clients pass `--cacert <state>/ca/ca.crt`). The bearer token is generated at the first start with `--api-listen`, written to `<state>/api.token` (mode 0600, `--api-token-file` names another path) and never logged. A node certificate is no credential on the operator address, which keeps node identity and operator access apart (operator client certificates would need their own CA profile; the bearer token is the one credential). Bodies are bounded (1 MiB; a webhook 256 KiB) and unknown fields are refused.

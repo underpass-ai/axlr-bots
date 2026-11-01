@@ -16,11 +16,12 @@ The adapter runs `axlr-tui` as a subprocess:
 | Policy | `--policy <state>/policies/<execution>.json` | the bot's level and tools, when the build takes the flag |
 | Correlation | `--correlation <state>/correlation/<execution>.json` | the four ids, when the build takes the flag |
 | Budget | `--budget <file>` | the bot's budgets (a delegated task's grant), when the build takes the flag |
+| Messages | `--steer-file <state>/steer/<execution>.jsonl` | the operator's and the teammates' messages to the running task, appended by the node; when the build takes the flag ([node protocol](../reference/node-protocol.md#the-agents-loop)) |
 | Delegation tool | `--plugin <state>/mcp/<execution>.json` | the node's `axlr-node mcp-relay` to the execution's socket, for a bot that may delegate, under an enforced policy ([delegation](delegation.md)) |
 | Timeout | the process is stopped | the bot's `taskTimeoutSeconds` (15 minutes when absent) |
 | Decision | `--session <id> --decide approve\|deny [--call <id>] --policy <file> --json` | an approval or denial of the pending call |
 
-The adapter reads `axlr-tui --help` once to learn which flags the build takes (`-policy`, `-correlation`, `-budget`, `-execution`) and `--version` for the node's capabilities. With `-correlation` it passes `--correlation` (and `--budget`); with `-execution` alone it passes one `--execution <bundle>` holding the policy, the budget and the correlation in place of `--policy`; without any of them the files are still written as evidence and the execution says `"carried": false`. AXLR v0.14.0 takes `--policy`, `--correlation` and `--budget`.
+The adapter reads `axlr-tui --help` once to learn which flags the build takes (`-policy`, `-correlation`, `-budget`, `-execution`, `-steer-file`) and `--version` for the node's capabilities. With `-correlation` it passes `--correlation` (and `--budget`); with `-execution` alone it passes one `--execution <bundle>` holding the policy, the budget and the correlation in place of `--policy`; without any of them the files are still written as evidence and the execution says `"carried": false`. AXLR v0.14.0 takes `--policy`, `--correlation` and `--budget`.
 
 ## The policy
 

@@ -11,7 +11,7 @@ pod demo-log-service-0 (StatefulSet)                                    control 
 │   state: PVC per replica (key, certificate, traces)         │
 │   /tmp: tmpfs (AXLR's diagnostics and sessions)             │ ─────▶ model provider (HTTPS)
 └─────────────────────────────────────────────────────────────┘
-  NetworkPolicy: no ingress; egress to DNS, the control plane and the model provider only
+  NetworkPolicy: no ingress; egress to DNS, the control plane and the model provider only (and the broker, with bus.kind nats)
 ```
 
 ## Before you start
@@ -148,6 +148,29 @@ axlr-bots-node:
 ```
 
 The workload must be a StatefulSet whose pods carry an `app` label. A NetworkPolicy applies to the whole pod, so the chart cannot add one without restricting your service: put `axlr-bots-node.inject.egress` in your own policy, beside your service's rules. `sidecar.native: true` adds `restartPolicy: Always`, for a native sidecar under `initContainers`.
+
+## Values
+
+[`values.yaml`](../../charts/axlr-bots-node/values.yaml) says the same, field by field; `values.schema.json` checks the types.
+
+| Value | Default | What it does |
+|---|---|---|
+| `image.repository`, `image.digest` | `ghcr.io/underpass-ai/axlr-bots-node`, none | the node image, by digest only (`sha256:<64 hex>`); the image is not published, so push it and set both |
+| `controlPlane.url` | none | the control plane's node address as the pod reaches it, `https://host:port` |
+| `controlPlane.ca.existingConfigMap` | none | a ConfigMap with `ca.crt` to pin the fleet CA instead of the token's |
+| `enrollment.existingSecret` | none | the Secret with one token per node id, read at a first start only |
+| `model.enabled`, `model.apiKey.existingSecret`, `model.apiKey.key` | `true`, none, `OPENROUTER_API_KEY` | the model key the sidecar alone reads; `model.enabled: false` for a node of Jev bots only, which needs no key |
+| `bus.kind` | `direct` | `nats` reads the control plane's pushes from a broker ([bus port](../architecture/bus-port.md)); needs `bus.nats.url` (`tls://host:4222`), `bus.nats.cidr` and `bus.nats.port` (4222) for the egress, and the broker's CA in `bus.nats.ca.existingConfigMap` or `bus.nats.ca.existingSecret` (only its `ca.crt` is mounted) |
+| `node.idPrefix`, `node.appLabelKey`, `node.labels`, `node.dedicated` | empty, `app`, none, `true` | the node id `<idPrefix><pod name>`, the pod label read as the `app` label, extra labels, and whether it runs only the bots placed on it |
+| `sidecar.name`, `sidecar.native`, `sidecar.resources` | `axlr-node`, `false`, 50m/128Mi requested, 1 CPU/512Mi limit | the container; `native` adds `restartPolicy: Always` for `initContainers` |
+| `sidecar.workspaces` | none | `[{bot, volume, subPath?}]`: a pod volume mounted read-only as that bot's workspace |
+| `sidecar.state.persistent`, `.size`, `.storageClassName` | `true`, `1Gi`, the cluster's default | the node's state: a PVC per replica, or an emptyDir |
+| `sidecar.workspacesSize`, `sidecar.tmpSize` | `1Gi`, `64Mi` | the scratch workspaces and AXLR's tmpfs |
+| `sidecar.env` | none | more container env entries, such as `TYPESAFE_API_KEY` from a Secret for Jev bots |
+| `networkPolicy.enabled`, `.controlPlaneCIDR`, `.dns`, `.modelProvider` | `true`, `<ip>/32` of `controlPlane.url`, kube-dns, HTTPS to the public ranges | the demo's policy; a chart that includes the templates puts `axlr-bots-node.inject.egress` in its own |
+| `nodeSelector`, `tolerations`, `affinity` | none | where the demo pod and the chart test run |
+| `demo.*` | off | the demo StatefulSet ([above](#4-install-the-demo)) and its HTTPS variant ([below](#the-service-over-https-with-mutual-tls)) |
+| `tests.enabled` | `true` | the chart test (`axlr-node check`), with the demo |
 
 ## What the sidecar keeps where
 

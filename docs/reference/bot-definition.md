@@ -272,7 +272,7 @@ axlr-bots bot events bot --limit 100                 # the bot's newest events, 
 
 A task's `priority` is `urgent` when it went first ([urgent tasks](#urgent-tasks)), absent otherwise.
 
-A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `delegation`, `groups`, `events`, `subscriptions`, `model`, `budgets`) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`cmd/axlr-bots/testdata/bot-triggers-patch.json`](../../cmd/axlr-bots/testdata/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`cmd/axlr-bots/testdata/bot-act-with-approval.json`](../../cmd/axlr-bots/testdata/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
+A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `delegation`, `groups`, `events`, `subscriptions`, `runtime`, `model`, `budgets`) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`cmd/axlr-bots/testdata/bot-triggers-patch.json`](../../cmd/axlr-bots/testdata/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`cmd/axlr-bots/testdata/bot-act-with-approval.json`](../../cmd/axlr-bots/testdata/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
 
 ## Tasks
 
