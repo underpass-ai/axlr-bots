@@ -697,7 +697,10 @@ function renderShips(f, now) {
 
 function render(f) {
   // Say "live AIS" only while the ships really are live.
-  document.getElementById("simnote").textContent = "simulated vehicles and containers · real imagery" + ((f.ais || {}).status === "live" ? " and live AIS" : "");
+  // The photos come from the simulator's cameras when the vehicles fly in gz.
+  const simCamera = (f.photos || []).some(p => p.imagery === "simulator");
+  document.getElementById("simnote").textContent = "simulated vehicles and containers · " +
+    (simCamera ? "simulator camera · rendered port model" : "real imagery") + ((f.ais || {}).status === "live" ? " and live AIS" : "");
   const now = performance.now();
   drawStatic(f);
   live("live · " + new Date(f.updated).toLocaleTimeString(), "var(--ok)");

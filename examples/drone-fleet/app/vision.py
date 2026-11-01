@@ -45,11 +45,14 @@ SOURCES = {"pdok": PDOK, "esri": ESRI}
 CREDITS = {
     "pdok": "Luchtfoto © Beeldmateriaal Nederland / PDOK (CC BY 4.0)",
     "esri": "Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+    "simulator": "Simulator camera: rendered port model (OpenStreetMap data, ODbL)",
 }
+# How long the station waits for a vehicle to fetch its camera's picture.
+PHOTO_WAIT_S = 5
 BLANK_MEAN = 240      # a frame brighter than this on average is "no data", not a photo
 PROMPT = (
     "You are the image analyst of an inspection fleet at the Port of Rotterdam (Maasvlakte 2). "
-    "This aerial photo was taken by {kind} {vehicle} at {alt:.0f} m during mission '{mission}'. "
+    "{what} was taken by {kind} {vehicle} at {alt:.0f} m during mission '{mission}'. "
     "Report what matters for port operations and safety: ships, quay cranes, container stacks, trucks, "
     "people, oil sheen or other water pollution, debris, fire or smoke, damage, anything unusual. "
     'Answer with JSON only: {{"objects": ["short noun phrases, with counts"], "findings": ["short notable observations"], '
@@ -57,7 +60,7 @@ PROMPT = (
 )
 SEARCH_PROMPT = (
     "You are the image analyst of a search for shipping containers lost overboard off Maasvlakte 2, Rotterdam. "
-    "This aerial photo was taken by {kind} {vehicle} at {alt:.0f} m during mission '{mission}'. "
+    "{what} was taken by {kind} {vehicle} at {alt:.0f} m during mission '{mission}'. "
     "Report what matters: floating shipping containers first, then ships, debris, oil sheen, people in the water. "
     "For each floating container you can see, give its centre as fractions of the image width and height from the top-left corner. "
     'Answer with JSON only: {{"containers": [{{"x": 0.0-1.0, "y": 0.0-1.0, "size": "20ft|40ft|unsure"}}], '
@@ -65,6 +68,8 @@ SEARCH_PROMPT = (
     '"alert": true or false (true for a container or a safety or pollution issue), "summary": "one sentence"}}'
 )
 PHOTO_ID = re.compile(r"^[a-z0-9-]{1,80}$")
+VEHICLE_PHOTO = re.compile(r"^/photos/[0-9]{1,9}\.jpg$")
+WHAT = {"simulator": "This photo from the vehicle's downward camera (the image's top is the vehicle's bow)"}
 
 
 class NoImagery(Exception):
@@ -101,9 +106,17 @@ def fetch_imagery(bbox, sources=("pdok", "esri"), get=_get):
     raise NoImagery("; ".join(tried))
 
 
-def frame(lat, lon, alt_m):
-    """The photo's frame in Web Mercator metres, 4:3, for an 84-degree lens no narrower than 120 m."""
-    width = max(120.0, 1.8 * max(alt_m, 10.0))
+def fetch_vehicle_photo(state_url, photo, get=_get):
+    """The picture a vehicle's camera took: photo is its /photos/<n>.jpg beside /state."""
+    if not VEHICLE_PHOTO.match(photo or ""):
+        raise ValueError(f"not a vehicle photo: {photo!r}")
+    base = state_url[:-len("/state")] if state_url.endswith("/state") else state_url.rstrip("/")
+    return get(base + photo)
+
+
+def frame(lat, lon, alt_m, min_width=120.0):
+    """The photo's frame in Web Mercator metres, 4:3, for an 84-degree lens no narrower than min_width."""
+    width = max(min_width, 1.8 * max(alt_m, 10.0))
     mx, my = sprites.mercator(lat, lon)
     k = 1 / math.cos(math.radians(lat))
     return mx - width * k / 2, my - width * 0.375 * k, mx + width * k / 2, my + width * 0.375 * k
@@ -113,6 +126,7 @@ class Vision:
     def __init__(self, store_dir, model, api_key, every, max_per_flight, workers=3, search_max_per_flight=80, sources=("pdok", "esri")):
         self.sources = tuple(x for x in sources if x in SOURCES) or ("pdok", "esri")
         self.search = None                # the incident's hooks (fleet_base.Base), set by the base
+        self.vehicle_urls = {}            # vehicle -> its /state URL, set by the base
         self.search_max_per_flight = search_max_per_flight
         self.store = store_dir
         self.model = model
@@ -135,6 +149,8 @@ class Vision:
             key = (vehicle, started, shot["n"])
             if key in self.seen:
                 continue
+            if "photo" in shot and shot["photo"] is None and time.time() - shot.get("t", 0) < PHOTO_WAIT_S:
+                continue    # the vehicle is still fetching its camera's picture
             self.seen.add(key)
             taken = self.per_flight.get((vehicle, started), 0)
             searching = self.search is not None and self.search.searching()
@@ -177,27 +193,35 @@ class Vision:
                 log.warning("photo %s/%s: %s", job["vehicle"], job["n"], exc)
 
     def _analyse(self, job):
-        bbox = frame(job["lat"], job["lon"], job["alt_m"])
-        try:
-            image, source = fetch_imagery(bbox, self.sources)
-        except NoImagery as exc:
-            # Never a white frame to the model: the photo is left out.
-            log.info("%s photo %d: no imagery (%s)", job["vehicle"], job["n"], exc)
-            return
         searching = job.get("searching") and self.search is not None
-        if searching:
-            # The simulation's containers inside this frame, drawn where they float now.
-            image, _ = sprites.compose(image, bbox, self.search.floaters())
+        if job.get("photo"):
+            # The simulator's camera saw it: the containers are in its world, the
+            # frame is the lens's (no 120 m floor), turned with the vehicle.
+            bbox = frame(job["lat"], job["lon"], job["alt_m"], min_width=0)
+            image = fetch_vehicle_photo(self.vehicle_urls[job["vehicle"]], job["photo"])
+            source = "simulator"
+        else:
+            bbox = frame(job["lat"], job["lon"], job["alt_m"])
+            try:
+                image, source = fetch_imagery(bbox, self.sources)
+            except NoImagery as exc:
+                # Never a white frame to the model: the photo is left out.
+                log.info("%s photo %d: no imagery (%s)", job["vehicle"], job["n"], exc)
+                return
+            if searching:
+                # The simulation's containers inside this frame, drawn where they float now.
+                image, _ = sprites.compose(image, bbox, self.search.floaters())
         photo_id = f"{job['vehicle']}-{int(job['t'])}-{job['n']}"
         with open(os.path.join(self.store, photo_id + ".jpg"), "wb") as f:
             f.write(image)
         if self.api_key:
-            analysis, cost = self._ask(image, job, searching)
+            analysis, cost = self._ask(image, job, searching, source)
         else:
             analysis, cost = {"summary": "no vision model configured", "objects": [], "findings": [], "alert": False, "containers": []}, 0.0
         detections = []
         if searching:
-            detections = self.search.observe(job["vehicle"], job["kind"], job["alt_m"], job["t"], analysis.get("containers", []), bbox, photo_id, cost)
+            yaw = job.get("yaw") if source == "simulator" else None
+            detections = self.search.observe(job["vehicle"], job["kind"], job["alt_m"], job["t"], analysis.get("containers", []), bbox, photo_id, cost, yaw)
         analysis.pop("containers", None)
         result = {"id": photo_id, "vehicle": job["vehicle"], "kind": job["kind"], "mission": job["mission"], "n": job["n"],
                   "lat": job["lat"], "lon": job["lon"], "alt_m": job["alt_m"], "t": job["t"], "analysis": analysis,
@@ -209,7 +233,7 @@ class Vision:
             del self.results[:-200]
         log.info("%s photo %d: %s%s", job["vehicle"], job["n"], analysis.get("summary", ""), " [ALERT]" if analysis.get("alert") else "")
 
-    def _ask(self, image, job, searching=False):
+    def _ask(self, image, job, searching=False, source=""):
         prompt = SEARCH_PROMPT if searching else PROMPT
         body = {
             "model": self.model,
@@ -217,7 +241,8 @@ class Vision:
             "reasoning": {"effort": "low"},
             "usage": {"include": True},
             "messages": [{"role": "user", "content": [
-                {"type": "text", "text": prompt.format(kind=job["kind"], vehicle=job["vehicle"], alt=job["alt_m"], mission=job["mission"])},
+                {"type": "text", "text": prompt.format(what=WHAT.get(source, "This aerial photo"), kind=job["kind"], vehicle=job["vehicle"],
+                                                       alt=job["alt_m"], mission=job["mission"])},
                 {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(image).decode()}},
             ]}],
         }

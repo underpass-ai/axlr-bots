@@ -94,6 +94,7 @@ class Base:
         self.pool = ThreadPoolExecutor(max_workers=max(4, len(vehicles)))
         self.vision = vision.from_env()
         self.vision.search = self
+        self.vision.vehicle_urls = vehicles
         self.coast = [tuple(p) for p in layout.get("coast") or []]
         self.cp = control_plane.ControlPlane(os.environ.get("CP_URL", ""), os.environ.get("CP_CA_FILE", ""),
                                              os.environ.get("CP_TOKEN_FILE", ""), os.environ.get("CP_WEBHOOK_SECRET_FILE", ""))
@@ -301,12 +302,12 @@ class Base:
         with self.lock:
             return self.incident.floaters() if self.incident else []
 
-    def observe(self, vehicle, kind, alt_m, t, containers, bbox, photo_id, cost):
+    def observe(self, vehicle, kind, alt_m, t, containers, bbox, photo_id, cost, yaw=None):
         with self.lock:
             if not self.incident:
                 return []
             self.incident.cost["vision_usd"] = round(self.incident.cost["vision_usd"] + cost, 5)
-            seen = self.incident.observe(vehicle, kind, alt_m, t, containers, bbox, photo_id)
+            seen = self.incident.observe(vehicle, kind, alt_m, t, containers, bbox, photo_id, yaw)
             for d in seen:
                 if d["container"]:
                     st = self.incident.state[d["container"]]
