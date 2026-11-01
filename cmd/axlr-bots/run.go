@@ -234,7 +234,8 @@ func printUsage(w io.Writer) {
   bot update <bot-id> --file <patch.json>
                                       replace the fields the patch names (mission, level,
                                       allowedTools, toolRules, triggers, placement, approvals,
-                                      delegation, groups, events, subscriptions, model, budgets)
+                                      delegation, groups, events, subscriptions, model, budgets,
+                                      runtime)
   bot events <bot-id> [--limit 100]   the bot's newest events, oldest first
   bot subscribe <bot-id> <topic> [--mode task|message|note] [--from a,b]
                                       make the bot listen to a topic of its teams
