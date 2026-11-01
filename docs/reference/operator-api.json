@@ -3801,9 +3801,13 @@
             "type": "integer",
             "description": "alerts received while it was already open"
           },
+          "retries": {
+            "type": "integer",
+            "description": "triages an alert started again while it was Escalated, since its last diagnosis"
+          },
           "costUsd": {
             "type": "number",
-            "description": "what its tasks' executions reported"
+            "description": "what its tasks' executions reported, delegated children included"
           },
           "openedAt": {
             "type": "string",

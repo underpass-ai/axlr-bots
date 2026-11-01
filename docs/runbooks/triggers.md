@@ -39,7 +39,7 @@ receivers:
         http_config:
           tls_config: {ca_file: /etc/alertmanager/axlr-ca.crt}
           http_headers:                      # Alertmanager 0.27 or later; the route takes the trigger's own secret
-            X-Axlr-Secret: {secrets: ["<the trigger's secret>"]}
+            X-Axlr-Secret: {files: [/etc/alertmanager/secrets/axlr-trigger/secret]}
 route:
   group_by: [alertname, namespace]
   group_wait: 30s
@@ -47,6 +47,8 @@ route:
   repeat_interval: 2m
   receiver: axlr-bots
 ```
+
+The secret is a mounted file (`files:`), not inline (`secrets:`): prometheus-operator re-renders Alertmanager's configuration and writes an inline `secrets:` value as the literal `<secret>`, which the trigger refuses with `403`. With kube-prometheus-stack, put the secret in a Secret, list it under `alertmanager.alertmanagerSpec.secrets` (it is mounted at `/etc/alertmanager/secrets/<name>/`) and name the file.
 
 Check: the first firing group answers `201`, `"action": "opened"`, the incident and its triage task; every resend of the same group (`repeat_interval`) answers `200`, `"action": "repeated"`, no task, and `incident get` shows `repeats` growing and the new alerts under `fingerprints`; when the group goes green, `"action": "resolved"`, the incident is `Resolved` and no task was started; a group that fires again within 30 minutes answers `"action": "reopened"` with a new task and `"cycle": 2`. After an hour of resends, `incident list` holds one incident for the group. A body that is not Alertmanager's answers `400`.
 
@@ -57,6 +59,7 @@ An incident is one alert group of a tenant and the triage tasks one bot ran for 
 ```text
 new group key ──▶ Open, cycle 1, a triage task ──task Completed──▶ Diagnosed (the answer is the diagnosis)
                       └──task Failed, Expired or Cancelled──▶ Escalated (a person must look)
+same key while Escalated ──▶ Open, cycle + 1, a new task (twice; then a repeat, left to a person)
 same key, not Resolved ──▶ a repeat: its alerts added, no task
 resolved group, or incident resolve ──▶ Resolved ──same key within 30 minutes──▶ Open, cycle + 1, a new task
                                                   └─same key later──▶ a new incident
@@ -66,7 +69,7 @@ resolved group, or incident resolve ──▶ Resolved ──same key within 30 
 |---|---|
 | `Open` | nobody has said the cause yet: its triage task is pending or running |
 | `Diagnosed` | the task completed; its answer, the cause with its evidence, is the incident's `diagnosis` |
-| `Escalated` | the task failed, expired or was cancelled; `reason` says which, and a person takes it from there |
+| `Escalated` | the task failed, expired or was cancelled; `reason` says which. The next alert of the group starts another triage (`"action": "reopened"`, the event's `retry` true), at most twice since the last diagnosis (`retries`); after that a person takes it from there |
 | `Resolved` | its alerts went green, or a person closed it; a running task still settles and its cost is still added, but it moves the incident no further |
 
 ```bash
@@ -74,7 +77,7 @@ axlr-bots bot update triage --file patch.json     # {"triggers": [{"type": "manu
 axlr-bots incident open --tenant default --bot triage --group-key "HighLatency/web" \
     --title "High latency in web" --severity sev2 --fingerprints a1
 axlr-bots incident list --status Open
-axlr-bots incident get inc-…                      # alerts, cycle, taskIds, diagnosis, reason, repeats, costUsd
+axlr-bots incident get inc-…                      # alerts, cycle, taskIds, diagnosis, reason, repeats, retries, costUsd (delegated children included)
 axlr-bots incident resolve inc-… --reason "rolled back"
 ```
 
