@@ -113,20 +113,29 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             let wants: El<'a> = match fleet.call_of(&task.id) {
                 Some(call) => row![
                     icon(Icon::Wrench, 14.0, tokens.muted),
-                    muted(format!("wants {}", call.summary(40)), tokens).wrapping(Wrapping::None)
+                    muted(format!("wants {}", call.summary(40)), tokens).wrapping(Wrapping::WordOrGlyph)
                 ]
                 .spacing(6)
                 .align_y(Alignment::Center)
                 .into(),
                 None => Space::new().into(),
             };
+            // The bot and what it asks share a line while they fit and go
+            // one under the other when they do not; the age and the
+            // buttons are laid out first and keep their room.
+            let words = row![
+                bold(task.bot_id.to_string()),
+                column![text(task.headline(70)).wrapping(Wrapping::WordOrGlyph), wants].spacing(2),
+            ]
+            .spacing(14)
+            .align_y(Alignment::Center)
+            .width(Length::Fill)
+            .wrap()
+            .vertical_spacing(2);
             list = list.push(
                 row![
                     pill(Tone::Wait, "Needs OK", tokens),
-                    bold(task.bot_id.to_string()),
-                    column![text(task.headline(70)).wrapping(Wrapping::None), wants]
-                        .spacing(2)
-                        .width(Length::Fill),
+                    words,
                     muted(format::age(task.created_at, app.now), tokens),
                     super::decide::buttons(app, &task.id, tokens),
                     action(
@@ -167,6 +176,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         nodes = nodes.push(empty(Icon::Nodes, "No node yet", tokens));
     }
 
+    // A headline wraps in what the age leaves it, as on a bot's page.
     let mut latest = column![].spacing(8);
     for task in fleet.tasks.iter().take(8) {
         latest = latest.push(
@@ -176,7 +186,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
                     bold(task.bot_id.to_string()).size(SMALL),
                     text(task.headline(48))
                         .size(SMALL)
-                        .wrapping(Wrapping::None)
+                        .wrapping(Wrapping::WordOrGlyph)
                         .width(Length::Fill),
                     muted(format::age(task.created_at, app.now), tokens),
                 ]
