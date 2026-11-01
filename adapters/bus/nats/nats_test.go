@@ -67,10 +67,17 @@ func TestPushesSurviveTheNodesAndTheBrokersAbsence(t *testing.T) {
 	stop()
 	for range stream {
 	}
+	// The node is away: its stream closed, and the broker holds no pull
+	// of it. The push is on the broker once it left the outbox.
+	publisher := pusher.(*Publisher)
 	if err := pusher.Push(ctx, bustest.NodeA, application.NodePush{Execution: "exec-away"}); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(300 * time.Millisecond)
+	for deadline := time.Now().Add(10 * time.Second); len(publisher.box.sweep()) > 0; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the push made while the node was away was not published")
+		}
+	}
 	stream, err = open(ctx, bustest.NodeA)
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +102,6 @@ func TestPushesSurviveTheNodesAndTheBrokersAbsence(t *testing.T) {
 	}
 
 	// The broker goes away: the push waits in the outbox.
-	publisher := pusher.(*Publisher)
 	s.Shutdown()
 	s.WaitForShutdown()
 	if err := pusher.Push(ctx, bustest.NodeA, application.NodePush{Execution: "exec-later"}); err != nil {
