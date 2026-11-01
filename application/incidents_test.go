@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -102,6 +103,57 @@ func TestOpenIncidentOpensOnceAndRepeats(t *testing.T) {
 	}
 }
 
+// An Escalated incident whose alert comes again starts another triage,
+// IncidentEscalationRetries times; after that the alert is a repeat and
+// the incident is left to a person.
+func TestOpenIncidentRetriesAnEscalatedIncident(t *testing.T) {
+	h := newHarness()
+	bot := triageBot(t, h, "triage", "")
+	ctx := context.Background()
+	uc := NewOpenIncident(h.deps)
+	first, err := uc.Execute(ctx, alert(bot, "fp-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	escalate := func() {
+		t.Helper()
+		incident, err := h.incs.Get(ctx, first.Incident.ID())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := incident.Escalate("task failed: a tool server was down", h.clock.now); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.incs.Save(ctx, incident); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for retry := 1; retry <= domain.IncidentEscalationRetries; retry++ {
+		escalate()
+		h.clock.now = h.clock.now.Add(4 * time.Minute)
+		again, err := uc.Execute(ctx, alert(bot, "fp-a"))
+		if err != nil || again.Action != IncidentReopened || again.Task == nil || again.Incident.ID() != first.Incident.ID() || again.Incident.Status() != domain.IncidentOpen || again.Incident.Cycle() != retry+1 || again.Incident.Retries() != retry {
+			t.Fatalf("retry %d = %+v %v", retry, again, err)
+		}
+		if again.Task.IdempotencyKey() != domain.IdempotencyKey("incident:"+first.Incident.ID().String()+":"+strconv.Itoa(retry+1)) {
+			t.Errorf("retry %d key = %s", retry, again.Task.IdempotencyKey())
+		}
+		last := h.log.events[len(h.log.events)-1]
+		if last.Type != domain.EventIncidentReopened || last.Payload["retry"] != true || last.Payload["retries"] != retry {
+			t.Errorf("retry %d event = %+v", retry, last)
+		}
+	}
+	escalate()
+	h.clock.now = h.clock.now.Add(4 * time.Minute)
+	held, err := uc.Execute(ctx, alert(bot, "fp-a"))
+	if err != nil || held.Action != IncidentRepeated || held.Task != nil || held.Incident.Status() != domain.IncidentEscalated {
+		t.Fatalf("after the retries = %+v %v", held, err)
+	}
+	if len(h.tasks.tasks) != 1+domain.IncidentEscalationRetries {
+		t.Errorf("tasks = %d", len(h.tasks.tasks))
+	}
+}
+
 func TestOpenIncidentRefusals(t *testing.T) {
 	h := newHarness()
 	ctx := context.Background()
@@ -166,6 +218,47 @@ func TestOpenIncidentRefusals(t *testing.T) {
 	h.incs.fail = errBoom
 	if _, err := uc.Execute(ctx, alert(triage, "fp")); !errors.Is(err, errBoom) {
 		t.Errorf("save failure: %v", err)
+	}
+}
+
+// A delegated child's cost, and its own child's, reaches the incident of
+// the triage task they descend from; a task an event made does not.
+func TestIncidentCountsItsDelegatedChildren(t *testing.T) {
+	h := newHarness()
+	bot := triageBot(t, h, "triage", "")
+	ctx := context.Background()
+	opened, err := NewOpenIncident(h.deps).Execute(ctx, alert(bot, "fp-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ended := func(id domain.TaskID, parent domain.TaskID, depth int, event string, usd float64) {
+		t.Helper()
+		task, err := domain.NewTask(id, "diag", "look", domain.IdempotencyKey("k-"+id.String()), "", t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		chain := []string{"triage", "diag"}[:depth]
+		lineage := domain.TaskLineage{ParentTaskID: parent.String(), ParentExecutionID: "exec-p", ParentBotID: chain[depth-1], Depth: depth, MaxDepth: 2, Chain: chain, Grant: domain.DelegationGrant{MaxModelCalls: 1, Deadline: t0.Add(time.Minute)}, EventID: event}
+		if err := task.Link(lineage); err != nil {
+			t.Fatal(err)
+		}
+		execution, _ := domain.NewExecution(domain.ExecutionID("exec-"+id.String()), id, "diag", t0)
+		_ = task.Start(execution.ID(), t0)
+		_ = task.Complete(t0)
+		_ = execution.Complete(domain.Result{Answer: "CAUSE: x"}, domain.Usage{CostUSD: usd}, "", t0)
+		if err := h.tasks.Save(ctx, task); err != nil {
+			t.Fatal(err)
+		}
+		if err := newIncidentAdvancer(h.deps).taskEnded(ctx, bot, task, execution); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ended("task-child", opened.Task.ID(), 1, "", 0.005)
+	ended("task-grandchild", "task-child", 2, "", 0.002)
+	ended("task-heard", opened.Task.ID(), 1, "evt-1", 0.1)
+	incident, _ := h.incs.Get(ctx, opened.Incident.ID())
+	if got := incident.CostUSD(); got < 0.00699 || got > 0.00701 || incident.Status() != domain.IncidentOpen {
+		t.Fatalf("cost %v, status %s", got, incident.Status())
 	}
 }
 

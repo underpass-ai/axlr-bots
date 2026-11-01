@@ -9,7 +9,8 @@ import "time"
 // for each reopening; TaskIDs lists the triage tasks, one per cycle,
 // oldest first. Diagnosis is the answer of the last completed triage
 // task; Reason says why it was escalated or resolved. Repeats counts the
-// alerts received while it was already open; CostUSD sums what its tasks'
+// alerts received while it was already open; Retries the triages an alert
+// started again on it while it was Escalated, since its last diagnosis; CostUSD sums what its tasks'
 // executions reported.
 type IncidentSnapshot struct {
 	ID                   string     `json:"id"`
@@ -27,6 +28,7 @@ type IncidentSnapshot struct {
 	Diagnosis            string     `json:"diagnosis,omitempty"`
 	Reason               string     `json:"reason,omitempty"`
 	Repeats              int        `json:"repeats,omitempty"`
+	Retries              int        `json:"retries,omitempty"`
 	CostUSD              float64    `json:"costUsd,omitempty"`
 	OpenedAt             time.Time  `json:"openedAt"`
 	UpdatedAt            time.Time  `json:"updatedAt"`

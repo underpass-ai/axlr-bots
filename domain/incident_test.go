@@ -145,6 +145,50 @@ func TestIncidentValidation(t *testing.T) {
 	}
 }
 
+// An Escalated incident takes IncidentEscalationRetries more triages; a
+// diagnosis gives it its retries back, and so does a reopening.
+func TestIncidentRetriesWhileEscalated(t *testing.T) {
+	i := sampleIncident(t)
+	_ = i.AttachTask("task-1", t0)
+	if i.CanRetry() || i.Retry([]string{"fp-a"}, t0) == nil {
+		t.Fatal("an Open incident retried")
+	}
+	for n := 1; n <= IncidentEscalationRetries; n++ {
+		if err := i.Escalate("task failed", t0); err != nil {
+			t.Fatal(err)
+		}
+		if !i.CanRetry() {
+			t.Fatalf("retry %d refused", n)
+		}
+		if err := i.Retry([]string{"fp-c"}, t0.Add(time.Duration(n)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		if i.Status() != IncidentOpen || i.Cycle() != n+1 || i.Retries() != n || i.Reason() != "task failed" {
+			t.Fatalf("retry %d: %+v", n, i.Snapshot())
+		}
+		_ = i.AttachTask(TaskID("task-r"+string(rune('0'+n))), t0)
+	}
+	_ = i.Escalate("task failed", t0)
+	if i.CanRetry() || i.Retry(nil, t0) == nil {
+		t.Fatal("retried past the limit")
+	}
+	back, err := RestoreIncident(i.Snapshot())
+	if err != nil || back.Retries() != IncidentEscalationRetries || back.CanRetry() {
+		t.Fatalf("restored %+v %v", back.Snapshot(), err)
+	}
+	_ = i.Resolve("green", t0.Add(time.Hour))
+	if err := i.Reopen([]string{"fp-a"}, t0.Add(time.Hour+time.Minute)); err != nil || i.Retries() != 0 {
+		t.Fatalf("reopened retries %d %v", i.Retries(), err)
+	}
+	_ = i.AttachTask("task-x", t0)
+	_ = i.Escalate("again", t0)
+	_ = i.Retry(nil, t0)
+	_ = i.AttachTask("task-y", t0)
+	if err := i.Diagnose("found it", t0); err != nil || i.Retries() != 0 {
+		t.Fatalf("diagnosed retries %d %v", i.Retries(), err)
+	}
+}
+
 func TestIncidentSnapshotRoundTrip(t *testing.T) {
 	i := sampleIncident(t)
 	_ = i.AttachTask("task-1", t0)
@@ -171,6 +215,7 @@ func TestIncidentSnapshotRoundTrip(t *testing.T) {
 		"zero cycle":         func(s *IncidentSnapshot) { s.Cycle = 0 },
 		"too many tasks":     func(s *IncidentSnapshot) { s.TaskIDs = []string{"task-1", "task-2"} },
 		"negative repeats":   func(s *IncidentSnapshot) { s.Repeats = -1 },
+		"negative retries":   func(s *IncidentSnapshot) { s.Retries = -1 },
 		"resolved without":   func(s *IncidentSnapshot) { s.ResolvedAt = nil },
 		"open with resolved": func(s *IncidentSnapshot) { s.Status = "Open" },
 		"escalated silent":   func(s *IncidentSnapshot) { s.Status = "Escalated"; s.ResolvedAt = nil; s.Reason = "" },
