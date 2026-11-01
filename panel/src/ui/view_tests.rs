@@ -784,6 +784,36 @@ fn the_chat_writes_to_a_running_task_and_shows_its_answer() {
     ));
 }
 
+#[test]
+fn a_bot_page_shows_the_task_of_each_event_whole() {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
+    let running = app.running_task(&app.bot.as_ref().unwrap().bot.clone()).unwrap();
+    app.apply(Message::ChatInput("Say the date too, please.".into()));
+    let effects = app.apply(Message::ChatSend);
+    super::test_runtime::drive(&mut app, effects);
+    fake.say(&running, "OK, I will say the date too: 25 October 2026.");
+    let tick = app.now + chrono::Duration::seconds(5);
+    send(&mut app, Message::Tick(tick));
+    // A task id as long as the control plane's, with a long reason.
+    let failed: crate::domain::Event = serde_json::from_str(
+        r#"{"eventId":"evt-long","type":"bot.task.failed","botId":"bot","taskId":"task-68edb0ffeae524e9",
+            "createdAt":"2026-10-25T10:00:06Z","payload":{"reason":"workspace/reports/weekly-summary.txt does not exist on this node"}}"#,
+    )
+    .unwrap();
+    app.bot.as_mut().unwrap().feed.events.push(failed);
+    let tokens = Tokens::of(app.mode);
+    for width in [MIN_WINDOW.width, WINDOW.width] {
+        for id in [running.as_str(), "task-68ed…"] {
+            shows_whole(&app, width, id, |_| widgets::muted(id.to_string(), tokens).into());
+        }
+    }
+}
+
 fn subscribed_fleet() -> (std::sync::Arc<crate::adapters::fake::FakeControlPlane>, App) {
     let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
         "2026-10-25T10:00:00Z".parse().unwrap(),

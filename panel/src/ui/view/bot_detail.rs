@@ -2,6 +2,7 @@
 //! what it does now and an urgent order, its events and recent work; its
 //! definition under Advanced, closed by default.
 
+use iced::widget::text::{LineHeight, Wrapping};
 use iced::widget::{Space, column, container, mouse_area, pick_list, row, scrollable, text, text_input};
 use iced::{Alignment, Length, mouse};
 
@@ -584,33 +585,42 @@ fn event_tools<'a>(app: &'a App, tokens: Tokens) -> Vec<El<'a>> {
     }
 }
 
+/// The bot's events, newest first: the time, what happened and its
+/// task's id on a line, the detail under it. The id is short and laid out
+/// before the words, which wrap in what is left: the column is narrow, a
+/// line of all four would push the id out of the card.
 fn events<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let Some(feed) = app.feed() else {
         return empty(Icon::Clock, "No event yet", tokens);
     };
+    let line_height = LineHeight::default().to_absolute(SMALL.into());
     let mut list = column![].spacing(8);
     for event in feed.events.iter().rev().take(15) {
         let tone = Tone::of_event(event.tone());
-        let mut line = row![
-            muted(format::clock(event.created_at), tokens),
-            icon(tone.event_icon(), 14.0, tone.color(&tokens)),
-            bold(event.label()).size(SMALL),
-            muted(event.detail(), tokens),
+        let task = TaskId::new(&event.task_id).ok();
+        let mut head = row![bold(event.label()).size(SMALL).width(Length::Fill)].spacing(10);
+        if let Some(task) = &task {
+            head = head.push(muted(format::short_id(task.as_str(), 9), tokens).wrapping(Wrapping::None));
+        }
+        let mut words = column![head].spacing(2).width(Length::Fill);
+        let detail = event.detail();
+        if !detail.is_empty() {
+            words = words.push(muted(detail, tokens));
+        }
+        let line = row![
+            muted(format::clock(event.created_at), tokens).wrapping(Wrapping::None),
+            container(icon(tone.event_icon(), 14.0, tone.color(&tokens))).center_y(line_height),
+            words,
         ]
-        .spacing(10)
-        .align_y(Alignment::Center);
-        if let Ok(task) = TaskId::new(&event.task_id) {
-            line = line
-                .push(Space::new().width(Length::Fill))
-                .push(muted(format::short_id(task.as_str(), 14), tokens));
-            list = list.push(
+        .spacing(10);
+        list = match task {
+            Some(task) => list.push(
                 mouse_area(line)
                     .on_press(Message::Go(Screen::Task(task)))
                     .interaction(mouse::Interaction::Pointer),
-            );
-        } else {
-            list = list.push(line);
-        }
+            ),
+            None => list.push(line),
+        };
     }
     if feed.events.is_empty() {
         return empty(Icon::Clock, "No event yet", tokens);
