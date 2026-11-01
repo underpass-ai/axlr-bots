@@ -88,7 +88,8 @@ const (
 	// arrived: nothing was started; the payload holds the alerts added.
 	EventIncidentRepeated EventType = "incident.repeated"
 	// EventIncidentReopened says an alert came soon after the incident
-	// was resolved: a new cycle and a new triage task.
+	// was resolved, or came again while it was Escalated (the payload's
+	// retry is true): a new cycle and a new triage task.
 	EventIncidentReopened EventType = "incident.reopened"
 	// EventIncidentDiagnosed says the triage task completed: the payload
 	// holds the diagnosis.

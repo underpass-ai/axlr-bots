@@ -55,6 +55,9 @@ type opening struct {
 	objective    string
 	input        []byte
 	fields       map[string]any
+	// retry is set when the alert starts another triage of an Escalated
+	// incident.
+	retry bool
 }
 
 // Execute opens, repeats or reopens the incident by hand: the bot's
@@ -112,6 +115,12 @@ func (uc OpenIncident) open(ctx context.Context, o opening) (OpenIncidentResult,
 			return OpenIncidentResult{}, err
 		}
 		return uc.start(ctx, o, existing, domain.EventIncidentOpened, existing.Cycle() > 1)
+	case found && existing.CanRetry():
+		if err := existing.Retry(o.fingerprints, now); err != nil {
+			return OpenIncidentResult{}, err
+		}
+		o.retry = true
+		return uc.start(ctx, o, existing, domain.EventIncidentReopened, true)
 	case found && !existing.Status().IsResolved():
 		return uc.repeat(ctx, bot, existing, o.fingerprints, now)
 	case found && existing.CanReopen(now):
@@ -204,6 +213,9 @@ func (uc OpenIncident) start(ctx context.Context, o opening, incident domain.Inc
 	payload := map[string]any{
 		"groupKey": incident.GroupKey(), "source": incident.Source(), "title": incident.Title(), "severity": incident.Severity().String(),
 		"fingerprints": incident.Fingerprints(), "cycle": incident.Cycle(), "taskId": result.Task.ID().String(), "trigger": o.trigger.Name(),
+	}
+	if o.retry {
+		payload["retry"], payload["retries"] = true, incident.Retries()
 	}
 	if err := uc.rec.incidentEvent(ctx, kind, bot, incident, payload); err != nil {
 		return OpenIncidentResult{}, err

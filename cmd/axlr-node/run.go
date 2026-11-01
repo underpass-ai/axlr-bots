@@ -64,6 +64,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	caFile := flags.String("ca-file", envOr("AXLR_NODE_CA_FILE", ""), "with --token-file, the fleet CA in PEM instead of the one the token carries (also AXLR_NODE_CA_FILE)")
 	retry := flags.Duration("enroll-retry", 10*time.Second, "with --token-file, how long to wait between enrollment attempts")
 	dedicated := flags.Bool("dedicated", envOr("AXLR_NODE_DEDICATED", "") == "true", "run only the bots whose placement names this node or selects its labels, never those placed on any node (also AXLR_NODE_DEDICATED=true): a sidecar")
+	axlrMCPConfig := flags.String("axlr-mcp-config", envOr("AXLR_NODE_AXLR_MCP_CONFIG", ""), "the mcp.json every AXLR execution loads instead of the operator's ~/.config/axlr/mcp.json, so a server the operator added does not join the bots' runs (also AXLR_NODE_AXLR_MCP_CONFIG; an absolute path that exists)")
 	mcpConfig := flags.String("mcp-config", envOr("AXLR_NODE_MCP_CONFIG", ""), "the mcp.json a Jev bot's program finds its MCP server in (also AXLR_NODE_MCP_CONFIG; default: ~/.config/axlr/mcp.json, the node's AXLR's)")
 	jevModel := flags.String("jev-model", envOr("AXLR_NODE_JEV_MODEL", jev.DefaultModel), "the pinned Jev version the jev runtime asks (also AXLR_NODE_JEV_MODEL)")
 	bus := flags.String("bus", envOr("AXLR_NODE_BUS", "direct"), "how the control plane's pushes reach this node: direct (a stream over the node's own connection) or nats (also AXLR_NODE_BUS)")
@@ -107,6 +108,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "axlr-node: --token-file needs --control https://host:port (the control plane's TLS address)")
 		return exitUsage
 	}
+	if *axlrMCPConfig != "" {
+		if _, err := os.Stat(*axlrMCPConfig); err != nil || !filepath.IsAbs(*axlrMCPConfig) {
+			fmt.Fprintln(stderr, "axlr-node: --axlr-mcp-config needs an absolute path to an mcp.json that exists:", *axlrMCPConfig)
+			return exitUsage
+		}
+	}
 	if err := os.MkdirAll(*stateDir, 0o755); err != nil {
 		fmt.Fprintln(stderr, "axlr-node: state directory:", err)
 		return exitError
@@ -130,6 +137,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	logger.Printf("node: control plane %s, %s", *control, identity)
 	executor := axlr.NewExecutor(*axlrBin, *stateDir)
+	executor.MCPConfig = *axlrMCPConfig
 	// AXLR reaches the delegation tool through this binary's mcp-relay.
 	if self, err := os.Executable(); err == nil {
 		executor.Relay = self

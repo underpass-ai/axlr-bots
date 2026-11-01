@@ -60,6 +60,12 @@ type Executor struct {
 	// Relay is the absolute path of axlr-node, whose mcp-relay AXLR
 	// starts to reach the delegation tool; empty wires no tool.
 	Relay string
+	// MCPConfig is the mcp.json every run loads (axlr-tui --mcp-config)
+	// instead of the operator's ~/.config/axlr/mcp.json; empty keeps the
+	// operator's. On 1 November 2026 an SRE bot's triage failed because
+	// a documentation server in the operator's file could not be
+	// reached.
+	MCPConfig string
 
 	detect   sync.Once
 	features features
@@ -94,6 +100,7 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 	if e.Mode != "" {
 		args = append(args, "--mode", e.Mode)
 	}
+	args = append(args, e.mcpConfigArgs()...)
 	// The correlation ids and the budget go with the run when the binary
 	// takes them (docs/runtime-contract.md, the reserved fields); the
 	// correlation file is written either way and the record says whether
@@ -111,6 +118,14 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 	report.Policy = &policy.record
 	correlate(&report, correlation)
 	return report, err
+}
+
+// mcpConfigArgs names the run's mcp.json when the node has its own.
+func (e *Executor) mcpConfigArgs() []string {
+	if e.MCPConfig == "" {
+		return nil
+	}
+	return []string{"--mcp-config", e.MCPConfig}
 }
 
 // Decide approves or denies the pending call of an execution that ended
@@ -132,6 +147,7 @@ func (e *Executor) Decide(ctx context.Context, request application.DecisionReque
 	if request.CallID != "" {
 		args = append(args, "--call", request.CallID)
 	}
+	args = append(args, e.mcpConfigArgs()...)
 	correlation, err := e.prepareCorrelation(ctx, request.ExecutionID, request.TaskID, request.BotID, request.CorrelationID, domain.Budgets{}, e.timeout(request.Timeout), &policy)
 	if err != nil {
 		return application.ExecutionReport{}, err

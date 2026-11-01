@@ -16,6 +16,12 @@ const (
 	// IncidentReopenWindow is how long after a resolution a new alert of
 	// the same group reopens the incident instead of opening another.
 	IncidentReopenWindow = 30 * time.Minute
+	// IncidentEscalationRetries is how many times an alert of an
+	// Escalated incident starts another triage before the incident is
+	// left to a person: a triage that failed (a model, a node, a tool
+	// that was down) gets another try when its alert comes again, and a
+	// fault that keeps failing stops costing.
+	IncidentEscalationRetries = 2
 )
 
 // Incident is one grouped fault of a tenant: what the alerts say, which
@@ -39,6 +45,7 @@ type Incident struct {
 	diagnosis    string
 	reason       string
 	repeats      int
+	retries      int
 	costUSD      float64
 	openedAt     time.Time
 	updatedAt    time.Time
@@ -239,6 +246,37 @@ func (i *Incident) Repeat(fingerprints []string, now time.Time) error {
 	return nil
 }
 
+// CanRetry reports an Escalated incident a new alert gives another
+// triage: fewer than IncidentEscalationRetries retries since its last
+// diagnosis. On 1 November 2026 a triage failed on a tool server that
+// was down, and its Escalated incident took every later alert of the
+// group as a repeat: nobody diagnosed the fault again.
+func (i Incident) CanRetry() bool {
+	return i.status == IncidentEscalated && i.retries < IncidentEscalationRetries
+}
+
+// Retry opens an Escalated incident again on a new alert: one more
+// cycle, Open, with the alerts; the reason it was escalated is kept
+// until the new triage settles.
+func (i *Incident) Retry(fingerprints []string, now time.Time) error {
+	if !i.CanRetry() {
+		return i.refuse("retry")
+	}
+	if err := i.addFingerprints(fingerprints); err != nil {
+		return err
+	}
+	i.unresolve(fingerprints)
+	i.cycle++
+	i.retries++
+	i.status = IncidentOpen
+	i.lastSeenAt, i.updatedAt = now, now
+	return nil
+}
+
+// Retries counts the triages an alert started again on the Escalated
+// incident since its last diagnosis.
+func (i Incident) Retries() int { return i.retries }
+
 // CanReopen reports a resolved incident a new alert at now reopens: the
 // resolution is less than IncidentReopenWindow ago.
 func (i Incident) CanReopen(now time.Time) bool {
@@ -257,6 +295,7 @@ func (i *Incident) Reopen(fingerprints []string, now time.Time) error {
 	}
 	i.unresolve(fingerprints)
 	i.cycle++
+	i.retries = 0
 	i.status = IncidentOpen
 	i.resolvedAt = nil
 	i.lastSeenAt, i.updatedAt = now, now
@@ -274,6 +313,7 @@ func (i *Incident) Diagnose(diagnosis string, now time.Time) error {
 		return err
 	}
 	i.diagnosis = text
+	i.retries = 0
 	i.status = IncidentDiagnosed
 	i.updatedAt = now
 	return nil
@@ -351,7 +391,7 @@ func (i Incident) Snapshot() IncidentSnapshot {
 	return IncidentSnapshot{
 		ID: i.id.String(), TenantID: i.tenant.String(), BotID: i.bot.String(), GroupKey: i.groupKey, Source: i.source,
 		Title: i.title, Severity: i.severity.String(), Status: i.status.String(), Fingerprints: i.Fingerprints(), ResolvedFingerprints: i.ResolvedFingerprints(),
-		Cycle: i.cycle, TaskIDs: tasks, Diagnosis: i.diagnosis, Reason: i.reason, Repeats: i.repeats, CostUSD: i.costUSD,
+		Cycle: i.cycle, TaskIDs: tasks, Diagnosis: i.diagnosis, Reason: i.reason, Repeats: i.repeats, Retries: i.retries, CostUSD: i.costUSD,
 		OpenedAt: i.openedAt, UpdatedAt: i.updatedAt, LastSeenAt: i.lastSeenAt, ResolvedAt: resolvedAt,
 	}
 }
@@ -392,8 +432,8 @@ func RestoreIncident(s IncidentSnapshot) (Incident, error) {
 		return Incident{}, invalid("cycle", "must be at least 1")
 	case len(s.TaskIDs) > s.Cycle:
 		return Incident{}, invalid("task ids", "an incident has at most one task per cycle")
-	case s.Repeats < 0 || s.CostUSD < 0:
-		return Incident{}, invalid("repeats or cost", "must not be negative")
+	case s.Repeats < 0 || s.Retries < 0 || s.CostUSD < 0:
+		return Incident{}, invalid("repeats, retries or cost", "must not be negative")
 	case status.IsResolved() && s.ResolvedAt == nil:
 		return Incident{}, invalid("resolved at", "a Resolved incident needs it")
 	case !status.IsResolved() && s.ResolvedAt != nil:
@@ -430,7 +470,7 @@ func RestoreIncident(s IncidentSnapshot) (Incident, error) {
 			incident.resolved = append(incident.resolved, fingerprint)
 		}
 	}
-	incident.cycle, incident.repeats, incident.costUSD = s.Cycle, s.Repeats, s.CostUSD
+	incident.cycle, incident.repeats, incident.retries, incident.costUSD = s.Cycle, s.Repeats, s.Retries, s.CostUSD
 	incident.status, incident.updatedAt, incident.lastSeenAt = status, s.UpdatedAt, s.LastSeenAt
 	return incident, nil
 }
