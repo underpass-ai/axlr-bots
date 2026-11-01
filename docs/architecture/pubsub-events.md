@@ -6,7 +6,7 @@ Changes since it was accepted, dated: on 1 November 2026 the `recall` alias of d
 
 ## Context
 
-Today a bot tells its team something with `axlr_bots_emit_event {name, message, severity, data, to}`: the emitter names the receivers (`to`), or broadcasts; a receiver hears what is addressed to it and the team's `warning` and `critical` broadcasts; every event heard is a new task. The product owner wants bots that talk **by publish/subscribe**: the emitter names a topic, not the receivers; whoever subscribed hears it; the operator sees and controls who hears what from the panel. The guide principles hold: "desde el panel siento que controlo mis bots", "no se traslada la complejidad al usuario", "los bots se conocen y pertenecen a grupos". Bots stay generic (a shop, a cluster, a fleet); the vehicle fleet is only the live demo.
+Today a bot tells its team something with `axlr_bots_emit_event {name, message, severity, data, to}`: the emitter names the receivers (`to`), or broadcasts; a receiver hears what is addressed to it and the team's `warning` and `critical` broadcasts; every event heard is a new task. The product owner wants bots that talk **by publish/subscribe**: the emitter names a topic, not the receivers; whoever subscribed hears it; the operator sees and controls who hears what from the panel. The guide principles hold: "desde el panel siento que controlo mis bots", "no se traslada la complejidad al usuario", "los bots se conocen y pertenecen a grupos". Bots stay generic (a shop, a cluster, a fleet); the vehicle fleet (now in the private repo `axlr-bots-examples`) is only the live demo.
 
 Most of pub/sub already exists. The event's `name` is a dotted topic (`pedido.nuevo`); an `event` trigger with `events: ["pedido.*"]` is a subscription; an event without `to` is a broadcast; the control plane is the bus. What is missing, and what this ADR adds:
 
@@ -192,7 +192,7 @@ Domain `TopicKind`, severity derived, default emit rules by kind, `error.*`/`don
 | Check | Expected |
 |---|---|
 | a bot in a team emits `info.turno` | `bot.event.emitted` with `severity: info`; delivered as today (nobody hears a broadcast `info` yet: no deliveries, no skips) |
-| emits `stop.recall` addressed to a teammate | the teammate's task is urgent (`severity: critical` derived) |
+| emits `stop.halt` addressed to a teammate | the teammate's task is urgent (`severity: critical` derived) |
 | emits `error.bot` | `200` with `refused: {reason: "not_allowed"}`, `bot.event.refused` |
 | an old node sends `severity: "critical"` with `info.x` | accepted; the event is `info` |
 | `events.emit: [{"name": "warn.*", "maxSeverity": "critical"}]` | accepted; `warn.x` is `warning`; `info.x` refused `not_allowed` |
@@ -210,7 +210,7 @@ Domain `TopicKind`, severity derived, default emit rules by kind, `error.*`/`don
 | the same event from a bot not in `from` | not heard; no skip |
 | a bot with no subscriptions; a teammate emits `danger.fire` | an urgent task (team default); with `events.interruptible: false` a normal task |
 | a bot subscribed only to `pedido.*` from `recepcion`; `almacen` emits `stop.all` | an urgent task: `danger.*` and `stop.*` broadcasts reach every Enabled teammate whatever its subscriptions |
-| `stop.recall` addressed to a bot whose subscriptions do not match `stop.*` | heard anyway (implicit subscription), urgent |
+| `stop.halt` addressed to a bot whose subscriptions do not match `stop.*` | heard anyway (implicit subscription), urgent |
 | a teammate emits `recall` addressed to a bot | read as `stop.recall`: an urgent task (until 1 November 2026, [#88](https://github.com/underpass-ai/axlr-bots/pull/88); a kindless name addressed to a bot is a note by default now) |
 | a teammate emits `warn.x` addressed to a bot with no matching subscription | a task, **not** urgent |
 | `PATCH` with 17 subscriptions, a bad pattern, `from` naming a stranger | `400 validation` each, with the field |
@@ -288,6 +288,8 @@ Listens to, Listen to a topic, Remove, the pending card with Approve/Deny (and t
 | an old control plane (no `/topics`) | the Topics tab says the control plane is older, nothing else breaks |
 
 ### PR 9 — the fleet and the runbook
+
+The fleet, its definitions and its runbook live in the private repo `axlr-bots-examples` since 1 November 2026; the [runbook](../runbooks/teams-and-events.md) here walks a neutral team.
 
 The pilots emit `stop.recall` instead of `recall` with a severity; the fleet's definitions (`drone-fleet/`, now in the private repo `axlr-bots-examples`) get a subscription or two that show the three modes (the plane: `info.*` as notes; a quad: `warn.*` as messages; the operator's `stop.all` as the generalised Recall); `docs/runbooks/teams-and-events.md` extended with "Listen to a topic", "Publish an event" and "When it does not work" rows; the fleet's runbook updated.
 

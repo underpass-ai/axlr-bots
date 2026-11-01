@@ -22,13 +22,13 @@ bot A ──emit──▶ control plane ──record──▶ events.jsonl
 
 | Layer | Holds | Knows nothing of |
 |---|---|---|
-| `domain/` | events, topics, subscriptions, teams | brokers, subjects, the orchestra |
+| `domain/` | events, topics, subscriptions, teams | brokers, subjects, any use case |
 | `application/` | `NodePusher` (push to a node), `NodePush` (an execution to renew now, or all; an optional `Ack`), the rules | brokers |
 | `adapters/unixapi` | the **direct** adapter: a per-node ring the use cases push into and the stream route the node holds open | |
 | `adapters/bus/nats` | the **nats** adapter: publisher with an outbox, subscriber with a durable consumer; subjects, streams, credentials | the domain |
 | `adapters/bus/bustest` | the port's contract, run against every adapter | |
 | `adapters/nodeagent` | `Streamer`: the node's end; `Agent.Streamer` chooses it | |
-| the orchestra (private repo `axlr-bots-examples`) | the use case: which bots tell what, the broker's deployment and its permissions | |
+| a use case (the examples in the private repo `axlr-bots-examples`, or yours) | which bots tell what, the broker's deployment and its permissions | |
 
 Another broker (Kafka, Redis Streams, MQTT) is another package under `adapters/bus/` that passes `bustest.Run`; the core does not change.
 
@@ -55,6 +55,6 @@ A push is a hint, not the message: *execution X of yours needs you now* (it was 
 | control plane | `axlr-bots serve --bus nats --nats-url nats://host:4222 [--nats-creds file] [--nats-cert file --nats-key file] [--nats-ca file]` (`AXLR_BOTS_BUS`, `AXLR_BOTS_NATS_URL`, `AXLR_BOTS_NATS_CREDS`, `AXLR_BOTS_NATS_CERT`, `AXLR_BOTS_NATS_KEY`, `AXLR_BOTS_NATS_CA`) | every push also goes to the broker; the direct stream stays on, so a node may read either. The control plane defines the stream as it connects, at start |
 | node | `axlr-node --bus nats --nats-url … [--nats-creds file] [--nats-cert file --nats-key file] [--nats-ca file]` (`AXLR_NODE_BUS`, `AXLR_NODE_NATS_URL`, `AXLR_NODE_NATS_CREDS`, `AXLR_NODE_NATS_CERT`, `AXLR_NODE_NATS_KEY`, `AXLR_NODE_NATS_CA`) | the node reads its pushes from the broker instead of holding the stream open; polls, leases, reports and messages still go to the control plane. It finds the stream, never defines it |
 
-**Mutual TLS.** With a `tls://` broker and an `https://` control plane a node shows the broker its own certificate from enrollment (`CN=<node id>,O=axlr-bots nodes`) unless `--nats-cert` names another; the control plane shows one `axlr-bots ca issue-client --name control-plane --out <dir>` wrote (`CN=control-plane,O=axlr-bots clients`). A broker with `verify_and_map` checks both against the fleet CA and takes the user from the subject, so rule 6 holds per certificate: `adapters/bus/nats/tls_test.go` runs the contract that way and checks that a node cannot open another's consumer and that a certificate the broker does not list is refused. The orchestra's chart, in the private repo `axlr-bots-examples`, is a deployment.
+**Mutual TLS.** With a `tls://` broker and an `https://` control plane a node shows the broker its own certificate from enrollment (`CN=<node id>,O=axlr-bots nodes`) unless `--nats-cert` names another; the control plane shows one `axlr-bots ca issue-client --name control-plane --out <dir>` wrote (`CN=control-plane,O=axlr-bots clients`). A broker with `verify_and_map` checks both against the fleet CA and takes the user from the subject, so rule 6 holds per certificate: `adapters/bus/nats/tls_test.go` runs the contract that way and checks that a node cannot open another's consumer and that a certificate the broker does not list is refused. A chart in the private repo `axlr-bots-examples` is one deployment.
 
 `--bus direct` (the default on both) is the stream over the node's own connection to the control plane, which needs no broker. The nats publisher never blocks the use cases: `Push` writes the outbox and returns; one goroutine publishes in order and waits for the broker when it is away.

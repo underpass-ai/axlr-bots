@@ -9,7 +9,7 @@ A bot asks another only by explicit delegation (`delegation.to`): no directory, 
 - "Desde el control pane puedo sentir que puedo controlar mis bots": everything from the panel, one click, immediate feedback.
 - "No se tiene que trasladar la complejidad al usuario": a group is a **team** with a name, picked when creating a bot; everything else has a default; patterns and limits only under *Advanced*.
 
-Guide case, with nothing configured but the team: the operator tells the plane's bot "dile al quad-1 que se retire, hay un barco"; quad-1 cuts its mission, flies home, and the operator sees why.
+Guide case, from the port fleet (now in the private repo `axlr-bots-examples`), with nothing configured but the team: the operator tells the plane's bot "dile al quad-1 que se retire, hay un barco"; quad-1 cuts its mission, flies home, and the operator sees why.
 
 ```text
 operator ──"dile al quad-1 que se retire"──▶ pilot-plane-0 (its directory lists pilot-quad-1 and its tools)
@@ -86,7 +86,7 @@ Served by the node agent on the execution's socket, next to `axlr_bots_delegate`
 }
 ```
 
-It answers at once with the event id, who got a task and who was skipped and why. Refusals of the whole call, each a `bot.event.refused` and an audit entry: `not_allowed`, `severity_not_allowed`, `no_team`, `not_member`, `rate_limited`. Event names: dot-separated segments `[a-z0-9-]`, ≤ 64 chars; a pattern takes `*` (one segment) or `**` (any).
+The schema as decided here; [publish/subscribe](pubsub-events.md) later took `severity` out of it (the name's kind fixes it), and the [runbook](../runbooks/teams-and-events.md) walks a neutral example. It answers at once with the event id, who got a task and who was skipped and why. Refusals of the whole call, each a `bot.event.refused` and an audit entry: `not_allowed`, `severity_not_allowed`, `no_team`, `not_member`, `rate_limited`. Event names: dot-separated segments `[a-z0-9-]`, ≤ 64 chars; a pattern takes `*` (one segment) or `**` (any).
 
 ### The definition
 
