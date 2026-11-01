@@ -494,7 +494,7 @@
       },
       "post": {
         "operationId": "publishGroupEvent",
-        "description": "the operator publishes an event on the team: the same checks and deliveries as a bot's event, as operator, less the rate and the chain; error.* and done.* are refused (400, not_allowed); stop.all recalls every member",
+        "description": "the operator publishes an event on the team: the same checks and deliveries as a bot's event, as operator, less the rate and the chain; error.* and done.* are refused (400, not_allowed); stop.all stops every member: each gets an urgent task",
         "parameters": [
           {
             "name": "tenant",

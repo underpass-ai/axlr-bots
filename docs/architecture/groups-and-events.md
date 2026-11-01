@@ -32,7 +32,7 @@ operator ──"dile al quad-1 que se retire"──▶ pilot-plane-0 (its direct
 | see the teams and who is in each | **Teams** view: each member with its line of the directory (purpose, tools, where it runs) and its status | live, as bots change |
 | watch events flow | the team's timeline: emitted → task received → preempted → done, coloured by severity; `GET /v1/groups/{name}/events?after=<cursor>&wait=20s` long-polls, so an event shows within a second | `warning` and `critical` also raise a banner |
 | give an order in plain words | the task box on a bot, as today, with an **Urgent** switch | the task shows in the timeline with its status |
-| stop or recall a bot at once | **Stop**: pauses the bot and cancels its open tasks; **Recall**: an urgent task "Return home now" for a bot that has `return_home` | the cancelled and new tasks change on screen within the node's renewal (10 s) |
+| stop a bot, or give it an urgent order, at once | **Stop**: pauses the bot and cancels its open tasks; **Urgent order**: the operator types the order and it runs as an urgent task, on any bot that takes tasks. Decided here as **Recall**, an urgent task "Return home now" for a bot that had `return_home`; it became the Urgent order on 1 November 2026 ([#89](https://github.com/underpass-ai/axlr-bots/pull/89)) | the cancelled and new tasks change on screen within the node's renewal (10 s) |
 | see why each bot decided | every event carries its `message` (required: what and why); a task shows what started it (the event and who emitted it, a delegation, a person), its tool calls with arguments, who approved (a person or `policy`), its answer | one line per step in the timeline; the task detail has the rest |
 | change the defaults | *Advanced*, closed by default: events it may emit, events it listens to, what interrupts it, rate, calls that run without asking | — |
 
@@ -45,7 +45,7 @@ operator ──"dile al quad-1 que se retire"──▶ pilot-plane-0 (its direct
 | emitting | a member may emit any event name to its team, severity up to `warning`, 6 per minute | `events.emit`: names or patterns, each with `maxSeverity` (`critical` only here); `events.perMinute` (≤ 60) |
 | hearing | a member hears the events **addressed to it** (`to`) and the team's **broadcasts of `warning` or `critical`**; `info` broadcasts go to the history only. Each event heard is a new task (trigger `event`) | `event` triggers with names or patterns replace the default |
 | being interrupted | a teammate's event of `warning` or `critical` **addressed to it** makes an urgent task. Broadcasts never interrupt by default | `events.interruptible: false`, or `interrupt` on each `event` trigger |
-| running without asking | none; the panel pre-ticks `return_home` when the bot's tools include it | `approvals.autoApprove` |
+| running without asking | none. The panel pre-ticked `return_home` when the bot's tools included it until 1 November 2026 ([#89](https://github.com/underpass-ai/axlr-bots/pull/89)); it adds no rule now | `approvals.autoApprove` |
 
 ### The rules underneath
 

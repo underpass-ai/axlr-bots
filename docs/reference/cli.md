@@ -17,7 +17,7 @@ axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>]
   group list | group get <group> [--tenant <id>]   the teams the bots name, with their members
   group events <group> [--after <event-id>] [--limit 100] [--tenant <id>]   the team's timeline
   group topics <group> [--tenant <id>]   who publishes, who listens, nobody listens
-  group publish <group> <name> --message "<text>" [--data '{…}'] [--to a,b] [--key <k>] [--tenant <id>]   the operator's event; stop.all recalls everyone
+  group publish <group> <name> --message "<text>" [--data '{…}'] [--to a,b] [--key <k>] [--tenant <id>]   the operator's event; stop.all stops everyone
   incident open --tenant <id> --bot <bot-id> --group-key "<key>" --title "<text>" [--severity sev1..sev4] [--fingerprints a,b] [--source <name>] [--objective "<text>"]   report an alert group: a new incident and its triage task, a repeat, or a reopening
   incident list [--tenant <id>] [--status <status>] [--limit 100] | incident get <incident-id> | incident resolve <incident-id> [--reason "<text>"]   the incidents, one incident, close one
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>] [--urgent]

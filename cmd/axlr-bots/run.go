@@ -247,7 +247,7 @@ func printUsage(w io.Writer) {
   group topics <group> [--tenant <id>]
                                       the team's topics: who publishes, who listens, nobody listens
   group publish <group> <name> --message "<text>" [--data '{…}'] [--to a,b] [--key <k>] [--tenant <id>]
-                                      publish the operator's event on the team; stop.all recalls everyone
+                                      publish the operator's event on the team; stop.all stops everyone
   incident open --tenant <id> --bot <bot-id> --group-key "<key>" --title "<text>" [--severity sev1..sev4]
                 [--fingerprints a,b] [--source <name>] [--objective "<text>"]
                                       report an alert group: a new incident and its triage task,

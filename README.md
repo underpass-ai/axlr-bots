@@ -71,7 +71,7 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | Approve or deny the write a bot wants to make, be notified of it, let it expire | [Approvals](docs/runbooks/approvals.md) |
 | Let a bot ask another bot to do a task, within depth and budget limits that stop loops | [Delegation](docs/reference/bot-definition.md#delegation), [ADR](docs/architecture/delegation.md) |
 | Put bots in a team so they know each other and ask each other without naming targets | [Teams](docs/reference/bot-definition.md#teams), [ADR](docs/architecture/groups-and-events.md) |
-| Let a bot warn or recall its teammates with an event, and follow the team's timeline | [Events](docs/reference/bot-definition.md#events), [ADR](docs/architecture/groups-and-events.md) |
+| Let a bot warn or stop its teammates with an event, and follow the team's timeline | [Events](docs/reference/bot-definition.md#events), [ADR](docs/architecture/groups-and-events.md) |
 | Add a host: enrollment token, mutual TLS, revocation | [Add a host](docs/runbooks/add-a-host.md) |
 | Run the node agent as a sidecar beside a service in a Kubernetes pod, with Helm | [Sidecar](docs/runbooks/sidecar.md) |
 | Watch the fleet and approve calls from a desktop window | [Control panel](panel/README.md) |

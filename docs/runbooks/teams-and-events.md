@@ -6,15 +6,15 @@ Bots that share a **Team** know each other, ask each other to do a task and warn
 |---|---|---|
 | 1. Put bots in a team | **Bots → New bot → Team**: `port`; or a bot's page → **Team → Change** | the bot is in `port`; its teammates read it in their next task's directory |
 | 2. Check the team | **Teams → port** | each member with what it is for, its tools and where it runs; "only one bot: a typo?" when a name was typed differently |
-| 3. Give the order | **Tasks → New task**, bot `pilot-plane-0`: «Dile al quad-1 que se retire: hay un barco entrando en su zona» | the plane's bot calls `axlr_bots_emit_event` with `stop.recall` for `pilot-quad-1` (an older pilot's `recall` is read the same); no person approves telling the team |
-| 4. Watch it | the banner **Alarm to the team · team port** wherever you are; **Teams → port → What happens** | quad-1's bot gets an **urgent** task: what it was doing ends **Stopped for urgent**, `return_home` is **Approved by its policy**, the vehicle flies home, the task is **Done** with the reason |
+| 3. Give the order | **Tasks → New task**, bot `pilot-plane-0`: «Dile al quad-1 que se retire: hay un barco entrando en su zona» | the plane's bot calls `axlr_bots_emit_event` with `stop.recall` for `pilot-quad-1`; no person approves telling the team |
+| 4. Watch it | the banner **Alarm to the team · team port** wherever you are; **Teams → port → What happens** | quad-1's bot gets an **urgent** task: what it was doing ends **Stopped for urgent**, `return_home` is approved **by its policy, no person needed** (when its definition has the rule, below), the vehicle flies home, the task is **Done** with the reason |
 | 5. See why | open quad-1's task | **Told by** `pilot-plane-0: …`, the urgent pill, the tool call and who approved it (`policy:autoApprove`) |
-| 6. Recall it yourself | a bot's page or the team's page → **Recall** | an urgent task «Return home now»: one click, no approval |
+| 6. Give an order yourself | a bot's page, or its line on the team's page → **Urgent order**: type the order → **Send the order** | an urgent task with your words: it stops what the bot was doing and does this; the banner «… got an urgent order» and the task's page |
 | 7. Brake | a bot's page → **Stop** | the bot is paused and every task it had not finished is cancelled |
 | 8. Listen to a topic | a bot's page → **Listens to → Listen to a topic**: topic `warn.*`, mode (by its kind unless you pick: `task` a new task, `message` into its running task, `note` for its next task), from (anyone) | the line `warn.* · message · from anyone`; `bot.subscription.changed` in the timeline; **Remove** undoes it |
 | 9. Answer a bot's ask | the card «`almacen` asks to listen to `error.*`: "…"» on its page; it counts in **need you** | **Approve**: it hears the topic from now on; **Deny**: the ask is dropped. Until then it hears nothing of it |
 | 10. See the team's topics | **Teams → port → Topics** | each topic: who publishes, who listens and how, the last event; **nobody listens** in red on one nobody hears |
-| 11. Publish an event | **Teams → port → Publish an event**: name `stop.all`, message, optional To | `stop.all` is the generalised Recall: every member gets an urgent task; `warn.*` reaches who listens while it works; `info.*` is a note. The timeline shows it and what it did to each bot within a poll |
+| 11. Publish an event | **Teams → port → Publish an event**: name `stop.all`, message, optional To | `stop.all` stops every member: each gets an urgent task; `warn.*` reaches who listens while it works; `info.*` is a note. The timeline shows it and what it did to each bot within a poll |
 | 12. One press | `~/.config/axlr-bots-panel/shortcuts.toml`: `[[shortcut]]` `team`, `label`, `name`, `message`, `data`; restart the panel → **Teams → orchestra → Shortcuts** | each press publishes its event at once, as the operator, with a new key; a stop is red |
 
 A task can be urgent from the panel too: **New task → Urgent** sends it first and stops what the bot is doing.
@@ -24,7 +24,7 @@ A task can be urgent from the panel too: **New task → Urgent** sends it first 
 | Bot | Needs |
 |---|---|
 | any bot in a team | nothing more: the team gives it the delegation and the emit tools, still under its level |
-| a vehicle's pilot that comes home | `return_home` in its **Tools**; the panel then lets `return_home` run without a person (`approvals.autoApprove`); taking off (`run_mission`) still asks |
+| a vehicle's pilot that comes home | `return_home` in its **Tools**, and `"approvals": {"autoApprove": [{"tool": "return_home"}]}` in its definition file so it runs without a person (the panel adds no such rule); taking off (`run_mission`) still asks |
 
 ## Under Advanced (a definition file)
 
@@ -39,7 +39,7 @@ Everything else has a default; a bot's definition file (**Bots → From file**) 
 | `events.interruptible` | a critical a teammate emits (`stop.*`, `danger.*`) interrupts | `false` |
 | `subscriptions` | hears what is addressed to it and the team's `danger.*` and `stop.*` | `[{"topic": "ship.*", "urgent": true}]` (`bot subscribe <bot> 'ship.*'`); a trigger of type `event` is read as one |
 | `delegation.fromTeam` | takes its teammates' tasks | `false` |
-| `approvals.autoApprove` | none (the panel adds `return_home`) | `[{"tool": "return_home"}]` |
+| `approvals.autoApprove` | none | `[{"tool": "return_home"}]` |
 
 ## When it does not work
 
@@ -47,7 +47,7 @@ Everything else has a default; a bot's definition file (**Bots → From file**) 
 |---|---|---|
 | the plane says it cannot tell quad-1 | they are not in the same team, or quad-1 is paused | **Teams → port**: both there and on |
 | quad-1 got the event but kept flying | its pilot has no `return_home`, or the vehicle's service is older | add the tool; update the fleet's `fleet-app` |
-| quad-1 waits for your OK to come home | its definition has no `autoApprove` for `return_home` (it was added before, or from a file without it) | approve it this time; then add `"approvals": {"autoApprove": [{"tool": "return_home"}]}` to its definition, or re-add it from the form with `return_home` in Tools |
+| quad-1 waits for your OK to come home | its definition has no `autoApprove` for `return_home` (the panel's form adds none) | approve it this time; then add `"approvals": {"autoApprove": [{"tool": "return_home"}]}` with `axlr-bots bot update <bot> --file <patch.json>` (a patch replaces the whole `approvals`) |
 | `rate_limited` in the timeline | the plane emitted more than its rate in a minute | wait a minute, or raise `events.perMinute` |
 | `depth_exceeded` | a chain of events went past its depth | by design (2: a reaction may react once); raise `events.maxDepth` on the emitter if a longer chain is wanted |
 | a bot never reacts to a teammate's `info.*` or `warn.*` | nothing addressed it and it does not listen to that topic | its page → **Listen to a topic**; **Teams → port → Topics** shows **nobody listens** |
