@@ -71,7 +71,11 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | Approve or deny the write a bot wants to make, be notified of it, let it expire | [Approvals](docs/runbooks/approvals.md) |
 | Let a bot ask another bot to do a task, within depth and budget limits that stop loops | [Delegation](docs/reference/bot-definition.md#delegation), [ADR](docs/architecture/delegation.md) |
 | Put bots in a team so they know each other and ask each other without naming targets | [Teams](docs/reference/bot-definition.md#teams), [ADR](docs/architecture/groups-and-events.md) |
-| Let a bot warn or recall its teammates with an event, and follow the team's timeline | [Events](docs/reference/bot-definition.md#events), [ADR](docs/architecture/groups-and-events.md) |
+| Let a bot warn or stop its teammates with an event, and follow the team's timeline | [Events](docs/reference/bot-definition.md#events), [ADR](docs/architecture/groups-and-events.md) |
+| From the panel: give a bot an urgent order, talk to it while it works, publish to its team in one press | [Teams and events from the panel](docs/runbooks/teams-and-events.md) |
+| Turn alert groups into incidents a bot triages, from Alertmanager or by hand | [Incidents](docs/runbooks/triggers.md#incidents) |
+| Run a bot with no language model: a fixed program whose every choice Jev makes | [Runtime](docs/reference/bot-definition.md#runtime) |
+| Carry the control plane's pushes to the nodes through a NATS broker | [Bus port](docs/architecture/bus-port.md#deploy-a-broker) |
 | Add a host: enrollment token, mutual TLS, revocation | [Add a host](docs/runbooks/add-a-host.md) |
 | Run the node agent as a sidecar beside a service in a Kubernetes pod, with Helm | [Sidecar](docs/runbooks/sidecar.md) |
 | Watch the fleet and approve calls from a desktop window | [Control panel](panel/README.md) |
@@ -91,10 +95,11 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | Component | Runs | Does |
 |---|---|---|
 | `axlr-bots` (control plane) | one host, `systemctl --user` | keeps the bots, tasks, executions, nodes and timers; serves the CLI on a Unix socket, the nodes on a TLS address, operators and webhooks on another; fires the timers; reconciles what a crash left running |
-| `axlr-node` (node agent) | every host that runs bots, under systemd; or in a pod beside a service, as a sidecar (`charts/axlr-bots-node`) | enrolls with a token, registers, heartbeats, polls for the executions of the bots placed on its host, runs them, reports |
+| `axlr-node` (node agent) | every host that runs bots, under systemd; or in a pod beside a service, as a sidecar (`charts/axlr-bots-node`) | enrolls with a token, registers, heartbeats, polls for the executions of the bots placed on its host, runs them (with AXLR, or a [Jev bot](docs/reference/bot-definition.md#runtime)'s program), reports |
 | AXLR (`axlr-tui --exec`) | on the node, one process per execution | the model loop, the tools, the policy and the approvals; writes the result object the node reports |
 | `axlr-bots-panel` (control panel) | an operator's desktop | reads and drives the control plane over the operator API, with the fleet CA and the bearer token |
 | your model provider | wherever it is | answers the model calls with the key in that host's environment file |
+| a NATS broker (optional) | wherever it is | carries the control plane's pushes to the nodes with `serve --bus nats`; the control plane keeps the record ([bus port](docs/architecture/bus-port.md)) |
 
 ## Project status
 

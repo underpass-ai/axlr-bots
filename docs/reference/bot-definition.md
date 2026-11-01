@@ -71,7 +71,7 @@ A call the policy leaves to a person stops the task in `WaitingApproval` ([runbo
 | `ttl` | a duration from `1m` to `720h`; the wait's deadline is when the task stopped plus the `ttl`, kept on the task (`approval.deadline`) so a restart keeps it |
 | `onExpire` | `deny`: at the deadline the call is denied as a person's deny would (a new execution hands the denial to the session, which goes on without the call); `cancel`: the task ends `Expired` and the session stays where it is. A denial whose run fails ends the task `Expired` too, and a paused bot's expired task ends `Expired` either way ([expiry](../runbooks/approvals.md#expiry)) |
 | `notify` | up to 8 targets, names unique (the type when not given). A `webhook` takes an absolute `http`/`https` `url` without credentials and the `secret` its deliveries are signed with; a `command` takes the program by its absolute path and its arguments |
-| `autoApprove` | up to 16 rules, as in `toolRules` (`{"tool": "return_home"}`, argument patterns allowed): a call that fits one is approved by the control plane at once, as actor `policy:autoApprove`, without a notification. An MCP call AXLR asks for as `axlr_call_tool` is judged by the tool it names. It costs one more execution (a few seconds): AXLR's `act-with-approval` asks for every call, so the decision is the control plane's. A bot paused meanwhile, or any other refusal, leaves the call to a person as usual |
+| `autoApprove` | up to 16 rules, as in `toolRules` (`{"tool": "rollback"}`, argument patterns allowed): a call that fits one is approved by the control plane at once, as actor `policy:autoApprove`, without a notification. An MCP call AXLR asks for as `axlr_call_tool` is judged by the tool it names. It costs one more execution (a few seconds): AXLR's `act-with-approval` asks for every call, so the decision is the control plane's. A bot paused meanwhile, or any other refusal, leaves the call to a person as usual |
 
 A decision that arrives after the deadline authorises nothing (vision §14): it is refused with `409 approval_expired`, whether the daemon has carried out the expiry yet or not, and the call never runs. The secret is stored with the bot and redacted in every answer, as a trigger's is; a `PATCH` of `approvals` replaces the whole value, secrets included. A bot defined before approvals waits an hour and then denies.
 
@@ -98,13 +98,13 @@ The target takes delegated tasks when its `triggers` include `{"type": "delegati
 
 ## Urgent tasks
 
-Only the operator makes a task urgent: with `priority: urgent` at submission (`task submit --urgent`, the panel's Urgent switch), or in the definition of the bot that hears a teammate's event (below). An urgent task is assigned before the bot's other tasks, and it cancels the bot's tasks that are Running or WaitingApproval and not urgent: each ends `Cancelled` with the reason `preempted by the urgent task <id> (<why>)` and a `bot.task.preempted` event, a running execution stops as soon as the control plane pushes the cancel on its node's stream (at the node's next lease renewal, 10 s, without the stream), and a waiting call never gets its decision (a late approve or deny is `409`). Pending tasks wait behind it; an urgent task never cancels another urgent one. Cancelling stops the model, not what it started: a vehicle on a mission flies on until the urgent task calls, say, `return_home`.
+Only the operator makes a task urgent: with `priority: urgent` at submission (`task submit --urgent`, the panel's Urgent switch), or in the definition of the bot that hears a teammate's event (below). An urgent task is assigned before the bot's other tasks, and it cancels the bot's tasks that are Running or WaitingApproval and not urgent: each ends `Cancelled` with the reason `preempted by the urgent task <id> (<why>)` and a `bot.task.preempted` event, a running execution stops as soon as the control plane pushes the cancel on its node's stream (at the node's next lease renewal, 10 s, without the stream), and a waiting call never gets its decision (a late approve or deny is `409`). Pending tasks wait behind it; an urgent task never cancels another urgent one. Cancelling stops the model, not what it started: a job the bot started on a service runs on until the urgent task calls, say, the service's `rollback`.
 
 **Stop** (`bot stop`, `POST /v1/bots/{id}/stop`) is the operator's brake: it pauses the bot and cancels every task it has not finished, Pending included.
 
 ## Teams
 
-A team is a name bots share: `"groups": ["port"]`. Nothing else needs to be written ([ADR](../architecture/groups-and-events.md)). A team exists while a bot of the tenant names it; `axlr-bots group list` and `GET /v1/groups` show each team with its members.
+A team is a name bots share: `"groups": ["ops"]`. Nothing else needs to be written ([ADR](../architecture/groups-and-events.md)). A team exists while a bot of the tenant names it; `axlr-bots group list` and `GET /v1/groups` show each team with its members.
 
 | Inside a team, by default | Change it with |
 |---|---|
@@ -112,7 +112,7 @@ A team is a name bots share: `"groups": ["port"]`. Nothing else needs to be writ
 | a bot may ask any Enabled teammate to do a task with `axlr_bots_delegate`, without naming it in `delegation.to`; the target needs no `delegation` trigger: the team is its consent. Depth, cycle and budget are checked as for any [delegation](#delegation) | `delegation.to` adds bots outside the team; `"delegation": {"fromTeam": false}` refuses the teammates' tasks (the `delegation` trigger still takes anyone's that may ask) |
 
 ```json
-{"id": "plane", "tenant": "default", "name": "plane", "owner": "operator", "mission": "…", "groups": ["port"], "…": "…"}
+{"id": "watcher", "tenant": "default", "name": "watcher", "owner": "operator", "mission": "…", "groups": ["ops"], "…": "…"}
 ```
 
 [`cmd/axlr-bots/testdata/bot-team-a.json`](../../cmd/axlr-bots/testdata/bot-team-a.json) asks [`cmd/axlr-bots/testdata/bot-team-b.json`](../../cmd/axlr-bots/testdata/bot-team-b.json), its teammate in `releases`, with no `delegation` block and no `delegation` trigger. Teams belong to a tenant: two tenants may use one name, and their bots are not teammates.
@@ -227,17 +227,18 @@ The procedure, with the checks, is the [triggers runbook](../runbooks/triggers.m
 
 ## Runtime
 
-A bot's tasks run as an AXLR session unless its definition says otherwise: a model reads the mission and the objective and calls the tools. A **Jev bot** has no model. Its node runs a fixed program over one MCP server, and every decision in it is one question to [Jev](https://typesafe.ai), TypeSafe's judgement model, which answers a choice among options in about 0.2 s. The world being acted on (the MCP server) writes the questions; the program only carries them to Jev and carries the answer back. It is for a bot whose steps are known and whose only open point is a choice: the orchestra's chairs, which play the phrase Jev picks.
+A bot's tasks run as an AXLR session unless its definition says otherwise: a model reads the mission and the objective and calls the tools. A **Jev bot** has no model. Its node runs a fixed program over one MCP server, and every decision in it is one question to [Jev](https://typesafe.ai), TypeSafe's judgement model, which answers a choice among options in about 0.2 s. The world being acted on (the MCP server) writes the questions; the program only carries them to Jev and carries the answer back. It is for a bot whose steps are known and whose only open point is a choice: a worker that takes the batch Jev picks from a queue, say.
 
 ```json
 "runtime": {
   "kind": "jev",
   "jev": {
-    "server": "score",
-    "start": "phrases",
-    "act": {"tool": "play", "choice": "phrase", "verdict": "judge", "pass": ["dynamics"]},
+    "server": "queue",
+    "start": "batches",
+    "act": {"tool": "process", "choice": "batch", "verdict": "judge", "pass": ["priority"]},
     "wait": "listen",
     "stop": "stop",
+    "tell": {"name": "info.worker.processed", "fields": ["batch", "probability"]},
     "model": "jev-1.13.0"
   }
 }
@@ -245,19 +246,19 @@ A bot's tasks run as an AXLR session unless its definition says otherwise: a mod
 
 | Field | Meaning |
 |---|---|
-| `server` | the MCP server that serves the tools, by its name in the node's `~/.config/axlr/mcp.json` (the file the node's AXLR reads): one server per bot |
+| `server` | the MCP server that serves the tools, by its name in the node's `~/.config/axlr/mcp.json` (the file the node's AXLR reads): one server per bot, reached over `http(s)` at the `url` of its entry, or of the manifest the entry names |
 | `start` | the tool a task begins with (no arguments) |
-| `act` | how the program acts on a choice: the `tool`, the argument that takes the `choice` (the first whole number in Jev's choice, else its text: «phrase 3: bars 17–24» is 3), the argument that takes Jev's `verdict` as `{choice, probability, confidence}` (optional), and the fields of the event's data to `pass` on as they are (at most 8; a cue's `dynamics`) |
+| `act` | how the program acts on a choice: the `tool`, the argument that takes the `choice` (the first whole number in Jev's choice, else its text: «batch 3: rows 17–24» is 3), the argument that takes Jev's `verdict` as `{choice, probability, confidence}` (optional), and the fields of the event's data to `pass` on as they are (at most 8; a notice's `priority`) |
 | `wait` | the tool that waits for the next question |
 | `stop` | the tool a `stop.*` task calls once (optional) |
 | `tell` | what the bot tells its teams after each act (optional): the event's `name` (one the bot may emit) and the `fields` of the decision that ride as its data: `choice`, `probability`, `confidence`, the act's choice argument, a field passed on; all of them when none is named. The message is Jev's choice. Teammates hear it as any event ([subscriptions](#subscriptions)) |
 | `model` | the pinned Jev version; `jev-1.13.0` when absent, never a `-latest` alias |
 
-The program, for a task that an event made (a cue): `start`; then, while a result carries `ask: {state, question, options}`, put it to Jev, call `act` with Jev's choice, call `wait`, which answers with the next `ask`; a result with `done: true` ends the task. A result with neither (a paused world, or between questions) is waited on again, a little later each time (up to 5 s between waits): a pause never ends a task; the budgets and `taskTimeoutSeconds` end a task the world never ends. For a `stop.*` task: `stop` once. An event heard while the task runs (a cue in mode `message`) changes what the next `act` passes on. Jev not answering is retried on the next question, three in a row fail the task; the world refusing `act` three times in a row fails it too; the budgets bound Jev's calls (`maxModelCallsPerTask`) and the tools' (`maxToolCallsPerTask`) and end a task with `budget_exceeded`, as AXLR's do.
+The program, for a task that an event made (a notice such as `info.notice.load`): `start`; then, while a result carries `ask: {state, question, options}`, put it to Jev, call `act` with Jev's choice, call `wait`, which answers with the next `ask`; a result with `done: true` ends the task. A result with neither (a paused world, or between questions) is waited on again, a little later each time (up to 5 s between waits): a pause never ends a task; the budgets and `taskTimeoutSeconds` end a task the world never ends. For a `stop.*` task: `stop` once. An event heard while the task runs (a notice in mode `message`) changes what the next `act` passes on. Jev not answering is retried on the next question, three in a row fail the task; the world refusing `act` three times in a row fails it too; the budgets bound Jev's calls (`maxModelCallsPerTask`) and the tools' (`maxToolCallsPerTask`) and end a task with `budget_exceeded`, as AXLR's do.
 
 The program's tools must be in `allowedTools`, and the level must be `act-within-policy`: the program calls its tools without asking a person. A definition or an update that narrows them past the program is refused. The execution's report carries the tool calls, the usage (Jev's calls and input tokens, the cost at TypeSafe's price) and a receipt, `axlr-bots.jev-receipt/v1`, with each decision: a hash of the question, the choice, its probability, Jev's confidence, the latency and whether the act was taken. The trace stays on the node, as AXLR's does.
 
-A node runs Jev bots only when it has `TYPESAFE_API_KEY` in its environment: it then registers the runtime `jev` in its capabilities, and the control plane assigns a Jev bot to no other node. `axlr-node --mcp-config` names another `mcp.json`; `--jev-model` another pinned version.
+A node runs Jev bots only when it has `TYPESAFE_API_KEY` in its environment: it then registers the runtime `jev` in its capabilities, and the control plane assigns a Jev bot to no other node. `axlr-node --mcp-config` names another `mcp.json`; `--jev-model` another pinned version. Where the key goes: the env file on a host ([install](../runbooks/install.md#jev-bots-and-a-broker-on-a-host)), `sidecar.env` in a pod ([sidecar](../runbooks/sidecar.md#jev-bots-and-a-broker-in-a-pod)).
 
 ## Register, enable, update
 
@@ -271,7 +272,7 @@ axlr-bots bot events bot --limit 100                 # the bot's newest events, 
 
 A task's `priority` is `urgent` when it went first ([urgent tasks](#urgent-tasks)), absent otherwise.
 
-A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `delegation`, `groups`, `events`, `subscriptions`, `model`, `budgets`) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`cmd/axlr-bots/testdata/bot-triggers-patch.json`](../../cmd/axlr-bots/testdata/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`cmd/axlr-bots/testdata/bot-act-with-approval.json`](../../cmd/axlr-bots/testdata/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
+A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `delegation`, `groups`, `events`, `subscriptions`, `runtime`, `model`, `budgets`) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`cmd/axlr-bots/testdata/bot-triggers-patch.json`](../../cmd/axlr-bots/testdata/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`cmd/axlr-bots/testdata/bot-act-with-approval.json`](../../cmd/axlr-bots/testdata/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
 
 ## Tasks
 

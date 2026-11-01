@@ -38,7 +38,7 @@ Which door "the world tells" goes through follows the topic's kind, as the bus f
 | `info.<what>` | info | the bots subscribed to it, or the ones in `to`; nobody else | a note (a message or a task when the subscription says so) |
 | `warn.<what>` | warning | the same | a line in a running task; a task when the bot is idle |
 | `danger.<what>` | critical | every Enabled member, whatever it subscribes to | an urgent task (a normal one for a bot with `events.interruptible: false`) |
-| `stop.<what>` | critical | every Enabled member | an urgent task; `stop.all` is the team's Recall |
+| `stop.<what>` | critical | every Enabled member | an urgent task; `stop.all` stops the whole team |
 | `error.*`, `done.*` | | refused, `not_allowed`: the control plane's only | |
 
 ## Rules

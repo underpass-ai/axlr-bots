@@ -2,9 +2,11 @@
 
 Status: accepted, 28 October 2026 (the product owner settled each question below in turn: topics per team, «C» for who subscribes, the modes and the kinds, the panel «Aprobado», the limits and the migration «déjalo todo preparado»). Vision principle 13; builds on [teams, events and urgent tasks](groups-and-events.md) and [delegation](delegation.md). This document is written so that a session can implement it in the ordered PRs at the end, each with its acceptance checks, without asking again.
 
+Changes since it was accepted, dated: on 1 November 2026 the `recall` alias of decision 7 was removed ([#88](https://github.com/underpass-ai/axlr-bots/pull/88)): a kindless `recall` is `info`, like any other name whose first segment is no kind. The same day the panel's **Recall** became the **Urgent order**, an order the operator types for any bot, run as an urgent task ([#89](https://github.com/underpass-ai/axlr-bots/pull/89)); `stop.all` still stops the whole team. The [bus port](bus-port.md) (30 October 2026) adds an optional NATS adapter that carries the control plane's pushes to the nodes; the control plane stays the bus and the record, as below.
+
 ## Context
 
-Today a bot tells its team something with `axlr_bots_emit_event {name, message, severity, data, to}`: the emitter names the receivers (`to`), or broadcasts; a receiver hears what is addressed to it and the team's `warning` and `critical` broadcasts; every event heard is a new task. The product owner wants bots that talk **by publish/subscribe**: the emitter names a topic, not the receivers; whoever subscribed hears it; the operator sees and controls who hears what from the panel. The guide principles hold: "desde el panel siento que controlo mis bots", "no se traslada la complejidad al usuario", "los bots se conocen y pertenecen a grupos". Bots stay generic (a shop, a cluster, a fleet); the vehicle fleet is only the live demo.
+Today a bot tells its team something with `axlr_bots_emit_event {name, message, severity, data, to}`: the emitter names the receivers (`to`), or broadcasts; a receiver hears what is addressed to it and the team's `warning` and `critical` broadcasts; every event heard is a new task. The product owner wants bots that talk **by publish/subscribe**: the emitter names a topic, not the receivers; whoever subscribed hears it; the operator sees and controls who hears what from the panel. The guide principles hold: "desde el panel siento que controlo mis bots", "no se traslada la complejidad al usuario", "los bots se conocen y pertenecen a grupos". Bots stay generic (a shop, a cluster, a fleet); the vehicle fleet (now in the private repo `axlr-bots-examples`) is only the live demo.
 
 Most of pub/sub already exists. The event's `name` is a dotted topic (`pedido.nuevo`); an `event` trigger with `events: ["pedido.*"]` is a subscription; an event without `to` is a broadcast; the control plane is the bus. What is missing, and what this ADR adds:
 
@@ -42,7 +44,7 @@ control plane (B's task failed) ──error.bot on B's teams──▶ bot S, sub
 | 4 | Severity | **The topic's first segment is its kind, and the kind fixes the severity.** The emit tool no longer takes `severity`. Six kinds: `error`, `danger`, `stop` (critical), `warn` (warning), `done`, `info` (info). `error` and `done` are the control plane's only; a name whose first segment is no kind (`recall`) is `info`. |
 | 5 | The panel | Bot page → **Listens to** (its subscriptions: topic, mode, from whom; **Listen to a topic**; a card for each pending ask with **Approve** / **Deny**). Team → **Topics** (each topic: who publishes, who listens, last event; **nobody listens** in red). Team → **Publish an event**. |
 | 6 | Limits on the hearing side | Intake: **10 events a minute per bot**; past it, a delivery degrades to `note` (nothing is lost). Coalescing: a **Pending task not yet started absorbs** the later events of the same subscription as notes. Loops: cycle cut as today; the default depth of an event chain goes from 1 to **2**. Budget: the receiver spends **its own**, as today. |
-| 7 | Migration | `to` stays: an addressed event is heard by the named teammates whether or not they subscribe. `severity` leaves the tool (accepted and ignored from an older node). A bot with no subscriptions hears what is addressed to it and the team's `danger.*` and `stop.*` (not `error.*`: that would wake every teammate on every failure; a supervisor subscribes to it). `event` triggers in a definition are read as subscriptions of mode `task` for one release. **Two behaviours change**: an addressed `warn.*` no longer interrupts (it is a `message`, or a normal task when the receiver is idle): to stop a teammate, emit `stop.*`; an addressed `info.*` or kindless name makes no task (a `note`). For one release the kindless name `recall` is read as `stop.recall`, so the deployed pilots keep recalling until their definitions move. |
+| 7 | Migration | `to` stays: an addressed event is heard by the named teammates whether or not they subscribe. `severity` leaves the tool (accepted and ignored from an older node). A bot with no subscriptions hears what is addressed to it and the team's `danger.*` and `stop.*` (not `error.*`: that would wake every teammate on every failure; a supervisor subscribes to it). `event` triggers in a definition are read as subscriptions of mode `task` for one release. **Two behaviours change**: an addressed `warn.*` no longer interrupts (it is a `message`, or a normal task when the receiver is idle): to stop a teammate, emit `stop.*`; an addressed `info.*` or kindless name makes no task (a `note`). For one release the kindless name `recall` is read as `stop.recall`, so the deployed pilots keep recalling until their definitions move (the alias was removed on 1 November 2026, [#88](https://github.com/underpass-ai/axlr-bots/pull/88)). |
 
 ## What the operator sees and does
 
@@ -67,9 +69,9 @@ Panel words are English, as the rest of the panel; the API names are in code.
 | Rule | Decision |
 |---|---|
 | name | dot-separated segments `[a-z0-9-]`, ≤ 64 chars (as today). The first segment is the **kind**. A pattern takes `*` (one segment) and `**` (any), as today |
-| kinds | `error` critical, control plane only · `danger` critical, bots and the operator · `stop` critical, bots and the operator · `warn` warning, bots, the operator and the control plane · `done` info, control plane only · `info` info, bots and the operator. Any other first segment is `info`, except `recall`, read as `stop.recall` for one release (the deployed pilots emit it) |
+| kinds | `error` critical, control plane only · `danger` critical, bots and the operator · `stop` critical, bots and the operator · `warn` warning, bots, the operator and the control plane · `done` info, control plane only · `info` info, bots and the operator. Any other first segment is `info`, except `recall`, read as `stop.recall` for one release (the deployed pilots emit it; the alias was removed on 1 November 2026, [#88](https://github.com/underpass-ai/axlr-bots/pull/88), and `recall` is `info` now) |
 | who may emit what | by default a bot may emit any name that is not `error.*` or `done.*`, 6 a minute (`events.perMinute`, ≤ 60). *Advanced* `events.emit` lists names or patterns and narrows it; `maxSeverity` on a rule is accepted and ignored (the kind decides) |
-| the operator | may publish any name but `error.*` and `done.*`; `stop.all` to a team is the generalised **Recall** |
+| the operator | may publish any name but `error.*` and `done.*`; `stop.all` to a team is the generalised **Recall** (since 1 November 2026 the panel has no Recall button: its **Urgent order** is a typed order to one bot, [#89](https://github.com/underpass-ai/axlr-bots/pull/89); `stop.all` stops the whole team) |
 | the control plane | publishes on the bus, as the bot the fact is about and `by: control-plane`, only when a teammate of that bot subscribes to the name: `error.bot` (the task failed or expired; `data`: `taskId`, `reason`), `warn.approval` (the task waits for a person; `data`: `taskId`, `tool`), `done.task` (the task completed; `data`: `taskId`, `answer`: the task's result text, cut at 280 chars). The bot the fact is about never hears its own |
 | event id | `evt-` + sha256 of the task (or the operator's idempotency key), name, message, data and `to`: the same call again is the same event and delivers nothing twice (as today, less the severity) |
 
@@ -190,7 +192,7 @@ Domain `TopicKind`, severity derived, default emit rules by kind, `error.*`/`don
 | Check | Expected |
 |---|---|
 | a bot in a team emits `info.turno` | `bot.event.emitted` with `severity: info`; delivered as today (nobody hears a broadcast `info` yet: no deliveries, no skips) |
-| emits `stop.recall` addressed to a teammate | the teammate's task is urgent (`severity: critical` derived) |
+| emits `stop.halt` addressed to a teammate | the teammate's task is urgent (`severity: critical` derived) |
 | emits `error.bot` | `200` with `refused: {reason: "not_allowed"}`, `bot.event.refused` |
 | an old node sends `severity: "critical"` with `info.x` | accepted; the event is `info` |
 | `events.emit: [{"name": "warn.*", "maxSeverity": "critical"}]` | accepted; `warn.x` is `warning`; `info.x` refused `not_allowed` |
@@ -208,8 +210,8 @@ Domain `TopicKind`, severity derived, default emit rules by kind, `error.*`/`don
 | the same event from a bot not in `from` | not heard; no skip |
 | a bot with no subscriptions; a teammate emits `danger.fire` | an urgent task (team default); with `events.interruptible: false` a normal task |
 | a bot subscribed only to `pedido.*` from `recepcion`; `almacen` emits `stop.all` | an urgent task: `danger.*` and `stop.*` broadcasts reach every Enabled teammate whatever its subscriptions |
-| `stop.recall` addressed to a bot whose subscriptions do not match `stop.*` | heard anyway (implicit subscription), urgent |
-| a teammate emits `recall` addressed to a bot | read as `stop.recall`: an urgent task |
+| `stop.halt` addressed to a bot whose subscriptions do not match `stop.*` | heard anyway (implicit subscription), urgent |
+| a teammate emits `recall` addressed to a bot | read as `stop.recall`: an urgent task (until 1 November 2026, [#88](https://github.com/underpass-ai/axlr-bots/pull/88); a kindless name addressed to a bot is a note by default now) |
 | a teammate emits `warn.x` addressed to a bot with no matching subscription | a task, **not** urgent |
 | `PATCH` with 17 subscriptions, a bad pattern, `from` naming a stranger | `400 validation` each, with the field |
 | a definition with `triggers: [{"type": "event", "events": ["a.*"], "interrupt": true}]` | registered; `bot get` shows `subscriptions: [{"topic": "a.*", "mode": "task", "urgent": true}]` |
@@ -287,6 +289,8 @@ Listens to, Listen to a topic, Remove, the pending card with Approve/Deny (and t
 
 ### PR 9 — the fleet and the runbook
 
+The fleet, its definitions and its runbook live in the private repo `axlr-bots-examples` since 1 November 2026; the [runbook](../runbooks/teams-and-events.md) here walks a neutral team.
+
 The pilots emit `stop.recall` instead of `recall` with a severity; the fleet's definitions (`drone-fleet/`, now in the private repo `axlr-bots-examples`) get a subscription or two that show the three modes (the plane: `info.*` as notes; a quad: `warn.*` as messages; the operator's `stop.all` as the generalised Recall); `docs/runbooks/teams-and-events.md` extended with "Listen to a topic", "Publish an event" and "When it does not work" rows; the fleet's runbook updated.
 
 | Check | Expected |
@@ -301,7 +305,7 @@ The pilots emit `stop.recall` instead of `recall` with a severity; the fleet's d
 - Three new things reach a bot's prompt or run: a task (as today), a teammate's line in its chat, a block of notes. The directory loses up to 1200 characters to the notes when the prompt is tight; the mission and the objective never.
 - The control plane publishes about itself only when someone listens, so the history grows by what the operators asked for.
 - **Upgrade order**: control plane, then nodes (an old node still offers `severity`, ignored), then the panel (an old panel shows the new events as `Unknown` and knows no subscriptions: it edits `groups` and nothing else).
-- **What stops working as before**: a teammate's addressed `warning` no longer interrupts (the live-tested recall of 26 October relied on it): the deployed pilots emit `recall`, which the control plane reads as `stop.recall` for one release, so they keep recalling; their definitions and prompts move to `stop.recall` in PR 9, and the alias leaves in the release after. Tests that assert an addressed `warning` or `info` makes a task (`application/urgent_test.go`, `events_test.go`) change on purpose.
+- **What stops working as before**: a teammate's addressed `warning` no longer interrupts (the live-tested recall of 26 October relied on it): the deployed pilots emit `recall`, which the control plane reads as `stop.recall` for one release, so they keep recalling; their definitions and prompts move to `stop.recall` in PR 9, and the alias leaves in the release after. It left on 1 November 2026 ([#88](https://github.com/underpass-ai/axlr-bots/pull/88)). Tests that assert an addressed `warning` or `info` makes a task (`application/urgent_test.go`, `events_test.go`) change on purpose.
 - The default depth 2 lets a reaction react once; a chain of three needs `events.maxDepth` on the bots along it.
 
 ## Left out

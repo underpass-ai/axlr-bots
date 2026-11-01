@@ -24,9 +24,9 @@ The control plane decides *when, where, as whom and under which permissions* a u
 
 | | Control plane (`axlr-bots serve`) | Node (`axlr-node`) | AXLR (`axlr-tui --exec`) |
 |---|---|---|---|
-| Keeps | bots, tasks, executions, nodes, timers, enrollments, events, audit, reports | its credentials, the traces, policy files and workspaces of what it ran (on the host, or on its pod's volume) | the session: transcript, tool calls, decisions, usage |
+| Keeps | bots, tasks, executions, incidents, nodes, timers, enrollments, events, audit, reports | its credentials, the traces, policy files and workspaces of what it ran (on the host, or on its pod's volume) | the session: transcript, tool calls, decisions, usage |
 | Decides | which task runs, where, as which bot, with which policy and budget; whether a fire or a report is new | nothing: it runs what it is assigned and reports | each model call and tool call, within the policy; when to stop for a person |
-| Talks to | the CLI (socket), operators and webhooks (TLS, bearer token or the trigger's secret), the nodes (TLS, client certificates) | the control plane only, outbound | the model provider, with the key in the host's environment |
+| Talks to | the CLI (socket), operators and webhooks (TLS, bearer token or the trigger's secret), the nodes (TLS, client certificates); a broker, with `--bus nats` | the control plane only, outbound; a broker too, with `--bus nats` | the model provider, with the key in the host's environment |
 | Trusts | the socket's owner; a certificate the fleet CA signed, for that node id only; the bearer token; a trigger's own credential | the CA the token carried | the policy file and the approval level it was given |
 
 ## The daemon
@@ -57,6 +57,11 @@ A bot whose definition names other bots in `delegation.to` may ask one of them t
         └────────── the child's answer ◀── node polls ◀───────────┘   bot-b's execution runs on a node, reports
 ```
 
+## Runtimes and pushes
+
+- **Two runtimes, one contract.** A node runs a task on AXLR unless the bot's definition names `runtime.kind: jev`: then the node's Jev runtime runs a fixed program over one MCP server, each decision one question to Jev, with the same request and report ([runtime contract](runtime-contract.md#a-second-runtime-a-jev-program), [bot definition](../reference/bot-definition.md#runtime)). A node offers it only when `TYPESAFE_API_KEY` is in its environment, and the control plane assigns a Jev bot to no other node.
+- **Pushes are hints.** When one of a node's executions is cancelled, preempted, expired or given a message, the control plane tells that node at once: over the stream the node holds open, and with `--bus nats` through a broker too ([bus port](bus-port.md)). The node then renews the lease and reads from the control plane, which keeps the record; a lost push costs one lease renewal (10 s).
+
 ## The node as a sidecar
 
 The same `axlr-node`, from the node image ([`distribution/node.Dockerfile`](../../distribution/node.Dockerfile): `axlr-node` and AXLR's `axlr-tui`, distroless, user 65532), runs as a container in a service's pod, beside the service, packaged by the Helm chart [`charts/axlr-bots-node`](../../charts/axlr-bots-node) ([sidecar runbook](../runbooks/sidecar.md)). Systemd disappears; nothing else changes on the control plane, which stays one per fleet, on a host or wherever it is reachable, and sees the pod as one more node.
@@ -82,4 +87,4 @@ The chart renders a demo (a StatefulSet whose service writes a log the sidecar r
 
 ## What is left out
 
-A systemd unit event as a trigger type; an incident's own lock (the open path holds the submissions lock and the task's end runs under the serial runner, and the file store has no optimistic locking, vision §8.4), the Alertmanager adapter over `POST /v1/incidents` and the states between a diagnosis and a resolution (the [AXLR Bots SRE design](https://github.com/underpass-ai/axlr-sre/blob/main/docs/design.md)); Kubernetes resources for bots (`Bot`, `BotExecution`: no CRDs, vision §9.3); an approval queue beyond `task approve` (who may decide, and when; an expired approval); operator client certificates on the API address (the bearer token is the one credential); a `GET /v1/tasks` listing; `axlr-serve` as a second `RuntimeExecutor`; delegation from the control plane's in-process runs and a cancel that reaches a task's children ([delegation](delegation.md#left-out)); automatic certificate renewal, CRL/OCSP and a CA key outside the state directory ([node protocol](../reference/node-protocol.md#limits-today)). The vision's §13 and §14 name the rest for Phase 2.
+A systemd unit event as a trigger type; an incident's own lock (the open path holds the submissions lock and the task's end runs under the serial runner, and the file store has no optimistic locking, vision §8.4), the states between a diagnosis and a resolution (the [AXLR Bots SRE design](https://github.com/underpass-ai/axlr-sre/blob/main/docs/design.md)); Kubernetes resources for bots (`Bot`, `BotExecution`: no CRDs, vision §9.3); an approval queue beyond `task approve` and `task list --status WaitingApproval` (who may decide); operator client certificates on the API address (the bearer token is the one credential); `axlr-serve` as a second `RuntimeExecutor`; delegation from the control plane's in-process runs and a cancel that reaches a task's children ([delegation](delegation.md#left-out)); automatic certificate renewal, CRL/OCSP and a CA key outside the state directory ([node protocol](../reference/node-protocol.md#limits-today)). The vision's §13 and §14 name the rest for Phase 2.

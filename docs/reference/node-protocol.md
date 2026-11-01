@@ -20,7 +20,7 @@ Over the TLS address a node **is** its certificate: the server takes the node id
 | renew lease | `POST /v1/nodes/{id}/executions/{exec}/lease` | node → control plane | yes; refused for another node's or an ended execution |
 | operator messages | `GET /v1/nodes/{id}/executions/{exec}/messages?after=<event id>` | node → control plane, with each lease renewal | yes: the messages after the cursor, oldest first (all when the cursor is empty or out of the task's window); none for an ended execution; refused for another node's. A teammate's event heard in mode `message` comes the same way, as `Your teammate <from> says (<name>): <message>` ([subscriptions](bot-definition.md#subscriptions)) |
 | a reply `{inReplyTo?, text}` | `POST /v1/nodes/{id}/executions/{exec}/said` | node → control plane, while the execution runs | no: each reply is one `bot.task.said` event in the task's timeline (words past 8000 characters cut); refused for another node's or an ended execution |
-| artifact (the bytes; `Content-Type`, `Content-Length`, `X-Axlr-Artifact-Sha256`) | `PUT /v1/nodes/{id}/executions/{exec}/artifacts/{name}` | node → control plane, before the report | per name: a repeat replaces it; refused once the execution has ended ([below](#artifacts)) |
+| artifact (the bytes; `Content-Type`, `Content-Length`, `X-Axlr-Artifact-Sha256`, and the optional `X-Axlr-Artifact-Reference` and `X-Axlr-Artifact-Description`) | `PUT /v1/nodes/{id}/executions/{exec}/artifacts/{name}` | node → control plane, before the report | per name: a repeat replaces it; refused once the execution has ended ([below](#artifacts)) |
 | report `{outcome, result, usage, failureReason, traceReference, policy, correlation, receipt}` | `POST /v1/nodes/{id}/executions/{exec}/report` | node → control plane (at most 8 MiB) | **accepted once**: a repeat answers `accepted: false` with the stored outcome |
 | delegate `{bot, objective, wait}` | `POST /v1/nodes/{id}/executions/{exec}/delegations` | node → control plane, while the execution runs | per asking task, bot and objective: a repeat answers the same child, `201` when created, `200` otherwise; a refusal is `200` with `refused: {reason, message}` ([below](#delegation)) |
 | read a delegation | `GET /v1/nodes/{id}/executions/{exec}/delegations/{task}?wait=20s` | node → control plane (long poll, at most 30 s) | yes; only a child of the execution's own task |
@@ -57,7 +57,7 @@ The report carries AXLR's receipt line (`axlr.execution-receipt/v1`, at most 1 M
 
 ## Events
 
-`node.registered`, `node.heartbeat`, `node.offline`, `node.enrolled`, `node.revoked`, `execution.assigned` and `execution.reported` are the node events, `bot.task.delegated` and `bot.delegation.refused` the delegation's, and `bot.event.emitted` and `bot.event.refused` a team event's, on the asking bot's stream, in `events.jsonl` with the bot, task, execution and trace ids they concern. The control plane marks Offline the nodes silent for over a minute, on start and every minute.
+`node.registered`, `node.heartbeat`, `node.offline`, `node.enrolled`, `node.revoked`, `execution.assigned` and `execution.reported` are the node events, `bot.task.delegated` and `bot.delegation.refused` the delegation's, `bot.event.emitted` and `bot.event.refused` a team event's and `bot.subscription.asked` a subscribe's, on the asking bot's stream, `bot.event.heard` on each bot that heard the event, and `bot.task.message` and `bot.task.said` the messages to a running task and its replies, in the task's timeline. All go to `events.jsonl` with the bot, task, execution and trace ids they concern. The control plane marks Offline the nodes silent for over a minute, on start and every minute.
 
 ## Revocation
 
@@ -71,8 +71,8 @@ The node is marked `Revoked`, its certificate's serial goes on the denylist (`<s
 
 | | |
 |---|---|
-| Out of the node | the registration, heartbeats, polls, lease renewals and reports; the bytes of the artifacts an execution delivered; an execution's delegations (the target and the objective the model wrote); its team events (the name, message, severity, data and teammates the model wrote); the signing request at enrollment |
-| Into the node | the assignments (the objective, model, level, tools, rules, timeout, budgets and correlation ids, the delegation targets, or a decision), the state and answer of a child an execution delegated, and its own certificate once |
+| Out of the node | the registration, heartbeats, polls, lease renewals and reports; the bytes of the artifacts an execution delivered; an execution's delegations (the target and the objective the model wrote); its team events (the name, message, data and teammates the model wrote) and its asks to subscribe (the topic and why); what a run says back to a message; the signing request at enrollment |
+| Into the node | the assignments (the objective, model, level, tools, rules, timeout, budgets and correlation ids, the delegation targets and the team's event names and teammates; for a Jev bot its program and the task's input; or a decision), the messages for a running execution (the operator's and the teammates'), the stream's hints, the state and answer of a child an execution delegated, and its own certificate once |
 | Never leaves the node | its private key, the AXLR session and its trace (the execution keeps a reference), the workspace beyond the delivered artifacts |
 | Never leaves the control plane | the CA key, the token secrets (stored hashed), the operator bearer token |
 | Per host | the model key, in that host's environment file |

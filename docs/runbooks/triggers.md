@@ -1,6 +1,6 @@
 # Runbook: start tasks from a webhook or on a timer
 
-Give a bot automatic triggers, fire them, and verify that a redelivery or a restart creates nothing twice; point Alertmanager at a bot and verify that a group resent thirty times is one incident. The trigger types, their fields and their keys are in the [bot definition](../reference/bot-definition.md#triggers).
+Give a bot automatic triggers, fire them, and verify that a redelivery or a restart creates nothing twice; point Alertmanager at a bot and verify that a group resent thirty times is one incident; open, follow and close an incident by hand. The trigger types, their fields and their keys are in the [bot definition](../reference/bot-definition.md#triggers).
 
 ## Add the triggers
 
@@ -49,6 +49,36 @@ route:
 ```
 
 Check: the first firing group answers `201`, `"action": "opened"`, the incident and its triage task; every resend of the same group (`repeat_interval`) answers `200`, `"action": "repeated"`, no task, and `incident get` shows `repeats` growing and the new alerts under `fingerprints`; when the group goes green, `"action": "resolved"`, the incident is `Resolved` and no task was started; a group that fires again within 30 minutes answers `"action": "reopened"` with a new task and `"cycle": 2`. After an hour of resends, `incident list` holds one incident for the group. A body that is not Alertmanager's answers `400`.
+
+## Incidents
+
+An incident is one alert group of a tenant and the triage tasks one bot ran for it ([operator API](../reference/operator-api.md#routes)). Alertmanager opens them through an `alertmanager` trigger (above); anything else, or a person, through `POST /v1/incidents` or `axlr-bots incident open`, for a bot that declares the `incident` trigger. One task per cycle: a repeated alert starts nothing.
+
+```text
+new group key ──▶ Open, cycle 1, a triage task ──task Completed──▶ Diagnosed (the answer is the diagnosis)
+                      └──task Failed, Expired or Cancelled──▶ Escalated (a person must look)
+same key, not Resolved ──▶ a repeat: its alerts added, no task
+resolved group, or incident resolve ──▶ Resolved ──same key within 30 minutes──▶ Open, cycle + 1, a new task
+                                                  └─same key later──▶ a new incident
+```
+
+| Status | Means |
+|---|---|
+| `Open` | nobody has said the cause yet: its triage task is pending or running |
+| `Diagnosed` | the task completed; its answer, the cause with its evidence, is the incident's `diagnosis` |
+| `Escalated` | the task failed, expired or was cancelled; `reason` says which, and a person takes it from there |
+| `Resolved` | its alerts went green, or a person closed it; a running task still settles and its cost is still added, but it moves the incident no further |
+
+```bash
+axlr-bots bot update triage --file patch.json     # {"triggers": [{"type": "manual"}, {"type": "incident"}]}; the bot is Enabled
+axlr-bots incident open --tenant default --bot triage --group-key "HighLatency/web" \
+    --title "High latency in web" --severity sev2 --fingerprints a1
+axlr-bots incident list --status Open
+axlr-bots incident get inc-…                      # alerts, cycle, taskIds, diagnosis, reason, repeats, costUsd
+axlr-bots incident resolve inc-… --reason "rolled back"
+```
+
+Check: the first `open` answers `created: true`, the incident `Open` at cycle 1 and its triage task, key `incident:<id>:1`, whose objective is the trigger's template or the default ("Incident … Find the cause with evidence and report it; change nothing") and whose `input` is the incident. The same group key again answers `created: false`, no task, and the incident with the new fingerprints and `repeats` one higher. After `resolve`, the same key within 30 minutes answers `reopened: true`, cycle 2 and a task keyed `…:2`. The bot's events show `incident.opened`, `incident.repeated`, `incident.resolved`, `incident.reopened`, and `incident.diagnosed` or `incident.escalated` when its task ends. Severity is `sev1` to `sev4` (`sev3` when absent); a bot without the `incident` trigger, or not Enabled, refuses the incident.
 
 ## Check the catch-up
 

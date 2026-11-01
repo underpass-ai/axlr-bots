@@ -41,11 +41,13 @@ One Go module, hexagonal: the domain depends on nothing, the application holds t
   policies/<exec-id>.json  correlation/<exec-id>.json  artifacts/<task-id>/report.md
   artifacts/executions/<exec-id>/<name> (+ .listing/<name>.json)   the artifacts an execution delivered
   deliveries/pending/<dlv-id>.json, deliveries/done/   the outbox of approval notifications
+  outbox/nats/<node>/<time>-<seq>.json   with serve --bus nats: the pushes the broker has not acknowledged yet
   traces/, workspaces/     (single-process runs; a node keeps its own under its state)
 
 <node-state>/
   pki/node.key (0600), pki/node.crt, pki/ca.crt, pki/enrollment.json (with the token's id)   (once enrolled)
   traces/, policies/, correlation/, workspaces/<bot-id>/
+  steer/<exec-id>.jsonl    the messages to a running execution, read by its axlr-tui (--steer-file)
   run/<exec-id>.sock (0700 directory, while an execution that may delegate runs)   mcp/<exec-id>.json (its MCP manifest)
 ```
 

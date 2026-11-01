@@ -234,7 +234,8 @@ func printUsage(w io.Writer) {
   bot update <bot-id> --file <patch.json>
                                       replace the fields the patch names (mission, level,
                                       allowedTools, toolRules, triggers, placement, approvals,
-                                      delegation, groups, events, subscriptions, model, budgets)
+                                      delegation, groups, events, subscriptions, model, budgets,
+                                      runtime)
   bot events <bot-id> [--limit 100]   the bot's newest events, oldest first
   bot subscribe <bot-id> <topic> [--mode task|message|note] [--from a,b]
                                       make the bot listen to a topic of its teams
@@ -247,7 +248,7 @@ func printUsage(w io.Writer) {
   group topics <group> [--tenant <id>]
                                       the team's topics: who publishes, who listens, nobody listens
   group publish <group> <name> --message "<text>" [--data '{…}'] [--to a,b] [--key <k>] [--tenant <id>]
-                                      publish the operator's event on the team; stop.all recalls everyone
+                                      publish the operator's event on the team; stop.all stops everyone
   incident open --tenant <id> --bot <bot-id> --group-key "<key>" --title "<text>" [--severity sev1..sev4]
                 [--fingerprints a,b] [--source <name>] [--objective "<text>"]
                                       report an alert group: a new incident and its triage task,
