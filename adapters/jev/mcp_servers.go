@@ -12,7 +12,7 @@ import (
 
 // MCPConfig finds a program's MCP server by its name in the node's AXLR
 // configuration, ~/.config/axlr/mcp.json: the same file the node's AXLR
-// reads, so a chair's score service is named once per node. A plugin
+// reads, so a server is named once per node. A plugin
 // entry names a manifest; the manifest gives the server's URL.
 type MCPConfig struct {
 	// Path is the mcp.json; empty means $HOME/.config/axlr/mcp.json.

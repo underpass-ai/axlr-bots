@@ -35,7 +35,7 @@ func TestAnOperatorMessageReachesTheRunningExecution(t *testing.T) {
 	if _, err := f.client.EnableBot(ctx, "bot"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, err := f.client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "patrol the quay", IdempotencyKey: "k1"})
+	submitted, err := f.client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "watch the queue", IdempotencyKey: "k1"})
 	if err != nil {
 		t.Fatal(err)
 	}

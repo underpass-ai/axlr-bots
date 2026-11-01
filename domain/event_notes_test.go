@@ -38,12 +38,12 @@ func TestNotesKeepTheNewestEightOldestFirst(t *testing.T) {
 }
 
 func TestNotesAreCutBeforeTheDirectory(t *testing.T) {
-	directory := NewTeamDirectory([]TeamName{"port"}, []Teammate{{ID: "quad-1", Purpose: "Pilot.", Where: "any node"}})
+	directory := NewTeamDirectory([]TeamName{"ops"}, []Teammate{{ID: "worker-1", Purpose: "Deployer.", Where: "any node"}})
 	notes := notesOf(8, strings.Repeat("n", 100))
 	mission, _ := NewMission(strings.Repeat("m", 2000))
-	objective, _ := NewObjective("Warn quad-1.")
+	objective, _ := NewObjective("Warn worker-1.")
 	got, err := NewTeamPrompt(mission, objective, directory, notes)
-	if err != nil || !strings.Contains(got.String(), "quad-1: Pilot.") || strings.Count(got.String(), "\n- 10:") != 8 {
+	if err != nil || !strings.Contains(got.String(), "worker-1: Deployer.") || strings.Count(got.String(), "\n- 10:") != 8 {
 		t.Fatalf("roomy = %v\n%s", err, got)
 	}
 	// Mission, objective, eight notes and the directory pass 8000: the
@@ -52,7 +52,7 @@ func TestNotesAreCutBeforeTheDirectory(t *testing.T) {
 	objective, _ = NewObjective(strings.Repeat("o", 5100))
 	got, err = NewTeamPrompt(mission, objective, directory, notes)
 	text := got.String()
-	if err != nil || !strings.Contains(text, "quad-1: Pilot.") || strings.Contains(text, "info.n1)") || !strings.Contains(text, "info.n8") || !strings.HasSuffix(text, "o") || !strings.Contains(text, mission.String()) {
+	if err != nil || !strings.Contains(text, "worker-1: Deployer.") || strings.Contains(text, "info.n1)") || !strings.Contains(text, "info.n8") || !strings.HasSuffix(text, "o") || !strings.Contains(text, mission.String()) {
 		t.Errorf("tight = %v (%d)\n%s", err, len(text), text)
 	}
 	objective, _ = NewObjective(strings.Repeat("o", 5880))
@@ -60,7 +60,7 @@ func TestNotesAreCutBeforeTheDirectory(t *testing.T) {
 	if err != nil || strings.Contains(got.String(), "Recent events") || strings.Contains(got.String(), "teammates") {
 		t.Errorf("full = %v", err)
 	}
-	if only, err := NewTeamPrompt(NewMissionOrPanic("Fly."), NewObjectiveOrPanic("Go."), TeamDirectory{}, notes); err != nil || !strings.Contains(only.String(), "Recent events") {
+	if only, err := NewTeamPrompt(NewMissionOrPanic("Watch."), NewObjectiveOrPanic("Go."), TeamDirectory{}, notes); err != nil || !strings.Contains(only.String(), "Recent events") {
 		t.Errorf("notes alone = %v %s", err, only)
 	}
 }

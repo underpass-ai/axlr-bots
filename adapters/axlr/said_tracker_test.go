@@ -11,12 +11,12 @@ func TestTheRunsWordsAfterAMessageAreOneReply(t *testing.T) {
 	var heard []application.SaidReply
 	tracker := newSaidTracker(func(reply application.SaidReply) { heard = append(heard, reply) })
 	for _, line := range []string{
-		`{"type":"text","text":"Working on the quay. "}`,
+		`{"type":"text","text":"Working on the queue. "}`,
 		`{"type":"steered","text":"check row F"}`,
 		`{"type":"text","text":"OK, "}`,
 		`{"type":"text","text":"row F next."}`,
-		`{"type":"tool.requested","tool":"drone_fly"}`,
-		`{"type":"text","text":"Flying."}`,
+		`{"type":"tool.requested","tool":"service_restart"}`,
+		`{"type":"text","text":"Restarting."}`,
 		`{"type":"steered","text":"nothing to say"}`,
 		`{"type":"steered","text":"and row G?"}`,
 		`{"type":"text","text":"Row G too."}`,

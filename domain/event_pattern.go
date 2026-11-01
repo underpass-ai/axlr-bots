@@ -4,8 +4,8 @@ import "strings"
 
 // EventPattern matches event names: segments as in a name, where *
 // stands for one segment and ** for any number of them, none included.
-// ship.* matches ship.sighted, not ship; ship.** matches both, and **
-// matches every name.
+// deploy.* matches deploy.started, not deploy; deploy.** matches both,
+// and ** matches every name.
 type EventPattern string
 
 // AnyEvent matches every event name.

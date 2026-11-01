@@ -312,7 +312,7 @@ func TestUpdateBot(t *testing.T) {
 	if _, err := uc.Execute(ctx, bot.ID(), BotPatch{}); !errors.As(err, &verr) {
 		t.Error("empty patch accepted:", err)
 	}
-	bad := "fly"
+	bad := "reckless"
 	if _, err := uc.Execute(ctx, bot.ID(), BotPatch{Level: &bad}); err == nil {
 		t.Error("bad level accepted")
 	}

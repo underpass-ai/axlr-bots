@@ -122,7 +122,7 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 	}
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	report := r.play(runCtx)
+	report := r.perform(runCtx)
 	if ctx.Err() != nil {
 		// The node stopped the run (the lease was lost): its report would
 		// be dropped, as AXLR's is.
@@ -131,8 +131,8 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 	return report, nil
 }
 
-// Hear takes the events that reached the execution while it runs: a cue
-// changes what the next act passes on (the event's data, by the fields
+// Hear takes the events that reached the execution while it runs: an
+// event changes what the next act passes on (the event's data, by the fields
 // the program names). An event the execution's bot would answer with a
 // task of its own (a stop.*) reaches it as a task, not here.
 func (e *Executor) Hear(_ context.Context, execution domain.ExecutionID, messages []application.RelayedMessage) error {
@@ -196,7 +196,7 @@ type run struct {
 	decisions []decision
 	usage     domain.Usage
 	failures  int
-	phrases   []string
+	choices   []string
 	// refused is the hash of the ask whose act the world last refused
 	// (the same ask is not put to Jev again), and refusedTimes how many
 	// acts in a row were refused.
@@ -216,7 +216,7 @@ type decision struct {
 	Acted       bool      `json:"acted"`
 }
 
-// hear keeps a later event's data for the next act: the cue's dynamics.
+// hear keeps a later event's data for the next act.
 func (r *run) hear(name string, data map[string]any) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -242,8 +242,8 @@ func (r *run) pass() map[string]any {
 	return out
 }
 
-// play runs the program and builds the report.
-func (r *run) play(ctx context.Context) application.ExecutionReport {
+// perform runs the program and builds the report.
+func (r *run) perform(ctx context.Context) application.ExecutionReport {
 	started := r.executor.now()
 	r.log("start", map[string]any{"event": r.event, "data": r.data, "program": r.program.Snapshot(), "server": r.client.url})
 	outcome, reason := r.steps(ctx)
@@ -338,7 +338,7 @@ func (r *run) steps(ctx context.Context) (domain.ExecutionOutcome, string) {
 			default:
 				r.refused, r.refusedTimes = "", 0
 				r.decisions[len(r.decisions)-1].Acted = true
-				r.phrases = append(r.phrases, fmt.Sprintf("%s (%.2f)", verdict.Choice, verdict.Probability))
+				r.choices = append(r.choices, fmt.Sprintf("%s (%.2f)", verdict.Choice, verdict.Probability))
 				r.tell(ctx, verdict, arguments)
 				if done, _ := acted.Object["done"].(bool); done {
 					return domain.ExecutionCompleted, ""
@@ -498,13 +498,13 @@ func (r *run) judge(ctx context.Context, ask Question) (Verdict, error) {
 // answer is the one line a completed run reports: what Jev chose, with
 // its probability for each.
 func (r *run) answer() string {
-	if len(r.phrases) == 0 {
+	if len(r.choices) == 0 {
 		if r.event != "" {
 			return "heard " + r.event + ": nothing to choose"
 		}
 		return "nothing to choose"
 	}
-	return "Jev chose: " + strings.Join(r.phrases, "; ")
+	return "Jev chose: " + strings.Join(r.choices, "; ")
 }
 
 // log appends one line to the trace.
@@ -541,7 +541,7 @@ func question(object map[string]any) (Question, bool) {
 }
 
 // choiceValue is the value the act tool takes for a choice: its first
-// whole number ("phrase 3: bars 17–24" is 3), else its text.
+// whole number ("batch 3: rows 17–24" is 3), else its text.
 func choiceValue(choice string) any {
 	if match := firstNumber.FindString(choice); match != "" {
 		if n, err := strconv.Atoi(match); err == nil {

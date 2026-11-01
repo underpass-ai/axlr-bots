@@ -6,8 +6,8 @@ import "strings"
 const MaxEventNameLength = 64
 
 // EventName names what a bot tells its team happened: dot-separated
-// segments of lowercase letters, digits and '-', such as recall or
-// ship.sighted.
+// segments of lowercase letters, digits and '-', such as stop.halt or
+// deploy.started.
 type EventName string
 
 // NewEventName validates an event's name.

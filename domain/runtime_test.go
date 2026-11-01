@@ -7,8 +7,8 @@ import (
 
 func jevSnapshot() *RuntimeSnapshot {
 	return &RuntimeSnapshot{Kind: "jev", Jev: &JevProgramSnapshot{
-		Server: "score", Start: "phrases", Wait: "listen", Stop: "stop",
-		Act: JevActSnapshot{Tool: "play", Choice: "phrase", Verdict: "judge", Pass: []string{"dynamics"}},
+		Server: "queue", Start: "batches", Wait: "listen", Stop: "stop",
+		Act: JevActSnapshot{Tool: "process", Choice: "batch", Verdict: "judge", Pass: []string{"priority"}},
 	}}
 }
 
@@ -31,7 +31,7 @@ func TestRuntimeIsAXLRUnlessItNamesAJevProgram(t *testing.T) {
 		t.Fatal(err)
 	}
 	program, ok := jev.Jev()
-	if !ok || jev.Kind() != RuntimeJev || program.Server() != "score" || program.Start() != "phrases" || program.Act() != "play" || program.Wait() != "listen" || program.Stop() != "stop" || program.Choice() != "phrase" || program.Verdict() != "judge" || program.Model() != DefaultJevModel {
+	if !ok || jev.Kind() != RuntimeJev || program.Server() != "queue" || program.Start() != "batches" || program.Act() != "process" || program.Wait() != "listen" || program.Stop() != "stop" || program.Choice() != "batch" || program.Verdict() != "judge" || program.Model() != DefaultJevModel {
 		t.Errorf("program = %+v", program)
 	}
 	if tools := program.Tools(); len(tools) != 4 || tools[3] != "stop" {
@@ -40,7 +40,7 @@ func TestRuntimeIsAXLRUnlessItNamesAJevProgram(t *testing.T) {
 	back := jev.Snapshot()
 	want := jevSnapshot()
 	want.Jev.Model = DefaultJevModel
-	if back.Kind != "jev" || back.Jev.Server != want.Jev.Server || back.Jev.Start != want.Jev.Start || back.Jev.Wait != want.Jev.Wait || back.Jev.Stop != want.Jev.Stop || back.Jev.Model != want.Jev.Model || back.Jev.Act.Tool != want.Jev.Act.Tool || back.Jev.Act.Choice != want.Jev.Act.Choice || back.Jev.Act.Verdict != want.Jev.Act.Verdict || len(back.Jev.Act.Pass) != 1 || back.Jev.Act.Pass[0] != "dynamics" {
+	if back.Kind != "jev" || back.Jev.Server != want.Jev.Server || back.Jev.Start != want.Jev.Start || back.Jev.Wait != want.Jev.Wait || back.Jev.Stop != want.Jev.Stop || back.Jev.Model != want.Jev.Model || back.Jev.Act.Tool != want.Jev.Act.Tool || back.Jev.Act.Choice != want.Jev.Act.Choice || back.Jev.Act.Verdict != want.Jev.Act.Verdict || len(back.Jev.Act.Pass) != 1 || back.Jev.Act.Pass[0] != "priority" {
 		t.Errorf("snapshot = %+v", back)
 	}
 	for _, kind := range []string{"", "axlr", "jev"} {
@@ -61,18 +61,18 @@ func TestAJevProgramIsValidated(t *testing.T) {
 		"no server":           func(s *RuntimeSnapshot) { s.Jev.Server = "" },
 		"bad server":          func(s *RuntimeSnapshot) { s.Jev.Server = "a b" },
 		"no start":            func(s *RuntimeSnapshot) { s.Jev.Start = "" },
-		"bad act tool":        func(s *RuntimeSnapshot) { s.Jev.Act.Tool = "Play" },
+		"bad act tool":        func(s *RuntimeSnapshot) { s.Jev.Act.Tool = "Process" },
 		"no wait":             func(s *RuntimeSnapshot) { s.Jev.Wait = "" },
 		"bad stop":            func(s *RuntimeSnapshot) { s.Jev.Stop = "a b" },
 		"no choice argument":  func(s *RuntimeSnapshot) { s.Jev.Act.Choice = "" },
-		"verdict is choice":   func(s *RuntimeSnapshot) { s.Jev.Act.Verdict = "phrase" },
-		"pass is choice":      func(s *RuntimeSnapshot) { s.Jev.Act.Pass = []string{"phrase"} },
+		"verdict is choice":   func(s *RuntimeSnapshot) { s.Jev.Act.Verdict = "batch" },
+		"pass is choice":      func(s *RuntimeSnapshot) { s.Jev.Act.Pass = []string{"batch"} },
 		"pass twice":          func(s *RuntimeSnapshot) { s.Jev.Act.Pass = []string{"a", "a"} },
 		"too many pass":       func(s *RuntimeSnapshot) { s.Jev.Act.Pass = strings.Split("a b c d e f g h i", " ") },
 		"model not pinned":    func(s *RuntimeSnapshot) { s.Jev.Model = "jev-latest" },
 		"model with spaces":   func(s *RuntimeSnapshot) { s.Jev.Model = "jev 1" },
 		"bad argument name":   func(s *RuntimeSnapshot) { s.Jev.Act.Choice = "1x" },
-		"bad pass field":      func(s *RuntimeSnapshot) { s.Jev.Act.Pass = []string{"dyn-amics"} },
+		"bad pass field":      func(s *RuntimeSnapshot) { s.Jev.Act.Pass = []string{"pri-ority"} },
 	}
 	for name, change := range cases {
 		s := jevSnapshot()
@@ -83,10 +83,10 @@ func TestAJevProgramIsValidated(t *testing.T) {
 	}
 	for name, tell := range map[string]*JevTellSnapshot{
 		"no name":         {Name: ""},
-		"not a bot's":     {Name: "error.chair"},
-		"unknown field":   {Name: "info.chair.played", Fields: []string{"tempo"}},
-		"field twice":     {Name: "info.chair.played", Fields: []string{"choice", "choice"}},
-		"the verdict arg": {Name: "info.chair.played", Fields: []string{"judge"}},
+		"not a bot's":     {Name: "error.worker"},
+		"unknown field":   {Name: "info.worker.processed", Fields: []string{"speed"}},
+		"field twice":     {Name: "info.worker.processed", Fields: []string{"choice", "choice"}},
+		"the verdict arg": {Name: "info.worker.processed", Fields: []string{"judge"}},
 	} {
 		s := jevSnapshot()
 		s.Jev.Tell = tell
@@ -95,14 +95,14 @@ func TestAJevProgramIsValidated(t *testing.T) {
 		}
 	}
 	telling := jevSnapshot()
-	telling.Jev.Tell = &JevTellSnapshot{Name: "info.chair.played", Fields: []string{"phrase", "probability", "dynamics"}}
+	telling.Jev.Tell = &JevTellSnapshot{Name: "info.worker.processed", Fields: []string{"batch", "probability", "priority"}}
 	told, err := NewRuntime(telling)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if program, _ := told.Jev(); true {
 		name, fields, ok := program.Tell()
-		if !ok || name != "info.chair.played" || len(fields) != 3 || told.Snapshot().Jev.Tell == nil || told.Snapshot().Jev.Tell.Fields[2] != "dynamics" {
+		if !ok || name != "info.worker.processed" || len(fields) != 3 || told.Snapshot().Jev.Tell == nil || told.Snapshot().Jev.Tell.Fields[2] != "priority" {
 			t.Errorf("tell = %v %v %v", name, fields, ok)
 		}
 	}
@@ -119,10 +119,10 @@ func TestAJevProgramIsValidated(t *testing.T) {
 // A Jev program fits a bot only when its tools are allowed and the bot
 // acts within the policy; a bot that narrows them afterwards is refused.
 func TestAJevProgramMustFitTheBotsToolsAndLevel(t *testing.T) {
-	tools, _ := NewAllowedTools([]string{"phrases", "play", "listen", "stop"})
+	tools, _ := NewAllowedTools([]string{"batches", "process", "listen", "stop"})
 	model, _ := NewModelPolicy("", "", false, 0)
 	budgets, _ := NewBudgets(0, 0, 0, 0)
-	bot, err := NewBot("ob-1", "default", "Oboe 1", "conductor", "play", tools, model, budgets, t0)
+	bot, err := NewBot("worker-1", "default", "Worker 1", "operator", "process", tools, model, budgets, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestAJevProgramMustFitTheBotsToolsAndLevel(t *testing.T) {
 	if err := bot.SetRuntime(jev); err != nil || bot.Runtime().Kind() != RuntimeJev {
 		t.Fatalf("set: %v", err)
 	}
-	fewer, _ := NewAllowedTools([]string{"phrases", "play"})
+	fewer, _ := NewAllowedTools([]string{"batches", "process"})
 	if err := bot.Redefine(bot.Mission(), fewer, model, budgets); err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestAJevProgramMustFitTheBotsToolsAndLevel(t *testing.T) {
 	if snapshot.Runtime == nil || snapshot.Runtime.Kind != "jev" {
 		t.Errorf("snapshot runtime = %+v", snapshot.Runtime)
 	}
-	snapshot.AllowedTools = []string{"phrases", "play", "listen", "stop"}
+	snapshot.AllowedTools = []string{"batches", "process", "listen", "stop"}
 	snapshot.UpdatedAt = t0
 	restored, err := RestoreBot(snapshot)
 	if err != nil || restored.Runtime().Kind() != RuntimeJev {

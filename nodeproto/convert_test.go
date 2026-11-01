@@ -106,19 +106,19 @@ func TestEnrollTokenRoundTrip(t *testing.T) {
 // back as it was; a run without a runtime is AXLR's, as an older control
 // plane's are.
 func TestARunCarriesItsRuntimeAndInput(t *testing.T) {
-	tools, _ := domain.NewAllowedTools([]string{"phrases", "play", "listen", "stop"})
+	tools, _ := domain.NewAllowedTools([]string{"batches", "process", "listen", "stop"})
 	runtime, err := domain.NewRuntime(&domain.RuntimeSnapshot{Kind: "jev", Jev: &domain.JevProgramSnapshot{
-		Server: "score", Start: "phrases", Wait: "listen", Stop: "stop", Act: domain.JevActSnapshot{Tool: "play", Choice: "phrase", Verdict: "judge", Pass: []string{"dynamics"}},
+		Server: "queue", Start: "batches", Wait: "listen", Stop: "stop", Act: domain.JevActSnapshot{Tool: "process", Choice: "batch", Verdict: "judge", Pass: []string{"priority"}},
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := json.RawMessage(`{"name":"info.cue.winds","data":{"dynamics":"f"}}`)
+	input := json.RawMessage(`{"name":"info.notice.load","data":{"priority":"high"}}`)
 	run := application.Assignment{ExecutionID: "exec-1", Kind: domain.ExecutionRun, Run: &application.ExecutionRequest{
-		ExecutionID: "exec-1", TaskID: "task-1", BotID: "ob-1", TenantID: "t", Objective: "play", Level: domain.AutonomyActWithinPolicy, AllowedTools: tools.Names(), Runtime: runtime, Input: input,
+		ExecutionID: "exec-1", TaskID: "task-1", BotID: "worker-1", TenantID: "t", Objective: "process", Level: domain.AutonomyActWithinPolicy, AllowedTools: tools.Names(), Runtime: runtime, Input: input,
 	}}
 	raw, _ := json.Marshal(FromAssignment(run))
-	if !strings.Contains(string(raw), `"runtime":{"kind":"jev"`) || !strings.Contains(string(raw), `"input":{"name":"info.cue.winds"`) {
+	if !strings.Contains(string(raw), `"runtime":{"kind":"jev"`) || !strings.Contains(string(raw), `"input":{"name":"info.notice.load"`) {
 		t.Fatalf("wire = %s", raw)
 	}
 	var m AssignmentMessage
@@ -128,7 +128,7 @@ func TestARunCarriesItsRuntimeAndInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	program, ok := back.Run.Runtime.Jev()
-	if !ok || program.Act() != "play" || program.Pass()[0] != "dynamics" || string(back.Run.Input) != string(input) {
+	if !ok || program.Act() != "process" || program.Pass()[0] != "priority" || string(back.Run.Input) != string(input) {
 		t.Errorf("back = %+v", back.Run)
 	}
 	m.Run.Runtime = &domain.RuntimeSnapshot{Kind: "jev"}

@@ -17,23 +17,23 @@ import (
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
-// world is a fake score service: an MCP server whose phrases and listen
-// ask which phrase to play next until none is left, and whose play
+// world is a fake queue service: an MCP server whose batches and listen
+// ask which batch to process next until none is left, and whose process
 // records what it was told.
 type world struct {
 	mu     sync.Mutex
 	calls  []string
-	plays  []map[string]any
+	acts   []map[string]any
 	left   int
 	refuse bool
 	// moving asks a different question each time, even when nothing
-	// was played.
+	// was processed.
 	moving   bool
 	asked    int
 	sessions int
-	// afterFirstPlay runs once, inside the first listen after a play,
+	// afterFirstAct runs once, inside the first listen after a process,
 	// without the lock: what the test does while the run waits.
-	afterFirstPlay func()
+	afterFirstAct func()
 	// quiet is how many listens answer with neither an ask nor done
 	// before the next question: a paused world.
 	quiet int
@@ -74,9 +74,9 @@ func (w *world) serve(t *testing.T) *httptest.Server {
 		w.mu.Lock()
 		defer w.mu.Unlock()
 		w.calls = append(w.calls, request.Params.Name)
-		if request.Params.Name == "listen" && len(w.plays) == 1 && w.afterFirstPlay != nil {
-			hook := w.afterFirstPlay
-			w.afterFirstPlay = nil
+		if request.Params.Name == "listen" && len(w.acts) == 1 && w.afterFirstAct != nil {
+			hook := w.afterFirstAct
+			w.afterFirstAct = nil
 			w.mu.Unlock()
 			hook()
 			w.mu.Lock()
@@ -86,34 +86,34 @@ func (w *world) serve(t *testing.T) *httptest.Server {
 			answer(map[string]any{"content": []map[string]any{{"type": "text", "text": string(raw)}}, "isError": isError})
 		}
 		switch request.Params.Name {
-		case "phrases", "listen":
+		case "batches", "listen":
 			if request.Params.Name == "listen" && w.quiet > 0 {
 				w.quiet--
-				text(map[string]any{"state": "paused", "note": "the conductor holds the orchestra"}, false)
+				text(map[string]any{"state": "paused", "note": "the operator holds the queue"}, false)
 				return
 			}
 			if w.left == 0 {
-				text(map[string]any{"note": "no phrase left to play", "done": true}, false)
+				text(map[string]any{"note": "no batch left to process", "done": true}, false)
 				return
 			}
 			n := 4 - w.left
 			w.asked++
-			state := "An orchestra plays. This chair has nothing scheduled."
+			state := "A queue runs. This worker has nothing scheduled."
 			if w.moving {
-				state += " Bar " + itoa(w.asked%10)
+				state += " Row " + itoa(w.asked%10)
 			}
 			text(map[string]any{"ask": map[string]any{
-				"state": state, "question": "Which phrase next?",
-				"options": []string{"phrase " + itoa(n) + ": bars 1–8", "phrase " + itoa(n+1) + ": bars 9–16"},
+				"state": state, "question": "Which batch next?",
+				"options": []string{"batch " + itoa(n) + ": rows 1–8", "batch " + itoa(n+1) + ": rows 9–16"},
 			}}, false)
-		case "play":
+		case "process":
 			if w.refuse {
-				text(map[string]any{"error": "the conductor stopped the music"}, true)
+				text(map[string]any{"error": "the operator stopped the queue"}, true)
 				return
 			}
 			w.left--
-			w.plays = append(w.plays, request.Params.Arguments)
-			text(map[string]any{"note": "phrase sounds in 1.2 s"}, false)
+			w.acts = append(w.acts, request.Params.Arguments)
+			text(map[string]any{"note": "batch runs in 1.2 s"}, false)
 		case "stop":
 			text(map[string]any{"state": "stopped", "done": true}, false)
 		default:
@@ -157,9 +157,9 @@ func jevServer(t *testing.T, pick func(options []string) string) *httptest.Serve
 func program(t *testing.T) domain.Runtime {
 	t.Helper()
 	runtime, err := domain.NewRuntime(&domain.RuntimeSnapshot{Kind: "jev", Jev: &domain.JevProgramSnapshot{
-		Server: "score", Start: "phrases", Wait: "listen", Stop: "stop",
-		Act:  domain.JevActSnapshot{Tool: "play", Choice: "phrase", Verdict: "judge", Pass: []string{"dynamics"}},
-		Tell: &domain.JevTellSnapshot{Name: "info.chair.played", Fields: []string{"phrase", "probability"}},
+		Server: "queue", Start: "batches", Wait: "listen", Stop: "stop",
+		Act:  domain.JevActSnapshot{Tool: "process", Choice: "batch", Verdict: "judge", Pass: []string{"priority"}},
+		Tell: &domain.JevTellSnapshot{Name: "info.worker.processed", Fields: []string{"batch", "probability"}},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -175,8 +175,8 @@ func fixture(t *testing.T, w *world, pick func([]string) string) (*Executor, app
 	t.Cleanup(typesafe.Close)
 	dir := t.TempDir()
 	config := filepath.Join(dir, "mcp.json")
-	_ = os.WriteFile(filepath.Join(dir, "score.json"), []byte(`{"id": "score", "url": "`+server.URL+`/mcp/ob-1"}`), 0o600)
-	_ = os.WriteFile(config, []byte(`{"version": 1, "plugins": [{"manifest": "score.json", "name": "score"}]}`), 0o600)
+	_ = os.WriteFile(filepath.Join(dir, "queue.json"), []byte(`{"id": "queue", "url": "`+server.URL+`/mcp/worker-1"}`), 0o600)
+	_ = os.WriteFile(config, []byte(`{"version": 1, "plugins": [{"manifest": "queue.json", "name": "queue"}]}`), 0o600)
 	judge, err := NewClient(ClientConfig{APIKey: "test-key", Endpoint: typesafe.URL})
 	if err != nil {
 		t.Fatal(err)
@@ -184,9 +184,9 @@ func fixture(t *testing.T, w *world, pick func([]string) string) (*Executor, app
 	executor := NewExecutor(judge, MCPConfig{Path: config}, filepath.Join(dir, "node"))
 	executor.IdleBackoff = time.Millisecond
 	budgets, _ := domain.NewBudgets(16, 32, 0, time.Minute)
-	input, _ := json.Marshal(map[string]any{"name": "info.cue.winds", "data": map[string]any{"dynamics": "f"}, "message": "winds"})
+	input, _ := json.Marshal(map[string]any{"name": "info.notice.load", "data": map[string]any{"priority": "high"}, "message": "load"})
 	request := application.ExecutionRequest{
-		ExecutionID: "exec-1", TaskID: "task-1", BotID: "ob-1", TenantID: "default", CorrelationID: "trace-1",
+		ExecutionID: "exec-1", TaskID: "task-1", BotID: "worker-1", TenantID: "default", CorrelationID: "trace-1",
 		Level: domain.AutonomyActWithinPolicy, Runtime: program(t), Input: input, Budgets: budgets, Timeout: 30 * time.Second,
 	}
 	return executor, request
@@ -202,27 +202,28 @@ func first(options []string) string {
 	return best
 }
 
-// A cue runs the program: phrases, then Jev → play → listen until the
-// world says done. Each play carries the phrase number from Jev's choice,
-// Jev's verdict and the cue's dynamics; the receipt lists each decision.
-func TestACueIsPlayedPhraseByPhraseAsJevChooses(t *testing.T) {
+// A notice runs the program: batches, then Jev → process → listen until
+// the world says done. Each process carries the batch number from Jev's
+// choice, Jev's verdict and the notice's priority; the receipt lists each
+// decision.
+func TestANoticeIsProcessedBatchByBatchAsJevChooses(t *testing.T) {
 	w := &world{left: 3}
 	executor, request := fixture(t, w, first)
 	report, err := executor.Execute(context.Background(), request)
 	if err != nil || report.Outcome != domain.ExecutionCompleted {
 		t.Fatalf("report = %+v %v", report, err)
 	}
-	if got := strings.Join(w.calls, " "); got != "phrases play listen play listen play listen" {
+	if got := strings.Join(w.calls, " "); got != "batches process listen process listen process listen" {
 		t.Errorf("calls = %s", got)
 	}
-	if len(w.plays) != 3 || w.plays[0]["phrase"] != float64(1) || w.plays[0]["dynamics"] != "f" {
-		t.Errorf("plays = %v", w.plays)
+	if len(w.acts) != 3 || w.acts[0]["batch"] != float64(1) || w.acts[0]["priority"] != "high" {
+		t.Errorf("acts = %v", w.acts)
 	}
-	verdict, _ := w.plays[0]["judge"].(map[string]any)
-	if verdict["choice"] != "phrase 1: bars 1–8" || verdict["probability"] != 0.9 || verdict["confidence"] != 0.8 {
+	verdict, _ := w.acts[0]["judge"].(map[string]any)
+	if verdict["choice"] != "batch 1: rows 1–8" || verdict["probability"] != 0.9 || verdict["confidence"] != 0.8 {
 		t.Errorf("verdict = %v", verdict)
 	}
-	if !strings.HasPrefix(report.Result.Answer, "Jev chose: phrase 1: bars 1–8 (0.90); phrase 2") {
+	if !strings.HasPrefix(report.Result.Answer, "Jev chose: batch 1: rows 1–8 (0.90); batch 2") {
 		t.Errorf("answer = %q", report.Result.Answer)
 	}
 	if report.Usage.Requests != 3 || report.Usage.ToolCalls != 7 || report.Usage.PromptTokens != 360 || report.Usage.CostUSD <= 0 {
@@ -255,8 +256,8 @@ func TestAPausedWorldHoldsTheRun(t *testing.T) {
 	w := &world{left: 2, quiet: 12}
 	executor, request := fixture(t, w, first)
 	report, err := executor.Execute(context.Background(), request)
-	if err != nil || report.Outcome != domain.ExecutionCompleted || len(w.plays) != 2 {
-		t.Fatalf("report = %+v %v plays %d", report, err, len(w.plays))
+	if err != nil || report.Outcome != domain.ExecutionCompleted || len(w.acts) != 2 {
+		t.Fatalf("report = %+v %v acts %d", report, err, len(w.acts))
 	}
 	if got := strings.Count(strings.Join(w.calls, " "), "listen"); got != 14 {
 		t.Errorf("listens = %d", got)
@@ -285,7 +286,7 @@ func TestEachActIsToldToTheTeam(t *testing.T) {
 		if len(told) == 2 {
 			return application.EmitAnswer{Refused: &domain.EventRefusal{Reason: "rate"}}, nil
 		}
-		return application.EmitAnswer{EventID: "evt-1", Deliveries: []application.EventDelivery{{BotID: "vc-1"}}}, nil
+		return application.EmitAnswer{EventID: "evt-1", Deliveries: []application.EventDelivery{{BotID: "worker-2"}}}, nil
 	}
 	report, err := executor.Execute(context.Background(), request)
 	if err != nil || report.Outcome != domain.ExecutionCompleted || len(told) != 2 {
@@ -293,7 +294,7 @@ func TestEachActIsToldToTheTeam(t *testing.T) {
 	}
 	var data map[string]any
 	_ = json.Unmarshal(told[0].Data, &data)
-	if told[0].Name != "info.chair.played" || told[0].Message != "phrase 2: bars 1–8" || data["phrase"] != float64(2) || data["probability"] != 0.9 || len(data) != 2 {
+	if told[0].Name != "info.worker.processed" || told[0].Message != "batch 2: rows 1–8" || data["batch"] != float64(2) || data["probability"] != 0.9 || len(data) != 2 {
 		t.Errorf("told = %+v %v", told[0], data)
 	}
 	tells := 0
@@ -316,24 +317,25 @@ func TestEachActIsToldToTheTeam(t *testing.T) {
 func TestAStopTaskCallsStopOnce(t *testing.T) {
 	w := &world{left: 3}
 	executor, request := fixture(t, w, first)
-	request.Input, _ = json.Marshal(map[string]any{"name": "stop.ob", "message": "stop"})
+	request.Input, _ = json.Marshal(map[string]any{"name": "stop.halt", "message": "stop"})
 	report, err := executor.Execute(context.Background(), request)
 	if err != nil || report.Outcome != domain.ExecutionCompleted || strings.Join(w.calls, " ") != "stop" {
 		t.Fatalf("report = %+v %v calls %v", report, err, w.calls)
 	}
-	if report.Result.Answer != "heard stop.ob: nothing to choose" {
+	if report.Result.Answer != "heard stop.halt: nothing to choose" {
 		t.Errorf("answer = %q", report.Result.Answer)
 	}
 }
 
-// A cue heard while the run plays changes what the next play passes on.
-func TestACueHeardWhileItPlaysChangesTheDynamics(t *testing.T) {
+// A notice heard while the run works changes what the next process
+// passes on.
+func TestANoticeHeardWhileItRunsChangesThePriority(t *testing.T) {
 	w := &world{left: 2}
 	executor, request := fixture(t, w, first)
 	heard := false
-	// The cue arrives while the run waits in listen, as a real one does.
-	w.afterFirstPlay = func() {
-		err := executor.Hear(context.Background(), "exec-1", []application.RelayedMessage{{ID: "evt-1", Text: "...", Event: &application.RelayedEvent{Name: "info.cue.winds", Data: map[string]any{"dynamics": "p"}}}})
+	// The notice arrives while the run waits in listen, as a real one does.
+	w.afterFirstAct = func() {
+		err := executor.Hear(context.Background(), "exec-1", []application.RelayedMessage{{ID: "evt-1", Text: "...", Event: &application.RelayedEvent{Name: "info.notice.load", Data: map[string]any{"priority": "low"}}}})
 		if err != nil {
 			t.Error(err)
 		}
@@ -341,13 +343,13 @@ func TestACueHeardWhileItPlaysChangesTheDynamics(t *testing.T) {
 	}
 	report, err := executor.Execute(context.Background(), request)
 	if !heard {
-		t.Fatal("the cue was never heard")
+		t.Fatal("the notice was never heard")
 	}
-	if err != nil || report.Outcome != domain.ExecutionCompleted || len(w.plays) != 2 {
-		t.Fatalf("report = %+v %v plays %v", report, err, w.plays)
+	if err != nil || report.Outcome != domain.ExecutionCompleted || len(w.acts) != 2 {
+		t.Fatalf("report = %+v %v acts %v", report, err, w.acts)
 	}
-	if w.plays[0]["dynamics"] != "f" || w.plays[1]["dynamics"] != "p" {
-		t.Errorf("dynamics = %v %v", w.plays[0]["dynamics"], w.plays[1]["dynamics"])
+	if w.acts[0]["priority"] != "high" || w.acts[1]["priority"] != "low" {
+		t.Errorf("priority = %v %v", w.acts[0]["priority"], w.acts[1]["priority"])
 	}
 	if err := executor.Hear(context.Background(), "exec-9", nil); err == nil {
 		t.Error("an unknown execution heard a message")
@@ -375,14 +377,14 @@ func TestTheBudgetsBoundARun(t *testing.T) {
 // A refusal of the act tool is a step that did not happen: the run
 // listens on. A node that stops the run (its context) ends it as
 // interrupted, with an error so the agent's report is dropped.
-func TestARefusedPlayIsNotFatalAndACancelInterrupts(t *testing.T) {
+func TestARefusedActIsNotFatalAndACancelInterrupts(t *testing.T) {
 	w := &world{left: 2, refuse: true}
 	executor, request := fixture(t, w, first)
 	report, err := executor.Execute(context.Background(), request)
-	// Every listen asks the same question again and every play is refused:
+	// Every listen asks the same question again and every process is refused:
 	// Jev is asked once for it, the run waits for the world to move on,
 	// and ends when it does not.
-	if err != nil || report.Outcome != domain.ExecutionFailed || !strings.Contains(report.FailureReason, "play was refused") || report.Usage.Requests != 1 {
+	if err != nil || report.Outcome != domain.ExecutionFailed || !strings.Contains(report.FailureReason, "process was refused") || report.Usage.Requests != 1 {
 		t.Fatalf("report = %+v %v", report, err)
 	}
 	w = &world{left: 2, refuse: true, moving: true}
@@ -397,7 +399,7 @@ func TestARefusedPlayIsNotFatalAndACancelInterrupts(t *testing.T) {
 	executor, request = fixture(t, w, first)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	w.afterFirstPlay = cancel
+	w.afterFirstAct = cancel
 	report, err = executor.Execute(ctx, request)
 	if !errors.Is(err, context.Canceled) || report.Outcome != domain.ExecutionFailed || !strings.HasPrefix(report.FailureReason, "interrupted") {
 		t.Errorf("report = %+v %v", report, err)
@@ -436,13 +438,13 @@ func TestJevNotAnsweringEndsTheRunAfterThreeTimes(t *testing.T) {
 	if err != nil || report.Outcome != domain.ExecutionFailed || !strings.Contains(report.FailureReason, "Jev did not answer 3 times") {
 		t.Fatalf("report = %+v %v", report, err)
 	}
-	if got := strings.Join(w.calls, " "); got != "phrases listen listen" {
+	if got := strings.Join(w.calls, " "); got != "batches listen listen" {
 		t.Errorf("calls = %s", got)
 	}
 }
 
 func TestChoiceValueAndQuestions(t *testing.T) {
-	if choiceValue("phrase 3: bars 17–24") != 3 || choiceValue("yes") != "yes" {
+	if choiceValue("batch 3: rows 17–24") != 3 || choiceValue("yes") != "yes" {
 		t.Error("choice values")
 	}
 	if _, ok := question(map[string]any{"note": "x"}); ok {

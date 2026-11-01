@@ -128,7 +128,7 @@ func TestEventTriggerRefs(t *testing.T) {
 	if err != nil || ref.Name != "pedido.*" {
 		t.Errorf("ref = %+v %v", ref, err)
 	}
-	if old, err := NewTriggerRef("event", "ship_watch"); err != nil || old.Name != "ship_watch" {
+	if old, err := NewTriggerRef("event", "deploy_watch"); err != nil || old.Name != "deploy_watch" {
 		t.Errorf("an event trigger's name from before = %+v %v", old, err)
 	}
 	if _, err := NewTriggerRef("event", "Bad"); err == nil {

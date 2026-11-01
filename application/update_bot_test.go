@@ -25,7 +25,7 @@ func TestTurningTheLevelSaysWhereFromAndWhereTo(t *testing.T) {
 	}
 
 	// A patch that leaves the level as it was names no levels.
-	mission := "Watch the quay and report."
+	mission := "Watch the queue and report."
 	if _, err := NewUpdateBot(h.deps).Execute(context.Background(), bot.ID(), BotPatch{Mission: &mission}); err != nil {
 		t.Fatal(err)
 	}

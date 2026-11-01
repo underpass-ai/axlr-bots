@@ -6,30 +6,30 @@ import (
 )
 
 func TestEventNamesAndPatterns(t *testing.T) {
-	for _, good := range []string{"recall", "ship.sighted", "vehicle-1.low-battery"} {
+	for _, good := range []string{"halt", "deploy.started", "service-1.low-disk"} {
 		if _, err := NewEventName(good); err != nil {
 			t.Errorf("%q: %v", good, err)
 		}
 	}
-	for _, bad := range []string{"", "Recall", "ship..sighted", "ship.*", ".x", strings.Repeat("a", 65), "ship sighted"} {
+	for _, bad := range []string{"", "Halt", "deploy..started", "deploy.*", ".x", strings.Repeat("a", 65), "deploy started"} {
 		if _, err := NewEventName(bad); err == nil {
 			t.Errorf("name %q accepted", bad)
 		}
 	}
-	if _, err := NewEventPattern("ship.*.**"); err != nil {
+	if _, err := NewEventPattern("deploy.*.**"); err != nil {
 		t.Error(err)
 	}
-	if _, err := NewEventPattern("ship.x*"); err == nil {
+	if _, err := NewEventPattern("deploy.x*"); err == nil {
 		t.Error("a partial wildcard was accepted")
 	}
 	cases := []struct {
 		pattern, name string
 		match         bool
 	}{
-		{"recall", "recall", true}, {"recall", "recall.now", false},
-		{"ship.*", "ship.sighted", true}, {"ship.*", "ship", false}, {"ship.*", "ship.a.b", false},
-		{"ship.**", "ship", true}, {"ship.**", "ship.a.b", true}, {"**", "anything.at.all", true},
-		{"*.sighted", "ship.sighted", true}, {"**.sighted", "a.b.sighted", true}, {"**.sighted", "a.b.lost", false},
+		{"halt", "halt", true}, {"halt", "halt.now", false},
+		{"deploy.*", "deploy.started", true}, {"deploy.*", "deploy", false}, {"deploy.*", "deploy.a.b", false},
+		{"deploy.**", "deploy", true}, {"deploy.**", "deploy.a.b", true}, {"**", "anything.at.all", true},
+		{"*.started", "deploy.started", true}, {"**.started", "a.b.started", true}, {"**.started", "a.b.lost", false},
 	}
 	for _, c := range cases {
 		if got := EventPattern(c.pattern).Matches(EventName(c.name)); got != c.match {
@@ -45,8 +45,8 @@ func TestSeverities(t *testing.T) {
 }
 
 func TestEventMessage(t *testing.T) {
-	m, err := NewEventMessage("ship 244 entering\nthe zone")
-	if err != nil || m.String() != "ship 244 entering the zone" {
+	m, err := NewEventMessage("deploy 244 starting\non the service")
+	if err != nil || m.String() != "deploy 244 starting on the service" {
 		t.Errorf("message = %q %v", m, err)
 	}
 	if _, err := NewEventMessage(strings.Repeat("x", 281)); err == nil {
@@ -59,7 +59,7 @@ func TestEventMessage(t *testing.T) {
 
 func TestEventPolicy(t *testing.T) {
 	var team EventPolicy
-	if !team.MayEmit("anything") || !team.MayEmit("stop.recall") || team.PerMinute() != DefaultEventsPerMinute || team.Snapshot() != nil {
+	if !team.MayEmit("anything") || !team.MayEmit("stop.halt") || team.PerMinute() != DefaultEventsPerMinute || team.Snapshot() != nil {
 		t.Errorf("default = %+v", team)
 	}
 	for _, name := range []EventName{"error.bot", "done.task"} {
@@ -69,7 +69,7 @@ func TestEventPolicy(t *testing.T) {
 	}
 	// maxSeverity is read from an older definition and ignored: the kind
 	// decides.
-	p, err := NewEventPolicy(EventsSnapshot{Emit: []EmitRuleSnapshot{{Name: "recall"}, {Name: "warn.*", MaxSeverity: "critical"}, {Name: "**", MaxSeverity: "loud"}}, PerMinute: 12})
+	p, err := NewEventPolicy(EventsSnapshot{Emit: []EmitRuleSnapshot{{Name: "halt"}, {Name: "warn.*", MaxSeverity: "critical"}, {Name: "**", MaxSeverity: "loud"}}, PerMinute: 12})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,17 +103,17 @@ func TestEventPolicy(t *testing.T) {
 }
 
 func TestEventTriggers(t *testing.T) {
-	trigger, err := NewTrigger(TriggerSnapshot{Type: "event", Name: "ships", Events: []string{"ship.*"}})
+	trigger, err := NewTrigger(TriggerSnapshot{Type: "event", Name: "deploys", Events: []string{"deploy.*"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if trigger.ObjectiveTemplate() != "" {
 		t.Errorf("trigger = %+v", trigger)
 	}
-	if s := trigger.Snapshot(); len(s.Events) != 1 || s.Events[0] != "ship.*" {
+	if s := trigger.Snapshot(); len(s.Events) != 1 || s.Events[0] != "deploy.*" {
 		t.Errorf("snapshot = %+v", s)
 	}
-	if templated, err := NewTrigger(TriggerSnapshot{Type: "event", Events: []string{"recall"}, Objective: "Go home: {{.message}}"}); err != nil || templated.ObjectiveTemplate() == "" || templated.Name() != "event" {
+	if templated, err := NewTrigger(TriggerSnapshot{Type: "event", Events: []string{"halt"}, Objective: "Roll back: {{.message}}"}); err != nil || templated.ObjectiveTemplate() == "" || templated.Name() != "event" {
 		t.Errorf("templated = %+v %v", templated, err)
 	}
 	bad := []TriggerSnapshot{
@@ -129,31 +129,31 @@ func TestEventTriggers(t *testing.T) {
 }
 
 func TestBotHearsItsTeam(t *testing.T) {
-	quad := teamTestBot(t, "quad-1", "default", []string{"port"})
-	if sub, ok := quad.Hears("info.x", "plane", PublisherBot, true); !ok || !sub.Implicit() || sub.TriggerName() != "team" {
+	worker := teamTestBot(t, "worker-1", "default", []string{"ops"})
+	if sub, ok := worker.Hears("info.x", "watcher", PublisherBot, true); !ok || !sub.Implicit() || sub.TriggerName() != "team" {
 		t.Errorf("addressed info = %+v %v", sub, ok)
 	}
-	if _, ok := quad.Hears("warn.ship", "plane", PublisherBot, false); ok {
+	if _, ok := worker.Hears("warn.deploy", "watcher", PublisherBot, false); ok {
 		t.Error("a warning broadcast was heard without a subscription")
 	}
-	if _, ok := quad.Hears("danger.fire", "plane", PublisherBot, false); !ok {
+	if _, ok := worker.Hears("danger.fire", "watcher", PublisherBot, false); !ok {
 		t.Error("a danger broadcast was not heard by default")
 	}
-	subs, _ := NewSubscriptions([]SubscriptionSnapshot{{Topic: "ship.*", From: []string{"plane"}}})
-	quad.SetSubscriptions(subs)
-	if sub, ok := quad.Hears("ship.sighted", "plane", PublisherBot, false); !ok || sub.TriggerName() != "ship.*" {
+	subs, _ := NewSubscriptions([]SubscriptionSnapshot{{Topic: "deploy.*", From: []string{"watcher"}}})
+	worker.SetSubscriptions(subs)
+	if sub, ok := worker.Hears("deploy.started", "watcher", PublisherBot, false); !ok || sub.TriggerName() != "deploy.*" {
 		t.Errorf("subscribed = %+v %v", sub, ok)
 	}
-	if _, ok := quad.Hears("ship.sighted", "quad-2", PublisherBot, false); ok {
+	if _, ok := worker.Hears("deploy.started", "worker-2", PublisherBot, false); ok {
 		t.Error("a sender outside from was heard")
 	}
-	if sub, ok := quad.Hears("stop.recall", "plane", PublisherBot, true); !ok || !sub.Implicit() {
+	if sub, ok := worker.Hears("stop.halt", "watcher", PublisherBot, true); !ok || !sub.Implicit() {
 		t.Errorf("addressed stop = %+v %v", sub, ok)
 	}
 	policy, _ := NewEventPolicy(EventsSnapshot{PerMinute: 3})
-	quad.SetEvents(policy)
-	s := quad.Snapshot()
-	s.Triggers = append(s.Triggers, TriggerSnapshot{Type: "event", Events: []string{"a.*", "ship.*"}, Interrupt: true})
+	worker.SetEvents(policy)
+	s := worker.Snapshot()
+	s.Triggers = append(s.Triggers, TriggerSnapshot{Type: "event", Events: []string{"a.*", "deploy.*"}, Interrupt: true})
 	s.Model = ModelPolicySnapshot{Model: "m", RoutingPolicy: "cost-optimized"}
 	s.Budgets = BudgetsSnapshot{MaxModelCallsPerTask: 1, MaxToolCallsPerTask: 1, TaskTimeoutSeconds: 60}
 	s.Level, s.Status = "observe", "Registered"

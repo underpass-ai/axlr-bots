@@ -13,14 +13,14 @@ func TestEveryKindFixesItsSeverityAndItsPublishers(t *testing.T) {
 	}{
 		{"error.bot", KindError, SeverityCritical, false, false, true},
 		{"danger.fire", KindDanger, SeverityCritical, true, true, false},
-		{"stop.recall", KindStop, SeverityCritical, true, true, false},
+		{"stop.halt", KindStop, SeverityCritical, true, true, false},
 		{"stop", KindStop, SeverityCritical, true, true, false},
 		{"warn.stock", KindWarn, SeverityWarning, true, true, true},
 		{"done.task", KindDone, SeverityInfo, false, false, true},
 		{"info.turno", KindInfo, SeverityInfo, true, true, false},
 		{"pedido.nuevo", KindInfo, SeverityInfo, true, true, false},
 		{"errors.bot", KindInfo, SeverityInfo, true, true, false},
-		{"recall.home", KindInfo, SeverityInfo, true, true, false},
+		{"halt.now", KindInfo, SeverityInfo, true, true, false},
 	}
 	for _, c := range cases {
 		kind := KindOf(c.name)

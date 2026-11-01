@@ -76,8 +76,8 @@ func TestRuntimesDispatchOnTheRequestsRuntime(t *testing.T) {
 		}
 	}()
 	<-jev.started
-	message := application.RelayedMessage{ID: "evt-1", Text: "Your operator says (info.cue.winds): f", Event: &application.RelayedEvent{Name: "info.cue.winds", Data: map[string]any{"dynamics": "f"}}}
-	if err := runtimes.Hear(ctx, "exec-j", []application.RelayedMessage{message}); err != nil || len(jev.heard) != 1 || jev.heard[0].Event.Name != "info.cue.winds" {
+	message := application.RelayedMessage{ID: "evt-1", Text: "Your operator says (info.notice.load): high", Event: &application.RelayedEvent{Name: "info.notice.load", Data: map[string]any{"priority": "high"}}}
+	if err := runtimes.Hear(ctx, "exec-j", []application.RelayedMessage{message}); err != nil || len(jev.heard) != 1 || jev.heard[0].Event.Name != "info.notice.load" {
 		t.Errorf("jev heard: %v %v", err, jev.heard)
 	}
 	if err := runtimes.Hear(ctx, "exec-a", []application.RelayedMessage{message}); err != nil || len(axlr.steers) != 1 || axlr.steers[0] != message.Text {

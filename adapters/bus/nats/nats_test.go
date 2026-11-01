@@ -130,7 +130,7 @@ func TestPushesSurviveTheNodesAndTheBrokersAbsence(t *testing.T) {
 }
 
 func TestSubjectsAndWire(t *testing.T) {
-	if subject("stage.ob-1") != "axlr.push.stage_ob-1" || consumerName("web 1") != "node-web_1" {
+	if subject("rack.worker-1") != "axlr.push.rack_worker-1" || consumerName("web 1") != "node-web_1" {
 		t.Error("subject tokens")
 	}
 	push, ok := decode(encode(application.NodePush{Execution: "exec-1"}))
