@@ -11,4 +11,6 @@ type OpenIncidentResult struct {
 	Task     *domain.Task
 	Created  bool
 	Reopened bool
+	// Action says what the alert did: opened, repeated or reopened.
+	Action string
 }

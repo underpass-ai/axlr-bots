@@ -45,6 +45,8 @@ func (uc FireTrigger) Execute(ctx context.Context, command FireTriggerCommand) (
 		payload = map[string]any{"trigger": trigger.Name(), "type": trigger.Type().String()}
 	)
 	switch trigger.Type() {
+	case domain.TriggerAlertmanager:
+		return uc.fireAlertmanager(ctx, bot, trigger, command.Body)
 	case domain.TriggerWebhook:
 		if err := json.Unmarshal(command.Body, &event); err != nil || event == nil {
 			return FireTriggerResult{}, domain.ValidationError{Field: "body", Reason: "must be a JSON object"}
@@ -82,5 +84,6 @@ func (uc FireTrigger) Execute(ctx context.Context, command FireTriggerCommand) (
 	if err := uc.rec.event(ctx, domain.EventTriggerFired, bot, result.Task.ID(), result.Task.CorrelationID(), payload); err != nil {
 		return FireTriggerResult{}, err
 	}
-	return FireTriggerResult{Task: result.Task, Created: result.Created, Trigger: trigger.Ref(), IdempotencyKey: key}, nil
+	task := result.Task
+	return FireTriggerResult{Task: &task, Created: result.Created, Trigger: trigger.Ref(), IdempotencyKey: key}, nil
 }

@@ -27,7 +27,7 @@ A bot has no role baked in: its definition is what an operator writes, and the s
 | `level` | the autonomy level ([below](#autonomy-levels)); default `observe` |
 | `allowedTools` | AXLR's tool names (`local_read`, `local_search`, `local_list`, `local_write`, `local_exec`, …); nothing else may be called |
 | `toolRules` | narrows the allowed tools by their arguments ([below](#tool-rules)) |
-| `triggers` | how tasks reach the bot: `manual` (the default), `webhook`, `timer`, `delegation`, `incident`; a bot that declares triggers takes only those ([below](#triggers)). A trigger of type `event` is read as a [subscription](#subscriptions), for one release |
+| `triggers` | how tasks reach the bot: `manual` (the default), `webhook`, `timer`, `delegation`, `incident`, `alertmanager`; a bot that declares triggers takes only those ([below](#triggers)). A trigger of type `event` is read as a [subscription](#subscriptions), for one release |
 | `placement` | where the bot's tasks run: `{"nodes": ["web-1"]}`, `{"selector": {"zone": "eu"}}`, or nothing for any node but a dedicated one, such as a sidecar ([nodes](node-protocol.md)) |
 | `approvals` | how a pending call waits for a person: `ttl` (default `1h`), `onExpire` (`deny`, the default, or `cancel`) and the `notify` targets told when a task starts to wait ([below](#approvals)) |
 | `delegation` | the bots outside its teams this bot may ask to do a task, how deep a chain through it may go and the share of its task a child may take; absent: it asks only its teammates ([below](#delegation)) |
@@ -198,8 +198,9 @@ Every fire creates a task through the same path as a manual submission, under an
   {"type": "manual"},
   {"type": "webhook", "name": "deploy", "secret": "<16 to 256 characters>",
    "objective": "Handle event {{.type}} for {{.service}}"},
-  {"type": "webhook", "name": "alerts", "signingKey": "<16 to 256 characters>",
-   "objective": "Look at the alert {{.alertname}} on {{.instance}}"},
+  {"type": "webhook", "name": "deploys", "signingKey": "<16 to 256 characters>",
+   "objective": "Look at the deploy of {{.service}}"},
+  {"type": "alertmanager", "name": "alerts", "secret": "<16 to 256 characters>"},
   {"type": "timer", "name": "clock", "every": "10m",
    "objective": "Say the current time of this host (the trigger fired at {{.firedAt}})."},
   {"type": "timer", "name": "nightly", "cron": "0 3 * * 1-5", "objective": "Write the nightly report"}
@@ -213,6 +214,7 @@ Every fire creates a task through the same path as a manual submission, under an
 | `timer` | the daemon, on every tick | `timer:<name>:<unix seconds of the slot>` | none: it is the control plane's own |
 | `delegation` | another bot's execution, through its node ([delegation](#delegation)) | `delegation:<asking task>:<hash of the bot and the objective>` | the asking node's certificate, and the asking bot's `delegation.to` or a shared team |
 | `event` | a teammate's event the bot heard ([subscriptions](#subscriptions)); the task names the subscription's topic, or `team` | `event:<event id>:<bot>` | the emitting node's certificate, a shared team and the emitter's `events` |
+| `alertmanager` | `POST /v1/triggers/{bot}/{trigger}` with Alertmanager's webhook payload (version 4) as the body: a webhook whose body is read. A **firing** group opens an incident of the bot and its triage task (the payload is the task's `input`; the title is `<alertname> in <namespace>`, the severity the `severity` label: critical sev1, error sev2, warning sev3, info sev4), is a repeat of the incident the group already has (Alertmanager resends a group every `repeat_interval`: alerts added, no task), or reopens one resolved less than 30 minutes ago; the alerts marked resolved inside it are recorded. A **resolved** group (`send_resolved: true` on the receiver) resolves the incident and starts nothing; a group nobody had is ignored. The trigger's optional `objective` renders over the incident and, under `alert`, the payload. A body that is not Alertmanager's is `400` | `incident:<incident id>:<cycle>`; none for a repeat or a resolution | as a `webhook`: the trigger's `secret` or `signingKey` |
 | `incident` | the control plane, when `POST /v1/incidents` opens or reopens an incident for the bot ([operator API](operator-api.md#routes)); the trigger's optional `objective` is rendered over the incident (`id`, `title`, `severity`, `groupKey`, `fingerprints`, `cycle`, …), the default being "Incident … Find the cause with evidence and report it; change nothing"; the task's `input` is the incident. One task per cycle: a repeated alert starts nothing. When the task ends, the incident is Diagnosed (Completed) or Escalated (anything else) | `incident:<incident id>:<cycle>` | the socket, or the operator bearer token |
 
 **Webhook.** A webhook is fired from outside with the trigger's own credential: the shared `secret` compared in constant time, or a signature over the body under the `signingKey` (what GitHub and most senders produce). An unknown bot or trigger, a missing or wrong credential and a tampered body are all `403`, so the route tells a stranger nothing; a body past 256 KiB is `413`. The secret and the signing key are stored with the bot (file mode 0600) and redacted in every answer of the API and the CLI. The body is stored on the task as its `input`; only the rendered objective reaches AXLR.

@@ -2057,13 +2057,18 @@
           "kind": {
             "type": "string",
             "x-go-enum": "domain.RuntimeKind",
-            "enum": ["axlr", "jev"]
+            "enum": [
+              "axlr",
+              "jev"
+            ]
           },
           "jev": {
             "$ref": "#/components/schemas/JevProgramSnapshot"
           }
         },
-        "required": ["kind"]
+        "required": [
+          "kind"
+        ]
       },
       "JevProgramSnapshot": {
         "type": "object",
@@ -2092,7 +2097,12 @@
             "type": "string"
           }
         },
-        "required": ["server", "start", "act", "wait"]
+        "required": [
+          "server",
+          "start",
+          "act",
+          "wait"
+        ]
       },
       "JevTellSnapshot": {
         "type": "object",
@@ -2109,7 +2119,9 @@
             }
           }
         },
-        "required": ["name"]
+        "required": [
+          "name"
+        ]
       },
       "JevActSnapshot": {
         "type": "object",
@@ -2132,7 +2144,10 @@
             }
           }
         },
-        "required": ["tool", "choice"]
+        "required": [
+          "tool",
+          "choice"
+        ]
       },
       "DelegationSnapshot": {
         "type": "object",
@@ -2500,14 +2515,20 @@
           },
           "trigger": {
             "$ref": "#/components/schemas/TriggerRef"
+          },
+          "incident": {
+            "$ref": "#/components/schemas/IncidentSnapshot"
+          },
+          "action": {
+            "type": "string",
+            "description": "an alertmanager fire: opened, repeated, reopened, resolved or ignored"
           }
         },
         "required": [
           "created",
-          "task",
-          "trigger",
-          "idempotencyKey"
-        ]
+          "trigger"
+        ],
+        "description": "what a fire returns; an alertmanager fire names the incident and what it did to it, and has no task for a repeat, a resolution or a group nobody had"
       },
       "Group": {
         "type": "object",
@@ -3652,7 +3673,8 @@
           "timer",
           "delegation",
           "event",
-          "incident"
+          "incident",
+          "alertmanager"
         ],
         "description": "A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
       },
@@ -3798,6 +3820,13 @@
           "resolvedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "resolvedFingerprints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the alerts seen that the source said went green"
           }
         },
         "required": [

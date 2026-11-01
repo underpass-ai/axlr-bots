@@ -33,6 +33,7 @@ type Incident struct {
 	severity     IncidentSeverity
 	status       IncidentStatus
 	fingerprints []string
+	resolved     []string
 	cycle        int
 	tasks        []TaskID
 	diagnosis    string
@@ -128,6 +129,39 @@ func (i Incident) Status() IncidentStatus { return i.status }
 // Fingerprints lists the alerts seen in the incident, oldest first.
 func (i Incident) Fingerprints() []string { return append([]string(nil), i.fingerprints...) }
 
+// ResolvedFingerprints lists the alerts the source said went green, in
+// the order they did.
+func (i Incident) ResolvedFingerprints() []string { return append([]string(nil), i.resolved...) }
+
+// FiringFingerprints lists the alerts seen that the source has not
+// resolved.
+func (i Incident) FiringFingerprints() []string {
+	var firing []string
+	for _, fingerprint := range i.fingerprints {
+		if !slices.Contains(i.resolved, fingerprint) {
+			firing = append(firing, fingerprint)
+		}
+	}
+	return firing
+}
+
+// MarkResolved records the alerts the source said went green; an alert
+// not seen before is recorded as seen and resolved at once. It changes
+// no status: the source says when the whole group is resolved.
+func (i *Incident) MarkResolved(fingerprints []string, now time.Time) error {
+	if err := i.addFingerprints(fingerprints); err != nil {
+		return err
+	}
+	for _, raw := range fingerprints {
+		fingerprint := strings.TrimSpace(raw)
+		if !slices.Contains(i.resolved, fingerprint) {
+			i.resolved = append(i.resolved, fingerprint)
+		}
+	}
+	i.lastSeenAt, i.updatedAt = now, now
+	return nil
+}
+
 // Cycle counts the times the incident was opened: 1, then one more for
 // each reopening.
 func (i Incident) Cycle() int { return i.cycle }
@@ -199,6 +233,7 @@ func (i *Incident) Repeat(fingerprints []string, now time.Time) error {
 	if err := i.addFingerprints(fingerprints); err != nil {
 		return err
 	}
+	i.unresolve(fingerprints)
 	i.repeats++
 	i.lastSeenAt, i.updatedAt = now, now
 	return nil
@@ -220,6 +255,7 @@ func (i *Incident) Reopen(fingerprints []string, now time.Time) error {
 	if err := i.addFingerprints(fingerprints); err != nil {
 		return err
 	}
+	i.unresolve(fingerprints)
 	i.cycle++
 	i.status = IncidentOpen
 	i.resolvedAt = nil
@@ -289,6 +325,14 @@ func (i *Incident) AddCost(usd float64, now time.Time) error {
 	return nil
 }
 
+// unresolve takes alerts that fire again out of the resolved ones.
+func (i *Incident) unresolve(fingerprints []string) {
+	for _, raw := range fingerprints {
+		fingerprint := strings.TrimSpace(raw)
+		i.resolved = slices.DeleteFunc(i.resolved, func(resolved string) bool { return resolved == fingerprint })
+	}
+}
+
 func (i Incident) refuse(attempted string) error {
 	return StateError{Subject: "incident " + i.id.String(), Current: i.status.String(), Attempted: attempted}
 }
@@ -306,7 +350,7 @@ func (i Incident) Snapshot() IncidentSnapshot {
 	}
 	return IncidentSnapshot{
 		ID: i.id.String(), TenantID: i.tenant.String(), BotID: i.bot.String(), GroupKey: i.groupKey, Source: i.source,
-		Title: i.title, Severity: i.severity.String(), Status: i.status.String(), Fingerprints: i.Fingerprints(),
+		Title: i.title, Severity: i.severity.String(), Status: i.status.String(), Fingerprints: i.Fingerprints(), ResolvedFingerprints: i.ResolvedFingerprints(),
 		Cycle: i.cycle, TaskIDs: tasks, Diagnosis: i.diagnosis, Reason: i.reason, Repeats: i.repeats, CostUSD: i.costUSD,
 		OpenedAt: i.openedAt, UpdatedAt: i.updatedAt, LastSeenAt: i.lastSeenAt, ResolvedAt: resolvedAt,
 	}
@@ -377,6 +421,14 @@ func RestoreIncident(s IncidentSnapshot) (Incident, error) {
 	if s.ResolvedAt != nil {
 		at := *s.ResolvedAt
 		incident.resolvedAt = &at
+	}
+	for _, fingerprint := range s.ResolvedFingerprints {
+		if !slices.Contains(incident.fingerprints, fingerprint) {
+			return Incident{}, invalid("resolved fingerprints", "must be alerts the incident saw")
+		}
+		if !slices.Contains(incident.resolved, fingerprint) {
+			incident.resolved = append(incident.resolved, fingerprint)
+		}
 	}
 	incident.cycle, incident.repeats, incident.costUSD = s.Cycle, s.Repeats, s.CostUSD
 	incident.status, incident.updatedAt, incident.lastSeenAt = status, s.UpdatedAt, s.LastSeenAt

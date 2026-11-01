@@ -10,11 +10,21 @@ import (
 )
 
 // DefaultIncidentObjective is what the triage task asks for when neither
-// the alert nor the bot's incident trigger says.
+// the alert nor the bot's trigger says.
 const DefaultIncidentObjective = "Incident {{.id}} ({{.severity}}): {{.title}}. Alerts: {{.fingerprints}}. Find the cause with evidence and report it; change nothing."
 
 // IncidentSource is the source of an incident opened by hand.
 const IncidentSource = "manual"
+
+// What an alert did to its incident: opened a new one, repeated the one
+// open, reopened one resolved less than the window ago, or resolved it.
+const (
+	IncidentOpened   = "opened"
+	IncidentRepeated = "repeated"
+	IncidentReopened = "reopened"
+	IncidentClosed   = "resolved"
+	IncidentIgnored  = "ignored"
+)
 
 // OpenIncident takes an alert group: it opens an incident and the triage
 // task of the bot, or records a repeat on the incident the group already
@@ -30,7 +40,25 @@ func NewOpenIncident(deps Dependencies) OpenIncident {
 	return OpenIncident{deps: deps, rec: recorder{deps: deps}}
 }
 
-// Execute opens, repeats or reopens the incident.
+// opening is one alert group reaching a bot, by hand or through its
+// alertmanager trigger: the trigger the triage task comes through (its
+// template renders over fields), what the task is given as input, and
+// the incident's own facts.
+type opening struct {
+	bot          domain.Bot
+	trigger      domain.Trigger
+	source       string
+	groupKey     string
+	title        string
+	severity     domain.IncidentSeverity
+	fingerprints []string
+	objective    string
+	input        []byte
+	fields       map[string]any
+}
+
+// Execute opens, repeats or reopens the incident by hand: the bot's
+// incident trigger is its consent and its template.
 func (uc OpenIncident) Execute(ctx context.Context, command OpenIncidentCommand) (OpenIncidentResult, error) {
 	tenant, err := domain.NewTenantID(command.Tenant)
 	if err != nil {
@@ -55,8 +83,24 @@ func (uc OpenIncident) Execute(ctx context.Context, command OpenIncidentCommand)
 	if bot.TenantID() != tenant {
 		return OpenIncidentResult{}, domain.NotFoundError{Kind: "bot", ID: botID.String()}
 	}
+	trigger, ok := bot.Trigger(domain.TriggerIncident.String())
+	if !ok {
+		_ = uc.rec.audit(ctx, "incident.open", botID.String(), domain.AuditDenied, map[string]string{"reason": "bot takes no incidents"})
+		return OpenIncidentResult{}, domain.StateError{Subject: "bot " + botID.String(), Current: "without an incident trigger", Attempted: "take an incident"}
+	}
+	return uc.open(ctx, opening{bot: bot, trigger: trigger, source: source, groupKey: command.GroupKey, title: command.Title, severity: severity, fingerprints: command.Fingerprints, objective: command.Objective})
+}
+
+// open finds what the group already has and opens, repeats or reopens.
+func (uc OpenIncident) open(ctx context.Context, o opening) (OpenIncidentResult, error) {
+	bot := o.bot
+	if !bot.AcceptsTasks() {
+		// Checked before anything is saved; submitTask refuses the same way.
+		_ = uc.rec.audit(ctx, "incident.open", bot.ID().String(), domain.AuditDenied, map[string]string{"reason": "bot is " + bot.Status().String()})
+		return OpenIncidentResult{}, domain.StateError{Subject: "bot " + bot.ID().String(), Current: bot.Status().String(), Attempted: "take an incident"}
+	}
 	now := uc.deps.Clock.Now()
-	existing, found, err := uc.deps.Incidents.FindNewestByGroupKey(ctx, tenant, command.GroupKey)
+	existing, found, err := uc.deps.Incidents.FindNewestByGroupKey(ctx, bot.TenantID(), o.groupKey)
 	if err != nil {
 		return OpenIncidentResult{}, err
 	}
@@ -64,27 +108,27 @@ func (uc OpenIncident) Execute(ctx context.Context, command OpenIncidentCommand)
 	case found && !existing.Status().IsResolved() && len(existing.TaskIDs()) < existing.Cycle():
 		// A crash between the incident's save and its task: the alert
 		// that comes again gives the cycle its task.
-		if err := existing.Repeat(command.Fingerprints, now); err != nil {
+		if err := existing.Repeat(o.fingerprints, now); err != nil {
 			return OpenIncidentResult{}, err
 		}
-		return uc.start(ctx, bot, existing, command.Objective, domain.EventIncidentOpened, existing.Cycle() > 1)
+		return uc.start(ctx, o, existing, domain.EventIncidentOpened, existing.Cycle() > 1)
 	case found && !existing.Status().IsResolved():
-		return uc.repeat(ctx, bot, existing, command.Fingerprints, now)
+		return uc.repeat(ctx, bot, existing, o.fingerprints, now)
 	case found && existing.CanReopen(now):
-		if err := existing.Reopen(command.Fingerprints, now); err != nil {
+		if err := existing.Reopen(o.fingerprints, now); err != nil {
 			return OpenIncidentResult{}, err
 		}
-		return uc.start(ctx, bot, existing, command.Objective, domain.EventIncidentReopened, true)
+		return uc.start(ctx, o, existing, domain.EventIncidentReopened, true)
 	}
 	id, err := domain.NewIncidentID(uc.deps.IDs.NewID("inc-"))
 	if err != nil {
 		return OpenIncidentResult{}, err
 	}
-	incident, err := domain.NewIncident(id, tenant, botID, command.GroupKey, source, command.Title, severity, command.Fingerprints, now)
+	incident, err := domain.NewIncident(id, bot.TenantID(), bot.ID(), o.groupKey, o.source, o.title, o.severity, o.fingerprints, now)
 	if err != nil {
 		return OpenIncidentResult{}, err
 	}
-	return uc.start(ctx, bot, incident, command.Objective, domain.EventIncidentOpened, false)
+	return uc.start(ctx, o, incident, domain.EventIncidentOpened, false)
 }
 
 // repeat records the alert on the open incident and starts nothing.
@@ -103,33 +147,31 @@ func (uc OpenIncident) repeat(ctx context.Context, bot domain.Bot, incident doma
 	if err := uc.rec.audit(ctx, "incident.open", incident.ID().String(), domain.AuditOK, map[string]string{"groupKey": incident.GroupKey(), "deduplicated": "true"}); err != nil {
 		return OpenIncidentResult{}, err
 	}
-	return OpenIncidentResult{Incident: incident}, nil
+	return OpenIncidentResult{Incident: incident, Action: IncidentRepeated}, nil
 }
 
 // start saves the incident (new or reopened) and submits its triage
 // task under the key of its cycle; the incident is saved before the
 // task, and saved again with the task attached, so a crash between the
 // two leaves an incident without a task, found again by its group key.
-func (uc OpenIncident) start(ctx context.Context, bot domain.Bot, incident domain.Incident, objective string, kind domain.EventType, reopened bool) (OpenIncidentResult, error) {
-	if !bot.AcceptsTrigger(domain.TriggerIncident) {
-		_ = uc.rec.audit(ctx, "incident.open", incident.ID().String(), domain.AuditDenied, map[string]string{"reason": "bot takes no incidents"})
-		return OpenIncidentResult{}, domain.StateError{Subject: "bot " + bot.ID().String(), Current: "without an incident trigger", Attempted: "take an incident"}
-	}
-	// Checked here, before the incident is saved, so a refusal saves
-	// nothing; submitTask checks it again and refuses the same way.
-	if !bot.AcceptsTasks() {
-		_ = uc.rec.audit(ctx, "incident.open", incident.ID().String(), domain.AuditDenied, map[string]string{"reason": "bot is " + bot.Status().String()})
-		return OpenIncidentResult{}, domain.StateError{Subject: "bot " + bot.ID().String(), Current: bot.Status().String(), Attempted: "take an incident"}
-	}
+func (uc OpenIncident) start(ctx context.Context, o opening, incident domain.Incident, kind domain.EventType, reopened bool) (OpenIncidentResult, error) {
+	bot := o.bot
 	if err := uc.deps.Incidents.Save(ctx, incident); err != nil {
 		return OpenIncidentResult{}, err
 	}
-	trigger, _ := bot.Trigger(domain.TriggerIncident.String())
-	input, _ := json.Marshal(incident.Snapshot())
-	var fields map[string]any
-	_ = json.Unmarshal(input, &fields)
+	snapshot, _ := json.Marshal(incident.Snapshot())
+	fields := map[string]any{}
+	_ = json.Unmarshal(snapshot, &fields)
+	for key, value := range o.fields {
+		fields[key] = value
+	}
+	input := o.input
+	if input == nil {
+		input = snapshot
+	}
+	objective := o.objective
 	if objective == "" {
-		template := trigger.ObjectiveTemplate()
+		template := o.trigger.ObjectiveTemplate()
 		if template == "" {
 			template = DefaultIncidentObjective
 		}
@@ -147,7 +189,7 @@ func (uc OpenIncident) start(ctx context.Context, bot domain.Bot, incident domai
 	if err != nil {
 		return OpenIncidentResult{}, err
 	}
-	result, err := submitTask(ctx, uc.deps, submission{action: "incident.open", bot: bot, trigger: trigger.Ref(), objective: parsed, key: key, input: input, incident: incident.ID()})
+	result, err := submitTask(ctx, uc.deps, submission{action: "incident.open", bot: bot, trigger: o.trigger.Ref(), objective: parsed, key: key, input: input, incident: incident.ID()})
 	if err != nil {
 		return OpenIncidentResult{}, err
 	}
@@ -161,7 +203,7 @@ func (uc OpenIncident) start(ctx context.Context, bot domain.Bot, incident domai
 	}
 	payload := map[string]any{
 		"groupKey": incident.GroupKey(), "source": incident.Source(), "title": incident.Title(), "severity": incident.Severity().String(),
-		"fingerprints": incident.Fingerprints(), "cycle": incident.Cycle(), "taskId": result.Task.ID().String(),
+		"fingerprints": incident.Fingerprints(), "cycle": incident.Cycle(), "taskId": result.Task.ID().String(), "trigger": o.trigger.Name(),
 	}
 	if err := uc.rec.incidentEvent(ctx, kind, bot, incident, payload); err != nil {
 		return OpenIncidentResult{}, err
@@ -171,5 +213,9 @@ func (uc OpenIncident) start(ctx context.Context, bot domain.Bot, incident domai
 		return OpenIncidentResult{}, err
 	}
 	task := result.Task
-	return OpenIncidentResult{Incident: incident, Task: &task, Created: !reopened, Reopened: reopened}, nil
+	action := IncidentOpened
+	if reopened {
+		action = IncidentReopened
+	}
+	return OpenIncidentResult{Incident: incident, Task: &task, Created: !reopened, Reopened: reopened, Action: action}, nil
 }

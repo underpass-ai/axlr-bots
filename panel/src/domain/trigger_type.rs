@@ -13,6 +13,7 @@ pub enum TriggerType {
     Delegation,
     Event,
     Incident,
+    Alertmanager,
     /// A value this panel does not know: the control plane is newer. Read,
     /// shown as unknown, never refused.
     #[serde(other)]
@@ -28,6 +29,7 @@ impl TriggerType {
             Self::Delegation => "delegation",
             Self::Event => "event",
             Self::Incident => "incident",
+            Self::Alertmanager => "alertmanager",
             Self::Unknown => "unknown",
         }
     }
@@ -40,6 +42,7 @@ impl TriggerType {
             Self::Delegation => "Another bot",
             Self::Event => "A teammate's event",
             Self::Incident => "An incident",
+            Self::Alertmanager => "Alertmanager",
             Self::Unknown => "Unknown",
         }
     }
@@ -81,6 +84,11 @@ mod tests {
         );
         assert_eq!(TriggerType::Incident.name(), "incident");
         assert_eq!(TriggerType::Incident.label(), "An incident");
+        assert_eq!(
+            serde_json::from_str::<TriggerType>("\"alertmanager\"").unwrap(),
+            TriggerType::Alertmanager
+        );
+        assert_eq!(TriggerType::Alertmanager.label(), "Alertmanager");
     }
 
     #[test]
