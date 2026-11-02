@@ -10,6 +10,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | Look up a command, its defaults and its environment | [Command reference](reference/cli.md) |
 | Run a bot with no language model: a fixed program over one MCP server whose every choice Jev makes | [Runtime](reference/bot-definition.md#runtime) |
 | Watch the fleet, send tasks and approve calls from a desktop window | [Control panel](../panel/README.md) |
+| Watch what a running bot does, call by call and word by word, and correct it while it works | [Control panel](../panel/README.md#screens), [ADR](architecture/live-progress.md) |
 | Call the control plane over HTTP: listeners, routes, idempotency key, errors | [Operator API](reference/operator-api.md) |
 | Know what a node and the control plane say to each other, and how a node is identified | [Node protocol](reference/node-protocol.md) |
 
@@ -38,6 +39,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | The packages, the state directory, how to build and test | [Layout](architecture/layout.md) |
 | How a node runs AXLR, the policy it passes, how it reads the result; the Jev runtime | [Runtime contract](architecture/runtime-contract.md) |
 | How a push reaches a node: its own stream, or a NATS broker, and what a broker needs | [Bus port](architecture/bus-port.md) |
+| How a running task's progress gets from the run to the panel without slowing the run | [Live progress](architecture/live-progress.md) |
 | How a world (a simulation, a camera, a sensor, an operator's hand) reaches the bots as text, through the tools, the bus and the notes that exist | [Input adapters](architecture/input-adapters.md) |
 | The product and architecture vision this implements | [Vision](architecture/vision.md) |
 

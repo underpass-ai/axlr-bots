@@ -47,7 +47,7 @@ The control plane generates every id: `bot_id` at registration, `task_id` and a 
 
 ## The result
 
-The last JSON line, `{"type":"result","result":{"schema":"axlr.execution-result/v1",…}}`, gives the status (`completed`, `needs_decision`, `interrupted`, `failed`, `budget_exceeded`), the answer, the sessions, the pending call with its arguments, the tool calls, the usage (requests, tokens, cost) and the artifacts. The adapter keeps the raw lines as the trace (`<state>/traces/<execution>.jsonl`), bounded per line. Fallback for an older `axlr-tui` without the result line: the exit code (0 completed, 3 decision required, 1 failed) plus the `completed`, `failed` and `decision.required` lines.
+The last JSON line, `{"type":"result","result":{"schema":"axlr.execution-result/v1",…}}`, gives the status (`completed`, `needs_decision`, `interrupted`, `failed`, `budget_exceeded`), the answer, the sessions, the pending call with its arguments, the tool calls, the usage (requests, tokens, cost) and the artifacts. The adapter keeps the raw lines as the trace (`<state>/traces/<execution>.jsonl`), bounded per line; on a node it also turns them, as it reads them, into the progress the operator watches live ([live progress](live-progress.md)). Fallback for an older `axlr-tui` without the result line: the exit code (0 completed, 3 decision required, 1 failed) plus the `completed`, `failed` and `decision.required` lines.
 
 | Result status | Execution outcome | Task |
 |---|---|---|
