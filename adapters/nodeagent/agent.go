@@ -40,6 +40,9 @@ type Agent struct {
 	// Streamer hears the control plane's pushes when they come by another
 	// way than the transport (a broker); nil hears them on the transport.
 	Streamer Streamer
+	// Certificate is the node's client certificate, which the agent
+	// renews before it expires; nil (over the socket) renews nothing.
+	Certificate Certificate
 
 	slots *slots
 	wg    *sync.WaitGroup
@@ -77,6 +80,17 @@ func (a Agent) Run(ctx context.Context) error {
 	// node look dead to the control plane.
 	go a.heartbeat(ctx, id)
 	go a.listen(ctx, id)
+	// The control plane answered the registration, so it can answer a
+	// renewal now: one due at start is not left for a day.
+	// Run returns only once a renewal under way is kept: a node stopped
+	// between the control plane's answer and the write would come back
+	// with a denied certificate.
+	kept := make(chan struct{})
+	go func() {
+		defer close(kept)
+		a.keepCertificate(ctx, id)
+	}()
+	defer func() { <-kept }()
 	for ctx.Err() == nil {
 		// One execution works at a time; one that waits for a child it
 		// delegated lends its slot, so the child may run here too.

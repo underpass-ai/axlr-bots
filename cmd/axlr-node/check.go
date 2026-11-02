@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/underpass-ai/axlr-bots/adapters/nodeagent"
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
 	"github.com/underpass-ai/axlr-bots/nodeproto"
 )
@@ -30,6 +31,7 @@ func check(args []string, stdout, stderr io.Writer) int {
 	tokenFile := flags.String("token-file", envOr("AXLR_NODE_TOKEN_FILE", ""), "take the CA from the token in this file when no --ca-file is given (also AXLR_NODE_TOKEN_FILE)")
 	stateDir := flags.String("state", envOr("AXLR_NODE_STATE", defaultStateDir()), "take the CA an enrolled node stored when neither is given")
 	timeout := flags.Duration("timeout", 10*time.Second, "how long to wait for the answer")
+	renewBefore := flags.Duration("renew-before", envDuration("AXLR_NODE_RENEW_BEFORE", nodeagent.RenewCertificateBefore), "say a certificate under the state is due for renewal this long before it expires, as the agent does (also AXLR_NODE_RENEW_BEFORE)")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exitOK
@@ -56,7 +58,11 @@ func check(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "axlr-node: check:", err)
 		return exitError
 	}
-	printJSON(stdout, map[string]string{"control": *control, "status": status, "ca": source})
+	answer := map[string]string{"control": *control, "status": status, "ca": source}
+	for key, value := range certificateStatus(*stateDir, time.Now(), *renewBefore) {
+		answer[key] = value
+	}
+	printJSON(stdout, answer)
 	return exitOK
 }
 
@@ -113,4 +119,22 @@ func checkHealth(ctx context.Context, control string, caPEM []byte) (string, err
 		return "", fmt.Errorf("/healthz: %w", err)
 	}
 	return health.Status, nil
+}
+
+// certificateStatus says, for a node enrolled under the state
+// directory, its certificate's serial and expiry and whether the agent
+// renews it at its next check; nothing for a node not enrolled.
+func certificateStatus(stateDir string, now time.Time, before time.Duration) map[string]string {
+	creds, err := pki.LoadCredentials(stateDir)
+	if err != nil {
+		return nil
+	}
+	due := "no"
+	switch {
+	case !creds.NotAfter.After(now):
+		due = "expired: enroll again with a fresh token"
+	case nodeagent.RenewalDue(creds.NotAfter, now, before):
+		due = "yes"
+	}
+	return map[string]string{"certificate": creds.Serial, "notAfter": creds.NotAfter.UTC().Format(time.RFC3339), "renewalDue": due}
 }

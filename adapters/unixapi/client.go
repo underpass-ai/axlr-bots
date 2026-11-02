@@ -25,7 +25,7 @@ import (
 // https:// address with the TLS configuration of an enrolled node
 // (NewTLSClient).
 type Client struct {
-	http    *http.Client
+	http    *liveClient
 	base    string
 	address string
 	token   string
@@ -45,7 +45,7 @@ func (c *Client) WithToken(token string) *Client {
 // transport: for the node's certificate use NewTLSClient.
 func NewClient(address string) *Client {
 	if strings.HasPrefix(address, "http://") || strings.HasPrefix(address, "https://") {
-		return &Client{http: &http.Client{}, base: strings.TrimRight(address, "/"), address: address}
+		return &Client{http: newLiveClient(&http.Client{}), base: strings.TrimRight(address, "/"), address: address}
 	}
 	socketPath := strings.TrimPrefix(address, "unix://")
 	transport := &http.Transport{
@@ -54,7 +54,7 @@ func NewClient(address string) *Client {
 			return dialer.DialContext(ctx, "unix", socketPath)
 		},
 	}
-	return &Client{http: &http.Client{Transport: transport}, base: "http://axlr-bots", address: socketPath}
+	return &Client{http: newLiveClient(&http.Client{Transport: transport}), base: "http://axlr-bots", address: socketPath}
 }
 
 // NewTLSClient talks to the control plane at an https:// address with
@@ -66,6 +66,22 @@ func NewClient(address string) *Client {
 // Offline. The response-header bound is past the longest long poll
 // (maxPollWait) and the stream's ping.
 func NewTLSClient(address string, config *tls.Config) *Client {
+	return &Client{http: newLiveClient(tlsHTTPClient(config)), base: strings.TrimRight(address, "/"), address: address}
+}
+
+// UseTLSConfig makes every later call go out with the TLS configuration:
+// a node that renewed its certificate presents the new one from then
+// on. A pooled connection carries the certificate it was opened with,
+// which the control plane now refuses, so none is reused; the calls
+// under way (a long poll, the stream) end on their own connection.
+func (c *Client) UseTLSConfig(config *tls.Config) {
+	previous := c.http.swap(tlsHTTPClient(config))
+	previous.CloseIdleConnections()
+}
+
+// tlsHTTPClient is a node's HTTP client over TLS, bounded as
+// NewTLSClient says.
+func tlsHTTPClient(config *tls.Config) *http.Client {
 	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 15 * time.Second}
 	transport := &http.Transport{
 		TLSClientConfig:       config,
@@ -74,7 +90,7 @@ func NewTLSClient(address string, config *tls.Config) *Client {
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: 45 * time.Second,
 	}
-	return &Client{http: &http.Client{Transport: transport}, base: strings.TrimRight(address, "/"), address: address}
+	return &http.Client{Transport: transport}
 }
 
 // Reachable reports whether a daemon answers on the socket.
@@ -369,6 +385,18 @@ func (c *Client) RevokeNode(ctx context.Context, id string) (RevokeResponse, err
 func (c *Client) Enroll(ctx context.Context, request nodeproto.EnrollRequest) (nodeproto.EnrollResponse, error) {
 	var response nodeproto.EnrollResponse
 	return response, c.call(ctx, http.MethodPost, "/v1/enroll", request, &response)
+}
+
+// RenewCertificate trades the certificate the client presents for a
+// new one signed from the request (application.NodeTransport). Only
+// over TLS: the socket has no certificate to renew.
+func (c *Client) RenewCertificate(ctx context.Context, node domain.NodeID, csrPEM []byte) (application.RenewedCertificate, error) {
+	var response nodeproto.EnrollResponse
+	path := "/v1/nodes/" + url.PathEscape(node.String()) + "/certificate"
+	if err := c.call(ctx, http.MethodPost, path, nodeproto.RenewRequest{CSR: string(csrPEM)}, &response); err != nil {
+		return application.RenewedCertificate{}, err
+	}
+	return application.RenewedCertificate{CertificatePEM: []byte(response.Certificate), CAPEM: []byte(response.CA), Serial: response.Serial, NotAfter: response.NotAfter}, nil
 }
 
 // Register is the node protocol's registration (application.NodeTransport).

@@ -312,6 +312,9 @@ func (f *fakeTransport) ExecutionMessages(context.Context, domain.NodeID, domain
 func (f *fakeTransport) Said(context.Context, domain.NodeID, domain.ExecutionID, application.SaidReply) error {
 	return nil
 }
+func (f *fakeTransport) RenewCertificate(context.Context, domain.NodeID, []byte) (application.RenewedCertificate, error) {
+	return application.RenewedCertificate{}, errors.New("not served")
+}
 func (f *fakeTransport) Report(_ context.Context, _ domain.NodeID, _ domain.ExecutionID, report application.ExecutionReport) (application.ReportAck, error) {
 	f.reports++
 	f.report = report

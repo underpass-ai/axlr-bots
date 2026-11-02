@@ -2364,6 +2364,7 @@
           "node.offline",
           "node.enrolled",
           "node.revoked",
+          "node.renewed",
           "incident.opened",
           "incident.repeated",
           "incident.reopened",

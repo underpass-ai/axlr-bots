@@ -762,11 +762,17 @@ type fakeCertifier struct {
 	caFail  error
 	lastCSR []byte
 	lastID  domain.NodeID
+	// onIssue runs while the certificate is signed: what may land
+	// between a use case's check and its write.
+	onIssue func()
 }
 
 func (f *fakeCertifier) IssueNodeCertificate(_ context.Context, node domain.NodeID, csr []byte) (IssuedCertificate, error) {
 	if f.fail != nil {
 		return IssuedCertificate{}, f.fail
+	}
+	if f.onIssue != nil {
+		f.onIssue()
 	}
 	f.issued++
 	f.lastCSR, f.lastID = csr, node

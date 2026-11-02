@@ -44,9 +44,33 @@ type Options struct {
 	// for each execution of a bot that may delegate (mode 0700); empty
 	// serves no tool.
 	SocketDir string
+	// RenewBefore is how long before its expiry the certificate is
+	// renewed; zero is RenewCertificateBefore. An operator who wants to
+	// see a renewal on a test node sets it past the certificate's life.
+	RenewBefore time.Duration
+	// CertificateCheck is how often the agent looks whether its
+	// certificate is due for renewal.
+	CertificateCheck time.Duration
+	// Now is the clock the certificate's expiry is read against; nil is
+	// the wall clock.
+	Now func() time.Time
 	// Log receives one line per registration, assignment and report;
 	// nil discards them.
 	Log *log.Logger
+}
+
+func (o Options) certificateCheck() time.Duration {
+	if o.CertificateCheck > 0 {
+		return o.CertificateCheck
+	}
+	return DefaultCertificateCheck
+}
+
+func (o Options) now() time.Time {
+	if o.Now != nil {
+		return o.Now()
+	}
+	return time.Now()
 }
 
 func (o Options) heartbeat() time.Duration {

@@ -4,9 +4,9 @@ What a node and the control plane say to each other. Every message goes **out fr
 
 ## Identity
 
-The control plane runs the fleet's CA (ECDSA P-256, the key under `<state>/ca`, mode 0600). Each node holds a client certificate the CA signed from the node's own request: common name = node id, organisation `axlr-bots nodes`, valid a year. The control plane's own certificate is issued by the same CA at start for the host's names (the listen address, the host name, `localhost`, the loopback, every interface address when it listens on all of them, plus `--server-names`) and reissued before it expires; it lives in memory, nothing of it on disk. Both ends speak TLS 1.3.
+The control plane runs the fleet's CA (ECDSA P-256, the key under `<state>/ca`, mode 0600). Each node holds a client certificate the CA signed from the node's own request: common name = node id, organisation `axlr-bots nodes`, valid a year, and [renewed](#renewal) by the agent before it expires. The control plane's own certificate is issued by the same CA at start for the host's names (the listen address, the host name, `localhost`, the loopback, every interface address when it listens on all of them, plus `--server-names`) and reissued before it expires; it lives in memory, nothing of it on disk. Both ends speak TLS 1.3.
 
-Over the TLS address a node **is** its certificate: the server refuses a certificate that was not issued to a node (the CA also signs the fleet's own services, `ca issue-client`, organisation `axlr-bots clients`, whatever their common name), takes the node id from the common name, refuses a URL node id (or a registration body) that names another node, and refuses the certificate when its serial is on the denylist or is not the one recorded at the node's last enrollment. Over the socket, where there is no certificate, the node id in the URL is trusted (same host, same user). A node the control plane does not know but whose node certificate the CA signed may register: that is how a node comes back after the control plane lost its state. Its record is then pinned to that certificate (serial and expiry), as an enrollment would pin it, so its later calls pass the serial check; a known node's serial changes only by enrolling.
+Over the TLS address a node **is** its certificate: the server refuses a certificate that was not issued to a node (the CA also signs the fleet's own services, `ca issue-client`, organisation `axlr-bots clients`, whatever their common name), takes the node id from the common name, refuses a URL node id (or a registration body) that names another node, and refuses the certificate when its serial is on the denylist or is not the one recorded at the node's last enrollment. Over the socket, where there is no certificate, the node id in the URL is trusted (same host, same user). A node the control plane does not know but whose node certificate the CA signed may register: that is how a node comes back after the control plane lost its state. Its record is then pinned to that certificate (serial and expiry), as an enrollment would pin it, so its later calls pass the serial check; a known node's serial changes only by enrolling or by renewing.
 
 ## Labels
 
@@ -19,6 +19,7 @@ A node's labels come from two places: the enrollment token's (`axlr-bots node en
 | enroll `{tokenId, secret, hostName, csr}` | `POST /v1/enroll` | node → control plane, **without a certificate** | once per token: the answer is the node's certificate, the CA and the node |
 | register `{id, hostName, labels, capabilities}` | `POST /v1/nodes` | node → control plane | per node id: a repeat describes the node anew; a registration without labels keeps the ones the node reported before ([labels](#labels)) |
 | heartbeat | `POST /v1/nodes/{id}/heartbeat` | node → control plane | yes |
+| renew the certificate `{csr}` | `POST /v1/nodes/{id}/certificate` | node → control plane, **over TLS only**, with the node's current certificate | no: each call issues a new certificate and denies the one it came with; the answer is shaped like enroll's ([renewal](#renewal)) |
 | next assignment | `GET /v1/nodes/{id}/assignments/next?wait=20s` | node → control plane (long poll; `204` when none). The control plane looks again as soon as it records a change (a task created, a decision queued), and at least every 5 s | each execution is handed out once; an unleased one assigned to the node (a queued decision) goes first |
 | stream | `GET /v1/nodes/{id}/stream` | control plane → node, over a request the node holds open: `application/x-ndjson`, one `{type, executionId?}` per line. `resync` first (renew all you run), `execution` when one of the node's executions is cancelled, preempted, expired or given a message (renew it now), `ping` every 15 s; a node that hears nothing for 45 s opens it again | a hint only: the renewal and the messages route still say what happened. A control plane without the route answers its plain `404` and the node renews on its clock. A node started with `--bus nats` reads the same pushes from the broker instead ([bus port](../architecture/bus-port.md)) |
 | renew lease | `POST /v1/nodes/{id}/executions/{exec}/lease` | node → control plane | yes; refused for another node's or an ended execution |
@@ -61,7 +62,7 @@ The report carries AXLR's receipt line (`axlr.execution-receipt/v1`, at most 1 M
 
 ## Events
 
-`node.registered`, `node.heartbeat`, `node.offline`, `node.enrolled`, `node.revoked`, `execution.assigned` and `execution.reported` are the node events, `bot.task.delegated` and `bot.delegation.refused` the delegation's, `bot.event.emitted` and `bot.event.refused` a team event's and `bot.subscription.asked` a subscribe's, on the asking bot's stream, `bot.event.heard` on each bot that heard the event, and `bot.task.message` and `bot.task.said` the messages to a running task and its replies, in the task's timeline. All go to `events.jsonl` with the bot, task, execution and trace ids they concern. The control plane marks Offline the nodes silent for over a minute, on start and every minute.
+`node.registered`, `node.heartbeat`, `node.offline`, `node.enrolled`, `node.renewed`, `node.revoked`, `execution.assigned` and `execution.reported` are the node events, `bot.task.delegated` and `bot.delegation.refused` the delegation's, `bot.event.emitted` and `bot.event.refused` a team event's and `bot.subscription.asked` a subscribe's, on the asking bot's stream, `bot.event.heard` on each bot that heard the event, and `bot.task.message` and `bot.task.said` the messages to a running task and its replies, in the task's timeline. All go to `events.jsonl` with the bot, task, execution and trace ids they concern. The control plane marks Offline the nodes silent for over a minute, on start and every minute.
 
 ## Revocation
 
@@ -70,6 +71,14 @@ axlr-bots node revoke web-2
 ```
 
 The node is marked `Revoked`, its certificate's serial goes on the denylist (`<state>/pki/revoked.json`, checked on every request a certificate authenticates, so an open connection is cut off too), and the executions it still held fail with their tasks (`revoked: node web-2 was revoked at …`, a `bot.task.failed` event with `"reason": "revoked"`). A revoked node cannot register, heartbeat or take work; a fresh token readmits it with a new certificate, and the old serial stays denied.
+
+## Renewal
+
+The agent looks at its certificate's expiry at start (once the control plane has answered its registration) and every day. From 30 days before it expires (`--renew-before`, `AXLR_NODE_RENEW_BEFORE`) it draws a new key, sends a signing request for it to `POST /v1/nodes/{id}/certificate` over the connection its current certificate opens, writes the new key, certificate and CA under `<state>/pki` (each file replaced whole) and presents the new certificate from its next call; it logs `certificate renewed: serial <new> until <date> (the old one ran until <date>)`. A renewal that fails is logged and tried again the next day.
+
+The control plane renews only over TLS (over the socket there is no certificate: `403`), only the node's current certificate (a superseded or denied one is `403`), never a revoked node's (`403`: enroll it again), and signs only a request for the node's own name (`400 validation` otherwise). It records the new serial and expiry on the node, puts the old serial on the denylist, so the old certificate opens nothing from then on, and records `node.renewed` (`previousSerial`, `serial`, `notAfter`) and the audit `node.renew`. Labels, status and enrollment record stay as they were.
+
+`axlr-node check` prints the certificate under the state (`certificate`, `notAfter`) and `renewalDue`: `no`, `yes` (the agent renews it at its next check) or `expired`.
 
 ## What travels, what stays
 
@@ -83,4 +92,4 @@ The node is marked `Revoked`, its certificate's serial goes on the denylist (`<s
 
 ## Limits today
 
-A node certificate lasts a year and is renewed by enrolling again with a fresh token (no automatic renewal). Revocation is the control plane's own denylist (no CRL or OCSP for other verifiers). The CA key lives in the control plane's state directory (no HSM, no intermediate). Operators authenticate with a bearer token, not client certificates ([API](operator-api.md)).
+A node certificate lasts a year and the agent renews it from 30 days before it expires; one that expired anyway (the node was off for that month) is replaced only by enrolling again with a fresh token. A renewal whose answer never reaches the node, or that the node cannot write to its state, leaves the node with a denied certificate: it needs a fresh token too. Revocation is the control plane's own denylist (no CRL or OCSP for other verifiers). The CA key lives in the control plane's state directory (no HSM, no intermediate). Operators authenticate with a bearer token, not client certificates ([API](operator-api.md)).
