@@ -67,7 +67,7 @@ func (f *fixture) start(t *testing.T) (*unixapi.Client, func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, f.deps, Options{SocketPath: f.socket, Tick: 20 * time.Millisecond, ReconcileEvery: 50 * time.Millisecond, DeliverEvery: 20 * time.Millisecond, Grace: time.Millisecond, NodeOfflineAfter: 150 * time.Millisecond, Log: log.New(f.logs, "", 0)})
+		done <- Run(ctx, f.deps, Options{StateDir: f.state, SocketPath: f.socket, Tick: 20 * time.Millisecond, ReconcileEvery: 50 * time.Millisecond, DeliverEvery: 20 * time.Millisecond, Grace: time.Millisecond, NodeOfflineAfter: 150 * time.Millisecond, Log: log.New(f.logs, "", 0)})
 	}()
 	deadline := time.Now().Add(5 * time.Second)
 	for !unixapi.Reachable(context.Background(), f.socket) {
@@ -216,9 +216,10 @@ func TestDaemonLogsRunErrorsAndKeepsGoing(t *testing.T) {
 		t.Fatal(err)
 	}
 	submitted, _ := local.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "b", Objective: "o", IdempotencyKey: "k"})
-	// A task file that is not valid JSON makes the Pending scan fail; the
-	// daemon logs it and keeps serving.
-	if err := os.WriteFile(filepath.Join(f.state, "tasks", "task-broken.json"), []byte("{"), 0o644); err != nil {
+	// A task file the domain refuses makes the Pending scan fail (one that
+	// is not JSON at all would be set aside); the daemon logs it and keeps
+	// serving.
+	if err := os.WriteFile(filepath.Join(f.state, "tasks", "task-broken.json"), []byte(`{"id":"task-broken","status":"Nope"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	client, stop := f.start(t)
@@ -252,7 +253,7 @@ func TestDaemonRefusals(t *testing.T) {
 	if err := os.WriteFile(file, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := Run(context.Background(), f.deps, Options{SocketPath: filepath.Join(file, "x.sock")}); err == nil {
+	if err := Run(context.Background(), f.deps, Options{StateDir: f.state, SocketPath: filepath.Join(file, "x.sock")}); err == nil {
 		t.Error("socket under a file served")
 	}
 	o := Options{}

@@ -97,13 +97,19 @@ func TestListOnEmptyAndCorruptStores(t *testing.T) {
 	if _, err := repo.Get(ctx, "broken"); err == nil || !strings.Contains(err.Error(), "not valid JSON") {
 		t.Errorf("corrupt file: %v", err)
 	}
-	if _, err := repo.List(ctx); err == nil {
-		t.Error("list with a corrupt file succeeded")
+	if list, err := repo.List(ctx); err != nil || len(list) != 0 || !quarantined(t, dir, "broken") {
+		t.Errorf("list with a corrupt file = %v %d", err, len(list))
 	}
+	if _, err := repo.Get(ctx, "broken"); !domain.IsNotFound(err) {
+		t.Errorf("corrupt file set aside: %v", err)
+	}
+	// Valid JSON the domain refuses is not set aside: the listing fails.
 	_ = os.WriteFile(filepath.Join(dir, "invalid.json"), []byte(`{"id":"invalid","status":"Nope"}`), 0o644)
-	_ = os.Remove(filepath.Join(dir, "broken.json"))
 	if _, err := repo.Get(ctx, "invalid"); err == nil {
 		t.Error("invalid snapshot restored")
+	}
+	if _, err := repo.List(ctx); err == nil || quarantined(t, dir, "invalid") {
+		t.Errorf("list with an invalid snapshot: %v", err)
 	}
 	// A directory that cannot be listed.
 	unreadable := NewBotRepository(filepath.Join(state, "file-not-dir"))
@@ -146,8 +152,8 @@ func TestTaskRepositoryFindsByKey(t *testing.T) {
 		t.Errorf("missing: %v", err)
 	}
 	_ = os.WriteFile(filepath.Join(repo.files.dir, "bad.json"), []byte("{"), 0o644)
-	if _, _, err := repo.FindByIdempotencyKey(ctx, "bot-1", "alert-1"); err == nil {
-		t.Error("corrupt task ignored by the scan")
+	if _, found, err := repo.FindByIdempotencyKey(ctx, "bot-1", "nope"); err != nil || found || !quarantined(t, repo.files.dir, "bad") {
+		t.Errorf("scan past a corrupt task = %v %v", err, found)
 	}
 	broken := NewTaskRepository(filepath.Join(t.TempDir(), "f"))
 	_ = os.WriteFile(filepath.Dir(broken.files.dir), []byte("x"), 0o644)
@@ -180,20 +186,31 @@ func TestExecutionRepositoryRoundTrip(t *testing.T) {
 	}
 }
 
-func TestWriteAtomicallyFailures(t *testing.T) {
+func TestWriteFileFailures(t *testing.T) {
 	state := t.TempDir()
 	blocker := filepath.Join(state, "blocker")
 	_ = os.WriteFile(blocker, []byte("x"), 0o644)
-	if err := writeAtomically(filepath.Join(blocker, "x.json"), []byte("{}")); err == nil {
+	if err := writeFile(filepath.Join(blocker, "x.json"), []byte("{}")); err == nil {
 		t.Error("mkdir under a file succeeded")
 	}
 	target := filepath.Join(state, "dir-target")
 	_ = os.MkdirAll(filepath.Join(target, "child"), 0o755)
-	if err := writeAtomically(target, []byte("{}")); err == nil {
+	if err := writeFile(target, []byte("{}")); err == nil {
 		t.Error("rename over a non-empty directory succeeded")
 	}
 	if entries, _ := os.ReadDir(state); len(entries) != 2 {
 		t.Errorf("temporaries left behind: %d entries", len(entries))
+	}
+	// The state is private to the daemon's user: 0600 files, 0750 dirs.
+	path := filepath.Join(state, "kind", "id.json")
+	if err := writeFile(path, []byte("{}")); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("file mode = %v %v", info.Mode().Perm(), err)
+	}
+	if info, err := os.Stat(filepath.Dir(path)); err != nil || info.Mode().Perm()&0o007 != 0 {
+		t.Errorf("dir mode = %v %v", info.Mode().Perm(), err)
 	}
 }
 
@@ -231,11 +248,12 @@ func TestTaskRepositoryListsByStatus(t *testing.T) {
 		t.Errorf("all: %v %d", err, len(all))
 	}
 	_ = os.WriteFile(filepath.Join(repo.files.dir, "bad.json"), []byte("{"), 0o644)
-	if _, err := repo.ListByStatus(ctx, domain.TaskRunning); err == nil {
-		t.Error("corrupt task ignored by the scan")
+	if running, err := repo.ListByStatus(ctx, domain.TaskRunning); err != nil || len(running) != 2 || !quarantined(t, repo.files.dir, "bad") {
+		t.Errorf("scan past a corrupt task = %v %d", err, len(running))
 	}
-	if _, err := repo.List(ctx); err == nil {
-		t.Error("corrupt task ignored by the list")
+	_ = os.WriteFile(filepath.Join(repo.files.dir, "worse.json"), []byte("{"), 0o644)
+	if all, err := repo.List(ctx); err != nil || len(all) != 3 || !quarantined(t, repo.files.dir, "worse") {
+		t.Errorf("list past a corrupt task = %v %d", err, len(all))
 	}
 	broken := NewTaskRepository(filepath.Join(t.TempDir(), "f"))
 	_ = os.WriteFile(filepath.Dir(broken.files.dir), []byte("x"), 0o644)
@@ -306,8 +324,8 @@ func TestNodeRepositoryAndRunningExecutions(t *testing.T) {
 		t.Errorf("list: %v %d", err, len(list))
 	}
 	_ = os.WriteFile(filepath.Join(state, "nodes", "bad.json"), []byte("{"), 0o644)
-	if _, err := nodes.List(ctx); err == nil {
-		t.Error("corrupt node listed")
+	if list, err := nodes.List(ctx); err != nil || len(list) != 1 || !quarantined(t, filepath.Join(state, "nodes"), "bad") {
+		t.Errorf("list past a corrupt node = %v %d", err, len(list))
 	}
 
 	execs := NewExecutionRepository(state)
@@ -333,11 +351,12 @@ func TestNodeRepositoryAndRunningExecutions(t *testing.T) {
 		t.Errorf("no dir: %v %d", err, len(all))
 	}
 	_ = os.WriteFile(filepath.Join(state, "executions", "bad.json"), []byte("{"), 0o644)
-	if _, err := execs.ListRunning(ctx); err == nil {
-		t.Error("corrupt execution listed")
+	if list, err := execs.ListRunning(ctx); err != nil || len(list) != 1 || !quarantined(t, filepath.Join(state, "executions"), "bad") {
+		t.Errorf("running past a corrupt execution = %v %d", err, len(list))
 	}
-	if _, err := execs.List(ctx); err == nil {
-		t.Error("corrupt execution in the list")
+	_ = os.WriteFile(filepath.Join(state, "executions", "worse.json"), []byte("{"), 0o644)
+	if all, err := execs.List(ctx); err != nil || len(all) != 2 || !quarantined(t, filepath.Join(state, "executions"), "worse") {
+		t.Errorf("list past a corrupt execution = %v %d", err, len(all))
 	}
 }
 
@@ -543,11 +562,12 @@ func TestIncidentRepositoryFindsTheNewestOfAGroup(t *testing.T) {
 		t.Errorf("list: %d %v", len(list), err)
 	}
 	_ = os.WriteFile(filepath.Join(repo.files.dir, "inc-bad.json"), []byte("{"), 0o600)
-	if _, err := repo.List(ctx); err == nil {
-		t.Error("a corrupt incident listed")
+	if list, err := repo.List(ctx); err != nil || len(list) != 4 || !quarantined(t, repo.files.dir, "inc-bad") {
+		t.Errorf("list past a corrupt incident = %v %d", err, len(list))
 	}
-	if _, _, err := repo.FindNewestByGroupKey(ctx, "ops", "g"); err == nil {
-		t.Error("a corrupt incident searched")
+	_ = os.WriteFile(filepath.Join(repo.files.dir, "inc-worse.json"), []byte("{"), 0o600)
+	if _, _, err := repo.FindNewestByGroupKey(ctx, "ops", "g"); err != nil || !quarantined(t, repo.files.dir, "inc-worse") {
+		t.Errorf("search past a corrupt incident: %v", err)
 	}
 }
 
@@ -630,7 +650,7 @@ func TestListingsByStatusFollowTheFiles(t *testing.T) {
 		t.Fatalf("running, second listing = %d", len(list))
 	}
 	_ = os.WriteFile(filepath.Join(state, "executions", "exec-a.json"), []byte("{"), 0o644)
-	if _, err := execs.ListRunning(ctx); err == nil {
-		t.Error("a changed file was not read again")
+	if _, err := execs.ListRunning(ctx); err != nil || !quarantined(t, filepath.Join(state, "executions"), "exec-a") {
+		t.Errorf("a changed file was not read again: %v", err)
 	}
 }

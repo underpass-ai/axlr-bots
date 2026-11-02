@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
+	"github.com/underpass-ai/axlr-bots/internal/statelock"
 )
 
 // caDir is the fleet CA's directory under the state directory.
@@ -21,6 +22,13 @@ func caInit(stateDir string, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "axlr-bots: ca init takes no arguments")
 		return exitUsage
 	}
+	// Two inits at once would both find no CA and both write one; the
+	// lock lets one through, and the other then finds it.
+	release, err := statelock.Acquire(stateDir)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer release()
 	authority, err := pki.Generate(caDir(stateDir))
 	if err != nil {
 		return fail(stderr, err)

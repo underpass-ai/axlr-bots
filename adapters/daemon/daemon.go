@@ -25,6 +25,7 @@ import (
 
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/internal/statelock"
 )
 
 // Run serves until ctx ends. The socket is removed on the way out.
@@ -32,6 +33,19 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	if options.SocketPath == "" {
 		return errors.New("daemon: a socket path is required")
 	}
+	if options.StateDir == "" {
+		return errors.New("daemon: a state directory is required")
+	}
+	// The lock comes before anything binds: a second daemon on the same
+	// state is refused here, before its server would remove the first
+	// one's socket and its loops would run the same tasks. It is released
+	// last, after the socket's cleanup, so a daemon started next on the
+	// same state finds both free.
+	release, err := statelock.Acquire(options.StateDir)
+	if err != nil {
+		return err
+	}
+	defer release()
 	logger := options.log()
 	local := unixapi.NewLocal(deps)
 	for _, pusher := range options.Pushers {

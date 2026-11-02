@@ -15,7 +15,7 @@ axlr-bots task reconcile                # {"failed": ["task-…"], "skipped": []
 axlr-bots task reconcile --grace 30s
 ```
 
-The daemon's own pass never fails a task it is running in process, whatever `--grace`. `task reconcile` is another process and cannot see that run: while the daemon serves, leave `--grace` out (or give one past the bot's timeout), or a small grace fails a run that is alive ([concurrency](../architecture/concurrency.md#the-windows-that-remain)).
+The daemon's own pass never fails a task it is running in process, whatever `--grace`. `task reconcile` works on the files and takes the lock on the state directory (`<state>/.lock`): while the daemon serves it is refused (`the state at … is in use by another process …`), since the daemon reconciles by itself; stop the daemon first to reconcile by hand ([concurrency](../architecture/concurrency.md#decision)).
 
 Check: the task and its execution are `Failed` (the task is `Expired` when the lost run was the denial of an approval nobody decided in time; [approvals](approvals.md#expiry)) with the diagnosis (`reconciled: … node web-1 stopped renewing its lease at …`, or `…; the process that ran it is gone`); `bot events <bot>` has a `bot.task.failed` event with `"reason": "reconciled"`; `<state>/audit.jsonl` has a `task.reconcile` entry. Running it again is harmless. Submit the task again with a new key if it should run.
 
@@ -33,7 +33,11 @@ A node whose certificate the fleet CA signed may register even when the control 
 
 ## The daemon refuses to start
 
-`journalctl --user -u axlr-bots -n 20`. The usual causes: `--listen` without `ca init` (the daemon refuses to listen), a port in use, an unreadable environment file, or an `AXLR_TUI` that does not exist (the in-process runs fail; the nodes run their own). A stale socket file is removed at start.
+`journalctl --user -u axlr-bots -n 20`. The usual causes: `--listen` without `ca init` (the daemon refuses to listen), a port in use, an unreadable environment file, or an `AXLR_TUI` that does not exist (the in-process runs fail; the nodes run their own). A stale socket file is removed at start. `the state at … is in use by another process` means another daemon (or a command such as `task reconcile`) holds `<state>/.lock`: find it with `fuser -v <state>/.lock` and stop it. A lock file left by a crash is no obstacle: the kernel drops the lock with its process, and the file itself stays on purpose.
+
+## A record was set aside
+
+A record file under `<state>` that is not valid JSON (cut by a full disk, edited by hand) no longer hides the rest of its kind: the first listing that meets it moves it to `<state>/<kind>/.quarantine/<id>.json.<unixnano>` (for example `<state>/tasks/.quarantine/task-….json.1793…`), logs `… is not valid JSON: …; set aside as …` once, and goes on with the other records. From then on `task get` (or `bot get`, …) of that id answers not found. To recover it, repair the JSON and move it back to `<state>/<kind>/<id>.json` with the daemon stopped; or keep it for the diagnosis and delete it later. A file that is valid JSON but not a valid record (an unknown status) is not moved: the listing fails, loudly, until it is fixed. Check: `find <state> -path '*/.quarantine/*'`.
 
 ## A run never ends on the node
 

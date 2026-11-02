@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
+	"github.com/underpass-ai/axlr-bots/internal/atomicfile"
 )
 
 // entry is one push in the outbox: the node, the bytes to publish and
@@ -47,12 +48,9 @@ func (o outbox) add(node domain.NodeID, seq uint64, payload []byte) (entry, erro
 	if err != nil {
 		return entry{}, err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
-		return entry{}, err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
+	// Written whole and fsynced: a push the broker never got must still be
+	// there, readable, after a crash.
+	if err := atomicfile.Write(path, raw, 0o600); err != nil {
 		return entry{}, err
 	}
 	return entry{id: id, node: node, payload: payload, path: path}, nil

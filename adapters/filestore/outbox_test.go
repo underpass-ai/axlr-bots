@@ -52,8 +52,8 @@ func TestDeliveryRepositoryMovesADeliveryOnceItIsDone(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(state, "deliveries", "pending", "dlv-3.json"), []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repo.ListPending(ctx); err == nil {
-		t.Error("a corrupt delivery was listed")
+	if pending, err := repo.ListPending(ctx); err != nil || len(pending) != 1 || !quarantined(t, filepath.Join(state, "deliveries", "pending"), "dlv-3") {
+		t.Errorf("pending past a corrupt delivery = %v %d", err, len(pending))
 	}
 	_ = os.WriteFile(filepath.Join(state, "deliveries", "pending", "dlv-3.json"), []byte(`{"id":"dlv-3"}`), 0o644)
 	if _, err := repo.ListPending(ctx); err == nil {

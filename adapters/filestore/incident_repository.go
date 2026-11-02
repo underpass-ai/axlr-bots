@@ -59,6 +59,9 @@ func (r IncidentRepository) List(ctx context.Context) ([]domain.Incident, error)
 	incidents := make([]domain.Incident, 0, len(ids))
 	for _, id := range ids {
 		incident, err := r.Get(ctx, domain.IncidentID(id))
+		if r.files.skipListed(id, err) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}

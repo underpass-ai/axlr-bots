@@ -56,7 +56,7 @@ func (d CertificateDenylist) Deny(_ context.Context, serial, node string) error 
 	if err != nil {
 		return err
 	}
-	return writeAtomically(d.path, append(data, '\n'))
+	return writeFile(d.path, append(data, '\n'))
 }
 
 // IsDenied reports whether the serial was revoked.

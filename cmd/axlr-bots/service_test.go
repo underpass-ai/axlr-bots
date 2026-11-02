@@ -115,6 +115,22 @@ func TestServeRunsWhatTheCommandsSendOverTheSocket(t *testing.T) {
 	if code, _, errText := c.run("bot", "get", "ghost"); code != exitError || !strings.Contains(errText, "not found") {
 		t.Errorf("missing bot over the socket: %d %s", code, errText)
 	}
+	// While serve holds the state nothing else writes it: a second serve
+	// (on another socket), task reconcile, ca init and a command that does
+	// not reach the daemon are refused with the reason, and leave nothing.
+	direct := cli{t: t, state: state, axlr: "/nonexistent/axlr-tui", socket: filepath.Join(t.TempDir(), "none.sock")}
+	for _, args := range [][]string{{"serve"}, {"task", "reconcile"}, {"ca", "init"}, {"bot", "list"}, {"overview"}} {
+		code, _, errText := direct.run(args...)
+		if code != exitError || !strings.Contains(errText, "the state at "+state+" is in use by another process") || !strings.Contains(errText, "use the socket or stop it") {
+			t.Errorf("%v while serve runs: %d %s", args, code, errText)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(state, "ca")); err == nil {
+		t.Error("ca init wrote a CA while serve ran")
+	}
+	if _, err := os.Stat(direct.socket); err == nil {
+		t.Error("the second serve made a socket")
+	}
 
 	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
 		t.Fatal(err)
@@ -136,6 +152,9 @@ func TestServeRunsWhatTheCommandsSendOverTheSocket(t *testing.T) {
 	// With the daemon gone the commands fall back to the state directory.
 	if code, got := c.json("task", "get", taskID); code != exitOK || got["status"] != "Completed" {
 		t.Errorf("after stop: %d %v", code, got)
+	}
+	if code, _, errText := c.run("task", "reconcile"); code != exitOK {
+		t.Errorf("reconcile after stop: %d %s", code, errText)
 	}
 }
 

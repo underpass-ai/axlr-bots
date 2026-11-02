@@ -84,7 +84,7 @@ axlr-bots task report --path <task-id>   # only where it is
 
 ## Recovery
 
-`task reconcile` fails the tasks a crash left Running, with a diagnosis, and the Running executions no task runs (`orphaned`: a crash between saving an execution and its task left them); the daemon does the same on start and every `--reconcile-every`. The daemon never fails a run it has in flight; `task reconcile` is another process and cannot tell, so while the daemon serves leave `--grace` out. The procedure is the [recovery runbook](../runbooks/recovery.md).
+`task reconcile` fails the tasks a crash left Running, with a diagnosis, and the Running executions no task runs (`orphaned`: a crash between saving an execution and its task left them); the daemon does the same on start and every `--reconcile-every`. The daemon never fails a run it has in flight. `task reconcile` works on the files: it takes the lock on the state directory (`<state>/.lock`), so while the daemon serves it is refused, and so is `ca init`. A command that finds no daemon on the socket falls back to the files under the same lock; when a daemon holds it (busy, or on another socket) the command says so and exits 1 instead of racing it. The procedure is the [recovery runbook](../runbooks/recovery.md).
 
 ## Logs and audit
 

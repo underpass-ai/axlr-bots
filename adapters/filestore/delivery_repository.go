@@ -70,7 +70,11 @@ func (r DeliveryRepository) ListPending(_ context.Context) ([]domain.Delivery, e
 	deliveries := make([]domain.Delivery, 0, len(ids))
 	for _, id := range ids {
 		var snapshot domain.DeliverySnapshot
-		if err := r.pending.read(id, &snapshot); err != nil {
+		err := r.pending.read(id, &snapshot)
+		if r.pending.skipListed(id, err) {
+			continue
+		}
+		if err != nil {
 			return nil, err
 		}
 		delivery, err := domain.RestoreDelivery(snapshot)

@@ -44,6 +44,9 @@ func (r TimerRepository) List(ctx context.Context) ([]domain.Timer, error) {
 	timers := make([]domain.Timer, 0, len(keys))
 	for _, key := range keys {
 		timer, err := r.Get(ctx, key)
+		if r.files.skipListed(key, err) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}

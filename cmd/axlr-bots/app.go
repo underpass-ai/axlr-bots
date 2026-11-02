@@ -8,6 +8,7 @@ import (
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/compose"
+	"github.com/underpass-ai/axlr-bots/internal/statelock"
 )
 
 // newApp wires the application over the state directory (compose is the
@@ -21,12 +22,19 @@ func newApp(stateDir, axlrBin, actor string) (application.Dependencies, error) {
 // the running service, and in process over the state files otherwise.
 // The in-process path is the Phase 0 command and the fallback that
 // spools a task while the service is down; notice says which was taken.
-func newService(ctx context.Context, deps application.Dependencies, socketPath string, notice io.Writer) unixapi.Service {
+// It holds the state directory's lock until release: a daemon that runs
+// but did not answer the probe in time (busy, or on another socket) is
+// not raced on its own files, the command is refused with the reason.
+func newService(ctx context.Context, deps application.Dependencies, stateDir, socketPath string, notice io.Writer) (unixapi.Service, func(), error) {
 	if socketPath != "" && unixapi.Reachable(ctx, socketPath) {
-		return unixapi.NewClient(socketPath)
+		return unixapi.NewClient(socketPath), func() {}, nil
+	}
+	release, err := statelock.Acquire(stateDir)
+	if err != nil {
+		return nil, nil, err
 	}
 	if socketPath != "" && notice != nil {
 		fmt.Fprintf(notice, "axlr-bots: no service answers on %s; working on the state directory directly\n", socketPath)
 	}
-	return unixapi.NewLocal(deps)
+	return unixapi.NewLocal(deps), release, nil
 }

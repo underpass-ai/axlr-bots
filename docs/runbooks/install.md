@@ -51,6 +51,8 @@ Check: `axlr-bots node list` shows this host `Online` with `certificateSerial` s
 | `~/.local/state/axlr-bots/` | the control plane's state ([layout](../architecture/layout.md#the-state-directory)) |
 | `~/.local/state/axlr-node/` | the node's state: traces, policy files, workspaces, and `pki/` once enrolled |
 
+The control plane's state is private to the user the daemon runs as: its directories are made 0750, its records, keys and token 0600, and `events.jsonl` and `audit.jsonl` 0640, so only that user writes it and only its group reads it. `<state>/.lock` is the daemon's lock on the directory ([concurrency](../architecture/concurrency.md#decision)); leave it there. A state directory made by an older build keeps its modes (0755 directories, 0644 logs) until the operator tightens them once, with the daemon stopped: `chmod -R o-rwx ~/.local/state/axlr-bots` (or `/var/lib/axlr-bots`).
+
 A user service cannot sandbox the filesystem (`ProtectSystem=` and `ProtectHome=` need privileges a user manager lacks); the unit says so. `--destdir <dir>` renders everything under a directory (packaging, tests); `--no-systemctl` writes the files and runs nothing.
 
 ## Change the model key or the AXLR build
