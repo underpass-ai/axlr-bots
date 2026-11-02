@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -53,17 +54,30 @@ func (a incidentAdvancer) taskEnded(ctx context.Context, bot domain.Bot, task do
 		if answer == "" {
 			answer = "the triage task completed without an answer"
 		}
-		err, kind = incident.Diagnose(answer, now), domain.EventIncidentDiagnosed
+		err, kind = incident.Diagnose(domain.IncidentText(answer, domain.MaxIncidentDiagnosisLength), now), domain.EventIncidentDiagnosed
 		payload["diagnosis"] = incident.Diagnosis()
 	default:
 		reason := task.FailureReason()
 		if reason == "" {
 			reason = "the triage task was " + task.Status().String()
 		}
-		err, kind = incident.Escalate("task "+task.ID().String()+" "+task.Status().String()+": "+reason, now), domain.EventIncidentEscalated
+		reason = domain.IncidentText("task "+task.ID().String()+" "+task.Status().String()+": "+reason, domain.MaxIncidentReasonLength)
+		err, kind = incident.Escalate(reason, now), domain.EventIncidentEscalated
 		payload["reason"] = incident.Reason()
 	}
-	if err != nil {
+	var state domain.StateError
+	if err != nil && !errors.As(err, &state) {
+		// What the task wrote was refused even after IncidentText: a
+		// person looks at it rather than the incident staying Open with
+		// no task left to move it.
+		reason := domain.IncidentText("triage answer not usable: "+err.Error(), domain.MaxIncidentReasonLength)
+		if err := incident.Escalate(reason, now); err != nil {
+			return err
+		}
+		kind = domain.EventIncidentEscalated
+		delete(payload, "diagnosis")
+		payload["reason"] = incident.Reason()
+	} else if err != nil {
 		// The incident moved on without this task (resolved by the
 		// source, or by a person): the cost is still kept.
 		if saveErr := a.deps.Incidents.Save(ctx, incident); saveErr != nil {

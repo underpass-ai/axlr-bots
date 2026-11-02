@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -220,8 +221,8 @@ func TestIncidentSnapshotRoundTrip(t *testing.T) {
 		"open with resolved": func(s *IncidentSnapshot) { s.Status = "Open" },
 		"escalated silent":   func(s *IncidentSnapshot) { s.Status = "Escalated"; s.ResolvedAt = nil; s.Reason = "" },
 		"bad task id":        func(s *IncidentSnapshot) { s.TaskIDs = []string{"Task One"} },
-		"long diagnosis":     func(s *IncidentSnapshot) { s.Diagnosis = string(make([]byte, maxIncidentDiagnosisLength+1)) },
-		"long reason":        func(s *IncidentSnapshot) { s.Reason = string(make([]byte, maxIncidentReasonLength+1)) },
+		"long diagnosis":     func(s *IncidentSnapshot) { s.Diagnosis = string(make([]byte, MaxIncidentDiagnosisLength+1)) },
+		"long reason":        func(s *IncidentSnapshot) { s.Reason = string(make([]byte, MaxIncidentReasonLength+1)) },
 	}
 	for name, change := range broken {
 		s := i.Snapshot()
@@ -263,5 +264,26 @@ func TestTaskForIncidentAndIncidentEvents(t *testing.T) {
 	}
 	if _, err := NewTrigger(TriggerSnapshot{Type: "incident", Every: "1m"}); err == nil {
 		t.Error("an incident trigger with a schedule validated")
+	}
+}
+
+func TestIncidentResolvesOnlyTheAlertsItKept(t *testing.T) {
+	fingerprints := make([]string, 70)
+	for n := range fingerprints {
+		fingerprints[n] = "fp-" + strconv.Itoa(n)
+	}
+	i, err := NewIncident("inc-big", "ops", "triage", "g", "alertmanager", "a node down", Sev2, fingerprints, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.MarkResolved(fingerprints, t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	back, err := RestoreIncident(i.Snapshot())
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if len(back.Fingerprints()) != maxIncidentFingerprints || len(back.ResolvedFingerprints()) != maxIncidentFingerprints || len(back.FiringFingerprints()) != 0 {
+		t.Errorf("seen %d, resolved %d, firing %d", len(back.Fingerprints()), len(back.ResolvedFingerprints()), len(back.FiringFingerprints()))
 	}
 }

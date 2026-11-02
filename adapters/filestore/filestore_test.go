@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -547,6 +548,31 @@ func TestIncidentRepositoryFindsTheNewestOfAGroup(t *testing.T) {
 	}
 	if _, _, err := repo.FindNewestByGroupKey(ctx, "ops", "g"); err == nil {
 		t.Error("a corrupt incident searched")
+	}
+}
+
+// An incident whose group grew past the alerts it keeps, all of them
+// resolved, is saved and listed again.
+func TestIncidentRepositoryKeepsAnIncidentPastItsAlertCap(t *testing.T) {
+	ctx := context.Background()
+	repo := NewIncidentRepository(t.TempDir())
+	fingerprints := make([]string, 70)
+	for n := range fingerprints {
+		fingerprints[n] = "fp-" + strconv.Itoa(n)
+	}
+	incident, err := domain.NewIncident("inc-big", "ops", "triage", "g", "alertmanager", "a node down", domain.Sev2, fingerprints, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := incident.MarkResolved(fingerprints, t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Save(ctx, incident); err != nil {
+		t.Fatal(err)
+	}
+	list, err := repo.List(ctx)
+	if err != nil || len(list) != 1 || len(list[0].FiringFingerprints()) != 0 || len(list[0].ResolvedFingerprints()) != 64 {
+		t.Fatalf("list: %d %v", len(list), err)
 	}
 }
 
