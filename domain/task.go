@@ -140,10 +140,15 @@ func (t *Task) AdoptChild(child TaskID, grant DelegationGrant, now time.Time) er
 	return nil
 }
 
+// MinRunWindow is the least time a delegated task must have left to
+// its deadline to run: timeouts travel to a node in whole seconds, and a
+// run that cannot be given one second does nothing useful.
+const MinRunWindow = time.Second
+
 // DeadlinePassed reports a delegated task whose grant's deadline has
-// come.
+// come, or is less than MinRunWindow away.
 func (t Task) DeadlinePassed(now time.Time) bool {
-	return t.lineage != nil && !now.Before(t.lineage.Grant.Deadline)
+	return t.lineage != nil && t.lineage.Grant.Deadline.Sub(now) < MinRunWindow
 }
 
 // MissDeadline fails a delegated task that has not finished when its

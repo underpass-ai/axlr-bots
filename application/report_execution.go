@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -47,11 +48,31 @@ func (uc ReportExecution) Execute(ctx context.Context, node domain.NodeID, id do
 		action = "task.decide"
 	}
 	if err := uc.set.settle(ctx, action, bot, &task, &execution, report, nil, execution.StartedAt()); err != nil {
-		return ReportResult{}, err
+		// A reconcile ended the execution between the read and the save:
+		// its end stands and the report is late.
+		var conflict domain.ConflictError
+		if !errors.As(err, &conflict) {
+			return ReportResult{}, err
+		}
+		return uc.late(ctx, id)
 	}
 	payload := map[string]any{"executionId": execution.ID().String(), "nodeId": node.String(), "outcome": execution.Outcome().String()}
 	if err := uc.rec.executionEvent(ctx, domain.EventExecutionReported, bot, task.ID(), execution.ID(), task.CorrelationID(), payload); err != nil {
 		return ReportResult{}, err
 	}
 	return ReportResult{Task: task, Execution: execution, Accepted: true}, nil
+}
+
+// late answers a report whose execution ended meanwhile: not accepted,
+// with the task and the execution as they now stand.
+func (uc ReportExecution) late(ctx context.Context, id domain.ExecutionID) (ReportResult, error) {
+	execution, err := uc.deps.Executions.Get(ctx, id)
+	if err != nil {
+		return ReportResult{}, err
+	}
+	task, err := uc.deps.Tasks.Get(ctx, execution.TaskID())
+	if err != nil {
+		return ReportResult{}, err
+	}
+	return ReportResult{Task: task, Execution: execution, Accepted: false}, nil
 }

@@ -50,8 +50,14 @@ func (uc NextAssignment) queued(ctx context.Context, node domain.Node) (Assignme
 			continue
 		}
 		task, err := uc.deps.Tasks.Get(ctx, execution.TaskID())
+		if err == nil && (task.Status() != domain.TaskRunning || task.CurrentExecutionID() != execution.ID()) {
+			err = domain.StateError{Subject: "task " + task.ID().String(), Current: task.Status().String() + " on " + string(task.CurrentExecutionID()), Attempted: "run its execution " + execution.ID().String()}
+		}
 		if err != nil {
-			return Assignment{}, false, err
+			if err := uc.orphan(ctx, &execution, err); err != nil {
+				return Assignment{}, false, err
+			}
+			continue
 		}
 		bot, err := uc.deps.Bots.Get(ctx, task.BotID())
 		if err != nil {
@@ -66,12 +72,44 @@ func (uc NextAssignment) queued(ctx context.Context, node domain.Node) (Assignme
 			continue
 		}
 		assignment, err := uc.describe(ctx, bot, task, execution)
-		if err != nil {
-			return Assignment{}, false, err
+		switch {
+		case errors.Is(err, errTooLate):
+			if err := newDeadlineKeeper(uc.deps).miss(ctx, bot, &task, &execution); err != nil {
+				return Assignment{}, false, err
+			}
+			continue
+		case err != nil:
+			if err := uc.orphan(ctx, &execution, err); err != nil {
+				return Assignment{}, false, err
+			}
+			continue
 		}
 		return uc.lease(ctx, bot, task, execution, assignment)
 	}
 	return Assignment{}, false, nil
+}
+
+// orphan fails an execution assigned to the node that cannot run: its
+// task is gone, no longer runs it (a crash between saving the execution
+// and saving its task, in ApproveTask or startPending, leaves one), or it
+// decides a call that is not there. Left Running, it would fail every
+// poll of the node and starve it; failing it lets the node take its next
+// task. Any other error is the poll's and is returned.
+func (uc NextAssignment) orphan(ctx context.Context, execution *domain.Execution, cause error) error {
+	var state domain.StateError
+	if !errors.As(cause, &state) && !domain.IsNotFound(cause) {
+		return cause
+	}
+	now := uc.deps.Clock.Now()
+	tracePath, _ := uc.deps.Traces.TracePath(execution.ID())
+	if err := execution.Fail("orphan: "+cause.Error(), domain.Result{}, domain.Usage{}, tracePath, now); err != nil {
+		return err
+	}
+	if err := uc.deps.Executions.Save(ctx, *execution); err != nil {
+		return err
+	}
+	details := map[string]string{"task": execution.TaskID().String(), "node": execution.NodeID().String(), "reason": cause.Error()}
+	return uc.rec.audit(ctx, "execution.orphaned", execution.ID().String(), domain.AuditOK, details)
 }
 
 // startPending starts the oldest Pending task the node may run.
@@ -87,7 +125,7 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 		if err != nil {
 			return Assignment{}, false, err
 		}
-		if !candidate.AcceptsTasks() || !candidate.Placement().Admits(node) || !node.Capabilities().Runs(candidate.Runtime().Kind()) {
+		if !candidate.AcceptsTasks() || !nodeCanRun(candidate, node) {
 			continue
 		}
 		if pending[i].DeadlinePassed(uc.deps.Clock.Now()) {
@@ -136,6 +174,10 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 		return Assignment{}, false, err
 	}
 	assignment, err := uc.describe(ctx, bot, task, execution)
+	if errors.Is(err, errTooLate) {
+		// The deadline came while the task was being started.
+		return Assignment{}, false, newDeadlineKeeper(uc.deps).miss(ctx, bot, &task, &execution)
+	}
 	if err != nil {
 		return Assignment{}, false, err
 	}
@@ -157,7 +199,10 @@ func goesBefore(a, b domain.Task) bool {
 // team reads its teammates between its mission and the task.
 func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task domain.Task, execution domain.Execution) (Assignment, error) {
 	assignment := Assignment{ExecutionID: execution.ID(), Kind: execution.Kind()}
-	timeout := runTimeout(bot, task, uc.deps.Clock.Now())
+	timeout, ok := runTimeout(bot, task, uc.deps.Clock.Now())
+	if !ok {
+		return Assignment{}, errTooLate
+	}
 	mates, err := teammatesOf(ctx, uc.deps, bot)
 	if err != nil {
 		return Assignment{}, err

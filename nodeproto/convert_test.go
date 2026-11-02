@@ -62,6 +62,23 @@ func TestAssignmentRoundTrip(t *testing.T) {
 	}
 }
 
+// A timeout under a whole second travels as one second, never as zero,
+// which a node reads as "no timeout" and runs for its default.
+func TestATimeoutRoundsUpToAWholeSecond(t *testing.T) {
+	run := application.Assignment{ExecutionID: "exec-1", Kind: domain.ExecutionRun, Run: &application.ExecutionRequest{BotID: "bot", Objective: "o", Timeout: 500 * time.Millisecond}}
+	decide := application.Assignment{ExecutionID: "exec-2", Kind: domain.ExecutionDecide, Decide: &application.DecisionRequest{BotID: "bot", Timeout: 1500 * time.Millisecond}}
+	if got := FromAssignment(run).Run.TimeoutSeconds; got != 1 {
+		t.Errorf("run timeoutSeconds = %d", got)
+	}
+	if got := FromAssignment(decide).Decide.TimeoutSeconds; got != 2 {
+		t.Errorf("decide timeoutSeconds = %d", got)
+	}
+	run.Run.Timeout = 3 * time.Second
+	if got := FromAssignment(run).Run.TimeoutSeconds; got != 3 {
+		t.Errorf("whole seconds timeoutSeconds = %d", got)
+	}
+}
+
 func TestReportRoundTrip(t *testing.T) {
 	report := application.ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "done", SessionID: "s"}, Usage: domain.Usage{Requests: 2}, TracePath: "node:web-1:/t.jsonl", Policy: &domain.PolicyRecord{Level: "observe", Enforced: true}}
 	raw, _ := json.Marshal(FromReport(report))

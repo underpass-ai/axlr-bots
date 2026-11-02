@@ -16,7 +16,7 @@ func FromAssignment(a application.Assignment) AssignmentMessage {
 		m.Run = &RunMessage{
 			TaskID: r.TaskID.String(), BotID: r.BotID.String(), TenantID: r.TenantID.String(), CorrelationID: r.CorrelationID.String(),
 			Objective: r.PromptText(), Model: r.Model, Level: r.Level.String(), AllowedTools: r.AllowedTools,
-			ToolRules: r.ToolRules.Snapshot(), TimeoutSeconds: int(r.Timeout / time.Second), Delegation: fromOffer(r.Delegation),
+			ToolRules: r.ToolRules.Snapshot(), TimeoutSeconds: wholeSeconds(r.Timeout), Delegation: fromOffer(r.Delegation),
 			Events: fromEventsOffer(r.Events), Runtime: r.Runtime.Snapshot(), Input: r.Input,
 		}
 		if model, tools := r.Budgets.MaxModelCallsPerTask(), r.Budgets.MaxToolCallsPerTask(); model > 0 || tools > 0 {
@@ -27,11 +27,18 @@ func FromAssignment(a application.Assignment) AssignmentMessage {
 		d := a.Decide
 		m.Decide = &DecideMessage{
 			TaskID: d.TaskID.String(), BotID: d.BotID.String(), CorrelationID: d.CorrelationID.String(), SessionID: d.SessionID, CallID: d.CallID, Decision: d.Decision, Level: d.Level.String(),
-			AllowedTools: d.AllowedTools, ToolRules: d.ToolRules.Snapshot(), TimeoutSeconds: int(d.Timeout / time.Second), Delegation: fromOffer(d.Delegation),
+			AllowedTools: d.AllowedTools, ToolRules: d.ToolRules.Snapshot(), TimeoutSeconds: wholeSeconds(d.Timeout), Delegation: fromOffer(d.Delegation),
 			Events: fromEventsOffer(d.Events),
 		}
 	}
 	return m
+}
+
+// wholeSeconds is a timeout on the wire, rounded up: a node reads zero
+// as "no timeout" and runs for its default, so a timeout under a second
+// must not round down to it.
+func wholeSeconds(timeout time.Duration) int {
+	return int((timeout + time.Second - 1) / time.Second)
 }
 
 // ToAssignment reads a message back into an assignment the node's

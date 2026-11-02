@@ -259,7 +259,7 @@ func reconcile(ctx context.Context, deps application.Dependencies, options Optio
 		logger.Printf("daemon: reconcile: %v", err)
 		return
 	}
-	if len(result.Failed) > 0 || len(result.Skipped) > 0 {
-		logger.Printf("daemon: reconcile: failed %v, skipped %v", result.Failed, result.Skipped)
+	if len(result.Failed) > 0 || len(result.Skipped) > 0 || len(result.Orphaned) > 0 {
+		logger.Printf("daemon: reconcile: failed %v, skipped %v, orphaned %v", result.Failed, result.Skipped, result.Orphaned)
 	}
 }

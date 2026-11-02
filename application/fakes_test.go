@@ -193,6 +193,10 @@ func (m *memoryExecutions) Save(_ context.Context, e domain.Execution) error {
 	if stored, ok := m.executions[e.ID()]; ok && stored.Outcome().IsFinal() && e.Outcome() == domain.ExecutionRunning {
 		return domain.StateError{Subject: "execution " + e.ID().String(), Current: stored.Outcome().String(), Attempted: "run again"}
 	}
+	// Nor does it end twice.
+	if stored, ok := m.executions[e.ID()]; ok && stored.Outcome().IsFinal() && e.Outcome() != stored.Outcome() {
+		return domain.ConflictError{Kind: "execution", ID: e.ID().String(), Reason: "already ended " + stored.Outcome().String()}
+	}
 	if m.executions == nil {
 		m.executions = map[domain.ExecutionID]domain.Execution{}
 	}

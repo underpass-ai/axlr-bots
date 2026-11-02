@@ -39,7 +39,9 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 		_ = uc.rec.audit(ctx, "task.run", id.String(), domain.AuditDenied, map[string]string{"reason": "bot is " + bot.Status().String()})
 		return RunTaskResult{}, domain.StateError{Subject: "bot " + bot.ID().String(), Current: bot.Status().String(), Attempted: "run a task"}
 	}
-	if task.Status() == domain.TaskPending && task.DeadlinePassed(uc.deps.Clock.Now()) {
+	now := uc.deps.Clock.Now()
+	timeout, inTime := runTimeout(bot, task, now)
+	if task.Status() == domain.TaskPending && !inTime {
 		if err := newDeadlineKeeper(uc.deps).miss(ctx, bot, &task, nil); err != nil {
 			return RunTaskResult{}, err
 		}
@@ -49,7 +51,6 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 	if err != nil {
 		return RunTaskResult{}, err
 	}
-	now := uc.deps.Clock.Now()
 	if err := task.Start(executionID, now); err != nil {
 		_ = uc.rec.audit(ctx, "task.run", id.String(), domain.AuditDenied, map[string]string{"reason": err.Error()})
 		return RunTaskResult{}, err
@@ -95,7 +96,7 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 		AllowedTools:  bot.AllowedTools().Names(),
 		ToolRules:     bot.ToolRules(),
 		Budgets:       taskBudgets(bot, task),
-		Timeout:       runTimeout(bot, task, now),
+		Timeout:       timeout,
 	})
 	if err := uc.set.settle(ctx, "task.run", bot, &task, &execution, report, runErr, now); err != nil {
 		return RunTaskResult{}, err

@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -20,7 +21,8 @@ const ReconcileGrace = time.Minute
 // grace period ago and fails it with a diagnosis: the loss is explicit
 // and no task stays Running forever. A younger task may still be running
 // in another process and is left alone. A delegated task still Pending
-// or waiting for a person past its deadline is failed too.
+// or waiting for a person past its deadline is failed too, and so is a
+// Running execution its task does not run (an orphan).
 type ReconcileTasks struct {
 	deps Dependencies
 	rec  recorder
@@ -48,7 +50,7 @@ func (uc ReconcileTasks) Execute(ctx context.Context, grace time.Duration) (Reco
 	if err != nil {
 		return ReconcileTasksResult{}, err
 	}
-	result := ReconcileTasksResult{Failed: missed, Skipped: []domain.TaskID{}}
+	result := ReconcileTasksResult{Failed: missed, Skipped: []domain.TaskID{}, Orphaned: []domain.ExecutionID{}}
 	if result.Failed == nil {
 		result.Failed = []domain.TaskID{}
 	}
@@ -63,7 +65,98 @@ func (uc ReconcileTasks) Execute(ctx context.Context, grace time.Duration) (Reco
 			result.Skipped = append(result.Skipped, task.ID())
 		}
 	}
+	orphaned, err := uc.failOrphans(ctx, grace)
+	if err != nil {
+		return ReconcileTasksResult{}, err
+	}
+	result.Orphaned = append(result.Orphaned, orphaned...)
 	return result, nil
+}
+
+// failOrphans fails the Running executions no Running task runs: a crash
+// between saving an execution and saving its task (RunTask,
+// NextAssignment, ApproveTask) leaves one behind, the pass over Running
+// tasks never reaches it, and a node it is queued for would try to take
+// it on every poll. The task is left alone; it is not running it. A
+// younger orphan may be a start still between its two saves.
+func (uc ReconcileTasks) failOrphans(ctx context.Context, grace time.Duration) ([]domain.ExecutionID, error) {
+	running, err := uc.deps.Executions.ListRunning(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var orphaned []domain.ExecutionID
+	now := uc.deps.Clock.Now()
+	for _, execution := range running {
+		task, err := uc.deps.Tasks.Get(ctx, execution.TaskID())
+		switch {
+		case err != nil && !domain.IsNotFound(err):
+			return nil, fmt.Errorf("reconcile execution %s: %w", execution.ID(), err)
+		case err == nil && task.Status() == domain.TaskRunning && task.CurrentExecutionID() == execution.ID():
+			continue
+		}
+		gone := err != nil
+		after := grace
+		if after <= 0 {
+			after = DefaultTaskTimeout + ReconcileGrace
+		}
+		if !gone {
+			bot, err := uc.deps.Bots.Get(ctx, task.BotID())
+			if err != nil {
+				return nil, fmt.Errorf("reconcile execution %s: %w", execution.ID(), err)
+			}
+			after = graceFor(bot, task, execution, grace)
+		}
+		age := now.Sub(execution.StartedAt())
+		if age <= after {
+			continue
+		}
+		state := "is gone"
+		if !gone {
+			state = "is " + task.Status().String() + " and does not run it"
+		}
+		reason := "reconciled: orphan: the control plane found it Running after " + age.Round(time.Second).String() + " but its task " + execution.TaskID().String() + " " + state
+		tracePath, _ := uc.deps.Traces.TracePath(execution.ID())
+		if err := execution.Fail(reason, domain.Result{}, domain.Usage{}, tracePath, now); err != nil {
+			return nil, err
+		}
+		if err := uc.deps.Executions.Save(ctx, execution); err != nil {
+			if settledMeanwhile(err) {
+				continue
+			}
+			return nil, fmt.Errorf("reconcile execution %s: %w", execution.ID(), err)
+		}
+		details := map[string]string{"task": execution.TaskID().String(), "age": age.Round(time.Second).String()}
+		if err := uc.rec.audit(ctx, "execution.orphaned", execution.ID().String(), domain.AuditOK, details); err != nil {
+			return nil, err
+		}
+		orphaned = append(orphaned, execution.ID())
+	}
+	return orphaned, nil
+}
+
+// settledMeanwhile reports a save refused because the execution ended
+// in another process after it was read: that end stands. The store
+// answers a domain.ConflictError for a copy that would end it again.
+func settledMeanwhile(err error) bool {
+	var conflict domain.ConflictError
+	return errors.As(err, &conflict)
+}
+
+// graceFor is how long the execution may run before reconcile calls it
+// lost: the grace asked for or, when that is zero or less, the bot's task
+// timeout plus ReconcileGrace. A delegated task is never given past its
+// grant's deadline plus ReconcileGrace: its run was bounded by the
+// deadline, whatever the bot's own timeout.
+func graceFor(bot domain.Bot, task domain.Task, execution domain.Execution, grace time.Duration) time.Duration {
+	if grace <= 0 {
+		grace = bot.Budgets().TaskTimeoutOr(DefaultTaskTimeout) + ReconcileGrace
+	}
+	if lineage, ok := task.Lineage(); ok {
+		if bound := lineage.Grant.Deadline.Add(ReconcileGrace).Sub(execution.StartedAt()); bound < grace {
+			grace = bound
+		}
+	}
+	return grace
 }
 
 // missDeadlines fails the delegated tasks still Pending or waiting for a
@@ -107,14 +200,17 @@ func (uc ReconcileTasks) reconcile(ctx context.Context, task domain.Task, grace 
 	if err != nil {
 		return false, err
 	}
-	if grace <= 0 {
-		grace = bot.Budgets().TaskTimeoutOr(DefaultTaskTimeout) + ReconcileGrace
-	}
+	grace = graceFor(bot, task, execution, grace)
 	now := uc.deps.Clock.Now()
 	age := now.Sub(execution.StartedAt())
 	expired := execution.LeaseExpired(now)
 	if age <= grace && !expired {
 		return false, nil
+	}
+	// A report or a cancel may have ended the task since it was listed;
+	// read both again so that end stands.
+	if stillLost, err := uc.unchanged(ctx, task, execution); err != nil || !stillLost {
+		return false, err
 	}
 	reason := diagnosis(execution, age, expired)
 	if execution.Outcome() == domain.ExecutionRunning {
@@ -123,6 +219,10 @@ func (uc ReconcileTasks) reconcile(ctx context.Context, task domain.Task, grace 
 			return false, err
 		}
 		if err := uc.deps.Executions.Save(ctx, execution); err != nil {
+			// A report settled it between the read and this save.
+			if settledMeanwhile(err) {
+				return false, nil
+			}
 			return false, err
 		}
 	}
@@ -147,6 +247,24 @@ func (uc ReconcileTasks) reconcile(ctx context.Context, task domain.Task, grace 
 		return false, err
 	}
 	return true, nil
+}
+
+// unchanged reads the task and its execution again and reports whether
+// they are as the pass found them: the task Running on that execution,
+// and the execution with the same outcome.
+func (uc ReconcileTasks) unchanged(ctx context.Context, task domain.Task, execution domain.Execution) (bool, error) {
+	fresh, err := uc.deps.Tasks.Get(ctx, task.ID())
+	if err != nil {
+		return false, err
+	}
+	if fresh.Status() != domain.TaskRunning || fresh.CurrentExecutionID() != execution.ID() {
+		return false, nil
+	}
+	current, err := uc.deps.Executions.Get(ctx, execution.ID())
+	if err != nil {
+		return false, err
+	}
+	return current.Outcome() == execution.Outcome(), nil
 }
 
 // diagnosis is the failure reason a reconciled task and execution carry.

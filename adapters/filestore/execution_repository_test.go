@@ -57,3 +57,39 @@ func TestAnEndedExecutionIsNeverSavedBackAsRunning(t *testing.T) {
 		t.Error("saved over a record it could not read")
 	}
 }
+
+// A reconcile reads the execution Running and fails it; a report has
+// completed it meanwhile: the Completed on disk stays.
+func TestAnEndedExecutionDoesNotEndTwice(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	repo := NewExecutionRepository(dir)
+	started := time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
+	running, _ := domain.NewExecution("exec-1", "task-1", "bot", started)
+	if err := repo.Save(ctx, running); err != nil {
+		t.Fatal(err)
+	}
+	reconciled, _ := repo.Get(ctx, "exec-1")
+	completed, _ := repo.Get(ctx, "exec-1")
+	if err := completed.Complete(domain.Result{Answer: "done"}, domain.Usage{Requests: 3}, "", started.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Save(ctx, completed); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "executions", "exec-1.json")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reconciled.Fail("reconciled: lost", domain.Result{}, domain.Usage{}, "", started.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	var conflict domain.ConflictError
+	if err := repo.Save(ctx, reconciled); !errors.As(err, &conflict) {
+		t.Fatalf("a Failed copy was saved over a Completed one: %v", err)
+	}
+	if after, _ := os.ReadFile(path); string(after) != string(before) {
+		t.Errorf("the file changed:\n%s\n%s", before, after)
+	}
+}

@@ -3,6 +3,7 @@ package application
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -125,17 +126,30 @@ func delegationKey(parent domain.TaskID, bot domain.BotID, objective domain.Obje
 	return domain.NewIdempotencyKey("delegation:" + parent.String() + ":" + hex.EncodeToString(sum[:12]))
 }
 
+// errTooLate is describe's answer for an execution whose delegated
+// task has less than domain.MinRunWindow left: the caller misses the
+// deadline instead of running it.
+var errTooLate = errors.New("the delegation's deadline leaves no time to run")
+
 // runTimeout is how long an execution of the task that starts now may
 // run: the bot's timeout, or the time left to a delegated task's
-// deadline when that is shorter.
-func runTimeout(bot domain.Bot, task domain.Task, now time.Time) time.Duration {
+// deadline when that is shorter. It answers false when that time is
+// under domain.MinRunWindow: a node gets its timeout in whole seconds
+// and reads zero as "no timeout", so a sub-second remainder would let
+// the child run for the node's default (up to 15 minutes) past its
+// grant.
+func runTimeout(bot domain.Bot, task domain.Task, now time.Time) (time.Duration, bool) {
 	timeout := bot.Budgets().TaskTimeoutOr(DefaultTaskTimeout)
 	if lineage, ok := task.Lineage(); ok {
-		if left := lineage.Grant.Deadline.Sub(now); left < timeout {
+		left := lineage.Grant.Deadline.Sub(now)
+		if left < domain.MinRunWindow {
+			return 0, false
+		}
+		if left < timeout {
 			timeout = left
 		}
 	}
-	return timeout
+	return timeout, true
 }
 
 // allowedTools is the execution's tool allow-list: the bot's, the

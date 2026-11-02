@@ -89,6 +89,27 @@ func TestAJevBotRunsOnlyWhereJevIs(t *testing.T) {
 	}
 }
 
+// A Jev bot whose only Online node lacks the jev runtime is not left to
+// that node, which would never take it: the single-process worker runs it.
+func TestAJevBotWithNoNodeForItsRuntimeRunsInProcess(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	bot, err := NewRegisterBot(h.deps).Execute(ctx, jevDefinition())
+	if err != nil {
+		t.Fatal(err)
+	}
+	bot, _ = NewEnableBot(h.deps).Execute(ctx, bot.ID())
+	plain := onlineNode(t, h, "plain-1")
+	submitted := submit(t, h, bot, "k-in-process").Task
+	if _, found, err := NewNextAssignment(h.deps).Execute(ctx, plain.ID()); err != nil || found {
+		t.Fatalf("a node without the runtime was assigned a Jev bot: %v %v", found, err)
+	}
+	result, ran, err := NewRunNextPending(h.deps).Execute(ctx)
+	if err != nil || !ran || result.Task.ID() != submitted.ID() || result.Task.Status() != domain.TaskCompleted {
+		t.Fatalf("run next: %v %v %+v", err, ran, result.Task.Snapshot())
+	}
+}
+
 // A teammate's or the operator's event delivered as a message carries
 // its name and data, so a Jev program reads the event without parsing text.
 func TestAMessageCarriesItsEvent(t *testing.T) {

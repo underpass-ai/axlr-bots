@@ -68,9 +68,18 @@ func (uc RunNextPending) Pick(ctx context.Context) (domain.TaskID, bool, error) 
 // hasOnlineNode reports a bot an Online node may run.
 func hasOnlineNode(bot domain.Bot, nodes []domain.Node) bool {
 	for _, node := range nodes {
-		if node.IsOnline() && bot.Placement().Admits(node) {
+		if nodeCanRun(bot, node) {
 			return true
 		}
 	}
 	return false
+}
+
+// nodeCanRun reports whether the node may take the bot's tasks: it is
+// Online, the bot's placement admits it and it has the bot's runtime.
+// Pick and NextAssignment ask the same question, so a task neither of
+// them would run cannot be left Pending: a bot whose only Online node
+// lacks its runtime runs in process.
+func nodeCanRun(bot domain.Bot, node domain.Node) bool {
+	return node.IsOnline() && bot.Placement().Admits(node) && node.Capabilities().Runs(bot.Runtime().Kind())
 }

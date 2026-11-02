@@ -266,6 +266,9 @@ func TestErrorTypes(t *testing.T) {
 	if (ConflictError{Kind: "bot", ID: "b1"}).Error() != "bot b1 already exists" {
 		t.Error("ConflictError wrong")
 	}
+	if (ConflictError{Kind: "execution", ID: "e1", Reason: "already ended Completed"}).Error() != "execution e1 already ended Completed" {
+		t.Error("ConflictError with a reason wrong")
+	}
 	if (StateError{Subject: "task t", Current: "Completed", Attempted: "start"}).Error() != "task t is Completed: cannot start" {
 		t.Error("StateError wrong")
 	}
