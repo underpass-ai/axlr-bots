@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -13,8 +14,21 @@ import (
 // the host carries one axlr-tui at a time. It also knows which task is
 // running in process right now, so a cancel can interrupt it without
 // waiting for the lock the run holds.
+//
+// Two locks, always taken in this order: slot, then mu (flightMu is
+// taken last, alone). slot is held for the whole of Run, RunNext,
+// Decide and ExpireApprovals: one in-process run at a time. mu guards
+// the state changes (start, assign, settle, report, reconcile) and every
+// method takes it, but the four that reach the runtime let go of it
+// while the runtime runs (serial_runner_slot.go), so a node's poll or
+// report waits for a state change, never for a 15-minute run.
+// docs/architecture/concurrency.md says what each lock keeps out.
 type SerialRunner struct {
-	deps     Dependencies
+	deps Dependencies
+	// slotDeps are deps with the runtime and the decisions wrapped to
+	// let go of mu while they run; only the four slot methods use them.
+	slotDeps Dependencies
+	slot     sync.Mutex
 	mu       sync.Mutex
 	flightMu sync.Mutex
 	inFlight map[domain.TaskID]context.CancelFunc
@@ -22,36 +36,54 @@ type SerialRunner struct {
 
 // NewSerialRunner wires the runner.
 func NewSerialRunner(deps Dependencies) *SerialRunner {
-	return &SerialRunner{deps: deps, inFlight: map[domain.TaskID]context.CancelFunc{}}
+	r := &SerialRunner{deps: deps, inFlight: map[domain.TaskID]context.CancelFunc{}}
+	r.slotDeps = deps
+	if deps.Runtime != nil {
+		r.slotDeps.Runtime = unlockedRuntime{inner: deps.Runtime, mu: &r.mu}
+	}
+	if deps.Decisions != nil {
+		r.slotDeps.Decisions = unlockedDecisions{inner: deps.Decisions, mu: &r.mu}
+	}
+	return r
+}
+
+// lockSlot takes the slot, then the state lock, and returns what lets
+// go of both.
+func (r *SerialRunner) lockSlot() func() {
+	r.slot.Lock()
+	r.mu.Lock()
+	return func() {
+		r.mu.Unlock()
+		r.slot.Unlock()
+	}
 }
 
 // Run runs one Pending task, as RunTask does.
 func (r *SerialRunner) Run(ctx context.Context, id domain.TaskID) (RunTaskResult, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	defer r.lockSlot()()
 	runCtx, done := r.track(ctx, id)
 	defer done()
-	return NewRunTask(r.deps).Execute(runCtx, id)
+	return NewRunTask(r.slotDeps).Execute(runCtx, id)
 }
 
 // Decide decides a WaitingApproval task's pending call, as ApproveTask
-// does; callID, when given, must name it.
+// does; callID, when given, must name it. It holds the slot even for a
+// decision a node carries: it cannot know which until it has read the
+// task, and that read must come after the slot to keep the lock order.
 func (r *SerialRunner) Decide(ctx context.Context, id domain.TaskID, decision, callID string) (ApproveTaskResult, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	defer r.lockSlot()()
 	runCtx, done := r.track(ctx, id)
 	defer done()
-	return NewApproveTask(r.deps).Execute(runCtx, id, decision, callID)
+	return NewApproveTask(r.slotDeps).Execute(runCtx, id, decision, callID)
 }
 
 // ExpireApprovals carries out every deadline that has passed, as
-// ExpireApprovals does, under the same lock as the decisions: a call is
+// ExpireApprovals does, under the same slot as the decisions: a call is
 // never both decided by a person and denied by its deadline. It returns
 // what it did, and the first error after trying every task.
 func (r *SerialRunner) ExpireApprovals(ctx context.Context) ([]ExpiredApproval, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	uc := NewExpireApprovals(r.deps)
+	defer r.lockSlot()()
+	uc := NewExpireApprovals(r.slotDeps)
 	due, first := uc.Due(ctx)
 	var done []ExpiredApproval
 	for _, id := range due {
@@ -73,15 +105,14 @@ func (r *SerialRunner) ExpireApprovals(ctx context.Context) ([]ExpiredApproval, 
 
 // RunNext runs the oldest Pending task, as RunNextPending does.
 func (r *SerialRunner) RunNext(ctx context.Context) (RunTaskResult, bool, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	id, found, err := NewRunNextPending(r.deps).Pick(ctx)
+	defer r.lockSlot()()
+	id, found, err := NewRunNextPending(r.slotDeps).Pick(ctx)
 	if err != nil || !found {
 		return RunTaskResult{}, false, err
 	}
 	runCtx, done := r.track(ctx, id)
 	defer done()
-	result, err := NewRunTask(r.deps).Execute(runCtx, id)
+	result, err := NewRunTask(r.slotDeps).Execute(runCtx, id)
 	if err != nil {
 		return RunTaskResult{}, true, err
 	}
@@ -99,6 +130,28 @@ func (r *SerialRunner) Interrupt(id domain.TaskID) bool {
 		cancel()
 	}
 	return ok
+}
+
+// running reports whether the task is being run in process right now.
+func (r *SerialRunner) running(id domain.TaskID) bool {
+	r.flightMu.Lock()
+	defer r.flightMu.Unlock()
+	_, ok := r.inFlight[id]
+	return ok
+}
+
+// Reconcile fails what a dead run left Running, as ReconcileTasks does,
+// under the same lock as the state changes, and never a task this
+// process is running right now, however small the grace: the run is
+// alive and will settle it. The command `task reconcile` runs in
+// another process and cannot see this lock: only a lock on the state
+// directory itself can keep it from a run's settle.
+func (r *SerialRunner) Reconcile(ctx context.Context, grace time.Duration) (ReconcileTasksResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	uc := NewReconcileTasks(r.deps)
+	uc.InFlight = r.running
+	return uc.Execute(ctx, grace)
 }
 
 // track derives the run's context and remembers how to cancel it while

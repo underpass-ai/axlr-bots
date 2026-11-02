@@ -26,6 +26,10 @@ const ReconcileGrace = time.Minute
 type ReconcileTasks struct {
 	deps Dependencies
 	rec  recorder
+	// InFlight, when set, reports a task this process is running right
+	// now (SerialRunner's): such a task is never lost, whatever its age
+	// and the grace, and is left alone. Nil in another process.
+	InFlight func(domain.TaskID) bool
 }
 
 // NewReconcileTasks wires the use case.
@@ -192,6 +196,9 @@ func (uc ReconcileTasks) missDeadlines(ctx context.Context) ([]domain.TaskID, er
 // budgets and its tenant, never for its status: a paused bot's lost task
 // is still lost.
 func (uc ReconcileTasks) reconcile(ctx context.Context, task domain.Task, grace time.Duration) (bool, error) {
+	if uc.InFlight != nil && uc.InFlight(task.ID()) {
+		return false, nil
+	}
 	bot, err := uc.deps.Bots.Get(ctx, task.BotID())
 	if err != nil {
 		return false, err
