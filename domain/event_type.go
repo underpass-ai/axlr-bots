@@ -110,6 +110,9 @@ const (
 	EventNodeEnrolled EventType = "node.enrolled"
 	// EventNodeRevoked says the operator cut a node off.
 	EventNodeRevoked EventType = "node.revoked"
+	// EventNodeRenewed says a node traded its certificate for a new one
+	// before it expired; the old serial is denied.
+	EventNodeRenewed EventType = "node.renewed"
 	// EventExecutionAssigned says an execution was handed to a node.
 	EventExecutionAssigned EventType = "execution.assigned"
 	// EventExecutionReported says a node reported how an execution ended.
@@ -123,7 +126,7 @@ func ParseEventType(raw string) (EventType, error) {
 		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventTaskDelegated, EventTaskMessage, EventTaskSaid, EventDelegationRefused,
 		EventEventEmitted, EventEventRefused, EventEventHeard, EventSubscriptionChanged, EventSubscriptionAsked, EventGroupEventPublished,
 		EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentEscalated, EventIncidentResolved,
-		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked,
+		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked, EventNodeRenewed,
 		EventExecutionAssigned, EventExecutionReported:
 		return EventType(raw), nil
 	}
@@ -148,7 +151,7 @@ func (t EventType) AboutGroup() bool { return t == EventGroupEventPublished }
 // AboutNode reports an event about a node rather than a bot.
 func (t EventType) AboutNode() bool {
 	switch t {
-	case EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked:
+	case EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked, EventNodeRenewed:
 		return true
 	}
 	return false

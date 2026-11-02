@@ -403,7 +403,7 @@ func TestEnrollmentTokens(t *testing.T) {
 	if (ForbiddenError{Reason: "x"}).Error() != "forbidden: x" || IsForbidden(errors.New("other")) {
 		t.Error("forbidden error wording")
 	}
-	for _, kind := range []EventType{EventNodeEnrolled, EventNodeRevoked} {
+	for _, kind := range []EventType{EventNodeEnrolled, EventNodeRevoked, EventNodeRenewed} {
 		if _, err := NewNodeEvent("evt-1", kind, "web-2", t0, nil); err != nil {
 			t.Errorf("%s: %v", kind, err)
 		}

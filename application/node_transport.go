@@ -46,6 +46,19 @@ type NodeTransport interface {
 	// Subscribe asks the operator, for the execution's bot, to hear a
 	// topic of its teams; a refusal is an answer, not an error.
 	Subscribe(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, command SubscribeCommand) (SubscribeAnswer, error)
+	// RenewCertificate trades the node's current certificate for one
+	// signed from the request, before the current one expires; the old
+	// one opens nothing once the answer is given.
+	RenewCertificate(ctx context.Context, node domain.NodeID, csrPEM []byte) (RenewedCertificate, error)
+}
+
+// RenewedCertificate is what a node receives for its renewal: the new
+// certificate and the CA in PEM, its serial and expiry.
+type RenewedCertificate struct {
+	CertificatePEM []byte
+	CAPEM          []byte
+	Serial         string
+	NotAfter       time.Time
 }
 
 // ReportAck is the control plane's answer to a report.

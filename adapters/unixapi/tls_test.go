@@ -567,3 +567,66 @@ func TestStreamsAndLongPollsOutliveTheReadTimeout(t *testing.T) {
 		}
 	}
 }
+
+// A node trades its certificate for a new one over the connection the
+// current one opens: the old certificate opens nothing afterwards, the
+// new one everything, and the client that renewed goes on with the new
+// one once it is handed the new configuration.
+func TestANodeRenewsItsCertificateOverTLS(t *testing.T) {
+	f := serveFleet(t)
+	ctx := context.Background()
+	creds, node := f.enroll(t, f.token(t, "web-1", map[string]string{"zone": "eu"}))
+	if _, err := node.Register(ctx, application.NodeRegistration{HostName: "web-1.example"}); err != nil {
+		t.Fatal(err)
+	}
+	// A request for another node's name is refused; nothing changes.
+	_, foreign, _ := pki.NewNodeKeyAndRequest("web-9")
+	var remote RemoteError
+	if _, err := node.RenewCertificate(ctx, "web-1", foreign); !errors.As(err, &remote) || remote.Kind != KindValidation {
+		t.Errorf("a request for web-9: %v", err)
+	}
+	// Over the socket there is no certificate to renew.
+	_, csr, _ := pki.NewNodeKeyAndRequest("web-1")
+	if _, err := f.operator.RenewCertificate(ctx, "web-1", csr); !domain.IsForbidden(err) {
+		t.Errorf("over the socket: %v", err)
+	}
+	if _, err := node.Heartbeat(ctx, "web-1"); err != nil {
+		t.Fatalf("refused renewals changed the certificate: %v", err)
+	}
+	key, csr, _ := pki.NewNodeKeyAndRequest("web-1")
+	renewed, err := node.RenewCertificate(ctx, "web-1", csr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := pki.ParseCredentials(key, renewed.CertificatePEM, renewed.CAPEM)
+	if err != nil || fresh.NodeID != "web-1" || fresh.Serial != renewed.Serial || renewed.Serial == creds.Serial || !renewed.NotAfter.Equal(fresh.NotAfter) || string(renewed.CAPEM) != string(f.ca.CertificatePEM()) {
+		t.Fatalf("renewed: %v %+v", err, fresh)
+	}
+	// The old certificate gets 403, on a new connection and on the
+	// client's pooled one alike, and cannot renew again.
+	oldConfig, _ := creds.ClientTLSConfig()
+	raw := &http.Client{Transport: &http.Transport{TLSClientConfig: oldConfig}}
+	response, err := raw.Post(f.url+"/v1/nodes/web-1/heartbeat", "application/json", nil)
+	if err != nil || response.StatusCode != http.StatusForbidden {
+		t.Errorf("old certificate, new connection: %v %v", err, response)
+	}
+	if response != nil {
+		response.Body.Close()
+	}
+	if _, err := node.Heartbeat(ctx, "web-1"); !domain.IsForbidden(err) {
+		t.Errorf("old certificate, pooled connection: %v", err)
+	}
+	if _, err := NewTLSClient(f.url, oldConfig).RenewCertificate(ctx, "web-1", csr); !domain.IsForbidden(err) {
+		t.Errorf("the old certificate renewed again: %v", err)
+	}
+	// The new one gets 200, through the same client once it uses it.
+	newConfig, _ := fresh.ClientTLSConfig()
+	node.UseTLSConfig(newConfig)
+	if beat, err := node.Heartbeat(ctx, "web-1"); err != nil || beat.Status != "Online" || beat.CertificateSerial != renewed.Serial {
+		t.Errorf("new certificate: %v %+v", err, beat)
+	}
+	got, err := f.operator.GetNode(ctx, "web-1")
+	if err != nil || got.CertificateSerial != renewed.Serial || got.CertificateNotAfter == nil || !got.CertificateNotAfter.Equal(renewed.NotAfter) || got.Labels["zone"] != "eu" {
+		t.Errorf("node = %v %+v", err, got)
+	}
+}

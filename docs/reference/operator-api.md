@@ -57,7 +57,7 @@ Every CLI command tries the socket first (`--socket`, `AXLR_BOTS_SOCKET`, defaul
 | `POST /v1/tasks/{id}/run`, `GET /v1/tasks/{id}/report`, `GET /v1/executions/{id}` | the CLI's run, report and execution routes | |
 | `GET /v1/executions/{id}/artifacts/{name}` | the bytes of an artifact the control plane keeps for the execution, as a download: `Content-Type` its media type, `X-Axlr-Artifact-Sha256` its hash; `404` for one not kept | |
 | `GET /v1/overview?since=` | the dashboard's counts ([below](#the-overview)) | |
-| `GET /v1/nodes`, `GET /v1/nodes/{id}`, `POST /v1/enrollments`, `POST /v1/nodes/{id}/revoke` | the nodes: list, show, mint a token, revoke; a node shows `certificateNotAfter`, its certificate's expiry, once the control plane has seen it (at enrollment, or on the node's next call over mutual TLS); `labels` are the effective ones, the enrollment's `operatorLabels` over the agent's `reportedLabels` ([labels](node-protocol.md#labels)) | |
+| `GET /v1/nodes`, `GET /v1/nodes/{id}`, `POST /v1/enrollments`, `POST /v1/nodes/{id}/revoke` | the nodes: list, show, mint a token, revoke; a node shows `certificateNotAfter`, its certificate's expiry, once the control plane has seen it (at enrollment, at a renewal, or on the node's next call over mutual TLS); the agent renews its certificate from 30 days before that, and each renewal is a `node.renewed` event ([renewal](node-protocol.md#renewal)); `labels` are the effective ones, the enrollment's `operatorLabels` over the agent's `reportedLabels` ([labels](node-protocol.md#labels)) | |
 
 ## The idempotency key
 

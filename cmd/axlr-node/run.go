@@ -60,6 +60,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	axlrBin := flags.String("axlr-bin", envOr("AXLR_TUI", "axlr-tui"), "the axlr-tui that runs executions (also AXLR_TUI)")
 	heartbeat := flags.Duration("heartbeat", nodeagent.DefaultHeartbeat, "how often to tell the control plane the node is alive")
 	poll := flags.Duration("poll", nodeagent.DefaultPollWait, "how long one poll for an assignment waits")
+	renewBefore := flags.Duration("renew-before", envDuration("AXLR_NODE_RENEW_BEFORE", nodeagent.RenewCertificateBefore), "over https, renew the node's certificate this long before it expires; checked at start and every day (also AXLR_NODE_RENEW_BEFORE; past the certificate's life it renews at once, to try it on a test node)")
 	tokenFile := flags.String("token-file", envOr("AXLR_NODE_TOKEN_FILE", ""), "over https, enroll with the token in this file when the state holds no certificate, then run (also AXLR_NODE_TOKEN_FILE): a sidecar's first start")
 	caFile := flags.String("ca-file", envOr("AXLR_NODE_CA_FILE", ""), "with --token-file, the fleet CA in PEM instead of the one the token carries (also AXLR_NODE_CA_FILE)")
 	retry := flags.Duration("enroll-retry", 10*time.Second, "with --token-file, how long to wait between enrollment attempts")
@@ -127,15 +128,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return exitOK
 		}
 	}
-	transport, id, labelsFromEnrollment, identity, err := transportFor(*control, *nodeID, *stateDir)
+	conn, err := transportFor(*control, *nodeID, *stateDir)
 	if err != nil {
 		fmt.Fprintln(stderr, "axlr-node:", err)
 		return exitError
 	}
+	id, labelsFromEnrollment := conn.nodeID, conn.labels
 	for key, value := range parsedLabels {
 		labelsFromEnrollment[key] = value
 	}
-	logger.Printf("node: control plane %s, %s", *control, identity)
+	logger.Printf("node: control plane %s, %s", *control, conn.identity)
 	executor := axlr.NewExecutor(*axlrBin, *stateDir)
 	executor.MCPConfig = *axlrMCPConfig
 	// AXLR reaches the delegation tool through this binary's mcp-relay.
@@ -159,9 +161,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		logger.Printf("node: TYPESAFE_API_KEY is not set: Jev bots are not run here")
 	}
 	agent := nodeagent.Agent{
-		Transport: transport,
+		Transport: conn.transport,
 		Executor:  runtimes,
-		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Dedicated: *dedicated, Runtimes: runtimes.Kinds(), Heartbeat: *heartbeat, PollWait: *poll, Log: logger, SocketDir: filepath.Join(*stateDir, "run")},
+		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Dedicated: *dedicated, Runtimes: runtimes.Kinds(), Heartbeat: *heartbeat, PollWait: *poll, RenewBefore: *renewBefore, Log: logger, SocketDir: filepath.Join(*stateDir, "run")},
+	}
+	if conn.certificate != nil {
+		agent.Certificate = conn.certificate
 	}
 	if *bus == "nats" {
 		cert, key, how := natsClientCertificate(*natsURL, *control, *stateDir, *natsCert, *natsKey)
@@ -186,40 +191,52 @@ func printJSON(w io.Writer, v any) {
 	fmt.Fprintln(w, string(data))
 }
 
+// connection is how the agent reaches the control plane: the
+// transport, the node id, the labels the enrollment gave the node, a
+// line saying which identity it speaks with, and over https the
+// certificate the agent renews.
+type connection struct {
+	transport   application.NodeTransport
+	nodeID      string
+	labels      map[string]string
+	identity    string
+	certificate *nodeCertificate
+}
+
 // transportFor picks how the agent reaches the control plane. Over
 // https the identity is the certificate enroll stored: its common name
 // is the node id, and a --node-id that disagrees is refused; the labels
 // the enrollment gave the node come first (flags add to them). Over the
-// socket the id is the flag's, or the host name. The last value says
-// which, for the log.
-func transportFor(control, nodeID, stateDir string) (application.NodeTransport, string, map[string]string, string, error) {
+// socket the id is the flag's, or the host name.
+func transportFor(control, nodeID, stateDir string) (connection, error) {
 	labels := map[string]string{}
 	if !strings.HasPrefix(control, "https://") {
 		if nodeID == "" {
 			nodeID = defaultNodeID()
 		}
-		return unixapi.NewClient(control), nodeID, labels, "node id " + nodeID + " from the host (no certificate over the socket)", nil
+		return connection{transport: unixapi.NewClient(control), nodeID: nodeID, labels: labels, identity: "node id " + nodeID + " from the host (no certificate over the socket)"}, nil
 	}
 	creds, err := pki.LoadCredentials(stateDir)
 	if err != nil {
-		return nil, "", nil, "", err
+		return connection{}, err
 	}
 	if nodeID != "" && nodeID != creds.NodeID {
-		return nil, "", nil, "", fmt.Errorf("--node-id %q disagrees with the certificate, which names %q", nodeID, creds.NodeID)
+		return connection{}, fmt.Errorf("--node-id %q disagrees with the certificate, which names %q", nodeID, creds.NodeID)
 	}
 	config, err := creds.ClientTLSConfig()
 	if err != nil {
-		return nil, "", nil, "", err
+		return connection{}, err
 	}
 	record, err := loadRecord(stateDir)
 	if err != nil {
-		return nil, "", nil, "", err
+		return connection{}, err
 	}
 	for key, value := range record.Labels {
 		labels[key] = value
 	}
 	identity := fmt.Sprintf("client certificate %s for node %s (serial %s, until %s)", filepath.Join(stateDir, pki.CredentialsDirName, "node.crt"), creds.NodeID, creds.Serial, creds.NotAfter.UTC().Format("2006-01-02"))
-	return unixapi.NewTLSClient(control, config), creds.NodeID, labels, identity, nil
+	client := unixapi.NewTLSClient(control, config)
+	return connection{transport: client, nodeID: creds.NodeID, labels: labels, identity: identity, certificate: newNodeCertificate(stateDir, client, creds)}, nil
 }
 
 // parseLabels reads key=value,key=value.
@@ -256,6 +273,15 @@ func defaultStateDir() string {
 		return filepath.Join(".", "axlr-node-state")
 	}
 	return filepath.Join(home, ".local", "state", "axlr-node")
+}
+
+// envDuration is the duration in the variable, or the fallback when it
+// is unset or not a duration.
+func envDuration(name string, fallback time.Duration) time.Duration {
+	if value, err := time.ParseDuration(os.Getenv(name)); err == nil {
+		return value
+	}
+	return fallback
 }
 
 func envOr(name, fallback string) string {

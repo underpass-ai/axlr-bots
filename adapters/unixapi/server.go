@@ -191,6 +191,7 @@ func (s *Server) nodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/enroll", s.enroll)
 	mux.HandleFunc("POST /v1/nodes", s.authenticated(s.registerNode))
 	mux.HandleFunc("POST /v1/nodes/{id}/heartbeat", s.authenticated(s.heartbeat))
+	mux.HandleFunc("POST /v1/nodes/{id}/certificate", s.authenticated(s.renewCertificate))
 	mux.HandleFunc("GET /v1/nodes/{id}/assignments/next", s.authenticated(s.nextAssignment))
 	mux.HandleFunc("GET /v1/nodes/{id}/stream", s.authenticated(s.stream))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/lease", s.authenticated(s.renewLease))
@@ -992,6 +993,27 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusCreated, nodeproto.EnrollResponse{Node: result.Node.Snapshot(), Certificate: string(result.CertificatePEM), CA: string(result.CAPEM), Serial: result.Serial, NotAfter: result.NotAfter}, nil)
+}
+
+// renewCertificate trades the certificate the request came with for a
+// new one. The certificate is the proof, so only a request over TLS may
+// renew: over the socket, where the path is trusted, there is none.
+func (s *Server) renewCertificate(w http.ResponseWriter, r *http.Request) {
+	identity, ok := identityOf(r)
+	if !ok {
+		respond(w, 0, nil, domain.ForbiddenError{Reason: "a certificate is renewed over TLS with the certificate itself"})
+		return
+	}
+	var request nodeproto.RenewRequest
+	if !readJSON(w, r, &request) {
+		return
+	}
+	result, err := application.NewRenewNodeCertificate(s.service.Dependencies()).Execute(r.Context(), application.CertificateRenewal{NodeID: identity.ID, Serial: identity.Serial, CSRPEM: []byte(request.CSR)})
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	respond(w, http.StatusOK, nodeproto.EnrollResponse{Node: result.Node.Snapshot(), Certificate: string(result.CertificatePEM), CA: string(result.CAPEM), Serial: result.Serial, NotAfter: result.NotAfter}, nil)
 }
 
 func (s *Server) createEnrollmentToken(w http.ResponseWriter, r *http.Request) {

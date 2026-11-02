@@ -98,6 +98,7 @@ impl Event {
             "node.offline" => "Node offline".into(),
             "node.enrolled" => "Node enrolled".into(),
             "node.revoked" => "Node revoked".into(),
+            "node.renewed" => "Certificate renewed".into(),
             "node.heartbeat" => "Heartbeat".into(),
             other => other.to_string(),
         }
@@ -113,8 +114,8 @@ impl Event {
 
     pub fn tone(&self) -> EventTone {
         match self.event_type.as_str() {
-            "bot.task.completed" | "bot.enabled" | "node.registered" | "node.enrolled" | "incident.diagnosed"
-            | "incident.resolved" => EventTone::Good,
+            "bot.task.completed" | "bot.enabled" | "node.registered" | "node.enrolled" | "node.renewed"
+            | "incident.diagnosed" | "incident.resolved" => EventTone::Good,
             "bot.task.failed"
             | "node.offline"
             | "node.revoked"
@@ -367,6 +368,7 @@ mod tests {
             "node.offline",
             "node.enrolled",
             "node.revoked",
+            "node.renewed",
             "node.heartbeat",
         ] {
             assert!(!event(kind, "{}").label().contains('.'), "{kind}");
