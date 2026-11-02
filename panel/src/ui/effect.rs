@@ -68,7 +68,8 @@ pub enum Effect {
         urgent: bool,
     },
     Cancel(TaskId),
-    Decide(TaskId, Decision),
+    /// The decision, and the call it was made on when the panel knew it.
+    Decide(TaskId, Decision, Option<String>),
     Copy(String),
     /// A desktop notice, and the place a click on it opens.
     Notify {

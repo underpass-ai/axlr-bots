@@ -220,8 +220,8 @@ impl Services {
                 Ok(cp) => CancelTask::new(cp).execute(id).await,
                 Err(e) => Err(e),
             }),
-            Effect::Decide(id, decision) => Message::Decided(match self.control_plane() {
-                Ok(cp) => DecideTask::new(cp).execute(id, decision).await,
+            Effect::Decide(id, decision, call_id) => Message::Decided(match self.control_plane() {
+                Ok(cp) => DecideTask::new(cp).execute(id, decision, call_id).await,
                 Err(e) => Err(e),
             }),
         };

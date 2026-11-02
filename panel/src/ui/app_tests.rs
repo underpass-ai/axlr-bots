@@ -137,7 +137,11 @@ fn a_waiting_task_is_approved_from_its_page() {
     let effects = app.apply(Message::Approve(id.clone()));
     assert_eq!(
         effects,
-        vec![Effect::Decide(id.clone(), crate::domain::Decision::Approve)]
+        vec![Effect::Decide(
+            id.clone(),
+            crate::domain::Decision::Approve,
+            Some("call-1".into())
+        )]
     );
     assert!(
         app.apply(Message::Approve(id.clone())).is_empty(),
@@ -441,7 +445,7 @@ fn without_a_connection_nothing_is_asked_of_the_control_plane() {
         },
         Effect::SetTeams(BotId::new("b").unwrap(), vec!["ops".into()]),
         Effect::Cancel(TaskId::new("t").unwrap()),
-        Effect::Decide(TaskId::new("t").unwrap(), crate::domain::Decision::Deny),
+        Effect::Decide(TaskId::new("t").unwrap(), crate::domain::Decision::Deny, None),
     ] {
         let message = futures::executor::block_on(app.services.clone().execute(effect.clone())).unwrap();
         let text = format!("{message:?}");

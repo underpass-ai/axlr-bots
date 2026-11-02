@@ -157,6 +157,8 @@ struct TextBody {
 #[derive(Serialize)]
 struct DecisionBody {
     decision: Decision,
+    #[serde(rename = "callId", skip_serializing_if = "Option::is_none")]
+    call_id: Option<String>,
 }
 
 /// No body: a POST that carries nothing.
@@ -283,8 +285,11 @@ impl ControlPlane for HttpControlPlane {
         self.post(format!("/v1/tasks/{id}/cancel"), NO_BODY)
     }
 
-    fn decide_task(&self, id: TaskId, decision: Decision) -> PortFuture<'_, DecidedTask> {
-        self.post(format!("/v1/tasks/{id}/decide"), Some(DecisionBody { decision }))
+    fn decide_task(&self, id: TaskId, decision: Decision, call_id: Option<String>) -> PortFuture<'_, DecidedTask> {
+        self.post(
+            format!("/v1/tasks/{id}/decide"),
+            Some(DecisionBody { decision, call_id }),
+        )
     }
 
     fn task_executions(&self, id: TaskId) -> PortFuture<'_, Vec<Execution>> {

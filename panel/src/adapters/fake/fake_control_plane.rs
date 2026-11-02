@@ -3,7 +3,7 @@ use std::sync::Mutex;
 
 use chrono::{DateTime, Duration, Utc};
 
-use crate::application::{ControlPlane, PanelError, PortFuture};
+use crate::application::{ControlPlane, PanelError, PortFuture, WaitingCall};
 use crate::domain::{
     Bot, BotDefinition, BotId, BotPatch, BotStatus, Budgets, CancelledTask, DecidedTask, Decision, EnrollmentRequest,
     EnrollmentToken, Event, Execution, ExecutionId, ExecutionKind, ExecutionOutcome, ExecutionResult, Node,
@@ -1026,13 +1026,21 @@ impl ControlPlane for FakeControlPlane {
         })
     }
 
-    fn decide_task(&self, id: TaskId, decision: Decision) -> PortFuture<'_, DecidedTask> {
+    fn decide_task(&self, id: TaskId, decision: Decision, call_id: Option<String>) -> PortFuture<'_, DecidedTask> {
         self.call(format!("decide_task {id} {}", decision.name()), move |s| {
             let now = s.clock();
             let task = s.task_mut(&id)?;
             if task.status != TaskStatus::WaitingApproval {
                 return Err(PanelError::State(format!("task {id} is {}", task.status.name())));
             }
+            if let Some(call_id) = call_id {
+                let executions: Vec<Execution> = s.executions.iter().filter(|e| e.task_id == id).cloned().collect();
+                let pending = WaitingCall::newest(&executions).map(|c| c.call_id.as_str());
+                if pending != Some(call_id.as_str()) {
+                    return Err(PanelError::State(format!("task {id} does not wait on call {call_id}")));
+                }
+            }
+            let task = s.task_mut(&id)?;
             task.status = TaskStatus::Running;
             let bot = task.bot_id.to_string();
             s.event(

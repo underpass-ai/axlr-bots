@@ -47,7 +47,10 @@ pub trait ControlPlane: Send + Sync {
     /// Writes to a running task: its node hands the text to the run
     /// between model steps. Any other task is a state error.
     fn send_task_message(&self, id: TaskId, text: String) -> PortFuture<'_, SentTaskMessage>;
-    fn decide_task(&self, id: TaskId, decision: Decision) -> PortFuture<'_, DecidedTask>;
+    /// Decides the call the task waits on. With `call_id`, a task that now
+    /// waits on another call is a state error, so a decision made on an old
+    /// screen never lands on a newer call.
+    fn decide_task(&self, id: TaskId, decision: Decision, call_id: Option<String>) -> PortFuture<'_, DecidedTask>;
     /// The task's executions, oldest first.
     fn task_executions(&self, id: TaskId) -> PortFuture<'_, Vec<Execution>>;
     /// The task's newest `limit` events, oldest first.
