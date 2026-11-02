@@ -40,6 +40,9 @@ func (r NodeRepository) List(ctx context.Context) ([]domain.Node, error) {
 	nodes := make([]domain.Node, 0, len(ids))
 	for _, id := range ids {
 		node, err := r.Get(ctx, domain.NodeID(id))
+		if r.files.skipListed(id, err) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}

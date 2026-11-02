@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/underpass-ai/axlr-bots/internal/atomicfile"
 )
 
 // Files of a node's credentials under <node-state>/pki.
@@ -41,7 +43,9 @@ func SaveCredentials(dir string, keyPEM, certPEM, caPEM []byte) error {
 		data []byte
 		mode os.FileMode
 	}{{nodeKeyFile, keyPEM, 0o600}, {nodeCertFile, certPEM, 0o644}, {nodeCAFile, caPEM, 0o644}} {
-		if err := os.WriteFile(filepath.Join(target, file.name), file.data, file.mode); err != nil {
+		// Each file is replaced whole: a renewal that dies half-way leaves
+		// the node with its old key or its new one, never a torn key.
+		if err := atomicfile.Write(filepath.Join(target, file.name), file.data, file.mode); err != nil {
 			return fmt.Errorf("pki: %w", err)
 		}
 	}

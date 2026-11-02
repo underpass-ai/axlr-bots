@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/underpass-ai/axlr-bots/internal/atomicfile"
 )
 
 // apiTokenFileName is the operator bearer token under the state
@@ -34,10 +36,10 @@ func loadOrCreateAPIToken(path string) (token string, created bool, err error) {
 		return "", false, err
 	}
 	token = hex.EncodeToString(random[:])
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return "", false, err
 	}
-	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
+	if err := atomicfile.Write(path, []byte(token+"\n"), 0o600); err != nil {
 		return "", false, err
 	}
 	return token, true, nil

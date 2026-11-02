@@ -37,7 +37,7 @@ func (s ArtifactStore) reportPath(task domain.TaskID) string {
 // SaveReport writes the report and returns its path.
 func (s ArtifactStore) SaveReport(_ context.Context, task domain.TaskID, _ domain.ExecutionID, content []byte) (string, error) {
 	path := s.reportPath(task)
-	if err := writeAtomically(path, content); err != nil {
+	if err := writeFile(path, content); err != nil {
 		return "", err
 	}
 	return path, nil
@@ -88,7 +88,7 @@ func (s ArtifactStore) SaveArtifact(_ context.Context, execution domain.Executio
 		return err
 	}
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, dirMode); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
@@ -118,7 +118,7 @@ func (s ArtifactStore) SaveArtifact(_ context.Context, execution domain.Executio
 	if err != nil {
 		return err
 	}
-	return writeAtomically(listing, append(data, '\n'))
+	return writeFile(listing, append(data, '\n'))
 }
 
 // StoredArtifacts reads the listings of the execution's artifacts, in

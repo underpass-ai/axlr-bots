@@ -51,6 +51,9 @@ func (r TaskRepository) FindByIdempotencyKey(ctx context.Context, bot domain.Bot
 			continue
 		}
 		task, err := r.Get(ctx, domain.TaskID(id))
+		if r.files.skipListed(id, err) {
+			continue
+		}
 		if err != nil {
 			return domain.Task{}, false, err
 		}
@@ -77,6 +80,9 @@ func (r TaskRepository) ListByStatus(ctx context.Context, status domain.TaskStat
 			continue
 		}
 		task, err := r.Get(ctx, domain.TaskID(entry.id))
+		if r.files.skipListed(entry.id, err) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -97,6 +103,9 @@ func (r TaskRepository) List(ctx context.Context) ([]domain.Task, error) {
 	tasks := make([]domain.Task, 0, len(ids))
 	for _, id := range ids {
 		task, err := r.Get(ctx, domain.TaskID(id))
+		if r.files.skipListed(id, err) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}

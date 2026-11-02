@@ -68,6 +68,9 @@ func (r ExecutionRepository) ListRunning(ctx context.Context) ([]domain.Executio
 			continue
 		}
 		execution, err := r.Get(ctx, domain.ExecutionID(entry.id))
+		if r.files.skipListed(entry.id, err) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -88,6 +91,9 @@ func (r ExecutionRepository) List(ctx context.Context) ([]domain.Execution, erro
 	executions := make([]domain.Execution, 0, len(ids))
 	for _, id := range ids {
 		execution, err := r.Get(ctx, domain.ExecutionID(id))
+		if r.files.skipListed(id, err) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}

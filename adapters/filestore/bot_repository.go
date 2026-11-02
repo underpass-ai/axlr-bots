@@ -40,6 +40,9 @@ func (r BotRepository) List(ctx context.Context) ([]domain.Bot, error) {
 	bots := make([]domain.Bot, 0, len(ids))
 	for _, id := range ids {
 		bot, err := r.Get(ctx, domain.BotID(id))
+		if r.files.skipListed(id, err) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}

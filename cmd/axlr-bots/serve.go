@@ -17,6 +17,7 @@ import (
 	"github.com/underpass-ai/axlr-bots/adapters/daemon"
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
 	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/internal/statelock"
 )
 
 // operatorURL is the base of the links an approval notification carries:
@@ -90,7 +91,7 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 		fmt.Fprintln(stderr, "axlr-bots: --nats-cert and --nats-key go together")
 		return exitUsage
 	}
-	options := daemon.Options{SocketPath: socketPath, Tick: *tick, ReconcileEvery: *reconcileEvery, Grace: *grace}
+	options := daemon.Options{StateDir: stateDir, SocketPath: socketPath, Tick: *tick, ReconcileEvery: *reconcileEvery, Grace: *grace}
 	if *listen != "" || *apiListen != "" {
 		authority, err := pki.Load(caDir(stateDir))
 		if err != nil {
@@ -114,6 +115,13 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 		options.APIListenAddr = *apiListen
 		options.TLS = pki.ServerTLSConfigFor(authority, hosts)
 	}
+	// A second serve on the state is refused here, before its bus sweeps
+	// the first one's outbox; daemon.Run takes the lock for good.
+	probe, err := statelock.Acquire(stateDir)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	probe()
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	options.Log = log.New(stderr, "", log.LstdFlags)

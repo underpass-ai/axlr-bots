@@ -21,6 +21,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/underpass-ai/axlr-bots/internal/atomicfile"
 )
 
 // Files of the authority under <state>/ca.
@@ -78,11 +80,11 @@ func Generate(dir string) (Authority, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return Authority{}, fmt.Errorf("pki: %w", err)
 	}
-	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+	if err := atomicfile.Write(keyPath, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
 		return Authority{}, fmt.Errorf("pki: %w", err)
 	}
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
-	if err := os.WriteFile(certPath, certPEM, 0o644); err != nil {
+	if err := atomicfile.Write(certPath, certPEM, 0o644); err != nil {
 		return Authority{}, fmt.Errorf("pki: %w", err)
 	}
 	return Load(dir)

@@ -24,7 +24,7 @@ func Dependencies(stateDir, axlrBin, actor string) (application.Dependencies, er
 	if stateDir == "" {
 		return application.Dependencies{}, fmt.Errorf("the state directory must not be empty")
 	}
-	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+	if err := os.MkdirAll(stateDir, 0o750); err != nil {
 		return application.Dependencies{}, fmt.Errorf("state directory: %w", err)
 	}
 	executor := axlr.NewExecutor(axlrBin, stateDir)

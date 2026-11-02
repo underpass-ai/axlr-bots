@@ -56,7 +56,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return serve(ctx, app, *stateDir, socketPath, rest[1:], stdout, stderr)
 	}
 	if rest[0] == "overview" {
-		return overview(ctx, newService(ctx, app, socketPath, nil), rest[1:], stdout, stderr)
+		service, release, err := newService(ctx, app, *stateDir, socketPath, nil)
+		if err != nil {
+			return fail(stderr, err)
+		}
+		defer release()
+		return overview(ctx, service, rest[1:], stdout, stderr)
 	}
 	if len(rest) < 2 {
 		printUsage(stderr)
@@ -65,7 +70,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	group, verb, rest := rest[0], rest[1], rest[2:]
 	switch group + " " + verb {
 	case "task reconcile":
-		return taskReconcile(ctx, app, rest, stdout, stderr)
+		return taskReconcile(ctx, app, *stateDir, rest, stdout, stderr)
 	case "ca init":
 		return caInit(*stateDir, rest, stdout, stderr)
 	case "ca show":
@@ -73,7 +78,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "ca issue-client":
 		return caIssueClient(*stateDir, rest, stdout, stderr)
 	}
-	service := newService(ctx, app, socketPath, nil)
+	service, release, err := newService(ctx, app, *stateDir, socketPath, nil)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer release()
 	switch group + " " + verb {
 	case "bot register":
 		return botRegister(ctx, service, rest, stdout, stderr)
@@ -281,11 +290,9 @@ func printUsage(w io.Writer) {
   task reconcile [--grace <duration>] fail the tasks a crashed run left Running
                                       longer than the grace (default: the bot's
                                       task timeout plus 1m); prints failed/skipped.
-                                      Another process than serve: it cannot see a
-                                      run serve has in flight, and only a lock on
-                                      the state directory (not there yet) would keep
-                                      them apart; while serve runs, use a grace past
-                                      the bot's timeout (serve reconciles by itself)
+                                      Works on the files and takes the state
+                                      directory's lock: while serve runs (and
+                                      reconciles by itself) it is refused
   execution get <execution-id>        show one execution: outcome, answer, usage, policy,
                                       artifacts and receipt
   execution artifact <execution-id> <name> [--out <file>]

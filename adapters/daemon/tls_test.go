@@ -36,7 +36,7 @@ func (f *fixture) startTLS(t *testing.T) (*unixapi.Client, string, func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, f.deps, Options{SocketPath: f.socket, Listener: listener, TLS: pki.ServerTLSConfig(ca, []string{"127.0.0.1"}), Tick: 20 * time.Millisecond, ReconcileEvery: 50 * time.Millisecond, Grace: time.Hour, NodeOfflineAfter: time.Second, Log: log.New(f.logs, "", 0)})
+		done <- Run(ctx, f.deps, Options{StateDir: f.state, SocketPath: f.socket, Listener: listener, TLS: pki.ServerTLSConfig(ca, []string{"127.0.0.1"}), Tick: 20 * time.Millisecond, ReconcileEvery: 50 * time.Millisecond, Grace: time.Hour, NodeOfflineAfter: time.Second, Log: log.New(f.logs, "", 0)})
 	}()
 	for !unixapi.Reachable(context.Background(), f.socket) {
 		time.Sleep(10 * time.Millisecond)
@@ -178,18 +178,18 @@ func TestLiveTwoNodesOverTLS(t *testing.T) {
 
 func TestDaemonTLSOptions(t *testing.T) {
 	f := newFixture(t, "completed")
-	if err := Run(context.Background(), f.deps, Options{SocketPath: f.socket, ListenAddr: "127.0.0.1:0"}); err == nil || !strings.Contains(err.Error(), "TLS configuration") {
+	if err := Run(context.Background(), f.deps, Options{StateDir: f.state, SocketPath: f.socket, ListenAddr: "127.0.0.1:0"}); err == nil || !strings.Contains(err.Error(), "TLS configuration") {
 		t.Errorf("listen without TLS: %v", err)
 	}
 	ca, _ := pki.Generate(filepath.Join(f.state, pki.CADirName))
-	if err := Run(context.Background(), f.deps, Options{SocketPath: f.socket, ListenAddr: "300.0.0.1:0", TLS: pki.ServerTLSConfig(ca, nil)}); err == nil {
+	if err := Run(context.Background(), f.deps, Options{StateDir: f.state, SocketPath: f.socket, ListenAddr: "300.0.0.1:0", TLS: pki.ServerTLSConfig(ca, nil)}); err == nil {
 		t.Error("a bad address listened")
 	}
 	// A ListenAddr the daemon binds itself.
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, f.deps, Options{SocketPath: f.socket, ListenAddr: "127.0.0.1:0", TLS: pki.ServerTLSConfig(ca, []string{"127.0.0.1"}), Tick: 20 * time.Millisecond, Log: log.New(f.logs, "", 0)})
+		done <- Run(ctx, f.deps, Options{StateDir: f.state, SocketPath: f.socket, ListenAddr: "127.0.0.1:0", TLS: pki.ServerTLSConfig(ca, []string{"127.0.0.1"}), Tick: 20 * time.Millisecond, Log: log.New(f.logs, "", 0)})
 	}()
 	for !unixapi.Reachable(context.Background(), f.socket) {
 		time.Sleep(10 * time.Millisecond)
@@ -205,15 +205,15 @@ func TestDaemonTLSOptions(t *testing.T) {
 
 func TestDaemonOperatorAddressOptions(t *testing.T) {
 	f := newFixture(t, "completed")
-	if err := Run(context.Background(), f.deps, Options{SocketPath: f.socket, APIListenAddr: "127.0.0.1:0", APIToken: "t"}); err == nil || !strings.Contains(err.Error(), "TLS configuration") {
+	if err := Run(context.Background(), f.deps, Options{StateDir: f.state, SocketPath: f.socket, APIListenAddr: "127.0.0.1:0", APIToken: "t"}); err == nil || !strings.Contains(err.Error(), "TLS configuration") {
 		t.Errorf("operator address without TLS: %v", err)
 	}
 	ca, _ := pki.Generate(filepath.Join(f.state, pki.CADirName))
 	tlsConfig := pki.ServerTLSConfig(ca, []string{"127.0.0.1"})
-	if err := Run(context.Background(), f.deps, Options{SocketPath: f.socket, APIListenAddr: "127.0.0.1:0", TLS: tlsConfig}); err == nil || !strings.Contains(err.Error(), "bearer token") {
+	if err := Run(context.Background(), f.deps, Options{StateDir: f.state, SocketPath: f.socket, APIListenAddr: "127.0.0.1:0", TLS: tlsConfig}); err == nil || !strings.Contains(err.Error(), "bearer token") {
 		t.Errorf("operator address without a token: %v", err)
 	}
-	if err := Run(context.Background(), f.deps, Options{SocketPath: f.socket, ListenAddr: "127.0.0.1:0", APIListenAddr: "300.0.0.1:0", APIToken: "t", TLS: tlsConfig}); err == nil {
+	if err := Run(context.Background(), f.deps, Options{StateDir: f.state, SocketPath: f.socket, ListenAddr: "127.0.0.1:0", APIListenAddr: "300.0.0.1:0", APIToken: "t", TLS: tlsConfig}); err == nil {
 		t.Error("a bad operator address listened")
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -223,7 +223,7 @@ func TestDaemonOperatorAddressOptions(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, f.deps, Options{SocketPath: f.socket, APIListener: listener, APIToken: "operator-token", TLS: tlsConfig, Tick: 20 * time.Millisecond, Log: log.New(f.logs, "", 0)})
+		done <- Run(ctx, f.deps, Options{StateDir: f.state, SocketPath: f.socket, APIListener: listener, APIToken: "operator-token", TLS: tlsConfig, Tick: 20 * time.Millisecond, Log: log.New(f.logs, "", 0)})
 	}()
 	for !unixapi.Reachable(context.Background(), f.socket) {
 		time.Sleep(10 * time.Millisecond)

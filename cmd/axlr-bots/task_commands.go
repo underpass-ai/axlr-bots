@@ -10,6 +10,7 @@ import (
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
+	"github.com/underpass-ai/axlr-bots/internal/statelock"
 )
 
 func taskSubmit(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
@@ -143,7 +144,10 @@ func taskReport(ctx context.Context, service unixapi.Service, args []string, std
 	return exitOK
 }
 
-func taskReconcile(ctx context.Context, app application.Dependencies, args []string, stdout, stderr io.Writer) int {
+// taskReconcile works on the state files, never through the socket, so
+// it holds the state directory's lock for its run: while a daemon holds
+// it (and reconciles by itself), the command is refused.
+func taskReconcile(ctx context.Context, app application.Dependencies, stateDir string, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("task reconcile", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	grace := flags.Duration("grace", 0, "fail Running tasks older than this (default: the bot's task timeout plus 1m)")
@@ -154,6 +158,11 @@ func taskReconcile(ctx context.Context, app application.Dependencies, args []str
 		fmt.Fprintln(stderr, "axlr-bots: task reconcile takes no arguments, only --grace")
 		return exitUsage
 	}
+	release, err := statelock.Acquire(stateDir)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer release()
 	result, err := application.NewReconcileTasks(app).Execute(ctx, *grace)
 	if err != nil {
 		return fail(stderr, err)

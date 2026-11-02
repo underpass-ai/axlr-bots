@@ -42,6 +42,9 @@ func (r EnrollmentRepository) List(ctx context.Context) ([]domain.Enrollment, er
 	enrollments := make([]domain.Enrollment, 0, len(ids))
 	for _, id := range ids {
 		enrollment, err := r.Get(ctx, domain.EnrollmentID(id))
+		if r.files.skipListed(id, err) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}

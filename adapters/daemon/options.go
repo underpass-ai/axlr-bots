@@ -19,6 +19,11 @@ const (
 
 // Options tune the daemon.
 type Options struct {
+	// StateDir is the state directory the dependencies work on. Run
+	// holds its lock (statelock) for its whole life, so a second daemon
+	// or a command that would write the files directly is refused while
+	// this one runs. Required.
+	StateDir string
 	// SocketPath is where the local API listens.
 	SocketPath string
 	// ListenAddr is an optional TLS address for nodes on other hosts

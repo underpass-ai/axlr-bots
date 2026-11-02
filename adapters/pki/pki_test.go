@@ -129,6 +129,24 @@ func TestCredentialsRoundTrip(t *testing.T) {
 	if _, err := creds.ClientTLSConfig(); err != nil {
 		t.Error(err)
 	}
+	// A renewal writes over the files: each is replaced whole, keeps its
+	// mode and leaves no temporary beside it.
+	renewedKey, renewedCSR, _ := NewNodeKeyAndRequest("web-1")
+	renewed, _ := ca.IssueNode(renewedCSR, "web-1", 0)
+	if err := SaveCredentials(dir, renewedKey, renewed.CertificatePEM, ca.CertificatePEM()); err != nil {
+		t.Fatal(err)
+	}
+	if creds, err := LoadCredentials(dir); err != nil || creds.Serial != renewed.Serial {
+		t.Errorf("load after a renewal: %v %+v", err, creds)
+	}
+	for name, mode := range map[string]os.FileMode{"node.key": 0o600, "node.crt": 0o644, "ca.crt": 0o644} {
+		if info, err := os.Stat(filepath.Join(dir, "pki", name)); err != nil || info.Mode().Perm() != mode {
+			t.Errorf("%s mode = %v %v", name, info.Mode().Perm(), err)
+		}
+	}
+	if entries, _ := os.ReadDir(filepath.Join(dir, "pki")); len(entries) != 3 {
+		t.Errorf("files under pki after a renewal = %d", len(entries))
+	}
 	if _, err := ParseCredentials(key, issued.CertificatePEM, []byte("junk")); err == nil {
 		t.Error("junk CA accepted")
 	}
