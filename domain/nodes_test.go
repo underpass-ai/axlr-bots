@@ -85,7 +85,9 @@ func TestNodeSnapshotRoundTrip(t *testing.T) {
 	bad := []func(*NodeSnapshot){
 		func(s *NodeSnapshot) { s.ID = "" },
 		func(s *NodeSnapshot) { s.HostName = "" },
-		func(s *NodeSnapshot) { s.Labels = map[string]string{"Bad": "x"} },
+		func(s *NodeSnapshot) { s.Labels, s.ReportedLabels = map[string]string{"Bad": "x"}, nil },
+		func(s *NodeSnapshot) { s.ReportedLabels = map[string]string{"Bad": "x"} },
+		func(s *NodeSnapshot) { s.OperatorLabels = map[string]string{"Bad": "x"} },
 		func(s *NodeSnapshot) { s.Status = "Gone" },
 		func(s *NodeSnapshot) { s.RegisteredAt = time.Time{} },
 		func(s *NodeSnapshot) { s.LastSeenAt = time.Time{} },

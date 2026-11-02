@@ -20,14 +20,15 @@ func NewHeartbeatNode(deps Dependencies) HeartbeatNode {
 // Execute records the heartbeat; an unknown node is a NotFoundError, so
 // the agent registers again.
 func (uc HeartbeatNode) Execute(ctx context.Context, id domain.NodeID) (domain.Node, error) {
-	node, err := uc.deps.Nodes.Get(ctx, id)
+	var node domain.Node
+	err := uc.deps.Nodes.Update(ctx, id, func(known *domain.Node) error {
+		if err := known.Heartbeat(uc.deps.Clock.Now()); err != nil {
+			return err
+		}
+		node = *known
+		return nil
+	})
 	if err != nil {
-		return domain.Node{}, err
-	}
-	if err := node.Heartbeat(uc.deps.Clock.Now()); err != nil {
-		return domain.Node{}, err
-	}
-	if err := uc.deps.Nodes.Save(ctx, node); err != nil {
 		return domain.Node{}, err
 	}
 	return node, uc.rec.nodeEvent(ctx, domain.EventNodeHeartbeat, node.ID(), nil)

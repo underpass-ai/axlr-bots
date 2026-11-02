@@ -360,6 +360,18 @@ func TestIssueClientSignsAClientCertificateOfTheFleet(t *testing.T) {
 	if leaf.Subject.CommonName != "control-plane" || leaf.Subject.Organization[0] != ClientOrganization {
 		t.Errorf("subject %v", leaf.Subject)
 	}
+	if IsNodeCertificate(leaf) {
+		t.Error("a client certificate passes for a node's")
+	}
+	nodeKey, csr, _ := NewNodeKeyAndRequest("web-1")
+	issued, err := ca.IssueNode(csr, "web-1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node, err := ParseCredentials(nodeKey, issued.CertificatePEM, ca.CertificatePEM())
+	if err != nil || !IsNodeCertificate(node.Certificate.Leaf) {
+		t.Errorf("a node certificate is not a node's: %v", err)
+	}
 	// No lifetime given: a node's.
 	if life := leaf.NotAfter.Sub(leaf.NotBefore); life < NodeCertificateLifetime || life > NodeCertificateLifetime+10*time.Minute {
 		t.Errorf("lifetime %v", life)

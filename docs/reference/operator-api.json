@@ -2773,9 +2773,21 @@
             "format": "date-time",
             "type": "string"
           },
+          "operatorLabels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
           "registeredAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "reportedLabels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
           },
           "revokedAt": {
             "format": "date-time",

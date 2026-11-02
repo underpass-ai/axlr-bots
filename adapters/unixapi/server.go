@@ -712,16 +712,21 @@ func (s *Server) registerNode(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &request) {
 		return
 	}
+	registration := application.NodeRegistration{ID: request.ID, HostName: request.HostName, Labels: request.Labels, Capabilities: request.Capabilities}
 	if identity, ok := identityOf(r); ok {
-		if request.ID == "" {
-			request.ID = identity.ID.String()
+		if registration.ID == "" {
+			registration.ID = identity.ID.String()
 		}
-		if request.ID != identity.ID.String() {
-			respond(w, 0, nil, domain.ForbiddenError{Reason: "the certificate is for node " + identity.ID.String() + ", the registration names " + request.ID})
+		if registration.ID != identity.ID.String() {
+			respond(w, 0, nil, domain.ForbiddenError{Reason: "the certificate is for node " + identity.ID.String() + ", the registration names " + registration.ID})
 			return
 		}
+		// A node the control plane no longer knows is pinned to the
+		// certificate it registers with; without the serial its next
+		// call would be refused as not the current one.
+		registration.CertificateSerial, registration.CertificateNotAfter = identity.Serial, identity.NotAfter
 	}
-	node, err := application.NewRegisterNode(s.service.Dependencies()).Execute(r.Context(), application.NodeRegistration{ID: request.ID, HostName: request.HostName, Labels: request.Labels, Capabilities: request.Capabilities})
+	node, err := application.NewRegisterNode(s.service.Dependencies()).Execute(r.Context(), registration)
 	if err != nil {
 		respond(w, 0, nil, err)
 		return

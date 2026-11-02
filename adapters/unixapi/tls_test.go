@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -332,7 +334,111 @@ func TestTLSRefusals(t *testing.T) {
 	if _, err := NewTLSClient(f.url, badConfig).Heartbeat(ctx, "web-1"); !domain.IsForbidden(err) || !strings.Contains(err.Error(), "common name") {
 		t.Errorf("bad common name: %v", err)
 	}
+	// A client certificate of the fleet's own services is signed by the
+	// same CA for client auth, but it is no node's: whatever its common
+	// name says, it registers nothing.
+	clientKey, clientCert, err := f.ca.IssueClient("web-9", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientCreds, _ := pki.ParseCredentials(clientKey, clientCert, f.ca.CertificatePEM())
+	clientConfig, _ := clientCreds.ClientTLSConfig()
+	service := NewTLSClient(f.url, clientConfig)
+	if _, err := service.Register(ctx, application.NodeRegistration{HostName: "h"}); !domain.IsForbidden(err) || !strings.Contains(err.Error(), "not issued to a node") {
+		t.Errorf("client certificate register: %v", err)
+	}
+	if _, err := service.Heartbeat(ctx, "web-9"); !domain.IsForbidden(err) {
+		t.Errorf("client certificate heartbeat: %v", err)
+	}
+	if listed, err := f.operator.ListNodes(ctx); err != nil || slices.ContainsFunc(listed, func(n domain.NodeSnapshot) bool { return n.ID == "web-9" }) {
+		t.Errorf("a client certificate made a node: %v %+v", err, listed)
+	}
 	_ = tls.VersionTLS13
+}
+
+// A node whose record the control plane lost (a restored backup, a
+// deleted file) registers again with the certificate it holds and is
+// pinned to it, instead of being taken in once and refused as "not the
+// current certificate" on every call after.
+func TestAForgottenNodeRegistersAgainWithItsCertificate(t *testing.T) {
+	f := serveFleet(t)
+	ctx := context.Background()
+	creds, node := f.enroll(t, f.token(t, "web-1", map[string]string{"zone": "eu"}))
+	registered, err := node.Register(ctx, application.NodeRegistration{HostName: "web-1.example", Labels: map[string]string{"zone": "us", "host": "x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The enrollment's labels win over the ones the node reports.
+	if registered.Labels["zone"] != "eu" || registered.Labels["host"] != "x" || registered.ReportedLabels["zone"] != "us" {
+		t.Errorf("labels = %+v", registered)
+	}
+	if err := os.Remove(filepath.Join(f.state, "nodes", "web-1.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := node.Heartbeat(ctx, "web-1"); !domain.IsNotFound(err) {
+		t.Fatalf("heartbeat of a forgotten node: %v", err)
+	}
+	again, err := node.Register(ctx, application.NodeRegistration{HostName: "web-1.example"})
+	if err != nil || again.CertificateSerial != creds.Serial || again.Status != "Online" {
+		t.Fatalf("register again: %v %+v", err, again)
+	}
+	for range 2 {
+		if beat, err := node.Heartbeat(ctx, "web-1"); err != nil || beat.Status != "Online" {
+			t.Fatalf("heartbeat after registering again: %v %+v", err, beat)
+		}
+	}
+	got, err := f.operator.GetNode(ctx, "web-1")
+	if err != nil || got.CertificateSerial != creds.Serial || got.CertificateNotAfter == nil || !got.CertificateNotAfter.Equal(creds.NotAfter) {
+		t.Errorf("node = %v %+v", err, got)
+	}
+	// Pinned: another certificate for the same id is refused now.
+	_, other := f.enroll(t, f.token(t, "web-1", nil))
+	if _, err := node.Heartbeat(ctx, "web-1"); !domain.IsForbidden(err) {
+		t.Errorf("superseded certificate: %v", err)
+	}
+	if _, err := other.Heartbeat(ctx, "web-1"); err != nil {
+		t.Errorf("current certificate: %v", err)
+	}
+}
+
+// Heartbeats that read the node before a revoke and write it after
+// would bring a revoked node back Online; node writes are serialised,
+// so the record ends revoked whatever the order.
+func TestHeartbeatsRacingARevokeLeaveTheNodeRevoked(t *testing.T) {
+	state := t.TempDir()
+	deps, err := compose.Dependencies(state, "/nonexistent/axlr-tui", "test:api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := application.NewRegisterNode(deps).Execute(ctx, application.NodeRegistration{ID: "web-1", HostName: "web-1"}); err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range 50 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, _ = application.NewHeartbeatNode(deps).Execute(ctx, "web-1")
+		}()
+	}
+	revoked := make(chan error, 1)
+	go func() {
+		<-start
+		_, err := application.NewRevokeNode(deps).Execute(ctx, "web-1")
+		revoked <- err
+	}()
+	close(start)
+	wg.Wait()
+	if err := <-revoked; err != nil {
+		t.Fatal(err)
+	}
+	node, err := filestore.NewNodeRepository(state).Get(ctx, "web-1")
+	if err != nil || !node.IsRevoked() {
+		t.Errorf("node = %v %+v", err, node.Snapshot())
+	}
 }
 
 func TestDaemonRefusesTLSWithoutAConfiguration(t *testing.T) {

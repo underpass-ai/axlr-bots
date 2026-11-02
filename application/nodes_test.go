@@ -104,6 +104,79 @@ func TestMarkOfflineNodes(t *testing.T) {
 	}
 }
 
+func TestRegisterPinsTheCertificateOfANewNodeOnly(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	notAfter := t0.Add(90 * 24 * time.Hour)
+	first := registration("web-1")
+	first.CertificateSerial, first.CertificateNotAfter = "ab12", notAfter
+	node, err := NewRegisterNode(h.deps).Execute(ctx, first)
+	if err != nil || node.CertificateSerial() != "ab12" || !node.CertificateExpiry().Equal(notAfter) || !node.IsOnline() || !node.AcceptsCertificate("ab12") {
+		t.Fatalf("new node: %v %+v", err, node.Snapshot())
+	}
+	// A known node keeps the serial of its enrollment whatever the
+	// registration carries.
+	again := registration("web-1")
+	again.CertificateSerial, again.CertificateNotAfter = "cd34", notAfter.Add(time.Hour)
+	if node, err := NewRegisterNode(h.deps).Execute(ctx, again); err != nil || node.CertificateSerial() != "ab12" || !node.CertificateExpiry().Equal(notAfter) {
+		t.Errorf("known node: %v %+v", err, node.Snapshot())
+	}
+	// Over the socket there is no certificate and nothing is pinned.
+	if node := onlineNode(t, h, "web-2"); node.CertificateSerial() != "" || !node.CertificateExpiry().IsZero() {
+		t.Errorf("socket node: %+v", node.Snapshot())
+	}
+}
+
+func TestEnrollmentLabelsWinOverRegisteredOnes(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	token := mint(t, h, "web-2", map[string]string{"zone": "eu"})
+	if _, err := NewEnrollNode(h.deps).Execute(ctx, EnrollmentRequest{TokenID: token.ID.String(), Secret: token.Secret, HostName: "web-2", CSRPEM: []byte("CSR")}); err != nil {
+		t.Fatal(err)
+	}
+	node, err := NewRegisterNode(h.deps).Execute(ctx, NodeRegistration{ID: "web-2", HostName: "web-2", Labels: map[string]string{"zone": "us", "host": "x"}})
+	if err != nil || node.Labels()["zone"] != "eu" || node.Labels()["host"] != "x" {
+		t.Errorf("labels = %v %v", err, node.Labels())
+	}
+	stored, _ := h.nodes.Get(ctx, "web-2")
+	if snapshot := stored.Snapshot(); snapshot.Labels["zone"] != "eu" || snapshot.ReportedLabels["zone"] != "us" || snapshot.OperatorLabels["zone"] != "eu" {
+		t.Errorf("stored = %+v", snapshot)
+	}
+}
+
+// staleNodes lists the nodes as they were before a heartbeat or a
+// deletion that landed since.
+type staleNodes struct {
+	*memoryNodes
+	listed []domain.Node
+}
+
+func (s staleNodes) List(context.Context) ([]domain.Node, error) { return s.listed, nil }
+
+func TestMarkOfflineChecksTheNodeAgainBeforeWriting(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	silent := onlineNode(t, h, "web-1")
+	gone := onlineNode(t, h, "web-2")
+	h.clock.now = t0.Add(90 * time.Second)
+	if _, err := NewHeartbeatNode(h.deps).Execute(ctx, "web-1"); err != nil {
+		t.Fatal(err)
+	}
+	delete(h.nodes.nodes, "web-2")
+	h.deps.Nodes = staleNodes{memoryNodes: h.nodes, listed: []domain.Node{silent, gone}}
+	h.log.events = nil
+	offline, err := NewMarkOfflineNodes(h.deps).Execute(ctx, 0)
+	if err != nil || len(offline) != 0 {
+		t.Errorf("offline = %v %v", offline, err)
+	}
+	if node, _ := h.nodes.Get(ctx, "web-1"); !node.IsOnline() {
+		t.Errorf("a heartbeat since the listing was overwritten: %+v", node.Snapshot())
+	}
+	if len(h.log.events) != 0 {
+		t.Errorf("events = %v", h.log.eventTypes())
+	}
+}
+
 func TestNodePortErrors(t *testing.T) {
 	h := newHarness()
 	ctx := context.Background()

@@ -72,7 +72,7 @@ The same `axlr-node`, from the node image ([`distribution/node.Dockerfile`](../.
 | Identity | a token minted for the host's node id, `axlr-node enroll` once | a token per replica in a Secret; the first start enrolls (`--token-file`), refusing a token for another node id before sending it; later starts keep the certificate |
 | Node id | the token's | `<idPrefix><pod name>`: a StatefulSet's ordinal, stable across restarts |
 | State | `~/.local/state/axlr-node` | a PVC per replica (`volumeClaimTemplates`); AXLR's own state on a tmpfs |
-| Labels | the token's and `AXLR_NODE_LABELS` | the token's, plus `namespace`, `app` and `pod` from the Downward API |
+| Labels | the token's and `AXLR_NODE_LABELS`; the token's win on a shared key ([labels](../reference/node-protocol.md#labels)) | the token's, plus `namespace`, `app` and `pod` from the Downward API |
 | Which bots | those placed on it, and those placed on any node | those placed on it by name or selector only (`dedicated`) |
 | What the bots read | the host's files under the bot's workspace | the service's volume, mounted read-only as the bot's workspace (`sidecar.workspaces`) |
 | Network | outbound to the control plane | the same, under a NetworkPolicy: egress to DNS, the control plane and the model provider only |

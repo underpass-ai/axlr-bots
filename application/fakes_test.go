@@ -238,6 +238,7 @@ func (m *memoryExecutions) List(context.Context) ([]domain.Execution, error) {
 }
 
 type memoryNodes struct {
+	mu       sync.Mutex
 	nodes    map[domain.NodeID]domain.Node
 	fail     error
 	listFail error
@@ -260,6 +261,22 @@ func (m *memoryNodes) Get(_ context.Context, id domain.NodeID) (domain.Node, err
 		return domain.Node{}, domain.NotFoundError{Kind: "node", ID: id.String()}
 	}
 	return node, nil
+}
+
+func (m *memoryNodes) Update(ctx context.Context, id domain.NodeID, change func(*domain.Node) error) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	node, err := m.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := change(&node); err != nil {
+		if errors.Is(err, ErrNodeUnchanged) {
+			return nil
+		}
+		return err
+	}
+	return m.Save(ctx, node)
 }
 
 func (m *memoryNodes) List(context.Context) ([]domain.Node, error) {
