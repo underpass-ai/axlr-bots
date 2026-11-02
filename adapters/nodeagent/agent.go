@@ -83,7 +83,11 @@ func (a Agent) Run(ctx context.Context) error {
 		if !a.slots.acquire(ctx) {
 			return nil
 		}
-		assignment, found, err := a.Transport.NextAssignment(ctx, id, a.Options.pollWait())
+		// The poll is bounded a little past its wait: a connection that
+		// went half-open must not hold the loop for ever.
+		pollCtx, cancelPoll := context.WithTimeout(ctx, a.Options.pollWait()+10*time.Second)
+		assignment, found, err := a.Transport.NextAssignment(pollCtx, id, a.Options.pollWait())
+		cancelPoll()
 		if err != nil {
 			a.slots.release()
 			if ctx.Err() != nil {
@@ -175,7 +179,13 @@ func (a Agent) heartbeat(ctx context.Context, id domain.NodeID) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if _, err := a.Transport.Heartbeat(ctx, id); err != nil && ctx.Err() == nil {
+			// One heartbeat never outlasts the interval: a stalled call
+			// would keep the next from going out, and the control plane
+			// would mark the node Offline while it is up.
+			beatCtx, cancel := context.WithTimeout(ctx, a.Options.heartbeat())
+			_, err := a.Transport.Heartbeat(beatCtx, id)
+			cancel()
+			if err != nil && ctx.Err() == nil {
 				a.Options.log().Printf("node: heartbeat: %v", err)
 				if domain.IsNotFound(err) {
 					_ = a.register(ctx, id)
@@ -325,7 +335,11 @@ func (a Agent) renew(ctx context.Context, id domain.NodeID, execution domain.Exe
 // renewOnce renews the lease and relays the messages after the cursor;
 // it answers the new cursor, and true when the lease is lost for good.
 func (a Agent) renewOnce(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, after string) (string, bool) {
-	_, err := a.Transport.RenewLease(ctx, id, execution)
+	// A renewal never outlasts the interval, so a stalled one does not
+	// let the lease lapse while the next waits.
+	renewCtx, cancel := context.WithTimeout(ctx, a.Options.renew())
+	_, err := a.Transport.RenewLease(renewCtx, id, execution)
+	cancel()
 	if err == nil {
 		return a.relay(ctx, id, execution, after), false
 	}

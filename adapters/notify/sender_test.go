@@ -197,3 +197,21 @@ func TestACommandThatFailsSaysWhy(t *testing.T) {
 		t.Errorf("stderr is bounded: %d", len(err.Error()))
 	}
 }
+
+// A command sees the desktop session it needs, and none of the
+// daemon's secrets.
+func TestACommandGetsAMinimalEnvironment(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "leak")
+	t.Setenv("AXLR_BOTS_NATS_CREDS", "/secret/creds")
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "bus")
+	t.Setenv("LC_TIME", "C")
+	out := filepath.Join(t.TempDir(), "env")
+	target := commandTarget(t, "/bin/sh", "-c", `printf '%s|%s|%s|%s|%s' "$OPENROUTER_API_KEY" "$DBUS_SESSION_BUS_ADDRESS" "$AXLR_BOTS_NATS_CREDS" "$LC_TIME" "$AXLR_BOTS_EVENT" > "$1"`, "notify", out)
+	if err := NewSender().Send(context.Background(), target, delivery(t, target)); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(out)
+	if want := "|bus||C|" + domain.EventTaskWaitingApproval.String(); string(got) != want {
+		t.Errorf("environment = %q, want %q", got, want)
+	}
+}

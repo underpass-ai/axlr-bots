@@ -2,15 +2,20 @@ package nats
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/nats-io/nats-server/v2/server"
+	natsio "github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/underpass-ai/axlr-bots/adapters/bus/bustest"
 	"github.com/underpass-ai/axlr-bots/application"
@@ -20,7 +25,17 @@ import (
 // broker starts a NATS server with JetStream for one test.
 func broker(t *testing.T) *server.Server {
 	t.Helper()
-	s, err := server.NewServer(&server.Options{Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoLog: true, NoSigs: true})
+	return brokerWith(t, nil)
+}
+
+// brokerWith is broker with a change to the server's options.
+func brokerWith(t *testing.T, change func(*server.Options)) *server.Server {
+	t.Helper()
+	opts := &server.Options{Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoLog: true, NoSigs: true}
+	if change != nil {
+		change(opts)
+	}
+	s, err := server.NewServer(opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,4 +172,193 @@ func TestSubjectsAndWire(t *testing.T) {
 	if _, err := NewPublisher(Config{URL: "nats://127.0.0.1:1"}); err == nil {
 		t.Error("a publisher without an outbox")
 	}
+}
+
+// publisherOn starts a publisher on the broker with its own outbox.
+func publisherOn(t *testing.T, url string) *Publisher {
+	t.Helper()
+	publisher, err := NewPublisher(Config{URL: url, Outbox: filepath.Join(t.TempDir(), "outbox"), Name: "test", Log: log.New(os.Stderr, "", 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(publisher.Close)
+	return publisher
+}
+
+// drained waits for the publisher's outbox to empty.
+func drained(t *testing.T, publisher *Publisher, within time.Duration) {
+	t.Helper()
+	for deadline := time.Now().Add(within); len(publisher.box.sweep()) > 0; time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the outbox still holds %d pushes", len(publisher.box.sweep()))
+		}
+	}
+}
+
+// operatorJS is a JetStream client of the test's own, as an operator's.
+func operatorJS(t *testing.T, url string) jetstream.JetStream {
+	t.Helper()
+	conn, err := natsio.Connect(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(conn.Close)
+	js, err := jetstream.New(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return js
+}
+
+// streamMessages is how many pushes the stream holds.
+func streamMessages(t *testing.T, js jetstream.JetStream) uint64 {
+	t.Helper()
+	stream, err := js.Stream(context.Background(), DefaultStream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := stream.Info(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return info.State.Msgs
+}
+
+// A stream an operator deletes while the control plane runs is defined
+// again, and the push lands on it instead of being retried for ever.
+func TestADeletedStreamIsDefinedAgain(t *testing.T) {
+	url := broker(t).ClientURL()
+	publisher := publisherOn(t, url)
+	ctx := context.Background()
+	if err := publisher.Push(ctx, bustest.NodeA, application.NodePush{Execution: "exec-1"}); err != nil {
+		t.Fatal(err)
+	}
+	drained(t, publisher, 10*time.Second)
+	js := operatorJS(t, url)
+	if err := js.DeleteStream(ctx, DefaultStream); err != nil {
+		t.Fatal(err)
+	}
+	if err := publisher.Push(ctx, bustest.NodeA, application.NodePush{Execution: "exec-2"}); err != nil {
+		t.Fatal(err)
+	}
+	drained(t, publisher, 15*time.Second)
+	if got := streamMessages(t, js); got != 1 {
+		t.Errorf("the stream defined again holds %d pushes, want 1", got)
+	}
+}
+
+// writeOld puts in the outbox a push made age ago, as a control plane
+// stopped that long would have left it.
+func writeOld(t *testing.T, outboxDir string, node domain.NodeID, age time.Duration) string {
+	t.Helper()
+	dir := filepath.Join(outboxDir, token(node))
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, fmt.Sprintf("%020d-%012d.json", time.Now().Add(-age).UnixNano(), 1))
+	raw := `{"node": "` + node.String() + `", "payload": ` + string(encode(application.NodePush{Execution: "exec-old"})) + `}`
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// A push older than the stream keeps one is dropped from the outbox at
+// start, unpublished: the node resyncs when it comes back.
+func TestAnOutboxPushOlderThanTheRetentionIsDropped(t *testing.T) {
+	url := broker(t).ClientURL()
+	outboxDir := filepath.Join(t.TempDir(), "outbox")
+	old := writeOld(t, outboxDir, bustest.NodeA, 2*time.Hour)
+	recent := writeOld(t, outboxDir, bustest.NodeB, time.Minute)
+	var logs syncLog
+	publisher, err := NewPublisher(Config{URL: url, Outbox: outboxDir, Name: "test", Log: log.New(&logs, "", 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(publisher.Close)
+	if _, err := os.Stat(old); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the 2-h-old push is still in the outbox: %v", err)
+	}
+	drained(t, publisher, 10*time.Second)
+	if _, err := os.Stat(recent); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the recent push was not published: %v", err)
+	}
+	if got := streamMessages(t, operatorJS(t, url)); got != 1 {
+		t.Errorf("the stream holds %d pushes, want only the recent one", got)
+	}
+	if !strings.Contains(logs.String(), "dropped 1 pushes older than") {
+		t.Errorf("logs = %q", logs.String())
+	}
+	// One that aged while it waited in the queue is dropped there.
+	e := entry{id: fmt.Sprintf("%020d-%012d", time.Now().Add(-2*time.Hour).UnixNano(), 9), node: bustest.NodeA, payload: encode(application.NodePush{Execution: "exec-stale"})}
+	if !e.olderThan(Retention, time.Now()) || (entry{id: "not-a-time"}).olderThan(Retention, time.Now()) {
+		t.Error("olderThan")
+	}
+	publisher.enqueue(e)
+	for deadline := time.Now().Add(5 * time.Second); !strings.Contains(logs.String(), e.id); time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the stale queued push was not dropped: %q", logs.String())
+		}
+	}
+	if got := streamMessages(t, operatorJS(t, url)); got != 1 {
+		t.Errorf("the stream holds %d pushes after the stale one", got)
+	}
+}
+
+// A push the broker refuses for good is dropped after a few tries, and
+// the one queued behind it goes out.
+func TestARefusedPushDoesNotHoldBackTheNext(t *testing.T) {
+	url := brokerWith(t, func(o *server.Options) { o.MaxPayload = 2048 }).ClientURL()
+	publisher := publisherOn(t, url)
+	big := []byte(`"` + strings.Repeat("x", 4096) + `"`)
+	bad, err := publisher.box.add(bustest.NodeA, publisher.seq.Add(1), big)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publisher.enqueue(bad)
+	if err := publisher.Push(context.Background(), bustest.NodeA, application.NodePush{Execution: "exec-good"}); err != nil {
+		t.Fatal(err)
+	}
+	drained(t, publisher, 20*time.Second)
+	if got := streamMessages(t, operatorJS(t, url)); got != 1 {
+		t.Errorf("the stream holds %d pushes, want the good one", got)
+	}
+}
+
+func TestRefusalsAreTheBrokersForGood(t *testing.T) {
+	for _, tc := range []struct {
+		err              error
+		refused, suspect bool
+	}{
+		{&jetstream.APIError{Code: 400, ErrorCode: 10054}, true, true},
+		{fmt.Errorf("wrapped: %w", &jetstream.APIError{Code: 404}), true, true},
+		{&jetstream.APIError{Code: 408}, false, false},
+		{&jetstream.APIError{Code: 503}, false, false},
+		{jetstream.ErrNoStreamResponse, false, true},
+		{natsio.ErrMaxPayload, true, false},
+		{context.DeadlineExceeded, false, false},
+	} {
+		if refused(tc.err) != tc.refused || streamSuspect(tc.err) != tc.suspect {
+			t.Errorf("%v: refused %v, suspect %v", tc.err, refused(tc.err), streamSuspect(tc.err))
+		}
+	}
+}
+
+// syncLog is a log the publisher's goroutine writes while the test
+// reads it.
+type syncLog struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (l *syncLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *syncLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
 }

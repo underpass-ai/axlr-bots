@@ -195,7 +195,22 @@ func TestServerRefusesBadBodies(t *testing.T) {
 			t.Errorf("%s %s: %d %s", tc.method, tc.path, rec.Code, rec.Body)
 		}
 	}
+	// A body past the bound is too large, not malformed: one byte over
+	// is 413, and the same route's small malformed body stays 400.
 	rec := httptest.NewRecorder()
+	big := `{"name": "` + strings.Repeat("x", maxBodyBytes) + `"}`
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/bots", strings.NewReader(big[:maxBodyBytes+1])))
+	var failure ErrorResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &failure)
+	if rec.Code != http.StatusRequestEntityTooLarge || failure.Kind != KindTooLarge {
+		t.Errorf("1 MiB + 1: %d %s", rec.Code, failure.Kind)
+	}
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/bots", strings.NewReader(`{"name": `+strings.Repeat(" ", 1024))))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("1 KiB malformed: %d %s", rec.Code, rec.Body)
+	}
+	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if rec.Code != http.StatusOK {
 		t.Errorf("healthz = %d", rec.Code)
