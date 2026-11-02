@@ -158,7 +158,11 @@ func taskReconcile(ctx context.Context, app application.Dependencies, args []str
 	if err != nil {
 		return fail(stderr, err)
 	}
-	printJSON(stdout, reconcileOutput{Failed: taskIDStrings(result.Failed), Skipped: taskIDStrings(result.Skipped)})
+	orphaned := make([]string, 0, len(result.Orphaned))
+	for _, id := range result.Orphaned {
+		orphaned = append(orphaned, id.String())
+	}
+	printJSON(stdout, reconcileOutput{Failed: taskIDStrings(result.Failed), Skipped: taskIDStrings(result.Skipped), Orphaned: orphaned})
 	return exitOK
 }
 

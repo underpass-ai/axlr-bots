@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -220,6 +221,220 @@ func TestReconcileTasksPortErrors(t *testing.T) {
 		arrange(h)
 		if _, err := NewReconcileTasks(h.deps).Execute(ctx, 0); !errors.Is(err, errBoom) {
 			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+// runningExecution saves a Running execution of the task that no task
+// save followed: what a crash between the two saves leaves.
+func runningExecution(t *testing.T, h *harness, id domain.ExecutionID, task domain.TaskID, bot domain.BotID, startedAt time.Time) {
+	t.Helper()
+	execution, err := domain.NewExecution(id, task, bot, startedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.execs.Save(context.Background(), execution); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A Running execution its task does not run, for a task still Pending,
+// one already Completed or one that is gone, is failed once older than
+// the grace; the tasks are left as they are and a younger one waits.
+func TestReconcileTasksFailsTheOrphanedExecutions(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	bot := enabledBot(t, h)
+	pending := submit(t, h, bot, "pending").Task
+	completed, err := NewRunTask(h.deps).Execute(ctx, submit(t, h, bot, "completed").Task.ID())
+	if err != nil || completed.Task.Status() != domain.TaskCompleted {
+		t.Fatalf("run: %v %s", err, completed.Task.Status())
+	}
+	runningExecution(t, h, "exec-a-orphan", pending.ID(), bot.ID(), t0)
+	runningExecution(t, h, "exec-b-orphan", completed.Task.ID(), bot.ID(), t0)
+	runningExecution(t, h, "exec-c-gone", "task-gone", bot.ID(), t0)
+	runningExecution(t, h, "exec-d-young", pending.ID(), bot.ID(), t0.Add(10*time.Minute))
+	h.clock.now = t0.Add(17 * time.Minute)
+	result, err := NewReconcileTasks(h.deps).Execute(ctx, 0)
+	if err != nil || len(result.Failed) != 0 || len(result.Orphaned) != 3 || result.Orphaned[0] != "exec-a-orphan" || result.Orphaned[1] != "exec-b-orphan" || result.Orphaned[2] != "exec-c-gone" {
+		t.Fatalf("result = %+v %v", result, err)
+	}
+	for id, want := range map[domain.ExecutionID]string{"exec-a-orphan": "is Pending and does not run it", "exec-b-orphan": "is Completed and does not run it", "exec-c-gone": "task-gone is gone"} {
+		execution, _ := h.execs.Get(ctx, id)
+		if execution.Outcome() != domain.ExecutionFailed || !strings.HasPrefix(execution.FailureReason(), "reconciled: orphan: ") || !strings.HasSuffix(execution.FailureReason(), want) {
+			t.Errorf("%s = %s %q", id, execution.Outcome(), execution.FailureReason())
+		}
+	}
+	if young, _ := h.execs.Get(ctx, "exec-d-young"); young.Outcome() != domain.ExecutionRunning {
+		t.Errorf("the young one = %s", young.Outcome())
+	}
+	if got, _ := h.tasks.Get(ctx, pending.ID()); got.Status() != domain.TaskPending {
+		t.Errorf("pending = %s", got.Status())
+	}
+	if got, _ := h.tasks.Get(ctx, completed.Task.ID()); got.Status() != domain.TaskCompleted {
+		t.Errorf("completed = %s", got.Status())
+	}
+	audits := 0
+	for _, audit := range h.log.audits {
+		if audit.Action == "execution.orphaned" {
+			audits++
+		}
+	}
+	if audits != 3 {
+		t.Errorf("audits = %+v", h.log.audits)
+	}
+	// The pass stops at a store error.
+	h.clock.now = t0.Add(time.Hour)
+	h.execs.fail = errBoom
+	if _, err := NewReconcileTasks(h.deps).Execute(ctx, 0); !errors.Is(err, errBoom) {
+		t.Errorf("save: %v", err)
+	}
+	h.execs.fail, h.execs.listFail = nil, errBoom
+	if _, err := NewReconcileTasks(h.deps).Execute(ctx, 0); !errors.Is(err, errBoom) {
+		t.Errorf("list: %v", err)
+	}
+}
+
+// A node's report lands while reconcile fails the same execution: the
+// report's Completed stands, and the task ends once, Completed.
+func TestReconcileTasksLeavesAReportThatLandsMeanwhile(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	bot := enabledBot(t, h)
+	node := onlineNode(t, h, "web-1")
+	task := submit(t, h, bot, "k").Task
+	assignment, _, _ := NewNextAssignment(h.deps).Execute(ctx, node.ID())
+	h.clock.now = t0.Add(LeaseDuration + time.Second)
+	h.execs.beforeSave = func(e domain.Execution) {
+		if e.Outcome() != domain.ExecutionFailed {
+			return
+		}
+		h.execs.beforeSave = nil
+		if _, err := NewReportExecution(h.deps).Execute(ctx, node.ID(), assignment.ExecutionID, ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "done"}}); err != nil {
+			t.Fatalf("report: %v", err)
+		}
+	}
+	result, err := NewReconcileTasks(h.deps).Execute(ctx, 0)
+	if err != nil || len(result.Failed) != 0 {
+		t.Fatalf("reconcile = %+v %v", result, err)
+	}
+	got, _ := h.tasks.Get(ctx, task.ID())
+	execution, _ := h.execs.Get(ctx, assignment.ExecutionID)
+	if got.Status() != domain.TaskCompleted || execution.Outcome() != domain.ExecutionCompleted {
+		t.Errorf("task %s, execution %s", got.Status(), execution.Outcome())
+	}
+	ends := 0
+	for _, event := range h.log.events {
+		if event.TaskID == task.ID() && (event.Type == domain.EventTaskCompleted || event.Type == domain.EventTaskFailed) {
+			ends++
+		}
+	}
+	if ends != 1 {
+		t.Errorf("events = %v", h.log.eventTypes())
+	}
+	// A report the other way round: reconcile ended it first, and the
+	// report that read it Running is answered as late.
+	other := submit(t, h, bot, "k-2").Task
+	second, _, _ := NewNextAssignment(h.deps).Execute(ctx, node.ID())
+	h.clock.now = h.clock.now.Add(LeaseDuration + time.Second)
+	h.execs.beforeSave = func(e domain.Execution) {
+		if e.Outcome() != domain.ExecutionCompleted {
+			return
+		}
+		h.execs.beforeSave = nil
+		if _, err := NewReconcileTasks(h.deps).Execute(ctx, 0); err != nil {
+			t.Fatalf("reconcile: %v", err)
+		}
+	}
+	late, err := NewReportExecution(h.deps).Execute(ctx, node.ID(), second.ExecutionID, ExecutionReport{Outcome: domain.ExecutionCompleted})
+	if err != nil || late.Accepted || late.Execution.Outcome() != domain.ExecutionFailed || late.Task.ID() != other.ID() || late.Task.Status() != domain.TaskFailed {
+		t.Errorf("late = %v %+v", err, late)
+	}
+}
+
+// A task the pass listed Running that a cancel ended before its save is
+// left as the cancel left it.
+func TestReconcileTasksRereadsBeforeItSaves(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	bot := enabledBot(t, h)
+	listed, _ := leftRunning(t, h, bot, "k", t0)
+	if _, err := NewCancelTask(h.deps).Execute(ctx, listed.ID()); err != nil {
+		t.Fatal(err)
+	}
+	h.clock.now = t0.Add(time.Hour)
+	if failed, err := NewReconcileTasks(h.deps).reconcile(ctx, listed, 0); err != nil || failed {
+		t.Errorf("reconcile = %v %v", failed, err)
+	}
+	if got, _ := h.tasks.Get(ctx, listed.ID()); got.Status() != domain.TaskCancelled {
+		t.Errorf("task = %s", got.Status())
+	}
+}
+
+// A delegated task runs until its grant's deadline, whatever its bot's
+// own timeout: reconcile fails it a minute after that deadline.
+func TestReconcileTasksBoundsADelegatedTaskByItsDeadline(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	onlineNode(t, h, "web-1")
+	a := delegationBot(t, h, "bot-a", &domain.DelegationSnapshot{To: []string{"bot-b"}, BudgetShare: 1}, BudgetsDefinition{TaskTimeoutSeconds: 120})
+	delegationBot(t, h, "bot-b", nil, BudgetsDefinition{TaskTimeoutSeconds: 900})
+	parent := runOnNode(t, h, a, "web-1", "ask-1")
+	h.clock.now = t0.Add(60 * time.Second)
+	answer := delegate(t, h, "web-1", parent.ExecutionID, "bot-b", "Quick")
+	child := nextFor(t, h, "web-1")
+	if child.Run == nil || child.Run.TaskID != answer.TaskID || child.Run.Timeout != 60*time.Second {
+		t.Fatalf("child = %+v", child.Run)
+	}
+	// The node renews the child's lease; the deadline is t0+120s.
+	h.clock.now = t0.Add(150 * time.Second)
+	if _, err := NewRenewLease(h.deps).Execute(ctx, "web-1", child.ExecutionID); err != nil {
+		t.Fatal(err)
+	}
+	h.clock.now = answer.Grant.Deadline.Add(ReconcileGrace - time.Second)
+	if result, err := NewReconcileTasks(h.deps).Execute(ctx, 0); err != nil || containsTask(result.Failed, answer.TaskID) {
+		t.Fatalf("within a minute of the deadline: %+v %v", result, err)
+	}
+	h.clock.now = answer.Grant.Deadline.Add(ReconcileGrace + time.Second)
+	if result, err := NewReconcileTasks(h.deps).Execute(ctx, 0); err != nil || !containsTask(result.Failed, answer.TaskID) {
+		t.Fatalf("a minute past the deadline: %+v %v", result, err)
+	}
+	if got, _ := h.tasks.Get(ctx, answer.TaskID); got.Status() != domain.TaskFailed || !strings.HasPrefix(got.FailureReason(), "reconciled: ") {
+		t.Errorf("child = %s %q", got.Status(), got.FailureReason())
+	}
+}
+
+// A child with less than a second left is not handed to a node, which
+// would read a zero timeout as none, nor run in process: it ends by its
+// deadline instead.
+func TestAChildWithUnderASecondLeftIsNotRun(t *testing.T) {
+	for name, run := range map[string]func(*harness, domain.TaskID) error{
+		"on a node": func(h *harness, _ domain.TaskID) error {
+			if assignment, found, err := NewNextAssignment(h.deps).Execute(context.Background(), "web-1"); err != nil || found {
+				return fmt.Errorf("assigned: %v %v %+v", err, found, assignment)
+			}
+			return nil
+		},
+		"in process": func(h *harness, id domain.TaskID) error {
+			if _, err := NewRunTask(h.deps).Execute(context.Background(), id); !isState(err) {
+				return fmt.Errorf("ran: %v", err)
+			}
+			return nil
+		},
+	} {
+		h := newHarness()
+		onlineNode(t, h, "web-1")
+		a := delegationBot(t, h, "bot-a", &domain.DelegationSnapshot{To: []string{"bot-b"}, BudgetShare: 1}, BudgetsDefinition{TaskTimeoutSeconds: 120})
+		delegationBot(t, h, "bot-b", nil, BudgetsDefinition{TaskTimeoutSeconds: 900})
+		parent := runOnNode(t, h, a, "web-1", "ask-1")
+		h.clock.now = t0.Add(60 * time.Second)
+		answer := delegate(t, h, "web-1", parent.ExecutionID, "bot-b", "Quick")
+		h.clock.now = answer.Grant.Deadline.Add(-500 * time.Millisecond)
+		if err := run(h, answer.TaskID); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+		if got, _ := h.tasks.Get(context.Background(), answer.TaskID); got.Status() != domain.TaskFailed || !strings.HasPrefix(got.FailureReason(), "deadline:") {
+			t.Errorf("%s: child = %s %q", name, got.Status(), got.FailureReason())
 		}
 	}
 }

@@ -475,6 +475,11 @@ func TestTaskReconcileFailsWhatACrashLeftRunning(t *testing.T) {
 	// The example bot's timeout is 900s: the default grace is 16 minutes.
 	crashed(t, state, "task-old", time.Now().Add(-time.Hour))
 	crashed(t, state, "task-young", time.Now().Add(-time.Minute))
+	// An execution saved Running whose task never was: an orphan.
+	orphan, _ := domain.NewExecution("exec-orphan", "task-never", "bot", time.Now().Add(-time.Hour))
+	if err := filestore.NewExecutionRepository(state).Save(context.Background(), orphan); err != nil {
+		t.Fatal(err)
+	}
 	tracePath := filepath.Join(state, "traces", "exec-task-old.jsonl")
 	_ = os.MkdirAll(filepath.Dir(tracePath), 0o755)
 	_ = os.WriteFile(tracePath, []byte(`{"type":"session","session":"sess-1"}`+"\n"), 0o644)
@@ -489,13 +494,20 @@ func TestTaskReconcileFailsWhatACrashLeftRunning(t *testing.T) {
 	if skipped, _ := json.Marshal(out["skipped"]); string(skipped) != `["task-young"]` {
 		t.Errorf("skipped = %s", skipped)
 	}
+	if orphaned, _ := json.Marshal(out["orphaned"]); string(orphaned) != `["exec-orphan"]` {
+		t.Errorf("orphaned = %s", orphaned)
+	}
+	code, execution := c.json("execution", "get", "exec-orphan")
+	if reason, _ := execution["failureReason"].(string); code != exitOK || execution["outcome"] != "Failed" || !strings.HasPrefix(reason, "reconciled: orphan: ") {
+		t.Errorf("orphan: %d %v", code, execution)
+	}
 	code, task := c.json("task", "get", "task-old")
 	reason, _ := task["failureReason"].(string)
 	// The age is read from the wall clock: a slow disk may make it 1h0m1s.
 	if code != exitOK || task["status"] != "Failed" || !strings.HasPrefix(reason, "reconciled: the control plane found it Running after 1h0m") || !strings.HasSuffix(reason, "; the process that ran it is gone") {
 		t.Errorf("old task: %d %v", code, task)
 	}
-	code, execution := c.json("execution", "get", "exec-task-old")
+	code, execution = c.json("execution", "get", "exec-task-old")
 	if code != exitOK || execution["outcome"] != "Failed" || execution["failureReason"] != reason || execution["tracePath"] != tracePath || execution["endedAt"] == nil {
 		t.Errorf("old execution: %d %v", code, execution)
 	}
@@ -521,6 +533,9 @@ func TestTaskReconcileFailsWhatACrashLeftRunning(t *testing.T) {
 	code, out = c.json("task", "reconcile")
 	if failed, _ := json.Marshal(out["failed"]); code != exitOK || string(failed) != `[]` {
 		t.Errorf("second reconcile: %d %v", code, out)
+	}
+	if orphaned, _ := json.Marshal(out["orphaned"]); string(orphaned) != `[]` {
+		t.Errorf("second reconcile orphaned = %s", orphaned)
 	}
 	code, out = c.json("task", "reconcile", "--grace", "30s")
 	if failed, _ := json.Marshal(out["failed"]); code != exitOK || string(failed) != `["task-young"]` {

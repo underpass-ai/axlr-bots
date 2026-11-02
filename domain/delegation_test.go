@@ -221,7 +221,11 @@ func TestADelegatedTaskKeepsItsLineageChildrenAndDeadline(t *testing.T) {
 	if !task.DeadlinePassed(t0.Add(time.Minute)) {
 		t.Error("the deadline has come")
 	}
-	if err := task.MissDeadline(t0.Add(time.Minute)); err != nil || task.Status() != TaskFailed || task.FailureReason() == "" {
+	// Less than a second left is no time to run.
+	if task.DeadlinePassed(t0.Add(time.Minute-MinRunWindow)) || !task.DeadlinePassed(t0.Add(time.Minute-500*time.Millisecond)) {
+		t.Error("the run window is one second")
+	}
+	if err := task.MissDeadline(t0.Add(time.Minute - 500*time.Millisecond)); err != nil || task.Status() != TaskFailed || task.FailureReason() == "" {
 		t.Fatalf("missed: %v %s", err, task.Status())
 	}
 	if err := task.MissDeadline(t0.Add(time.Hour)); err == nil {

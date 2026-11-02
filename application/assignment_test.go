@@ -200,24 +200,61 @@ func TestApproveTaskQueuesTheDecisionForTheNode(t *testing.T) {
 	}
 }
 
-func TestNextAssignmentRefusesABrokenQueuedDecision(t *testing.T) {
+// An execution queued for the node that cannot run (its task never
+// took it: the process died between the two saves; or it decides a call
+// that is not there) is failed as an orphan, and the node gets its next
+// task instead of an error on every poll.
+func TestNextAssignmentFailsAnOrphanAndHandsOutThePendingTask(t *testing.T) {
 	h := newHarness()
 	ctx := context.Background()
 	bot := enabledBot(t, h)
 	node := onlineNode(t, h, "web-1")
 	task := submit(t, h, bot, "k").Task
-	// An execution assigned to the node that claims to decide, but its
-	// task has no earlier execution with a pending call.
-	execution, _ := domain.NewExecution("exec-odd", task.ID(), bot.ID(), t0)
-	_ = execution.Decide("approve")
-	_ = execution.AssignTo(node.ID())
-	_ = h.execs.Save(ctx, execution)
-	stored, _ := h.tasks.Get(ctx, task.ID())
-	_ = stored.Start("exec-odd", t0)
-	_ = h.tasks.Save(ctx, stored)
-	var serr domain.StateError
-	if _, _, err := NewNextAssignment(h.deps).Execute(ctx, node.ID()); !errors.As(err, &serr) {
-		t.Errorf("broken decision: %v", err)
+	// A decision queued for the node whose task is still Pending: it was
+	// never saved with it.
+	orphan, _ := domain.NewExecution("exec-odd", task.ID(), bot.ID(), t0)
+	_ = orphan.Decide("approve")
+	_ = orphan.AssignTo(node.ID())
+	_ = h.execs.Save(ctx, orphan)
+	// A decision its Running task does hold, with no earlier execution
+	// holding a pending call.
+	broken := submit(t, h, bot, "k-broken").Task
+	decide, _ := domain.NewExecution("exec-odder", broken.ID(), bot.ID(), t0)
+	_ = decide.Decide("approve")
+	_ = decide.AssignTo(node.ID())
+	_ = h.execs.Save(ctx, decide)
+	_ = broken.Start("exec-odder", t0)
+	_ = h.tasks.Save(ctx, broken)
+	// One whose task is gone.
+	lost, _ := domain.NewExecution("exec-gone", "task-gone", bot.ID(), t0)
+	_ = lost.AssignTo(node.ID())
+	_ = h.execs.Save(ctx, lost)
+	assignment, found, err := NewNextAssignment(h.deps).Execute(ctx, node.ID())
+	if err != nil || !found || assignment.Run == nil || assignment.Run.TaskID != task.ID() {
+		t.Fatalf("assignment = %v %v %+v", err, found, assignment)
+	}
+	for _, id := range []domain.ExecutionID{"exec-odd", "exec-odder", "exec-gone"} {
+		failed, _ := h.execs.Get(ctx, id)
+		if failed.Outcome() != domain.ExecutionFailed || !strings.HasPrefix(failed.FailureReason(), "orphan: ") {
+			t.Errorf("%s = %s %q", id, failed.Outcome(), failed.FailureReason())
+		}
+	}
+	orphaned := 0
+	for _, audit := range h.log.audits {
+		if audit.Action == "execution.orphaned" {
+			orphaned++
+		}
+	}
+	if orphaned != 3 {
+		t.Errorf("audits = %+v", h.log.audits)
+	}
+	// An orphan that cannot be saved failed ends the poll with the error.
+	another, _ := domain.NewExecution("exec-odd-2", task.ID(), bot.ID(), t0)
+	_ = another.AssignTo(node.ID())
+	_ = h.execs.Save(ctx, another)
+	h.execs.fail = errors.New("disk full")
+	if _, _, err := NewNextAssignment(h.deps).Execute(ctx, node.ID()); err == nil || !strings.Contains(err.Error(), "disk full") {
+		t.Errorf("a store error: %v", err)
 	}
 }
 

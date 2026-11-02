@@ -25,18 +25,22 @@ func NewExecutionRepository(stateDir string) ExecutionRepository {
 // Save writes the execution atomically. An execution that has ended
 // never runs again, so a Running copy of one that ended is refused (a
 // domain.StateError): a lease renewal that read the execution before a
-// cancel or a report saved it cannot bring it back.
+// cancel or a report saved it cannot bring it back. Nor does it end
+// twice: a copy with another final outcome is refused too (a
+// domain.ConflictError), so a reconcile that read the execution Running
+// cannot turn the Completed a report saved meanwhile into Failed.
 func (r ExecutionRepository) Save(ctx context.Context, execution domain.Execution) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if execution.Outcome() == domain.ExecutionRunning {
-		stored, err := r.Get(ctx, execution.ID())
-		switch {
-		case err == nil && stored.Outcome().IsFinal():
-			return domain.StateError{Subject: "execution " + execution.ID().String(), Current: stored.Outcome().String(), Attempted: "run again"}
-		case err != nil && !domain.IsNotFound(err):
-			return err
-		}
+	stored, err := r.Get(ctx, execution.ID())
+	switch {
+	case err != nil && !domain.IsNotFound(err):
+		return err
+	case err != nil || !stored.Outcome().IsFinal():
+	case execution.Outcome() == domain.ExecutionRunning:
+		return domain.StateError{Subject: "execution " + execution.ID().String(), Current: stored.Outcome().String(), Attempted: "run again"}
+	case execution.Outcome() != stored.Outcome():
+		return domain.ConflictError{Kind: "execution", ID: execution.ID().String(), Reason: "already ended " + stored.Outcome().String() + ": it cannot end " + execution.Outcome().String()}
 	}
 	return r.files.write(execution.ID().String(), execution.Snapshot())
 }
