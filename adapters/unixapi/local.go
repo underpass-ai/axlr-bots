@@ -292,13 +292,15 @@ func (l *Local) ListTasks(ctx context.Context, query application.TaskQuery) ([]d
 	return snapshots, nil
 }
 
-// ListTaskEvents answers the task's timeline, oldest first.
-func (l *Local) ListTaskEvents(ctx context.Context, id string, limit int) ([]domain.Event, error) {
-	taskID, err := domain.NewTaskID(id)
+// ListTaskEvents answers the task's timeline after the caller's last
+// event, oldest first.
+func (l *Local) ListTaskEvents(ctx context.Context, query application.TaskEventsQuery) ([]domain.Event, error) {
+	taskID, err := domain.NewTaskID(query.ID.String())
 	if err != nil {
 		return nil, err
 	}
-	return application.NewListTaskEvents(l.deps).Execute(ctx, taskID, limit)
+	query.ID = taskID
+	return application.NewListTaskEvents(l.deps).Query(ctx, query)
 }
 
 // GetOverview answers the counts of the operator's dashboard.

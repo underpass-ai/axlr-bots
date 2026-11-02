@@ -16,6 +16,15 @@ const (
 	DefaultPollWait  = 20 * time.Second
 	DefaultRenew     = 10 * time.Second
 	DefaultUpload    = 2 * time.Minute
+	// DefaultProgressEvery and DefaultProgressChars: the model's words go
+	// to the control plane at most this often, or once this many wait.
+	DefaultProgressEvery = 1500 * time.Millisecond
+	DefaultProgressChars = 500
+	// DefaultProgressQueue is how many items wait for the control plane
+	// before the oldest is dropped.
+	DefaultProgressQueue = 256
+	// DefaultProgressTimeout bounds one progress batch.
+	DefaultProgressTimeout = 10 * time.Second
 )
 
 // Options tune the agent.
@@ -40,6 +49,11 @@ type Options struct {
 	Renew time.Duration
 	// Upload bounds the upload of one artifact.
 	Upload time.Duration
+	// ProgressEvery, ProgressChars and ProgressQueue tune how a run's
+	// progress goes to the control plane; zero takes the defaults.
+	ProgressEvery time.Duration
+	ProgressChars int
+	ProgressQueue int
 	// SocketDir holds the socket the agent serves the delegation tool on
 	// for each execution of a bot that may delegate (mode 0700); empty
 	// serves no tool.
@@ -75,6 +89,31 @@ func (o Options) uploadTimeout() time.Duration {
 		return o.Upload
 	}
 	return DefaultUpload
+}
+
+func (o Options) progressEvery() time.Duration {
+	if o.ProgressEvery > 0 {
+		return o.ProgressEvery
+	}
+	return DefaultProgressEvery
+}
+
+func (o Options) progressChars() int {
+	if o.ProgressChars > 0 {
+		return o.ProgressChars
+	}
+	return DefaultProgressChars
+}
+
+func (o Options) progressQueue() int {
+	if o.ProgressQueue > 0 {
+		return o.ProgressQueue
+	}
+	return DefaultProgressQueue
+}
+
+func (o Options) progressTimeout() time.Duration {
+	return min(o.uploadTimeout(), DefaultProgressTimeout)
 }
 
 func (o Options) log() *log.Logger {

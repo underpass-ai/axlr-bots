@@ -707,7 +707,17 @@
       ],
       "get": {
         "operationId": "listTaskEvents",
+        "description": "the task's timeline, oldest first, after the caller's last event; bot.task.progress events say what a running execution does",
         "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "the id of the last event the caller has; absent or older than the window: the newest limit"
+          },
           {
             "name": "limit",
             "in": "query",
@@ -715,7 +725,16 @@
             "schema": {
               "type": "integer"
             },
-            "description": "newest events to return, oldest first"
+            "description": "newest events to return, oldest first (100 by default, at most 1000)"
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "a duration up to 30s: wait for a new event and answer as soon as there is one, or empty"
           }
         ],
         "responses": {
@@ -2349,6 +2368,7 @@
           "bot.task.delegated",
           "bot.task.message",
           "bot.task.said",
+          "bot.task.progress",
           "bot.delegation.refused",
           "bot.event.emitted",
           "bot.event.refused",

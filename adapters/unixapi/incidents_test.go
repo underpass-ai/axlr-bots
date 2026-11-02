@@ -52,7 +52,7 @@ func TestIncidentsOverTheSocket(t *testing.T) {
 	if diagnosed.Status != "Diagnosed" || diagnosed.Diagnosis == "" {
 		t.Fatalf("after the run = %+v", diagnosed)
 	}
-	events, _ := client.ListTaskEvents(ctx, opened.Task.ID, 50)
+	events, _ := client.ListTaskEvents(ctx, application.TaskEventsQuery{ID: domain.TaskID(opened.Task.ID), Limit: 50})
 	kinds := map[string]string{}
 	for _, event := range events {
 		kinds[event.Type.String()] = string(event.IncidentID)

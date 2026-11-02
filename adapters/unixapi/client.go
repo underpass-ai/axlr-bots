@@ -280,12 +280,20 @@ func (c *Client) ListTasks(ctx context.Context, query application.TaskQuery) ([]
 	return tasks, c.call(ctx, http.MethodGet, path, nil, &tasks)
 }
 
-// ListTaskEvents asks for the task's timeline, oldest first.
-func (c *Client) ListTaskEvents(ctx context.Context, id string, limit int) ([]domain.Event, error) {
+// ListTaskEvents asks for the task's timeline after the caller's last
+// event, oldest first.
+func (c *Client) ListTaskEvents(ctx context.Context, query application.TaskEventsQuery) ([]domain.Event, error) {
 	events := []domain.Event{}
-	path := "/v1/tasks/" + url.PathEscape(id) + "/events"
-	if limit > 0 {
-		path += "?limit=" + strconv.Itoa(limit)
+	values := url.Values{}
+	if query.After != "" {
+		values.Set("after", query.After)
+	}
+	if query.Limit > 0 {
+		values.Set("limit", strconv.Itoa(query.Limit))
+	}
+	path := "/v1/tasks/" + url.PathEscape(query.ID.String()) + "/events"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
 	}
 	return events, c.call(ctx, http.MethodGet, path, nil, &events)
 }
@@ -528,6 +536,28 @@ func (c *Client) ExecutionMessages(ctx context.Context, node domain.NodeID, exec
 func (c *Client) Said(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, reply application.SaidReply) error {
 	path := "/v1/nodes/" + url.PathEscape(node.String()) + "/executions/" + url.PathEscape(execution.String()) + "/said"
 	return c.call(ctx, http.MethodPost, path, reply, nil)
+}
+
+// Progress hands over what the run did since the last batch. A control
+// plane without the route answers its mux's plain 404, a not found.
+func (c *Client) Progress(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, batch application.ProgressBatch) (application.ProgressAnswer, error) {
+	var answer application.ProgressAnswer
+	path := "/v1/nodes/" + url.PathEscape(node.String()) + "/executions/" + url.PathEscape(execution.String()) + "/progress"
+	status, raw, err := c.do(ctx, http.MethodPost, path, batch)
+	if err != nil {
+		return answer, err
+	}
+	if status >= 400 {
+		var failure ErrorResponse
+		if json.Unmarshal(raw, &failure) != nil && status == http.StatusNotFound {
+			return answer, domain.NotFoundError{Kind: "route", ID: "POST /v1/nodes/{id}/executions/{exec}/progress"}
+		}
+		return answer, fromWire(status, failure)
+	}
+	if err := json.Unmarshal(raw, &answer); err != nil {
+		return answer, fmt.Errorf("control plane answered POST %s: %w", path, err)
+	}
+	return answer, nil
 }
 
 // request builds a request to the control plane with the bearer token.

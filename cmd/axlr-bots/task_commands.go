@@ -248,7 +248,7 @@ func taskEvents(ctx context.Context, service unixapi.Service, args []string, std
 		fmt.Fprintln(stderr, "axlr-bots: task events takes --limit only")
 		return exitUsage
 	}
-	events, err := service.ListTaskEvents(ctx, taskID, *limit)
+	events, err := service.ListTaskEvents(ctx, application.TaskEventsQuery{ID: domain.TaskID(taskID), Limit: *limit})
 	if err != nil {
 		return fail(stderr, err)
 	}

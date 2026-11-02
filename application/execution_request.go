@@ -46,6 +46,10 @@ type ExecutionRequest struct {
 	// OnSaid hears what the run says back to an operator's message as
 	// it says it; the node sets it, it never travels.
 	OnSaid func(SaidReply) `json:"-"`
+	// OnProgress hears each thing the run does as it does it (a tool
+	// call, a decision, its words); the node sets it, it never travels.
+	// It must not block: the node queues the item and sends it later.
+	OnProgress func(ProgressItem) `json:"-"`
 	// OnEmit tells the execution's teams an event, as the emit tool does
 	// for a model; the node sets it when the bot is in a team, it never
 	// travels. A runtime without a model (a Jev program) tells through it.
