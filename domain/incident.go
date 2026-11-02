@@ -7,11 +7,13 @@ import (
 	"time"
 )
 
-// Limits of an incident's text fields and of its alerts.
+// Limits of an incident's text fields and of its alerts. The diagnosis
+// and reason limits are exported so that what a task wrote can be cut to
+// fit with IncidentText.
 const (
 	maxIncidentTitleLength     = 200
-	maxIncidentDiagnosisLength = 16000
-	maxIncidentReasonLength    = 1000
+	MaxIncidentDiagnosisLength = 16000
+	MaxIncidentReasonLength    = 1000
 	maxIncidentFingerprints    = 64
 	// IncidentReopenWindow is how long after a resolution a new alert of
 	// the same group reopens the incident instead of opening another.
@@ -161,7 +163,10 @@ func (i *Incident) MarkResolved(fingerprints []string, now time.Time) error {
 	}
 	for _, raw := range fingerprints {
 		fingerprint := strings.TrimSpace(raw)
-		if !slices.Contains(i.resolved, fingerprint) {
+		// Only an alert the incident kept is resolved: one dropped past
+		// maxIncidentFingerprints would make the snapshot one that
+		// RestoreIncident refuses, and the store could not load it again.
+		if slices.Contains(i.fingerprints, fingerprint) && !slices.Contains(i.resolved, fingerprint) {
 			i.resolved = append(i.resolved, fingerprint)
 		}
 	}
@@ -308,7 +313,7 @@ func (i *Incident) Diagnose(diagnosis string, now time.Time) error {
 	if i.status != IncidentOpen {
 		return i.refuse("diagnose")
 	}
-	text, err := validateText("diagnosis", diagnosis, maxIncidentDiagnosisLength)
+	text, err := validateText("diagnosis", diagnosis, MaxIncidentDiagnosisLength)
 	if err != nil {
 		return err
 	}
@@ -324,7 +329,7 @@ func (i *Incident) Escalate(reason string, now time.Time) error {
 	if i.status != IncidentOpen && i.status != IncidentDiagnosed {
 		return i.refuse("escalate")
 	}
-	text, err := validateText("reason", reason, maxIncidentReasonLength)
+	text, err := validateText("reason", reason, MaxIncidentReasonLength)
 	if err != nil {
 		return err
 	}
@@ -341,7 +346,7 @@ func (i *Incident) Resolve(reason string, now time.Time) error {
 		return i.refuse("resolve")
 	}
 	if reason != "" {
-		text, err := validateText("reason", reason, maxIncidentReasonLength)
+		text, err := validateText("reason", reason, MaxIncidentReasonLength)
 		if err != nil {
 			return err
 		}
@@ -449,12 +454,12 @@ func RestoreIncident(s IncidentSnapshot) (Incident, error) {
 		incident.tasks = append(incident.tasks, task)
 	}
 	if s.Diagnosis != "" {
-		if incident.diagnosis, err = validateText("diagnosis", s.Diagnosis, maxIncidentDiagnosisLength); err != nil {
+		if incident.diagnosis, err = validateText("diagnosis", s.Diagnosis, MaxIncidentDiagnosisLength); err != nil {
 			return Incident{}, err
 		}
 	}
 	if s.Reason != "" {
-		if incident.reason, err = validateText("reason", s.Reason, maxIncidentReasonLength); err != nil {
+		if incident.reason, err = validateText("reason", s.Reason, MaxIncidentReasonLength); err != nil {
 			return Incident{}, err
 		}
 	}

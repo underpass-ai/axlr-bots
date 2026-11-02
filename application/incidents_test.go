@@ -400,3 +400,31 @@ func TestIncidentAdvancerLeavesAGoneOrResolvedIncident(t *testing.T) {
 		t.Errorf("store failure: %v", err)
 	}
 }
+
+func TestIncidentIsDiagnosedByAnAnswerItMustCut(t *testing.T) {
+	h := newHarness()
+	bot := triageBot(t, h, "triage", "")
+	ctx := context.Background()
+	for n, answer := range []string{strings.Repeat("x", 20000), "OOMKilled\r\nlimit 32Mi"} {
+		h.runtime.report = ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: answer, SessionID: "s"}, TracePath: "/t"}
+		cmd := alert(bot, "fp-a")
+		cmd.GroupKey = "g" + strconv.Itoa(n)
+		opened, err := NewOpenIncident(h.deps).Execute(ctx, cmd)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewRunTask(h.deps).Execute(ctx, opened.Task.ID()); err != nil {
+			t.Fatal(err)
+		}
+		incident, _ := h.incs.Get(ctx, opened.Incident.ID())
+		if incident.Status() != domain.IncidentDiagnosed || len(incident.Diagnosis()) > domain.MaxIncidentDiagnosisLength || strings.ContainsRune(incident.Diagnosis(), '\r') {
+			t.Errorf("answer %d: status %s, %d bytes", n, incident.Status(), len(incident.Diagnosis()))
+		}
+		if n == 0 && !strings.HasSuffix(incident.Diagnosis(), "…") {
+			t.Errorf("answer %d not marked as cut", n)
+		}
+		if n == 1 && incident.Diagnosis() != "OOMKilled\nlimit 32Mi" {
+			t.Errorf("answer %d = %q", n, incident.Diagnosis())
+		}
+	}
+}
