@@ -60,9 +60,20 @@ func NewClient(address string) *Client {
 // NewTLSClient talks to the control plane at an https:// address with
 // the TLS configuration: the node's certificate and the fleet CA
 // (pki.Credentials.ClientTLSConfig), or the CA alone to enroll
-// (pki.EnrollTLSConfig).
+// (pki.EnrollTLSConfig). Unlike the operator's socket client it bounds
+// the network: a node talks across hosts, where a half-open connection
+// would otherwise stall its heartbeat until the control plane marks it
+// Offline. The response-header bound is past the longest long poll
+// (maxPollWait) and the stream's ping.
 func NewTLSClient(address string, config *tls.Config) *Client {
-	transport := &http.Transport{TLSClientConfig: config, ForceAttemptHTTP2: true}
+	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 15 * time.Second}
+	transport := &http.Transport{
+		TLSClientConfig:       config,
+		ForceAttemptHTTP2:     true,
+		DialContext:           dialer.DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 45 * time.Second,
+	}
 	return &Client{http: &http.Client{Transport: transport}, base: strings.TrimRight(address, "/"), address: address}
 }
 

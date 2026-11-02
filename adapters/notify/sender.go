@@ -103,12 +103,12 @@ func (s *Sender) post(ctx context.Context, target domain.NotifyTarget, delivery 
 }
 
 // run starts the program with the payload on its stdin and the ids in
-// its environment; exit status 0 is a delivery.
+// a minimal environment (commandEnv); exit status 0 is a delivery.
 func (s *Sender) run(ctx context.Context, target domain.NotifyTarget, delivery domain.Delivery) error {
 	command := target.Command()
 	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
 	cmd.Stdin = bytes.NewReader(delivery.Payload())
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(commandEnv(os.Environ()),
 		"AXLR_BOTS_DELIVERY_ID="+delivery.ID().String(),
 		"AXLR_BOTS_TASK_ID="+delivery.TaskID().String(),
 		"AXLR_BOTS_BOT_ID="+delivery.BotID().String(),
@@ -128,6 +128,41 @@ func (s *Sender) run(ctx context.Context, target domain.NotifyTarget, delivery d
 		return fmt.Errorf("%s: %v: %s", command[0], err, line)
 	}
 	return fmt.Errorf("%s: %w", command[0], err)
+}
+
+// passedEnv are the variables of the daemon's environment a command
+// gets, and passedEnvPrefixes the prefixes: what finds programs, a
+// locale, temp files and a desktop session (notify-send needs D-Bus),
+// nothing else. The daemon's environment carries the model provider's
+// API keys and the broker's credentials, and a notification script has
+// no use for them.
+var (
+	passedEnv = map[string]bool{
+		"PATH": true, "HOME": true, "USER": true, "LOGNAME": true, "LANG": true, "TZ": true, "TMPDIR": true,
+		"XDG_RUNTIME_DIR": true, "DBUS_SESSION_BUS_ADDRESS": true, "DISPLAY": true, "WAYLAND_DISPLAY": true,
+	}
+	passedEnvPrefixes = []string{"LC_"}
+)
+
+// commandEnv keeps of environ the variables a command gets.
+func commandEnv(environ []string) []string {
+	var out []string
+	for _, kv := range environ {
+		name, _, _ := strings.Cut(kv, "=")
+		if passedEnv[name] || hasAnyPrefix(name, passedEnvPrefixes) {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
+
+func hasAnyPrefix(name string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // limited keeps the first limit bytes written to it.

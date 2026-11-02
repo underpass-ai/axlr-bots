@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +23,18 @@ type entry struct {
 	node    domain.NodeID
 	payload []byte
 	path    string
+}
+
+// olderThan reports whether the push was made more than age before
+// now; its id starts with the time it was made, in nanoseconds. An id
+// that does not is taken as new.
+func (e entry) olderThan(age time.Duration, now time.Time) bool {
+	stamp, _, _ := strings.Cut(e.id, "-")
+	nanos, err := strconv.ParseInt(stamp, 10, 64)
+	if err != nil {
+		return false
+	}
+	return now.Sub(time.Unix(0, nanos)) > age
 }
 
 // outbox keeps pushes as files, <dir>/<node>/<time>-<seq>.json, written

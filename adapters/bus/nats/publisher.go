@@ -23,6 +23,11 @@ const queueSize = 4096
 // the queue did not take.
 const sweepEvery = 30 * time.Second
 
+// maxRefusals is how many times the broker may refuse one push for good
+// (refused) before the publisher drops it: a push it can never take
+// must not hold back the ones behind it.
+const maxRefusals = 5
+
 // Publisher is the control plane's side: application.NodePusher over
 // the broker. Push writes the outbox and returns; one goroutine
 // publishes in order, retrying while the broker is away, and removes
@@ -94,9 +99,20 @@ func (p *Publisher) dequeued(e entry) {
 	delete(p.queued, e.id)
 }
 
+// requeue queues what the outbox holds, dropping the pushes older than
+// the stream keeps them: a node that comes back after that resyncs.
 func (p *Publisher) requeue() {
+	stale := 0
 	for _, e := range p.box.sweep() {
+		if e.olderThan(Retention, time.Now()) {
+			p.box.remove(e)
+			stale++
+			continue
+		}
 		p.enqueue(e)
+	}
+	if stale > 0 {
+		p.cfg.log().Printf("bus: nats: dropped %d pushes older than %s from the outbox", stale, Retention)
 	}
 }
 
@@ -142,7 +158,15 @@ func (p *Publisher) run() {
 			continue
 		case e = <-p.queue:
 		}
+		refusals := 0
 		for {
+			if e.olderThan(Retention, time.Now()) {
+				// The broker would not keep it now anyway.
+				logger.Printf("bus: nats: push %s to %s dropped: older than %s", e.id, e.node, Retention)
+				p.box.remove(e)
+				p.dequeued(e)
+				break
+			}
 			if !connected() {
 				return
 			}
@@ -154,8 +178,20 @@ func (p *Publisher) run() {
 				p.dequeued(e)
 				break
 			}
+			if refused(err) {
+				refusals++
+				if refusals >= maxRefusals {
+					logger.Printf("bus: nats: push %s to %s dropped: refused %d times: %v", e.id, e.node, refusals, err)
+					p.box.remove(e)
+					p.dequeued(e)
+					break
+				}
+			}
 			logger.Printf("bus: nats: push to %s not taken: %v (retrying)", e.node, err)
-			if conn.IsClosed() {
+			if conn.IsClosed() || streamSuspect(err) {
+				// A stream an operator deleted, or one that refuses the
+				// push, is defined again on the next connection.
+				conn.Close()
 				js, conn = nil, nil
 			}
 			if !p.pause(time.Second) {
@@ -163,6 +199,31 @@ func (p *Publisher) run() {
 			}
 		}
 	}
+}
+
+// refused reports whether the broker refused the push for good, as
+// opposed to being away: JetStream refused it (rejected) or it is
+// larger than the server takes.
+func refused(err error) bool {
+	return errors.Is(err, natsio.ErrMaxPayload) || rejected(err)
+}
+
+// streamSuspect reports whether the stream itself may be what is
+// wrong: nothing answered for it (an operator deleted it) or JetStream
+// rejected the push.
+func streamSuspect(err error) bool {
+	return errors.Is(err, jetstream.ErrNoStreamResponse) || rejected(err)
+}
+
+// rejected reports a JetStream API error of the 4xx kind other than a
+// timeout: the request was wrong, and asking again will not mend it.
+func rejected(err error) bool {
+	var jsErr jetstream.JetStreamError
+	if !errors.As(err, &jsErr) {
+		return false
+	}
+	api := jsErr.APIError()
+	return api != nil && api.Code >= 400 && api.Code < 500 && api.Code != 408
 }
 
 func (p *Publisher) pause(d time.Duration) bool {

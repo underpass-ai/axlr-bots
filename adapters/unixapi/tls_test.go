@@ -33,6 +33,12 @@ type fleet struct {
 // serveFleet starts the control plane over the socket and TLS.
 func serveFleet(t *testing.T) *fleet {
 	t.Helper()
+	return serveFleetWith(t, Timeouts{})
+}
+
+// serveFleetWith is serveFleet with other server timeouts.
+func serveFleetWith(t *testing.T, timeouts Timeouts) *fleet {
+	t.Helper()
 	dir := t.TempDir()
 	state := filepath.Join(dir, "state")
 	deps, err := compose.Dependencies(state, "/nonexistent/axlr-tui", "test:api")
@@ -45,7 +51,7 @@ func serveFleet(t *testing.T) *fleet {
 	}
 	other, _ := pki.Generate(filepath.Join(dir, "other"))
 	local := NewLocal(deps)
-	server := NewServer(local)
+	server := NewServer(local).WithTimeouts(timeouts)
 	socket := filepath.Join(dir, "cp.sock")
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -332,5 +338,126 @@ func TestTLSRefusals(t *testing.T) {
 func TestDaemonRefusesTLSWithoutAConfiguration(t *testing.T) {
 	if _, err := Listen("300.0.0.1:0"); err == nil {
 		t.Error("a bad address listened")
+	}
+}
+
+// A connection that idles after its answer, or that sends a body's
+// headers and never the body, is closed by the server's timeouts
+// instead of holding a goroutine and a descriptor for ever.
+func TestTheNodeAddressClosesIdleAndStalledConnections(t *testing.T) {
+	dir := t.TempDir()
+	state := filepath.Join(dir, "state")
+	deps, err := compose.Dependencies(state, "/nonexistent/axlr-tui", "test:api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := pki.Generate(filepath.Join(state, pki.CADirName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const limit = 500 * time.Millisecond
+	server := NewServer(NewLocal(deps)).WithTimeouts(Timeouts{Read: limit, Idle: limit})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- server.ServeTLS(ctx, listener, pki.ServerTLSConfig(ca, []string{"127.0.0.1"})) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	})
+	// closedWithin reads what the server sends until it closes the
+	// connection, and fails when that takes longer than within.
+	closedWithin := func(t *testing.T, conn net.Conn, within time.Duration) string {
+		t.Helper()
+		_ = conn.SetReadDeadline(time.Now().Add(within))
+		var got strings.Builder
+		buf := make([]byte, 4096)
+		for {
+			n, err := conn.Read(buf)
+			got.Write(buf[:n])
+			if err == nil {
+				continue
+			}
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				t.Fatalf("the connection is still open after %s: %q", within, got.String())
+			}
+			return got.String()
+		}
+	}
+	dial := func(t *testing.T) net.Conn {
+		t.Helper()
+		// No ALPN: HTTP/1.1, where the connection is the request's.
+		conn, err := tls.Dial("tcp", listener.Addr().String(), &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: ca.Pool()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+		return conn
+	}
+	t.Run("idle", func(t *testing.T) {
+		conn := dial(t)
+		if _, err := conn.Write([]byte("GET /healthz HTTP/1.1\r\nHost: cp\r\n\r\n")); err != nil {
+			t.Fatal(err)
+		}
+		if got := closedWithin(t, conn, 4*limit); !strings.HasPrefix(got, "HTTP/1.1 200") {
+			t.Errorf("answer before the close: %q", got)
+		}
+	})
+	t.Run("stalled body", func(t *testing.T) {
+		conn := dial(t)
+		if _, err := conn.Write([]byte("POST /v1/enroll HTTP/1.1\r\nHost: cp\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{")); err != nil {
+			t.Fatal(err)
+		}
+		closedWithin(t, conn, 4*limit)
+	})
+}
+
+// The read timeout bounds a request's arrival, not the answer: a node
+// stream outlives it, over TLS (HTTP/2) and over the socket (HTTP/1.1),
+// and a long poll longer than it answers when its wait ends.
+func TestStreamsAndLongPollsOutliveTheReadTimeout(t *testing.T) {
+	const limit = 300 * time.Millisecond
+	f := serveFleetWith(t, Timeouts{Read: limit, Idle: limit})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	_, node := f.enroll(t, f.token(t, "web-1", nil))
+	if _, err := node.Register(ctx, application.NodeRegistration{HostName: "web-1.example"}); err != nil {
+		t.Fatal(err)
+	}
+	overTLS, err := node.Stream(ctx, "web-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	overSocket, err := f.operator.Stream(ctx, "web-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-overTLS
+	<-overSocket
+	start := time.Now()
+	if _, found, err := node.NextAssignment(ctx, "web-1", 4*limit); err != nil || found {
+		t.Errorf("long poll over TLS: %v %v", err, found)
+	}
+	if _, found, err := f.operator.NextAssignment(ctx, "web-1", 4*limit); err != nil || found {
+		t.Errorf("long poll over the socket: %v %v", err, found)
+	}
+	if waited := time.Since(start); waited < 8*limit {
+		t.Errorf("the long polls answered after %s, before their waits", waited)
+	}
+	for name, stream := range map[string]<-chan application.NodePush{"TLS": overTLS, "socket": overSocket} {
+		select {
+		case push, open := <-stream:
+			if !open {
+				t.Errorf("the %s stream closed past the read timeout", name)
+			} else {
+				t.Logf("%s stream: %+v", name, push)
+			}
+		default:
+		}
 	}
 }

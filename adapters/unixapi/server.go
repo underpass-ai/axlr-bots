@@ -37,7 +37,8 @@ const (
 // one way in without one, and the operator routes alone on an optional
 // TLS address behind a bearer token.
 type Server struct {
-	service *Local
+	service  *Local
+	timeouts Timeouts
 	// closing ends the node streams when the server shuts down: a
 	// stream is never idle, so a graceful shutdown would wait for it.
 	closing   chan struct{}
@@ -46,7 +47,59 @@ type Server struct {
 
 // NewServer serves the local service.
 func NewServer(service *Local) *Server {
-	return &Server{service: service, closing: make(chan struct{})}
+	return &Server{service: service, timeouts: DefaultTimeouts, closing: make(chan struct{})}
+}
+
+// Timeouts bound a connection: Read the whole request, uploads
+// included, and Idle the wait for the next request on a kept-alive
+// connection. There is no server-wide write timeout: the node stream
+// lives for hours and a long poll answers after up to maxPollWait, so
+// each response sets its own write deadline instead (writeJSON).
+type Timeouts struct {
+	Read time.Duration
+	Idle time.Duration
+}
+
+// DefaultTimeouts gives a request two minutes, what a node takes to
+// upload a 32-MiB artifact (nodeagent.DefaultUpload), and drops a
+// connection idle for a minute.
+var DefaultTimeouts = Timeouts{Read: 2 * time.Minute, Idle: time.Minute}
+
+// WithTimeouts is the server with other timeouts; a zero field keeps
+// the default.
+func (s *Server) WithTimeouts(t Timeouts) *Server {
+	if t.Read > 0 {
+		s.timeouts.Read = t.Read
+	}
+	if t.Idle > 0 {
+		s.timeouts.Idle = t.Idle
+	}
+	return s
+}
+
+// responseWriteTimeout bounds writing one JSON answer, and
+// artifactWriteTimeout one artifact download: a client that stops
+// reading no longer holds the handler for ever.
+const (
+	responseWriteTimeout = 30 * time.Second
+	artifactWriteTimeout = 2 * time.Minute
+)
+
+// httpServer is an http.Server for the handler with the timeouts. A
+// write deadline is set on the connection, and the server never resets
+// it without a WriteTimeout, so each request starts with none: what the
+// previous request on a kept-alive connection left would otherwise
+// break the next answer, and kill a node stream outright.
+func (s *Server) httpServer(handler http.Handler, config *tls.Config) *http.Server {
+	fresh := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+		handler.ServeHTTP(w, r)
+	})
+	server := &http.Server{Handler: fresh, TLSConfig: config, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: s.timeouts.Read, IdleTimeout: s.timeouts.Idle}
+	if config != nil {
+		server.ErrorLog = log.New(io.Discard, "", 0)
+	}
+	return server
 }
 
 // recheckEvery is how often a long poll looks again when nothing woke
@@ -155,7 +208,7 @@ func (s *Server) nodeRoutes(mux *http.ServeMux) {
 // configuration (pki.ServerTLSConfig) until ctx ends. The caller binds
 // the listener, so it knows the address when it asked for port 0.
 func (s *Server) ServeTLS(ctx context.Context, listener net.Listener, config *tls.Config) error {
-	server := &http.Server{Handler: s.NodeHandler(), TLSConfig: config, ReadHeaderTimeout: 10 * time.Second, ErrorLog: log.New(io.Discard, "", 0)}
+	server := s.httpServer(s.NodeHandler(), config)
 	return s.run(ctx, server, func() error { return server.ServeTLS(listener, "", "") }, func() {})
 }
 
@@ -165,7 +218,7 @@ func (s *Server) ServeAPI(ctx context.Context, listener net.Listener, config *tl
 	if token == "" {
 		return errors.New("unixapi: the operator address needs a bearer token")
 	}
-	server := &http.Server{Handler: s.OperatorHandler(token), TLSConfig: config, ReadHeaderTimeout: 10 * time.Second, ErrorLog: log.New(io.Discard, "", 0)}
+	server := s.httpServer(s.OperatorHandler(token), config)
 	return s.run(ctx, server, func() error { return server.ServeTLS(listener, "", "") }, func() {})
 }
 
@@ -202,7 +255,7 @@ func (s *Server) Serve(ctx context.Context, socketPath string) error {
 // serve runs the HTTP server on the listener until ctx ends, then
 // cleans up.
 func (s *Server) serve(ctx context.Context, listener net.Listener, cleanup func()) error {
-	server := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	server := s.httpServer(s.Handler(), nil)
 	return s.run(ctx, server, func() error { return server.Serve(listener) }, cleanup)
 }
 
@@ -629,6 +682,7 @@ func (s *Server) getArtifact(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="`+artifact.Name+`"`)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set(nodeproto.ArtifactSHA256Header, artifact.SHA256)
+	writeDeadline(w, artifactWriteTimeout)
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, content.Body)
 }
@@ -721,6 +775,7 @@ func (s *Server) nextAssignment(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !time.Now().Before(deadline) || !awaitChange(r.Context(), changed, min(recheckEvery, time.Until(deadline))) {
+			writeDeadline(w, responseWriteTimeout)
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -961,11 +1016,16 @@ func readJSON(w http.ResponseWriter, r *http.Request, into any) bool {
 	return readJSONLimit(w, r, into, maxBodyBytes)
 }
 
-// readJSONLimit is readJSON with its own bound on the body.
+// readJSONLimit is readJSON with its own bound on the body; a body past
+// it is 413, not a malformed one.
 func readJSONLimit(w http.ResponseWriter, r *http.Request, into any, limit int64) bool {
-	decoder := json.NewDecoder(io.LimitReader(r.Body, limit))
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(into); err != nil {
+		if tooLarge := new(*http.MaxBytesError); errors.As(err, tooLarge) {
+			respond(w, 0, nil, err)
+			return false
+		}
 		writeJSON(w, http.StatusBadRequest, ErrorResponse{Kind: KindValidation, Message: "request body: " + err.Error()})
 		return false
 	}
@@ -983,7 +1043,14 @@ func respond(w http.ResponseWriter, status int, value any, err error) {
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
+	writeDeadline(w, responseWriteTimeout)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+// writeDeadline gives the answer about to be written d to go out; a
+// writer that cannot take a deadline (a test recorder) goes without.
+func writeDeadline(w http.ResponseWriter, d time.Duration) {
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(d))
 }

@@ -538,3 +538,39 @@ func TestAPushedCancelStopsTheRunAtOnce(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 }
+
+// stalledHeartbeat is a transport whose heartbeat hangs until its
+// context ends, as over a half-open connection; it notes when each
+// heartbeat began.
+type stalledHeartbeat struct {
+	fakeTransport
+	began chan time.Time
+}
+
+func (s *stalledHeartbeat) Heartbeat(ctx context.Context, _ domain.NodeID) (domain.NodeSnapshot, error) {
+	s.began <- time.Now()
+	<-ctx.Done()
+	return domain.NodeSnapshot{}, ctx.Err()
+}
+
+// TestAStalledHeartbeatDoesNotStopTheNext gives the agent a heartbeat
+// that never answers: it is cut at the interval, and the next one goes
+// out within two intervals of it.
+func TestAStalledHeartbeatDoesNotStopTheNext(t *testing.T) {
+	const interval = 50 * time.Millisecond
+	transport := &stalledHeartbeat{began: make(chan time.Time, 16)}
+	agent := Agent{Transport: transport, Options: Options{NodeID: "web-1", Heartbeat: interval}}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); agent.heartbeat(ctx, "web-1") }()
+	defer func() { cancel(); <-done }()
+	first := <-transport.began
+	select {
+	case second := <-transport.began:
+		if gap := second.Sub(first); gap > 2*interval+interval/2 {
+			t.Errorf("the second heartbeat came %s after the first, past two intervals", gap)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a stalled heartbeat kept the next from going out")
+	}
+}
