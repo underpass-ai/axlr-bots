@@ -5,7 +5,7 @@
 #
 #   docker buildx build -f distribution/node.Dockerfile --platform linux/arm64 -t axlr-bots-node:dev --load .
 
-ARG GO_IMAGE=golang:1.26.5-trixie@sha256:f1a132429b98724a904e9b3bdbaed399d8f923203c3e5170e6def66d0a7cc04c
+ARG GO_IMAGE=golang:1.26.10-trixie@sha256:a050dcceee6eb9bf110151662dfac7662f3bec40927c7dee48731e3d92083d42
 ARG BASE_IMAGE=gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99
 
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS build

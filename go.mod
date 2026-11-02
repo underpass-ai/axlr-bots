@@ -2,6 +2,8 @@ module github.com/underpass-ai/axlr-bots
 
 go 1.26.0
 
+toolchain go1.26.10
+
 require (
 	github.com/nats-io/nats-server/v2 v2.15.2
 	github.com/nats-io/nats.go v1.55.0
