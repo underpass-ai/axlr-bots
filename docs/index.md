@@ -43,4 +43,4 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 
 ## Documentation status and evidence
 
-The guides were reconciled with `main` at `91dc705` on 24 October 2026 and checked again at `8a8a38f` on 1 November 2026; the [documentation catalog](documentation-catalog.md) lists every page with its purpose and the revision it was checked at. The [live run](live-run.md) records the demo script's output on a real host, the sidecar on a real cluster and the three live tests. [Brand](brand.md) documents the marks.
+The guides were reconciled with `main` at `91dc705` on 24 October 2026 and checked again at `8a8a38f` on 1 November 2026 and at `01bbb7b` on 2 November 2026, after the cleanup of PRs #97 to #107; the [documentation catalog](documentation-catalog.md) lists every page with its purpose and the revision it was checked at. The [live run](live-run.md) records the demo script's output on a real host, the sidecar on a real cluster and the three live tests. [Brand](brand.md) documents the marks.
