@@ -12,8 +12,8 @@ type IDGenerator struct{}
 // NewID returns prefix followed by 24 random hex characters.
 func (IDGenerator) NewID(prefix string) string {
 	var raw [12]byte
-	if _, err := rand.Read(raw[:]); err != nil {
-		panic("system: random source unavailable: " + err.Error())
-	}
+	// Since Go 1.24 crypto/rand.Read never returns an error: when the
+	// kernel's source fails it crashes the program instead.
+	_, _ = rand.Read(raw[:])
 	return prefix + hex.EncodeToString(raw[:])
 }

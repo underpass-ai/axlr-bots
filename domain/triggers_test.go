@@ -244,7 +244,10 @@ func TestFireKeys(t *testing.T) {
 	if byDelivery != FireKeyWebhook(long, "delivery-1", []byte(`{"a":2}`)) {
 		t.Error("the delivery id should decide the key, not the body")
 	}
-	if FireKeyWebhook("w", "", []byte(`{"a":1}`)) == FireKeyWebhook("w", "", []byte(`{"a":2}`)) || FireKeyWebhook("w", "", []byte(`{"a":1}`)) != FireKeyWebhook("w", "", []byte(`{"a":1}`)) {
+	// Without a delivery id the body decides: the same body sent again
+	// finds the same key, another body another key.
+	byBody := FireKeyWebhook("w", "", []byte(`{"a":1}`))
+	if byBody == FireKeyWebhook("w", "", []byte(`{"a":2}`)) || byBody != FireKeyWebhook("w", "", []byte(`{"a":1}`)) {
 		t.Error("body hash wrong")
 	}
 	timerKey := FireKeyTimer(long, t0)

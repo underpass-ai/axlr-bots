@@ -324,3 +324,34 @@ func TestServerCertificateFollowsTheNamesItMustCarry(t *testing.T) {
 		t.Error("no certificate source")
 	}
 }
+
+func TestIssueClientSignsAClientCertificateOfTheFleet(t *testing.T) {
+	ca, _ := Generate(filepath.Join(t.TempDir(), "ca"))
+	if _, _, err := ca.IssueClient("", time.Hour); err == nil {
+		t.Error("a client without a name was issued")
+	}
+	keyPEM, certPEM, err := ca.IssueClient("control-plane", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pair, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf := pair.Leaf
+	if leaf.Subject.CommonName != "control-plane" || leaf.Subject.Organization[0] != ClientOrganization {
+		t.Errorf("subject %v", leaf.Subject)
+	}
+	// No lifetime given: a node's.
+	if life := leaf.NotAfter.Sub(leaf.NotBefore); life < NodeCertificateLifetime || life > NodeCertificateLifetime+10*time.Minute {
+		t.Errorf("lifetime %v", life)
+	}
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM(ca.CertificatePEM())
+	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
+		t.Error("not a client certificate of the CA:", err)
+	}
+	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}); err == nil {
+		t.Error("a client certificate serves")
+	}
+}

@@ -29,20 +29,37 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-          cache-dependency-path: go.mod
+          cache-dependency-path: go.sum
       - name: Format
         run: test -z "$(gofmt -l .)"
       - name: Vet
         run: go vet ./...
+      - name: Staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 ./...
+      - name: Vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
       - name: Build
         run: go build ./...
       - name: Race tests with coverage
-        run: go test -race -count=1 -coverprofile=coverage.out ./...
-      - name: Coverage gate (80 % total)
+        shell: bash
+        run: go test -race -count=1 -coverprofile=coverage.out ./... | tee test.log
+      - name: Coverage gate (80 % per package)
         run: |
-          coverage=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub(/%/, "", $3); print $3}')
-          echo "Total coverage: ${coverage}%"
-          awk -v value="$coverage" 'BEGIN { exit !(value >= 80) }'
+          go tool cover -func=coverage.out | tail -n 1
+          # Every package on its own, so a well-tested one cannot hide one
+          # that is not. bustest is a helper the bus tests import; it has
+          # no tests of its own.
+          awk '
+            match($0, /coverage: [0-9.]+% of statements/) {
+              pkg = ""
+              for (i = 1; i <= NF; i++) if ($i ~ /^github\.com\//) pkg = $i
+              if (pkg ~ /\/adapters\/bus\/bustest$/) next
+              value = substr($0, RSTART + 10, index(substr($0, RSTART), "%") - 11)
+              checked++
+              if (value + 0 < 80) { printf "%s: %s%%, below 80%%\n", pkg, value; low = 1 }
+            }
+            END { if (!checked) { print "no package coverage in the log"; exit 1 } exit low }
+          ' test.log
 
   chart:
     runs-on: ubuntu-latest

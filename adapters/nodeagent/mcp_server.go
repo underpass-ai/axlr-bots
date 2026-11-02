@@ -28,7 +28,7 @@ type mcpServer struct {
 // serves every connection until Close.
 func serveMCP(ctx context.Context, path string, version string, handlers ...mcpHandler) (*mcpServer, error) {
 	if strings.Contains(path, "..") || !strings.HasSuffix(path, ".sock") {
-		return nil, errors.New("a socket path ends in .sock and holds no ..")
+		return nil, errors.New(`a socket path ends in .sock and holds no ".."`)
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
