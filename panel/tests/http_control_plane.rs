@@ -371,9 +371,14 @@ async fn sends_the_acts_with_their_bodies() {
     );
 
     assert!(api.cancel_task(task_id.clone()).await.unwrap().changed);
-    let decided = api.decide_task(task_id, Decision::Approve).await.unwrap();
+    let decided = api
+        .decide_task(task_id.clone(), Decision::Approve, Some("call-1".into()))
+        .await
+        .unwrap();
     assert_eq!(decided.execution.kind.name(), "decide");
-    assert_eq!(server.last().body, r#"{"decision":"approve"}"#);
+    assert_eq!(server.last().body, r#"{"decision":"approve","callId":"call-1"}"#);
+    api.decide_task(task_id, Decision::Deny, None).await.unwrap();
+    assert_eq!(server.last().body, r#"{"decision":"deny"}"#);
 }
 
 #[tokio::test]

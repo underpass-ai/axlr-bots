@@ -844,7 +844,16 @@ impl App {
             return Vec::new();
         }
         self.deciding = Some(id.clone());
-        vec![Effect::Decide(id, decision)]
+        // The call on screen, so the control plane refuses the decision if
+        // the task has since moved on to another call.
+        let call_id = self
+            .task
+            .as_ref()
+            .filter(|d| d.task.id == id)
+            .and_then(|d| d.pending_call())
+            .or_else(|| self.fleet.as_ref().and_then(|f| f.call_of(&id)))
+            .map(|c| c.call_id.clone());
+        vec![Effect::Decide(id, decision, call_id)]
     }
 
     /// The followed bot's feed, if one is on screen.
