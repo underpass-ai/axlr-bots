@@ -24,6 +24,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | Start tasks from a webhook or on a timer and verify nothing fires twice; turn alert groups into incidents a bot triages | [Triggers](runbooks/triggers.md), [Incidents](runbooks/triggers.md#incidents) |
 | Approve or deny the write a bot wants to make, be notified of it, let it expire | [Approvals](runbooks/approvals.md) |
 | Let a bot ask another bot to do a task, within depth and budget limits that stop loops | [Delegation](reference/bot-definition.md#delegation), [ADR](architecture/delegation.md) |
+| Give bots a memory the control plane owns: recall before a task, record after it, one store per tenant (accepted, not built yet) | [ADR](architecture/memory.md) |
 | Put bots in a team so they know each other and ask each other without naming targets | [Teams](reference/bot-definition.md#teams), [ADR](architecture/groups-and-events.md) |
 | Let a bot warn or stop its teammates with an event, and follow the team's timeline | [Events](reference/bot-definition.md#events), [ADR](architecture/groups-and-events.md) |
 | Let bots publish on topics and choose who listens, in what mode, from the panel | [ADR](architecture/pubsub-events.md) |

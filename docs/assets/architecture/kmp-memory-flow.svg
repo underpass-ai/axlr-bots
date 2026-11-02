@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" width="1200" height="700" role="img" aria-labelledby="t d">
+  <title id="t">KMP memory in AXLR Bots: one task</title>
+  <desc id="d">The control plane recalls the bot's memory from KMP before the run, puts it in the prompt as data, hands the assignment to a node where AXLR runs, and records one episode in KMP when the execution ends.</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6B4A2E"/>
+    </marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#B85C38"/>
+    </marker>
+    <style>
+      text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1B1411; }
+      .h { font-size: 22px; font-weight: 700; }
+      .b { font-size: 15px; font-weight: 700; }
+      .m { font-size: 13px; }
+      .s { font-size: 12px; fill: #6B4A2E; }
+      .c { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+      .ln { stroke: #6B4A2E; stroke-width: 1.8; fill: none; }
+      .mem { stroke: #B85C38; stroke-width: 2.2; fill: none; }
+      .dash { stroke-dasharray: 6 4; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="700" fill="#ffffff"/>
+  <text x="40" y="44" class="h">KMP memory in AXLR Bots — one task</text>
+  <text x="40" y="68" class="m">The control plane owns the memory: it chooses the scope, recalls before the run and records after it. The model never picks the about.</text>
+
+  <!-- control plane -->
+  <rect x="40" y="96" width="760" height="360" rx="14" fill="#FBF6EE" stroke="#C9B08C" stroke-width="1.5"/>
+  <text x="60" y="124" class="b">Control plane (axlr-bots serve)</text>
+
+  <rect x="64" y="148" width="150" height="70" rx="10" fill="#ffffff" stroke="#6B4A2E" stroke-width="1.5"/>
+  <text x="139" y="176" class="b" text-anchor="middle">Task</text>
+  <text x="139" y="198" class="s" text-anchor="middle">manual · timer · webhook</text>
+  <text x="139" y="212" class="s" text-anchor="middle">incident · delegation</text>
+
+  <rect x="262" y="148" width="210" height="70" rx="10" fill="#FDEBDD" stroke="#B85C38" stroke-width="2"/>
+  <text x="367" y="174" class="b" text-anchor="middle">1 · Recall</text>
+  <text x="367" y="194" class="m" text-anchor="middle">kmp_ask(about, objective)</text>
+  <text x="367" y="210" class="s" text-anchor="middle">not_found → empty memory</text>
+
+  <rect x="520" y="148" width="250" height="70" rx="10" fill="#ffffff" stroke="#6B4A2E" stroke-width="1.5"/>
+  <text x="645" y="174" class="b" text-anchor="middle">2 · Prompt</text>
+  <text x="645" y="194" class="m" text-anchor="middle">mission · team · notes · Memory</text>
+  <text x="645" y="210" class="s" text-anchor="middle">memory is data, never instructions</text>
+
+  <path d="M214,183 L258,183" class="ln" marker-end="url(#a)"/>
+  <path d="M472,183 L516,183" class="ln" marker-end="url(#a)"/>
+
+  <rect x="262" y="300" width="210" height="80" rx="10" fill="#FDEBDD" stroke="#B85C38" stroke-width="2"/>
+  <text x="367" y="326" class="b" text-anchor="middle">4 · Record</text>
+  <text x="367" y="346" class="m" text-anchor="middle">kmp_write_memory: one episode</text>
+  <text x="367" y="362" class="s" text-anchor="middle">idempotency key = task + execution</text>
+
+  <rect x="520" y="300" width="250" height="80" rx="10" fill="#ffffff" stroke="#6B4A2E" stroke-width="1.5"/>
+  <text x="645" y="326" class="b" text-anchor="middle">Execution report</text>
+  <text x="645" y="346" class="m" text-anchor="middle">outcome · answer · approvals</text>
+  <text x="645" y="362" class="s" text-anchor="middle">tool calls · times · correlation</text>
+  <path d="M520,340 L476,340" class="ln" marker-end="url(#a)"/>
+
+  <rect x="64" y="300" width="150" height="80" rx="10" fill="#ffffff" stroke="#C9B08C" stroke-width="1.5"/>
+  <text x="139" y="326" class="b" text-anchor="middle">MemoryStore</text>
+  <text x="139" y="344" class="s" text-anchor="middle">application port</text>
+  <text x="139" y="364" class="c" text-anchor="middle">adapters/kmp</text>
+  <path d="M367,218 L367,250 L139,250 L139,296" class="mem dash" marker-end="url(#g)"/>
+  <path d="M262,340 L218,340" class="mem dash" marker-end="url(#g)"/>
+
+  <text x="300" y="430" class="s">Default on when KMP is configured; a bot opts out with "memory": {"enabled": false}.</text>
+
+  <!-- node + AXLR -->
+  <rect x="860" y="96" width="300" height="360" rx="14" fill="#F4F4F2" stroke="#9A9A92" stroke-width="1.5"/>
+  <text x="880" y="124" class="b">Node (axlr-node)</text>
+  <rect x="884" y="160" width="252" height="88" rx="10" fill="#ffffff" stroke="#6B4A2E" stroke-width="1.5"/>
+  <text x="1010" y="188" class="b" text-anchor="middle">3 · AXLR runs the bot</text>
+  <text x="1010" y="208" class="c" text-anchor="middle">axlr-tui --exec &lt;prompt&gt;</text>
+  <text x="1010" y="228" class="s" text-anchor="middle">its MCP config has no KMP</text>
+
+  <rect x="884" y="300" width="252" height="80" rx="10" fill="#ffffff" stroke="#C9B08C" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="1010" y="326" class="b" text-anchor="middle">Phase 2</text>
+  <text x="1010" y="346" class="c" text-anchor="middle">axlr_bots_recall / _remember</text>
+  <text x="1010" y="364" class="s" text-anchor="middle">through mcp-relay, like delegation</text>
+
+  <path d="M770,183 L880,200" class="ln" marker-end="url(#a)"/>
+  <text x="790" y="178" class="s">assignment</text>
+  <path d="M1010,248 L1010,280 L800,280 L700,300" class="ln" marker-end="url(#a)"/>
+  <text x="820" y="274" class="s">report</text>
+
+  <!-- KMP -->
+  <rect x="40" y="500" width="1120" height="170" rx="14" fill="#ffffff" stroke="#B85C38" stroke-width="2"/>
+  <text x="240" y="528" class="b">KMP — started and owned by the control plane</text>
+  <rect x="64" y="546" width="300" height="104" rx="10" fill="#FDEBDD" stroke="#B85C38" stroke-width="1.5"/>
+  <text x="214" y="572" class="b" text-anchor="middle">kmp-mcp over stdio</text>
+  <text x="214" y="594" class="m" text-anchor="middle">MCP JSON-RPC, as the relay speaks it</text>
+  <text x="214" y="614" class="c" text-anchor="middle">KMP_MCP_BACKEND=embedded</text>
+  <text x="214" y="632" class="s" text-anchor="middle">one data dir per tenant</text>
+
+  <rect x="420" y="546" width="340" height="104" rx="10" fill="#ffffff" stroke="#C9B08C" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="590" y="572" class="b" text-anchor="middle">Later, no change in axlr-bots</text>
+  <text x="590" y="594" class="c" text-anchor="middle">KMP_MCP_BACKEND=grpc</text>
+  <text x="590" y="612" class="s" text-anchor="middle">kmp-server (Neo4j, Valkey, NATS)</text>
+  <text x="590" y="630" class="s" text-anchor="middle">shared by several hosts</text>
+
+  <rect x="816" y="546" width="320" height="104" rx="10" fill="#ffffff" stroke="#6B4A2E" stroke-width="1.5"/>
+  <text x="976" y="572" class="b" text-anchor="middle">Why not AXLR's own KMP</text>
+  <text x="976" y="594" class="s" text-anchor="middle">one owner, no double writes</text>
+  <text x="976" y="612" class="s" text-anchor="middle">isolation enforced, not trusted</text>
+  <text x="976" y="630" class="s" text-anchor="middle">same memory on every node</text>
+
+  <path d="M139,380 L139,460 L214,460 L214,542" class="mem" marker-end="url(#g)"/>
+  <path d="M364,598 L416,598" class="ln dash" marker-end="url(#a)"/>
+</svg>

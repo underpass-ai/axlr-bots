@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" width="1200" height="620" role="img" aria-labelledby="t d">
+  <title id="t">KMP memory in AXLR Bots: isolation</title>
+  <desc id="d">KMP has no tenants in its embedded or gRPC modes, so AXLR Bots keeps one store per tenant and one about per bot, chosen by the control plane. A team about is shared only by the bots of that team and only when they opt in.</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#B85C38"/>
+    </marker>
+    <style>
+      text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1B1411; }
+      .h { font-size: 22px; font-weight: 700; }
+      .b { font-size: 15px; font-weight: 700; }
+      .m { font-size: 13px; }
+      .s { font-size: 12px; fill: #6B4A2E; }
+      .c { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+      .mem { stroke: #B85C38; stroke-width: 2; fill: none; }
+      .no { stroke: #9A9A92; stroke-width: 2; fill: none; stroke-dasharray: 5 4; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="620" fill="#ffffff"/>
+  <text x="40" y="44" class="h">KMP memory in AXLR Bots — isolation</text>
+  <text x="40" y="68" class="m">KMP's embedded and gRPC modes have no tenants. AXLR Bots draws the boundary: one store per tenant, one about per bot.</text>
+
+  <!-- tenant A -->
+  <rect x="40" y="96" width="540" height="420" rx="14" fill="#FBF6EE" stroke="#C9B08C" stroke-width="1.5"/>
+  <text x="60" y="124" class="b">Tenant A</text>
+  <text x="60" y="144" class="c">&lt;state&gt;/memory/A/   (KMP_MCP_DATA_DIR)</text>
+
+  <rect x="64" y="168" width="150" height="56" rx="10" fill="#ffffff" stroke="#6B4A2E" stroke-width="1.5"/>
+  <text x="139" y="194" class="b" text-anchor="middle">bot triage</text>
+  <text x="139" y="212" class="s" text-anchor="middle">team: oncall</text>
+  <rect x="64" y="248" width="150" height="56" rx="10" fill="#ffffff" stroke="#6B4A2E" stroke-width="1.5"/>
+  <text x="139" y="274" class="b" text-anchor="middle">bot remedy</text>
+  <text x="139" y="292" class="s" text-anchor="middle">team: oncall</text>
+  <rect x="64" y="328" width="150" height="56" rx="10" fill="#ffffff" stroke="#6B4A2E" stroke-width="1.5"/>
+  <text x="139" y="354" class="b" text-anchor="middle">bot reports</text>
+  <text x="139" y="372" class="s" text-anchor="middle">no team</text>
+
+  <rect x="300" y="168" width="250" height="56" rx="10" fill="#FDEBDD" stroke="#B85C38" stroke-width="1.5"/>
+  <text x="425" y="201" class="c" text-anchor="middle">about  bot:triage</text>
+  <rect x="300" y="248" width="250" height="56" rx="10" fill="#FDEBDD" stroke="#B85C38" stroke-width="1.5"/>
+  <text x="425" y="281" class="c" text-anchor="middle">about  bot:remedy</text>
+  <rect x="300" y="328" width="250" height="56" rx="10" fill="#FDEBDD" stroke="#B85C38" stroke-width="1.5"/>
+  <text x="425" y="361" class="c" text-anchor="middle">about  bot:reports</text>
+  <rect x="300" y="420" width="250" height="56" rx="10" fill="#ffffff" stroke="#D97B2D" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="425" y="444" class="c" text-anchor="middle">about  team:oncall</text>
+  <text x="425" y="462" class="s" text-anchor="middle">read by its members when they opt in</text>
+
+  <path d="M214,196 L296,196" class="mem" marker-end="url(#a)"/>
+  <path d="M214,276 L296,276" class="mem" marker-end="url(#a)"/>
+  <path d="M214,356 L296,356" class="mem" marker-end="url(#a)"/>
+  <path d="M180,224 L180,236 L250,236 L250,440 L296,440" class="mem" stroke-dasharray="6 4" marker-end="url(#a)"/>
+  <path d="M190,304 L190,316 L258,316 L258,452 L296,452" class="mem" stroke-dasharray="6 4" marker-end="url(#a)"/>
+
+  <!-- tenant B -->
+  <rect x="620" y="96" width="300" height="420" rx="14" fill="#F4F4F2" stroke="#9A9A92" stroke-width="1.5"/>
+  <text x="640" y="124" class="b">Tenant B</text>
+  <text x="640" y="144" class="c">&lt;state&gt;/memory/B/</text>
+  <rect x="644" y="168" width="252" height="56" rx="10" fill="#ffffff" stroke="#6B4A2E" stroke-width="1.5"/>
+  <text x="770" y="194" class="b" text-anchor="middle">bot triage</text>
+  <text x="770" y="212" class="c" text-anchor="middle">about  bot:triage</text>
+  <text x="770" y="260" class="m" text-anchor="middle">Same bot name, another store:</text>
+  <text x="770" y="278" class="m" text-anchor="middle">nothing of tenant A is visible.</text>
+  <path d="M640,330 L560,330" class="no"/>
+  <text x="600" y="322" class="s" text-anchor="middle">✕</text>
+
+  <!-- rules -->
+  <rect x="960" y="96" width="200" height="420" rx="14" fill="#ffffff" stroke="#B85C38" stroke-width="2"/>
+  <text x="980" y="124" class="b">Rules</text>
+  <text x="980" y="156" class="m">1. The control plane</text>
+  <text x="980" y="174" class="m">   picks store and about.</text>
+  <text x="980" y="204" class="m">2. The model never</text>
+  <text x="980" y="222" class="m">   names an about.</text>
+  <text x="980" y="252" class="m">3. Recalled text is data,</text>
+  <text x="980" y="270" class="m">   not instructions.</text>
+  <text x="980" y="300" class="m">4. Every write carries</text>
+  <text x="980" y="318" class="m">   actor, task, execution</text>
+  <text x="980" y="336" class="m">   and evidence.</text>
+  <text x="980" y="366" class="m">5. A deleted bot keeps</text>
+  <text x="980" y="384" class="m">   its about until the</text>
+  <text x="980" y="402" class="m">   operator purges it.</text>
+
+  <text x="40" y="560" class="s">KMP's HTTP gateway can check abouts per caller with OIDC claims; it needs the gRPC server. Until a fleet uses it, the per-tenant store is the boundary.</text>
+  <text x="40" y="584" class="s">Labels inside an about (bot, team, trigger, outcome) filter recall; they are not a security boundary.</text>
+</svg>
