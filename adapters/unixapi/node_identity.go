@@ -3,6 +3,7 @@ package unixapi
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
 	"github.com/underpass-ai/axlr-bots/application"
@@ -10,10 +11,12 @@ import (
 )
 
 // nodeIdentity is who a node request comes from when a client
-// certificate authenticated it: the common name and the serial.
+// certificate authenticated it: the common name, the serial and when
+// the certificate expires.
 type nodeIdentity struct {
-	ID     domain.NodeID
-	Serial string
+	ID       domain.NodeID
+	Serial   string
+	NotAfter time.Time
 }
 
 type identityKey struct{}
@@ -26,7 +29,8 @@ func identityOf(r *http.Request) (nodeIdentity, bool) {
 
 // authenticated wraps a node route. Over TLS the request must carry a
 // client certificate (the handshake already verified it against the
-// fleet CA), its common name must be the node id in the path, and the
+// fleet CA) that was issued to a node, not to another of the fleet's
+// clients, its common name must be the node id in the path, and the
 // certificate must be the node's current one and not revoked; the
 // identity is then on the context for the handler. Over the socket,
 // where no certificate exists, the path is trusted as before.
@@ -41,6 +45,10 @@ func (s *Server) authenticated(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		leaf := r.TLS.PeerCertificates[0]
+		if !pki.IsNodeCertificate(leaf) {
+			respond(w, 0, nil, domain.ForbiddenError{Reason: "the certificate was not issued to a node"})
+			return
+		}
 		id, err := domain.NewNodeID(leaf.Subject.CommonName)
 		if err != nil {
 			respond(w, 0, nil, domain.ForbiddenError{Reason: "the certificate's common name is not a node id: " + err.Error()})
@@ -50,7 +58,7 @@ func (s *Server) authenticated(next http.HandlerFunc) http.HandlerFunc {
 			respond(w, 0, nil, domain.ForbiddenError{Reason: "the certificate is for node " + id.String() + ", the request names " + pathID})
 			return
 		}
-		identity := nodeIdentity{ID: id, Serial: pki.SerialOf(leaf)}
+		identity := nodeIdentity{ID: id, Serial: pki.SerialOf(leaf), NotAfter: leaf.NotAfter}
 		if err := application.NewAuthenticateNode(s.service.Dependencies()).Execute(r.Context(), identity.ID, identity.Serial); err != nil {
 			respond(w, 0, nil, err)
 			return

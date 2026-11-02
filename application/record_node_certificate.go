@@ -24,15 +24,14 @@ func NewRecordNodeCertificate(deps Dependencies) RecordNodeCertificate {
 // certificate and the expiry is new; the node is saved only then. An
 // unknown node records nothing.
 func (uc RecordNodeCertificate) Execute(ctx context.Context, id domain.NodeID, serial string, notAfter time.Time) error {
-	node, err := uc.deps.Nodes.Get(ctx, id)
+	err := uc.deps.Nodes.Update(ctx, id, func(node *domain.Node) error {
+		if !node.RecordCertificateExpiry(serial, notAfter) {
+			return ErrNodeUnchanged
+		}
+		return nil
+	})
 	if domain.IsNotFound(err) {
 		return nil
 	}
-	if err != nil {
-		return err
-	}
-	if !node.RecordCertificateExpiry(serial, notAfter) {
-		return nil
-	}
-	return uc.deps.Nodes.Save(ctx, node)
+	return err
 }

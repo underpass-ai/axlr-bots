@@ -75,27 +75,42 @@ func (uc EnrollNode) certify(ctx context.Context, enrollment domain.Enrollment, 
 	if hostName == "" {
 		hostName = enrollment.NodeID().String()
 	}
-	node, err := uc.deps.Nodes.Get(ctx, enrollment.NodeID())
-	switch {
-	case domain.IsNotFound(err):
-		node, err = domain.NewNode(enrollment.NodeID(), hostName, enrollment.Labels(), domain.NodeCapabilities{}, now)
-		if err != nil {
-			return domain.Node{}, err
+	var node domain.Node
+	err := uc.deps.Nodes.Update(ctx, enrollment.NodeID(), func(known *domain.Node) error {
+		if previous := known.CertificateSerial(); previous != "" && previous != issued.Serial {
+			if err := uc.deps.Denylist.Deny(ctx, previous, known.ID().String()); err != nil {
+				return err
+			}
 		}
-	case err != nil:
+		if err := uc.pin(known, enrollment, issued, now); err != nil {
+			return err
+		}
+		node = *known
+		return nil
+	})
+	if !domain.IsNotFound(err) {
+		return node, err
+	}
+	// The enrollment's labels are the operator's, set by Certify; the
+	// node has reported none yet.
+	node, err = domain.NewNode(enrollment.NodeID(), hostName, nil, domain.NodeCapabilities{}, now)
+	if err != nil {
 		return domain.Node{}, err
 	}
-	if previous := node.CertificateSerial(); previous != "" && previous != issued.Serial {
-		if err := uc.deps.Denylist.Deny(ctx, previous, node.ID().String()); err != nil {
-			return domain.Node{}, err
-		}
-	}
-	if err := node.Certify(issued.Serial, enrollment.Labels(), now); err != nil {
+	if err := uc.pin(&node, enrollment, issued, now); err != nil {
 		return domain.Node{}, err
 	}
-	node.RecordCertificateExpiry(issued.Serial, issued.NotAfter)
 	if err := uc.deps.Nodes.Save(ctx, node); err != nil {
 		return domain.Node{}, err
 	}
 	return node, nil
+}
+
+// pin records the issued certificate, and its expiry, on the node.
+func (uc EnrollNode) pin(node *domain.Node, enrollment domain.Enrollment, issued IssuedCertificate, now time.Time) error {
+	if err := node.Certify(issued.Serial, enrollment.Labels(), now); err != nil {
+		return err
+	}
+	node.RecordCertificateExpiry(issued.Serial, issued.NotAfter)
+	return nil
 }

@@ -8,11 +8,15 @@ import "time"
 // plane never reaches into the host. A node on another host holds a
 // client certificate whose common name is its id; the node keeps the
 // serial of the current one, and a revoked node is refused whatever it
-// presents until it is enrolled again.
+// presents until it is enrolled again. Its labels come from two places:
+// the operator's, on the enrollment token, and the ones the agent
+// reports when it registers; the operator's win, so a node cannot move
+// itself out of the zone it was enrolled into.
 type Node struct {
 	id                NodeID
 	hostName          string
-	labels            NodeLabels
+	operatorLabels    NodeLabels
+	reportedLabels    NodeLabels
 	capabilities      NodeCapabilities
 	status            NodeStatus
 	registeredAt      time.Time
@@ -22,7 +26,7 @@ type Node struct {
 	revokedAt         time.Time
 }
 
-// NewNode registers a node.
+// NewNode registers a node with the labels its agent reported.
 func NewNode(id NodeID, hostName string, labels NodeLabels, capabilities NodeCapabilities, now time.Time) (Node, error) {
 	host, err := validateText("host name", hostName, 253)
 	if err != nil {
@@ -31,7 +35,7 @@ func NewNode(id NodeID, hostName string, labels NodeLabels, capabilities NodeCap
 	if now.IsZero() {
 		return Node{}, invalid("registered at", "must not be zero")
 	}
-	return Node{id: id, hostName: host, labels: labels, capabilities: capabilities, status: NodeRegistered, registeredAt: now, lastSeenAt: now}, nil
+	return Node{id: id, hostName: host, reportedLabels: labels, capabilities: capabilities, status: NodeRegistered, registeredAt: now, lastSeenAt: now}, nil
 }
 
 // ID is the node's identifier.
@@ -40,8 +44,27 @@ func (n Node) ID() NodeID { return n.id }
 // HostName is the host the node reported.
 func (n Node) HostName() string { return n.hostName }
 
-// Labels are the node's labels.
-func (n Node) Labels() NodeLabels { return n.labels }
+// Labels are the node's effective labels: the ones its agent reported,
+// with the operator's on top wherever both name a key.
+func (n Node) Labels() NodeLabels {
+	if len(n.operatorLabels) == 0 && len(n.reportedLabels) == 0 {
+		return nil
+	}
+	labels := make(NodeLabels, len(n.operatorLabels)+len(n.reportedLabels))
+	for k, v := range n.reportedLabels {
+		labels[k] = v
+	}
+	for k, v := range n.operatorLabels {
+		labels[k] = v
+	}
+	return labels
+}
+
+// OperatorLabels are the labels of the node's enrollment token.
+func (n Node) OperatorLabels() NodeLabels { return n.operatorLabels }
+
+// ReportedLabels are the labels the node's agent last reported.
+func (n Node) ReportedLabels() NodeLabels { return n.reportedLabels }
 
 // Capabilities is what the node can run.
 func (n Node) Capabilities() NodeCapabilities { return n.capabilities }
@@ -70,8 +93,9 @@ func (n Node) RevokedAt() time.Time { return n.revokedAt }
 
 // Describe takes a node's registration again: a restarted agent reports
 // its host, labels and capabilities anew and comes Online. A
-// registration without labels keeps the ones the node has (an enrolled
-// node's labels are the operator's). A revoked node is refused.
+// registration without labels keeps the ones the node reported before;
+// the operator's labels stay whatever the node reports. A revoked node
+// is refused.
 func (n *Node) Describe(hostName string, labels NodeLabels, capabilities NodeCapabilities, now time.Time) error {
 	if n.IsRevoked() {
 		return n.refuse("register")
@@ -82,7 +106,7 @@ func (n *Node) Describe(hostName string, labels NodeLabels, capabilities NodeCap
 	}
 	n.hostName = host
 	if len(labels) > 0 {
-		n.labels = labels
+		n.reportedLabels = labels
 	}
 	n.capabilities = capabilities
 	n.status = NodeOnline
@@ -104,6 +128,8 @@ func (n *Node) Heartbeat(now time.Time) error {
 // one the control plane now expects. A revoked node that is enrolled
 // again is readmitted as Registered; an enrolled node that enrols again
 // rotates its certificate and the previous one stops being accepted.
+// Labels, when given, become the operator's; none keeps the ones the
+// node has.
 func (n *Node) Certify(serial string, labels NodeLabels, now time.Time) error {
 	if serial == "" {
 		return invalid("certificate serial", "must not be empty")
@@ -113,7 +139,7 @@ func (n *Node) Certify(serial string, labels NodeLabels, now time.Time) error {
 	}
 	n.certificateSerial = serial
 	if len(labels) > 0 {
-		n.labels = labels
+		n.operatorLabels = labels
 	}
 	if n.IsRevoked() {
 		n.status = NodeRegistered
@@ -175,7 +201,8 @@ func (n Node) SeenWithin(now time.Time, within time.Duration) bool {
 // Snapshot returns the node as plain data.
 func (n Node) Snapshot() NodeSnapshot {
 	s := NodeSnapshot{
-		ID: n.id.String(), HostName: n.hostName, Labels: n.labels.Copy(), Capabilities: n.capabilities,
+		ID: n.id.String(), HostName: n.hostName, Labels: n.Labels().Copy(), Capabilities: n.capabilities,
+		OperatorLabels: n.operatorLabels.Copy(), ReportedLabels: n.reportedLabels.Copy(),
 		Status: n.status.String(), RegisteredAt: n.registeredAt, LastSeenAt: n.lastSeenAt, CertificateSerial: n.certificateSerial,
 	}
 	if !n.certificateExpiry.IsZero() {
@@ -195,7 +222,7 @@ func RestoreNode(s NodeSnapshot) (Node, error) {
 	if err != nil {
 		return Node{}, err
 	}
-	labels, err := NewNodeLabels(s.Labels)
+	operator, reported, err := restoreNodeLabels(s)
 	if err != nil {
 		return Node{}, err
 	}
@@ -203,10 +230,11 @@ func RestoreNode(s NodeSnapshot) (Node, error) {
 	if err != nil {
 		return Node{}, err
 	}
-	node, err := NewNode(id, s.HostName, labels, s.Capabilities, s.RegisteredAt)
+	node, err := NewNode(id, s.HostName, reported, s.Capabilities, s.RegisteredAt)
 	if err != nil {
 		return Node{}, err
 	}
+	node.operatorLabels = operator
 	if s.LastSeenAt.IsZero() {
 		return Node{}, invalid("last seen at", "must not be zero")
 	}
@@ -223,4 +251,28 @@ func RestoreNode(s NodeSnapshot) (Node, error) {
 		return Node{}, invalid("revoked at", "must be set on a revoked node")
 	}
 	return node, nil
+}
+
+// restoreNodeLabels splits a snapshot's labels into the operator's and
+// the reported ones. A record written before the two were kept apart
+// has only the effective labels: an enrolled node's were set by its
+// enrollment and are the operator's, any other node's were reported.
+func restoreNodeLabels(s NodeSnapshot) (operator, reported NodeLabels, err error) {
+	if s.OperatorLabels == nil && s.ReportedLabels == nil {
+		labels, err := NewNodeLabels(s.Labels)
+		if err != nil {
+			return nil, nil, err
+		}
+		if s.CertificateSerial != "" {
+			return labels, nil, nil
+		}
+		return nil, labels, nil
+	}
+	if operator, err = NewNodeLabels(s.OperatorLabels); err != nil {
+		return nil, nil, err
+	}
+	if reported, err = NewNodeLabels(s.ReportedLabels); err != nil {
+		return nil, nil, err
+	}
+	return operator, reported, nil
 }

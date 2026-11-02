@@ -33,13 +33,32 @@ func (uc MarkOfflineNodes) Execute(ctx context.Context, after time.Duration) ([]
 	}
 	now := uc.deps.Clock.Now()
 	offline := []domain.NodeID{}
-	for _, node := range nodes {
-		if !node.IsOnline() || node.SeenWithin(now, after) {
+	silent := func(node domain.Node) bool { return node.IsOnline() && !node.SeenWithin(now, after) }
+	for _, listed := range nodes {
+		if !silent(listed) {
 			continue
 		}
-		node.MarkOffline()
-		if err := uc.deps.Nodes.Save(ctx, node); err != nil {
+		// The listing may be stale by now: a heartbeat that landed since
+		// keeps the node Online, so the check is made again on the
+		// record the update reads.
+		var node domain.Node
+		marked := false
+		err := uc.deps.Nodes.Update(ctx, listed.ID(), func(current *domain.Node) error {
+			if !silent(*current) {
+				return ErrNodeUnchanged
+			}
+			current.MarkOffline()
+			node, marked = *current, true
+			return nil
+		})
+		if domain.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
 			return nil, err
+		}
+		if !marked {
+			continue
 		}
 		if err := uc.rec.nodeEvent(ctx, domain.EventNodeOffline, node.ID(), map[string]any{"lastSeenAt": node.LastSeenAt()}); err != nil {
 			return nil, err

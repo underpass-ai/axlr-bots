@@ -29,22 +29,20 @@ func (uc RegisterNode) Execute(ctx context.Context, registration NodeRegistratio
 		return domain.Node{}, err
 	}
 	now := uc.deps.Clock.Now()
-	node, err := uc.deps.Nodes.Get(ctx, id)
+	var node domain.Node
+	err = uc.deps.Nodes.Update(ctx, id, func(known *domain.Node) error {
+		if err := known.Describe(registration.HostName, labels, registration.Capabilities, now); err != nil {
+			return err
+		}
+		node = *known
+		return nil
+	})
 	switch {
-	case err == nil:
-		if err := node.Describe(registration.HostName, labels, registration.Capabilities, now); err != nil {
-			return domain.Node{}, err
-		}
 	case domain.IsNotFound(err):
-		node, err = domain.NewNode(id, registration.HostName, labels, registration.Capabilities, now)
-		if err != nil {
+		if node, err = uc.create(ctx, id, labels, registration); err != nil {
 			return domain.Node{}, err
 		}
-		_ = node.Heartbeat(now)
-	default:
-		return domain.Node{}, err
-	}
-	if err := uc.deps.Nodes.Save(ctx, node); err != nil {
+	case err != nil:
 		return domain.Node{}, err
 	}
 	payload := map[string]any{"hostName": node.HostName(), "labels": node.Labels().Copy(), "capabilities": node.Capabilities()}
@@ -52,6 +50,31 @@ func (uc RegisterNode) Execute(ctx context.Context, registration NodeRegistratio
 		return domain.Node{}, err
 	}
 	if err := uc.rec.audit(ctx, "node.register", node.ID().String(), domain.AuditOK, map[string]string{"host": node.HostName()}); err != nil {
+		return domain.Node{}, err
+	}
+	return node, nil
+}
+
+// create stores a node the control plane does not know. Over mutual TLS
+// the node's certificate already passed the fleet CA, so the node is
+// pinned to it as an enrolled one would be: a control plane that lost
+// the node's record takes it back with the certificate it holds, and
+// every later call is checked against that serial. The serial is set
+// only here; a known node's comes from its enrollment alone.
+func (uc RegisterNode) create(ctx context.Context, id domain.NodeID, labels domain.NodeLabels, registration NodeRegistration) (domain.Node, error) {
+	now := uc.deps.Clock.Now()
+	node, err := domain.NewNode(id, registration.HostName, labels, registration.Capabilities, now)
+	if err != nil {
+		return domain.Node{}, err
+	}
+	if registration.CertificateSerial != "" {
+		if err := node.Certify(registration.CertificateSerial, nil, now); err != nil {
+			return domain.Node{}, err
+		}
+		node.RecordCertificateExpiry(registration.CertificateSerial, registration.CertificateNotAfter)
+	}
+	_ = node.Heartbeat(now)
+	if err := uc.deps.Nodes.Save(ctx, node); err != nil {
 		return domain.Node{}, err
 	}
 	return node, nil

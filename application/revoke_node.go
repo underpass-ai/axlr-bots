@@ -24,20 +24,21 @@ func NewRevokeNode(deps Dependencies) RevokeNode {
 
 // Execute revokes the node.
 func (uc RevokeNode) Execute(ctx context.Context, id domain.NodeID) (RevokeNodeResult, error) {
-	node, err := uc.deps.Nodes.Get(ctx, id)
-	if err != nil {
-		return RevokeNodeResult{}, err
-	}
 	now := uc.deps.Clock.Now()
-	if err := node.Revoke(now); err != nil {
-		return RevokeNodeResult{}, err
-	}
-	if serial := node.CertificateSerial(); serial != "" {
-		if err := uc.deps.Denylist.Deny(ctx, serial, id.String()); err != nil {
-			return RevokeNodeResult{}, err
+	var node domain.Node
+	err := uc.deps.Nodes.Update(ctx, id, func(current *domain.Node) error {
+		if err := current.Revoke(now); err != nil {
+			return err
 		}
-	}
-	if err := uc.deps.Nodes.Save(ctx, node); err != nil {
+		if serial := current.CertificateSerial(); serial != "" {
+			if err := uc.deps.Denylist.Deny(ctx, serial, id.String()); err != nil {
+				return err
+			}
+		}
+		node = *current
+		return nil
+	})
+	if err != nil {
 		return RevokeNodeResult{}, err
 	}
 	failed, err := uc.failExecutions(ctx, node, now)
