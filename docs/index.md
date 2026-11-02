@@ -7,6 +7,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | Task | Guide |
 |:--|:--|
 | Write a bot: mission, model, tools, autonomy level, triggers, budgets, placement | [Bot definition](reference/bot-definition.md) |
+| Start from a ready-made bot: 31 definitions to register as they are, what each is for, its trigger, its level and what its node needs | [Bot catalog](../catalog/README.md) |
 | Look up a command, its defaults and its environment | [Command reference](reference/cli.md) |
 | Run a bot with no language model: a fixed program over one MCP server whose every choice Jev makes | [Runtime](reference/bot-definition.md#runtime) |
 | Watch the fleet, send tasks and approve calls from a desktop window | [Control panel](../panel/README.md) |

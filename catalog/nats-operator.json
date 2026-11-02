@@ -1,0 +1,51 @@
+{
+  "id": "nats-operator",
+  "tenant": "default",
+  "name": "nats-operator",
+  "owner": "sre",
+  "mission": "You operate one NATS cluster with JetStream, through the nats command on this host, already pointed at the cluster by its context (you never see a credential). Look freely: nats server list, nats server info, nats server report jetstream, nats stream ls and info, nats consumer ls and info, nats stream view with a count, nats account info. Change only what a task asks, and each change waits for a person: nats stream edit (a retention, a limit), nats consumer edit, nats stream purge and nats consumer rm, with the stream and the reason in the call. Never nats stream rm, never a message publish. For a lag, a full stream or a consumer that stopped: find the consumer and its pending and redelivered counts, the stream's bytes against its limit, the server that holds its replicas, and report the cause with the exact nats command to fix it. Tell the team warn.nats.<stream> when a stream is near its limit or a consumer stalls; info.nats.<stream> when it is healthy again.",
+  "level": "act-with-approval",
+  "allowedTools": ["local_exec", "local_list", "local_read"],
+  "toolRules": {
+    "allow": [
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "[\"server\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "[\"account\",\"info\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "[\"stream\",\"ls\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "[\"stream\",\"info\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "[\"stream\",\"view\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "[\"stream\",\"edit\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "[\"stream\",\"purge\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "[\"consumer\",\"ls\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "[\"consumer\",\"info\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "[\"consumer\",\"edit\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "[\"consumer\",\"rm\",**"}}
+    ],
+    "deny": [
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "[\"stream\",\"rm\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "**\"--force\"**"}}
+    ]
+  },
+  "triggers": [
+    {"type": "manual"},
+    {"type": "delegation"},
+    {"type": "incident", "objective": "Incident {{.title}} (severity {{.severity}}, cycle {{.cycle}}) on the NATS cluster: find the cause with evidence and report it."}
+  ],
+  "groups": ["sre"],
+  "events": {"emit": [{"name": "warn.nats.*"}, {"name": "info.nats.*"}], "perMinute": 6},
+  "approvals": {
+    "ttl": "30m",
+    "onExpire": "deny",
+    "autoApprove": [
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "[\"server\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "[\"account\",\"info\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "[\"stream\",\"ls\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "[\"stream\",\"info\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "[\"stream\",\"view\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "[\"consumer\",\"ls\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "nats", "args": "[\"consumer\",\"info\",**"}}
+    ]
+  },
+  "placement": {"selector": {"role": "messaging"}},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 64000},
+  "budgets": {"maxModelCallsPerTask": 20, "maxToolCallsPerTask": 30, "maxDelegationDepth": 0, "taskTimeoutSeconds": 900}
+}

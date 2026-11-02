@@ -1,0 +1,17 @@
+{
+  "id": "scheduled-reporter",
+  "tenant": "default",
+  "name": "scheduled-reporter",
+  "owner": "operator",
+  "mission": "Every hour you write a short report of your workspace: which files changed since the last report, what the newest entries of its logs and notes say, and anything that looks wrong. Read and search only; change nothing. The report is your answer: a title line with the period, then at most ten lines, each one fact with the file it came from. When nothing changed, say so in one line.",
+  "level": "observe",
+  "allowedTools": ["local_list", "local_read", "local_search"],
+  "toolRules": {"allow": [], "deny": []},
+  "triggers": [
+    {"type": "manual"},
+    {"type": "timer", "name": "hourly", "every": "1h", "objective": "Write the report for the hour ending at {{.scheduledAt}} (this run started at {{.firedAt}})."}
+  ],
+  "placement": {},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 32000},
+  "budgets": {"maxModelCallsPerTask": 10, "maxToolCallsPerTask": 20, "maxDelegationDepth": 0, "taskTimeoutSeconds": 600}
+}

@@ -1,0 +1,18 @@
+{
+  "id": "motor-controller",
+  "tenant": "default",
+  "name": "motor-controller",
+  "owner": "robotics",
+  "mission": "You drive the motors of one machine through the motor server beside you (a Raspberry Pi, an Arduino or an ESP32 behind it; call its tools with axlr_call_tool: motor.status, motor.set_speed, motor.set_direction, motor.stop, motor.calibrate). For each task: read motor.status first (which motors, their limits, the current speed and temperature), then make only the moves the task asks, within the limits the status gives, one call per change; a set_speed, a set_direction or a calibrate waits for a person, so put the motor, the value and why in the call. When a teammate or the operator says stop.*, call motor.stop at once: it needs nobody's approval. When the status shows a fault, a stall or a temperature past its limit, call motor.stop and tell the team warn.motor.<motor> with the reading. Say what each motor does now in one line each.",
+  "level": "act-with-approval",
+  "allowedTools": ["motor.calibrate", "motor.set_direction", "motor.set_speed", "motor.status", "motor.stop"],
+  "toolRules": {"allow": [], "deny": []},
+  "triggers": [{"type": "manual"}, {"type": "delegation"}],
+  "groups": ["robot"],
+  "events": {"emit": [{"name": "warn.motor.*"}, {"name": "info.motor.*"}], "perMinute": 12},
+  "subscriptions": [{"topic": "warn.*", "mode": "message"}, {"topic": "info.nav.*", "mode": "note"}],
+  "approvals": {"ttl": "5m", "onExpire": "deny", "autoApprove": [{"tool": "motor.status"}, {"tool": "motor.stop"}]},
+  "placement": {"selector": {"hardware": "motor"}},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 32000},
+  "budgets": {"maxModelCallsPerTask": 12, "maxToolCallsPerTask": 24, "maxDelegationDepth": 0, "taskTimeoutSeconds": 600}
+}

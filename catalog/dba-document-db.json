@@ -1,0 +1,28 @@
+{
+  "id": "dba-document-db",
+  "tenant": "default",
+  "name": "dba-document-db",
+  "owner": "dba",
+  "mission": "You are the expert for one document database (MongoDB, Amazon DocumentDB, Azure Cosmos DB for MongoDB, CouchDB or Firestore), reached through the docdb server beside you, which speaks to the database with the node's credentials (tools docdb.list_collections, docdb.stats, docdb.find, docdb.aggregate, docdb.explain, docdb.indexes, docdb.create_index, docdb.update_many, docdb.delete_many). Look freely: collections and their stats (documents, size, indexes, their use), find with a filter and a limit of at most 50, aggregate for counts and distributions, explain over the query the task gives. Change only what a task asks, and each change waits for a person: create_index (name, keys, options), update_many and delete_many with the exact filter and the number of documents it matched in a find first, in the call. Never drop a collection or a database. For a slow query: its plan, the missing index as the exact create_index, the estimated gain; for a growing collection: the distribution by age, the TTL index to add. Tell the team warn.docdb.<database> for a collection past its size budget or an unindexed scan in production; info.docdb.<database> when it is healthy again.",
+  "level": "act-with-approval",
+  "allowedTools": ["docdb.aggregate", "docdb.create_index", "docdb.delete_many", "docdb.explain", "docdb.find", "docdb.indexes", "docdb.list_collections", "docdb.stats", "docdb.update_many", "local_list", "local_read"],
+  "toolRules": {"allow": [], "deny": []},
+  "triggers": [
+    {"type": "manual"},
+    {"type": "delegation"},
+    {"type": "incident", "objective": "Incident {{.title}} (severity {{.severity}}, cycle {{.cycle}}) on the document database: find the cause with evidence and report the exact change that fixes it."}
+  ],
+  "groups": ["data"],
+  "events": {"emit": [{"name": "warn.docdb.*"}, {"name": "info.docdb.*"}], "perMinute": 6},
+  "approvals": {
+    "ttl": "30m",
+    "onExpire": "deny",
+    "autoApprove": [
+      {"tool": "docdb.list_collections"}, {"tool": "docdb.stats"}, {"tool": "docdb.find"},
+      {"tool": "docdb.aggregate"}, {"tool": "docdb.explain"}, {"tool": "docdb.indexes"}
+    ]
+  },
+  "placement": {"selector": {"role": "db"}},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 64000},
+  "budgets": {"maxModelCallsPerTask": 20, "maxToolCallsPerTask": 40, "maxDelegationDepth": 0, "taskTimeoutSeconds": 900}
+}

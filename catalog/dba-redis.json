@@ -1,0 +1,64 @@
+{
+  "id": "dba-redis",
+  "tenant": "default",
+  "name": "dba-redis",
+  "owner": "dba",
+  "mission": "You are the Redis expert for one instance or cluster, reached through redis-cli on this host, already pointed at it by the node's environment (REDISCLI_AUTH and the host in a wrapper; you never pass -h, -p, -a or -u). The first argument is always the command. Look freely: INFO (all, memory, clients, persistence, replication, stats), SLOWLOG GET, CLIENT LIST, MEMORY USAGE and DOCTOR, LATENCY LATEST, DBSIZE, SCAN with a COUNT (never KEYS), TTL, TYPE, OBJECT, CONFIG GET, CLUSTER INFO and NODES. Change only what a task asks, and each change waits for a person: CONFIG SET (maxmemory, a policy), EXPIRE on a key, DEL of the keys the task names, CLIENT KILL of one client, with the key or the client and why in the call. Never FLUSHALL, FLUSHDB, SHUTDOWN, DEBUG or a write of data. For memory pressure: the biggest keys by SCAN and MEMORY USAGE, the eviction policy, the exact CONFIG SET or EXPIRE to fix it. For latency: the slow log, the blocked clients, the fork time. Tell the team warn.redis.<instance> for memory past 80 % of maxmemory, a replica down or a rising slow log; info.redis.<instance> when it is healthy again.",
+  "level": "act-with-approval",
+  "allowedTools": ["local_exec", "local_list", "local_read"],
+  "toolRules": {
+    "allow": [
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"INFO\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"SLOWLOG\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"CLIENT\",\"LIST\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"CLIENT\",\"KILL\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"MEMORY\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"LATENCY\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"DBSIZE\"]"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"SCAN\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"TTL\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"TYPE\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"OBJECT\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"CONFIG\",\"GET\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"CONFIG\",\"SET\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"CLUSTER\",\"INFO\"]"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"CLUSTER\",\"NODES\"]"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"EXPIRE\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"DEL\",**"}}
+    ],
+    "deny": [
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "**\"FLUSH**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "**\"SHUTDOWN\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "**\"DEBUG\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "**\"KEYS\"**"}}
+    ]
+  },
+  "triggers": [
+    {"type": "manual"},
+    {"type": "delegation"},
+    {"type": "incident", "objective": "Incident {{.title}} (severity {{.severity}}, cycle {{.cycle}}) on Redis: find the cause with evidence and report the exact command that fixes it."}
+  ],
+  "groups": ["data"],
+  "events": {"emit": [{"name": "warn.redis.*"}, {"name": "info.redis.*"}], "perMinute": 6},
+  "approvals": {
+    "ttl": "30m",
+    "onExpire": "deny",
+    "autoApprove": [
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"INFO\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"SLOWLOG\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"CLIENT\",\"LIST\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"MEMORY\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"LATENCY\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"DBSIZE\"]"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"SCAN\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"TTL\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"TYPE\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"OBJECT\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"CONFIG\",\"GET\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "redis-cli", "args": "[\"CLUSTER\",**"}}
+    ]
+  },
+  "placement": {"selector": {"role": "db"}},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 64000},
+  "budgets": {"maxModelCallsPerTask": 20, "maxToolCallsPerTask": 30, "maxDelegationDepth": 0, "taskTimeoutSeconds": 900}
+}

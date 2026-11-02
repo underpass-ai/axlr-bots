@@ -1,0 +1,42 @@
+{
+  "id": "dba-sqlite",
+  "tenant": "default",
+  "name": "dba-sqlite",
+  "owner": "dba",
+  "mission": "You are the SQLite expert for the databases in your workspace (*.db, *.sqlite, *.sqlite3), through sqlite3 on this host. Every statement is one call: sqlite3 -readonly -json <file> '<statement>' to look, sqlite3 -json <file> '<statement>' to change. Look freely: the schema (SELECT over sqlite_master, PRAGMA table_info, index_list, foreign_key_list), PRAGMA integrity_check, page_count, page_size, journal_mode, EXPLAIN QUERY PLAN over the query the task gives, SELECT with a LIMIT of at most 50. Change only what a task asks, and each change waits for a person: CREATE INDEX, ANALYZE, VACUUM, PRAGMA journal_mode=WAL, REINDEX, with the file, the statement and why in the call. Never DROP, DELETE, UPDATE, INSERT or ALTER: a person runs those, with a copy of the file first. For a slow query: its plan, the missing index as the exact CREATE INDEX, the estimated gain. For a corrupt or bloated file: the integrity check's lines, the free pages, the exact step (VACUUM, or .recover into a new file) a person should run. Answer with the file, the statement you ran and the result in at most ten lines.",
+  "level": "act-with-approval",
+  "allowedTools": ["local_exec", "local_list", "local_read", "local_search"],
+  "toolRules": {
+    "allow": [
+      {"tool": "local_exec", "arguments": {"program": "sqlite3", "args": "[\"-readonly\",\"-json\",**,\"SELECT **"}},
+      {"tool": "local_exec", "arguments": {"program": "sqlite3", "args": "[\"-readonly\",\"-json\",**,\"PRAGMA **"}},
+      {"tool": "local_exec", "arguments": {"program": "sqlite3", "args": "[\"-readonly\",\"-json\",**,\"EXPLAIN **"}},
+      {"tool": "local_exec", "arguments": {"program": "sqlite3", "args": "[\"-json\",**,\"CREATE INDEX **"}},
+      {"tool": "local_exec", "arguments": {"program": "sqlite3", "args": "[\"-json\",**,\"ANALYZE**"}},
+      {"tool": "local_exec", "arguments": {"program": "sqlite3", "args": "[\"-json\",**,\"VACUUM**"}},
+      {"tool": "local_exec", "arguments": {"program": "sqlite3", "args": "[\"-json\",**,\"REINDEX**"}},
+      {"tool": "local_exec", "arguments": {"program": "sqlite3", "args": "[\"-json\",**,\"PRAGMA journal_mode=**"}}
+    ],
+    "deny": [
+      {"tool": "local_exec", "arguments": {"program": "sqlite3", "args": "**DROP **"}},
+      {"tool": "local_exec", "arguments": {"program": "sqlite3", "args": "**DELETE **"}},
+      {"tool": "local_exec", "arguments": {"program": "sqlite3", "args": "**UPDATE **"}},
+      {"tool": "local_exec", "arguments": {"program": "sqlite3", "args": "**INSERT **"}},
+      {"tool": "local_exec", "arguments": {"program": "sqlite3", "args": "**ALTER **"}},
+      {"tool": "local_exec", "arguments": {"program": "sqlite3", "args": "**ATTACH **"}}
+    ]
+  },
+  "triggers": [{"type": "manual"}, {"type": "delegation"}],
+  "groups": ["data"],
+  "events": {"emit": [{"name": "warn.sqlite.*"}, {"name": "info.sqlite.*"}], "perMinute": 6},
+  "approvals": {
+    "ttl": "30m",
+    "onExpire": "deny",
+    "autoApprove": [
+      {"tool": "local_exec", "arguments": {"program": "sqlite3", "args": "[\"-readonly\",**"}}
+    ]
+  },
+  "placement": {},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 64000},
+  "budgets": {"maxModelCallsPerTask": 20, "maxToolCallsPerTask": 30, "maxDelegationDepth": 0, "taskTimeoutSeconds": 900}
+}
