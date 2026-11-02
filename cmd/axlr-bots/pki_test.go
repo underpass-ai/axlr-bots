@@ -3,8 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -114,6 +118,98 @@ func TestCAInitAndServeOverTLS(t *testing.T) {
 	if !strings.Contains(serveErr.String(), "and https://127.0.0.1:"+port) {
 		t.Errorf("serve log = %s", serveErr.String())
 	}
+}
+
+func TestCAIssueClientWritesAClientCertificateOfTheFleet(t *testing.T) {
+	state := t.TempDir()
+	c := cli{t: t, state: state, axlr: "/nonexistent/axlr-tui"}
+	out := filepath.Join(t.TempDir(), "certs")
+	if code, _, errText := c.run("ca", "issue-client", "--name", "control-plane", "--out", out); code != exitError || !strings.Contains(errText, "ca init") {
+		t.Errorf("issue-client without a CA: %d %s", code, errText)
+	}
+	if code, _ := c.json("ca", "init"); code != exitOK {
+		t.Fatalf("ca init: %d", code)
+	}
+	code, report := c.json("ca", "issue-client", "--name", "control-plane", "--out", out)
+	if code != exitOK || report["subject"] != "CN=control-plane,O=axlr-bots clients" || report["dir"] != out || report["ca"] == "" {
+		t.Fatalf("issue-client: %d %v", code, report)
+	}
+	if info, err := os.Stat(filepath.Join(out, "client.key")); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("client.key: %v %v", err, info)
+	}
+	leaf := clientCertificate(t, out)
+	if leaf.Subject.CommonName != "control-plane" || len(leaf.Subject.Organization) != 1 || leaf.Subject.Organization[0] != pki.ClientOrganization {
+		t.Errorf("subject %v", leaf.Subject)
+	}
+	if !slices.Contains(leaf.ExtKeyUsage, x509.ExtKeyUsageClientAuth) {
+		t.Errorf("usage %v", leaf.ExtKeyUsage)
+	}
+	if lifetime := time.Until(leaf.NotAfter); lifetime < 364*24*time.Hour || lifetime > 366*24*time.Hour {
+		t.Errorf("default lifetime %s", lifetime)
+	}
+	// The key is the certificate's: the pair loads together.
+	if _, err := tls.LoadX509KeyPair(filepath.Join(out, "client.crt"), filepath.Join(out, "client.key")); err != nil {
+		t.Errorf("key pair: %v", err)
+	}
+	// A second run keeps the key it finds.
+	before, _ := os.ReadFile(filepath.Join(out, "client.key"))
+	if code, _, errText := c.run("ca", "issue-client", "--name", "control-plane", "--out", out); code != exitError || !strings.Contains(errText, "exists") {
+		t.Errorf("issue-client twice: %d %s", code, errText)
+	}
+	if after, _ := os.ReadFile(filepath.Join(out, "client.key")); !bytes.Equal(before, after) {
+		t.Error("the second run replaced the key")
+	}
+	short := filepath.Join(t.TempDir(), "short")
+	if code, _ := c.json("ca", "issue-client", "--name", "nats", "--out", short, "--lifetime", "1h"); code != exitOK {
+		t.Fatalf("issue-client --lifetime: %d", code)
+	}
+	if lifetime := time.Until(clientCertificate(t, short).NotAfter); lifetime < 55*time.Minute || lifetime > time.Hour+time.Minute {
+		t.Errorf("--lifetime 1h gave %s", lifetime)
+	}
+	other := filepath.Join(t.TempDir(), "other")
+	for _, args := range [][]string{
+		{"ca", "issue-client", "--out", other},
+		{"ca", "issue-client", "--name", "control-plane"},
+		{"ca", "issue-client", "--name", "control-plane", "--out", other, "extra"},
+		{"ca", "issue-client", "--bogus"},
+	} {
+		if code, _, _ := c.run(args...); code != exitUsage {
+			t.Errorf("%v: %d", args, code)
+		}
+	}
+	if _, err := os.Stat(other); !os.IsNotExist(err) {
+		t.Errorf("a refused run wrote %s: %v", other, err)
+	}
+}
+
+// clientCertificate reads the client.crt under dir and verifies it
+// against the ca.crt beside it, for client authentication.
+func clientCertificate(t *testing.T, dir string) *x509.Certificate {
+	t.Helper()
+	caPEM, err := os.ReadFile(filepath.Join(dir, "ca.crt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPEM, err := os.ReadFile(filepath.Join(dir, "client.crt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		t.Fatalf("client.crt is not PEM: %s", certPEM)
+	}
+	leaf, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(caPEM) {
+		t.Fatalf("ca.crt is not PEM: %s", caPEM)
+	}
+	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
+		t.Errorf("verify: %v", err)
+	}
+	return leaf
 }
 
 func TestServerNamesAndLabels(t *testing.T) {
