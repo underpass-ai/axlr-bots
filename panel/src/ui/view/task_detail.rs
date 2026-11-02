@@ -174,6 +174,9 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
             tokens,
         ));
     }
+    if let Some(files) = artifacts(app, detail, tokens) {
+        page = page.push(files);
+    }
     let usage = detail.total_usage();
     let mut runs = column![
         row![
@@ -212,6 +215,51 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     }))
     .height(Length::Fill)
     .into()
+}
+
+/// The files the runs delivered: name, media type and size, and Save for
+/// those the control plane keeps.
+fn artifacts<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> Option<El<'a>> {
+    let mut list = column![].spacing(10);
+    let mut any = false;
+    for execution in &detail.executions {
+        for artifact in &execution.result.artifacts {
+            any = true;
+            let mut about = vec![];
+            if !artifact.media_type.is_empty() {
+                about.push(artifact.media_type.clone());
+            }
+            if artifact.size > 0 {
+                about.push(format::bytes(artifact.size));
+            }
+            let save: El<'a> = if artifact.stored {
+                action(
+                    Kind::Secondary,
+                    Icon::File,
+                    "Save",
+                    (!app.downloading).then(|| Message::Download(execution.id.clone(), artifact.name.clone())),
+                    tokens,
+                )
+            } else {
+                muted("not kept", tokens).wrapping(text::Wrapping::None).into()
+            };
+            list = list.push(
+                row![
+                    icon(Icon::File, 18.0, tokens.muted),
+                    column![
+                        bold(artifact.name.clone()).wrapping(text::Wrapping::WordOrGlyph),
+                        muted(about.join(" · "), tokens),
+                    ]
+                    .spacing(2)
+                    .width(Length::Fill),
+                    save,
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center),
+            );
+        }
+    }
+    any.then(|| section(Icon::File, "Files", list, tokens))
 }
 
 /// An id with a copy button.

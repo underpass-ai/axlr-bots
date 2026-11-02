@@ -5,11 +5,12 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::application::{ControlPlane, PanelError, PortFuture, WaitingCall};
 use crate::domain::{
-    Bot, BotDefinition, BotId, BotPatch, BotStatus, Budgets, CancelledTask, DecidedTask, Decision, EnrollmentRequest,
-    EnrollmentToken, Event, Execution, ExecutionId, ExecutionKind, ExecutionOutcome, ExecutionResult, Node,
-    NodeCapabilities, NodeId, NodeStatus, Overview, PendingDecision, Publication, Published, RevokedNode, Secret,
-    SentTaskMessage, StoppedBotAnswer, SubmittedTask, Subscription, Task, TaskFilter, TaskId, TaskStatus,
-    TaskSubmission, ToolCall, Topic, TopicListener, TriggerRef, Usage,
+    Artifact, Bot, BotDefinition, BotId, BotPatch, BotStatus, Budgets, CancelledTask, DecidedTask, Decision,
+    EnrollmentRequest, EnrollmentToken, Event, Execution, ExecutionId, ExecutionKind, ExecutionOutcome,
+    ExecutionResult, Incident, IncidentSeverity, IncidentStatus, Node, NodeCapabilities, NodeId, NodeStatus, Overview,
+    PendingDecision, Publication, Published, RevokedNode, Secret, SentTaskMessage, StoppedBotAnswer, SubmittedTask,
+    Subscription, Task, TaskFilter, TaskId, TaskStatus, TaskSubmission, ToolCall, Topic, TopicListener, TriggerRef,
+    Usage,
 };
 
 /// The control plane in memory: what the use cases and the interface are
@@ -28,6 +29,9 @@ struct FakeState {
     tasks: Vec<Task>,
     executions: Vec<Execution>,
     events: Vec<Event>,
+    incidents: Vec<Incident>,
+    /// The bytes the control plane keeps, by execution and name.
+    artifacts: BTreeMap<(ExecutionId, String), Vec<u8>>,
     failure: Option<PanelError>,
     /// Answers as a control plane from before the stop and message routes.
     older: bool,
@@ -75,7 +79,7 @@ impl FakeControlPlane {
                 TaskStatus::Completed,
                 now - Duration::minutes(30),
             );
-            state.add_execution(
+            let done_run = state.add_execution(
                 &done,
                 ExecutionOutcome::Completed,
                 Some("wrx80"),
@@ -83,6 +87,13 @@ impl FakeControlPlane {
                 None,
                 now - Duration::minutes(30),
             );
+            state.add_artifact(
+                &done_run,
+                "files.md",
+                "text/markdown",
+                Some("# Files\n\n- a\n- b\n- c\n"),
+            );
+            state.add_artifact(&done_run, "workspace.tar", "application/x-tar", None);
             let waiting = state.add_task(
                 "bot-act-with-approval",
                 "Write hello into hello.txt",
@@ -123,7 +134,8 @@ impl FakeControlPlane {
                 TaskStatus::Expired,
                 now - Duration::minutes(1),
             );
-            state.add_task("bot", "Say the time", TaskStatus::Running, now - Duration::seconds(20));
+            let running = state.add_task("bot", "Say the time", TaskStatus::Running, now - Duration::seconds(20));
+            state.add_incidents(&running, now);
         }
         fake
     }
@@ -493,6 +505,101 @@ impl FakeState {
             created_at: now,
             payload,
         });
+    }
+
+    fn incident_mut(&mut self, id: &str) -> Result<&mut Incident, PanelError> {
+        self.incidents
+            .iter_mut()
+            .find(|i| i.id == id)
+            .ok_or_else(|| PanelError::NotFound(format!("incident {id} not found")))
+    }
+
+    /// Lists an artifact on the execution's result; with `content`, the
+    /// control plane keeps its bytes.
+    fn add_artifact(&mut self, execution: &ExecutionId, name: &str, media_type: &str, content: Option<&str>) {
+        let Some(run) = self.executions.iter_mut().find(|e| &e.id == execution) else {
+            return;
+        };
+        run.result.artifacts.push(Artifact {
+            name: name.into(),
+            media_type: media_type.into(),
+            reference: format!("out/{name}"),
+            size: content.map_or(10_485_760, |c| c.len() as u64),
+            stored: content.is_some(),
+            ..Default::default()
+        });
+        if let Some(content) = content {
+            self.artifacts
+                .insert((execution.clone(), name.into()), content.as_bytes().to_vec());
+        }
+    }
+
+    /// Three incidents the bot `bot` triages: one open that the running
+    /// task works on, one escalated to a person, one resolved.
+    fn add_incidents(&mut self, triage: &TaskId, now: DateTime<Utc>) {
+        if let Some(task) = self.tasks.iter_mut().find(|t| &t.id == triage) {
+            task.incident_id = "inc-latency".into();
+        }
+        let incident = |id: &str, title: &str, severity, status, ago: i64| Incident {
+            id: id.into(),
+            tenant_id: "acme".into(),
+            bot_id: BotId::new("bot").unwrap(),
+            group_key: format!("{{}}:{{alertname=\"{id}\"}}"),
+            source: "alertmanager".into(),
+            title: title.into(),
+            severity,
+            status,
+            fingerprints: Vec::new(),
+            resolved_fingerprints: Vec::new(),
+            cycle: 1,
+            task_ids: Vec::new(),
+            diagnosis: String::new(),
+            reason: String::new(),
+            repeats: 0,
+            retries: 0,
+            cost_usd: 0.0,
+            opened_at: now - Duration::minutes(ago + 10),
+            updated_at: now - Duration::minutes(ago),
+            last_seen_at: now - Duration::minutes(ago),
+            resolved_at: None,
+        };
+        let mut open = incident(
+            "inc-latency",
+            "HighLatency on checkout",
+            IncidentSeverity::Sev2,
+            IncidentStatus::Open,
+            1,
+        );
+        open.fingerprints = vec!["fp-checkout-1".into(), "fp-checkout-2".into()];
+        open.resolved_fingerprints = vec!["fp-checkout-1".into()];
+        open.task_ids = vec![triage.clone()];
+        open.repeats = 3;
+        open.cost_usd = 0.0042;
+        let mut escalated = incident(
+            "inc-disk",
+            "Disk almost full on db-0",
+            IncidentSeverity::Sev1,
+            IncidentStatus::Escalated,
+            12,
+        );
+        escalated.fingerprints = vec!["fp-disk".into()];
+        escalated.diagnosis = "The WAL volume grows 2 GB an hour.".into();
+        escalated.reason = "It needs a bigger volume: a person must approve the cost.".into();
+        escalated.repeats = 7;
+        escalated.retries = 1;
+        escalated.cost_usd = 0.031;
+        let mut resolved = incident(
+            "inc-cert",
+            "Certificate expires soon",
+            IncidentSeverity::Sev4,
+            IncidentStatus::Resolved,
+            90,
+        );
+        resolved.fingerprints = vec!["fp-cert".into()];
+        resolved.resolved_fingerprints = vec!["fp-cert".into()];
+        resolved.reason = "Renewed by hand.".into();
+        resolved.resolved_at = Some(now - Duration::minutes(90));
+        self.incidents = vec![open, escalated, resolved];
     }
 
     fn task_mut(&mut self, id: &TaskId) -> Result<&mut Task, PanelError> {
@@ -1073,6 +1180,54 @@ impl ControlPlane for FakeControlPlane {
             let events: Vec<Event> = s.events.iter().filter(|e| e.task_id == id.as_str()).cloned().collect();
             let skip = events.len().saturating_sub(limit as usize);
             Ok(events.into_iter().skip(skip).collect())
+        })
+    }
+
+    fn artifact(&self, execution: ExecutionId, name: String) -> PortFuture<'_, Vec<u8>> {
+        self.call(format!("artifact {execution} {name}"), move |s| {
+            s.artifacts
+                .get(&(execution.clone(), name.clone()))
+                .cloned()
+                .ok_or_else(|| PanelError::NotFound(format!("artifact {name} of {execution} not found")))
+        })
+    }
+
+    fn list_incidents(
+        &self,
+        tenant: Option<String>,
+        status: Option<IncidentStatus>,
+        limit: u32,
+    ) -> PortFuture<'_, Vec<Incident>> {
+        self.call("list_incidents".into(), move |s| {
+            let mut list: Vec<Incident> = s
+                .incidents
+                .iter()
+                .filter(|i| tenant.as_ref().is_none_or(|t| &i.tenant_id == t))
+                .filter(|i| status.is_none_or(|status| i.status == status))
+                .cloned()
+                .collect();
+            list.sort_by_key(|i| std::cmp::Reverse(i.last_seen_at));
+            list.truncate(limit as usize);
+            Ok(list)
+        })
+    }
+
+    fn get_incident(&self, id: String) -> PortFuture<'_, Incident> {
+        self.call(format!("get_incident {id}"), move |s| s.incident_mut(&id).cloned())
+    }
+
+    fn resolve_incident(&self, id: String, reason: Option<String>) -> PortFuture<'_, Incident> {
+        self.call(format!("resolve_incident {id}"), move |s| {
+            let now = s.clock();
+            let incident = s.incident_mut(&id)?;
+            if !incident.status.can_resolve() {
+                return Err(PanelError::State(format!("incident {id} is already Resolved")));
+            }
+            incident.status = IncidentStatus::Resolved;
+            incident.reason = reason.unwrap_or_default();
+            incident.resolved_at = Some(now);
+            incident.updated_at = now;
+            Ok(incident.clone())
         })
     }
 }

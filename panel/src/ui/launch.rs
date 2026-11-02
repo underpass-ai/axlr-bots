@@ -16,7 +16,7 @@ pub enum Command {
 }
 
 pub const USAGE: &str =
-    "usage: axlr-bots-panel [--theme light|dark] [--screen overview|nodes|bots|bot:<id>|tasks|task:<id>|settings]
+    "usage: axlr-bots-panel [--theme light|dark] [--screen overview|nodes|bots|bot:<id>|tasks|task:<id>|teams|team:<name>|incidents|incident:<id>|settings]
 
 The AXLR Bots control panel. Settings live in ~/.config/axlr-bots-panel/config.toml;
 the first run fills them from the local install. ICED_BACKEND=tiny-skia draws without a GPU.";

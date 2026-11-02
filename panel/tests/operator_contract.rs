@@ -11,8 +11,8 @@ use std::path::Path;
 
 use axlr_bots_panel::domain::{
     AutonomyLevel, Bot, BotStatus, CancelledTask, DecidedTask, EnrollmentToken, Event, Execution, ExecutionKind,
-    ExecutionOutcome, Node, NodeStatus, Overview, RevokedNode, StoppedBotAnswer, SubmittedTask, Task, TaskStatus,
-    TriggerType,
+    ExecutionOutcome, Incident, IncidentSeverity, IncidentStatus, Node, NodeStatus, Overview, RevokedNode,
+    StoppedBotAnswer, SubmittedTask, Task, TaskStatus, TriggerType,
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
@@ -139,6 +139,7 @@ fn reads_every_answer_it_asks_for() {
     reads::<StoppedBotAnswer>(&spec, "StopResponse");
     reads::<DecidedTask>(&spec, "RunResponse");
     reads::<Execution>(&spec, "ExecutionSnapshot");
+    reads::<Incident>(&spec, "IncidentSnapshot");
 }
 
 fn values(spec: &Value, name: &str) -> Vec<String> {
@@ -175,6 +176,8 @@ fn knows_every_value_the_contract_lists_and_reads_a_new_one_as_unknown() {
     knows(&spec, "ExecutionKind", ExecutionKind::Unknown);
     knows(&spec, "TriggerType", TriggerType::Unknown);
     knows(&spec, "AutonomyLevel", AutonomyLevel::Unknown);
+    knows(&spec, "IncidentStatus", IncidentStatus::Unknown);
+    knows(&spec, "IncidentSeverity", IncidentSeverity::Unknown);
 }
 
 #[test]

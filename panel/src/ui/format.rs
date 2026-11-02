@@ -51,6 +51,16 @@ pub fn cost(usd: f64) -> String {
     }
 }
 
+/// A file's size as `512 B`, `2.0 KB`, `10.0 MB`, in steps of 1024.
+pub fn bytes(count: u64) -> String {
+    const KB: u64 = 1024;
+    match count {
+        0..KB => format!("{count} B"),
+        KB..=1_048_575 => format!("{:.1} KB", count as f64 / KB as f64),
+        _ => format!("{:.1} MB", count as f64 / (KB * KB) as f64),
+    }
+}
+
 /// Tokens as `950`, `12.3k`, `1.2M`.
 pub fn tokens(count: u64) -> String {
     match count {
@@ -160,6 +170,9 @@ mod tests {
         assert_eq!(tokens(950), "950");
         assert_eq!(tokens(12_300), "12.3k");
         assert_eq!(tokens(1_250_000), "1.2M");
+        assert_eq!(bytes(512), "512 B");
+        assert_eq!(bytes(2048), "2.0 KB");
+        assert_eq!(bytes(10_485_760), "10.0 MB");
         assert_eq!(short_id("task-68edb0ffeae524e9", 13), "task-68edb0ff…");
         assert_eq!(short_id("bot", 13), "bot");
         let moment: DateTime<Utc> = "2026-10-25T10:00:00Z".parse().unwrap();

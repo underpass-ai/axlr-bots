@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use super::{BotView, Connection, Effect, Message};
 use crate::application::{
-    CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader, FilePicker, FollowBotEvents,
-    FollowTeamEvents, KeySource, ListTopics, LoadChat, LoadTaskDetail, MintEnrollmentToken, Notifier, PanelError,
-    PatchBot, PublishEvent, RefreshFleet, RegisterBot, RevokeNode, SaveSubscriptions, SendChat, ShortcutSource,
-    StopBot, SubmitTask, SwitchBot,
+    CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader, DownloadArtifact, FilePicker,
+    FollowBotEvents, FollowTeamEvents, KeySource, ListIncidents, ListTopics, LoadChat, LoadTaskDetail,
+    MintEnrollmentToken, Notifier, PanelError, PatchBot, PublishEvent, RefreshFleet, RegisterBot, ResolveIncident,
+    RevokeNode, SaveSubscriptions, SendChat, ShortcutSource, ShowIncident, StopBot, SubmitTask, SwitchBot,
 };
 use crate::domain::BotPatch;
 
@@ -218,6 +218,29 @@ impl Services {
             }
             Effect::Cancel(id) => Message::Cancelled(match self.control_plane() {
                 Ok(cp) => CancelTask::new(cp).execute(id).await,
+                Err(e) => Err(e),
+            }),
+            Effect::LoadIncidents => Message::IncidentsLoaded(match self.control_plane() {
+                Ok(cp) => ListIncidents::new(cp).execute().await,
+                Err(e) => Err(e),
+            }),
+            Effect::LoadIncident(id) => {
+                let result = match self.control_plane() {
+                    Ok(cp) => ShowIncident::new(cp).execute(id.clone()).await,
+                    Err(e) => Err(e),
+                };
+                Message::IncidentLoaded(id, result)
+            }
+            Effect::ResolveIncident { id, reason } => Message::IncidentResolved(match self.control_plane() {
+                Ok(cp) => ResolveIncident::new(cp).execute(id, &reason).await,
+                Err(e) => Err(e),
+            }),
+            Effect::Download(execution, name) => Message::Downloaded(match self.control_plane() {
+                Ok(cp) => {
+                    DownloadArtifact::new(cp, self.picker.clone())
+                        .execute(execution, name)
+                        .await
+                }
                 Err(e) => Err(e),
             }),
             Effect::Decide(id, decision, call_id) => Message::Decided(match self.control_plane() {

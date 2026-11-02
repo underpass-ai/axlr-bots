@@ -1104,3 +1104,151 @@ fn a_task_an_event_made_says_who_told_it_and_what_it_knew() {
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
     shows(&app, &["Your teammate bot-wrx80 says (warn.stock): low on boxes"]);
 }
+
+#[test]
+fn the_incidents_screen_lists_them_and_opens_one() {
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Incidents));
+    shows(
+        &app,
+        &[
+            "Incidents",
+            "Severity",
+            "Repeats",
+            "Last seen",
+            "HighLatency on checkout",
+            "Disk almost full on db-0",
+            "Certificate expires soon",
+            "sev1",
+            "Escalated",
+            "Resolved",
+            "12m",
+        ],
+    );
+    // The button, not the Open status of the first row.
+    let mut escalated = connected();
+    send(&mut escalated, Message::Go(Screen::Incidents));
+    escalated
+        .incidents
+        .list
+        .as_mut()
+        .unwrap()
+        .retain(|i| i.id == "inc-disk");
+    assert!(matches!(
+        messages_of_click(&escalated, "Open").as_slice(),
+        [Message::Go(Screen::Incident(id))] if id == "inc-disk"
+    ));
+    let sent = messages_of_click(&app, "Incidents");
+    assert!(matches!(sent.as_slice(), [Message::Go(Screen::Incidents)]));
+    // A long title wraps in what the other columns leave it.
+    let long = "HighLatency on checkout-service-eu-west-1-blue-canary in the payments namespace over five minutes";
+    let first = &mut app.incidents.list.as_mut().unwrap()[0];
+    first.title = long.into();
+    // Diagnosed, so the only Open on screen is the button.
+    first.status = crate::domain::IncidentStatus::Diagnosed;
+    for width in [MIN_WINDOW.width, WINDOW.width] {
+        shows_whole(&app, width, long, |_| text(long));
+        shows_whole(&app, width, "Open", |_| widgets::semibold("Open").size(widgets::BODY));
+    }
+    app.incidents.list = Some(Vec::new());
+    shows(&app, &["No incident: nothing is firing"]);
+}
+
+#[test]
+fn an_incident_shows_its_alerts_diagnosis_and_tasks_and_resolves() {
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Incident("inc-latency".into())));
+    let task = app.incidents.detail.as_ref().unwrap().task_ids[0].clone();
+    shows(
+        &app,
+        &[
+            "HighLatency on checkout",
+            "sev2",
+            "Open",
+            "Alerts",
+            "Firing",
+            "fp-checkout-2",
+            "Went green",
+            "fp-checkout-1",
+            "Tasks",
+            task.as_str(),
+            "Running",
+            "acme",
+            "alertmanager",
+            "$0.0042",
+            "Resolve",
+        ],
+    );
+    assert!(matches!(
+        messages_of_click(&app, task.as_str()).as_slice(),
+        [Message::Go(Screen::Task(id))] if *id == task
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Resolve").as_slice(),
+        [Message::ResolveOpen]
+    ));
+    app.apply(Message::ResolveOpen);
+    shows(&app, &["Resolve this incident", "Keep it open"]);
+    assert!(matches!(
+        messages_of_click(&app, "Keep it open").as_slice(),
+        [Message::ResolveClose]
+    ));
+    for width in [MIN_WINDOW.width, WINDOW.width] {
+        for button in ["Resolve", "Keep it open"] {
+            shows_whole(&app, width, button, |_| widgets::semibold(button).size(widgets::BODY));
+        }
+    }
+    app.incidents.resolve.busy = true;
+    shows(&app, &["Resolving…"]);
+
+    send(&mut app, Message::Go(Screen::Incident("inc-disk".into())));
+    shows(
+        &app,
+        &[
+            "Diagnosis",
+            "The WAL volume grows 2 GB an hour.",
+            "Why it was escalated",
+            "No task worked on it",
+        ],
+    );
+    send(&mut app, Message::Go(Screen::Incident("inc-cert".into())));
+    shows(&app, &["Why it was resolved", "Renewed by hand."]);
+    assert!(simulator_misses(&app, "Resolve"), "a resolved incident has no Resolve");
+}
+
+#[test]
+fn a_finished_task_lists_its_files_and_saves_a_kept_one() {
+    let mut app = connected();
+    let done = app
+        .fleet
+        .as_ref()
+        .unwrap()
+        .tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::Completed)
+        .unwrap()
+        .id
+        .clone();
+    send(&mut app, Message::Go(Screen::Task(done)));
+    shows(
+        &app,
+        &[
+            "Files",
+            "files.md",
+            "text/markdown · 21 B",
+            "workspace.tar",
+            "application/x-tar · 10.0 MB",
+            "not kept",
+        ],
+    );
+    assert!(matches!(
+        messages_of_click(&app, "Save").as_slice(),
+        [Message::Download(_, name)] if name == "files.md"
+    ));
+    for width in [MIN_WINDOW.width, WINDOW.width] {
+        shows_whole(&app, width, "Save", |_| widgets::semibold("Save").size(widgets::BODY));
+        shows_whole(&app, width, "not kept", |_| text("not kept").size(widgets::SMALL));
+    }
+    app.downloading = true;
+    assert!(messages_of_click(&app, "Save").is_empty(), "one save at a time");
+}

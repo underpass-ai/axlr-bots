@@ -6,8 +6,8 @@ use super::ModeChoice;
 use super::{BotChoice, BotView, Connection, NodeChoice, Screen, ThemeMode};
 use crate::application::{ChatSent, EventFeed, Fleet, PanelError, StoppedBot, SubscriptionChange, TaskDetail};
 use crate::domain::{
-    AutonomyLevel, Bot, BotId, CancelledTask, DecidedTask, EnrollmentToken, NodeId, Published, RevokedNode,
-    SubmittedTask, TaskId, TaskStatus, Topic,
+    AutonomyLevel, Bot, BotId, CancelledTask, DecidedTask, EnrollmentToken, ExecutionId, Incident, NodeId, Published,
+    RevokedNode, SubmittedTask, TaskId, TaskStatus, Topic,
 };
 
 /// Everything that happens in the panel: what the operator does, the
@@ -130,6 +130,20 @@ pub enum Message {
     Approve(TaskId),
     AskDeny(TaskId),
     Decided(Result<DecidedTask, PanelError>),
+
+    /// The incidents' list, and one incident's page.
+    IncidentsLoaded(Result<Vec<Incident>, PanelError>),
+    IncidentLoaded(String, Result<Incident, PanelError>),
+    /// Resolve the incident on screen: open the form, give a reason, send.
+    ResolveOpen,
+    ResolveReason(String),
+    ResolveSend,
+    ResolveClose,
+    IncidentResolved(Result<Incident, PanelError>),
+    /// Save an execution's artifact, and where it went; `None` when the
+    /// person cancelled.
+    Download(ExecutionId, String),
+    Downloaded(Result<Option<PathBuf>, PanelError>),
 
     ConfirmYes,
     ConfirmNo,

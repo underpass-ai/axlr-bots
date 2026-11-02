@@ -1,7 +1,9 @@
 use iced::Color;
 
 use super::{Icon, Tokens};
-use crate::domain::{BotStatus, CallVerdict, EventTone, ExecutionOutcome, NodeStatus, TaskStatus};
+use crate::domain::{
+    BotStatus, CallVerdict, EventTone, ExecutionOutcome, IncidentSeverity, IncidentStatus, NodeStatus, TaskStatus,
+};
 
 /// What a status means at a glance: one colour and one icon each.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,6 +109,27 @@ impl Tone {
         }
     }
 
+    /// An incident: red while it fires, busy once diagnosed, amber when
+    /// handed to a person, green when closed.
+    pub fn of_incident(status: IncidentStatus) -> Self {
+        match status {
+            IncidentStatus::Open => Self::Bad,
+            IncidentStatus::Diagnosed => Self::Busy,
+            IncidentStatus::Escalated => Self::Wait,
+            IncidentStatus::Resolved => Self::Good,
+            IncidentStatus::Unknown => Self::Idle,
+        }
+    }
+
+    /// sev1 red, sev2 amber, the milder ones quiet.
+    pub fn of_severity(severity: IncidentSeverity) -> Self {
+        match severity {
+            IncidentSeverity::Sev1 => Self::Bad,
+            IncidentSeverity::Sev2 => Self::Wait,
+            IncidentSeverity::Sev3 | IncidentSeverity::Sev4 | IncidentSeverity::Unknown => Self::Idle,
+        }
+    }
+
     pub fn of_event(tone: EventTone) -> Self {
         match tone {
             EventTone::Good => Self::Good,
@@ -160,6 +183,14 @@ mod tests {
         assert_eq!(Tone::of_event(EventTone::Neutral), Tone::Idle);
         assert_eq!(Tone::of_event(EventTone::Working), Tone::Busy);
         assert_eq!(Tone::Idle.event_icon(), Icon::Dot);
+        assert_eq!(Tone::of_incident(IncidentStatus::Open), Tone::Bad);
+        assert_eq!(Tone::of_incident(IncidentStatus::Diagnosed), Tone::Busy);
+        assert_eq!(Tone::of_incident(IncidentStatus::Escalated), Tone::Wait);
+        assert_eq!(Tone::of_incident(IncidentStatus::Resolved), Tone::Good);
+        assert_eq!(Tone::of_incident(IncidentStatus::Unknown), Tone::Idle);
+        assert_eq!(Tone::of_severity(IncidentSeverity::Sev1), Tone::Bad);
+        assert_eq!(Tone::of_severity(IncidentSeverity::Sev2), Tone::Wait);
+        assert_eq!(Tone::of_severity(IncidentSeverity::Sev4), Tone::Idle);
         assert_eq!(Tone::Good.event_icon(), Icon::Check);
     }
 
