@@ -3,8 +3,8 @@ use chrono::{DateTime, Utc};
 use super::PortFuture;
 use crate::domain::{
     Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, EnrollmentRequest, EnrollmentToken,
-    Event, Execution, Node, NodeId, Overview, Publication, Published, RevokedNode, SentTaskMessage, StoppedBotAnswer,
-    SubmittedTask, Task, TaskFilter, TaskId, TaskSubmission, Topic,
+    Event, Execution, ExecutionId, Incident, IncidentStatus, Node, NodeId, Overview, Publication, Published,
+    RevokedNode, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId, TaskSubmission, Topic,
 };
 
 /// The control plane as the panel needs it: the operator API's routes.
@@ -55,4 +55,19 @@ pub trait ControlPlane: Send + Sync {
     fn task_executions(&self, id: TaskId) -> PortFuture<'_, Vec<Execution>>;
     /// The task's newest `limit` events, oldest first.
     fn task_events(&self, id: TaskId, limit: u32) -> PortFuture<'_, Vec<Event>>;
+    /// The bytes of an artifact the control plane keeps for the execution.
+    fn artifact(&self, execution: ExecutionId, name: String) -> PortFuture<'_, Vec<u8>>;
+
+    /// Incidents, the last seen first: of one tenant or all, in one status
+    /// or any, at most `limit`.
+    fn list_incidents(
+        &self,
+        tenant: Option<String>,
+        status: Option<IncidentStatus>,
+        limit: u32,
+    ) -> PortFuture<'_, Vec<Incident>>;
+    fn get_incident(&self, id: String) -> PortFuture<'_, Incident>;
+    /// Closes the incident, with the operator's reason if they gave one.
+    /// One already resolved is a state error.
+    fn resolve_incident(&self, id: String, reason: Option<String>) -> PortFuture<'_, Incident>;
 }

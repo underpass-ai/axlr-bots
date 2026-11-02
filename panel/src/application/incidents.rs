@@ -1,0 +1,93 @@
+use std::sync::Arc;
+
+use super::{ControlPlane, PanelError};
+use crate::domain::Incident;
+
+/// How many incidents the list reads: the control plane's own default.
+pub const INCIDENTS: u32 = 100;
+
+/// The incidents of every tenant, in any status, the last seen first.
+pub struct ListIncidents {
+    control_plane: Arc<dyn ControlPlane>,
+}
+
+impl ListIncidents {
+    pub fn new(control_plane: Arc<dyn ControlPlane>) -> Self {
+        Self { control_plane }
+    }
+
+    pub async fn execute(&self) -> Result<Vec<Incident>, PanelError> {
+        self.control_plane.list_incidents(None, None, INCIDENTS).await
+    }
+}
+
+/// One incident, as the control plane has it now.
+pub struct ShowIncident {
+    control_plane: Arc<dyn ControlPlane>,
+}
+
+impl ShowIncident {
+    pub fn new(control_plane: Arc<dyn ControlPlane>) -> Self {
+        Self { control_plane }
+    }
+
+    pub async fn execute(&self, id: String) -> Result<Incident, PanelError> {
+        self.control_plane.get_incident(id).await
+    }
+}
+
+/// Closes an incident by hand, with the operator's reason; words that are
+/// only spaces are no reason.
+pub struct ResolveIncident {
+    control_plane: Arc<dyn ControlPlane>,
+}
+
+impl ResolveIncident {
+    pub fn new(control_plane: Arc<dyn ControlPlane>) -> Self {
+        Self { control_plane }
+    }
+
+    pub async fn execute(&self, id: String, reason: &str) -> Result<Incident, PanelError> {
+        let reason = reason.trim();
+        let reason = (!reason.is_empty()).then(|| reason.to_string());
+        self.control_plane.resolve_incident(id, reason).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::test_support::{fleet, run};
+    use crate::domain::IncidentStatus;
+
+    #[test]
+    fn lists_shows_and_resolves_incidents() {
+        let (control_plane, _) = fleet();
+        let list = run(ListIncidents::new(control_plane.clone()).execute()).unwrap();
+        assert_eq!(
+            list.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(),
+            vec!["inc-latency", "inc-disk", "inc-cert"]
+        );
+        let open = run(ShowIncident::new(control_plane.clone()).execute("inc-latency".into())).unwrap();
+        assert_eq!(open.status, IncidentStatus::Open);
+        assert_eq!(open.task_ids.len(), 1);
+        let resolved =
+            run(ResolveIncident::new(control_plane.clone()).execute("inc-latency".into(), "  Fixed the pool. "))
+                .unwrap();
+        assert_eq!(resolved.status, IncidentStatus::Resolved);
+        assert_eq!(resolved.reason, "Fixed the pool.");
+        assert!(resolved.resolved_at.is_some());
+        assert!(matches!(
+            run(ResolveIncident::new(control_plane.clone()).execute("inc-latency".into(), "")),
+            Err(PanelError::State(_))
+        ));
+        let disk = run(ResolveIncident::new(control_plane.clone()).execute("inc-disk".into(), "   ")).unwrap();
+        assert!(disk.reason.is_empty());
+        assert!(matches!(
+            run(ShowIncident::new(control_plane.clone()).execute("inc-none".into())),
+            Err(PanelError::NotFound(_))
+        ));
+        control_plane.fail_with(Some(PanelError::Server("boom".into())));
+        assert!(run(ListIncidents::new(control_plane).execute()).is_err());
+    }
+}

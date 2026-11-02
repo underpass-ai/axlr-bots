@@ -1,8 +1,9 @@
 use chrono::{DateTime, Duration, Utc};
 
 use super::{
-    Answer, Banner, BotChoice, BotView, Confirm, Effect, Launch, ListenForm, Message, MintForm, NodeChoice, OrderForm,
-    PublishForm, RegisterForm, Screen, Services, SettingsForm, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode,
+    Answer, Banner, BotChoice, BotView, Confirm, Effect, IncidentWatch, Launch, ListenForm, Message, MintForm,
+    NodeChoice, OrderForm, PublishForm, RegisterForm, ResolveForm, Screen, Services, SettingsForm, SubmitForm,
+    TaskViewFilter, TeamWatch, ThemeMode,
 };
 use crate::application::SubscriptionChange;
 use crate::application::{EventFeed, Fleet, PanelConfig, PanelError, TaskDetail};
@@ -63,6 +64,10 @@ pub struct App {
     pub order: OrderForm,
     /// The operator's one-press buttons, read at start.
     pub shortcuts: Vec<Shortcut>,
+    /// The incidents and the Resolve form.
+    pub incidents: IncidentWatch,
+    /// An artifact on its way to a file.
+    pub downloading: bool,
     /// Where to go once connected.
     target: Screen,
 }
@@ -106,6 +111,8 @@ impl App {
             publish: PublishForm::default(),
             order: OrderForm::default(),
             shortcuts: Vec::new(),
+            incidents: IncidentWatch::default(),
+            downloading: false,
             target: if launch.screen == Screen::Settings {
                 Screen::Overview
             } else {
@@ -659,6 +666,22 @@ impl App {
                 effects
             }
 
+            Message::IncidentsLoaded(result) => self.incidents_loaded(result),
+            Message::IncidentLoaded(id, result) => self.incident_loaded(id, result),
+            Message::ResolveOpen => self.resolve_open(),
+            Message::ResolveReason(value) => {
+                self.incidents.resolve.reason = value;
+                Vec::new()
+            }
+            Message::ResolveSend => self.resolve_send(),
+            Message::ResolveClose => {
+                self.incidents.resolve = ResolveForm::default();
+                Vec::new()
+            }
+            Message::IncidentResolved(result) => self.incident_resolved(result),
+            Message::Download(execution, name) => self.download(execution, name),
+            Message::Downloaded(result) => self.downloaded(result),
+
             Message::ConfirmYes => match self.confirm.take() {
                 Some(Confirm::Revoke(id)) => vec![Effect::Revoke(id)],
                 Some(Confirm::Cancel(id)) => vec![Effect::Cancel(id)],
@@ -779,6 +802,14 @@ impl App {
                 self.watch.loading_topics.insert(name.clone());
                 vec![Effect::LoadTopics(name.clone())]
             }
+            Screen::Incidents if !self.incidents.list_loading => {
+                self.incidents.list_loading = true;
+                vec![Effect::LoadIncidents]
+            }
+            Screen::Incident(id) if !self.incidents.detail_loading => {
+                self.incidents.detail_loading = true;
+                vec![Effect::LoadIncident(id.clone())]
+            }
             _ => Vec::new(),
         }
     }
@@ -795,6 +826,11 @@ impl App {
         {
             self.bot = None;
         }
+        if let Screen::Incident(id) = &screen
+            && self.incidents.detail.as_ref().is_some_and(|i| &i.id != id)
+        {
+            self.incidents.detail = None;
+        }
         if screen != self.screen {
             self.advanced = false;
             self.chat_draft.clear();
@@ -804,6 +840,9 @@ impl App {
             self.order = OrderForm::default();
             self.task_loading = false;
             self.bot_loading = false;
+            self.incidents.list_loading = false;
+            self.incidents.detail_loading = false;
+            self.incidents.resolve = ResolveForm::default();
         }
         self.screen = screen;
         self.confirm = None;

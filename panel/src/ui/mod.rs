@@ -3,6 +3,7 @@
 
 mod answer;
 mod app;
+mod app_incidents;
 mod app_notices;
 mod app_orders;
 mod app_teams;
@@ -17,6 +18,7 @@ mod connection;
 mod effect;
 pub mod format;
 mod icon;
+mod incident_watch;
 mod launch;
 mod listen_form;
 mod message;
@@ -52,6 +54,7 @@ pub use confirm::Confirm;
 pub use connection::Connection;
 pub use effect::Effect;
 pub use icon::{Icon, brand};
+pub use incident_watch::{IncidentWatch, ResolveForm};
 pub use launch::{Command, Launch, USAGE};
 pub use listen_form::{ListenForm, ModeChoice};
 pub use message::Message;

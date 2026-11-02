@@ -9,8 +9,9 @@ use super::api_error::ApiError;
 use crate::application::{ControlPlane, PanelConfig, PanelError, PortFuture};
 use crate::domain::{
     Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, EnrollmentRequest, EnrollmentToken,
-    Event, Execution, Node, NodeId, Overview, Publication, Published, RevokedNode, Secret, SentTaskMessage,
-    StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId, TaskSubmission, Topic,
+    Event, Execution, ExecutionId, Incident, IncidentStatus, Node, NodeId, Overview, Publication, Published,
+    RevokedNode, Secret, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId, TaskSubmission,
+    Topic,
 };
 
 /// How long a read may take.
@@ -113,13 +114,19 @@ impl HttpControlPlane {
 /// Sends the request and reads the answer: the value on a 2xx, the
 /// classified error otherwise.
 async fn send<T: DeserializeOwned>(request: RequestBuilder) -> Result<T, PanelError> {
+    let body = send_raw(request).await?;
+    serde_json::from_slice(&body).map_err(|e| PanelError::Unreadable(format!("the control plane's answer: {e}")))
+}
+
+/// Sends the request and keeps the answer's bytes as they came.
+async fn send_raw(request: RequestBuilder) -> Result<Vec<u8>, PanelError> {
     let response = request.send().await.map_err(transport_error)?;
     let status = response.status();
     let body = response.bytes().await.map_err(transport_error)?;
     if !status.is_success() {
         return Err(ApiError::classify(status.as_u16(), &body));
     }
-    serde_json::from_slice(&body).map_err(|e| PanelError::Unreadable(format!("the control plane's answer: {e}")))
+    Ok(body.to_vec())
 }
 
 fn transport_error(error: reqwest::Error) -> PanelError {
@@ -153,6 +160,15 @@ const POLL_MARGIN: Duration = Duration::from_secs(10);
 struct TextBody {
     text: String,
 }
+
+#[derive(Serialize)]
+struct ResolveBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+}
+
+/// How long an artifact's bytes may take to come: one may be large.
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Serialize)]
 struct DecisionBody {
@@ -298,5 +314,49 @@ impl ControlPlane for HttpControlPlane {
 
     fn task_events(&self, id: TaskId, limit: u32) -> PortFuture<'_, Vec<Event>> {
         self.get_query(format!("/v1/tasks/{id}/events"), vec![("limit", limit.to_string())])
+    }
+
+    fn artifact(&self, execution: ExecutionId, name: String) -> PortFuture<'_, Vec<u8>> {
+        let mut url = match reqwest::Url::parse(&self.base) {
+            Ok(url) => url,
+            Err(e) => return Box::pin(async move { Err(PanelError::Config(format!("the API address: {e}"))) }),
+        };
+        // The name is one path segment, escaped as such: a space or a '#'
+        // in it stays part of the name.
+        if let Ok(mut segments) = url.path_segments_mut() {
+            segments
+                .pop_if_empty()
+                .extend(["v1", "executions", execution.as_str(), "artifacts", &name]);
+        }
+        let request = self
+            .client
+            .get(url)
+            .bearer_auth(self.token.expose())
+            .timeout(DOWNLOAD_TIMEOUT);
+        Box::pin(send_raw(request))
+    }
+
+    fn list_incidents(
+        &self,
+        tenant: Option<String>,
+        status: Option<IncidentStatus>,
+        limit: u32,
+    ) -> PortFuture<'_, Vec<Incident>> {
+        let mut query = vec![("limit", limit.to_string())];
+        if let Some(tenant) = tenant {
+            query.push(("tenant", tenant));
+        }
+        if let Some(status) = status {
+            query.push(("status", status.name().to_string()));
+        }
+        self.get_query("/v1/incidents".into(), query)
+    }
+
+    fn get_incident(&self, id: String) -> PortFuture<'_, Incident> {
+        self.get(format!("/v1/incidents/{id}"))
+    }
+
+    fn resolve_incident(&self, id: String, reason: Option<String>) -> PortFuture<'_, Incident> {
+        self.post(format!("/v1/incidents/{id}/resolve"), Some(ResolveBody { reason }))
     }
 }

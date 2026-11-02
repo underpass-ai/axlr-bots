@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use super::Screen;
 use crate::application::{ChatTurn, EventFeed, Notice, PanelConfig, SubscriptionChange};
-use crate::domain::{AutonomyLevel, BotForm, BotId, Decision, IdempotencyKey, NodeId, TaskId};
+use crate::domain::{AutonomyLevel, BotForm, BotId, Decision, ExecutionId, IdempotencyKey, NodeId, TaskId};
 
 /// What the panel asks the outside world to do after a message: a call
 /// to the control plane, a dialog, the clipboard. The update logic only
@@ -70,6 +70,14 @@ pub enum Effect {
     Cancel(TaskId),
     /// The decision, and the call it was made on when the panel knew it.
     Decide(TaskId, Decision, Option<String>),
+    LoadIncidents,
+    LoadIncident(String),
+    ResolveIncident {
+        id: String,
+        reason: String,
+    },
+    /// Fetch an artifact and ask where to save it.
+    Download(ExecutionId, String),
     Copy(String),
     /// A desktop notice, and the place a click on it opens.
     Notify {
