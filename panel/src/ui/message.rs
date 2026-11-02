@@ -32,6 +32,12 @@ pub enum Message {
         result: Result<Fleet, PanelError>,
     },
     TaskLoaded(TaskId, Result<TaskDetail, PanelError>),
+    /// What a read of the task's timeline brought, for its Activity.
+    TaskFollowed(TaskId, Result<EventFeed, PanelError>),
+    /// Open or close the details of an Activity entry.
+    ActivityPick(usize),
+    /// The cursor or the selection moved in the model's words.
+    WordsSelect(iced::widget::text_editor::Action),
     BotLoaded(BotId, Result<BotView, PanelError>),
 
     MintOpen,

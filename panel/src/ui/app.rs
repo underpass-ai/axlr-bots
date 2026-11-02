@@ -1,8 +1,9 @@
 use chrono::{DateTime, Duration, Utc};
 
 use super::{
-    Answer, Banner, BotChoice, BotView, Confirm, Effect, Launch, ListenForm, Message, MintForm, NodeChoice, OrderForm,
-    PublishForm, RegisterForm, Screen, Services, SettingsForm, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode,
+    Answer, Banner, BotChoice, BotView, Confirm, Effect, Launch, ListenForm, LiveTask, Message, MintForm, NodeChoice,
+    OrderForm, PublishForm, RegisterForm, Screen, Services, SettingsForm, SubmitForm, TaskViewFilter, TeamWatch,
+    ThemeMode,
 };
 use crate::application::SubscriptionChange;
 use crate::application::{EventFeed, Fleet, PanelConfig, PanelError, TaskDetail};
@@ -34,6 +35,8 @@ pub struct App {
     /// The task's answer, parsed once per answer.
     pub answer: Option<Answer>,
     task_loading: bool,
+    /// The task on screen as it is followed live: its Activity.
+    pub live: Option<LiveTask>,
     pub bot: Option<BotView>,
     bot_loading: bool,
     pub mint: MintForm,
@@ -87,6 +90,7 @@ impl App {
             task: None,
             answer: None,
             task_loading: false,
+            live: None,
             bot: None,
             bot_loading: false,
             mint: MintForm::default(),
@@ -219,8 +223,22 @@ impl App {
                             self.answer = answer.map(Answer::new);
                         }
                         self.task = Some(detail);
+                        self.settle_live();
                     }
                     Err(error) => self.banner = Some(Banner::error(&error, self.now)),
+                }
+                self.follow_task()
+            }
+            Message::TaskFollowed(id, result) => self.task_followed(id, result),
+            Message::ActivityPick(index) => {
+                if let Some(live) = self.live.as_mut() {
+                    live.pick(index);
+                }
+                Vec::new()
+            }
+            Message::WordsSelect(action) => {
+                if let Some(live) = self.live.as_mut() {
+                    live.select(action);
                 }
                 Vec::new()
             }
@@ -761,9 +779,14 @@ impl App {
             return Vec::new();
         }
         match &self.screen {
-            Screen::Task(id) if !self.task_loading => {
-                self.task_loading = true;
-                vec![Effect::LoadTask(id.clone())]
+            Screen::Task(id) => {
+                let mut effects = Vec::new();
+                if !self.task_loading {
+                    self.task_loading = true;
+                    effects.push(Effect::LoadTask(id.clone()));
+                }
+                effects.extend(self.follow_task());
+                effects
             }
             Screen::Bot(id) if !self.bot_loading => {
                 self.bot_loading = true;
@@ -789,6 +812,11 @@ impl App {
         {
             self.task = None;
             self.answer = None;
+        }
+        if let Screen::Task(id) = &screen
+            && self.live.as_ref().is_some_and(|l| &l.id != id)
+        {
+            self.live = None;
         }
         if let Screen::Bot(id) = &screen
             && self.bot.as_ref().is_some_and(|b| &b.bot.id != id)

@@ -1104,3 +1104,115 @@ fn a_task_an_event_made_says_who_told_it_and_what_it_knew() {
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
     shows(&app, &["Your teammate bot-wrx80 says (warn.stock): low on boxes"]);
 }
+
+#[test]
+fn a_running_task_shows_its_activity_live_and_every_part_copies() {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    let tasks = &app.fleet.as_ref().unwrap().tasks;
+    let running = tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::Running)
+        .unwrap()
+        .id
+        .clone();
+    let done = tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::Completed)
+        .unwrap()
+        .id
+        .clone();
+    fake.progress(
+        &running,
+        serde_json::json!([{"kind": "delegation", "bot": "bot-wrx80", "taskId": done.to_string()}]),
+    );
+    send(&mut app, Message::Go(Screen::Task(running.clone())));
+    shows(
+        &app,
+        &[
+            "Activity",
+            "live",
+            "Talk to it",
+            "Copy activity",
+            "local_exec",
+            "ok",
+            "40 ms",
+            "get_time · axlr_call_tool",
+            "running",
+            "Asked bot-wrx80",
+            "Open task",
+            "What it says",
+            "Copy words",
+        ],
+    );
+    // The run's progress is in the Activity, not in the timeline.
+    assert!(simulator_misses(&app, "Working"));
+    assert!(matches!(
+        messages_of_click(&app, "Talk to it").as_slice(),
+        [Message::Go(Screen::Bot(bot))] if bot.as_str() == "bot"
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Open task").as_slice(),
+        [Message::Go(Screen::Task(child))] if *child == done
+    ));
+    let copied = messages_of_click(&app, "Copy activity");
+    assert!(matches!(
+        copied.as_slice(),
+        [Message::Copy(all)] if all.contains("local_exec · ok · 40 ms") && all.contains("Checking it against the time server.")
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Copy words").as_slice(),
+        [Message::Copy(words)] if words.starts_with("I will read the host's clock.")
+    ));
+
+    // A click on a step opens its details, which copy too.
+    assert!(matches!(
+        messages_of_click(&app, "local_exec").as_slice(),
+        [Message::ActivityPick(0)]
+    ));
+    send(&mut app, Message::ActivityPick(0));
+    shows(
+        &app,
+        &["Arguments", "{\"program\":\"date\"}", "Call id", "c1", "Copy step"],
+    );
+    assert!(matches!(
+        messages_of_click(&app, "Copy step").as_slice(),
+        [Message::Copy(step)] if step.starts_with("local_exec · ok · 40 ms\nTool: local_exec")
+    ));
+    let copied = send(&mut app, Message::Copy("x".into()));
+    assert_eq!(copied, ["x"]);
+}
+
+#[test]
+fn a_finished_task_keeps_its_activity_and_a_task_without_one_shows_none() {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    let tasks = &app.fleet.as_ref().unwrap().tasks;
+    let running = tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::Running)
+        .unwrap()
+        .id
+        .clone();
+    let done = tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::Completed)
+        .unwrap()
+        .id
+        .clone();
+    send(&mut app, Message::Go(Screen::Task(done)));
+    assert!(simulator_misses(&app, "Activity"));
+    send(&mut app, Message::Go(Screen::Task(running.clone())));
+    send(&mut app, Message::AskCancel(running));
+    send(&mut app, Message::ConfirmYes);
+    let tick = app.now + chrono::Duration::seconds(3);
+    send(&mut app, Message::Tick(tick));
+    shows(&app, &["Activity", "local_exec", "no end seen", "Copy activity"]);
+    assert!(simulator_misses(&app, "Talk to it"));
+}

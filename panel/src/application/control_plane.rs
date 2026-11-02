@@ -52,4 +52,8 @@ pub trait ControlPlane: Send + Sync {
     fn task_executions(&self, id: TaskId) -> PortFuture<'_, Vec<Execution>>;
     /// The task's newest `limit` events, oldest first.
     fn task_events(&self, id: TaskId, limit: u32) -> PortFuture<'_, Vec<Event>>;
+    /// A task's timeline after the event `after` names, oldest first;
+    /// with `wait_seconds`, the control plane answers as soon as there is
+    /// a new one. A control plane older than `after` answers the newest.
+    fn task_events_after(&self, id: TaskId, after: Option<String>, wait_seconds: u32) -> PortFuture<'_, Vec<Event>>;
 }

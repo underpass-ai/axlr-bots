@@ -3,6 +3,7 @@
 
 mod answer;
 mod app;
+mod app_live;
 mod app_notices;
 mod app_orders;
 mod app_teams;
@@ -19,6 +20,7 @@ pub mod format;
 mod icon;
 mod launch;
 mod listen_form;
+mod live_task;
 mod message;
 mod mint_form;
 mod order_form;
@@ -54,6 +56,7 @@ pub use effect::Effect;
 pub use icon::{Icon, brand};
 pub use launch::{Command, Launch, USAGE};
 pub use listen_form::{ListenForm, ModeChoice};
+pub use live_task::LiveTask;
 pub use message::Message;
 pub use mint_form::MintForm;
 pub use order_form::OrderForm;

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::AutonomyLevel;
+use super::{AutonomyLevel, ProgressItem};
 
 /// Something that happened to a bot, a task or a node, as the control
 /// plane's event log keeps it.
@@ -67,6 +67,7 @@ impl Event {
             }
             "bot.task.message" => "You wrote".into(),
             "bot.task.said" => "It answered".into(),
+            "bot.task.progress" => "Working".into(),
             "bot.task.expired" => "Expired".into(),
             "bot.approval.expired" => "Approval expired".into(),
             "bot.event.emitted" => match self.payload_text("severity").as_deref() {
@@ -131,13 +132,40 @@ impl Event {
             "bot.task.waiting_approval" | "bot.paused" | "bot.task.expired" | "bot.approval.expired" => {
                 EventTone::Waiting
             }
-            "bot.task.started" | "execution.assigned" | "execution.reported" => EventTone::Working,
+            "bot.task.started" | "bot.task.progress" | "execution.assigned" | "execution.reported" => {
+                EventTone::Working
+            }
             "bot.task.decided" => match self.payload_text("decision").as_deref() {
                 Some("deny") => EventTone::Bad,
                 _ => EventTone::Good,
             },
             _ => EventTone::Neutral,
         }
+    }
+
+    /// What a `bot.task.progress` event says the run did, in order; none
+    /// for any other event, and an item it cannot read is left out.
+    pub fn progress(&self) -> Vec<ProgressItem> {
+        if self.event_type != "bot.task.progress" {
+            return Vec::new();
+        }
+        self.payload
+            .as_ref()
+            .and_then(|p| p.get("items"))
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| serde_json::from_value(item.clone()).ok())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Whether the event is a run's progress, which the Activity shows
+    /// and the timeline leaves out.
+    pub fn is_progress(&self) -> bool {
+        self.event_type == "bot.task.progress"
     }
 
     /// A payload field as text, when it is a string, a number or a flag.
@@ -227,6 +255,14 @@ impl Event {
                 return format!("you → {}: {name} · {message}", self.addressed_to());
             }
             "bot.event.heard" => return self.heard(),
+            "bot.task.progress" => {
+                let steps = self.progress().len();
+                return if steps == 1 {
+                    "1 step".into()
+                } else {
+                    format!("{steps} steps")
+                };
+            }
             "bot.subscription.asked" => {
                 let topic = self.payload_text("topic").unwrap_or_default();
                 let why = self.payload_text("why").unwrap_or_default();
@@ -295,6 +331,32 @@ mod tests {
         assert_eq!(by_policy.detail(), "by its policy, no person needed");
         assert_eq!(event("bot.task.delegated", "{}").label(), "Asked a bot");
         assert_eq!(event("bot.delegation.refused", "{}").tone(), EventTone::Bad);
+    }
+
+    #[test]
+    fn a_runs_progress_holds_its_steps() {
+        let progress = event(
+            "bot.task.progress",
+            r#"{"items":[{"kind":"tool.started","tool":"local_read","callId":"c1"},{"kind":"text","text":"hi"},"not an item"]}"#,
+        );
+        assert!(progress.is_progress());
+        assert_eq!(progress.label(), "Working");
+        assert_eq!(progress.tone(), EventTone::Working);
+        let steps = progress.progress();
+        assert_eq!(steps.len(), 2);
+        assert_eq!(
+            (steps[0].kind.as_str(), steps[0].tool.as_str()),
+            ("tool.started", "local_read")
+        );
+        assert_eq!(progress.detail(), "2 steps");
+        let one = event("bot.task.progress", r#"{"items":[{"kind":"text","text":"hi"}]}"#);
+        assert_eq!(one.detail(), "1 step");
+        assert!(event("bot.task.progress", "{}").progress().is_empty());
+        assert!(
+            event("bot.task.said", r#"{"items":[{"kind":"text"}]}"#)
+                .progress()
+                .is_empty()
+        );
     }
 
     #[test]
