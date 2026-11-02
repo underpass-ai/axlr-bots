@@ -280,7 +280,12 @@ func printUsage(w io.Writer) {
   task report <task-id> [--path]      print the task's report (or only where it is)
   task reconcile [--grace <duration>] fail the tasks a crashed run left Running
                                       longer than the grace (default: the bot's
-                                      task timeout plus 1m); prints failed/skipped
+                                      task timeout plus 1m); prints failed/skipped.
+                                      Another process than serve: it cannot see a
+                                      run serve has in flight, and only a lock on
+                                      the state directory (not there yet) would keep
+                                      them apart; while serve runs, use a grace past
+                                      the bot's timeout (serve reconciles by itself)
   execution get <execution-id>        show one execution: outcome, answer, usage, policy,
                                       artifacts and receipt
   execution artifact <execution-id> <name> [--out <file>]

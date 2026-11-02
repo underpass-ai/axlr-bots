@@ -125,7 +125,7 @@ A node runs one execution at a time. A parent blocked in `wait: true` on a child
 
 ## Left out
 
-- Delegation from the control plane's in-process runs (single-process mode): `SerialRunner` holds its lock for the whole run, so a waiting parent would block its own child; those runs are not offered the tool.
+- Delegation from the control plane's in-process runs (single-process mode): `SerialRunner` holds its slot for the whole run ([concurrency](concurrency.md)), so a waiting parent would block its own child; those runs are not offered the tool.
 - Cancelling a parent does not cancel its children; each child ends at its own deadline.
 - The socket and the relay keep the tool to the node's user, as the node's key is: a bot with `local_exec` on the same node could reach the socket of another execution there and delegate within that execution's grants. Per-execution sandboxes (vision §9.2) close it.
 - A grant from the parent's live spend, and a share of the cost in dollars: AXLR's `usd` budget is not passed yet.

@@ -436,3 +436,55 @@ func eventsOf(events []domain.Event, kind domain.EventType) []domain.Event {
 	}
 	return out
 }
+
+// heldRuntime holds every run until its context ends, and says when one
+// is in the runtime.
+type heldRuntime struct{ started chan string }
+
+func (h heldRuntime) Execute(ctx context.Context, request application.ExecutionRequest) (application.ExecutionReport, error) {
+	h.started <- request.TaskID.String()
+	<-ctx.Done()
+	return application.ExecutionReport{}, ctx.Err()
+}
+
+func TestDaemonFiresTimersWhileARunIsInTheRuntime(t *testing.T) {
+	f := newFixture(t, "completed")
+	runtime := heldRuntime{started: make(chan string, 4)}
+	f.deps.Runtime = runtime
+	ctx := context.Background()
+	local := unixapi.NewLocal(f.deps)
+	if _, err := local.RegisterBot(ctx, timerDefinition("slow")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.EnableBot(ctx, "slow"); err != nil {
+		t.Fatal(err)
+	}
+	// The slow bot's timer fires at once and its task runs in process,
+	// held in the runtime until the daemon stops.
+	client, stop := f.start(t)
+	defer stop()
+	select {
+	case <-runtime.started:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("no run reached the runtime: %s", f.logs.String())
+	}
+	// Another bot's timer comes due while that run lasts: it fires on
+	// the next tick, not after the run.
+	if _, err := client.RegisterBot(ctx, timerDefinition("ticker")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.EnableBot(ctx, "ticker"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		events, _ := client.ListEvents(ctx, "ticker", 0)
+		if len(eventsOf(events, domain.EventTriggerFired)) == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the timer waited for the run: %s", f.logs.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}

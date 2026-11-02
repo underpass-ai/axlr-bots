@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
@@ -103,7 +104,7 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 		return first
 	}
 
-	reconcile(ctx, deps, options, logger)
+	reconcile(ctx, deps, runner, options, logger)
 	// Notifications go out on their own loop: a slow webhook must not
 	// hold up the runs, and the runs must not hold up the notifications.
 	delivered := make(chan struct{})
@@ -112,6 +113,13 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 		deliverLoop(ctx, deps, options, logger)
 	}()
 	defer func() { cancel(); <-delivered }()
+	// The in-process runs go on the worker's own goroutine: a run lasts
+	// up to its task timeout, and the timers and the reconciler must not
+	// wait for it. One worker at a time (a tick that finds it busy
+	// skips); the way out waits for it to end.
+	var working sync.Mutex
+	var workers sync.WaitGroup
+	defer func() { cancel(); workers.Wait() }()
 	ticker := time.NewTicker(options.tick())
 	defer ticker.Stop()
 	reconciler := time.NewTicker(options.reconcileEvery())
@@ -119,8 +127,14 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	logger.Printf("daemon: serving on %s, tick %s", listening, options.tick())
 	for {
 		fireTimers(ctx, deps, logger)
-		expireApprovals(ctx, runner, logger)
-		drain(ctx, runner, logger)
+		if working.TryLock() {
+			workers.Add(1)
+			go func() {
+				defer workers.Done()
+				defer working.Unlock()
+				drain(ctx, runner, logger)
+			}()
+		}
 		select {
 		case <-ctx.Done():
 			err := stopped(<-served)
@@ -140,7 +154,7 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 			return stopped(err)
 		case <-ticker.C:
 		case <-reconciler.C:
-			reconcile(ctx, deps, options, logger)
+			reconcile(ctx, deps, runner, options, logger)
 		}
 	}
 }
@@ -221,9 +235,13 @@ func deliverLoop(ctx context.Context, deps application.Dependencies, options Opt
 	}
 }
 
-// drain runs Pending tasks until none is left or ctx ends.
+// drain runs Pending tasks until none is left or ctx ends. Before each
+// run it carries out the approval deadlines that passed: an expiry
+// takes the runner's slot, as a run does, so it gets its turn between
+// two runs rather than after the whole queue.
 func drain(ctx context.Context, runner *application.SerialRunner, logger interface{ Printf(string, ...any) }) {
 	for ctx.Err() == nil {
+		expireApprovals(ctx, runner, logger)
 		result, ran, err := runner.RunNext(ctx)
 		if err != nil {
 			logger.Printf("daemon: run: %v", err)
@@ -248,13 +266,16 @@ func drain(ctx context.Context, runner *application.SerialRunner, logger interfa
 
 // reconcile marks silent nodes Offline and fails the tasks a dead run
 // left Running past the grace or whose node stopped renewing its lease.
-func reconcile(ctx context.Context, deps application.Dependencies, options Options, logger interface{ Printf(string, ...any) }) {
+// The tasks go through the runner: under its state lock, so a pass
+// never fails a task a report or a run is settling, and never a task
+// the worker is running in process, whatever the grace.
+func reconcile(ctx context.Context, deps application.Dependencies, runner *application.SerialRunner, options Options, logger interface{ Printf(string, ...any) }) {
 	if offline, err := application.NewMarkOfflineNodes(deps).Execute(ctx, options.NodeOfflineAfter); err != nil {
 		logger.Printf("daemon: nodes: %v", err)
 	} else if len(offline) > 0 {
 		logger.Printf("daemon: nodes offline: %v", offline)
 	}
-	result, err := application.NewReconcileTasks(deps).Execute(ctx, options.Grace)
+	result, err := runner.Reconcile(ctx, options.Grace)
 	if err != nil {
 		logger.Printf("daemon: reconcile: %v", err)
 		return
