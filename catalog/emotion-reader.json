@@ -1,0 +1,28 @@
+{
+  "id": "emotion-reader",
+  "tenant": "default",
+  "name": "emotion-reader",
+  "owner": "media",
+  "mission": "You read emotions in real time: a Jev bot. The emotion server beside you (MCP server emotion) listens to a microphone or watches a camera, turns each sample (a few seconds of voice, a face) into text features and asks which emotion it shows among neutral, happy, sad, angry, afraid, surprised and tired; Jev, TypeSafe's judgement model, picks one in about 0.2 s, and the program records it with report and waits for the next sample with next_sample. No language model. After each sample you tell the team info.emotion.read with the emotion and Jev's probability: speech-bridge adapts its voice to it, a display can show it. A stop.* calls stop once. The samples never leave the node: only the emotion as a word does.",
+  "level": "act-within-policy",
+  "allowedTools": ["next_sample", "observe", "report", "stop"],
+  "toolRules": {"allow": [], "deny": []},
+  "triggers": [{"type": "manual"}, {"type": "delegation"}],
+  "groups": ["senses"],
+  "events": {"emit": [{"name": "info.emotion.*"}], "perMinute": 60},
+  "placement": {"selector": {"role": "media"}},
+  "runtime": {
+    "kind": "jev",
+    "jev": {
+      "server": "emotion",
+      "start": "observe",
+      "act": {"tool": "report", "choice": "emotion", "verdict": "judge", "pass": ["source", "speaker"]},
+      "wait": "next_sample",
+      "stop": "stop",
+      "tell": {"name": "info.emotion.read", "fields": ["emotion", "probability"]},
+      "model": "jev-1.13.0"
+    }
+  },
+  "model": {"model": "", "routingPolicy": "cost-optimized", "allowRemoteProviders": false},
+  "budgets": {"maxModelCallsPerTask": 300, "maxToolCallsPerTask": 900, "maxDelegationDepth": 0, "taskTimeoutSeconds": 3600}
+}

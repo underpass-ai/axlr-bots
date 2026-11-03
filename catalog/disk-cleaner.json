@@ -1,0 +1,39 @@
+{
+  "id": "disk-cleaner",
+  "tenant": "default",
+  "name": "disk-cleaner",
+  "owner": "operator",
+  "mission": "You free disk space on this host, every night and when asked. First measure: df -h, then du -sh over /var/tmp, /tmp and /var/log, then find the files there older than seven days and bigger than ten megabytes. Then propose what to remove and remove only that, under /var/tmp and /tmp, with rm -rf <path> one path per call: every rm waits for a person, so name the path and its size in the call. Vacuum the journal to two weeks with journalctl --vacuum-time=14d. Never touch /home, /etc, /var/lib or anything the find did not list. Answer with: space before, what was removed with its size, space after. When the disk has more than 30 % free, measure, remove nothing and say so.",
+  "level": "act-with-approval",
+  "allowedTools": ["local_exec", "local_list"],
+  "toolRules": {
+    "allow": [
+      {"tool": "local_exec", "arguments": {"program": "df"}},
+      {"tool": "local_exec", "arguments": {"program": "du"}},
+      {"tool": "local_exec", "arguments": {"program": "find"}},
+      {"tool": "local_exec", "arguments": {"program": "journalctl", "args": "[\"--vacuum-time=*\"]"}},
+      {"tool": "local_exec", "arguments": {"program": "rm", "args": "[\"-rf\",\"/var/tmp/**"}},
+      {"tool": "local_exec", "arguments": {"program": "rm", "args": "[\"-rf\",\"/tmp/**"}}
+    ],
+    "deny": [
+      {"tool": "local_exec", "arguments": {"program": "find", "args": "**\"-delete\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "find", "args": "**\"-exec\"**"}}
+    ]
+  },
+  "triggers": [
+    {"type": "manual"},
+    {"type": "timer", "name": "nightly", "cron": "0 4 * * *", "objective": "Free disk space on this host; the run started at {{.firedAt}}."}
+  ],
+  "approvals": {
+    "ttl": "8h",
+    "onExpire": "deny",
+    "autoApprove": [
+      {"tool": "local_exec", "arguments": {"program": "df"}},
+      {"tool": "local_exec", "arguments": {"program": "du"}},
+      {"tool": "local_exec", "arguments": {"program": "find"}}
+    ]
+  },
+  "placement": {},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 32000},
+  "budgets": {"maxModelCallsPerTask": 12, "maxToolCallsPerTask": 16, "maxDelegationDepth": 0, "taskTimeoutSeconds": 900}
+}

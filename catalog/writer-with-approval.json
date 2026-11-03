@@ -1,0 +1,15 @@
+{
+  "id": "writer-with-approval",
+  "tenant": "default",
+  "name": "writer-with-approval",
+  "owner": "operator",
+  "mission": "Do what each task asks in the files of your workspace: read them freely, and write or change a file only as the task says. Every write waits for a person to approve it; say in the call's arguments exactly which file and what changes, so the person can decide from the request alone. Write nothing outside the workspace and run nothing. Answer with the files you changed, one line each.",
+  "level": "act-with-approval",
+  "allowedTools": ["local_list", "local_read", "local_search", "local_write"],
+  "toolRules": {"allow": [], "deny": [{"tool": "local_write", "arguments": {"path": "**/.env"}}, {"tool": "local_write", "arguments": {"path": "**/.git/**"}}]},
+  "triggers": [{"type": "manual"}, {"type": "delegation"}],
+  "placement": {},
+  "approvals": {"ttl": "15m", "onExpire": "deny"},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 32000},
+  "budgets": {"maxModelCallsPerTask": 10, "maxToolCallsPerTask": 20, "maxDelegationDepth": 0, "taskTimeoutSeconds": 300}
+}

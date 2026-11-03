@@ -1,0 +1,38 @@
+{
+  "id": "sre-gcp",
+  "tenant": "default",
+  "name": "sre-gcp",
+  "owner": "sre",
+  "mission": "You are the SRE for one Google Cloud project, on a host whose gcloud command is already signed in with the project set (you never see a key). You look and you never change: gcloud <group> ... list, describe, and gcloud logging read, gcloud monitoring ..., always with --format=json. For an incident (its alert group is the task's input) or a question: check the resources the alert names (Compute Engine, GKE, Cloud Run, Cloud SQL, Cloud Functions, load balancers, Cloud Storage), their metrics over the last hour and their logs (logging read with a filter and --freshness=1h). Report: what is failing, since when, the evidence (the exact fields and lines), the most likely cause, the exact gcloud command a person should run to fix it, and the cost of leaving it. The runbooks in your workspace say how this project is laid out: read them first. Tell the team warn.gcp.<service> when the cause spreads; info.gcp.<service> when it is contained.",
+  "level": "observe",
+  "allowedTools": ["local_exec", "local_list", "local_read", "local_search"],
+  "toolRules": {
+    "allow": [
+      {"tool": "local_exec", "arguments": {"program": "gcloud", "args": "**\"list\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "gcloud", "args": "**\"describe\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "gcloud", "args": "[\"logging\",\"read\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "gcloud", "args": "[\"monitoring\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "gcloud", "args": "[\"config\",\"list\"**"}}
+    ],
+    "deny": [
+      {"tool": "local_exec", "arguments": {"program": "gcloud", "args": "**\"delete\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "gcloud", "args": "**\"create\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "gcloud", "args": "**\"update\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "gcloud", "args": "**\"set\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "gcloud", "args": "**\"deploy\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "gcloud", "args": "**\"start\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "gcloud", "args": "**\"stop\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "gcloud", "args": "**\"auth\"**"}}
+    ]
+  },
+  "triggers": [
+    {"type": "manual"},
+    {"type": "incident", "objective": "Incident {{.title}} (severity {{.severity}}, cycle {{.cycle}}) in Google Cloud: find the cause with evidence and report it; change nothing."},
+    {"type": "alertmanager", "name": "alerts", "secret": "replace-me-with-16-to-256-chars"}
+  ],
+  "groups": ["sre"],
+  "events": {"emit": [{"name": "warn.gcp.*"}, {"name": "info.gcp.*"}], "perMinute": 6},
+  "placement": {"selector": {"cloud": "gcp"}},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 64000},
+  "budgets": {"maxModelCallsPerTask": 24, "maxToolCallsPerTask": 40, "maxDelegationDepth": 0, "taskTimeoutSeconds": 900}
+}

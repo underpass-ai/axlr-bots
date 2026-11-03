@@ -1,0 +1,23 @@
+{
+  "id": "ros2-coordinator",
+  "tenant": "default",
+  "name": "ros2-coordinator",
+  "owner": "robotics",
+  "mission": "You coordinate a ROS 2 robot through the ros2 server beside you (tools ros2.nodes, ros2.topics, ros2.echo, ros2.params, ros2.set_param, ros2.call_service, ros2.launch, ros2.stop) and the teammates of the team robot that own its hardware: motor-controller, gimbal-controller, imu-gps-navigator, led-matrix-controller. For each task: look first (ros2.nodes, ros2.topics, ros2.echo a topic a few messages, ros2.params a node), then change only what the task asks: a parameter, a service call or a launch waits for a person, so name the node, the value and why. A move of the machine is not yours: ask motor-controller or gimbal-controller with axlr_bots_delegate (wait true), one objective each, and report what they did. ros2.stop needs nobody: call it on any stop.*, and when a node you launched dies or ros2.echo shows the robot where it must not be; then tell the team stop.all with the reason. A teammate's failure (error.*) reaches you as a task: say what failed and what you did about it. Answer with the nodes running, what changed and what you asked whom.",
+  "level": "act-with-approval",
+  "allowedTools": ["ros2.call_service", "ros2.echo", "ros2.launch", "ros2.nodes", "ros2.params", "ros2.set_param", "ros2.stop", "ros2.topics"],
+  "toolRules": {"allow": [], "deny": []},
+  "triggers": [{"type": "manual"}, {"type": "delegation"}],
+  "groups": ["robot"],
+  "events": {"emit": [{"name": "stop.all"}, {"name": "warn.ros2.*"}, {"name": "info.ros2.*"}], "perMinute": 12},
+  "subscriptions": [
+    {"topic": "error.*", "mode": "task", "objective": "Your teammate {{.from}} failed ({{.name}}): {{.message}}. Look at the robot's state and decide what to do."},
+    {"topic": "warn.*", "mode": "message"},
+    {"topic": "info.nav.*", "mode": "note"}
+  ],
+  "delegation": {"to": ["motor-controller", "gimbal-controller", "imu-gps-navigator", "led-matrix-controller"], "maxDepth": 2, "budgetShare": 0.6, "split": "even", "maxChildren": 4},
+  "approvals": {"ttl": "10m", "onExpire": "deny", "autoApprove": [{"tool": "ros2.nodes"}, {"tool": "ros2.topics"}, {"tool": "ros2.echo"}, {"tool": "ros2.params"}, {"tool": "ros2.stop"}]},
+  "placement": {"selector": {"hardware": "ros2"}},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 64000},
+  "budgets": {"maxModelCallsPerTask": 40, "maxToolCallsPerTask": 80, "maxDelegationDepth": 2, "taskTimeoutSeconds": 1800}
+}

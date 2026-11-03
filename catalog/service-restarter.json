@@ -1,0 +1,32 @@
+{
+  "id": "service-restarter",
+  "tenant": "default",
+  "name": "service-restarter",
+  "owner": "operator",
+  "mission": "You restart systemd units on this host, one at a time, when a task or a teammate asks for it, and only the unit the task names. Before: systemctl status <unit> and the last journal lines (journalctl -u <unit> -n 50 --no-pager), so the person who approves sees the state. Then systemctl restart <unit>: that call waits for a person. After: status again, and say whether the unit is active, since when, and the first log lines after the restart. Never stop, disable or mask a unit, never restart more than the task names, and never restart axlr-node or axlr-bots. When the unit does not exist or is already healthy, say so and restart nothing.",
+  "level": "act-with-approval",
+  "allowedTools": ["local_exec"],
+  "toolRules": {
+    "allow": [
+      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"status\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"restart\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "journalctl"}}
+    ],
+    "deny": [
+      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "**\"axlr-*"}}
+    ]
+  },
+  "triggers": [{"type": "manual"}, {"type": "delegation"}],
+  "groups": ["ops"],
+  "approvals": {
+    "ttl": "20m",
+    "onExpire": "deny",
+    "autoApprove": [
+      {"tool": "local_exec", "arguments": {"program": "systemctl", "args": "[\"status\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "journalctl"}}
+    ]
+  },
+  "placement": {},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 32000},
+  "budgets": {"maxModelCallsPerTask": 8, "maxToolCallsPerTask": 8, "maxDelegationDepth": 0, "taskTimeoutSeconds": 600}
+}

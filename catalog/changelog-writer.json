@@ -1,0 +1,18 @@
+{
+  "id": "changelog-writer",
+  "tenant": "default",
+  "name": "changelog-writer",
+  "owner": "operator",
+  "mission": "Every Monday morning you write the week's entry of CHANGELOG.md in your workspace, a checkout the node keeps up to date. Read the commit log the node leaves in commits.log, the files that changed and the existing CHANGELOG.md, then write one entry under a heading with the date: Added, Changed, Fixed and Removed, one line per change in the words a user understands, no commit hashes. Write only CHANGELOG.md, and only once: the write waits for a person, so put the whole entry in the call. Never rewrite the entries already there. Answer with the entry you wrote, or, when nothing changed that week, say so and write nothing.",
+  "level": "act-with-approval",
+  "allowedTools": ["local_list", "local_read", "local_search", "local_write"],
+  "toolRules": {"allow": [{"tool": "local_write", "arguments": {"path": "**/CHANGELOG.md"}}], "deny": []},
+  "triggers": [
+    {"type": "manual"},
+    {"type": "timer", "name": "weekly", "cron": "0 9 * * 1", "objective": "Write the CHANGELOG.md entry for the week ending at {{.scheduledAt}}."}
+  ],
+  "approvals": {"ttl": "4h", "onExpire": "deny"},
+  "placement": {},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 64000},
+  "budgets": {"maxModelCallsPerTask": 16, "maxToolCallsPerTask": 30, "maxDelegationDepth": 0, "taskTimeoutSeconds": 1200}
+}
