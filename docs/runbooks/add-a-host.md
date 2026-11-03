@@ -42,7 +42,11 @@ Check: a task of a bot placed on `web-2` (`"placement": {"nodes": ["web-2"]}` or
 
 ## Rotate a node's certificate
 
-Mint a fresh token for the same node id and run `axlr-node enroll` again on the host, then restart `axlr-node.service`. The previous certificate goes on the denylist and stops being accepted at the next request. Check: `node list` shows the new serial and its expiry in `certificateNotAfter`.
+The agent renews its own certificate: at start and every day it looks at the expiry, and from 30 days before it (`--renew-before`, `AXLR_NODE_RENEW_BEFORE`; `720h` by default) it draws a new key, asks `POST /v1/nodes/{id}/certificate` over the connection its current certificate opens, writes the new key, certificate and CA under `<state>/pki` and presents the new certificate from its next call; the old serial goes on the denylist ([node protocol](../reference/node-protocol.md#renewal)). A renewal that fails is logged and tried again the next day. Check: `axlr-node check --state ~/.local/state/axlr-node` prints the certificate's `notAfter` and `renewalDue` (`no`; `yes`: the agent renews at its next check; `expired`: only a fresh token helps); on the control plane `node get web-2` shows the new serial and `certificateNotAfter`, and the node's events carry a `node.renewed`.
+
+To rotate by hand (a key you no longer trust, a certificate that expired while the host was off), mint a fresh token for the same node id and run `axlr-node enroll` again on the host, then restart `axlr-node.service`. The previous certificate goes on the denylist and stops being accepted at the next request. Check: `node list` shows the new serial and its expiry in `certificateNotAfter`.
+
+A node whose record the control plane lost (a state restored from before the node was enrolled) needs no new token: its next registration recreates the record pinned to the certificate it holds, and every later call is checked against that serial. The recreated record has only the labels the agent reports (`reportedLabels`); the token's labels went with the lost record, so mint a token with them and enroll again when they matter. On a known node the token's labels (`operatorLabels`) win over the agent's wherever both name a key, and `labels` is the result.
 
 ## Retire or revoke a host
 
@@ -50,6 +54,6 @@ Mint a fresh token for the same node id and run `axlr-node enroll` again on the 
 axlr-bots node revoke web-2
 ```
 
-The node is `Revoked`, its certificate's serial is denied on every request (an open connection is cut off too), and the executions it still held fail with their tasks (`revoked: node web-2 was revoked at …`). Check: `node get web-2` shows `Revoked`; the tasks it held are `Failed` with a `bot.task.failed` event, `"reason": "revoked"`. A fresh token readmits the host with a new certificate; the old serial stays denied. On the host itself, `axlr-bots uninstall` removes the node unit and binary.
+The node is `Revoked`, its certificate's serial goes on the denylist, so the next request it makes is refused (a connection it holds open is not cut; the next request on it is), and the executions it still held fail with their tasks (`revoked: node web-2 was revoked at …`). Check: `node get web-2` shows `Revoked`; the tasks it held are `Failed` with a `bot.task.failed` event, `"reason": "revoked"`. A fresh token readmits the host with a new certificate; the old serial stays denied. On the host itself, `axlr-bots uninstall` removes the node unit and binary.
 
 The same node can run inside a Kubernetes pod, beside a service: the [sidecar runbook](sidecar.md) mints one token per replica into a Secret, and the pod enrolls itself on its first start.

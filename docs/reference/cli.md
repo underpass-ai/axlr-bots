@@ -20,7 +20,7 @@ axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>]
   group events <group> [--after <event-id>] [--limit 100] [--tenant <id>]   the team's timeline
   group topics <group> [--tenant <id>]   who publishes, who listens, nobody listens
   group publish <group> <name> --message "<text>" [--data '{…}'] [--to a,b] [--key <k>] [--tenant <id>]   the operator's event; stop.all stops everyone
-  incident open --tenant <id> --bot <bot-id> --group-key "<key>" --title "<text>" [--severity sev1..sev4] [--fingerprints a,b] [--source <name>] [--objective "<text>"]   report an alert group: a new incident and its triage task, a repeat, or a reopening
+  incident open --tenant <id> --bot <bot-id> --group-key "<key>" --title "<text>" [--severity sev1..sev4] [--fingerprints a,b] [--source <name>] [--objective "<text>"]   report an alert group: a new incident and its triage task, a repeat, or a reopening; sev3 without `--severity`
   incident list [--tenant <id>] [--status Open|Diagnosed|Resolved|Escalated] [--limit 100] | incident get <incident-id> | incident resolve <incident-id> [--reason "<text>"]   the incidents, one incident, close one
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>] [--urgent]
   trigger fire <bot-id> <trigger> --body '<json>' | --file <event.json> [--delivery <id>]
@@ -61,10 +61,10 @@ axlr-node mcp-relay --socket <path>
 | operator token file | `serve --api-token-file` | | `<state>/api.token` |
 | the operator API's base URL in approval notifications | `serve --api-url` | `AXLR_BOTS_API_URL` | `https://` and the `--api-listen` address (the host's name for a wildcard address) |
 | control plane: bus | `serve --bus direct\|nats`, `--nats-url`, `--nats-creds`, `--nats-cert`, `--nats-key`, `--nats-ca` | `AXLR_BOTS_BUS`, `AXLR_BOTS_NATS_URL`, `AXLR_BOTS_NATS_CREDS`, `AXLR_BOTS_NATS_CERT`, `AXLR_BOTS_NATS_KEY`, `AXLR_BOTS_NATS_CA` | `direct`: the nodes' own streams only; `nats` also publishes every push to the broker ([bus port](../architecture/bus-port.md#configuration)) |
-| who acts (audit) | `--actor` | | the user |
+| who acts (audit) | `--actor` | | `cli:<$USER>` (`cli:unknown` when `USER` is unset) |
 | node: control plane, id, labels, state | `--control`, `--node-id`, `--labels`, `--state` | `AXLR_NODE_CONTROL`, `AXLR_NODE_ID`, `AXLR_NODE_LABELS`, `AXLR_NODE_STATE` | the state is `~/.local/state/axlr-node`; over the socket the id is the host name; over `https://` it is the certificate's, and a `--node-id` that disagrees is refused |
 | node: the enrollment token (`axlr-node enroll` only) | `--token` | `AXLR_NODE_TOKEN` | none |
-| node: token file, pinned CA | `--token-file`, `--ca-file` | `AXLR_NODE_TOKEN_FILE`, `AXLR_NODE_CA_FILE` | none |
+| node: token file, pinned CA | `--token-file`, `--ca-file` | `AXLR_NODE_TOKEN_FILE`, `AXLR_NODE_CA_FILE` | none; `enroll` takes `--ca-file` from the flag only (`run` and `check` read `AXLR_NODE_CA_FILE`) |
 | node: dedicated | `--dedicated` | `AXLR_NODE_DEDICATED=true` | off: the node also runs bots placed on any node |
 | node: certificate renewal | `--renew-before` | `AXLR_NODE_RENEW_BEFORE` | `720h`: the agent renews its certificate from 30 days before it expires, checking at start and every day ([renewal](node-protocol.md#renewal)); a value past the certificate's life renews at every check, to see a renewal on a test node |
 | node: bus | `--bus direct\|nats`, `--nats-url`, `--nats-creds`, `--nats-cert`, `--nats-key`, `--nats-ca` | `AXLR_NODE_BUS`, `AXLR_NODE_NATS_URL`, `AXLR_NODE_NATS_CREDS`, `AXLR_NODE_NATS_CERT`, `AXLR_NODE_NATS_KEY`, `AXLR_NODE_NATS_CA` | `direct`: the control plane's pushes over the node's own stream; `nats`: read from the broker, showing a `tls://` broker the node's own certificate from enrollment unless `--nats-cert` names another ([bus port](../architecture/bus-port.md)) |
