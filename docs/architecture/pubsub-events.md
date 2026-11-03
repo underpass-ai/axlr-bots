@@ -55,7 +55,7 @@ Panel words are English, as the rest of the panel; the API names are in code.
 | see what a bot listens to | bot page → **Listens to**: one line per subscription: `pedido.*` · `task` · from `recepcion` | live; a pending ask shows as a card above the list |
 | make a bot listen | **Listen to a topic**: topic (pattern), mode (default by the kind's severity, shown), from (default anyone) → `PATCH /v1/bots/{id}` with `subscriptions` | the line appears; `bot.subscription.changed` in the timeline |
 | stop it listening | the line's **Remove** | same |
-| answer a bot's ask | the card «`almacen` asks to listen to `error.*`: "para reintentar si recepcion falla"» → **Approve** (status `active`) or **Deny** (removed) | `bot.subscription.decided`; the Overview's "need you" count includes pending asks |
+| answer a bot's ask | the card «`almacen` asks to listen to `error.*`: "para reintentar si recepcion falla"» → **Approve** (status `active`) or **Deny** (removed) | `bot.subscription.changed`, as for any `PATCH` of `subscriptions`; the Overview's "need you" count includes pending asks |
 | see the team's topics | Team → **Topics**: `pedido.nuevo` · publishes `recepcion` · listens `almacen`, `supervisor` · 2 min ago; `info.turno` · **nobody listens** | derived live from `GET /v1/groups/{name}/topics` |
 | publish an event | Team → **Publish an event**: name, message, optional `to` → `POST /v1/groups/{name}/events` | the event and its deliveries in the timeline within a second |
 | watch events flow | the team timeline, as today, now with the mode of each delivery: «`almacen` got a task», «told `recepcion` while it worked», «noted for `supervisor`» | long-poll as today |

@@ -7,7 +7,7 @@ What to do after a crash, a dead host or a lost control plane. Every task is wri
 Three things end a `Running` task: the node's report, the daemon's reconciliation, or `task reconcile` by hand.
 
 1. Read it: `axlr-bots task get task-…` shows the execution, its `nodeId` (or none for an in-process run) and its lease.
-2. Wait for the daemon: on start and every `--reconcile-every` (a minute) it fails the executions whose node stopped renewing its lease (two minutes, renewed every 30 s) and the in-process runs older than the grace (the bot's `taskTimeoutSeconds` plus a minute; for a delegated task, never later than a minute past its grant's deadline). It also fails, past the same grace, a `Running` execution whose task does not run it (a crash between the two saves left it), with `reconciled: orphan: …`, an `execution.orphaned` audit entry, and its id under `orphaned`; the task is left as it is.
+2. Wait for the daemon: on start and every `--reconcile-every` (a minute) it fails the executions whose node stopped renewing its lease (two minutes, renewed every 10 s) and the in-process runs older than the grace (the bot's `taskTimeoutSeconds` plus a minute; for a delegated task, never later than a minute past its grant's deadline). It also fails, past the same grace, a `Running` execution whose task does not run it (a crash between the two saves left it), with `reconciled: orphan: …`, an `execution.orphaned` audit entry, and its id under `orphaned`; the task is left as it is.
 3. Or reconcile now:
 
 ```bash
