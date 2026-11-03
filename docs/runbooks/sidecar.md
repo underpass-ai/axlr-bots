@@ -27,13 +27,13 @@ pod demo-log-service-0 (StatefulSet)                                    control 
 ```bash
 R=registry.example.internal/underpass-ai/axlr-bots-node
 for arch in amd64 arm64; do
-  docker buildx build -f distribution/node.Dockerfile --platform linux/$arch -t $R:0.1.0-$arch --load .
-  docker push $R:0.1.0-$arch
+  docker buildx build -f distribution/node.Dockerfile --platform linux/$arch -t $R:0.2.0-$arch --load .
+  docker push $R:0.2.0-$arch
 done
-docker buildx imagetools create -t $R:0.1.0 $R:0.1.0-amd64 $R:0.1.0-arm64   # prints the digest
+docker buildx imagetools create -t $R:0.2.0 $R:0.2.0-amd64 $R:0.2.0-arm64   # prints the digest
 ```
 
-Check: `docker run --rm --read-only $R:0.1.0-amd64 --help` lists `axlr-node check`; `docker buildx imagetools inspect $R:0.1.0` shows `linux/amd64` and `linux/arm64`. The chart takes the image by digest.
+Check: `docker run --rm --read-only $R:0.2.0-amd64 --help` lists `axlr-node check`; `docker buildx imagetools inspect $R:0.2.0` shows `linux/amd64` and `linux/arm64`. The chart takes the image by digest.
 
 ## 2. One token per replica
 
@@ -124,7 +124,7 @@ Depend on this chart with its demo off and include its templates in your pod; `h
 ```yaml
 # Chart.yaml
 dependencies:
-  - {name: axlr-bots-node, version: 0.1.0, repository: file://../charts/axlr-bots-node}
+  - {name: axlr-bots-node, version: 0.2.0, repository: file://../charts/axlr-bots-node}
 # values.yaml
 axlr-bots-node:
   image: {digest: sha256:…}
