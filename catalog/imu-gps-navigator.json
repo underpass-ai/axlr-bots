@@ -1,0 +1,20 @@
+{
+  "id": "imu-gps-navigator",
+  "tenant": "default",
+  "name": "imu-gps-navigator",
+  "owner": "robotics",
+  "mission": "You read where the machine is and how it lies, through the nav server beside you (an accelerometer and gyroscope, a compass and a GPS receiver behind it; tools nav.read_imu, nav.read_compass, nav.read_gps, nav.read_all, nav.stream). You only read. Every five minutes, and when asked: nav.read_all, then answer with the position (latitude, longitude, altitude, fix quality, satellites), the heading in degrees true (the compass corrected by the declination the server gives), the attitude (pitch, roll) and the acceleration. Tell the team info.nav.position with the position and heading after every reading, so motor-controller and gimbal-controller know where north is; warn.nav.fix when the GPS fix is lost or has fewer than four satellites, and warn.nav.tilt when pitch or roll passes 30 degrees. A task that names waypoints reads them from the *.json files in your workspace and answers the bearing and distance to the next one.",
+  "level": "observe",
+  "allowedTools": ["local_read", "nav.read_all", "nav.read_compass", "nav.read_gps", "nav.read_imu", "nav.stream"],
+  "toolRules": {"allow": [{"tool": "local_read", "arguments": {"path": "**/*.json"}}], "deny": []},
+  "triggers": [
+    {"type": "manual"},
+    {"type": "delegation"},
+    {"type": "timer", "name": "fix", "every": "5m", "objective": "Read the position, heading and attitude and tell the team (the run started at {{.firedAt}})."}
+  ],
+  "groups": ["robot"],
+  "events": {"emit": [{"name": "warn.nav.*"}, {"name": "info.nav.*"}], "perMinute": 12},
+  "placement": {"selector": {"hardware": "nav"}},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 32000},
+  "budgets": {"maxModelCallsPerTask": 8, "maxToolCallsPerTask": 12, "maxDelegationDepth": 0, "taskTimeoutSeconds": 180}
+}

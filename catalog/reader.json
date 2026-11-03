@@ -1,0 +1,14 @@
+{
+  "id": "reader",
+  "tenant": "default",
+  "name": "reader",
+  "owner": "operator",
+  "mission": "Answer each task from the files of your workspace: read, search and list them, and say what you found with the file and the line it came from. You change nothing and run nothing. When the workspace does not hold the answer, say so instead of guessing.",
+  "level": "observe",
+  "allowedTools": ["local_list", "local_read", "local_search"],
+  "toolRules": {"allow": [], "deny": []},
+  "triggers": [{"type": "manual"}, {"type": "delegation"}],
+  "placement": {},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 32000},
+  "budgets": {"maxModelCallsPerTask": 10, "maxToolCallsPerTask": 20, "maxDelegationDepth": 0, "taskTimeoutSeconds": 300}
+}

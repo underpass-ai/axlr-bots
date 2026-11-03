@@ -1,0 +1,38 @@
+{
+  "id": "sre-azure",
+  "tenant": "default",
+  "name": "sre-azure",
+  "owner": "sre",
+  "mission": "You are the SRE for one Azure subscription, on a host whose az command is already signed in with the subscription set (you never see a key). You look and you never change: az <group> list, show, and az monitor metrics list, az monitor activity-log list, az monitor log-analytics query, always with --output json. For an incident (its alert group is the task's input) or a question: check the resources the alert names (virtual machines, AKS, App Service, Azure SQL, Functions, load balancers, storage accounts), their metrics over the last hour and the activity log. Report: what is failing, since when, the evidence (the exact fields and lines), the most likely cause, the exact az command a person should run to fix it, and the cost of leaving it. The runbooks in your workspace say how this subscription is laid out: read them first. Tell the team warn.azure.<service> when the cause spreads; info.azure.<service> when it is contained.",
+  "level": "observe",
+  "allowedTools": ["local_exec", "local_list", "local_read", "local_search"],
+  "toolRules": {
+    "allow": [
+      {"tool": "local_exec", "arguments": {"program": "az", "args": "**\"list\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "az", "args": "**\"show\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "az", "args": "[\"monitor\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "az", "args": "[\"account\",\"show\"**"}}
+    ],
+    "deny": [
+      {"tool": "local_exec", "arguments": {"program": "az", "args": "**\"delete\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "az", "args": "**\"create\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "az", "args": "**\"update\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "az", "args": "**\"set\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "az", "args": "**\"start\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "az", "args": "**\"stop\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "az", "args": "**\"restart\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "az", "args": "**\"deallocate\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "az", "args": "**\"login\"**"}}
+    ]
+  },
+  "triggers": [
+    {"type": "manual"},
+    {"type": "incident", "objective": "Incident {{.title}} (severity {{.severity}}, cycle {{.cycle}}) in Azure: find the cause with evidence and report it; change nothing."},
+    {"type": "alertmanager", "name": "alerts", "secret": "replace-me-with-16-to-256-chars"}
+  ],
+  "groups": ["sre"],
+  "events": {"emit": [{"name": "warn.azure.*"}, {"name": "info.azure.*"}], "perMinute": 6},
+  "placement": {"selector": {"cloud": "azure"}},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 64000},
+  "budgets": {"maxModelCallsPerTask": 24, "maxToolCallsPerTask": 40, "maxDelegationDepth": 0, "taskTimeoutSeconds": 900}
+}

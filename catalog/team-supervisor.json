@@ -1,0 +1,22 @@
+{
+  "id": "team-supervisor",
+  "tenant": "default",
+  "name": "team-supervisor",
+  "owner": "operator",
+  "mission": "You supervise the team crew: team-worker-a writes, team-worker-b researches. Give each task to the teammate that fits it with axlr_bots_delegate (wait true) and answer with what it did. You hear the control plane's error.bot when a teammate's task fails: read the reason, give the task once more to the same teammate with what to do differently, or to the other one; when the same teammate fails twice in a row, tell the team stop.halt with the reason and stop delegating until a person asks again. You hear warn.* as a line in your running task and done.* as notes for your next task. You run nothing yourself and read only your workspace.",
+  "level": "observe",
+  "allowedTools": ["local_list", "local_read"],
+  "toolRules": {"allow": [], "deny": []},
+  "triggers": [{"type": "manual"}],
+  "groups": ["crew"],
+  "events": {"emit": [{"name": "stop.halt"}, {"name": "warn.supervisor.*"}, {"name": "info.supervisor.*"}], "perMinute": 12},
+  "subscriptions": [
+    {"topic": "error.*", "mode": "task", "objective": "Your teammate {{.from}} failed ({{.name}}): {{.message}}. Decide whether to give the task again, to whom, and do it."},
+    {"topic": "warn.*", "mode": "message"},
+    {"topic": "done.*", "mode": "note"}
+  ],
+  "delegation": {"maxDepth": 1, "budgetShare": 0.5, "maxChildren": 4},
+  "placement": {},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 32000},
+  "budgets": {"maxModelCallsPerTask": 20, "maxToolCallsPerTask": 20, "maxDelegationDepth": 1, "taskTimeoutSeconds": 900}
+}

@@ -1,0 +1,37 @@
+{
+  "id": "sre-aws",
+  "tenant": "default",
+  "name": "sre-aws",
+  "owner": "sre",
+  "mission": "You are the SRE for one AWS account, on a host whose aws command is already signed in (the node's profile; you never see a key). You look and you never change: aws <service> describe-*, list-*, get-* and logs filter-log-events, sts get-caller-identity, with the service as the first argument and --output json. For an incident (its alert group is the task's input) or a question: check the resources the alert names (EC2, ECS, EKS, RDS, Lambda, ELB, S3), their CloudWatch metrics over the last hour (cloudwatch get-metric-statistics) and alarms, and the log groups that matter. Report: what is failing, since when, the evidence (the exact fields and lines), the most likely cause, the exact aws command a person should run to fix it, and the cost of leaving it. The runbooks in your workspace say how this account is laid out: read them first. Tell the team warn.aws.<service> when the cause spreads; info.aws.<service> when it is contained.",
+  "level": "observe",
+  "allowedTools": ["local_exec", "local_list", "local_read", "local_search"],
+  "toolRules": {
+    "allow": [
+      {"tool": "local_exec", "arguments": {"program": "aws", "args": "[*,\"describe-**"}},
+      {"tool": "local_exec", "arguments": {"program": "aws", "args": "[*,\"list-**"}},
+      {"tool": "local_exec", "arguments": {"program": "aws", "args": "[*,\"get-**"}},
+      {"tool": "local_exec", "arguments": {"program": "aws", "args": "[\"logs\",\"filter-log-events\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "aws", "args": "[\"sts\",\"get-caller-identity\"**"}}
+    ],
+    "deny": [
+      {"tool": "local_exec", "arguments": {"program": "aws", "args": "**\"delete-**"}},
+      {"tool": "local_exec", "arguments": {"program": "aws", "args": "**\"terminate-**"}},
+      {"tool": "local_exec", "arguments": {"program": "aws", "args": "**\"put-**"}},
+      {"tool": "local_exec", "arguments": {"program": "aws", "args": "**\"create-**"}},
+      {"tool": "local_exec", "arguments": {"program": "aws", "args": "**\"update-**"}},
+      {"tool": "local_exec", "arguments": {"program": "aws", "args": "**\"modify-**"}},
+      {"tool": "local_exec", "arguments": {"program": "aws", "args": "**\"--profile\"**"}}
+    ]
+  },
+  "triggers": [
+    {"type": "manual"},
+    {"type": "incident", "objective": "Incident {{.title}} (severity {{.severity}}, cycle {{.cycle}}) in AWS: find the cause with evidence and report it; change nothing."},
+    {"type": "alertmanager", "name": "alerts", "secret": "replace-me-with-16-to-256-chars"}
+  ],
+  "groups": ["sre"],
+  "events": {"emit": [{"name": "warn.aws.*"}, {"name": "info.aws.*"}], "perMinute": 6},
+  "placement": {"selector": {"cloud": "aws"}},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 64000},
+  "budgets": {"maxModelCallsPerTask": 24, "maxToolCallsPerTask": 40, "maxDelegationDepth": 0, "taskTimeoutSeconds": 900}
+}

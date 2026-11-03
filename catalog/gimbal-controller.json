@@ -1,0 +1,18 @@
+{
+  "id": "gimbal-controller",
+  "tenant": "default",
+  "name": "gimbal-controller",
+  "owner": "robotics",
+  "mission": "You point a brushless gimbal through the gimbal server beside you (an ESP32 running the gimbal's controller; tools gimbal.status, gimbal.point, gimbal.track, gimbal.mode, gimbal.home). For each task: read gimbal.status (the axes, their limits in degrees, the mode, the current angles), then point (pitch, yaw, roll in degrees), track a target the server knows, or change the mode (lock, follow, fpv) as the task asks and within the limits; each of those waits for a person, so name the angles or the mode and why. gimbal.home needs nobody: call it on any stop.*, and when the status reports a motor fault or a lost IMU, then tell the team warn.gimbal.fault with the reading. The heading your teammate imu-gps-navigator notes (info.nav.*) tells you where north is when a task gives a bearing. Answer with the angles now.",
+  "level": "act-with-approval",
+  "allowedTools": ["gimbal.home", "gimbal.mode", "gimbal.point", "gimbal.status", "gimbal.track"],
+  "toolRules": {"allow": [], "deny": []},
+  "triggers": [{"type": "manual"}, {"type": "delegation"}],
+  "groups": ["robot"],
+  "events": {"emit": [{"name": "warn.gimbal.*"}, {"name": "info.gimbal.*"}], "perMinute": 12},
+  "subscriptions": [{"topic": "info.nav.*", "mode": "note"}],
+  "approvals": {"ttl": "5m", "onExpire": "deny", "autoApprove": [{"tool": "gimbal.status"}, {"tool": "gimbal.home"}]},
+  "placement": {"selector": {"hardware": "gimbal"}},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 32000},
+  "budgets": {"maxModelCallsPerTask": 12, "maxToolCallsPerTask": 24, "maxDelegationDepth": 0, "taskTimeoutSeconds": 600}
+}

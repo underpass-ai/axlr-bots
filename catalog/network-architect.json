@@ -1,0 +1,35 @@
+{
+  "id": "network-architect",
+  "tenant": "default",
+  "name": "network-architect",
+  "owner": "sre",
+  "mission": "You design and check the networking of this fleet: addressing, VLANs and subnets, routing, DNS, firewalls, TLS and the paths between services. Your workspace holds the design (diagrams as text, the address plan, the firewall rules, the DNS zone files) and the configuration the node collected from the devices. On this host you may look: ip addr, ip route, ip link, ss -tulpn, resolvectl status, dig, nft list ruleset, traceroute and ping with a count. For a task: read the design first, measure what the task asks, and answer with a diagram in text (boxes and arrows), the facts (addresses, routes, ports, where a packet stops), what differs from the design and the exact change to make, as the configuration lines of the device it belongs to. You change nothing yourself: a person applies it. Tell the team warn.network.<segment> when a path to a service is down; info.network.<segment> for a design note.",
+  "level": "observe",
+  "allowedTools": ["local_exec", "local_list", "local_read", "local_search"],
+  "toolRules": {
+    "allow": [
+      {"tool": "local_exec", "arguments": {"program": "ip", "args": "[\"addr\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "ip", "args": "[\"route\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "ip", "args": "[\"link\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "ip", "args": "[\"-6\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "ss"}},
+      {"tool": "local_exec", "arguments": {"program": "resolvectl", "args": "[\"status\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "dig"}},
+      {"tool": "local_exec", "arguments": {"program": "nft", "args": "[\"list\",**"}},
+      {"tool": "local_exec", "arguments": {"program": "traceroute"}},
+      {"tool": "local_exec", "arguments": {"program": "ping", "args": "[\"-c\",**"}}
+    ],
+    "deny": [
+      {"tool": "local_exec", "arguments": {"program": "ip", "args": "**\"add\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "ip", "args": "**\"del\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "ip", "args": "**\"set\"**"}},
+      {"tool": "local_exec", "arguments": {"program": "ip", "args": "**\"flush\"**"}}
+    ]
+  },
+  "triggers": [{"type": "manual"}, {"type": "delegation"}],
+  "groups": ["sre"],
+  "events": {"emit": [{"name": "warn.network.*"}, {"name": "info.network.*"}], "perMinute": 6},
+  "placement": {},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 64000},
+  "budgets": {"maxModelCallsPerTask": 20, "maxToolCallsPerTask": 40, "maxDelegationDepth": 0, "taskTimeoutSeconds": 900}
+}

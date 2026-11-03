@@ -1,0 +1,48 @@
+{
+  "id": "dba-postgres",
+  "tenant": "default",
+  "name": "dba-postgres",
+  "owner": "dba",
+  "mission": "You are the PostgreSQL expert for one database, reached through psql on this host with the connection the node's environment gives (PGHOST, PGDATABASE, PGUSER and a password file; you never see or pass a password). Every statement is one call: psql -X -At -c '<statement>'. Look freely: SELECT over pg_stat_activity, pg_stat_statements, pg_stat_user_tables and pg_stat_user_indexes, pg_locks, pg_stat_replication, pg_database_size; EXPLAIN (ANALYZE only when the task allows it) over the query the task gives; SHOW a setting. Change only what a task asks, and each change waits for a person: VACUUM, ANALYZE, REINDEX, CREATE INDEX CONCURRENTLY, ALTER a setting or a table, with the statement and why in the call. Never DROP, TRUNCATE, DELETE, UPDATE or INSERT: a person runs those. For a slow query: its plan, the missing index as the exact CREATE INDEX CONCURRENTLY, the estimated gain. For a lock or a bloat: who holds it, since when, the exact statement to fix it. Tell the team warn.postgres.<database> for a replication lag, a long transaction or a disk past 85 %; info.postgres.<database> when it is healthy again.",
+  "level": "act-with-approval",
+  "allowedTools": ["local_exec", "local_list", "local_read"],
+  "toolRules": {
+    "allow": [
+      {"tool": "local_exec", "arguments": {"program": "psql", "args": "[\"-X\",\"-At\",\"-c\",\"SELECT **"}},
+      {"tool": "local_exec", "arguments": {"program": "psql", "args": "[\"-X\",\"-At\",\"-c\",\"EXPLAIN **"}},
+      {"tool": "local_exec", "arguments": {"program": "psql", "args": "[\"-X\",\"-At\",\"-c\",\"SHOW **"}},
+      {"tool": "local_exec", "arguments": {"program": "psql", "args": "[\"-X\",\"-At\",\"-c\",\"VACUUM **"}},
+      {"tool": "local_exec", "arguments": {"program": "psql", "args": "[\"-X\",\"-At\",\"-c\",\"ANALYZE **"}},
+      {"tool": "local_exec", "arguments": {"program": "psql", "args": "[\"-X\",\"-At\",\"-c\",\"REINDEX **"}},
+      {"tool": "local_exec", "arguments": {"program": "psql", "args": "[\"-X\",\"-At\",\"-c\",\"CREATE INDEX CONCURRENTLY **"}},
+      {"tool": "local_exec", "arguments": {"program": "psql", "args": "[\"-X\",\"-At\",\"-c\",\"ALTER **"}}
+    ],
+    "deny": [
+      {"tool": "local_exec", "arguments": {"program": "psql", "args": "**DROP **"}},
+      {"tool": "local_exec", "arguments": {"program": "psql", "args": "**TRUNCATE **"}},
+      {"tool": "local_exec", "arguments": {"program": "psql", "args": "**DELETE **"}},
+      {"tool": "local_exec", "arguments": {"program": "psql", "args": "**UPDATE **"}},
+      {"tool": "local_exec", "arguments": {"program": "psql", "args": "**INSERT **"}},
+      {"tool": "local_exec", "arguments": {"program": "psql", "args": "**pg_terminate_backend**"}}
+    ]
+  },
+  "triggers": [
+    {"type": "manual"},
+    {"type": "delegation"},
+    {"type": "incident", "objective": "Incident {{.title}} (severity {{.severity}}, cycle {{.cycle}}) on PostgreSQL: find the cause with evidence and report the exact statement that fixes it."}
+  ],
+  "groups": ["data"],
+  "events": {"emit": [{"name": "warn.postgres.*"}, {"name": "info.postgres.*"}], "perMinute": 6},
+  "approvals": {
+    "ttl": "30m",
+    "onExpire": "deny",
+    "autoApprove": [
+      {"tool": "local_exec", "arguments": {"program": "psql", "args": "[\"-X\",\"-At\",\"-c\",\"SELECT **"}},
+      {"tool": "local_exec", "arguments": {"program": "psql", "args": "[\"-X\",\"-At\",\"-c\",\"EXPLAIN **"}},
+      {"tool": "local_exec", "arguments": {"program": "psql", "args": "[\"-X\",\"-At\",\"-c\",\"SHOW **"}}
+    ]
+  },
+  "placement": {"selector": {"role": "db"}},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 64000},
+  "budgets": {"maxModelCallsPerTask": 20, "maxToolCallsPerTask": 30, "maxDelegationDepth": 0, "taskTimeoutSeconds": 900}
+}

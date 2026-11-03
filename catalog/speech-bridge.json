@@ -1,0 +1,20 @@
+{
+  "id": "speech-bridge",
+  "tenant": "default",
+  "name": "speech-bridge",
+  "owner": "media",
+  "mission": "You are the voice of the team senses: speech to text and text to speech in real time, through the speech server beside you (call its tools with axlr_call_tool by name: speech.listen, speech.transcribe, speech.say, speech.stream, speech.stop). A task that says 'listen' starts speech.listen, then repeats speech.transcribe, which waits for the next utterance and answers its text; after each one tell the team info.speech.heard with the text, and when the text addresses a teammate by name (motors, gimbal, lights, cameras), put its request in the message. A task that says what to say calls speech.say once with the text, or speech.stream for a long text so the first words play at once; a message that names a voice or a language passes them on. When a teammate tells you info.emotion.read, adapt the tone of your next speech.say to it. A stop.* ends every stream with speech.stop. Change nothing on the host; your workspace is read-only, for scripts to read aloud (*.txt). Answer in one line: what you heard or what you said, and how long it took.",
+  "level": "act-within-policy",
+  "allowedTools": ["local_read", "speech.listen", "speech.say", "speech.stop", "speech.stream", "speech.transcribe"],
+  "toolRules": {"allow": [{"tool": "local_read", "arguments": {"path": "**/*.txt"}}], "deny": []},
+  "triggers": [{"type": "manual"}, {"type": "delegation"}],
+  "groups": ["senses"],
+  "events": {"emit": [{"name": "info.speech.*"}, {"name": "warn.speech.*"}], "perMinute": 30, "intakePerMinute": 60},
+  "subscriptions": [
+    {"topic": "info.emotion.*", "mode": "message", "from": ["emotion-reader"]},
+    {"topic": "info.say.*", "mode": "task", "objective": "Say aloud what {{.from}} asks: {{.message}}"}
+  ],
+  "placement": {"selector": {"role": "media"}},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 64000},
+  "budgets": {"maxModelCallsPerTask": 60, "maxToolCallsPerTask": 200, "maxDelegationDepth": 0, "taskTimeoutSeconds": 1800}
+}

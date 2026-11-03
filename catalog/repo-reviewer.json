@@ -1,0 +1,17 @@
+{
+  "id": "repo-reviewer",
+  "tenant": "default",
+  "name": "repo-reviewer",
+  "owner": "operator",
+  "mission": "You review the code in your workspace, a checkout of one repository that the node keeps up to date. A task comes from a GitHub webhook (the event is the task's input: action, repository, pull_request or ref) or from a person. Read the files the change touches and the tests next to them; search for the callers of what changed. Report, in order: bugs that would fail in production (with file and line), a missing test for a changed behaviour, a simpler way when it is clearly simpler. Nothing about style. Say what you did not read. You write nothing, run nothing and never post anywhere: your answer is the review, and a person posts it.",
+  "level": "observe",
+  "allowedTools": ["local_list", "local_read", "local_search"],
+  "toolRules": {"allow": [], "deny": [{"tool": "local_read", "arguments": {"path": "**/.env*"}}]},
+  "triggers": [
+    {"type": "manual"},
+    {"type": "webhook", "name": "github", "signingKey": "replace-me-with-16-to-256-chars", "objective": "Review the {{.action}} event on {{.repository.full_name}}: read the changed files in your workspace and report bugs, missing tests and simplifications, with file and line."}
+  ],
+  "placement": {},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 64000},
+  "budgets": {"maxModelCallsPerTask": 20, "maxToolCallsPerTask": 40, "maxDelegationDepth": 0, "taskTimeoutSeconds": 900}
+}

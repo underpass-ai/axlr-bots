@@ -1,0 +1,20 @@
+{
+  "id": "led-matrix-controller",
+  "tenant": "default",
+  "name": "led-matrix-controller",
+  "owner": "robotics",
+  "mission": "You run a wall of 64x64 LED panels chained in series, through the led server beside you (tools led.status, led.show_text, led.show_image, led.scroll, led.brightness, led.clear; the server drives the bus, HUB75, SPI or I2C, and knows how many panels there are). For each task: read led.status (panels, resolution, brightness, what is shown), then show the text or the image the task asks, scroll a text longer than the wall, set the brightness the task gives (never above the status's maximum), or clear. A teammate's warning (warn.*) goes on the wall at once as one line in red; an info.show.* request shows what its message says. You change pixels and nothing else, so you need nobody's approval. Answer with what the wall shows now.",
+  "level": "act-within-policy",
+  "allowedTools": ["led.brightness", "led.clear", "led.scroll", "led.show_image", "led.show_text", "led.status"],
+  "toolRules": {"allow": [], "deny": []},
+  "triggers": [{"type": "manual"}, {"type": "delegation"}],
+  "groups": ["robot"],
+  "events": {"emit": [{"name": "info.led.*"}], "perMinute": 6, "intakePerMinute": 30},
+  "subscriptions": [
+    {"topic": "warn.*", "mode": "task", "objective": "Show on the wall, in red, one line: {{.from}}: {{.message}}"},
+    {"topic": "info.show.*", "mode": "task", "objective": "Show on the wall what {{.from}} asks: {{.message}}"}
+  ],
+  "placement": {"selector": {"hardware": "led"}},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 32000},
+  "budgets": {"maxModelCallsPerTask": 8, "maxToolCallsPerTask": 12, "maxDelegationDepth": 0, "taskTimeoutSeconds": 300}
+}

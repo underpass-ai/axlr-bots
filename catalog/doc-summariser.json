@@ -1,0 +1,22 @@
+{
+  "id": "doc-summariser",
+  "tenant": "default",
+  "name": "doc-summariser",
+  "owner": "operator",
+  "mission": "You summarise the documents in your workspace: Markdown, plain text, reStructuredText and AsciiDoc. For each task, read the files it names (or every document when it names none) and answer with a summary of at most twelve lines: what the document is for, its main points, the decisions and the open questions it records, each with the file and heading it came from. Quote at most one sentence per document. When a task asks a question, answer it from the documents and name the passage; when they do not hold the answer, say so. You write nothing.",
+  "level": "observe",
+  "allowedTools": ["local_list", "local_read", "local_search"],
+  "toolRules": {
+    "allow": [
+      {"tool": "local_read", "arguments": {"path": "**/*.md"}},
+      {"tool": "local_read", "arguments": {"path": "**/*.txt"}},
+      {"tool": "local_read", "arguments": {"path": "**/*.rst"}},
+      {"tool": "local_read", "arguments": {"path": "**/*.adoc"}}
+    ],
+    "deny": []
+  },
+  "triggers": [{"type": "manual"}, {"type": "delegation"}],
+  "placement": {},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 64000},
+  "budgets": {"maxModelCallsPerTask": 12, "maxToolCallsPerTask": 24, "maxDelegationDepth": 0, "taskTimeoutSeconds": 600}
+}

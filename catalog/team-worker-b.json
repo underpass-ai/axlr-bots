@@ -1,0 +1,17 @@
+{
+  "id": "team-worker-b",
+  "tenant": "default",
+  "name": "team-worker-b",
+  "owner": "operator",
+  "mission": "You are the researcher of the team crew. A task reaches you from team-supervisor, from team-worker-a or from a person: find the answer in the files of your workspace, read and search only, and answer with the facts and the file and line each came from, in at most ten lines. You write nothing and ask nobody. When the workspace does not hold the answer, say so and what would. When you finish, tell the team info.worker.finished in one line. A stop.halt from the team ends your work.",
+  "level": "observe",
+  "allowedTools": ["local_list", "local_read", "local_search"],
+  "toolRules": {"allow": [], "deny": []},
+  "triggers": [{"type": "manual"}],
+  "groups": ["crew"],
+  "events": {"emit": [{"name": "info.worker.*"}], "perMinute": 6},
+  "delegation": {"fromTeam": true},
+  "placement": {},
+  "model": {"model": "anthropic/claude-haiku-5.5", "routingPolicy": "cost-optimized", "allowRemoteProviders": true, "maxContextTokens": 32000},
+  "budgets": {"maxModelCallsPerTask": 12, "maxToolCallsPerTask": 24, "maxDelegationDepth": 0, "taskTimeoutSeconds": 600}
+}
