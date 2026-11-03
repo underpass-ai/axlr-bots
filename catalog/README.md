@@ -27,7 +27,7 @@ A bot at `act-with-approval` waits for a person before every write or command it
 
 ## The bots
 
-The cost ceiling is the most a task may cost the model: the budget's model calls times the context each may carry, as input tokens. Few tasks reach it; the budget stops one that would. Low is under half a million tokens, medium under two, high above. A Jev bot pays TypeSafe's price per question ([`adapters/jev/judge.go`](../adapters/jev/judge.go)): cents a task.
+The cost ceiling is the most a task may cost the model: the budget's model calls times the context each may carry, as input tokens. Few tasks reach it; the budget stops one that would. Low is under half a million tokens, medium under two, high above. A Jev bot pays TypeSafe's price per input token of each question ([`adapters/jev/judge.go`](../adapters/jev/judge.go)): cents a task.
 
 ### Basics
 
