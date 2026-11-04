@@ -276,6 +276,17 @@ async fn reads_every_route_with_the_token_over_tls() {
     );
     assert_eq!(api.task_events(task_id.clone(), 200).await.unwrap().len(), 1);
     assert_eq!(server.last().path, "/v1/tasks/task-1/events?limit=200");
+    let live = api
+        .task_events_after(task_id.clone(), Some("evt-9".into()), 20)
+        .await
+        .unwrap();
+    assert_eq!(live.len(), 1);
+    assert_eq!(
+        server.last().path,
+        "/v1/tasks/task-1/events?limit=1000&after=evt-9&wait=20s"
+    );
+    api.task_events_after(task_id.clone(), None, 0).await.unwrap();
+    assert_eq!(server.last().path, "/v1/tasks/task-1/events?limit=1000");
     let team = api.group_events("ops".into(), Some("evt-9".into()), 20).await.unwrap();
     assert_eq!(team[0].event_type, "bot.task.submitted");
     assert_eq!(

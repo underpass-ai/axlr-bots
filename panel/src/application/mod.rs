@@ -1,5 +1,7 @@
 //! The use cases the panel offers and the ports they need.
 
+mod activity;
+mod activity_entry;
 mod bot_now;
 mod cancel_task;
 mod chat_line;
@@ -12,11 +14,13 @@ mod connector;
 mod control_plane;
 mod decide_task;
 mod definition_reader;
+mod delegation_activity;
 mod download_artifact;
 mod event_feed;
 mod file_picker;
 mod fleet;
 mod follow_bot_events;
+mod follow_task_events;
 mod follow_team_events;
 mod get_overview;
 mod incidents;
@@ -51,8 +55,12 @@ mod switch_bot;
 mod task_detail;
 #[cfg(test)]
 pub(crate) mod test_support;
+mod tool_activity;
+mod tool_state;
 mod waiting_call;
 
+pub use activity::Activity;
+pub use activity_entry::ActivityEntry;
 pub use bot_now::BotNow;
 pub use cancel_task::CancelTask;
 pub use chat_line::{CHAT_LINES, ChatLine};
@@ -65,11 +73,13 @@ pub use connector::Connector;
 pub use control_plane::ControlPlane;
 pub use decide_task::DecideTask;
 pub use definition_reader::DefinitionReader;
+pub use delegation_activity::DelegationActivity;
 pub use download_artifact::DownloadArtifact;
 pub use event_feed::EventFeed;
 pub use file_picker::FilePicker;
 pub use fleet::Fleet;
 pub use follow_bot_events::{FEED_SIZE, FollowBotEvents};
+pub use follow_task_events::{FollowTaskEvents, LIVE_FEED_SIZE, LIVE_WAIT_SECONDS};
 pub use follow_team_events::{FollowTeamEvents, TEAM_FEED_SIZE, TEAM_WAIT_SECONDS};
 pub use get_overview::GetOverview;
 pub use incidents::{INCIDENTS, ListIncidents, ResolveIncident, ShowIncident};
@@ -102,4 +112,6 @@ pub use stopped_bot::StoppedBot;
 pub use submit_task::SubmitTask;
 pub use switch_bot::SwitchBot;
 pub use task_detail::TaskDetail;
+pub use tool_activity::ToolActivity;
+pub use tool_state::ToolState;
 pub use waiting_call::WaitingCall;

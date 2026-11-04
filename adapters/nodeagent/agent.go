@@ -145,7 +145,7 @@ func (a Agent) sweepSockets() {
 // serveDelegation opens the execution's socket when its bot may
 // delegate or emit events, and says where it is; "" when no tool is
 // served.
-func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, offer *application.DelegationOffer, events *application.EventsOffer) (string, func()) {
+func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, offer *application.DelegationOffer, events *application.EventsOffer, progress func(application.ProgressItem)) (string, func()) {
 	if (offer == nil && events == nil) || a.Options.SocketDir == "" || a.slots == nil {
 		return "", func() {}
 	}
@@ -159,7 +159,7 @@ func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution 
 	}
 	var handlers []mcpHandler
 	if offer != nil {
-		d := delegator{transport: a.Transport, node: id, execution: execution, slots: a.slots, pollWait: a.Options.pollWait(), log: a.Options.log()}
+		d := delegator{transport: a.Transport, node: id, execution: execution, slots: a.slots, pollWait: a.Options.pollWait(), log: a.Options.log(), progress: progress}
 		handlers = append(handlers, mcpHandler{tool: delegateTool(*offer), call: d.call})
 	}
 	if events != nil {
@@ -254,13 +254,15 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	var report application.ExecutionReport
 	var err error
 	var bot domain.BotID
+	progress := a.startProgress(runCtx, id, assignment.ExecutionID)
 	switch {
 	case assignment.Run != nil:
 		bot = assignment.Run.BotID
 		request := *assignment.Run
-		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events)
+		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events, progress.push)
 		request.DelegationSocket = socket
 		request.OnSaid = a.say(runCtx, id, assignment.ExecutionID)
+		request.OnProgress = progress.push
 		if request.Events != nil {
 			request.OnEmit = func(command application.EmitEventCommand) (application.EmitAnswer, error) {
 				return a.Transport.Emit(runCtx, id, assignment.ExecutionID, command)
@@ -271,14 +273,18 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	case assignment.Decide != nil:
 		bot = assignment.Decide.BotID
 		request := *assignment.Decide
-		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events)
+		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events, progress.push)
 		request.DelegationSocket = socket
 		request.OnSaid = a.say(runCtx, id, assignment.ExecutionID)
+		request.OnProgress = progress.push
 		report, err = a.Executor.Decide(runCtx, request)
 		closeSocket()
 	default:
 		err = errors.New("the assignment carries neither a run nor a decision")
 	}
+	// What the run did last goes before the report, which ends the
+	// execution: the control plane takes no progress after it.
+	progress.finish()
 	if err != nil {
 		stopRun()
 		report = application.ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "node " + id.String() + ": " + err.Error(), Policy: report.Policy, Correlation: report.Correlation}

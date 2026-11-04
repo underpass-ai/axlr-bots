@@ -136,6 +136,28 @@ impl FakeControlPlane {
             );
             let running = state.add_task("bot", "Say the time", TaskStatus::Running, now - Duration::seconds(20));
             state.add_incidents(&running, now);
+            // What its run did so far, as its node told it.
+            state.event(
+                "bot.task.progress",
+                "bot",
+                &running,
+                now - Duration::seconds(12),
+                serde_json::json!({"items": [
+                    {"kind": "text", "text": "I will read the host's clock. "},
+                    {"kind": "tool.started", "tool": "local_exec", "callId": "c1", "summary": "{\"program\":\"date\"}"},
+                    {"kind": "tool.ended", "tool": "local_exec", "callId": "c1", "status": "ok", "durationMs": 40},
+                ]}),
+            );
+            state.event(
+                "bot.task.progress",
+                "bot",
+                &running,
+                now - Duration::seconds(6),
+                serde_json::json!({"items": [
+                    {"kind": "text", "text": "Checking it against the time server."},
+                    {"kind": "tool.started", "tool": "axlr_call_tool", "mcpTool": "get_time", "callId": "c2"},
+                ]}),
+            );
         }
         fake
     }
@@ -186,6 +208,26 @@ impl FakeControlPlane {
         let mut state = self.state.lock().unwrap();
         let payload = payload.as_object().cloned();
         state.bot_event_with(kind, &BotId::new(bot).unwrap(), payload);
+    }
+
+    /// What a running task's run did, as its node hands it over: one
+    /// `bot.task.progress` event with the items.
+    pub fn progress(&self, task: &TaskId, items: serde_json::Value) {
+        let mut state = self.state.lock().unwrap();
+        let now = state.clock();
+        let bot = state
+            .tasks
+            .iter()
+            .find(|t| &t.id == task)
+            .map(|t| t.bot_id.to_string())
+            .unwrap();
+        state.event(
+            "bot.task.progress",
+            &bot,
+            task,
+            now,
+            serde_json::json!({ "items": items }),
+        );
     }
 
     /// What a running task's run says back to the person, as its node
@@ -831,7 +873,12 @@ impl ControlPlane for FakeControlPlane {
     fn bot_events(&self, id: BotId, limit: u32) -> PortFuture<'_, Vec<Event>> {
         self.call(format!("bot_events {id}"), move |s| {
             s.bot(&id)?;
-            let events: Vec<Event> = s.events.iter().filter(|e| e.bot_id == id.as_str()).cloned().collect();
+            let events: Vec<Event> = s
+                .events
+                .iter()
+                .filter(|e| e.bot_id == id.as_str() && !e.is_progress())
+                .cloned()
+                .collect();
             let skip = events.len().saturating_sub(limit as usize);
             Ok(events.into_iter().skip(skip).collect())
         })
@@ -851,7 +898,7 @@ impl ControlPlane for FakeControlPlane {
             let events: Vec<Event> = s
                 .events
                 .iter()
-                .filter(|e| members.contains(&e.bot_id) || e.group_name == name)
+                .filter(|e| (members.contains(&e.bot_id) || e.group_name == name) && !e.is_progress())
                 .cloned()
                 .collect();
             let start = after
@@ -1171,6 +1218,18 @@ impl ControlPlane for FakeControlPlane {
         self.call(format!("task_executions {id}"), move |s| {
             s.task_mut(&id)?;
             Ok(s.executions.iter().filter(|e| e.task_id == id).cloned().collect())
+        })
+    }
+
+    fn task_events_after(&self, id: TaskId, after: Option<String>, _wait_seconds: u32) -> PortFuture<'_, Vec<Event>> {
+        self.call(format!("task_events_after {id}"), move |s| {
+            s.task_mut(&id)?;
+            let events: Vec<Event> = s.events.iter().filter(|e| e.task_id == id.as_str()).cloned().collect();
+            let start = after
+                .and_then(|cursor| events.iter().position(|e| e.event_id == cursor))
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            Ok(events.into_iter().skip(start).collect())
         })
     }
 

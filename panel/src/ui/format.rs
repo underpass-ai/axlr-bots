@@ -75,6 +75,21 @@ pub fn clock(moment: DateTime<Utc>) -> String {
     moment.with_timezone(&Local).format("%H:%M:%S").to_string()
 }
 
+/// A task's Activity one entry per line, `14:05:09 list_pods · ok ·
+/// 120 ms`, then the model's words: what a copy of the Activity takes.
+pub fn activity(activity: &crate::application::Activity) -> String {
+    let mut lines: Vec<String> = activity
+        .entries
+        .iter()
+        .map(|entry| format!("{} {}", clock(entry.at()), entry.headline()))
+        .collect();
+    if !activity.text.trim().is_empty() {
+        lines.push(String::new());
+        lines.push(activity.text.trim().to_string());
+    }
+    lines.join("\n")
+}
+
 /// Events one per line, `14:05:09 Failed · the file does not exist`:
 /// what a copy of a timeline takes.
 pub fn events<'a>(events: impl IntoIterator<Item = &'a Event>) -> String {

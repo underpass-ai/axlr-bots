@@ -17,7 +17,9 @@ type Options struct {
 	// Scenario is one of completed, slow (completed after a second),
 	// decision, failed, approval-flow, delivered (two artifacts written
 	// to the workspace, one of them changed after its delivery, and a
-	// receipt) or steered (answers the first message of its --steer-file).
+	// receipt), steered (answers the first message of its --steer-file)
+	// or progress (words, a bridged MCP call and a read, a moment apart,
+	// as a run a person watches writes them).
 	Scenario string
 	// NoPolicy makes --help omit -policy, like a build older than the
 	// execution policy.
@@ -119,6 +121,11 @@ exit 1`
 		return delivered()
 	case "steered":
 		return steered
+	case "progress":
+		return `printf '%s\n' '{"type":"session","session":"sess-1"}' '{"type":"text","text":"Looking at "}' '{"type":"text","text":"the pods."}' '{"type":"tool.requested","tool":"axlr_call_tool","call_id":"c1","arguments":{"name":"list_pods","arguments":{"namespace":"web"}}}'
+sleep 0.2
+printf '%s\n' '{"type":"tool.completed","tool":"axlr_call_tool","call_id":"c1","decision":"auto_approve"}' '{"type":"tool.requested","tool":"local_read","call_id":"c2"}' '{"type":"tool.completed","tool":"local_read","call_id":"c2","decision":"auto_approve"}' '{"type":"text","text":"All pods run."}' '{"type":"completed","session":"sess-1"}' '` + fmt.Sprintf(resultCompleted, `All pods run.`, `{"call_id":"c1","tool":"axlr_call_tool","decision":"auto_approve","status":"completed"},{"call_id":"c2","tool":"local_read","decision":"auto_approve","status":"completed"}`) + `'
+exit 0`
 	case "approval-flow":
 		return `decide=""
 prev=""

@@ -57,7 +57,9 @@ type Service interface {
 	SendTaskMessage(ctx context.Context, id string, request MessageRequest) (application.SentTaskMessage, error)
 	GetTask(ctx context.Context, id string) (domain.TaskSnapshot, error)
 	ListTasks(ctx context.Context, query application.TaskQuery) ([]domain.TaskSnapshot, error)
-	ListTaskEvents(ctx context.Context, id string, limit int) ([]domain.Event, error)
+	// ListTaskEvents answers a task's timeline after the caller's last
+	// event, oldest first.
+	ListTaskEvents(ctx context.Context, query application.TaskEventsQuery) ([]domain.Event, error)
 	GetOverview(ctx context.Context, since time.Time) (application.Overview, error)
 	// OpenIncident reports an alert group: it opens an incident and its
 	// triage task, repeats one already open, or reopens one resolved

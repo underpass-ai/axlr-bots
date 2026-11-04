@@ -9,7 +9,7 @@ use super::widgets::{
     section, section_title, section_with,
 };
 use crate::application::TaskDetail;
-use crate::domain::{Execution, ExecutionKind, TaskId, TaskStatus};
+use crate::domain::{Event, Execution, ExecutionKind, TaskId, TaskStatus};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
 use crate::ui::{App, Icon, Message, Screen, Tokens, Tone};
@@ -99,6 +99,9 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
         page = page.push(section(Icon::Tasks, "Task", text(task.objective.clone()), tokens));
     }
     page = page.push(facts);
+    if let Some(activity) = super::activity::pane(app, detail, tokens) {
+        page = page.push(activity);
+    }
     let knew = task.knew();
     if !knew.is_empty() {
         let mut notes = column![muted("What its bot had heard, given to it when it started", tokens)].spacing(6);
@@ -201,8 +204,8 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
             container(section_with(
                 Icon::Clock,
                 "Timeline",
-                timeline_tools(detail, tokens),
-                timeline(detail, tokens),
+                timeline_tools(app, detail, tokens),
+                timeline(app, detail, tokens),
                 tokens
             ))
             .width(Length::FillPortion(2)),
@@ -459,20 +462,32 @@ fn execution_card<'a>(app: &'a App, execution: &'a Execution, tokens: Tokens) ->
         .into()
 }
 
-/// A copy of the whole timeline, once it has an event.
-fn timeline_tools<'a>(detail: &'a TaskDetail, tokens: Tokens) -> Vec<El<'a>> {
-    if detail.events.is_empty() {
-        return Vec::new();
-    }
-    vec![copy_button("Copy timeline", format::events(&detail.events), tokens)]
+/// The task's timeline without its run's progress, which the Activity
+/// shows: from the live read when it came, which holds the whole of it.
+fn timeline_events<'a>(app: &'a App, detail: &'a TaskDetail) -> Vec<&'a Event> {
+    let events = match app.live.as_ref().filter(|l| l.id == detail.task.id && l.read) {
+        Some(live) => &live.feed.events,
+        None => &detail.events,
+    };
+    events.iter().filter(|e| !e.is_progress()).collect()
 }
 
-fn timeline<'a>(detail: &'a TaskDetail, tokens: Tokens) -> El<'a> {
-    if detail.events.is_empty() {
+/// A copy of the whole timeline, once it has an event.
+fn timeline_tools<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> Vec<El<'a>> {
+    let events = timeline_events(app, detail);
+    if events.is_empty() {
+        return Vec::new();
+    }
+    vec![copy_button("Copy timeline", format::events(events), tokens)]
+}
+
+fn timeline<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> El<'a> {
+    let events = timeline_events(app, detail);
+    if events.is_empty() {
         return empty(Icon::Clock, "No event yet", tokens);
     }
     let mut list = column![].spacing(10);
-    for event in &detail.events {
+    for event in events {
         let tone = Tone::of_event(event.tone());
         list = list.push(
             row![

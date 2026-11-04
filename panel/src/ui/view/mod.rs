@@ -1,5 +1,6 @@
 //! What the panel draws for each screen.
 
+mod activity;
 mod bot_detail;
 mod bots;
 mod decide;

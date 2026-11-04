@@ -315,6 +315,10 @@ func (f *fakeTransport) Said(context.Context, domain.NodeID, domain.ExecutionID,
 func (f *fakeTransport) RenewCertificate(context.Context, domain.NodeID, []byte) (application.RenewedCertificate, error) {
 	return application.RenewedCertificate{}, errors.New("not served")
 }
+
+func (f *fakeTransport) Progress(context.Context, domain.NodeID, domain.ExecutionID, application.ProgressBatch) (application.ProgressAnswer, error) {
+	return application.ProgressAnswer{Recorded: true}, nil
+}
 func (f *fakeTransport) Report(_ context.Context, _ domain.NodeID, _ domain.ExecutionID, report application.ExecutionReport) (application.ReportAck, error) {
 	f.reports++
 	f.report = report

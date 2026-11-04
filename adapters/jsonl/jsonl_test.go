@@ -156,6 +156,18 @@ func TestEventLogListsATasksEvents(t *testing.T) {
 	}
 	if other, _ := log.ListTaskEvents(ctx, "task-2", 0); len(other) != 1 || other[0].ID != "evt-b" {
 		t.Errorf("task-2 = %+v", other)
+	} // A run's progress is in its task's timeline alone, not in its bot's
+	// nor its teams'.
+	progress, _ := domain.NewEvent("evt-p", domain.EventTaskProgress, "underpass", "bot-1", "task-1", "trace", t0, map[string]any{"items": []any{}})
+	_ = log.Publish(ctx, progress)
+	if events, _ := log.ListTaskEvents(ctx, "task-1", 10); len(events) != 4 || events[3].ID != "evt-p" {
+		t.Errorf("task-1 = %+v", events)
+	}
+	if events, _ := log.ListEvents(ctx, "bot-1", 10); len(events) != 4 || events[3].ID == "evt-p" {
+		t.Errorf("bot-1 = %+v", events)
+	}
+	if events, _ := log.ListTeamEvents(ctx, "underpass", "ops", []domain.BotID{"bot-1"}, 10); len(events) != 4 {
+		t.Errorf("team = %+v", events)
 	}
 }
 

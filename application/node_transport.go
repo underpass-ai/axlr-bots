@@ -27,6 +27,9 @@ type NodeTransport interface {
 	// Said hands over what the run said back to an operator's message,
 	// before the run ends.
 	Said(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, reply SaidReply) error
+	// Progress hands over what the run did since the last batch, while
+	// it runs; Full in the answer says the control plane keeps no more.
+	Progress(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, batch ProgressBatch) (ProgressAnswer, error)
 	// UploadArtifact hands over the bytes of an artifact the execution
 	// delivered, before the report; the control plane keeps them only
 	// when they match the artifact's size and SHA-256.

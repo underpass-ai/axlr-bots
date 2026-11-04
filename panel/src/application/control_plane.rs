@@ -70,4 +70,9 @@ pub trait ControlPlane: Send + Sync {
     /// Closes the incident, with the operator's reason if they gave one.
     /// One already resolved is a state error.
     fn resolve_incident(&self, id: String, reason: Option<String>) -> PortFuture<'_, Incident>;
+
+    /// A task's timeline after the event `after` names, oldest first;
+    /// with `wait_seconds`, the control plane answers as soon as there is
+    /// a new one. A control plane older than `after` answers the newest.
+    fn task_events_after(&self, id: TaskId, after: Option<String>, wait_seconds: u32) -> PortFuture<'_, Vec<Event>>;
 }

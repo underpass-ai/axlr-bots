@@ -222,6 +222,24 @@ func TestAgentRunsTheChildOnTheSameNodeWhileTheParentWaits(t *testing.T) {
 	if !strings.Contains(f.logs.String(), "may delegate to bot-b") || !strings.Contains(f.logs.String(), "ended Completed") {
 		t.Errorf("logs = %s", f.logs.String())
 	}
+	// The parent's live view names whom it asked and the child it got.
+	timeline, err := f.client.ListTaskEvents(ctx, application.TaskEventsQuery{ID: domain.TaskID(parent.ID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	told := false
+	for _, event := range timeline {
+		if event.Type != domain.EventTaskProgress {
+			continue
+		}
+		for _, item := range event.Payload["items"].([]any) {
+			fields := item.(map[string]any)
+			told = told || (fields["kind"] == "delegation" && fields["bot"] == "bot-b" && fields["taskId"] == child.ID)
+		}
+	}
+	if !told {
+		t.Errorf("no delegation in the parent's progress: %+v", timeline)
+	}
 }
 
 func TestAgentHandsTheModelTheRefusalOfALoop(t *testing.T) {

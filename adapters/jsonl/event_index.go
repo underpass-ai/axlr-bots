@@ -26,12 +26,14 @@ type teamKey struct {
 }
 
 // eventKeys are the fields an event is found by: its bot, its task and,
-// for an event about a team, the team.
+// for an event about a team, the team; and its type, since a run's
+// progress belongs to its task's timeline alone.
 type eventKeys struct {
-	TenantID  domain.TenantID `json:"tenantId"`
-	BotID     domain.BotID    `json:"botId"`
-	GroupName string          `json:"groupName"`
-	TaskID    domain.TaskID   `json:"taskId"`
+	Type      domain.EventType `json:"type"`
+	TenantID  domain.TenantID  `json:"tenantId"`
+	BotID     domain.BotID     `json:"botId"`
+	GroupName string           `json:"groupName"`
+	TaskID    domain.TaskID    `json:"taskId"`
 }
 
 // eventIndex knows where each bot's, task's and team's events are in the
@@ -101,9 +103,13 @@ func (x *eventIndex) add(at int64, line []byte) {
 	}
 	n := int32(len(x.lines))
 	x.lines = append(x.lines, eventLine{at: at, len: int32(len(line))})
-	if keys.BotID != "" {
+	switch {
+	case keys.Type == domain.EventTaskProgress:
+		// What a run did, step by step, is read in its task's timeline;
+		// it would drown the bot's and its teams' timelines.
+	case keys.BotID != "":
 		x.byBot[keys.BotID] = append(x.byBot[keys.BotID], n)
-	} else if keys.GroupName != "" {
+	case keys.GroupName != "":
 		key := teamKey{tenant: keys.TenantID, team: keys.GroupName}
 		x.byTeam[key] = append(x.byTeam[key], n)
 	}

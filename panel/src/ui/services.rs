@@ -3,9 +3,10 @@ use std::sync::Arc;
 use super::{BotView, Connection, Effect, Message};
 use crate::application::{
     CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader, DownloadArtifact, FilePicker,
-    FollowBotEvents, FollowTeamEvents, KeySource, ListIncidents, ListTopics, LoadChat, LoadTaskDetail,
-    MintEnrollmentToken, Notifier, PanelError, PatchBot, PublishEvent, RefreshFleet, RegisterBot, ResolveIncident,
-    RevokeNode, SaveSubscriptions, SendChat, ShortcutSource, ShowIncident, StopBot, SubmitTask, SwitchBot,
+    FollowBotEvents, FollowTaskEvents, FollowTeamEvents, KeySource, ListIncidents, ListTopics, LoadChat,
+    LoadTaskDetail, MintEnrollmentToken, Notifier, PanelError, PatchBot, PublishEvent, RefreshFleet, RegisterBot,
+    ResolveIncident, RevokeNode, SaveSubscriptions, SendChat, ShortcutSource, ShowIncident, StopBot, SubmitTask,
+    SwitchBot,
 };
 use crate::domain::BotPatch;
 
@@ -68,6 +69,13 @@ impl Services {
                     Err(e) => Err(e),
                 };
                 Message::TaskLoaded(id, result)
+            }
+            Effect::FollowTask { id, feed, wait } => {
+                let result = match self.control_plane() {
+                    Ok(cp) => FollowTaskEvents::new(cp).execute(id.clone(), feed, wait).await,
+                    Err(e) => Err(e),
+                };
+                Message::TaskFollowed(id, result)
             }
             Effect::FollowBot(id, feed) => {
                 let result = match self.control_plane() {

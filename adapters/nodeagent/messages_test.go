@@ -12,6 +12,7 @@ import (
 	"github.com/underpass-ai/axlr-bots/adapters/axlr"
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/domain"
 	"github.com/underpass-ai/axlr-bots/internal/fakeaxlr"
 )
 
@@ -50,7 +51,7 @@ func TestAnOperatorMessageReachesTheRunningExecution(t *testing.T) {
 	if err != nil || len(executions) != 1 || executions[0].Result.Answer != "Heard: check row F too" {
 		t.Fatalf("%+v %v\n%s", executions, err, f.logs.String())
 	}
-	events, err := f.client.ListTaskEvents(ctx, task, 0)
+	events, err := f.client.ListTaskEvents(ctx, application.TaskEventsQuery{ID: domain.TaskID(task), Limit: 0})
 	if err != nil {
 		t.Fatal(err)
 	}

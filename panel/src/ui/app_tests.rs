@@ -959,3 +959,86 @@ fn a_kept_artifact_is_saved_and_one_not_kept_says_why() {
     send(&mut app, Message::Downloaded(Ok(None)));
     assert!(app.banner.is_none(), "a cancelled save says nothing");
 }
+
+#[test]
+fn a_running_task_is_followed_live_and_keeps_its_history_once_it_ends() {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    let running = task_in(&app, TaskStatus::Running);
+    let done = task_in(&app, TaskStatus::Completed);
+    send(&mut app, Message::Go(Screen::Task(running.clone())));
+    let live = app.live.as_ref().unwrap();
+    assert!(live.read && !live.following && !live.settled);
+    assert_eq!(live.activity.entries.len(), 2);
+    assert_eq!(live.activity.running(), 1);
+    assert!(live.words.text().starts_with("I will read the host's clock."));
+
+    // While it runs, the next read waits for what comes.
+    let tick = app.now + Duration::seconds(3);
+    let effects = app.apply(Message::Tick(tick));
+    assert!(effects.iter().any(|e| matches!(
+        e,
+        Effect::FollowTask { id, wait, .. } if *id == running && *wait == crate::application::LIVE_WAIT_SECONDS
+    )));
+    assert!(
+        app.apply(Message::Tick(tick))
+            .iter()
+            .all(|e| !matches!(e, Effect::FollowTask { .. }))
+    );
+    drive(&mut app, effects);
+    fake.progress(
+        &running,
+        serde_json::json!([
+            {"kind": "tool.ended", "tool": "axlr_call_tool", "callId": "c2", "status": "ok", "durationMs": 900},
+            {"kind": "delegation", "bot": "bot-wrx80", "taskId": done.to_string()},
+            {"kind": "text", "text": " It is ten."}
+        ]),
+    );
+    fake.say(&running, "It is ten o'clock.");
+    send(&mut app, Message::Tick(tick + Duration::seconds(3)));
+    let live = app.live.as_ref().unwrap();
+    assert_eq!(live.activity.running(), 0);
+    assert_eq!(live.activity.entries.len(), 4);
+    assert!(live.words.text().contains("It is ten."));
+    send(&mut app, Message::ActivityPick(2));
+    send(
+        &mut app,
+        Message::WordsSelect(iced::widget::text_editor::Action::SelectAll),
+    );
+    let live = app.live.as_ref().unwrap();
+    assert_eq!(live.selected, Some(2));
+    assert!(live.words.selection().is_some_and(|s| s.ends_with("It is ten.")));
+
+    // A read for another screen, or that failed, changes nothing.
+    assert!(
+        app.apply(Message::TaskFollowed(done.clone(), Ok(Default::default())))
+            .is_empty()
+    );
+    assert!(
+        app.apply(Message::TaskFollowed(
+            running.clone(),
+            Err(PanelError::Unreachable("down".into()))
+        ))
+        .is_empty()
+    );
+
+    // It ends: one more read takes what came last, then the following
+    // stops and the history stays.
+    send(&mut app, Message::AskCancel(running.clone()));
+    send(&mut app, Message::ConfirmYes);
+    send(&mut app, Message::Tick(tick + Duration::seconds(6)));
+    let live = app.live.as_ref().unwrap();
+    assert!(live.settled && live.read);
+    assert_eq!(live.activity.entries.len(), 4);
+    let effects = app.apply(Message::Tick(tick + Duration::seconds(9)));
+    assert!(effects.iter().all(|e| !matches!(e, Effect::FollowTask { .. })));
+
+    // Another task starts its own.
+    send(&mut app, Message::Go(Screen::Task(done.clone())));
+    assert_eq!(app.live.as_ref().unwrap().id, done);
+    send(&mut app, Message::Go(Screen::Overview));
+    assert!(app.apply(Message::ActivityPick(0)).is_empty());
+}

@@ -1,6 +1,7 @@
 use iced::Color;
 
 use super::{Icon, Tokens};
+use crate::application::ToolState;
 use crate::domain::{
     BotStatus, CallVerdict, EventTone, ExecutionOutcome, IncidentSeverity, IncidentStatus, NodeStatus, TaskStatus,
 };
@@ -97,6 +98,17 @@ impl Tone {
             ExecutionOutcome::DecisionRequired => Self::Wait,
             ExecutionOutcome::Failed => Self::Bad,
             ExecutionOutcome::Cancelled | ExecutionOutcome::Unknown => Self::Idle,
+        }
+    }
+
+    /// Where a tool call of a live run stands.
+    pub fn of_tool(state: ToolState) -> Self {
+        match state {
+            ToolState::Running => Self::Busy,
+            ToolState::Waiting => Self::Wait,
+            ToolState::Ok => Self::Good,
+            ToolState::Denied | ToolState::Failed => Self::Bad,
+            ToolState::Unfinished => Self::Idle,
         }
     }
 

@@ -114,7 +114,7 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 	args = append(args, correlation.args...)
 	args = append(args, e.steerArgs(ctx, request.ExecutionID)...)
 	defer e.dropSteer(request.ExecutionID)
-	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout, request.OnSaid)
+	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout, request.OnSaid, request.OnProgress)
 	report.Policy = &policy.record
 	correlate(&report, correlation)
 	return report, err
@@ -157,7 +157,7 @@ func (e *Executor) Decide(ctx context.Context, request application.DecisionReque
 	args = append(args, correlation.args...)
 	args = append(args, e.steerArgs(ctx, request.ExecutionID)...)
 	defer e.dropSteer(request.ExecutionID)
-	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout, request.OnSaid)
+	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout, request.OnSaid, request.OnProgress)
 	report.Policy = &policy.record
 	correlate(&report, correlation)
 	return report, err
@@ -263,7 +263,7 @@ func (e *Executor) waitDelay() time.Duration {
 
 // run starts the process, keeps every stdout line in the trace file and
 // stderr beside it, and turns what it saw into a report.
-func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot domain.BotID, args []string, requested time.Duration, hear func(application.SaidReply)) (application.ExecutionReport, error) {
+func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot domain.BotID, args []string, requested time.Duration, hear func(application.SaidReply), tell func(application.ProgressItem)) (application.ExecutionReport, error) {
 	if execution == "" || bot == "" {
 		return application.ExecutionReport{}, errors.New("axlr: the request needs an execution id and a bot id")
 	}
@@ -307,6 +307,7 @@ func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot do
 
 	parser := newTurnParser()
 	said := newSaidTracker(hear)
+	progress := newProgressTracker(tell)
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxLineBytes)
 	for scanner.Scan() {
@@ -315,6 +316,7 @@ func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot do
 		_, _ = trace.Write([]byte{'\n'})
 		parser.feed(line)
 		said.feed(line)
+		progress.feed(line)
 	}
 	said.flush()
 	scanErr := scanner.Err()

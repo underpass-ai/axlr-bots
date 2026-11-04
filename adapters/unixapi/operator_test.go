@@ -192,17 +192,17 @@ func TestPanelRoutesOverTheSocket(t *testing.T) {
 		t.Errorf("unknown bot: %v", err)
 	}
 
-	timeline, err := client.ListTaskEvents(ctx, first.Task.ID, 0)
+	timeline, err := client.ListTaskEvents(ctx, application.TaskEventsQuery{ID: domain.TaskID(first.Task.ID), Limit: 0})
 	if err != nil || len(timeline) != 3 || timeline[0].Type != domain.EventTaskSubmitted || timeline[2].Type != domain.EventTaskCompleted {
 		t.Errorf("timeline: %v %+v", err, timeline)
 	}
-	if last, err := client.ListTaskEvents(ctx, first.Task.ID, 1); err != nil || len(last) != 1 {
+	if last, err := client.ListTaskEvents(ctx, application.TaskEventsQuery{ID: domain.TaskID(first.Task.ID), Limit: 1}); err != nil || len(last) != 1 {
 		t.Errorf("last event: %v %+v", err, last)
 	}
-	if _, err := client.ListTaskEvents(ctx, "task-none", 0); !domain.IsNotFound(err) {
+	if _, err := client.ListTaskEvents(ctx, application.TaskEventsQuery{ID: domain.TaskID("task-none"), Limit: 0}); !domain.IsNotFound(err) {
 		t.Errorf("unknown task: %v", err)
 	}
-	if _, err := client.ListTaskEvents(ctx, "bad id", 0); !errorsAs(err, &remote) || remote.Kind != KindValidation {
+	if _, err := client.ListTaskEvents(ctx, application.TaskEventsQuery{ID: domain.TaskID("bad id"), Limit: 0}); !errorsAs(err, &remote) || remote.Kind != KindValidation {
 		t.Errorf("bad task id: %v", err)
 	}
 

@@ -13,6 +13,12 @@ pub enum Effect {
         generation: u64,
     },
     LoadTask(TaskId),
+    /// Read a task's timeline after the feed, waiting up to `wait` seconds.
+    FollowTask {
+        id: TaskId,
+        feed: EventFeed,
+        wait: u32,
+    },
     FollowBot(BotId, EventFeed),
     /// Read a team's timeline after the feed, waiting up to `wait` seconds.
     FollowTeam {

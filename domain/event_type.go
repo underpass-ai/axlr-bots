@@ -50,6 +50,11 @@ const (
 	// EventTaskSaid says a running task's execution answered the
 	// operator's message: the payload holds its words and the message.
 	EventTaskSaid EventType = "bot.task.said"
+	// EventTaskProgress says what a running task's execution was doing:
+	// the payload holds a batch of items the node read from the run as
+	// it went (a tool call started or ended, a decision required, a
+	// delegation, the model's text).
+	EventTaskProgress EventType = "bot.task.progress"
 	// EventDelegationRefused says a task's execution asked another bot
 	// and the control plane refused: the payload names the target and
 	// the check that refused it.
@@ -123,7 +128,7 @@ const (
 func ParseEventType(raw string) (EventType, error) {
 	switch EventType(raw) {
 	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
-		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventTaskDelegated, EventTaskMessage, EventTaskSaid, EventDelegationRefused,
+		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventTaskDelegated, EventTaskMessage, EventTaskSaid, EventTaskProgress, EventDelegationRefused,
 		EventEventEmitted, EventEventRefused, EventEventHeard, EventSubscriptionChanged, EventSubscriptionAsked, EventGroupEventPublished,
 		EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentEscalated, EventIncidentResolved,
 		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked, EventNodeRenewed,

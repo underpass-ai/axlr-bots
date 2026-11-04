@@ -6,7 +6,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use super::api_error::ApiError;
-use crate::application::{ControlPlane, PanelConfig, PanelError, PortFuture};
+use crate::application::{ControlPlane, LIVE_FEED_SIZE, PanelConfig, PanelError, PortFuture};
 use crate::domain::{
     Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, EnrollmentRequest, EnrollmentToken,
     Event, Execution, ExecutionId, Incident, IncidentStatus, Node, NodeId, Overview, Publication, Published,
@@ -358,5 +358,20 @@ impl ControlPlane for HttpControlPlane {
 
     fn resolve_incident(&self, id: String, reason: Option<String>) -> PortFuture<'_, Incident> {
         self.post(format!("/v1/incidents/{id}/resolve"), Some(ResolveBody { reason }))
+    }
+
+    fn task_events_after(&self, id: TaskId, after: Option<String>, wait_seconds: u32) -> PortFuture<'_, Vec<Event>> {
+        let mut query = vec![("limit", LIVE_FEED_SIZE.to_string())];
+        if let Some(after) = after {
+            query.push(("after", after));
+        }
+        if wait_seconds > 0 {
+            query.push(("wait", format!("{wait_seconds}s")));
+        }
+        let timeout = READ_TIMEOUT + Duration::from_secs(u64::from(wait_seconds)) + POLL_MARGIN;
+        let request = self
+            .request(Method::GET, &format!("/v1/tasks/{id}/events"), timeout)
+            .query(&query);
+        Box::pin(send(request))
     }
 }
