@@ -133,3 +133,18 @@ func TestTheLinesOfACurrentAXLRNameTheMCPToolAndTheFailure(t *testing.T) {
 		t.Fatalf("%+v", told[2:])
 	}
 }
+
+// A tool whose name collides with another plugin's reaches the model under an
+// opaque mcp_ alias: the plugin_tool the run resolved names it, not the alias.
+func TestTheRunsResolutionNamesAToolBehindItsAlias(t *testing.T) {
+	var told []application.ProgressItem
+	tracker := newProgressTracker(func(item application.ProgressItem) { told = append(told, item) })
+	tracker.feed([]byte(`{"type":"tool.requested","tool":"axlr_call_tool","call_id":"c1","plugin_tool":"checks/doctor","arguments":{"name":"mcp_0123abcd","arguments":{"probe":true}}}`))
+	tracker.feed([]byte(`{"type":"tool.requested","tool":"axlr_call_tool","call_id":"c2","arguments":{"name":"mcp_0123abcd","arguments":{}}}`))
+	if len(told) != 2 || told[0].MCPTool != "checks/doctor" || told[0].Summary != `{"probe":true}` {
+		t.Fatalf("%+v", told)
+	}
+	if told[1].MCPTool != "mcp_0123abcd" {
+		t.Fatalf("without plugin_tool the alias stays: %+v", told[1])
+	}
+}

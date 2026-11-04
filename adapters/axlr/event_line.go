@@ -17,6 +17,9 @@ type eventLine struct {
 	// Arguments are a call's arguments, on the tool.requested line of
 	// a build that writes them; AXLR v0.14.0 writes none.
 	Arguments json.RawMessage `json:"arguments,omitempty"`
-	Result    *resultObject   `json:"result,omitempty"`
-	Receipt   json.RawMessage `json:"receipt,omitempty"`
+	// PluginTool is the plugin's tool a call reaches, plugin/tool, as the
+	// run resolved it, on the tool lines of a build that writes it.
+	PluginTool string          `json:"plugin_tool,omitempty"`
+	Result     *resultObject   `json:"result,omitempty"`
+	Receipt    json.RawMessage `json:"receipt,omitempty"`
 }

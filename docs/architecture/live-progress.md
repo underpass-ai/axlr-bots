@@ -22,7 +22,7 @@ The AXLR adapter feeds every line it reads to a progress tracker (`adapters/axlr
 
 | Line | Item | Fields |
 |---|---|---|
-| `tool.requested` | `tool.started` | `tool`, `callId`; for `axlr_call_tool` the MCP tool its arguments name (`mcpTool`); a summary of the arguments, one line of JSON cut at 120 characters, when the line carries them |
+| `tool.requested` | `tool.started` | `tool`, `callId`; the plugin tool the call reaches (`mcpTool`): the line's `plugin_tool` (`plugin/tool`, as the run resolved it, also behind an opaque `mcp_…` alias) or, without it, the name an `axlr_call_tool`'s arguments give; a summary of the arguments, one line of JSON cut at 120 characters, when the line carries them |
 | `tool.completed` | `tool.ended` | `tool`, `callId`, `status` (`ok`, `denied` when the decision is `deny`, `failed` when the line says so), `error`, the first line of a failure as AXLR wrote it, cut at 240 characters, and `durationMs` on the node's clock since its `tool.requested` |
 | `decision.required` | `decision.required` | the `tool` and `callId` waiting for a person |
 | `text` | `text` | the model's words, up to 32 KiB per run; then one `text.truncated` and no more words |

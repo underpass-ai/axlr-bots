@@ -53,6 +53,11 @@ func (t *progressTracker) feed(line []byte) {
 	case "tool.requested":
 		t.started[event.CallID] = now
 		mcpTool, summary := describeArguments(event.Tool, event.Arguments)
+		if event.PluginTool != "" {
+			// The run's own resolution names the tool behind an opaque
+			// mcp_ alias; the alias in the arguments does not.
+			mcpTool = event.PluginTool
+		}
 		t.tell(application.ProgressItem{Kind: application.ProgressToolStarted, At: now, Tool: event.Tool, CallID: event.CallID, MCPTool: mcpTool, Summary: summary})
 	case "tool.completed":
 		item := application.ProgressItem{Kind: application.ProgressToolEnded, At: now, Tool: event.Tool, CallID: event.CallID, Status: endedStatus(event), Error: event.Error}
