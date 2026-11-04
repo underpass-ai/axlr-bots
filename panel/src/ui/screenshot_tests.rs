@@ -168,4 +168,13 @@ fn screenshots() {
     let tick = app.now + chrono::Duration::seconds(5);
     send(&mut app, Message::Tick(tick));
     camera.shoot(&mut app, "live-chat-light");
+
+    // A call that publishes a post: the post drawn as it would read.
+    let publishing = fake.add_waiting_call(
+        "bot-act-with-approval",
+        "Propose today's post about AI news",
+        super::view_tests::publishing_call(),
+    );
+    send(&mut app, Message::Go(Screen::Task(publishing)));
+    camera.both(&mut app, "task-post-draft");
 }

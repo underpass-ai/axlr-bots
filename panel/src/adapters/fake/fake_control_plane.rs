@@ -232,6 +232,23 @@ impl FakeControlPlane {
     }
 
     /// Finishes a task as a node's report would.
+    /// A task of `bot` that stopped on `pending`, waiting for a person, as
+    /// a node just reported it.
+    pub fn add_waiting_call(&self, bot: &str, objective: &str, pending: PendingDecision) -> TaskId {
+        let mut state = self.state.lock().unwrap();
+        let now = state.clock();
+        let task = state.add_task(bot, objective, TaskStatus::WaitingApproval, now - Duration::minutes(1));
+        state.add_execution(
+            &task,
+            ExecutionOutcome::DecisionRequired,
+            Some("gx10-ff95"),
+            "",
+            Some(pending),
+            now - Duration::minutes(1),
+        );
+        task
+    }
+
     pub fn finish_task(&self, id: &TaskId, status: TaskStatus) {
         let mut state = self.state.lock().unwrap();
         let now = state.clock();
