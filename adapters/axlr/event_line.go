@@ -14,8 +14,8 @@ type eventLine struct {
 	Decision string `json:"decision,omitempty"`
 	Status   string `json:"status,omitempty"`
 	Error    string `json:"error,omitempty"`
-	// Arguments are a call's arguments, on a tool line of a build that
-	// writes them; AXLR v0.14.0 writes none.
+	// Arguments are a call's arguments, on the tool.requested line of
+	// a build that writes them; AXLR v0.14.0 writes none.
 	Arguments json.RawMessage `json:"arguments,omitempty"`
 	Result    *resultObject   `json:"result,omitempty"`
 	Receipt   json.RawMessage `json:"receipt,omitempty"`

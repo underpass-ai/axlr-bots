@@ -55,7 +55,7 @@ func (t *progressTracker) feed(line []byte) {
 		mcpTool, summary := describeArguments(event.Tool, event.Arguments)
 		t.tell(application.ProgressItem{Kind: application.ProgressToolStarted, At: now, Tool: event.Tool, CallID: event.CallID, MCPTool: mcpTool, Summary: summary})
 	case "tool.completed":
-		item := application.ProgressItem{Kind: application.ProgressToolEnded, At: now, Tool: event.Tool, CallID: event.CallID, Status: endedStatus(event)}
+		item := application.ProgressItem{Kind: application.ProgressToolEnded, At: now, Tool: event.Tool, CallID: event.CallID, Status: endedStatus(event), Error: event.Error}
 		if started, ok := t.started[event.CallID]; ok {
 			item.DurationMS = now.Sub(started).Milliseconds()
 			delete(t.started, event.CallID)
@@ -89,7 +89,8 @@ func (t *progressTracker) words(text string, now time.Time) {
 }
 
 // endedStatus is how a call ended as its line says: denied by a person
-// or the policy, failed, or ok. AXLR v0.14.0 writes only the decision.
+// or the policy, failed, or ok. AXLR v0.14.0 writes only the decision;
+// later builds write the status, ok or failed, and a failure's error.
 func endedStatus(event eventLine) string {
 	switch {
 	case event.Decision == "deny", event.Status == "denied", event.Status == "forbidden":

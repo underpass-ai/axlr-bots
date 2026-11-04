@@ -19,8 +19,10 @@ type ProgressItem struct {
 	CallID  string `json:"callId,omitempty"`
 	// Summary is a short, cut summary of a call's arguments.
 	Summary string `json:"summary,omitempty"`
-	// Status is how a call ended: ok, denied or failed.
+	// Status is how a call ended: ok, denied or failed; Error the
+	// first line of what a failed call answered.
 	Status     string `json:"status,omitempty"`
+	Error      string `json:"error,omitempty"`
 	DurationMS int64  `json:"durationMs,omitempty"`
 	// Bot is the bot a delegation asked; TaskID the child it created;
 	// Reason why the control plane refused it.
@@ -36,6 +38,7 @@ const (
 	maxProgressName    = 200
 	maxProgressSummary = 160
 	maxProgressStatus  = 32
+	maxProgressError   = 240
 	// MaxProgressText bounds the words of one text item.
 	MaxProgressText = 4000
 )
@@ -64,6 +67,7 @@ func (i ProgressItem) normalized(now time.Time) (ProgressItem, bool) {
 	case ProgressToolEnded:
 		call()
 		out.Status = cut(i.Status, maxProgressStatus)
+		out.Error = cut(i.Error, maxProgressError)
 		out.DurationMS = max(i.DurationMS, 0)
 		return out, out.Tool != "" || out.CallID != ""
 	case ProgressDecisionRequired:

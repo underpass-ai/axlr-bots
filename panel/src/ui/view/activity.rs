@@ -6,7 +6,7 @@ use iced::widget::{Space, button, column, container, row, text, text_editor};
 use iced::{Alignment, Font, Length, Padding};
 
 use super::widgets::{BODY, El, REGULAR, SMALL, action, bold, copy_button, empty, icon, muted, pill, section_with};
-use crate::application::{ActivityEntry, TaskDetail};
+use crate::application::{ActivityEntry, TaskDetail, ToolActivity};
 use crate::domain::TaskStatus;
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
@@ -14,6 +14,10 @@ use crate::ui::{App, Icon, LiveTask, Message, Screen, Tokens, Tone};
 
 /// How tall the model's words stand before they scroll.
 const WORDS_HEIGHT: f32 = 180.0;
+/// How much of a call's arguments, and of a failure's error, a step's
+/// line shows; its details show them whole.
+const LINE_SUMMARY: usize = 60;
+const LINE_ERROR: usize = 90;
 
 /// The Activity of the task on screen: while it may run, and after it
 /// ended when its run told anything.
@@ -113,7 +117,7 @@ fn line<'a>(index: usize, entry: &'a ActivityEntry, open: bool, tokens: Tokens) 
         .align_y(Alignment::Center);
     content = match entry {
         ActivityEntry::Tool(call) => content
-            .push(bold(call.name()).size(SMALL).width(Length::Fill))
+            .push(tool_name(call, tokens))
             .push(pill(Tone::of_tool(call.state), call.state.label(), tokens))
             .push(muted(call.took(), tokens).wrapping(text::Wrapping::None)),
         ActivityEntry::Delegation(asked) => {
@@ -160,6 +164,31 @@ fn line<'a>(index: usize, entry: &'a ActivityEntry, open: bool, tokens: Tokens) 
         .into(),
         _ => pressed.into(),
     }
+}
+
+/// A call's name, the MCP tool a bridged call names, with a short summary
+/// of its arguments beside it and, when it failed, its error below.
+fn tool_name<'a>(call: &'a ToolActivity, tokens: Tokens) -> El<'a> {
+    let mut name = row![bold(call.name()).size(SMALL)]
+        .spacing(8)
+        .align_y(Alignment::Center);
+    if !call.summary.is_empty() {
+        name = name.push(
+            muted(call.short_summary(LINE_SUMMARY), tokens)
+                .font(Font::MONOSPACE)
+                .wrapping(text::Wrapping::None),
+        );
+    }
+    let mut lines = column![name].spacing(2).width(Length::Fill);
+    if !call.error.is_empty() {
+        let error: String = if call.error.chars().count() > LINE_ERROR {
+            format!("{}…", call.error.chars().take(LINE_ERROR - 1).collect::<String>())
+        } else {
+            call.error.clone()
+        };
+        lines = lines.push(text(error).size(SMALL).color(tokens.bad));
+    }
+    lines.into()
 }
 
 /// Everything a step knows, and a copy of it.

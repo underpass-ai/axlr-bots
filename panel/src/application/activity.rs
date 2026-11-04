@@ -48,6 +48,7 @@ impl Activity {
                                     mcp_tool: item.mcp_tool,
                                     summary: item.summary,
                                     state: ToolState::Running,
+                                    error: String::new(),
                                     started_at: at,
                                     duration_ms: None,
                                 }));
@@ -55,6 +56,7 @@ impl Activity {
                             "tool.ended" => match activity.call(&calls, &key) {
                                 Some(call) => {
                                     call.state = ToolState::ended(&item.status);
+                                    call.error = item.error;
                                     call.duration_ms = item.duration_ms;
                                 }
                                 None => activity.entries.push(ActivityEntry::Tool(ToolActivity {
@@ -63,6 +65,7 @@ impl Activity {
                                     mcp_tool: String::new(),
                                     summary: String::new(),
                                     state: ToolState::ended(&item.status),
+                                    error: item.error,
                                     started_at: at,
                                     duration_ms: item.duration_ms,
                                 })),
@@ -188,7 +191,7 @@ mod tests {
                      "summary": "{\"namespace\":\"web\"}", "at": "2026-11-02T10:00:01Z"},
                     {"kind": "tool.ended", "tool": "axlr_call_tool", "callId": "c1", "status": "ok", "durationMs": 120},
                     {"kind": "tool.started", "tool": "local_read", "callId": "c2"},
-                    {"kind": "tool.ended", "tool": "local_grep", "callId": "c9", "status": "failed"},
+                    {"kind": "tool.ended", "tool": "local_grep", "callId": "c9", "status": "failed", "error": "no such file"},
                     {"kind": "delegation", "bot": "worker", "taskId": "task-child"},
                     {"kind": "delegation", "bot": "stranger", "reason": "not_allowed"},
                     {"kind": "something new"}
@@ -246,7 +249,7 @@ mod tests {
         assert_eq!(
             lines,
             [
-                "list_pods · axlr_call_tool · ok · 120 ms",
+                "list_pods · ok · 120 ms",
                 "local_read · running",
                 "local_grep · failed",
                 "Asked worker · task task-child",
@@ -275,6 +278,11 @@ mod tests {
         let activity = Activity::of(&timeline(), false);
         assert_eq!(activity.running(), 0);
         assert_eq!(activity.entries[1].headline(), "local_read · no end seen");
+        assert!(
+            activity.entries[2]
+                .details()
+                .contains(&("Error", "no such file".to_string()))
+        );
         assert_eq!(activity.entries[8].headline(), "service_restart · no end seen");
         assert!(Activity::of(&[], false).is_empty());
     }

@@ -23,11 +23,11 @@ The AXLR adapter feeds every line it reads to a progress tracker (`adapters/axlr
 | Line | Item | Fields |
 |---|---|---|
 | `tool.requested` | `tool.started` | `tool`, `callId`; for `axlr_call_tool` the MCP tool its arguments name (`mcpTool`); a summary of the arguments, one line of JSON cut at 120 characters, when the line carries them |
-| `tool.completed` | `tool.ended` | `tool`, `callId`, `status` (`ok`, `denied` when the decision is `deny`, `failed` when the line says so), `durationMs` on the node's clock since its `tool.requested` |
+| `tool.completed` | `tool.ended` | `tool`, `callId`, `status` (`ok`, `denied` when the decision is `deny`, `failed` when the line says so), `error`, the first line of a failure as AXLR wrote it, cut at 240 characters, and `durationMs` on the node's clock since its `tool.requested` |
 | `decision.required` | `decision.required` | the `tool` and `callId` waiting for a person |
 | `text` | `text` | the model's words, up to 32 KiB per run; then one `text.truncated` and no more words |
 
-AXLR v0.14.0 writes `{"type","tool","call_id","decision"}` on its tool lines and no arguments (`trace_payloads: false` keeps them out of the trace as well), so today an item has the tool's name and nothing more; the MCP tool and the summary appear with a build whose lines carry `arguments`, and the adapter needs no change for it. A full set of arguments never leaves the node.
+AXLR v0.14.0 writes `{"type","tool","call_id","decision"}` on its tool lines and no arguments (`trace_payloads: false` keeps them out of the trace as well), so with it an item has the tool's name and nothing more. Later builds write the call's `arguments` on `tool.requested` and its `status` and `error` on `tool.completed`: the item then names the MCP tool, summarizes its arguments and says why a call failed, with no change to the adapter. A full set of arguments never leaves the node.
 
 The delegation tool adds its own item when the control plane answered: `delegation` with the `bot` asked and the child's `taskId`, or the refusal's `reason` (`adapters/nodeagent/delegator.go`).
 
@@ -59,7 +59,7 @@ On a task's page the panel reads the task's timeline with `after` and `wait=20s`
 
 The **Activity** pane folds the timeline (`application/activity.rs`):
 
-- each tool call with its state (▶ running, ✓ ok, ✕ denied or failed, ⚠ waits for you, no end seen for a call of a task that ended) and how long it took;
+- each tool call by the name a person knows it, the MCP tool a bridged call names, with a short summary of its arguments, its state (▶ running, ✓ ok, ✕ denied or failed, ⚠ waits for you, no end seen for a call of a task that ended), how long it took and, when it failed, its error;
 - each bot asked, with **Open task** to the child's own page, which follows the child live the same way; the node's `delegation` item and the control plane's `bot.task.delegated` and `bot.delegation.refused` are shown once;
 - a call that waits for a person, with its tool;
 - what the operator wrote to the run (`bot.task.message`) and what it said back (`bot.task.said`);

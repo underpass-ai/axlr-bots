@@ -154,3 +154,17 @@ func TestATasksTimelineReadsAfterTheCallersLastEvent(t *testing.T) {
 		t.Fatalf("a cursor out of the window reads them all: %d", len(again))
 	}
 }
+
+// A failed call's error reaches the timeline cut to its bound, and only
+// on the item that says how the call ended.
+func TestAFailedCallsErrorIsKeptShort(t *testing.T) {
+	now := time.Date(2026, 11, 4, 10, 0, 0, 0, time.UTC)
+	ended, ok := ProgressItem{Kind: ProgressToolEnded, Tool: "axlr_call_tool", CallID: "c1", Status: "failed", Error: strings.Repeat("é", 300)}.normalized(now)
+	if !ok || ended.Status != "failed" || len([]rune(ended.Error)) != maxProgressError || !strings.HasSuffix(ended.Error, "…") {
+		t.Fatalf("%+v", ended)
+	}
+	started, _ := ProgressItem{Kind: ProgressToolStarted, Tool: "axlr_call_tool", Error: "not here"}.normalized(now)
+	if started.Error != "" {
+		t.Fatalf("%+v", started)
+	}
+}

@@ -105,3 +105,31 @@ func TestArgumentsSayLittle(t *testing.T) {
 		}
 	}
 }
+
+// A build of AXLR that writes a call's arguments and how it ended: the
+// bridged MCP tool and its arguments when it starts, and the status and
+// first line of the error AXLR wrote when it fails.
+func TestTheLinesOfACurrentAXLRNameTheMCPToolAndTheFailure(t *testing.T) {
+	var told []application.ProgressItem
+	tracker := newProgressTracker(func(item application.ProgressItem) { told = append(told, item) })
+	for _, line := range []string{
+		`{"type":"tool.requested","tool":"axlr_call_tool","call_id":"c1","decision":"","arguments":{"name":"get_status","arguments":{"env":"pre","only_failed":true}}}`,
+		`{"type":"tool.completed","tool":"axlr_call_tool","call_id":"c1","decision":"auto_approve","status":"failed","error":"the session expired: log in again"}`,
+		`{"type":"tool.requested","tool":"axlr_call_tool","call_id":"c2","arguments":{"name":"get_status","arguments":{}}}`,
+		`{"type":"tool.completed","tool":"axlr_call_tool","call_id":"c2","decision":"auto_approve","status":"ok"}`,
+	} {
+		tracker.feed([]byte(line))
+	}
+	if len(told) != 4 {
+		t.Fatalf("%+v", told)
+	}
+	if started := told[0]; started.MCPTool != "get_status" || started.Summary != `{"env":"pre","only_failed":true}` {
+		t.Fatalf("%+v", started)
+	}
+	if failed := told[1]; failed.Status != "failed" || failed.Error != "the session expired: log in again" {
+		t.Fatalf("%+v", failed)
+	}
+	if told[2].MCPTool != "get_status" || told[2].Summary != "" || told[3].Status != "ok" || told[3].Error != "" {
+		t.Fatalf("%+v", told[2:])
+	}
+}

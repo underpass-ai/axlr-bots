@@ -60,6 +60,7 @@ impl ActivityEntry {
                 put("State", call.state.label().to_string());
                 put("Took", call.took());
                 put("Arguments", call.summary.clone());
+                put("Error", call.error.clone());
                 put("Call id", call.call_id.clone());
             }
             Self::Delegation(asked) => {

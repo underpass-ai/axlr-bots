@@ -1288,7 +1288,7 @@ fn a_running_task_shows_its_activity_live_and_every_part_copies() {
             "local_exec",
             "ok",
             "40 ms",
-            "get_time · axlr_call_tool",
+            "get_time",
             "running",
             "Asked bot-wrx80",
             "Open task",
@@ -1363,4 +1363,53 @@ fn a_finished_task_keeps_its_activity_and_a_task_without_one_shows_none() {
     send(&mut app, Message::Tick(tick));
     shows(&app, &["Activity", "local_exec", "no end seen", "Copy activity"]);
     assert!(simulator_misses(&app, "Talk to it"));
+}
+
+#[test]
+fn a_bridged_call_shows_its_mcp_tool_its_arguments_and_why_it_failed() {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    let running = app
+        .fleet
+        .as_ref()
+        .unwrap()
+        .tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::Running)
+        .unwrap()
+        .id
+        .clone();
+    fake.progress(
+        &running,
+        serde_json::json!([
+            {"kind": "tool.started", "tool": "axlr_call_tool", "mcpTool": "get_status", "callId": "c7",
+             "summary": "{\"env\":\"pre\",\"only_failed\":true}"},
+            {"kind": "tool.ended", "tool": "axlr_call_tool", "callId": "c7", "status": "failed",
+             "error": "the session expired: log in again", "durationMs": 300}
+        ]),
+    );
+    send(&mut app, Message::Go(Screen::Task(running)));
+    shows(
+        &app,
+        &[
+            "get_status",
+            "{\"env\":\"pre\",\"only_failed\":true}",
+            "failed",
+            "the session expired: log in again",
+        ],
+    );
+    let index = app
+        .live
+        .as_ref()
+        .unwrap()
+        .activity
+        .entries
+        .iter()
+        .position(|e| e.headline().starts_with("get_status"))
+        .unwrap();
+    send(&mut app, Message::ActivityPick(index));
+    shows(&app, &["MCP tool", "axlr_call_tool", "Error"]);
 }
