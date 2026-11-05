@@ -9,10 +9,8 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/adapters/axlr"
@@ -120,7 +118,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitError
 	}
 	logger := log.New(stderr, "", log.LstdFlags)
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	ctx, stop := stopOnSignal(context.Background())
 	defer stop()
 	if *tokenFile != "" {
 		start := firstStart{Control: *control, TokenFile: *tokenFile, CAFile: *caFile, StateDir: *stateDir, NodeID: *nodeID}

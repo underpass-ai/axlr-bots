@@ -2,6 +2,7 @@ package axlr
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -237,7 +238,7 @@ func TestExecuteUsesTheDefaultTimeout(t *testing.T) {
 
 func TestExecuteCancelled(t *testing.T) {
 	e, argsFile := fake(t, "hang")
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	go func() {
 		// Cancel once the process runs: the helper writes its arguments
 		// before it says anything, so a fixed delay (too short under
@@ -249,13 +250,13 @@ func TestExecuteCancelled(t *testing.T) {
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
-		cancel()
+		cancel(errors.New("the node is stopping"))
 	}()
 	report, err := e.Execute(ctx, request(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Outcome != domain.ExecutionFailed || !strings.HasPrefix(report.FailureReason, "cancelled: ") {
+	if report.Outcome != domain.ExecutionFailed || report.FailureReason != "cancelled: the node is stopping" {
 		t.Errorf("outcome %s reason %q", report.Outcome, report.FailureReason)
 	}
 }
