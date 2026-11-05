@@ -43,7 +43,7 @@ impl App {
             Ok(submitted) => {
                 self.banner = Some(Banner::good(
                     format!("{} got an urgent order", submitted.task.bot_id),
-                    "It stops what it was doing and does it",
+                    "It stops what it was doing, drops its queue and does it",
                     self.now,
                 ));
                 self.order = OrderForm::default();
