@@ -331,7 +331,9 @@ func (a Agent) uploadOne(id domain.NodeID, execution domain.ExecutionID, bot dom
 // control plane pushes that something happened to the execution, and
 // with each renewal hands the operator's new messages to the run; a
 // lease the control plane refuses for good (application.ErrLeaseLost)
-// stops the run.
+// stops the run, and so does a node it refuses (a revoked certificate):
+// the run's report would be refused too, and before, a revoked node ran
+// on to the run's end, tools and model calls included (5 November 2026).
 func (a Agent) renew(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, stopRun context.CancelFunc, poke <-chan struct{}) {
 	ticker := time.NewTicker(a.Options.renew())
 	defer ticker.Stop()
@@ -370,6 +372,10 @@ func (a Agent) renewOnce(ctx context.Context, id domain.NodeID, execution domain
 	logger.Printf("node: renew lease of %s: %v", execution, err)
 	if errors.Is(err, application.ErrLeaseLost) {
 		logger.Printf("node: execution %s: the lease is lost, stopping the run", execution)
+		return after, true
+	}
+	if domain.IsForbidden(err) {
+		logger.Printf("node: execution %s: the control plane refuses this node, stopping the run", execution)
 		return after, true
 	}
 	return after, false

@@ -274,6 +274,7 @@ type fakeTransport struct {
 	reports  int
 	notFound bool
 	uploads  []string
+	renewErr error
 }
 
 func (f *fakeTransport) UploadArtifact(_ context.Context, _ domain.NodeID, _ domain.ExecutionID, artifact domain.Artifact, content io.Reader) error {
@@ -304,7 +305,24 @@ func (f *fakeTransport) NextAssignment(context.Context, domain.NodeID, time.Dura
 	return application.Assignment{}, false, nil
 }
 func (f *fakeTransport) RenewLease(context.Context, domain.NodeID, domain.ExecutionID) (time.Time, error) {
-	return time.Time{}, nil
+	return time.Time{}, f.renewErr
+}
+
+// TestAgentStopsARunWhenTheControlPlaneRefusesTheNode: a revoked node's
+// lease renewal is forbidden; the run stops instead of running to its
+// end with nobody to report to. A passing failure (the network) does not
+// stop it.
+func TestAgentStopsARunWhenTheControlPlaneRefusesTheNode(t *testing.T) {
+	logs := &bytes.Buffer{}
+	fake := &fakeTransport{renewErr: domain.ForbiddenError{Reason: "the certificate of node web-1 was revoked"}}
+	agent := Agent{Transport: fake, Options: Options{NodeID: "web-1", Log: log.New(logs, "", 0)}}
+	if _, lost := agent.renewOnce(context.Background(), "web-1", "exec-1", ""); !lost {
+		t.Errorf("a revoked node's run goes on:\n%s", logs.String())
+	}
+	fake.renewErr = errors.New("connection refused")
+	if _, lost := agent.renewOnce(context.Background(), "web-1", "exec-1", ""); lost {
+		t.Error("a network failure stopped the run")
+	}
 }
 func (f *fakeTransport) ExecutionMessages(context.Context, domain.NodeID, domain.ExecutionID, string) ([]application.RelayedMessage, error) {
 	return nil, nil
