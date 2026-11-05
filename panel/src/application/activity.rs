@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use chrono::{DateTime, Utc};
+
 use super::{ActivityEntry, DelegationActivity, ToolActivity, ToolState};
 use crate::domain::{Event, TaskId};
 
@@ -30,9 +32,16 @@ impl Activity {
     pub fn of(events: &[Event], live: bool) -> Self {
         let mut activity = Self::default();
         let mut calls: BTreeMap<(String, String), usize> = BTreeMap::new();
+        // When each call was decided and each run went to its node: a call
+        // ended by the run that took its decision has no duration from
+        // that run, which never saw it start, so it is counted from then.
+        let mut decided: BTreeMap<String, DateTime<Utc>> = BTreeMap::new();
+        let mut assigned: BTreeMap<String, DateTime<Utc>> = BTreeMap::new();
         // Whether the last item was reasoning: the reasoning of the next
         // step starts a paragraph of its own.
         let mut thinking = false;
+        // The run whose words came last.
+        let mut words_of: Option<String> = None;
         for event in events {
             match event.event_type.as_str() {
                 "bot.task.progress" => {
@@ -65,7 +74,13 @@ impl Activity {
                                 Some(call) => {
                                     call.state = ToolState::ended(&item.status);
                                     call.error = item.error;
-                                    call.duration_ms = item.duration_ms;
+                                    call.duration_ms = item.duration_ms.or_else(|| {
+                                        let since = [decided.get(&item.call_id), assigned.get(&event.execution_id)]
+                                            .into_iter()
+                                            .flatten()
+                                            .fold(call.started_at, |since, at| since.max(*at));
+                                        u64::try_from((at - since).num_milliseconds()).ok()
+                                    });
                                 }
                                 None => activity.entries.push(ActivityEntry::Tool(ToolActivity {
                                     call_id: item.call_id,
@@ -95,7 +110,17 @@ impl Activity {
                                 refused: item.reason,
                                 at,
                             }),
-                            "text" => activity.text.push_str(&item.text),
+                            "text" => {
+                                // The words of the run after a decision
+                                // start a paragraph of their own.
+                                if words_of.as_ref().is_some_and(|run| run != &event.execution_id)
+                                    && !activity.text.is_empty()
+                                {
+                                    activity.text = format!("{}\n\n", activity.text.trim_end());
+                                }
+                                words_of = Some(event.execution_id.clone());
+                                activity.text.push_str(&item.text);
+                            }
                             "text.truncated" => activity.text_cut = true,
                             "thinking" => {
                                 if !was_thinking && !activity.thinking.is_empty() {
@@ -120,10 +145,14 @@ impl Activity {
                     refused: event.payload_text("reason").unwrap_or_default(),
                     at: event.created_at,
                 }),
-                "bot.task.decided" => activity.decided(
-                    &event.payload_text("callId").unwrap_or_default(),
-                    &event.payload_text("decision").unwrap_or_default(),
-                ),
+                "bot.task.decided" => {
+                    let call_id = event.payload_text("callId").unwrap_or_default();
+                    activity.decided(&call_id, &event.payload_text("decision").unwrap_or_default());
+                    decided.insert(call_id, event.created_at);
+                }
+                "execution.assigned" => {
+                    assigned.insert(event.execution_id.clone(), event.created_at);
+                }
                 "bot.task.message" => activity.entries.push(ActivityEntry::YouWrote {
                     text: event.payload_text("text").unwrap_or_default(),
                     at: event.created_at,
@@ -422,7 +451,18 @@ mod tests {
             serde_json::json!({"items": [{"kind": "tool.ended", "tool": "service_restart", "callId": "c3", "status": "ok"}]}),
         ));
         let ended = Activity::of(&events, true);
-        assert_eq!(ended.entries[8].headline(), "service_restart · ok");
+        // No time from its own run: from the decision, here the same moment.
+        assert_eq!(ended.entries[8].headline(), "service_restart · ok · 0 ms");
+        events.push(event(
+            "e10",
+            "bot.task.progress",
+            "exec-2",
+            serde_json::json!({"items": [{"kind": "text", "text": "Restarted."}]}),
+        ));
+        assert_eq!(
+            Activity::of(&events, true).text,
+            "Looking at the pods. All pods run.\n\nRestarted."
+        );
         assert_eq!(ended.entries.len(), decided.entries.len());
 
         let mut denied = timeline();
@@ -435,5 +475,62 @@ mod tests {
         let denied = Activity::of(&denied, true);
         assert_eq!(denied.entries[8].headline(), "service_restart · denied");
         assert_eq!(denied.entries[9].headline(), "You denied the call to service_restart");
+    }
+
+    #[test]
+    fn a_call_ended_by_the_run_of_its_decision_takes_from_the_decision_or_the_run() {
+        let at = |id: &str, kind: &str, execution: &str, when: &str, payload: serde_json::Value| {
+            let mut event = event(id, kind, execution, payload);
+            event.created_at = when.parse().unwrap();
+            event
+        };
+        let ended = |when: &str| {
+            at(
+                "e9",
+                "bot.task.progress",
+                "exec-2",
+                when,
+                serde_json::json!({"items": [{"kind": "tool.ended", "tool": "local_exec", "callId": "c1", "status": "ok", "at": when}]}),
+            )
+        };
+        let mut events = vec![
+            at(
+                "e1",
+                "bot.task.progress",
+                "exec-1",
+                "2026-11-02T10:00:00Z",
+                serde_json::json!({"items": [
+                    {"kind": "tool.started", "tool": "local_exec", "callId": "c1", "at": "2026-11-02T10:00:00Z"},
+                    {"kind": "decision.required", "tool": "local_exec", "callId": "c1"}
+                ]}),
+            ),
+            at(
+                "e2",
+                "bot.task.decided",
+                "exec-2",
+                "2026-11-02T10:05:00Z",
+                serde_json::json!({"decision": "approve", "callId": "c1"}),
+            ),
+        ];
+        // Run in process: from the decision.
+        let mut in_process = events.clone();
+        in_process.push(ended("2026-11-02T10:05:02.400Z"));
+        assert_eq!(
+            Activity::of(&in_process, true).entries[0].headline(),
+            "local_exec · ok · 2.4 s"
+        );
+        // Queued for a node that came back later: from the run's start.
+        events.push(at(
+            "e3",
+            "execution.assigned",
+            "exec-2",
+            "2026-11-02T10:09:00Z",
+            serde_json::json!({}),
+        ));
+        events.push(ended("2026-11-02T10:09:00.300Z"));
+        assert_eq!(
+            Activity::of(&events, true).entries[0].headline(),
+            "local_exec · ok · 300 ms"
+        );
     }
 }

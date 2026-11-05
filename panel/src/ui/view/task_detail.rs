@@ -9,7 +9,7 @@ use super::widgets::{
     section, section_title, section_with,
 };
 use crate::application::TaskDetail;
-use crate::domain::{Event, Execution, ExecutionKind, PostDraft, TaskId, TaskStatus};
+use crate::domain::{Event, Execution, ExecutionKind, NodeWait, PostDraft, TaskId, TaskStatus};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
 use crate::ui::{App, Icon, Message, Screen, Tokens, Tone};
@@ -98,6 +98,11 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     if let Some(waiting) = approval(app, detail, tokens) {
         page = page.push(waiting);
     }
+    // A decision queued for a node that is away or busy: what it waits
+    // for, in a sentence, while it waits.
+    if let Some(waiting) = node_wait(app, detail, tokens) {
+        page = page.push(waiting);
+    }
     // While the task runs, what it does comes next; once it ended, after
     // what it was asked.
     let activity = super::activity::pane(app, detail, tokens);
@@ -169,7 +174,7 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
                 ),
             )
         } else {
-            let style = markdown::Style::from_palette(tokens.theme().palette());
+            let style = super::widgets::markdown_style(tokens);
             (
                 markdown::view(answer.markdown.items(), markdown::Settings::with_text_size(BODY, style))
                     .map(Message::Copy),
@@ -207,7 +212,7 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
             chip(format!("{} model calls", usage.requests), tokens),
             chip(format!("{} tokens", format::tokens(usage.total_tokens())), tokens),
             chip(format!("{} tool calls", usage.tool_calls), tokens),
-            chip(format!("cost {}", format::cost(usage.cost_usd)), tokens),
+            chip(format!("cost {}", format::spend(detail.cost())), tokens),
         ]
         .spacing(8)
     ]
@@ -394,7 +399,7 @@ fn execution_card<'a>(app: &'a App, execution: &'a Execution, tokens: Tokens) ->
                 "{} calls · {} tokens · {}",
                 execution.usage.requests,
                 format::tokens(execution.usage.total_tokens()),
-                format::cost(execution.usage.cost_usd)
+                format::run_cost(&execution.usage)
             ),
             tokens
         ),
@@ -508,6 +513,32 @@ fn timeline_events<'a>(app: &'a App, detail: &'a TaskDetail) -> Vec<&'a Event> {
     events.iter().filter(|e| !e.is_progress()).collect()
 }
 
+/// What the task's decision waits for while its node is away or busy.
+fn node_wait<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> Option<El<'a>> {
+    if detail.task.status != TaskStatus::Running {
+        return None;
+    }
+    let events = match app.live.as_ref().filter(|l| l.id == detail.task.id && l.read) {
+        Some(live) => &live.feed.events,
+        None => &detail.events,
+    };
+    let wait = NodeWait::current(events)?;
+    Some(
+        container(
+            row![
+                icon(Icon::Hourglass, 20.0, Tone::Late.color(&tokens)),
+                bold(format::wait(&wait)).width(Length::Fill),
+            ]
+            .spacing(12)
+            .align_y(Alignment::Center),
+        )
+        .padding(16)
+        .width(Length::Fill)
+        .style(styles::tone_card(tokens, Tone::Late))
+        .into(),
+    )
+}
+
 /// A copy of the whole timeline, once it has an event.
 fn timeline_tools<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> Vec<El<'a>> {
     let events = timeline_events(app, detail);
@@ -529,7 +560,11 @@ fn timeline<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> El<'a> 
             row![
                 muted(format::clock(event.created_at), tokens),
                 icon(tone.event_icon(), 16.0, tone.color(&tokens)),
-                column![bold(event.label()).size(BODY), muted(event.detail(), tokens)].spacing(2),
+                column![
+                    bold(event.label()).size(BODY),
+                    muted(format::event_detail(event), tokens)
+                ]
+                .spacing(2),
             ]
             .spacing(10)
             .align_y(Alignment::Center),

@@ -2,8 +2,8 @@ use chrono::{DateTime, Duration, Utc};
 
 use super::{
     Answer, Banner, BotChoice, BotEditForm, BotView, Confirm, DeleteForm, Effect, IncidentWatch, Keypress, Launch,
-    ListenForm, LiveTask, Message, MintForm, NodeChoice, OrderForm, PublishForm, Readers, RegisterForm, ResolveForm,
-    Screen, Services, SettingsForm, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode, passages,
+    ListenForm, LiveStream, LiveTask, Message, MintForm, NodeChoice, OrderForm, PublishForm, Readers, RegisterForm,
+    ResolveForm, Screen, Services, SettingsForm, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode, passages,
 };
 use crate::application::SubscriptionChange;
 use crate::application::{EventFeed, Fleet, PanelConfig, PanelError, TaskDetail};
@@ -272,12 +272,19 @@ impl App {
                 }
                 Vec::new()
             }
-            Message::WordsSelecting(selecting) => {
-                if let Some(live) = self.live.as_mut() {
+            Message::WordsSelecting(selecting) => match self.live.as_mut() {
+                Some(live) => {
                     live.selecting(selecting);
+                    // Back to the formatted words: a new box, at its end
+                    // while the person had not scrolled up in it.
+                    if !selecting && live.follows(LiveStream::Words) {
+                        vec![Effect::ShowEnd(LiveStream::Words)]
+                    } else {
+                        Vec::new()
+                    }
                 }
-                Vec::new()
-            }
+                None => Vec::new(),
+            },
             Message::ActivityScrolled(stream, at_end) => {
                 if let Some(live) = self.live.as_mut() {
                     live.scrolled(stream, at_end);

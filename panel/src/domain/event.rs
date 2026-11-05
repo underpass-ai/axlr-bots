@@ -279,7 +279,8 @@ impl Event {
         {
             return "by its policy, no person needed".into();
         }
-        for key in ["nodeId", "reason", "text", "tool", "trigger", "outcome"] {
+        // What a decision queued for a node waits for comes before the node.
+        for key in ["waiting", "nodeId", "reason", "text", "tool", "trigger", "outcome"] {
             if let Some(value) = self.payload_text(key) {
                 return value;
             }

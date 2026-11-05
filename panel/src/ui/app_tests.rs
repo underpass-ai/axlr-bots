@@ -1107,6 +1107,13 @@ fn the_boxes_of_a_running_task_show_their_new_end_until_the_person_scrolls_up() 
     assert!(!words.follows(LiveStream::Words) && words.activity.text.ends_with(" More."));
     send(&mut app, Message::ActivityScrolled(LiveStream::Words, true));
     assert!(app.live.as_ref().unwrap().follows(LiveStream::Words));
+    // Back from selecting a part, the formatted words show their end;
+    // after scrolling up in them, they stay where the person left them.
+    assert!(shown(&app.apply(Message::WordsSelecting(true))).is_empty());
+    assert_eq!(shown(&app.apply(Message::WordsSelecting(false))), [LiveStream::Words]);
+    send(&mut app, Message::ActivityScrolled(LiveStream::Words, false));
+    assert!(shown(&app.apply(Message::WordsSelecting(false))).is_empty());
+    send(&mut app, Message::ActivityScrolled(LiveStream::Words, true));
 
     // Away from the task, nothing is brought into view.
     let feed = grow(&app, "p3", serde_json::json!([{"kind": "text", "text": " Done."}]));

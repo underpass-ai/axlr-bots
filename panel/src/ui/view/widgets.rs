@@ -80,31 +80,106 @@ pub fn number<'a>(words: impl text::IntoFragment<'a>) -> text::Text<'a> {
     text(words).font(NUMERAL).size(NUMBER)
 }
 
-/// The size at which `value` fits `width` in the pixel face, whose every
-/// glyph is half an em wide: `NUMBER` while it fits, smaller for a long
-/// value, a cost of `$1234.56` in a narrow window, never under `SMALL`.
+/// The sign of a floor, `≥ $0.42`: a cost some run did not tell. The
+/// pixel face has no glyph for it, so it is drawn in the face for words.
+pub const FLOOR: char = '≥';
+
+/// How wide a point is drawn in the pixel face, in ems. Every glyph of
+/// the face is half an em wide, and a point's ink sits at the left of
+/// its cell: at a full cell `$0.12` reads `$0. 12`.
+const POINT_EMS: f32 = 0.25;
+
+/// How wide the sign of a floor is beside a number, in the number's ems.
+const FLOOR_EMS: f32 = 0.6;
+
+/// How many ems `value` takes in the pixel face.
+fn number_ems(value: &str) -> f32 {
+    value
+        .chars()
+        .map(|c| match c {
+            '.' => POINT_EMS,
+            FLOOR => FLOOR_EMS,
+            ' ' => 0.0,
+            _ => 0.5,
+        })
+        .sum()
+}
+
+/// The size at which `value` fits `width` in the pixel face: `NUMBER`
+/// while it fits, smaller for a long value, a cost of `$1234.56` in a
+/// narrow window, never under `SMALL`.
 fn number_size(value: &str, width: f32) -> f32 {
-    let ems = value.chars().count() as f32 * 0.5;
     // Two pixels to spare, so rounding never pushes the last digit out.
-    ((width - 2.0) / ems).clamp(SMALL, NUMBER)
+    ((width - 2.0) / number_ems(value).max(0.5)).clamp(SMALL, NUMBER)
+}
+
+/// A number in the pixel face at `size`: each point in a cell as wide as
+/// its ink, and the sign of a floor in the face for words.
+fn pixel_number<'a>(value: &str, size: f32, color: Color) -> El<'a> {
+    let mut line = row![].align_y(Alignment::End);
+    let value = match value.strip_prefix(FLOOR) {
+        Some(rest) => {
+            line = line.push(
+                container(text(FLOOR.to_string()).font(REGULAR).size(size * 0.55).color(color))
+                    .width(size * FLOOR_EMS)
+                    .padding(Padding {
+                        bottom: size * 0.12,
+                        ..Padding::ZERO
+                    }),
+            );
+            rest.trim_start()
+        }
+        None => value,
+    };
+    for (index, part) in value.split('.').enumerate() {
+        if index > 0 {
+            line = line.push(
+                container(number(".").size(size).color(color).wrapping(Wrapping::None))
+                    .width(size * POINT_EMS)
+                    .clip(true),
+            );
+        }
+        if !part.is_empty() {
+            line = line.push(
+                number(part.to_string())
+                    .size(size)
+                    .color(color)
+                    .wrapping(Wrapping::None),
+            );
+        }
+    }
+    line.into()
 }
 
 /// A number in the pixel face as big as its place lets it be, on a line
 /// as high as a big number's, so the cards of a row end level.
 fn fitted_number<'a>(value: String, color: Color) -> El<'a> {
     responsive(move |space| {
-        container(
-            number(value.clone())
-                .size(number_size(&value, space.width))
-                .color(color)
-                .wrapping(Wrapping::None),
-        )
-        .height(LineHeight::default().to_absolute(NUMBER.into()))
-        .align_y(Alignment::End)
-        .into()
+        container(pixel_number(&value, number_size(&value, space.width), color))
+            .height(LineHeight::default().to_absolute(NUMBER.into()))
+            .align_y(Alignment::End)
+            .into()
     })
     .height(Length::Shrink)
     .into()
+}
+
+/// How Markdown reads in the panel: in its face for words, with the
+/// theme's colours. Iced's own style draws it in the system's face.
+/// Code in a line is ink on a chip, as the rest of the panel's chips,
+/// not white on black.
+pub fn markdown_style(tokens: Tokens) -> iced::widget::markdown::Style {
+    use iced::widget::markdown::{Highlight, Style};
+    Style {
+        font: REGULAR,
+        inline_code_color: tokens.text,
+        inline_code_highlight: Highlight {
+            background: tokens.raised.into(),
+            border: iced::border::rounded(4).color(tokens.border).width(1),
+        },
+        inline_code_padding: Padding::from([0, 2]),
+        ..Style::from_palette(tokens.theme().palette())
+    }
 }
 
 /// A page title with its icon.
@@ -184,16 +259,20 @@ pub fn stat<'a>(
 ) -> El<'a> {
     let color = tone.color(&tokens);
     let body = column![
+        // A gap the label never closes, even when the card is narrow.
         row![
             text(label).size(SMALL).color(tokens.muted),
             Space::new().width(Length::Fill),
             icon(glyph, 16.0, color)
         ]
+        .spacing(6)
         .align_y(Alignment::Center),
         fitted_number(value, color),
     ]
     .spacing(4);
-    let card = container(body).padding(Padding::from([12, 16])).width(Length::Fill);
+    // Seven cards share a row: a side of 12 leaves the longest label,
+    // `expired today`, its gap to the icon at 1360 px.
+    let card = container(body).padding(12).width(Length::Fill);
     let card = if matches!(tone, Tone::Wait | Tone::Bad) {
         card.style(styles::tone_card(tokens, tone))
     } else {
@@ -354,5 +433,21 @@ fn selection_only(press: text_editor::KeyPress) -> Option<Binding<Message>> {
         | Binding::SelectLine
         | Binding::SelectAll) => Some(binding),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_point_and_a_floor_take_their_own_width() {
+        assert_eq!(number_ems("12"), 1.0);
+        assert_eq!(number_ems("$0.12"), 2.25);
+        assert_eq!(number_ems("≥ $0.12"), 2.85);
+        assert_eq!(number_size("1/43", 400.0), NUMBER);
+        assert_eq!(number_size("$1234.56", 40.0), SMALL);
+        assert!((number_size("$0.12", 92.0) - 40.0).abs() < 1e-3);
+        assert_eq!(number_size("", 100.0), NUMBER);
     }
 }

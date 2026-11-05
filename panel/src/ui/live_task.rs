@@ -1,4 +1,4 @@
-use iced::widget::text_editor;
+use iced::widget::{markdown, text_editor};
 
 use super::LiveStream;
 use crate::application::{Activity, EventFeed};
@@ -21,6 +21,9 @@ pub struct LiveTask {
     pub activity: Activity,
     /// The Activity entry whose details are open.
     pub selected: Option<usize>,
+    /// The model's words as formatted text, parsed as they come: a new
+    /// piece is added to what was parsed, not the whole read again.
+    pub markdown: markdown::Content,
     /// The model's words, read only: a person selects a part and copies.
     /// While they select, it keeps the words as they were, so a new word
     /// never takes their selection away; the read view shows them all.
@@ -43,6 +46,7 @@ impl LiveTask {
             settled: false,
             activity: Activity::default(),
             selected: None,
+            markdown: markdown::Content::new(),
             words: text_editor::Content::new(),
             selecting: false,
             held: [false; 3],
@@ -61,8 +65,14 @@ impl LiveTask {
             activity.thinking.len() > self.activity.thinking.len(),
             activity.text.len() > self.activity.text.len(),
         ];
-        if activity.text != self.activity.text && !self.selecting {
-            self.words = text_editor::Content::with_text(&activity.text);
+        if activity.text != self.activity.text {
+            match activity.text.strip_prefix(self.activity.text.as_str()) {
+                Some(more) => self.markdown.push_str(more),
+                None => self.markdown = markdown::Content::parse(&activity.text),
+            }
+            if !self.selecting {
+                self.words = text_editor::Content::with_text(&activity.text);
+            }
         }
         if self.selected.is_some_and(|i| i >= activity.entries.len()) {
             self.selected = None;
@@ -139,6 +149,7 @@ mod tests {
         assert_eq!(live.update(feed.clone(), true), [LiveStream::Steps, LiveStream::Words]);
         assert!(live.read);
         assert_eq!(live.words.text().trim_end(), "Reading.");
+        assert_eq!(live.markdown.items().len(), 1);
         assert_eq!(live.activity.running(), 1);
         live.pick(0);
         assert_eq!(live.selected, Some(0));
@@ -163,6 +174,8 @@ mod tests {
         live.update(more, true);
         assert_eq!(live.words.selection().as_deref(), Some("Reading."));
         assert_eq!(live.activity.text, "Reading. Then the log.");
+        // The formatted words grow while the person selects.
+        assert_eq!(live.markdown.items().len(), 1);
         live.selecting(false);
         live.selecting(true);
         assert_eq!(live.words.text().trim_end(), "Reading. Then the log.");
@@ -171,6 +184,7 @@ mod tests {
         // selection past the list closes.
         live.update(EventFeed::default(), false);
         assert_eq!(live.selected, None);
+        assert!(live.markdown.items().is_empty());
         assert!(live.words.text().trim().is_empty());
         live.update(feed, false);
         assert_eq!(live.activity.running(), 0);

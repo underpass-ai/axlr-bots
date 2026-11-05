@@ -126,6 +126,21 @@ pub fn chip(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
 }
 
 /// The banner on top of the content.
+/// How far the banner's shadow reaches past its edge: its blur and its
+/// drop.
+pub const BANNER_SHADOW_REACH: f32 = BANNER_SHADOW_BLUR + BANNER_SHADOW_DROP;
+const BANNER_SHADOW_BLUR: f32 = 16.0;
+const BANNER_SHADOW_DROP: f32 = 4.0;
+
+/// A box that draws nothing, but is drawn: what changes under it is
+/// repainted whole.
+pub fn clear(_: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(Color::TRANSPARENT)),
+        ..container::Style::default()
+    }
+}
+
 pub fn banner(tokens: Tokens, tone: Tone) -> impl Fn(&Theme) -> container::Style {
     move |_| {
         let color = tone.color(&tokens);
@@ -144,8 +159,8 @@ pub fn banner(tokens: Tokens, tone: Tone) -> impl Fn(&Theme) -> container::Style
             // It floats over the page: a soft shadow lifts it off.
             shadow: Shadow {
                 color: Color::from_rgba(0.0, 0.0, 0.0, if tokens.dark { 0.5 } else { 0.18 }),
-                offset: iced::Vector::new(0.0, 4.0),
-                blur_radius: 16.0,
+                offset: iced::Vector::new(0.0, BANNER_SHADOW_DROP),
+                blur_radius: BANNER_SHADOW_BLUR,
             },
             ..container::Style::default()
         }

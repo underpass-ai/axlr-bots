@@ -364,7 +364,7 @@ fn line<'a>(event: &'a Event, tokens: Tokens) -> El<'a> {
     ) {
         words = words.push(muted(event.bot_id.clone(), tokens));
     }
-    words = words.push(text(event.detail()).size(SMALL).width(Length::Fill));
+    words = words.push(text(format::event_detail(event)).size(SMALL).width(Length::Fill));
     match TaskId::new(&event.task_id) {
         Ok(task) => mouse_area(words)
             .on_press(Message::Go(Screen::Task(task)))

@@ -242,7 +242,7 @@ fn register_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         .align_y(Alignment::Center),
         container(field(
             "Name",
-            "harbour-watch",
+            "deploy-watch",
             &form.name,
             Message::RegisterName,
             None,
