@@ -301,11 +301,15 @@ func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot do
 	if err != nil {
 		return application.ExecutionReport{}, fmt.Errorf("axlr: %w", err)
 	}
+	// The receipt's requests of this run start after this moment, on the
+	// same host's clock; the ones before it are earlier runs' of the
+	// session.
+	started := time.Now()
 	if err := cmd.Start(); err != nil {
 		return application.ExecutionReport{}, fmt.Errorf("axlr: start %s: %w", e.binary(), err)
 	}
 
-	parser := newTurnParser()
+	parser := newTurnParser(started)
 	said := newSaidTracker(hear)
 	progress := newProgressTracker(tell)
 	scanner := bufio.NewScanner(stdout)

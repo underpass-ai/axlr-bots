@@ -38,7 +38,7 @@ func TestAReceiptOfAnotherSchemaIsLeftInTheTrace(t *testing.T) {
 	if err != nil || report.Receipt != nil {
 		t.Errorf("receipt = %s %v", report.Receipt, err)
 	}
-	p := newTurnParser()
+	p := newTurnParser(time.Time{})
 	p.keepReceipt([]byte(`{"schema":"axlr.execution-receipt/v1","x":"` + strings.Repeat("a", domain.MaxReceiptBytes) + `"}`))
 	if p.receipt != nil {
 		t.Error("an oversized receipt was kept")

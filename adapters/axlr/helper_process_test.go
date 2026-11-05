@@ -72,6 +72,16 @@ func TestHelperProcess(t *testing.T) {
 			`{"type":"receipt","receipt":{"schema":"axlr.execution-receipt/v1",  "status":"completed","complete":true}}`,
 			`{"type":"result","session":"sess-1","result":{"schema":"axlr.execution-result/v1","status":"completed","session_id":"sess-1","answer":"Delivered.","tool_calls":[],"usage":{"requests":1},"artifacts":[`+artifact+`]}}`)
 		os.Exit(0)
+	case "decide-continues":
+		// The session's first run made two requests; this run makes one.
+		now := time.Now().UTC().Format(time.RFC3339Nano)
+		say(`{"type":"session.continued","session":"sess-1"}`,
+			`{"type":"receipt","receipt":{"schema":"axlr.execution-receipt/v1","status":"completed","complete":true,"requests":[`+
+				`{"session_id":"sess-1","index":1,"started_at":"2026-11-05T00:00:03Z","status":"completed","prompt_tokens":7411,"cached_tokens":0,"completion_tokens":140,"reasoning_tokens":49,"cost_usd":0.000996275},`+
+				`{"session_id":"sess-1","index":2,"started_at":"2026-11-05T00:00:05Z","status":"completed","prompt_tokens":7600,"cached_tokens":7407,"completion_tokens":90,"reasoning_tokens":0,"cost_usd":0.0007},`+
+				`{"session_id":"sess-1","index":3,"started_at":"`+now+`","status":"completed","prompt_tokens":7800,"cached_tokens":7600,"completion_tokens":60,"reasoning_tokens":10,"cost_usd":0.00011}]}}`,
+			`{"type":"result","session":"sess-1","result":{"schema":"axlr.execution-result/v1","status":"completed","session_id":"sess-1","sessions":["sess-1"],"answer":"Done.","tool_calls":[],"usage":{"requests":3,"prompt_tokens":22811,"cached_tokens":15007,"completion_tokens":290,"reasoning_tokens":59,"cost_usd":0.001806275,"cost_requests":3}}}`)
+		os.Exit(0)
 	case "receipt-unknown":
 		say(session, `{"type":"receipt","receipt":{"schema":"axlr.execution-receipt/v9"}}`, `{"type":"receipt","receipt":"no"}`, `{"type":"completed","session":"sess-1"}`)
 		os.Exit(0)

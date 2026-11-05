@@ -56,7 +56,7 @@ The last JSON line, `{"type":"result","result":{"schema":"axlr.execution-result/
 | `failed`, `interrupted`, a timeout, a cancel | `Failed` (or `Cancelled` when the task was cancelled) | the same, with the reason |
 | `budget_exceeded` | `Failed`, `budget exceeded: …` | `Failed` |
 
-The execution keeps the node, the policy record, the correlation record, the usage with its cost, the trace reference, the result and the receipt (vision §12.3).
+The execution keeps the node, the policy record, the correlation record, the usage with its cost, the trace reference, the result and the receipt (vision §12.3). The usage is the run's own: AXLR's result and receipt cover every turn of the session, so a decision, which continues the session, would report again what its first run reported. The adapter sums the receipt's requests that started after its process did (same host, same clock), and keeps the result's usage when the receipt lists no requests.
 
 ## Artifacts and the receipt
 
