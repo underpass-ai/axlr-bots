@@ -93,14 +93,30 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     );
 
     let mut page = column![header].spacing(16);
+    // A call that waits for the person comes first: Approve and Deny in
+    // the window's first view.
+    if let Some(waiting) = approval(app, detail, tokens) {
+        page = page.push(waiting);
+    }
+    // While the task runs, what it does comes next; once it ended, after
+    // what it was asked.
+    let activity = super::activity::pane(app, detail, tokens);
+    let (first, after) = if task.status.is_terminal() {
+        (None, activity)
+    } else {
+        (activity, None)
+    };
+    if let Some(pane) = first {
+        page = page.push(pane);
+    }
     // The header shows the objective's first line, cut; a longer one is
     // here whole.
     if task.headline(80) != task.objective.trim() {
         page = page.push(section(Icon::Tasks, "Task", text(task.objective.clone()), tokens));
     }
     page = page.push(facts);
-    if let Some(activity) = super::activity::pane(app, detail, tokens) {
-        page = page.push(activity);
+    if let Some(pane) = after {
+        page = page.push(pane);
     }
     let knew = task.knew();
     if !knew.is_empty() {
@@ -109,9 +125,6 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
             notes = notes.push(text(note).size(SMALL));
         }
         page = page.push(section(Icon::Clock, "Knew", notes, tokens));
-    }
-    if let Some(waiting) = approval(app, detail, tokens) {
-        page = page.push(waiting);
     }
     if !task.failure_reason.is_empty() {
         // An expired task is nobody's decision in time, not a crash.
@@ -169,9 +182,16 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
                 ),
             )
         };
+        // Only a task that ended has an answer; before, its last run's
+        // words are what it said before it stopped to ask.
+        let (glyph, title) = match task.status {
+            TaskStatus::WaitingApproval => (Icon::Hourglass, "What it said before asking you"),
+            status if !status.is_terminal() => (Icon::Hourglass, "What it said before it stopped"),
+            _ => (Icon::Check, "Answer"),
+        };
         page = page.push(section_with(
-            Icon::Check,
-            "Answer",
+            glyph,
+            title,
             vec![toggle, copy_button("Copy answer", answer.source.clone(), tokens)],
             body,
             tokens,
@@ -337,12 +357,14 @@ fn approval<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> Option<
                 ]
                 .spacing(10)
                 .align_y(Alignment::Center),
+                // The answer before the call's words: a long argument
+                // never pushes Approve and Deny out of the first view.
+                buttons,
                 draft.map_or_else(
                     || Space::new().height(0).into(),
                     |(draft, author)| super::post_draft::view(draft, author, tokens),
                 ),
                 arguments,
-                buttons,
             ]
             .spacing(14),
         )

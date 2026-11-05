@@ -6,7 +6,7 @@ use crate::domain::{Event, TaskId};
 /// What a task's executions did, folded from its timeline: each tool call
 /// with its state and how long it took, the bots it asked, the calls that
 /// wait for a person, what the person wrote to it and what it said back,
-/// and the model's words as they came.
+/// and the model's words and reasoning as they came.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Activity {
     pub entries: Vec<ActivityEntry>,
@@ -14,6 +14,10 @@ pub struct Activity {
     pub text: String,
     /// The node stopped sending words at the run's cap.
     pub text_cut: bool,
+    /// The model's reasoning, in the order it came, when the run tells it.
+    pub thinking: String,
+    /// The node stopped sending reasoning at the run's cap.
+    pub thinking_cut: bool,
     /// Steps the node dropped on the way, and whether the control plane
     /// stopped keeping them at the execution's bound.
     pub dropped: u64,
@@ -26,6 +30,9 @@ impl Activity {
     pub fn of(events: &[Event], live: bool) -> Self {
         let mut activity = Self::default();
         let mut calls: BTreeMap<(String, String), usize> = BTreeMap::new();
+        // Whether the last item was reasoning: the reasoning of the next
+        // step starts a paragraph of its own.
+        let mut thinking = false;
         for event in events {
             match event.event_type.as_str() {
                 "bot.task.progress" => {
@@ -38,6 +45,7 @@ impl Activity {
                     activity.truncated |= event.payload_text("truncated").as_deref() == Some("true");
                     for item in event.progress() {
                         let at = item.at.unwrap_or(event.created_at);
+                        let was_thinking = std::mem::replace(&mut thinking, item.kind == "thinking");
                         let key = (event.execution_id.clone(), item.call_id.clone());
                         match item.kind.as_str() {
                             "tool.started" => {
@@ -74,7 +82,12 @@ impl Activity {
                                 if let Some(call) = activity.call(&calls, &key) {
                                     call.state = ToolState::Waiting;
                                 }
-                                activity.entries.push(ActivityEntry::Waiting { tool: item.tool, at });
+                                activity.entries.push(ActivityEntry::Waiting {
+                                    tool: item.tool,
+                                    call_id: item.call_id,
+                                    at,
+                                    decision: String::new(),
+                                });
                             }
                             "delegation" => activity.asked(DelegationActivity {
                                 bot: item.bot,
@@ -84,6 +97,13 @@ impl Activity {
                             }),
                             "text" => activity.text.push_str(&item.text),
                             "text.truncated" => activity.text_cut = true,
+                            "thinking" => {
+                                if !was_thinking && !activity.thinking.is_empty() {
+                                    activity.thinking = format!("{}\n\n", activity.thinking.trim_end());
+                                }
+                                activity.thinking.push_str(&item.text);
+                            }
+                            "thinking.truncated" => activity.thinking_cut = true,
                             _ => {}
                         }
                     }
@@ -100,6 +120,10 @@ impl Activity {
                     refused: event.payload_text("reason").unwrap_or_default(),
                     at: event.created_at,
                 }),
+                "bot.task.decided" => activity.decided(
+                    &event.payload_text("callId").unwrap_or_default(),
+                    &event.payload_text("decision").unwrap_or_default(),
+                ),
                 "bot.task.message" => activity.entries.push(ActivityEntry::YouWrote {
                     text: event.payload_text("text").unwrap_or_default(),
                     at: event.created_at,
@@ -123,14 +147,47 @@ impl Activity {
         activity
     }
 
-    /// The call the key names, to change it.
+    /// The call the key names, to change it: in its execution, or, for a
+    /// call decided by a person and ended by the execution that took the
+    /// decision, the call with its id still waiting or running.
     fn call(&mut self, calls: &BTreeMap<(String, String), usize>, key: &(String, String)) -> Option<&mut ToolActivity> {
         if key.1.is_empty() {
             return None;
         }
-        match self.entries.get_mut(*calls.get(key)?) {
+        let index = match calls.get(key) {
+            Some(index) => *index,
+            None => self.entries.iter().position(|entry| {
+                matches!(entry, ActivityEntry::Tool(call) if call.call_id == key.1 && matches!(call.state, ToolState::Running | ToolState::Waiting))
+            })?,
+        };
+        match self.entries.get_mut(index) {
             Some(ActivityEntry::Tool(call)) => Some(call),
             _ => None,
+        }
+    }
+
+    /// A person decided the call that waited: it no longer waits, it runs
+    /// when approved and was denied otherwise.
+    fn decided(&mut self, call_id: &str, decision: &str) {
+        let decision = if decision == "deny" { "deny" } else { "approve" };
+        for entry in &mut self.entries {
+            match entry {
+                ActivityEntry::Tool(call)
+                    if call.state == ToolState::Waiting && (call_id.is_empty() || call.call_id == call_id) =>
+                {
+                    call.state = if decision == "deny" {
+                        ToolState::Denied
+                    } else {
+                        ToolState::Running
+                    };
+                }
+                ActivityEntry::Waiting {
+                    call_id: waited,
+                    decision: said,
+                    ..
+                } if said.is_empty() && (call_id.is_empty() || waited == call_id) => *said = decision.to_string(),
+                _ => {}
+            }
         }
     }
 
@@ -155,7 +212,7 @@ impl Activity {
 
     /// Whether there is anything to show.
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty() && self.text.is_empty()
+        self.entries.is_empty() && self.text.is_empty() && self.thinking.is_empty()
     }
 
     /// The calls still going.
@@ -186,6 +243,7 @@ mod tests {
             progress(
                 "e1",
                 serde_json::json!([
+                    {"kind": "thinking", "text": "The pods first, "},
                     {"kind": "text", "text": "Looking at the pods. "},
                     {"kind": "tool.started", "tool": "axlr_call_tool", "mcpTool": "list_pods", "callId": "c1",
                      "summary": "{\"namespace\":\"web\"}", "at": "2026-11-02T10:00:01Z"},
@@ -236,6 +294,8 @@ mod tests {
                     {"kind": "tool.started", "tool": "service_restart", "callId": "c3"},
                     {"kind": "decision.required", "tool": "service_restart", "callId": "c3"},
                     {"kind": "text.truncated"},
+                    {"kind": "thinking", "text": "then the log."},
+                    {"kind": "thinking.truncated"},
                     {"kind": "tool.ended", "tool": "x"}
                 ]}),
             ),
@@ -264,6 +324,9 @@ mod tests {
         );
         assert_eq!(activity.text, "Looking at the pods. All pods run.");
         assert!(activity.text_cut && activity.truncated);
+        // A step came between: the next reasoning is a paragraph of its own.
+        assert_eq!(activity.thinking, "The pods first,\n\nthen the log.");
+        assert!(activity.thinking_cut);
         assert_eq!(activity.dropped, 2);
         assert_eq!(activity.running(), 1);
         assert!(!activity.is_empty());
@@ -285,6 +348,11 @@ mod tests {
         );
         assert_eq!(activity.entries[8].headline(), "service_restart · no end seen");
         assert!(Activity::of(&[], false).is_empty());
+        let thought = Activity::of(
+            &[progress("e1", serde_json::json!([{"kind": "thinking", "text": "Hm."}]))],
+            true,
+        );
+        assert!(!thought.is_empty() && thought.text.is_empty());
     }
 
     #[test]
@@ -310,7 +378,10 @@ mod tests {
             [("Bot", "stranger".to_string()), ("Refused", "not_allowed".to_string())]
         );
         assert_eq!(activity.entries[6].details(), [("Words", "check row F".to_string())]);
-        assert_eq!(activity.entries[9].details(), [("Tool", "service_restart".to_string())]);
+        assert_eq!(
+            activity.entries[9].details(),
+            [("Tool", "service_restart".to_string()), ("Call id", "c3".to_string())]
+        );
         let unnamed = Activity::of(
             &[progress(
                 "e1",
@@ -327,5 +398,42 @@ mod tests {
             true,
         );
         assert_eq!(asked.entries[0].headline(), "Asked worker");
+    }
+
+    #[test]
+    fn a_decided_call_no_longer_waits_and_its_end_in_the_next_run_closes_it() {
+        let mut events = timeline();
+        events.push(event(
+            "e8",
+            "bot.task.decided",
+            "exec-2",
+            serde_json::json!({"decision": "approve", "callId": "c3"}),
+        ));
+        let decided = Activity::of(&events, true);
+        assert_eq!(decided.entries[8].headline(), "service_restart · running");
+        assert_eq!(
+            decided.entries[9].headline(),
+            "You approved the call to service_restart"
+        );
+        events.push(event(
+            "e9",
+            "bot.task.progress",
+            "exec-2",
+            serde_json::json!({"items": [{"kind": "tool.ended", "tool": "service_restart", "callId": "c3", "status": "ok"}]}),
+        ));
+        let ended = Activity::of(&events, true);
+        assert_eq!(ended.entries[8].headline(), "service_restart · ok");
+        assert_eq!(ended.entries.len(), decided.entries.len());
+
+        let mut denied = timeline();
+        denied.push(event(
+            "e8",
+            "bot.task.decided",
+            "exec-2",
+            serde_json::json!({"decision": "deny", "callId": "c3"}),
+        ));
+        let denied = Activity::of(&denied, true);
+        assert_eq!(denied.entries[8].headline(), "service_restart · denied");
+        assert_eq!(denied.entries[9].headline(), "You denied the call to service_restart");
     }
 }

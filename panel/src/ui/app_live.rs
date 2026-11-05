@@ -36,12 +36,14 @@ impl App {
         }]
     }
 
-    /// What a read of the task's timeline brought: the Activity grows, and
-    /// when it brought something while the task runs, the next read waits
-    /// at once for what comes after; a read that waited and brought
-    /// nothing is started again by the next tick.
+    /// What a read of the task's timeline brought: the Activity grows, its
+    /// boxes that follow the run show their new end, and when it brought
+    /// something while the task runs, the next read waits at once for
+    /// what comes after; a read that waited and brought nothing is
+    /// started again by the next tick.
     pub(super) fn task_followed(&mut self, id: TaskId, result: Result<EventFeed, PanelError>) -> Vec<Effect> {
         let ended = self.task_ended(&id);
+        let on_screen = self.screen == Screen::Task(id.clone());
         let Some(live) = self.live.as_mut().filter(|l| l.id == id) else {
             return Vec::new();
         };
@@ -51,12 +53,17 @@ impl App {
             return Vec::new();
         };
         let brought = feed.new > 0;
-        live.update(feed, !ended);
+        let mut effects: Vec<Effect> = live
+            .update(feed, !ended)
+            .into_iter()
+            .filter(|_| on_screen)
+            .map(Effect::ShowEnd)
+            .collect();
         live.settled = live.asked_ended;
-        if !brought || ended || self.screen != Screen::Task(id) {
-            return Vec::new();
+        if brought && !ended && on_screen {
+            effects.extend(self.follow_task());
         }
-        self.follow_task()
+        effects
     }
 
     /// Whether the task as last read ended: a task not read yet may run.
@@ -76,7 +83,8 @@ impl App {
         let ended = detail.task.status.is_terminal();
         if let Some(live) = self.live.as_mut().filter(|l| l.id == detail.task.id && l.read) {
             let feed = live.feed.clone();
-            live.update(feed, !ended);
+            // Nothing new came: the boxes stay where they are.
+            let _ = live.update(feed, !ended);
         }
     }
 }

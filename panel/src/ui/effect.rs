@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::Screen;
+use super::{LiveStream, Screen};
 use crate::application::{ChatTurn, EventFeed, Notice, PanelConfig, SubscriptionChange};
 use crate::domain::{AutonomyLevel, BotForm, BotId, Decision, ExecutionId, IdempotencyKey, NodeId, TaskId};
 
@@ -19,6 +19,8 @@ pub enum Effect {
         feed: EventFeed,
         wait: u32,
     },
+    /// Bring the end of a box of the running task's Activity into view.
+    ShowEnd(LiveStream),
     FollowBot(BotId, EventFeed),
     /// Read a team's timeline after the feed, waiting up to `wait` seconds.
     FollowTeam {

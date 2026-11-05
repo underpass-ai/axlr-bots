@@ -1042,3 +1042,71 @@ fn a_running_task_is_followed_live_and_keeps_its_history_once_it_ends() {
     send(&mut app, Message::Go(Screen::Overview));
     assert!(app.apply(Message::ActivityPick(0)).is_empty());
 }
+
+#[test]
+fn the_boxes_of_a_running_task_show_their_new_end_until_the_person_scrolls_up() {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake);
+    send(&mut app, Message::SettingsSave);
+    let running = task_in(&app, TaskStatus::Running);
+    send(&mut app, Message::Go(Screen::Task(running.clone())));
+    let grow = |app: &App, id: &str, items: serde_json::Value| {
+        let mut feed = app.live.as_ref().unwrap().feed.clone();
+        let event: crate::domain::Event = serde_json::from_value(serde_json::json!({
+            "eventId": id, "type": "bot.task.progress", "tenantId": "t", "botId": "b",
+            "taskId": running.to_string(), "createdAt": "2026-10-25T10:00:00Z", "payload": {"items": items}
+        }))
+        .unwrap();
+        feed.merge(vec![event], crate::application::LIVE_FEED_SIZE);
+        feed
+    };
+    let shown = |effects: &[Effect]| -> Vec<LiveStream> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                Effect::ShowEnd(stream) => Some(*stream),
+                _ => None,
+            })
+            .collect()
+    };
+    let feed = grow(
+        &app,
+        "p1",
+        serde_json::json!([{"kind": "thinking", "text": "The log next."}, {"kind": "tool.started", "tool": "local_read", "callId": "c9"}, {"kind": "text", "text": " Reading it."}]),
+    );
+    let effects = app.apply(Message::TaskFollowed(running.clone(), Ok(feed)));
+    assert_eq!(
+        shown(&effects),
+        [LiveStream::Steps, LiveStream::Thinking, LiveStream::Words]
+    );
+    assert!(effects.iter().any(|e| matches!(e, Effect::FollowTask { .. })));
+
+    // The person scrolls up in the words to read: they stay put, the
+    // steps go on showing their end.
+    assert!(
+        app.apply(Message::ActivityScrolled(LiveStream::Words, false))
+            .is_empty()
+    );
+    let feed = grow(
+        &app,
+        "p2",
+        serde_json::json!([{"kind": "tool.ended", "tool": "local_read", "callId": "c9"}, {"kind": "tool.started", "tool": "local_list", "callId": "c10"}, {"kind": "text", "text": " More."}]),
+    );
+    let effects = app.apply(Message::TaskFollowed(running.clone(), Ok(feed)));
+    assert_eq!(shown(&effects), [LiveStream::Steps]);
+    let words = app.live.as_ref().unwrap();
+    assert!(!words.follows(LiveStream::Words) && words.activity.text.ends_with(" More."));
+    send(&mut app, Message::ActivityScrolled(LiveStream::Words, true));
+    assert!(app.live.as_ref().unwrap().follows(LiveStream::Words));
+
+    // Away from the task, nothing is brought into view.
+    let feed = grow(&app, "p3", serde_json::json!([{"kind": "text", "text": " Done."}]));
+    send(&mut app, Message::Go(Screen::Overview));
+    assert!(shown(&app.apply(Message::TaskFollowed(running, Ok(feed)))).is_empty());
+    assert!(
+        app.apply(Message::ActivityScrolled(LiveStream::Steps, false))
+            .is_empty()
+    );
+}

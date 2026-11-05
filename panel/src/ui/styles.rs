@@ -301,6 +301,21 @@ pub fn reader(tokens: Tokens) -> impl Fn(&Theme, text_editor::Status) -> text_ed
     }
 }
 
+/// A box of text that grows as it is read: the reader's look, without
+/// an editor's focus.
+pub fn well(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
+        text_color: Some(tokens.text),
+        background: Some(Background::Color(tokens.surface)),
+        border: Border {
+            color: tokens.border,
+            width: 1.0,
+            radius: RADIUS_S.into(),
+        },
+        ..container::Style::default()
+    }
+}
+
 /// The text colour that reads on a filled colour: ink on light fills,
 /// white on dark ones.
 pub fn on(fill: Color) -> Color {
