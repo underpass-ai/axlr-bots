@@ -30,6 +30,8 @@ impl ExecutionOutcome {
     pub fn label(self) -> &'static str {
         match self {
             Self::DecisionRequired => "Needs OK",
+            Self::Completed => "Done",
+            Self::Cancelled => "Stopped",
             other => other.name(),
         }
     }
@@ -47,6 +49,8 @@ mod tests {
     fn labels_and_finality() {
         assert_eq!(ExecutionOutcome::DecisionRequired.label(), "Needs OK");
         assert_eq!(ExecutionOutcome::Failed.label(), "Failed");
+        assert_eq!(ExecutionOutcome::Completed.label(), "Done");
+        assert_eq!(ExecutionOutcome::Cancelled.label(), "Stopped");
         assert!(!ExecutionOutcome::Running.is_final());
         assert!(ExecutionOutcome::Cancelled.is_final());
         let parsed: ExecutionOutcome = serde_json::from_str("\"DecisionRequired\"").unwrap();

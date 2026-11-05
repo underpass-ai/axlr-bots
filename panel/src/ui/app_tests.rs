@@ -402,9 +402,10 @@ fn filters_open_the_task_list() {
 fn without_a_connection_nothing_is_asked_of_the_control_plane() {
     let mut app = app();
     assert!(app.apply(Message::Tick(app.now)).is_empty());
-    assert!(
-        app.apply(Message::Go(Screen::Task(TaskId::new("task-1").unwrap())))
-            .is_empty()
+    // Only the page's own scroll: nothing goes to the control plane.
+    assert_eq!(
+        app.apply(Message::Go(Screen::Task(TaskId::new("task-1").unwrap()))),
+        vec![Effect::ScrollTop]
     );
     let message = futures::executor::block_on(app.services.clone().execute(Effect::Refresh { generation: 1 }));
     assert!(matches!(
@@ -866,7 +867,10 @@ fn a_teammates_warning_raises_a_notice_that_opens_the_teams() {
 fn an_incident_is_listed_opened_and_resolved_with_a_reason() {
     use crate::domain::IncidentStatus;
     let mut app = connected();
-    assert_eq!(app.apply(Message::Go(Screen::Incidents)), vec![Effect::LoadIncidents]);
+    assert_eq!(
+        app.apply(Message::Go(Screen::Incidents)),
+        vec![Effect::ScrollTop, Effect::LoadIncidents]
+    );
     assert!(
         app.apply(Message::Tick(app.now))
             .iter()
@@ -882,7 +886,10 @@ fn an_incident_is_listed_opened_and_resolved_with_a_reason() {
     );
 
     let effects = app.apply(Message::Go(Screen::Incident("inc-disk".into())));
-    assert_eq!(effects, vec![Effect::LoadIncident("inc-disk".into())]);
+    assert_eq!(
+        effects,
+        vec![Effect::ScrollTop, Effect::LoadIncident("inc-disk".into())]
+    );
     drive(&mut app, effects);
     assert_eq!(app.incidents.detail.as_ref().unwrap().status, IncidentStatus::Escalated);
 
@@ -1109,4 +1116,64 @@ fn the_boxes_of_a_running_task_show_their_new_end_until_the_person_scrolls_up() 
         app.apply(Message::ActivityScrolled(LiveStream::Steps, false))
             .is_empty()
     );
+}
+
+#[test]
+fn esc_keeps_what_a_dialog_would_do_and_enter_does_it() {
+    let mut app = connected();
+    let id = app.fleet.as_ref().unwrap().waiting()[0].bot_id.clone();
+    send(&mut app, Message::Go(Screen::Bot(id.clone())));
+    app.apply(Message::AskStopBot(id.clone()));
+    assert!(app.apply(Message::Key(Keypress::Escape)).is_empty());
+    assert_eq!(app.confirm, None);
+    app.apply(Message::AskStopBot(id.clone()));
+    let effects = app.apply(Message::Key(Keypress::Enter));
+    assert!(matches!(effects.as_slice(), [Effect::StopBot(stopped)] if *stopped == id));
+    assert_eq!(app.confirm, None);
+    // Without a dialog, Enter does nothing.
+    assert!(app.apply(Message::Key(Keypress::Enter)).is_empty());
+}
+
+#[test]
+fn esc_closes_the_new_task_form() {
+    let mut app = connected();
+    send(&mut app, Message::SubmitOpen(None));
+    assert!(app.submit.open);
+    app.apply(Message::Key(Keypress::Escape));
+    assert!(!app.submit.open);
+}
+
+#[test]
+fn another_screen_opens_at_its_top_a_refresh_keeps_its_place() {
+    let mut app = connected();
+    assert!(app.apply(Message::Go(Screen::Bots)).contains(&Effect::ScrollTop));
+    assert!(!app.apply(Message::Go(Screen::Bots)).contains(&Effect::ScrollTop));
+    let later = app.now + Duration::seconds(3);
+    assert!(!app.apply(Message::Tick(later)).contains(&Effect::ScrollTop));
+    assert!(app.apply(Message::Go(Screen::Tasks)).contains(&Effect::ScrollTop));
+}
+
+#[test]
+fn a_bot_page_holds_readers_that_keep_a_selection_over_a_refresh() {
+    let mut app = connected();
+    let id = app.fleet.as_ref().unwrap().bots[0].id.clone();
+    send(&mut app, Message::Go(Screen::Bot(id)));
+    let mission = app.bot.as_ref().unwrap().bot.mission.clone();
+    let reader = app.readers.get(&ReaderKey::BotMission).unwrap();
+    assert_eq!(reader.source(), mission);
+    assert!(app.readers.get(&ReaderKey::BotModel).is_some());
+    app.apply(Message::Read(
+        ReaderKey::BotMission,
+        iced::widget::text_editor::Action::SelectAll,
+    ));
+    app.apply(Message::Read(
+        ReaderKey::BotMission,
+        iced::widget::text_editor::Action::Edit(iced::widget::text_editor::Edit::Insert('x')),
+    ));
+    let later = app.now + Duration::seconds(3);
+    send(&mut app, Message::Tick(later));
+    let reader = app.readers.get(&ReaderKey::BotMission).unwrap();
+    assert_eq!(reader.content().selection().as_deref(), Some(mission.as_str()));
+    send(&mut app, Message::Go(Screen::Bots));
+    assert!(app.readers.is_empty());
 }

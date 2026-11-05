@@ -1,15 +1,15 @@
 //! Nodes: who runs the bots, how healthy, and enrolling a new host.
 
 use iced::widget::{Space, column, container, row, scrollable, table, text};
-use iced::{Alignment, Font, Length};
+use iced::{Alignment, Length};
 
 use super::widgets::{
-    BODY, El, SMALL, action, bold, card, chip, empty, field, icon, muted, pill, section_title, title,
+    BODY, El, Voice, action, bold, card, chip, empty, field, icon, muted, pill, reader, section_title, title,
 };
 use crate::domain::{CertificateHealth, Node};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
-use crate::ui::{App, Icon, Message, Tokens, Tone};
+use crate::ui::{App, Icon, Message, ReaderKey, Tokens, Tone};
 
 pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let Some(fleet) = &app.fleet else {
@@ -100,6 +100,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         right: 12.0,
         ..Default::default()
     }))
+    .id(super::widgets::PAGE)
     .height(Length::Fill)
     .into()
 }
@@ -178,12 +179,28 @@ fn mint_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
                     ]
                     .spacing(10)
                     .align_y(Alignment::Center),
-                    super::widgets::fact("Node", bold(token.node_id.to_string()), tokens),
+                    super::widgets::fact(
+                        "Node",
+                        reader(
+                            &app.readers,
+                            ReaderKey::MintedNode,
+                            token.node_id.to_string(),
+                            Voice::Body,
+                            tokens
+                        ),
+                        tokens
+                    ),
                     super::widgets::fact("Expires", text(format::when(token.expires_at)), tokens),
-                    container(text(token.token.expose().to_string()).font(Font::MONOSPACE).size(SMALL))
-                        .padding(10)
-                        .width(Length::Fill)
-                        .style(styles::chip(tokens)),
+                    container(reader(
+                        &app.readers,
+                        ReaderKey::MintedToken,
+                        token.token.expose().to_string(),
+                        Voice::Mono,
+                        tokens
+                    ))
+                    .padding(10)
+                    .width(Length::Fill)
+                    .style(styles::chip(tokens)),
                     row![
                         action(
                             Kind::Primary,

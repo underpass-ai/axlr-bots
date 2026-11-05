@@ -61,7 +61,7 @@ impl Event {
             "bot.task.failed" => "Failed".into(),
             "bot.task.waiting_approval" => "Needs OK".into(),
             "bot.task.decided" => self.decision_label(),
-            "bot.task.cancelled" => "Cancelled".into(),
+            "bot.task.cancelled" => "Stopped".into(),
             "bot.task.message" if self.payload_text("from").is_some_and(|f| f.starts_with("event:")) => {
                 "A teammate told it".into()
             }

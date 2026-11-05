@@ -134,7 +134,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             .vertical_spacing(2);
             list = list.push(
                 row![
-                    pill(Tone::Wait, "Needs OK", tokens),
+                    pill(Tone::Wait, TaskStatus::WaitingApproval.label(), tokens),
                     words,
                     muted(format::age(task.created_at, app.now), tokens),
                     super::decide::buttons(app, &task.id, tokens),
@@ -212,6 +212,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         right: 12.0,
         ..Default::default()
     }))
+    .id(super::widgets::PAGE)
     .height(Length::Fill)
     .into()
 }

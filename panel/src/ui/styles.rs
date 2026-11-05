@@ -141,6 +141,12 @@ pub fn banner(tokens: Tokens, tone: Tone) -> impl Fn(&Theme) -> container::Style
                 width: 1.0,
                 radius: RADIUS.into(),
             },
+            // It floats over the page: a soft shadow lifts it off.
+            shadow: Shadow {
+                color: Color::from_rgba(0.0, 0.0, 0.0, if tokens.dark { 0.5 } else { 0.18 }),
+                offset: iced::Vector::new(0.0, 4.0),
+                blur_radius: 16.0,
+            },
             ..container::Style::default()
         }
     }
@@ -316,6 +322,18 @@ pub fn well(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
     }
 }
 
+/// The look of words a person reads and selects in place: no box, the
+/// words' own colour, the selection in the accent.
+pub fn reading(tokens: Tokens, value: Color) -> impl Fn(&Theme, text_editor::Status) -> text_editor::Style {
+    move |_, _| text_editor::Style {
+        background: Background::Color(Color::TRANSPARENT),
+        border: Border::default(),
+        placeholder: tokens.muted,
+        value,
+        selection: Tokens::fade(tokens.accent, 0.35),
+    }
+}
+
 /// The text colour that reads on a filled colour: ink on light fills,
 /// white on dark ones.
 pub fn on(fill: Color) -> Color {
@@ -377,6 +395,21 @@ mod tests {
         assert_eq!(idle.border.color, tokens.border);
         assert_eq!(focused.border.color, tokens.accent);
         assert_eq!(idle.value, tokens.text);
+    }
+
+    #[test]
+    fn reading_shows_no_box_even_when_focused() {
+        let theme = Tokens::LIGHT.theme();
+        let tokens = Tokens::LIGHT;
+        for status in [
+            text_editor::Status::Active,
+            text_editor::Status::Focused { is_hovered: true },
+        ] {
+            let style = reading(tokens, tokens.muted)(&theme, status);
+            assert_eq!(style.background, Background::Color(Color::TRANSPARENT));
+            assert_eq!(style.border.width, 0.0);
+            assert_eq!(style.value, tokens.muted);
+        }
     }
 
     #[test]

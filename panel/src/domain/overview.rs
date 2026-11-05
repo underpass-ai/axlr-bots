@@ -44,8 +44,10 @@ impl Overview {
         self.tasks_since.get(status.name()).copied().unwrap_or(0)
     }
 
+    /// The nodes of the fleet: every one but the revoked, which never
+    /// come back.
     pub fn total_nodes(&self) -> u32 {
-        self.nodes.values().sum()
+        self.nodes.values().sum::<u32>() - self.nodes_in(NodeStatus::Revoked)
     }
 
     pub fn total_bots(&self) -> u32 {
@@ -71,7 +73,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(overview.nodes_in(NodeStatus::Online), 2);
-        assert_eq!(overview.total_nodes(), 4);
+        assert_eq!(overview.total_nodes(), 3);
         assert_eq!(overview.nodes_down(), 1);
         assert_eq!(overview.bots_in(BotStatus::Paused), 1);
         assert_eq!(overview.bots_in(BotStatus::Draft), 0);

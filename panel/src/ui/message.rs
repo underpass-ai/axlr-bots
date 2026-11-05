@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 
 use super::ModeChoice;
-use super::{BotChoice, BotView, Connection, NodeChoice, Screen, ThemeMode};
+use super::{BotChoice, BotView, Connection, Keypress, NodeChoice, ReaderKey, Screen, ThemeMode};
 use crate::application::{ChatSent, EventFeed, Fleet, PanelError, StoppedBot, SubscriptionChange, TaskDetail};
 use crate::domain::{
     AutonomyLevel, Bot, BotId, CancelledTask, DecidedTask, EnrollmentToken, ExecutionId, Incident, NodeId, Published,
@@ -16,6 +16,10 @@ use crate::domain::{
 pub enum Message {
     Tick(DateTime<Utc>),
     Go(Screen),
+    /// Esc or Enter, when no widget took it.
+    Key(Keypress),
+    /// A click, drag or key in a reader: it selects, it never edits.
+    Read(ReaderKey, iced::widget::text_editor::Action),
     ToggleTheme,
     SetTheme(ThemeMode),
     DismissBanner,

@@ -15,6 +15,8 @@ use crate::ui::{App, Icon, Message, Screen, Section, ThemeMode, Tokens, Tone, br
 const EMBLEM_WIDTH: f32 = 100.0;
 /// The side bar's width.
 const SIDEBAR_WIDTH: f32 = 196.0;
+/// The widest the banner gets over the page's foot.
+const BANNER_WIDTH: f32 = 820.0;
 
 pub fn frame<'a>(app: &'a App, content: El<'a>, tokens: Tokens) -> Element<'a, Message> {
     let body = row![
@@ -222,47 +224,59 @@ fn sidebar<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     .into()
 }
 
+/// The page, and over its foot the banner after an act: it floats, so
+/// the page never moves when it comes or goes.
 fn main<'a>(app: &'a App, content: El<'a>, tokens: Tokens) -> El<'a> {
-    let mut stackable = column![]
-        .spacing(14)
+    let page = container(content)
         .padding(Padding::from([20, 28]))
         .width(Length::Fill)
         .height(Length::Fill);
-    if let Some(banner) = &app.banner {
-        let mut words = row![
-            icon(banner.tone.icon(), 20.0, banner.tone.color(&tokens)),
-            bold(banner.title.clone()).size(BODY)
-        ]
-        .spacing(10)
-        .align_y(Alignment::Center);
-        if !banner.detail.is_empty() {
-            words = words.push(text(banner.detail.clone()).size(BODY).color(tokens.muted));
-        }
-        let mut line = row![words, Space::new().width(Length::Fill)].align_y(Alignment::Center);
-        if banner.tone == Tone::Bad {
-            line = line.push(icon_button(
-                Icon::Copy,
-                "Copy error",
-                Some(Message::Copy(banner.copy_text())),
-                tokens,
-            ));
-        }
-        if banner.tone == Tone::Bad && app.screen != Screen::Settings {
-            line = line.push(action(
-                Kind::Secondary,
-                Icon::Settings,
-                "Settings",
-                Some(Message::Go(Screen::Settings)),
-                tokens,
-            ));
-        }
-        line = line.push(icon_button(Icon::Cross, "Close", Some(Message::DismissBanner), tokens));
-        stackable = stackable.push(
-            container(line.spacing(8))
-                .padding(Padding::from([8, 14]))
-                .width(Length::Fill)
-                .style(styles::banner(tokens, banner.tone)),
-        );
+    // Always two layers, so the page keeps its widgets (its scroll) when
+    // the banner comes and goes.
+    let Some(banner) = &app.banner else {
+        return stack![page, Space::new()].into();
+    };
+    let mut words = row![
+        icon(banner.tone.icon(), 20.0, banner.tone.color(&tokens)),
+        bold(banner.title.clone()).size(BODY)
+    ]
+    .spacing(10)
+    .align_y(Alignment::Center);
+    if !banner.detail.is_empty() {
+        words = words.push(text(banner.detail.clone()).size(BODY).color(tokens.muted));
     }
-    stackable.push(content).into()
+    let mut line = row![words, Space::new().width(Length::Fill)].align_y(Alignment::Center);
+    if banner.tone == Tone::Bad {
+        line = line.push(icon_button(
+            Icon::Copy,
+            "Copy error",
+            Some(Message::Copy(banner.copy_text())),
+            tokens,
+        ));
+    }
+    if banner.tone == Tone::Bad && app.screen != Screen::Settings {
+        line = line.push(action(
+            Kind::Secondary,
+            Icon::Settings,
+            "Settings",
+            Some(Message::Go(Screen::Settings)),
+            tokens,
+        ));
+    }
+    line = line.push(icon_button(Icon::Cross, "Close", Some(Message::DismissBanner), tokens));
+    let toast = container(line.spacing(8))
+        .padding(Padding::from([8, 14]))
+        .width(Length::Fill)
+        .max_width(BANNER_WIDTH)
+        .style(styles::banner(tokens, banner.tone));
+    stack![
+        page,
+        container(toast)
+            .padding(Padding::from([20, 28]))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::End),
+    ]
+    .into()
 }

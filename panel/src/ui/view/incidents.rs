@@ -3,13 +3,15 @@
 
 use iced::widget::text::Wrapping;
 use iced::widget::{Space, column, container, mouse_area, row, scrollable, table, text, text_input};
-use iced::{Alignment, Font, Length, mouse};
+use iced::{Alignment, Length, mouse};
 
-use super::widgets::{BODY, El, SMALL, action, bold, card, chip, empty, fact, muted, pill, section, title};
+use super::widgets::{
+    BODY, El, Voice, action, bold, card, chip, empty, fact, muted, pill, pill_with, reader, section, title,
+};
 use crate::domain::{Incident, TaskId};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
-use crate::ui::{App, Icon, Message, Screen, Tokens, Tone};
+use crate::ui::{App, Icon, Message, ReaderKey, Screen, Tokens, Tone};
 
 /// Every incident, the last seen first.
 pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
@@ -21,12 +23,8 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     };
     let now = app.now;
     let columns = vec![
-        table::column(bold("Severity"), move |i: &'a Incident| {
-            pill(Tone::of_severity(i.severity), i.severity.name(), tokens)
-        }),
-        table::column(bold("Status"), move |i: &'a Incident| {
-            pill(Tone::of_incident(i.status), i.status.name(), tokens)
-        }),
+        table::column(bold("Severity"), move |i: &'a Incident| severity(i, tokens)),
+        table::column(bold("Status"), move |i: &'a Incident| status(i, tokens)),
         // The title takes what the other columns leave and wraps there,
         // so the smallest window keeps the age and Open in sight.
         table::column(bold("Incident"), move |i: &'a Incident| {
@@ -62,6 +60,7 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         right: 12.0,
         ..Default::default()
     }))
+    .id(super::widgets::PAGE)
     .height(Length::Fill)
     .into()
 }
@@ -84,12 +83,15 @@ pub fn detail<'a>(app: &'a App, id: &'a str, tokens: Tokens) -> El<'a> {
     let form = &app.incidents.resolve;
     let mut header = row![
         back,
-        pill(Tone::of_severity(incident.severity), incident.severity.name(), tokens),
-        pill(Tone::of_incident(incident.status), incident.status.name(), tokens),
-        bold(incident.title.clone())
-            .size(22.0)
-            .wrapping(Wrapping::WordOrGlyph)
-            .width(Length::Fill),
+        severity(incident, tokens),
+        status(incident, tokens),
+        reader(
+            &app.readers,
+            ReaderKey::IncidentTitle,
+            incident.title.clone(),
+            Voice::Heading,
+            tokens
+        ),
     ]
     .spacing(12)
     .align_y(Alignment::Center);
@@ -113,19 +115,37 @@ pub fn detail<'a>(app: &'a App, id: &'a str, tokens: Tokens) -> El<'a> {
             crate::domain::IncidentStatus::Escalated => "Why it was escalated",
             _ => "Reason",
         };
-        page = page.push(section(Icon::Alert, why, text(incident.reason.clone()), tokens));
+        page = page.push(section(
+            Icon::Alert,
+            why,
+            reader(
+                &app.readers,
+                ReaderKey::IncidentReason,
+                incident.reason.clone(),
+                Voice::Body,
+                tokens,
+            ),
+            tokens,
+        ));
     }
     if !incident.diagnosis.is_empty() {
         page = page.push(section(
             Icon::Check,
             "Diagnosis",
-            text(incident.diagnosis.clone()),
+            reader(
+                &app.readers,
+                ReaderKey::IncidentDiagnosis,
+                incident.diagnosis.clone(),
+                Voice::Body,
+                tokens,
+            ),
             tokens,
         ));
     }
     page = page.push(
         row![
-            container(section(Icon::Alert, "Alerts", alerts(incident, tokens), tokens)).width(Length::FillPortion(1)),
+            container(section(Icon::Alert, "Alerts", alerts(app, incident, tokens), tokens))
+                .width(Length::FillPortion(1)),
             container(section(Icon::Tasks, "Tasks", tasks(app, incident, tokens), tokens))
                 .width(Length::FillPortion(1)),
         ]
@@ -135,6 +155,7 @@ pub fn detail<'a>(app: &'a App, id: &'a str, tokens: Tokens) -> El<'a> {
         right: 12.0,
         ..Default::default()
     }))
+    .id(super::widgets::PAGE)
     .height(Length::Fill)
     .into()
 }
@@ -149,7 +170,17 @@ fn facts<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> El<'a> {
             tokens
         ),
         fact("Tenant", text(incident.tenant_id.clone()), tokens),
-        fact("Source", text(incident.source.clone()), tokens),
+        fact(
+            "Source",
+            reader(
+                &app.readers,
+                ReaderKey::IncidentSource,
+                incident.source.clone(),
+                Voice::Body,
+                tokens
+            ),
+            tokens
+        ),
         fact(
             "Opened",
             text(format!(
@@ -173,10 +204,13 @@ fn facts<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> El<'a> {
         fact("Cycle", text(incident.cycle.to_string()), tokens),
         fact(
             "Group",
-            text(incident.group_key.clone())
-                .font(Font::MONOSPACE)
-                .size(SMALL)
-                .wrapping(Wrapping::WordOrGlyph),
+            reader(
+                &app.readers,
+                ReaderKey::IncidentGroup,
+                incident.group_key.clone(),
+                Voice::Mono,
+                tokens
+            ),
             tokens
         ),
     ]
@@ -185,12 +219,38 @@ fn facts<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> El<'a> {
     card(row![left, right].spacing(20), tokens).into()
 }
 
+fn severity<'a>(incident: &Incident, tokens: Tokens) -> El<'a> {
+    pill_with(
+        Icon::of_severity(incident.severity),
+        Tone::of_severity(incident.severity),
+        incident.severity.name(),
+        tokens,
+    )
+}
+
+fn status<'a>(incident: &Incident, tokens: Tokens) -> El<'a> {
+    pill_with(
+        Icon::of_incident(incident.status),
+        Tone::of_incident(incident.status),
+        incident.status.name(),
+        tokens,
+    )
+}
+
 /// The alerts still firing, then those the source said went green.
-fn alerts<'a>(incident: &'a Incident, tokens: Tokens) -> El<'a> {
+fn alerts<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> El<'a> {
     if incident.fingerprints.is_empty() {
         return empty(Icon::Alert, "No alert listed", tokens);
     }
-    let fingerprint = |f: &str| text(f.to_string()).font(Font::MONOSPACE).size(SMALL);
+    let fingerprint = |f: &str| {
+        reader(
+            &app.readers,
+            ReaderKey::Fingerprint(f.to_string()),
+            f.to_string(),
+            Voice::Mono,
+            tokens,
+        )
+    };
     let mut body = column![].spacing(8);
     let firing = incident.firing();
     if !firing.is_empty() {

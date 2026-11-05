@@ -4,11 +4,13 @@
 use iced::widget::{Space, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Length, mouse};
 
-use super::widgets::{El, SMALL, action, bold, card, chip, empty, field, icon, muted, pill, section, title};
+use super::widgets::{
+    El, SMALL, Voice, action, bold, card, chip, empty, field, icon, muted, pill, reader, section, title,
+};
 use crate::domain::{Event, TaskId, Team};
 use crate::ui::format;
 use crate::ui::styles::Kind;
-use crate::ui::{App, Icon, Message, Screen, Tokens, Tone};
+use crate::ui::{App, Icon, Message, ReaderKey, Screen, Tokens, Tone};
 
 /// How many events of a team the timeline shows, newest first.
 const SHOWN: usize = 40;
@@ -67,6 +69,7 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         right: 12.0,
         ..Default::default()
     }))
+    .id(super::widgets::PAGE)
     .height(Length::Fill)
     .into()
 }
@@ -115,7 +118,13 @@ pub fn detail<'a>(app: &'a App, name: &'a str, tokens: Tokens) -> El<'a> {
             column![
                 first,
                 row![
-                    text(Team::purpose(bot)).size(SMALL).width(Length::Fill),
+                    reader(
+                        &app.readers,
+                        ReaderKey::MemberPurpose(bot.id.clone()),
+                        Team::purpose(bot),
+                        Voice::Small,
+                        tokens
+                    ),
                     super::order::button(app, bot, tokens),
                 ]
                 .spacing(10)
@@ -162,6 +171,7 @@ pub fn detail<'a>(app: &'a App, name: &'a str, tokens: Tokens) -> El<'a> {
         right: 12.0,
         ..Default::default()
     }))
+    .id(super::widgets::PAGE)
     .height(Length::Fill)
     .into()
 }

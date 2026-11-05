@@ -8,14 +8,14 @@ use iced::{Alignment, Length, mouse};
 
 use super::levels;
 use super::widgets::{
-    El, SMALL, action, bold, chip, copy_button, empty, fact, icon, muted, pill, section, section_title, section_with,
-    title,
+    El, SMALL, Voice, action, bold, chip, copy_button, empty, fact, icon, muted, pill, reader, section, section_title,
+    section_with, title,
 };
 use crate::application::{BotNow, ChatLine};
 use crate::domain::{Bot, BotId, BotStatus, TaskId};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
-use crate::ui::{App, BotView, Icon, Message, ModeChoice, Screen, Tokens, Tone};
+use crate::ui::{App, BotView, Icon, Message, ModeChoice, ReaderKey, Screen, Tokens, Tone, passages};
 
 pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
     let back = action(Kind::Ghost, Icon::Back, "Bots", Some(Message::Go(Screen::Bots)), tokens);
@@ -107,7 +107,13 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
             Icon::Bolt,
             "What it does",
             vec![copy_button("Copy mission", bot.mission.clone(), tokens)],
-            text(bot.mission.clone()),
+            reader(
+                &app.readers,
+                ReaderKey::BotMission,
+                bot.mission.clone(),
+                Voice::Body,
+                tokens
+            ),
             tokens,
         ),
         team(app, bot, tokens),
@@ -134,6 +140,7 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
         right: 12.0,
         ..Default::default()
     }))
+    .id(super::widgets::PAGE)
     .height(Length::Fill)
     .into()
 }
@@ -520,30 +527,38 @@ fn advanced<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
     }
     let facts = column![
         fact("Starts by", triggers, tokens),
-        fact("Runs on", text(bot.placement.describe()), tokens),
+        fact(
+            "Runs on",
+            reader(
+                &app.readers,
+                ReaderKey::BotRunsOn,
+                bot.placement.describe(),
+                Voice::Body,
+                tokens
+            ),
+            tokens
+        ),
         fact("Tools", tools(bot, tokens), tokens),
         fact(
             "Model",
-            text(format!(
-                "{} · {} · {}",
-                bot.model.model,
-                bot.model.routing_policy,
-                if bot.model.allow_remote_providers {
-                    "remote allowed"
-                } else {
-                    "local only"
-                }
-            )),
+            reader(
+                &app.readers,
+                ReaderKey::BotModel,
+                passages::model(bot),
+                Voice::Body,
+                tokens
+            ),
             tokens
         ),
         fact(
             "Budgets",
-            text(format!(
-                "{} model calls · {} tool calls · {} per task",
-                limit(bot.budgets.max_model_calls_per_task),
-                limit(bot.budgets.max_tool_calls_per_task),
-                bot.budgets.timeout_label()
-            )),
+            reader(
+                &app.readers,
+                ReaderKey::BotBudgets,
+                passages::budgets(bot),
+                Voice::Body,
+                tokens
+            ),
             tokens
         ),
     ]
@@ -558,15 +573,6 @@ fn advanced<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
         .spacing(24),
         tokens,
     )
-}
-
-/// A budget, or `default` when the bot leaves it to the control plane.
-fn limit(value: u32) -> String {
-    if value == 0 {
-        "default".to_string()
-    } else {
-        value.to_string()
-    }
 }
 
 fn tools<'a>(bot: &'a Bot, tokens: Tokens) -> El<'a> {

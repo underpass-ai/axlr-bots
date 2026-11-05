@@ -9,7 +9,7 @@ use iced::widget::{Text, container, text};
 use iced::{Rectangle, Settings, Size};
 use iced_test::{Simulator, simulator};
 
-use super::runtime::{MIN_WINDOW, WINDOW};
+use super::runtime::{FONTS, MIN_WINDOW, WINDOW};
 use super::test_runtime::{connected, send};
 use super::view::tests::app;
 use super::view::widgets::{self, El};
@@ -23,14 +23,6 @@ static SIMULATOR: Mutex<()> = Mutex::new(());
 pub(super) fn turn() -> MutexGuard<'static, ()> {
     SIMULATOR.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
-
-/// The panel's typefaces, as `runtime::launch` gives them to the window.
-const FONTS: [&[u8]; 4] = [
-    include_bytes!("../../assets/fonts/Lexend-Regular.ttf"),
-    include_bytes!("../../assets/fonts/Lexend-SemiBold.ttf"),
-    include_bytes!("../../assets/fonts/Lexend-Bold.ttf"),
-    include_bytes!("../../assets/fonts/DotGothic16-Latin.ttf"),
-];
 
 /// A simulator's settings with the panel's typefaces, so its texts are
 /// as wide as in the window. The typefaces go into the renderer's shared
@@ -106,6 +98,15 @@ fn simulator_misses(app: &App, word: &str) -> bool {
     let _turn = turn();
     let mut ui = simulator(view::view(app));
     ui.find(word).is_err()
+}
+
+/// Fails unless the screen holds a reader of `words` under `key`.
+fn reads(app: &App, key: ReaderKey, words: &str) {
+    let reader = app
+        .readers
+        .get(&key)
+        .unwrap_or_else(|| panic!("no reader {key:?} on {:?}", app.screen));
+    assert!(reader.source().contains(words), "{key:?} reads {:?}", reader.source());
 }
 
 fn shows(app: &App, words: &[&str]) {
@@ -375,7 +376,7 @@ fn the_bots_screen_lists_switches_and_adds() {
             "Copy mission",
             "Advanced",
             "Now",
-            "Waits for you",
+            "Needs OK",
             "It waits for your OK before it goes on.",
         ],
     );
@@ -465,7 +466,7 @@ fn the_tasks_screen_filters_and_sends() {
         &[
             "Tasks",
             "All 5",
-            "Waiting 1",
+            "Needs OK 1",
             "Failed 1",
             "Expired 1",
             "Write hello into hello.txt",
@@ -488,7 +489,8 @@ fn the_tasks_screen_filters_and_sends() {
     shows(&app, &["List the files in your workspace"]);
     app.apply(Message::SubmitOpen(Some(BotId::new("bot-wrx80").unwrap())));
     app.apply(Message::SubmitObjective("Count the files".into()));
-    shows(&app, &["New task", "Send", "key test-1: sending twice makes one task"]);
+    shows(&app, &["New task", "Send"]);
+    reads(&app, ReaderKey::SubmitKey, "key test-1: sending twice makes one task");
     assert!(matches!(
         messages_of_click(&app, "Send").as_slice(),
         [Message::SubmitSend]
@@ -718,7 +720,7 @@ fn errors_and_empty_places_say_so() {
 fn now_says_what_each_bot_is_doing() {
     let mut app = connected();
     send(&mut app, Message::Go(Screen::Bots));
-    shows(&app, &["Now", "Working", "Say the time", "Waits for you", "Idle"]);
+    shows(&app, &["Now", "Working", "Say the time", "Needs OK", "Idle"]);
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
     shows(&app, &["Working", "Say the time", "Open task"]);
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot-wrx80").unwrap())));
@@ -1217,23 +1219,25 @@ fn an_incident_shows_its_alerts_diagnosis_and_tasks_and_resolves() {
     shows(
         &app,
         &[
-            "HighLatency on checkout",
             "sev2",
             "Open",
             "Alerts",
             "Firing",
-            "fp-checkout-2",
             "Went green",
-            "fp-checkout-1",
             "Tasks",
             task.as_str(),
             "Running",
             "acme",
-            "alertmanager",
             "$0.0042",
             "Resolve",
         ],
     );
+    // The title, the source and the alerts read in readers: a part of
+    // them selects and copies.
+    reads(&app, ReaderKey::IncidentTitle, "HighLatency on checkout");
+    reads(&app, ReaderKey::IncidentSource, "alertmanager");
+    reads(&app, ReaderKey::Fingerprint("fp-checkout-2".into()), "fp-checkout-2");
+    reads(&app, ReaderKey::Fingerprint("fp-checkout-1".into()), "fp-checkout-1");
     assert!(matches!(
         messages_of_click(&app, task.as_str()).as_slice(),
         [Message::Go(Screen::Task(id))] if *id == task
@@ -1257,17 +1261,11 @@ fn an_incident_shows_its_alerts_diagnosis_and_tasks_and_resolves() {
     shows(&app, &["Resolving…"]);
 
     send(&mut app, Message::Go(Screen::Incident("inc-disk".into())));
-    shows(
-        &app,
-        &[
-            "Diagnosis",
-            "The WAL volume grows 2 GB an hour.",
-            "Why it was escalated",
-            "No task worked on it",
-        ],
-    );
+    shows(&app, &["Diagnosis", "Why it was escalated", "No task worked on it"]);
+    reads(&app, ReaderKey::IncidentDiagnosis, "The WAL volume grows 2 GB an hour.");
     send(&mut app, Message::Go(Screen::Incident("inc-cert".into())));
-    shows(&app, &["Why it was resolved", "Renewed by hand."]);
+    shows(&app, &["Why it was resolved"]);
+    reads(&app, ReaderKey::IncidentReason, "Renewed by hand.");
     assert!(simulator_misses(&app, "Resolve"), "a resolved incident has no Resolve");
 }
 
