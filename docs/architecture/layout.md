@@ -44,7 +44,7 @@ One Go module, hexagonal: the domain depends on nothing, the application holds t
   outbox/nats/<node>/<time>-<seq>.json   with serve --bus nats: the pushes the broker has not acknowledged yet
   traces/, workspaces/     (single-process runs; a node keeps its own under its state)
   .lock                    the daemon holds it while it runs (a command working on the files takes it too)
-  <kind>/.quarantine/<id>.json.<unixnano>   a record a listing could not parse, set aside
+  <kind>/.quarantine/<id>.json.<unixnano>   a record a listing could not parse or the domain refused, set aside
 
 <node-state>/
   pki/node.key (0600), pki/node.crt, pki/ca.crt, pki/enrollment.json (with the token's id)   (once enrolled)

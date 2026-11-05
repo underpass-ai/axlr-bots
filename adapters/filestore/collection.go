@@ -78,20 +78,30 @@ func (e invalidRecordError) Error() string {
 func (e invalidRecordError) Unwrap() error { return e.err }
 
 // skipListed reports whether a listing goes on past the record id whose
-// read answered err. A file that is not valid JSON is moved to
-// <dir>/.quarantine/<id>.json.<unixnano> and skipped: one bad file must
-// not hide every other record of its kind (every listing, every tick of
-// the daemon, would fail on it). A get of the id keeps failing loudly
-// while the file is there and answers not found once it is set aside.
-// A record gone since the directory was read (deleted, or set aside by
-// a listing running beside this one) is skipped too. Any other error,
-// and a valid file the domain refuses, still fails the listing.
+// read answered err. A file that is not valid JSON, or valid JSON the
+// domain refuses (a status it does not know, a value past its limits),
+// is moved to <dir>/.quarantine/<id>.json.<unixnano> and skipped: one
+// bad file must not hide every other record of its kind (every listing,
+// every tick of the daemon, every node's poll would fail on it; QA
+// 5 Nov 2026 stopped a fleet with one task file of an unknown status).
+// The file is kept there whole, for a person or a newer binary. A get of
+// the id keeps failing loudly while the file is there and answers not
+// found once it is set aside. A record gone since the directory was
+// read (deleted, or set aside by a listing running beside this one) is
+// skipped too. Any other error still fails the listing.
 func (c collection) skipListed(id string, err error) bool {
 	if domain.IsNotFound(err) {
 		return true
 	}
-	var invalid invalidRecordError
-	if !errors.As(err, &invalid) {
+	var invalid error
+	var malformed invalidRecordError
+	var refused domain.ValidationError
+	switch {
+	case errors.As(err, &malformed):
+		invalid = malformed
+	case errors.As(err, &refused):
+		invalid = fmt.Errorf("filestore: %s %s is refused by the domain: %w", c.kind, id, refused)
+	default:
 		return false
 	}
 	path, pathErr := c.path(id)

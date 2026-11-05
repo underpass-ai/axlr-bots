@@ -216,12 +216,17 @@ func TestDaemonLogsRunErrorsAndKeepsGoing(t *testing.T) {
 		t.Fatal(err)
 	}
 	submitted, _ := local.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "b", Objective: "o", IdempotencyKey: "k"})
-	// A task file the domain refuses makes the Pending scan fail (one that
-	// is not JSON at all would be set aside); the daemon logs it and keeps
+	// A task directory that cannot be listed makes the Pending scan fail
+	// (a bad file in it would be set aside); the daemon logs it and keeps
 	// serving.
-	if err := os.WriteFile(filepath.Join(f.state, "tasks", "task-broken.json"), []byte(`{"id":"task-broken","status":"Nope"}`), 0o644); err != nil {
+	if os.Geteuid() == 0 {
+		t.Skip("root lists an unreadable directory")
+	}
+	tasks := filepath.Join(f.state, "tasks")
+	if err := os.Chmod(tasks, 0o300); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = os.Chmod(tasks, 0o750) })
 	client, stop := f.start(t)
 	// The run tick and the reconcile pass both read the broken file; on a
 	// loaded runner the reconcile error can be the only line after a fixed
@@ -233,7 +238,7 @@ func TestDaemonLogsRunErrorsAndKeepsGoing(t *testing.T) {
 	if !strings.Contains(f.logs.String(), "daemon: run:") {
 		t.Errorf("logs = %s", f.logs.String())
 	}
-	if err := os.Remove(filepath.Join(f.state, "tasks", "task-broken.json")); err != nil {
+	if err := os.Chmod(tasks, 0o750); err != nil {
 		t.Fatal(err)
 	}
 	failed := waitFor(t, client, submitted.Task.ID, "Failed")
