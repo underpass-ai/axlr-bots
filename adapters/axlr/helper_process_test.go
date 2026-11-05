@@ -3,7 +3,9 @@ package axlr
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -144,6 +146,29 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(0)
 	case "hang":
 		say(session, text)
+		time.Sleep(30 * time.Second)
+		os.Exit(0)
+	case "hang-then-receipt":
+		// As axlr-tui does on a SIGTERM: the turn stops, and the receipt
+		// and the result still go out before it exits.
+		term := make(chan os.Signal, 1)
+		signal.Notify(term, syscall.SIGTERM)
+		started := time.Now().UTC().Format(time.RFC3339Nano)
+		say(session, `{"type":"tool.requested","tool":"local_read","call_id":"c1"}`, `{"type":"tool.completed","tool":"local_read","call_id":"c1"}`)
+		select {
+		case <-term:
+		case <-time.After(30 * time.Second):
+		}
+		say(`{"type":"failed","session":"sess-1","error":"context canceled"}`,
+			`{"type":"receipt","receipt":{"schema":"axlr.execution-receipt/v1","status":"interrupted","complete":false,"requests":[`+
+				`{"session_id":"sess-1","index":1,"started_at":"2026-11-05T00:00:03Z","status":"completed","prompt_tokens":5000,"completion_tokens":100,"cost_usd":0.003},`+
+				`{"session_id":"sess-1","index":2,"started_at":"`+started+`","status":"completed","prompt_tokens":1200,"completion_tokens":40,"cost_usd":0.0007},`+
+				`{"session_id":"sess-1","index":3,"started_at":"`+started+`","status":"interrupted","unmetered":true,"cost_usd":null}]}}`,
+			`{"type":"result","session":"sess-1","result":{"schema":"axlr.execution-result/v1","status":"interrupted","session_id":"sess-1","error":"context canceled","tool_calls":[{"call_id":"c0","tool":"local_read","status":"completed"},{"call_id":"c1","tool":"local_read","status":"completed"}],"usage":{"requests":3,"cost_usd":0.0037}}}`)
+		os.Exit(1)
+	case "result-then-hang":
+		// A result without an itemized receipt, then the process hangs.
+		say(`{"type":"result","session":"sess-1","result":{"schema":"axlr.execution-result/v1","status":"completed","session_id":"sess-1","usage":{"requests":2,"prompt_tokens":800,"cost_usd":0.0021}}}`)
 		time.Sleep(30 * time.Second)
 		os.Exit(0)
 	case "hang-ignoring-term":

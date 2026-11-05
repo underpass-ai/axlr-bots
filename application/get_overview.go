@@ -66,6 +66,9 @@ func (uc GetOverview) Execute(ctx context.Context, since time.Time) (Overview, e
 		}
 		overview.ExecutionsSince++
 		overview.CostUSDSince += execution.Usage().CostUSD
+		if execution.Usage().CostUnknown {
+			overview.CostUnknownSince++
+		}
 	}
 	return overview, nil
 }

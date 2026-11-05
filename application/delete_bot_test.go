@@ -168,3 +168,21 @@ func TestResolveIncidentClosesTheIncidentOfAGoneBot(t *testing.T) {
 		t.Errorf("event = %+v", event)
 	}
 }
+
+// A deleted bot's history stays readable through its events, bot.deleted
+// last (it answered not found once the record was gone); an id that was
+// never a bot is still not found.
+func TestListEventsOfADeletedBotKeepsItsHistory(t *testing.T) {
+	h, _, _ := deletable(t)
+	ctx := context.Background()
+	if _, err := NewDeleteBot(h.deps).Execute(ctx, "worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	events, err := NewListEvents(h.deps).Execute(ctx, "worker-1", 0)
+	if err != nil || len(events) == 0 || events[len(events)-1].Type != domain.EventBotDeleted {
+		t.Fatalf("events = %v %v", events, err)
+	}
+	if _, err := NewListEvents(h.deps).Execute(ctx, "never-there", 0); !domain.IsNotFound(err) {
+		t.Errorf("an id with no bot and no events: %v", err)
+	}
+}

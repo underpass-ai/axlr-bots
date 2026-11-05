@@ -255,6 +255,7 @@ type memoryNodes struct {
 	nodes    map[domain.NodeID]domain.Node
 	fail     error
 	listFail error
+	getFail  error
 }
 
 func (m *memoryNodes) Save(_ context.Context, node domain.Node) error {
@@ -269,6 +270,9 @@ func (m *memoryNodes) Save(_ context.Context, node domain.Node) error {
 }
 
 func (m *memoryNodes) Get(_ context.Context, id domain.NodeID) (domain.Node, error) {
+	if m.getFail != nil {
+		return domain.Node{}, m.getFail
+	}
 	node, ok := m.nodes[id]
 	if !ok {
 		return domain.Node{}, domain.NotFoundError{Kind: "node", ID: id.String()}

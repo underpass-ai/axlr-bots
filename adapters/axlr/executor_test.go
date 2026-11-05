@@ -208,6 +208,11 @@ func TestExecuteTimesOutAndKeepsThePartialTrace(t *testing.T) {
 	if report.Result.Answer != "The spike " || report.Result.SessionID != "sess-1" {
 		t.Errorf("partial result lost: %+v", report.Result)
 	}
+	// Killed before it wrote a receipt or a result: what it spent is not
+	// known, which is not $0.
+	if u := report.Usage; !u.CostUnknown || u.CostUSD != 0 {
+		t.Errorf("usage = %+v, want an unknown cost", u)
+	}
 	trace, _ := os.ReadFile(report.TracePath)
 	if !strings.Contains(string(trace), `"session":"sess-1"`) {
 		t.Errorf("trace = %s", trace)
@@ -379,5 +384,38 @@ func TestTracePathReportsOnlyAKeptTrace(t *testing.T) {
 	_ = os.WriteFile(want, []byte("{}\n"), 0o644)
 	if got, ok := e.TracePath("exec-1"); !ok || got != want {
 		t.Errorf("TracePath = %q %v, want %q", got, ok, want)
+	}
+}
+
+// A run stopped at its timeout reports what it spent when AXLR wrote
+// its receipt on the SIGTERM: its own requests (the earlier one is the
+// session's first run), the call it made and the receipt. Before, the
+// run counted as $0 (5 November 2026).
+func TestATimedOutRunKeepsTheCostItsReceiptTells(t *testing.T) {
+	e, _ := fake(t, "hang-then-receipt")
+	report, err := e.Execute(context.Background(), request(500*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Outcome != domain.ExecutionFailed || report.FailureReason != "timed out after 500ms" {
+		t.Errorf("outcome %s reason %q", report.Outcome, report.FailureReason)
+	}
+	if u := report.Usage; u.CostUnknown || u.Requests != 2 || u.PromptTokens != 1200 || !near(u.CostUSD, 0.0007) || u.ToolCalls != 1 {
+		t.Errorf("usage = %+v, want this run's two requests and its one call", u)
+	}
+	if len(report.Receipt) == 0 {
+		t.Error("the receipt was not kept")
+	}
+}
+
+// Without an itemized receipt, a stopped run's result usage stands.
+func TestATimedOutRunWithAResultKeepsItsUsage(t *testing.T) {
+	e, _ := fake(t, "result-then-hang")
+	report, err := e.Execute(context.Background(), request(300*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u := report.Usage; u.CostUnknown || u.Requests != 2 || !near(u.CostUSD, 0.0021) {
+		t.Errorf("usage = %+v", u)
 	}
 }

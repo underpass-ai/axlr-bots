@@ -216,7 +216,7 @@ func (l *Local) ListEvents(ctx context.Context, id string, limit int) ([]domain.
 func (l *Local) SubmitTask(ctx context.Context, request SubmitRequest) (SubmitResponse, error) {
 	l.submits.Lock()
 	defer l.submits.Unlock()
-	result, err := application.NewSubmitTask(l.deps).Execute(ctx, application.SubmitTaskCommand{
+	result, err := l.runner.SubmitTask(ctx, application.SubmitTaskCommand{
 		BotID: request.BotID, Objective: request.Objective, IdempotencyKey: request.IdempotencyKey, CorrelationID: request.CorrelationID, Priority: request.Priority,
 	})
 	if err != nil {
@@ -228,7 +228,7 @@ func (l *Local) SubmitTask(ctx context.Context, request SubmitRequest) (SubmitRe
 func (l *Local) FireTrigger(ctx context.Context, request FireRequest) (FireResponse, error) {
 	l.submits.Lock()
 	defer l.submits.Unlock()
-	result, err := application.NewFireTrigger(l.deps).Execute(ctx, application.FireTriggerCommand{
+	result, err := l.runner.FireTrigger(ctx, application.FireTriggerCommand{
 		BotID: request.BotID, TriggerName: request.Trigger, DeliveryID: request.DeliveryID, Body: request.Body,
 	})
 	if err != nil {
@@ -247,23 +247,24 @@ func (l *Local) FireTrigger(ctx context.Context, request FireRequest) (FireRespo
 }
 
 // SendTaskMessage records the operator's message for the task's running
-// execution.
+// execution, under the runner's state lock.
 func (l *Local) SendTaskMessage(ctx context.Context, id string, request MessageRequest) (application.SentTaskMessage, error) {
 	taskID, err := domain.NewTaskID(id)
 	if err != nil {
 		return application.SentTaskMessage{}, err
 	}
-	return application.NewSendTaskMessage(l.deps).Execute(ctx, taskID, request.Text)
+	return l.runner.SendTaskMessage(ctx, taskID, request.Text)
 }
 
-// CancelTask ends the task and, when the control plane itself is
-// running it, interrupts the run.
+// CancelTask ends the task under the runner's state lock, so it never
+// ends one a node's report is settling, and, when the control plane
+// itself is running it, interrupts the run.
 func (l *Local) CancelTask(ctx context.Context, id string) (CancelResponse, error) {
 	taskID, err := domain.NewTaskID(id)
 	if err != nil {
 		return CancelResponse{}, err
 	}
-	result, err := application.NewCancelTask(l.deps).Execute(ctx, taskID)
+	result, err := l.runner.CancelTask(ctx, taskID)
 	if err != nil {
 		return CancelResponse{}, err
 	}
@@ -359,13 +360,13 @@ func (l *Local) GetOverview(ctx context.Context, since time.Time) (application.O
 	return application.NewGetOverview(l.deps).Execute(ctx, since)
 }
 
-// OpenIncident holds the submissions lock: the lookup by group key and
-// the save are a read then a write, and two deliveries of one alert
-// must make one incident.
+// OpenIncident holds the submissions lock, then the runner's: the
+// lookup by group key and the save are a read then a write, and two
+// deliveries of one alert must make one incident.
 func (l *Local) OpenIncident(ctx context.Context, command application.OpenIncidentCommand) (OpenIncidentResponse, error) {
 	l.submits.Lock()
 	defer l.submits.Unlock()
-	result, err := application.NewOpenIncident(l.deps).Execute(ctx, command)
+	result, err := l.runner.OpenIncident(ctx, command)
 	if err != nil {
 		return OpenIncidentResponse{}, err
 	}
@@ -406,7 +407,7 @@ func (l *Local) ResolveIncident(ctx context.Context, id string, request ResolveR
 	if err != nil {
 		return domain.IncidentSnapshot{}, err
 	}
-	incident, err := application.NewResolveIncident(l.deps).Execute(ctx, incidentID, request.Reason)
+	incident, err := l.runner.ResolveIncident(ctx, incidentID, request.Reason)
 	if err != nil {
 		return domain.IncidentSnapshot{}, err
 	}

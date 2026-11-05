@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -140,8 +141,14 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 	if err := execution.Decide(decision); err != nil {
 		return ApproveTaskResult{}, err
 	}
+	waits := map[string]any{}
 	if previous.IsAssigned() {
 		if err := execution.AssignTo(previous.NodeID()); err != nil {
+			return ApproveTaskResult{}, err
+		}
+		// Read before anything is saved: a node store that fails then
+		// leaves the task waiting for its decision.
+		if err := uc.waitingFor(ctx, previous.NodeID(), task.ID(), waits); err != nil {
 			return ApproveTaskResult{}, err
 		}
 	}
@@ -155,6 +162,9 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 	if previous.IsAssigned() {
 		payload["nodeId"] = previous.NodeID().String()
 	}
+	for key, value := range waits {
+		payload[key] = value
+	}
 	for key, value := range extra {
 		payload[key] = value
 	}
@@ -163,7 +173,11 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 	}
 	if previous.IsAssigned() {
 		// The node takes it on its next poll (NextAssignment) and reports.
-		if err := uc.rec.audit(ctx, "task.decide", task.ID().String(), domain.AuditOK, map[string]string{"execution": executionID.String(), "queuedFor": previous.NodeID().String(), "decision": decision}); err != nil {
+		details := map[string]string{"execution": executionID.String(), "queuedFor": previous.NodeID().String(), "decision": decision}
+		if waiting, ok := payload["waiting"].(string); ok {
+			details["waiting"] = waiting
+		}
+		if err := uc.rec.audit(ctx, "task.decide", task.ID().String(), domain.AuditOK, details); err != nil {
 			return ApproveTaskResult{}, err
 		}
 		return ApproveTaskResult{Task: task, Execution: execution}, nil
@@ -186,6 +200,45 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 		return ApproveTaskResult{}, err
 	}
 	return ApproveTaskResult{Task: task, Execution: execution}, nil
+}
+
+// waitingFor says, in the decided event, what the queued decision waits
+// for when its node cannot take it now: the node carries one execution
+// at a time and polls only when it is free, so a decision queued for a
+// node busy with a long run waits for that run's end, and one queued
+// for an Offline node waits for it to come back (reconcile fails it once
+// the node is unseen past the grace). Before, the task showed Running
+// with no hint (QA, 5 November 2026). busyWith lists the tasks the node
+// runs; waiting says it in words. Nothing is added for a free node.
+func (uc ApproveTask) waitingFor(ctx context.Context, nodeID domain.NodeID, own domain.TaskID, payload map[string]any) error {
+	node, err := uc.deps.Nodes.Get(ctx, nodeID)
+	if domain.IsNotFound(err) {
+		payload["waiting"] = "waiting for node " + nodeID.String() + ", which is gone"
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !node.IsOnline() {
+		payload["nodeStatus"] = node.Status().String()
+		payload["waiting"] = "waiting for node " + nodeID.String() + ", which is " + node.Status().String()
+		return nil
+	}
+	running, err := uc.deps.Executions.ListRunning(ctx)
+	if err != nil {
+		return err
+	}
+	busy := []string{}
+	for _, execution := range running {
+		if execution.NodeID() == nodeID && execution.TaskID() != own && !execution.LeaseUntil().IsZero() {
+			busy = append(busy, execution.TaskID().String())
+		}
+	}
+	if len(busy) > 0 {
+		payload["busyWith"] = busy
+		payload["waiting"] = "waiting for node " + nodeID.String() + ", busy with task " + strings.Join(busy, ", ")
+	}
+	return nil
 }
 
 // deny audits a refused decision and returns its cause.

@@ -428,3 +428,18 @@ func TestIncidentIsDiagnosedByAnAnswerItMustCut(t *testing.T) {
 		}
 	}
 }
+
+// An incident opened by hand with no fingerprints renders the default
+// objective: the snapshot leaves the empty list out, and the template's
+// {{.fingerprints}} failed with "map has no entry for key".
+func TestOpenIncidentWithoutFingerprintsRendersTheDefaultObjective(t *testing.T) {
+	h := newHarness()
+	bot := triageBot(t, h, "triage", "")
+	opened, err := NewOpenIncident(h.deps).Execute(context.Background(), alert(bot))
+	if err != nil || opened.Task == nil {
+		t.Fatalf("open = %+v %v", opened, err)
+	}
+	if objective := opened.Task.Objective().String(); !strings.Contains(objective, "Alerts: [].") || !strings.Contains(objective, "KubePodCrashLooping in shop") {
+		t.Errorf("objective = %q", objective)
+	}
+}

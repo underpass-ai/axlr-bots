@@ -124,15 +124,35 @@ func (p *turnParser) call(event eventLine, status string) {
 }
 
 // interrupted reports a run the control plane stopped (timeout,
-// cancellation) with whatever it had seen.
+// cancellation) with whatever it had seen, and the best number of what
+// it consumed (spent).
 func (p *turnParser) interrupted(reason string) application.ExecutionReport {
 	return application.ExecutionReport{
 		Outcome:       domain.ExecutionFailed,
 		Result:        p.partial(),
-		Usage:         domain.Usage{ToolCalls: len(p.calls)},
+		Usage:         p.spent(),
 		FailureReason: reason,
 		Receipt:       p.receipt,
 	}
+}
+
+// spent is what a run stopped before its end consumed: AXLR writes its
+// receipt and its result after a SIGTERM, so the receipt's requests
+// since the launch are the run's own; without an itemized receipt, the
+// result's usage; with neither (killed before it wrote them), the cost
+// is unknown, which is not $0. Before, a run killed at its timeout
+// counted as $0 whatever it had spent (5 November 2026).
+func (p *turnParser) spent() domain.Usage {
+	calls := len(p.calls)
+	switch {
+	case p.own != nil:
+		own := *p.own
+		own.ToolCalls = calls
+		return own
+	case p.result != nil:
+		return p.result.Usage.usage(calls)
+	}
+	return domain.UnknownUsage(calls)
 }
 
 // report turns the run into a report once the process has exited.
@@ -162,20 +182,14 @@ func (p *turnParser) fromResult(r *resultObject) application.ExecutionReport {
 			Description: a.Description, Source: a.Source, SessionID: a.SessionID, CallID: a.CallID,
 		})
 	}
-	usage := domain.Usage{
-		Requests:         r.Usage.Requests,
-		PromptTokens:     r.Usage.PromptTokens,
-		CachedTokens:     r.Usage.CachedTokens,
-		CompletionTokens: r.Usage.CompletionTokens,
-		ReasoningTokens:  r.Usage.ReasoningTokens,
-		ToolCalls:        len(r.ToolCalls),
-		CostUSD:          r.Usage.CostUSD,
-	}
+	usage := r.Usage.usage(len(r.ToolCalls))
 	if p.own != nil {
-		// The run's own requests, not the session's: a decision continues
-		// a session whose earlier requests its first run reported.
+		// The run's own requests and calls, not the session's: a
+		// decision continues a session whose earlier requests and calls
+		// its first run reported. The result lists every call of the
+		// session; the run's tool lines are its own.
 		own := *p.own
-		own.ToolCalls = usage.ToolCalls
+		own.ToolCalls = len(p.calls)
 		usage = own
 	}
 	report := application.ExecutionReport{Result: result, Usage: usage}

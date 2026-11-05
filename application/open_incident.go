@@ -171,6 +171,12 @@ func (uc OpenIncident) start(ctx context.Context, o opening, incident domain.Inc
 	snapshot, _ := json.Marshal(incident.Snapshot())
 	fields := map[string]any{}
 	_ = json.Unmarshal(snapshot, &fields)
+	if _, ok := fields["fingerprints"]; !ok {
+		// The snapshot leaves out an empty list, and the default
+		// template names it: an incident opened by hand with no alert
+		// fingerprints still gets its triage task.
+		fields["fingerprints"] = []string{}
+	}
 	for key, value := range o.fields {
 		fields[key] = value
 	}
