@@ -218,7 +218,13 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
         runs = runs.push(execution_card(app, execution, tokens));
     }
     if detail.executions.is_empty() {
-        runs = runs.push(empty(Icon::Hourglass, "Not run yet: waiting for a node", tokens));
+        // A task that ended before it started never waits for a node.
+        let never = if detail.task.status.is_terminal() {
+            "Never ran: it ended before a node took it"
+        } else {
+            "Not run yet: waiting for a node"
+        };
+        runs = runs.push(empty(Icon::Hourglass, never, tokens));
     }
     page = page.push(
         row![

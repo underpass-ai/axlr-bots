@@ -263,7 +263,11 @@ fn submit_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
                 ),
                 match passages::submit_key(form) {
                     Some(words) => reader(&app.readers, ReaderKey::SubmitKey, words, Voice::Muted, tokens),
-                    None => muted("urgent: it goes first and stops what the bot is doing", tokens).into(),
+                    None => muted(
+                        "urgent: it goes first, stops what the bot is doing and drops its queue",
+                        tokens
+                    )
+                    .into(),
                 },
             ]
             .spacing(14)

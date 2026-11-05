@@ -34,7 +34,10 @@ pub fn form<'a>(app: &'a App, bot: &Bot, tokens: Tokens) -> El<'a> {
             ready.then_some(Message::OrderSend),
             tokens
         ),
-        muted("It goes first: the bot stops what it is doing and does this.", tokens),
+        muted(
+            "It goes first: the bot stops what it is doing, drops its queue and does this.",
+            tokens
+        ),
         row![
             action(
                 Kind::Primary,

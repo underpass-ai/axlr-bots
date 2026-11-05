@@ -722,7 +722,7 @@ fn an_urgent_order_stops_the_bot_and_gives_it_the_typed_order() {
     drive(&mut app, effects);
     let banner = app.banner.clone().unwrap();
     assert_eq!(banner.title, "bot got an urgent order");
-    assert_eq!(banner.detail, "It stops what it was doing and does it");
+    assert_eq!(banner.detail, "It stops what it was doing, drops its queue and does it");
     let Screen::Task(id) = app.screen.clone() else {
         panic!("{:?}", app.screen)
     };

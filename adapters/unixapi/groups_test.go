@@ -182,12 +182,16 @@ func TestStopAndUrgentOverTheSocket(t *testing.T) {
 	if err != nil || urgent.Task.Priority != "urgent" {
 		t.Fatalf("urgent = %+v %v", urgent.Task, err)
 	}
+	// The urgent task drops the queued one: only the urgent one is left to stop.
+	if task, _ := client.GetTask(ctx, first.Task.ID); task.Status != "Cancelled" || !strings.HasPrefix(task.FailureReason, "dropped from the queue by the urgent task "+urgent.Task.ID) {
+		t.Errorf("first = %+v", task)
+	}
 	stopped, err := client.StopBot(ctx, "worker-1")
-	if err != nil || stopped.Bot.Status != "Paused" || len(stopped.Cancelled) != 2 || len(stopped.NotCancelled) != 0 {
+	if err != nil || stopped.Bot.Status != "Paused" || len(stopped.Cancelled) != 1 || stopped.Cancelled[0] != urgent.Task.ID || len(stopped.NotCancelled) != 0 {
 		t.Fatalf("stop = %+v %v", stopped, err)
 	}
-	if task, _ := client.GetTask(ctx, first.Task.ID); task.Status != "Cancelled" || !strings.HasPrefix(task.FailureReason, "stopped by ") {
-		t.Errorf("first = %+v", task)
+	if task, _ := client.GetTask(ctx, urgent.Task.ID); task.Status != "Cancelled" || !strings.HasPrefix(task.FailureReason, "stopped by ") {
+		t.Errorf("urgent = %+v", task)
 	}
 	if _, err := client.StopBot(ctx, "ghost"); !domain.IsNotFound(err) {
 		t.Errorf("ghost: %v", err)

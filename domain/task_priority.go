@@ -9,7 +9,8 @@ type TaskPriority string
 const (
 	// PriorityNormal waits its turn, oldest first.
 	PriorityNormal TaskPriority = "normal"
-	// PriorityUrgent goes first and preempts the bot's work in progress.
+	// PriorityUrgent goes first, preempts the bot's work in progress and
+	// drops its queue.
 	PriorityUrgent TaskPriority = "urgent"
 )
 

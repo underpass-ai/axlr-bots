@@ -73,8 +73,8 @@ type submission struct {
 	// accepts refuses the submission for a reason of its own, after the
 	// idempotency lookup and the bot's status; nil accepts.
 	accepts func() error
-	// priority is urgent for a task that goes first and preempts the
-	// bot's work in progress; why says who made it urgent.
+	// priority is urgent for a task that goes first, preempts the bot's
+	// work in progress and drops its queue; why says who made it urgent.
 	priority domain.TaskPriority
 	why      string
 }
