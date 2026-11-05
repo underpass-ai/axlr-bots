@@ -2,8 +2,9 @@
 //! row and one for all, a cell that keeps to its width, and the bar of
 //! acts on the picked rows.
 
+use iced::alignment::Vertical;
 use iced::widget::text::Wrapping;
-use iced::widget::{Space, button, container, responsive, row, text, tooltip};
+use iced::widget::{Space, button, container, responsive, row, stack, table, text, tooltip};
 use iced::{Alignment, Length, Padding};
 
 use super::widgets::{BODY, El, SMALL, action, bold, icon, muted, semibold};
@@ -42,6 +43,33 @@ pub fn header<'a>(label: &'a str, badge: Option<SortBadge>, press: Message, toke
         tooltip::Position::Bottom,
     )
     .into()
+}
+
+/// A list's table in the house style: rows parted by a hairline only,
+/// no rule between columns, every cell on its row's middle line, so a
+/// pill, a name and a button sit level.
+pub fn sheet<'a, T: Clone>(columns: Vec<table::Column<'a, 'a, T, Message>>, rows: impl IntoIterator<Item = T>) -> El<'a> {
+    table::table(columns.into_iter().map(|c| c.align_y(Vertical::Center)), rows)
+        .padding_x(8)
+        .padding_y(ROW_PAD)
+        .separator_x(0)
+        .width(Length::Fill)
+        .into()
+}
+
+/// The room above and under a table row's words.
+pub const ROW_PAD: f32 = 10.0;
+
+/// The width of a row's icon button, and of the room kept for one that
+/// the row does not have, so the acts after it line up row under row.
+pub const ACT: f32 = 32.0;
+
+/// An act in its fixed slot of a row, or the empty slot.
+pub fn act_slot<'a>(act: Option<El<'a>>) -> El<'a> {
+    match act {
+        Some(act) => container(act).width(ACT).center_x(ACT).into(),
+        None => Space::new().width(ACT).into(),
+    }
 }
 
 /// A row's box, or the header's box for every row shown.
@@ -131,14 +159,8 @@ pub fn shorten(words: &str, max: usize) -> String {
 /// An icon alone in a button of a kind, with a tip: a row's act where
 /// a word would not fit.
 pub fn icon_act<'a>(kind: Kind, glyph: Icon, tip: &'a str, on_press: Option<Message>, tokens: Tokens) -> El<'a> {
-    let ink = match kind {
-        Kind::Danger => styles::on(tokens.bad),
-        Kind::Good => styles::on(tokens.good),
-        Kind::Primary => tokens.on_accent,
-        _ => tokens.text,
-    };
     tooltip(
-        button(icon(glyph, 16.0, ink))
+        button(icon(glyph, 16.0, super::widgets::ink(kind, tokens)))
             .padding(7)
             .style(styles::button_style(tokens, kind))
             .on_press_maybe(on_press),
@@ -200,11 +222,41 @@ pub fn bar<'a>(app: &'a App, list: List, tokens: Tokens) -> Option<El<'a>> {
     }
     Some(
         container(line.wrap().vertical_spacing(8))
-            .padding(Padding::from([8, 12]))
-            .width(Length::Fill)
-            .style(styles::chip(tokens))
+            .padding(Padding::from([10, 14]))
+            .max_width(980)
+            .style(styles::floating(tokens))
             .into(),
     )
+}
+
+/// The room kept under a list's last row for the bar of acts, which
+/// floats there once a row is picked: the rows never move as it comes
+/// and goes, so the next click lands where it was aimed.
+pub const BAR_ROOM: f32 = 88.0;
+
+/// A list's page with the bar of acts on its picked rows floating at
+/// its foot, over the rows, not among them.
+pub fn with_bar<'a>(app: &'a App, list: List, page: El<'a>, tokens: Tokens) -> El<'a> {
+    match bar(app, list, tokens) {
+        Some(bar) => stack![
+            page,
+            container(bar)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(Alignment::Center)
+                .align_y(Vertical::Bottom)
+                .padding(Padding {
+                    right: 24.0,
+                    bottom: 18.0,
+                    left: 12.0,
+                    top: 0.0,
+                })
+        ]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into(),
+        None => page,
+    }
 }
 
 #[cfg(test)]

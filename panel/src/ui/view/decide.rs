@@ -3,7 +3,7 @@
 
 use iced::widget::row;
 
-use super::grid::icon_act;
+use super::grid::{act_slot, icon_act};
 use super::widgets::{El, action};
 use crate::domain::TaskId;
 use crate::ui::styles::Kind;
@@ -33,24 +33,25 @@ pub fn buttons<'a>(app: &'a App, id: &TaskId, tokens: Tokens) -> El<'a> {
     .into()
 }
 
-/// The same two answers as icons with tips, for a table row.
+/// The same two answers as icons with tips, for a table row, each in
+/// its fixed slot.
 pub fn icons<'a>(app: &'a App, id: &TaskId, tokens: Tokens) -> El<'a> {
     let free = app.deciding.is_none();
     row![
-        icon_act(
+        act_slot(Some(icon_act(
             Kind::Good,
             Icon::Check,
             "Approve",
             free.then(|| Message::Approve(id.clone())),
             tokens
-        ),
-        icon_act(
+        ))),
+        act_slot(Some(icon_act(
             Kind::Danger,
             Icon::Cross,
             "Deny",
             free.then(|| Message::AskDeny(id.clone())),
             tokens
-        ),
+        ))),
     ]
     .spacing(4)
     .into()

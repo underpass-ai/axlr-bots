@@ -89,35 +89,18 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         })
         .width(Length::FillPortion(4)),
         table::column(text(""), move |team: Team| {
-            action(
-                Kind::Ghost,
-                Icon::Play,
-                "Open",
-                Some(Message::Go(Screen::Team(team.name.clone()))),
-                tokens,
-            )
+            super::widgets::open("Open", Message::Go(Screen::Team(team.name.clone())), tokens)
         }),
     ];
-    let mut body = column![].spacing(12);
-    if let Some(bar) = grid::bar(app, List::Teams, tokens) {
-        body = body.push(bar);
-    }
-    page = page.push(card(
-        body.push(
-            table::table(columns, shown)
-                .padding_x(10)
-                .padding_y(10)
-                .width(Length::Fill),
-        ),
-        tokens,
-    ));
-    scrollable(page.padding(iced::Padding {
+    page = page.push(card(grid::sheet(columns, shown), tokens));
+    let page = scrollable(page.padding(iced::Padding {
         right: 12.0,
+        bottom: grid::BAR_ROOM,
         ..Default::default()
     }))
     .id(super::widgets::PAGE)
-    .height(Length::Fill)
-    .into()
+    .height(Length::Fill);
+    grid::with_bar(app, List::Teams, page.into(), tokens)
 }
 
 /// One team: its members, what each is for, and its timeline.
@@ -153,9 +136,7 @@ pub fn detail<'a>(app: &'a App, name: &'a str, tokens: Tokens) -> El<'a> {
     for bot in &team.members {
         let first = row![
             pill(Tone::of_bot(bot.status), bot.status.name(), tokens),
-            mouse_area(bold(bot.id.to_string()).color(tokens.accent))
-                .on_press(Message::Go(Screen::Bot(bot.id.clone())))
-                .interaction(mouse::Interaction::Pointer),
+            super::widgets::link(bot.id.to_string(), Message::Go(Screen::Bot(bot.id.clone())), tokens),
             muted(bot.placement.describe(), tokens),
         ]
         .spacing(10)

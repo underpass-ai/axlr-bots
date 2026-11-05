@@ -295,14 +295,8 @@ pub fn action<'a>(
     on_press: Option<Message>,
     tokens: Tokens,
 ) -> El<'a> {
-    let color = match kind {
-        Kind::Primary | Kind::Chip(true) => tokens.on_accent,
-        Kind::Danger => styles::on(tokens.bad),
-        Kind::Good => styles::on(tokens.good),
-        _ => tokens.text,
-    };
     button(
-        row![icon(glyph, 16.0, color), semibold(label).size(BODY)]
+        row![icon(glyph, 16.0, ink(kind, tokens)), semibold(label).size(BODY)]
             .spacing(8)
             .align_y(Alignment::Center),
     )
@@ -310,6 +304,16 @@ pub fn action<'a>(
     .style(styles::button_style(tokens, kind))
     .on_press_maybe(on_press)
     .into()
+}
+
+/// The colour of a button's icon: its words' colour.
+pub fn ink(kind: Kind, tokens: Tokens) -> Color {
+    match kind {
+        Kind::Primary | Kind::Chip(true) => tokens.on_accent,
+        Kind::Danger => styles::pill_ink(tokens, Tone::Bad),
+        Kind::Good => styles::pill_ink(tokens, Tone::Good),
+        _ => tokens.text,
+    }
 }
 
 /// A quiet small button that copies `value`, named for what it copies.
@@ -434,6 +438,65 @@ fn selection_only(press: text_editor::KeyPress) -> Option<Binding<Message>> {
         | Binding::SelectAll) => Some(binding),
         _ => None,
     }
+}
+
+/// The width kept for a status pill in a list that is not a table, so
+/// the words after it start at one edge row under row.
+pub const PILL_SLOT: f32 = 106.0;
+
+/// Something in a slot of a fixed width, at its start.
+pub fn slot<'a>(content: impl Into<El<'a>>, width: f32) -> El<'a> {
+    container(content).width(width).clip(true).into()
+}
+
+/// Go to a row's own page: the word, then a thin chevron, quiet until
+/// the pointer is on it.
+pub fn open<'a>(label: &'a str, on_press: Message, tokens: Tokens) -> El<'a> {
+    button(
+        row![semibold(label).size(BODY), icon(Icon::Next, 14.0, tokens.muted)]
+            .spacing(6)
+            .align_y(Alignment::Center),
+    )
+    .padding(Padding::from([8, 10]))
+    .style(styles::button_style(tokens, Kind::Ghost))
+    .on_press(on_press)
+    .into()
+}
+
+/// A name that opens its page: ink, the accent under the pointer, so
+/// copper stays for the one act of a place.
+pub fn link<'a>(words: impl text::IntoFragment<'a>, on_press: Message, tokens: Tokens) -> El<'a> {
+    button(bold(words))
+        .padding(0)
+        .style(styles::button_style(tokens, Kind::Link))
+        .on_press(on_press)
+        .into()
+}
+
+/// A few choices joined on one track, the picked one lifted off it as
+/// a surface: one control, not a row of separate buttons.
+pub fn segmented<'a, T: Copy + PartialEq + 'a>(
+    choices: impl IntoIterator<Item = T>,
+    picked: T,
+    label: impl Fn(T) -> &'a str,
+    on_pick: impl Fn(T) -> Message,
+    tokens: Tokens,
+) -> El<'a> {
+    let mut track = row![].spacing(2).align_y(Alignment::Center);
+    for choice in choices {
+        let on = choice == picked;
+        let words = if on { semibold(label(choice)) } else { text(label(choice)) };
+        track = track.push(
+            button(words.size(SMALL))
+                .padding(Padding::from([4, 10]))
+                .style(styles::button_style(tokens, Kind::Segment(on)))
+                .on_press_maybe((!on).then(|| on_pick(choice))),
+        );
+    }
+    container(track)
+        .padding(2)
+        .style(styles::segments(tokens))
+        .into()
 }
 
 #[cfg(test)]

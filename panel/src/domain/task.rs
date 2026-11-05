@@ -74,6 +74,21 @@ impl Task {
             .collect()
     }
 
+    /// What it was asked, in its first line: for a triage task, without
+    /// the incident's own name its objective starts with (`Incident
+    /// inc-… (sev1): `), which the incident's page already shows.
+    pub fn ask(&self) -> &str {
+        let first = self.objective.lines().next().unwrap_or_default();
+        if self.incident_id.is_empty() {
+            return first;
+        }
+        first
+            .strip_prefix("Incident ")
+            .and_then(|rest| rest.strip_prefix(self.incident_id.as_str()))
+            .and_then(|rest| rest.split_once("): "))
+            .map_or(first, |(_, ask)| ask)
+    }
+
     /// The objective's first line, cut to `max` characters with an ellipsis.
     pub fn headline(&self, max: usize) -> String {
         let first = self.objective.lines().next().unwrap_or_default();
@@ -127,6 +142,20 @@ mod tests {
         assert_eq!(task.trigger.describe(), "manual");
         assert!(task.input.is_none());
         assert!(task.failure_reason.is_empty());
+    }
+
+    #[test]
+    fn a_triage_task_asks_without_its_incident_name() {
+        let mut task = sample();
+        assert_eq!(
+            task.ask(),
+            "List the files in your workspace and say how many there are."
+        );
+        task.incident_id = "inc-12ff".into();
+        task.objective = "Incident inc-12ff (sev3): Slow DNS answers. Find the cause.\nMore".into();
+        assert_eq!(task.ask(), "Slow DNS answers. Find the cause.");
+        task.objective = "Look at inc-12ff".into();
+        assert_eq!(task.ask(), "Look at inc-12ff");
     }
 
     #[test]

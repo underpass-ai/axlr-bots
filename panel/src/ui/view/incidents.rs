@@ -2,12 +2,12 @@
 //! diagnosis and tasks, and closing one by hand.
 
 use iced::widget::text::Wrapping;
-use iced::widget::{Space, column, container, mouse_area, responsive, row, scrollable, table, text, text_input};
-use iced::{Alignment, Length, mouse};
+use iced::widget::{Space, column, container, responsive, row, scrollable, table, text, text_input};
+use iced::{Alignment, Length};
 
 use super::grid;
 use super::widgets::{
-    BODY, El, Voice, action, bold, card, chip, empty, fact, muted, pill, pill_with, reader, section, title,
+    BODY, El, PILL_SLOT, Voice, action, card, empty, fact, link, muted, pill, pill_with, reader, section, slot, title,
 };
 use crate::domain::{Incident, TaskId};
 use crate::ui::format;
@@ -26,23 +26,19 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let body: El<'a> = if incidents.is_empty() {
         empty(Icon::Check, "No incident: nothing is firing", tokens)
     } else {
-        let mut list = column![].spacing(12);
-        if let Some(bar) = grid::bar(app, List::Incidents, tokens) {
-            list = list.push(bar);
-        }
-        list.push(
-            responsive(move |space| table_of(app, incidents, space.width < NARROW, tokens)).height(Length::Shrink),
-        )
-        .into()
+        responsive(move |space| table_of(app, incidents, space.width < NARROW, tokens))
+            .height(Length::Shrink)
+            .into()
     };
     page = page.push(card(body, tokens));
-    scrollable(page.padding(iced::Padding {
+    let page = scrollable(page.padding(iced::Padding {
         right: 12.0,
+        bottom: grid::BAR_ROOM,
         ..Default::default()
     }))
     .id(super::widgets::PAGE)
-    .height(Length::Fill)
-    .into()
+    .height(Length::Fill);
+    grid::with_bar(app, List::Incidents, page.into(), tokens)
 }
 
 /// Under this width the severity and the status share one column and
@@ -108,19 +104,9 @@ fn table_of<'a>(app: &'a App, incidents: &'a [Incident], narrow: bool, tokens: T
         text(format::age(i.last_seen_at, now)).wrapping(Wrapping::None)
     }));
     columns.push(table::column(text(""), move |i: &'a Incident| {
-        action(
-            Kind::Ghost,
-            Icon::Play,
-            "Open",
-            Some(Message::Go(Screen::Incident(i.id.clone()))),
-            tokens,
-        )
+        super::widgets::open("Open", Message::Go(Screen::Incident(i.id.clone())), tokens)
     }));
-    table::table(columns, shown)
-        .padding_x(10)
-        .padding_y(8)
-        .width(Length::Fill)
-        .into()
+    grid::sheet(columns, shown)
 }
 
 /// One incident: where it stands, its alerts, what the triage found, the
@@ -222,9 +208,11 @@ fn facts<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> El<'a> {
     let mut left = column![
         fact(
             "Bot",
-            mouse_area(bold(incident.bot_id.to_string()).color(tokens.accent))
-                .on_press(Message::Go(Screen::Bot(incident.bot_id.clone())))
-                .interaction(mouse::Interaction::Pointer),
+            link(
+                incident.bot_id.to_string(),
+                Message::Go(Screen::Bot(incident.bot_id.clone())),
+                tokens
+            ),
             tokens
         ),
         fact("Tenant", text(incident.tenant_id.clone()), tokens),
@@ -341,21 +329,32 @@ fn tasks<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> El<'a> {
     list.into()
 }
 
+/// A triage task by what it was asked, its bot and age; by its id only
+/// when the fleet's read no longer holds it.
 fn task_line<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     let task = app.fleet.as_ref().and_then(|f| f.tasks.iter().find(|t| &t.id == id));
-    let mut line = row![].spacing(10).align_y(Alignment::Center);
-    if let Some(task) = task {
-        line = line.push(pill(Tone::of_task(task.status), task.status.label(), tokens));
+    let go = Message::Go(Screen::Task(id.clone()));
+    match task {
+        Some(task) => row![
+            slot(pill(Tone::of_task(task.status), task.status.label(), tokens), PILL_SLOT),
+            container(link(grid::shorten(task.ask(), 60), go, tokens)).width(Length::Fill),
+            muted(
+                format!("{} · {}", task.bot_id, format::age(task.created_at, app.now)),
+                tokens
+            )
+            .wrapping(Wrapping::None),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center)
+        .into(),
+        None => row![
+            link(id.to_string(), go, tokens),
+            muted("older than the tasks listed", tokens)
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center)
+        .into(),
     }
-    line = line.push(
-        mouse_area(bold(id.to_string()).color(tokens.accent))
-            .on_press(Message::Go(Screen::Task(id.clone())))
-            .interaction(mouse::Interaction::Pointer),
-    );
-    if let Some(task) = task {
-        line = line.push(chip(format::age(task.created_at, app.now), tokens));
-    }
-    line.into()
 }
 
 /// The reason box and the button that closes the incident. The buttons

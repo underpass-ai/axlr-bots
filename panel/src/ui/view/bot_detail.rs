@@ -284,11 +284,9 @@ fn now<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
     .spacing(12)
     .align_y(Alignment::Center);
     if let Some(task) = state.task() {
-        body = body.push(action(
-            Kind::Ghost,
-            Icon::Play,
+        body = body.push(super::widgets::open(
             "Open task",
-            Some(Message::Go(Screen::Task(task.id.clone()))),
+            Message::Go(Screen::Task(task.id.clone())),
             tokens,
         ));
     }
@@ -445,7 +443,10 @@ fn listens<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
                 row![
                     column![
                         bold("Mode").size(SMALL),
-                        pick_list(ModeChoice::ALL, Some(form.mode), Message::ListenMode).padding(8),
+                        pick_list(ModeChoice::ALL, Some(form.mode), Message::ListenMode)
+                            .padding(8)
+                            .style(styles::picker(tokens))
+                            .menu_style(styles::menu(tokens)),
                         muted(form.default_label(), tokens),
                     ]
                     .spacing(6),
@@ -684,7 +685,10 @@ fn tasks<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
         list = list.push(
             mouse_area(
                 row![
-                    pill(Tone::of_task(task.status), task.status.label(), tokens),
+                    super::widgets::slot(
+                        pill(Tone::of_task(task.status), task.status.label(), tokens),
+                        super::widgets::PILL_SLOT
+                    ),
                     text(task.headline(44)).size(SMALL).width(Length::Fill),
                     muted(format::age(task.created_at, app.now), tokens),
                 ]

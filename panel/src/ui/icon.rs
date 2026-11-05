@@ -41,10 +41,12 @@ pub enum Icon {
     Trash,
     /// Open: go to the row's own page.
     Next,
+    /// A cause found: an incident diagnosed.
+    Lens,
 }
 
 impl Icon {
-    pub const ALL: [Icon; 33] = [
+    pub const ALL: [Icon; 34] = [
         Icon::Overview,
         Icon::Nodes,
         Icon::Bots,
@@ -78,6 +80,7 @@ impl Icon {
         Icon::Down,
         Icon::Trash,
         Icon::Next,
+        Icon::Lens,
     ];
 
     fn bytes(self) -> &'static [u8] {
@@ -115,6 +118,7 @@ impl Icon {
             Icon::Down => include_bytes!("../../assets/icons/down.svg"),
             Icon::Trash => include_bytes!("../../assets/icons/trash.svg"),
             Icon::Next => include_bytes!("../../assets/icons/next.svg"),
+            Icon::Lens => include_bytes!("../../assets/icons/lens.svg"),
         }
     }
 
@@ -131,11 +135,11 @@ impl Icon {
         }
     }
 
-    /// An incident's status: a diagnosed one shows the trace of what was
+    /// An incident's status: a diagnosed one shows the lens of a cause
     /// found, not a run; the others keep their tone's icon.
     pub fn of_incident(status: IncidentStatus) -> Self {
         match status {
-            IncidentStatus::Diagnosed => Self::Trace,
+            IncidentStatus::Diagnosed => Self::Lens,
             other => super::Tone::of_incident(other).icon(),
         }
     }
@@ -182,7 +186,7 @@ mod tests {
         assert_eq!(Icon::of_severity(IncidentSeverity::Sev1), Icon::Alert);
         assert_eq!(Icon::of_severity(IncidentSeverity::Sev3), Icon::Dot);
         assert_ne!(Icon::of_severity(IncidentSeverity::Sev4), Icon::Pause);
-        assert_eq!(Icon::of_incident(IncidentStatus::Diagnosed), Icon::Trace);
+        assert_eq!(Icon::of_incident(IncidentStatus::Diagnosed), Icon::Lens);
         assert_eq!(Icon::of_incident(IncidentStatus::Open), Icon::Cross);
         assert_eq!(Icon::of_incident(IncidentStatus::Resolved), Icon::Check);
     }
