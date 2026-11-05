@@ -3,9 +3,11 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 
 use super::ModeChoice;
+use super::table::{ColumnRef, List, RowRef};
 use super::{BotChoice, BotView, Connection, Keypress, NodeChoice, ReaderKey, Screen, ThemeMode};
 use crate::application::{
-    ChatSent, DeletePreview, EventFeed, Fleet, PanelError, SavedEdit, StoppedBot, SubscriptionChange, TaskDetail,
+    BulkAction, BulkOutcome, ChatSent, DeletePreview, EventFeed, Fleet, PanelError, SavedEdit, StoppedBot,
+    SubscriptionChange, TaskDetail,
 };
 use crate::domain::{
     AutonomyLevel, Bot, BotId, CancelledTask, DecidedTask, DeletedBot, EnrollmentToken, ExecutionId, Incident, NodeId,
@@ -195,4 +197,20 @@ pub enum Message {
         result: Result<Connection, PanelError>,
         saved: bool,
     },
+
+    /// The keyboard's modifiers as they change: Shift held makes a
+    /// header press add its column to the order.
+    Modifiers(iced::keyboard::Modifiers),
+    /// A list's header pressed.
+    SortBy(ColumnRef),
+    /// A row's box ticked or not.
+    Pick(RowRef, bool),
+    /// The header's box: every row shown picked, or none.
+    PickShown(List, bool),
+    /// Let go of a list's picked rows.
+    ClearPicks(List),
+    /// An act from the bar over a list, on its picked rows: weigh it,
+    /// then ask once.
+    AskBulk(List, BulkAction),
+    BulkDone(BulkOutcome),
 }

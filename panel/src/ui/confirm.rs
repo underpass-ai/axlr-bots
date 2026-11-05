@@ -1,12 +1,16 @@
+use super::table::BulkPlan;
 use crate::domain::{BotId, NodeId, TaskId};
 
-/// An act that cannot be undone, waiting for a second click.
+/// An act that cannot be undone, or one on many rows, waiting for a
+/// second click.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Confirm {
     Revoke(NodeId),
     Cancel(TaskId),
     Deny(TaskId),
     StopBot(BotId),
+    /// One act on the rows picked in a list.
+    Bulk(BulkPlan),
 }
 
 impl Confirm {
@@ -16,12 +20,13 @@ impl Confirm {
             Self::Cancel(id) => format!("Stop {id}?"),
             Self::Deny(_) => "Deny this call?".to_string(),
             Self::StopBot(id) => format!("Stop {id}?"),
+            Self::Bulk(plan) => plan.title(),
         }
     }
 
-    /// What happens, in one or two short lines.
-    pub fn lines(&self) -> [&'static str; 2] {
-        match self {
+    /// What happens, in a few short lines.
+    pub fn lines(&self) -> Vec<String> {
+        let lines: [&str; 2] = match self {
             Self::Revoke(_) => [
                 "Its certificate stops working now.",
                 "Its running tasks fail. A new token brings it back.",
@@ -32,16 +37,28 @@ impl Confirm {
                 "It is paused: it takes no new task.",
                 "Its pending, running and waiting tasks are cancelled.",
             ],
-        }
+            Self::Bulk(plan) => return plan.lines(),
+        };
+        lines.iter().map(|line| line.to_string()).collect()
     }
 
     /// The words on the button that does it.
-    pub fn act(&self) -> &'static str {
+    pub fn act(&self) -> String {
         match self {
-            Self::Revoke(_) => "Revoke",
-            Self::Cancel(_) => "Stop task",
-            Self::Deny(_) => "Deny",
-            Self::StopBot(_) => "Stop",
+            Self::Revoke(_) => "Revoke".into(),
+            Self::Cancel(_) => "Stop task".into(),
+            Self::Deny(_) => "Deny".into(),
+            Self::StopBot(_) => "Stop".into(),
+            Self::Bulk(plan) => plan.act(),
+        }
+    }
+
+    /// It ends work or cannot be undone: its button is red. A bulk
+    /// Pause, Turn on, Approve or Resolve is not.
+    pub fn destructive(&self) -> bool {
+        match self {
+            Self::Bulk(plan) => plan.action.destructive(),
+            _ => true,
         }
     }
 }
@@ -49,6 +66,8 @@ impl Confirm {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::{BulkAction, BulkTarget};
+    use crate::ui::table::List;
 
     #[test]
     fn says_what_will_happen() {
@@ -59,9 +78,32 @@ mod tests {
         assert_eq!(cancel.title(), "Stop task-1?");
         assert!(cancel.lines()[0].contains("stops"));
         let deny = Confirm::Deny(TaskId::new("task-1").unwrap());
-        assert_eq!((deny.title().as_str(), deny.act()), ("Deny this call?", "Deny"));
+        assert_eq!(
+            (deny.title().as_str(), deny.act().as_str()),
+            ("Deny this call?", "Deny")
+        );
         let stop = Confirm::StopBot(BotId::new("worker-0").unwrap());
-        assert_eq!((stop.title().as_str(), stop.act()), ("Stop worker-0?", "Stop"));
+        assert_eq!((stop.title().as_str(), stop.act().as_str()), ("Stop worker-0?", "Stop"));
         assert!(stop.lines()[1].contains("cancelled"));
+        assert!(stop.destructive());
+    }
+
+    #[test]
+    fn a_bulk_act_names_its_rows_and_looks_as_harsh_as_it_is() {
+        let plan = |action| BulkPlan {
+            action,
+            unit: List::Bots,
+            targets: vec![BulkTarget::Bot(BotId::new("worker-1").unwrap())],
+            weighed: 2,
+            teams: Vec::new(),
+        };
+        let pause = Confirm::Bulk(plan(BulkAction::Pause));
+        assert_eq!(
+            (pause.title().as_str(), pause.act().as_str()),
+            ("Pause 1 bot?", "Pause 1")
+        );
+        assert_eq!(pause.lines()[0], "worker-1.");
+        assert!(!pause.destructive());
+        assert!(Confirm::Bulk(plan(BulkAction::Stop)).destructive());
     }
 }

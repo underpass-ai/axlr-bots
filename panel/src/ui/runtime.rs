@@ -63,12 +63,21 @@ pub fn run(app: &App, effect: Effect) -> Task<Message> {
     }
 }
 
-/// The clock, and Esc and Enter when no widget took them.
+/// The clock, Esc and Enter when no widget took them, and Shift as it
+/// is held or let go, for a header press that adds its column.
 pub fn subscription(_: &App) -> Subscription<Message> {
     Subscription::batch([
         iced::time::every(REFRESH_EVERY).map(|_| Message::Tick(Utc::now())),
-        iced::keyboard::listen().filter_map(Keypress::of).map(Message::Key),
+        iced::keyboard::listen().filter_map(keyboard),
     ])
+}
+
+/// A key no widget took, or the modifiers held when they change.
+fn keyboard(event: iced::keyboard::Event) -> Option<Message> {
+    match event {
+        iced::keyboard::Event::ModifiersChanged(modifiers) => Some(Message::Modifiers(modifiers)),
+        other => Keypress::of(other).map(Message::Key),
+    }
 }
 
 pub fn theme(app: &App) -> Theme {

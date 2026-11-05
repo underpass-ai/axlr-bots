@@ -8,6 +8,7 @@ mod app_incidents;
 mod app_live;
 mod app_notices;
 mod app_orders;
+mod app_tables;
 mod app_teams;
 #[cfg(test)]
 mod app_tests;
@@ -45,6 +46,7 @@ mod services;
 mod settings_form;
 pub mod styles;
 mod submit_form;
+pub mod table;
 mod task_view_filter;
 mod team_watch;
 #[cfg(test)]

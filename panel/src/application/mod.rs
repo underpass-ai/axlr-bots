@@ -2,8 +2,13 @@
 
 mod activity;
 mod activity_entry;
+mod apply_in_bulk;
 mod bot_edit;
 mod bot_now;
+mod bulk_action;
+mod bulk_failure;
+mod bulk_outcome;
+mod bulk_target;
 mod cancel_task;
 mod chat_line;
 mod chat_sent;
@@ -66,8 +71,13 @@ mod waiting_call;
 
 pub use activity::Activity;
 pub use activity_entry::ActivityEntry;
+pub use apply_in_bulk::{AT_ONCE, ApplyInBulk};
 pub use bot_edit::BotEdit;
 pub use bot_now::BotNow;
+pub use bulk_action::BulkAction;
+pub use bulk_failure::BulkFailure;
+pub use bulk_outcome::BulkOutcome;
+pub use bulk_target::BulkTarget;
 pub use cancel_task::CancelTask;
 pub use chat_line::{CHAT_LINES, ChatLine};
 pub use chat_sent::ChatSent;

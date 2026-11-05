@@ -3,6 +3,7 @@
 
 use iced::widget::row;
 
+use super::grid::icon_act;
 use super::widgets::{El, action};
 use crate::domain::TaskId;
 use crate::ui::styles::Kind;
@@ -29,5 +30,28 @@ pub fn buttons<'a>(app: &'a App, id: &TaskId, tokens: Tokens) -> El<'a> {
         ),
     ]
     .spacing(8)
+    .into()
+}
+
+/// The same two answers as icons with tips, for a table row.
+pub fn icons<'a>(app: &'a App, id: &TaskId, tokens: Tokens) -> El<'a> {
+    let free = app.deciding.is_none();
+    row![
+        icon_act(
+            Kind::Good,
+            Icon::Check,
+            "Approve",
+            free.then(|| Message::Approve(id.clone())),
+            tokens
+        ),
+        icon_act(
+            Kind::Danger,
+            Icon::Cross,
+            "Deny",
+            free.then(|| Message::AskDeny(id.clone())),
+            tokens
+        ),
+    ]
+    .spacing(4)
     .into()
 }

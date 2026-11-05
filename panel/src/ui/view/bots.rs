@@ -1,15 +1,16 @@
 //! Bots: the list, switching them on and off, and adding one.
 
-use iced::widget::{Space, column, container, pick_list, row, scrollable, table, text};
+use iced::widget::{Space, column, container, pick_list, responsive, row, scrollable, table, text};
 use iced::{Alignment, Length};
 
-use super::levels;
 use super::widgets::{
     El, SMALL, action, bold, card, chip, empty, field, icon, icon_button, muted, pill, section_title, title,
 };
+use super::{grid, levels};
 use crate::application::BotNow;
 use crate::domain::{AutonomyLevel, Bot};
 use crate::ui::styles::Kind;
+use crate::ui::table::{BotColumn, ColumnRef, List, RowRef, SortColumn};
 use crate::ui::{App, Icon, Message, NodeChoice, Screen, Tokens, Tone};
 
 pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
@@ -42,15 +43,69 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     if app.register.open {
         page = page.push(register_form(app, tokens));
     }
+    let list: El<'a> = if fleet.bots.is_empty() {
+        empty(Icon::Bots, "No bot yet: add one", tokens)
+    } else {
+        let mut body = column![].spacing(12);
+        if let Some(bar) = grid::bar(app, List::Bots, tokens) {
+            body = body.push(bar);
+        }
+        body.push(responsive(move |space| list(app, fleet, space.width < NARROW, tokens)).height(Length::Shrink))
+            .into()
+    };
+    page = page.push(card(list, tokens));
+    scrollable(page.padding(iced::Padding {
+        right: 12.0,
+        ..Default::default()
+    }))
+    .id(super::widgets::PAGE)
+    .height(Length::Fill)
+    .into()
+}
+
+/// Under this width the table leaves out Starts by and Open is an icon,
+/// so a bot's name and what it does now keep room.
+const NARROW: f32 = 900.0;
+
+/// The bots in the table's order: a box, the status, the name and
+/// model, what it does now, its level, team and place, how it starts
+/// unless `narrow`, and its acts.
+fn list<'a>(app: &'a App, fleet: &'a crate::application::Fleet, narrow: bool, tokens: Tokens) -> El<'a> {
     let switching = app.switching;
-    let columns = vec![
-        table::column(bold("Status"), move |b: &'a Bot| {
+    let state = &app.tables.bots;
+    let shown = state.sort.order(&fleet.bots);
+    let head = |c: BotColumn| {
+        grid::header(
+            c.label(),
+            state.sort.badge(c),
+            Message::SortBy(ColumnRef::Bots(c)),
+            tokens,
+        )
+    };
+    let all = state.selection.covers(shown.iter().map(|b| &b.id));
+    let mut columns = vec![
+        table::column(
+            grid::check(all, |on| Message::PickShown(List::Bots, on), tokens),
+            move |b: &'a Bot| {
+                let id = b.id.clone();
+                grid::check(
+                    state.selection.contains(&b.id),
+                    move |on| Message::Pick(RowRef::Bot(id.clone()), on),
+                    tokens,
+                )
+            },
+        ),
+        table::column(head(BotColumn::Status), move |b: &'a Bot| {
             pill(Tone::of_bot(b.status), b.status.name(), tokens)
         }),
-        table::column(bold("Bot"), move |b: &'a Bot| -> El<'a> {
-            column![bold(b.id.to_string()), muted(b.model.short_model().to_string(), tokens)]
-                .spacing(2)
-                .into()
+        // A long name is cut to one line, whole on hover.
+        table::column(head(BotColumn::Bot), move |b: &'a Bot| -> El<'a> {
+            column![
+                grid::fitted(b.id.to_string(), true, tokens),
+                grid::fitted_muted(b.model.short_model().to_string(), tokens)
+            ]
+            .spacing(2)
+            .into()
         })
         .width(Length::FillPortion(3)),
         table::column(bold("Now"), move |b: &'a Bot| -> El<'a> {
@@ -62,70 +117,78 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             cell.into()
         })
         .width(Length::FillPortion(3)),
-        table::column(bold("Level"), move |b: &'a Bot| chip(b.level.label(), tokens)),
-        table::column(bold("Team"), move |b: &'a Bot| text(b.team_summary()).size(SMALL)),
-        table::column(bold("Runs on"), move |b: &'a Bot| text(b.placement.describe())).width(Length::FillPortion(2)),
-        table::column(bold("Starts by"), move |b: &'a Bot| {
-            text(b.trigger_summary()).size(SMALL)
-        })
-        .width(Length::FillPortion(2)),
-        table::column(text(""), move |b: &'a Bot| -> El<'a> {
-            let switch = if b.status.can_pause() {
-                action(
-                    Kind::Secondary,
-                    Icon::Pause,
-                    "Pause",
-                    (!switching).then(|| Message::Pause(b.id.clone())),
-                    tokens,
-                )
-            } else if b.status.can_enable() {
-                action(
-                    Kind::Good,
-                    Icon::Play,
-                    "Turn on",
-                    (!switching).then(|| Message::Enable(b.id.clone())),
-                    tokens,
-                )
-            } else {
-                Space::new().into()
-            };
-            row![
-                switch,
-                icon_button(
-                    Icon::Stop,
-                    "Stop bot and its tasks",
-                    (!switching).then(|| Message::AskStopBot(b.id.clone())),
-                    tokens
-                ),
-                action(
-                    Kind::Ghost,
-                    Icon::Play,
-                    "Open",
-                    Some(Message::Go(Screen::Bot(b.id.clone()))),
-                    tokens
-                )
-            ]
-            .spacing(8)
-            .into()
+        table::column(head(BotColumn::Level), move |b: &'a Bot| chip(b.level.label(), tokens)),
+        table::column(head(BotColumn::Team), move |b: &'a Bot| {
+            grid::clipped(b.team_summary(), 14, false, tokens)
         }),
+        table::column(head(BotColumn::RunsOn), move |b: &'a Bot| text(b.placement.describe()))
+            .width(Length::FillPortion(2)),
     ];
-    let list: El<'a> = if fleet.bots.is_empty() {
-        empty(Icon::Bots, "No bot yet: add one", tokens)
-    } else {
-        table::table(columns, &fleet.bots)
-            .padding_x(12)
-            .padding_y(10)
-            .width(Length::Fill)
-            .into()
-    };
-    page = page.push(card(list, tokens));
-    scrollable(page.padding(iced::Padding {
-        right: 12.0,
-        ..Default::default()
-    }))
-    .id(super::widgets::PAGE)
-    .height(Length::Fill)
-    .into()
+    if !narrow {
+        columns.push(
+            table::column(head(BotColumn::StartsBy), move |b: &'a Bot| {
+                text(b.trigger_summary()).size(SMALL)
+            })
+            .width(Length::FillPortion(2)),
+        );
+    }
+    columns.push(table::column(text(""), move |b: &'a Bot| -> El<'a> {
+        let switch = if b.status.can_pause() {
+            grid::icon_act(
+                Kind::Secondary,
+                Icon::Pause,
+                "Pause",
+                (!switching).then(|| Message::Pause(b.id.clone())),
+                tokens,
+            )
+        } else if b.status.can_enable() {
+            grid::icon_act(
+                Kind::Good,
+                Icon::Play,
+                "Turn on",
+                (!switching).then(|| Message::Enable(b.id.clone())),
+                tokens,
+            )
+        } else {
+            Space::new().width(32).into()
+        };
+        let open = if narrow {
+            grid::icon_act(
+                Kind::Ghost,
+                Icon::Next,
+                "Open",
+                Some(Message::Go(Screen::Bot(b.id.clone()))),
+                tokens,
+            )
+        } else {
+            action(
+                Kind::Ghost,
+                Icon::Play,
+                "Open",
+                Some(Message::Go(Screen::Bot(b.id.clone()))),
+                tokens,
+            )
+        };
+        row![
+            switch,
+            grid::icon_act(
+                Kind::Ghost,
+                Icon::Stop,
+                "Stop bot and its tasks",
+                (!switching).then(|| Message::AskStopBot(b.id.clone())),
+                tokens
+            ),
+            open
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center)
+        .into()
+    }));
+    table::table(columns, shown)
+        .padding_x(8)
+        .padding_y(10)
+        .width(Length::Fill)
+        .into()
 }
 
 /// The Team question: a name its teammates share, with the teams there

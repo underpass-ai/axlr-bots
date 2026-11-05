@@ -360,6 +360,36 @@ pub fn shade(color: Color, amount: f32) -> Color {
     mix(color, Color::BLACK, amount)
 }
 
+/// A row's box in a table: the accent when ticked, a quiet frame when
+/// not, darker under the pointer. A button, so its mark is one of the
+/// panel's pixel glyphs, clipped like any other.
+pub fn check(tokens: Tokens, ticked: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_, status| {
+        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+        let fill = match (ticked, hovered) {
+            (true, true) => shade(tokens.accent, 0.12),
+            (true, false) => tokens.accent,
+            (false, _) => tokens.surface,
+        };
+        let edge = match (ticked, hovered) {
+            (true, _) => tokens.accent,
+            (false, true) => tokens.text,
+            (false, false) => tokens.muted,
+        };
+        button::Style {
+            background: Some(Background::Color(fill)),
+            text_color: tokens.on_accent,
+            border: Border {
+                color: edge,
+                width: 1.5,
+                radius: 3.0.into(),
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
