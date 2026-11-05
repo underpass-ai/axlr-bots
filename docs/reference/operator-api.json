@@ -3963,6 +3963,10 @@
             "type": "number",
             "description": "what its tasks' executions reported, delegated children included"
           },
+          "costUnknown": {
+            "type": "boolean",
+            "description": "one of its executions stopped before it said what it cost: costUsd is at least what it says (absent when false)"
+          },
           "openedAt": {
             "type": "string",
             "format": "date-time"
