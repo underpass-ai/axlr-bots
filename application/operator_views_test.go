@@ -245,3 +245,35 @@ func TestRecordNodeCertificateKeepsTheCurrentExpiry(t *testing.T) {
 		t.Errorf("an unchanged expiry saved: %v", err)
 	}
 }
+
+// A bot id registered again after a delete lists only its own tasks:
+// its predecessor's showed under its Recent work. The list across bots
+// keeps them all.
+func TestListTasksOfABotStartsWhenItWasRegistered(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	bot := enabledBot(t, h)
+	old := submit(t, h, bot, "k-1").Task
+	h.clock.now = t0.Add(time.Minute)
+	if _, err := NewDeleteBot(h.deps).Execute(ctx, bot.ID()); err != nil {
+		t.Fatal(err)
+	}
+	h.clock.now = t0.Add(2 * time.Minute)
+	again := enabledBot(t, h)
+	fresh := submit(t, h, again, "k-1").Task
+	if fresh.ID() == old.ID() {
+		t.Fatal("the old key found the deleted bot's task")
+	}
+	mine, err := NewListTasks(h.deps).Execute(ctx, TaskQuery{BotID: again.ID().String()})
+	if err != nil || len(mine) != 1 || mine[0].ID() != fresh.ID() {
+		t.Errorf("the bot's tasks = %v %v", ids(mine), err)
+	}
+	all, err := NewListTasks(h.deps).Execute(ctx, TaskQuery{})
+	if err != nil || len(all) != 2 {
+		t.Errorf("every task = %v %v", ids(all), err)
+	}
+	later, err := NewListTasks(h.deps).Execute(ctx, TaskQuery{BotID: again.ID().String(), Since: t0.Add(3 * time.Minute)})
+	if err != nil || len(later) != 0 {
+		t.Errorf("a since after the bot's start = %v %v", ids(later), err)
+	}
+}

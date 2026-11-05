@@ -583,7 +583,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "one bot"
+            "description": "one bot, from its registration on: an id registered again after a delete does not list its predecessor's tasks"
           },
           {
             "name": "status",
