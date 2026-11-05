@@ -145,6 +145,7 @@ func (s *Server) operatorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/bots", s.listBots)
 	mux.HandleFunc("GET /v1/bots/{id}", s.getBot)
 	mux.HandleFunc("PATCH /v1/bots/{id}", s.patchBot)
+	mux.HandleFunc("DELETE /v1/bots/{id}", s.deleteBot)
 	mux.HandleFunc("POST /v1/bots/{id}/enable", s.enableBot)
 	mux.HandleFunc("POST /v1/bots/{id}/pause", s.pauseBot)
 	mux.HandleFunc("POST /v1/bots/{id}/stop", s.stopBot)
@@ -396,6 +397,11 @@ func (s *Server) pauseBot(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) stopBot(w http.ResponseWriter, r *http.Request) {
 	value, err := s.service.StopBot(r.Context(), r.PathValue("id"))
+	respond(w, http.StatusOK, value, err)
+}
+
+func (s *Server) deleteBot(w http.ResponseWriter, r *http.Request) {
+	value, err := s.service.DeleteBot(r.Context(), r.PathValue("id"))
 	respond(w, http.StatusOK, value, err)
 }
 

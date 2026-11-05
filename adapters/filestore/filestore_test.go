@@ -79,6 +79,26 @@ func TestBotRepositorySurvivesAReopen(t *testing.T) {
 	}
 }
 
+func TestBotRepositoryDeletes(t *testing.T) {
+	ctx := context.Background()
+	repo := NewBotRepository(t.TempDir())
+	if err := repo.Save(ctx, sampleBot(t, "bot-1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Delete(ctx, "bot-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.Get(ctx, "bot-1"); !domain.IsNotFound(err) {
+		t.Errorf("get after delete: %v", err)
+	}
+	if err := repo.Delete(ctx, "bot-1"); !domain.IsNotFound(err) {
+		t.Errorf("second delete: %v", err)
+	}
+	if err := repo.Delete(ctx, "../x"); err == nil {
+		t.Error("a path was deleted")
+	}
+}
+
 func TestListOnEmptyAndCorruptStores(t *testing.T) {
 	ctx := context.Background()
 	state := t.TempDir()
@@ -122,7 +142,7 @@ func TestListOnEmptyAndCorruptStores(t *testing.T) {
 func TestTaskRepositoryFindsByKey(t *testing.T) {
 	ctx := context.Background()
 	repo := NewTaskRepository(t.TempDir())
-	if _, found, err := repo.FindByIdempotencyKey(ctx, "bot-1", "k"); err != nil || found {
+	if _, found, err := repo.FindByIdempotencyKey(ctx, "bot-1", "k", time.Time{}); err != nil || found {
 		t.Errorf("empty store: %v %v", err, found)
 	}
 	a, _ := domain.NewTask("task-a", "bot-1", "Investigate", "alert-1", "trace-1", t0)
@@ -134,15 +154,25 @@ func TestTaskRepositoryFindsByKey(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, found, err := repo.FindByIdempotencyKey(ctx, "bot-1", "alert-1")
+	got, found, err := repo.FindByIdempotencyKey(ctx, "bot-1", "alert-1", time.Time{})
 	if err != nil || !found || got.ID() != "task-a" {
 		t.Errorf("find: %v %v %s", err, found, got.ID())
 	}
-	if _, found, _ := repo.FindByIdempotencyKey(ctx, "bot-1", "alert-2"); found {
+	if _, found, _ := repo.FindByIdempotencyKey(ctx, "bot-1", "alert-2", time.Time{}); found {
 		t.Error("found a task under another key")
 	}
-	if _, found, _ := repo.FindByIdempotencyKey(ctx, "bot-3", "alert-1"); found {
+	if _, found, _ := repo.FindByIdempotencyKey(ctx, "bot-3", "alert-1", time.Time{}); found {
 		t.Error("found a task of another bot")
+	}
+	// The same id registered again later: the older task under the key
+	// was its predecessor's, and a newer one is found past it.
+	if _, found, _ := repo.FindByIdempotencyKey(ctx, "bot-1", "alert-1", t0.Add(time.Second)); found {
+		t.Error("found a deleted bot's task")
+	}
+	c, _ := domain.NewTask("task-c", "bot-1", "Investigate", "alert-1", "", t0.Add(time.Minute))
+	_ = repo.Save(ctx, c)
+	if got, found, _ := repo.FindByIdempotencyKey(ctx, "bot-1", "alert-1", t0.Add(time.Second)); !found || got.ID() != "task-c" {
+		t.Errorf("newer task: %v %s", found, got.ID())
 	}
 	reloaded, err := repo.Get(ctx, "task-b")
 	if err != nil || reloaded.Status() != domain.TaskFailed || reloaded.FailureReason() != "boom" || reloaded.CurrentExecutionID() != "exec-1" {
@@ -152,12 +182,12 @@ func TestTaskRepositoryFindsByKey(t *testing.T) {
 		t.Errorf("missing: %v", err)
 	}
 	_ = os.WriteFile(filepath.Join(repo.files.dir, "bad.json"), []byte("{"), 0o644)
-	if _, found, err := repo.FindByIdempotencyKey(ctx, "bot-1", "nope"); err != nil || found || !quarantined(t, repo.files.dir, "bad") {
+	if _, found, err := repo.FindByIdempotencyKey(ctx, "bot-1", "nope", time.Time{}); err != nil || found || !quarantined(t, repo.files.dir, "bad") {
 		t.Errorf("scan past a corrupt task = %v %v", err, found)
 	}
 	broken := NewTaskRepository(filepath.Join(t.TempDir(), "f"))
 	_ = os.WriteFile(filepath.Dir(broken.files.dir), []byte("x"), 0o644)
-	if _, _, err := broken.FindByIdempotencyKey(ctx, "b", "k"); err == nil {
+	if _, _, err := broken.FindByIdempotencyKey(ctx, "b", "k", time.Time{}); err == nil {
 		t.Error("scan over an unreadable directory succeeded")
 	}
 }
@@ -497,7 +527,7 @@ func TestTaskRepositoryKeepsTheTriggerAndInput(t *testing.T) {
 	if err != nil || got.Trigger().Name != "deploy" || string(got.Input()) != `{"type":"deploy"}` {
 		t.Errorf("reloaded: %v %+v", err, got.Snapshot())
 	}
-	found, ok, err := repo.FindByIdempotencyKey(ctx, "bot-1", "webhook:deploy:abc")
+	found, ok, err := repo.FindByIdempotencyKey(ctx, "bot-1", "webhook:deploy:abc", time.Time{})
 	if err != nil || !ok || found.ID() != "task-w" {
 		t.Error("lookup by the fire key failed")
 	}

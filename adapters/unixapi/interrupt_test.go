@@ -80,3 +80,59 @@ func TestStopAndPreemptionInterruptAnInProcessRun(t *testing.T) {
 	}
 	ended("urgent", ran)
 }
+
+// Deleting a bot interrupts its in-process run as a stop does, over the
+// socket: the answer names the task, the bot is gone, its task stays as
+// history and the same id may be registered again.
+func TestDeleteBotInterruptsAnInProcessRunAndKeepsTheHistory(t *testing.T) {
+	runtime := blockingRuntime{started: make(chan struct{}, 2)}
+	client, _, _ := serveWith(t, "completed", func(deps *application.Dependencies) { deps.Runtime = runtime })
+	ctx := context.Background()
+	if _, err := client.RegisterBot(ctx, definition("bot-d", "observe")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.EnableBot(ctx, "bot-d"); err != nil {
+		t.Fatal(err)
+	}
+	submitted, err := client.SubmitTask(ctx, SubmitRequest{BotID: "bot-d", Objective: "take a while", IdempotencyKey: "k-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ran := make(chan RunResponse, 1)
+	go func() {
+		result, _ := client.RunTask(ctx, submitted.Task.ID)
+		ran <- result
+	}()
+	select {
+	case <-runtime.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the run never started")
+	}
+	deleted, err := client.DeleteBot(ctx, "bot-d")
+	if err != nil || len(deleted.Cancelled) != 1 || deleted.Cancelled[0] != submitted.Task.ID || deleted.Bot.ID != "bot-d" || deleted.NamedBy == nil {
+		t.Fatalf("delete: %v %+v", err, deleted)
+	}
+	select {
+	case result := <-ran:
+		if result.Task.Status != "Cancelled" {
+			t.Errorf("run ended %s", result.Task.Status)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the in-process run was not interrupted")
+	}
+	if _, err := client.GetBot(ctx, "bot-d"); !domain.IsNotFound(err) {
+		t.Errorf("get after delete: %v", err)
+	}
+	if task, err := client.GetTask(ctx, submitted.Task.ID); err != nil || task.FailureReason != application.DeletedReason {
+		t.Errorf("task after delete: %v %+v", err, task)
+	}
+	if _, err := client.DeleteBot(ctx, "bot-d"); !domain.IsNotFound(err) {
+		t.Errorf("second delete: %v", err)
+	}
+	if _, err := client.DeleteBot(ctx, "Not An Id"); err == nil {
+		t.Error("a bad id was taken")
+	}
+	if _, err := client.RegisterBot(ctx, definition("bot-d", "observe")); err != nil {
+		t.Errorf("register again: %v", err)
+	}
+}

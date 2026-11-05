@@ -22,6 +22,11 @@ type Service interface {
 	PauseBot(ctx context.Context, id string) (domain.BotSnapshot, error)
 	// StopBot pauses the bot and cancels every task it has not finished.
 	StopBot(ctx context.Context, id string) (StopResponse, error)
+	// DeleteBot removes the bot: it cancels its unfinished tasks and the
+	// delegated children it asked for, resolves its open incidents,
+	// removes its timers and answers the bots that still name it. Its
+	// history stays.
+	DeleteBot(ctx context.Context, id string) (DeleteResponse, error)
 	// UpdateBot applies a partial change to the bot's definition.
 	UpdateBot(ctx context.Context, id string, patch application.BotPatch) (domain.BotSnapshot, error)
 	ListBots(ctx context.Context) ([]domain.BotSnapshot, error)

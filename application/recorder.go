@@ -39,14 +39,16 @@ func (r recorder) executionEventID(ctx context.Context, kind domain.EventType, b
 }
 
 // incidentEvent publishes an event about an incident, on the bot that
-// triages it and with the task of its current cycle.
-func (r recorder) incidentEvent(ctx context.Context, kind domain.EventType, bot domain.Bot, incident domain.Incident, payload map[string]any) error {
+// triages it and with the task of its current cycle. It names the bot
+// by the incident's own record, so an incident whose bot was deleted
+// still says what happened to it.
+func (r recorder) incidentEvent(ctx context.Context, kind domain.EventType, incident domain.Incident, payload map[string]any) error {
 	id, err := domain.NewEventID(r.deps.IDs.NewID("evt-"))
 	if err != nil {
 		return err
 	}
 	event := domain.Event{
-		ID: id, SchemaVersion: domain.EventSchemaV1, Type: kind, TenantID: bot.TenantID(), BotID: bot.ID(),
+		ID: id, SchemaVersion: domain.EventSchemaV1, Type: kind, TenantID: incident.TenantID(), BotID: incident.BotID(),
 		TaskID: incident.CurrentTaskID(), IncidentID: incident.ID(), CreatedAt: r.deps.Clock.Now(), Payload: payload,
 	}
 	if err := event.Validate(); err != nil {

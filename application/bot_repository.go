@@ -14,4 +14,7 @@ type BotRepository interface {
 	// Get returns a domain.NotFoundError when no bot has the id.
 	Get(ctx context.Context, id domain.BotID) (domain.Bot, error)
 	List(ctx context.Context) ([]domain.Bot, error)
+	// Delete removes the bot; a domain.NotFoundError when no bot has the
+	// id. Its tasks, events and audit are kept elsewhere.
+	Delete(ctx context.Context, id domain.BotID) error
 }

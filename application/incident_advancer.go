@@ -89,7 +89,7 @@ func (a incidentAdvancer) taskEnded(ctx context.Context, bot domain.Bot, task do
 		return err
 	}
 	payload["status"] = incident.Status().String()
-	if err := a.rec.incidentEvent(ctx, kind, bot, incident, payload); err != nil {
+	if err := a.rec.incidentEvent(ctx, kind, incident, payload); err != nil {
 		return err
 	}
 	return a.rec.audit(ctx, "incident.advance", id.String(), domain.AuditOK, map[string]string{"task": task.ID().String(), "status": incident.Status().String()})

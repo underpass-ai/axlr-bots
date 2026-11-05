@@ -13,7 +13,7 @@ axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>]
   ca issue-client --name <cn> --out <dir> [--lifetime <duration>]   client.key, client.crt, ca.crt for a service of the fleet (365 days)
   node list | node get <node-id>
   node enroll-token [--node-id <id>] [--labels k=v,k=v] [--ttl 1h] | node revoke <node-id>
-  bot register --file <bot.json> | bot enable <bot-id> | bot pause <bot-id> | bot stop <bot-id> | bot list | bot get <bot-id>
+  bot register --file <bot.json> | bot enable <bot-id> | bot pause <bot-id> | bot stop <bot-id> | bot delete <bot-id> | bot list | bot get <bot-id>
   bot update <bot-id> --file <patch.json> | bot events <bot-id> [--limit 100]
   bot subscribe <bot-id> <topic> [--mode task|message|note] [--from a,b] | bot unsubscribe <bot-id> <topic> | bot subscriptions <bot-id>
   group list | group get <group> [--tenant <id>]   the teams the bots name, with their members

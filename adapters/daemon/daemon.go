@@ -140,7 +140,7 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	defer reconciler.Stop()
 	logger.Printf("daemon: serving on %s, tick %s", listening, options.tick())
 	for {
-		fireTimers(ctx, deps, logger)
+		fireTimers(ctx, local, logger)
 		if working.TryLock() {
 			workers.Add(1)
 			go func() {
@@ -181,12 +181,13 @@ func closeListener(listener net.Listener) {
 }
 
 // fireTimers runs the scheduler's pass: every timer whose slot has come
-// fires once (TickTimers), and the pass is logged.
-func fireTimers(ctx context.Context, deps application.Dependencies, logger interface{ Printf(string, ...any) }) {
+// fires once (TickTimers), under the same locks as a submission and a
+// delete, and the pass is logged.
+func fireTimers(ctx context.Context, local *unixapi.Local, logger interface{ Printf(string, ...any) }) {
 	if ctx.Err() != nil {
 		return
 	}
-	result, err := application.NewTickTimers(deps).Execute(ctx)
+	result, err := local.TickTimers(ctx)
 	if err != nil {
 		logger.Printf("daemon: timers: %v", err)
 		return

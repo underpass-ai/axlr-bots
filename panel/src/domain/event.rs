@@ -52,6 +52,7 @@ impl Event {
             "bot.registered" => "Bot added".into(),
             "bot.enabled" => "Bot on".into(),
             "bot.paused" => "Bot paused".into(),
+            "bot.deleted" => "Bot deleted".into(),
             "bot.updated" if self.level_change().is_some() => "Level changed".into(),
             "bot.updated" => "Bot changed".into(),
             "bot.trigger.fired" => "Trigger fired".into(),

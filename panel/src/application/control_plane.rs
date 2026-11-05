@@ -2,9 +2,10 @@ use chrono::{DateTime, Utc};
 
 use super::PortFuture;
 use crate::domain::{
-    Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, EnrollmentRequest, EnrollmentToken,
-    Event, Execution, ExecutionId, Incident, IncidentStatus, Node, NodeId, Overview, Publication, Published,
-    RevokedNode, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId, TaskSubmission, Topic,
+    Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, DeletedBot, EnrollmentRequest,
+    EnrollmentToken, Event, Execution, ExecutionId, Incident, IncidentStatus, Node, NodeId, Overview, Publication,
+    Published, RevokedNode, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId, TaskSubmission,
+    Topic,
 };
 
 /// The control plane as the panel needs it: the operator API's routes.
@@ -27,6 +28,10 @@ pub trait ControlPlane: Send + Sync {
     /// Pauses the bot and cancels its pending, running and waiting tasks.
     /// A control plane older than the route answers not found.
     fn stop_bot(&self, id: BotId) -> PortFuture<'_, StoppedBotAnswer>;
+    /// Deletes the bot: its unfinished tasks and the children it asked
+    /// for are cancelled, its incidents resolved, its timers removed; the
+    /// answer names the bots that still name it.
+    fn delete_bot(&self, id: BotId) -> PortFuture<'_, DeletedBot>;
     /// The bot's newest `limit` events, oldest first.
     fn bot_events(&self, id: BotId, limit: u32) -> PortFuture<'_, Vec<Event>>;
     /// A team's timeline after the event `after` names, oldest first;

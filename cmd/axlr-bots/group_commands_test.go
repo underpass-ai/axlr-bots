@@ -84,6 +84,32 @@ func TestStopAndUrgentCommands(t *testing.T) {
 	}
 }
 
+func TestBotDeleteCommand(t *testing.T) {
+	c := cli{t: t, state: t.TempDir(), axlr: fakeAXLR(t, "completed"), socket: ""}
+	for _, args := range [][]string{
+		{"bot", "register", "--file", filepath.Join("testdata", "bot-team-b.json")},
+		{"bot", "enable", "team-b"},
+		{"task", "submit", "team-b", "--objective", "Wait here", "--key", "d-1"},
+	} {
+		if code, _, errText := c.run(args...); code != exitOK {
+			t.Fatalf("%v: %s", args, errText)
+		}
+	}
+	code, deleted := c.json("bot", "delete", "team-b")
+	if code != exitOK || len(deleted["cancelled"].([]any)) != 1 || deleted["bot"].(map[string]any)["id"] != "team-b" {
+		t.Errorf("delete = %d %v", code, deleted)
+	}
+	if code, _, _ := c.run("bot", "get", "team-b"); code == exitOK {
+		t.Error("the bot is still there")
+	}
+	if code, _, _ := c.run("bot", "delete"); code != exitUsage {
+		t.Errorf("delete without id: %d", code)
+	}
+	if code, _, _ := c.run("bot", "delete", "team-b"); code == exitOK {
+		t.Error("a missing bot was deleted")
+	}
+}
+
 func TestGroupPublishAndTopicsCommands(t *testing.T) {
 	c := cli{t: t, state: t.TempDir(), axlr: fakeAXLR(t, "completed"), socket: ""}
 	for _, name := range []string{"bot-team-a.json", "bot-team-b.json"} {

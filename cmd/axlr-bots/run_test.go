@@ -546,10 +546,12 @@ func TestTaskReconcileFailsWhatACrashLeftRunning(t *testing.T) {
 		t.Errorf("young execution after a short grace: %d %v", code, execution)
 	}
 
-	// A Running task whose bot is gone is an error, not silence.
+	// A Running task whose bot file is gone is skipped and listed, and
+	// the pass goes on (QA L11).
 	crashed(t, state, "task-orphan", time.Now().Add(-time.Hour))
 	_ = os.Remove(filepath.Join(state, "bots", "bot.json"))
-	if code, _, errText := c.run("task", "reconcile"); code != exitError || !strings.Contains(errText, "reconcile task task-orphan") {
-		t.Errorf("orphan: %d %s", code, errText)
+	code, out = c.json("task", "reconcile")
+	if skipped, _ := json.Marshal(out["skipped"]); code != exitOK || string(skipped) != `["task-orphan"]` {
+		t.Errorf("orphan: %d %v", code, out)
 	}
 }

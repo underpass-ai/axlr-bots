@@ -58,6 +58,20 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
             (!app.switching).then(|| Message::AskStopBot(bot.id.clone())),
             tokens,
         ),
+        action(
+            Kind::Secondary,
+            Icon::Wrench,
+            "Edit",
+            (!app.edit.is_open_for(&bot.id)).then(|| Message::EditOpen(bot.id.clone())),
+            tokens,
+        ),
+        action(
+            Kind::Secondary,
+            Icon::Ban,
+            "Delete",
+            (!app.delete.is_open_for(&bot.id)).then(|| Message::DeleteOpen(bot.id.clone())),
+            tokens,
+        ),
     ]
     .spacing(12)
     .align_y(Alignment::Center);
@@ -132,6 +146,13 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
     // Open, Advanced comes first, under the name, as the operator asked
     // for it.
     let mut page = column![header].spacing(18);
+    // Delete and Edit, once asked for, come first, under the name.
+    if let Some(card) = super::bot_delete::card(app, bot, tokens) {
+        page = page.push(card);
+    }
+    if let Some(card) = super::bot_edit::card(app, bot, tokens) {
+        page = page.push(card);
+    }
     if app.advanced {
         page = page.push(advanced(app, bot, tokens));
     }

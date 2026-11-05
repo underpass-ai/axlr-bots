@@ -78,7 +78,7 @@ func (uc DelegateTask) Execute(ctx context.Context, node domain.NodeID, executio
 	if err != nil {
 		return DelegationAnswer{}, err
 	}
-	if existing, found, err := uc.deps.Tasks.FindByIdempotencyKey(ctx, d.target, key); err != nil {
+	if existing, found, err := uc.deps.Tasks.FindByIdempotencyKey(ctx, d.target, key, target.CreatedAt()); err != nil {
 		return DelegationAnswer{}, err
 	} else if found {
 		return uc.again(ctx, d, existing, waitUntil, now)

@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -12,9 +13,11 @@ type TaskRepository interface {
 	Save(ctx context.Context, task domain.Task) error
 	// Get returns a domain.NotFoundError when no task has the id.
 	Get(ctx context.Context, id domain.TaskID) (domain.Task, error)
-	// FindByIdempotencyKey returns the bot's task submitted under the key,
-	// and false when none was.
-	FindByIdempotencyKey(ctx context.Context, bot domain.BotID, key domain.IdempotencyKey) (domain.Task, bool, error)
+	// FindByIdempotencyKey returns the bot's task submitted under the key
+	// and created at or after since, and false when none was. Since is the
+	// bot's registration: a bot deleted and registered again under the
+	// same id does not find its predecessor's tasks.
+	FindByIdempotencyKey(ctx context.Context, bot domain.BotID, key domain.IdempotencyKey, since time.Time) (domain.Task, bool, error)
 	// ListByStatus returns every task in the status, in id order.
 	ListByStatus(ctx context.Context, status domain.TaskStatus) ([]domain.Task, error)
 	// List answers every task, in no particular order.

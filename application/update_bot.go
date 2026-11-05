@@ -9,8 +9,8 @@ import (
 )
 
 // UpdateBot applies a patch to a bot's definition: its mission, level,
-// tools and rules, triggers, placement, approvals, delegation, teams,
-// model or budgets.
+// tools and rules, triggers, placement, approvals (or only the calls
+// they approve without a person), delegation, teams, model or budgets.
 // The status is not a field: EnableBot changes it. The bot is validated
 // as a whole after the patch, so a patch that strands a tool rule or
 // names a bad trigger changes nothing.
@@ -161,6 +161,14 @@ func applyPatch(bot *domain.Bot, patch BotPatch) ([]string, error) {
 		}
 		bot.SetApprovals(approvals)
 		changed = append(changed, "approvals")
+	}
+	if patch.AutoApprove != nil {
+		approvals, err := bot.Approvals().WithAutoApprove(*patch.AutoApprove)
+		if err != nil {
+			return nil, err
+		}
+		bot.SetApprovals(approvals)
+		changed = append(changed, "autoApprove")
 	}
 	if patch.Delegation != nil {
 		delegation, err := domain.NewDelegation(*patch.Delegation)

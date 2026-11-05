@@ -104,11 +104,14 @@ func (uc ReconcileTasks) failOrphans(ctx context.Context, grace time.Duration) (
 			after = DefaultTaskTimeout + ReconcileGrace
 		}
 		if !gone {
+			// A bot deleted meanwhile leaves the default grace.
 			bot, err := uc.deps.Bots.Get(ctx, task.BotID())
-			if err != nil {
+			switch {
+			case err == nil:
+				after = graceFor(bot, task, execution, grace)
+			case !domain.IsNotFound(err):
 				return nil, fmt.Errorf("reconcile execution %s: %w", execution.ID(), err)
 			}
-			after = graceFor(bot, task, execution, grace)
 		}
 		age := now.Sub(execution.StartedAt())
 		if age <= after {
@@ -179,6 +182,11 @@ func (uc ReconcileTasks) missDeadlines(ctx context.Context) ([]domain.TaskID, er
 				continue
 			}
 			bot, err := uc.deps.Bots.Get(ctx, tasks[i].BotID())
+			if domain.IsNotFound(err) {
+				// Its bot is gone (a lost file: a delete ends its tasks
+				// first); one task must not stop the pass.
+				continue
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -200,6 +208,11 @@ func (uc ReconcileTasks) reconcile(ctx context.Context, task domain.Task, grace 
 		return false, nil
 	}
 	bot, err := uc.deps.Bots.Get(ctx, task.BotID())
+	if domain.IsNotFound(err) {
+		// Its bot is gone (a lost file: a delete ends its tasks first);
+		// one task must not stop the pass.
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}

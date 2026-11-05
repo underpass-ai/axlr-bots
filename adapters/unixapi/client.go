@@ -135,6 +135,11 @@ func (c *Client) StopBot(ctx context.Context, id string) (StopResponse, error) {
 	return response, c.call(ctx, http.MethodPost, "/v1/bots/"+url.PathEscape(id)+"/stop", nil, &response)
 }
 
+func (c *Client) DeleteBot(ctx context.Context, id string) (DeleteResponse, error) {
+	var response DeleteResponse
+	return response, c.call(ctx, http.MethodDelete, "/v1/bots/"+url.PathEscape(id), nil, &response)
+}
+
 func (c *Client) ListBots(ctx context.Context) ([]domain.BotSnapshot, error) {
 	bots := []domain.BotSnapshot{}
 	return bots, c.call(ctx, http.MethodGet, "/v1/bots", nil, &bots)

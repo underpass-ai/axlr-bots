@@ -5,12 +5,12 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::application::{ControlPlane, PanelError, PortFuture, WaitingCall};
 use crate::domain::{
-    Artifact, Bot, BotDefinition, BotId, BotPatch, BotStatus, Budgets, CancelledTask, DecidedTask, Decision,
-    EnrollmentRequest, EnrollmentToken, Event, Execution, ExecutionId, ExecutionKind, ExecutionOutcome,
-    ExecutionResult, Incident, IncidentSeverity, IncidentStatus, Node, NodeCapabilities, NodeId, NodeStatus, Overview,
-    PendingDecision, Publication, Published, RevokedNode, Secret, SentTaskMessage, StoppedBotAnswer, SubmittedTask,
-    Subscription, Task, TaskFilter, TaskId, TaskStatus, TaskSubmission, ToolCall, Topic, TopicListener, TriggerRef,
-    Usage,
+    Artifact, Bot, BotDefinition, BotId, BotPatch, BotReference, BotStatus, Budgets, CancelledTask, DecidedTask,
+    Decision, DeletedBot, EnrollmentRequest, EnrollmentToken, Event, Execution, ExecutionId, ExecutionKind,
+    ExecutionOutcome, ExecutionResult, Incident, IncidentSeverity, IncidentStatus, Node, NodeCapabilities, NodeId,
+    NodeStatus, Overview, PendingDecision, Publication, Published, RevokedNode, Secret, SentTaskMessage,
+    StoppedBotAnswer, SubmittedTask, Subscription, Task, TaskFilter, TaskId, TaskStatus, TaskSubmission, ToolCall,
+    Topic, TopicListener, TriggerRef, Usage,
 };
 
 /// The control plane in memory: what the use cases and the interface are
@@ -171,6 +171,17 @@ impl FakeControlPlane {
     /// message routes.
     pub fn without_newer_routes(&self) {
         self.state.lock().unwrap().older = true;
+    }
+
+    /// Changes a bot behind the panel's back, as another operator or the
+    /// bot's own run would; its `updatedAt` moves on.
+    pub fn change_bot(&self, id: &str, change: impl FnOnce(&mut Bot)) {
+        let mut state = self.state.lock().unwrap();
+        let now = state.clock();
+        if let Some(bot) = state.bots.get_mut(&BotId::new(id).unwrap()) {
+            change(bot);
+            bot.updated_at = now + Duration::seconds(1);
+        }
     }
 
     /// The calls made so far, as `route arg`.
@@ -370,6 +381,8 @@ impl FakeState {
             },
             level,
             tool_rules: Default::default(),
+            approvals: Default::default(),
+            delegation: None,
             triggers: vec![crate::domain::Trigger::manual()],
             placement: crate::domain::Placement {
                 nodes: nodes.iter().map(|n| NodeId::new(n).unwrap()).collect(),
@@ -821,6 +834,8 @@ impl ControlPlane for FakeControlPlane {
                 budgets: definition.budgets,
                 level: definition.level,
                 tool_rules: definition.tool_rules,
+                approvals: Default::default(),
+                delegation: None,
                 triggers: definition.triggers,
                 placement: definition.placement,
                 groups: definition.groups,
@@ -856,6 +871,20 @@ impl ControlPlane for FakeControlPlane {
             }
             if let Some(tools) = patch.allowed_tools {
                 bot.allowed_tools = tools;
+            }
+            if let Some(rules) = patch.tool_rules {
+                // The control plane refuses a rule about a tool the bot
+                // does not list.
+                if let Some(rule) = rules.allow.iter().find(|r| !bot.allowed_tools.contains(&r.tool)) {
+                    return Err(PanelError::Invalid(format!(
+                        "tool rules: allow rule names {}, which is not an allowed tool",
+                        rule.tool
+                    )));
+                }
+                bot.tool_rules = rules;
+            }
+            if let Some(rules) = patch.auto_approve {
+                bot.approvals.auto_approve = rules;
             }
             if let Some(placement) = patch.placement {
                 bot.placement = placement;
@@ -1139,6 +1168,69 @@ impl ControlPlane for FakeControlPlane {
                 bot,
                 cancelled,
                 not_cancelled: Vec::new(),
+            })
+        })
+    }
+
+    fn delete_bot(&self, id: BotId) -> PortFuture<'_, DeletedBot> {
+        self.call(format!("delete_bot {id}"), move |s| {
+            if s.older {
+                return Err(PanelError::NotFound("404 page not found".into()));
+            }
+            let bot = s
+                .bots
+                .remove(&id)
+                .ok_or_else(|| PanelError::NotFound(format!("bot {id} not found")))?;
+            let now = s.clock();
+            let mut cancelled = Vec::new();
+            for task in s.tasks.iter_mut().filter(|t| t.bot_id == id && t.status.can_cancel()) {
+                task.status = TaskStatus::Cancelled;
+                task.updated_at = now;
+                cancelled.push(task.id.clone());
+            }
+            for task_id in &cancelled {
+                s.event(
+                    "bot.task.cancelled",
+                    id.as_str(),
+                    task_id,
+                    now,
+                    serde_json::json!({"reason": "bot deleted"}),
+                );
+            }
+            let mut named_by = Vec::new();
+            for other in s.bots.values() {
+                if other
+                    .delegation
+                    .as_ref()
+                    .is_some_and(|d| d.to.iter().any(|t| t == id.as_str()))
+                {
+                    named_by.push(BotReference {
+                        bot_id: other.id.to_string(),
+                        how: "delegation".into(),
+                        topic: String::new(),
+                    });
+                }
+                for sub in other
+                    .subscriptions
+                    .iter()
+                    .filter(|sub| sub.from.iter().any(|f| f == id.as_str()))
+                {
+                    named_by.push(BotReference {
+                        bot_id: other.id.to_string(),
+                        how: "subscription".into(),
+                        topic: sub.topic.clone(),
+                    });
+                }
+            }
+            s.bot_event("bot.deleted", &id);
+            Ok(DeletedBot {
+                bot,
+                cancelled: cancelled.iter().map(ToString::to_string).collect(),
+                children_cancelled: Vec::new(),
+                incidents_resolved: Vec::new(),
+                timers_removed: 0,
+                notifications_dropped: 0,
+                named_by,
             })
         })
     }

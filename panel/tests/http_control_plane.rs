@@ -95,6 +95,13 @@ async fn route(
         ("GET", "/v1/bots/bot-wrx80") => ok(BOT.into()),
         ("POST", "/v1/bots") => json(StatusCode::CREATED, &BOT.replace("Enabled", "Registered")),
         ("PATCH", "/v1/bots/bot-wrx80") => ok(BOT.replace("\"observe\"", "\"propose\"")),
+        ("DELETE", "/v1/bots/bot-wrx80") => ok(format!(
+            r#"{{"bot":{BOT},"cancelled":["task-1"],"childrenCancelled":[],"incidentsResolved":["inc-one"],"timersRemoved":1,"notificationsDropped":0,"namedBy":[{{"botId":"watcher","how":"delegation"}}]}}"#
+        )),
+        ("DELETE", "/v1/bots/ghost") => json(
+            StatusCode::NOT_FOUND,
+            r#"{"kind":"not_found","error":"bot ghost not found","resource":"bot","id":"ghost"}"#,
+        ),
         ("POST", "/v1/bots/bot-wrx80/enable") => ok(BOT.into()),
         ("POST", "/v1/bots/bot-wrx80/pause") => ok(BOT.replace("Enabled", "Paused")),
         ("POST", "/v1/bots/paused/pause") => json(
@@ -367,6 +374,26 @@ async fn sends_the_acts_with_their_bodies() {
     };
     api.patch_bot(bot_id.clone(), teams).await.unwrap();
     assert_eq!(server.last().body, r#"{"groups":["ops"]}"#);
+    let tools = BotPatch {
+        allowed_tools: Some(vec!["local_read".into()]),
+        tool_rules: Some(Default::default()),
+        auto_approve: Some(vec![axlr_bots_panel::domain::ToolRule::whole("local_read")]),
+        ..Default::default()
+    };
+    api.patch_bot(bot_id.clone(), tools).await.unwrap();
+    assert_eq!(
+        server.last().body,
+        r#"{"allowedTools":["local_read"],"toolRules":{},"autoApprove":[{"tool":"local_read"}]}"#
+    );
+    let deleted = api.delete_bot(bot_id.clone()).await.unwrap();
+    assert_eq!(
+        (server.last().method, server.last().path),
+        (Method::DELETE, "/v1/bots/bot-wrx80".to_string())
+    );
+    assert_eq!(deleted.summary(), "1 task cancelled · 1 incident resolved");
+    assert_eq!(deleted.named_by[0].describe(), "watcher may ask it for a task");
+    let gone = api.delete_bot(BotId::new("ghost").unwrap()).await.unwrap_err();
+    assert!(matches!(gone, PanelError::NotFound(_)));
     assert_eq!(api.enable_bot(bot_id.clone()).await.unwrap().status.name(), "Enabled");
     assert_eq!(api.pause_bot(bot_id.clone()).await.unwrap().status.name(), "Paused");
     let refused = api.pause_bot(BotId::new("paused").unwrap()).await.unwrap_err();

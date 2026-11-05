@@ -1517,3 +1517,36 @@ fn a_waiting_task_shows_approve_first_and_its_words_to_read_or_select() {
     shows(&app, &["What it said before asking you"]);
     assert!(simulator_misses(&app, "Answer"));
 }
+
+#[test]
+fn a_bots_edit_and_delete_say_what_they_do_in_words() {
+    let mut app = connected();
+    let id = BotId::new("bot-wrx80").unwrap();
+    send(&mut app, Message::Go(Screen::Bot(id.clone())));
+    shows(&app, &["Edit", "Delete"]);
+    send(&mut app, Message::EditOpen(id.clone()));
+    shows(
+        &app,
+        &[
+            "Edit bot-wrx80",
+            "Its tools",
+            "local_read",
+            "Runs on its own",
+            "Asks you first",
+            "Never runs",
+            "Add a tool",
+            "local_search",
+            "Save",
+        ],
+    );
+    send(&mut app, Message::DeleteOpen(id));
+    shows(
+        &app,
+        &[
+            "Delete bot-wrx80?",
+            "Type bot-wrx80 to delete it",
+            "Delete bot-wrx80",
+            "Keep it",
+        ],
+    );
+}

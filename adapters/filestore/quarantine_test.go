@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -165,7 +166,7 @@ func TestListingSetsARefusedRecordAside(t *testing.T) {
 	}
 	// The key lookup and the whole list go past one too.
 	plant()
-	if found, ok, err := repo.FindByIdempotencyKey(ctx, "bot-1", "k1"); err != nil || !ok || found.ID() != good.ID() {
+	if found, ok, err := repo.FindByIdempotencyKey(ctx, "bot-1", "k1", time.Time{}); err != nil || !ok || found.ID() != good.ID() {
 		t.Errorf("key lookup past a refused file: %v %v", err, ok)
 	}
 	plant()

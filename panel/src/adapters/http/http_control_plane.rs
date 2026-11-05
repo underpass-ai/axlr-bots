@@ -8,10 +8,10 @@ use serde::de::DeserializeOwned;
 use super::api_error::ApiError;
 use crate::application::{ControlPlane, LIVE_FEED_SIZE, PanelConfig, PanelError, PortFuture};
 use crate::domain::{
-    Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, EnrollmentRequest, EnrollmentToken,
-    Event, Execution, ExecutionId, Incident, IncidentStatus, Node, NodeId, Overview, Publication, Published,
-    RevokedNode, Secret, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId, TaskSubmission,
-    Topic,
+    Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, DeletedBot, EnrollmentRequest,
+    EnrollmentToken, Event, Execution, ExecutionId, Incident, IncidentStatus, Node, NodeId, Overview, Publication,
+    Published, RevokedNode, Secret, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId,
+    TaskSubmission, Topic,
 };
 
 /// How long a read may take.
@@ -219,6 +219,10 @@ impl ControlPlane for HttpControlPlane {
 
     fn patch_bot(&self, id: BotId, patch: BotPatch) -> PortFuture<'_, Bot> {
         self.act(Method::PATCH, format!("/v1/bots/{id}"), Some(patch))
+    }
+
+    fn delete_bot(&self, id: BotId) -> PortFuture<'_, DeletedBot> {
+        self.act(Method::DELETE, format!("/v1/bots/{id}"), NO_BODY)
     }
 
     fn enable_bot(&self, id: BotId) -> PortFuture<'_, Bot> {

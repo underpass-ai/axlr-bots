@@ -4,10 +4,12 @@ use chrono::{DateTime, Utc};
 
 use super::ModeChoice;
 use super::{BotChoice, BotView, Connection, Keypress, NodeChoice, ReaderKey, Screen, ThemeMode};
-use crate::application::{ChatSent, EventFeed, Fleet, PanelError, StoppedBot, SubscriptionChange, TaskDetail};
+use crate::application::{
+    ChatSent, DeletePreview, EventFeed, Fleet, PanelError, SavedEdit, StoppedBot, SubscriptionChange, TaskDetail,
+};
 use crate::domain::{
-    AutonomyLevel, Bot, BotId, CancelledTask, DecidedTask, EnrollmentToken, ExecutionId, Incident, NodeId, Published,
-    RevokedNode, SubmittedTask, TaskId, TaskStatus, Topic,
+    AutonomyLevel, Bot, BotId, CancelledTask, DecidedTask, DeletedBot, EnrollmentToken, ExecutionId, Incident, NodeId,
+    Published, RevokedNode, SubmittedTask, TaskId, TaskStatus, ToolAccess, Topic,
 };
 
 /// Everything that happens in the panel: what the operator does, the
@@ -104,6 +106,28 @@ pub enum Message {
     TeamLoaded(String, Result<EventFeed, PanelError>),
     /// A team's topics; `None` from a control plane older than the route.
     TopicsLoaded(String, Result<Option<Vec<Topic>>, PanelError>),
+
+    /// Edit a bot's mission and tools: open, change, save or cancel.
+    EditOpen(BotId),
+    EditClose,
+    EditMission(String),
+    /// What a listed tool may do, by its place in the list.
+    EditAccess(usize, ToolAccess),
+    EditRemove(usize),
+    EditNewTool(String),
+    EditNewAccess(ToolAccess),
+    /// Add the tool typed, or the one a suggestion names.
+    EditAdd(Option<String>),
+    EditSave,
+    EditSaved(Result<SavedEdit, PanelError>),
+    /// Delete a bot: open the confirmation, read what it will do, type
+    /// its id, delete.
+    DeleteOpen(BotId),
+    DeletePreviewed(BotId, Result<DeletePreview, PanelError>),
+    DeleteTyped(String),
+    DeleteClose,
+    DeleteSend,
+    BotDeleted(BotId, Result<DeletedBot, PanelError>),
 
     /// Make a bot listen to a topic: open the form, fill it, save.
     ListenOpen(BotId),
