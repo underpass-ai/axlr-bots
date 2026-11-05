@@ -1335,7 +1335,10 @@ fn an_incident_shows_its_alerts_diagnosis_and_tasks_and_resolves() {
     shows(&app, &["Resolving…"]);
 
     send(&mut app, Message::Go(Screen::Incident("inc-disk".into())));
-    shows(&app, &["Diagnosis", "Why it was escalated", "No task worked on it"]);
+    shows(
+        &app,
+        &["Diagnosis", "Why it was escalated", "No task worked on it", "≥ $0.03"],
+    );
     reads(&app, ReaderKey::IncidentDiagnosis, "The WAL volume grows 2 GB an hour.");
     send(&mut app, Message::Go(Screen::Incident("inc-cert".into())));
     shows(&app, &["Why it was resolved"]);

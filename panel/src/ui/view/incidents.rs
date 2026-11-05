@@ -244,7 +244,7 @@ fn facts<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> El<'a> {
         left = left.push(fact("Resolved", text(format::ago(at, app.now)), tokens));
     }
     let right = column![
-        fact("Cost", text(format::cost(incident.cost_usd)), tokens),
+        fact("Cost", text(format::spend(incident.cost())), tokens),
         fact("Repeats", text(incident.repeats.to_string()), tokens),
         fact("Retries", text(incident.retries.to_string()), tokens),
         fact("Cycle", text(incident.cycle.to_string()), tokens),
