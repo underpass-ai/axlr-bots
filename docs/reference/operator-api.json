@@ -1795,9 +1795,18 @@
           },
           "autoApprove": {
             "type": "array",
-            "description": "the calls approved without a person: replaces approvals.autoApprove only, the rest of approvals (its notification secrets) stays",
+            "description": "the calls approved without a person: replaces approvals.autoApprove only, the rest of approvals (its notification secrets) stays. Each item is a rule or, for short, a tool name (every call of that tool); the bot keeps rules",
             "items": {
-              "$ref": "#/components/schemas/ToolRuleSnapshot"
+              "oneOf": [
+                {
+                  "type": "string",
+                  "description": "a tool name: the rule with no arguments",
+                  "example": "local_exec"
+                },
+                {
+                  "$ref": "#/components/schemas/ToolRuleSnapshot"
+                }
+              ]
             }
           },
           "budgets": {

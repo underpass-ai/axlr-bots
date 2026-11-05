@@ -530,3 +530,43 @@ func TestSimultaneousRedeliveriesMakeOneTask(t *testing.T) {
 		t.Errorf("%d tasks created, %d distinct ids, want one of each", created, len(ids))
 	}
 }
+
+// PATCH autoApprove takes tool names as well as rules; any other shape
+// is a 400 that shows both.
+func TestPatchAutoApproveTakesToolNamesOrRules(t *testing.T) {
+	_, local, dir := serve(t, "completed")
+	ctx := context.Background()
+	if _, err := local.RegisterBot(ctx, definition("bot-a", "act-with-approval")); err != nil {
+		t.Fatal(err)
+	}
+	httpClient := NewClient(filepath.Join(dir, "cp.sock")).http
+	patch := func(body string) (int, map[string]any) {
+		t.Helper()
+		request, _ := http.NewRequest(http.MethodPatch, "http://axlr-bots/v1/bots/bot-a", strings.NewReader(body))
+		response, err := httpClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		var decoded map[string]any
+		_ = json.NewDecoder(response.Body).Decode(&decoded)
+		return response.StatusCode, decoded
+	}
+	if status, body := patch(`{"autoApprove": ["local_exec", {"tool": "local_write", "arguments": {"path": "notes/*"}}]}`); status != http.StatusOK {
+		t.Fatalf("names and rules: %d %v", status, body)
+	}
+	stored, _ := local.Dependencies().Bots.Get(ctx, "bot-a")
+	rules := stored.Approvals().Snapshot().AutoApprove
+	if len(rules) != 2 || rules[0].Tool != "local_exec" || len(rules[0].Arguments) != 0 || rules[1].Arguments["path"] != "notes/*" {
+		t.Errorf("rules = %+v", rules)
+	}
+	for _, bad := range []string{`{"autoApprove": "local_exec"}`, `{"autoApprove": [1]}`, `{"autoApprove": [{"tool": "x", "unknown": 1}]}`} {
+		status, body := patch(bad)
+		if message, _ := body["error"].(string); status != http.StatusBadRequest || !strings.Contains(message, `["local_exec"] or [{"tool": "local_exec"`) {
+			t.Errorf("%s: %d %v", bad, status, body)
+		}
+	}
+	if status, body := patch(`{"autoApprove": [""]}`); status != http.StatusBadRequest || body["kind"] != KindValidation {
+		t.Errorf("an empty name: %d %v", status, body)
+	}
+}
