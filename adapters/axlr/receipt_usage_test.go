@@ -36,14 +36,37 @@ func parse(since time.Time, lines ...[]byte) application.ExecutionReport {
 	return p.report(exitCompleted, "")
 }
 
+// sessionResult reports the whole session: two calls of the earlier run
+// and the one this run made.
+var sessionResult = []byte(`{"type":"result","result":{"schema":"axlr.execution-result/v1","status":"completed","session_id":"sess-1","sessions":["sess-1"],"answer":"ok","tool_calls":[{"call_id":"c1","tool":"local_read","status":"completed"},{"call_id":"c2","tool":"local_write","status":"completed"},{"call_id":"c3","tool":"local_read","status":"completed"}],"usage":{"requests":3,"cost_usd":0.006}}}`)
+
 func TestAContinuedSessionCountsOnlyItsOwnRequests(t *testing.T) {
 	report := parse(launch, receiptLine(earlierRow+","+earlierRow2+","+ownRow), cumulativeResult)
 	u := report.Usage
 	if u.Requests != 1 || u.PromptTokens != 100 || u.CachedTokens != 50 || u.CompletionTokens != 10 || u.ReasoningTokens != 1 || !near(u.CostUSD, 0.002) {
 		t.Errorf("usage = %+v, want only the request after the launch", u)
 	}
-	if u.ToolCalls != 1 {
-		t.Errorf("tool calls = %d", u.ToolCalls)
+	if u.ToolCalls != 0 {
+		t.Errorf("tool calls = %d, want none: the run wrote no tool line", u.ToolCalls)
+	}
+}
+
+// A decision's tool calls are the ones its own lines name, not every
+// call the session's result lists (it counted the first run's calls
+// again, as the cost did before the receipt's requests were read).
+func TestAContinuedSessionCountsOnlyItsOwnToolCalls(t *testing.T) {
+	requested := []byte(`{"type":"tool.requested","tool":"local_read","call_id":"c3"}`)
+	completed := []byte(`{"type":"tool.completed","tool":"local_read","call_id":"c3"}`)
+	report := parse(launch, requested, completed, receiptLine(earlierRow+","+ownRow), sessionResult)
+	if u := report.Usage; u.ToolCalls != 1 || u.Requests != 1 {
+		t.Errorf("usage = %+v, want this run's one call", u)
+	}
+	if calls := report.Result.ToolCalls; len(calls) != 3 {
+		t.Errorf("the result's calls = %+v, want the session's three", calls)
+	}
+	// Without an itemized receipt the runtime's numbers stand.
+	if report := parse(launch, requested, completed, sessionResult); report.Usage.ToolCalls != 3 {
+		t.Errorf("without a receipt tool calls = %d", report.Usage.ToolCalls)
 	}
 }
 

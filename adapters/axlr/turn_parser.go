@@ -172,10 +172,12 @@ func (p *turnParser) fromResult(r *resultObject) application.ExecutionReport {
 		CostUSD:          r.Usage.CostUSD,
 	}
 	if p.own != nil {
-		// The run's own requests, not the session's: a decision continues
-		// a session whose earlier requests its first run reported.
+		// The run's own requests and calls, not the session's: a
+		// decision continues a session whose earlier requests and calls
+		// its first run reported. The result lists every call of the
+		// session; the run's tool lines are its own.
 		own := *p.own
-		own.ToolCalls = usage.ToolCalls
+		own.ToolCalls = len(p.calls)
 		usage = own
 	}
 	report := application.ExecutionReport{Result: result, Usage: usage}
