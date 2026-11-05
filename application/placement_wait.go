@@ -62,7 +62,7 @@ func keptBy(node domain.Node, found bool, kind domain.RuntimeKind) string {
 	case node.IsOnline():
 		return "lacks the " + kind.String() + " runtime"
 	case node.Status() == domain.NodeRegistered:
-		return "has not come online yet"
+		return "is Registered but not yet Online"
 	}
 	return "is " + node.Status().String()
 }

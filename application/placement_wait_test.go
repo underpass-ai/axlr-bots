@@ -202,8 +202,8 @@ func TestTheWaitNamesEveryAdmittedNode(t *testing.T) {
 		want      string
 	}{
 		{domain.PlacementSnapshot{Nodes: []string{"web-1", "web-2"}}, "waiting for node web-1, web-2: web-1 is Offline, web-2 is not registered"},
-		{domain.PlacementSnapshot{Nodes: []string{"web-3"}}, "waiting for node web-3, which has not come online yet"},
-		{domain.PlacementSnapshot{Selector: map[string]string{"zone": "lab"}}, "waiting for a node labelled zone=lab: web-3 has not come online yet, web-4 is Revoked"},
+		{domain.PlacementSnapshot{Nodes: []string{"web-3"}}, "waiting for node web-3, which is Registered but not yet Online"},
+		{domain.PlacementSnapshot{Selector: map[string]string{"zone": "lab"}}, "waiting for a node labelled zone=lab: web-3 is Registered but not yet Online, web-4 is Revoked"},
 		{domain.PlacementSnapshot{Nodes: []string{"web-1"}, Selector: map[string]string{"zone": "mars"}}, "waiting for node web-1 or a node labelled zone=mars: web-1 is Offline, no node has these labels"},
 	}
 	for i, c := range cases {
