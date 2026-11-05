@@ -256,16 +256,20 @@ fn the_nodes_screen_lists_the_nodes_and_mints_a_token() {
     send(&mut app, Message::Go(Screen::Nodes));
     shows(
         &app,
-        &[
-            "Nodes",
-            "wrx80",
-            "wrx80-node1",
-            "gpu=rtx3090",
-            "364 days",
-            "0.14.0",
-            "Revoke",
-        ],
+        &["Nodes", "wrx80", "wrx80-node1", "gpu=rtx3090", "364 days", "0.14.0"],
     );
+    // In the smallest window Revoke is an icon on each row; picked rows
+    // get it in words on the bar, and a wide window has both.
+    send(&mut app, Message::PickShown(crate::ui::table::List::Nodes, true));
+    shows(&app, &["2 nodes selected", "Revoke"]);
+    send(&mut app, Message::ClearPicks(crate::ui::table::List::Nodes));
+    {
+        let _turn = turn();
+        let mut wide = Simulator::with_size(panel_settings(), Size::new(1600.0, 1000.0), view::view(&app));
+        for word in ["AXLR", "0.14.0", "Revoke"] {
+            assert!(wide.find(word).is_ok(), "{word} is not on the wide Nodes");
+        }
+    }
     if let Some(fleet) = app.fleet.as_mut() {
         fleet.nodes[1].capabilities.dedicated = true;
     }
@@ -298,16 +302,17 @@ fn the_bots_screen_lists_switches_and_adds() {
     send(&mut app, Message::Go(Screen::Bots));
     shows(
         &app,
-        &[
-            "Bots",
-            "bot-act-with-approval",
-            "Ask first",
-            "claude-haiku-5.5",
-            "wrx80",
-            "From file",
-            "Pause",
-        ],
+        &["Bots", "bot-wrx80", "Ask first", "wrx80", "From file", "Runs on"],
     );
+    // The model is cut to its column in the smallest window, whole in
+    // a wide one.
+    {
+        let _turn = turn();
+        let mut wide = Simulator::with_size(panel_settings(), Size::new(1600.0, 1000.0), view::view(&app));
+        for word in ["claude-haiku-5.5", "bot-act-with-approval", "Starts by"] {
+            assert!(wide.find(word).is_ok(), "{word} is not on the wide Bots");
+        }
+    }
     app.apply(Message::RegisterOpen);
     shows(
         &app,
@@ -470,16 +475,21 @@ fn the_tasks_screen_filters_and_sends() {
             "Failed 1",
             "Expired 1",
             "Write hello into hello.txt",
-            "Open",
+            "Age",
         ],
     );
+    // A row's acts are icons with tips; the words are on the bar once
+    // rows are picked.
+    send(&mut app, Message::PickShown(crate::ui::table::List::Tasks, true));
+    shows(
+        &app,
+        &["5 tasks selected", "Approve 1 of 5", "Deny 1 of 5", "Stop 2 of 5"],
+    );
     assert!(matches!(
-        messages_of_click(&app, "Approve").as_slice(),
-        [Message::Approve(_)]
+        messages_of_click(&app, "Approve 1 of 5").as_slice(),
+        [Message::AskBulk(_, crate::application::BulkAction::Approve)]
     ));
-    app.deciding = app.fleet.as_ref().unwrap().waiting().first().map(|t| t.id.clone());
-    assert!(messages_of_click(&app, "Approve").is_empty(), "one answer at a time");
-    app.deciding = None;
+    send(&mut app, Message::ClearPicks(crate::ui::table::List::Tasks));
     let sent = messages_of_click(&app, "Failed 1");
     assert!(matches!(
         sent.as_slice(),
@@ -787,7 +797,14 @@ fn the_teams_screen_shows_who_is_in_each_and_what_happens() {
     send(&mut app, Message::Tick(tick + chrono::Duration::seconds(3)));
     shows(
         &app,
-        &["ops", "2 bots", "lab", "only one bot: a typo?", "bot · bot-wrx80"],
+        &[
+            "ops",
+            "Members",
+            "Last word",
+            "lab",
+            "only one bot: a typo?",
+            "bot · bot-wrx80",
+        ],
     );
     let sent = messages_of_click(&app, "Open");
     assert!(matches!(sent.as_slice(), [Message::Go(Screen::Team(name))] if name == "lab"));
@@ -1171,7 +1188,7 @@ fn the_incidents_screen_lists_them_and_opens_one() {
         &[
             "Incidents",
             "Severity",
-            "Repeats",
+            "Status",
             "Last seen",
             "HighLatency on checkout",
             "Disk almost full on db-0",

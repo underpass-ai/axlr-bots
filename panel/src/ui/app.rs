@@ -9,6 +9,7 @@ use crate::application::SubscriptionChange;
 use crate::application::{EventFeed, Fleet, PanelConfig, PanelError, TaskDetail};
 use crate::domain::{Decision, Shortcut, TaskId, TaskStatus};
 use crate::ui::format;
+use crate::ui::table::Tables;
 
 /// How long a refresh may stay unanswered before the next tick tries again.
 const REFRESH_PATIENCE: i64 = 20;
@@ -77,6 +78,8 @@ pub struct App {
     target: Screen,
     /// The passages of the screen on show a person can select a part of.
     pub readers: Readers,
+    /// The list screens' tables: their order and their picked rows.
+    pub tables: Tables,
 }
 
 impl App {
@@ -129,6 +132,7 @@ impl App {
                 launch.screen
             },
             readers: Readers::default(),
+            tables: Tables::default(),
         };
         match app.services.shortcuts.load() {
             Ok(list) => app.shortcuts = list,
@@ -225,6 +229,7 @@ impl App {
                     Ok(fleet) => {
                         let mut effects = self.notice_waiting(&fleet, self.fleet.is_none());
                         self.fleet = Some(fleet);
+                        self.drop_gone_picks();
                         self.fleet_error = None;
                         self.last_refresh = Some(self.now);
                         effects.extend(self.follow_teams());
@@ -616,6 +621,7 @@ impl App {
 
             Message::FilterStatus(status) => {
                 self.filter.status = status;
+                self.drop_gone_picks();
                 if self.screen != Screen::Tasks {
                     return self.go(Screen::Tasks);
                 }
@@ -626,6 +632,7 @@ impl App {
                     BotChoice::All => None,
                     BotChoice::One(id) => Some(id),
                 };
+                self.drop_gone_picks();
                 Vec::new()
             }
             Message::SubmitOpen(bot) => {
@@ -754,6 +761,7 @@ impl App {
                     self.switching = true;
                     vec![Effect::StopBot(id)]
                 }
+                Some(Confirm::Bulk(plan)) => self.run_bulk(plan),
                 None => Vec::new(),
             },
             Message::ConfirmNo => {
@@ -810,6 +818,17 @@ impl App {
                     }
                 }
             }
+
+            Message::Modifiers(modifiers) => {
+                self.tables.shift = modifiers.shift();
+                Vec::new()
+            }
+            Message::SortBy(column) => self.sort_by(column),
+            Message::Pick(row, picked) => self.pick(row, picked),
+            Message::PickShown(list, picked) => self.pick_shown(list, picked),
+            Message::ClearPicks(list) => self.clear_picks(list),
+            Message::AskBulk(list, action) => self.ask_bulk(list, action),
+            Message::BulkDone(outcome) => self.bulk_done(outcome),
         }
     }
 
@@ -923,6 +942,8 @@ impl App {
             self.incidents.list_loading = false;
             self.incidents.detail_loading = false;
             self.incidents.resolve = ResolveForm::default();
+            // The picked rows belong to the list left; its order stays.
+            self.tables.clear_all();
         }
         self.screen = screen;
         self.confirm = None;
@@ -933,13 +954,20 @@ impl App {
         effects
     }
 
-    /// Esc keeps what a dialog would do, or closes the new task's form;
-    /// Enter does what the dialog asks. Other screens ignore them.
+    /// Esc keeps what a dialog would do, closes the new task's form or
+    /// a bot's Edit or Delete card, or lets go of the rows picked in a
+    /// list; Enter does what the dialog asks. Other screens ignore them.
     fn key(&mut self, key: Keypress) -> Vec<Effect> {
         match key {
             Keypress::Escape if self.confirm.is_some() => self.handle(Message::ConfirmNo),
             Keypress::Enter if self.confirm.is_some() => self.handle(Message::ConfirmYes),
             Keypress::Escape if self.submit.open && !self.submit.busy => self.handle(Message::SubmitClose),
+            Keypress::Escape if self.delete.bot.is_some() && !self.delete.busy => self.handle(Message::DeleteClose),
+            Keypress::Escape if self.edit.bot.is_some() && !self.edit.busy => self.handle(Message::EditClose),
+            Keypress::Escape => match self.list_on_screen() {
+                Some(list) if self.tables.picked(list) > 0 => self.clear_picks(list),
+                _ => Vec::new(),
+            },
             _ => Vec::new(),
         }
     }

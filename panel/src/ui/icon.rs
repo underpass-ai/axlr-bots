@@ -34,10 +34,17 @@ pub enum Icon {
     Chip,
     Trace,
     Team,
+    /// A sorted column, its smallest first.
+    Up,
+    /// A sorted column, its largest first.
+    Down,
+    Trash,
+    /// Open: go to the row's own page.
+    Next,
 }
 
 impl Icon {
-    pub const ALL: [Icon; 29] = [
+    pub const ALL: [Icon; 33] = [
         Icon::Overview,
         Icon::Nodes,
         Icon::Bots,
@@ -67,6 +74,10 @@ impl Icon {
         Icon::Chip,
         Icon::Trace,
         Icon::Team,
+        Icon::Up,
+        Icon::Down,
+        Icon::Trash,
+        Icon::Next,
     ];
 
     fn bytes(self) -> &'static [u8] {
@@ -100,6 +111,10 @@ impl Icon {
             Icon::Chip => include_bytes!("../../assets/icons/chip.svg"),
             Icon::Trace => include_bytes!("../../assets/icons/trace.svg"),
             Icon::Team => include_bytes!("../../assets/icons/team.svg"),
+            Icon::Up => include_bytes!("../../assets/icons/up.svg"),
+            Icon::Down => include_bytes!("../../assets/icons/down.svg"),
+            Icon::Trash => include_bytes!("../../assets/icons/trash.svg"),
+            Icon::Next => include_bytes!("../../assets/icons/next.svg"),
         }
     }
 

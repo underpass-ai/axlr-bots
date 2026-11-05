@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use super::{BotView, Connection, Effect, Message};
 use crate::application::{
-    CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader, DeleteBot, DownloadArtifact, FilePicker,
-    FollowBotEvents, FollowTaskEvents, FollowTeamEvents, KeySource, ListIncidents, ListTopics, LoadChat,
-    LoadTaskDetail, MintEnrollmentToken, Notifier, PanelError, PatchBot, PublishEvent, RefreshFleet, RegisterBot,
-    ResolveIncident, RevokeNode, SaveBotEdit, SaveSubscriptions, SendChat, ShortcutSource, ShowIncident, StopBot,
-    SubmitTask, SwitchBot,
+    ApplyInBulk, BulkOutcome, CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader, DeleteBot,
+    DownloadArtifact, FilePicker, FollowBotEvents, FollowTaskEvents, FollowTeamEvents, KeySource, ListIncidents,
+    ListTopics, LoadChat, LoadTaskDetail, MintEnrollmentToken, Notifier, PanelError, PatchBot, PublishEvent,
+    RefreshFleet, RegisterBot, ResolveIncident, RevokeNode, SaveBotEdit, SaveSubscriptions, SendChat, ShortcutSource,
+    ShowIncident, StopBot, SubmitTask, SwitchBot,
 };
 use crate::domain::BotPatch;
 
@@ -272,6 +272,16 @@ impl Services {
             Effect::Decide(id, decision, call_id) => Message::Decided(match self.control_plane() {
                 Ok(cp) => DecideTask::new(cp).execute(id, decision, call_id).await,
                 Err(e) => Err(e),
+            }),
+            Effect::Bulk { action, targets } => Message::BulkDone(match self.control_plane() {
+                Ok(cp) => ApplyInBulk::new(cp).execute(action, targets).await,
+                Err(e) => {
+                    let mut outcome = BulkOutcome::new(action);
+                    for target in targets {
+                        outcome.record(target.name(), Err(e.clone()));
+                    }
+                    outcome
+                }
             }),
         };
         Some(message)

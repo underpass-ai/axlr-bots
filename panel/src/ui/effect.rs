@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
 use super::{LiveStream, Screen};
-use crate::application::{BotEdit, ChatTurn, EventFeed, Notice, PanelConfig, SubscriptionChange};
+use crate::application::{
+    BotEdit, BulkAction, BulkTarget, ChatTurn, EventFeed, Notice, PanelConfig, SubscriptionChange,
+};
 use crate::domain::{AutonomyLevel, BotForm, BotId, Decision, ExecutionId, IdempotencyKey, NodeId, TaskId};
 
 /// What the panel asks the outside world to do after a message: a call
@@ -104,5 +106,10 @@ pub enum Effect {
     Connect {
         config: PanelConfig,
         save: bool,
+    },
+    /// One act on many rows: a call each, a few at a time.
+    Bulk {
+        action: BulkAction,
+        targets: Vec<BulkTarget>,
     },
 }

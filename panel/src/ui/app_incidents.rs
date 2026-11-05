@@ -12,7 +12,10 @@ impl App {
     pub(super) fn incidents_loaded(&mut self, result: Result<Vec<Incident>, PanelError>) -> Vec<Effect> {
         self.incidents.list_loading = false;
         match result {
-            Ok(list) => self.incidents.list = Some(list),
+            Ok(list) => {
+                self.incidents.list = Some(list);
+                self.drop_gone_picks();
+            }
             Err(error) => self.banner = Some(Banner::error(&error, self.now)),
         }
         Vec::new()

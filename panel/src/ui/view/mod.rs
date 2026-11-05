@@ -6,6 +6,7 @@ mod bot_detail;
 mod bot_edit;
 mod bots;
 mod decide;
+mod grid;
 mod incidents;
 mod levels;
 mod nodes;

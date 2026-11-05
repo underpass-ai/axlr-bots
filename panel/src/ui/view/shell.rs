@@ -35,31 +35,30 @@ pub fn frame<'a>(app: &'a App, content: El<'a>, tokens: Tokens) -> Element<'a, M
     .height(Length::Fill);
     match &app.confirm {
         Some(confirm) => {
-            let lines = confirm.lines();
-            let dialog = container(
-                column![
-                    row![icon(Icon::Alert, 26.0, tokens.bad), bold(confirm.title()).size(22.0)]
-                        .spacing(12)
-                        .align_y(Alignment::Center),
-                    text(lines[0]),
-                    text(lines[1]),
-                    row![
-                        action(Kind::Secondary, Icon::Back, "Keep it", Some(Message::ConfirmNo), tokens),
-                        action(
-                            Kind::Danger,
-                            Icon::Ban,
-                            confirm.act(),
-                            Some(Message::ConfirmYes),
-                            tokens
-                        ),
-                    ]
+            // A Pause, Turn on, Approve or Resolve on many rows asks too,
+            // but does not look like a Stop.
+            let (kind, glyph, ink) = if confirm.destructive() {
+                (Kind::Danger, Icon::Ban, tokens.bad)
+            } else {
+                (Kind::Primary, Icon::Check, tokens.accent)
+            };
+            let mut body = column![
+                row![icon(Icon::Alert, 26.0, ink), bold(confirm.title()).size(22.0)]
                     .spacing(12)
+                    .align_y(Alignment::Center)
+            ]
+            .spacing(14);
+            for line in confirm.lines() {
+                body = body.push(text(line));
+            }
+            body = body.push(
+                row![
+                    action(Kind::Secondary, Icon::Back, "Keep it", Some(Message::ConfirmNo), tokens),
+                    action(kind, glyph, confirm.act(), Some(Message::ConfirmYes), tokens),
                 ]
-                .spacing(14),
-            )
-            .padding(26)
-            .max_width(520)
-            .style(styles::card(tokens));
+                .spacing(12),
+            );
+            let dialog = container(body).padding(26).max_width(520).style(styles::card(tokens));
             stack![page, opaque(center(opaque(dialog)).style(styles::scrim))].into()
         }
         None => page.into(),

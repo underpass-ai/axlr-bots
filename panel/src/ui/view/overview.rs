@@ -183,7 +183,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             mouse_area(
                 row![
                     pill(Tone::of_task(task.status), task.status.label(), tokens),
-                    bold(task.bot_id.to_string()).size(SMALL),
+                    container(super::grid::clipped(task.bot_id.to_string(), 18, true, tokens)).max_width(170),
                     text(task.headline(48))
                         .size(SMALL)
                         .wrapping(Wrapping::WordOrGlyph)

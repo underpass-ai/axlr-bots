@@ -1,15 +1,18 @@
 //! Teams: who is in each, what each member is for, and the team's
 //! timeline as it happens.
 
-use iced::widget::{Space, column, container, mouse_area, row, scrollable, text};
+use iced::widget::text::Wrapping;
+use iced::widget::{Space, column, container, mouse_area, row, scrollable, table, text};
 use iced::{Alignment, Length, mouse};
 
+use super::grid;
 use super::widgets::{
     El, SMALL, Voice, action, bold, card, chip, empty, field, icon, muted, pill, reader, section, title,
 };
 use crate::domain::{Event, TaskId, Team};
 use crate::ui::format;
 use crate::ui::styles::Kind;
+use crate::ui::table::{ColumnRef, List, RowRef, SortColumn, TeamColumn};
 use crate::ui::{App, Icon, Message, ReaderKey, Screen, Tokens, Tone};
 
 /// How many events of a team the timeline shows, newest first.
@@ -36,35 +39,78 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         ));
         return page.into();
     }
-    for team in teams {
-        let last = app
-            .watch
-            .feed(&team.name)
-            .and_then(|f| f.events.iter().rev().find(|e| e.event_type == "bot.event.emitted"));
-        let mut head = row![
-            icon(Icon::Team, 18.0, tokens.text),
-            bold(team.name.clone()).size(18.0),
-            chip(format!("{} bots", team.members.len()), tokens),
-        ]
-        .spacing(10)
-        .align_y(Alignment::Center);
-        if team.lonely() {
-            head = head.push(pill(Tone::Wait, "only one bot: a typo?", tokens));
-        }
-        head = head.push(Space::new().width(Length::Fill)).push(action(
-            Kind::Ghost,
-            Icon::Play,
-            "Open",
-            Some(Message::Go(Screen::Team(team.name.clone()))),
+    let state = &app.tables.teams;
+    let shown: Vec<Team> = state.sort.order(&teams).into_iter().cloned().collect();
+    let head = |c: TeamColumn| {
+        grid::header(
+            c.label(),
+            state.sort.badge(c),
+            Message::SortBy(ColumnRef::Teams(c)),
             tokens,
-        ));
-        let names: Vec<String> = team.members.iter().map(|b| b.id.to_string()).collect();
-        let mut body = column![head, muted(names.join(" · "), tokens)].spacing(8);
-        if let Some(event) = last {
-            body = body.push(line(event, tokens));
-        }
-        page = page.push(card(body, tokens));
+        )
+    };
+    let all = state.selection.covers(shown.iter().map(|t| &t.name));
+    let columns = vec![
+        table::column(
+            grid::check(all, |on| Message::PickShown(List::Teams, on), tokens),
+            move |team: Team| {
+                let name = team.name.clone();
+                grid::check(
+                    state.selection.contains(&team.name),
+                    move |on| Message::Pick(RowRef::Team(name.clone()), on),
+                    tokens,
+                )
+            },
+        ),
+        table::column(head(TeamColumn::Team), move |team: Team| -> El<'a> {
+            let mut cell = column![grid::clipped(team.name.clone(), 20, true, tokens)].spacing(4);
+            if team.lonely() {
+                cell = cell.push(pill(Tone::Wait, "only one bot: a typo?", tokens));
+            }
+            cell.into()
+        }),
+        table::column(head(TeamColumn::Bots), move |team: Team| {
+            text(team.members.len().to_string())
+        }),
+        table::column(bold("Members"), move |team: Team| -> El<'a> {
+            let names: Vec<String> = team.members.iter().map(|b| b.id.to_string()).collect();
+            muted(names.join(" · "), tokens).wrapping(Wrapping::WordOrGlyph).into()
+        })
+        .width(Length::FillPortion(3)),
+        table::column(bold("Last word"), move |team: Team| -> El<'a> {
+            let last = app
+                .watch
+                .feed(&team.name)
+                .and_then(|f| f.events.iter().rev().find(|e| e.event_type == "bot.event.emitted"));
+            match last {
+                Some(event) => line(event, tokens),
+                None => muted("—", tokens).into(),
+            }
+        })
+        .width(Length::FillPortion(4)),
+        table::column(text(""), move |team: Team| {
+            action(
+                Kind::Ghost,
+                Icon::Play,
+                "Open",
+                Some(Message::Go(Screen::Team(team.name.clone()))),
+                tokens,
+            )
+        }),
+    ];
+    let mut body = column![].spacing(12);
+    if let Some(bar) = grid::bar(app, List::Teams, tokens) {
+        body = body.push(bar);
     }
+    page = page.push(card(
+        body.push(
+            table::table(columns, shown)
+                .padding_x(10)
+                .padding_y(10)
+                .width(Length::Fill),
+        ),
+        tokens,
+    ));
     scrollable(page.padding(iced::Padding {
         right: 12.0,
         ..Default::default()

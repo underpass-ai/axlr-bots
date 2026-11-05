@@ -1,14 +1,16 @@
 //! Nodes: who runs the bots, how healthy, and enrolling a new host.
 
-use iced::widget::{Space, column, container, row, scrollable, table, text};
+use iced::widget::{Space, column, container, responsive, row, scrollable, table, text};
 use iced::{Alignment, Length};
 
+use super::grid;
 use super::widgets::{
     BODY, El, Voice, action, bold, card, chip, empty, field, icon, muted, pill, reader, section_title, title,
 };
 use crate::domain::{CertificateHealth, Node};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
+use crate::ui::table::{ColumnRef, List, NodeColumn, RowRef, SortColumn};
 use crate::ui::{App, Icon, Message, ReaderKey, Tokens, Tone};
 
 pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
@@ -33,66 +35,14 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     if app.mint.open {
         page = page.push(mint_form(app, tokens));
     }
-    let now = app.now;
-    let columns = vec![
-        table::column(bold("Status"), move |n: &'a Node| {
-            pill(Tone::of_node(n.status), n.status.name(), tokens)
-        }),
-        table::column(bold("Node"), move |n: &'a Node| -> El<'a> {
-            let mut cell = column![bold(n.id.to_string()), muted(n.host_name.clone(), tokens)].spacing(2);
-            if n.capabilities.dedicated {
-                cell = cell.push(chip("dedicated", tokens));
-            }
-            cell.into()
-        })
-        .width(Length::FillPortion(2)),
-        table::column(bold("Labels"), move |n: &'a Node| -> El<'a> {
-            let mut chips = row![].spacing(6);
-            for pair in n.label_pairs() {
-                chips = chips.push(chip(pair, tokens));
-            }
-            chips.wrap().into()
-        })
-        .width(Length::FillPortion(3)),
-        table::column(bold("Last seen"), move |n: &'a Node| {
-            text(format::age(n.last_seen_at, now))
-        }),
-        table::column(bold("Certificate"), move |n: &'a Node| certificate(n, now, tokens)),
-        table::column(bold("AXLR"), move |n: &'a Node| {
-            text(if n.capabilities.axlr_version.is_empty() {
-                "—".to_string()
-            } else {
-                n.capabilities.axlr_version.clone()
-            })
-        }),
-        table::column(text(""), move |n: &'a Node| -> El<'a> {
-            if n.status.can_revoke() {
-                action(
-                    Kind::Secondary,
-                    Icon::Ban,
-                    "Revoke",
-                    Some(Message::AskRevoke(n.id.clone())),
-                    tokens,
-                )
-            } else {
-                muted(
-                    format!(
-                        "revoked {}",
-                        n.revoked_at.map(|at| format::age(at, now)).unwrap_or_default()
-                    ),
-                    tokens,
-                )
-                .into()
-            }
-        }),
-    ];
     let list: El<'a> = if fleet.nodes.is_empty() {
         empty(Icon::Nodes, "No node yet: make a token and enroll a host", tokens)
     } else {
-        table::table(columns, &fleet.nodes)
-            .padding_x(12)
-            .padding_y(10)
-            .width(Length::Fill)
+        let mut body = column![].spacing(12);
+        if let Some(bar) = grid::bar(app, List::Nodes, tokens) {
+            body = body.push(bar);
+        }
+        body.push(responsive(move |space| list(app, &fleet.nodes, space.width < NARROW, tokens)).height(Length::Shrink))
             .into()
     };
     page = page.push(card(list, tokens));
@@ -103,6 +53,115 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     .id(super::widgets::PAGE)
     .height(Length::Fill)
     .into()
+}
+
+/// Under this width the table leaves out the AXLR column (its version
+/// goes under the node) and Revoke is an icon, so the node keeps room.
+const NARROW: f32 = 900.0;
+
+/// The nodes in the table's order: a box, the status, the node, its
+/// labels, when it was last seen, its certificate, AXLR unless `narrow`,
+/// and Revoke.
+fn list<'a>(app: &'a App, nodes: &'a [Node], narrow: bool, tokens: Tokens) -> El<'a> {
+    let now = app.now;
+    let state = &app.tables.nodes;
+    let shown = state.sort.order(nodes);
+    let head = |c: NodeColumn| {
+        grid::header(
+            c.label(),
+            state.sort.badge(c),
+            Message::SortBy(ColumnRef::Nodes(c)),
+            tokens,
+        )
+    };
+    let all = state.selection.covers(shown.iter().map(|n| &n.id));
+    let mut columns = vec![
+        table::column(
+            grid::check(all, |on| Message::PickShown(List::Nodes, on), tokens),
+            move |n: &'a Node| {
+                let id = n.id.clone();
+                grid::check(
+                    state.selection.contains(&n.id),
+                    move |on| Message::Pick(RowRef::Node(id.clone()), on),
+                    tokens,
+                )
+            },
+        ),
+        table::column(head(NodeColumn::Status), move |n: &'a Node| {
+            pill(Tone::of_node(n.status), n.status.name(), tokens)
+        }),
+        table::column(head(NodeColumn::Node), move |n: &'a Node| -> El<'a> {
+            let mut cell = column![
+                grid::fitted(n.id.to_string(), true, tokens),
+                muted(grid::shorten(&n.host_name, 28), tokens)
+            ]
+            .spacing(2);
+            if narrow && !n.capabilities.axlr_version.is_empty() {
+                cell = cell.push(muted(grid::shorten(&n.capabilities.axlr_version, 24), tokens));
+            }
+            if n.capabilities.dedicated {
+                cell = cell.push(chip("dedicated", tokens));
+            }
+            cell.into()
+        })
+        .width(Length::FillPortion(if narrow { 3 } else { 2 })),
+        table::column(bold("Labels"), move |n: &'a Node| -> El<'a> {
+            let mut chips = row![].spacing(6);
+            for pair in n.label_pairs() {
+                chips = chips.push(chip(pair, tokens));
+            }
+            chips.wrap().into()
+        })
+        .width(Length::FillPortion(if narrow { 2 } else { 3 })),
+        table::column(head(NodeColumn::LastSeen), move |n: &'a Node| {
+            text(format::age(n.last_seen_at, now))
+        }),
+        table::column(head(NodeColumn::Certificate), move |n: &'a Node| {
+            certificate(n, now, tokens)
+        }),
+    ];
+    if !narrow {
+        columns.push(table::column(head(NodeColumn::Axlr), move |n: &'a Node| {
+            text(if n.capabilities.axlr_version.is_empty() {
+                "—".to_string()
+            } else {
+                n.capabilities.axlr_version.clone()
+            })
+        }));
+    }
+    columns.push(table::column(text(""), move |n: &'a Node| -> El<'a> {
+        if n.status.can_revoke() && narrow {
+            grid::icon_act(
+                Kind::Secondary,
+                Icon::Ban,
+                "Revoke",
+                Some(Message::AskRevoke(n.id.clone())),
+                tokens,
+            )
+        } else if n.status.can_revoke() {
+            action(
+                Kind::Secondary,
+                Icon::Ban,
+                "Revoke",
+                Some(Message::AskRevoke(n.id.clone())),
+                tokens,
+            )
+        } else {
+            muted(
+                format!(
+                    "revoked {}",
+                    n.revoked_at.map(|at| format::age(at, now)).unwrap_or_default()
+                ),
+                tokens,
+            )
+            .into()
+        }
+    }));
+    table::table(columns, shown)
+        .padding_x(10)
+        .padding_y(10)
+        .width(Length::Fill)
+        .into()
 }
 
 fn certificate<'a>(node: &Node, now: chrono::DateTime<chrono::Utc>, tokens: Tokens) -> El<'a> {

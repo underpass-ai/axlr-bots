@@ -2,15 +2,17 @@
 //! diagnosis and tasks, and closing one by hand.
 
 use iced::widget::text::Wrapping;
-use iced::widget::{Space, column, container, mouse_area, row, scrollable, table, text, text_input};
+use iced::widget::{Space, column, container, mouse_area, responsive, row, scrollable, table, text, text_input};
 use iced::{Alignment, Length, mouse};
 
+use super::grid;
 use super::widgets::{
     BODY, El, Voice, action, bold, card, chip, empty, fact, muted, pill, pill_with, reader, section, title,
 };
 use crate::domain::{Incident, TaskId};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
+use crate::ui::table::{ColumnRef, IncidentColumn, List, RowRef, SortColumn};
 use crate::ui::{App, Icon, Message, ReaderKey, Screen, Tokens, Tone};
 
 /// Every incident, the last seen first.
@@ -21,39 +23,17 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             .push(empty(Icon::Hourglass, "Loading the incidents…", tokens))
             .into();
     };
-    let now = app.now;
-    let columns = vec![
-        table::column(bold("Severity"), move |i: &'a Incident| severity(i, tokens)),
-        table::column(bold("Status"), move |i: &'a Incident| status(i, tokens)),
-        // The title takes what the other columns leave and wraps there,
-        // so the smallest window keeps the age and Open in sight.
-        table::column(bold("Incident"), move |i: &'a Incident| {
-            text(i.title.clone()).wrapping(Wrapping::WordOrGlyph)
-        })
-        .width(Length::Fill),
-        table::column(bold("Bot"), move |i: &'a Incident| bold(i.bot_id.to_string())),
-        table::column(bold("Repeats"), move |i: &'a Incident| text(i.repeats.to_string())),
-        table::column(bold("Last seen"), move |i: &'a Incident| {
-            text(format::age(i.last_seen_at, now)).wrapping(Wrapping::None)
-        }),
-        table::column(text(""), move |i: &'a Incident| {
-            action(
-                Kind::Ghost,
-                Icon::Play,
-                "Open",
-                Some(Message::Go(Screen::Incident(i.id.clone()))),
-                tokens,
-            )
-        }),
-    ];
     let body: El<'a> = if incidents.is_empty() {
         empty(Icon::Check, "No incident: nothing is firing", tokens)
     } else {
-        table::table(columns, incidents)
-            .padding_x(12)
-            .padding_y(8)
-            .width(Length::Fill)
-            .into()
+        let mut list = column![].spacing(12);
+        if let Some(bar) = grid::bar(app, List::Incidents, tokens) {
+            list = list.push(bar);
+        }
+        list.push(
+            responsive(move |space| table_of(app, incidents, space.width < NARROW, tokens)).height(Length::Shrink),
+        )
+        .into()
     };
     page = page.push(card(body, tokens));
     scrollable(page.padding(iced::Padding {
@@ -63,6 +43,84 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     .id(super::widgets::PAGE)
     .height(Length::Fill)
     .into()
+}
+
+/// Under this width the severity and the status share one column and
+/// the repeats go, so the title keeps room to read beside Open.
+const NARROW: f32 = 900.0;
+
+/// The incidents in the table's order: a box, the severity and status,
+/// the title, the bot, the repeats unless `narrow`, when last seen, Open.
+fn table_of<'a>(app: &'a App, incidents: &'a [Incident], narrow: bool, tokens: Tokens) -> El<'a> {
+    let now = app.now;
+    let state = &app.tables.incidents;
+    let shown = state.sort.order(incidents);
+    let head = |c: IncidentColumn| {
+        grid::header(
+            c.label(),
+            state.sort.badge(c),
+            Message::SortBy(ColumnRef::Incidents(c)),
+            tokens,
+        )
+    };
+    let all = state.selection.covers(shown.iter().map(|i| &i.id));
+    let mut columns = vec![table::column(
+        grid::check(all, |on| Message::PickShown(List::Incidents, on), tokens),
+        move |i: &'a Incident| {
+            let id = i.id.clone();
+            grid::check(
+                state.selection.contains(&i.id),
+                move |on| Message::Pick(RowRef::Incident(id.clone()), on),
+                tokens,
+            )
+        },
+    )];
+    if narrow {
+        columns.push(table::column(
+            column![head(IncidentColumn::Severity), head(IncidentColumn::Status)].spacing(2),
+            move |i: &'a Incident| -> El<'a> { column![severity(i, tokens), status(i, tokens)].spacing(4).into() },
+        ));
+    } else {
+        columns.push(table::column(head(IncidentColumn::Severity), move |i: &'a Incident| {
+            severity(i, tokens)
+        }));
+        columns.push(table::column(head(IncidentColumn::Status), move |i: &'a Incident| {
+            status(i, tokens)
+        }));
+    }
+    // The title takes what the other columns leave and wraps there, so
+    // the smallest window keeps the age and Open in sight.
+    columns.push(
+        table::column(head(IncidentColumn::Incident), move |i: &'a Incident| {
+            text(i.title.clone()).wrapping(Wrapping::WordOrGlyph)
+        })
+        .width(Length::Fill),
+    );
+    columns.push(table::column(head(IncidentColumn::Bot), move |i: &'a Incident| {
+        grid::clipped(i.bot_id.to_string(), if narrow { 12 } else { 20 }, true, tokens)
+    }));
+    if !narrow {
+        columns.push(table::column(head(IncidentColumn::Repeats), move |i: &'a Incident| {
+            text(i.repeats.to_string())
+        }));
+    }
+    columns.push(table::column(head(IncidentColumn::LastSeen), move |i: &'a Incident| {
+        text(format::age(i.last_seen_at, now)).wrapping(Wrapping::None)
+    }));
+    columns.push(table::column(text(""), move |i: &'a Incident| {
+        action(
+            Kind::Ghost,
+            Icon::Play,
+            "Open",
+            Some(Message::Go(Screen::Incident(i.id.clone()))),
+            tokens,
+        )
+    }));
+    table::table(columns, shown)
+        .padding_x(10)
+        .padding_y(8)
+        .width(Length::Fill)
+        .into()
 }
 
 /// One incident: where it stands, its alerts, what the triage found, the
