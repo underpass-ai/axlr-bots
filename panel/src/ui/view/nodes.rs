@@ -38,21 +38,19 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let list: El<'a> = if fleet.nodes.is_empty() {
         empty(Icon::Nodes, "No node yet: make a token and enroll a host", tokens)
     } else {
-        let mut body = column![].spacing(12);
-        if let Some(bar) = grid::bar(app, List::Nodes, tokens) {
-            body = body.push(bar);
-        }
-        body.push(responsive(move |space| list(app, &fleet.nodes, space.width < NARROW, tokens)).height(Length::Shrink))
+        responsive(move |space| list(app, &fleet.nodes, space.width < NARROW, tokens))
+            .height(Length::Shrink)
             .into()
     };
     page = page.push(card(list, tokens));
-    scrollable(page.padding(iced::Padding {
+    let page = scrollable(page.padding(iced::Padding {
         right: 12.0,
+        bottom: grid::BAR_ROOM,
         ..Default::default()
     }))
     .id(super::widgets::PAGE)
-    .height(Length::Fill)
-    .into()
+    .height(Length::Fill);
+    grid::with_bar(app, List::Nodes, page.into(), tokens)
 }
 
 /// Under this width the table leaves out the AXLR column (its version
@@ -132,7 +130,7 @@ fn list<'a>(app: &'a App, nodes: &'a [Node], narrow: bool, tokens: Tokens) -> El
     columns.push(table::column(text(""), move |n: &'a Node| -> El<'a> {
         if n.status.can_revoke() && narrow {
             grid::icon_act(
-                Kind::Secondary,
+                Kind::Ghost,
                 Icon::Ban,
                 "Revoke",
                 Some(Message::AskRevoke(n.id.clone())),
@@ -140,7 +138,7 @@ fn list<'a>(app: &'a App, nodes: &'a [Node], narrow: bool, tokens: Tokens) -> El
             )
         } else if n.status.can_revoke() {
             action(
-                Kind::Secondary,
+                Kind::Ghost,
                 Icon::Ban,
                 "Revoke",
                 Some(Message::AskRevoke(n.id.clone())),
@@ -157,11 +155,7 @@ fn list<'a>(app: &'a App, nodes: &'a [Node], narrow: bool, tokens: Tokens) -> El
             .into()
         }
     }));
-    table::table(columns, shown)
-        .padding_x(10)
-        .padding_y(10)
-        .width(Length::Fill)
-        .into()
+    grid::sheet(columns, shown)
 }
 
 fn certificate<'a>(node: &Node, now: chrono::DateTime<chrono::Utc>, tokens: Tokens) -> El<'a> {

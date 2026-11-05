@@ -9,7 +9,7 @@ use super::widgets::{
 use super::{grid, levels};
 use crate::application::BotNow;
 use crate::domain::{AutonomyLevel, Bot};
-use crate::ui::styles::Kind;
+use crate::ui::styles::{self, Kind};
 use crate::ui::table::{BotColumn, ColumnRef, List, RowRef, SortColumn};
 use crate::ui::{App, Icon, Message, NodeChoice, Screen, Tokens, Tone};
 
@@ -46,21 +46,19 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let list: El<'a> = if fleet.bots.is_empty() {
         empty(Icon::Bots, "No bot yet: add one", tokens)
     } else {
-        let mut body = column![].spacing(12);
-        if let Some(bar) = grid::bar(app, List::Bots, tokens) {
-            body = body.push(bar);
-        }
-        body.push(responsive(move |space| list(app, fleet, space.width < NARROW, tokens)).height(Length::Shrink))
+        responsive(move |space| list(app, fleet, space.width < NARROW, tokens))
+            .height(Length::Shrink)
             .into()
     };
     page = page.push(card(list, tokens));
-    scrollable(page.padding(iced::Padding {
+    let page = scrollable(page.padding(iced::Padding {
         right: 12.0,
+        bottom: grid::BAR_ROOM,
         ..Default::default()
     }))
     .id(super::widgets::PAGE)
-    .height(Length::Fill)
-    .into()
+    .height(Length::Fill);
+    grid::with_bar(app, List::Bots, page.into(), tokens)
 }
 
 /// Under this width the table leaves out Starts by and Open is an icon,
@@ -108,11 +106,13 @@ fn list<'a>(app: &'a App, fleet: &'a crate::application::Fleet, narrow: bool, to
             .into()
         })
         .width(Length::FillPortion(3)),
+        // The pill, and what it works on in one line under it, so every
+        // row keeps the height of a name over its model.
         table::column(bold("Now"), move |b: &'a Bot| -> El<'a> {
             let state = BotNow::of(b, &fleet.tasks, &[]);
-            let mut cell = column![pill(Tone::of_now(&state), state.word(), tokens)].spacing(4);
+            let mut cell = column![pill(Tone::of_now(&state), state.word(), tokens)].spacing(2);
             if let Some(task) = state.task() {
-                cell = cell.push(muted(task.headline(36), tokens));
+                cell = cell.push(grid::fitted_muted(task.headline(120), tokens));
             }
             cell.into()
         })
@@ -134,61 +134,51 @@ fn list<'a>(app: &'a App, fleet: &'a crate::application::Fleet, narrow: bool, to
     }
     columns.push(table::column(text(""), move |b: &'a Bot| -> El<'a> {
         let switch = if b.status.can_pause() {
-            grid::icon_act(
-                Kind::Secondary,
+            Some(grid::icon_act(
+                Kind::Ghost,
                 Icon::Pause,
                 "Pause",
                 (!switching).then(|| Message::Pause(b.id.clone())),
                 tokens,
-            )
+            ))
         } else if b.status.can_enable() {
-            grid::icon_act(
+            Some(grid::icon_act(
                 Kind::Good,
                 Icon::Play,
                 "Turn on",
                 (!switching).then(|| Message::Enable(b.id.clone())),
                 tokens,
-            )
+            ))
         } else {
-            Space::new().width(32).into()
+            None
         };
         let open = if narrow {
-            grid::icon_act(
+            grid::act_slot(Some(grid::icon_act(
                 Kind::Ghost,
                 Icon::Next,
                 "Open",
                 Some(Message::Go(Screen::Bot(b.id.clone()))),
                 tokens,
-            )
+            )))
         } else {
-            action(
-                Kind::Ghost,
-                Icon::Play,
-                "Open",
-                Some(Message::Go(Screen::Bot(b.id.clone()))),
-                tokens,
-            )
+            super::widgets::open("Open", Message::Go(Screen::Bot(b.id.clone())), tokens)
         };
         row![
-            switch,
-            grid::icon_act(
+            grid::act_slot(switch),
+            grid::act_slot(Some(grid::icon_act(
                 Kind::Ghost,
                 Icon::Stop,
                 "Stop bot and its tasks",
                 (!switching).then(|| Message::AskStopBot(b.id.clone())),
                 tokens
-            ),
+            ))),
             open
         ]
         .spacing(4)
         .align_y(Alignment::Center)
         .into()
     }));
-    table::table(columns, shown)
-        .padding_x(8)
-        .padding_y(10)
-        .width(Length::Fill)
-        .into()
+    grid::sheet(columns, shown)
 }
 
 /// The Team question: a name its teammates share, with the teams there
@@ -260,7 +250,11 @@ fn register_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         row![
             column![
                 bold("Where does it run?").size(SMALL),
-                pick_list(nodes, selected, Message::RegisterNode).padding(10).width(360)
+                pick_list(nodes, selected, Message::RegisterNode)
+                    .padding(10)
+                    .width(360)
+                    .style(styles::picker(tokens))
+                    .menu_style(styles::menu(tokens))
             ]
             .spacing(6),
             container(team_field(app, &form.team, tokens)).width(360),

@@ -4,6 +4,15 @@ use chrono::{DateTime, Duration, Local, Utc};
 
 use crate::domain::{Cost, Event, NodeWait, Usage};
 
+/// A count with its noun, one or many: `1 run`, `3 runs`.
+pub fn count(n: u64, one: &str, many: &str) -> String {
+    if n == 1 {
+        format!("1 {one}")
+    } else {
+        format!("{n} {many}")
+    }
+}
+
 /// `now`, `12s`, `5m`, `3h`, `2d` ago.
 pub fn age(from: DateTime<Utc>, now: DateTime<Utc>) -> String {
     span(now - from)
@@ -191,6 +200,13 @@ pub fn short_id(id: &str, keep: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn counts_say_one_or_many() {
+        assert_eq!(count(1, "run", "runs"), "1 run");
+        assert_eq!(count(0, "run", "runs"), "0 runs");
+        assert_eq!(count(3, "tool call", "tool calls"), "3 tool calls");
+    }
 
     #[test]
     fn a_cost_some_run_did_not_tell_is_a_floor() {

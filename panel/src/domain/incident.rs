@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{BotId, IncidentSeverity, IncidentStatus, TaskId};
+use super::{BotId, Cost, IncidentSeverity, IncidentStatus, TaskId};
 
 /// One grouped fault, as the control plane reports it: what its alerts
 /// say, the bot that triages it, the tasks that worked on it and where
@@ -41,6 +41,10 @@ pub struct Incident {
     pub retries: u32,
     #[serde(default, rename = "costUsd", skip_serializing_if = "is_free")]
     pub cost_usd: f64,
+    /// One of its runs stopped before it said what it cost: `cost_usd`
+    /// is at least what it says.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cost_unknown: bool,
     pub opened_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub last_seen_at: DateTime<Utc>,
@@ -57,6 +61,11 @@ fn is_free(usd: &f64) -> bool {
 }
 
 impl Incident {
+    /// What its runs cost: a floor when one of them did not tell.
+    pub fn cost(&self) -> Cost {
+        Cost::new(self.cost_usd, u32::from(self.cost_unknown))
+    }
+
     /// The alerts still firing: those seen that the source has not said
     /// went green, oldest first.
     pub fn firing(&self) -> Vec<&str> {
@@ -105,6 +114,16 @@ mod tests {
         assert_eq!(incident.severity, IncidentSeverity::Unknown);
         assert!(incident.fingerprints.is_empty() && incident.task_ids.is_empty());
         assert!(incident.firing().is_empty());
+        assert!(!incident.cost().is_floor());
+        let mut unknown = incident.clone();
+        unknown.cost_unknown = true;
+        assert!(unknown.cost().is_floor());
+        assert!(
+            serde_json::to_string(&unknown)
+                .unwrap()
+                .contains("\"costUnknown\":true")
+        );
+        assert!(!serde_json::to_string(&incident).unwrap().contains("costUnknown"));
         let absent: Incident = serde_json::from_str(
             r#"{"id":"inc-3","tenantId":"t","botId":"bot","groupKey":"g","source":"manual","title":"x",
             "status":"Open","cycle":1,"openedAt":"2026-11-01T10:00:00Z","updatedAt":"2026-11-01T10:00:00Z",

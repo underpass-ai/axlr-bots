@@ -5,7 +5,7 @@
 use iced::widget::{Space, button, column, container, row, text, text_input};
 use iced::{Alignment, Length, Padding};
 
-use super::widgets::{El, SMALL, action, bold, icon, muted, section_with, semibold};
+use super::widgets::{El, SMALL, action, bold, icon, muted, section_with, segmented, semibold};
 use crate::domain::{AutonomyLevel, Bot, CORE_TOOLS, ToolAccess};
 use crate::ui::styles::{self, Kind};
 use crate::ui::{App, Icon, Message, Tokens};
@@ -30,16 +30,13 @@ pub fn card<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> Option<El<'a>> {
         list = list.push(muted("No tool: it can only think and answer.", tokens));
     }
     for (index, setting) in draft.tools.tools.iter().enumerate() {
-        let mut choices = row![].spacing(6);
-        for access in ToolAccess::ALL {
-            let on = access == setting.access;
-            choices = choices.push(
-                button(text(access.label()).size(SMALL))
-                    .padding(Padding::from([5, 10]))
-                    .style(styles::button_style(tokens, Kind::Chip(on)))
-                    .on_press_maybe((!on).then_some(Message::EditAccess(index, access))),
-            );
-        }
+        let choices = segmented(
+            ToolAccess::ALL,
+            setting.access,
+            ToolAccess::label,
+            move |access| Message::EditAccess(index, access),
+            tokens,
+        );
         let mut line = column![
             row![
                 container(bold(setting.tool.clone())).width(Length::FillPortion(2)),
@@ -65,16 +62,13 @@ pub fn card<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> Option<El<'a>> {
     list = list.push(muted(level_note(bot.level), tokens).size(SMALL));
 
     let ready = !form.new_tool.trim().is_empty();
-    let mut picks = row![].spacing(6);
-    for access in ToolAccess::ALL {
-        let on = access == form.new_access;
-        picks = picks.push(
-            button(text(access.label()).size(SMALL))
-                .padding(Padding::from([5, 10]))
-                .style(styles::button_style(tokens, Kind::Chip(on)))
-                .on_press_maybe((!on).then_some(Message::EditNewAccess(access))),
-        );
-    }
+    let picks = segmented(
+        ToolAccess::ALL,
+        form.new_access,
+        ToolAccess::label,
+        Message::EditNewAccess,
+        tokens,
+    );
     let add = row![
         text_input("local_read, docdb.find…", &form.new_tool)
             .on_input(Message::EditNewTool)

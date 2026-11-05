@@ -630,6 +630,7 @@ impl FakeState {
             repeats: 0,
             retries: 0,
             cost_usd: 0.0,
+            cost_unknown: false,
             opened_at: now - Duration::minutes(ago + 10),
             updated_at: now - Duration::minutes(ago),
             last_seen_at: now - Duration::minutes(ago),
@@ -660,6 +661,7 @@ impl FakeState {
         escalated.repeats = 7;
         escalated.retries = 1;
         escalated.cost_usd = 0.031;
+        escalated.cost_unknown = true;
         let mut resolved = incident(
             "inc-cert",
             "Certificate expires soon",

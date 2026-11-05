@@ -78,7 +78,11 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     page = page.push(
         row![
             container(chips.wrap().vertical_spacing(8)).width(Length::Fill),
-            pick_list(bots, selected, Message::FilterBot).padding(8).width(220)
+            pick_list(bots, selected, Message::FilterBot)
+                .padding(8)
+                .width(220)
+                .style(styles::picker(tokens))
+                .menu_style(styles::menu(tokens))
         ]
         .spacing(12)
         .align_y(Alignment::Center),
@@ -93,10 +97,6 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         ));
     }
 
-    let mut body = column![].spacing(12);
-    if let Some(bar) = grid::bar(app, List::Tasks, tokens) {
-        body = body.push(bar);
-    }
     let list: El<'a> = if app.filter.apply(&fleet.tasks).is_empty() {
         empty(Icon::Tasks, "No task here", tokens)
     } else {
@@ -104,14 +104,15 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             .height(Length::Shrink)
             .into()
     };
-    page = page.push(card(body.push(list), tokens));
-    scrollable(page.padding(iced::Padding {
+    page = page.push(card(list, tokens));
+    let page = scrollable(page.padding(iced::Padding {
         right: 12.0,
+        bottom: grid::BAR_ROOM,
         ..Default::default()
     }))
     .id(super::widgets::PAGE)
-    .height(Length::Fill)
-    .into()
+    .height(Length::Fill);
+    grid::with_bar(app, List::Tasks, page.into(), tokens)
 }
 
 /// Under this width the table leaves out From, so the bot and the task
@@ -170,35 +171,38 @@ fn list<'a>(app: &'a App, tasks: &'a [Task], narrow: bool, tokens: Tokens) -> El
     columns.push(table::column(head(TaskColumn::Age), move |t: &'a Task| {
         text(format::age(t.created_at, now)).wrapping(Wrapping::None)
     }));
+    // Each act keeps its slot, there or not, so Stop and Open stand in
+    // one column down the table whatever the row's status.
+    let deciding = shown.iter().any(|t| t.status == TaskStatus::WaitingApproval);
     columns.push(table::column(text(""), move |t: &'a Task| -> El<'a> {
         let mut buttons = row![].spacing(4).align_y(Alignment::Center);
-        if t.status == TaskStatus::WaitingApproval {
-            buttons = buttons.push(super::decide::icons(app, &t.id, tokens));
-        }
-        if t.status.can_cancel() {
-            buttons = buttons.push(grid::icon_act(
-                Kind::Ghost,
-                Icon::Stop,
-                "Stop",
-                Some(Message::AskCancel(t.id.clone())),
-                tokens,
-            ));
+        if deciding {
+            buttons = buttons.push(if t.status == TaskStatus::WaitingApproval {
+                super::decide::icons(app, &t.id, tokens)
+            } else {
+                Space::new().width(2.0 * grid::ACT + 4.0).into()
+            });
         }
         buttons
-            .push(grid::icon_act(
+            .push(grid::act_slot(t.status.can_cancel().then(|| {
+                grid::icon_act(
+                    Kind::Ghost,
+                    Icon::Stop,
+                    "Stop",
+                    Some(Message::AskCancel(t.id.clone())),
+                    tokens,
+                )
+            })))
+            .push(grid::act_slot(Some(grid::icon_act(
                 Kind::Ghost,
                 Icon::Next,
                 "Open",
                 Some(Message::Go(Screen::Task(t.id.clone()))),
                 tokens,
-            ))
+            ))))
             .into()
     }));
-    table::table(columns, shown)
-        .padding_x(8)
-        .padding_y(8)
-        .width(Length::Fill)
-        .into()
+    grid::sheet(columns, shown)
 }
 
 fn submit_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
@@ -234,6 +238,8 @@ fn submit_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
                     pick_list(bots, selected, Message::SubmitBot)
                         .placeholder("Pick a bot")
                         .padding(10)
+                        .style(styles::picker(tokens))
+                        .menu_style(styles::menu(tokens))
                 ]
                 .spacing(6),
                 container(column![bold("Task").size(SMALL), objective].spacing(6)).width(Length::Fill),

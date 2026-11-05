@@ -27,7 +27,7 @@ impl ToolState {
     pub fn label(self) -> &'static str {
         match self {
             Self::Running => "running",
-            Self::Waiting => "waits for you",
+            Self::Waiting => "needs OK",
             Self::Ok => "ok",
             Self::Denied => "denied",
             Self::Failed => "failed",
@@ -57,9 +57,6 @@ mod tests {
         .iter()
         .map(|s| s.label())
         .collect();
-        assert_eq!(
-            labels,
-            ["running", "waits for you", "ok", "denied", "failed", "no end seen"]
-        );
+        assert_eq!(labels, ["running", "needs OK", "ok", "denied", "failed", "no end seen"]);
     }
 }

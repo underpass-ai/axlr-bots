@@ -1,7 +1,7 @@
 //! How the panel's surfaces, buttons and fields look, from the tokens:
 //! thin lines, slightly rounded corners, no shadows.
 
-use iced::widget::{button, container, svg, text_editor, text_input};
+use iced::widget::{button, container, overlay::menu, pick_list, svg, text_editor, text_input};
 use iced::{Background, Border, Color, Shadow, Theme};
 
 use super::{Tokens, Tone};
@@ -42,6 +42,27 @@ pub fn tone_card(tokens: Tokens, tone: Tone) -> impl Fn(&Theme) -> container::St
             ))),
             border: Border {
                 color,
+                width: 1.0,
+                radius: RADIUS.into(),
+            },
+            ..card(tokens)(theme)
+        }
+    }
+}
+
+/// The one stat card that asks a person to act: a whisper of its tone
+/// and a line in it, lighter than a card that holds the calls.
+pub fn stat_call(tokens: Tokens, tone: Tone) -> impl Fn(&Theme) -> container::Style {
+    move |theme| {
+        let color = tone.color(&tokens);
+        container::Style {
+            background: Some(Background::Color(mix(
+                tokens.surface,
+                color,
+                if tokens.dark { 0.07 } else { 0.06 },
+            ))),
+            border: Border {
+                color: Tokens::fade(color, 0.7),
                 width: 1.0,
                 radius: RADIUS.into(),
             },
@@ -125,6 +146,77 @@ pub fn chip(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
     }
 }
 
+/// The track of a segmented control: the raised grey in a hairline, its
+/// picked choice a surface on it.
+pub fn segments(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
+        text_color: Some(tokens.text),
+        background: Some(Background::Color(tokens.raised)),
+        border: Border {
+            color: tokens.border,
+            width: 1.0,
+            radius: RADIUS_S.into(),
+        },
+        ..container::Style::default()
+    }
+}
+
+/// The bar of acts on the picked rows, floating over the list's foot:
+/// the surface in a line a shade stronger than a card's, as the software
+/// renderer draws no soft shadow.
+pub fn floating(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
+        text_color: Some(tokens.text),
+        background: Some(Background::Color(tokens.surface)),
+        border: Border {
+            color: mix(tokens.border, tokens.text, 0.35),
+            width: 1.0,
+            radius: RADIUS.into(),
+        },
+        ..container::Style::default()
+    }
+}
+
+/// A drop-down as a field: the surface in a hairline, the accent's line
+/// while it is open, the handle in the muted ink.
+pub fn picker(tokens: Tokens) -> impl Fn(&Theme, pick_list::Status) -> pick_list::Style {
+    move |_, status| {
+        let (edge, width) = match status {
+            pick_list::Status::Opened { .. } => (tokens.accent, 1.5),
+            pick_list::Status::Hovered => (mix(tokens.border, tokens.text, 0.35), 1.0),
+            pick_list::Status::Active => (tokens.border, 1.0),
+        };
+        pick_list::Style {
+            text_color: tokens.text,
+            placeholder_color: Tokens::fade(tokens.muted, 0.75),
+            handle_color: tokens.muted,
+            background: Background::Color(tokens.surface),
+            border: Border {
+                color: edge,
+                width,
+                radius: RADIUS_S.into(),
+            },
+        }
+    }
+}
+
+/// A drop-down's open list: the surface in a hairline, the choice under
+/// the pointer in a light wash of the accent with ink words.
+pub fn menu(tokens: Tokens) -> impl Fn(&Theme) -> menu::Style {
+    move |_| menu::Style {
+        background: Background::Color(tokens.surface),
+        border: Border {
+            color: tokens.border,
+            width: 1.0,
+            radius: RADIUS_S.into(),
+        },
+        text_color: tokens.text,
+        selected_text_color: tokens.text,
+        selected_background: Background::Color(mix(tokens.surface, tokens.accent, 0.14)),
+        shadow: Shadow::default(),
+    }
+}
+
 /// The banner on top of the content.
 pub fn banner(tokens: Tokens, tone: Tone) -> impl Fn(&Theme) -> container::Style {
     move |_| {
@@ -165,9 +257,10 @@ pub enum Kind {
     Primary,
     /// Any other act: outlined.
     Secondary,
-    /// An act that cannot be undone: filled red.
+    /// An act that cannot be undone: a red word on a light red tint,
+    /// clear without shouting over the page.
     Danger,
-    /// Approve: filled green.
+    /// Approve: a green word on a light green tint.
     Good,
     /// A quiet act in a row: no fill until hovered.
     Ghost,
@@ -176,6 +269,23 @@ pub enum Kind {
     Nav(bool),
     /// A filter chip; `true` when it is on.
     Chip(bool),
+    /// A name that opens its page: ink, the accent under the pointer.
+    Link,
+    /// One choice of a segmented control; `true` when it is picked,
+    /// which lifts it off the track as a surface.
+    Segment(bool),
+}
+
+/// The fill of a tonal button: the surface with a little of the tone,
+/// a little more under the pointer.
+pub fn tonal_fill(tokens: Tokens, tone: Tone, hovered: bool) -> Color {
+    let amount = match (tokens.dark, hovered) {
+        (false, false) => 0.08,
+        (false, true) => 0.15,
+        (true, false) => 0.16,
+        (true, true) => 0.21,
+    };
+    mix(tokens.surface, tone.color(&tokens), amount)
 }
 
 pub fn button_style(tokens: Tokens, kind: Kind) -> impl Fn(&Theme, button::Status) -> button::Style {
@@ -183,8 +293,14 @@ pub fn button_style(tokens: Tokens, kind: Kind) -> impl Fn(&Theme, button::Statu
         let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
         let (background, text, border) = match kind {
             Kind::Primary => (Some(tokens.accent), tokens.on_accent, tokens.accent),
-            Kind::Danger => (Some(tokens.bad), on(tokens.bad), tokens.bad),
-            Kind::Good => (Some(tokens.good), on(tokens.good), tokens.good),
+            Kind::Danger | Kind::Good => {
+                let tone = if kind == Kind::Danger { Tone::Bad } else { Tone::Good };
+                (
+                    Some(tonal_fill(tokens, tone, hovered)),
+                    pill_ink(tokens, tone),
+                    Tokens::fade(tone.color(&tokens), 0.45),
+                )
+            }
             Kind::Secondary => (Some(tokens.surface), tokens.text, tokens.border),
             Kind::Ghost => (hovered.then_some(tokens.raised), tokens.text, Color::TRANSPARENT),
             Kind::Nav(true) => (None, tokens.accent, Color::TRANSPARENT),
@@ -195,22 +311,39 @@ pub fn button_style(tokens: Tokens, kind: Kind) -> impl Fn(&Theme, button::Statu
             ),
             Kind::Chip(true) => (Some(tokens.accent), tokens.on_accent, tokens.accent),
             Kind::Chip(false) => (Some(tokens.surface), tokens.text, tokens.border),
+            Kind::Link => (
+                None,
+                if hovered { tokens.accent } else { tokens.text },
+                Color::TRANSPARENT,
+            ),
+            Kind::Segment(true) => (Some(tokens.surface), tokens.text, tokens.border),
+            Kind::Segment(false) => (
+                hovered.then(|| mix(tokens.raised, tokens.text, 0.06)),
+                if hovered { tokens.text } else { tokens.muted },
+                Color::TRANSPARENT,
+            ),
         };
         let background = match (background, hovered, kind) {
-            (Some(color), true, Kind::Primary | Kind::Danger | Kind::Good | Kind::Chip(_)) => Some(shade(color, 0.12)),
+            (Some(color), true, Kind::Primary | Kind::Chip(_)) => Some(shade(color, 0.12)),
             (Some(color), true, Kind::Secondary) => Some(mix(color, tokens.text, 0.06)),
             (other, _, _) => other,
         };
         // A chip or an entry that is on has no act left, but it is not off:
         // it keeps its full colour.
-        let disabled = status == button::Status::Disabled && !matches!(kind, Kind::Chip(true) | Kind::Nav(true));
+        let disabled = status == button::Status::Disabled
+            && !matches!(kind, Kind::Chip(true) | Kind::Nav(true) | Kind::Segment(true));
+        let radius = match kind {
+            Kind::Segment(_) => RADIUS_S - 2.0,
+            Kind::Link => 0.0,
+            _ => RADIUS_S,
+        };
         button::Style {
             background: background.map(|c| Background::Color(if disabled { Tokens::fade(c, 0.45) } else { c })),
             text_color: if disabled { Tokens::fade(text, 0.55) } else { text },
             border: Border {
                 color: border,
                 width: 1.0,
-                radius: RADIUS_S.into(),
+                radius: radius.into(),
             },
             shadow: Shadow::default(),
             snap: true,
@@ -477,6 +610,63 @@ mod tests {
             let active = button_style(tokens, kind)(&theme, button::Status::Active);
             let hover = button_style(tokens, kind)(&theme, button::Status::Pressed);
             assert_ne!(active.background, hover.background, "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn links_segments_and_drop_downs_keep_to_ink_and_one_accent() {
+        let theme = Tokens::LIGHT.theme();
+        let tokens = Tokens::LIGHT;
+        let link = button_style(tokens, Kind::Link)(&theme, button::Status::Active);
+        assert_eq!((link.background, link.text_color), (None, tokens.text));
+        let hovered = button_style(tokens, Kind::Link)(&theme, button::Status::Hovered);
+        assert_eq!(hovered.text_color, tokens.accent);
+        let picked = button_style(tokens, Kind::Segment(true))(&theme, button::Status::Disabled);
+        assert_eq!(picked.background, Some(Background::Color(tokens.surface)));
+        assert_eq!(picked.text_color, tokens.text);
+        let other = button_style(tokens, Kind::Segment(false))(&theme, button::Status::Active);
+        assert_eq!((other.background, other.text_color), (None, tokens.muted));
+        assert_eq!(
+            segments(tokens)(&theme).background,
+            Some(Background::Color(tokens.raised))
+        );
+        let open = picker(tokens)(&theme, pick_list::Status::Opened { is_hovered: false });
+        assert_eq!(open.border.color, tokens.accent);
+        assert_eq!(
+            picker(tokens)(&theme, pick_list::Status::Active).border.color,
+            tokens.border
+        );
+        assert_ne!(
+            picker(tokens)(&theme, pick_list::Status::Hovered).border.color,
+            tokens.border
+        );
+        let list = menu(tokens)(&theme);
+        assert_eq!(list.background, Background::Color(tokens.surface));
+        assert_eq!(list.selected_text_color, tokens.text);
+        assert_eq!(
+            floating(tokens)(&theme).background,
+            Some(Background::Color(tokens.surface))
+        );
+        assert_eq!(stat_call(tokens, Tone::Wait)(&theme).border.width, 1.0);
+    }
+
+    /// Approve and Deny are tonal: a light tint, the tone's word, no
+    /// solid block.
+    #[test]
+    fn approve_and_deny_are_tonal() {
+        for tokens in [Tokens::LIGHT, Tokens::DARK] {
+            let theme = tokens.theme();
+            let deny = button_style(tokens, Kind::Danger)(&theme, button::Status::Active);
+            assert_eq!(
+                deny.background,
+                Some(Background::Color(tonal_fill(tokens, Tone::Bad, false)))
+            );
+            assert_eq!(deny.text_color, pill_ink(tokens, Tone::Bad));
+            assert_ne!(deny.background, Some(Background::Color(tokens.bad)));
+            assert_ne!(
+                tonal_fill(tokens, Tone::Good, true),
+                tonal_fill(tokens, Tone::Good, false)
+            );
         }
     }
 
