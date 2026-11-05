@@ -9,7 +9,7 @@ use super::widgets::{
     section, section_title, section_with,
 };
 use crate::application::TaskDetail;
-use crate::domain::{Event, Execution, ExecutionKind, TaskId, TaskStatus};
+use crate::domain::{Event, Execution, ExecutionKind, PostDraft, TaskId, TaskStatus};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
 use crate::ui::{App, Icon, Message, Screen, Tokens, Tone};
@@ -299,6 +299,15 @@ fn approval<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> Option<
             .align_y(Alignment::Center),
         );
     }
+    let draft = PostDraft::from_call(pending).map(|draft| {
+        let author = app
+            .fleet
+            .as_ref()
+            .and_then(|f| f.bots.iter().find(|b| b.id == detail.task.bot_id))
+            .map(|b| b.name.clone())
+            .unwrap_or_else(|| detail.task.bot_id.to_string());
+        (draft, author)
+    });
     let buttons = if deciding {
         row![icon(Icon::Hourglass, 18.0, tokens.wait), bold("Sending your answer…")]
             .spacing(10)
@@ -328,6 +337,10 @@ fn approval<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> Option<
                 ]
                 .spacing(10)
                 .align_y(Alignment::Center),
+                draft.map_or_else(
+                    || Space::new().height(0).into(),
+                    |(draft, author)| super::post_draft::view(draft, author, tokens),
+                ),
                 arguments,
                 buttons,
             ]

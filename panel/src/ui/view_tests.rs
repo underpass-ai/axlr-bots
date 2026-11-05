@@ -532,6 +532,61 @@ fn a_waiting_task_shows_the_call_and_its_answers() {
     shows(&app, &["Sending your answer…"]);
 }
 
+/// The call a bot stops on before it publishes a post: a program on the
+/// node with the words and two pictures as arguments.
+pub(crate) fn publishing_call() -> crate::domain::PendingDecision {
+    crate::domain::PendingDecision {
+        tool: "local_exec".into(),
+        call_id: "call-9".into(),
+        session_id: "sess-9".into(),
+        arguments: Some(serde_json::json!({
+            "program": "/home/me/x-ai-news/bin/x-post",
+            "args": [
+                "--topic", "hardware",
+                "--text", "A r/LocalLLaMA user reports DeepSeek-V4.1-Flash on 4x RTX 3090 and 256GB DDR4 at 524k context: prefill 400-600 tok/s, decode 30-40 tok/s.\n\nA home multi-GPU speed reference. No logs or config linked.\nhttps://www.reddit.com/r/LocalLLaMA/comments/1xnkr5q/",
+                "--card", "{\"template\":\"headline\",\"headline\":\"DeepSeek V4.1 Flash at 524k context on 4x RTX 3090\",\"kicker\":\"r/LocalLLaMA user report\"}",
+                "--card", "{\"template\":\"flow\",\"title\":\"How Maya runs a 748B MoE on a home rig\",\"steps\":[]}"
+            ],
+            "timeout_ms": 120000
+        })),
+    }
+}
+
+#[test]
+fn a_waiting_call_that_publishes_shows_the_post_as_it_would_read() {
+    use crate::adapters::fake::FakeControlPlane;
+    let fake = std::sync::Arc::new(FakeControlPlane::sample("2026-10-25T10:00:00Z".parse().unwrap()));
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    let id = fake.add_waiting_call(
+        "bot-act-with-approval",
+        "Propose today's post about AI news",
+        publishing_call(),
+    );
+    let draft = crate::domain::PostDraft::from_call(&publishing_call()).unwrap();
+    send(&mut app, Message::Go(Screen::Task(id)));
+    shows(
+        &app,
+        &[
+            "Needs your OK",
+            "local_exec",
+            "As it would read",
+            "bot-act-with-approval",
+            "· x-post · not posted yet",
+            "headline · DeepSeek V4.1 Flash at 524k context on 4x RTX 3090",
+            "flow · How Maya runs a 748B MoE on a home rig",
+            &format!("{} characters · 1 link · 2 attachments", draft.characters()),
+            "Copy text",
+            "Approve",
+            "Deny",
+        ],
+    );
+    // The call that writes a file is not a post.
+    let id = app.fleet.as_ref().unwrap().waiting()[0].id.clone();
+    send(&mut app, Message::Go(Screen::Task(id)));
+    assert!(simulator_misses(&app, "As it would read"));
+}
+
 #[test]
 fn a_finished_task_shows_its_answer_and_failure() {
     let mut app = connected();
