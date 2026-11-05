@@ -24,14 +24,20 @@ type Local struct {
 
 // NewLocal wires the service over the dependencies. Every event the use
 // cases record also wakes the long polls and the node streams waiting
-// on the service, and a push about an execution goes to its node through
-// the direct adapter and every pusher added.
+// on the service, a push about an execution goes to its node through
+// the direct adapter and every pusher added, and a task cancelled or
+// preempted while the control plane runs it in process has its run
+// interrupted, whichever use case ended it (a stop, an urgent task, a
+// team's stop.all, as well as a cancel).
 func NewLocal(deps application.Dependencies) *Local {
 	hub, extra := newChanges(), &pushers{}
+	var runner *application.SerialRunner
 	if deps.Events != nil {
-		deps.Events = tappedEvents{inner: deps.Events, changes: hub, executions: deps.Executions, pushers: extra}
+		interrupt := func(id domain.TaskID) bool { return runner.Interrupt(id) }
+		deps.Events = tappedEvents{inner: deps.Events, changes: hub, executions: deps.Executions, pushers: extra, interrupt: interrupt}
 	}
-	return &Local{deps: deps, runner: application.NewSerialRunner(deps), changes: hub, pushers: extra}
+	runner = application.NewSerialRunner(deps)
+	return &Local{deps: deps, runner: runner, changes: hub, pushers: extra}
 }
 
 // AddPusher adds a bus adapter the pushes to nodes also go through (a
