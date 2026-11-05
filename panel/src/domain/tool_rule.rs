@@ -11,6 +11,14 @@ pub struct ToolRule {
 }
 
 impl ToolRule {
+    /// A rule about the whole tool, whatever its arguments.
+    pub fn whole(tool: &str) -> Self {
+        Self {
+            tool: tool.to_string(),
+            arguments: BTreeMap::new(),
+        }
+    }
+
     /// `tool(arg=pattern, …)`, or the tool alone.
     pub fn describe(&self) -> String {
         if self.arguments.is_empty() {

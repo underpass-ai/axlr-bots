@@ -1,9 +1,9 @@
 use chrono::{DateTime, Duration, Utc};
 
 use super::{
-    Answer, Banner, BotChoice, BotView, Confirm, Effect, IncidentWatch, Keypress, Launch, ListenForm, LiveTask,
-    Message, MintForm, NodeChoice, OrderForm, PublishForm, Readers, RegisterForm, ResolveForm, Screen, Services,
-    SettingsForm, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode, passages,
+    Answer, Banner, BotChoice, BotEditForm, BotView, Confirm, DeleteForm, Effect, IncidentWatch, Keypress, Launch,
+    ListenForm, LiveTask, Message, MintForm, NodeChoice, OrderForm, PublishForm, Readers, RegisterForm, ResolveForm,
+    Screen, Services, SettingsForm, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode, passages,
 };
 use crate::application::SubscriptionChange;
 use crate::application::{EventFeed, Fleet, PanelConfig, PanelError, TaskDetail};
@@ -60,6 +60,9 @@ pub struct App {
     pub watch: TeamWatch,
     /// Making a bot listen to a topic.
     pub listen: ListenForm,
+    /// Editing a bot's mission and tools, and deleting a bot.
+    pub edit: BotEditForm,
+    pub delete: DeleteForm,
     /// Publishing an event on a team.
     pub publish: PublishForm,
     /// Giving a bot an urgent order.
@@ -113,6 +116,8 @@ impl App {
             switching: false,
             watch: TeamWatch::default(),
             listen: ListenForm::default(),
+            edit: BotEditForm::default(),
+            delete: DeleteForm::default(),
             publish: PublishForm::default(),
             order: OrderForm::default(),
             shortcuts: Vec::new(),
@@ -520,6 +525,22 @@ impl App {
             Message::TeamSaved(result) => self.team_saved(result),
             Message::TeamLoaded(name, result) => self.team_loaded(name, result),
             Message::TopicsLoaded(name, result) => self.topics_loaded(name, result),
+            message @ (Message::EditOpen(_)
+            | Message::EditClose
+            | Message::EditMission(_)
+            | Message::EditAccess(..)
+            | Message::EditRemove(_)
+            | Message::EditNewTool(_)
+            | Message::EditNewAccess(_)
+            | Message::EditAdd(_)
+            | Message::EditSave
+            | Message::EditSaved(_)
+            | Message::DeleteOpen(_)
+            | Message::DeletePreviewed(..)
+            | Message::DeleteTyped(_)
+            | Message::DeleteClose
+            | Message::DeleteSend
+            | Message::BotDeleted(..)) => self.bot_edit(message),
             Message::ListenOpen(bot) => {
                 self.listen = ListenForm::opened(bot);
                 Vec::new()
@@ -893,6 +914,8 @@ impl App {
             self.chat_draft.clear();
             self.watch.editing = None;
             self.listen = ListenForm::default();
+            self.edit = BotEditForm::default();
+            self.delete = DeleteForm::default();
             self.publish = PublishForm::default();
             self.order = OrderForm::default();
             self.task_loading = false;

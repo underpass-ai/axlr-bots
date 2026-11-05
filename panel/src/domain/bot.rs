@@ -1,7 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{AutonomyLevel, BotId, BotStatus, Budgets, ModelPolicy, Placement, Subscription, ToolRules, Trigger};
+use super::{
+    AutonomyLevel, BotApprovals, BotDelegation, BotId, BotStatus, Budgets, ModelPolicy, Placement, Subscription,
+    ToolRules, Trigger,
+};
 
 /// A bot as the control plane reports it: a durable resource with a
 /// mission, a model, tools, a level, triggers, budgets and a placement.
@@ -25,6 +28,12 @@ pub struct Bot {
     pub level: AutonomyLevel,
     #[serde(default)]
     pub tool_rules: ToolRules,
+    /// The calls it may make without a person.
+    #[serde(default)]
+    pub approvals: BotApprovals,
+    /// The bots outside its teams it may ask for a task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delegation: Option<BotDelegation>,
     #[serde(default)]
     pub triggers: Vec<Trigger>,
     #[serde(default)]

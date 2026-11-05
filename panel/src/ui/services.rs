@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use super::{BotView, Connection, Effect, Message};
 use crate::application::{
-    CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader, DownloadArtifact, FilePicker,
+    CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader, DeleteBot, DownloadArtifact, FilePicker,
     FollowBotEvents, FollowTaskEvents, FollowTeamEvents, KeySource, ListIncidents, ListTopics, LoadChat,
     LoadTaskDetail, MintEnrollmentToken, Notifier, PanelError, PatchBot, PublishEvent, RefreshFleet, RegisterBot,
-    ResolveIncident, RevokeNode, SaveSubscriptions, SendChat, ShortcutSource, ShowIncident, StopBot, SubmitTask,
-    SwitchBot,
+    ResolveIncident, RevokeNode, SaveBotEdit, SaveSubscriptions, SendChat, ShortcutSource, ShowIncident, StopBot,
+    SubmitTask, SwitchBot,
 };
 use crate::domain::BotPatch;
 
@@ -146,6 +146,24 @@ impl Services {
                 Ok(cp) => StopBot::new(cp).execute(id).await,
                 Err(e) => Err(e),
             }),
+            Effect::SaveBotEdit(id, edit) => Message::EditSaved(match self.control_plane() {
+                Ok(cp) => SaveBotEdit::new(cp).execute(id, edit).await,
+                Err(e) => Err(e),
+            }),
+            Effect::PreviewDelete(id) => {
+                let result = match self.control_plane() {
+                    Ok(cp) => DeleteBot::new(cp).preview(id.clone()).await,
+                    Err(e) => Err(e),
+                };
+                Message::DeletePreviewed(id, result)
+            }
+            Effect::DeleteBot(id) => {
+                let result = match self.control_plane() {
+                    Ok(cp) => DeleteBot::new(cp).delete(id.clone()).await,
+                    Err(e) => Err(e),
+                };
+                Message::BotDeleted(id, result)
+            }
             Effect::Submit {
                 bot,
                 objective,

@@ -1,7 +1,9 @@
 //! What the panel draws for each screen.
 
 mod activity;
+mod bot_delete;
 mod bot_detail;
+mod bot_edit;
 mod bots;
 mod decide;
 mod incidents;

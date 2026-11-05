@@ -1,7 +1,7 @@
 use serde::Serialize;
 
 use super::identifier::{validate_identifier, validate_text};
-use super::{AutonomyLevel, DomainError, MAX_SUBSCRIPTIONS, Placement, Subscription};
+use super::{AutonomyLevel, DomainError, MAX_SUBSCRIPTIONS, Placement, Subscription, ToolRule, ToolRules};
 
 /// The fields of a bot to replace; the others stay. Each named field is
 /// the whole new value.
@@ -14,6 +14,13 @@ pub struct BotPatch {
     pub level: Option<AutonomyLevel>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allowed_tools: Option<Vec<String>>,
+    /// The argument rules of its tools, the whole new value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_rules: Option<ToolRules>,
+    /// The calls approved without a person, the whole new list; the rest
+    /// of its approvals stays.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_approve: Option<Vec<ToolRule>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub placement: Option<Placement>,
     /// The bot's teams, the whole new list.
@@ -29,6 +36,8 @@ impl BotPatch {
         self.mission.is_none()
             && self.level.is_none()
             && self.allowed_tools.is_none()
+            && self.tool_rules.is_none()
+            && self.auto_approve.is_none()
             && self.placement.is_none()
             && self.groups.is_none()
             && self.subscriptions.is_none()

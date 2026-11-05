@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use super::{LiveStream, Screen};
-use crate::application::{ChatTurn, EventFeed, Notice, PanelConfig, SubscriptionChange};
+use crate::application::{BotEdit, ChatTurn, EventFeed, Notice, PanelConfig, SubscriptionChange};
 use crate::domain::{AutonomyLevel, BotForm, BotId, Decision, ExecutionId, IdempotencyKey, NodeId, TaskId};
 
 /// What the panel asks the outside world to do after a message: a call
@@ -63,6 +63,11 @@ pub enum Effect {
     Pause(BotId),
     SetLevel(BotId, AutonomyLevel),
     StopBot(BotId),
+    /// Save the edit of a bot's mission and tools, unless it changed since.
+    SaveBotEdit(BotId, BotEdit),
+    /// Read what deleting a bot will do, then delete it.
+    PreviewDelete(BotId),
+    DeleteBot(BotId),
     /// A message to a bot from its chat, with the turns before it.
     SendChat {
         bot: BotId,
