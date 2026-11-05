@@ -345,4 +345,26 @@ mod tests {
         send(&mut app, Message::ConfirmYes);
         assert_eq!(app.banner.as_ref().unwrap().title, "2 revoked");
     }
+
+    #[test]
+    fn esc_closes_a_dialog_then_the_bots_cards_then_lets_go_of_the_picks() {
+        let mut app = on(Screen::Bots);
+        send(&mut app, Message::Pick(bot("bot"), true));
+        send(&mut app, Message::AskStopBot(BotId::new("bot").unwrap()));
+        send(&mut app, Message::Key(Keypress::Escape));
+        assert!(app.confirm.is_none());
+        assert_eq!(app.tables.picked(List::Bots), 1, "the dialog goes first");
+        send(&mut app, Message::Key(Keypress::Escape));
+        assert_eq!(app.tables.picked(List::Bots), 0);
+
+        let mut page = on(Screen::Bot(BotId::new("bot").unwrap()));
+        send(&mut page, Message::DeleteOpen(BotId::new("bot").unwrap()));
+        assert!(page.delete.bot.is_some());
+        send(&mut page, Message::Key(Keypress::Escape));
+        assert!(page.delete.bot.is_none());
+        send(&mut page, Message::EditOpen(BotId::new("bot").unwrap()));
+        assert!(page.edit.bot.is_some());
+        send(&mut page, Message::Key(Keypress::Escape));
+        assert!(page.edit.bot.is_none());
+    }
 }
