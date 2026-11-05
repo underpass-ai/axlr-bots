@@ -49,6 +49,7 @@ type Incident struct {
 	repeats      int
 	retries      int
 	costUSD      float64
+	costUnknown  bool
 	openedAt     time.Time
 	updatedAt    time.Time
 	lastSeenAt   time.Time
@@ -201,6 +202,10 @@ func (i Incident) Repeats() int { return i.repeats }
 
 // CostUSD sums what the incident's executions reported.
 func (i Incident) CostUSD() float64 { return i.costUSD }
+
+// CostUnknown reports that one of the incident's executions stopped
+// before it said what it cost: CostUSD is then a floor, not the total.
+func (i Incident) CostUnknown() bool { return i.costUnknown }
 
 // OpenedAt is when the incident was first opened.
 func (i Incident) OpenedAt() time.Time { return i.openedAt }
@@ -360,12 +365,14 @@ func (i *Incident) Resolve(reason string, now time.Time) error {
 	return nil
 }
 
-// AddCost adds what an execution of the incident's tasks reported.
-func (i *Incident) AddCost(usd float64, now time.Time) error {
-	if usd < 0 {
+// AddCost adds what an execution of the incident's tasks reported; a
+// usage whose cost is unknown marks the incident's cost unknown too.
+func (i *Incident) AddCost(usage Usage, now time.Time) error {
+	if usage.CostUSD < 0 {
 		return invalid("cost", "must not be negative")
 	}
-	i.costUSD += usd
+	i.costUSD += usage.CostUSD
+	i.costUnknown = i.costUnknown || usage.CostUnknown
 	i.updatedAt = now
 	return nil
 }
@@ -396,7 +403,7 @@ func (i Incident) Snapshot() IncidentSnapshot {
 	return IncidentSnapshot{
 		ID: i.id.String(), TenantID: i.tenant.String(), BotID: i.bot.String(), GroupKey: i.groupKey, Source: i.source,
 		Title: i.title, Severity: i.severity.String(), Status: i.status.String(), Fingerprints: i.Fingerprints(), ResolvedFingerprints: i.ResolvedFingerprints(),
-		Cycle: i.cycle, TaskIDs: tasks, Diagnosis: i.diagnosis, Reason: i.reason, Repeats: i.repeats, Retries: i.retries, CostUSD: i.costUSD,
+		Cycle: i.cycle, TaskIDs: tasks, Diagnosis: i.diagnosis, Reason: i.reason, Repeats: i.repeats, Retries: i.retries, CostUSD: i.costUSD, CostUnknown: i.costUnknown,
 		OpenedAt: i.openedAt, UpdatedAt: i.updatedAt, LastSeenAt: i.lastSeenAt, ResolvedAt: resolvedAt,
 	}
 }
@@ -475,7 +482,7 @@ func RestoreIncident(s IncidentSnapshot) (Incident, error) {
 			incident.resolved = append(incident.resolved, fingerprint)
 		}
 	}
-	incident.cycle, incident.repeats, incident.retries, incident.costUSD = s.Cycle, s.Repeats, s.Retries, s.CostUSD
+	incident.cycle, incident.repeats, incident.retries, incident.costUSD, incident.costUnknown = s.Cycle, s.Repeats, s.Retries, s.CostUSD, s.CostUnknown
 	incident.status, incident.updatedAt, incident.lastSeenAt = status, s.UpdatedAt, s.LastSeenAt
 	return incident, nil
 }

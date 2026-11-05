@@ -75,7 +75,7 @@ The report carries AXLR's receipt line (`axlr.execution-receipt/v1`, at most 1 M
 axlr-bots node revoke web-2
 ```
 
-The node is marked `Revoked`, its certificate's serial goes on the denylist (`<state>/pki/revoked.json`, checked on every request a certificate authenticates, so an open connection is cut off too), and the executions it still held fail with their tasks (`revoked: node web-2 was revoked at …`, a `bot.task.failed` event with `"reason": "revoked"`). A revoked node cannot register, heartbeat or take work, and stops a run it still carries at its next lease renewal (refused `403`); a fresh token readmits it with a new certificate, and the old serial stays denied.
+The node is marked `Revoked`, its certificate's serial goes on the denylist (`<state>/pki/revoked.json`, checked on every request a certificate authenticates, so an open connection is cut off too), and the executions it still held fail with their tasks (`revoked: node web-2 was revoked at …`, a `bot.task.failed` event with `"reason": "revoked"`). A revoked node cannot register, heartbeat or take work, and stops a run it still carries at its next lease renewal (refused `403`). Every request of a revoked node is refused `403` with `"revoked": true` in the error body; at the first such answer the agent stops its heartbeats, polls, renewals and reports, logs once `node: web-2 is revoked: …` with the commands that bring it back, and idles until it is stopped (it does not exit: a sidecar that exits restarts, and a crash-looping sidecar takes its pod out of rotation). A `403` without `revoked` (a certificate a renewal just superseded) is retried as before. A fresh token readmits the node with a new certificate, and the old serial stays denied.
 
 ## Renewal
 

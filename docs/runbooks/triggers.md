@@ -96,7 +96,7 @@ Check: the timer fires once for the slot it found in the past (one task for that
 ## Remove or pause
 
 - `bot update bot --file` with `{"triggers": [{"type": "manual"}]}` removes the timer and the webhook; the timer file is dropped at the next tick.
-- A changed `every` or `cron` re-arms the timer; a paused bot's timers advance without firing.
+- A changed `every` or `cron` re-arms the timer; a paused bot's timers advance without firing. A timer a bot never had (a new bot, or a trigger added while it was paused) is armed only once the bot takes tasks, so an interval fires at once on enable.
 
 ## What the live run showed
 

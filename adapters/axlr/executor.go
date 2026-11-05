@@ -158,6 +158,7 @@ func (e *Executor) Decide(ctx context.Context, request application.DecisionReque
 	args = append(args, e.steerArgs(ctx, request.ExecutionID)...)
 	defer e.dropSteer(request.ExecutionID)
 	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout, request.OnSaid, request.OnProgress)
+	explainLostSession(&report, request.SessionID)
 	report.Policy = &policy.record
 	correlate(&report, correlation)
 	return report, err

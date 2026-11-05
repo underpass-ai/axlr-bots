@@ -1795,9 +1795,18 @@
           },
           "autoApprove": {
             "type": "array",
-            "description": "the calls approved without a person: replaces approvals.autoApprove only, the rest of approvals (its notification secrets) stays",
+            "description": "the calls approved without a person: replaces approvals.autoApprove only, the rest of approvals (its notification secrets) stays. Each item is a rule or, for short, a tool name (every call of that tool); the bot keeps rules",
             "items": {
-              "$ref": "#/components/schemas/ToolRuleSnapshot"
+              "oneOf": [
+                {
+                  "type": "string",
+                  "description": "a tool name: the rule with no arguments",
+                  "example": "local_exec"
+                },
+                {
+                  "$ref": "#/components/schemas/ToolRuleSnapshot"
+                }
+              ]
             }
           },
           "budgets": {
@@ -2307,6 +2316,10 @@
           },
           "resource": {
             "type": "string"
+          },
+          "revoked": {
+            "type": "boolean",
+            "description": "on a forbidden answer to a node: the node was revoked, and only a fresh enrollment readmits it"
           }
         },
         "required": [
@@ -3949,6 +3962,10 @@
           "costUsd": {
             "type": "number",
             "description": "what its tasks' executions reported, delegated children included"
+          },
+          "costUnknown": {
+            "type": "boolean",
+            "description": "one of its executions stopped before it said what it cost: costUsd is at least what it says (absent when false)"
           },
           "openedAt": {
             "type": "string",

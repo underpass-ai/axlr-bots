@@ -41,7 +41,7 @@ func TestAutoApproveChangesOnlyTheCallsApprovedWithoutAPerson(t *testing.T) {
 	bot := governBot(t, h, enabledBot(t, h), domain.ApprovalsSnapshot{TTL: "2h", Notify: []domain.NotifyTargetSnapshot{
 		{Type: "webhook", Name: "ops", URL: "https://hooks.example.com/axlr", Secret: "a-secret-of-sixteen-plus"},
 	}})
-	rules := []domain.ToolRuleSnapshot{{Tool: "kubernetes.get_pods"}}
+	rules := AutoApproveRules{{Tool: "kubernetes.get_pods"}}
 	updated, err := NewUpdateBot(h.deps).Execute(ctx, bot.ID(), BotPatch{AutoApprove: &rules})
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +53,7 @@ func TestAutoApproveChangesOnlyTheCallsApprovedWithoutAPerson(t *testing.T) {
 	if event := h.log.events[len(h.log.events)-1]; event.Payload["fields"].([]string)[0] != "autoApprove" {
 		t.Errorf("event = %+v", event.Payload)
 	}
-	bad := []domain.ToolRuleSnapshot{{Tool: ""}}
+	bad := AutoApproveRules{{Tool: ""}}
 	if _, err := NewUpdateBot(h.deps).Execute(ctx, bot.ID(), BotPatch{AutoApprove: &bad}); err == nil {
 		t.Error("a bad rule was taken")
 	}

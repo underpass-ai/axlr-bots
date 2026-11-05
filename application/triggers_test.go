@@ -215,6 +215,33 @@ func countTasks(h *harness, kind domain.TriggerType) int {
 	return n
 }
 
+// A bot registered but not yet enabled gets no timer: when it is enabled
+// its interval fires at once, however many passes came between.
+func TestTimersOfABotNotYetEnabledArmWhenItIs(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	definition := sampleDefinition()
+	definition.Triggers = []domain.TriggerSnapshot{{Type: "timer", Name: "tick", Objective: "x", Every: "10m"}}
+	bot, err := NewRegisterBot(h.deps).Execute(ctx, definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uc := NewTickTimers(h.deps)
+	if result, _ := uc.Execute(ctx); len(result.Fired) != 0 || len(result.Errors) != 0 {
+		t.Fatalf("a registered bot's pass = %+v", result)
+	}
+	if _, err := h.timers.Get(ctx, domain.TimerKey(bot.ID(), "tick")); !domain.IsNotFound(err) {
+		t.Errorf("a registered bot's timer was armed: %v", err)
+	}
+	h.clock.now = h.clock.now.Add(time.Minute)
+	if _, err := NewEnableBot(h.deps).Execute(ctx, bot.ID()); err != nil {
+		t.Fatal(err)
+	}
+	if result, _ := uc.Execute(ctx); len(result.Fired) != 1 || !result.Fired[0].ScheduledAt.Equal(h.clock.now) {
+		t.Errorf("enabled: %+v, want one fire at %s", result.Fired, h.clock.now)
+	}
+}
+
 func TestTimersFollowTheBotsDefinitionAndStatus(t *testing.T) {
 	h := newHarness()
 	bot := triggeredBot(t, h, domain.TriggerSnapshot{Type: "timer", Name: "tick", Objective: "x", Every: "10m"})

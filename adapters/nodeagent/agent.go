@@ -44,9 +44,10 @@ type Agent struct {
 	// renews before it expires; nil (over the socket) renews nothing.
 	Certificate Certificate
 
-	slots *slots
-	wg    *sync.WaitGroup
-	pokes *pokes
+	slots  *slots
+	wg     *sync.WaitGroup
+	pokes  *pokes
+	cutoff *cutoff
 }
 
 // Streamer is a transport that hears the control plane push: which
@@ -58,7 +59,8 @@ type Streamer interface {
 
 // Run registers and serves until ctx ends. A control plane that is not
 // there yet is retried; an execution in flight when ctx ends is
-// cancelled and reported as interrupted.
+// cancelled and reported as interrupted. A node the control plane says
+// is revoked stops its work, says so once and idles until ctx ends.
 func (a Agent) Run(ctx context.Context) error {
 	if a.Transport == nil || a.Executor == nil {
 		return errors.New("nodeagent: a transport and an executor are required")
@@ -67,9 +69,25 @@ func (a Agent) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("nodeagent: %w", err)
 	}
+	work, stopWork := context.WithCancel(ctx)
+	defer stopWork()
+	a.cutoff = newCutoff(id, a.Options.log(), stopWork)
+	err = a.serve(work, id)
+	if a.cutoff.happened() {
+		<-ctx.Done()
+		return nil
+	}
+	return err
+}
+
+// serve registers and works until ctx ends.
+func (a Agent) serve(ctx context.Context, id domain.NodeID) error {
 	logger := a.Options.log()
 	if err := a.registerUntilUp(ctx, id); err != nil {
 		return err
+	}
+	if ctx.Err() != nil {
+		return nil
 	}
 	a.sweepSockets()
 	a.slots, a.wg, a.pokes = newSlots(1), &sync.WaitGroup{}, newPokes()
@@ -104,7 +122,7 @@ func (a Agent) Run(ctx context.Context) error {
 		cancelPoll()
 		if err != nil {
 			a.slots.release()
-			if ctx.Err() != nil {
+			if ctx.Err() != nil || a.cutoff.revoked(err) {
 				return nil
 			}
 			logger.Printf("node: poll: %v", err)
@@ -199,7 +217,7 @@ func (a Agent) heartbeat(ctx context.Context, id domain.NodeID) {
 			beatCtx, cancel := context.WithTimeout(ctx, a.Options.heartbeat())
 			_, err := a.Transport.Heartbeat(beatCtx, id)
 			cancel()
-			if err != nil && ctx.Err() == nil {
+			if err != nil && ctx.Err() == nil && !a.cutoff.revoked(err) {
 				a.Options.log().Printf("node: heartbeat: %v", err)
 				if domain.IsNotFound(err) {
 					_ = a.register(ctx, id)
@@ -213,7 +231,7 @@ func (a Agent) heartbeat(ctx context.Context, id domain.NodeID) {
 func (a Agent) registerUntilUp(ctx context.Context, id domain.NodeID) error {
 	for {
 		err := a.register(ctx, id)
-		if err == nil {
+		if err == nil || a.cutoff.revoked(err) {
 			return nil
 		}
 		a.Options.log().Printf("node: register: %v (retrying)", err)
@@ -368,6 +386,9 @@ func (a Agent) renewOnce(ctx context.Context, id domain.NodeID, execution domain
 	if ctx.Err() != nil {
 		return after, false
 	}
+	if a.cutoff.revoked(err) {
+		return after, true
+	}
 	logger := a.Options.log()
 	logger.Printf("node: renew lease of %s: %v", execution, err)
 	if errors.Is(err, application.ErrLeaseLost) {
@@ -493,7 +514,8 @@ func (a Agent) relay(ctx context.Context, id domain.NodeID, execution domain.Exe
 }
 
 // report hands the result over, retrying a few times: the control plane
-// accepts a repeated report once, so a retry after a lost answer is safe.
+// accepts a repeated report once, so a retry after a lost answer is safe;
+// a revoked node does not retry.
 // It uses its own context so a stopping node still reports.
 func (a Agent) report(id domain.NodeID, execution domain.ExecutionID, report application.ExecutionReport) {
 	logger := a.Options.log()
@@ -503,6 +525,11 @@ func (a Agent) report(id domain.NodeID, execution domain.ExecutionID, report app
 		cancel()
 		if err == nil {
 			logger.Printf("node: execution %s reported %s (accepted %v)", execution, report.Outcome, ack.Accepted)
+			return
+		}
+		// A revoked node's executions were failed when it was revoked:
+		// the report has nowhere to go.
+		if a.cutoff.revoked(err) {
 			return
 		}
 		logger.Printf("node: report %s (attempt %d): %v", execution, attempt, err)

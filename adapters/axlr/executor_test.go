@@ -334,6 +334,28 @@ func TestDecide(t *testing.T) {
 	}
 }
 
+// A decision whose session AXLR no longer has (the pod that held it was
+// replaced) fails with a plain reason, not AXLR's file error; a run that
+// is not a decision keeps the error as AXLR said it.
+func TestDecideOnALostSessionSaysSo(t *testing.T) {
+	e, _ := fake(t, "session-lost")
+	report, err := e.Decide(context.Background(), application.DecisionRequest{ExecutionID: "exec-2", BotID: "sii", SessionID: "sess-1", Decision: "approve", Timeout: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Outcome != domain.ExecutionFailed || report.FailureReason != LostSessionReason {
+		t.Errorf("report = %+v", report)
+	}
+	other, _ := e.Decide(context.Background(), application.DecisionRequest{ExecutionID: "exec-3", BotID: "sii", SessionID: "sess-9", Decision: "approve", Timeout: time.Minute})
+	if !strings.Contains(other.FailureReason, "sessions/sess-1.json: no such file") {
+		t.Errorf("another session's missing file was taken for this one's: %+v", other)
+	}
+	run, _ := e.Execute(context.Background(), request(time.Minute))
+	if !strings.HasPrefix(run.FailureReason, "exit code 1: axlr-tui: open ") {
+		t.Errorf("run = %+v", run)
+	}
+}
+
 func TestTailWriter(t *testing.T) {
 	w := &tailWriter{limit: 8}
 	_, _ = w.Write([]byte("abcdefgh\n"))
