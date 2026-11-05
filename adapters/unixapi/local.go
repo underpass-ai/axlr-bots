@@ -222,7 +222,11 @@ func (l *Local) SubmitTask(ctx context.Context, request SubmitRequest) (SubmitRe
 	if err != nil {
 		return SubmitResponse{}, err
 	}
-	return SubmitResponse{Created: result.Created, Task: result.Task.Snapshot()}, nil
+	snapshots, err := l.taskSnapshots(ctx, []domain.Task{result.Task})
+	if err != nil {
+		return SubmitResponse{}, err
+	}
+	return SubmitResponse{Created: result.Created, Task: snapshots[0]}, nil
 }
 
 func (l *Local) FireTrigger(ctx context.Context, request FireRequest) (FireResponse, error) {
@@ -328,7 +332,11 @@ func (l *Local) GetTask(ctx context.Context, id string) (domain.TaskSnapshot, er
 	if err != nil {
 		return domain.TaskSnapshot{}, err
 	}
-	return task.Snapshot(), nil
+	snapshots, err := l.taskSnapshots(ctx, []domain.Task{task})
+	if err != nil {
+		return domain.TaskSnapshot{}, err
+	}
+	return snapshots[0], nil
 }
 
 // ListTasks answers the tasks the query selects, newest first.
@@ -337,9 +345,21 @@ func (l *Local) ListTasks(ctx context.Context, query application.TaskQuery) ([]d
 	if err != nil {
 		return nil, err
 	}
+	return l.taskSnapshots(ctx, tasks)
+}
+
+// taskSnapshots answers the tasks as plain data, each Pending task of a
+// placed bot no node may run saying what it waits for.
+func (l *Local) taskSnapshots(ctx context.Context, tasks []domain.Task) ([]domain.TaskSnapshot, error) {
+	waits, err := application.NewTaskWaits(l.deps).Execute(ctx, tasks)
+	if err != nil {
+		return nil, err
+	}
 	snapshots := make([]domain.TaskSnapshot, 0, len(tasks))
-	for _, t := range tasks {
-		snapshots = append(snapshots, t.Snapshot())
+	for _, task := range tasks {
+		snapshot := task.Snapshot()
+		snapshot.Waiting = waits[task.ID()]
+		snapshots = append(snapshots, snapshot)
 	}
 	return snapshots, nil
 }

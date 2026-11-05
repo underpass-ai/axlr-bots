@@ -70,22 +70,49 @@ func (p Placement) Snapshot() PlacementSnapshot {
 	return s
 }
 
+// Wanted names the node a task of the bot waits for, as a sentence's
+// object: the nodes it names, a node with the labels it selects, or
+// both; any node when the placement is empty.
+func (p Placement) Wanted() string {
+	var parts []string
+	if len(p.nodes) > 0 {
+		parts = append(parts, "node "+p.names())
+	}
+	if len(p.selector) > 0 {
+		parts = append(parts, "a node labelled "+p.labels())
+	}
+	if len(parts) == 0 {
+		return "any node"
+	}
+	return strings.Join(parts, " or ")
+}
+
 // Where says in a few words where the bot's tasks run, as its teammates
 // read it: the nodes it names, the labels it selects, or any node.
 func (p Placement) Where() string {
 	switch {
 	case len(p.nodes) > 0:
-		names := make([]string, len(p.nodes))
-		for i, id := range p.nodes {
-			names[i] = id.String()
-		}
-		return "node " + strings.Join(names, ", ")
+		return "node " + p.names()
 	case len(p.selector) > 0:
-		pairs := make([]string, 0, len(p.selector))
-		for _, key := range p.selector.Keys() {
-			pairs = append(pairs, key+"="+p.selector[key])
-		}
-		return "nodes labelled " + strings.Join(pairs, ", ")
+		return "nodes labelled " + p.labels()
 	}
 	return "any node"
+}
+
+// names lists the named nodes, `web-1, web-2`.
+func (p Placement) names() string {
+	names := make([]string, len(p.nodes))
+	for i, id := range p.nodes {
+		names[i] = id.String()
+	}
+	return strings.Join(names, ", ")
+}
+
+// labels lists the selector's labels in key order, `zone=lab, tier=1`.
+func (p Placement) labels() string {
+	pairs := make([]string, 0, len(p.selector))
+	for _, key := range p.selector.Keys() {
+		pairs = append(pairs, key+"="+p.selector[key])
+	}
+	return strings.Join(pairs, ", ")
 }

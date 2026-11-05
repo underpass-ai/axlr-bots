@@ -154,14 +154,19 @@ func (t Task) DeadlinePassed(now time.Time) bool {
 // MissDeadline fails a delegated task that has not finished when its
 // deadline came: Pending (it never ran), WaitingApproval (nobody decided
 // in time) or Running (its node never reported). A task that waited, or
-// whose last wait had already expired, ends Expired.
-func (t *Task) MissDeadline(now time.Time) error {
+// whose last wait had already expired, ends Expired. Waiting, when not
+// empty, is what the task was waiting for (a node its placement admits)
+// and ends the reason.
+func (t *Task) MissDeadline(now time.Time, waiting string) error {
 	if t.lineage == nil || t.status.IsTerminal() || !t.DeadlinePassed(now) {
 		return t.refuse("miss its deadline")
 	}
 	t.closeApproval(ApprovalExpired, now)
 	t.status = t.failedStatus()
 	t.failureReason = "deadline: the delegation's deadline " + t.lineage.Grant.Deadline.UTC().Format(time.RFC3339) + " passed before the task ended"
+	if waiting != "" {
+		t.failureReason += "; it was " + waiting
+	}
 	t.updatedAt = now
 	return nil
 }

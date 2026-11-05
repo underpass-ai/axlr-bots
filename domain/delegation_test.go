@@ -215,7 +215,7 @@ func TestADelegatedTaskKeepsItsLineageChildrenAndDeadline(t *testing.T) {
 			t.Errorf("restored a bad %s", name)
 		}
 	}
-	if err := task.MissDeadline(t0.Add(30 * time.Second)); err == nil {
+	if err := task.MissDeadline(t0.Add(30*time.Second), ""); err == nil {
 		t.Error("missed a deadline that has not come")
 	}
 	if !task.DeadlinePassed(t0.Add(time.Minute)) {
@@ -225,10 +225,11 @@ func TestADelegatedTaskKeepsItsLineageChildrenAndDeadline(t *testing.T) {
 	if task.DeadlinePassed(t0.Add(time.Minute-MinRunWindow)) || !task.DeadlinePassed(t0.Add(time.Minute-500*time.Millisecond)) {
 		t.Error("the run window is one second")
 	}
-	if err := task.MissDeadline(t0.Add(time.Minute - 500*time.Millisecond)); err != nil || task.Status() != TaskFailed || task.FailureReason() == "" {
-		t.Fatalf("missed: %v %s", err, task.Status())
+	// A Pending task says what it waited for.
+	if err := task.MissDeadline(t0.Add(time.Minute-500*time.Millisecond), "waiting for node web-1, which is Offline"); err != nil || task.Status() != TaskFailed || !strings.HasSuffix(task.FailureReason(), "passed before the task ended; it was waiting for node web-1, which is Offline") {
+		t.Fatalf("missed: %v %s %q", err, task.Status(), task.FailureReason())
 	}
-	if err := task.MissDeadline(t0.Add(time.Hour)); err == nil {
+	if err := task.MissDeadline(t0.Add(time.Hour), ""); err == nil {
 		t.Error("an ended task missed its deadline twice")
 	}
 }
@@ -240,7 +241,7 @@ func TestAWaitingTaskThatMissesItsDeadlineClosesItsWaitAndEndsExpired(t *testing
 	if err := task.AwaitApproval(ApprovalWait{CallID: "call-1", Since: t0, Deadline: t0.Add(time.Hour), OnExpire: ExpireDeny}, t0); err != nil {
 		t.Fatal(err)
 	}
-	if err := task.MissDeadline(t0.Add(2 * time.Minute)); err != nil {
+	if err := task.MissDeadline(t0.Add(2*time.Minute), ""); err != nil {
 		t.Fatal(err)
 	}
 	if wait, _ := task.Approval(); wait.Outcome != ApprovalExpired || task.Status() != TaskExpired || !strings.HasPrefix(task.FailureReason(), "deadline:") {

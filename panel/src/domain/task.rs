@@ -30,6 +30,11 @@ pub struct Task {
     /// The incident a triage task works on; empty for any other task.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub incident_id: String,
+    /// Why a Pending task of a placed bot has not started, as the
+    /// control plane says it: `waiting for node web-1, which is
+    /// Offline`; empty for any other task.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub waiting: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -38,6 +43,16 @@ impl Task {
     /// Whether it went first and stopped the bot's work in progress.
     pub fn is_urgent(&self) -> bool {
         self.priority == "urgent"
+    }
+
+    /// What it waits for, while it is Pending and its bot's node is
+    /// away: `Waiting for node web-1, which is Offline`.
+    pub fn waits_for(&self) -> Option<String> {
+        if self.status != TaskStatus::Pending || self.waiting.trim().is_empty() {
+            return None;
+        }
+        let mut chars = self.waiting.trim().chars();
+        chars.next().map(|first| first.to_uppercase().chain(chars).collect())
     }
 
     /// Who said what, for a task an event made: `watcher · stop.halt: a
@@ -132,6 +147,20 @@ mod tests {
         );
         assert_eq!(task.knew(), vec!["recepcion · info.turno: shift"]);
         assert!(sample().knew().is_empty());
+    }
+
+    #[test]
+    fn says_what_a_pending_task_waits_for() {
+        let mut task = sample();
+        task.waiting = "waiting for node web-1, which is Offline".into();
+        assert_eq!(task.waits_for(), None, "a Completed task waits for nothing");
+        task.status = TaskStatus::Pending;
+        assert_eq!(
+            task.waits_for().as_deref(),
+            Some("Waiting for node web-1, which is Offline")
+        );
+        task.waiting = " ".into();
+        assert_eq!(task.waits_for(), None);
     }
 
     #[test]

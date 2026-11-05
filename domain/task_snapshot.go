@@ -12,7 +12,10 @@ import (
 // Delegation is where a delegated task came from; Children are the
 // tasks this one delegated, and the granted counts what it handed them.
 // Priority is urgent for a task that goes first; empty for normal.
-// IncidentID names the incident a triage task works on.
+// IncidentID names the incident a triage task works on. Waiting says
+// why a Pending task of a placed bot has not started: no node its
+// placement admits is Online with its runtime. The control plane fills
+// it when the task is read; it is never stored.
 type TaskSnapshot struct {
 	ID             string             `json:"id"`
 	BotID          string             `json:"botId"`
@@ -31,6 +34,7 @@ type TaskSnapshot struct {
 	GrantedTools   int                `json:"grantedToolCalls,omitempty"`
 	Priority       string             `json:"priority,omitempty"`
 	IncidentID     string             `json:"incidentId,omitempty"`
+	Waiting        string             `json:"waiting,omitempty"`
 	CreatedAt      time.Time          `json:"createdAt"`
 	UpdatedAt      time.Time          `json:"updatedAt"`
 }

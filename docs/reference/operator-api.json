@@ -3628,6 +3628,11 @@
           "incidentId": {
             "type": "string",
             "description": "the incident a triage task works on"
+          },
+          "waiting": {
+            "type": "string",
+            "description": "why a Pending task of a placed bot has not started: no node its placement admits is Online with its runtime (\"waiting for node web-1, which is Offline\"); filled when the task is read, absent otherwise",
+            "example": "waiting for node web-1, which is Offline"
           }
         },
         "required": [

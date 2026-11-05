@@ -58,6 +58,35 @@ mod tests {
     }
 
     #[test]
+    fn a_pending_task_of_a_bot_whose_node_is_away_says_what_it_waits_for() {
+        let (control_plane, _) = fleet();
+        control_plane.set_node_status("wrx80", crate::domain::NodeStatus::Offline);
+        let submission = crate::domain::TaskSubmission {
+            bot_id: BotId::new("bot-wrx80").unwrap(),
+            objective: crate::domain::Objective::new("Look at the host").unwrap(),
+            key: crate::domain::IdempotencyKey::new("k-away").unwrap(),
+            urgent: false,
+        };
+        let submitted = run(control_plane.submit_task(submission)).unwrap().task;
+        let tasks = run(ListTasks::new(control_plane.clone()).execute(TaskFilter::default())).unwrap();
+        let waiting = tasks.iter().find(|t| t.id == submitted.id).unwrap();
+        assert_eq!(waiting.waiting, "waiting for node wrx80, which is Offline");
+        assert!(
+            tasks
+                .iter()
+                .filter(|t| t.id != submitted.id)
+                .all(|t| t.waiting.is_empty())
+        );
+        let read = run(control_plane.get_task(submitted.id.clone())).unwrap();
+        assert_eq!(
+            read.waits_for().as_deref(),
+            Some("Waiting for node wrx80, which is Offline")
+        );
+        control_plane.set_node_status("wrx80", crate::domain::NodeStatus::Online);
+        assert!(run(control_plane.get_task(submitted.id)).unwrap().waiting.is_empty());
+    }
+
+    #[test]
     fn lists_a_tasks_executions() {
         let (control_plane, _) = fleet();
         let tasks = run(ListTasks::new(control_plane.clone()).execute(TaskFilter::default())).unwrap();
