@@ -224,7 +224,11 @@ func (uc ReconcileTasks) reconcile(ctx context.Context, task domain.Task, grace 
 	now := uc.deps.Clock.Now()
 	age := now.Sub(execution.StartedAt())
 	expired := execution.LeaseExpired(now)
-	if age <= grace && !expired {
+	stranded, err := uc.stranded(ctx, execution, now)
+	if err != nil {
+		return false, err
+	}
+	if age <= grace && !expired && stranded == "" {
 		return false, nil
 	}
 	// A report or a cancel may have ended the task since it was listed;
@@ -233,6 +237,9 @@ func (uc ReconcileTasks) reconcile(ctx context.Context, task domain.Task, grace 
 		return false, err
 	}
 	reason := diagnosis(execution, age, expired)
+	if stranded != "" {
+		reason = stranded
+	}
 	if execution.Outcome() == domain.ExecutionRunning {
 		tracePath, _ := uc.deps.Traces.TracePath(execution.ID())
 		if err := execution.Fail(reason, domain.Result{}, domain.Usage{}, tracePath, now); err != nil {
@@ -267,6 +274,34 @@ func (uc ReconcileTasks) reconcile(ctx context.Context, task domain.Task, grace 
 		return false, err
 	}
 	return true, nil
+}
+
+// stranded explains why an execution queued for a node (a decision
+// ApproveTask or an approval's deadline queued, not yet leased) will
+// not run: its node is gone, or not Online and unseen for longer than
+// ReconcileGrace. The session the decision continues lives on that node,
+// so no other node can take it; left Running, the task showed Running
+// for the bot's timeout and a minute while nothing ran (QA L9, 5
+// November 2026). Empty when the execution is not queued, or its node
+// may still take it.
+func (uc ReconcileTasks) stranded(ctx context.Context, execution domain.Execution, now time.Time) (string, error) {
+	if execution.Outcome() != domain.ExecutionRunning || !execution.IsAssigned() || !execution.LeaseUntil().IsZero() {
+		return "", nil
+	}
+	what := "its execution " + execution.ID().String()
+	if execution.Kind() == domain.ExecutionDecide {
+		what = "its decision (" + execution.Decision() + ", execution " + execution.ID().String() + ")"
+	}
+	node, err := uc.deps.Nodes.Get(ctx, execution.NodeID())
+	switch {
+	case domain.IsNotFound(err):
+		return "reconciled: " + what + " waited for node " + execution.NodeID().String() + ", which is gone", nil
+	case err != nil:
+		return "", err
+	case node.IsOnline() || now.Sub(node.LastSeenAt()) <= ReconcileGrace:
+		return "", nil
+	}
+	return "reconciled: " + what + " waited for node " + node.ID().String() + ", which is " + node.Status().String() + " since it was last seen at " + node.LastSeenAt().UTC().Format(time.RFC3339) + "; the session it continues is on that node", nil
 }
 
 // unchanged reads the task and its execution again and reports whether

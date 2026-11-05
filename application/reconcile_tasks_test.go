@@ -439,3 +439,82 @@ func TestAChildWithUnderASecondLeftIsNotRun(t *testing.T) {
 		}
 	}
 }
+
+// queuedDecision leaves a task Running on a decision queued for web-1,
+// as an approval (or its deadline's deny) leaves it: not yet leased.
+func queuedDecision(t *testing.T, h *harness) (domain.Task, ApproveTaskResult) {
+	t.Helper()
+	ctx := context.Background()
+	bot := enabledBot(t, h)
+	node := onlineNode(t, h, "web-1")
+	task := submit(t, h, bot, "k").Task
+	first, _, _ := NewNextAssignment(h.deps).Execute(ctx, node.ID())
+	pending := ExecutionReport{Outcome: domain.ExecutionDecisionRequired, Result: domain.Result{SessionID: "sess-1", PendingDecision: &domain.PendingDecision{Tool: "local_write", CallID: "c1", SessionID: "sess-1"}}}
+	if _, err := NewReportExecution(h.deps).Execute(ctx, node.ID(), first.ExecutionID, pending); err != nil {
+		t.Fatal(err)
+	}
+	decided, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionDeny, "")
+	if err != nil || !decided.Execution.LeaseUntil().IsZero() {
+		t.Fatalf("decided = %+v %v", decided.Execution.Snapshot(), err)
+	}
+	return task, decided
+}
+
+// A decision queued for a node that went Offline is failed at the next
+// pass once the node is unseen past the grace, with a reason that names
+// the node: before, the task showed Running for the bot's timeout and a
+// minute while nothing ran (QA L9). A node still Online, or gone a
+// moment ago, keeps it.
+func TestReconcileFailsADecisionQueuedForAnOfflineNode(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	task, decided := queuedDecision(t, h)
+	uc := NewReconcileTasks(h.deps)
+	h.clock.now = t0.Add(5 * time.Minute)
+	if result, err := uc.Execute(ctx, 0); err != nil || len(result.Failed) != 0 {
+		t.Fatalf("an Online node's decision: %+v %v", result, err)
+	}
+	if _, err := NewMarkOfflineNodes(h.deps).Execute(ctx, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	node, _ := h.nodes.Get(ctx, "web-1")
+	if node.IsOnline() {
+		t.Fatal("the node is still Online")
+	}
+	h.clock.now = node.LastSeenAt().Add(ReconcileGrace)
+	if result, err := uc.Execute(ctx, 0); err != nil || len(result.Failed) != 0 {
+		t.Fatalf("a node unseen for just the grace: %+v %v", result, err)
+	}
+	h.clock.now = node.LastSeenAt().Add(ReconcileGrace + time.Second)
+	result, err := uc.Execute(ctx, 0)
+	if err != nil || len(result.Failed) != 1 || result.Failed[0] != task.ID() {
+		t.Fatalf("result = %+v %v", result, err)
+	}
+	stored, _ := h.tasks.Get(ctx, task.ID())
+	execution, _ := h.execs.Get(ctx, decided.Execution.ID())
+	want := "reconciled: its decision (deny, execution " + decided.Execution.ID().String() + ") waited for node web-1, which is Offline since it was last seen at "
+	if stored.Status() != domain.TaskFailed || !strings.HasPrefix(stored.FailureReason(), want) || execution.Outcome() != domain.ExecutionFailed || execution.FailureReason() != stored.FailureReason() {
+		t.Errorf("task = %s %q, execution = %s %q", stored.Status(), stored.FailureReason(), execution.Outcome(), execution.FailureReason())
+	}
+}
+
+// A queued decision whose node record is gone is failed at once; a node
+// store that fails stops the pass.
+func TestReconcileFailsADecisionQueuedForAGoneNode(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	task, _ := queuedDecision(t, h)
+	h.nodes.getFail = errBoom
+	if _, err := NewReconcileTasks(h.deps).Execute(ctx, 0); !errors.Is(err, errBoom) {
+		t.Errorf("a failing node store: %v", err)
+	}
+	h.nodes.getFail = nil
+	delete(h.nodes.nodes, "web-1")
+	result, err := NewReconcileTasks(h.deps).Execute(ctx, 0)
+	if err != nil || len(result.Failed) != 1 {
+		t.Fatalf("result = %+v %v", result, err)
+	}
+	if stored, _ := h.tasks.Get(ctx, task.ID()); !strings.HasSuffix(stored.FailureReason(), "waited for node web-1, which is gone") {
+		t.Errorf("reason = %q", stored.FailureReason())
+	}
+}
