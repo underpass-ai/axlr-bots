@@ -38,6 +38,11 @@ pub enum Message {
     ActivityPick(usize),
     /// The cursor or the selection moved in the model's words.
     WordsSelect(iced::widget::text_editor::Action),
+    /// The model's words as text to select (`true`), or to read as they come.
+    WordsSelecting(bool),
+    /// The person scrolled a box of the running task's Activity: whether
+    /// it now shows its end.
+    ActivityScrolled(super::LiveStream, bool),
     BotLoaded(BotId, Result<BotView, PanelError>),
 
     MintOpen,

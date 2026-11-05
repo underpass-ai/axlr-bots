@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 /// call names, a short summary of its arguments), `tool.ended` (status,
 /// the first line of a failure's error and how long it took), `decision.required` (the tool waiting for a
 /// person), `delegation` (the bot asked, the child task or why it was
-/// refused), `text` (the model's words) and `text.truncated`.
+/// refused), `text` (the model's words) and `text.truncated`, `thinking`
+/// (its reasoning, when the run tells it) and `thinking.truncated`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ProgressItem {

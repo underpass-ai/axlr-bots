@@ -1330,12 +1330,18 @@ fn a_running_task_shows_its_activity_live_and_every_part_copies() {
         .clone();
     fake.progress(
         &running,
-        serde_json::json!([{"kind": "delegation", "bot": "bot-wrx80", "taskId": done.to_string()}]),
+        serde_json::json!([
+            {"kind": "delegation", "bot": "bot-wrx80", "taskId": done.to_string()},
+            {"kind": "thinking", "text": "The clock may drift."}
+        ]),
     );
     send(&mut app, Message::Go(Screen::Task(running.clone())));
     shows(
         &app,
         &[
+            "What it thinks",
+            "The clock may drift.",
+            "Copy thinking",
             "Activity",
             "live",
             "Talk to it",
@@ -1364,7 +1370,11 @@ fn a_running_task_shows_its_activity_live_and_every_part_copies() {
     let copied = messages_of_click(&app, "Copy activity");
     assert!(matches!(
         copied.as_slice(),
-        [Message::Copy(all)] if all.contains("local_exec · ok · 40 ms") && all.contains("Checking it against the time server.")
+        [Message::Copy(all)] if all.contains("local_exec · ok · 40 ms") && all.contains("Checking it against the time server.") && all.contains("Thinking: The clock may drift.")
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Copy thinking").as_slice(),
+        [Message::Copy(thoughts)] if thoughts == "The clock may drift."
     ));
     assert!(matches!(
         messages_of_click(&app, "Copy words").as_slice(),
@@ -1467,4 +1477,45 @@ fn a_bridged_call_shows_its_mcp_tool_its_arguments_and_why_it_failed() {
         .unwrap();
     send(&mut app, Message::ActivityPick(index));
     shows(&app, &["MCP tool", "axlr_call_tool", "Error"]);
+}
+
+#[test]
+fn a_waiting_task_shows_approve_first_and_its_words_to_read_or_select() {
+    use crate::adapters::fake::FakeControlPlane;
+    let fake = std::sync::Arc::new(FakeControlPlane::sample("2026-10-25T10:00:00Z".parse().unwrap()));
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    let id = app.fleet.as_ref().unwrap().waiting()[0].id.clone();
+    fake.progress(
+        &id,
+        serde_json::json!([
+            {"kind": "text", "text": "The file is missing; I want to write it."},
+            {"kind": "tool.started", "tool": "local_write", "callId": "c7"},
+            {"kind": "decision.required", "tool": "local_write", "callId": "c7"}
+        ]),
+    );
+    send(&mut app, Message::Go(Screen::Task(id)));
+    let top = |word: &str| {
+        let _turn = turn();
+        let mut ui = simulator(view::view(&app));
+        ui.find(word).unwrap_or_else(|e| panic!("{word}: {e:?}")).bounds().y
+    };
+    // Approve and Deny come before the Activity, in the first view.
+    assert!(top("Approve") < top("What it says"));
+    assert!(top("Approve") < 600.0);
+    shows(&app, &["Waits for your OK to call local_write", "Select words"]);
+    assert!(matches!(
+        messages_of_click(&app, "Select words").as_slice(),
+        [Message::WordsSelecting(true)]
+    ));
+    send(&mut app, Message::WordsSelecting(true));
+    assert!(matches!(
+        messages_of_click(&app, "Read as it comes").as_slice(),
+        [Message::WordsSelecting(false)]
+    ));
+    // What its run said before it asked is not an answer: the task has
+    // not ended.
+    app.answer = Some(crate::ui::Answer::new("I want to write it.".into()));
+    shows(&app, &["What it said before asking you"]);
+    assert!(simulator_misses(&app, "Answer"));
 }

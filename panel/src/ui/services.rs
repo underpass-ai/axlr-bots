@@ -37,7 +37,7 @@ impl Services {
     /// The clipboard is the runtime's; it answers `None` here.
     pub async fn execute(self, effect: Effect) -> Option<Message> {
         let message = match effect {
-            Effect::Copy(_) | Effect::FocusWindow => return None,
+            Effect::Copy(_) | Effect::FocusWindow | Effect::ShowEnd(_) => return None,
             Effect::Notify { notice, open } => {
                 return match self.notifier.show(notice).await {
                     Ok(true) => Some(Message::NoticeClicked(open)),

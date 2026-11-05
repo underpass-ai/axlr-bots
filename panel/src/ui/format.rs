@@ -83,6 +83,10 @@ pub fn activity(activity: &crate::application::Activity) -> String {
         .iter()
         .map(|entry| format!("{} {}", clock(entry.at()), entry.headline()))
         .collect();
+    if !activity.thinking.trim().is_empty() {
+        lines.push(String::new());
+        lines.push(format!("Thinking: {}", activity.thinking.trim()));
+    }
     if !activity.text.trim().is_empty() {
         lines.push(String::new());
         lines.push(activity.text.trim().to_string());

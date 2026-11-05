@@ -30,6 +30,7 @@ pub fn run(app: &App, effect: Effect) -> Task<Message> {
     match effect {
         Effect::Copy(text) => iced::clipboard::write(text),
         Effect::FocusWindow => window::latest().and_then(window::gain_focus),
+        Effect::ShowEnd(stream) => iced::widget::operation::snap_to_end(stream.id()),
         other => {
             let services = app.services.clone();
             Task::perform(services.execute(other), |message| message).and_then(Task::done)

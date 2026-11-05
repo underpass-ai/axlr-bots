@@ -248,6 +248,18 @@ impl App {
                 }
                 Vec::new()
             }
+            Message::WordsSelecting(selecting) => {
+                if let Some(live) = self.live.as_mut() {
+                    live.selecting(selecting);
+                }
+                Vec::new()
+            }
+            Message::ActivityScrolled(stream, at_end) => {
+                if let Some(live) = self.live.as_mut() {
+                    live.scrolled(stream, at_end);
+                }
+                Vec::new()
+            }
             Message::BotLoaded(id, result) => {
                 self.bot_loading = false;
                 if self.screen != Screen::Bot(id) {

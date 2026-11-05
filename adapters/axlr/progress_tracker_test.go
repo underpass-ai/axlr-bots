@@ -18,7 +18,9 @@ func TestTheRunsLinesBecomeProgressItems(t *testing.T) {
 	}
 	for _, line := range []string{
 		`{"type":"session","session":"sess-1"}`,
+		`{"type":"reasoning","text":"The pods first."}`,
 		`{"type":"text","text":"Looking at the pods."}`,
+		`{"type":"reasoning","text":""}`,
 		`{"type":"tool.requested","tool":"axlr_call_tool","call_id":"c1","arguments":{"name":"list_pods","arguments":{"namespace":"web","labels":"` + strings.Repeat("x", 300) + `"}}}`,
 		`{"type":"tool.completed","tool":"axlr_call_tool","call_id":"c1","decision":"auto_approve"}`,
 		`{"type":"tool.requested","tool":"local_read","call_id":"c2","arguments":{"path":"app.log"}}`,
@@ -31,6 +33,10 @@ func TestTheRunsLinesBecomeProgressItems(t *testing.T) {
 	} {
 		tracker.feed([]byte(line))
 	}
+	if thinking := told[0]; thinking.Kind != application.ProgressThinking || thinking.Text != "The pods first." {
+		t.Fatalf("the model's reasoning: %+v", thinking)
+	}
+	told = told[1:]
 	kinds := []application.ProgressKind{}
 	for _, item := range told {
 		kinds = append(kinds, item.Kind)
@@ -146,5 +152,29 @@ func TestTheRunsResolutionNamesAToolBehindItsAlias(t *testing.T) {
 	}
 	if told[1].MCPTool != "mcp_0123abcd" {
 		t.Fatalf("without plugin_tool the alias stays: %+v", told[1])
+	}
+}
+
+func TestTheRunsReasoningIsCappedApartFromItsWords(t *testing.T) {
+	var told []application.ProgressItem
+	tracker := newProgressTracker(func(item application.ProgressItem) { told = append(told, item) })
+	chunk := strings.Repeat("r", 1000)
+	for range 20 {
+		tracker.feed([]byte(`{"type":"reasoning","text":"` + chunk + `"}`))
+	}
+	tracker.feed([]byte(`{"type":"text","text":"Still told."}`))
+	thinking, cut, words := 0, 0, ""
+	for _, item := range told {
+		switch item.Kind {
+		case application.ProgressThinking:
+			thinking += len(item.Text)
+		case application.ProgressThinkingTruncated:
+			cut++
+		case application.ProgressText:
+			words += item.Text
+		}
+	}
+	if thinking != maxProgressThinking || cut != 1 || words != "Still told." {
+		t.Fatalf("thinking %d, cut %d, words %q", thinking, cut, words)
 	}
 }

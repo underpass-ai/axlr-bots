@@ -25,6 +25,8 @@ func TestARunsProgressGoesToTheTaskTimeline(t *testing.T) {
 		{Kind: ProgressTextTruncated},
 		{Kind: "tool.exploded", Tool: "x"},
 		{Kind: ProgressText, Text: "   "},
+		{Kind: ProgressThinking, Text: strings.Repeat("t", MaxProgressText+10), Tool: "never kept"},
+		{Kind: ProgressThinkingTruncated},
 	}, Dropped: 3}
 	answer, err := record.Execute(ctx, node.ID(), execution, batch)
 	if err != nil || !answer.Recorded || answer.Full {
@@ -35,7 +37,7 @@ func TestARunsProgressGoesToTheTaskTimeline(t *testing.T) {
 		t.Fatalf("%+v", event)
 	}
 	items := event.Payload["items"].([]ProgressItem)
-	if len(items) != 6 {
+	if len(items) != 8 {
 		t.Fatalf("an unknown kind and empty words are left out: %+v", items)
 	}
 	if started := items[0]; started.MCPTool != "list_pods" || started.Text != "" || len([]rune(started.Summary)) != maxProgressSummary || !strings.HasSuffix(started.Summary, "…") {
@@ -49,6 +51,9 @@ func TestARunsProgressGoesToTheTaskTimeline(t *testing.T) {
 	}
 	if items[3].Bot != "worker" || items[3].TaskID != "task-child" || items[4].Tool != "local_exec" {
 		t.Fatalf("%+v", items)
+	}
+	if thinking := items[6]; thinking.Kind != ProgressThinking || len([]rune(thinking.Text)) != MaxProgressText || thinking.Tool != "" || items[7].Kind != ProgressThinkingTruncated {
+		t.Fatalf("the model's reasoning is kept, cut, like its words: %+v", items[6:])
 	}
 
 	if _, err := record.Execute(ctx, node.ID(), execution, ProgressBatch{Items: []ProgressItem{{Kind: "nothing"}}}); err == nil {

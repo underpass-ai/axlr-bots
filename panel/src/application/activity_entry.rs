@@ -3,15 +3,27 @@ use chrono::{DateTime, Utc};
 use super::{DelegationActivity, ToolActivity, ToolState};
 
 /// One line of a task's Activity: a tool call, a bot asked, a call that
-/// waits for a person, what the person wrote to the run and what it said
-/// back.
+/// waits for a person (and, once they decided, what they said), what the
+/// person wrote to the run and what it said back.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ActivityEntry {
     Tool(ToolActivity),
     Delegation(DelegationActivity),
-    Waiting { tool: String, at: DateTime<Utc> },
-    YouWrote { text: String, at: DateTime<Utc> },
-    Said { text: String, at: DateTime<Utc> },
+    Waiting {
+        tool: String,
+        call_id: String,
+        at: DateTime<Utc>,
+        /// `approve` or `deny` once a person decided; empty while it waits.
+        decision: String,
+    },
+    YouWrote {
+        text: String,
+        at: DateTime<Utc>,
+    },
+    Said {
+        text: String,
+        at: DateTime<Utc>,
+    },
 }
 
 impl ActivityEntry {
@@ -39,7 +51,11 @@ impl ActivityEntry {
                 (Some(task), true) => format!("Asked {} · task {task}", asked.bot),
                 (None, true) => format!("Asked {}", asked.bot),
             },
-            Self::Waiting { tool, .. } => format!("Waits for your OK to call {tool}"),
+            Self::Waiting { tool, decision, .. } => match decision.as_str() {
+                "" => format!("Waits for your OK to call {tool}"),
+                "deny" => format!("You denied the call to {tool}"),
+                _ => format!("You approved the call to {tool}"),
+            },
             Self::YouWrote { text, .. } => format!("You wrote: {text}"),
             Self::Said { text, .. } => format!("It answered: {text}"),
         }
@@ -68,7 +84,10 @@ impl ActivityEntry {
                 put("Task", asked.task.as_ref().map(|t| t.to_string()).unwrap_or_default());
                 put("Refused", asked.refused.clone());
             }
-            Self::Waiting { tool, .. } => put("Tool", tool.clone()),
+            Self::Waiting { tool, call_id, .. } => {
+                put("Tool", tool.clone());
+                put("Call id", call_id.clone());
+            }
             Self::YouWrote { text, .. } | Self::Said { text, .. } => put("Words", text.clone()),
         }
         out
