@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -25,13 +26,19 @@ type turnParser struct {
 	pending   *domain.PendingDecision
 	result    *resultObject
 	receipt   json.RawMessage
+	// since is when the process started; own is what the receipt's
+	// requests from then on consumed, nil when the receipt cannot tell.
+	since time.Time
+	own   *domain.Usage
 }
 
 // receiptSchema is the execution receipt the adapter keeps.
 const receiptSchema = "axlr.execution-receipt/v1"
 
-func newTurnParser() *turnParser {
-	return &turnParser{index: map[string]int{}}
+// newTurnParser reads a run whose process started at since; a zero since
+// keeps the result's usage as the runtime reports it.
+func newTurnParser(since time.Time) *turnParser {
+	return &turnParser{index: map[string]int{}, since: since}
 }
 
 // feed reads one line; lines that are not JSON events are ignored here
@@ -82,6 +89,9 @@ func (p *turnParser) keepReceipt(raw json.RawMessage) {
 	}
 	if json.Unmarshal(raw, &head) != nil || head.Schema != receiptSchema {
 		return
+	}
+	if own, ok := usageSince(raw, p.since); ok {
+		p.own = &own
 	}
 	if receipt := compactJSON(raw); len(receipt) <= domain.MaxReceiptBytes {
 		p.receipt = receipt
@@ -160,6 +170,13 @@ func (p *turnParser) fromResult(r *resultObject) application.ExecutionReport {
 		ReasoningTokens:  r.Usage.ReasoningTokens,
 		ToolCalls:        len(r.ToolCalls),
 		CostUSD:          r.Usage.CostUSD,
+	}
+	if p.own != nil {
+		// The run's own requests, not the session's: a decision continues
+		// a session whose earlier requests its first run reported.
+		own := *p.own
+		own.ToolCalls = usage.ToolCalls
+		usage = own
 	}
 	report := application.ExecutionReport{Result: result, Usage: usage}
 	switch r.Status {
