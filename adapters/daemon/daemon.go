@@ -252,17 +252,18 @@ func deliverLoop(ctx context.Context, deps application.Dependencies, options Opt
 // drain runs Pending tasks until none is left or ctx ends. Before each
 // run it carries out the approval deadlines that passed: an expiry
 // takes the runner's slot, as a run does, so it gets its turn between
-// two runs rather than after the whole queue.
+// two runs rather than after the whole queue. An error ends the drain
+// until the next tick: a run that could not start leaves its task
+// Pending, the next pick finds it again, and going on at once would
+// retry it as fast as the disk answers (QA 5 Nov 2026: a thousand
+// refused runs a second, each one an audit line).
 func drain(ctx context.Context, runner *application.SerialRunner, logger interface{ Printf(string, ...any) }) {
 	for ctx.Err() == nil {
 		expireApprovals(ctx, runner, logger)
 		result, ran, err := runner.RunNext(ctx)
 		if err != nil {
 			logger.Printf("daemon: run: %v", err)
-			if !ran {
-				return
-			}
-			continue
+			return
 		}
 		if !ran {
 			return
