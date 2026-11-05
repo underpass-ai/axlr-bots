@@ -27,7 +27,12 @@ func TestHelperProcess(t *testing.T) {
 	}
 	for _, a := range args {
 		if a == "--version" {
-			fmt.Fprintln(os.Stdout, "axlr-tui 0.14.0-dev")
+			// The real axlr-tui prints it on stderr.
+			out := os.Stdout
+			if os.Getenv("FAKE_AXLR_VERSION_STDERR") != "" {
+				out = os.Stderr
+			}
+			fmt.Fprintln(out, "axlr-tui 0.14.0-dev")
 			os.Exit(0)
 		}
 		if a == "--help" {

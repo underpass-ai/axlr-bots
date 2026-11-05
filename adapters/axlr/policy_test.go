@@ -201,6 +201,10 @@ func TestCapabilities(t *testing.T) {
 	if !e.SupportsPolicy(context.Background()) || e.Version(context.Background()) != "axlr-tui 0.14.0-dev" {
 		t.Errorf("capabilities: policy %v version %q", e.SupportsPolicy(context.Background()), e.Version(context.Background()))
 	}
+	t.Setenv("FAKE_AXLR_VERSION_STDERR", "1")
+	if v := e.Version(context.Background()); v != "axlr-tui 0.14.0-dev" {
+		t.Errorf("version on stderr = %q", v)
+	}
 	missing := NewExecutor("/no/such/axlr-tui", t.TempDir())
 	if missing.SupportsPolicy(context.Background()) || missing.Version(context.Background()) != "" {
 		t.Error("a missing binary has capabilities")

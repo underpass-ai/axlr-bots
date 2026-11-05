@@ -344,7 +344,9 @@ func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot do
 	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
 		report = parser.interrupted(fmt.Sprintf("timed out after %s", timeout))
 	case runCtx.Err() != nil:
-		report = parser.interrupted("cancelled: " + runCtx.Err().Error())
+		// The cause says who stopped the run (the node stopping, a lost
+		// lease); a plain cancel is "context canceled".
+		report = parser.interrupted("cancelled: " + context.Cause(runCtx).Error())
 	case scanErr != nil:
 		report = parser.interrupted("reading runtime output: " + scanErr.Error())
 	default:
