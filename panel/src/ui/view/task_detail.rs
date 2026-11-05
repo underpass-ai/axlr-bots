@@ -1,7 +1,9 @@
 //! One task: the call waiting for a person, the answer, the executions
 //! and the timeline.
 
-use iced::widget::{Space, column, container, markdown, mouse_area, responsive, row, scrollable, text, text_editor};
+use iced::widget::{
+    Space, column, container, markdown, mouse_area, responsive, row, scrollable, text, text_editor, tooltip,
+};
 use iced::{Alignment, Font, Length, mouse};
 
 use super::widgets::{
@@ -43,7 +45,7 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     if task.is_urgent() {
         header = header.push(pill(Tone::Wait, "urgent", tokens));
     }
-    header = header.push(headline(&task.objective));
+    header = header.push(headline(&task.objective, tokens));
     header = header.push(copy_button("Copy task", task.objective.clone(), tokens));
     if let Some(stop) = stop {
         header = header.push(stop);
@@ -108,9 +110,9 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     if let Some(pane) = super::activity::pane(app, detail, tokens) {
         page = page.push(pane);
     }
-    // The header shows the objective's first line, cut; a longer one is
-    // here whole.
-    if task.headline(80) != task.objective.trim() {
+    // The header shows the objective's first line, cut to its room; an
+    // objective the narrowest window may cut is here whole.
+    if shows_whole_below(&task.objective) {
         page = page.push(section(Icon::Tasks, "Task", text(task.objective.clone()), tokens));
     }
     page = page.push(facts);
@@ -508,19 +510,37 @@ fn timeline_events<'a>(app: &'a App, detail: &'a TaskDetail) -> Vec<&'a Event> {
 /// Bold.
 const TITLE_EM: f32 = 0.62;
 const TITLE_SIZE: f32 = 22.0;
+/// The longest first line the title shows whole in a 1360 px window; a
+/// longer objective is shown whole in its own card too. A title cut in a
+/// narrower window shows it whole on hover.
+const TITLE_WHOLE: usize = 40;
+
+/// Whether the objective needs its own card: more than one line, or a
+/// first line the title may cut.
+fn shows_whole_below(objective: &str) -> bool {
+    let objective = objective.trim();
+    objective.lines().count() > 1 || objective.chars().count() > TITLE_WHOLE
+}
 
 /// The objective's first line as the page's title: on one line, cut with
 /// an ellipsis to what the header's room holds.
-fn headline<'a>(objective: &'a str) -> El<'a> {
+fn headline<'a>(objective: &'a str, tokens: Tokens) -> El<'a> {
     responsive(move |space| {
         let fits = ((space.width / (TITLE_EM * TITLE_SIZE)).floor() as usize).clamp(8, 80);
         let first = objective.lines().next().unwrap_or_default().trim();
-        container(
-            bold(super::grid::shorten(first, fits))
-                .size(TITLE_SIZE)
-                .wrapping(text::Wrapping::None),
+        let short = super::grid::shorten(first, fits);
+        let cut = short != first;
+        let line = container(bold(short).size(TITLE_SIZE).wrapping(text::Wrapping::None)).clip(true);
+        if !cut {
+            return line.into();
+        }
+        tooltip(
+            line,
+            container(text(first).size(SMALL))
+                .padding(6)
+                .style(styles::chip(tokens)),
+            tooltip::Position::Bottom,
         )
-        .clip(true)
         .into()
     })
     .height(Length::Shrink)
@@ -585,4 +605,17 @@ fn timeline<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> El<'a> 
         );
     }
     list.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_objective_the_title_may_cut_is_shown_whole_below() {
+        assert!(!shows_whole_below("Check the disk"));
+        assert!(!shows_whole_below(&"x".repeat(TITLE_WHOLE)));
+        assert!(shows_whole_below(&"x".repeat(60)));
+        assert!(shows_whole_below("Check the disk\nthen the logs"));
+    }
 }
