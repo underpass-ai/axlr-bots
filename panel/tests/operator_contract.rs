@@ -125,6 +125,15 @@ fn reads<T: DeserializeOwned>(spec: &Value, name: &str) {
 }
 
 #[test]
+fn reads_what_a_pending_task_waits_for() {
+    let spec = contract();
+    let task: Task = serde_json::from_value(sample(&spec, schema(&spec, "TaskSnapshot"), Shape::Full)).unwrap();
+    assert_eq!(task.waiting, "waiting for node web-1, which is Offline");
+    let task: Task = serde_json::from_value(sample(&spec, schema(&spec, "TaskSnapshot"), Shape::Minimal)).unwrap();
+    assert!(task.waiting.is_empty());
+}
+
+#[test]
 fn reads_every_answer_it_asks_for() {
     let spec = contract();
     reads::<Overview>(&spec, "Overview");

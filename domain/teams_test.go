@@ -66,6 +66,23 @@ func TestPlacementWhere(t *testing.T) {
 	}
 }
 
+func TestPlacementWanted(t *testing.T) {
+	nodes, _ := NewPlacement([]string{"worker-1", "worker-2"}, nil)
+	labels, _ := NewPlacement(nil, map[string]string{"zone": "eu", "gpu": "yes"})
+	both, _ := NewPlacement([]string{"worker-1"}, map[string]string{"zone": "eu"})
+	cases := map[string]Placement{
+		"node worker-1, worker-2":                  nodes,
+		"a node labelled gpu=yes, zone=eu":         labels,
+		"node worker-1 or a node labelled zone=eu": both,
+		"any node": {},
+	}
+	for want, p := range cases {
+		if got := p.Wanted(); got != want {
+			t.Errorf("wanted = %q, want %q", got, want)
+		}
+	}
+}
+
 func teamTestBot(t *testing.T, id, tenant string, teams []string) Bot {
 	t.Helper()
 	bot, err := NewBot(BotID(id), TenantID(tenant), BotName(id), "operator", Mission("You are "+id+". You watch."), AllowedTools{}, ModelPolicy{}, Budgets{}, time.Unix(1, 0))

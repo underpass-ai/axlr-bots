@@ -7,8 +7,11 @@ import (
 )
 
 // RunNextPending runs the oldest Pending task once, through RunTask, in
-// the control plane's own process: the single-process mode. A task whose
-// bot an Online node may run is left to that node (NextAssignment). The
+// the control plane's own process: the single-process mode. Only a bot
+// with an empty placement runs there, and only while no Online node may
+// run it; a task whose bot an Online node may run is left to that node
+// (NextAssignment), and a placed bot's task waits for a node its
+// placement admits, however long it is away (QA L10, 5 November 2026). The
 // daemon's worker calls it on every tick, so a task submitted by another
 // process (over the socket or straight into the state directory while
 // the daemon was down) is picked up without a hand-off message.
@@ -35,11 +38,14 @@ func (uc RunNextPending) Execute(ctx context.Context) (RunTaskResult, bool, erro
 	return result, true, nil
 }
 
-// Pick chooses the oldest Pending task no Online node may run, without
-// running it. A task whose bot takes no task now (Paused, not yet
-// enabled) or is gone is passed over, as NextAssignment passes it over:
-// RunTask would refuse it, it would stay Pending and stay the oldest,
-// and every task behind it would wait for ever.
+// Pick chooses the oldest Pending task of a bot with an empty placement
+// that no Online node may run, without running it. A placed bot's task
+// is passed over: it waits for its node, with the control plane's tools
+// and workspace never standing in for the node's. A task whose bot takes
+// no task now (Paused, not yet enabled) or is gone is passed over too,
+// as NextAssignment passes it over: RunTask would refuse it, it would
+// stay Pending and stay the oldest, and every task behind it would wait
+// for ever.
 func (uc RunNextPending) Pick(ctx context.Context) (domain.TaskID, bool, error) {
 	pending, err := uc.deps.Tasks.ListByStatus(ctx, domain.TaskPending)
 	if err != nil {
@@ -58,7 +64,7 @@ func (uc RunNextPending) Pick(ctx context.Context) (domain.TaskID, bool, error) 
 		if err != nil {
 			return "", false, err
 		}
-		if !bot.AcceptsTasks() || hasOnlineNode(bot, nodes) {
+		if !bot.AcceptsTasks() || !bot.Placement().IsEmpty() || hasOnlineNode(bot, nodes) {
 			continue
 		}
 		if oldest == nil || pending[i].CreatedAt().Before(oldest.CreatedAt()) {
@@ -83,9 +89,11 @@ func hasOnlineNode(bot domain.Bot, nodes []domain.Node) bool {
 
 // nodeCanRun reports whether the node may take the bot's tasks: it is
 // Online, the bot's placement admits it and it has the bot's runtime.
-// Pick and NextAssignment ask the same question, so a task neither of
-// them would run cannot be left Pending: a bot whose only Online node
-// lacks its runtime runs in process.
+// NextAssignment asks it of the node that polls; Pick asks it of every
+// node for a bot with an empty placement, which runs in process while
+// no node may run it (none Online, or the only Online one lacks its
+// runtime). A placed bot's task no node may run stays Pending until one
+// may, and placementWait says what it waits for.
 func nodeCanRun(bot domain.Bot, node domain.Node) bool {
 	return node.IsOnline() && bot.Placement().Admits(node) && node.Capabilities().Runs(bot.Runtime().Kind())
 }

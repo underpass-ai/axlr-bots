@@ -543,6 +543,33 @@ fn the_tasks_screen_filters_and_sends() {
     ));
 }
 
+/// A placed bot's Pending task whose node is away says why, in the
+/// Tasks table under its objective and on its page (QA L10).
+#[test]
+fn a_pending_task_whose_node_is_away_says_what_it_waits_for() {
+    let now = "2026-10-25T10:00:00Z".parse().unwrap();
+    let control_plane = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(now));
+    control_plane.set_node_status("wrx80", crate::domain::NodeStatus::Offline);
+    let submission = crate::domain::TaskSubmission {
+        bot_id: BotId::new("bot-wrx80").unwrap(),
+        objective: crate::domain::Objective::new("Count the files").unwrap(),
+        key: crate::domain::IdempotencyKey::new("k-away").unwrap(),
+        urgent: false,
+    };
+    let task = futures::executor::block_on(crate::application::ControlPlane::submit_task(
+        control_plane.as_ref(),
+        submission,
+    ))
+    .unwrap()
+    .task;
+    let mut app = super::view::tests::app_over(control_plane);
+    send(&mut app, Message::SettingsSave);
+    send(&mut app, Message::Go(Screen::Tasks));
+    shows(&app, &["Count the files", "Waiting for node wrx80, which is Offline"]);
+    send(&mut app, Message::Go(Screen::Task(task.id)));
+    shows(&app, &["Waiting for node wrx80, which is Offline"]);
+}
+
 #[test]
 fn a_waiting_task_shows_the_call_and_its_answers() {
     let mut app = connected();

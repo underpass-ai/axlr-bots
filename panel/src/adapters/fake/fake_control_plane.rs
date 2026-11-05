@@ -415,6 +415,7 @@ impl FakeState {
             execution_ids: Vec::new(),
             priority: String::new(),
             incident_id: String::new(),
+            waiting: String::new(),
             failure_reason: match status {
                 TaskStatus::Failed => "the file does not exist".into(),
                 TaskStatus::Expired => {
@@ -674,6 +675,32 @@ impl FakeState {
         resolved.reason = "Renewed by hand.".into();
         resolved.resolved_at = Some(now - Duration::minutes(90));
         self.incidents = vec![open, escalated, resolved];
+    }
+
+    /// The task as the control plane answers it: a Pending task of a
+    /// bot placed on named nodes, none of them Online, says what it
+    /// waits for.
+    fn answered(&self, mut task: Task) -> Task {
+        task.waiting.clear();
+        let Some(bot) = self.bots.get(&task.bot_id) else {
+            return task;
+        };
+        let named = &bot.placement.nodes;
+        if task.status != TaskStatus::Pending
+            || named.is_empty()
+            || named
+                .iter()
+                .any(|id| self.nodes.get(id).is_some_and(|n| n.status == NodeStatus::Online))
+        {
+            return task;
+        }
+        let first = &named[0];
+        let which = match self.nodes.get(first) {
+            Some(node) => format!("is {}", node.status.name()),
+            None => "is not registered".to_string(),
+        };
+        task.waiting = format!("waiting for node {first}, which {which}");
+        task
     }
 
     fn task_mut(&mut self, id: &TaskId) -> Result<&mut Task, PanelError> {
@@ -1094,14 +1121,17 @@ impl ControlPlane for FakeControlPlane {
                 .map(|(i, t)| (i, t.clone()))
                 .collect();
             tasks.sort_by_key(|(i, t)| std::cmp::Reverse((t.created_at, *i)));
-            let mut tasks: Vec<Task> = tasks.into_iter().map(|(_, t)| t).collect();
+            let mut tasks: Vec<Task> = tasks.into_iter().map(|(_, t)| s.answered(t)).collect();
             tasks.truncate(filter.limit as usize);
             Ok(tasks)
         })
     }
 
     fn get_task(&self, id: TaskId) -> PortFuture<'_, Task> {
-        self.call(format!("get_task {id}"), move |s| s.task_mut(&id).map(|t| t.clone()))
+        self.call(format!("get_task {id}"), move |s| {
+            let task = s.task_mut(&id)?.clone();
+            Ok(s.answered(task))
+        })
     }
 
     fn submit_task(&self, submission: TaskSubmission) -> PortFuture<'_, SubmittedTask> {

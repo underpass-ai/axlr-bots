@@ -38,7 +38,7 @@ axlr-bots node list                         # web-2 Online, certificateSerial an
 axlr-bots bot register --file bot-eu.json   # "placement": {"selector": {"zone": "eu"}} runs on web-2 only
 ```
 
-Check: a task of a bot placed on `web-2` (`"placement": {"nodes": ["web-2"]}` or a matching selector) shows `"nodeId": "web-2"` on its execution.
+Check: a task of a bot placed on `web-2` (`"placement": {"nodes": ["web-2"]}` or a matching selector) shows `"nodeId": "web-2"` on its execution. While `web-2` is away the task stays `Pending`, never runs on the control plane, and `task get` shows why in `waiting` (`waiting for node web-2, which is Offline`); it starts on `web-2`'s first poll once the node is back.
 
 ## Rotate a node's certificate
 

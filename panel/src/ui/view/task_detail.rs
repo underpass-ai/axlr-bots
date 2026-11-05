@@ -98,8 +98,9 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     if let Some(waiting) = approval(app, detail, tokens) {
         page = page.push(waiting);
     }
-    // A decision queued for a node that is away or busy: what it waits
-    // for, in a sentence, while it waits.
+    // A decision queued for a node that is away or busy, or a placed
+    // bot's Pending task no node may take yet: what it waits for, in a
+    // sentence, while it waits.
     if let Some(waiting) = node_wait(app, detail, tokens) {
         page = page.push(waiting);
     }
@@ -557,21 +558,26 @@ fn headline<'a>(objective: &'a str, tokens: Tokens) -> El<'a> {
     .into()
 }
 
-/// What the task's decision waits for while its node is away or busy.
+/// What the task waits for: its decision, while its node is away or
+/// busy; a placed bot's Pending task, while no node its placement admits
+/// may take it (it never runs on the control plane instead).
 fn node_wait<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> Option<El<'a>> {
-    if detail.task.status != TaskStatus::Running {
-        return None;
-    }
-    let events = match app.live.as_ref().filter(|l| l.id == detail.task.id && l.read) {
-        Some(live) => &live.feed.events,
-        None => &detail.events,
+    let said = match detail.task.status {
+        TaskStatus::Pending => detail.task.waits_for()?,
+        TaskStatus::Running => {
+            let events = match app.live.as_ref().filter(|l| l.id == detail.task.id && l.read) {
+                Some(live) => &live.feed.events,
+                None => &detail.events,
+            };
+            format::wait(&NodeWait::current(events)?)
+        }
+        _ => return None,
     };
-    let wait = NodeWait::current(events)?;
     Some(
         container(
             row![
                 icon(Icon::Hourglass, 20.0, Tone::Late.color(&tokens)),
-                bold(format::wait(&wait)).width(Length::Fill),
+                bold(said).width(Length::Fill),
             ]
             .spacing(12)
             .align_y(Alignment::Center),

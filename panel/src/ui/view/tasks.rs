@@ -156,8 +156,16 @@ fn list<'a>(app: &'a App, tasks: &'a [Task], narrow: bool, tokens: Tokens) -> El
             grid::fitted(t.bot_id.to_string(), true, tokens)
         })
         .width(Length::FillPortion(if narrow { 3 } else { 2 })),
-        table::column(head(TaskColumn::Task), move |t: &'a Task| {
-            text(t.headline(64)).wrapping(Wrapping::WordOrGlyph)
+        // A Pending task that waits for its node says why, under its
+        // objective.
+        table::column(head(TaskColumn::Task), move |t: &'a Task| -> El<'a> {
+            let headline = text(t.headline(64)).wrapping(Wrapping::WordOrGlyph);
+            match t.waits_for() {
+                Some(why) => column![headline, muted(why, tokens).size(SMALL).wrapping(Wrapping::WordOrGlyph)]
+                    .spacing(2)
+                    .into(),
+                None => headline.into(),
+            }
         })
         .width(Length::FillPortion(5)),
     ];
