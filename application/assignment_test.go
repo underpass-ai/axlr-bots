@@ -391,3 +391,40 @@ func TestNextAssignmentGivesNothingWhenTheTaskIsCancelledMeanwhile(t *testing.T)
 		t.Errorf("task %s", got.Status())
 	}
 }
+
+// A Pending task, or an execution queued for the node, whose bot is gone
+// does not keep the node from its other work (QA 5 Nov 2026: one such
+// task failed every poll of every node).
+func TestNextAssignmentPassesOverAMissingBot(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	d := sampleDefinition()
+	d.Name = "gone-one"
+	gone, err := NewRegisterBot(h.deps).Execute(ctx, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gone, _ = NewEnableBot(h.deps).Execute(ctx, gone.ID())
+	bot := enabledBot(t, h)
+	node := onlineNode(t, h, "web-1")
+	h.clock.now = t0
+	submit(t, h, gone, "k-gone")
+	// A decision queued for the node on a Running task of the same bot.
+	running := submit(t, h, gone, "k-running").Task
+	queued, _ := domain.NewExecution("exec-queued", running.ID(), gone.ID(), t0)
+	_ = queued.Decide("approve")
+	_ = queued.AssignTo(node.ID())
+	_ = h.execs.Save(ctx, queued)
+	_ = running.Start("exec-queued", t0)
+	_ = h.tasks.Save(ctx, running)
+	h.clock.now = t0.Add(time.Minute)
+	waiting := submit(t, h, bot, "k-waiting").Task
+	delete(h.bots.bots, gone.ID())
+	assignment, found, err := NewNextAssignment(h.deps).Execute(ctx, node.ID())
+	if err != nil || !found || assignment.Run == nil || assignment.Run.TaskID != waiting.ID() {
+		t.Fatalf("the other task was not assigned: %v %v %+v", err, found, assignment)
+	}
+	if failed, _ := h.execs.Get(ctx, "exec-queued"); failed.Outcome() != domain.ExecutionFailed || !strings.HasPrefix(failed.FailureReason(), "orphan: ") {
+		t.Errorf("queued execution = %s %q", failed.Outcome(), failed.FailureReason())
+	}
+}

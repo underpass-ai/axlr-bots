@@ -60,6 +60,14 @@ func (uc NextAssignment) queued(ctx context.Context, node domain.Node) (Assignme
 			continue
 		}
 		bot, err := uc.deps.Bots.Get(ctx, task.BotID())
+		if domain.IsNotFound(err) {
+			// Its bot is gone: nothing can describe the run, so it is
+			// an orphan, as one whose task is gone.
+			if err := uc.orphan(ctx, &execution, err); err != nil {
+				return Assignment{}, false, err
+			}
+			continue
+		}
 		if err != nil {
 			return Assignment{}, false, err
 		}
@@ -122,6 +130,11 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 	var bot domain.Bot
 	for i := range pending {
 		candidate, err := uc.deps.Bots.Get(ctx, pending[i].BotID())
+		if domain.IsNotFound(err) {
+			// A task of a bot that is gone is no task for this node,
+			// and must not keep the others from it.
+			continue
+		}
 		if err != nil {
 			return Assignment{}, false, err
 		}
