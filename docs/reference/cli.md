@@ -30,7 +30,7 @@ axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>]
   task list [--bot <id>] [--status <status>] [--since <rfc3339>] [--limit 100]
   task report <task-id> [--path] | task reconcile [--grace <duration>]
   execution get <execution-id> | execution artifact <execution-id> <name> [--out <file>]
-  overview [--since <rfc3339>]                 nodes, bots and tasks by status; tasks, executions and cost since today
+  overview [--since <rfc3339>]                 nodes, bots and tasks by status; tasks, executions and cost since local midnight
   install [--system] [--prefix <dir>] [--state <dir>] [--node-state <dir>] [--unit-dir <dir>] [--env-file <path>]
           [--axlr-bin <path>] [--node-binary <path>] [--listen <addr>] [--server-names a,b] [--api-listen <addr>]
           [--control <url>] [--node-only] [--destdir <dir>] [--no-systemctl]
