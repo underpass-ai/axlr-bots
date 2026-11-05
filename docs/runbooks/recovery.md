@@ -15,7 +15,7 @@ axlr-bots task reconcile                # {"failed": ["task-…"], "skipped": []
 axlr-bots task reconcile --grace 30s
 ```
 
-The daemon's own pass never fails a task it is running in process, whatever `--grace`. `task reconcile` works on the files and takes the lock on the state directory (`<state>/.lock`): while the daemon serves it is refused (`the state at … is in use by another process …`), since the daemon reconciles by itself; stop the daemon first to reconcile by hand ([concurrency](../architecture/concurrency.md#decision)).
+A `Running` or late task whose bot's file is gone (lost by hand: `bot delete` ends a bot's tasks first) is listed under `skipped` and the pass goes on with the others; delete or restore the bot file to end it. The daemon's own pass never fails a task it is running in process, whatever `--grace`. `task reconcile` works on the files and takes the lock on the state directory (`<state>/.lock`): while the daemon serves it is refused (`the state at … is in use by another process …`), since the daemon reconciles by itself; stop the daemon first to reconcile by hand ([concurrency](../architecture/concurrency.md#decision)).
 
 Check: the task and its execution are `Failed` (the task is `Expired` when the lost run was the denial of an approval nobody decided in time; [approvals](approvals.md#expiry)) with the diagnosis (`reconciled: … node web-1 stopped renewing its lease at …`, or `…; the process that ran it is gone`); `bot events <bot>` has a `bot.task.failed` event with `"reason": "reconciled"`; `<state>/audit.jsonl` has a `task.reconcile` entry. Running it again is harmless. Submit the task again with a new key if it should run.
 
