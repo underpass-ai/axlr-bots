@@ -1,9 +1,9 @@
 use chrono::{DateTime, Duration, Utc};
 
 use super::{
-    Answer, Banner, BotChoice, BotView, Confirm, Effect, IncidentWatch, Launch, ListenForm, LiveTask, Message,
-    MintForm, NodeChoice, OrderForm, PublishForm, RegisterForm, ResolveForm, Screen, Services, SettingsForm,
-    SubmitForm, TaskViewFilter, TeamWatch, ThemeMode,
+    Answer, Banner, BotChoice, BotView, Confirm, Effect, IncidentWatch, Keypress, Launch, ListenForm, LiveTask,
+    Message, MintForm, NodeChoice, OrderForm, PublishForm, Readers, RegisterForm, ResolveForm, Screen, Services,
+    SettingsForm, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode, passages,
 };
 use crate::application::SubscriptionChange;
 use crate::application::{EventFeed, Fleet, PanelConfig, PanelError, TaskDetail};
@@ -72,6 +72,8 @@ pub struct App {
     pub downloading: bool,
     /// Where to go once connected.
     target: Screen,
+    /// The passages of the screen on show a person can select a part of.
+    pub readers: Readers,
 }
 
 impl App {
@@ -121,6 +123,7 @@ impl App {
             } else {
                 launch.screen
             },
+            readers: Readers::default(),
         };
         match app.services.shortcuts.load() {
             Ok(list) => app.shortcuts = list,
@@ -166,9 +169,20 @@ impl App {
     }
 
     pub fn apply(&mut self, message: Message) -> Vec<Effect> {
+        let effects = self.handle(message);
+        self.readers.sync(passages::of(self));
+        effects
+    }
+
+    fn handle(&mut self, message: Message) -> Vec<Effect> {
         match message {
             Message::Tick(now) => self.tick(now),
             Message::Go(screen) => self.go(screen),
+            Message::Key(key) => self.key(key),
+            Message::Read(key, action) => {
+                self.readers.act(&key, action);
+                Vec::new()
+            }
             Message::ToggleTheme => {
                 self.mode = self.mode.toggled();
                 Vec::new()
@@ -870,7 +884,11 @@ impl App {
         {
             self.incidents.detail = None;
         }
+        // Another screen opens at its top, not where the last one was
+        // scrolled to; a refresh of the same one keeps its place.
+        let mut effects = Vec::new();
         if screen != self.screen {
+            effects.push(Effect::ScrollTop);
             self.advanced = false;
             self.chat_draft.clear();
             self.watch.editing = None;
@@ -888,7 +906,19 @@ impl App {
         if self.screen == Screen::Settings && !self.settings.busy {
             self.settings.saved = self.settings.saved || self.connected();
         }
-        self.reload_screen()
+        effects.extend(self.reload_screen());
+        effects
+    }
+
+    /// Esc keeps what a dialog would do, or closes the new task's form;
+    /// Enter does what the dialog asks. Other screens ignore them.
+    fn key(&mut self, key: Keypress) -> Vec<Effect> {
+        match key {
+            Keypress::Escape if self.confirm.is_some() => self.handle(Message::ConfirmNo),
+            Keypress::Enter if self.confirm.is_some() => self.handle(Message::ConfirmYes),
+            Keypress::Escape if self.submit.open && !self.submit.busy => self.handle(Message::SubmitClose),
+            _ => Vec::new(),
+        }
     }
 
     /// The task a bot runs now, as the newest read of the fleet and its

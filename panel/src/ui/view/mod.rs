@@ -15,6 +15,7 @@ mod shell;
 mod task_detail;
 mod tasks;
 mod teams;
+mod voice;
 pub mod widgets;
 
 use iced::Element;

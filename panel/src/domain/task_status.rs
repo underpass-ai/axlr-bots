@@ -42,11 +42,18 @@ impl TaskStatus {
         }
     }
 
-    /// The short word shown in a pill.
-    pub fn label(self) -> &'static str {
+    /// The word a person reads, the same in every pill, chip and filter:
+    /// plain English, not the control plane's.
+    pub const fn label(self) -> &'static str {
         match self {
-            Self::WaitingApproval => "Waiting",
-            other => other.name(),
+            Self::Pending => "Queued",
+            Self::Running => "Running",
+            Self::WaitingApproval => "Needs OK",
+            Self::Completed => "Done",
+            Self::Failed => "Failed",
+            Self::Expired => "Expired",
+            Self::Cancelled => "Stopped",
+            Self::Unknown => "Unknown",
         }
     }
 
@@ -79,8 +86,11 @@ mod tests {
             );
         }
         assert_eq!(TaskStatus::parse("Sleeping"), None);
-        assert_eq!(TaskStatus::WaitingApproval.label(), "Waiting");
+        assert_eq!(TaskStatus::WaitingApproval.label(), "Needs OK");
         assert_eq!(TaskStatus::Running.label(), "Running");
+        assert_eq!(TaskStatus::Completed.label(), "Done");
+        assert_eq!(TaskStatus::Cancelled.label(), "Stopped");
+        assert_eq!(TaskStatus::Pending.label(), "Queued");
         assert!(TaskStatus::Failed.is_terminal());
         assert!(TaskStatus::Expired.is_terminal());
         assert!(!TaskStatus::Expired.can_cancel());

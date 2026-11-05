@@ -3,23 +3,30 @@
 use iced::widget::{Space, button, column, container, pick_list, row, scrollable, table, text, text_input};
 use iced::{Alignment, Length, Padding};
 
-use super::widgets::{BODY, El, SMALL, action, bold, card, empty, icon_button, muted, pill, section_title, title};
+use super::widgets::{
+    BODY, El, SMALL, Voice, action, bold, card, empty, icon_button, muted, pill, reader, section_title, title,
+};
 use crate::domain::{Task, TaskStatus};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
-use crate::ui::{App, BotChoice, Icon, Message, Screen, Tokens, Tone};
+use crate::ui::{App, BotChoice, Icon, Message, ReaderKey, Screen, Tokens, Tone, passages};
 
-/// The status chips, in the order an operator looks for them.
+/// The status chips, in the order an operator looks for them, each
+/// named as its tasks' pills are.
 const FILTERS: [(Option<TaskStatus>, &str); 8] = [
     (None, "All"),
-    (Some(TaskStatus::WaitingApproval), "Waiting"),
-    (Some(TaskStatus::Running), "Running"),
-    (Some(TaskStatus::Pending), "Pending"),
-    (Some(TaskStatus::Failed), "Failed"),
-    (Some(TaskStatus::Expired), "Expired"),
-    (Some(TaskStatus::Completed), "Done"),
-    (Some(TaskStatus::Cancelled), "Stopped"),
+    status(TaskStatus::WaitingApproval),
+    status(TaskStatus::Running),
+    status(TaskStatus::Pending),
+    status(TaskStatus::Failed),
+    status(TaskStatus::Expired),
+    status(TaskStatus::Completed),
+    status(TaskStatus::Cancelled),
 ];
+
+const fn status(status: TaskStatus) -> (Option<TaskStatus>, &'static str) {
+    (Some(status), status.label())
+}
 
 pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let Some(fleet) = &app.fleet else {
@@ -119,6 +126,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         right: 12.0,
         ..Default::default()
     }))
+    .id(super::widgets::PAGE)
     .height(Length::Fill)
     .into()
 }
@@ -142,7 +150,6 @@ fn submit_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         .padding(12)
         .size(BODY)
         .style(styles::field(tokens));
-    let key = form.key.as_ref().map(|k| k.as_str().to_string()).unwrap_or_default();
     card(
         column![
             row![
@@ -178,14 +185,10 @@ fn submit_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
                     Some(Message::SubmitUrgent(!form.urgent)),
                     tokens
                 ),
-                muted(
-                    if form.urgent {
-                        "urgent: it goes first and stops what the bot is doing".to_string()
-                    } else {
-                        format!("key {key}: sending twice makes one task")
-                    },
-                    tokens
-                ),
+                match passages::submit_key(form) {
+                    Some(words) => reader(&app.readers, ReaderKey::SubmitKey, words, Voice::Muted, tokens),
+                    None => muted("urgent: it goes first and stops what the bot is doing", tokens).into(),
+                },
             ]
             .spacing(14)
             .align_y(Alignment::Center),

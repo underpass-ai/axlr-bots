@@ -2,13 +2,21 @@
 
 use iced::font::{Family, Weight};
 use iced::widget::text::{LineHeight, Wrapping};
-use iced::widget::{Space, button, column, container, mouse_area, responsive, row, svg, text, text_input, tooltip};
+use iced::widget::text_editor::Binding;
+use iced::widget::{
+    Space, button, column, container, mouse_area, responsive, row, svg, text, text_editor, text_input, tooltip,
+};
 use iced::{Alignment, Color, Element, Font, Length, Padding, mouse};
 
+pub use super::voice::Voice;
 use crate::ui::styles::{self, Kind};
-use crate::ui::{Icon, Message, Tokens, Tone};
+use crate::ui::{Icon, Message, ReaderKey, Readers, Tokens, Tone};
 
 pub type El<'a> = Element<'a, Message>;
+
+/// The id of the scrollable page of every screen, which goes back to its
+/// top when another screen opens.
+pub const PAGE: &str = "page";
 
 /// The panel's typeface for words: Lexend, made for reading fluency,
 /// embedded with the binary (`assets/fonts`).
@@ -120,9 +128,15 @@ pub fn section_title<'a>(glyph: Icon, words: impl text::IntoFragment<'a>, tokens
 
 /// A status in a pill: the tone's icon, colour and a word or two.
 pub fn pill<'a>(tone: Tone, label: impl text::IntoFragment<'a>, tokens: Tokens) -> El<'a> {
+    pill_with(tone.icon(), tone, label, tokens)
+}
+
+/// A pill in a tone's colour with an icon of its own, for a status
+/// whose meaning is not its tone's: a severity, a diagnosis.
+pub fn pill_with<'a>(glyph: Icon, tone: Tone, label: impl text::IntoFragment<'a>, tokens: Tokens) -> El<'a> {
     let ink = styles::pill_ink(tokens, tone);
     container(
-        row![icon(tone.icon(), 13.0, ink), semibold(label).size(SMALL).color(ink)]
+        row![icon(glyph, 13.0, ink), semibold(label).size(SMALL).color(ink)]
             .spacing(5)
             .align_y(Alignment::Center),
     )
@@ -302,4 +316,43 @@ pub fn empty<'a>(glyph: Icon, words: impl text::IntoFragment<'a>, tokens: Tokens
     .padding(24)
     .center_x(Length::Fill)
     .into()
+}
+
+/// Words to read that a person can select a part of and copy with the
+/// mouse and Ctrl+C: a read-only editor as tall as its words, with no
+/// box and no caret until clicked, whose wheel scrolls the page. Until
+/// the state holds the passage's reader, the words show as plain text.
+pub fn reader<'a>(readers: &'a Readers, key: ReaderKey, words: String, voice: Voice, tokens: Tokens) -> El<'a> {
+    match readers.get(&key).filter(|reader| reader.source() == words) {
+        Some(reader) => text_editor(reader.content())
+            .on_action(move |action| Message::Read(key.clone(), action))
+            .key_binding(selection_only)
+            .font(voice.font())
+            .size(voice.size())
+            .padding(0)
+            .wrapping(Wrapping::WordOrGlyph)
+            .style(styles::reading(tokens, voice.color(tokens)))
+            .into(),
+        None => text(words)
+            .font(voice.font())
+            .size(voice.size())
+            .color(voice.color(tokens))
+            .wrapping(Wrapping::WordOrGlyph)
+            .width(Length::Fill)
+            .into(),
+    }
+}
+
+/// A reader's keys: those that move, select and copy; none that edits.
+fn selection_only(press: text_editor::KeyPress) -> Option<Binding<Message>> {
+    match Binding::from_key_press(press)? {
+        binding @ (Binding::Copy
+        | Binding::Unfocus
+        | Binding::Move(_)
+        | Binding::Select(_)
+        | Binding::SelectWord
+        | Binding::SelectLine
+        | Binding::SelectAll) => Some(binding),
+        _ => None,
+    }
 }

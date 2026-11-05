@@ -9,6 +9,8 @@ use crate::domain::{AutonomyLevel, BotForm, BotId, Decision, ExecutionId, Idempo
 /// returns effects; the runtime carries them out.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Effect {
+    /// The page on show back at its top: another screen opened.
+    ScrollTop,
     Refresh {
         generation: u64,
     },
