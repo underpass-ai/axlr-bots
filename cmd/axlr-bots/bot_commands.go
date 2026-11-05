@@ -81,6 +81,22 @@ func botStop(ctx context.Context, service unixapi.Service, args []string, stdout
 	return exitOK
 }
 
+// botDelete deletes the bot: its unfinished tasks and the children it
+// asked for are cancelled, its incidents resolved, its timers removed;
+// the answer names the bots that still name it.
+func botDelete(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, "axlr-bots: bot delete needs exactly one <bot-id>")
+		return exitUsage
+	}
+	deleted, err := service.DeleteBot(ctx, args[0])
+	if err != nil {
+		return fail(stderr, err)
+	}
+	printJSON(stdout, deleted)
+	return exitOK
+}
+
 func botList(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 0 {
 		fmt.Fprintln(stderr, "axlr-bots: bot list takes no arguments")

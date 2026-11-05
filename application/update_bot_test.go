@@ -34,3 +34,27 @@ func TestTurningTheLevelSaysWhereFromAndWhereTo(t *testing.T) {
 		t.Fatalf("an unchanged level is named: %v", event.Payload)
 	}
 }
+
+func TestAutoApproveChangesOnlyTheCallsApprovedWithoutAPerson(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	bot := governBot(t, h, enabledBot(t, h), domain.ApprovalsSnapshot{TTL: "2h", Notify: []domain.NotifyTargetSnapshot{
+		{Type: "webhook", Name: "ops", URL: "https://hooks.example.com/axlr", Secret: "a-secret-of-sixteen-plus"},
+	}})
+	rules := []domain.ToolRuleSnapshot{{Tool: "kubernetes.get_pods"}}
+	updated, err := NewUpdateBot(h.deps).Execute(ctx, bot.ID(), BotPatch{AutoApprove: &rules})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approvals := updated.Approvals().Snapshot()
+	if len(approvals.AutoApprove) != 1 || approvals.TTL != "2h" || approvals.Notify[0].Secret != "a-secret-of-sixteen-plus" {
+		t.Fatalf("approvals = %+v", approvals)
+	}
+	if event := h.log.events[len(h.log.events)-1]; event.Payload["fields"].([]string)[0] != "autoApprove" {
+		t.Errorf("event = %+v", event.Payload)
+	}
+	bad := []domain.ToolRuleSnapshot{{Tool: ""}}
+	if _, err := NewUpdateBot(h.deps).Execute(ctx, bot.ID(), BotPatch{AutoApprove: &bad}); err == nil {
+		t.Error("a bad rule was taken")
+	}
+}

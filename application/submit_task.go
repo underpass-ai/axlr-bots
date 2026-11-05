@@ -85,7 +85,7 @@ type submission struct {
 func submitTask(ctx context.Context, deps Dependencies, s submission) (SubmitTaskResult, error) {
 	rec := recorder{deps: deps}
 	botID := s.bot.ID()
-	if existing, found, err := deps.Tasks.FindByIdempotencyKey(ctx, botID, s.key); err != nil {
+	if existing, found, err := deps.Tasks.FindByIdempotencyKey(ctx, botID, s.key, s.bot.CreatedAt()); err != nil {
 		return SubmitTaskResult{}, err
 	} else if found {
 		if err := rec.audit(ctx, s.action, existing.ID().String(), domain.AuditOK, map[string]string{"idempotencyKey": s.key.String(), "deduplicated": "true"}); err != nil {

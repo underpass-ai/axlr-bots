@@ -92,6 +92,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return botPause(ctx, service, rest, stdout, stderr)
 	case "bot stop":
 		return botStop(ctx, service, rest, stdout, stderr)
+	case "bot delete":
+		return botDelete(ctx, service, rest, stdout, stderr)
 	case "bot list":
 		return botList(ctx, service, rest, stdout, stderr)
 	case "bot get":
@@ -238,13 +240,16 @@ func printUsage(w io.Writer) {
   bot enable <bot-id>                 let the bot accept tasks
   bot pause <bot-id>                  put an enabled bot on hold; it accepts no task
   bot stop <bot-id>                   pause it and cancel every task it has not finished
+  bot delete <bot-id>                 delete it: cancel its unfinished tasks and the children it
+                                      asked for, resolve its incidents, remove its timers; its
+                                      history stays and the answer names the bots that name it
   bot list                            list bots
   bot get <bot-id>                    show one bot
   bot update <bot-id> --file <patch.json>
                                       replace the fields the patch names (mission, level,
                                       allowedTools, toolRules, triggers, placement, approvals,
-                                      delegation, groups, events, subscriptions, model, budgets,
-                                      runtime)
+                                      autoApprove, delegation, groups, events, subscriptions,
+                                      model, budgets, runtime)
   bot events <bot-id> [--limit 100]   the bot's newest events, oldest first
   bot subscribe <bot-id> <topic> [--mode task|message|note] [--from a,b]
                                       make the bot listen to a topic of its teams

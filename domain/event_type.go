@@ -14,6 +14,10 @@ const (
 	// EventBotPaused says an enabled bot was put on hold; it accepts no
 	// task until it is enabled again.
 	EventBotPaused EventType = "bot.paused"
+	// EventBotDeleted says a bot was deleted: its unfinished tasks were
+	// cancelled, its timers removed and its open incidents resolved; its
+	// history stays.
+	EventBotDeleted EventType = "bot.deleted"
 	// EventTriggerFired says a trigger fired: a webhook arrived or a
 	// timer's slot came. The payload names the task and says whether the
 	// fire created it or found it under its idempotency key.
@@ -127,7 +131,7 @@ const (
 // ParseEventType validates an event type.
 func ParseEventType(raw string) (EventType, error) {
 	switch EventType(raw) {
-	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
+	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventBotDeleted, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
 		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventTaskDelegated, EventTaskMessage, EventTaskSaid, EventTaskProgress, EventDelegationRefused,
 		EventEventEmitted, EventEventRefused, EventEventHeard, EventSubscriptionChanged, EventSubscriptionAsked, EventGroupEventPublished,
 		EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentEscalated, EventIncidentResolved,

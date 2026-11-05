@@ -5,7 +5,10 @@ import "github.com/underpass-ai/axlr-bots/domain"
 // BotPatch is a partial change to a bot's definition (PATCH
 // /v1/bots/{id}): every field is optional and replaces the bot's whole
 // value for it; a nil field leaves the bot's. The identity (id, tenant,
-// name, owner) does not change.
+// name, owner) does not change. AutoApprove replaces only the calls
+// approved without a person, so a client that reads the bot (its
+// notification secrets redacted) can change them without sending the
+// secrets back; with Approvals too, it applies after them.
 type BotPatch struct {
 	Mission       *string                        `json:"mission,omitempty"`
 	Level         *string                        `json:"level,omitempty"`
@@ -14,6 +17,7 @@ type BotPatch struct {
 	Triggers      *[]domain.TriggerSnapshot      `json:"triggers,omitempty"`
 	Placement     *domain.PlacementSnapshot      `json:"placement,omitempty"`
 	Approvals     *domain.ApprovalsSnapshot      `json:"approvals,omitempty"`
+	AutoApprove   *[]domain.ToolRuleSnapshot     `json:"autoApprove,omitempty"`
 	Delegation    *domain.DelegationSnapshot     `json:"delegation,omitempty"`
 	Groups        *[]string                      `json:"groups,omitempty"`
 	Events        *domain.EventsSnapshot         `json:"events,omitempty"`

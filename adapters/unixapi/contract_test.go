@@ -41,7 +41,7 @@ func init() {
 		domain.RuntimeSnapshot{}, domain.JevProgramSnapshot{}, domain.JevActSnapshot{}, domain.JevTellSnapshot{},
 		application.BudgetsDefinition{}, application.ModelPolicyDefinition{},
 		SubmitRequest{}, TaskRequest{}, SubmitResponse{}, RunResponse{}, CancelResponse{}, ReportResponse{},
-		DecideRequest{}, MessageRequest{}, application.SentTaskMessage{}, StopResponse{}, application.StopRefusal{}, EnrollTokenRequest{}, EnrollTokenResponse{}, RevokeResponse{}, FireResponse{}, ErrorResponse{},
+		DecideRequest{}, MessageRequest{}, application.SentTaskMessage{}, StopResponse{}, application.StopRefusal{}, DeleteResponse{}, application.BotReference{}, EnrollTokenRequest{}, EnrollTokenResponse{}, RevokeResponse{}, FireResponse{}, ErrorResponse{},
 	} {
 		t := reflect.TypeOf(value)
 		contractTypes[t.String()] = t

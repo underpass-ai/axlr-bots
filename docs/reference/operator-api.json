@@ -151,6 +151,25 @@
             "$ref": "#/components/responses/Error"
           }
         }
+      },
+      "delete": {
+        "operationId": "deleteBot",
+        "description": "delete the bot: resolve its open incidents, cancel every task it has not finished and the delegated children it asked for, remove its timers and drop its approval notifications; its history stays. The answer names the other bots that still name it",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
       }
     },
     "/v1/bots/{id}/enable": {
@@ -1773,6 +1792,13 @@
           "approvals": {
             "$ref": "#/components/schemas/ApprovalsSnapshot"
           },
+          "autoApprove": {
+            "type": "array",
+            "description": "the calls approved without a person: replaces approvals.autoApprove only, the rest of approvals (its notification secrets) stays",
+            "items": {
+              "$ref": "#/components/schemas/ToolRuleSnapshot"
+            }
+          },
           "budgets": {
             "$ref": "#/components/schemas/BudgetsDefinition"
           },
@@ -2355,6 +2381,7 @@
           "bot.enabled",
           "bot.updated",
           "bot.paused",
+          "bot.deleted",
           "bot.trigger.fired",
           "bot.task.submitted",
           "bot.task.started",
@@ -3277,6 +3304,78 @@
           "bot",
           "cancelled",
           "notCancelled"
+        ]
+      },
+      "DeleteResponse": {
+        "type": "object",
+        "x-go-type": "unixapi.DeleteResponse",
+        "properties": {
+          "bot": {
+            "$ref": "#/components/schemas/BotSnapshot"
+          },
+          "cancelled": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the bot's tasks cancelled"
+          },
+          "childrenCancelled": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the delegated tasks it asked other bots for, cancelled"
+          },
+          "incidentsResolved": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "timersRemoved": {
+            "type": "integer"
+          },
+          "notificationsDropped": {
+            "type": "integer"
+          },
+          "namedBy": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BotReference"
+            },
+            "description": "the other bots that still name it; left as they are"
+          }
+        },
+        "required": [
+          "bot",
+          "cancelled",
+          "childrenCancelled",
+          "incidentsResolved",
+          "timersRemoved",
+          "notificationsDropped",
+          "namedBy"
+        ]
+      },
+      "BotReference": {
+        "type": "object",
+        "x-go-type": "application.BotReference",
+        "properties": {
+          "botId": {
+            "type": "string"
+          },
+          "how": {
+            "type": "string",
+            "description": "delegation (its delegation.to names the bot) or subscription (a topic it listens to names the bot in from)"
+          },
+          "topic": {
+            "type": "string",
+            "description": "the topic, for a subscription"
+          }
+        },
+        "required": [
+          "botId",
+          "how"
         ]
       },
       "SubmitRequest": {

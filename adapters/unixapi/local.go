@@ -56,7 +56,7 @@ func (l *Local) Pusher() application.NodePusher { return l.changes }
 func (l *Local) Runner() *application.SerialRunner { return l.runner }
 
 func (l *Local) RegisterBot(ctx context.Context, definition application.BotDefinition) (domain.BotSnapshot, error) {
-	bot, err := application.NewRegisterBot(l.deps).Execute(ctx, definition)
+	bot, err := l.runner.RegisterBot(ctx, definition)
 	if err != nil {
 		return domain.BotSnapshot{}, err
 	}
@@ -68,7 +68,7 @@ func (l *Local) EnableBot(ctx context.Context, id string) (domain.BotSnapshot, e
 	if err != nil {
 		return domain.BotSnapshot{}, err
 	}
-	bot, err := application.NewEnableBot(l.deps).Execute(ctx, botID)
+	bot, err := l.runner.EnableBot(ctx, botID)
 	if err != nil {
 		return domain.BotSnapshot{}, err
 	}
@@ -80,7 +80,7 @@ func (l *Local) PauseBot(ctx context.Context, id string) (domain.BotSnapshot, er
 	if err != nil {
 		return domain.BotSnapshot{}, err
 	}
-	bot, err := application.NewPauseBot(l.deps).Execute(ctx, botID)
+	bot, err := l.runner.PauseBot(ctx, botID)
 	if err != nil {
 		return domain.BotSnapshot{}, err
 	}
@@ -92,7 +92,7 @@ func (l *Local) UpdateBot(ctx context.Context, id string, patch application.BotP
 	if err != nil {
 		return domain.BotSnapshot{}, err
 	}
-	bot, err := application.NewUpdateBot(l.deps).Execute(ctx, botID, patch)
+	bot, err := l.runner.UpdateBot(ctx, botID, patch)
 	if err != nil {
 		return domain.BotSnapshot{}, err
 	}
@@ -104,7 +104,7 @@ func (l *Local) StopBot(ctx context.Context, id string) (StopResponse, error) {
 	if err != nil {
 		return StopResponse{}, err
 	}
-	result, err := application.NewStopBot(l.deps).Execute(ctx, botID)
+	result, err := l.runner.StopBot(ctx, botID)
 	if err != nil {
 		return StopResponse{}, err
 	}
@@ -114,6 +114,51 @@ func (l *Local) StopBot(ctx context.Context, id string) (StopResponse, error) {
 	}
 	response.NotCancelled = append(response.NotCancelled, result.NotCancelled...)
 	return response, nil
+}
+
+// DeleteBot deletes the bot under the submissions lock and then the
+// runner's: no submission or fire can create a task for it while it
+// goes, and no task of it is assigned or settled meanwhile.
+func (l *Local) DeleteBot(ctx context.Context, id string) (DeleteResponse, error) {
+	botID, err := domain.NewBotID(id)
+	if err != nil {
+		return DeleteResponse{}, err
+	}
+	l.submits.Lock()
+	defer l.submits.Unlock()
+	result, err := l.runner.DeleteBot(ctx, botID)
+	if err != nil {
+		return DeleteResponse{}, err
+	}
+	return DeleteResponse{
+		Bot: result.Bot.Snapshot().Redacted(), Cancelled: taskIDs(result.Cancelled), ChildrenCancelled: taskIDs(result.ChildrenCancelled),
+		IncidentsResolved: incidentIDs(result.IncidentsResolved), TimersRemoved: result.TimersRemoved,
+		NotificationsDropped: result.NotificationsDropped, NamedBy: result.NamedBy,
+	}, nil
+}
+
+// TickTimers runs the scheduler's pass under the submissions lock, as a
+// fire does, and the runner's.
+func (l *Local) TickTimers(ctx context.Context) (application.TickTimersResult, error) {
+	l.submits.Lock()
+	defer l.submits.Unlock()
+	return l.runner.TickTimers(ctx)
+}
+
+func taskIDs(ids []domain.TaskID) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, id.String())
+	}
+	return out
+}
+
+func incidentIDs(ids []domain.IncidentID) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, id.String())
+	}
+	return out
 }
 
 func (l *Local) ListBots(ctx context.Context) ([]domain.BotSnapshot, error) {

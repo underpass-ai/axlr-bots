@@ -192,12 +192,13 @@ func TestReconcileTasksPortErrors(t *testing.T) {
 	}
 	h.tasks.listFail = nil
 
-	// A Running task whose bot vanished, then one whose execution vanished.
+	// A Running task whose bot vanished is skipped, not a failed pass
+	// (QA L11), then one whose execution vanished.
 	orphan, _ := domain.NewTask("orphan", "ghost", "o", "k", "", t0)
 	_ = orphan.Start("exec-ghost", t0)
 	_ = h.tasks.Save(ctx, orphan)
-	if _, err := NewReconcileTasks(h.deps).Execute(ctx, 0); !domain.IsNotFound(err) || !strings.Contains(err.Error(), "reconcile task orphan") {
-		t.Errorf("missing bot: %v", err)
+	if res, err := NewReconcileTasks(h.deps).Execute(ctx, 0); err != nil || len(res.Skipped) != 1 || res.Skipped[0] != "orphan" {
+		t.Errorf("missing bot: %+v %v", res, err)
 	}
 	h.tasks.tasks = nil
 	bot := enabledBot(t, h)

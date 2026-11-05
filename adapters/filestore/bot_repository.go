@@ -2,6 +2,8 @@ package filestore
 
 import (
 	"context"
+	"errors"
+	"os"
 	"path/filepath"
 
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -49,4 +51,19 @@ func (r BotRepository) List(ctx context.Context) ([]domain.Bot, error) {
 		bots = append(bots, bot)
 	}
 	return bots, nil
+}
+
+// Delete removes the bot's file; a missing one is a not found.
+func (r BotRepository) Delete(_ context.Context, id domain.BotID) error {
+	path, err := r.files.path(id.String())
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return domain.NotFoundError{Kind: "bot", ID: id.String()}
+		}
+		return err
+	}
+	return nil
 }
