@@ -24,13 +24,26 @@ const (
 	// ProgressTextTruncated: the execution's text reached its cap; no
 	// more text item follows.
 	ProgressTextTruncated ProgressKind = "text.truncated"
+	// ProgressThinking: the model's reasoning since the last item, as the
+	// run wrote it, coalesced like its words.
+	ProgressThinking ProgressKind = "thinking"
+	// ProgressThinkingTruncated: the execution's reasoning reached its
+	// cap; no more thinking item follows.
+	ProgressThinkingTruncated ProgressKind = "thinking.truncated"
 )
 
 // known reports a kind the control plane records.
 func (k ProgressKind) known() bool {
 	switch k {
-	case ProgressToolStarted, ProgressToolEnded, ProgressDecisionRequired, ProgressDelegation, ProgressText, ProgressTextTruncated:
+	case ProgressToolStarted, ProgressToolEnded, ProgressDecisionRequired, ProgressDelegation, ProgressText, ProgressTextTruncated, ProgressThinking, ProgressThinkingTruncated:
 		return true
 	}
 	return false
+}
+
+// Streamed reports a kind that comes in pieces as the model writes: its
+// words or its reasoning. The pieces of one kind join while nothing
+// else comes between them.
+func (k ProgressKind) Streamed() bool {
+	return k == ProgressText || k == ProgressThinking
 }

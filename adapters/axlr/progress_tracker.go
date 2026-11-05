@@ -9,11 +9,12 @@ import (
 	"github.com/underpass-ai/axlr-bots/application"
 )
 
-// Bounds of what one run tells as it goes: the model's words, and a
-// call's summary of its arguments.
+// Bounds of what one run tells as it goes: the model's words, its
+// reasoning, and a call's summary of its arguments.
 const (
-	maxProgressText    = 32 << 10
-	maxProgressSummary = 120
+	maxProgressText     = 32 << 10
+	maxProgressThinking = 16 << 10
+	maxProgressSummary  = 120
 )
 
 // callToolName is AXLR's bridge to a plugin's tool: its arguments name
@@ -23,18 +24,23 @@ const callToolName = "axlr_call_tool"
 // progressTracker turns the lines of a run into progress items as the
 // run writes them: a call asked for and how it ended, with how long it
 // took on this host's clock, a call that waits for a person, and the
-// model's words up to a cap, then one mark that they were cut. It hands
-// each item over at once; whoever hears them must not block.
+// model's words and its reasoning, each up to a cap, then one mark that
+// they were cut. It hands each item over at once; whoever hears them
+// must not block.
 type progressTracker struct {
-	tell    func(application.ProgressItem)
-	now     func() time.Time
-	started map[string]time.Time
-	text    int
-	cut     bool
+	tell     func(application.ProgressItem)
+	now      func() time.Time
+	started  map[string]time.Time
+	words    cappedStream
+	thinking cappedStream
 }
 
 func newProgressTracker(tell func(application.ProgressItem)) *progressTracker {
-	return &progressTracker{tell: tell, now: time.Now, started: map[string]time.Time{}}
+	return &progressTracker{
+		tell: tell, now: time.Now, started: map[string]time.Time{},
+		words:    cappedStream{kind: application.ProgressText, cutKind: application.ProgressTextTruncated, limit: maxProgressText},
+		thinking: cappedStream{kind: application.ProgressThinking, cutKind: application.ProgressThinkingTruncated, limit: maxProgressThinking},
+	}
 }
 
 // feed reads one line of the run.
@@ -49,7 +55,9 @@ func (t *progressTracker) feed(line []byte) {
 	now := t.now()
 	switch event.Type {
 	case "text":
-		t.words(event.Text, now)
+		t.words.feed(event.Text, now, t.tell)
+	case "reasoning":
+		t.thinking.feed(event.Text, now, t.tell)
 	case "tool.requested":
 		t.started[event.CallID] = now
 		mcpTool, summary := describeArguments(event.Tool, event.Arguments)
@@ -69,28 +77,6 @@ func (t *progressTracker) feed(line []byte) {
 	case "decision.required":
 		t.tell(application.ProgressItem{Kind: application.ProgressDecisionRequired, At: now, Tool: event.Tool, CallID: event.CallID})
 	}
-}
-
-// words tells the model's words until the run's cap, then the mark
-// that the rest was cut.
-func (t *progressTracker) words(text string, now time.Time) {
-	if t.cut || text == "" {
-		return
-	}
-	if t.text+len(text) > maxProgressText {
-		keep := maxProgressText - t.text
-		for keep > 0 && !utf8.RuneStart(text[keep]) {
-			keep--
-		}
-		if keep > 0 {
-			t.tell(application.ProgressItem{Kind: application.ProgressText, At: now, Text: text[:keep]})
-		}
-		t.cut = true
-		t.tell(application.ProgressItem{Kind: application.ProgressTextTruncated, At: now})
-		return
-	}
-	t.text += len(text)
-	t.tell(application.ProgressItem{Kind: application.ProgressText, At: now, Text: text})
 }
 
 // endedStatus is how a call ended as its line says: denied by a person

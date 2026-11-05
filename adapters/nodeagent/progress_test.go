@@ -140,6 +140,35 @@ func TestWordsAreCoalescedAndACallGoesAtOnce(t *testing.T) {
 	}
 }
 
+// The model's reasoning joins reasoning and its words join words, never
+// each other: the order they came in stays.
+func TestReasoningAndWordsJoinTheirOwnKind(t *testing.T) {
+	q := newProgressQueue(10)
+	now := time.Now()
+	thinking := func(words string) application.ProgressItem {
+		return application.ProgressItem{Kind: application.ProgressThinking, Text: words}
+	}
+	q.push(thinking("The pods "), now)
+	q.push(thinking("first."), now)
+	q.push(text("Looking "), now)
+	q.push(text("at them."), now)
+	q.push(thinking("Then the log."), now)
+	if send, after := q.due(now, time.Second, 100); send || after != time.Second {
+		t.Fatalf("reasoning waits like words: %v %s", send, after)
+	}
+	if send, _ := q.due(now, time.Second, 20); !send {
+		t.Fatal("enough reasoning and words go")
+	}
+	batch := q.take(now)
+	got := []string{}
+	for _, item := range batch.Items {
+		got = append(got, string(item.Kind)+":"+item.Text)
+	}
+	if strings.Join(got, "|") != "thinking:The pods first.|text:Looking at them.|thinking:Then the log." {
+		t.Fatalf("%v", got)
+	}
+}
+
 // A queue past its limit drops the oldest and says so; the words of one
 // item stay within an item's bound.
 func TestTheQueueDropsTheOldest(t *testing.T) {

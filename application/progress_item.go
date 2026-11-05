@@ -29,7 +29,7 @@ type ProgressItem struct {
 	Bot    string `json:"bot,omitempty"`
 	TaskID string `json:"taskId,omitempty"`
 	Reason string `json:"reason,omitempty"`
-	// Text is the model's words.
+	// Text is the model's words, or its reasoning for a thinking item.
 	Text string `json:"text,omitempty"`
 }
 
@@ -39,7 +39,7 @@ const (
 	maxProgressSummary = 160
 	maxProgressStatus  = 32
 	maxProgressError   = 240
-	// MaxProgressText bounds the words of one text item.
+	// MaxProgressText bounds the words of one text or thinking item.
 	MaxProgressText = 4000
 )
 
@@ -78,7 +78,7 @@ func (i ProgressItem) normalized(now time.Time) (ProgressItem, bool) {
 		out.TaskID = cut(i.TaskID, maxProgressName)
 		out.Reason = cut(i.Reason, maxProgressName)
 		return out, out.Bot != ""
-	case ProgressText:
+	case ProgressText, ProgressThinking:
 		out.Text = cut(i.Text, MaxProgressText)
 		return out, strings.TrimSpace(out.Text) != ""
 	}

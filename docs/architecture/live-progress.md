@@ -26,6 +26,7 @@ The AXLR adapter feeds every line it reads to a progress tracker (`adapters/axlr
 | `tool.completed` | `tool.ended` | `tool`, `callId`, `status` (`ok`, `denied` when the decision is `deny`, `failed` when the line says so), `error`, the first line of a failure as AXLR wrote it, cut at 240 characters, and `durationMs` on the node's clock since its `tool.requested` |
 | `decision.required` | `decision.required` | the `tool` and `callId` waiting for a person |
 | `text` | `text` | the model's words, up to 32 KiB per run; then one `text.truncated` and no more words |
+| `reasoning` | `thinking` | the model's reasoning, when the model and its server stream it, up to 16 KiB per run; then one `thinking.truncated` and no more reasoning |
 
 AXLR v0.14.0 writes `{"type","tool","call_id","decision"}` on its tool lines and no arguments (`trace_payloads: false` keeps them out of the trace as well), so with it an item has the tool's name and nothing more. Later builds write the call's `arguments` on `tool.requested` and its `status` and `error` on `tool.completed`: the item then names the MCP tool, summarizes its arguments and says why a call failed, with no change to the adapter. A full set of arguments never leaves the node.
 
@@ -35,8 +36,8 @@ The delegation tool adds its own item when the control plane answered: `delegati
 
 The tracker hands each item to the node agent's sender of that execution (`adapters/nodeagent/progress_sender.go`) and returns at once:
 
-- **The queue** (`progress_queue.go`) holds at most 256 items. Past that, the oldest is dropped and counted; the next batch carries the count (`dropped`) and the node logs it. Words join the text item at the queue's end, so a stream of tokens is one growing item, not thousands.
-- **One goroutine sends.** A tool call, a decision or a delegation goes at once with whatever waits; words alone wait until 500 characters or 1.5 seconds have gathered. At most 64 items go in a batch.
+- **The queue** (`progress_queue.go`) holds at most 256 items. Past that, the oldest is dropped and counted; the next batch carries the count (`dropped`) and the node logs it. Words join the text item at the queue's end, and reasoning the thinking item, so a stream of tokens is one growing item, not thousands; a piece of the other kind starts a new item, so the order stays.
+- **One goroutine sends.** A tool call, a decision or a delegation goes at once with whatever waits; words and reasoning alone wait until 500 characters or 1.5 seconds have gathered. At most 64 items go in a batch.
 - **Before the report** the sender sends what is left and stops: the report ends the execution, and the control plane takes no progress after it.
 - **A batch that does not go is lost**, logged once per execution; a control plane older than the route (its mux's plain `404`), or one that answers `full`, closes the queue for the execution. The run is never told: its report still carries every tool call, the answer and the usage, as before.
 
@@ -61,18 +62,23 @@ The **Activity** pane folds the timeline (`application/activity.rs`):
 
 - each tool call by the name a person knows it, the MCP tool a bridged call names, with a short summary of its arguments, its state (▶ running, ✓ ok, ✕ denied or failed, ⚠ waits for you, no end seen for a call of a task that ended), how long it took and, when it failed, its error;
 - each bot asked, with **Open task** to the child's own page, which follows the child live the same way; the node's `delegation` item and the control plane's `bot.task.delegated` and `bot.delegation.refused` are shown once;
-- a call that waits for a person, with its tool;
+- a call that waits for a person, with its tool, and once the person decided (`bot.task.decided`), what they said: the call then runs, or was denied, and its end in the execution that took the decision closes it;
 - what the operator wrote to the run (`bot.task.message`) and what it said back (`bot.task.said`);
-- **What it says**: the model's words as they come, in a read-only text editor where a part can be selected and copied.
+- **What it thinks**: the model's reasoning as it comes, in muted italics, a paragraph per step;
+- **What it says**: the model's words as they come.
 
-A click on a step opens its details (tool, MCP tool, state, time, summary, call id) with **Copy step**; **Copy words** and **Copy activity** copy the words and the whole pane as text. The timeline beside it leaves the progress events out.
+While the task runs the Activity stands first on the page, under its title, and each of its three parts (the steps, the reasoning, the words) stands in a box of its own that keeps its newest lines in view, as a console does: a read that makes a box grow brings its end into view (`snap_to_end`), unless the person scrolled up in that box to read, which leaves it where they put it until they scroll back to its end. The page around them does not move. Once the task ended, the Activity goes back below the task's facts and the words become a read-only text editor where a part can be selected and copied (an editor rebuilt at every new word would jump back to its start).
+
+A click on a step opens its details (tool, MCP tool, state, time, summary, call id) with **Copy step**; **Copy thinking**, **Copy words** and **Copy activity** copy the reasoning, the words and the whole pane as text. The timeline beside it leaves the progress events out.
 
 **Talk to it**, in the pane's title while the task runs, opens the bot's page, whose chat already writes to the running task (`POST /v1/tasks/{id}/messages`, the run reads it between its steps through `--steer-file`). The answer comes back as `bot.task.said`, which the Activity shows in place: the panel has one way to correct a running bot, not two.
+
+AXLR writes a `reasoning` line every 512 bytes of reasoning, with the reasoning since the previous line. Builds before the fix that tells the rest when the model stops reasoning (it starts its words or a call, or the reply ends) lost the last few hundred bytes of each step's reasoning, so the panel showed its first word and nothing more for a short one.
 
 ## Consequences
 
 - One more node route on the existing mutual-TLS channel and two query parameters on an operator route; no change to AXLR.
-- **Upgrade the control plane first.** An older control plane answers the new route with its plain `404`: the new node logs it once per execution and runs as before. An older node never calls it. An older panel ignores the new event type (the contract's enums are open).
+- **Upgrade the control plane first.** An older control plane answers the new route with its plain `404`: the new node logs it once per execution and runs as before. An older node never calls it. An older panel ignores the new event type (the contract's enums are open). A control plane older than the `thinking` kind drops those items, and refuses a batch of reasoning alone, which the node logs and loses: the words and the steps still go.
 - The control plane writes one event per batch: about one every 1.5 seconds while a model writes, one per tool call, at most 400 per execution. Each wakes the long polls on the timelines, which read again and find nothing new outside the task.
 - The task's timeline now holds most of an execution's events; `GET /v1/tasks/{id}/events` without `limit` still answers the newest 100, and the panel reads up to 1000.
 
@@ -80,5 +86,5 @@ A click on a step opens its details (tool, MCP tool, state, time, summary, call 
 
 - **The Jev runtime** tells no progress yet: a program's steps are its tool calls and its questions to Jev, and its trace already lists them; the same items fit when it needs them.
 - **The control plane's in-process runs** (single-process mode) are not watched live: the executor there has no sender.
-- **Arguments in full**, tool results and the model's reasoning stay on the node, in the trace.
+- **Arguments in full** and tool results stay on the node, in the trace.
 - A step lost on the way (the queue full, the control plane down) is counted, not resent.
