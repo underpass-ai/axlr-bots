@@ -1,7 +1,9 @@
 //! One task: the call waiting for a person, the answer, the executions
 //! and the timeline.
 
-use iced::widget::{Space, column, container, markdown, mouse_area, row, scrollable, text, text_editor};
+use iced::widget::{
+    Space, column, container, markdown, mouse_area, responsive, row, scrollable, text, text_editor, tooltip,
+};
 use iced::{Alignment, Font, Length, mouse};
 
 use super::widgets::{
@@ -9,7 +11,7 @@ use super::widgets::{
     section, section_title, section_with,
 };
 use crate::application::TaskDetail;
-use crate::domain::{Event, Execution, ExecutionKind, PostDraft, TaskId, TaskStatus};
+use crate::domain::{Event, Execution, ExecutionKind, NodeWait, PostDraft, TaskId, TaskStatus};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
 use crate::ui::{App, Icon, Message, Screen, Tokens, Tone};
@@ -43,7 +45,7 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     if task.is_urgent() {
         header = header.push(pill(Tone::Wait, "urgent", tokens));
     }
-    header = header.push(bold(task.headline(80)).size(22.0).width(Length::Fill));
+    header = header.push(headline(&task.objective, tokens));
     header = header.push(copy_button("Copy task", task.objective.clone(), tokens));
     if let Some(stop) = stop {
         header = header.push(stop);
@@ -98,26 +100,22 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     if let Some(waiting) = approval(app, detail, tokens) {
         page = page.push(waiting);
     }
-    // While the task runs, what it does comes next; once it ended, after
-    // what it was asked.
-    let activity = super::activity::pane(app, detail, tokens);
-    let (first, after) = if task.status.is_terminal() {
-        (None, activity)
-    } else {
-        (activity, None)
-    };
-    if let Some(pane) = first {
+    // A decision queued for a node that is away or busy: what it waits
+    // for, in a sentence, while it waits.
+    if let Some(waiting) = node_wait(app, detail, tokens) {
+        page = page.push(waiting);
+    }
+    // What it does comes next, live and once it ended alike: the cards
+    // keep their places when the task ends, so the eye keeps its own.
+    if let Some(pane) = super::activity::pane(app, detail, tokens) {
         page = page.push(pane);
     }
-    // The header shows the objective's first line, cut; a longer one is
-    // here whole.
-    if task.headline(80) != task.objective.trim() {
+    // The header shows the objective's first line, cut to its room; an
+    // objective the narrowest window may cut is here whole.
+    if shows_whole_below(&task.objective) {
         page = page.push(section(Icon::Tasks, "Task", text(task.objective.clone()), tokens));
     }
     page = page.push(facts);
-    if let Some(pane) = after {
-        page = page.push(pane);
-    }
     let knew = task.knew();
     if !knew.is_empty() {
         let mut notes = column![muted("What its bot had heard, given to it when it started", tokens)].spacing(6);
@@ -169,7 +167,7 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
                 ),
             )
         } else {
-            let style = markdown::Style::from_palette(tokens.theme().palette());
+            let style = super::widgets::markdown_style(tokens);
             (
                 markdown::view(answer.markdown.items(), markdown::Settings::with_text_size(BODY, style))
                     .map(Message::Copy),
@@ -207,7 +205,7 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
             chip(format!("{} model calls", usage.requests), tokens),
             chip(format!("{} tokens", format::tokens(usage.total_tokens())), tokens),
             chip(format!("{} tool calls", usage.tool_calls), tokens),
-            chip(format!("cost {}", format::cost(usage.cost_usd)), tokens),
+            chip(format!("cost {}", format::spend(detail.cost())), tokens),
         ]
         .spacing(8)
     ]
@@ -394,7 +392,7 @@ fn execution_card<'a>(app: &'a App, execution: &'a Execution, tokens: Tokens) ->
                 "{} calls · {} tokens · {}",
                 execution.usage.requests,
                 format::tokens(execution.usage.total_tokens()),
-                format::cost(execution.usage.cost_usd)
+                format::run_cost(&execution.usage)
             ),
             tokens
         ),
@@ -508,6 +506,73 @@ fn timeline_events<'a>(app: &'a App, detail: &'a TaskDetail) -> Vec<&'a Event> {
     events.iter().filter(|e| !e.is_progress()).collect()
 }
 
+/// How wide a character of the title is on average, in its size: Lexend
+/// Bold.
+const TITLE_EM: f32 = 0.62;
+const TITLE_SIZE: f32 = 22.0;
+/// The longest first line the title shows whole in a 1360 px window; a
+/// longer objective is shown whole in its own card too. A title cut in a
+/// narrower window shows it whole on hover.
+const TITLE_WHOLE: usize = 40;
+
+/// Whether the objective needs its own card: more than one line, or a
+/// first line the title may cut.
+fn shows_whole_below(objective: &str) -> bool {
+    let objective = objective.trim();
+    objective.lines().count() > 1 || objective.chars().count() > TITLE_WHOLE
+}
+
+/// The objective's first line as the page's title: on one line, cut with
+/// an ellipsis to what the header's room holds.
+fn headline<'a>(objective: &'a str, tokens: Tokens) -> El<'a> {
+    responsive(move |space| {
+        let fits = ((space.width / (TITLE_EM * TITLE_SIZE)).floor() as usize).clamp(8, 80);
+        let first = objective.lines().next().unwrap_or_default().trim();
+        let short = super::grid::shorten(first, fits);
+        let cut = short != first;
+        let line = container(bold(short).size(TITLE_SIZE).wrapping(text::Wrapping::None)).clip(true);
+        if !cut {
+            return line.into();
+        }
+        tooltip(
+            line,
+            container(text(first).size(SMALL))
+                .padding(6)
+                .style(styles::chip(tokens)),
+            tooltip::Position::Bottom,
+        )
+        .into()
+    })
+    .height(Length::Shrink)
+    .into()
+}
+
+/// What the task's decision waits for while its node is away or busy.
+fn node_wait<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> Option<El<'a>> {
+    if detail.task.status != TaskStatus::Running {
+        return None;
+    }
+    let events = match app.live.as_ref().filter(|l| l.id == detail.task.id && l.read) {
+        Some(live) => &live.feed.events,
+        None => &detail.events,
+    };
+    let wait = NodeWait::current(events)?;
+    Some(
+        container(
+            row![
+                icon(Icon::Hourglass, 20.0, Tone::Late.color(&tokens)),
+                bold(format::wait(&wait)).width(Length::Fill),
+            ]
+            .spacing(12)
+            .align_y(Alignment::Center),
+        )
+        .padding(16)
+        .width(Length::Fill)
+        .style(styles::tone_card(tokens, Tone::Late))
+        .into(),
+    )
+}
+
 /// A copy of the whole timeline, once it has an event.
 fn timeline_tools<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> Vec<El<'a>> {
     let events = timeline_events(app, detail);
@@ -529,11 +594,28 @@ fn timeline<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> El<'a> 
             row![
                 muted(format::clock(event.created_at), tokens),
                 icon(tone.event_icon(), 16.0, tone.color(&tokens)),
-                column![bold(event.label()).size(BODY), muted(event.detail(), tokens)].spacing(2),
+                column![
+                    bold(event.label()).size(BODY),
+                    muted(format::event_detail(event), tokens)
+                ]
+                .spacing(2),
             ]
             .spacing(10)
             .align_y(Alignment::Center),
         );
     }
     list.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_objective_the_title_may_cut_is_shown_whole_below() {
+        assert!(!shows_whole_below("Check the disk"));
+        assert!(!shows_whole_below(&"x".repeat(TITLE_WHOLE)));
+        assert!(shows_whole_below(&"x".repeat(60)));
+        assert!(shows_whole_below("Check the disk\nthen the logs"));
+    }
 }

@@ -138,15 +138,13 @@ pub fn banner(tokens: Tokens, tone: Tone) -> impl Fn(&Theme) -> container::Style
             ))),
             border: Border {
                 color,
-                width: 1.0,
+                width: 2.0,
                 radius: RADIUS.into(),
             },
-            // It floats over the page: a soft shadow lifts it off.
-            shadow: Shadow {
-                color: Color::from_rgba(0.0, 0.0, 0.0, if tokens.dark { 0.5 } else { 0.18 }),
-                offset: iced::Vector::new(0.0, 4.0),
-                blur_radius: 16.0,
-            },
+            // It floats over the page with no shadow: the software
+            // renderer draws a blurred one as a grey block over the words
+            // and leaves it behind when the banner goes. Its border in its
+            // tone, two pixels, sets it off the page.
             ..container::Style::default()
         }
     }

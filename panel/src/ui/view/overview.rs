@@ -2,7 +2,7 @@
 
 use iced::widget::text::Wrapping;
 use iced::widget::{Space, column, container, mouse_area, row, scrollable, text};
-use iced::{Alignment, Length, mouse};
+use iced::{Alignment, Length, Padding, mouse};
 
 use super::widgets::{El, SMALL, action, bold, card, empty, icon, muted, pill, section, title};
 use crate::domain::{BotStatus, NodeStatus, TaskStatus};
@@ -79,7 +79,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         ),
         stat(
             Icon::Coin,
-            format::cost(o.cost_usd_since),
+            format::spend(o.cost_since()),
             "cost today",
             Tone::Idle,
             None,
@@ -87,6 +87,27 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         ),
     ]
     .spacing(14);
+    // Runs stopped before they said what they spent: the cost today is a
+    // floor, and a note under its card says how many.
+    let stats: El<'a> = if o.cost_since().is_floor() {
+        let runs = o.cost_unknown_since;
+        let note = if runs == 1 {
+            "1 run unknown".to_string()
+        } else {
+            format!("{runs} runs unknown")
+        };
+        column![
+            stats,
+            row![Space::new().width(Length::Fill), muted(note, tokens)].padding(Padding {
+                right: 12.0,
+                ..Padding::ZERO
+            })
+        ]
+        .spacing(4)
+        .into()
+    } else {
+        stats.into()
+    };
 
     let mut page = column![
         row![

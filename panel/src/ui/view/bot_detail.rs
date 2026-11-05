@@ -114,7 +114,7 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
             Icon::Tasks,
             "Recent work",
             vec![new_task],
-            tasks(app, &bot.id, tokens),
+            tasks(app, bot, tokens),
             tokens
         ),
         section_with(
@@ -641,7 +641,7 @@ fn events<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             head = head.push(muted(format::short_id(task.as_str(), 9), tokens).wrapping(Wrapping::None));
         }
         let mut words = column![head].spacing(2).width(Length::Fill);
-        let detail = event.detail();
+        let detail = format::event_detail(event);
         if !detail.is_empty() {
             words = words.push(muted(detail, tokens));
         }
@@ -666,13 +666,15 @@ fn events<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     list.into()
 }
 
-fn tasks<'a>(app: &'a App, bot: &'a BotId, tokens: Tokens) -> El<'a> {
+/// The bot's newest tasks. A task older than the bot is a predecessor's
+/// that had its id: a bot deleted and registered again starts afresh.
+fn tasks<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
     let mut list = column![].spacing(8);
     let mine: Vec<_> = app
         .fleet
         .iter()
         .flat_map(|f| f.tasks.iter())
-        .filter(|t| &t.bot_id == bot)
+        .filter(|t| t.bot_id == bot.id && t.created_at >= bot.created_at)
         .take(8)
         .collect();
     if mine.is_empty() {

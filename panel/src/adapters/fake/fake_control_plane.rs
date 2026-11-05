@@ -744,6 +744,7 @@ impl FakeState {
         for execution in self.executions.iter().filter(|e| e.started_at >= since) {
             overview.executions_since += 1;
             overview.cost_usd_since += execution.usage.cost_usd;
+            overview.cost_unknown_since += u32::from(execution.usage.cost_unknown);
         }
         overview
     }
@@ -1278,6 +1279,21 @@ impl ControlPlane for FakeControlPlane {
                     task.updated_at = now;
                     let task = task.clone();
                     let bot = task.bot_id.to_string();
+                    // A run stopped before it said what it spent: its
+                    // cost is unknown, as the control plane says.
+                    for execution in s
+                        .executions
+                        .iter_mut()
+                        .filter(|e| e.task_id == id && !e.outcome.is_final())
+                    {
+                        execution.outcome = ExecutionOutcome::Cancelled;
+                        execution.ended_at = Some(now);
+                        execution.usage = Usage {
+                            tool_calls: execution.usage.tool_calls,
+                            cost_unknown: true,
+                            ..Default::default()
+                        };
+                    }
                     s.event("bot.task.cancelled", &bot, &id, now, serde_json::json!({}));
                     Ok(CancelledTask {
                         task,

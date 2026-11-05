@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{BotStatus, NodeStatus, TaskStatus};
+use super::{BotStatus, Cost, NodeStatus, TaskStatus};
 
 /// The dashboard's counts: what the control plane holds now and what
 /// happened since a moment.
@@ -23,9 +23,18 @@ pub struct Overview {
     pub executions_since: u32,
     #[serde(default, rename = "costUsdSince")]
     pub cost_usd_since: f64,
+    /// Executions since the moment whose cost is not known: the cost
+    /// since is at least what it says.
+    #[serde(default, rename = "costUnknownSince")]
+    pub cost_unknown_since: u32,
 }
 
 impl Overview {
+    /// What the executions since the moment cost, as far as it is known.
+    pub fn cost_since(&self) -> Cost {
+        Cost::new(self.cost_usd_since, self.cost_unknown_since)
+    }
+
     pub fn nodes_in(&self, status: NodeStatus) -> u32 {
         self.nodes.get(status.name()).copied().unwrap_or(0)
     }
@@ -69,7 +78,8 @@ mod tests {
         let overview: Overview = serde_json::from_str(
             r#"{"since":"2026-10-24T22:00:00Z","nodes":{"Offline":1,"Online":2,"Registered":0,"Revoked":1},
             "bots":{"Enabled":3,"Paused":1},"tasks":{"Running":1,"WaitingApproval":2,"Completed":40},
-            "tasksSince":{"Completed":4,"Failed":1,"Expired":5},"executionsSince":6,"costUsdSince":0.0123}"#,
+            "tasksSince":{"Completed":4,"Failed":1,"Expired":5},"executionsSince":6,"costUsdSince":0.0123,
+            "costUnknownSince":2}"#,
         )
         .unwrap();
         assert_eq!(overview.nodes_in(NodeStatus::Online), 2);
@@ -84,5 +94,7 @@ mod tests {
         assert_eq!(overview.tasks_since_in(TaskStatus::Pending), 0);
         assert_eq!(overview.executions_since, 6);
         assert!((overview.cost_usd_since - 0.0123).abs() < 1e-9);
+        assert_eq!(overview.cost_since(), Cost::new(overview.cost_usd_since, 2));
+        assert_eq!(Overview::default().cost_since(), Cost::default());
     }
 }

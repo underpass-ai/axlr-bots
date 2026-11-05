@@ -183,12 +183,19 @@ fn the_cost_of_the_day_shows_whole_and_the_short_counts_stay_big() {
         let cost = format::cost(usd);
         for width in [MIN_WINDOW.width, WINDOW.width] {
             // In the pixel face at the size its card gives it, which its
-            // line's height tells.
-            shows_whole(&app, width, &cost, |room| {
-                widgets::number(cost.clone()).size(room.height / 1.3)
-            });
+            // line's height tells; the point in a cell of its own.
+            for part in cost.split('.') {
+                shows_whole(&app, width, part, |room| {
+                    widgets::number(part.to_string()).size(room.height / 1.3)
+                });
+            }
         }
     }
+    // Runs that did not tell their cost: at least, and how many.
+    app.fleet.as_mut().unwrap().overview.cost_unknown_since = 2;
+    shows(&app, &["≥", "2 runs unknown"]);
+    app.fleet.as_mut().unwrap().overview.cost_unknown_since = 1;
+    shows(&app, &["1 run unknown"]);
     let _turn = turn();
     for width in [MIN_WINDOW.width, WINDOW.width] {
         let mut ui = Simulator::with_size(panel_settings(), Size::new(width, 2000.0), view::view(&app));
@@ -1504,7 +1511,7 @@ fn a_waiting_task_shows_approve_first_and_its_words_to_read_or_select() {
     fake.progress(
         &id,
         serde_json::json!([
-            {"kind": "text", "text": "The file is missing; I want to write it."},
+            {"kind": "text", "text": "The file is **missing**; I want to write it."},
             {"kind": "tool.started", "tool": "local_write", "callId": "c7"},
             {"kind": "decision.required", "tool": "local_write", "callId": "c7"}
         ]),
@@ -1519,13 +1526,16 @@ fn a_waiting_task_shows_approve_first_and_its_words_to_read_or_select() {
     assert!(top("Approve") < top("What it says"));
     assert!(top("Approve") < 600.0);
     shows(&app, &["Waits for your OK to call local_write", "Select words"]);
+    // The words read formatted: no Markdown marks in sight.
+    assert!(simulator_misses(&app, "The file is **missing**; I want to write it."));
+    assert!(!app.live.as_ref().unwrap().markdown.items().is_empty());
     assert!(matches!(
         messages_of_click(&app, "Select words").as_slice(),
         [Message::WordsSelecting(true)]
     ));
     send(&mut app, Message::WordsSelecting(true));
     assert!(matches!(
-        messages_of_click(&app, "Read as it comes").as_slice(),
+        messages_of_click(&app, "Formatted").as_slice(),
         [Message::WordsSelecting(false)]
     ));
     // What its run said before it asked is not an answer: the task has
