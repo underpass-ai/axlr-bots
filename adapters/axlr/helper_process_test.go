@@ -144,6 +144,9 @@ func TestHelperProcess(t *testing.T) {
 		fmt.Fprintln(os.Stderr, "axlr-tui: no model provider: set OPENROUTER_API_KEY")
 		fmt.Fprintln(os.Stderr, "")
 		os.Exit(1)
+	case "session-lost":
+		fmt.Fprintln(os.Stderr, "axlr-tui: open /tmp/axlr-state/axlr/sessions/sess-1.json: no such file or directory")
+		os.Exit(1)
 	case "exit-7":
 		os.Exit(7)
 	case "garbage":
