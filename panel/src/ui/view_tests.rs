@@ -133,6 +133,32 @@ fn the_first_run_shows_the_settings_and_connects_on_a_click() {
     assert!(matches!(sent.as_slice(), [Message::SettingsSave]));
 }
 
+/// Home lists the five newest calls and the way to all of them, and
+/// the nodes that are not online before the others.
+#[test]
+fn home_caps_what_needs_you_and_puts_nodes_away_first() {
+    let mut app = connected();
+    let fleet = app.fleet.as_mut().unwrap();
+    let waiting = fleet
+        .tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::WaitingApproval)
+        .unwrap()
+        .clone();
+    let shown = fleet.waiting().len();
+    for n in shown..7 {
+        let mut copy = waiting.clone();
+        copy.id = crate::domain::TaskId::new(&format!("task-wait-{n}")).unwrap();
+        fleet.tasks.push(copy);
+    }
+    fleet.nodes[1].status = crate::domain::NodeStatus::Offline;
+    shows(&app, &["2 more wait for you", "See all 7", "Offline"]);
+    assert!(matches!(
+        messages_of_click(&app, "See all 7").as_slice(),
+        [Message::FilterStatus(Some(TaskStatus::WaitingApproval))]
+    ));
+}
+
 #[test]
 fn home_shows_the_counts_and_what_needs_a_person() {
     let mut app = connected();
@@ -147,13 +173,16 @@ fn home_shows_the_counts_and_what_needs_a_person() {
             "expired today",
             "Needs you",
             "Review",
-            "gx10-ff95",
             "Latest tasks",
             "2/2 nodes online",
             "127.0.0.1:7879",
         ],
     );
     shows(&app, &["wants local_write · hello", "Approve", "Deny"]);
+    // Each node says when it was last seen.
+    let node = &app.fleet.as_ref().unwrap().nodes[0];
+    let seen = format!("seen {}", crate::ui::format::age(node.last_seen_at, app.now));
+    shows(&app, &[seen.as_str()]);
     assert!(matches!(
         messages_of_click(&app, "Approve").as_slice(),
         [Message::Approve(_)]
@@ -522,7 +551,7 @@ fn a_waiting_task_shows_the_call_and_its_answers() {
     shows(
         &app,
         &[
-            "Needs your OK",
+            "Needs OK",
             "It asked you",
             "local_write",
             "hello.txt",
@@ -587,7 +616,7 @@ fn a_waiting_call_that_publishes_shows_the_post_as_it_would_read() {
     shows(
         &app,
         &[
-            "Needs your OK",
+            "Needs OK",
             "local_exec",
             "As it would read",
             "bot-act-with-approval",
@@ -898,6 +927,15 @@ fn a_bot_page_shows_its_team_and_an_urgent_order() {
     ));
 }
 
+/// None of `words` is on the screen.
+fn hides(app: &App, words: &[&str]) {
+    let _turn = turn();
+    let mut ui = simulator(view::view(app));
+    for word in words {
+        assert!(ui.find(*word).is_err(), "{word} is on {:?}", app.screen);
+    }
+}
+
 #[test]
 fn a_task_says_it_was_urgent_and_why_it_stopped() {
     let mut app = connected();
@@ -907,7 +945,8 @@ fn a_task_says_it_was_urgent_and_why_it_stopped() {
     shows(&app, &["urgent: it goes first and stops what the bot is doing"]);
     app.apply(Message::SubmitObjective("Come back".into()));
     send(&mut app, Message::SubmitSend);
-    shows(&app, &["urgent", "Told by", "nobody: not a teammate's event"]);
+    shows(&app, &["urgent", "Started by"]);
+    hides(&app, &["Told by", "nobody"]);
 }
 
 #[test]
@@ -1240,6 +1279,17 @@ fn an_incident_shows_its_alerts_diagnosis_and_tasks_and_resolves() {
     let mut app = connected();
     send(&mut app, Message::Go(Screen::Incident("inc-latency".into())));
     let task = app.incidents.detail.as_ref().unwrap().task_ids[0].clone();
+    // The task by what it was asked, not by its id.
+    let asked = app
+        .fleet
+        .as_ref()
+        .unwrap()
+        .tasks
+        .iter()
+        .find(|t| t.id == task)
+        .unwrap()
+        .ask()
+        .to_string();
     shows(
         &app,
         &[
@@ -1249,7 +1299,7 @@ fn an_incident_shows_its_alerts_diagnosis_and_tasks_and_resolves() {
             "Firing",
             "Went green",
             "Tasks",
-            task.as_str(),
+            asked.as_str(),
             "Running",
             "acme",
             "$0.0042",
@@ -1263,7 +1313,7 @@ fn an_incident_shows_its_alerts_diagnosis_and_tasks_and_resolves() {
     reads(&app, ReaderKey::Fingerprint("fp-checkout-2".into()), "fp-checkout-2");
     reads(&app, ReaderKey::Fingerprint("fp-checkout-1".into()), "fp-checkout-1");
     assert!(matches!(
-        messages_of_click(&app, task.as_str()).as_slice(),
+        messages_of_click(&app, asked.as_str()).as_slice(),
         [Message::Go(Screen::Task(id))] if *id == task
     ));
     assert!(matches!(
@@ -1525,7 +1575,7 @@ fn a_waiting_task_shows_approve_first_and_its_words_to_read_or_select() {
     // Approve and Deny come before the Activity, in the first view.
     assert!(top("Approve") < top("What it says"));
     assert!(top("Approve") < 600.0);
-    shows(&app, &["Waits for your OK to call local_write", "Select words"]);
+    shows(&app, &["Needs OK to call local_write", "Select words"]);
     // The words read formatted: no Markdown marks in sight.
     assert!(simulator_misses(&app, "The file is **missing**; I want to write it."));
     assert!(!app.live.as_ref().unwrap().markdown.items().is_empty());

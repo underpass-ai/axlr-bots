@@ -1,7 +1,7 @@
 //! Home: the fleet at a glance and what needs a person.
 
 use iced::widget::text::Wrapping;
-use iced::widget::{Space, button, column, container, mouse_area, row, scrollable, text};
+use iced::widget::{Space, button, column, container, mouse_area, responsive, row, scrollable, text};
 use iced::{Alignment, Length, Padding, mouse};
 
 use super::widgets::{
@@ -17,99 +17,52 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         return loading(app, tokens);
     };
     let o = &fleet.overview;
-    let online = o.nodes_in(NodeStatus::Online);
-    let waiting = app.waiting_count();
-    // Asks to listen and no waiting task: the count opens the bot that asks.
-    let need_you = match fleet.bots.iter().find(|b| b.pending_asks().next().is_some()) {
-        Some(bot) if o.tasks_in(TaskStatus::WaitingApproval) == 0 => Message::Go(Screen::Bot(bot.id.clone())),
-        _ => Message::FilterStatus(Some(TaskStatus::WaitingApproval)),
-    };
-    let failed_today = o.tasks_since_in(TaskStatus::Failed);
-    let expired_today = o.tasks_since_in(TaskStatus::Expired);
-    let stats = row![
-        stat(
-            Icon::Nodes,
-            format!("{online}/{}", o.total_nodes()),
-            "nodes online",
-            if o.nodes_down() > 0 { Tone::Bad } else { Tone::Good },
-            Some(Message::Go(Screen::Nodes)),
-            tokens
-        ),
-        stat(
-            Icon::Bots,
-            o.bots_in(BotStatus::Enabled).to_string(),
-            "bots on",
-            Tone::Good,
-            Some(Message::Go(Screen::Bots)),
-            tokens
-        ),
-        stat(
-            Icon::Play,
-            o.tasks_in(TaskStatus::Running).to_string(),
-            "running",
-            if o.tasks_in(TaskStatus::Running) > 0 {
-                Tone::Busy
-            } else {
-                Tone::Idle
-            },
-            Some(Message::FilterStatus(Some(TaskStatus::Running))),
-            tokens
-        ),
-        stat(
-            Icon::Alert,
-            waiting.to_string(),
-            "need you",
-            if waiting > 0 { Tone::Wait } else { Tone::Idle },
-            Some(need_you),
-            tokens
-        ),
-        stat(
-            Icon::Cross,
-            failed_today.to_string(),
-            "failed today",
-            if failed_today > 0 { Tone::Bad } else { Tone::Idle },
-            Some(Message::FilterStatus(Some(TaskStatus::Failed))),
-            tokens
-        ),
-        stat(
-            Icon::Hourglass,
-            expired_today.to_string(),
-            "expired today",
-            if expired_today > 0 { Tone::Late } else { Tone::Idle },
-            Some(Message::FilterStatus(Some(TaskStatus::Expired))),
-            tokens
-        ),
-        stat(
-            Icon::Coin,
-            format::spend(o.cost_since()),
-            "cost today",
-            Tone::Idle,
-            None,
-            tokens
-        ),
-    ]
-    .spacing(14);
     // Runs stopped before they said what they spent: the cost today is a
-    // floor, and a note under its card says how many.
-    let stats: El<'a> = if o.cost_since().is_floor() {
+    // floor, and a note by its card says how many.
+    let note = o.cost_since().is_floor().then(|| {
         let runs = o.cost_unknown_since;
-        let note = if runs == 1 {
+        if runs == 1 {
             "1 run unknown".to_string()
         } else {
             format!("{runs} runs unknown")
+        }
+    });
+    // Seven cards in a row while they fit at a readable size; in a
+    // narrow window, four over three, every card as wide as the others,
+    // the note in the place the eighth would take.
+    let stats: El<'a> = responsive(move |space| {
+        let mut cards = stat_cards(app, fleet, tokens).into_iter();
+        if space.width >= STATS_ONE_ROW {
+            let line = row(cards).spacing(14);
+            return match &note {
+                Some(note) => column![
+                    line,
+                    row![Space::new().width(Length::Fill), muted(note.clone(), tokens)].padding(Padding {
+                        right: 12.0,
+                        ..Padding::ZERO
+                    })
+                ]
+                .spacing(4)
+                .into(),
+                None => line.into(),
+            };
+        }
+        let top = row(cards.by_ref().take(4)).spacing(14);
+        let eighth: El<'a> = match &note {
+            Some(note) => container(muted(note.clone(), tokens))
+                .width(Length::Fill)
+                .padding(Padding::from([0, 4]))
+                .align_bottom(Length::Fill)
+                .into(),
+            None => Space::new().width(Length::Fill).into(),
         };
-        column![
-            stats,
-            row![Space::new().width(Length::Fill), muted(note, tokens)].padding(Padding {
-                right: 12.0,
-                ..Padding::ZERO
-            })
-        ]
-        .spacing(4)
-        .into()
-    } else {
-        stats.into()
-    };
+        let bottom = row(cards.chain(std::iter::once(eighth)))
+            .spacing(14)
+            .height(Length::Shrink);
+        column![top, bottom].spacing(14).into()
+    })
+    .height(Length::Shrink)
+    .into();
 
     let mut page = column![
         row![
@@ -196,9 +149,11 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
                 slot(pill(Tone::of_node(node.status), node.status.name(), tokens), PILL_SLOT),
                 container(super::grid::fitted(node.id.to_string(), true, tokens)).width(Length::FillPortion(3)),
                 container(super::grid::fitted_muted(node.host_name.clone(), tokens)).width(Length::FillPortion(2)),
-                container(muted(format!("seen {}", format::age(node.last_seen_at, app.now)), tokens).wrapping(Wrapping::None))
-                    .width(SEEN)
-                    .align_right(SEEN),
+                container(
+                    muted(format!("seen {}", format::age(node.last_seen_at, app.now)), tokens).wrapping(Wrapping::None)
+                )
+                .width(SEEN)
+                .align_right(SEEN),
             ]
             .spacing(12)
             .align_y(Alignment::Center),
@@ -261,6 +216,87 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     .id(super::widgets::PAGE)
     .height(Length::Fill)
     .into()
+}
+
+/// Under this width of the page the seven stat cards go on two rows:
+/// a window under about 1200 px.
+const STATS_ONE_ROW: f32 = 960.0;
+
+/// The fleet's numbers, one card each, in the order an operator reads
+/// them.
+fn stat_cards<'a>(app: &'a App, fleet: &'a crate::application::Fleet, tokens: Tokens) -> Vec<El<'a>> {
+    let o = &fleet.overview;
+    let online = o.nodes_in(NodeStatus::Online);
+    let waiting = app.waiting_count();
+    // Asks to listen and no waiting task: the count opens the bot that asks.
+    let need_you = match fleet.bots.iter().find(|b| b.pending_asks().next().is_some()) {
+        Some(bot) if o.tasks_in(TaskStatus::WaitingApproval) == 0 => Message::Go(Screen::Bot(bot.id.clone())),
+        _ => Message::FilterStatus(Some(TaskStatus::WaitingApproval)),
+    };
+    let failed_today = o.tasks_since_in(TaskStatus::Failed);
+    let expired_today = o.tasks_since_in(TaskStatus::Expired);
+    vec![
+        stat(
+            Icon::Nodes,
+            format!("{online}/{}", o.total_nodes()),
+            "nodes online",
+            if o.nodes_down() > 0 { Tone::Bad } else { Tone::Good },
+            Some(Message::Go(Screen::Nodes)),
+            tokens,
+        ),
+        stat(
+            Icon::Bots,
+            o.bots_in(BotStatus::Enabled).to_string(),
+            "bots on",
+            Tone::Good,
+            Some(Message::Go(Screen::Bots)),
+            tokens,
+        ),
+        stat(
+            Icon::Play,
+            o.tasks_in(TaskStatus::Running).to_string(),
+            "running",
+            if o.tasks_in(TaskStatus::Running) > 0 {
+                Tone::Busy
+            } else {
+                Tone::Idle
+            },
+            Some(Message::FilterStatus(Some(TaskStatus::Running))),
+            tokens,
+        ),
+        stat(
+            Icon::Alert,
+            waiting.to_string(),
+            "need you",
+            if waiting > 0 { Tone::Wait } else { Tone::Idle },
+            Some(need_you),
+            tokens,
+        ),
+        stat(
+            Icon::Cross,
+            failed_today.to_string(),
+            "failed today",
+            if failed_today > 0 { Tone::Bad } else { Tone::Idle },
+            Some(Message::FilterStatus(Some(TaskStatus::Failed))),
+            tokens,
+        ),
+        stat(
+            Icon::Hourglass,
+            expired_today.to_string(),
+            "expired today",
+            if expired_today > 0 { Tone::Late } else { Tone::Idle },
+            Some(Message::FilterStatus(Some(TaskStatus::Expired))),
+            tokens,
+        ),
+        stat(
+            Icon::Coin,
+            format::spend(o.cost_since()),
+            "cost today",
+            Tone::Idle,
+            None,
+            tokens,
+        ),
+    ]
 }
 
 /// How many waiting tasks Home lists before «See all».

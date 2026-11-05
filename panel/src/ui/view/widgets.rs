@@ -257,24 +257,30 @@ pub fn stat<'a>(
     on_press: Option<Message>,
     tokens: Tokens,
 ) -> El<'a> {
-    let color = tone.color(&tokens);
+    // Calm by default: a grey icon and an ink number; only a number that
+    // calls for a look keeps its tone, and only the one card that asks a
+    // person to act is tinted.
+    let number_ink = match tone {
+        Tone::Wait | Tone::Late | Tone::Bad => tone.color(&tokens),
+        Tone::Good | Tone::Busy | Tone::Idle => tokens.text,
+    };
     let body = column![
         // A gap the label never closes, even when the card is narrow.
         row![
             text(label).size(SMALL).color(tokens.muted),
             Space::new().width(Length::Fill),
-            icon(glyph, 16.0, color)
+            icon(glyph, 16.0, tokens.muted)
         ]
         .spacing(6)
         .align_y(Alignment::Center),
-        fitted_number(value, color),
+        fitted_number(value, number_ink),
     ]
     .spacing(4);
     // Seven cards share a row: a side of 12 leaves the longest label,
     // `expired today`, its gap to the icon at 1360 px.
     let card = container(body).padding(12).width(Length::Fill);
-    let card = if matches!(tone, Tone::Wait | Tone::Bad) {
-        card.style(styles::tone_card(tokens, tone))
+    let card = if tone == Tone::Wait {
+        card.style(styles::stat_call(tokens, tone))
     } else {
         card.style(styles::card(tokens))
     };
@@ -485,7 +491,11 @@ pub fn segmented<'a, T: Copy + PartialEq + 'a>(
     let mut track = row![].spacing(2).align_y(Alignment::Center);
     for choice in choices {
         let on = choice == picked;
-        let words = if on { semibold(label(choice)) } else { text(label(choice)) };
+        let words = if on {
+            semibold(label(choice))
+        } else {
+            text(label(choice))
+        };
         track = track.push(
             button(words.size(SMALL))
                 .padding(Padding::from([4, 10]))
@@ -493,10 +503,7 @@ pub fn segmented<'a, T: Copy + PartialEq + 'a>(
                 .on_press_maybe((!on).then(|| on_pick(choice))),
         );
     }
-    container(track)
-        .padding(2)
-        .style(styles::segments(tokens))
-        .into()
+    container(track).padding(2).style(styles::segments(tokens)).into()
 }
 
 #[cfg(test)]

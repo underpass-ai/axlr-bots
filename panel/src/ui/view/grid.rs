@@ -48,7 +48,10 @@ pub fn header<'a>(label: &'a str, badge: Option<SortBadge>, press: Message, toke
 /// A list's table in the house style: rows parted by a hairline only,
 /// no rule between columns, every cell on its row's middle line, so a
 /// pill, a name and a button sit level.
-pub fn sheet<'a, T: Clone>(columns: Vec<table::Column<'a, 'a, T, Message>>, rows: impl IntoIterator<Item = T>) -> El<'a> {
+pub fn sheet<'a, T: Clone>(
+    columns: Vec<table::Column<'a, 'a, T, Message>>,
+    rows: impl IntoIterator<Item = T>,
+) -> El<'a> {
     table::table(columns.into_iter().map(|c| c.align_y(Vertical::Center)), rows)
         .padding_x(8)
         .padding_y(ROW_PAD)

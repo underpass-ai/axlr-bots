@@ -353,8 +353,8 @@ mod tests {
                 "Asked helper · task task-other",
                 "You wrote: check row F",
                 "It answered: Row F next.",
-                "service_restart · waits for you",
-                "Waits for your OK to call service_restart",
+                "service_restart · needs OK",
+                "Needs OK to call service_restart",
                 "x · ok",
             ]
         );

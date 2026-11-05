@@ -1,10 +1,8 @@
 //! One task: the call waiting for a person, the answer, the executions
 //! and the timeline.
 
-use iced::widget::{
-    Space, column, container, markdown, mouse_area, responsive, row, scrollable, text, text_editor, tooltip,
-};
-use iced::{Alignment, Font, Length, mouse};
+use iced::widget::{Space, column, container, markdown, responsive, row, scrollable, text, text_editor, tooltip};
+use iced::{Alignment, Font, Length};
 
 use super::widgets::{
     BODY, El, REGULAR, SMALL, action, bold, card, chip, copy_button, empty, fact, icon, icon_button, muted, pill,
@@ -51,37 +49,37 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
         header = header.push(stop);
     }
 
+    // Who told it: a teammate's event, said once; nothing when no
+    // teammate did, as Started by already says where it came from.
+    let mut origin = column![
+        fact(
+            "Bot",
+            super::widgets::link(
+                task.bot_id.to_string(),
+                Message::Go(Screen::Bot(task.bot_id.clone())),
+                tokens
+            ),
+            tokens
+        ),
+        fact("Started by", text(task.trigger.describe()), tokens),
+    ]
+    .spacing(8)
+    .width(Length::FillPortion(1));
+    if let Some(told) = task.told_by() {
+        origin = origin.push(fact("Told by", text(told), tokens));
+    }
+    origin = origin.push(fact(
+        "Created",
+        text(format!(
+            "{} · {}",
+            format::when(task.created_at),
+            format::ago(task.created_at, app.now)
+        )),
+        tokens,
+    ));
     let facts = card(
         row![
-            column![
-                fact(
-                    "Bot",
-                    mouse_area(bold(task.bot_id.to_string()).color(tokens.accent))
-                        .on_press(Message::Go(Screen::Bot(task.bot_id.clone())))
-                        .interaction(mouse::Interaction::Pointer),
-                    tokens
-                ),
-                fact("Started by", text(task.trigger.describe()), tokens),
-                fact(
-                    "Told by",
-                    text(
-                        task.told_by()
-                            .unwrap_or_else(|| "nobody: not a teammate's event".into())
-                    ),
-                    tokens
-                ),
-                fact(
-                    "Created",
-                    text(format!(
-                        "{} · {}",
-                        format::when(task.created_at),
-                        format::ago(task.created_at, app.now)
-                    )),
-                    tokens
-                ),
-            ]
-            .spacing(8)
-            .width(Length::FillPortion(1)),
+            origin,
             column![
                 fact("Task id", copyable(task.id.to_string(), tokens), tokens),
                 fact("Trace id", copyable(task.correlation_id.clone(), tokens), tokens),
@@ -201,10 +199,16 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     let usage = detail.total_usage();
     let mut runs = column![
         row![
-            chip(format!("{} runs", detail.executions.len()), tokens),
-            chip(format!("{} model calls", usage.requests), tokens),
+            chip(format::count(detail.executions.len() as u64, "run", "runs"), tokens),
+            chip(
+                format::count(u64::from(usage.requests), "model call", "model calls"),
+                tokens
+            ),
             chip(format!("{} tokens", format::tokens(usage.total_tokens())), tokens),
-            chip(format!("{} tool calls", usage.tool_calls), tokens),
+            chip(
+                format::count(u64::from(usage.tool_calls), "tool call", "tool calls"),
+                tokens
+            ),
             chip(format!("cost {}", format::spend(detail.cost())), tokens),
         ]
         .spacing(8)
@@ -347,7 +351,7 @@ fn approval<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> Option<
     Some(
         container(
             column![
-                section_title(Icon::Alert, "Needs your OK", tokens),
+                section_title(Icon::Alert, "Needs OK", tokens),
                 row![
                     muted("The bot wants to call", tokens),
                     bold(pending.tool.clone()).size(20.0),

@@ -52,7 +52,7 @@ impl ActivityEntry {
                 (None, true) => format!("Asked {}", asked.bot),
             },
             Self::Waiting { tool, decision, .. } => match decision.as_str() {
-                "" => format!("Waits for your OK to call {tool}"),
+                "" => format!("Needs OK to call {tool}"),
                 "deny" => format!("You denied the call to {tool}"),
                 _ => format!("You approved the call to {tool}"),
             },

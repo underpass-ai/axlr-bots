@@ -50,6 +50,27 @@ pub fn tone_card(tokens: Tokens, tone: Tone) -> impl Fn(&Theme) -> container::St
     }
 }
 
+/// The one stat card that asks a person to act: a whisper of its tone
+/// and a line in it, lighter than a card that holds the calls.
+pub fn stat_call(tokens: Tokens, tone: Tone) -> impl Fn(&Theme) -> container::Style {
+    move |theme| {
+        let color = tone.color(&tokens);
+        container::Style {
+            background: Some(Background::Color(mix(
+                tokens.surface,
+                color,
+                if tokens.dark { 0.07 } else { 0.06 },
+            ))),
+            border: Border {
+                color: Tokens::fade(color, 0.7),
+                width: 1.0,
+                radius: RADIUS.into(),
+            },
+            ..card(tokens)(theme)
+        }
+    }
+}
+
 /// The page behind everything.
 pub fn page(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
     move |_| container::Style {
@@ -262,7 +283,7 @@ pub fn tonal_fill(tokens: Tokens, tone: Tone, hovered: bool) -> Color {
         (false, false) => 0.08,
         (false, true) => 0.15,
         (true, false) => 0.16,
-        (true, true) => 0.26,
+        (true, true) => 0.21,
     };
     mix(tokens.surface, tone.color(&tokens), amount)
 }
@@ -589,6 +610,63 @@ mod tests {
             let active = button_style(tokens, kind)(&theme, button::Status::Active);
             let hover = button_style(tokens, kind)(&theme, button::Status::Pressed);
             assert_ne!(active.background, hover.background, "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn links_segments_and_drop_downs_keep_to_ink_and_one_accent() {
+        let theme = Tokens::LIGHT.theme();
+        let tokens = Tokens::LIGHT;
+        let link = button_style(tokens, Kind::Link)(&theme, button::Status::Active);
+        assert_eq!((link.background, link.text_color), (None, tokens.text));
+        let hovered = button_style(tokens, Kind::Link)(&theme, button::Status::Hovered);
+        assert_eq!(hovered.text_color, tokens.accent);
+        let picked = button_style(tokens, Kind::Segment(true))(&theme, button::Status::Disabled);
+        assert_eq!(picked.background, Some(Background::Color(tokens.surface)));
+        assert_eq!(picked.text_color, tokens.text);
+        let other = button_style(tokens, Kind::Segment(false))(&theme, button::Status::Active);
+        assert_eq!((other.background, other.text_color), (None, tokens.muted));
+        assert_eq!(
+            segments(tokens)(&theme).background,
+            Some(Background::Color(tokens.raised))
+        );
+        let open = picker(tokens)(&theme, pick_list::Status::Opened { is_hovered: false });
+        assert_eq!(open.border.color, tokens.accent);
+        assert_eq!(
+            picker(tokens)(&theme, pick_list::Status::Active).border.color,
+            tokens.border
+        );
+        assert_ne!(
+            picker(tokens)(&theme, pick_list::Status::Hovered).border.color,
+            tokens.border
+        );
+        let list = menu(tokens)(&theme);
+        assert_eq!(list.background, Background::Color(tokens.surface));
+        assert_eq!(list.selected_text_color, tokens.text);
+        assert_eq!(
+            floating(tokens)(&theme).background,
+            Some(Background::Color(tokens.surface))
+        );
+        assert_eq!(stat_call(tokens, Tone::Wait)(&theme).border.width, 1.0);
+    }
+
+    /// Approve and Deny are tonal: a light tint, the tone's word, no
+    /// solid block.
+    #[test]
+    fn approve_and_deny_are_tonal() {
+        for tokens in [Tokens::LIGHT, Tokens::DARK] {
+            let theme = tokens.theme();
+            let deny = button_style(tokens, Kind::Danger)(&theme, button::Status::Active);
+            assert_eq!(
+                deny.background,
+                Some(Background::Color(tonal_fill(tokens, Tone::Bad, false)))
+            );
+            assert_eq!(deny.text_color, pill_ink(tokens, Tone::Bad));
+            assert_ne!(deny.background, Some(Background::Color(tokens.bad)));
+            assert_ne!(
+                tonal_fill(tokens, Tone::Good, true),
+                tonal_fill(tokens, Tone::Good, false)
+            );
         }
     }
 

@@ -209,7 +209,7 @@ fn line<'a>(index: usize, entry: &'a ActivityEntry, open: bool, tokens: Tokens) 
     let (glyph, color) = match entry {
         ActivityEntry::Tool(call) => (Icon::Wrench, Tone::of_tool(call.state).color(&tokens)),
         ActivityEntry::Delegation(asked) if !asked.refused.is_empty() => (Icon::Team, tokens.bad),
-        ActivityEntry::Delegation(_) => (Icon::Team, tokens.accent),
+        ActivityEntry::Delegation(_) => (Icon::Team, tokens.text),
         ActivityEntry::Waiting { decision, .. } if decision.is_empty() => (Icon::Alert, tokens.wait),
         ActivityEntry::Waiting { .. } => (Icon::Check, tokens.muted),
         ActivityEntry::YouWrote { .. } | ActivityEntry::Said { .. } => (Icon::Dot, tokens.muted),
@@ -249,15 +249,9 @@ fn line<'a>(index: usize, entry: &'a ActivityEntry, open: bool, tokens: Tokens) 
         .style(styles::button_style(tokens, kind))
         .on_press(Message::ActivityPick(index));
     match entry {
-        ActivityEntry::Delegation(asked) if asked.task.is_some() => row![
+        ActivityEntry::Delegation(crate::application::DelegationActivity { task: Some(task), .. }) => row![
             pressed,
-            action(
-                Kind::Ghost,
-                Icon::Play,
-                "Open task",
-                asked.task.clone().map(|task| Message::Go(Screen::Task(task))),
-                tokens
-            )
+            super::widgets::open("Open task", Message::Go(Screen::Task(task.clone())), tokens)
         ]
         .spacing(6)
         .align_y(Alignment::Center)
