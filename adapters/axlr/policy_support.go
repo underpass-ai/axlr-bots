@@ -1,6 +1,7 @@
 package axlr
 
 import (
+	"bytes"
 	"context"
 	"os/exec"
 	"strings"
@@ -37,16 +38,23 @@ func (e *Executor) SupportsCorrelation(ctx context.Context) bool {
 }
 
 // Version is the binary's version line (`axlr-tui --version`), or ""
-// when it has none.
+// when it has none. AXLR prints it on stderr, as the flag package does;
+// stdout wins when the binary writes there.
 func (e *Executor) Version(ctx context.Context) string {
 	versionCtx, cancel := context.WithTimeout(ctx, helpTimeout)
 	defer cancel()
 	args := append(append([]string{}, e.Args...), "--version")
-	out, err := exec.CommandContext(versionCtx, e.binary(), args...).Output()
-	if err != nil {
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(versionCtx, e.binary(), args...)
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
 		return ""
 	}
-	line, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
+	out := strings.TrimSpace(stdout.String())
+	if out == "" {
+		out = strings.TrimSpace(stderr.String())
+	}
+	line, _, _ := strings.Cut(out, "\n")
 	return line
 }
 
