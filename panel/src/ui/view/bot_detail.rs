@@ -74,7 +74,10 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
         ),
     ]
     .spacing(12)
-    .align_y(Alignment::Center);
+    .align_y(Alignment::Center)
+    // In a narrow window the acts go under the name, never out of sight.
+    .wrap()
+    .vertical_spacing(10);
 
     let mut left = column![].spacing(14).width(Length::FillPortion(3));
     if let Some(asking) = asking(app, &bot.id, tokens) {
@@ -689,7 +692,10 @@ fn tasks<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
                         pill(Tone::of_task(task.status), task.status.label(), tokens),
                         super::widgets::PILL_SLOT
                     ),
-                    text(task.headline(44)).size(SMALL).width(Length::Fill),
+                    text(task.headline(44))
+                        .size(SMALL)
+                        .wrapping(Wrapping::WordOrGlyph)
+                        .width(Length::Fill),
                     muted(format::age(task.created_at, app.now), tokens),
                 ]
                 .spacing(10)
