@@ -26,6 +26,7 @@ axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>]
   trigger fire <bot-id> <trigger> --body '<json>' | --file <event.json> [--delivery <id>]
   task run <task-id>                           in process (exit 0 completed, 3 decision required, 1 failed)
   task approve <task-id> | task deny <task-id> | task decide <task-id> approve|deny   [--call <id>]
+                                               (exit as task run; 0 too when a node carries the decision)
   task get <task-id> | task executions <task-id> | task events <task-id> [--limit 100] | task cancel <task-id>
   task list [--bot <id>] [--status <status>] [--since <rfc3339>] [--limit 100]
   task report <task-id> [--path] | task reconcile [--grace <duration>]
