@@ -145,11 +145,21 @@ func TestGetOverviewCountsNowAndSince(t *testing.T) {
 	if overview.Tasks["Completed"] != 2 || overview.Tasks["Pending"] != 1 || overview.TasksSince["Completed"] != 1 || overview.TasksSince["Pending"] != 1 || overview.TasksSince["Failed"] != 0 {
 		t.Errorf("tasks = %+v since %+v", overview.Tasks, overview.TasksSince)
 	}
-	if overview.ExecutionsSince != 1 || overview.CostUSDSince != 0.5 || !overview.Since.Equal(t0.Add(30*time.Minute)) {
+	if overview.ExecutionsSince != 1 || overview.CostUSDSince != 0.5 || overview.CostUnknownSince != 0 || !overview.Since.Equal(t0.Add(30*time.Minute)) {
 		t.Errorf("executions = %d cost %v since %v", overview.ExecutionsSince, overview.CostUSDSince, overview.Since)
 	}
+	// A run stopped before it said what it spent is counted apart: the
+	// cost of the day is at least what it says.
+	stopped := submit(t, h, bot, "stopped").Task
+	h.runtime.report.Usage = domain.UnknownUsage(3)
+	if _, err := NewRunTask(h.deps).Execute(ctx, stopped.ID()); err != nil {
+		t.Fatal(err)
+	}
+	if overview, err := NewGetOverview(h.deps).Execute(ctx, t0.Add(30*time.Minute)); err != nil || overview.ExecutionsSince != 2 || overview.CostUSDSince != 0.5 || overview.CostUnknownSince != 1 {
+		t.Errorf("with an unknown cost = %+v %v", overview, err)
+	}
 	today, err := NewGetOverview(h.deps).Execute(ctx, time.Time{})
-	if err != nil || !today.Since.Equal(time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)) || today.ExecutionsSince != 2 || today.CostUSDSince != 0.75 {
+	if err != nil || !today.Since.Equal(time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)) || today.ExecutionsSince != 3 || today.CostUSDSince != 0.75 {
 		t.Errorf("today = %+v %v", today, err)
 	}
 	for name, breakIt := range map[string]func(){

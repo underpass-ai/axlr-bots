@@ -493,7 +493,7 @@ func TestReconcileFailsADecisionQueuedForAnOfflineNode(t *testing.T) {
 	stored, _ := h.tasks.Get(ctx, task.ID())
 	execution, _ := h.execs.Get(ctx, decided.Execution.ID())
 	want := "reconciled: its decision (deny, execution " + decided.Execution.ID().String() + ") waited for node web-1, which is Offline since it was last seen at "
-	if stored.Status() != domain.TaskFailed || !strings.HasPrefix(stored.FailureReason(), want) || execution.Outcome() != domain.ExecutionFailed || execution.FailureReason() != stored.FailureReason() {
+	if stored.Status() != domain.TaskFailed || !strings.HasPrefix(stored.FailureReason(), want) || execution.Outcome() != domain.ExecutionFailed || execution.FailureReason() != stored.FailureReason() || execution.Usage().CostUnknown {
 		t.Errorf("task = %s %q, execution = %s %q", stored.Status(), stored.FailureReason(), execution.Outcome(), execution.FailureReason())
 	}
 }

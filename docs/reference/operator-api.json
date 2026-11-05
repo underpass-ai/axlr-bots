@@ -2907,6 +2907,10 @@
               "$ref": "#/components/schemas/BotStatus"
             }
           },
+          "costUnknownSince": {
+            "type": "integer",
+            "description": "executions since whose cost is not known: costUsdSince is at least what it says"
+          },
           "costUsdSince": {
             "type": "number"
           },
@@ -3820,6 +3824,10 @@
           },
           "completionTokens": {
             "type": "integer"
+          },
+          "costUnknown": {
+            "type": "boolean",
+            "description": "the run stopped before it said what it spent (killed at its timeout or cancelled, with no receipt yet): its cost is not known, and costUsd is 0"
           },
           "costUsd": {
             "type": "number"

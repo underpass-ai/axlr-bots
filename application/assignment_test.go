@@ -279,9 +279,13 @@ func TestReconcileFailsAnExpiredLease(t *testing.T) {
 	if failed.Status() != domain.TaskFailed || execution.Outcome() != domain.ExecutionFailed || !containsAll(failed.FailureReason(), "node web-1 stopped renewing its lease") {
 		t.Errorf("task = %+v execution = %+v", failed.Snapshot(), execution.Snapshot())
 	}
-	// A late report is accepted and changes nothing.
-	late, err := NewReportExecution(h.deps).Execute(ctx, node.ID(), assignment.ExecutionID, ExecutionReport{Outcome: domain.ExecutionCompleted})
-	if err != nil || late.Accepted || late.Task.Status() != domain.TaskFailed {
+	// The lost run's cost is not known; it was $0.
+	if !execution.Usage().CostUnknown {
+		t.Errorf("usage = %+v, want an unknown cost", execution.Usage())
+	}
+	// A late report is not accepted and changes nothing but the cost.
+	late, err := NewReportExecution(h.deps).Execute(ctx, node.ID(), assignment.ExecutionID, ExecutionReport{Outcome: domain.ExecutionCompleted, Usage: domain.Usage{Requests: 1, CostUSD: 0.001}})
+	if err != nil || late.Accepted || late.Task.Status() != domain.TaskFailed || late.Execution.Usage().CostUSD != 0.001 {
 		t.Errorf("late report: %v %+v", err, late)
 	}
 }

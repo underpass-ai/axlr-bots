@@ -446,3 +446,43 @@ func TestNodeCertificateExpiry(t *testing.T) {
 		t.Errorf("bot.paused = %v %v", kind, err)
 	}
 }
+
+// A cancel of a run that started does not know its cost; a late report
+// that does is kept once, with its receipt. One still queued for its
+// node never ran: its cancel knows it cost nothing.
+func TestCancelAndAccountLate(t *testing.T) {
+	started, _ := NewExecution("exec-1", "task-1", "bot-1", t0)
+	if changed, err := started.AccountLate(Usage{CostUSD: 1}, nil); changed || err != nil {
+		t.Errorf("a running execution was accounted: %v %v", changed, err)
+	}
+	if err := started.Cancel("stopped", t0.Add(time.Second)); err != nil || !started.Usage().CostUnknown {
+		t.Fatalf("cancel = %v %+v", err, started.Usage())
+	}
+	if changed, _ := started.AccountLate(UnknownUsage(1), nil); changed {
+		t.Error("a report that does not know either changed it")
+	}
+	if _, err := started.AccountLate(Usage{Requests: -1}, nil); err == nil {
+		t.Error("a negative usage was kept")
+	}
+	if changed, err := started.AccountLate(Usage{Requests: 2, CostUSD: 0.01}, json.RawMessage(`{"schema":"x"}`)); !changed || err != nil || started.Usage().CostUSD != 0.01 || started.Usage().CostUnknown || string(started.Receipt()) != `{"schema":"x"}` {
+		t.Errorf("late = %v %v %+v %s", changed, err, started.Usage(), started.Receipt())
+	}
+	if changed, _ := started.AccountLate(Usage{CostUSD: 5}, nil); changed {
+		t.Error("a known cost was replaced")
+	}
+	leased, _ := NewExecution("exec-2", "task-1", "bot-1", t0)
+	_ = leased.AssignTo("web-1")
+	_ = leased.Lease(t0.Add(time.Minute))
+	if _ = leased.Cancel("stopped", t0); !leased.Usage().CostUnknown {
+		t.Error("a leased run's cancel knew its cost")
+	}
+	queued, _ := NewExecution("exec-3", "task-1", "bot-1", t0)
+	_ = queued.AssignTo("web-1")
+	if _ = queued.Cancel("stopped", t0); queued.Usage().CostUnknown {
+		t.Error("a queued execution's cancel did not know it cost nothing")
+	}
+	back, err := RestoreExecution(started.Snapshot())
+	if err != nil || back.Usage() != started.Usage() {
+		t.Errorf("restored = %+v %v", back.Usage(), err)
+	}
+}

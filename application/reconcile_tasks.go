@@ -242,7 +242,14 @@ func (uc ReconcileTasks) reconcile(ctx context.Context, task domain.Task, grace 
 	}
 	if execution.Outcome() == domain.ExecutionRunning {
 		tracePath, _ := uc.deps.Traces.TracePath(execution.ID())
-		if err := execution.Fail(reason, domain.Result{}, domain.Usage{}, tracePath, now); err != nil {
+		// A run that started and was lost spent what nobody reported (a
+		// node's late report may still tell it); one still queued for
+		// its node never ran.
+		usage := domain.UnknownUsage(0)
+		if stranded != "" {
+			usage = domain.Usage{}
+		}
+		if err := execution.Fail(reason, domain.Result{}, usage, tracePath, now); err != nil {
 			return false, err
 		}
 		if err := uc.deps.Executions.Save(ctx, execution); err != nil {

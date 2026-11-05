@@ -358,7 +358,9 @@ func (b *blockingRuntime) Execute(ctx context.Context, request ExecutionRequest)
 	close(b.started)
 	select {
 	case <-ctx.Done():
-		return ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "interrupted: " + ctx.Err().Error()}, nil
+		// What the run had consumed when it was stopped, as AXLR's
+		// receipt tells it after a SIGTERM.
+		return ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "interrupted: " + ctx.Err().Error(), Usage: domain.Usage{Requests: 1, CostUSD: 0.004}, Receipt: []byte(`{"schema":"axlr.execution-receipt/v1"}`)}, nil
 	case <-b.release:
 		return ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "done"}}, nil
 	}
@@ -433,9 +435,17 @@ func TestCancelTask(t *testing.T) {
 	if stored.Outcome() != domain.ExecutionCancelled || stored.FailureReason() != "cancelled by test:operator" {
 		t.Errorf("stored execution = %+v", stored.Snapshot())
 	}
-	last := h.log.audits[len(h.log.audits)-1]
-	if last.Details["dropped"] == "" {
-		t.Errorf("the late report was not audited as dropped: %+v", last)
+	// The cancel could not know what the run consumed; the late report
+	// does, and its usage and receipt are kept (they counted as $0).
+	if u := cancelled.Execution.Usage(); !u.CostUnknown {
+		t.Errorf("the cancel knew the cost: %+v", u)
+	}
+	if u := stored.Usage(); u.CostUnknown || u.CostUSD != 0.004 || u.Requests != 1 || len(stored.Receipt()) == 0 {
+		t.Errorf("the late report's usage was not kept: %+v %s", u, stored.Receipt())
+	}
+	dropped, last := h.log.audits[len(h.log.audits)-2], h.log.audits[len(h.log.audits)-1]
+	if dropped.Details["dropped"] == "" || last.Action != "execution.account" || last.Details["costUsd"] != "0.004" {
+		t.Errorf("the late report was not audited as dropped, then accounted: %+v %+v", dropped, last)
 	}
 	for _, e := range h.log.events {
 		if e.Type == domain.EventTaskCancelled && e.TaskID == running.ID() && (e.ExecutionID != cancelled.Execution.ID() || e.Payload["executionId"] != cancelled.Execution.ID().String()) {

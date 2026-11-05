@@ -206,12 +206,41 @@ func (e *Execution) Fail(reason string, result Result, usage Usage, tracePath st
 	return e.end(ExecutionFailed, result, usage, reason, tracePath, endedAt)
 }
 
-// Cancel ends a running attempt because the operator stopped it.
+// Cancel ends a running attempt because the operator stopped it. One
+// that had started (in process, or leased by its node) has consumed what
+// only its late report can tell: its cost is unknown until then
+// (AccountLate). One still queued for its node never ran and cost
+// nothing.
 func (e *Execution) Cancel(reason string, endedAt time.Time) error {
 	if reason == "" {
 		return invalid("cancel reason", "must not be empty")
 	}
-	return e.end(ExecutionCancelled, Result{}, Usage{}, reason, e.tracePath, endedAt)
+	usage := Usage{}
+	if !e.IsAssigned() || !e.leaseUntil.IsZero() {
+		usage = UnknownUsage(0)
+	}
+	return e.end(ExecutionCancelled, Result{}, usage, reason, e.tracePath, endedAt)
+}
+
+// AccountLate keeps what a run reported after its execution had ended
+// (a cancel ends it first, and the run, interrupted, reports after):
+// the usage replaces an unknown one, and the receipt one the execution
+// does not have. It reports whether it changed anything: nothing for a
+// running execution, one whose cost is known, or a report that does
+// not know it either.
+func (e *Execution) AccountLate(usage Usage, receipt json.RawMessage) (bool, error) {
+	if !e.outcome.IsFinal() || !e.usage.CostUnknown || usage.CostUnknown {
+		return false, nil
+	}
+	if err := usage.Validate(); err != nil {
+		return false, err
+	}
+	e.usage = usage
+	if len(e.receipt) == 0 {
+		// A receipt it cannot keep stays in the trace; the usage stands.
+		_ = e.RecordReceipt(receipt)
+	}
+	return true, nil
 }
 
 // RequireDecision ends a running attempt on a tool call a person must decide.
@@ -353,7 +382,13 @@ func RestoreExecution(s ExecutionSnapshot) (Execution, error) {
 		err = execution.Fail(s.FailureReason, s.Result, s.Usage, s.TracePath, *s.EndedAt)
 	case ExecutionCancelled:
 		execution.tracePath = s.TracePath
-		err = execution.Cancel(s.FailureReason, *s.EndedAt)
+		if err = execution.Cancel(s.FailureReason, *s.EndedAt); err == nil {
+			// The usage as stored: unknown, none, or what a late report
+			// told (AccountLate).
+			if err = s.Usage.Validate(); err == nil {
+				execution.usage = s.Usage
+			}
+		}
 	default:
 		err = execution.RequireDecision(s.Result, s.Usage, s.TracePath, *s.EndedAt)
 	}

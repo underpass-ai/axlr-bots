@@ -95,6 +95,35 @@ func (a incidentAdvancer) taskEnded(ctx context.Context, bot domain.Bot, task do
 	return a.rec.audit(ctx, "incident.advance", id.String(), domain.AuditOK, map[string]string{"task": task.ID().String(), "status": incident.Status().String()})
 }
 
+// lateCost adds the cost an ended execution learnt late (its run
+// reported after a cancel) to the task's incident, or to the incident
+// of the triage task it descends from; nothing else of the incident
+// changes.
+func (a incidentAdvancer) lateCost(ctx context.Context, task domain.Task, execution domain.Execution) error {
+	usd := execution.Usage().CostUSD
+	id := task.IncidentID()
+	if id == "" {
+		return a.childEnded(ctx, task, execution)
+	}
+	if usd <= 0 {
+		return nil
+	}
+	incident, err := a.deps.Incidents.Get(ctx, id)
+	if domain.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := incident.AddCost(usd, a.deps.Clock.Now()); err != nil {
+		return err
+	}
+	if err := a.deps.Incidents.Save(ctx, incident); err != nil {
+		return err
+	}
+	return a.rec.audit(ctx, "incident.cost", id.String(), domain.AuditOK, map[string]string{"task": task.ID().String(), "execution": execution.ID().String()})
+}
+
 // maxCostLineage bounds the walk from a delegated task up to the triage
 // task of its incident.
 const maxCostLineage = 8

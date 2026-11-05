@@ -80,7 +80,7 @@ A manual submission carries the caller's key (`task submit --key`, the `Idempote
 }
 ```
 
-`tasks` counts every task by its status now; `tasksSince` the tasks created since the moment. `Expired` is a task nobody decided in time ([approvals](../runbooks/approvals.md#expiry)), counted apart from `Failed`; `executionsSince` and `costUsdSince` the executions started since then and the cost they reported. The `axlr-bots overview` command prints the same.
+`tasks` counts every task by its status now; `tasksSince` the tasks created since the moment. `Expired` is a task nobody decided in time ([approvals](../runbooks/approvals.md#expiry)), counted apart from `Failed`; `executionsSince` and `costUsdSince` the executions started since then and the cost they reported; `costUnknownSince` (absent at 0) the executions among them whose cost is not known, so `costUsdSince` is at least what it says. An execution's `usage.costUnknown` is a run stopped before it said what it spent: killed at its timeout with no receipt, cancelled or lost while it ran. A cancelled run's late report (interrupted in process, or stopped on its node by the refused lease) still sets the usage it tells, and adds it to the task's incident. The `axlr-bots overview` command prints the same.
 
 ## Artifacts
 
