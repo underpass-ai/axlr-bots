@@ -167,3 +167,54 @@ func TestGetReport(t *testing.T) {
 		t.Errorf("unknown task: %v", err)
 	}
 }
+
+// A Pending task whose bot takes no task now, or is gone, is passed
+// over: it must not stay the oldest and keep every other task waiting
+// (QA 5 Nov 2026: a paused bot's task stopped every in-process run).
+func TestRunNextPendingPassesOverPausedAndMissingBots(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	d := sampleDefinition()
+	d.Name = "paused-one"
+	paused, err := NewRegisterBot(h.deps).Execute(ctx, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paused, _ = NewEnableBot(h.deps).Execute(ctx, paused.ID())
+	d.Name = "gone-one"
+	gone, err := NewRegisterBot(h.deps).Execute(ctx, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gone, _ = NewEnableBot(h.deps).Execute(ctx, gone.ID())
+	bot := enabledBot(t, h)
+	h.clock.now = t0
+	stuck := submit(t, h, paused, "k-paused").Task
+	h.clock.now = t0.Add(time.Second)
+	orphan := submit(t, h, gone, "k-gone").Task
+	h.clock.now = t0.Add(time.Minute)
+	waiting := submit(t, h, bot, "k-waiting").Task
+	if _, err := NewPauseBot(h.deps).Execute(ctx, paused.ID()); err != nil {
+		t.Fatal(err)
+	}
+	delete(h.bots.bots, gone.ID())
+	res, ran, err := NewRunNextPending(h.deps).Execute(ctx)
+	if err != nil || !ran || res.Task.ID() != waiting.ID() {
+		t.Fatalf("the enabled bot's task did not run: %v %v %+v", err, ran, res.Task.Snapshot())
+	}
+	if _, ran, err := NewRunNextPending(h.deps).Execute(ctx); err != nil || ran {
+		t.Errorf("only passed-over tasks are left: %v %v", err, ran)
+	}
+	for _, id := range []domain.TaskID{stuck.ID(), orphan.ID()} {
+		if task, _ := h.tasks.Get(ctx, id); task.Status() != domain.TaskPending {
+			t.Errorf("%s = %s, want it left Pending", id, task.Status())
+		}
+	}
+	// Enabled again, the paused bot's task runs.
+	if _, err := NewEnableBot(h.deps).Execute(ctx, paused.ID()); err != nil {
+		t.Fatal(err)
+	}
+	if res, ran, err := NewRunNextPending(h.deps).Execute(ctx); err != nil || !ran || res.Task.ID() != stuck.ID() {
+		t.Errorf("after enable: %v %v %+v", err, ran, res.Task.Snapshot())
+	}
+}

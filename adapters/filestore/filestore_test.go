@@ -103,13 +103,13 @@ func TestListOnEmptyAndCorruptStores(t *testing.T) {
 	if _, err := repo.Get(ctx, "broken"); !domain.IsNotFound(err) {
 		t.Errorf("corrupt file set aside: %v", err)
 	}
-	// Valid JSON the domain refuses is not set aside: the listing fails.
+	// Valid JSON the domain refuses is set aside too.
 	_ = os.WriteFile(filepath.Join(dir, "invalid.json"), []byte(`{"id":"invalid","status":"Nope"}`), 0o644)
 	if _, err := repo.Get(ctx, "invalid"); err == nil {
 		t.Error("invalid snapshot restored")
 	}
-	if _, err := repo.List(ctx); err == nil || quarantined(t, dir, "invalid") {
-		t.Errorf("list with an invalid snapshot: %v", err)
+	if list, err := repo.List(ctx); err != nil || len(list) != 0 || !quarantined(t, dir, "invalid") {
+		t.Errorf("list with an invalid snapshot: %v %d", err, len(list))
 	}
 	// A directory that cannot be listed.
 	unreadable := NewBotRepository(filepath.Join(state, "file-not-dir"))
@@ -394,10 +394,11 @@ func TestEnrollmentRepositoryAndDenylist(t *testing.T) {
 		t.Errorf("list: %v %d", err, len(list))
 	}
 	_ = os.WriteFile(filepath.Join(state, "enrollments", "bad.json"), []byte(`{"id":"bad"}`), 0o644)
-	if _, err := repo.List(ctx); err == nil {
-		t.Error("an invalid enrollment listed")
+	if list, err := repo.List(ctx); err != nil || len(list) != 1 || !quarantined(t, filepath.Join(state, "enrollments"), "bad") {
+		t.Errorf("an invalid enrollment was not set aside: %v %d", err, len(list))
 	}
-	if _, err := NewEnrollmentRepository(filepath.Join(state, "enrollments", "bad.json")).List(ctx); err == nil {
+	_ = os.WriteFile(filepath.Join(state, "a-file"), []byte("x"), 0o644)
+	if _, err := NewEnrollmentRepository(filepath.Join(state, "a-file")).List(ctx); err == nil {
 		t.Error("list over a file succeeded")
 	}
 
@@ -479,8 +480,8 @@ func TestTimerRepository(t *testing.T) {
 		t.Error("an empty directory should list nothing")
 	}
 	_ = os.WriteFile(filepath.Join(repo.files.dir, "bad~one.json"), []byte(`{"botId": "Bad"}`), 0o600)
-	if _, err := repo.List(ctx); err == nil {
-		t.Error("a bad timer file listed")
+	if list, err := repo.List(ctx); err != nil || len(list) != 1 || !quarantined(t, repo.files.dir, "bad~one") {
+		t.Errorf("a bad timer file was not set aside: %v %d", err, len(list))
 	}
 }
 

@@ -36,7 +36,10 @@ func (uc RunNextPending) Execute(ctx context.Context) (RunTaskResult, bool, erro
 }
 
 // Pick chooses the oldest Pending task no Online node may run, without
-// running it.
+// running it. A task whose bot takes no task now (Paused, not yet
+// enabled) or is gone is passed over, as NextAssignment passes it over:
+// RunTask would refuse it, it would stay Pending and stay the oldest,
+// and every task behind it would wait for ever.
 func (uc RunNextPending) Pick(ctx context.Context) (domain.TaskID, bool, error) {
 	pending, err := uc.deps.Tasks.ListByStatus(ctx, domain.TaskPending)
 	if err != nil {
@@ -49,10 +52,13 @@ func (uc RunNextPending) Pick(ctx context.Context) (domain.TaskID, bool, error) 
 	var oldest *domain.Task
 	for i := range pending {
 		bot, err := uc.deps.Bots.Get(ctx, pending[i].BotID())
+		if domain.IsNotFound(err) {
+			continue
+		}
 		if err != nil {
 			return "", false, err
 		}
-		if hasOnlineNode(bot, nodes) {
+		if !bot.AcceptsTasks() || hasOnlineNode(bot, nodes) {
 			continue
 		}
 		if oldest == nil || pending[i].CreatedAt().Before(oldest.CreatedAt()) {
