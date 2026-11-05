@@ -428,3 +428,68 @@ func TestNextAssignmentPassesOverAMissingBot(t *testing.T) {
 		t.Errorf("queued execution = %s %q", failed.Outcome(), failed.FailureReason())
 	}
 }
+
+// A decision queued for a node busy with another task says so in its
+// decided event: the node carries one execution at a time and polls only
+// when it is free, and the task showed Running with no hint. One queued
+// for an Offline node, or a node whose record is gone, says that; a free
+// node adds nothing.
+func TestAQueuedDecisionSaysWhatItWaitsFor(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	bot := enabledBot(t, h)
+	node := onlineNode(t, h, "web-1")
+	waiting := func(key string) domain.Task {
+		t.Helper()
+		task := submit(t, h, bot, key).Task
+		first, _, _ := NewNextAssignment(h.deps).Execute(ctx, node.ID())
+		pending := ExecutionReport{Outcome: domain.ExecutionDecisionRequired, Result: domain.Result{SessionID: "sess-" + key, PendingDecision: &domain.PendingDecision{Tool: "local_write", CallID: "c1", SessionID: "sess-" + key}}}
+		if _, err := NewReportExecution(h.deps).Execute(ctx, node.ID(), first.ExecutionID, pending); err != nil {
+			t.Fatal(err)
+		}
+		return task
+	}
+	decided := func(task domain.Task) domain.Event {
+		t.Helper()
+		h.log.events = nil
+		if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, ""); err != nil {
+			t.Fatal(err)
+		}
+		return h.log.events[len(h.log.events)-1]
+	}
+	free, other, offline, broken, gone := waiting("k-free"), waiting("k-other"), waiting("k-offline"), waiting("k-broken"), waiting("k-gone")
+	if event := decided(free); event.Payload["waiting"] != nil || event.Payload["busyWith"] != nil {
+		t.Errorf("a free node: %+v", event.Payload)
+	}
+	if _, found, _ := NewNextAssignment(h.deps).Execute(ctx, node.ID()); !found {
+		t.Fatal("the node took nothing")
+	}
+	// The node now runs the first task's decision; the next one waits.
+	event := decided(other)
+	busy, _ := event.Payload["busyWith"].([]string)
+	if len(busy) != 1 || busy[0] != free.ID().String() || event.Payload["waiting"] != "waiting for node web-1, busy with task "+free.ID().String() {
+		t.Errorf("a busy node: %+v", event.Payload)
+	}
+	if last := h.log.audits[len(h.log.audits)-1]; last.Details["waiting"] != event.Payload["waiting"] {
+		t.Errorf("audit = %+v", last)
+	}
+	h.clock.now = t0.Add(3 * time.Minute)
+	if _, err := NewMarkOfflineNodes(h.deps).Execute(ctx, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if event := decided(offline); event.Payload["nodeStatus"] != "Offline" || event.Payload["waiting"] != "waiting for node web-1, which is Offline" {
+		t.Errorf("an Offline node: %+v", event.Payload)
+	}
+	h.nodes.getFail = errBoom
+	if _, err := NewApproveTask(h.deps).Execute(ctx, broken.ID(), DecisionApprove, ""); !errors.Is(err, errBoom) {
+		t.Errorf("a failing node store: %v", err)
+	}
+	if stored, _ := h.tasks.Get(ctx, broken.ID()); stored.Status() != domain.TaskWaitingApproval {
+		t.Errorf("a failing node store left the task %s", stored.Status())
+	}
+	h.nodes.getFail = nil
+	delete(h.nodes.nodes, "web-1")
+	if event := decided(gone); event.Payload["waiting"] != "waiting for node web-1, which is gone" {
+		t.Errorf("a gone node: %+v", event.Payload)
+	}
+}
