@@ -342,6 +342,7 @@
       ],
       "get": {
         "operationId": "listBotEvents",
+        "description": "the bot's newest events, oldest first; a deleted bot's history stays readable, bot.deleted last, and only an id that is no bot and has no events is not found",
         "parameters": [
           {
             "name": "limit",
