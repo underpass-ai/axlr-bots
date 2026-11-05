@@ -2307,6 +2307,10 @@
           },
           "resource": {
             "type": "string"
+          },
+          "revoked": {
+            "type": "boolean",
+            "description": "on a forbidden answer to a node: the node was revoked, and only a fresh enrollment readmits it"
           }
         },
         "required": [

@@ -37,7 +37,7 @@ func toWire(err error) (int, ErrorResponse) {
 	case errors.As(err, &notFound):
 		return http.StatusNotFound, ErrorResponse{Kind: KindNotFound, Message: err.Error(), Resource: notFound.Kind, ID: notFound.ID}
 	case errors.As(err, &forbidden):
-		return http.StatusForbidden, ErrorResponse{Kind: KindForbidden, Message: err.Error()}
+		return http.StatusForbidden, ErrorResponse{Kind: KindForbidden, Message: err.Error(), Revoked: forbidden.Revoked}
 	case errors.As(err, &unauthorized):
 		return http.StatusUnauthorized, ErrorResponse{Kind: KindUnauthorized, Message: err.Error()}
 	case errors.As(err, &tooLarge):
@@ -55,13 +55,13 @@ func toWire(err error) (int, ErrorResponse) {
 // fromWire rebuilds the error the daemon reported. A not-found error
 // comes back as a domain.NotFoundError so IsNotFound keeps working, and
 // a forbidden one as a domain.ForbiddenError so a node knows it was
-// refused rather than unreachable.
+// refused rather than unreachable, and whether for good (revoked).
 func fromWire(status int, response ErrorResponse) error {
 	if response.Message == "" {
 		response.Message = fmt.Sprintf("the control plane answered HTTP %d", status)
 	}
 	if response.Kind == KindForbidden {
-		return domain.ForbiddenError{Reason: strings.TrimPrefix(response.Message, "forbidden: ")}
+		return domain.ForbiddenError{Reason: strings.TrimPrefix(response.Message, "forbidden: "), Revoked: response.Revoked}
 	}
 	if response.Kind == KindUnauthorized {
 		return UnauthorizedError{}

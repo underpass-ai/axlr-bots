@@ -233,6 +233,7 @@ func TestErrorsRoundTrip(t *testing.T) {
 		{domain.StateError{Subject: "s", Current: "c", Attempted: "a"}, http.StatusConflict, KindState},
 		{domain.ConflictError{Kind: "bot", ID: "b"}, http.StatusConflict, KindConflict},
 		{domain.ForbiddenError{Reason: "no"}, http.StatusForbidden, KindForbidden},
+		{domain.ForbiddenError{Reason: "node n was revoked", Revoked: true}, http.StatusForbidden, KindForbidden},
 		{context.Canceled, http.StatusInternalServerError, KindInternal},
 	}
 	for _, tc := range cases {
@@ -249,6 +250,9 @@ func TestErrorsRoundTrip(t *testing.T) {
 		}
 		if back.Error() != tc.err.Error() {
 			t.Errorf("message changed: %v", back)
+		}
+		if domain.IsRevoked(back) != domain.IsRevoked(tc.err) {
+			t.Errorf("revoked changed: %v", back)
 		}
 	}
 	if err := fromWire(502, ErrorResponse{}); !strings.Contains(err.Error(), "HTTP 502") {

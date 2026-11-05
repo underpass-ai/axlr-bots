@@ -96,7 +96,7 @@ func (uc RenewNodeCertificate) Execute(ctx context.Context, request CertificateR
 // recorded may name its successor.
 func admitsRenewal(node domain.Node, serial string) error {
 	if node.IsRevoked() {
-		return domain.ForbiddenError{Reason: "node " + node.ID().String() + " is revoked: enroll it again with a fresh token"}
+		return domain.ForbiddenError{Reason: "node " + node.ID().String() + " is revoked: enroll it again with a fresh token", Revoked: true}
 	}
 	if !node.AcceptsCertificate(serial) {
 		return domain.ForbiddenError{Reason: "the certificate is not the current one of node " + node.ID().String()}

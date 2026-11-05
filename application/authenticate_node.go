@@ -21,7 +21,10 @@ func NewAuthenticateNode(deps Dependencies) AuthenticateNode {
 	return AuthenticateNode{deps: deps}
 }
 
-// Execute returns a ForbiddenError when the certificate is refused.
+// Execute returns a ForbiddenError when the certificate is refused,
+// marked Revoked when the node itself is: then no retry helps, and the
+// node says so and stops asking. A serial denied while its node is not
+// revoked is one a renewal or a fresh enrollment superseded.
 func (uc AuthenticateNode) Execute(ctx context.Context, id domain.NodeID, serial string) error {
 	if serial == "" {
 		return domain.ForbiddenError{Reason: "a client certificate is required"}
@@ -30,17 +33,18 @@ func (uc AuthenticateNode) Execute(ctx context.Context, id domain.NodeID, serial
 	if err != nil {
 		return err
 	}
+	node, err := uc.deps.Nodes.Get(ctx, id)
+	known := err == nil
+	if err != nil && !domain.IsNotFound(err) {
+		return err
+	}
+	if known && node.IsRevoked() {
+		return domain.ForbiddenError{Reason: "node " + id.String() + " was revoked: enroll it again with a fresh token", Revoked: true}
+	}
 	if denied {
 		return domain.ForbiddenError{Reason: "the certificate of node " + id.String() + " was revoked"}
 	}
-	node, err := uc.deps.Nodes.Get(ctx, id)
-	if domain.IsNotFound(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if !node.AcceptsCertificate(serial) {
+	if known && !node.AcceptsCertificate(serial) {
 		return domain.ForbiddenError{Reason: "the certificate is not the current one of node " + id.String()}
 	}
 	return nil
