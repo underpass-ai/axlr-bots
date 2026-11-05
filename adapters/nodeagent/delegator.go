@@ -21,6 +21,9 @@ type delegator struct {
 	slots     *slots
 	pollWait  time.Duration
 	log       *log.Logger
+	// progress tells the operator's live view whom the run asked and the
+	// child it got; nil tells nobody.
+	progress func(application.ProgressItem)
 }
 
 // delegationView is what the model reads about a child.
@@ -44,6 +47,7 @@ func (d delegator) call(ctx context.Context, raw json.RawMessage) mcpToolResult 
 		d.log.Printf("node: execution %s: delegation to %s failed: %v", d.execution, args.Bot, err)
 		return textResult("the control plane did not take the delegation: "+err.Error(), true)
 	}
+	d.tell(application.ProgressItem{Kind: application.ProgressDelegation, Bot: args.Bot, TaskID: answer.TaskID.String(), Reason: refusalReason(answer.Refused)})
 	if answer.Refused != nil {
 		d.log.Printf("node: execution %s: delegation to %s refused (%s)", d.execution, args.Bot, answer.Refused.Reason)
 		return jsonResult(map[string]string{"refused": answer.Refused.Reason, "message": answer.Refused.Message}, true)
@@ -83,4 +87,19 @@ func (d delegator) call(ctx context.Context, raw json.RawMessage) mcpToolResult 
 
 func view(answer application.DelegationAnswer, note string) delegationView {
 	return delegationView{Task: answer.TaskID.String(), Bot: answer.BotID.String(), Status: answer.Status.String(), Depth: answer.Depth, Answer: answer.Answer, FailureReason: answer.FailureReason, Note: note}
+}
+
+// tell hands a delegation to the execution's progress.
+func (d delegator) tell(item application.ProgressItem) {
+	if d.progress != nil {
+		d.progress(item)
+	}
+}
+
+// refusalReason is the refusal's reason, empty for none.
+func refusalReason(refusal *domain.DelegationRefusal) string {
+	if refusal == nil {
+		return ""
+	}
+	return refusal.Reason
 }

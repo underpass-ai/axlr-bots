@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 
+use super::Cost;
+
 /// What an execution used: model requests, tokens, tool calls and cost.
+/// A run stopped before it said what it spent has its cost unknown, and
+/// `cost_usd` at 0.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Usage {
@@ -18,12 +22,19 @@ pub struct Usage {
     pub tool_calls: u32,
     #[serde(default)]
     pub cost_usd: f64,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cost_unknown: bool,
 }
 
 impl Usage {
     /// Prompt plus completion tokens.
     pub fn total_tokens(&self) -> u64 {
         self.prompt_tokens + self.completion_tokens
+    }
+
+    /// What the run cost, as far as it is known.
+    pub fn cost(&self) -> Cost {
+        Cost::new(self.cost_usd, u32::from(self.cost_unknown))
     }
 }
 
@@ -39,5 +50,9 @@ mod tests {
         assert_eq!(usage.total_tokens(), 38339);
         assert_eq!(usage.requests, 5);
         assert_eq!(usage.cached_tokens, 0);
+        assert_eq!(usage.cost(), Cost::new(0.0016, 0));
+        let unknown: Usage = serde_json::from_str(r#"{"requests":0,"costUsd":0,"costUnknown":true}"#).unwrap();
+        assert_eq!(unknown.cost(), Cost::new(0.0, 1));
+        assert!(!serde_json::to_string(&usage).unwrap().contains("costUnknown"));
     }
 }

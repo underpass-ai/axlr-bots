@@ -13,8 +13,12 @@ import (
 // ones that are due, once each: the fire is for the persisted slot, so a
 // daemon that was down fires the slot it missed once and arms the next
 // one after now rather than replaying every slot in between. A bot that
-// takes no tasks has its timers advanced, not fired. Timers of triggers
-// that no longer exist are removed.
+// takes no tasks has its timers advanced, not fired, and a timer it
+// never had is not armed until it takes tasks: a bot registered and then
+// enabled fires its interval at once, whether or not a pass fell between
+// the two (before, such a pass armed the timer and advanced its first
+// slot, so the bot waited a whole interval; QA 5 Nov 2026). Timers of
+// triggers that no longer exist are removed.
 type TickTimers struct {
 	deps Dependencies
 }
@@ -70,6 +74,9 @@ func (uc TickTimers) tick(ctx context.Context, bot domain.Bot, trigger domain.Tr
 	now := uc.deps.Clock.Now()
 	schedule := trigger.Schedule()
 	dirty := false
+	if !found && !bot.AcceptsTasks() {
+		return nil, nil
+	}
 	if !found {
 		first := schedule.Next(now)
 		if schedule.ArmsAtOnce() {

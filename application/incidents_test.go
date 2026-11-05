@@ -231,7 +231,7 @@ func TestIncidentCountsItsDelegatedChildren(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ended := func(id domain.TaskID, parent domain.TaskID, depth int, event string, usd float64) {
+	ended := func(id domain.TaskID, parent domain.TaskID, depth int, event string, usage domain.Usage) {
 		t.Helper()
 		task, err := domain.NewTask(id, "diag", "look", domain.IdempotencyKey("k-"+id.String()), "", t0)
 		if err != nil {
@@ -245,7 +245,7 @@ func TestIncidentCountsItsDelegatedChildren(t *testing.T) {
 		execution, _ := domain.NewExecution(domain.ExecutionID("exec-"+id.String()), id, "diag", t0)
 		_ = task.Start(execution.ID(), t0)
 		_ = task.Complete(t0)
-		_ = execution.Complete(domain.Result{Answer: "CAUSE: x"}, domain.Usage{CostUSD: usd}, "", t0)
+		_ = execution.Complete(domain.Result{Answer: "CAUSE: x"}, usage, "", t0)
 		if err := h.tasks.Save(ctx, task); err != nil {
 			t.Fatal(err)
 		}
@@ -253,12 +253,18 @@ func TestIncidentCountsItsDelegatedChildren(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	ended("task-child", opened.Task.ID(), 1, "", 0.005)
-	ended("task-grandchild", "task-child", 2, "", 0.002)
-	ended("task-heard", opened.Task.ID(), 1, "evt-1", 0.1)
+	ended("task-child", opened.Task.ID(), 1, "", domain.Usage{CostUSD: 0.005})
+	ended("task-grandchild", "task-child", 2, "", domain.Usage{CostUSD: 0.002})
+	ended("task-heard", opened.Task.ID(), 1, "evt-1", domain.Usage{CostUSD: 0.1})
 	incident, _ := h.incs.Get(ctx, opened.Incident.ID())
-	if got := incident.CostUSD(); got < 0.00699 || got > 0.00701 || incident.Status() != domain.IncidentOpen {
-		t.Fatalf("cost %v, status %s", got, incident.Status())
+	if got := incident.CostUSD(); got < 0.00699 || got > 0.00701 || incident.Status() != domain.IncidentOpen || incident.CostUnknown() {
+		t.Fatalf("cost %v, status %s, unknown %v", got, incident.Status(), incident.CostUnknown())
+	}
+	// A child stopped before it said its cost: the sum is a floor.
+	ended("task-stopped", opened.Task.ID(), 1, "", domain.UnknownUsage(0))
+	incident, _ = h.incs.Get(ctx, opened.Incident.ID())
+	if got := incident.CostUSD(); got < 0.00699 || got > 0.00701 || !incident.CostUnknown() || !incident.Snapshot().CostUnknown {
+		t.Fatalf("after an unknown cost: %v, unknown %v", got, incident.CostUnknown())
 	}
 }
 
@@ -426,5 +432,20 @@ func TestIncidentIsDiagnosedByAnAnswerItMustCut(t *testing.T) {
 		if n == 1 && incident.Diagnosis() != "OOMKilled\nlimit 32Mi" {
 			t.Errorf("answer %d = %q", n, incident.Diagnosis())
 		}
+	}
+}
+
+// An incident opened by hand with no fingerprints renders the default
+// objective: the snapshot leaves the empty list out, and the template's
+// {{.fingerprints}} failed with "map has no entry for key".
+func TestOpenIncidentWithoutFingerprintsRendersTheDefaultObjective(t *testing.T) {
+	h := newHarness()
+	bot := triageBot(t, h, "triage", "")
+	opened, err := NewOpenIncident(h.deps).Execute(context.Background(), alert(bot))
+	if err != nil || opened.Task == nil {
+		t.Fatalf("open = %+v %v", opened, err)
+	}
+	if objective := opened.Task.Objective().String(); !strings.Contains(objective, "Alerts: [].") || !strings.Contains(objective, "KubePodCrashLooping in shop") {
+		t.Errorf("objective = %q", objective)
 	}
 }

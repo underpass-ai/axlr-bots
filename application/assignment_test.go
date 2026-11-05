@@ -279,9 +279,13 @@ func TestReconcileFailsAnExpiredLease(t *testing.T) {
 	if failed.Status() != domain.TaskFailed || execution.Outcome() != domain.ExecutionFailed || !containsAll(failed.FailureReason(), "node web-1 stopped renewing its lease") {
 		t.Errorf("task = %+v execution = %+v", failed.Snapshot(), execution.Snapshot())
 	}
-	// A late report is accepted and changes nothing.
-	late, err := NewReportExecution(h.deps).Execute(ctx, node.ID(), assignment.ExecutionID, ExecutionReport{Outcome: domain.ExecutionCompleted})
-	if err != nil || late.Accepted || late.Task.Status() != domain.TaskFailed {
+	// The lost run's cost is not known; it was $0.
+	if !execution.Usage().CostUnknown {
+		t.Errorf("usage = %+v, want an unknown cost", execution.Usage())
+	}
+	// A late report is not accepted and changes nothing but the cost.
+	late, err := NewReportExecution(h.deps).Execute(ctx, node.ID(), assignment.ExecutionID, ExecutionReport{Outcome: domain.ExecutionCompleted, Usage: domain.Usage{Requests: 1, CostUSD: 0.001}})
+	if err != nil || late.Accepted || late.Task.Status() != domain.TaskFailed || late.Execution.Usage().CostUSD != 0.001 {
 		t.Errorf("late report: %v %+v", err, late)
 	}
 }
@@ -389,5 +393,107 @@ func TestNextAssignmentGivesNothingWhenTheTaskIsCancelledMeanwhile(t *testing.T)
 	}
 	if got, _ := h.tasks.Get(ctx, task.ID()); got.Status() != domain.TaskCancelled {
 		t.Errorf("task %s", got.Status())
+	}
+}
+
+// A Pending task, or an execution queued for the node, whose bot is gone
+// does not keep the node from its other work (QA 5 Nov 2026: one such
+// task failed every poll of every node).
+func TestNextAssignmentPassesOverAMissingBot(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	d := sampleDefinition()
+	d.Name = "gone-one"
+	gone, err := NewRegisterBot(h.deps).Execute(ctx, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gone, _ = NewEnableBot(h.deps).Execute(ctx, gone.ID())
+	bot := enabledBot(t, h)
+	node := onlineNode(t, h, "web-1")
+	h.clock.now = t0
+	submit(t, h, gone, "k-gone")
+	// A decision queued for the node on a Running task of the same bot.
+	running := submit(t, h, gone, "k-running").Task
+	queued, _ := domain.NewExecution("exec-queued", running.ID(), gone.ID(), t0)
+	_ = queued.Decide("approve")
+	_ = queued.AssignTo(node.ID())
+	_ = h.execs.Save(ctx, queued)
+	_ = running.Start("exec-queued", t0)
+	_ = h.tasks.Save(ctx, running)
+	h.clock.now = t0.Add(time.Minute)
+	waiting := submit(t, h, bot, "k-waiting").Task
+	delete(h.bots.bots, gone.ID())
+	assignment, found, err := NewNextAssignment(h.deps).Execute(ctx, node.ID())
+	if err != nil || !found || assignment.Run == nil || assignment.Run.TaskID != waiting.ID() {
+		t.Fatalf("the other task was not assigned: %v %v %+v", err, found, assignment)
+	}
+	if failed, _ := h.execs.Get(ctx, "exec-queued"); failed.Outcome() != domain.ExecutionFailed || !strings.HasPrefix(failed.FailureReason(), "orphan: ") {
+		t.Errorf("queued execution = %s %q", failed.Outcome(), failed.FailureReason())
+	}
+}
+
+// A decision queued for a node busy with another task says so in its
+// decided event: the node carries one execution at a time and polls only
+// when it is free, and the task showed Running with no hint. One queued
+// for an Offline node, or a node whose record is gone, says that; a free
+// node adds nothing.
+func TestAQueuedDecisionSaysWhatItWaitsFor(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	bot := enabledBot(t, h)
+	node := onlineNode(t, h, "web-1")
+	waiting := func(key string) domain.Task {
+		t.Helper()
+		task := submit(t, h, bot, key).Task
+		first, _, _ := NewNextAssignment(h.deps).Execute(ctx, node.ID())
+		pending := ExecutionReport{Outcome: domain.ExecutionDecisionRequired, Result: domain.Result{SessionID: "sess-" + key, PendingDecision: &domain.PendingDecision{Tool: "local_write", CallID: "c1", SessionID: "sess-" + key}}}
+		if _, err := NewReportExecution(h.deps).Execute(ctx, node.ID(), first.ExecutionID, pending); err != nil {
+			t.Fatal(err)
+		}
+		return task
+	}
+	decided := func(task domain.Task) domain.Event {
+		t.Helper()
+		h.log.events = nil
+		if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, ""); err != nil {
+			t.Fatal(err)
+		}
+		return h.log.events[len(h.log.events)-1]
+	}
+	free, other, offline, broken, gone := waiting("k-free"), waiting("k-other"), waiting("k-offline"), waiting("k-broken"), waiting("k-gone")
+	if event := decided(free); event.Payload["waiting"] != nil || event.Payload["busyWith"] != nil {
+		t.Errorf("a free node: %+v", event.Payload)
+	}
+	if _, found, _ := NewNextAssignment(h.deps).Execute(ctx, node.ID()); !found {
+		t.Fatal("the node took nothing")
+	}
+	// The node now runs the first task's decision; the next one waits.
+	event := decided(other)
+	busy, _ := event.Payload["busyWith"].([]string)
+	if len(busy) != 1 || busy[0] != free.ID().String() || event.Payload["waiting"] != "waiting for node web-1, busy with task "+free.ID().String() {
+		t.Errorf("a busy node: %+v", event.Payload)
+	}
+	if last := h.log.audits[len(h.log.audits)-1]; last.Details["waiting"] != event.Payload["waiting"] {
+		t.Errorf("audit = %+v", last)
+	}
+	h.clock.now = t0.Add(3 * time.Minute)
+	if _, err := NewMarkOfflineNodes(h.deps).Execute(ctx, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if event := decided(offline); event.Payload["nodeStatus"] != "Offline" || event.Payload["waiting"] != "waiting for node web-1, which is Offline" {
+		t.Errorf("an Offline node: %+v", event.Payload)
+	}
+	h.nodes.getFail = errBoom
+	if _, err := NewApproveTask(h.deps).Execute(ctx, broken.ID(), DecisionApprove, ""); !errors.Is(err, errBoom) {
+		t.Errorf("a failing node store: %v", err)
+	}
+	if stored, _ := h.tasks.Get(ctx, broken.ID()); stored.Status() != domain.TaskWaitingApproval {
+		t.Errorf("a failing node store left the task %s", stored.Status())
+	}
+	h.nodes.getFail = nil
+	delete(h.nodes.nodes, "web-1")
+	if event := decided(gone); event.Payload["waiting"] != "waiting for node web-1, which is gone" {
+		t.Errorf("a gone node: %+v", event.Payload)
 	}
 }

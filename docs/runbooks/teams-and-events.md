@@ -33,7 +33,7 @@ message = "Stop: the operator halts the team"
 [[shortcut]]
 team = "ops"
 label = "Deploy starts"
-name = "warn.deploy.started"
+name = "warn.deploy-started"
 message = "A deploy is starting on service-1"
 data = { service = "service-1" }
 ```
@@ -69,7 +69,7 @@ Everything else has a default; a definition file (**Bots → From file** registe
 | worker-1 waits for your OK to roll back | its definition has no `autoApprove` for `rollback` (the panel's form adds none) | approve it this time; then add `"approvals": {"autoApprove": [{"tool": "rollback"}]}` with `axlr-bots bot update <bot> --file <patch.json>` (a patch replaces the whole `approvals`) |
 | `rate_limited` in the timeline | the watcher emitted more than its rate in a minute | wait a minute, or raise `events.perMinute` |
 | `depth_exceeded` | a chain of events went past its depth | by design (2: a reaction may react once); raise `events.maxDepth` on the emitter if a longer chain is wanted |
-| a bot never reacts to a teammate's `info.*` or `warn.*` | nothing addressed it and it does not listen to that topic | its page → **Listen to a topic**; **Teams → ops → Topics** shows **nobody listens** |
+| a bot never reacts to a teammate's `info.*` or `warn.*` | nothing addressed it and it does not listen to that topic; or the name has more dots than the pattern: `*` is one segment, so `warn.*` hears `warn.deploy-started` but not `warn.deploy.started` (`warn.**` hears both) | its page → **Listen to a topic**; **Teams → ops → Topics** shows **nobody listens** |
 | a warning arrived as a line in its chat, not a task | it was working: `warn.*` is a `message` by default | pick mode `task` on its subscription, or `"urgent": true` to stop what it does |
 | a bot "noted" an event and did nothing | `info.*` is a `note` by default: it is in its next task's prompt (**Knew** in that task) | pick mode `task`, or send it a task |
 | «too many this minute» on a line | the bot took 10 events in a minute as tasks or messages; the rest are notes | raise `events.intakePerMinute` on that bot |

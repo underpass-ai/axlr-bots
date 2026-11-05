@@ -129,6 +129,15 @@ func (a Approvals) AutoApproves(tool string, arguments []byte) bool {
 	return false
 }
 
+// WithAutoApprove is the settings with another list of the calls
+// approved without a person; the wait, the expiry and the targets, their
+// secrets included, stay. The list is validated as NewApprovals does.
+func (a Approvals) WithAutoApprove(rules []ToolRuleSnapshot) (Approvals, error) {
+	s := a.Snapshot()
+	s.AutoApprove = rules
+	return NewApprovals(s)
+}
+
 // TTL is how long a pending call waits for a person.
 func (a Approvals) TTL() time.Duration {
 	if a.ttl == 0 {

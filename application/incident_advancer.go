@@ -43,7 +43,7 @@ func (a incidentAdvancer) taskEnded(ctx context.Context, bot domain.Bot, task do
 		return a.rec.audit(ctx, "incident.advance", id.String(), domain.AuditDenied, map[string]string{"task": task.ID().String(), "reason": "not the task of the current cycle"})
 	}
 	now := a.deps.Clock.Now()
-	_ = incident.AddCost(execution.Usage().CostUSD, now)
+	_ = incident.AddCost(execution.Usage(), now)
 	var (
 		kind    domain.EventType
 		payload = map[string]any{"taskId": task.ID().String(), "executionId": execution.ID().String(), "costUsd": incident.CostUSD()}
@@ -89,10 +89,39 @@ func (a incidentAdvancer) taskEnded(ctx context.Context, bot domain.Bot, task do
 		return err
 	}
 	payload["status"] = incident.Status().String()
-	if err := a.rec.incidentEvent(ctx, kind, bot, incident, payload); err != nil {
+	if err := a.rec.incidentEvent(ctx, kind, incident, payload); err != nil {
 		return err
 	}
 	return a.rec.audit(ctx, "incident.advance", id.String(), domain.AuditOK, map[string]string{"task": task.ID().String(), "status": incident.Status().String()})
+}
+
+// lateCost adds the cost an ended execution learnt late (its run
+// reported after a cancel) to the task's incident, or to the incident
+// of the triage task it descends from; nothing else of the incident
+// changes.
+func (a incidentAdvancer) lateCost(ctx context.Context, task domain.Task, execution domain.Execution) error {
+	usage := execution.Usage()
+	id := task.IncidentID()
+	if id == "" {
+		return a.childEnded(ctx, task, execution)
+	}
+	if usage.CostUSD <= 0 && !usage.CostUnknown {
+		return nil
+	}
+	incident, err := a.deps.Incidents.Get(ctx, id)
+	if domain.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := incident.AddCost(usage, a.deps.Clock.Now()); err != nil {
+		return err
+	}
+	if err := a.deps.Incidents.Save(ctx, incident); err != nil {
+		return err
+	}
+	return a.rec.audit(ctx, "incident.cost", id.String(), domain.AuditOK, map[string]string{"task": task.ID().String(), "execution": execution.ID().String()})
 }
 
 // maxCostLineage bounds the walk from a delegated task up to the triage
@@ -104,8 +133,8 @@ const maxCostLineage = 8
 // October 2026 an incident's cost counted only triage's own executions,
 // and its diag-k8s children were summed by hand.
 func (a incidentAdvancer) childEnded(ctx context.Context, task domain.Task, execution domain.Execution) error {
-	usd := execution.Usage().CostUSD
-	if usd <= 0 {
+	usage := execution.Usage()
+	if usage.CostUSD <= 0 && !usage.CostUnknown {
 		return nil
 	}
 	current := task
@@ -139,7 +168,7 @@ func (a incidentAdvancer) childEnded(ctx context.Context, task domain.Task, exec
 			}
 			return err
 		}
-		if err := incident.AddCost(usd, a.deps.Clock.Now()); err != nil {
+		if err := incident.AddCost(usage, a.deps.Clock.Now()); err != nil {
 			return err
 		}
 		if err := a.deps.Incidents.Save(ctx, incident); err != nil {

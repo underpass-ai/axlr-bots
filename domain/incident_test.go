@@ -38,11 +38,18 @@ func TestIncidentLifecycle(t *testing.T) {
 	if err := i.Repeat([]string{"fp-c"}, t1); err != nil || i.Repeats() != 1 || len(i.Fingerprints()) != 3 || !i.LastSeenAt().Equal(t1) {
 		t.Fatalf("repeat: %v", err)
 	}
-	if err := i.AddCost(0.25, t1); err != nil || i.CostUSD() != 0.25 {
+	if err := i.AddCost(Usage{CostUSD: 0.25}, t1); err != nil || i.CostUSD() != 0.25 || i.CostUnknown() {
 		t.Fatalf("cost: %v", err)
 	}
-	if err := i.AddCost(-1, t1); err == nil {
+	if err := i.AddCost(Usage{CostUSD: -1}, t1); err == nil {
 		t.Error("negative cost added")
+	}
+	// A run stopped before it said its cost leaves the sum a floor.
+	if err := i.AddCost(UnknownUsage(0), t1); err != nil || i.CostUSD() != 0.25 || !i.CostUnknown() {
+		t.Fatalf("unknown cost: %v %v", err, i.CostUnknown())
+	}
+	if _ = i.AddCost(Usage{CostUSD: 0.5}, t1); !i.CostUnknown() {
+		t.Error("a known cost after an unknown one cleared the marker")
 	}
 	if i.CanReopen(t1) {
 		t.Error("an open incident reopens")
@@ -194,14 +201,14 @@ func TestIncidentSnapshotRoundTrip(t *testing.T) {
 	i := sampleIncident(t)
 	_ = i.AttachTask("task-1", t0)
 	_ = i.Diagnose("OOMKilled: limit 32Mi", t0)
-	_ = i.AddCost(0.01, t0)
+	_ = i.AddCost(Usage{CostUSD: 0.01, CostUnknown: true}, t0)
 	_ = i.Resolve("green", t0.Add(time.Minute))
 	snapshot := i.Snapshot()
 	back, err := RestoreIncident(snapshot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again := back.Snapshot(); again.ID != snapshot.ID || again.Status != "Resolved" || again.Diagnosis != snapshot.Diagnosis || again.CostUSD != 0.01 ||
+	if again := back.Snapshot(); again.ID != snapshot.ID || again.Status != "Resolved" || again.Diagnosis != snapshot.Diagnosis || again.CostUSD != 0.01 || !again.CostUnknown ||
 		len(again.TaskIDs) != 1 || again.ResolvedAt == nil || !again.ResolvedAt.Equal(*snapshot.ResolvedAt) || len(again.Fingerprints) != 2 {
 		t.Errorf("round trip differs: %+v", again)
 	}

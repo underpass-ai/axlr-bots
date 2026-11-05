@@ -13,7 +13,7 @@ axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>]
   ca issue-client --name <cn> --out <dir> [--lifetime <duration>]   client.key, client.crt, ca.crt for a service of the fleet (365 days)
   node list | node get <node-id>
   node enroll-token [--node-id <id>] [--labels k=v,k=v] [--ttl 1h] | node revoke <node-id>
-  bot register --file <bot.json> | bot enable <bot-id> | bot pause <bot-id> | bot stop <bot-id> | bot list | bot get <bot-id>
+  bot register --file <bot.json> | bot enable <bot-id> | bot pause <bot-id> | bot stop <bot-id> | bot delete <bot-id> | bot list | bot get <bot-id>
   bot update <bot-id> --file <patch.json> | bot events <bot-id> [--limit 100]
   bot subscribe <bot-id> <topic> [--mode task|message|note] [--from a,b] | bot unsubscribe <bot-id> <topic> | bot subscriptions <bot-id>
   group list | group get <group> [--tenant <id>]   the teams the bots name, with their members
@@ -26,11 +26,12 @@ axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>]
   trigger fire <bot-id> <trigger> --body '<json>' | --file <event.json> [--delivery <id>]
   task run <task-id>                           in process (exit 0 completed, 3 decision required, 1 failed)
   task approve <task-id> | task deny <task-id> | task decide <task-id> approve|deny   [--call <id>]
+                                               (exit as task run; 0 too when a node carries the decision)
   task get <task-id> | task executions <task-id> | task events <task-id> [--limit 100] | task cancel <task-id>
   task list [--bot <id>] [--status <status>] [--since <rfc3339>] [--limit 100]
   task report <task-id> [--path] | task reconcile [--grace <duration>]
   execution get <execution-id> | execution artifact <execution-id> <name> [--out <file>]
-  overview [--since <rfc3339>]                 nodes, bots and tasks by status; tasks, executions and cost since today
+  overview [--since <rfc3339>]                 nodes, bots and tasks by status; tasks, executions and cost since local midnight
   install [--system] [--prefix <dir>] [--state <dir>] [--node-state <dir>] [--unit-dir <dir>] [--env-file <path>]
           [--axlr-bin <path>] [--node-binary <path>] [--listen <addr>] [--server-names a,b] [--api-listen <addr>]
           [--control <url>] [--node-only] [--destdir <dir>] [--no-systemctl]

@@ -1,5 +1,7 @@
 use iced::widget::svg::Handle;
 
+use crate::domain::{IncidentSeverity, IncidentStatus};
+
 /// The panel's pixel glyphs (`assets/icons`) and the brand's marks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Icon {
@@ -32,10 +34,19 @@ pub enum Icon {
     Chip,
     Trace,
     Team,
+    /// A sorted column, its smallest first.
+    Up,
+    /// A sorted column, its largest first.
+    Down,
+    Trash,
+    /// Open: go to the row's own page.
+    Next,
+    /// A cause found: an incident diagnosed.
+    Lens,
 }
 
 impl Icon {
-    pub const ALL: [Icon; 29] = [
+    pub const ALL: [Icon; 34] = [
         Icon::Overview,
         Icon::Nodes,
         Icon::Bots,
@@ -65,6 +76,11 @@ impl Icon {
         Icon::Chip,
         Icon::Trace,
         Icon::Team,
+        Icon::Up,
+        Icon::Down,
+        Icon::Trash,
+        Icon::Next,
+        Icon::Lens,
     ];
 
     fn bytes(self) -> &'static [u8] {
@@ -98,11 +114,34 @@ impl Icon {
             Icon::Chip => include_bytes!("../../assets/icons/chip.svg"),
             Icon::Trace => include_bytes!("../../assets/icons/trace.svg"),
             Icon::Team => include_bytes!("../../assets/icons/team.svg"),
+            Icon::Up => include_bytes!("../../assets/icons/up.svg"),
+            Icon::Down => include_bytes!("../../assets/icons/down.svg"),
+            Icon::Trash => include_bytes!("../../assets/icons/trash.svg"),
+            Icon::Next => include_bytes!("../../assets/icons/next.svg"),
+            Icon::Lens => include_bytes!("../../assets/icons/lens.svg"),
         }
     }
 
     pub fn handle(self) -> Handle {
         Handle::from_memory(self.bytes())
+    }
+
+    /// A severity is a level of alarm, never a state of work: the alert
+    /// for the two that page someone, a dot for the milder ones.
+    pub fn of_severity(severity: IncidentSeverity) -> Self {
+        match severity {
+            IncidentSeverity::Sev1 | IncidentSeverity::Sev2 => Self::Alert,
+            IncidentSeverity::Sev3 | IncidentSeverity::Sev4 | IncidentSeverity::Unknown => Self::Dot,
+        }
+    }
+
+    /// An incident's status: a diagnosed one shows the lens of a cause
+    /// found, not a run; the others keep their tone's icon.
+    pub fn of_incident(status: IncidentStatus) -> Self {
+        match status {
+            IncidentStatus::Diagnosed => Self::Lens,
+            other => super::Tone::of_incident(other).icon(),
+        }
     }
 }
 
@@ -140,5 +179,15 @@ mod tests {
         let _ = brand::emblem(true);
         let _ = brand::emblem(false);
         assert_eq!(&brand::WINDOW_ICON_PNG[1..4], b"PNG");
+    }
+
+    #[test]
+    fn incidents_never_borrow_the_icons_of_work() {
+        assert_eq!(Icon::of_severity(IncidentSeverity::Sev1), Icon::Alert);
+        assert_eq!(Icon::of_severity(IncidentSeverity::Sev3), Icon::Dot);
+        assert_ne!(Icon::of_severity(IncidentSeverity::Sev4), Icon::Pause);
+        assert_eq!(Icon::of_incident(IncidentStatus::Diagnosed), Icon::Lens);
+        assert_eq!(Icon::of_incident(IncidentStatus::Open), Icon::Cross);
+        assert_eq!(Icon::of_incident(IncidentStatus::Resolved), Icon::Check);
     }
 }

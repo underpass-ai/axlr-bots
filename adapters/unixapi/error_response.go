@@ -9,6 +9,9 @@ type ErrorResponse struct {
 	Message  string `json:"error"`
 	Resource string `json:"resource,omitempty"`
 	ID       string `json:"id,omitempty"`
+	// Revoked marks a forbidden answer to a revoked node: refused for
+	// good, until it is enrolled again.
+	Revoked bool `json:"revoked,omitempty"`
 }
 
 // Kinds of errors the API names.

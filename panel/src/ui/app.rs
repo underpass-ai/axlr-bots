@@ -1,14 +1,15 @@
 use chrono::{DateTime, Duration, Utc};
 
 use super::{
-    Answer, Banner, BotChoice, BotView, Confirm, Effect, IncidentWatch, Launch, ListenForm, Message, MintForm,
-    NodeChoice, OrderForm, PublishForm, RegisterForm, ResolveForm, Screen, Services, SettingsForm, SubmitForm,
-    TaskViewFilter, TeamWatch, ThemeMode,
+    Answer, Banner, BotChoice, BotEditForm, BotView, Confirm, DeleteForm, Effect, IncidentWatch, Keypress, Launch,
+    ListenForm, LiveStream, LiveTask, Message, MintForm, NodeChoice, OrderForm, PublishForm, Readers, RegisterForm,
+    ResolveForm, Screen, Services, SettingsForm, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode, passages,
 };
 use crate::application::SubscriptionChange;
 use crate::application::{EventFeed, Fleet, PanelConfig, PanelError, TaskDetail};
 use crate::domain::{Decision, Shortcut, TaskId, TaskStatus};
 use crate::ui::format;
+use crate::ui::table::Tables;
 
 /// How long a refresh may stay unanswered before the next tick tries again.
 const REFRESH_PATIENCE: i64 = 20;
@@ -35,6 +36,8 @@ pub struct App {
     /// The task's answer, parsed once per answer.
     pub answer: Option<Answer>,
     task_loading: bool,
+    /// The task on screen as it is followed live: its Activity.
+    pub live: Option<LiveTask>,
     pub bot: Option<BotView>,
     bot_loading: bool,
     pub mint: MintForm,
@@ -58,6 +61,9 @@ pub struct App {
     pub watch: TeamWatch,
     /// Making a bot listen to a topic.
     pub listen: ListenForm,
+    /// Editing a bot's mission and tools, and deleting a bot.
+    pub edit: BotEditForm,
+    pub delete: DeleteForm,
     /// Publishing an event on a team.
     pub publish: PublishForm,
     /// Giving a bot an urgent order.
@@ -70,6 +76,10 @@ pub struct App {
     pub downloading: bool,
     /// Where to go once connected.
     target: Screen,
+    /// The passages of the screen on show a person can select a part of.
+    pub readers: Readers,
+    /// The list screens' tables: their order and their picked rows.
+    pub tables: Tables,
 }
 
 impl App {
@@ -92,6 +102,7 @@ impl App {
             task: None,
             answer: None,
             task_loading: false,
+            live: None,
             bot: None,
             bot_loading: false,
             mint: MintForm::default(),
@@ -108,6 +119,8 @@ impl App {
             switching: false,
             watch: TeamWatch::default(),
             listen: ListenForm::default(),
+            edit: BotEditForm::default(),
+            delete: DeleteForm::default(),
             publish: PublishForm::default(),
             order: OrderForm::default(),
             shortcuts: Vec::new(),
@@ -118,6 +131,8 @@ impl App {
             } else {
                 launch.screen
             },
+            readers: Readers::default(),
+            tables: Tables::default(),
         };
         match app.services.shortcuts.load() {
             Ok(list) => app.shortcuts = list,
@@ -163,9 +178,20 @@ impl App {
     }
 
     pub fn apply(&mut self, message: Message) -> Vec<Effect> {
+        let effects = self.handle(message);
+        self.readers.sync(passages::of(self));
+        effects
+    }
+
+    fn handle(&mut self, message: Message) -> Vec<Effect> {
         match message {
             Message::Tick(now) => self.tick(now),
             Message::Go(screen) => self.go(screen),
+            Message::Key(key) => self.key(key),
+            Message::Read(key, action) => {
+                self.readers.act(&key, action);
+                Vec::new()
+            }
             Message::ToggleTheme => {
                 self.mode = self.mode.toggled();
                 Vec::new()
@@ -203,6 +229,7 @@ impl App {
                     Ok(fleet) => {
                         let mut effects = self.notice_waiting(&fleet, self.fleet.is_none());
                         self.fleet = Some(fleet);
+                        self.drop_gone_picks();
                         self.fleet_error = None;
                         self.last_refresh = Some(self.now);
                         effects.extend(self.follow_teams());
@@ -226,8 +253,41 @@ impl App {
                             self.answer = answer.map(Answer::new);
                         }
                         self.task = Some(detail);
+                        self.settle_live();
                     }
                     Err(error) => self.banner = Some(Banner::error(&error, self.now)),
+                }
+                self.follow_task()
+            }
+            Message::TaskFollowed(id, result) => self.task_followed(id, result),
+            Message::ActivityPick(index) => {
+                if let Some(live) = self.live.as_mut() {
+                    live.pick(index);
+                }
+                Vec::new()
+            }
+            Message::WordsSelect(action) => {
+                if let Some(live) = self.live.as_mut() {
+                    live.select(action);
+                }
+                Vec::new()
+            }
+            Message::WordsSelecting(selecting) => match self.live.as_mut() {
+                Some(live) => {
+                    live.selecting(selecting);
+                    // Back to the formatted words: a new box, at its end
+                    // while the person had not scrolled up in it.
+                    if !selecting && live.follows(LiveStream::Words) {
+                        vec![Effect::ShowEnd(LiveStream::Words)]
+                    } else {
+                        Vec::new()
+                    }
+                }
+                None => Vec::new(),
+            },
+            Message::ActivityScrolled(stream, at_end) => {
+                if let Some(live) = self.live.as_mut() {
+                    live.scrolled(stream, at_end);
                 }
                 Vec::new()
             }
@@ -477,6 +537,22 @@ impl App {
             Message::TeamSaved(result) => self.team_saved(result),
             Message::TeamLoaded(name, result) => self.team_loaded(name, result),
             Message::TopicsLoaded(name, result) => self.topics_loaded(name, result),
+            message @ (Message::EditOpen(_)
+            | Message::EditClose
+            | Message::EditMission(_)
+            | Message::EditAccess(..)
+            | Message::EditRemove(_)
+            | Message::EditNewTool(_)
+            | Message::EditNewAccess(_)
+            | Message::EditAdd(_)
+            | Message::EditSave
+            | Message::EditSaved(_)
+            | Message::DeleteOpen(_)
+            | Message::DeletePreviewed(..)
+            | Message::DeleteTyped(_)
+            | Message::DeleteClose
+            | Message::DeleteSend
+            | Message::BotDeleted(..)) => self.bot_edit(message),
             Message::ListenOpen(bot) => {
                 self.listen = ListenForm::opened(bot);
                 Vec::new()
@@ -552,6 +628,7 @@ impl App {
 
             Message::FilterStatus(status) => {
                 self.filter.status = status;
+                self.drop_gone_picks();
                 if self.screen != Screen::Tasks {
                     return self.go(Screen::Tasks);
                 }
@@ -562,6 +639,7 @@ impl App {
                     BotChoice::All => None,
                     BotChoice::One(id) => Some(id),
                 };
+                self.drop_gone_picks();
                 Vec::new()
             }
             Message::SubmitOpen(bot) => {
@@ -690,6 +768,7 @@ impl App {
                     self.switching = true;
                     vec![Effect::StopBot(id)]
                 }
+                Some(Confirm::Bulk(plan)) => self.run_bulk(plan),
                 None => Vec::new(),
             },
             Message::ConfirmNo => {
@@ -746,6 +825,17 @@ impl App {
                     }
                 }
             }
+
+            Message::Modifiers(modifiers) => {
+                self.tables.shift = modifiers.shift();
+                Vec::new()
+            }
+            Message::SortBy(column) => self.sort_by(column),
+            Message::Pick(row, picked) => self.pick(row, picked),
+            Message::PickShown(list, picked) => self.pick_shown(list, picked),
+            Message::ClearPicks(list) => self.clear_picks(list),
+            Message::AskBulk(list, action) => self.ask_bulk(list, action),
+            Message::BulkDone(outcome) => self.bulk_done(outcome),
         }
     }
 
@@ -784,9 +874,14 @@ impl App {
             return Vec::new();
         }
         match &self.screen {
-            Screen::Task(id) if !self.task_loading => {
-                self.task_loading = true;
-                vec![Effect::LoadTask(id.clone())]
+            Screen::Task(id) => {
+                let mut effects = Vec::new();
+                if !self.task_loading {
+                    self.task_loading = true;
+                    effects.push(Effect::LoadTask(id.clone()));
+                }
+                effects.extend(self.follow_task());
+                effects
             }
             Screen::Bot(id) if !self.bot_loading => {
                 self.bot_loading = true;
@@ -821,6 +916,11 @@ impl App {
             self.task = None;
             self.answer = None;
         }
+        if let Screen::Task(id) = &screen
+            && self.live.as_ref().is_some_and(|l| &l.id != id)
+        {
+            self.live = None;
+        }
         if let Screen::Bot(id) = &screen
             && self.bot.as_ref().is_some_and(|b| &b.bot.id != id)
         {
@@ -831,11 +931,17 @@ impl App {
         {
             self.incidents.detail = None;
         }
+        // Another screen opens at its top, not where the last one was
+        // scrolled to; a refresh of the same one keeps its place.
+        let mut effects = Vec::new();
         if screen != self.screen {
+            effects.push(Effect::ScrollTop);
             self.advanced = false;
             self.chat_draft.clear();
             self.watch.editing = None;
             self.listen = ListenForm::default();
+            self.edit = BotEditForm::default();
+            self.delete = DeleteForm::default();
             self.publish = PublishForm::default();
             self.order = OrderForm::default();
             self.task_loading = false;
@@ -843,13 +949,34 @@ impl App {
             self.incidents.list_loading = false;
             self.incidents.detail_loading = false;
             self.incidents.resolve = ResolveForm::default();
+            // The picked rows belong to the list left; its order stays.
+            self.tables.clear_all();
         }
         self.screen = screen;
         self.confirm = None;
         if self.screen == Screen::Settings && !self.settings.busy {
             self.settings.saved = self.settings.saved || self.connected();
         }
-        self.reload_screen()
+        effects.extend(self.reload_screen());
+        effects
+    }
+
+    /// Esc keeps what a dialog would do, closes the new task's form or
+    /// a bot's Edit or Delete card, or lets go of the rows picked in a
+    /// list; Enter does what the dialog asks. Other screens ignore them.
+    fn key(&mut self, key: Keypress) -> Vec<Effect> {
+        match key {
+            Keypress::Escape if self.confirm.is_some() => self.handle(Message::ConfirmNo),
+            Keypress::Enter if self.confirm.is_some() => self.handle(Message::ConfirmYes),
+            Keypress::Escape if self.submit.open && !self.submit.busy => self.handle(Message::SubmitClose),
+            Keypress::Escape if self.delete.bot.is_some() && !self.delete.busy => self.handle(Message::DeleteClose),
+            Keypress::Escape if self.edit.bot.is_some() && !self.edit.busy => self.handle(Message::EditClose),
+            Keypress::Escape => match self.list_on_screen() {
+                Some(list) if self.tables.picked(list) > 0 => self.clear_picks(list),
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        }
     }
 
     /// The task a bot runs now, as the newest read of the fleet and its

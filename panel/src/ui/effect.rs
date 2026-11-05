@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
-use super::Screen;
-use crate::application::{ChatTurn, EventFeed, Notice, PanelConfig, SubscriptionChange};
+use super::{LiveStream, Screen};
+use crate::application::{
+    BotEdit, BulkAction, BulkTarget, ChatTurn, EventFeed, Notice, PanelConfig, SubscriptionChange,
+};
 use crate::domain::{AutonomyLevel, BotForm, BotId, Decision, ExecutionId, IdempotencyKey, NodeId, TaskId};
 
 /// What the panel asks the outside world to do after a message: a call
@@ -9,10 +11,20 @@ use crate::domain::{AutonomyLevel, BotForm, BotId, Decision, ExecutionId, Idempo
 /// returns effects; the runtime carries them out.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Effect {
+    /// The page on show back at its top: another screen opened.
+    ScrollTop,
     Refresh {
         generation: u64,
     },
     LoadTask(TaskId),
+    /// Read a task's timeline after the feed, waiting up to `wait` seconds.
+    FollowTask {
+        id: TaskId,
+        feed: EventFeed,
+        wait: u32,
+    },
+    /// Bring the end of a box of the running task's Activity into view.
+    ShowEnd(LiveStream),
     FollowBot(BotId, EventFeed),
     /// Read a team's timeline after the feed, waiting up to `wait` seconds.
     FollowTeam {
@@ -53,6 +65,11 @@ pub enum Effect {
     Pause(BotId),
     SetLevel(BotId, AutonomyLevel),
     StopBot(BotId),
+    /// Save the edit of a bot's mission and tools, unless it changed since.
+    SaveBotEdit(BotId, BotEdit),
+    /// Read what deleting a bot will do, then delete it.
+    PreviewDelete(BotId),
+    DeleteBot(BotId),
     /// A message to a bot from its chat, with the turns before it.
     SendChat {
         bot: BotId,
@@ -89,5 +106,10 @@ pub enum Effect {
     Connect {
         config: PanelConfig,
         save: bool,
+    },
+    /// One act on many rows: a call each, a few at a time.
+    Bulk {
+        action: BulkAction,
+        targets: Vec<BulkTarget>,
     },
 }

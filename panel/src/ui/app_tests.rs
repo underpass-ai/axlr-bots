@@ -402,9 +402,10 @@ fn filters_open_the_task_list() {
 fn without_a_connection_nothing_is_asked_of_the_control_plane() {
     let mut app = app();
     assert!(app.apply(Message::Tick(app.now)).is_empty());
-    assert!(
-        app.apply(Message::Go(Screen::Task(TaskId::new("task-1").unwrap())))
-            .is_empty()
+    // Only the page's own scroll: nothing goes to the control plane.
+    assert_eq!(
+        app.apply(Message::Go(Screen::Task(TaskId::new("task-1").unwrap()))),
+        vec![Effect::ScrollTop]
     );
     let message = futures::executor::block_on(app.services.clone().execute(Effect::Refresh { generation: 1 }));
     assert!(matches!(
@@ -866,7 +867,10 @@ fn a_teammates_warning_raises_a_notice_that_opens_the_teams() {
 fn an_incident_is_listed_opened_and_resolved_with_a_reason() {
     use crate::domain::IncidentStatus;
     let mut app = connected();
-    assert_eq!(app.apply(Message::Go(Screen::Incidents)), vec![Effect::LoadIncidents]);
+    assert_eq!(
+        app.apply(Message::Go(Screen::Incidents)),
+        vec![Effect::ScrollTop, Effect::LoadIncidents]
+    );
     assert!(
         app.apply(Message::Tick(app.now))
             .iter()
@@ -882,7 +886,10 @@ fn an_incident_is_listed_opened_and_resolved_with_a_reason() {
     );
 
     let effects = app.apply(Message::Go(Screen::Incident("inc-disk".into())));
-    assert_eq!(effects, vec![Effect::LoadIncident("inc-disk".into())]);
+    assert_eq!(
+        effects,
+        vec![Effect::ScrollTop, Effect::LoadIncident("inc-disk".into())]
+    );
     drive(&mut app, effects);
     assert_eq!(app.incidents.detail.as_ref().unwrap().status, IncidentStatus::Escalated);
 
@@ -958,4 +965,222 @@ fn a_kept_artifact_is_saved_and_one_not_kept_says_why() {
     app.banner = None;
     send(&mut app, Message::Downloaded(Ok(None)));
     assert!(app.banner.is_none(), "a cancelled save says nothing");
+}
+
+#[test]
+fn a_running_task_is_followed_live_and_keeps_its_history_once_it_ends() {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    let running = task_in(&app, TaskStatus::Running);
+    let done = task_in(&app, TaskStatus::Completed);
+    send(&mut app, Message::Go(Screen::Task(running.clone())));
+    let live = app.live.as_ref().unwrap();
+    assert!(live.read && !live.following && !live.settled);
+    assert_eq!(live.activity.entries.len(), 2);
+    assert_eq!(live.activity.running(), 1);
+    assert!(live.words.text().starts_with("I will read the host's clock."));
+
+    // While it runs, the next read waits for what comes.
+    let tick = app.now + Duration::seconds(3);
+    let effects = app.apply(Message::Tick(tick));
+    assert!(effects.iter().any(|e| matches!(
+        e,
+        Effect::FollowTask { id, wait, .. } if *id == running && *wait == crate::application::LIVE_WAIT_SECONDS
+    )));
+    assert!(
+        app.apply(Message::Tick(tick))
+            .iter()
+            .all(|e| !matches!(e, Effect::FollowTask { .. }))
+    );
+    drive(&mut app, effects);
+    fake.progress(
+        &running,
+        serde_json::json!([
+            {"kind": "tool.ended", "tool": "axlr_call_tool", "callId": "c2", "status": "ok", "durationMs": 900},
+            {"kind": "delegation", "bot": "bot-wrx80", "taskId": done.to_string()},
+            {"kind": "text", "text": " It is ten."}
+        ]),
+    );
+    fake.say(&running, "It is ten o'clock.");
+    send(&mut app, Message::Tick(tick + Duration::seconds(3)));
+    let live = app.live.as_ref().unwrap();
+    assert_eq!(live.activity.running(), 0);
+    assert_eq!(live.activity.entries.len(), 4);
+    assert!(live.words.text().contains("It is ten."));
+    send(&mut app, Message::ActivityPick(2));
+    send(
+        &mut app,
+        Message::WordsSelect(iced::widget::text_editor::Action::SelectAll),
+    );
+    let live = app.live.as_ref().unwrap();
+    assert_eq!(live.selected, Some(2));
+    assert!(live.words.selection().is_some_and(|s| s.ends_with("It is ten.")));
+
+    // A read for another screen, or that failed, changes nothing.
+    assert!(
+        app.apply(Message::TaskFollowed(done.clone(), Ok(Default::default())))
+            .is_empty()
+    );
+    assert!(
+        app.apply(Message::TaskFollowed(
+            running.clone(),
+            Err(PanelError::Unreachable("down".into()))
+        ))
+        .is_empty()
+    );
+
+    // It ends: one more read takes what came last, then the following
+    // stops and the history stays.
+    send(&mut app, Message::AskCancel(running.clone()));
+    send(&mut app, Message::ConfirmYes);
+    send(&mut app, Message::Tick(tick + Duration::seconds(6)));
+    let live = app.live.as_ref().unwrap();
+    assert!(live.settled && live.read);
+    assert_eq!(live.activity.entries.len(), 4);
+    let effects = app.apply(Message::Tick(tick + Duration::seconds(9)));
+    assert!(effects.iter().all(|e| !matches!(e, Effect::FollowTask { .. })));
+
+    // Another task starts its own.
+    send(&mut app, Message::Go(Screen::Task(done.clone())));
+    assert_eq!(app.live.as_ref().unwrap().id, done);
+    send(&mut app, Message::Go(Screen::Overview));
+    assert!(app.apply(Message::ActivityPick(0)).is_empty());
+}
+
+#[test]
+fn the_boxes_of_a_running_task_show_their_new_end_until_the_person_scrolls_up() {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake);
+    send(&mut app, Message::SettingsSave);
+    let running = task_in(&app, TaskStatus::Running);
+    send(&mut app, Message::Go(Screen::Task(running.clone())));
+    let grow = |app: &App, id: &str, items: serde_json::Value| {
+        let mut feed = app.live.as_ref().unwrap().feed.clone();
+        let event: crate::domain::Event = serde_json::from_value(serde_json::json!({
+            "eventId": id, "type": "bot.task.progress", "tenantId": "t", "botId": "b",
+            "taskId": running.to_string(), "createdAt": "2026-10-25T10:00:00Z", "payload": {"items": items}
+        }))
+        .unwrap();
+        feed.merge(vec![event], crate::application::LIVE_FEED_SIZE);
+        feed
+    };
+    let shown = |effects: &[Effect]| -> Vec<LiveStream> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                Effect::ShowEnd(stream) => Some(*stream),
+                _ => None,
+            })
+            .collect()
+    };
+    let feed = grow(
+        &app,
+        "p1",
+        serde_json::json!([{"kind": "thinking", "text": "The log next."}, {"kind": "tool.started", "tool": "local_read", "callId": "c9"}, {"kind": "text", "text": " Reading it."}]),
+    );
+    let effects = app.apply(Message::TaskFollowed(running.clone(), Ok(feed)));
+    assert_eq!(
+        shown(&effects),
+        [LiveStream::Steps, LiveStream::Thinking, LiveStream::Words]
+    );
+    assert!(effects.iter().any(|e| matches!(e, Effect::FollowTask { .. })));
+
+    // The person scrolls up in the words to read: they stay put, the
+    // steps go on showing their end.
+    assert!(
+        app.apply(Message::ActivityScrolled(LiveStream::Words, false))
+            .is_empty()
+    );
+    let feed = grow(
+        &app,
+        "p2",
+        serde_json::json!([{"kind": "tool.ended", "tool": "local_read", "callId": "c9"}, {"kind": "tool.started", "tool": "local_list", "callId": "c10"}, {"kind": "text", "text": " More."}]),
+    );
+    let effects = app.apply(Message::TaskFollowed(running.clone(), Ok(feed)));
+    assert_eq!(shown(&effects), [LiveStream::Steps]);
+    let words = app.live.as_ref().unwrap();
+    assert!(!words.follows(LiveStream::Words) && words.activity.text.ends_with("\n\nMore."));
+    send(&mut app, Message::ActivityScrolled(LiveStream::Words, true));
+    assert!(app.live.as_ref().unwrap().follows(LiveStream::Words));
+    // Back from selecting a part, the formatted words show their end;
+    // after scrolling up in them, they stay where the person left them.
+    assert!(shown(&app.apply(Message::WordsSelecting(true))).is_empty());
+    assert_eq!(shown(&app.apply(Message::WordsSelecting(false))), [LiveStream::Words]);
+    send(&mut app, Message::ActivityScrolled(LiveStream::Words, false));
+    assert!(shown(&app.apply(Message::WordsSelecting(false))).is_empty());
+    send(&mut app, Message::ActivityScrolled(LiveStream::Words, true));
+
+    // Away from the task, nothing is brought into view.
+    let feed = grow(&app, "p3", serde_json::json!([{"kind": "text", "text": " Done."}]));
+    send(&mut app, Message::Go(Screen::Overview));
+    assert!(shown(&app.apply(Message::TaskFollowed(running, Ok(feed)))).is_empty());
+    assert!(
+        app.apply(Message::ActivityScrolled(LiveStream::Steps, false))
+            .is_empty()
+    );
+}
+
+#[test]
+fn esc_keeps_what_a_dialog_would_do_and_enter_does_it() {
+    let mut app = connected();
+    let id = app.fleet.as_ref().unwrap().waiting()[0].bot_id.clone();
+    send(&mut app, Message::Go(Screen::Bot(id.clone())));
+    app.apply(Message::AskStopBot(id.clone()));
+    assert!(app.apply(Message::Key(Keypress::Escape)).is_empty());
+    assert_eq!(app.confirm, None);
+    app.apply(Message::AskStopBot(id.clone()));
+    let effects = app.apply(Message::Key(Keypress::Enter));
+    assert!(matches!(effects.as_slice(), [Effect::StopBot(stopped)] if *stopped == id));
+    assert_eq!(app.confirm, None);
+    // Without a dialog, Enter does nothing.
+    assert!(app.apply(Message::Key(Keypress::Enter)).is_empty());
+}
+
+#[test]
+fn esc_closes_the_new_task_form() {
+    let mut app = connected();
+    send(&mut app, Message::SubmitOpen(None));
+    assert!(app.submit.open);
+    app.apply(Message::Key(Keypress::Escape));
+    assert!(!app.submit.open);
+}
+
+#[test]
+fn another_screen_opens_at_its_top_a_refresh_keeps_its_place() {
+    let mut app = connected();
+    assert!(app.apply(Message::Go(Screen::Bots)).contains(&Effect::ScrollTop));
+    assert!(!app.apply(Message::Go(Screen::Bots)).contains(&Effect::ScrollTop));
+    let later = app.now + Duration::seconds(3);
+    assert!(!app.apply(Message::Tick(later)).contains(&Effect::ScrollTop));
+    assert!(app.apply(Message::Go(Screen::Tasks)).contains(&Effect::ScrollTop));
+}
+
+#[test]
+fn a_bot_page_holds_readers_that_keep_a_selection_over_a_refresh() {
+    let mut app = connected();
+    let id = app.fleet.as_ref().unwrap().bots[0].id.clone();
+    send(&mut app, Message::Go(Screen::Bot(id)));
+    let mission = app.bot.as_ref().unwrap().bot.mission.clone();
+    let reader = app.readers.get(&ReaderKey::BotMission).unwrap();
+    assert_eq!(reader.source(), mission);
+    assert!(app.readers.get(&ReaderKey::BotModel).is_some());
+    app.apply(Message::Read(
+        ReaderKey::BotMission,
+        iced::widget::text_editor::Action::SelectAll,
+    ));
+    app.apply(Message::Read(
+        ReaderKey::BotMission,
+        iced::widget::text_editor::Action::Edit(iced::widget::text_editor::Edit::Insert('x')),
+    ));
+    let later = app.now + Duration::seconds(3);
+    send(&mut app, Message::Tick(later));
+    let reader = app.readers.get(&ReaderKey::BotMission).unwrap();
+    assert_eq!(reader.content().selection().as_deref(), Some(mission.as_str()));
+    send(&mut app, Message::Go(Screen::Bots));
+    assert!(app.readers.is_empty());
 }

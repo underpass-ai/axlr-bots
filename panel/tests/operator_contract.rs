@@ -10,9 +10,9 @@
 use std::path::Path;
 
 use axlr_bots_panel::domain::{
-    AutonomyLevel, Bot, BotStatus, CancelledTask, DecidedTask, EnrollmentToken, Event, Execution, ExecutionKind,
-    ExecutionOutcome, Incident, IncidentSeverity, IncidentStatus, Node, NodeStatus, Overview, RevokedNode,
-    StoppedBotAnswer, SubmittedTask, Task, TaskStatus, TriggerType,
+    AutonomyLevel, Bot, BotStatus, CancelledTask, DecidedTask, DeletedBot, EnrollmentToken, Event, Execution,
+    ExecutionKind, ExecutionOutcome, Incident, IncidentSeverity, IncidentStatus, Node, NodeStatus, Overview,
+    RevokedNode, StoppedBotAnswer, SubmittedTask, Task, TaskStatus, TriggerType, Usage,
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
@@ -137,6 +137,7 @@ fn reads_every_answer_it_asks_for() {
     reads::<SubmittedTask>(&spec, "SubmitResponse");
     reads::<CancelledTask>(&spec, "CancelResponse");
     reads::<StoppedBotAnswer>(&spec, "StopResponse");
+    reads::<DeletedBot>(&spec, "DeleteResponse");
     reads::<DecidedTask>(&spec, "RunResponse");
     reads::<Execution>(&spec, "ExecutionSnapshot");
     reads::<Incident>(&spec, "IncidentSnapshot");
@@ -164,6 +165,17 @@ fn knows<T: DeserializeOwned + PartialEq + std::fmt::Debug>(spec: &Value, name: 
         future, unknown,
         "{name}: a value the panel does not know reads as unknown"
     );
+}
+
+#[test]
+fn reads_a_cost_the_control_plane_does_not_know() {
+    let spec = contract();
+    let usage: Usage = serde_json::from_value(sample(&spec, schema(&spec, "Usage"), Shape::Full)).unwrap();
+    assert!(usage.cost_unknown, "Usage.costUnknown is read");
+    let overview: Overview = serde_json::from_value(sample(&spec, schema(&spec, "Overview"), Shape::Full)).unwrap();
+    assert_eq!(overview.cost_unknown_since, 1, "Overview.costUnknownSince is read");
+    let minimal: Overview = serde_json::from_value(sample(&spec, schema(&spec, "Overview"), Shape::Minimal)).unwrap();
+    assert!(!minimal.cost_since().is_floor());
 }
 
 #[test]

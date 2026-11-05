@@ -1,15 +1,17 @@
 //! Nodes: who runs the bots, how healthy, and enrolling a new host.
 
-use iced::widget::{Space, column, container, row, scrollable, table, text};
-use iced::{Alignment, Font, Length};
+use iced::widget::{Space, column, container, responsive, row, scrollable, table, text};
+use iced::{Alignment, Length};
 
+use super::grid;
 use super::widgets::{
-    BODY, El, SMALL, action, bold, card, chip, empty, field, icon, muted, pill, section_title, title,
+    BODY, El, Voice, action, bold, card, chip, empty, field, icon, muted, pill, reader, section_title, title,
 };
 use crate::domain::{CertificateHealth, Node};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
-use crate::ui::{App, Icon, Message, Tokens, Tone};
+use crate::ui::table::{ColumnRef, List, NodeColumn, RowRef, SortColumn};
+use crate::ui::{App, Icon, Message, ReaderKey, Tokens, Tone};
 
 pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let Some(fleet) = &app.fleet else {
@@ -33,19 +35,74 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     if app.mint.open {
         page = page.push(mint_form(app, tokens));
     }
+    let list: El<'a> = if fleet.nodes.is_empty() {
+        empty(Icon::Nodes, "No node yet: make a token and enroll a host", tokens)
+    } else {
+        responsive(move |space| list(app, &fleet.nodes, space.width < NARROW, tokens))
+            .height(Length::Shrink)
+            .into()
+    };
+    page = page.push(card(list, tokens));
+    let page = scrollable(page.padding(iced::Padding {
+        right: 12.0,
+        bottom: grid::BAR_ROOM,
+        ..Default::default()
+    }))
+    .id(super::widgets::PAGE)
+    .height(Length::Fill);
+    grid::with_bar(app, List::Nodes, page.into(), tokens)
+}
+
+/// Under this width the table leaves out the AXLR column (its version
+/// goes under the node) and Revoke is an icon, so the node keeps room.
+const NARROW: f32 = 900.0;
+
+/// The nodes in the table's order: a box, the status, the node, its
+/// labels, when it was last seen, its certificate, AXLR unless `narrow`,
+/// and Revoke.
+fn list<'a>(app: &'a App, nodes: &'a [Node], narrow: bool, tokens: Tokens) -> El<'a> {
     let now = app.now;
-    let columns = vec![
-        table::column(bold("Status"), move |n: &'a Node| {
+    let state = &app.tables.nodes;
+    let shown = state.sort.order(nodes);
+    let head = |c: NodeColumn| {
+        grid::header(
+            c.label(),
+            state.sort.badge(c),
+            Message::SortBy(ColumnRef::Nodes(c)),
+            tokens,
+        )
+    };
+    let all = state.selection.covers(shown.iter().map(|n| &n.id));
+    let mut columns = vec![
+        table::column(
+            grid::check(all, |on| Message::PickShown(List::Nodes, on), tokens),
+            move |n: &'a Node| {
+                let id = n.id.clone();
+                grid::check(
+                    state.selection.contains(&n.id),
+                    move |on| Message::Pick(RowRef::Node(id.clone()), on),
+                    tokens,
+                )
+            },
+        ),
+        table::column(head(NodeColumn::Status), move |n: &'a Node| {
             pill(Tone::of_node(n.status), n.status.name(), tokens)
         }),
-        table::column(bold("Node"), move |n: &'a Node| -> El<'a> {
-            let mut cell = column![bold(n.id.to_string()), muted(n.host_name.clone(), tokens)].spacing(2);
+        table::column(head(NodeColumn::Node), move |n: &'a Node| -> El<'a> {
+            let mut cell = column![
+                grid::fitted(n.id.to_string(), true, tokens),
+                muted(grid::shorten(&n.host_name, 28), tokens)
+            ]
+            .spacing(2);
+            if narrow && !n.capabilities.axlr_version.is_empty() {
+                cell = cell.push(muted(grid::shorten(&n.capabilities.axlr_version, 24), tokens));
+            }
             if n.capabilities.dedicated {
                 cell = cell.push(chip("dedicated", tokens));
             }
             cell.into()
         })
-        .width(Length::FillPortion(2)),
+        .width(Length::FillPortion(if narrow { 3 } else { 2 })),
         table::column(bold("Labels"), move |n: &'a Node| -> El<'a> {
             let mut chips = row![].spacing(6);
             for pair in n.label_pairs() {
@@ -53,55 +110,52 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             }
             chips.wrap().into()
         })
-        .width(Length::FillPortion(3)),
-        table::column(bold("Last seen"), move |n: &'a Node| {
+        .width(Length::FillPortion(if narrow { 2 } else { 3 })),
+        table::column(head(NodeColumn::LastSeen), move |n: &'a Node| {
             text(format::age(n.last_seen_at, now))
         }),
-        table::column(bold("Certificate"), move |n: &'a Node| certificate(n, now, tokens)),
-        table::column(bold("AXLR"), move |n: &'a Node| {
+        table::column(head(NodeColumn::Certificate), move |n: &'a Node| {
+            certificate(n, now, tokens)
+        }),
+    ];
+    if !narrow {
+        columns.push(table::column(head(NodeColumn::Axlr), move |n: &'a Node| {
             text(if n.capabilities.axlr_version.is_empty() {
                 "—".to_string()
             } else {
                 n.capabilities.axlr_version.clone()
             })
-        }),
-        table::column(text(""), move |n: &'a Node| -> El<'a> {
-            if n.status.can_revoke() {
-                action(
-                    Kind::Secondary,
-                    Icon::Ban,
-                    "Revoke",
-                    Some(Message::AskRevoke(n.id.clone())),
-                    tokens,
-                )
-            } else {
-                muted(
-                    format!(
-                        "revoked {}",
-                        n.revoked_at.map(|at| format::age(at, now)).unwrap_or_default()
-                    ),
-                    tokens,
-                )
-                .into()
-            }
-        }),
-    ];
-    let list: El<'a> = if fleet.nodes.is_empty() {
-        empty(Icon::Nodes, "No node yet: make a token and enroll a host", tokens)
-    } else {
-        table::table(columns, &fleet.nodes)
-            .padding_x(12)
-            .padding_y(10)
-            .width(Length::Fill)
+        }));
+    }
+    columns.push(table::column(text(""), move |n: &'a Node| -> El<'a> {
+        if n.status.can_revoke() && narrow {
+            grid::icon_act(
+                Kind::Ghost,
+                Icon::Ban,
+                "Revoke",
+                Some(Message::AskRevoke(n.id.clone())),
+                tokens,
+            )
+        } else if n.status.can_revoke() {
+            action(
+                Kind::Ghost,
+                Icon::Ban,
+                "Revoke",
+                Some(Message::AskRevoke(n.id.clone())),
+                tokens,
+            )
+        } else {
+            muted(
+                format!(
+                    "revoked {}",
+                    n.revoked_at.map(|at| format::age(at, now)).unwrap_or_default()
+                ),
+                tokens,
+            )
             .into()
-    };
-    page = page.push(card(list, tokens));
-    scrollable(page.padding(iced::Padding {
-        right: 12.0,
-        ..Default::default()
-    }))
-    .height(Length::Fill)
-    .into()
+        }
+    }));
+    grid::sheet(columns, shown)
 }
 
 fn certificate<'a>(node: &Node, now: chrono::DateTime<chrono::Utc>, tokens: Tokens) -> El<'a> {
@@ -178,12 +232,28 @@ fn mint_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
                     ]
                     .spacing(10)
                     .align_y(Alignment::Center),
-                    super::widgets::fact("Node", bold(token.node_id.to_string()), tokens),
+                    super::widgets::fact(
+                        "Node",
+                        reader(
+                            &app.readers,
+                            ReaderKey::MintedNode,
+                            token.node_id.to_string(),
+                            Voice::Body,
+                            tokens
+                        ),
+                        tokens
+                    ),
                     super::widgets::fact("Expires", text(format::when(token.expires_at)), tokens),
-                    container(text(token.token.expose().to_string()).font(Font::MONOSPACE).size(SMALL))
-                        .padding(10)
-                        .width(Length::Fill)
-                        .style(styles::chip(tokens)),
+                    container(reader(
+                        &app.readers,
+                        ReaderKey::MintedToken,
+                        token.token.expose().to_string(),
+                        Voice::Mono,
+                        tokens
+                    ))
+                    .padding(10)
+                    .width(Length::Fill)
+                    .style(styles::chip(tokens)),
                     row![
                         action(
                             Kind::Primary,

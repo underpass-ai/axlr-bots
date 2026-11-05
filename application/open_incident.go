@@ -150,7 +150,7 @@ func (uc OpenIncident) repeat(ctx context.Context, bot domain.Bot, incident doma
 		return OpenIncidentResult{}, err
 	}
 	payload := map[string]any{"repeats": incident.Repeats(), "added": incident.Fingerprints()[before:], "status": incident.Status().String()}
-	if err := uc.rec.incidentEvent(ctx, domain.EventIncidentRepeated, bot, incident, payload); err != nil {
+	if err := uc.rec.incidentEvent(ctx, domain.EventIncidentRepeated, incident, payload); err != nil {
 		return OpenIncidentResult{}, err
 	}
 	if err := uc.rec.audit(ctx, "incident.open", incident.ID().String(), domain.AuditOK, map[string]string{"groupKey": incident.GroupKey(), "deduplicated": "true"}); err != nil {
@@ -171,6 +171,12 @@ func (uc OpenIncident) start(ctx context.Context, o opening, incident domain.Inc
 	snapshot, _ := json.Marshal(incident.Snapshot())
 	fields := map[string]any{}
 	_ = json.Unmarshal(snapshot, &fields)
+	if _, ok := fields["fingerprints"]; !ok {
+		// The snapshot leaves out an empty list, and the default
+		// template names it: an incident opened by hand with no alert
+		// fingerprints still gets its triage task.
+		fields["fingerprints"] = []string{}
+	}
 	for key, value := range o.fields {
 		fields[key] = value
 	}
@@ -217,7 +223,7 @@ func (uc OpenIncident) start(ctx context.Context, o opening, incident domain.Inc
 	if o.retry {
 		payload["retry"], payload["retries"] = true, incident.Retries()
 	}
-	if err := uc.rec.incidentEvent(ctx, kind, bot, incident, payload); err != nil {
+	if err := uc.rec.incidentEvent(ctx, kind, incident, payload); err != nil {
 		return OpenIncidentResult{}, err
 	}
 	details := map[string]string{"groupKey": incident.GroupKey(), "task": result.Task.ID().String(), "cycle": strconv.Itoa(incident.Cycle())}

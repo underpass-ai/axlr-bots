@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -116,5 +117,60 @@ func TestSkipListedLeavesOtherErrorsToTheListing(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "cannot set it aside") {
 		t.Errorf("log = %q", logs.String())
+	}
+}
+
+// TestListingSetsARefusedRecordAside: a file that is JSON but that the
+// domain refuses (here a task status it does not know) no longer stops
+// every listing of its kind: the Pending scan, the key lookup and the
+// list move it under .quarantine and answer the good tasks (QA 5 Nov
+// 2026: one such file stopped every run, every node's poll and every
+// submission).
+func TestListingSetsARefusedRecordAside(t *testing.T) {
+	var logs bytes.Buffer
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	ctx := context.Background()
+	state := t.TempDir()
+	repo := NewTaskRepository(state)
+	good, err := domain.NewTask("task-b", "bot-1", "Investigate", "k1", "", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Save(ctx, good); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(state, "tasks")
+	plant := func() {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "task-a.json"), []byte(`{"id":"task-a","botId":"bot-1","status":"Nope"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plant()
+	if _, err := repo.Get(ctx, "task-a"); err == nil {
+		t.Error("get of a refused file worked")
+	}
+	pending, err := repo.ListByStatus(ctx, domain.TaskPending)
+	if err != nil || len(pending) != 1 || pending[0].ID() != good.ID() {
+		t.Fatalf("pending past a refused file = %v %d", err, len(pending))
+	}
+	if !quarantined(t, dir, "task-a") {
+		t.Error("the refused file was not set aside")
+	}
+	if _, err := repo.Get(ctx, "task-a"); !domain.IsNotFound(err) {
+		t.Errorf("get once set aside: %v", err)
+	}
+	if !strings.Contains(logs.String(), "task task-a is refused by the domain") {
+		t.Errorf("log = %q", logs.String())
+	}
+	// The key lookup and the whole list go past one too.
+	plant()
+	if found, ok, err := repo.FindByIdempotencyKey(ctx, "bot-1", "k1", time.Time{}); err != nil || !ok || found.ID() != good.ID() {
+		t.Errorf("key lookup past a refused file: %v %v", err, ok)
+	}
+	plant()
+	if list, err := repo.List(ctx); err != nil || len(list) != 1 {
+		t.Errorf("list past a refused file: %v %d", err, len(list))
 	}
 }

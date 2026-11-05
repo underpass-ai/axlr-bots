@@ -3,6 +3,7 @@ package filestore
 import (
 	"context"
 	"path/filepath"
+	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -39,8 +40,10 @@ func (r TaskRepository) Get(_ context.Context, id domain.TaskID) (domain.Task, e
 
 // FindByIdempotencyKey scans the bot's tasks for the key. A task's bot
 // and key never change, so a task read once is matched on them without
-// reading it again; the task found is read whole and checked.
-func (r TaskRepository) FindByIdempotencyKey(ctx context.Context, bot domain.BotID, key domain.IdempotencyKey) (domain.Task, bool, error) {
+// reading it again; the task found is read whole and checked. A task of
+// the key created before since was a deleted bot's of the same id: the
+// scan goes on past it.
+func (r TaskRepository) FindByIdempotencyKey(ctx context.Context, bot domain.BotID, key domain.IdempotencyKey, since time.Time) (domain.Task, bool, error) {
 	ids, err := r.files.ids()
 	if err != nil {
 		return domain.Task{}, false, err
@@ -59,7 +62,7 @@ func (r TaskRepository) FindByIdempotencyKey(ctx context.Context, bot domain.Bot
 		}
 		found := taskKey{bot: task.BotID(), key: task.IdempotencyKey()}
 		r.keys.put(id, found)
-		if found == wanted {
+		if found == wanted && !task.CreatedAt().Before(since) {
 			return task, true, nil
 		}
 	}

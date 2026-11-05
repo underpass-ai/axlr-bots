@@ -1,15 +1,15 @@
 //! One task: the call waiting for a person, the answer, the executions
 //! and the timeline.
 
-use iced::widget::{Space, column, container, markdown, mouse_area, row, scrollable, text, text_editor};
-use iced::{Alignment, Font, Length, mouse};
+use iced::widget::{Space, column, container, markdown, responsive, row, scrollable, text, text_editor, tooltip};
+use iced::{Alignment, Font, Length};
 
 use super::widgets::{
     BODY, El, REGULAR, SMALL, action, bold, card, chip, copy_button, empty, fact, icon, icon_button, muted, pill,
     section, section_title, section_with,
 };
 use crate::application::TaskDetail;
-use crate::domain::{Execution, ExecutionKind, TaskId, TaskStatus};
+use crate::domain::{Event, Execution, ExecutionKind, NodeWait, PostDraft, TaskId, TaskStatus};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
 use crate::ui::{App, Icon, Message, Screen, Tokens, Tone};
@@ -43,43 +43,43 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     if task.is_urgent() {
         header = header.push(pill(Tone::Wait, "urgent", tokens));
     }
-    header = header.push(bold(task.headline(80)).size(22.0).width(Length::Fill));
+    header = header.push(headline(&task.objective, tokens));
     header = header.push(copy_button("Copy task", task.objective.clone(), tokens));
     if let Some(stop) = stop {
         header = header.push(stop);
     }
 
+    // Who told it: a teammate's event, said once; nothing when no
+    // teammate did, as Started by already says where it came from.
+    let mut origin = column![
+        fact(
+            "Bot",
+            super::widgets::link(
+                task.bot_id.to_string(),
+                Message::Go(Screen::Bot(task.bot_id.clone())),
+                tokens
+            ),
+            tokens
+        ),
+        fact("Started by", text(task.trigger.describe()), tokens),
+    ]
+    .spacing(8)
+    .width(Length::FillPortion(1));
+    if let Some(told) = task.told_by() {
+        origin = origin.push(fact("Told by", text(told), tokens));
+    }
+    origin = origin.push(fact(
+        "Created",
+        text(format!(
+            "{} · {}",
+            format::when(task.created_at),
+            format::ago(task.created_at, app.now)
+        )),
+        tokens,
+    ));
     let facts = card(
         row![
-            column![
-                fact(
-                    "Bot",
-                    mouse_area(bold(task.bot_id.to_string()).color(tokens.accent))
-                        .on_press(Message::Go(Screen::Bot(task.bot_id.clone())))
-                        .interaction(mouse::Interaction::Pointer),
-                    tokens
-                ),
-                fact("Started by", text(task.trigger.describe()), tokens),
-                fact(
-                    "Told by",
-                    text(
-                        task.told_by()
-                            .unwrap_or_else(|| "nobody: not a teammate's event".into())
-                    ),
-                    tokens
-                ),
-                fact(
-                    "Created",
-                    text(format!(
-                        "{} · {}",
-                        format::when(task.created_at),
-                        format::ago(task.created_at, app.now)
-                    )),
-                    tokens
-                ),
-            ]
-            .spacing(8)
-            .width(Length::FillPortion(1)),
+            origin,
             column![
                 fact("Task id", copyable(task.id.to_string(), tokens), tokens),
                 fact("Trace id", copyable(task.correlation_id.clone(), tokens), tokens),
@@ -93,9 +93,24 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     );
 
     let mut page = column![header].spacing(16);
-    // The header shows the objective's first line, cut; a longer one is
-    // here whole.
-    if task.headline(80) != task.objective.trim() {
+    // A call that waits for the person comes first: Approve and Deny in
+    // the window's first view.
+    if let Some(waiting) = approval(app, detail, tokens) {
+        page = page.push(waiting);
+    }
+    // A decision queued for a node that is away or busy: what it waits
+    // for, in a sentence, while it waits.
+    if let Some(waiting) = node_wait(app, detail, tokens) {
+        page = page.push(waiting);
+    }
+    // What it does comes next, live and once it ended alike: the cards
+    // keep their places when the task ends, so the eye keeps its own.
+    if let Some(pane) = super::activity::pane(app, detail, tokens) {
+        page = page.push(pane);
+    }
+    // The header shows the objective's first line, cut to its room; an
+    // objective the narrowest window may cut is here whole.
+    if shows_whole_below(&task.objective) {
         page = page.push(section(Icon::Tasks, "Task", text(task.objective.clone()), tokens));
     }
     page = page.push(facts);
@@ -106,9 +121,6 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
             notes = notes.push(text(note).size(SMALL));
         }
         page = page.push(section(Icon::Clock, "Knew", notes, tokens));
-    }
-    if let Some(waiting) = approval(app, detail, tokens) {
-        page = page.push(waiting);
     }
     if !task.failure_reason.is_empty() {
         // An expired task is nobody's decision in time, not a crash.
@@ -153,7 +165,7 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
                 ),
             )
         } else {
-            let style = markdown::Style::from_palette(tokens.theme().palette());
+            let style = super::widgets::markdown_style(tokens);
             (
                 markdown::view(answer.markdown.items(), markdown::Settings::with_text_size(BODY, style))
                     .map(Message::Copy),
@@ -166,9 +178,16 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
                 ),
             )
         };
+        // Only a task that ended has an answer; before, its last run's
+        // words are what it said before it stopped to ask.
+        let (glyph, title) = match task.status {
+            TaskStatus::WaitingApproval => (Icon::Hourglass, "What it said before asking you"),
+            status if !status.is_terminal() => (Icon::Hourglass, "What it said before it stopped"),
+            _ => (Icon::Check, "Answer"),
+        };
         page = page.push(section_with(
-            Icon::Check,
-            "Answer",
+            glyph,
+            title,
             vec![toggle, copy_button("Copy answer", answer.source.clone(), tokens)],
             body,
             tokens,
@@ -180,11 +199,17 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     let usage = detail.total_usage();
     let mut runs = column![
         row![
-            chip(format!("{} runs", detail.executions.len()), tokens),
-            chip(format!("{} model calls", usage.requests), tokens),
+            chip(format::count(detail.executions.len() as u64, "run", "runs"), tokens),
+            chip(
+                format::count(u64::from(usage.requests), "model call", "model calls"),
+                tokens
+            ),
             chip(format!("{} tokens", format::tokens(usage.total_tokens())), tokens),
-            chip(format!("{} tool calls", usage.tool_calls), tokens),
-            chip(format!("cost {}", format::cost(usage.cost_usd)), tokens),
+            chip(
+                format::count(u64::from(usage.tool_calls), "tool call", "tool calls"),
+                tokens
+            ),
+            chip(format!("cost {}", format::spend(detail.cost())), tokens),
         ]
         .spacing(8)
     ]
@@ -201,8 +226,8 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
             container(section_with(
                 Icon::Clock,
                 "Timeline",
-                timeline_tools(detail, tokens),
-                timeline(detail, tokens),
+                timeline_tools(app, detail, tokens),
+                timeline(app, detail, tokens),
                 tokens
             ))
             .width(Length::FillPortion(2)),
@@ -213,6 +238,7 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
         right: 12.0,
         ..Default::default()
     }))
+    .id(super::widgets::PAGE)
     .height(Length::Fill)
     .into()
 }
@@ -296,6 +322,15 @@ fn approval<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> Option<
             .align_y(Alignment::Center),
         );
     }
+    let draft = PostDraft::from_call(pending).map(|draft| {
+        let author = app
+            .fleet
+            .as_ref()
+            .and_then(|f| f.bots.iter().find(|b| b.id == detail.task.bot_id))
+            .map(|b| b.name.clone())
+            .unwrap_or_else(|| detail.task.bot_id.to_string());
+        (draft, author)
+    });
     let buttons = if deciding {
         row![icon(Icon::Hourglass, 18.0, tokens.wait), bold("Sending your answer…")]
             .spacing(10)
@@ -316,7 +351,7 @@ fn approval<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> Option<
     Some(
         container(
             column![
-                section_title(Icon::Alert, "Needs your OK", tokens),
+                section_title(Icon::Alert, "Needs OK", tokens),
                 row![
                     muted("The bot wants to call", tokens),
                     bold(pending.tool.clone()).size(20.0),
@@ -325,8 +360,14 @@ fn approval<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> Option<
                 ]
                 .spacing(10)
                 .align_y(Alignment::Center),
-                arguments,
+                // The answer before the call's words: a long argument
+                // never pushes Approve and Deny out of the first view.
                 buttons,
+                draft.map_or_else(
+                    || Space::new().height(0).into(),
+                    |(draft, author)| super::post_draft::view(draft, author, tokens),
+                ),
+                arguments,
             ]
             .spacing(14),
         )
@@ -355,7 +396,7 @@ fn execution_card<'a>(app: &'a App, execution: &'a Execution, tokens: Tokens) ->
                 "{} calls · {} tokens · {}",
                 execution.usage.requests,
                 format::tokens(execution.usage.total_tokens()),
-                format::cost(execution.usage.cost_usd)
+                format::run_cost(&execution.usage)
             ),
             tokens
         ),
@@ -459,30 +500,126 @@ fn execution_card<'a>(app: &'a App, execution: &'a Execution, tokens: Tokens) ->
         .into()
 }
 
-/// A copy of the whole timeline, once it has an event.
-fn timeline_tools<'a>(detail: &'a TaskDetail, tokens: Tokens) -> Vec<El<'a>> {
-    if detail.events.is_empty() {
-        return Vec::new();
-    }
-    vec![copy_button("Copy timeline", format::events(&detail.events), tokens)]
+/// The task's timeline without its run's progress, which the Activity
+/// shows: from the live read when it came, which holds the whole of it.
+fn timeline_events<'a>(app: &'a App, detail: &'a TaskDetail) -> Vec<&'a Event> {
+    let events = match app.live.as_ref().filter(|l| l.id == detail.task.id && l.read) {
+        Some(live) => &live.feed.events,
+        None => &detail.events,
+    };
+    events.iter().filter(|e| !e.is_progress()).collect()
 }
 
-fn timeline<'a>(detail: &'a TaskDetail, tokens: Tokens) -> El<'a> {
-    if detail.events.is_empty() {
+/// How wide a character of the title is on average, in its size: Lexend
+/// Bold.
+const TITLE_EM: f32 = 0.62;
+const TITLE_SIZE: f32 = 22.0;
+/// The longest first line the title shows whole in a 1360 px window; a
+/// longer objective is shown whole in its own card too. A title cut in a
+/// narrower window shows it whole on hover.
+const TITLE_WHOLE: usize = 40;
+
+/// Whether the objective needs its own card: more than one line, or a
+/// first line the title may cut.
+fn shows_whole_below(objective: &str) -> bool {
+    let objective = objective.trim();
+    objective.lines().count() > 1 || objective.chars().count() > TITLE_WHOLE
+}
+
+/// The objective's first line as the page's title: on one line, cut with
+/// an ellipsis to what the header's room holds.
+fn headline<'a>(objective: &'a str, tokens: Tokens) -> El<'a> {
+    responsive(move |space| {
+        let fits = ((space.width / (TITLE_EM * TITLE_SIZE)).floor() as usize).clamp(8, 80);
+        let first = objective.lines().next().unwrap_or_default().trim();
+        let short = super::grid::shorten(first, fits);
+        let cut = short != first;
+        let line = container(bold(short).size(TITLE_SIZE).wrapping(text::Wrapping::None)).clip(true);
+        if !cut {
+            return line.into();
+        }
+        tooltip(
+            line,
+            container(text(first).size(SMALL))
+                .padding(6)
+                .style(styles::chip(tokens)),
+            tooltip::Position::Bottom,
+        )
+        .into()
+    })
+    .height(Length::Shrink)
+    .into()
+}
+
+/// What the task's decision waits for while its node is away or busy.
+fn node_wait<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> Option<El<'a>> {
+    if detail.task.status != TaskStatus::Running {
+        return None;
+    }
+    let events = match app.live.as_ref().filter(|l| l.id == detail.task.id && l.read) {
+        Some(live) => &live.feed.events,
+        None => &detail.events,
+    };
+    let wait = NodeWait::current(events)?;
+    Some(
+        container(
+            row![
+                icon(Icon::Hourglass, 20.0, Tone::Late.color(&tokens)),
+                bold(format::wait(&wait)).width(Length::Fill),
+            ]
+            .spacing(12)
+            .align_y(Alignment::Center),
+        )
+        .padding(16)
+        .width(Length::Fill)
+        .style(styles::tone_card(tokens, Tone::Late))
+        .into(),
+    )
+}
+
+/// A copy of the whole timeline, once it has an event.
+fn timeline_tools<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> Vec<El<'a>> {
+    let events = timeline_events(app, detail);
+    if events.is_empty() {
+        return Vec::new();
+    }
+    vec![copy_button("Copy timeline", format::events(events), tokens)]
+}
+
+fn timeline<'a>(app: &'a App, detail: &'a TaskDetail, tokens: Tokens) -> El<'a> {
+    let events = timeline_events(app, detail);
+    if events.is_empty() {
         return empty(Icon::Clock, "No event yet", tokens);
     }
     let mut list = column![].spacing(10);
-    for event in &detail.events {
+    for event in events {
         let tone = Tone::of_event(event.tone());
         list = list.push(
             row![
                 muted(format::clock(event.created_at), tokens),
                 icon(tone.event_icon(), 16.0, tone.color(&tokens)),
-                column![bold(event.label()).size(BODY), muted(event.detail(), tokens)].spacing(2),
+                column![
+                    bold(event.label()).size(BODY),
+                    muted(format::event_detail(event), tokens)
+                ]
+                .spacing(2),
             ]
             .spacing(10)
             .align_y(Alignment::Center),
         );
     }
     list.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_objective_the_title_may_cut_is_shown_whole_below() {
+        assert!(!shows_whole_below("Check the disk"));
+        assert!(!shows_whole_below(&"x".repeat(TITLE_WHOLE)));
+        assert!(shows_whole_below(&"x".repeat(60)));
+        assert!(shows_whole_below("Check the disk\nthen the logs"));
+    }
 }

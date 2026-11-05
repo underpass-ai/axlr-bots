@@ -44,9 +44,10 @@ type Agent struct {
 	// renews before it expires; nil (over the socket) renews nothing.
 	Certificate Certificate
 
-	slots *slots
-	wg    *sync.WaitGroup
-	pokes *pokes
+	slots  *slots
+	wg     *sync.WaitGroup
+	pokes  *pokes
+	cutoff *cutoff
 }
 
 // Streamer is a transport that hears the control plane push: which
@@ -58,7 +59,8 @@ type Streamer interface {
 
 // Run registers and serves until ctx ends. A control plane that is not
 // there yet is retried; an execution in flight when ctx ends is
-// cancelled and reported as interrupted.
+// cancelled and reported as interrupted. A node the control plane says
+// is revoked stops its work, says so once and idles until ctx ends.
 func (a Agent) Run(ctx context.Context) error {
 	if a.Transport == nil || a.Executor == nil {
 		return errors.New("nodeagent: a transport and an executor are required")
@@ -67,9 +69,25 @@ func (a Agent) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("nodeagent: %w", err)
 	}
+	work, stopWork := context.WithCancel(ctx)
+	defer stopWork()
+	a.cutoff = newCutoff(id, a.Options.log(), stopWork)
+	err = a.serve(work, id)
+	if a.cutoff.happened() {
+		<-ctx.Done()
+		return nil
+	}
+	return err
+}
+
+// serve registers and works until ctx ends.
+func (a Agent) serve(ctx context.Context, id domain.NodeID) error {
 	logger := a.Options.log()
 	if err := a.registerUntilUp(ctx, id); err != nil {
 		return err
+	}
+	if ctx.Err() != nil {
+		return nil
 	}
 	a.sweepSockets()
 	a.slots, a.wg, a.pokes = newSlots(1), &sync.WaitGroup{}, newPokes()
@@ -104,7 +122,7 @@ func (a Agent) Run(ctx context.Context) error {
 		cancelPoll()
 		if err != nil {
 			a.slots.release()
-			if ctx.Err() != nil {
+			if ctx.Err() != nil || a.cutoff.revoked(err) {
 				return nil
 			}
 			logger.Printf("node: poll: %v", err)
@@ -145,7 +163,7 @@ func (a Agent) sweepSockets() {
 // serveDelegation opens the execution's socket when its bot may
 // delegate or emit events, and says where it is; "" when no tool is
 // served.
-func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, offer *application.DelegationOffer, events *application.EventsOffer) (string, func()) {
+func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, offer *application.DelegationOffer, events *application.EventsOffer, progress func(application.ProgressItem)) (string, func()) {
 	if (offer == nil && events == nil) || a.Options.SocketDir == "" || a.slots == nil {
 		return "", func() {}
 	}
@@ -159,7 +177,7 @@ func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution 
 	}
 	var handlers []mcpHandler
 	if offer != nil {
-		d := delegator{transport: a.Transport, node: id, execution: execution, slots: a.slots, pollWait: a.Options.pollWait(), log: a.Options.log()}
+		d := delegator{transport: a.Transport, node: id, execution: execution, slots: a.slots, pollWait: a.Options.pollWait(), log: a.Options.log(), progress: progress}
 		handlers = append(handlers, mcpHandler{tool: delegateTool(*offer), call: d.call})
 	}
 	if events != nil {
@@ -199,7 +217,7 @@ func (a Agent) heartbeat(ctx context.Context, id domain.NodeID) {
 			beatCtx, cancel := context.WithTimeout(ctx, a.Options.heartbeat())
 			_, err := a.Transport.Heartbeat(beatCtx, id)
 			cancel()
-			if err != nil && ctx.Err() == nil {
+			if err != nil && ctx.Err() == nil && !a.cutoff.revoked(err) {
 				a.Options.log().Printf("node: heartbeat: %v", err)
 				if domain.IsNotFound(err) {
 					_ = a.register(ctx, id)
@@ -213,7 +231,7 @@ func (a Agent) heartbeat(ctx context.Context, id domain.NodeID) {
 func (a Agent) registerUntilUp(ctx context.Context, id domain.NodeID) error {
 	for {
 		err := a.register(ctx, id)
-		if err == nil {
+		if err == nil || a.cutoff.revoked(err) {
 			return nil
 		}
 		a.Options.log().Printf("node: register: %v (retrying)", err)
@@ -254,13 +272,15 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	var report application.ExecutionReport
 	var err error
 	var bot domain.BotID
+	progress := a.startProgress(runCtx, id, assignment.ExecutionID)
 	switch {
 	case assignment.Run != nil:
 		bot = assignment.Run.BotID
 		request := *assignment.Run
-		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events)
+		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events, progress.push)
 		request.DelegationSocket = socket
 		request.OnSaid = a.say(runCtx, id, assignment.ExecutionID)
+		request.OnProgress = progress.push
 		if request.Events != nil {
 			request.OnEmit = func(command application.EmitEventCommand) (application.EmitAnswer, error) {
 				return a.Transport.Emit(runCtx, id, assignment.ExecutionID, command)
@@ -271,14 +291,18 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	case assignment.Decide != nil:
 		bot = assignment.Decide.BotID
 		request := *assignment.Decide
-		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events)
+		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events, progress.push)
 		request.DelegationSocket = socket
 		request.OnSaid = a.say(runCtx, id, assignment.ExecutionID)
+		request.OnProgress = progress.push
 		report, err = a.Executor.Decide(runCtx, request)
 		closeSocket()
 	default:
 		err = errors.New("the assignment carries neither a run nor a decision")
 	}
+	// What the run did last goes before the report, which ends the
+	// execution: the control plane takes no progress after it.
+	progress.finish()
 	if err != nil {
 		stopRun()
 		report = application.ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "node " + id.String() + ": " + err.Error(), Policy: report.Policy, Correlation: report.Correlation}
@@ -325,7 +349,9 @@ func (a Agent) uploadOne(id domain.NodeID, execution domain.ExecutionID, bot dom
 // control plane pushes that something happened to the execution, and
 // with each renewal hands the operator's new messages to the run; a
 // lease the control plane refuses for good (application.ErrLeaseLost)
-// stops the run.
+// stops the run, and so does a node it refuses (a revoked certificate):
+// the run's report would be refused too, and before, a revoked node ran
+// on to the run's end, tools and model calls included (5 November 2026).
 func (a Agent) renew(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, stopRun context.CancelFunc, poke <-chan struct{}) {
 	ticker := time.NewTicker(a.Options.renew())
 	defer ticker.Stop()
@@ -360,10 +386,17 @@ func (a Agent) renewOnce(ctx context.Context, id domain.NodeID, execution domain
 	if ctx.Err() != nil {
 		return after, false
 	}
+	if a.cutoff.revoked(err) {
+		return after, true
+	}
 	logger := a.Options.log()
 	logger.Printf("node: renew lease of %s: %v", execution, err)
 	if errors.Is(err, application.ErrLeaseLost) {
 		logger.Printf("node: execution %s: the lease is lost, stopping the run", execution)
+		return after, true
+	}
+	if domain.IsForbidden(err) {
+		logger.Printf("node: execution %s: the control plane refuses this node, stopping the run", execution)
 		return after, true
 	}
 	return after, false
@@ -481,7 +514,8 @@ func (a Agent) relay(ctx context.Context, id domain.NodeID, execution domain.Exe
 }
 
 // report hands the result over, retrying a few times: the control plane
-// accepts a repeated report once, so a retry after a lost answer is safe.
+// accepts a repeated report once, so a retry after a lost answer is safe;
+// a revoked node does not retry.
 // It uses its own context so a stopping node still reports.
 func (a Agent) report(id domain.NodeID, execution domain.ExecutionID, report application.ExecutionReport) {
 	logger := a.Options.log()
@@ -491,6 +525,11 @@ func (a Agent) report(id domain.NodeID, execution domain.ExecutionID, report app
 		cancel()
 		if err == nil {
 			logger.Printf("node: execution %s reported %s (accepted %v)", execution, report.Outcome, ack.Accepted)
+			return
+		}
+		// A revoked node's executions were failed when it was revoked:
+		// the report has nowhere to go.
+		if a.cutoff.revoked(err) {
 			return
 		}
 		logger.Printf("node: report %s (attempt %d): %v", execution, attempt, err)

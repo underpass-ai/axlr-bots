@@ -83,6 +83,9 @@ func (a Agent) renewCertificateIfDue(ctx context.Context, id domain.NodeID) {
 	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), renewalTimeout)
 	renewed, err := a.Transport.RenewCertificate(callCtx, id, csr)
 	cancel()
+	if a.cutoff.revoked(err) {
+		return
+	}
 	if err != nil {
 		logger.Printf("node: certificate renewal: %v (next try in %s)", err, a.Options.certificateCheck())
 		return

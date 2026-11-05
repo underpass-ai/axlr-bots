@@ -202,8 +202,8 @@ func TestEnrollNodeRefusals(t *testing.T) {
 	if err != nil || readmitted.Node.IsRevoked() || readmitted.Node.Status() != domain.NodeRegistered || readmitted.Serial != "serial-2" {
 		t.Errorf("readmit: %v %+v", err, readmitted.Node.Snapshot())
 	}
-	if err := NewAuthenticateNode(h.deps).Execute(ctx, "web-2", "serial-1"); !domain.IsForbidden(err) {
-		t.Errorf("the revoked serial is accepted after readmission: %v", err)
+	if err := NewAuthenticateNode(h.deps).Execute(ctx, "web-2", "serial-1"); !domain.IsForbidden(err) || domain.IsRevoked(err) {
+		t.Errorf("the revoked serial after readmission: %v (refused, but the node is no longer revoked)", err)
 	}
 	if err := NewAuthenticateNode(h.deps).Execute(ctx, "web-2", "serial-2"); err != nil {
 		t.Errorf("the new serial is refused: %v", err)
@@ -248,7 +248,7 @@ func TestRevokeNodeFailsItsExecutionsAndDeniesItsCertificate(t *testing.T) {
 	if len(h.log.audits) != 1 || h.log.audits[0].Action != "node.revoke" || h.log.audits[0].Details["failedTasks"] != task.ID().String() || h.log.audits[0].Details["serial"] != "serial-1" {
 		t.Errorf("audits = %+v", h.log.audits)
 	}
-	if err := NewAuthenticateNode(h.deps).Execute(ctx, "web-1", "serial-1"); !domain.IsForbidden(err) || !strings.Contains(err.Error(), "revoked") {
+	if err := NewAuthenticateNode(h.deps).Execute(ctx, "web-1", "serial-1"); !domain.IsRevoked(err) || !strings.Contains(err.Error(), "enroll it again") {
 		t.Errorf("authenticate revoked: %v", err)
 	}
 	if _, err := NewHeartbeatNode(h.deps).Execute(ctx, "web-1"); err == nil {

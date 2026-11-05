@@ -90,7 +90,7 @@ func TestDaemonNotifiesThenExpiresAnApprovalAndRefusesTheLateDecision(t *testing
 	if !errors.As(err, &remote) || remote.Kind != unixapi.KindApprovalExpired {
 		t.Errorf("late approve: %v", err)
 	}
-	events, _ := client.ListTaskEvents(ctx, submitted.Task.ID, 0)
+	events, _ := client.ListTaskEvents(ctx, application.TaskEventsQuery{ID: domain.TaskID(submitted.Task.ID), Limit: 0})
 	var types []string
 	for _, e := range events {
 		types = append(types, e.Type.String())

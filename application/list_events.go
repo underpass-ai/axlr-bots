@@ -23,10 +23,13 @@ func NewListEvents(deps Dependencies) ListEvents {
 }
 
 // Execute returns up to limit events (DefaultEventLimit when zero or
-// less, MaxEventLimit at most) of the bot, which must exist.
+// less, MaxEventLimit at most) of the bot. A deleted bot's history stays
+// readable, bot.deleted last: only an id that is neither a bot nor in
+// the log is not found.
 func (uc ListEvents) Execute(ctx context.Context, id domain.BotID, limit int) ([]domain.Event, error) {
-	if _, err := uc.deps.Bots.Get(ctx, id); err != nil {
-		return nil, err
+	_, missing := uc.deps.Bots.Get(ctx, id)
+	if missing != nil && !domain.IsNotFound(missing) {
+		return nil, missing
 	}
 	switch {
 	case limit <= 0:
@@ -37,6 +40,9 @@ func (uc ListEvents) Execute(ctx context.Context, id domain.BotID, limit int) ([
 	events, err := uc.deps.EventReader.ListEvents(ctx, id, limit)
 	if err != nil {
 		return nil, err
+	}
+	if len(events) == 0 && missing != nil {
+		return nil, missing
 	}
 	if events == nil {
 		events = []domain.Event{}

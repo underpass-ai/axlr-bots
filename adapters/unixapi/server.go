@@ -145,6 +145,7 @@ func (s *Server) operatorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/bots", s.listBots)
 	mux.HandleFunc("GET /v1/bots/{id}", s.getBot)
 	mux.HandleFunc("PATCH /v1/bots/{id}", s.patchBot)
+	mux.HandleFunc("DELETE /v1/bots/{id}", s.deleteBot)
 	mux.HandleFunc("POST /v1/bots/{id}/enable", s.enableBot)
 	mux.HandleFunc("POST /v1/bots/{id}/pause", s.pauseBot)
 	mux.HandleFunc("POST /v1/bots/{id}/stop", s.stopBot)
@@ -203,6 +204,7 @@ func (s *Server) nodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/subscriptions", s.authenticated(s.subscribe))
 	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/messages", s.authenticated(s.executionMessages))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/said", s.authenticated(s.said))
+	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/progress", s.authenticated(s.progress))
 }
 
 // ServeTLS serves the node protocol on the listener with the TLS
@@ -320,20 +322,22 @@ func (s *Server) listGroupEvents(w http.ResponseWriter, r *http.Request) {
 		respond(w, 0, nil, err)
 		return
 	}
-	wait := time.Duration(0)
-	if raw := r.URL.Query().Get("wait"); raw != "" {
-		parsed, err := time.ParseDuration(raw)
-		if err != nil || parsed < 0 {
-			respond(w, 0, nil, domain.ValidationError{Field: "wait", Reason: "must be a duration"})
-			return
-		}
-		wait = min(parsed, maxPollWait)
+	wait, err := queryWait(r)
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
 	}
 	query := application.GroupEventsQuery{Name: r.PathValue("name"), Tenant: r.URL.Query().Get("tenant"), After: r.URL.Query().Get("after"), Limit: limit}
+	s.pollEvents(w, r, wait, func() ([]domain.Event, error) { return s.service.ListGroupEvents(r.Context(), query) })
+}
+
+// pollEvents answers what read finds: at once when it finds an event or
+// fails, else as soon as a change brings one, or [] when wait passes.
+func (s *Server) pollEvents(w http.ResponseWriter, r *http.Request, wait time.Duration, read func() ([]domain.Event, error)) {
 	deadline := time.Now().Add(wait)
 	for {
 		changed, _ := s.service.changes.next()
-		events, err := s.service.ListGroupEvents(r.Context(), query)
+		events, err := read()
 		if err != nil || len(events) > 0 || !time.Now().Before(deadline) {
 			respond(w, http.StatusOK, events, err)
 			return
@@ -343,6 +347,20 @@ func (s *Server) listGroupEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// queryWait reads the wait parameter of a long poll, at most
+// maxPollWait: zero when it is absent.
+func queryWait(r *http.Request) (time.Duration, error) {
+	raw := r.URL.Query().Get("wait")
+	if raw == "" {
+		return 0, nil
+	}
+	parsed, err := time.ParseDuration(raw)
+	if err != nil || parsed < 0 {
+		return 0, domain.ValidationError{Field: "wait", Reason: "must be a duration"}
+	}
+	return min(parsed, maxPollWait), nil
 }
 
 // publishGroupEvent is POST /v1/groups/{name}/events?tenant=: the
@@ -379,6 +397,11 @@ func (s *Server) pauseBot(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) stopBot(w http.ResponseWriter, r *http.Request) {
 	value, err := s.service.StopBot(r.Context(), r.PathValue("id"))
+	respond(w, http.StatusOK, value, err)
+}
+
+func (s *Server) deleteBot(w http.ResponseWriter, r *http.Request) {
+	value, err := s.service.DeleteBot(r.Context(), r.PathValue("id"))
 	respond(w, http.StatusOK, value, err)
 }
 
@@ -448,14 +471,22 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, value, err)
 }
 
+// listTaskEvents is GET /v1/tasks/{id}/events?after=&limit=&wait=: the
+// task's timeline after the caller's last event, waiting for a new one
+// as a team's timeline does.
 func (s *Server) listTaskEvents(w http.ResponseWriter, r *http.Request) {
 	limit, err := queryLimit(r)
 	if err != nil {
 		respond(w, 0, nil, err)
 		return
 	}
-	value, err := s.service.ListTaskEvents(r.Context(), r.PathValue("id"), limit)
-	respond(w, http.StatusOK, value, err)
+	wait, err := queryWait(r)
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	query := application.TaskEventsQuery{ID: domain.TaskID(r.PathValue("id")), After: r.URL.Query().Get("after"), Limit: limit}
+	s.pollEvents(w, r, wait, func() ([]domain.Event, error) { return s.service.ListTaskEvents(r.Context(), query) })
 }
 
 // getOverview is GET /v1/overview?since=: the dashboard's counts.
@@ -540,6 +571,21 @@ func (s *Server) said(w http.ResponseWriter, r *http.Request) {
 	}
 	err := application.NewRecordSaid(s.service.Dependencies()).Execute(r.Context(), id, executionID, reply)
 	respond(w, http.StatusOK, map[string]bool{"recorded": err == nil}, err)
+}
+
+// progress is POST .../executions/{exec}/progress: what the node's run
+// did since the last batch.
+func (s *Server) progress(w http.ResponseWriter, r *http.Request) {
+	id, executionID, ok := nodeExecution(w, r)
+	if !ok {
+		return
+	}
+	var batch application.ProgressBatch
+	if !readJSON(w, r, &batch) {
+		return
+	}
+	answer, err := application.NewRecordProgress(s.service.Dependencies()).Execute(r.Context(), id, executionID, batch)
+	respond(w, http.StatusOK, answer, err)
 }
 
 // openIncident is POST /v1/incidents: an alert group. 201 for a new

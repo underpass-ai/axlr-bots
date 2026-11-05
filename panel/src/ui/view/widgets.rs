@@ -2,13 +2,21 @@
 
 use iced::font::{Family, Weight};
 use iced::widget::text::{LineHeight, Wrapping};
-use iced::widget::{Space, button, column, container, mouse_area, responsive, row, svg, text, text_input, tooltip};
+use iced::widget::text_editor::Binding;
+use iced::widget::{
+    Space, button, column, container, mouse_area, responsive, row, svg, text, text_editor, text_input, tooltip,
+};
 use iced::{Alignment, Color, Element, Font, Length, Padding, mouse};
 
+pub use super::voice::Voice;
 use crate::ui::styles::{self, Kind};
-use crate::ui::{Icon, Message, Tokens, Tone};
+use crate::ui::{Icon, Message, ReaderKey, Readers, Tokens, Tone};
 
 pub type El<'a> = Element<'a, Message>;
+
+/// The id of the scrollable page of every screen, which goes back to its
+/// top when another screen opens.
+pub const PAGE: &str = "page";
 
 /// The panel's typeface for words: Lexend, made for reading fluency,
 /// embedded with the binary (`assets/fonts`).
@@ -72,31 +80,106 @@ pub fn number<'a>(words: impl text::IntoFragment<'a>) -> text::Text<'a> {
     text(words).font(NUMERAL).size(NUMBER)
 }
 
-/// The size at which `value` fits `width` in the pixel face, whose every
-/// glyph is half an em wide: `NUMBER` while it fits, smaller for a long
-/// value, a cost of `$1234.56` in a narrow window, never under `SMALL`.
+/// The sign of a floor, `≥ $0.42`: a cost some run did not tell. The
+/// pixel face has no glyph for it, so it is drawn in the face for words.
+pub const FLOOR: char = '≥';
+
+/// How wide a point is drawn in the pixel face, in ems. Every glyph of
+/// the face is half an em wide, and a point's ink sits at the left of
+/// its cell: at a full cell `$0.12` reads `$0. 12`.
+const POINT_EMS: f32 = 0.25;
+
+/// How wide the sign of a floor is beside a number, in the number's ems.
+const FLOOR_EMS: f32 = 0.6;
+
+/// How many ems `value` takes in the pixel face.
+fn number_ems(value: &str) -> f32 {
+    value
+        .chars()
+        .map(|c| match c {
+            '.' => POINT_EMS,
+            FLOOR => FLOOR_EMS,
+            ' ' => 0.0,
+            _ => 0.5,
+        })
+        .sum()
+}
+
+/// The size at which `value` fits `width` in the pixel face: `NUMBER`
+/// while it fits, smaller for a long value, a cost of `$1234.56` in a
+/// narrow window, never under `SMALL`.
 fn number_size(value: &str, width: f32) -> f32 {
-    let ems = value.chars().count() as f32 * 0.5;
     // Two pixels to spare, so rounding never pushes the last digit out.
-    ((width - 2.0) / ems).clamp(SMALL, NUMBER)
+    ((width - 2.0) / number_ems(value).max(0.5)).clamp(SMALL, NUMBER)
+}
+
+/// A number in the pixel face at `size`: each point in a cell as wide as
+/// its ink, and the sign of a floor in the face for words.
+fn pixel_number<'a>(value: &str, size: f32, color: Color) -> El<'a> {
+    let mut line = row![].align_y(Alignment::End);
+    let value = match value.strip_prefix(FLOOR) {
+        Some(rest) => {
+            line = line.push(
+                container(text(FLOOR.to_string()).font(REGULAR).size(size * 0.55).color(color))
+                    .width(size * FLOOR_EMS)
+                    .padding(Padding {
+                        bottom: size * 0.12,
+                        ..Padding::ZERO
+                    }),
+            );
+            rest.trim_start()
+        }
+        None => value,
+    };
+    for (index, part) in value.split('.').enumerate() {
+        if index > 0 {
+            line = line.push(
+                container(number(".").size(size).color(color).wrapping(Wrapping::None))
+                    .width(size * POINT_EMS)
+                    .clip(true),
+            );
+        }
+        if !part.is_empty() {
+            line = line.push(
+                number(part.to_string())
+                    .size(size)
+                    .color(color)
+                    .wrapping(Wrapping::None),
+            );
+        }
+    }
+    line.into()
 }
 
 /// A number in the pixel face as big as its place lets it be, on a line
 /// as high as a big number's, so the cards of a row end level.
 fn fitted_number<'a>(value: String, color: Color) -> El<'a> {
     responsive(move |space| {
-        container(
-            number(value.clone())
-                .size(number_size(&value, space.width))
-                .color(color)
-                .wrapping(Wrapping::None),
-        )
-        .height(LineHeight::default().to_absolute(NUMBER.into()))
-        .align_y(Alignment::End)
-        .into()
+        container(pixel_number(&value, number_size(&value, space.width), color))
+            .height(LineHeight::default().to_absolute(NUMBER.into()))
+            .align_y(Alignment::End)
+            .into()
     })
     .height(Length::Shrink)
     .into()
+}
+
+/// How Markdown reads in the panel: in its face for words, with the
+/// theme's colours. Iced's own style draws it in the system's face.
+/// Code in a line is ink on a chip, as the rest of the panel's chips,
+/// not white on black.
+pub fn markdown_style(tokens: Tokens) -> iced::widget::markdown::Style {
+    use iced::widget::markdown::{Highlight, Style};
+    Style {
+        font: REGULAR,
+        inline_code_color: tokens.text,
+        inline_code_highlight: Highlight {
+            background: tokens.raised.into(),
+            border: iced::border::rounded(4).color(tokens.border).width(1),
+        },
+        inline_code_padding: Padding::from([0, 2]),
+        ..Style::from_palette(tokens.theme().palette())
+    }
 }
 
 /// A page title with its icon.
@@ -120,9 +203,15 @@ pub fn section_title<'a>(glyph: Icon, words: impl text::IntoFragment<'a>, tokens
 
 /// A status in a pill: the tone's icon, colour and a word or two.
 pub fn pill<'a>(tone: Tone, label: impl text::IntoFragment<'a>, tokens: Tokens) -> El<'a> {
+    pill_with(tone.icon(), tone, label, tokens)
+}
+
+/// A pill in a tone's colour with an icon of its own, for a status
+/// whose meaning is not its tone's: a severity, a diagnosis.
+pub fn pill_with<'a>(glyph: Icon, tone: Tone, label: impl text::IntoFragment<'a>, tokens: Tokens) -> El<'a> {
     let ink = styles::pill_ink(tokens, tone);
     container(
-        row![icon(tone.icon(), 13.0, ink), semibold(label).size(SMALL).color(ink)]
+        row![icon(glyph, 13.0, ink), semibold(label).size(SMALL).color(ink)]
             .spacing(5)
             .align_y(Alignment::Center),
     )
@@ -168,20 +257,30 @@ pub fn stat<'a>(
     on_press: Option<Message>,
     tokens: Tokens,
 ) -> El<'a> {
-    let color = tone.color(&tokens);
+    // Calm by default: a grey icon and an ink number; only a number that
+    // calls for a look keeps its tone, and only the one card that asks a
+    // person to act is tinted.
+    let number_ink = match tone {
+        Tone::Wait | Tone::Late | Tone::Bad => tone.color(&tokens),
+        Tone::Good | Tone::Busy | Tone::Idle => tokens.text,
+    };
     let body = column![
+        // A gap the label never closes, even when the card is narrow.
         row![
             text(label).size(SMALL).color(tokens.muted),
             Space::new().width(Length::Fill),
-            icon(glyph, 16.0, color)
+            icon(glyph, 16.0, tokens.muted)
         ]
+        .spacing(6)
         .align_y(Alignment::Center),
-        fitted_number(value, color),
+        fitted_number(value, number_ink),
     ]
     .spacing(4);
-    let card = container(body).padding(Padding::from([12, 16])).width(Length::Fill);
-    let card = if matches!(tone, Tone::Wait | Tone::Bad) {
-        card.style(styles::tone_card(tokens, tone))
+    // Seven cards share a row: a side of 12 leaves the longest label,
+    // `expired today`, its gap to the icon at 1360 px.
+    let card = container(body).padding(12).width(Length::Fill);
+    let card = if tone == Tone::Wait {
+        card.style(styles::stat_call(tokens, tone))
     } else {
         card.style(styles::card(tokens))
     };
@@ -202,14 +301,8 @@ pub fn action<'a>(
     on_press: Option<Message>,
     tokens: Tokens,
 ) -> El<'a> {
-    let color = match kind {
-        Kind::Primary | Kind::Chip(true) => tokens.on_accent,
-        Kind::Danger => styles::on(tokens.bad),
-        Kind::Good => styles::on(tokens.good),
-        _ => tokens.text,
-    };
     button(
-        row![icon(glyph, 16.0, color), semibold(label).size(BODY)]
+        row![icon(glyph, 16.0, ink(kind, tokens)), semibold(label).size(BODY)]
             .spacing(8)
             .align_y(Alignment::Center),
     )
@@ -217,6 +310,16 @@ pub fn action<'a>(
     .style(styles::button_style(tokens, kind))
     .on_press_maybe(on_press)
     .into()
+}
+
+/// The colour of a button's icon: its words' colour.
+pub fn ink(kind: Kind, tokens: Tokens) -> Color {
+    match kind {
+        Kind::Primary | Kind::Chip(true) => tokens.on_accent,
+        Kind::Danger => styles::pill_ink(tokens, Tone::Bad),
+        Kind::Good => styles::pill_ink(tokens, Tone::Good),
+        _ => tokens.text,
+    }
 }
 
 /// A quiet small button that copies `value`, named for what it copies.
@@ -302,4 +405,119 @@ pub fn empty<'a>(glyph: Icon, words: impl text::IntoFragment<'a>, tokens: Tokens
     .padding(24)
     .center_x(Length::Fill)
     .into()
+}
+
+/// Words to read that a person can select a part of and copy with the
+/// mouse and Ctrl+C: a read-only editor as tall as its words, with no
+/// box and no caret until clicked, whose wheel scrolls the page. Until
+/// the state holds the passage's reader, the words show as plain text.
+pub fn reader<'a>(readers: &'a Readers, key: ReaderKey, words: String, voice: Voice, tokens: Tokens) -> El<'a> {
+    match readers.get(&key).filter(|reader| reader.source() == words) {
+        Some(reader) => text_editor(reader.content())
+            .on_action(move |action| Message::Read(key.clone(), action))
+            .key_binding(selection_only)
+            .font(voice.font())
+            .size(voice.size())
+            .padding(0)
+            .wrapping(Wrapping::WordOrGlyph)
+            .style(styles::reading(tokens, voice.color(tokens)))
+            .into(),
+        None => text(words)
+            .font(voice.font())
+            .size(voice.size())
+            .color(voice.color(tokens))
+            .wrapping(Wrapping::WordOrGlyph)
+            .width(Length::Fill)
+            .into(),
+    }
+}
+
+/// A reader's keys: those that move, select and copy; none that edits.
+fn selection_only(press: text_editor::KeyPress) -> Option<Binding<Message>> {
+    match Binding::from_key_press(press)? {
+        binding @ (Binding::Copy
+        | Binding::Unfocus
+        | Binding::Move(_)
+        | Binding::Select(_)
+        | Binding::SelectWord
+        | Binding::SelectLine
+        | Binding::SelectAll) => Some(binding),
+        _ => None,
+    }
+}
+
+/// The width kept for a status pill in a list that is not a table, so
+/// the words after it start at one edge row under row.
+pub const PILL_SLOT: f32 = 106.0;
+
+/// Something in a slot of a fixed width, at its start.
+pub fn slot<'a>(content: impl Into<El<'a>>, width: f32) -> El<'a> {
+    container(content).width(width).clip(true).into()
+}
+
+/// Go to a row's own page: the word, then a thin chevron, quiet until
+/// the pointer is on it.
+pub fn open<'a>(label: &'a str, on_press: Message, tokens: Tokens) -> El<'a> {
+    button(
+        row![semibold(label).size(BODY), icon(Icon::Next, 14.0, tokens.muted)]
+            .spacing(6)
+            .align_y(Alignment::Center),
+    )
+    .padding(Padding::from([8, 10]))
+    .style(styles::button_style(tokens, Kind::Ghost))
+    .on_press(on_press)
+    .into()
+}
+
+/// A name that opens its page: ink, the accent under the pointer, so
+/// copper stays for the one act of a place.
+pub fn link<'a>(words: impl text::IntoFragment<'a>, on_press: Message, tokens: Tokens) -> El<'a> {
+    button(bold(words))
+        .padding(0)
+        .style(styles::button_style(tokens, Kind::Link))
+        .on_press(on_press)
+        .into()
+}
+
+/// A few choices joined on one track, the picked one lifted off it as
+/// a surface: one control, not a row of separate buttons.
+pub fn segmented<'a, T: Copy + PartialEq + 'a>(
+    choices: impl IntoIterator<Item = T>,
+    picked: T,
+    label: impl Fn(T) -> &'a str,
+    on_pick: impl Fn(T) -> Message,
+    tokens: Tokens,
+) -> El<'a> {
+    let mut track = row![].spacing(2).align_y(Alignment::Center);
+    for choice in choices {
+        let on = choice == picked;
+        let words = if on {
+            semibold(label(choice))
+        } else {
+            text(label(choice))
+        };
+        track = track.push(
+            button(words.size(SMALL))
+                .padding(Padding::from([4, 10]))
+                .style(styles::button_style(tokens, Kind::Segment(on)))
+                .on_press_maybe((!on).then(|| on_pick(choice))),
+        );
+    }
+    container(track).padding(2).style(styles::segments(tokens)).into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_point_and_a_floor_take_their_own_width() {
+        assert_eq!(number_ems("12"), 1.0);
+        assert_eq!(number_ems("$0.12"), 2.25);
+        assert_eq!(number_ems("≥ $0.12"), 2.85);
+        assert_eq!(number_size("1/43", 400.0), NUMBER);
+        assert_eq!(number_size("$1234.56", 40.0), SMALL);
+        assert!((number_size("$0.12", 92.0) - 40.0).abs() < 1e-3);
+        assert_eq!(number_size("", 100.0), NUMBER);
+    }
 }

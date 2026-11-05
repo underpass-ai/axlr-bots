@@ -151,6 +151,25 @@
             "$ref": "#/components/responses/Error"
           }
         }
+      },
+      "delete": {
+        "operationId": "deleteBot",
+        "description": "delete the bot: resolve its open incidents, cancel every task it has not finished and the delegated children it asked for, remove its timers and drop its approval notifications; its history stays. The answer names the other bots that still name it",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
       }
     },
     "/v1/bots/{id}/enable": {
@@ -323,6 +342,7 @@
       ],
       "get": {
         "operationId": "listBotEvents",
+        "description": "the bot's newest events, oldest first; a deleted bot's history stays readable, bot.deleted last, and only an id that is no bot and has no events is not found",
         "parameters": [
           {
             "name": "limit",
@@ -563,7 +583,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "one bot"
+            "description": "one bot, from its registration on: an id registered again after a delete does not list its predecessor's tasks"
           },
           {
             "name": "status",
@@ -707,7 +727,17 @@
       ],
       "get": {
         "operationId": "listTaskEvents",
+        "description": "the task's timeline, oldest first, after the caller's last event; bot.task.progress events say what a running execution does",
         "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "the id of the last event the caller has; absent or older than the window: the newest limit"
+          },
           {
             "name": "limit",
             "in": "query",
@@ -715,7 +745,16 @@
             "schema": {
               "type": "integer"
             },
-            "description": "newest events to return, oldest first"
+            "description": "newest events to return, oldest first (100 by default, at most 1000)"
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "a duration up to 30s: wait for a new event and answer as soon as there is one, or empty"
           }
         ],
         "responses": {
@@ -1754,6 +1793,22 @@
           "approvals": {
             "$ref": "#/components/schemas/ApprovalsSnapshot"
           },
+          "autoApprove": {
+            "type": "array",
+            "description": "the calls approved without a person: replaces approvals.autoApprove only, the rest of approvals (its notification secrets) stays. Each item is a rule or, for short, a tool name (every call of that tool); the bot keeps rules",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "description": "a tool name: the rule with no arguments",
+                  "example": "local_exec"
+                },
+                {
+                  "$ref": "#/components/schemas/ToolRuleSnapshot"
+                }
+              ]
+            }
+          },
           "budgets": {
             "$ref": "#/components/schemas/BudgetsDefinition"
           },
@@ -2261,6 +2316,10 @@
           },
           "resource": {
             "type": "string"
+          },
+          "revoked": {
+            "type": "boolean",
+            "description": "on a forbidden answer to a node: the node was revoked, and only a fresh enrollment readmits it"
           }
         },
         "required": [
@@ -2336,6 +2395,7 @@
           "bot.enabled",
           "bot.updated",
           "bot.paused",
+          "bot.deleted",
           "bot.trigger.fired",
           "bot.task.submitted",
           "bot.task.started",
@@ -2349,6 +2409,7 @@
           "bot.task.delegated",
           "bot.task.message",
           "bot.task.said",
+          "bot.task.progress",
           "bot.delegation.refused",
           "bot.event.emitted",
           "bot.event.refused",
@@ -2859,6 +2920,10 @@
               "$ref": "#/components/schemas/BotStatus"
             }
           },
+          "costUnknownSince": {
+            "type": "integer",
+            "description": "executions since whose cost is not known: costUsdSince is at least what it says"
+          },
           "costUsdSince": {
             "type": "number"
           },
@@ -3257,6 +3322,78 @@
           "bot",
           "cancelled",
           "notCancelled"
+        ]
+      },
+      "DeleteResponse": {
+        "type": "object",
+        "x-go-type": "unixapi.DeleteResponse",
+        "properties": {
+          "bot": {
+            "$ref": "#/components/schemas/BotSnapshot"
+          },
+          "cancelled": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the bot's tasks cancelled"
+          },
+          "childrenCancelled": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the delegated tasks it asked other bots for, cancelled"
+          },
+          "incidentsResolved": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "timersRemoved": {
+            "type": "integer"
+          },
+          "notificationsDropped": {
+            "type": "integer"
+          },
+          "namedBy": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BotReference"
+            },
+            "description": "the other bots that still name it; left as they are"
+          }
+        },
+        "required": [
+          "bot",
+          "cancelled",
+          "childrenCancelled",
+          "incidentsResolved",
+          "timersRemoved",
+          "notificationsDropped",
+          "namedBy"
+        ]
+      },
+      "BotReference": {
+        "type": "object",
+        "x-go-type": "application.BotReference",
+        "properties": {
+          "botId": {
+            "type": "string"
+          },
+          "how": {
+            "type": "string",
+            "description": "delegation (its delegation.to names the bot) or subscription (a topic it listens to names the bot in from)"
+          },
+          "topic": {
+            "type": "string",
+            "description": "the topic, for a subscription"
+          }
+        },
+        "required": [
+          "botId",
+          "how"
         ]
       },
       "SubmitRequest": {
@@ -3701,6 +3838,10 @@
           "completionTokens": {
             "type": "integer"
           },
+          "costUnknown": {
+            "type": "boolean",
+            "description": "the run stopped before it said what it spent (killed at its timeout or cancelled, with no receipt yet): its cost is not known, and costUsd is 0"
+          },
           "costUsd": {
             "type": "number"
           },
@@ -3821,6 +3962,10 @@
           "costUsd": {
             "type": "number",
             "description": "what its tasks' executions reported, delegated children included"
+          },
+          "costUnknown": {
+            "type": "boolean",
+            "description": "one of its executions stopped before it said what it cost: costUsd is at least what it says (absent when false)"
           },
           "openedAt": {
             "type": "string",

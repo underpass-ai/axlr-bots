@@ -59,6 +59,19 @@ func (m *memoryBots) List(context.Context) ([]domain.Bot, error) {
 	return out, nil
 }
 
+func (m *memoryBots) Delete(_ context.Context, id domain.BotID) error {
+	if m.fail != nil {
+		return m.fail
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.bots[id]; !ok {
+		return domain.NotFoundError{Kind: "bot", ID: id.String()}
+	}
+	delete(m.bots, id)
+	return nil
+}
+
 type memoryTasks struct {
 	tasks    map[domain.TaskID]domain.Task
 	fail     error
@@ -111,9 +124,9 @@ func (m *memoryTasks) List(context.Context) ([]domain.Task, error) {
 	return out, nil
 }
 
-func (m *memoryTasks) FindByIdempotencyKey(_ context.Context, bot domain.BotID, key domain.IdempotencyKey) (domain.Task, bool, error) {
+func (m *memoryTasks) FindByIdempotencyKey(_ context.Context, bot domain.BotID, key domain.IdempotencyKey, since time.Time) (domain.Task, bool, error) {
 	for _, t := range m.tasks {
-		if t.BotID() == bot && t.IdempotencyKey() == key {
+		if t.BotID() == bot && t.IdempotencyKey() == key && !t.CreatedAt().Before(since) {
 			return t, true, nil
 		}
 	}
@@ -242,6 +255,7 @@ type memoryNodes struct {
 	nodes    map[domain.NodeID]domain.Node
 	fail     error
 	listFail error
+	getFail  error
 }
 
 func (m *memoryNodes) Save(_ context.Context, node domain.Node) error {
@@ -256,6 +270,9 @@ func (m *memoryNodes) Save(_ context.Context, node domain.Node) error {
 }
 
 func (m *memoryNodes) Get(_ context.Context, id domain.NodeID) (domain.Node, error) {
+	if m.getFail != nil {
+		return domain.Node{}, m.getFail
+	}
 	node, ok := m.nodes[id]
 	if !ok {
 		return domain.Node{}, domain.NotFoundError{Kind: "node", ID: id.String()}

@@ -25,18 +25,26 @@ type ListTasks struct {
 func NewListTasks(deps Dependencies) ListTasks { return ListTasks{deps: deps} }
 
 // Execute validates the query and answers at most its limit of tasks,
-// the newest created first. A bot that does not exist is not found.
+// the newest created first. A bot that does not exist is not found. A
+// bot's list starts when the bot was registered, as its idempotency
+// lookup does: an id registered again after a delete does not show its
+// predecessor's tasks, which the list across bots keeps.
 func (uc ListTasks) Execute(ctx context.Context, query TaskQuery) ([]domain.Task, error) {
 	var bot domain.BotID
+	since := query.Since
 	if query.BotID != "" {
 		id, err := domain.NewBotID(query.BotID)
 		if err != nil {
 			return nil, err
 		}
-		if _, err := uc.deps.Bots.Get(ctx, id); err != nil {
+		found, err := uc.deps.Bots.Get(ctx, id)
+		if err != nil {
 			return nil, err
 		}
 		bot = id
+		if found.CreatedAt().After(since) {
+			since = found.CreatedAt()
+		}
 	}
 	var status domain.TaskStatus
 	if query.Status != "" {
@@ -68,7 +76,7 @@ func (uc ListTasks) Execute(ctx context.Context, query TaskQuery) ([]domain.Task
 		if status != "" && task.Status() != status {
 			continue
 		}
-		if task.CreatedAt().Before(query.Since) {
+		if task.CreatedAt().Before(since) {
 			continue
 		}
 		tasks = append(tasks, task)

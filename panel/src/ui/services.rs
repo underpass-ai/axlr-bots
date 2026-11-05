@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use super::{BotView, Connection, Effect, Message};
 use crate::application::{
-    CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader, DownloadArtifact, FilePicker,
-    FollowBotEvents, FollowTeamEvents, KeySource, ListIncidents, ListTopics, LoadChat, LoadTaskDetail,
-    MintEnrollmentToken, Notifier, PanelError, PatchBot, PublishEvent, RefreshFleet, RegisterBot, ResolveIncident,
-    RevokeNode, SaveSubscriptions, SendChat, ShortcutSource, ShowIncident, StopBot, SubmitTask, SwitchBot,
+    ApplyInBulk, BulkOutcome, CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader, DeleteBot,
+    DownloadArtifact, FilePicker, FollowBotEvents, FollowTaskEvents, FollowTeamEvents, KeySource, ListIncidents,
+    ListTopics, LoadChat, LoadTaskDetail, MintEnrollmentToken, Notifier, PanelError, PatchBot, PublishEvent,
+    RefreshFleet, RegisterBot, ResolveIncident, RevokeNode, SaveBotEdit, SaveSubscriptions, SendChat, ShortcutSource,
+    ShowIncident, StopBot, SubmitTask, SwitchBot,
 };
 use crate::domain::BotPatch;
 
@@ -36,7 +37,7 @@ impl Services {
     /// The clipboard is the runtime's; it answers `None` here.
     pub async fn execute(self, effect: Effect) -> Option<Message> {
         let message = match effect {
-            Effect::Copy(_) | Effect::FocusWindow => return None,
+            Effect::Copy(_) | Effect::FocusWindow | Effect::ShowEnd(_) | Effect::ScrollTop => return None,
             Effect::Notify { notice, open } => {
                 return match self.notifier.show(notice).await {
                     Ok(true) => Some(Message::NoticeClicked(open)),
@@ -68,6 +69,13 @@ impl Services {
                     Err(e) => Err(e),
                 };
                 Message::TaskLoaded(id, result)
+            }
+            Effect::FollowTask { id, feed, wait } => {
+                let result = match self.control_plane() {
+                    Ok(cp) => FollowTaskEvents::new(cp).execute(id.clone(), feed, wait).await,
+                    Err(e) => Err(e),
+                };
+                Message::TaskFollowed(id, result)
             }
             Effect::FollowBot(id, feed) => {
                 let result = match self.control_plane() {
@@ -138,6 +146,24 @@ impl Services {
                 Ok(cp) => StopBot::new(cp).execute(id).await,
                 Err(e) => Err(e),
             }),
+            Effect::SaveBotEdit(id, edit) => Message::EditSaved(match self.control_plane() {
+                Ok(cp) => SaveBotEdit::new(cp).execute(id, edit).await,
+                Err(e) => Err(e),
+            }),
+            Effect::PreviewDelete(id) => {
+                let result = match self.control_plane() {
+                    Ok(cp) => DeleteBot::new(cp).preview(id.clone()).await,
+                    Err(e) => Err(e),
+                };
+                Message::DeletePreviewed(id, result)
+            }
+            Effect::DeleteBot(id) => {
+                let result = match self.control_plane() {
+                    Ok(cp) => DeleteBot::new(cp).delete(id.clone()).await,
+                    Err(e) => Err(e),
+                };
+                Message::BotDeleted(id, result)
+            }
             Effect::Submit {
                 bot,
                 objective,
@@ -246,6 +272,16 @@ impl Services {
             Effect::Decide(id, decision, call_id) => Message::Decided(match self.control_plane() {
                 Ok(cp) => DecideTask::new(cp).execute(id, decision, call_id).await,
                 Err(e) => Err(e),
+            }),
+            Effect::Bulk { action, targets } => Message::BulkDone(match self.control_plane() {
+                Ok(cp) => ApplyInBulk::new(cp).execute(action, targets).await,
+                Err(e) => {
+                    let mut outcome = BulkOutcome::new(action);
+                    for target in targets {
+                        outcome.record(target.name(), Err(e.clone()));
+                    }
+                    outcome
+                }
             }),
         };
         Some(message)

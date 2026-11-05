@@ -2,7 +2,16 @@
 
 use chrono::{DateTime, Duration, Local, Utc};
 
-use crate::domain::Event;
+use crate::domain::{Cost, Event, NodeWait, Usage};
+
+/// A count with its noun, one or many: `1 run`, `3 runs`.
+pub fn count(n: u64, one: &str, many: &str) -> String {
+    if n == 1 {
+        format!("1 {one}")
+    } else {
+        format!("{n} {many}")
+    }
+}
 
 /// `now`, `12s`, `5m`, `3h`, `2d` ago.
 pub fn age(from: DateTime<Utc>, now: DateTime<Utc>) -> String {
@@ -51,6 +60,26 @@ pub fn cost(usd: f64) -> String {
     }
 }
 
+/// What runs cost together: `$0.42`, or `≥ $0.42` when some run did not
+/// tell its cost.
+pub fn spend(cost: Cost) -> String {
+    if cost.is_floor() {
+        format!("≥ {}", self::cost(cost.usd))
+    } else {
+        self::cost(cost.usd)
+    }
+}
+
+/// What one run cost: `$0.0012`, or `cost unknown` when it stopped
+/// before it said.
+pub fn run_cost(usage: &Usage) -> String {
+    if usage.cost_unknown {
+        "cost unknown".to_string()
+    } else {
+        cost(usage.cost_usd)
+    }
+}
+
 /// A file's size as `512 B`, `2.0 KB`, `10.0 MB`, in steps of 1024.
 pub fn bytes(count: u64) -> String {
     const KB: u64 = 1024;
@@ -75,13 +104,66 @@ pub fn clock(moment: DateTime<Utc>) -> String {
     moment.with_timezone(&Local).format("%H:%M:%S").to_string()
 }
 
+/// A task's Activity one entry per line, `14:05:09 list_pods · ok ·
+/// 120 ms`, then the model's words: what a copy of the Activity takes.
+pub fn activity(activity: &crate::application::Activity) -> String {
+    let mut lines: Vec<String> = activity
+        .entries
+        .iter()
+        .map(|entry| format!("{} {}", clock(entry.at()), entry.headline()))
+        .collect();
+    if !activity.thinking.trim().is_empty() {
+        lines.push(String::new());
+        lines.push(format!("Thinking: {}", activity.thinking.trim()));
+    }
+    if !activity.text.trim().is_empty() {
+        lines.push(String::new());
+        lines.push(activity.text.trim().to_string());
+    }
+    lines.join("\n")
+}
+
+/// An event's detail as a person reads it: what a decision queued for a
+/// node waits for, with the time in the person's own clock, or the
+/// event's own detail.
+pub fn event_detail(event: &Event) -> String {
+    NodeWait::of(event)
+        .map(|wait| self::wait(&wait))
+        .unwrap_or_else(|| event.detail())
+}
+
+/// What a decision queued for a node waits for, in a sentence: `Waiting
+/// for node web-1, offline since 11:09`, in local time.
+pub fn wait(wait: &NodeWait) -> String {
+    let node = &wait.node;
+    match (&wait.since, wait.busy_with.is_empty(), wait.status.as_str()) {
+        (Some(since), _, status) if !status.is_empty() => format!(
+            "Waiting for node {node}, {} since {}",
+            status.to_lowercase(),
+            since.with_timezone(&Local).format("%H:%M")
+        ),
+        (_, false, _) => format!("Waiting for node {node}, busy with task {}", wait.busy_with.join(", ")),
+        (_, true, "gone") => format!("Waiting for node {node}, which is gone"),
+        (_, true, "") => upper_first(&wait.said),
+        (_, true, status) => format!("Waiting for node {node}, which is {status}"),
+    }
+}
+
+fn upper_first(words: &str) -> String {
+    let mut chars = words.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
 /// Events one per line, `14:05:09 Failed · the file does not exist`:
 /// what a copy of a timeline takes.
 pub fn events<'a>(events: impl IntoIterator<Item = &'a Event>) -> String {
     events
         .into_iter()
         .map(|event| {
-            let detail = event.detail();
+            let detail = event_detail(event);
             let head = format!("{} {}", clock(event.created_at), event.label());
             if detail.is_empty() {
                 head
@@ -118,6 +200,69 @@ pub fn short_id(id: &str, keep: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn counts_say_one_or_many() {
+        assert_eq!(count(1, "run", "runs"), "1 run");
+        assert_eq!(count(0, "run", "runs"), "0 runs");
+        assert_eq!(count(3, "tool call", "tool calls"), "3 tool calls");
+    }
+
+    #[test]
+    fn a_cost_some_run_did_not_tell_is_a_floor() {
+        assert_eq!(spend(Cost::new(0.42, 0)), "$0.42");
+        assert_eq!(spend(Cost::new(0.42, 2)), "≥ $0.42");
+        assert_eq!(spend(Cost::new(0.0, 1)), "≥ $0");
+        let mut usage = Usage {
+            cost_usd: 0.0012,
+            ..Default::default()
+        };
+        assert_eq!(run_cost(&usage), "$0.0012");
+        usage = Usage {
+            cost_unknown: true,
+            ..Default::default()
+        };
+        assert_eq!(run_cost(&usage), "cost unknown");
+    }
+
+    #[test]
+    fn says_what_a_queued_decision_waits_for_in_local_time() {
+        let since: DateTime<Utc> = "2026-11-05T10:09:26Z".parse().unwrap();
+        let mut wait = NodeWait {
+            node: "web-1".into(),
+            status: "Offline".into(),
+            since: Some(since),
+            busy_with: Vec::new(),
+            said: "waiting for node web-1, offline since 10:09 UTC".into(),
+            execution: "exec-2".into(),
+        };
+        let local = since.with_timezone(&Local).format("%H:%M").to_string();
+        assert_eq!(
+            super::wait(&wait),
+            format!("Waiting for node web-1, offline since {local}")
+        );
+        wait.since = None;
+        assert_eq!(super::wait(&wait), "Waiting for node web-1, which is Offline");
+        wait.status = "gone".into();
+        assert_eq!(super::wait(&wait), "Waiting for node web-1, which is gone");
+        wait.status.clear();
+        wait.busy_with = vec!["task-9".into(), "task-8".into()];
+        assert_eq!(
+            super::wait(&wait),
+            "Waiting for node web-1, busy with task task-9, task-8"
+        );
+        wait.busy_with.clear();
+        assert_eq!(super::wait(&wait), "Waiting for node web-1, offline since 10:09 UTC");
+        assert_eq!(upper_first(""), "");
+        let event: Event = serde_json::from_value(serde_json::json!({
+            "eventId": "e1", "type": "bot.task.decided", "tenantId": "t", "createdAt": "2026-11-05T10:13:37Z",
+            "payload": {"decision": "approve", "nodeId": "web-1", "nodeStatus": "Offline",
+                "waiting": "waiting for node web-1, which is Offline"}
+        }))
+        .unwrap();
+        assert_eq!(event_detail(&event), "Waiting for node web-1, which is Offline");
+        assert_eq!(event.detail(), "waiting for node web-1, which is Offline");
+    }
 
     #[test]
     fn events_one_per_line() {

@@ -3,11 +3,15 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 
 use super::ModeChoice;
-use super::{BotChoice, BotView, Connection, NodeChoice, Screen, ThemeMode};
-use crate::application::{ChatSent, EventFeed, Fleet, PanelError, StoppedBot, SubscriptionChange, TaskDetail};
+use super::table::{ColumnRef, List, RowRef};
+use super::{BotChoice, BotView, Connection, Keypress, NodeChoice, ReaderKey, Screen, ThemeMode};
+use crate::application::{
+    BulkAction, BulkOutcome, ChatSent, DeletePreview, EventFeed, Fleet, PanelError, SavedEdit, StoppedBot,
+    SubscriptionChange, TaskDetail,
+};
 use crate::domain::{
-    AutonomyLevel, Bot, BotId, CancelledTask, DecidedTask, EnrollmentToken, ExecutionId, Incident, NodeId, Published,
-    RevokedNode, SubmittedTask, TaskId, TaskStatus, Topic,
+    AutonomyLevel, Bot, BotId, CancelledTask, DecidedTask, DeletedBot, EnrollmentToken, ExecutionId, Incident, NodeId,
+    Published, RevokedNode, SubmittedTask, TaskId, TaskStatus, ToolAccess, Topic,
 };
 
 /// Everything that happens in the panel: what the operator does, the
@@ -16,6 +20,10 @@ use crate::domain::{
 pub enum Message {
     Tick(DateTime<Utc>),
     Go(Screen),
+    /// Esc or Enter, when no widget took it.
+    Key(Keypress),
+    /// A click, drag or key in a reader: it selects, it never edits.
+    Read(ReaderKey, iced::widget::text_editor::Action),
     ToggleTheme,
     SetTheme(ThemeMode),
     DismissBanner,
@@ -32,6 +40,17 @@ pub enum Message {
         result: Result<Fleet, PanelError>,
     },
     TaskLoaded(TaskId, Result<TaskDetail, PanelError>),
+    /// What a read of the task's timeline brought, for its Activity.
+    TaskFollowed(TaskId, Result<EventFeed, PanelError>),
+    /// Open or close the details of an Activity entry.
+    ActivityPick(usize),
+    /// The cursor or the selection moved in the model's words.
+    WordsSelect(iced::widget::text_editor::Action),
+    /// The model's words as text to select (`true`), or to read as they come.
+    WordsSelecting(bool),
+    /// The person scrolled a box of the running task's Activity: whether
+    /// it now shows its end.
+    ActivityScrolled(super::LiveStream, bool),
     BotLoaded(BotId, Result<BotView, PanelError>),
 
     MintOpen,
@@ -89,6 +108,28 @@ pub enum Message {
     TeamLoaded(String, Result<EventFeed, PanelError>),
     /// A team's topics; `None` from a control plane older than the route.
     TopicsLoaded(String, Result<Option<Vec<Topic>>, PanelError>),
+
+    /// Edit a bot's mission and tools: open, change, save or cancel.
+    EditOpen(BotId),
+    EditClose,
+    EditMission(String),
+    /// What a listed tool may do, by its place in the list.
+    EditAccess(usize, ToolAccess),
+    EditRemove(usize),
+    EditNewTool(String),
+    EditNewAccess(ToolAccess),
+    /// Add the tool typed, or the one a suggestion names.
+    EditAdd(Option<String>),
+    EditSave,
+    EditSaved(Result<SavedEdit, PanelError>),
+    /// Delete a bot: open the confirmation, read what it will do, type
+    /// its id, delete.
+    DeleteOpen(BotId),
+    DeletePreviewed(BotId, Result<DeletePreview, PanelError>),
+    DeleteTyped(String),
+    DeleteClose,
+    DeleteSend,
+    BotDeleted(BotId, Result<DeletedBot, PanelError>),
 
     /// Make a bot listen to a topic: open the form, fill it, save.
     ListenOpen(BotId),
@@ -156,4 +197,20 @@ pub enum Message {
         result: Result<Connection, PanelError>,
         saved: bool,
     },
+
+    /// The keyboard's modifiers as they change: Shift held makes a
+    /// header press add its column to the order.
+    Modifiers(iced::keyboard::Modifiers),
+    /// A list's header pressed.
+    SortBy(ColumnRef),
+    /// A row's box ticked or not.
+    Pick(RowRef, bool),
+    /// The header's box: every row shown picked, or none.
+    PickShown(List, bool),
+    /// Let go of a list's picked rows.
+    ClearPicks(List),
+    /// An act from the bar over a list, on its picked rows: weigh it,
+    /// then ask once.
+    AskBulk(List, BulkAction),
+    BulkDone(BulkOutcome),
 }

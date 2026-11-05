@@ -1,6 +1,7 @@
 use iced::Color;
 
 use super::{Icon, Tokens};
+use crate::application::ToolState;
 use crate::domain::{
     BotStatus, CallVerdict, EventTone, ExecutionOutcome, IncidentSeverity, IncidentStatus, NodeStatus, TaskStatus,
 };
@@ -63,17 +64,17 @@ impl Tone {
     pub fn of_bot(status: BotStatus) -> Self {
         match status {
             BotStatus::Enabled => Self::Good,
-            BotStatus::Paused => Self::Wait,
-            BotStatus::Draft | BotStatus::Registered | BotStatus::Unknown => Self::Idle,
+            // Paused on purpose: grey, not a call for a person.
+            BotStatus::Paused | BotStatus::Draft | BotStatus::Registered | BotStatus::Unknown => Self::Idle,
         }
     }
 
-    /// What a bot is doing now: amber when it waits for a person or is
-    /// paused, busy when it works, quiet otherwise.
+    /// What a bot is doing now: amber when it waits for a person, busy
+    /// when it works, quiet otherwise, paused included.
     pub fn of_now(now: &crate::application::BotNow) -> Self {
         use crate::application::BotNow;
         match now {
-            BotNow::Waiting { .. } | BotNow::Off(BotStatus::Paused) => Self::Wait,
+            BotNow::Waiting { .. } => Self::Wait,
             BotNow::Working { .. } => Self::Busy,
             BotNow::Queued { .. } | BotNow::Off(_) | BotNow::Idle => Self::Idle,
         }
@@ -97,6 +98,17 @@ impl Tone {
             ExecutionOutcome::DecisionRequired => Self::Wait,
             ExecutionOutcome::Failed => Self::Bad,
             ExecutionOutcome::Cancelled | ExecutionOutcome::Unknown => Self::Idle,
+        }
+    }
+
+    /// Where a tool call of a live run stands.
+    pub fn of_tool(state: ToolState) -> Self {
+        match state {
+            ToolState::Running => Self::Busy,
+            ToolState::Waiting => Self::Wait,
+            ToolState::Ok => Self::Good,
+            ToolState::Denied | ToolState::Failed => Self::Bad,
+            ToolState::Unfinished => Self::Idle,
         }
     }
 
@@ -149,7 +161,7 @@ mod tests {
     fn what_a_bot_does_now_has_a_tone() {
         use crate::application::BotNow;
         assert_eq!(Tone::of_now(&BotNow::Idle), Tone::Idle);
-        assert_eq!(Tone::of_now(&BotNow::Off(BotStatus::Paused)), Tone::Wait);
+        assert_eq!(Tone::of_now(&BotNow::Off(BotStatus::Paused)), Tone::Idle);
         assert_eq!(Tone::of_now(&BotNow::Off(BotStatus::Draft)), Tone::Idle);
     }
 
@@ -158,7 +170,7 @@ mod tests {
         assert_eq!(Tone::of_node(NodeStatus::Online), Tone::Good);
         assert_eq!(Tone::of_node(NodeStatus::Registered), Tone::Idle);
         assert_eq!(Tone::of_node(NodeStatus::Revoked), Tone::Bad);
-        assert_eq!(Tone::of_bot(BotStatus::Paused), Tone::Wait);
+        assert_eq!(Tone::of_bot(BotStatus::Paused), Tone::Idle);
         assert_eq!(Tone::of_bot(BotStatus::Draft), Tone::Idle);
         assert_eq!(Tone::of_bot(BotStatus::Enabled), Tone::Good);
         assert_eq!(Tone::of_task(TaskStatus::WaitingApproval), Tone::Wait);

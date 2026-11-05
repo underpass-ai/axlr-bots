@@ -9,7 +9,7 @@ use iced::widget::{Text, container, text};
 use iced::{Rectangle, Settings, Size};
 use iced_test::{Simulator, simulator};
 
-use super::runtime::{MIN_WINDOW, WINDOW};
+use super::runtime::{FONTS, MIN_WINDOW, WINDOW};
 use super::test_runtime::{connected, send};
 use super::view::tests::app;
 use super::view::widgets::{self, El};
@@ -23,14 +23,6 @@ static SIMULATOR: Mutex<()> = Mutex::new(());
 pub(super) fn turn() -> MutexGuard<'static, ()> {
     SIMULATOR.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
-
-/// The panel's typefaces, as `runtime::launch` gives them to the window.
-const FONTS: [&[u8]; 4] = [
-    include_bytes!("../../assets/fonts/Lexend-Regular.ttf"),
-    include_bytes!("../../assets/fonts/Lexend-SemiBold.ttf"),
-    include_bytes!("../../assets/fonts/Lexend-Bold.ttf"),
-    include_bytes!("../../assets/fonts/DotGothic16-Latin.ttf"),
-];
 
 /// A simulator's settings with the panel's typefaces, so its texts are
 /// as wide as in the window. The typefaces go into the renderer's shared
@@ -108,6 +100,15 @@ fn simulator_misses(app: &App, word: &str) -> bool {
     ui.find(word).is_err()
 }
 
+/// Fails unless the screen holds a reader of `words` under `key`.
+fn reads(app: &App, key: ReaderKey, words: &str) {
+    let reader = app
+        .readers
+        .get(&key)
+        .unwrap_or_else(|| panic!("no reader {key:?} on {:?}", app.screen));
+    assert!(reader.source().contains(words), "{key:?} reads {:?}", reader.source());
+}
+
 fn shows(app: &App, words: &[&str]) {
     let _turn = turn();
     let mut ui = simulator(view::view(app));
@@ -132,6 +133,32 @@ fn the_first_run_shows_the_settings_and_connects_on_a_click() {
     assert!(matches!(sent.as_slice(), [Message::SettingsSave]));
 }
 
+/// Home lists the five newest calls and the way to all of them, and
+/// the nodes that are not online before the others.
+#[test]
+fn home_caps_what_needs_you_and_puts_nodes_away_first() {
+    let mut app = connected();
+    let fleet = app.fleet.as_mut().unwrap();
+    let waiting = fleet
+        .tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::WaitingApproval)
+        .unwrap()
+        .clone();
+    let shown = fleet.waiting().len();
+    for n in shown..7 {
+        let mut copy = waiting.clone();
+        copy.id = crate::domain::TaskId::new(&format!("task-wait-{n}")).unwrap();
+        fleet.tasks.push(copy);
+    }
+    fleet.nodes[1].status = crate::domain::NodeStatus::Offline;
+    shows(&app, &["2 more wait for you", "See all 7", "Offline"]);
+    assert!(matches!(
+        messages_of_click(&app, "See all 7").as_slice(),
+        [Message::FilterStatus(Some(TaskStatus::WaitingApproval))]
+    ));
+}
+
 #[test]
 fn home_shows_the_counts_and_what_needs_a_person() {
     let mut app = connected();
@@ -146,13 +173,16 @@ fn home_shows_the_counts_and_what_needs_a_person() {
             "expired today",
             "Needs you",
             "Review",
-            "gx10-ff95",
             "Latest tasks",
             "2/2 nodes online",
             "127.0.0.1:7879",
         ],
     );
     shows(&app, &["wants local_write · hello", "Approve", "Deny"]);
+    // Each node says when it was last seen.
+    let node = &app.fleet.as_ref().unwrap().nodes[0];
+    let seen = format!("seen {}", crate::ui::format::age(node.last_seen_at, app.now));
+    shows(&app, &[seen.as_str()]);
     assert!(matches!(
         messages_of_click(&app, "Approve").as_slice(),
         [Message::Approve(_)]
@@ -182,12 +212,19 @@ fn the_cost_of_the_day_shows_whole_and_the_short_counts_stay_big() {
         let cost = format::cost(usd);
         for width in [MIN_WINDOW.width, WINDOW.width] {
             // In the pixel face at the size its card gives it, which its
-            // line's height tells.
-            shows_whole(&app, width, &cost, |room| {
-                widgets::number(cost.clone()).size(room.height / 1.3)
-            });
+            // line's height tells; the point in a cell of its own.
+            for part in cost.split('.') {
+                shows_whole(&app, width, part, |room| {
+                    widgets::number(part.to_string()).size(room.height / 1.3)
+                });
+            }
         }
     }
+    // Runs that did not tell their cost: at least, and how many.
+    app.fleet.as_mut().unwrap().overview.cost_unknown_since = 2;
+    shows(&app, &["≥", "2 runs unknown"]);
+    app.fleet.as_mut().unwrap().overview.cost_unknown_since = 1;
+    shows(&app, &["1 run unknown"]);
     let _turn = turn();
     for width in [MIN_WINDOW.width, WINDOW.width] {
         let mut ui = Simulator::with_size(panel_settings(), Size::new(width, 2000.0), view::view(&app));
@@ -255,16 +292,20 @@ fn the_nodes_screen_lists_the_nodes_and_mints_a_token() {
     send(&mut app, Message::Go(Screen::Nodes));
     shows(
         &app,
-        &[
-            "Nodes",
-            "wrx80",
-            "wrx80-node1",
-            "gpu=rtx3090",
-            "364 days",
-            "0.14.0",
-            "Revoke",
-        ],
+        &["Nodes", "wrx80", "wrx80-node1", "gpu=rtx3090", "364 days", "0.14.0"],
     );
+    // In the smallest window Revoke is an icon on each row; picked rows
+    // get it in words on the bar, and a wide window has both.
+    send(&mut app, Message::PickShown(crate::ui::table::List::Nodes, true));
+    shows(&app, &["2 nodes selected", "Revoke"]);
+    send(&mut app, Message::ClearPicks(crate::ui::table::List::Nodes));
+    {
+        let _turn = turn();
+        let mut wide = Simulator::with_size(panel_settings(), Size::new(1600.0, 1000.0), view::view(&app));
+        for word in ["AXLR", "0.14.0", "Revoke"] {
+            assert!(wide.find(word).is_ok(), "{word} is not on the wide Nodes");
+        }
+    }
     if let Some(fleet) = app.fleet.as_mut() {
         fleet.nodes[1].capabilities.dedicated = true;
     }
@@ -297,16 +338,17 @@ fn the_bots_screen_lists_switches_and_adds() {
     send(&mut app, Message::Go(Screen::Bots));
     shows(
         &app,
-        &[
-            "Bots",
-            "bot-act-with-approval",
-            "Ask first",
-            "claude-haiku-5.5",
-            "wrx80",
-            "From file",
-            "Pause",
-        ],
+        &["Bots", "bot-wrx80", "Ask first", "wrx80", "From file", "Runs on"],
     );
+    // The model is cut to its column in the smallest window, whole in
+    // a wide one.
+    {
+        let _turn = turn();
+        let mut wide = Simulator::with_size(panel_settings(), Size::new(1600.0, 1000.0), view::view(&app));
+        for word in ["claude-haiku-5.5", "bot-act-with-approval", "Starts by"] {
+            assert!(wide.find(word).is_ok(), "{word} is not on the wide Bots");
+        }
+    }
     app.apply(Message::RegisterOpen);
     shows(
         &app,
@@ -375,7 +417,7 @@ fn the_bots_screen_lists_switches_and_adds() {
             "Copy mission",
             "Advanced",
             "Now",
-            "Waits for you",
+            "Needs OK",
             "It waits for your OK before it goes on.",
         ],
     );
@@ -465,20 +507,25 @@ fn the_tasks_screen_filters_and_sends() {
         &[
             "Tasks",
             "All 5",
-            "Waiting 1",
+            "Needs OK 1",
             "Failed 1",
             "Expired 1",
             "Write hello into hello.txt",
-            "Open",
+            "Age",
         ],
     );
+    // A row's acts are icons with tips; the words are on the bar once
+    // rows are picked.
+    send(&mut app, Message::PickShown(crate::ui::table::List::Tasks, true));
+    shows(
+        &app,
+        &["5 tasks selected", "Approve 1 of 5", "Deny 1 of 5", "Stop 2 of 5"],
+    );
     assert!(matches!(
-        messages_of_click(&app, "Approve").as_slice(),
-        [Message::Approve(_)]
+        messages_of_click(&app, "Approve 1 of 5").as_slice(),
+        [Message::AskBulk(_, crate::application::BulkAction::Approve)]
     ));
-    app.deciding = app.fleet.as_ref().unwrap().waiting().first().map(|t| t.id.clone());
-    assert!(messages_of_click(&app, "Approve").is_empty(), "one answer at a time");
-    app.deciding = None;
+    send(&mut app, Message::ClearPicks(crate::ui::table::List::Tasks));
     let sent = messages_of_click(&app, "Failed 1");
     assert!(matches!(
         sent.as_slice(),
@@ -488,7 +535,8 @@ fn the_tasks_screen_filters_and_sends() {
     shows(&app, &["List the files in your workspace"]);
     app.apply(Message::SubmitOpen(Some(BotId::new("bot-wrx80").unwrap())));
     app.apply(Message::SubmitObjective("Count the files".into()));
-    shows(&app, &["New task", "Send", "key test-1: sending twice makes one task"]);
+    shows(&app, &["New task", "Send"]);
+    reads(&app, ReaderKey::SubmitKey, "key test-1: sending twice makes one task");
     assert!(matches!(
         messages_of_click(&app, "Send").as_slice(),
         [Message::SubmitSend]
@@ -503,7 +551,7 @@ fn a_waiting_task_shows_the_call_and_its_answers() {
     shows(
         &app,
         &[
-            "Needs your OK",
+            "Needs OK",
             "It asked you",
             "local_write",
             "hello.txt",
@@ -530,6 +578,61 @@ fn a_waiting_task_shows_the_call_and_its_answers() {
     ));
     app.deciding = app.task.as_ref().map(|t| t.task.id.clone());
     shows(&app, &["Sending your answer…"]);
+}
+
+/// The call a bot stops on before it publishes a post: a program on the
+/// node with the words and two pictures as arguments.
+pub(crate) fn publishing_call() -> crate::domain::PendingDecision {
+    crate::domain::PendingDecision {
+        tool: "local_exec".into(),
+        call_id: "call-9".into(),
+        session_id: "sess-9".into(),
+        arguments: Some(serde_json::json!({
+            "program": "/home/me/x-ai-news/bin/x-post",
+            "args": [
+                "--topic", "hardware",
+                "--text", "A r/LocalLLaMA user reports DeepSeek-V4.1-Flash on 4x RTX 3090 and 256GB DDR4 at 524k context: prefill 400-600 tok/s, decode 30-40 tok/s.\n\nA home multi-GPU speed reference. No logs or config linked.\nhttps://www.reddit.com/r/LocalLLaMA/comments/1xnkr5q/",
+                "--card", "{\"template\":\"headline\",\"headline\":\"DeepSeek V4.1 Flash at 524k context on 4x RTX 3090\",\"kicker\":\"r/LocalLLaMA user report\"}",
+                "--card", "{\"template\":\"flow\",\"title\":\"How Maya runs a 748B MoE on a home rig\",\"steps\":[]}"
+            ],
+            "timeout_ms": 120000
+        })),
+    }
+}
+
+#[test]
+fn a_waiting_call_that_publishes_shows_the_post_as_it_would_read() {
+    use crate::adapters::fake::FakeControlPlane;
+    let fake = std::sync::Arc::new(FakeControlPlane::sample("2026-10-25T10:00:00Z".parse().unwrap()));
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    let id = fake.add_waiting_call(
+        "bot-act-with-approval",
+        "Propose today's post about AI news",
+        publishing_call(),
+    );
+    let draft = crate::domain::PostDraft::from_call(&publishing_call()).unwrap();
+    send(&mut app, Message::Go(Screen::Task(id)));
+    shows(
+        &app,
+        &[
+            "Needs OK",
+            "local_exec",
+            "As it would read",
+            "bot-act-with-approval",
+            "· x-post · not posted yet",
+            "headline · DeepSeek V4.1 Flash at 524k context on 4x RTX 3090",
+            "flow · How Maya runs a 748B MoE on a home rig",
+            &format!("{} characters · 1 link · 2 attachments", draft.characters()),
+            "Copy text",
+            "Approve",
+            "Deny",
+        ],
+    );
+    // The call that writes a file is not a post.
+    let id = app.fleet.as_ref().unwrap().waiting()[0].id.clone();
+    send(&mut app, Message::Go(Screen::Task(id)));
+    assert!(simulator_misses(&app, "As it would read"));
 }
 
 #[test]
@@ -663,7 +766,7 @@ fn errors_and_empty_places_say_so() {
 fn now_says_what_each_bot_is_doing() {
     let mut app = connected();
     send(&mut app, Message::Go(Screen::Bots));
-    shows(&app, &["Now", "Working", "Say the time", "Waits for you", "Idle"]);
+    shows(&app, &["Now", "Working", "Say the time", "Needs OK", "Idle"]);
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
     shows(&app, &["Working", "Say the time", "Open task"]);
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot-wrx80").unwrap())));
@@ -730,7 +833,14 @@ fn the_teams_screen_shows_who_is_in_each_and_what_happens() {
     send(&mut app, Message::Tick(tick + chrono::Duration::seconds(3)));
     shows(
         &app,
-        &["ops", "2 bots", "lab", "only one bot: a typo?", "bot · bot-wrx80"],
+        &[
+            "ops",
+            "Members",
+            "Last word",
+            "lab",
+            "only one bot: a typo?",
+            "bot · bot-wrx80",
+        ],
     );
     let sent = messages_of_click(&app, "Open");
     assert!(matches!(sent.as_slice(), [Message::Go(Screen::Team(name))] if name == "lab"));
@@ -817,6 +927,15 @@ fn a_bot_page_shows_its_team_and_an_urgent_order() {
     ));
 }
 
+/// None of `words` is on the screen.
+fn hides(app: &App, words: &[&str]) {
+    let _turn = turn();
+    let mut ui = simulator(view::view(app));
+    for word in words {
+        assert!(ui.find(*word).is_err(), "{word} is on {:?}", app.screen);
+    }
+}
+
 #[test]
 fn a_task_says_it_was_urgent_and_why_it_stopped() {
     let mut app = connected();
@@ -826,7 +945,8 @@ fn a_task_says_it_was_urgent_and_why_it_stopped() {
     shows(&app, &["urgent: it goes first and stops what the bot is doing"]);
     app.apply(Message::SubmitObjective("Come back".into()));
     send(&mut app, Message::SubmitSend);
-    shows(&app, &["urgent", "Told by", "nobody: not a teammate's event"]);
+    shows(&app, &["urgent", "Started by"]);
+    hides(&app, &["Told by", "nobody"]);
 }
 
 #[test]
@@ -1114,7 +1234,7 @@ fn the_incidents_screen_lists_them_and_opens_one() {
         &[
             "Incidents",
             "Severity",
-            "Repeats",
+            "Status",
             "Last seen",
             "HighLatency on checkout",
             "Disk almost full on db-0",
@@ -1159,28 +1279,41 @@ fn an_incident_shows_its_alerts_diagnosis_and_tasks_and_resolves() {
     let mut app = connected();
     send(&mut app, Message::Go(Screen::Incident("inc-latency".into())));
     let task = app.incidents.detail.as_ref().unwrap().task_ids[0].clone();
+    // The task by what it was asked, not by its id.
+    let asked = app
+        .fleet
+        .as_ref()
+        .unwrap()
+        .tasks
+        .iter()
+        .find(|t| t.id == task)
+        .unwrap()
+        .ask()
+        .to_string();
     shows(
         &app,
         &[
-            "HighLatency on checkout",
             "sev2",
             "Open",
             "Alerts",
             "Firing",
-            "fp-checkout-2",
             "Went green",
-            "fp-checkout-1",
             "Tasks",
-            task.as_str(),
+            asked.as_str(),
             "Running",
             "acme",
-            "alertmanager",
             "$0.0042",
             "Resolve",
         ],
     );
+    // The title, the source and the alerts read in readers: a part of
+    // them selects and copies.
+    reads(&app, ReaderKey::IncidentTitle, "HighLatency on checkout");
+    reads(&app, ReaderKey::IncidentSource, "alertmanager");
+    reads(&app, ReaderKey::Fingerprint("fp-checkout-2".into()), "fp-checkout-2");
+    reads(&app, ReaderKey::Fingerprint("fp-checkout-1".into()), "fp-checkout-1");
     assert!(matches!(
-        messages_of_click(&app, task.as_str()).as_slice(),
+        messages_of_click(&app, asked.as_str()).as_slice(),
         [Message::Go(Screen::Task(id))] if *id == task
     ));
     assert!(matches!(
@@ -1204,15 +1337,12 @@ fn an_incident_shows_its_alerts_diagnosis_and_tasks_and_resolves() {
     send(&mut app, Message::Go(Screen::Incident("inc-disk".into())));
     shows(
         &app,
-        &[
-            "Diagnosis",
-            "The WAL volume grows 2 GB an hour.",
-            "Why it was escalated",
-            "No task worked on it",
-        ],
+        &["Diagnosis", "Why it was escalated", "No task worked on it", "≥ $0.03"],
     );
+    reads(&app, ReaderKey::IncidentDiagnosis, "The WAL volume grows 2 GB an hour.");
     send(&mut app, Message::Go(Screen::Incident("inc-cert".into())));
-    shows(&app, &["Why it was resolved", "Renewed by hand."]);
+    shows(&app, &["Why it was resolved"]);
+    reads(&app, ReaderKey::IncidentReason, "Renewed by hand.");
     assert!(simulator_misses(&app, "Resolve"), "a resolved incident has no Resolve");
 }
 
@@ -1251,4 +1381,252 @@ fn a_finished_task_lists_its_files_and_saves_a_kept_one() {
     }
     app.downloading = true;
     assert!(messages_of_click(&app, "Save").is_empty(), "one save at a time");
+}
+
+#[test]
+fn a_running_task_shows_its_activity_live_and_every_part_copies() {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    let tasks = &app.fleet.as_ref().unwrap().tasks;
+    let running = tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::Running)
+        .unwrap()
+        .id
+        .clone();
+    let done = tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::Completed)
+        .unwrap()
+        .id
+        .clone();
+    fake.progress(
+        &running,
+        serde_json::json!([
+            {"kind": "delegation", "bot": "bot-wrx80", "taskId": done.to_string()},
+            {"kind": "thinking", "text": "The clock may drift."}
+        ]),
+    );
+    send(&mut app, Message::Go(Screen::Task(running.clone())));
+    shows(
+        &app,
+        &[
+            "What it thinks",
+            "The clock may drift.",
+            "Copy thinking",
+            "Activity",
+            "live",
+            "Talk to it",
+            "Copy activity",
+            "local_exec",
+            "ok",
+            "40 ms",
+            "get_time",
+            "running",
+            "Asked bot-wrx80",
+            "Open task",
+            "What it says",
+            "Copy words",
+        ],
+    );
+    // The run's progress is in the Activity, not in the timeline.
+    assert!(simulator_misses(&app, "Working"));
+    assert!(matches!(
+        messages_of_click(&app, "Talk to it").as_slice(),
+        [Message::Go(Screen::Bot(bot))] if bot.as_str() == "bot"
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Open task").as_slice(),
+        [Message::Go(Screen::Task(child))] if *child == done
+    ));
+    let copied = messages_of_click(&app, "Copy activity");
+    assert!(matches!(
+        copied.as_slice(),
+        [Message::Copy(all)] if all.contains("local_exec · ok · 40 ms") && all.contains("Checking it against the time server.") && all.contains("Thinking: The clock may drift.")
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Copy thinking").as_slice(),
+        [Message::Copy(thoughts)] if thoughts == "The clock may drift."
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Copy words").as_slice(),
+        [Message::Copy(words)] if words.starts_with("I will read the host's clock.")
+    ));
+
+    // A click on a step opens its details, which copy too.
+    assert!(matches!(
+        messages_of_click(&app, "local_exec").as_slice(),
+        [Message::ActivityPick(0)]
+    ));
+    send(&mut app, Message::ActivityPick(0));
+    shows(
+        &app,
+        &["Arguments", "{\"program\":\"date\"}", "Call id", "c1", "Copy step"],
+    );
+    assert!(matches!(
+        messages_of_click(&app, "Copy step").as_slice(),
+        [Message::Copy(step)] if step.starts_with("local_exec · ok · 40 ms\nTool: local_exec")
+    ));
+    let copied = send(&mut app, Message::Copy("x".into()));
+    assert_eq!(copied, ["x"]);
+}
+
+#[test]
+fn a_finished_task_keeps_its_activity_and_a_task_without_one_shows_none() {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    let tasks = &app.fleet.as_ref().unwrap().tasks;
+    let running = tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::Running)
+        .unwrap()
+        .id
+        .clone();
+    let done = tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::Completed)
+        .unwrap()
+        .id
+        .clone();
+    send(&mut app, Message::Go(Screen::Task(done)));
+    assert!(simulator_misses(&app, "Activity"));
+    send(&mut app, Message::Go(Screen::Task(running.clone())));
+    send(&mut app, Message::AskCancel(running));
+    send(&mut app, Message::ConfirmYes);
+    let tick = app.now + chrono::Duration::seconds(3);
+    send(&mut app, Message::Tick(tick));
+    shows(&app, &["Activity", "local_exec", "no end seen", "Copy activity"]);
+    assert!(simulator_misses(&app, "Talk to it"));
+}
+
+#[test]
+fn a_bridged_call_shows_its_mcp_tool_its_arguments_and_why_it_failed() {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    let running = app
+        .fleet
+        .as_ref()
+        .unwrap()
+        .tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::Running)
+        .unwrap()
+        .id
+        .clone();
+    fake.progress(
+        &running,
+        serde_json::json!([
+            {"kind": "tool.started", "tool": "axlr_call_tool", "mcpTool": "get_status", "callId": "c7",
+             "summary": "{\"env\":\"pre\",\"only_failed\":true}"},
+            {"kind": "tool.ended", "tool": "axlr_call_tool", "callId": "c7", "status": "failed",
+             "error": "the session expired: log in again", "durationMs": 300}
+        ]),
+    );
+    send(&mut app, Message::Go(Screen::Task(running)));
+    shows(
+        &app,
+        &[
+            "get_status",
+            "{\"env\":\"pre\",\"only_failed\":true}",
+            "failed",
+            "the session expired: log in again",
+        ],
+    );
+    let index = app
+        .live
+        .as_ref()
+        .unwrap()
+        .activity
+        .entries
+        .iter()
+        .position(|e| e.headline().starts_with("get_status"))
+        .unwrap();
+    send(&mut app, Message::ActivityPick(index));
+    shows(&app, &["MCP tool", "axlr_call_tool", "Error"]);
+}
+
+#[test]
+fn a_waiting_task_shows_approve_first_and_its_words_to_read_or_select() {
+    use crate::adapters::fake::FakeControlPlane;
+    let fake = std::sync::Arc::new(FakeControlPlane::sample("2026-10-25T10:00:00Z".parse().unwrap()));
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    let id = app.fleet.as_ref().unwrap().waiting()[0].id.clone();
+    fake.progress(
+        &id,
+        serde_json::json!([
+            {"kind": "text", "text": "The file is **missing**; I want to write it."},
+            {"kind": "tool.started", "tool": "local_write", "callId": "c7"},
+            {"kind": "decision.required", "tool": "local_write", "callId": "c7"}
+        ]),
+    );
+    send(&mut app, Message::Go(Screen::Task(id)));
+    let top = |word: &str| {
+        let _turn = turn();
+        let mut ui = simulator(view::view(&app));
+        ui.find(word).unwrap_or_else(|e| panic!("{word}: {e:?}")).bounds().y
+    };
+    // Approve and Deny come before the Activity, in the first view.
+    assert!(top("Approve") < top("What it says"));
+    assert!(top("Approve") < 600.0);
+    shows(&app, &["Needs OK to call local_write", "Select words"]);
+    // The words read formatted: no Markdown marks in sight.
+    assert!(simulator_misses(&app, "The file is **missing**; I want to write it."));
+    assert!(!app.live.as_ref().unwrap().markdown.items().is_empty());
+    assert!(matches!(
+        messages_of_click(&app, "Select words").as_slice(),
+        [Message::WordsSelecting(true)]
+    ));
+    send(&mut app, Message::WordsSelecting(true));
+    assert!(matches!(
+        messages_of_click(&app, "Formatted").as_slice(),
+        [Message::WordsSelecting(false)]
+    ));
+    // What its run said before it asked is not an answer: the task has
+    // not ended.
+    app.answer = Some(crate::ui::Answer::new("I want to write it.".into()));
+    shows(&app, &["What it said before asking you"]);
+    assert!(simulator_misses(&app, "Answer"));
+}
+
+#[test]
+fn a_bots_edit_and_delete_say_what_they_do_in_words() {
+    let mut app = connected();
+    let id = BotId::new("bot-wrx80").unwrap();
+    send(&mut app, Message::Go(Screen::Bot(id.clone())));
+    shows(&app, &["Edit", "Delete"]);
+    send(&mut app, Message::EditOpen(id.clone()));
+    shows(
+        &app,
+        &[
+            "Edit bot-wrx80",
+            "Its tools",
+            "local_read",
+            "Runs on its own",
+            "Asks you first",
+            "Never runs",
+            "Add a tool",
+            "local_search",
+            "Save",
+        ],
+    );
+    send(&mut app, Message::DeleteOpen(id));
+    shows(
+        &app,
+        &[
+            "Delete bot-wrx80?",
+            "Type bot-wrx80 to delete it",
+            "Delete bot-wrx80",
+            "Keep it",
+        ],
+    );
 }

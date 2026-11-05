@@ -66,7 +66,7 @@ func TestRenewNodeCertificateRefusals(t *testing.T) {
 		t.Fatal(err)
 	}
 	issued := h.ca.issued
-	if _, err := NewRenewNodeCertificate(h.deps).Execute(ctx, CertificateRenewal{NodeID: "web-2", Serial: "serial-1", CSRPEM: []byte("CSR")}); !domain.IsForbidden(err) {
+	if _, err := NewRenewNodeCertificate(h.deps).Execute(ctx, CertificateRenewal{NodeID: "web-2", Serial: "serial-1", CSRPEM: []byte("CSR")}); !domain.IsRevoked(err) {
 		t.Errorf("revoked: %v", err)
 	}
 	if stored, _ := h.nodes.Get(ctx, "web-2"); !stored.IsRevoked() || stored.CertificateSerial() != "serial-1" || h.ca.issued != issued {

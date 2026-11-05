@@ -56,7 +56,7 @@ impl BotNow {
     /// The state in one or two words, for a list.
     pub fn word(&self) -> &'static str {
         match self {
-            Self::Waiting { .. } => "Waits for you",
+            Self::Waiting { .. } => "Needs OK",
             Self::Working { .. } => "Working",
             Self::Queued { .. } => "Queued",
             Self::Off(BotStatus::Paused) => "Paused",
@@ -95,7 +95,7 @@ mod tests {
         let bot = |id: &str| fleet.bots.iter().find(|b| b.id.as_str() == id).unwrap().clone();
 
         let asking = BotNow::of(&bot("bot-act-with-approval"), &fleet.tasks, &[]);
-        assert_eq!(asking.word(), "Waits for you");
+        assert_eq!(asking.word(), "Needs OK");
         assert!(asking.task().is_some());
 
         let worker = bot("bot");

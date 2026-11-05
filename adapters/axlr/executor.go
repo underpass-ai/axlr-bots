@@ -114,7 +114,7 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 	args = append(args, correlation.args...)
 	args = append(args, e.steerArgs(ctx, request.ExecutionID)...)
 	defer e.dropSteer(request.ExecutionID)
-	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout, request.OnSaid)
+	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout, request.OnSaid, request.OnProgress)
 	report.Policy = &policy.record
 	correlate(&report, correlation)
 	return report, err
@@ -157,7 +157,8 @@ func (e *Executor) Decide(ctx context.Context, request application.DecisionReque
 	args = append(args, correlation.args...)
 	args = append(args, e.steerArgs(ctx, request.ExecutionID)...)
 	defer e.dropSteer(request.ExecutionID)
-	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout, request.OnSaid)
+	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout, request.OnSaid, request.OnProgress)
+	explainLostSession(&report, request.SessionID)
 	report.Policy = &policy.record
 	correlate(&report, correlation)
 	return report, err
@@ -263,7 +264,7 @@ func (e *Executor) waitDelay() time.Duration {
 
 // run starts the process, keeps every stdout line in the trace file and
 // stderr beside it, and turns what it saw into a report.
-func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot domain.BotID, args []string, requested time.Duration, hear func(application.SaidReply)) (application.ExecutionReport, error) {
+func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot domain.BotID, args []string, requested time.Duration, hear func(application.SaidReply), tell func(application.ProgressItem)) (application.ExecutionReport, error) {
 	if execution == "" || bot == "" {
 		return application.ExecutionReport{}, errors.New("axlr: the request needs an execution id and a bot id")
 	}
@@ -301,12 +302,17 @@ func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot do
 	if err != nil {
 		return application.ExecutionReport{}, fmt.Errorf("axlr: %w", err)
 	}
+	// The receipt's requests of this run start after this moment, on the
+	// same host's clock; the ones before it are earlier runs' of the
+	// session.
+	started := time.Now()
 	if err := cmd.Start(); err != nil {
 		return application.ExecutionReport{}, fmt.Errorf("axlr: start %s: %w", e.binary(), err)
 	}
 
-	parser := newTurnParser()
+	parser := newTurnParser(started)
 	said := newSaidTracker(hear)
+	progress := newProgressTracker(tell)
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxLineBytes)
 	for scanner.Scan() {
@@ -315,6 +321,7 @@ func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot do
 		_, _ = trace.Write([]byte{'\n'})
 		parser.feed(line)
 		said.feed(line)
+		progress.feed(line)
 	}
 	said.flush()
 	scanErr := scanner.Err()
@@ -338,7 +345,9 @@ func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot do
 	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
 		report = parser.interrupted(fmt.Sprintf("timed out after %s", timeout))
 	case runCtx.Err() != nil:
-		report = parser.interrupted("cancelled: " + runCtx.Err().Error())
+		// The cause says who stopped the run (the node stopping, a lost
+		// lease); a plain cancel is "context canceled".
+		report = parser.interrupted("cancelled: " + context.Cause(runCtx).Error())
 	case scanErr != nil:
 		report = parser.interrupted("reading runtime output: " + scanErr.Error())
 	default:

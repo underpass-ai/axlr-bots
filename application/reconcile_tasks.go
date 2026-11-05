@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -104,11 +105,14 @@ func (uc ReconcileTasks) failOrphans(ctx context.Context, grace time.Duration) (
 			after = DefaultTaskTimeout + ReconcileGrace
 		}
 		if !gone {
+			// A bot deleted meanwhile leaves the default grace.
 			bot, err := uc.deps.Bots.Get(ctx, task.BotID())
-			if err != nil {
+			switch {
+			case err == nil:
+				after = graceFor(bot, task, execution, grace)
+			case !domain.IsNotFound(err):
 				return nil, fmt.Errorf("reconcile execution %s: %w", execution.ID(), err)
 			}
-			after = graceFor(bot, task, execution, grace)
 		}
 		age := now.Sub(execution.StartedAt())
 		if age <= after {
@@ -179,6 +183,11 @@ func (uc ReconcileTasks) missDeadlines(ctx context.Context) ([]domain.TaskID, er
 				continue
 			}
 			bot, err := uc.deps.Bots.Get(ctx, tasks[i].BotID())
+			if domain.IsNotFound(err) {
+				// Its bot is gone (a lost file: a delete ends its tasks
+				// first); one task must not stop the pass.
+				continue
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -200,6 +209,11 @@ func (uc ReconcileTasks) reconcile(ctx context.Context, task domain.Task, grace 
 		return false, nil
 	}
 	bot, err := uc.deps.Bots.Get(ctx, task.BotID())
+	if domain.IsNotFound(err) {
+		// Its bot is gone (a lost file: a delete ends its tasks first);
+		// one task must not stop the pass.
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}
@@ -211,7 +225,17 @@ func (uc ReconcileTasks) reconcile(ctx context.Context, task domain.Task, grace 
 	now := uc.deps.Clock.Now()
 	age := now.Sub(execution.StartedAt())
 	expired := execution.LeaseExpired(now)
+	stranded, waits, err := uc.stranded(ctx, execution)
+	if err != nil {
+		return false, err
+	}
 	if age <= grace && !expired {
+		// A decision queued for a node that is away waits for it (a
+		// reboot or a reinstall takes minutes, and the run resumes);
+		// only the timeout fails it. The task says what it waits for.
+		if waits != nil {
+			return false, uc.tellWaiting(ctx, bot, task, execution, waits)
+		}
 		return false, nil
 	}
 	// A report or a cancel may have ended the task since it was listed;
@@ -220,9 +244,19 @@ func (uc ReconcileTasks) reconcile(ctx context.Context, task domain.Task, grace 
 		return false, err
 	}
 	reason := diagnosis(execution, age, expired)
+	if stranded != "" {
+		reason = stranded
+	}
 	if execution.Outcome() == domain.ExecutionRunning {
 		tracePath, _ := uc.deps.Traces.TracePath(execution.ID())
-		if err := execution.Fail(reason, domain.Result{}, domain.Usage{}, tracePath, now); err != nil {
+		// A run that started and was lost spent what nobody reported (a
+		// node's late report may still tell it); one still queued for
+		// its node never ran.
+		usage := domain.UnknownUsage(0)
+		if stranded != "" {
+			usage = domain.Usage{}
+		}
+		if err := execution.Fail(reason, domain.Result{}, usage, tracePath, now); err != nil {
 			return false, err
 		}
 		if err := uc.deps.Executions.Save(ctx, execution); err != nil {
@@ -254,6 +288,75 @@ func (uc ReconcileTasks) reconcile(ctx context.Context, task domain.Task, grace 
 		return false, err
 	}
 	return true, nil
+}
+
+// stranded explains why an execution queued for a node (a decision
+// ApproveTask or an approval's deadline queued, not yet leased) does not
+// run: its node is gone, or not Online. The session the decision
+// continues lives on that node, so no other node can take it. It answers
+// the failure reason the timeout gives it, and the payload of the event
+// that tells the task's timeline; both empty when the execution is not
+// queued or its node is Online.
+func (uc ReconcileTasks) stranded(ctx context.Context, execution domain.Execution) (string, map[string]any, error) {
+	if execution.Outcome() != domain.ExecutionRunning || !execution.IsAssigned() || !execution.LeaseUntil().IsZero() {
+		return "", nil, nil
+	}
+	what := "its execution " + execution.ID().String()
+	if execution.Kind() == domain.ExecutionDecide {
+		what = "its decision (" + execution.Decision() + ", execution " + execution.ID().String() + ")"
+	}
+	nodeID := execution.NodeID().String()
+	waits := map[string]any{"executionId": execution.ID().String(), "nodeId": nodeID}
+	node, err := uc.deps.Nodes.Get(ctx, execution.NodeID())
+	switch {
+	case domain.IsNotFound(err):
+		waits["nodeStatus"], waits["waiting"] = "gone", "waiting for node "+nodeID+", which is gone"
+		return "reconciled: " + what + " waited for node " + nodeID + ", which is gone", waits, nil
+	case err != nil:
+		return "", nil, err
+	case node.IsOnline():
+		return "", nil, nil
+	}
+	seen := node.LastSeenAt().UTC()
+	waits["nodeStatus"], waits["lastSeenAt"] = node.Status().String(), seen.Format(time.RFC3339Nano)
+	waits["waiting"] = "waiting for node " + nodeID + ", " + strings.ToLower(node.Status().String()) + " since " + seen.Format("15:04") + " UTC"
+	return "reconciled: " + what + " waited for node " + nodeID + ", which is " + node.Status().String() + " since it was last seen at " + seen.Format(time.RFC3339) + "; the session it continues is on that node", waits, nil
+}
+
+// tellWaiting records, once per state of the node, a node.offline event
+// in the task's timeline: the decision waits for node X, offline since
+// HH:MM. Before, the task showed Running with no hint while nothing ran
+// (QA L9, 5 November 2026). The same state on the next pass records
+// nothing; the node back and away again (a new last seen) records anew.
+func (uc ReconcileTasks) tellWaiting(ctx context.Context, bot domain.Bot, task domain.Task, execution domain.Execution, waits map[string]any) error {
+	timeline, err := uc.deps.EventReader.ListTaskEvents(ctx, task.ID(), MaxEventLimit)
+	if err != nil {
+		return err
+	}
+	for i := len(timeline) - 1; i >= 0; i-- {
+		told := timeline[i]
+		if told.Type != domain.EventNodeOffline || told.ExecutionID != execution.ID() {
+			continue
+		}
+		if fmt.Sprint(told.Payload["nodeStatus"]) == fmt.Sprint(waits["nodeStatus"]) && fmt.Sprint(told.Payload["lastSeenAt"]) == fmt.Sprint(waits["lastSeenAt"]) {
+			return nil
+		}
+		break
+	}
+	id, err := domain.NewEventID(uc.deps.IDs.NewID("evt-"))
+	if err != nil {
+		return err
+	}
+	// The node's event, told in the bot's tenant about its task.
+	event, err := domain.NewNodeEvent(id, domain.EventNodeOffline, execution.NodeID(), uc.deps.Clock.Now(), waits)
+	if err != nil {
+		return err
+	}
+	event.TenantID, event.BotID, event.TaskID, event.CorrelationID, event.ExecutionID = bot.TenantID(), bot.ID(), task.ID(), task.CorrelationID(), execution.ID()
+	if err := event.Validate(); err != nil {
+		return err
+	}
+	return uc.deps.Events.Publish(ctx, event)
 }
 
 // unchanged reads the task and its execution again and reports whether

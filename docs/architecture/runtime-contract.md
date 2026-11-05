@@ -47,7 +47,7 @@ The control plane generates every id: `bot_id` at registration, `task_id` and a 
 
 ## The result
 
-The last JSON line, `{"type":"result","result":{"schema":"axlr.execution-result/v1",…}}`, gives the status (`completed`, `needs_decision`, `interrupted`, `failed`, `budget_exceeded`), the answer, the sessions, the pending call with its arguments, the tool calls, the usage (requests, tokens, cost) and the artifacts. The adapter keeps the raw lines as the trace (`<state>/traces/<execution>.jsonl`), bounded per line. Fallback for an older `axlr-tui` without the result line: the exit code (0 completed, 3 decision required, 1 failed) plus the `completed`, `failed` and `decision.required` lines.
+The last JSON line, `{"type":"result","result":{"schema":"axlr.execution-result/v1",…}}`, gives the status (`completed`, `needs_decision`, `interrupted`, `failed`, `budget_exceeded`), the answer, the sessions, the pending call with its arguments, the tool calls, the usage (requests, tokens, cost) and the artifacts. The adapter keeps the raw lines as the trace (`<state>/traces/<execution>.jsonl`), bounded per line; on a node it also turns them, as it reads them, into the progress the operator watches live ([live progress](live-progress.md)). Fallback for an older `axlr-tui` without the result line: the exit code (0 completed, 3 decision required, 1 failed) plus the `completed`, `failed` and `decision.required` lines.
 
 | Result status | Execution outcome | Task |
 |---|---|---|
@@ -56,7 +56,7 @@ The last JSON line, `{"type":"result","result":{"schema":"axlr.execution-result/
 | `failed`, `interrupted`, a timeout, a cancel | `Failed` (or `Cancelled` when the task was cancelled) | the same, with the reason |
 | `budget_exceeded` | `Failed`, `budget exceeded: …` | `Failed` |
 
-The execution keeps the node, the policy record, the correlation record, the usage with its cost, the trace reference, the result and the receipt (vision §12.3).
+The execution keeps the node, the policy record, the correlation record, the usage with its cost, the trace reference, the result and the receipt (vision §12.3). The usage is the run's own: AXLR's result and receipt cover every turn of the session, so a decision, which continues the session, would report again what its first run reported. The adapter sums the receipt's requests that started after its process did (same host, same clock) and counts the tool calls the run's own lines name (the result lists every call of the session), and keeps the result's usage when the receipt lists no requests. A run stopped at its timeout or by a cancel reports the same: AXLR writes its receipt and result after the SIGTERM, within the wait delay. A run killed before it wrote either reports `costUnknown: true` and no cost, which is not $0; so does a cancel, or a reconcile, of a run that had started, until the run's late report tells the usage.
 
 ## Artifacts and the receipt
 

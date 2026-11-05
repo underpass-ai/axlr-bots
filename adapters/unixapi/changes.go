@@ -148,12 +148,24 @@ func awaitChange(ctx context.Context, signal <-chan struct{}, d time.Duration) b
 
 // tappedEvents records events through the inner publisher, tells the hub
 // of each one recorded and pushes those about an execution to its node,
-// through the direct adapter and every other pusher configured.
+// through the direct adapter and every other pusher configured. A task
+// cancelled or preempted has its in-process run, if one is going on,
+// interrupted through interrupt: StopBot, an urgent submission and a
+// team's stop.all end tasks without the API's cancel, and their runs
+// went on to their own end (QA 5 Nov 2026: a stopped bot's run kept the
+// in-process worker for its whole timeout).
 type tappedEvents struct {
 	inner      application.EventPublisher
 	changes    *changes
 	executions application.ExecutionRepository
 	pushers    *pushers
+	interrupt  func(domain.TaskID) bool
+}
+
+// interruptingTypes are the events that end a task's run where it is.
+var interruptingTypes = map[domain.EventType]bool{
+	domain.EventTaskCancelled: true,
+	domain.EventTaskPreempted: true,
 }
 
 func (t tappedEvents) Publish(ctx context.Context, event domain.Event) error {
@@ -161,6 +173,9 @@ func (t tappedEvents) Publish(ctx context.Context, event domain.Event) error {
 		return err
 	}
 	t.changes.saw(event)
+	if interruptingTypes[event.Type] && event.TaskID != "" && t.interrupt != nil {
+		t.interrupt(event.TaskID)
+	}
 	if event.ExecutionID == "" || !hintedTypes[event.Type] || t.executions == nil {
 		return nil
 	}

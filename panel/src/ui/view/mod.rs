@@ -1,18 +1,24 @@
 //! What the panel draws for each screen.
 
+mod activity;
+mod bot_delete;
 mod bot_detail;
+mod bot_edit;
 mod bots;
 mod decide;
+mod grid;
 mod incidents;
 mod levels;
 mod nodes;
 mod order;
 mod overview;
+mod post_draft;
 mod settings;
 mod shell;
 mod task_detail;
 mod tasks;
 mod teams;
+mod voice;
 pub mod widgets;
 
 use iced::Element;

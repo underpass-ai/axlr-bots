@@ -19,7 +19,7 @@ One Go module, hexagonal: the domain depends on nothing, the application holds t
 | `adapters/jev` | The jev runtime on the node: a bot's fixed program over its MCP server, each decision one question to Jev through TypeSafe's API; the receipt of each decision ([bot definition](../reference/bot-definition.md#runtime)) |
 | `adapters/bus/nats` | The bus port over a NATS broker: the control plane's publisher with its outbox, the node's subscriber with its durable consumer ([bus port](bus-port.md)) |
 | `adapters/bus/bustest` | The bus port's contract, run against the direct stream and against NATS |
-| `adapters/nodeagent` | The node agent's loop: register, heartbeat, poll, run, renew, report; one working slot, lent by an execution that waits on a child; the delegation tool's MCP server (newline JSON-RPC over `<node-state>/run/<execution>.sock`) and its calls to the control plane |
+| `adapters/nodeagent` | The node agent's loop: register, heartbeat, poll, run, renew, report; the queue and sender of a run's progress ([live progress](live-progress.md)); one working slot, lent by an execution that waits on a child; the delegation tool's MCP server (newline JSON-RPC over `<node-state>/run/<execution>.sock`) and its calls to the control plane |
 | `adapters/systemd` | Renders and installs the two units and the environment file (or the node's alone, for a host that joins a control plane elsewhere); removes them |
 | `adapters/system` | Wall clock, random ids |
 | `compose` | The composition root the commands share |
@@ -44,7 +44,7 @@ One Go module, hexagonal: the domain depends on nothing, the application holds t
   outbox/nats/<node>/<time>-<seq>.json   with serve --bus nats: the pushes the broker has not acknowledged yet
   traces/, workspaces/     (single-process runs; a node keeps its own under its state)
   .lock                    the daemon holds it while it runs (a command working on the files takes it too)
-  <kind>/.quarantine/<id>.json.<unixnano>   a record a listing could not parse, set aside
+  <kind>/.quarantine/<id>.json.<unixnano>   a record a listing could not parse or the domain refused, set aside
 
 <node-state>/
   pki/node.key (0600), pki/node.crt, pki/ca.crt, pki/enrollment.json (with the token's id)   (once enrolled)

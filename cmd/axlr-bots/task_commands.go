@@ -261,12 +261,21 @@ func taskEvents(ctx context.Context, service unixapi.Service, args []string, std
 		fmt.Fprintln(stderr, "axlr-bots: task events takes --limit only")
 		return exitUsage
 	}
-	events, err := service.ListTaskEvents(ctx, taskID, *limit)
+	events, err := service.ListTaskEvents(ctx, application.TaskEventsQuery{ID: domain.TaskID(taskID), Limit: *limit})
 	if err != nil {
 		return fail(stderr, err)
 	}
 	printJSON(stdout, events)
 	return exitOK
+}
+
+// startOfToday is midnight of the operator's day where the command runs,
+// as the panel counts it. The control plane's own default is midnight on
+// its clock, UTC: before 5 November 2026 the command's cost of the day
+// in Madrid left out the hour after local midnight.
+func startOfToday(now time.Time) time.Time {
+	year, month, day := now.Date()
+	return time.Date(year, month, day, 0, 0, 0, 0, now.Location())
 }
 
 // overview prints the dashboard's counts: nodes, bots and tasks by
@@ -282,7 +291,7 @@ func overview(ctx context.Context, service unixapi.Service, args []string, stdou
 		fmt.Fprintln(stderr, "axlr-bots: overview takes --since only")
 		return exitUsage
 	}
-	var from time.Time
+	from := startOfToday(time.Now())
 	if *since != "" {
 		parsed, err := time.Parse(time.RFC3339Nano, *since)
 		if err != nil {

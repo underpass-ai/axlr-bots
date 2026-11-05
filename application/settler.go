@@ -31,7 +31,7 @@ func newSettler(deps Dependencies) settler {
 // execution began, so a clock that runs backwards cannot end it earlier.
 // A completed run's answer is kept as the task's report artifact.
 func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task *domain.Task, execution *domain.Execution, report ExecutionReport, runErr error, started time.Time) error {
-	if dropped, err := s.dropIfEnded(ctx, action, task, execution); dropped || err != nil {
+	if dropped, err := s.dropIfEnded(ctx, action, task, execution, report, runErr); dropped || err != nil {
 		return err
 	}
 	if runErr != nil {
@@ -170,8 +170,9 @@ func storedNames(artifacts []domain.Artifact) []string {
 
 // dropIfEnded keeps the stored execution and task when the execution
 // was ended while the run went on (the operator cancelled it): the
-// report of a run nobody waits for changes nothing, and is audited.
-func (s settler) dropIfEnded(ctx context.Context, action string, task *domain.Task, execution *domain.Execution) (bool, error) {
+// report of a run nobody waits for changes nothing but what the run
+// consumed, which the cancel could not know, and is audited.
+func (s settler) dropIfEnded(ctx context.Context, action string, task *domain.Task, execution *domain.Execution, report ExecutionReport, runErr error) (bool, error) {
 	stored, err := s.deps.Executions.Get(ctx, execution.ID())
 	if err != nil || stored.Outcome() == domain.ExecutionRunning {
 		return false, nil
@@ -181,7 +182,13 @@ func (s settler) dropIfEnded(ctx context.Context, action string, task *domain.Ta
 		*task = current
 	}
 	details := map[string]string{"execution": execution.ID().String(), "outcome": execution.Outcome().String(), "dropped": "the execution had already ended"}
-	return true, s.rec.audit(ctx, action, task.ID().String(), domain.AuditOK, details)
+	if err := s.rec.audit(ctx, action, task.ID().String(), domain.AuditOK, details); err != nil {
+		return true, err
+	}
+	if runErr != nil {
+		return true, nil
+	}
+	return true, newLateAccount(s.deps).keep(ctx, *task, execution, report)
 }
 
 // apply moves the execution and the task to where the report says and

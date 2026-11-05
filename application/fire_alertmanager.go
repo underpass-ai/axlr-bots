@@ -96,7 +96,7 @@ func (uc FireTrigger) resolveGroup(ctx context.Context, bot domain.Bot, trigger 
 		return nil, err
 	}
 	payloadOut := map[string]any{"by": "trigger:" + trigger.Name(), "reason": reason, "cycle": incident.Cycle(), "costUsd": incident.CostUSD()}
-	if err := uc.rec.incidentEvent(ctx, domain.EventIncidentResolved, bot, incident, payloadOut); err != nil {
+	if err := uc.rec.incidentEvent(ctx, domain.EventIncidentResolved, incident, payloadOut); err != nil {
 		return nil, err
 	}
 	if err := uc.rec.audit(ctx, "incident.resolve", incident.ID().String(), domain.AuditOK, map[string]string{"trigger": trigger.Name(), "reason": reason}); err != nil {

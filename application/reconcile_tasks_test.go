@@ -192,12 +192,13 @@ func TestReconcileTasksPortErrors(t *testing.T) {
 	}
 	h.tasks.listFail = nil
 
-	// A Running task whose bot vanished, then one whose execution vanished.
+	// A Running task whose bot vanished is skipped, not a failed pass
+	// (QA L11), then one whose execution vanished.
 	orphan, _ := domain.NewTask("orphan", "ghost", "o", "k", "", t0)
 	_ = orphan.Start("exec-ghost", t0)
 	_ = h.tasks.Save(ctx, orphan)
-	if _, err := NewReconcileTasks(h.deps).Execute(ctx, 0); !domain.IsNotFound(err) || !strings.Contains(err.Error(), "reconcile task orphan") {
-		t.Errorf("missing bot: %v", err)
+	if res, err := NewReconcileTasks(h.deps).Execute(ctx, 0); err != nil || len(res.Skipped) != 1 || res.Skipped[0] != "orphan" {
+		t.Errorf("missing bot: %+v %v", res, err)
 	}
 	h.tasks.tasks = nil
 	bot := enabledBot(t, h)
@@ -436,5 +437,130 @@ func TestAChildWithUnderASecondLeftIsNotRun(t *testing.T) {
 		if got, _ := h.tasks.Get(context.Background(), answer.TaskID); got.Status() != domain.TaskFailed || !strings.HasPrefix(got.FailureReason(), "deadline:") {
 			t.Errorf("%s: child = %s %q", name, got.Status(), got.FailureReason())
 		}
+	}
+}
+
+// queuedDecision leaves a task Running on a decision queued for web-1,
+// as an approval (or its deadline's deny) leaves it: not yet leased.
+func queuedDecision(t *testing.T, h *harness) (domain.Task, ApproveTaskResult) {
+	t.Helper()
+	ctx := context.Background()
+	bot := enabledBot(t, h)
+	node := onlineNode(t, h, "web-1")
+	task := submit(t, h, bot, "k").Task
+	first, _, _ := NewNextAssignment(h.deps).Execute(ctx, node.ID())
+	pending := ExecutionReport{Outcome: domain.ExecutionDecisionRequired, Result: domain.Result{SessionID: "sess-1", PendingDecision: &domain.PendingDecision{Tool: "local_write", CallID: "c1", SessionID: "sess-1"}}}
+	if _, err := NewReportExecution(h.deps).Execute(ctx, node.ID(), first.ExecutionID, pending); err != nil {
+		t.Fatal(err)
+	}
+	decided, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionDeny, "")
+	if err != nil || !decided.Execution.LeaseUntil().IsZero() {
+		t.Fatalf("decided = %+v %v", decided.Execution.Snapshot(), err)
+	}
+	return task, decided
+}
+
+// offlineEvents are the node.offline events in the task's timeline.
+func offlineEvents(h *harness, task domain.TaskID) []domain.Event {
+	var out []domain.Event
+	for _, e := range h.log.events {
+		if e.Type == domain.EventNodeOffline && e.TaskID == task {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// A decision queued for a node that went Offline waits for it (a reboot
+// or a reinstall takes minutes and the run resumes), and the task's
+// timeline says so once per state of the node: before, the task showed
+// Running with no hint (QA L9). Only the timeout fails it, naming the
+// node.
+func TestReconcileTellsADecisionQueuedForAnOfflineNodeAndKeepsIt(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	task, decided := queuedDecision(t, h)
+	uc := NewReconcileTasks(h.deps)
+	h.clock.now = t0.Add(5 * time.Minute)
+	if result, err := uc.Execute(ctx, 0); err != nil || len(result.Failed) != 0 || len(offlineEvents(h, task.ID())) != 0 {
+		t.Fatalf("an Online node's decision: %+v %v", result, err)
+	}
+	away := func() domain.Node {
+		t.Helper()
+		if _, err := NewMarkOfflineNodes(h.deps).Execute(ctx, time.Minute); err != nil {
+			t.Fatal(err)
+		}
+		node, _ := h.nodes.Get(ctx, "web-1")
+		if node.IsOnline() {
+			t.Fatal("the node is still Online")
+		}
+		return node
+	}
+	node := away()
+	for pass := 0; pass < 3; pass++ {
+		h.clock.now = h.clock.now.Add(time.Minute)
+		if result, err := uc.Execute(ctx, 0); err != nil || len(result.Failed) != 0 {
+			t.Fatalf("pass %d failed the waiting decision: %+v %v", pass, result, err)
+		}
+	}
+	told := offlineEvents(h, task.ID())
+	if len(told) != 1 {
+		t.Fatalf("offline events = %+v, want one for the state", told)
+	}
+	want := "waiting for node web-1, offline since " + node.LastSeenAt().UTC().Format("15:04") + " UTC"
+	if e := told[0]; e.Payload["waiting"] != want || e.Payload["nodeStatus"] != "Offline" || e.NodeID != "web-1" || e.ExecutionID != decided.Execution.ID() || e.BotID != task.BotID() {
+		t.Errorf("event = %+v", e)
+	}
+	if stored, _ := h.tasks.Get(ctx, task.ID()); stored.Status() != domain.TaskRunning {
+		t.Errorf("task = %s", stored.Status())
+	}
+	// Back, then away again: a new state, told again.
+	if _, err := NewHeartbeatNode(h.deps).Execute(ctx, "web-1"); err != nil {
+		t.Fatal(err)
+	}
+	h.clock.now = h.clock.now.Add(3 * time.Minute)
+	away()
+	if _, err := uc.Execute(ctx, 0); err != nil || len(offlineEvents(h, task.ID())) != 2 {
+		t.Errorf("away again: %d events %v", len(offlineEvents(h, task.ID())), err)
+	}
+	// The timeout fails it, naming the node; it never ran, so it cost
+	// nothing.
+	h.clock.now = t0.Add(DefaultTaskTimeout + ReconcileGrace + time.Second)
+	result, err := uc.Execute(ctx, 0)
+	if err != nil || len(result.Failed) != 1 || result.Failed[0] != task.ID() {
+		t.Fatalf("at the timeout: %+v %v", result, err)
+	}
+	stored, _ := h.tasks.Get(ctx, task.ID())
+	execution, _ := h.execs.Get(ctx, decided.Execution.ID())
+	reason := "reconciled: its decision (deny, execution " + decided.Execution.ID().String() + ") waited for node web-1, which is Offline since it was last seen at "
+	if stored.Status() != domain.TaskFailed || !strings.HasPrefix(stored.FailureReason(), reason) || execution.Outcome() != domain.ExecutionFailed || execution.Usage().CostUnknown {
+		t.Errorf("task = %s %q, execution = %s %+v", stored.Status(), stored.FailureReason(), execution.Outcome(), execution.Usage())
+	}
+}
+
+// A queued decision whose node record is gone is told once too; a node
+// store or a timeline that fails stops the pass.
+func TestReconcileTellsADecisionQueuedForAGoneNode(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	task, _ := queuedDecision(t, h)
+	h.nodes.getFail = errBoom
+	if _, err := NewReconcileTasks(h.deps).Execute(ctx, 0); !errors.Is(err, errBoom) {
+		t.Errorf("a failing node store: %v", err)
+	}
+	h.nodes.getFail = nil
+	delete(h.nodes.nodes, "web-1")
+	h.log.fail = errBoom
+	if _, err := NewReconcileTasks(h.deps).Execute(ctx, 0); !errors.Is(err, errBoom) {
+		t.Errorf("a failing timeline: %v", err)
+	}
+	h.log.fail = nil
+	for pass := 0; pass < 2; pass++ {
+		if result, err := NewReconcileTasks(h.deps).Execute(ctx, 0); err != nil || len(result.Failed) != 0 {
+			t.Fatalf("result = %+v %v", result, err)
+		}
+	}
+	if told := offlineEvents(h, task.ID()); len(told) != 1 || told[0].Payload["waiting"] != "waiting for node web-1, which is gone" || told[0].Payload["nodeStatus"] != "gone" {
+		t.Errorf("events = %+v", told)
 	}
 }

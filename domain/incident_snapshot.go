@@ -11,7 +11,8 @@ import "time"
 // task; Reason says why it was escalated or resolved. Repeats counts the
 // alerts received while it was already open; Retries the triages an alert
 // started again on it while it was Escalated, since its last diagnosis; CostUSD sums what its tasks'
-// executions reported.
+// executions reported, and CostUnknown says one of them stopped before
+// it said what it cost (CostUSD is then a floor).
 type IncidentSnapshot struct {
 	ID                   string     `json:"id"`
 	TenantID             string     `json:"tenantId"`
@@ -30,6 +31,7 @@ type IncidentSnapshot struct {
 	Repeats              int        `json:"repeats,omitempty"`
 	Retries              int        `json:"retries,omitempty"`
 	CostUSD              float64    `json:"costUsd,omitempty"`
+	CostUnknown          bool       `json:"costUnknown,omitempty"`
 	OpenedAt             time.Time  `json:"openedAt"`
 	UpdatedAt            time.Time  `json:"updatedAt"`
 	LastSeenAt           time.Time  `json:"lastSeenAt"`

@@ -4,7 +4,8 @@ use super::ThemeMode;
 
 /// The colours of one theme: ink on a warm white page (graphite on near
 /// black in the dark theme), the brand's copper as the one accent, and
-/// one strong colour per status.
+/// one strong colour per status. Work in progress is a calm slate, not
+/// the accent, so copper keeps pointing at the one act of a place.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Tokens {
     pub page: Color,
@@ -34,7 +35,7 @@ impl Tokens {
         accent: color!(0xB85C38),
         on_accent: color!(0xFFFFFF),
         good: color!(0x2E7D4F),
-        busy: color!(0xB85C38),
+        busy: color!(0x44627D),
         wait: color!(0xA65F00),
         bad: color!(0xB3261E),
         idle: color!(0x75665A),
@@ -51,7 +52,7 @@ impl Tokens {
         accent: color!(0xE08A5A),
         on_accent: color!(0x111111),
         good: color!(0x6CC28C),
-        busy: color!(0xE59A5C),
+        busy: color!(0x9FB7CE),
         wait: color!(0xE8B45A),
         bad: color!(0xF07B6B),
         idle: color!(0xA3A39E),
@@ -137,6 +138,42 @@ mod tests {
                     "{tone:?} dark={}",
                     tokens.dark
                 );
+            }
+        }
+    }
+
+    /// Copper is the one accent: work in progress has a tone of its own,
+    /// apart from the accent and from the quiet grey of what is idle.
+    #[test]
+    fn busy_is_not_the_accent() {
+        for tokens in [Tokens::LIGHT, Tokens::DARK] {
+            assert_ne!(tokens.busy, tokens.accent);
+            assert_ne!(tokens.busy, tokens.idle);
+            assert!(contrast(tokens.busy, tokens.page) >= 4.5);
+        }
+    }
+
+    /// Approve and Deny are tonal: their word reads on their own tint,
+    /// at rest and under the pointer.
+    #[test]
+    fn tonal_buttons_read_on_their_tint() {
+        use crate::ui::styles::{Kind, button_style};
+        use iced::widget::button::Status;
+        for tokens in [Tokens::LIGHT, Tokens::DARK] {
+            let theme = tokens.theme();
+            for kind in [Kind::Good, Kind::Danger] {
+                for status in [Status::Active, Status::Hovered] {
+                    let style = button_style(tokens, kind)(&theme, status);
+                    let Some(iced::Background::Color(fill)) = style.background else {
+                        panic!("{kind:?} has no fill");
+                    };
+                    assert!(
+                        contrast(style.text_color, fill) >= 4.5,
+                        "{kind:?} {status:?} dark={}",
+                        tokens.dark
+                    );
+                    assert!(contrast(style.text_color, tokens.surface) >= 4.5);
+                }
             }
         }
     }

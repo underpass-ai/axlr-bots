@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" width="1200" height="700" role="img" aria-labelledby="t d">
+  <title id="t">Live progress in AXLR Bots: watching a running task</title>
+  <desc id="d">The node reads the lines axlr-tui writes as the run goes, turns them into small progress items in a queue that never blocks the run, and sends them in batches to the control plane, which keeps each batch as a bot.task.progress event in the task's timeline. The panel follows that timeline with a long poll and shows the task's Activity; the operator corrects the bot with a message the node hands to the run.</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6B4A2E"/>
+    </marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#B85C38"/>
+    </marker>
+    <marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#D97B2D"/>
+    </marker>
+    <style>
+      text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1B1411; }
+      .h { font-size: 22px; font-weight: 700; }
+      .b { font-size: 15px; font-weight: 700; }
+      .m { font-size: 13px; }
+      .s { font-size: 12px; fill: #6B4A2E; }
+      .c { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+      .ln { stroke: #6B4A2E; stroke-width: 1.8; fill: none; }
+      .live { stroke: #B85C38; stroke-width: 2.2; fill: none; }
+      .talk { stroke: #D97B2D; stroke-width: 2; fill: none; }
+      .dash { stroke-dasharray: 6 4; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="700" fill="#ffffff"/>
+  <text x="40" y="44" class="h">Live progress — watching a running task</text>
+  <text x="40" y="68" class="m">The node reads the run as it goes and never waits for the control plane; the control plane keeps what it gets in the task's timeline; the panel follows it.</text>
+
+  <!-- node -->
+  <rect x="40" y="96" width="420" height="420" rx="14" fill="#F4F4F2" stroke="#9A9A92" stroke-width="1.5"/>
+  <text x="60" y="124" class="b">Node (axlr-node)</text>
+
+  <rect x="64" y="144" width="372" height="62" rx="10" fill="#ffffff" stroke="#6B4A2E" stroke-width="1.5"/>
+  <text x="250" y="170" class="c" text-anchor="middle">axlr-tui --exec --json</text>
+  <text x="250" y="192" class="s" text-anchor="middle">text · tool.requested · tool.completed · decision.required</text>
+
+  <rect x="64" y="240" width="176" height="78" rx="10" fill="#FDEBDD" stroke="#B85C38" stroke-width="2"/>
+  <text x="152" y="264" class="b" text-anchor="middle">1 · Tracker</text>
+  <text x="152" y="284" class="m" text-anchor="middle">a line → an item</text>
+  <text x="152" y="302" class="s" text-anchor="middle">duration on the node's clock</text>
+
+  <rect x="260" y="240" width="176" height="78" rx="10" fill="#ffffff" stroke="#6B4A2E" stroke-width="1.5"/>
+  <text x="348" y="264" class="b" text-anchor="middle">Delegator</text>
+  <text x="348" y="284" class="m" text-anchor="middle">axlr_bots_delegate</text>
+  <text x="348" y="302" class="s" text-anchor="middle">the bot asked, its child task</text>
+
+  <rect x="64" y="352" width="372" height="78" rx="10" fill="#FDEBDD" stroke="#B85C38" stroke-width="2"/>
+  <text x="250" y="376" class="b" text-anchor="middle">2 · Queue and sender</text>
+  <text x="250" y="396" class="m" text-anchor="middle">a push never blocks · oldest dropped and counted</text>
+  <text x="250" y="414" class="s" text-anchor="middle">a call at once · words every 1.5 s or 500 chars · 32 KiB of words</text>
+
+  <rect x="64" y="452" width="372" height="44" rx="10" fill="#ffffff" stroke="#C9B08C" stroke-width="1.5"/>
+  <text x="250" y="479" class="c" text-anchor="middle">steer/&lt;exec&gt;.jsonl → the run, between steps</text>
+
+  <path d="M152,206 L152,236" class="ln" marker-end="url(#a)"/>
+  <path d="M152,318 L152,348" class="live" marker-end="url(#g)"/>
+  <path d="M348,318 L348,348" class="live" marker-end="url(#g)"/>
+
+  <!-- control plane -->
+  <rect x="520" y="96" width="400" height="420" rx="14" fill="#FBF6EE" stroke="#C9B08C" stroke-width="1.5"/>
+  <text x="540" y="124" class="b">Control plane (axlr-bots serve)</text>
+
+  <rect x="544" y="144" width="352" height="96" rx="10" fill="#FDEBDD" stroke="#B85C38" stroke-width="2"/>
+  <text x="720" y="170" class="b" text-anchor="middle">3 · RecordProgress</text>
+  <text x="720" y="190" class="c" text-anchor="middle">POST …/executions/{exec}/progress</text>
+  <text x="720" y="210" class="s" text-anchor="middle">only the node that holds the running execution</text>
+  <text x="720" y="226" class="s" text-anchor="middle">400 events and 256 KiB per execution, then full</text>
+
+  <rect x="544" y="274" width="352" height="78" rx="10" fill="#ffffff" stroke="#6B4A2E" stroke-width="1.5"/>
+  <text x="720" y="300" class="b" text-anchor="middle">The task's timeline</text>
+  <text x="720" y="320" class="c" text-anchor="middle">bot.task.progress · .said · .delegated</text>
+  <text x="720" y="338" class="s" text-anchor="middle">not in the bot's nor the team's timeline</text>
+
+  <rect x="544" y="386" width="352" height="66" rx="10" fill="#ffffff" stroke="#6B4A2E" stroke-width="1.5"/>
+  <text x="720" y="410" class="c" text-anchor="middle">GET /v1/tasks/{id}/events?after=&amp;wait=20s</text>
+  <text x="720" y="432" class="s" text-anchor="middle">answers as soon as an event is recorded</text>
+
+  <rect x="544" y="466" width="352" height="34" rx="10" fill="#ffffff" stroke="#C9B08C" stroke-width="1.5"/>
+  <text x="720" y="488" class="c" text-anchor="middle">POST /v1/tasks/{id}/messages</text>
+
+  <path d="M436,391 L480,391 L480,192 L540,192" class="live" marker-end="url(#g)"/>
+  <text x="446" y="182" class="s">mTLS, outbound</text>
+  <path d="M720,240 L720,270" class="ln" marker-end="url(#a)"/>
+  <path d="M720,352 L720,382" class="ln" marker-end="url(#a)"/>
+  <path d="M544,483 L500,483 L500,474 L440,474" class="talk dash" marker-end="url(#o)"/>
+  <text x="452" y="506" class="s">with the lease</text>
+
+  <!-- panel -->
+  <rect x="980" y="96" width="180" height="420" rx="14" fill="#ffffff" stroke="#B85C38" stroke-width="2"/>
+  <text x="1070" y="124" class="b" text-anchor="middle">Panel</text>
+  <text x="1070" y="152" class="b" text-anchor="middle">4 · Activity</text>
+  <text x="1000" y="180" class="m">▶ list_pods · running</text>
+  <text x="1000" y="202" class="m">✓ local_read · 120 ms</text>
+  <text x="1000" y="224" class="m">✕ local_exec · failed</text>
+  <text x="1000" y="246" class="m">Asked worker → open</text>
+  <text x="1000" y="268" class="m">⚠ waits for your OK</text>
+  <text x="1000" y="290" class="m">It answered: …</text>
+  <text x="1000" y="318" class="b">What it says</text>
+  <text x="1000" y="338" class="s">the words as they come,</text>
+  <text x="1000" y="354" class="s">selectable</text>
+  <text x="1000" y="384" class="s">a click: a step's details</text>
+  <text x="1000" y="400" class="s">Copy: a step, the words,</text>
+  <text x="1000" y="416" class="s">the whole Activity</text>
+  <text x="1000" y="460" class="b">Talk to it</text>
+  <text x="1000" y="480" class="s">the bot's chat</text>
+
+  <path d="M896,419 L976,419" class="live" marker-end="url(#g)"/>
+  <path d="M996,486 L960,486 L960,483 L900,483" class="talk" marker-end="url(#o)"/>
+
+  <!-- legend -->
+  <rect x="40" y="560" width="1120" height="110" rx="14" fill="#ffffff" stroke="#C9B08C" stroke-width="1.5"/>
+  <path d="M64,594 L120,594" class="live" marker-end="url(#g)"/>
+  <text x="132" y="598" class="m">what the run did, as it does it: the node never waits for it, a late batch is lost and the report still says everything</text>
+  <path d="M64,626 L120,626" class="talk" marker-end="url(#o)"/>
+  <text x="132" y="630" class="m">the operator's correction: a message to the running task, which the run reads between its steps and answers as bot.task.said</text>
+  <text x="64" y="656" class="s">AXLR v0.14.0 writes a call's name and id, not its arguments: the MCP tool behind axlr_call_tool and a summary show only from a build whose lines carry them.</text>
+</svg>

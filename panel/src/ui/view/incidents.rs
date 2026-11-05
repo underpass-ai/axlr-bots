@@ -2,14 +2,18 @@
 //! diagnosis and tasks, and closing one by hand.
 
 use iced::widget::text::Wrapping;
-use iced::widget::{Space, column, container, mouse_area, row, scrollable, table, text, text_input};
-use iced::{Alignment, Font, Length, mouse};
+use iced::widget::{Space, column, container, responsive, row, scrollable, table, text, text_input};
+use iced::{Alignment, Length};
 
-use super::widgets::{BODY, El, SMALL, action, bold, card, chip, empty, fact, muted, pill, section, title};
+use super::grid;
+use super::widgets::{
+    BODY, El, PILL_SLOT, Voice, action, card, empty, fact, link, muted, pill, pill_with, reader, section, slot, title,
+};
 use crate::domain::{Incident, TaskId};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
-use crate::ui::{App, Icon, Message, Screen, Tokens, Tone};
+use crate::ui::table::{ColumnRef, IncidentColumn, List, RowRef, SortColumn};
+use crate::ui::{App, Icon, Message, ReaderKey, Screen, Tokens, Tone};
 
 /// Every incident, the last seen first.
 pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
@@ -19,51 +23,90 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             .push(empty(Icon::Hourglass, "Loading the incidents…", tokens))
             .into();
     };
-    let now = app.now;
-    let columns = vec![
-        table::column(bold("Severity"), move |i: &'a Incident| {
-            pill(Tone::of_severity(i.severity), i.severity.name(), tokens)
-        }),
-        table::column(bold("Status"), move |i: &'a Incident| {
-            pill(Tone::of_incident(i.status), i.status.name(), tokens)
-        }),
-        // The title takes what the other columns leave and wraps there,
-        // so the smallest window keeps the age and Open in sight.
-        table::column(bold("Incident"), move |i: &'a Incident| {
-            text(i.title.clone()).wrapping(Wrapping::WordOrGlyph)
-        })
-        .width(Length::Fill),
-        table::column(bold("Bot"), move |i: &'a Incident| bold(i.bot_id.to_string())),
-        table::column(bold("Repeats"), move |i: &'a Incident| text(i.repeats.to_string())),
-        table::column(bold("Last seen"), move |i: &'a Incident| {
-            text(format::age(i.last_seen_at, now)).wrapping(Wrapping::None)
-        }),
-        table::column(text(""), move |i: &'a Incident| {
-            action(
-                Kind::Ghost,
-                Icon::Play,
-                "Open",
-                Some(Message::Go(Screen::Incident(i.id.clone()))),
-                tokens,
-            )
-        }),
-    ];
     let body: El<'a> = if incidents.is_empty() {
         empty(Icon::Check, "No incident: nothing is firing", tokens)
     } else {
-        table::table(columns, incidents)
-            .padding_x(12)
-            .padding_y(8)
-            .width(Length::Fill)
+        responsive(move |space| table_of(app, incidents, space.width < NARROW, tokens))
+            .height(Length::Shrink)
             .into()
     };
     page = page.push(card(body, tokens));
-    scrollable(page.padding(iced::Padding {
+    let page = scrollable(page.padding(iced::Padding {
         right: 12.0,
+        bottom: grid::BAR_ROOM,
         ..Default::default()
     }))
-    .height(Length::Fill)
-    .into()
+    .id(super::widgets::PAGE)
+    .height(Length::Fill);
+    grid::with_bar(app, List::Incidents, page.into(), tokens)
+}
+
+/// Under this width the severity and the status share one column and
+/// the repeats go, so the title keeps room to read beside Open.
+const NARROW: f32 = 900.0;
+
+/// The incidents in the table's order: a box, the severity and status,
+/// the title, the bot, the repeats unless `narrow`, when last seen, Open.
+fn table_of<'a>(app: &'a App, incidents: &'a [Incident], narrow: bool, tokens: Tokens) -> El<'a> {
+    let now = app.now;
+    let state = &app.tables.incidents;
+    let shown = state.sort.order(incidents);
+    let head = |c: IncidentColumn| {
+        grid::header(
+            c.label(),
+            state.sort.badge(c),
+            Message::SortBy(ColumnRef::Incidents(c)),
+            tokens,
+        )
+    };
+    let all = state.selection.covers(shown.iter().map(|i| &i.id));
+    let mut columns = vec![table::column(
+        grid::check(all, |on| Message::PickShown(List::Incidents, on), tokens),
+        move |i: &'a Incident| {
+            let id = i.id.clone();
+            grid::check(
+                state.selection.contains(&i.id),
+                move |on| Message::Pick(RowRef::Incident(id.clone()), on),
+                tokens,
+            )
+        },
+    )];
+    if narrow {
+        columns.push(table::column(
+            column![head(IncidentColumn::Severity), head(IncidentColumn::Status)].spacing(2),
+            move |i: &'a Incident| -> El<'a> { column![severity(i, tokens), status(i, tokens)].spacing(4).into() },
+        ));
+    } else {
+        columns.push(table::column(head(IncidentColumn::Severity), move |i: &'a Incident| {
+            severity(i, tokens)
+        }));
+        columns.push(table::column(head(IncidentColumn::Status), move |i: &'a Incident| {
+            status(i, tokens)
+        }));
+    }
+    // The title takes what the other columns leave and wraps there, so
+    // the smallest window keeps the age and Open in sight.
+    columns.push(
+        table::column(head(IncidentColumn::Incident), move |i: &'a Incident| {
+            text(i.title.clone()).wrapping(Wrapping::WordOrGlyph)
+        })
+        .width(Length::Fill),
+    );
+    columns.push(table::column(head(IncidentColumn::Bot), move |i: &'a Incident| {
+        grid::clipped(i.bot_id.to_string(), if narrow { 12 } else { 20 }, true, tokens)
+    }));
+    if !narrow {
+        columns.push(table::column(head(IncidentColumn::Repeats), move |i: &'a Incident| {
+            text(i.repeats.to_string())
+        }));
+    }
+    columns.push(table::column(head(IncidentColumn::LastSeen), move |i: &'a Incident| {
+        text(format::age(i.last_seen_at, now)).wrapping(Wrapping::None)
+    }));
+    columns.push(table::column(text(""), move |i: &'a Incident| {
+        super::widgets::open("Open", Message::Go(Screen::Incident(i.id.clone())), tokens)
+    }));
+    grid::sheet(columns, shown)
 }
 
 /// One incident: where it stands, its alerts, what the triage found, the
@@ -84,12 +127,15 @@ pub fn detail<'a>(app: &'a App, id: &'a str, tokens: Tokens) -> El<'a> {
     let form = &app.incidents.resolve;
     let mut header = row![
         back,
-        pill(Tone::of_severity(incident.severity), incident.severity.name(), tokens),
-        pill(Tone::of_incident(incident.status), incident.status.name(), tokens),
-        bold(incident.title.clone())
-            .size(22.0)
-            .wrapping(Wrapping::WordOrGlyph)
-            .width(Length::Fill),
+        severity(incident, tokens),
+        status(incident, tokens),
+        reader(
+            &app.readers,
+            ReaderKey::IncidentTitle,
+            incident.title.clone(),
+            Voice::Heading,
+            tokens
+        ),
     ]
     .spacing(12)
     .align_y(Alignment::Center);
@@ -113,19 +159,37 @@ pub fn detail<'a>(app: &'a App, id: &'a str, tokens: Tokens) -> El<'a> {
             crate::domain::IncidentStatus::Escalated => "Why it was escalated",
             _ => "Reason",
         };
-        page = page.push(section(Icon::Alert, why, text(incident.reason.clone()), tokens));
+        page = page.push(section(
+            Icon::Alert,
+            why,
+            reader(
+                &app.readers,
+                ReaderKey::IncidentReason,
+                incident.reason.clone(),
+                Voice::Body,
+                tokens,
+            ),
+            tokens,
+        ));
     }
     if !incident.diagnosis.is_empty() {
         page = page.push(section(
             Icon::Check,
             "Diagnosis",
-            text(incident.diagnosis.clone()),
+            reader(
+                &app.readers,
+                ReaderKey::IncidentDiagnosis,
+                incident.diagnosis.clone(),
+                Voice::Body,
+                tokens,
+            ),
             tokens,
         ));
     }
     page = page.push(
         row![
-            container(section(Icon::Alert, "Alerts", alerts(incident, tokens), tokens)).width(Length::FillPortion(1)),
+            container(section(Icon::Alert, "Alerts", alerts(app, incident, tokens), tokens))
+                .width(Length::FillPortion(1)),
             container(section(Icon::Tasks, "Tasks", tasks(app, incident, tokens), tokens))
                 .width(Length::FillPortion(1)),
         ]
@@ -135,6 +199,7 @@ pub fn detail<'a>(app: &'a App, id: &'a str, tokens: Tokens) -> El<'a> {
         right: 12.0,
         ..Default::default()
     }))
+    .id(super::widgets::PAGE)
     .height(Length::Fill)
     .into()
 }
@@ -143,13 +208,25 @@ fn facts<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> El<'a> {
     let mut left = column![
         fact(
             "Bot",
-            mouse_area(bold(incident.bot_id.to_string()).color(tokens.accent))
-                .on_press(Message::Go(Screen::Bot(incident.bot_id.clone())))
-                .interaction(mouse::Interaction::Pointer),
+            link(
+                incident.bot_id.to_string(),
+                Message::Go(Screen::Bot(incident.bot_id.clone())),
+                tokens
+            ),
             tokens
         ),
         fact("Tenant", text(incident.tenant_id.clone()), tokens),
-        fact("Source", text(incident.source.clone()), tokens),
+        fact(
+            "Source",
+            reader(
+                &app.readers,
+                ReaderKey::IncidentSource,
+                incident.source.clone(),
+                Voice::Body,
+                tokens
+            ),
+            tokens
+        ),
         fact(
             "Opened",
             text(format!(
@@ -167,16 +244,19 @@ fn facts<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> El<'a> {
         left = left.push(fact("Resolved", text(format::ago(at, app.now)), tokens));
     }
     let right = column![
-        fact("Cost", text(format::cost(incident.cost_usd)), tokens),
+        fact("Cost", text(format::spend(incident.cost())), tokens),
         fact("Repeats", text(incident.repeats.to_string()), tokens),
         fact("Retries", text(incident.retries.to_string()), tokens),
         fact("Cycle", text(incident.cycle.to_string()), tokens),
         fact(
             "Group",
-            text(incident.group_key.clone())
-                .font(Font::MONOSPACE)
-                .size(SMALL)
-                .wrapping(Wrapping::WordOrGlyph),
+            reader(
+                &app.readers,
+                ReaderKey::IncidentGroup,
+                incident.group_key.clone(),
+                Voice::Mono,
+                tokens
+            ),
             tokens
         ),
     ]
@@ -185,12 +265,38 @@ fn facts<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> El<'a> {
     card(row![left, right].spacing(20), tokens).into()
 }
 
+fn severity<'a>(incident: &Incident, tokens: Tokens) -> El<'a> {
+    pill_with(
+        Icon::of_severity(incident.severity),
+        Tone::of_severity(incident.severity),
+        incident.severity.name(),
+        tokens,
+    )
+}
+
+fn status<'a>(incident: &Incident, tokens: Tokens) -> El<'a> {
+    pill_with(
+        Icon::of_incident(incident.status),
+        Tone::of_incident(incident.status),
+        incident.status.name(),
+        tokens,
+    )
+}
+
 /// The alerts still firing, then those the source said went green.
-fn alerts<'a>(incident: &'a Incident, tokens: Tokens) -> El<'a> {
+fn alerts<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> El<'a> {
     if incident.fingerprints.is_empty() {
         return empty(Icon::Alert, "No alert listed", tokens);
     }
-    let fingerprint = |f: &str| text(f.to_string()).font(Font::MONOSPACE).size(SMALL);
+    let fingerprint = |f: &str| {
+        reader(
+            &app.readers,
+            ReaderKey::Fingerprint(f.to_string()),
+            f.to_string(),
+            Voice::Mono,
+            tokens,
+        )
+    };
     let mut body = column![].spacing(8);
     let firing = incident.firing();
     if !firing.is_empty() {
@@ -223,21 +329,32 @@ fn tasks<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> El<'a> {
     list.into()
 }
 
+/// A triage task by what it was asked, its bot and age; by its id only
+/// when the fleet's read no longer holds it.
 fn task_line<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     let task = app.fleet.as_ref().and_then(|f| f.tasks.iter().find(|t| &t.id == id));
-    let mut line = row![].spacing(10).align_y(Alignment::Center);
-    if let Some(task) = task {
-        line = line.push(pill(Tone::of_task(task.status), task.status.label(), tokens));
+    let go = Message::Go(Screen::Task(id.clone()));
+    match task {
+        Some(task) => row![
+            slot(pill(Tone::of_task(task.status), task.status.label(), tokens), PILL_SLOT),
+            container(link(grid::shorten(task.ask(), 60), go, tokens)).width(Length::Fill),
+            muted(
+                format!("{} · {}", task.bot_id, format::age(task.created_at, app.now)),
+                tokens
+            )
+            .wrapping(Wrapping::None),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center)
+        .into(),
+        None => row![
+            link(id.to_string(), go, tokens),
+            muted("older than the tasks listed", tokens)
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center)
+        .into(),
     }
-    line = line.push(
-        mouse_area(bold(id.to_string()).color(tokens.accent))
-            .on_press(Message::Go(Screen::Task(id.clone())))
-            .interaction(mouse::Interaction::Pointer),
-    );
-    if let Some(task) = task {
-        line = line.push(chip(format::age(task.created_at, app.now), tokens));
-    }
-    line.into()
 }
 
 /// The reason box and the button that closes the incident. The buttons

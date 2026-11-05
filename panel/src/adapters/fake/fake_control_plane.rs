@@ -5,12 +5,12 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::application::{ControlPlane, PanelError, PortFuture, WaitingCall};
 use crate::domain::{
-    Artifact, Bot, BotDefinition, BotId, BotPatch, BotStatus, Budgets, CancelledTask, DecidedTask, Decision,
-    EnrollmentRequest, EnrollmentToken, Event, Execution, ExecutionId, ExecutionKind, ExecutionOutcome,
-    ExecutionResult, Incident, IncidentSeverity, IncidentStatus, Node, NodeCapabilities, NodeId, NodeStatus, Overview,
-    PendingDecision, Publication, Published, RevokedNode, Secret, SentTaskMessage, StoppedBotAnswer, SubmittedTask,
-    Subscription, Task, TaskFilter, TaskId, TaskStatus, TaskSubmission, ToolCall, Topic, TopicListener, TriggerRef,
-    Usage,
+    Artifact, Bot, BotDefinition, BotId, BotPatch, BotReference, BotStatus, Budgets, CancelledTask, DecidedTask,
+    Decision, DeletedBot, EnrollmentRequest, EnrollmentToken, Event, Execution, ExecutionId, ExecutionKind,
+    ExecutionOutcome, ExecutionResult, Incident, IncidentSeverity, IncidentStatus, Node, NodeCapabilities, NodeId,
+    NodeStatus, Overview, PendingDecision, Publication, Published, RevokedNode, Secret, SentTaskMessage,
+    StoppedBotAnswer, SubmittedTask, Subscription, Task, TaskFilter, TaskId, TaskStatus, TaskSubmission, ToolCall,
+    Topic, TopicListener, TriggerRef, Usage,
 };
 
 /// The control plane in memory: what the use cases and the interface are
@@ -136,6 +136,28 @@ impl FakeControlPlane {
             );
             let running = state.add_task("bot", "Say the time", TaskStatus::Running, now - Duration::seconds(20));
             state.add_incidents(&running, now);
+            // What its run did so far, as its node told it.
+            state.event(
+                "bot.task.progress",
+                "bot",
+                &running,
+                now - Duration::seconds(12),
+                serde_json::json!({"items": [
+                    {"kind": "text", "text": "I will read the host's clock. "},
+                    {"kind": "tool.started", "tool": "local_exec", "callId": "c1", "summary": "{\"program\":\"date\"}"},
+                    {"kind": "tool.ended", "tool": "local_exec", "callId": "c1", "status": "ok", "durationMs": 40},
+                ]}),
+            );
+            state.event(
+                "bot.task.progress",
+                "bot",
+                &running,
+                now - Duration::seconds(6),
+                serde_json::json!({"items": [
+                    {"kind": "text", "text": "Checking it against the time server."},
+                    {"kind": "tool.started", "tool": "axlr_call_tool", "mcpTool": "get_time", "callId": "c2"},
+                ]}),
+            );
         }
         fake
     }
@@ -149,6 +171,17 @@ impl FakeControlPlane {
     /// message routes.
     pub fn without_newer_routes(&self) {
         self.state.lock().unwrap().older = true;
+    }
+
+    /// Changes a bot behind the panel's back, as another operator or the
+    /// bot's own run would; its `updatedAt` moves on.
+    pub fn change_bot(&self, id: &str, change: impl FnOnce(&mut Bot)) {
+        let mut state = self.state.lock().unwrap();
+        let now = state.clock();
+        if let Some(bot) = state.bots.get_mut(&BotId::new(id).unwrap()) {
+            change(bot);
+            bot.updated_at = now + Duration::seconds(1);
+        }
     }
 
     /// The calls made so far, as `route arg`.
@@ -186,6 +219,26 @@ impl FakeControlPlane {
         let mut state = self.state.lock().unwrap();
         let payload = payload.as_object().cloned();
         state.bot_event_with(kind, &BotId::new(bot).unwrap(), payload);
+    }
+
+    /// What a running task's run did, as its node hands it over: one
+    /// `bot.task.progress` event with the items.
+    pub fn progress(&self, task: &TaskId, items: serde_json::Value) {
+        let mut state = self.state.lock().unwrap();
+        let now = state.clock();
+        let bot = state
+            .tasks
+            .iter()
+            .find(|t| &t.id == task)
+            .map(|t| t.bot_id.to_string())
+            .unwrap();
+        state.event(
+            "bot.task.progress",
+            &bot,
+            task,
+            now,
+            serde_json::json!({ "items": items }),
+        );
     }
 
     /// What a running task's run says back to the person, as its node
@@ -232,6 +285,23 @@ impl FakeControlPlane {
     }
 
     /// Finishes a task as a node's report would.
+    /// A task of `bot` that stopped on `pending`, waiting for a person, as
+    /// a node just reported it.
+    pub fn add_waiting_call(&self, bot: &str, objective: &str, pending: PendingDecision) -> TaskId {
+        let mut state = self.state.lock().unwrap();
+        let now = state.clock();
+        let task = state.add_task(bot, objective, TaskStatus::WaitingApproval, now - Duration::minutes(1));
+        state.add_execution(
+            &task,
+            ExecutionOutcome::DecisionRequired,
+            Some("gx10-ff95"),
+            "",
+            Some(pending),
+            now - Duration::minutes(1),
+        );
+        task
+    }
+
     pub fn finish_task(&self, id: &TaskId, status: TaskStatus) {
         let mut state = self.state.lock().unwrap();
         let now = state.clock();
@@ -311,6 +381,8 @@ impl FakeState {
             },
             level,
             tool_rules: Default::default(),
+            approvals: Default::default(),
+            delegation: None,
             triggers: vec![crate::domain::Trigger::manual()],
             placement: crate::domain::Placement {
                 nodes: nodes.iter().map(|n| NodeId::new(n).unwrap()).collect(),
@@ -558,6 +630,7 @@ impl FakeState {
             repeats: 0,
             retries: 0,
             cost_usd: 0.0,
+            cost_unknown: false,
             opened_at: now - Duration::minutes(ago + 10),
             updated_at: now - Duration::minutes(ago),
             last_seen_at: now - Duration::minutes(ago),
@@ -588,6 +661,7 @@ impl FakeState {
         escalated.repeats = 7;
         escalated.retries = 1;
         escalated.cost_usd = 0.031;
+        escalated.cost_unknown = true;
         let mut resolved = incident(
             "inc-cert",
             "Certificate expires soon",
@@ -672,6 +746,7 @@ impl FakeState {
         for execution in self.executions.iter().filter(|e| e.started_at >= since) {
             overview.executions_since += 1;
             overview.cost_usd_since += execution.usage.cost_usd;
+            overview.cost_unknown_since += u32::from(execution.usage.cost_unknown);
         }
         overview
     }
@@ -762,6 +837,8 @@ impl ControlPlane for FakeControlPlane {
                 budgets: definition.budgets,
                 level: definition.level,
                 tool_rules: definition.tool_rules,
+                approvals: Default::default(),
+                delegation: None,
                 triggers: definition.triggers,
                 placement: definition.placement,
                 groups: definition.groups,
@@ -798,6 +875,20 @@ impl ControlPlane for FakeControlPlane {
             if let Some(tools) = patch.allowed_tools {
                 bot.allowed_tools = tools;
             }
+            if let Some(rules) = patch.tool_rules {
+                // The control plane refuses a rule about a tool the bot
+                // does not list.
+                if let Some(rule) = rules.allow.iter().find(|r| !bot.allowed_tools.contains(&r.tool)) {
+                    return Err(PanelError::Invalid(format!(
+                        "tool rules: allow rule names {}, which is not an allowed tool",
+                        rule.tool
+                    )));
+                }
+                bot.tool_rules = rules;
+            }
+            if let Some(rules) = patch.auto_approve {
+                bot.approvals.auto_approve = rules;
+            }
             if let Some(placement) = patch.placement {
                 bot.placement = placement;
             }
@@ -831,7 +922,12 @@ impl ControlPlane for FakeControlPlane {
     fn bot_events(&self, id: BotId, limit: u32) -> PortFuture<'_, Vec<Event>> {
         self.call(format!("bot_events {id}"), move |s| {
             s.bot(&id)?;
-            let events: Vec<Event> = s.events.iter().filter(|e| e.bot_id == id.as_str()).cloned().collect();
+            let events: Vec<Event> = s
+                .events
+                .iter()
+                .filter(|e| e.bot_id == id.as_str() && !e.is_progress())
+                .cloned()
+                .collect();
             let skip = events.len().saturating_sub(limit as usize);
             Ok(events.into_iter().skip(skip).collect())
         })
@@ -851,7 +947,7 @@ impl ControlPlane for FakeControlPlane {
             let events: Vec<Event> = s
                 .events
                 .iter()
-                .filter(|e| members.contains(&e.bot_id) || e.group_name == name)
+                .filter(|e| (members.contains(&e.bot_id) || e.group_name == name) && !e.is_progress())
                 .cloned()
                 .collect();
             let start = after
@@ -1079,6 +1175,69 @@ impl ControlPlane for FakeControlPlane {
         })
     }
 
+    fn delete_bot(&self, id: BotId) -> PortFuture<'_, DeletedBot> {
+        self.call(format!("delete_bot {id}"), move |s| {
+            if s.older {
+                return Err(PanelError::NotFound("404 page not found".into()));
+            }
+            let bot = s
+                .bots
+                .remove(&id)
+                .ok_or_else(|| PanelError::NotFound(format!("bot {id} not found")))?;
+            let now = s.clock();
+            let mut cancelled = Vec::new();
+            for task in s.tasks.iter_mut().filter(|t| t.bot_id == id && t.status.can_cancel()) {
+                task.status = TaskStatus::Cancelled;
+                task.updated_at = now;
+                cancelled.push(task.id.clone());
+            }
+            for task_id in &cancelled {
+                s.event(
+                    "bot.task.cancelled",
+                    id.as_str(),
+                    task_id,
+                    now,
+                    serde_json::json!({"reason": "bot deleted"}),
+                );
+            }
+            let mut named_by = Vec::new();
+            for other in s.bots.values() {
+                if other
+                    .delegation
+                    .as_ref()
+                    .is_some_and(|d| d.to.iter().any(|t| t == id.as_str()))
+                {
+                    named_by.push(BotReference {
+                        bot_id: other.id.to_string(),
+                        how: "delegation".into(),
+                        topic: String::new(),
+                    });
+                }
+                for sub in other
+                    .subscriptions
+                    .iter()
+                    .filter(|sub| sub.from.iter().any(|f| f == id.as_str()))
+                {
+                    named_by.push(BotReference {
+                        bot_id: other.id.to_string(),
+                        how: "subscription".into(),
+                        topic: sub.topic.clone(),
+                    });
+                }
+            }
+            s.bot_event("bot.deleted", &id);
+            Ok(DeletedBot {
+                bot,
+                cancelled: cancelled.iter().map(ToString::to_string).collect(),
+                children_cancelled: Vec::new(),
+                incidents_resolved: Vec::new(),
+                timers_removed: 0,
+                notifications_dropped: 0,
+                named_by,
+            })
+        })
+    }
+
     fn send_task_message(&self, id: TaskId, text: String) -> PortFuture<'_, SentTaskMessage> {
         self.call(format!("send_task_message {id}"), move |s| {
             if s.older {
@@ -1122,6 +1281,21 @@ impl ControlPlane for FakeControlPlane {
                     task.updated_at = now;
                     let task = task.clone();
                     let bot = task.bot_id.to_string();
+                    // A run stopped before it said what it spent: its
+                    // cost is unknown, as the control plane says.
+                    for execution in s
+                        .executions
+                        .iter_mut()
+                        .filter(|e| e.task_id == id && !e.outcome.is_final())
+                    {
+                        execution.outcome = ExecutionOutcome::Cancelled;
+                        execution.ended_at = Some(now);
+                        execution.usage = Usage {
+                            tool_calls: execution.usage.tool_calls,
+                            cost_unknown: true,
+                            ..Default::default()
+                        };
+                    }
                     s.event("bot.task.cancelled", &bot, &id, now, serde_json::json!({}));
                     Ok(CancelledTask {
                         task,
@@ -1171,6 +1345,18 @@ impl ControlPlane for FakeControlPlane {
         self.call(format!("task_executions {id}"), move |s| {
             s.task_mut(&id)?;
             Ok(s.executions.iter().filter(|e| e.task_id == id).cloned().collect())
+        })
+    }
+
+    fn task_events_after(&self, id: TaskId, after: Option<String>, _wait_seconds: u32) -> PortFuture<'_, Vec<Event>> {
+        self.call(format!("task_events_after {id}"), move |s| {
+            s.task_mut(&id)?;
+            let events: Vec<Event> = s.events.iter().filter(|e| e.task_id == id.as_str()).cloned().collect();
+            let start = after
+                .and_then(|cursor| events.iter().position(|e| e.event_id == cursor))
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            Ok(events.into_iter().skip(start).collect())
         })
     }
 

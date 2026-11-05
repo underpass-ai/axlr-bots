@@ -140,7 +140,7 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	defer reconciler.Stop()
 	logger.Printf("daemon: serving on %s, tick %s", listening, options.tick())
 	for {
-		fireTimers(ctx, deps, logger)
+		fireTimers(ctx, local, logger)
 		if working.TryLock() {
 			workers.Add(1)
 			go func() {
@@ -181,12 +181,13 @@ func closeListener(listener net.Listener) {
 }
 
 // fireTimers runs the scheduler's pass: every timer whose slot has come
-// fires once (TickTimers), and the pass is logged.
-func fireTimers(ctx context.Context, deps application.Dependencies, logger interface{ Printf(string, ...any) }) {
+// fires once (TickTimers), under the same locks as a submission and a
+// delete, and the pass is logged.
+func fireTimers(ctx context.Context, local *unixapi.Local, logger interface{ Printf(string, ...any) }) {
 	if ctx.Err() != nil {
 		return
 	}
-	result, err := application.NewTickTimers(deps).Execute(ctx)
+	result, err := local.TickTimers(ctx)
 	if err != nil {
 		logger.Printf("daemon: timers: %v", err)
 		return
@@ -252,17 +253,18 @@ func deliverLoop(ctx context.Context, deps application.Dependencies, options Opt
 // drain runs Pending tasks until none is left or ctx ends. Before each
 // run it carries out the approval deadlines that passed: an expiry
 // takes the runner's slot, as a run does, so it gets its turn between
-// two runs rather than after the whole queue.
+// two runs rather than after the whole queue. An error ends the drain
+// until the next tick: a run that could not start leaves its task
+// Pending, the next pick finds it again, and going on at once would
+// retry it as fast as the disk answers (QA 5 Nov 2026: a thousand
+// refused runs a second, each one an audit line).
 func drain(ctx context.Context, runner *application.SerialRunner, logger interface{ Printf(string, ...any) }) {
 	for ctx.Err() == nil {
 		expireApprovals(ctx, runner, logger)
 		result, ran, err := runner.RunNext(ctx)
 		if err != nil {
 			logger.Printf("daemon: run: %v", err)
-			if !ran {
-				return
-			}
-			continue
+			return
 		}
 		if !ran {
 			return

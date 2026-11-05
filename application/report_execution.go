@@ -37,6 +37,11 @@ func (uc ReportExecution) Execute(ctx context.Context, node domain.NodeID, id do
 		return ReportResult{}, err
 	}
 	if execution.Outcome() != domain.ExecutionRunning {
+		// A late report: the run's usage is still kept, when the end
+		// (a cancel) could not know it.
+		if err := newLateAccount(uc.deps).keep(ctx, task, &execution, report); err != nil {
+			return ReportResult{}, err
+		}
 		return ReportResult{Task: task, Execution: execution, Accepted: false}, nil
 	}
 	bot, err := uc.deps.Bots.Get(ctx, task.BotID())

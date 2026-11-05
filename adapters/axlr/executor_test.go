@@ -2,6 +2,7 @@ package axlr
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -208,6 +209,11 @@ func TestExecuteTimesOutAndKeepsThePartialTrace(t *testing.T) {
 	if report.Result.Answer != "The spike " || report.Result.SessionID != "sess-1" {
 		t.Errorf("partial result lost: %+v", report.Result)
 	}
+	// Killed before it wrote a receipt or a result: what it spent is not
+	// known, which is not $0.
+	if u := report.Usage; !u.CostUnknown || u.CostUSD != 0 {
+		t.Errorf("usage = %+v, want an unknown cost", u)
+	}
 	trace, _ := os.ReadFile(report.TracePath)
 	if !strings.Contains(string(trace), `"session":"sess-1"`) {
 		t.Errorf("trace = %s", trace)
@@ -232,7 +238,7 @@ func TestExecuteUsesTheDefaultTimeout(t *testing.T) {
 
 func TestExecuteCancelled(t *testing.T) {
 	e, argsFile := fake(t, "hang")
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	go func() {
 		// Cancel once the process runs: the helper writes its arguments
 		// before it says anything, so a fixed delay (too short under
@@ -244,13 +250,13 @@ func TestExecuteCancelled(t *testing.T) {
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
-		cancel()
+		cancel(errors.New("the node is stopping"))
 	}()
 	report, err := e.Execute(ctx, request(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Outcome != domain.ExecutionFailed || !strings.HasPrefix(report.FailureReason, "cancelled: ") {
+	if report.Outcome != domain.ExecutionFailed || report.FailureReason != "cancelled: the node is stopping" {
 		t.Errorf("outcome %s reason %q", report.Outcome, report.FailureReason)
 	}
 }
@@ -328,6 +334,28 @@ func TestDecide(t *testing.T) {
 	}
 }
 
+// A decision whose session AXLR no longer has (the pod that held it was
+// replaced) fails with a plain reason, not AXLR's file error; a run that
+// is not a decision keeps the error as AXLR said it.
+func TestDecideOnALostSessionSaysSo(t *testing.T) {
+	e, _ := fake(t, "session-lost")
+	report, err := e.Decide(context.Background(), application.DecisionRequest{ExecutionID: "exec-2", BotID: "sii", SessionID: "sess-1", Decision: "approve", Timeout: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Outcome != domain.ExecutionFailed || report.FailureReason != LostSessionReason {
+		t.Errorf("report = %+v", report)
+	}
+	other, _ := e.Decide(context.Background(), application.DecisionRequest{ExecutionID: "exec-3", BotID: "sii", SessionID: "sess-9", Decision: "approve", Timeout: time.Minute})
+	if !strings.Contains(other.FailureReason, "sessions/sess-1.json: no such file") {
+		t.Errorf("another session's missing file was taken for this one's: %+v", other)
+	}
+	run, _ := e.Execute(context.Background(), request(time.Minute))
+	if !strings.HasPrefix(run.FailureReason, "exit code 1: axlr-tui: open ") {
+		t.Errorf("run = %+v", run)
+	}
+}
+
 func TestTailWriter(t *testing.T) {
 	w := &tailWriter{limit: 8}
 	_, _ = w.Write([]byte("abcdefgh\n"))
@@ -379,5 +407,38 @@ func TestTracePathReportsOnlyAKeptTrace(t *testing.T) {
 	_ = os.WriteFile(want, []byte("{}\n"), 0o644)
 	if got, ok := e.TracePath("exec-1"); !ok || got != want {
 		t.Errorf("TracePath = %q %v, want %q", got, ok, want)
+	}
+}
+
+// A run stopped at its timeout reports what it spent when AXLR wrote
+// its receipt on the SIGTERM: its own requests (the earlier one is the
+// session's first run), the call it made and the receipt. Before, the
+// run counted as $0 (5 November 2026).
+func TestATimedOutRunKeepsTheCostItsReceiptTells(t *testing.T) {
+	e, _ := fake(t, "hang-then-receipt")
+	report, err := e.Execute(context.Background(), request(500*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Outcome != domain.ExecutionFailed || report.FailureReason != "timed out after 500ms" {
+		t.Errorf("outcome %s reason %q", report.Outcome, report.FailureReason)
+	}
+	if u := report.Usage; u.CostUnknown || u.Requests != 2 || u.PromptTokens != 1200 || !near(u.CostUSD, 0.0007) || u.ToolCalls != 1 {
+		t.Errorf("usage = %+v, want this run's two requests and its one call", u)
+	}
+	if len(report.Receipt) == 0 {
+		t.Error("the receipt was not kept")
+	}
+}
+
+// Without an itemized receipt, a stopped run's result usage stands.
+func TestATimedOutRunWithAResultKeepsItsUsage(t *testing.T) {
+	e, _ := fake(t, "result-then-hang")
+	report, err := e.Execute(context.Background(), request(300*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u := report.Usage; u.CostUnknown || u.Requests != 2 || !near(u.CostUSD, 0.0021) {
+		t.Errorf("usage = %+v", u)
 	}
 }

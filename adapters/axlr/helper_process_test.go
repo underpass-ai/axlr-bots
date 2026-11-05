@@ -3,7 +3,9 @@ package axlr
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -25,7 +27,12 @@ func TestHelperProcess(t *testing.T) {
 	}
 	for _, a := range args {
 		if a == "--version" {
-			fmt.Fprintln(os.Stdout, "axlr-tui 0.14.0-dev")
+			// The real axlr-tui prints it on stderr.
+			out := os.Stdout
+			if os.Getenv("FAKE_AXLR_VERSION_STDERR") != "" {
+				out = os.Stderr
+			}
+			fmt.Fprintln(out, "axlr-tui 0.14.0-dev")
 			os.Exit(0)
 		}
 		if a == "--help" {
@@ -71,6 +78,16 @@ func TestHelperProcess(t *testing.T) {
 		say(session, `{"type":"artifact","artifact":`+artifact+`}`,
 			`{"type":"receipt","receipt":{"schema":"axlr.execution-receipt/v1",  "status":"completed","complete":true}}`,
 			`{"type":"result","session":"sess-1","result":{"schema":"axlr.execution-result/v1","status":"completed","session_id":"sess-1","answer":"Delivered.","tool_calls":[],"usage":{"requests":1},"artifacts":[`+artifact+`]}}`)
+		os.Exit(0)
+	case "decide-continues":
+		// The session's first run made two requests; this run makes one.
+		now := time.Now().UTC().Format(time.RFC3339Nano)
+		say(`{"type":"session.continued","session":"sess-1"}`,
+			`{"type":"receipt","receipt":{"schema":"axlr.execution-receipt/v1","status":"completed","complete":true,"requests":[`+
+				`{"session_id":"sess-1","index":1,"started_at":"2026-11-05T00:00:03Z","status":"completed","prompt_tokens":7411,"cached_tokens":0,"completion_tokens":140,"reasoning_tokens":49,"cost_usd":0.000996275},`+
+				`{"session_id":"sess-1","index":2,"started_at":"2026-11-05T00:00:05Z","status":"completed","prompt_tokens":7600,"cached_tokens":7407,"completion_tokens":90,"reasoning_tokens":0,"cost_usd":0.0007},`+
+				`{"session_id":"sess-1","index":3,"started_at":"`+now+`","status":"completed","prompt_tokens":7800,"cached_tokens":7600,"completion_tokens":60,"reasoning_tokens":10,"cost_usd":0.00011}]}}`,
+			`{"type":"result","session":"sess-1","result":{"schema":"axlr.execution-result/v1","status":"completed","session_id":"sess-1","sessions":["sess-1"],"answer":"Done.","tool_calls":[],"usage":{"requests":3,"prompt_tokens":22811,"cached_tokens":15007,"completion_tokens":290,"reasoning_tokens":59,"cost_usd":0.001806275,"cost_requests":3}}}`)
 		os.Exit(0)
 	case "receipt-unknown":
 		say(session, `{"type":"receipt","receipt":{"schema":"axlr.execution-receipt/v9"}}`, `{"type":"receipt","receipt":"no"}`, `{"type":"completed","session":"sess-1"}`)
@@ -127,6 +144,9 @@ func TestHelperProcess(t *testing.T) {
 		fmt.Fprintln(os.Stderr, "axlr-tui: no model provider: set OPENROUTER_API_KEY")
 		fmt.Fprintln(os.Stderr, "")
 		os.Exit(1)
+	case "session-lost":
+		fmt.Fprintln(os.Stderr, "axlr-tui: open /tmp/axlr-state/axlr/sessions/sess-1.json: no such file or directory")
+		os.Exit(1)
 	case "exit-7":
 		os.Exit(7)
 	case "garbage":
@@ -134,6 +154,29 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(0)
 	case "hang":
 		say(session, text)
+		time.Sleep(30 * time.Second)
+		os.Exit(0)
+	case "hang-then-receipt":
+		// As axlr-tui does on a SIGTERM: the turn stops, and the receipt
+		// and the result still go out before it exits.
+		term := make(chan os.Signal, 1)
+		signal.Notify(term, syscall.SIGTERM)
+		started := time.Now().UTC().Format(time.RFC3339Nano)
+		say(session, `{"type":"tool.requested","tool":"local_read","call_id":"c1"}`, `{"type":"tool.completed","tool":"local_read","call_id":"c1"}`)
+		select {
+		case <-term:
+		case <-time.After(30 * time.Second):
+		}
+		say(`{"type":"failed","session":"sess-1","error":"context canceled"}`,
+			`{"type":"receipt","receipt":{"schema":"axlr.execution-receipt/v1","status":"interrupted","complete":false,"requests":[`+
+				`{"session_id":"sess-1","index":1,"started_at":"2026-11-05T00:00:03Z","status":"completed","prompt_tokens":5000,"completion_tokens":100,"cost_usd":0.003},`+
+				`{"session_id":"sess-1","index":2,"started_at":"`+started+`","status":"completed","prompt_tokens":1200,"completion_tokens":40,"cost_usd":0.0007},`+
+				`{"session_id":"sess-1","index":3,"started_at":"`+started+`","status":"interrupted","unmetered":true,"cost_usd":null}]}}`,
+			`{"type":"result","session":"sess-1","result":{"schema":"axlr.execution-result/v1","status":"interrupted","session_id":"sess-1","error":"context canceled","tool_calls":[{"call_id":"c0","tool":"local_read","status":"completed"},{"call_id":"c1","tool":"local_read","status":"completed"}],"usage":{"requests":3,"cost_usd":0.0037}}}`)
+		os.Exit(1)
+	case "result-then-hang":
+		// A result without an itemized receipt, then the process hangs.
+		say(`{"type":"result","session":"sess-1","result":{"schema":"axlr.execution-result/v1","status":"completed","session_id":"sess-1","usage":{"requests":2,"prompt_tokens":800,"cost_usd":0.0021}}}`)
 		time.Sleep(30 * time.Second)
 		os.Exit(0)
 	case "hang-ignoring-term":

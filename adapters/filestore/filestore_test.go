@@ -79,6 +79,26 @@ func TestBotRepositorySurvivesAReopen(t *testing.T) {
 	}
 }
 
+func TestBotRepositoryDeletes(t *testing.T) {
+	ctx := context.Background()
+	repo := NewBotRepository(t.TempDir())
+	if err := repo.Save(ctx, sampleBot(t, "bot-1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Delete(ctx, "bot-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.Get(ctx, "bot-1"); !domain.IsNotFound(err) {
+		t.Errorf("get after delete: %v", err)
+	}
+	if err := repo.Delete(ctx, "bot-1"); !domain.IsNotFound(err) {
+		t.Errorf("second delete: %v", err)
+	}
+	if err := repo.Delete(ctx, "../x"); err == nil {
+		t.Error("a path was deleted")
+	}
+}
+
 func TestListOnEmptyAndCorruptStores(t *testing.T) {
 	ctx := context.Background()
 	state := t.TempDir()
@@ -103,13 +123,13 @@ func TestListOnEmptyAndCorruptStores(t *testing.T) {
 	if _, err := repo.Get(ctx, "broken"); !domain.IsNotFound(err) {
 		t.Errorf("corrupt file set aside: %v", err)
 	}
-	// Valid JSON the domain refuses is not set aside: the listing fails.
+	// Valid JSON the domain refuses is set aside too.
 	_ = os.WriteFile(filepath.Join(dir, "invalid.json"), []byte(`{"id":"invalid","status":"Nope"}`), 0o644)
 	if _, err := repo.Get(ctx, "invalid"); err == nil {
 		t.Error("invalid snapshot restored")
 	}
-	if _, err := repo.List(ctx); err == nil || quarantined(t, dir, "invalid") {
-		t.Errorf("list with an invalid snapshot: %v", err)
+	if list, err := repo.List(ctx); err != nil || len(list) != 0 || !quarantined(t, dir, "invalid") {
+		t.Errorf("list with an invalid snapshot: %v %d", err, len(list))
 	}
 	// A directory that cannot be listed.
 	unreadable := NewBotRepository(filepath.Join(state, "file-not-dir"))
@@ -122,7 +142,7 @@ func TestListOnEmptyAndCorruptStores(t *testing.T) {
 func TestTaskRepositoryFindsByKey(t *testing.T) {
 	ctx := context.Background()
 	repo := NewTaskRepository(t.TempDir())
-	if _, found, err := repo.FindByIdempotencyKey(ctx, "bot-1", "k"); err != nil || found {
+	if _, found, err := repo.FindByIdempotencyKey(ctx, "bot-1", "k", time.Time{}); err != nil || found {
 		t.Errorf("empty store: %v %v", err, found)
 	}
 	a, _ := domain.NewTask("task-a", "bot-1", "Investigate", "alert-1", "trace-1", t0)
@@ -134,15 +154,25 @@ func TestTaskRepositoryFindsByKey(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, found, err := repo.FindByIdempotencyKey(ctx, "bot-1", "alert-1")
+	got, found, err := repo.FindByIdempotencyKey(ctx, "bot-1", "alert-1", time.Time{})
 	if err != nil || !found || got.ID() != "task-a" {
 		t.Errorf("find: %v %v %s", err, found, got.ID())
 	}
-	if _, found, _ := repo.FindByIdempotencyKey(ctx, "bot-1", "alert-2"); found {
+	if _, found, _ := repo.FindByIdempotencyKey(ctx, "bot-1", "alert-2", time.Time{}); found {
 		t.Error("found a task under another key")
 	}
-	if _, found, _ := repo.FindByIdempotencyKey(ctx, "bot-3", "alert-1"); found {
+	if _, found, _ := repo.FindByIdempotencyKey(ctx, "bot-3", "alert-1", time.Time{}); found {
 		t.Error("found a task of another bot")
+	}
+	// The same id registered again later: the older task under the key
+	// was its predecessor's, and a newer one is found past it.
+	if _, found, _ := repo.FindByIdempotencyKey(ctx, "bot-1", "alert-1", t0.Add(time.Second)); found {
+		t.Error("found a deleted bot's task")
+	}
+	c, _ := domain.NewTask("task-c", "bot-1", "Investigate", "alert-1", "", t0.Add(time.Minute))
+	_ = repo.Save(ctx, c)
+	if got, found, _ := repo.FindByIdempotencyKey(ctx, "bot-1", "alert-1", t0.Add(time.Second)); !found || got.ID() != "task-c" {
+		t.Errorf("newer task: %v %s", found, got.ID())
 	}
 	reloaded, err := repo.Get(ctx, "task-b")
 	if err != nil || reloaded.Status() != domain.TaskFailed || reloaded.FailureReason() != "boom" || reloaded.CurrentExecutionID() != "exec-1" {
@@ -152,12 +182,12 @@ func TestTaskRepositoryFindsByKey(t *testing.T) {
 		t.Errorf("missing: %v", err)
 	}
 	_ = os.WriteFile(filepath.Join(repo.files.dir, "bad.json"), []byte("{"), 0o644)
-	if _, found, err := repo.FindByIdempotencyKey(ctx, "bot-1", "nope"); err != nil || found || !quarantined(t, repo.files.dir, "bad") {
+	if _, found, err := repo.FindByIdempotencyKey(ctx, "bot-1", "nope", time.Time{}); err != nil || found || !quarantined(t, repo.files.dir, "bad") {
 		t.Errorf("scan past a corrupt task = %v %v", err, found)
 	}
 	broken := NewTaskRepository(filepath.Join(t.TempDir(), "f"))
 	_ = os.WriteFile(filepath.Dir(broken.files.dir), []byte("x"), 0o644)
-	if _, _, err := broken.FindByIdempotencyKey(ctx, "b", "k"); err == nil {
+	if _, _, err := broken.FindByIdempotencyKey(ctx, "b", "k", time.Time{}); err == nil {
 		t.Error("scan over an unreadable directory succeeded")
 	}
 }
@@ -394,10 +424,11 @@ func TestEnrollmentRepositoryAndDenylist(t *testing.T) {
 		t.Errorf("list: %v %d", err, len(list))
 	}
 	_ = os.WriteFile(filepath.Join(state, "enrollments", "bad.json"), []byte(`{"id":"bad"}`), 0o644)
-	if _, err := repo.List(ctx); err == nil {
-		t.Error("an invalid enrollment listed")
+	if list, err := repo.List(ctx); err != nil || len(list) != 1 || !quarantined(t, filepath.Join(state, "enrollments"), "bad") {
+		t.Errorf("an invalid enrollment was not set aside: %v %d", err, len(list))
 	}
-	if _, err := NewEnrollmentRepository(filepath.Join(state, "enrollments", "bad.json")).List(ctx); err == nil {
+	_ = os.WriteFile(filepath.Join(state, "a-file"), []byte("x"), 0o644)
+	if _, err := NewEnrollmentRepository(filepath.Join(state, "a-file")).List(ctx); err == nil {
 		t.Error("list over a file succeeded")
 	}
 
@@ -479,8 +510,8 @@ func TestTimerRepository(t *testing.T) {
 		t.Error("an empty directory should list nothing")
 	}
 	_ = os.WriteFile(filepath.Join(repo.files.dir, "bad~one.json"), []byte(`{"botId": "Bad"}`), 0o600)
-	if _, err := repo.List(ctx); err == nil {
-		t.Error("a bad timer file listed")
+	if list, err := repo.List(ctx); err != nil || len(list) != 1 || !quarantined(t, repo.files.dir, "bad~one") {
+		t.Errorf("a bad timer file was not set aside: %v %d", err, len(list))
 	}
 }
 
@@ -496,7 +527,7 @@ func TestTaskRepositoryKeepsTheTriggerAndInput(t *testing.T) {
 	if err != nil || got.Trigger().Name != "deploy" || string(got.Input()) != `{"type":"deploy"}` {
 		t.Errorf("reloaded: %v %+v", err, got.Snapshot())
 	}
-	found, ok, err := repo.FindByIdempotencyKey(ctx, "bot-1", "webhook:deploy:abc")
+	found, ok, err := repo.FindByIdempotencyKey(ctx, "bot-1", "webhook:deploy:abc", time.Time{})
 	if err != nil || !ok || found.ID() != "task-w" {
 		t.Error("lookup by the fire key failed")
 	}

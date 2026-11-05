@@ -35,6 +35,8 @@ type DecisionRequest struct {
 	DelegationSocket string
 	// OnSaid is as on an ExecutionRequest.
 	OnSaid func(SaidReply) `json:"-"`
+	// OnProgress is as on an ExecutionRequest.
+	OnProgress func(ProgressItem) `json:"-"`
 }
 
 // Validate checks the request names a session and a known decision.

@@ -14,6 +14,10 @@ const (
 	// EventBotPaused says an enabled bot was put on hold; it accepts no
 	// task until it is enabled again.
 	EventBotPaused EventType = "bot.paused"
+	// EventBotDeleted says a bot was deleted: its unfinished tasks were
+	// cancelled, its timers removed and its open incidents resolved; its
+	// history stays.
+	EventBotDeleted EventType = "bot.deleted"
 	// EventTriggerFired says a trigger fired: a webhook arrived or a
 	// timer's slot came. The payload names the task and says whether the
 	// fire created it or found it under its idempotency key.
@@ -50,6 +54,11 @@ const (
 	// EventTaskSaid says a running task's execution answered the
 	// operator's message: the payload holds its words and the message.
 	EventTaskSaid EventType = "bot.task.said"
+	// EventTaskProgress says what a running task's execution was doing:
+	// the payload holds a batch of items the node read from the run as
+	// it went (a tool call started or ended, a decision required, a
+	// delegation, the model's text).
+	EventTaskProgress EventType = "bot.task.progress"
 	// EventDelegationRefused says a task's execution asked another bot
 	// and the control plane refused: the payload names the target and
 	// the check that refused it.
@@ -122,8 +131,8 @@ const (
 // ParseEventType validates an event type.
 func ParseEventType(raw string) (EventType, error) {
 	switch EventType(raw) {
-	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
-		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventTaskDelegated, EventTaskMessage, EventTaskSaid, EventDelegationRefused,
+	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventBotDeleted, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
+		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventTaskDelegated, EventTaskMessage, EventTaskSaid, EventTaskProgress, EventDelegationRefused,
 		EventEventEmitted, EventEventRefused, EventEventHeard, EventSubscriptionChanged, EventSubscriptionAsked, EventGroupEventPublished,
 		EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentEscalated, EventIncidentResolved,
 		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked, EventNodeRenewed,

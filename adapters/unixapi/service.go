@@ -22,6 +22,11 @@ type Service interface {
 	PauseBot(ctx context.Context, id string) (domain.BotSnapshot, error)
 	// StopBot pauses the bot and cancels every task it has not finished.
 	StopBot(ctx context.Context, id string) (StopResponse, error)
+	// DeleteBot removes the bot: it cancels its unfinished tasks and the
+	// delegated children it asked for, resolves its open incidents,
+	// removes its timers and answers the bots that still name it. Its
+	// history stays.
+	DeleteBot(ctx context.Context, id string) (DeleteResponse, error)
 	// UpdateBot applies a partial change to the bot's definition.
 	UpdateBot(ctx context.Context, id string, patch application.BotPatch) (domain.BotSnapshot, error)
 	ListBots(ctx context.Context) ([]domain.BotSnapshot, error)
@@ -57,7 +62,9 @@ type Service interface {
 	SendTaskMessage(ctx context.Context, id string, request MessageRequest) (application.SentTaskMessage, error)
 	GetTask(ctx context.Context, id string) (domain.TaskSnapshot, error)
 	ListTasks(ctx context.Context, query application.TaskQuery) ([]domain.TaskSnapshot, error)
-	ListTaskEvents(ctx context.Context, id string, limit int) ([]domain.Event, error)
+	// ListTaskEvents answers a task's timeline after the caller's last
+	// event, oldest first.
+	ListTaskEvents(ctx context.Context, query application.TaskEventsQuery) ([]domain.Event, error)
 	GetOverview(ctx context.Context, since time.Time) (application.Overview, error)
 	// OpenIncident reports an alert group: it opens an incident and its
 	// triage task, repeats one already open, or reopens one resolved

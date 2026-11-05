@@ -8,14 +8,14 @@ use iced::{Alignment, Length, mouse};
 
 use super::levels;
 use super::widgets::{
-    El, SMALL, action, bold, chip, copy_button, empty, fact, icon, muted, pill, section, section_title, section_with,
-    title,
+    El, SMALL, Voice, action, bold, chip, copy_button, empty, fact, icon, muted, pill, reader, section, section_title,
+    section_with, title,
 };
 use crate::application::{BotNow, ChatLine};
 use crate::domain::{Bot, BotId, BotStatus, TaskId};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
-use crate::ui::{App, BotView, Icon, Message, ModeChoice, Screen, Tokens, Tone};
+use crate::ui::{App, BotView, Icon, Message, ModeChoice, ReaderKey, Screen, Tokens, Tone, passages};
 
 pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
     let back = action(Kind::Ghost, Icon::Back, "Bots", Some(Message::Go(Screen::Bots)), tokens);
@@ -58,9 +58,26 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
             (!app.switching).then(|| Message::AskStopBot(bot.id.clone())),
             tokens,
         ),
+        action(
+            Kind::Secondary,
+            Icon::Wrench,
+            "Edit",
+            (!app.edit.is_open_for(&bot.id)).then(|| Message::EditOpen(bot.id.clone())),
+            tokens,
+        ),
+        action(
+            Kind::Secondary,
+            Icon::Ban,
+            "Delete",
+            (!app.delete.is_open_for(&bot.id)).then(|| Message::DeleteOpen(bot.id.clone())),
+            tokens,
+        ),
     ]
     .spacing(12)
-    .align_y(Alignment::Center);
+    .align_y(Alignment::Center)
+    // In a narrow window the acts go under the name, never out of sight.
+    .wrap()
+    .vertical_spacing(10);
 
     let mut left = column![].spacing(14).width(Length::FillPortion(3));
     if let Some(asking) = asking(app, &bot.id, tokens) {
@@ -100,14 +117,20 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
             Icon::Tasks,
             "Recent work",
             vec![new_task],
-            tasks(app, &bot.id, tokens),
+            tasks(app, bot, tokens),
             tokens
         ),
         section_with(
             Icon::Bolt,
             "What it does",
             vec![copy_button("Copy mission", bot.mission.clone(), tokens)],
-            text(bot.mission.clone()),
+            reader(
+                &app.readers,
+                ReaderKey::BotMission,
+                bot.mission.clone(),
+                Voice::Body,
+                tokens
+            ),
             tokens,
         ),
         team(app, bot, tokens),
@@ -126,6 +149,13 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
     // Open, Advanced comes first, under the name, as the operator asked
     // for it.
     let mut page = column![header].spacing(18);
+    // Delete and Edit, once asked for, come first, under the name.
+    if let Some(card) = super::bot_delete::card(app, bot, tokens) {
+        page = page.push(card);
+    }
+    if let Some(card) = super::bot_edit::card(app, bot, tokens) {
+        page = page.push(card);
+    }
     if app.advanced {
         page = page.push(advanced(app, bot, tokens));
     }
@@ -134,6 +164,7 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
         right: 12.0,
         ..Default::default()
     }))
+    .id(super::widgets::PAGE)
     .height(Length::Fill)
     .into()
 }
@@ -256,11 +287,9 @@ fn now<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
     .spacing(12)
     .align_y(Alignment::Center);
     if let Some(task) = state.task() {
-        body = body.push(action(
-            Kind::Ghost,
-            Icon::Play,
+        body = body.push(super::widgets::open(
             "Open task",
-            Some(Message::Go(Screen::Task(task.id.clone()))),
+            Message::Go(Screen::Task(task.id.clone())),
             tokens,
         ));
     }
@@ -417,7 +446,10 @@ fn listens<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
                 row![
                     column![
                         bold("Mode").size(SMALL),
-                        pick_list(ModeChoice::ALL, Some(form.mode), Message::ListenMode).padding(8),
+                        pick_list(ModeChoice::ALL, Some(form.mode), Message::ListenMode)
+                            .padding(8)
+                            .style(styles::picker(tokens))
+                            .menu_style(styles::menu(tokens)),
                         muted(form.default_label(), tokens),
                     ]
                     .spacing(6),
@@ -520,30 +552,38 @@ fn advanced<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
     }
     let facts = column![
         fact("Starts by", triggers, tokens),
-        fact("Runs on", text(bot.placement.describe()), tokens),
+        fact(
+            "Runs on",
+            reader(
+                &app.readers,
+                ReaderKey::BotRunsOn,
+                bot.placement.describe(),
+                Voice::Body,
+                tokens
+            ),
+            tokens
+        ),
         fact("Tools", tools(bot, tokens), tokens),
         fact(
             "Model",
-            text(format!(
-                "{} · {} · {}",
-                bot.model.model,
-                bot.model.routing_policy,
-                if bot.model.allow_remote_providers {
-                    "remote allowed"
-                } else {
-                    "local only"
-                }
-            )),
+            reader(
+                &app.readers,
+                ReaderKey::BotModel,
+                passages::model(bot),
+                Voice::Body,
+                tokens
+            ),
             tokens
         ),
         fact(
             "Budgets",
-            text(format!(
-                "{} model calls · {} tool calls · {} per task",
-                limit(bot.budgets.max_model_calls_per_task),
-                limit(bot.budgets.max_tool_calls_per_task),
-                bot.budgets.timeout_label()
-            )),
+            reader(
+                &app.readers,
+                ReaderKey::BotBudgets,
+                passages::budgets(bot),
+                Voice::Body,
+                tokens
+            ),
             tokens
         ),
     ]
@@ -558,15 +598,6 @@ fn advanced<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
         .spacing(24),
         tokens,
     )
-}
-
-/// A budget, or `default` when the bot leaves it to the control plane.
-fn limit(value: u32) -> String {
-    if value == 0 {
-        "default".to_string()
-    } else {
-        value.to_string()
-    }
 }
 
 fn tools<'a>(bot: &'a Bot, tokens: Tokens) -> El<'a> {
@@ -614,7 +645,7 @@ fn events<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             head = head.push(muted(format::short_id(task.as_str(), 9), tokens).wrapping(Wrapping::None));
         }
         let mut words = column![head].spacing(2).width(Length::Fill);
-        let detail = event.detail();
+        let detail = format::event_detail(event);
         if !detail.is_empty() {
             words = words.push(muted(detail, tokens));
         }
@@ -639,13 +670,15 @@ fn events<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     list.into()
 }
 
-fn tasks<'a>(app: &'a App, bot: &'a BotId, tokens: Tokens) -> El<'a> {
+/// The bot's newest tasks. A task older than the bot is a predecessor's
+/// that had its id: a bot deleted and registered again starts afresh.
+fn tasks<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
     let mut list = column![].spacing(8);
     let mine: Vec<_> = app
         .fleet
         .iter()
         .flat_map(|f| f.tasks.iter())
-        .filter(|t| &t.bot_id == bot)
+        .filter(|t| t.bot_id == bot.id && t.created_at >= bot.created_at)
         .take(8)
         .collect();
     if mine.is_empty() {
@@ -655,8 +688,14 @@ fn tasks<'a>(app: &'a App, bot: &'a BotId, tokens: Tokens) -> El<'a> {
         list = list.push(
             mouse_area(
                 row![
-                    pill(Tone::of_task(task.status), task.status.label(), tokens),
-                    text(task.headline(44)).size(SMALL).width(Length::Fill),
+                    super::widgets::slot(
+                        pill(Tone::of_task(task.status), task.status.label(), tokens),
+                        super::widgets::PILL_SLOT
+                    ),
+                    text(task.headline(44))
+                        .size(SMALL)
+                        .wrapping(Wrapping::WordOrGlyph)
+                        .width(Length::Fill),
                     muted(format::age(task.created_at, app.now), tokens),
                 ]
                 .spacing(10)
