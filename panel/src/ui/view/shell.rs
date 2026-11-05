@@ -268,18 +268,10 @@ fn main<'a>(app: &'a App, content: El<'a>, tokens: Tokens) -> El<'a> {
         .width(Length::Fill)
         .max_width(BANNER_WIDTH)
         .style(styles::banner(tokens, banner.tone));
-    // Its shadow reaches past it, and a renderer that redraws only what
-    // changed redraws only a box's own bounds: a clear box as wide as the
-    // shadow makes the banner's going repaint all of it at once.
-    let reach = styles::BANNER_SHADOW_REACH;
-    let toast = container(toast)
-        .padding(reach)
-        .max_width(BANNER_WIDTH + 2.0 * reach)
-        .style(styles::clear);
     stack![
         page,
         container(toast)
-            .padding(Padding::from([20.0 - reach, 28.0 - reach]))
+            .padding(Padding::from([20, 28]))
             .width(Length::Fill)
             .height(Length::Fill)
             .align_x(Alignment::Center)

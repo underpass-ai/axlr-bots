@@ -4,7 +4,7 @@
 //! does, until the person scrolls up to read. A step opens its details,
 //! a bot asked opens its own task, and every part copies.
 
-use iced::widget::{Space, button, column, container, markdown, row, scrollable, text, text_editor};
+use iced::widget::{Space, button, column, container, markdown, responsive, row, scrollable, text, text_editor};
 use iced::{Alignment, Font, Length, Padding};
 
 use super::widgets::{BODY, El, REGULAR, SMALL, action, bold, copy_button, empty, icon, muted, pill, section_with};
@@ -26,6 +26,8 @@ const AT_END: f32 = 4.0;
 /// line shows; its details show them whole.
 const LINE_SUMMARY: usize = 60;
 const LINE_ERROR: usize = 90;
+/// How wide a character of the monospaced face is, in its size.
+const MONO_EM: f32 = 0.6;
 
 /// The Activity of the task on screen: while it may run, and after it
 /// ended when its run told anything.
@@ -271,10 +273,20 @@ fn tool_name<'a>(call: &'a ToolActivity, tokens: Tokens) -> El<'a> {
         .spacing(8)
         .align_y(Alignment::Center);
     if !call.summary.is_empty() {
+        // As much as the line's room holds, cut with an ellipsis: never
+        // under the state's pill in a narrow window.
         name = name.push(
-            muted(call.short_summary(LINE_SUMMARY), tokens)
-                .font(Font::MONOSPACE)
-                .wrapping(text::Wrapping::None),
+            responsive(move |space| {
+                let fits = ((space.width / (MONO_EM * SMALL)).floor() as usize).min(LINE_SUMMARY);
+                container(
+                    muted(call.short_summary(fits.max(2)), tokens)
+                        .font(Font::MONOSPACE)
+                        .wrapping(text::Wrapping::None),
+                )
+                .clip(true)
+                .into()
+            })
+            .height(Length::Shrink),
         );
     }
     let mut lines = column![name].spacing(2).width(Length::Fill);

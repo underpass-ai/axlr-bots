@@ -40,7 +40,9 @@ impl Activity {
         // Whether the last item was reasoning: the reasoning of the next
         // step starts a paragraph of its own.
         let mut thinking = false;
-        // The run whose words came last.
+        // Whether the last item was words, and the run whose words came
+        // last: words after anything else start a paragraph.
+        let mut words = false;
         let mut words_of: Option<String> = None;
         for event in events {
             match event.event_type.as_str() {
@@ -55,6 +57,7 @@ impl Activity {
                     for item in event.progress() {
                         let at = item.at.unwrap_or(event.created_at);
                         let was_thinking = std::mem::replace(&mut thinking, item.kind == "thinking");
+                        let was_words = std::mem::replace(&mut words, item.kind == "text");
                         let key = (event.execution_id.clone(), item.call_id.clone());
                         match item.kind.as_str() {
                             "tool.started" => {
@@ -111,15 +114,19 @@ impl Activity {
                                 at,
                             }),
                             "text" => {
-                                // The words of the run after a decision
-                                // start a paragraph of their own.
-                                if words_of.as_ref().is_some_and(|run| run != &event.execution_id)
-                                    && !activity.text.is_empty()
-                                {
+                                // The words of another turn of the model
+                                // (after a step or its reasoning) or of the
+                                // run after a decision start a paragraph
+                                // of their own: never "workspace.Two files".
+                                let turn =
+                                    !was_words || words_of.as_ref().is_some_and(|run| run != &event.execution_id);
+                                let mut said = item.text.as_str();
+                                if turn && !activity.text.is_empty() {
                                     activity.text = format!("{}\n\n", activity.text.trim_end());
+                                    said = said.trim_start();
                                 }
                                 words_of = Some(event.execution_id.clone());
-                                activity.text.push_str(&item.text);
+                                activity.text.push_str(said);
                             }
                             "text.truncated" => activity.text_cut = true,
                             "thinking" => {
@@ -351,7 +358,8 @@ mod tests {
                 "x · ok",
             ]
         );
-        assert_eq!(activity.text, "Looking at the pods. All pods run.");
+        // A step came between: the next words are a paragraph of their own.
+        assert_eq!(activity.text, "Looking at the pods.\n\nAll pods run.");
         assert!(activity.text_cut && activity.truncated);
         // A step came between: the next reasoning is a paragraph of its own.
         assert_eq!(activity.thinking, "The pods first,\n\nthen the log.");
@@ -461,7 +469,7 @@ mod tests {
         ));
         assert_eq!(
             Activity::of(&events, true).text,
-            "Looking at the pods. All pods run.\n\nRestarted."
+            "Looking at the pods.\n\nAll pods run.\n\nRestarted."
         );
         assert_eq!(ended.entries.len(), decided.entries.len());
 

@@ -1104,7 +1104,7 @@ fn the_boxes_of_a_running_task_show_their_new_end_until_the_person_scrolls_up() 
     let effects = app.apply(Message::TaskFollowed(running.clone(), Ok(feed)));
     assert_eq!(shown(&effects), [LiveStream::Steps]);
     let words = app.live.as_ref().unwrap();
-    assert!(!words.follows(LiveStream::Words) && words.activity.text.ends_with(" More."));
+    assert!(!words.follows(LiveStream::Words) && words.activity.text.ends_with("\n\nMore."));
     send(&mut app, Message::ActivityScrolled(LiveStream::Words, true));
     assert!(app.live.as_ref().unwrap().follows(LiveStream::Words));
     // Back from selecting a part, the formatted words show their end;

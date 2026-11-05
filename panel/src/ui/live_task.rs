@@ -173,12 +173,13 @@ mod tests {
         );
         live.update(more, true);
         assert_eq!(live.words.selection().as_deref(), Some("Reading."));
-        assert_eq!(live.activity.text, "Reading. Then the log.");
+        // A step came between: a paragraph of its own.
+        assert_eq!(live.activity.text, "Reading.\n\nThen the log.");
         // The formatted words grow while the person selects.
-        assert_eq!(live.markdown.items().len(), 1);
+        assert_eq!(live.markdown.items().len(), 2);
         live.selecting(false);
         live.selecting(true);
-        assert_eq!(live.words.text().trim_end(), "Reading. Then the log.");
+        assert_eq!(live.words.text().trim_end(), "Reading.\n\nThen the log.");
         live.selecting(false);
         // The task ended: the call without an end is unfinished, and a
         // selection past the list closes.

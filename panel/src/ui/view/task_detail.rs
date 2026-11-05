@@ -1,7 +1,7 @@
 //! One task: the call waiting for a person, the answer, the executions
 //! and the timeline.
 
-use iced::widget::{Space, column, container, markdown, mouse_area, row, scrollable, text, text_editor};
+use iced::widget::{Space, column, container, markdown, mouse_area, responsive, row, scrollable, text, text_editor};
 use iced::{Alignment, Font, Length, mouse};
 
 use super::widgets::{
@@ -43,7 +43,7 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     if task.is_urgent() {
         header = header.push(pill(Tone::Wait, "urgent", tokens));
     }
-    header = header.push(bold(task.headline(80)).size(22.0).width(Length::Fill));
+    header = header.push(headline(&task.objective));
     header = header.push(copy_button("Copy task", task.objective.clone(), tokens));
     if let Some(stop) = stop {
         header = header.push(stop);
@@ -103,15 +103,9 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     if let Some(waiting) = node_wait(app, detail, tokens) {
         page = page.push(waiting);
     }
-    // While the task runs, what it does comes next; once it ended, after
-    // what it was asked.
-    let activity = super::activity::pane(app, detail, tokens);
-    let (first, after) = if task.status.is_terminal() {
-        (None, activity)
-    } else {
-        (activity, None)
-    };
-    if let Some(pane) = first {
+    // What it does comes next, live and once it ended alike: the cards
+    // keep their places when the task ends, so the eye keeps its own.
+    if let Some(pane) = super::activity::pane(app, detail, tokens) {
         page = page.push(pane);
     }
     // The header shows the objective's first line, cut; a longer one is
@@ -120,9 +114,6 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
         page = page.push(section(Icon::Tasks, "Task", text(task.objective.clone()), tokens));
     }
     page = page.push(facts);
-    if let Some(pane) = after {
-        page = page.push(pane);
-    }
     let knew = task.knew();
     if !knew.is_empty() {
         let mut notes = column![muted("What its bot had heard, given to it when it started", tokens)].spacing(6);
@@ -511,6 +502,29 @@ fn timeline_events<'a>(app: &'a App, detail: &'a TaskDetail) -> Vec<&'a Event> {
         None => &detail.events,
     };
     events.iter().filter(|e| !e.is_progress()).collect()
+}
+
+/// How wide a character of the title is on average, in its size: Lexend
+/// Bold.
+const TITLE_EM: f32 = 0.62;
+const TITLE_SIZE: f32 = 22.0;
+
+/// The objective's first line as the page's title: on one line, cut with
+/// an ellipsis to what the header's room holds.
+fn headline<'a>(objective: &'a str) -> El<'a> {
+    responsive(move |space| {
+        let fits = ((space.width / (TITLE_EM * TITLE_SIZE)).floor() as usize).clamp(8, 80);
+        let first = objective.lines().next().unwrap_or_default().trim();
+        container(
+            bold(super::grid::shorten(first, fits))
+                .size(TITLE_SIZE)
+                .wrapping(text::Wrapping::None),
+        )
+        .clip(true)
+        .into()
+    })
+    .height(Length::Shrink)
+    .into()
 }
 
 /// What the task's decision waits for while its node is away or busy.
