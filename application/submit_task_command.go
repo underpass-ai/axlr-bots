@@ -7,7 +7,8 @@ type SubmitTaskCommand struct {
 	Objective      string
 	IdempotencyKey string
 	CorrelationID  string
-	// Priority is urgent for a task that goes first and preempts the
-	// bot's work in progress; empty or normal waits its turn.
+	// Priority is urgent for a task that goes first, preempts the bot's
+	// work in progress and drops its queue; empty or normal waits its
+	// turn.
 	Priority string
 }

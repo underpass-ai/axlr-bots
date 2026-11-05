@@ -16,7 +16,7 @@ operator ──"dile al quad-1 que se retire"──▶ pilot-plane-0 (its direct
    └─ axlr_bots_emit_event(name "recall", to [pilot-quad-1], severity warning, message "ship 244… entering the zone")
         ▼ control plane: same team, rate, depth, cycle
         ├─▶ pilot-quad-1: urgent task (a teammate's warning addressed to it interrupts by default)
-        │     ├─ its task in progress, or a pending approval, ends Cancelled (preempted)
+        │     ├─ its task in progress, a pending approval, or a queued task, ends Cancelled (preempted)
         │     └─ return_home (runs without a person) ──▶ vehicle RTL ──▶ "returning home: ship 244… entering the zone"
         ├─▶ history: bot.event.emitted
         └─▶ panel timeline and banner, phone page (warning); notify targets (critical)
@@ -57,7 +57,7 @@ operator ──"dile al quad-1 que se retire"──▶ pilot-plane-0 (its direct
 | 4 | Loops and depth | The receiver's task gets the emitter's **lineage** (depth + 1, the chain), cut with `depth_exceeded` / `cycle` exactly like a delegation; the receiver is skipped, the event still goes to the history and to people |
 | 5 | Budget | The receiver runs on **its own budgets and timeout**. A grant from the emitter's pool, as in delegation, would starve a broadcast (a pool split among 8 teammates leaves less than one call each) and kill a recall when the emitter is about to end. The cost stays bounded: per emitter by `perMinute` × team size, per chain by its depth, and every hop is a task the panel shows |
 | 6 | Who may make a task urgent | The **operator**: at submission (Urgent), or by the receiver's definition, whose default lets a teammate's addressed `warning` interrupt. A bot never makes a broadcast urgent and never raises its severity past its `maxSeverity`; delegations, webhooks and timers are never urgent |
-| 7 | What urgent does | It goes first in `NextAssignment`. The bot's **Running and WaitingApproval** tasks that are not urgent end `Cancelled`, reason `preempted by the urgent task <id>`, with the emitter's why in brackets when it gave one (`bot.task.preempted`); its Pending tasks wait behind; an urgent task never cancels another urgent one |
+| 7 | What urgent does | It goes first in `NextAssignment`. The bot's **Running and WaitingApproval** tasks that are not urgent end `Cancelled`, reason `preempted by the urgent task <id>`, with the emitter's why in brackets when it gave one (`bot.task.preempted`); since 5 November 2026 its Pending tasks that are not urgent are dropped too, reason `dropped from the queue by the urgent task <id>`; an urgent task never cancels another urgent one |
 | 8 | A pending approval of a preempted task | The wait is closed; a late approve or deny gets `409` and the call never runs; the card leaves the panel and the phone page |
 | 9 | How fast | Cancelling refuses the execution's next lease renewal and the node stops `axlr-tui`; the node's `DefaultRenew` goes from 30 s to **10 s**. Cancelling stops the model, not the vehicle: the quad flies on until the urgent task calls `return_home` |
 | 10 | A call without a person | `approvals.autoApprove`: rules like `toolRules` (`{"tool": "return_home"}`). When a task stops on a matching call, the control plane approves it at once as actor `policy:autoApprove` (audit `task.decide`, no notification): one more execution, a few seconds. AXLR's `act-with-approval` asks for every call even under `--approve all`, so this lives in the control plane until AXLR has a per-tool rule. `run_mission` (take off, go somewhere new) stays a person's decision |
@@ -132,6 +132,6 @@ The same bot with every *Advanced* field:
 ## Left out
 
 - Events from the operator (`POST /v1/groups/{name}/events`) and from webhooks; urgent webhooks and timers. The operator's events, subscriptions by topic and the three delivery modes are in [publish/subscribe events](pubsub-events.md).
-- Cancelling a preempted task's Pending queue and its delegated children.
+- Cancelling a preempted task's delegated children (the bot's own queue is dropped since 5 November 2026).
 - Teams with their own settings (description, notify targets): a team aggregate can come later without changing the bots' `groups`.
 - Approval without the extra execution: needs a per-tool rule in AXLR.

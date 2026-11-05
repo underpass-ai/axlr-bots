@@ -68,22 +68,22 @@ func TestAnUrgentTaskPreemptsTheWorkInProgress(t *testing.T) {
 	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionApprove, ""); err == nil {
 		t.Error("a late approval of a preempted task was taken")
 	}
-	if taskOf(t, h, queued.ID()).Status() != domain.TaskPending {
-		t.Error("a Pending task was preempted")
+	if task := taskOf(t, h, queued.ID()); task.Status() != domain.TaskCancelled || task.FailureReason() != "dropped from the queue by the urgent task "+urgent.ID().String()+" (the operator submitted it as urgent)" {
+		t.Errorf("queued = %s %q", task.Status(), task.FailureReason())
 	}
-	preempted := 0
+	preempted := map[domain.TaskID]any{}
 	for _, e := range h.log.events {
 		if e.Type == domain.EventTaskPreempted && e.Payload["preemptedBy"] == urgent.ID().String() {
-			preempted++
+			preempted[e.TaskID] = e.Payload["fromStatus"]
 		}
 	}
-	if preempted != 2 {
-		t.Errorf("%d preempted events", preempted)
+	if len(preempted) != 3 || preempted[running.ID()] != "Running" || preempted[waiting.ID()] != "WaitingApproval" || preempted[queued.ID()] != "Pending" {
+		t.Errorf("preempted events = %v", preempted)
 	}
 	if submitted, ok := lastEvent(h, domain.EventTaskSubmitted); !ok || submitted.Payload["priority"] != "urgent" {
 		t.Errorf("submitted = %+v", submitted)
 	}
-	// The urgent task goes before the older Pending one.
+	// The urgent task is the only one left to run.
 	if next := nextFor(t, h, "web-1"); next.Run.TaskID != urgent.ID() {
 		t.Errorf("assigned %s first", next.Run.TaskID)
 	}
@@ -94,6 +94,48 @@ func TestAnUrgentTaskPreemptsTheWorkInProgress(t *testing.T) {
 	h.tasks.listFail = errBoom
 	if _, err := NewSubmitTask(h.deps).Execute(ctx, SubmitTaskCommand{BotID: "worker-1", Objective: "x", IdempotencyKey: "fails", Priority: "urgent"}); !errors.Is(err, errBoom) {
 		t.Errorf("list failure: %v", err)
+	}
+}
+
+func TestAnUrgentTaskDropsTheBotsQueue(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	onlineNode(t, h, "web-1")
+	teamBot(t, h, "worker-1", nil, nil)
+	teamBot(t, h, "worker-2", nil, nil)
+	queued := submitWith(t, h, "worker-1", "restock", "")
+	other := submitWith(t, h, "worker-2", "restock", "")
+	h.clock.now = t0.Add(time.Second)
+	first := submitWith(t, h, "worker-1", "halt", "urgent")
+	h.clock.now = t0.Add(2 * time.Second)
+	second := submitWith(t, h, "worker-1", "halt-again", "urgent")
+	if task := taskOf(t, h, queued.ID()); task.Status() != domain.TaskCancelled || task.FailureReason() != "dropped from the queue by the urgent task "+first.ID().String()+" (the operator submitted it as urgent)" || task.CurrentExecutionID() != "" {
+		t.Errorf("queued = %s %q %s", task.Status(), task.FailureReason(), task.CurrentExecutionID())
+	}
+	dropped, ok := lastEvent(h, domain.EventTaskPreempted)
+	if !ok || dropped.TaskID != queued.ID() || dropped.Payload["fromStatus"] != "Pending" || dropped.Payload["executionId"] != nil {
+		t.Errorf("dropped = %+v", dropped)
+	}
+	// An urgent task never drops another, and the queue of another bot is its own.
+	if taskOf(t, h, first.ID()).Status() != domain.TaskPending || taskOf(t, h, second.ID()).Status() != domain.TaskPending {
+		t.Error("an urgent task dropped another urgent one")
+	}
+	if taskOf(t, h, other.ID()).Status() != domain.TaskPending {
+		t.Error("another bot's queue was dropped")
+	}
+	// The node gets the urgent tasks and the other bot's; never the dropped one.
+	var assigned []domain.TaskID
+	for range 3 {
+		assigned = append(assigned, nextFor(t, h, "web-1").Run.TaskID)
+	}
+	if assigned[0] != first.ID() || assigned[1] != second.ID() || assigned[2] != other.ID() {
+		t.Errorf("assigned %v", assigned)
+	}
+	if _, found, err := NewNextAssignment(h.deps).Execute(ctx, "web-1"); found || err != nil {
+		t.Errorf("a fourth assignment: %v %v", found, err)
+	}
+	if _, err := NewRunTask(h.deps).Execute(ctx, queued.ID()); err == nil {
+		t.Error("a dropped task ran")
 	}
 }
 

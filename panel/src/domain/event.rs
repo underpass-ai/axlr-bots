@@ -85,6 +85,9 @@ impl Event {
             "bot.subscription.asked" => "Asks to listen".into(),
             "bot.subscription.changed" => "Listening changed".into(),
             "group.event.published" => "You published".into(),
+            "bot.task.preempted" if self.payload_text("fromStatus").as_deref() == Some("Pending") => {
+                "Dropped for urgent".into()
+            }
             "bot.task.preempted" => "Stopped for urgent".into(),
             "bot.task.delegated" => "Asked a bot".into(),
             "bot.delegation.refused" => "Ask refused".into(),
@@ -326,6 +329,14 @@ mod tests {
         assert_eq!(
             event("bot.task.preempted", r#"{"reason":"preempted by task-2"}"#).label(),
             "Stopped for urgent"
+        );
+        assert_eq!(
+            event(
+                "bot.task.preempted",
+                r#"{"fromStatus":"Pending","reason":"dropped from the queue by task-2"}"#
+            )
+            .label(),
+            "Dropped for urgent"
         );
         let by_policy = event(
             "bot.task.decided",

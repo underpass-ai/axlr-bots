@@ -900,7 +900,7 @@ fn a_bot_page_shows_its_team_and_an_urgent_order() {
         &app,
         &[
             "Order",
-            "It goes first: the bot stops what it is doing and does this.",
+            "It goes first: the bot stops what it is doing, drops its queue and does this.",
             "Send the order",
             "Cancel",
         ],
@@ -942,11 +942,22 @@ fn a_task_says_it_was_urgent_and_why_it_stopped() {
     app.apply(Message::SubmitOpen(Some(BotId::new("bot-wrx80").unwrap())));
     shows(&app, &["Urgent"]);
     app.apply(Message::SubmitUrgent(true));
-    shows(&app, &["urgent: it goes first and stops what the bot is doing"]);
+    shows(
+        &app,
+        &["urgent: it goes first, stops what the bot is doing and drops its queue"],
+    );
     app.apply(Message::SubmitObjective("Come back".into()));
     send(&mut app, Message::SubmitSend);
-    shows(&app, &["urgent", "Started by"]);
+    shows(&app, &["urgent", "Started by", "Not run yet: waiting for a node"]);
     hides(&app, &["Told by", "nobody"]);
+    // Cancelled before a node took it: it never ran and waits for nothing.
+    let Screen::Task(queued) = app.screen.clone() else {
+        panic!("not on the task: {:?}", app.screen)
+    };
+    send(&mut app, Message::AskCancel(queued));
+    send(&mut app, Message::ConfirmYes);
+    shows(&app, &["Never ran: it ended before a node took it"]);
+    hides(&app, &["Not run yet: waiting for a node"]);
 }
 
 #[test]

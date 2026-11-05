@@ -1,8 +1,8 @@
 use crate::domain::{BotId, IdempotencyKey};
 
 /// The form that gives a bot an urgent order: the words the operator
-/// types become an urgent task, which stops what the bot is doing. It
-/// keeps one key from the moment it opens: sending twice is the same
+/// types become an urgent task, which stops what the bot is doing and
+/// drops its queue. It keeps one key from the moment it opens: sending twice is the same
 /// order.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OrderForm {

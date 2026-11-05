@@ -38,8 +38,9 @@ const (
 	// EventTaskCancelled says the operator stopped the task.
 	EventTaskCancelled EventType = "bot.task.cancelled"
 	// EventTaskPreempted says an urgent task of the bot cancelled this
-	// one, which was running or waiting for a person: the payload names
-	// the urgent task and why it was urgent.
+	// one, which was running, waiting for a person or queued: the payload
+	// names the urgent task, why it was urgent and the status it left
+	// (fromStatus).
 	EventTaskPreempted EventType = "bot.task.preempted"
 	// EventTaskExpired says a task ended Expired: nobody decided the call
 	// it waited on in time, and the call never ran.

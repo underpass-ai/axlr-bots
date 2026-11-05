@@ -263,6 +263,7 @@ func printUsage(w io.Writer) {
                                       the team's topics: who publishes, who listens, nobody listens
   group publish <group> <name> --message "<text>" [--data '{…}'] [--to a,b] [--key <k>] [--tenant <id>]
                                       publish the operator's event on the team; stop.all stops everyone
+                                      and drops their queued tasks
   incident open --tenant <id> --bot <bot-id> --group-key "<key>" --title "<text>" [--severity sev1..sev4]
                 [--fingerprints a,b] [--source <name>] [--objective "<text>"]
                                       report an alert group: a new incident and its triage task,
@@ -274,7 +275,8 @@ func printUsage(w io.Writer) {
                                       close it; a new alert within 30 minutes reopens it
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>] [--urgent]
                                       accept a task; the same key names the same task; --urgent
-                                      goes first and cancels the bot's work in progress
+                                      goes first, cancels the bot's work in progress and drops
+                                      its queued tasks
   trigger fire <bot-id> <trigger> --body '<json>' | --file <event.json> [--delivery <id>]
                                       fire a webhook trigger with an event (over the socket)
   task run <task-id>                  run a pending task now, in process
