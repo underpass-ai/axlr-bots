@@ -72,6 +72,9 @@ fn incident(incident: &Incident) -> Vec<(ReaderKey, String)> {
     if !incident.diagnosis.is_empty() {
         passages.push((ReaderKey::IncidentDiagnosis, incident.diagnosis.clone()));
     }
+    if !incident.proposal.is_empty() {
+        passages.push((ReaderKey::IncidentProposal, incident.proposal.clone()));
+    }
     for fingerprint in incident.fingerprints.iter().chain(&incident.resolved_fingerprints) {
         passages.push((ReaderKey::Fingerprint(fingerprint.clone()), fingerprint.clone()));
     }

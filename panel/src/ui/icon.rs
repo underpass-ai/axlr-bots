@@ -136,10 +136,12 @@ impl Icon {
     }
 
     /// An incident's status: a diagnosed one shows the lens of a cause
-    /// found, not a run; the others keep their tone's icon.
+    /// found, not a run, a proposed one the wrench of a fix; the others
+    /// keep their tone's icon.
     pub fn of_incident(status: IncidentStatus) -> Self {
         match status {
             IncidentStatus::Diagnosed => Self::Lens,
+            IncidentStatus::Proposed => Self::Wrench,
             other => super::Tone::of_incident(other).icon(),
         }
     }
@@ -187,6 +189,7 @@ mod tests {
         assert_eq!(Icon::of_severity(IncidentSeverity::Sev3), Icon::Dot);
         assert_ne!(Icon::of_severity(IncidentSeverity::Sev4), Icon::Pause);
         assert_eq!(Icon::of_incident(IncidentStatus::Diagnosed), Icon::Lens);
+        assert_eq!(Icon::of_incident(IncidentStatus::Proposed), Icon::Wrench);
         assert_eq!(Icon::of_incident(IncidentStatus::Open), Icon::Cross);
         assert_eq!(Icon::of_incident(IncidentStatus::Resolved), Icon::Check);
     }

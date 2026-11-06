@@ -1,5 +1,5 @@
 //! Incidents: the grouped faults the bots triage, one incident's alerts,
-//! diagnosis and tasks, and closing one by hand.
+//! diagnosis, proposal and tasks, and closing one by hand.
 
 use iced::widget::text::Wrapping;
 use iced::widget::{Space, column, container, responsive, row, scrollable, table, text, text_input};
@@ -186,6 +186,20 @@ pub fn detail<'a>(app: &'a App, id: &'a str, tokens: Tokens) -> El<'a> {
             tokens,
         ));
     }
+    if !incident.proposal.is_empty() {
+        page = page.push(section(
+            Icon::Wrench,
+            "Proposal · not applied",
+            reader(
+                &app.readers,
+                ReaderKey::IncidentProposal,
+                incident.proposal.clone(),
+                Voice::Body,
+                tokens,
+            ),
+            tokens,
+        ));
+    }
     page = page.push(
         row![
             container(section(Icon::Alert, "Alerts", alerts(app, incident, tokens), tokens))
@@ -316,30 +330,34 @@ fn alerts<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> El<'a> {
     body.into()
 }
 
-/// The triage tasks, one per cycle, with their status when the fleet's
-/// read has them; a click opens one.
+/// The tasks of each phase, oldest first, with their status when the
+/// fleet's read has them; a click opens one.
 fn tasks<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> El<'a> {
     if incident.task_ids.is_empty() {
         return empty(Icon::Tasks, "No task worked on it", tokens);
     }
     let mut list = column![].spacing(8);
     for id in &incident.task_ids {
-        list = list.push(task_line(app, id, tokens));
+        list = list.push(task_line(app, incident, id, tokens));
     }
     list.into()
 }
 
-/// A triage task by what it was asked, its bot and age; by its id only
+/// A task by what it was asked, its phase, bot and age; by its id only
 /// when the fleet's read no longer holds it.
-fn task_line<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
+fn task_line<'a>(app: &'a App, incident: &'a Incident, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     let task = app.fleet.as_ref().and_then(|f| f.tasks.iter().find(|t| &t.id == id));
     let go = Message::Go(Screen::Task(id.clone()));
+    let phase = incident
+        .phase_of(id)
+        .map(|p| format!("{} · ", p.name()))
+        .unwrap_or_default();
     match task {
         Some(task) => row![
             slot(pill(Tone::of_task(task.status), task.status.label(), tokens), PILL_SLOT),
             container(link(grid::shorten(task.ask(), 60), go, tokens)).width(Length::Fill),
             muted(
-                format!("{} · {}", task.bot_id, format::age(task.created_at, app.now)),
+                format!("{phase}{} · {}", task.bot_id, format::age(task.created_at, app.now)),
                 tokens
             )
             .wrapping(Wrapping::None),

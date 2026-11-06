@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -264,5 +265,44 @@ func TestIncidentFixObjectiveFits(t *testing.T) {
 	fields, _ := incidentFields(incident)
 	if _, err := fixObjective(trigger, incident, fields); err == nil {
 		t.Error("a template naming a missing field rendered")
+	}
+}
+
+// The launch reports what the stores refuse and leaves an incident whose
+// triage bot is gone alone.
+func TestIncidentFixPhaseLaunchFailures(t *testing.T) {
+	h := newHarness()
+	triage := sreTeam(t, h, "fix")
+	ctx := context.Background()
+	diagnosed := func(id domain.IncidentID, bot domain.BotID) domain.Incident {
+		t.Helper()
+		incident, err := domain.NewIncident(id, triage.TenantID(), bot, "g-"+id.String(), "manual", "drift", domain.Sev3, nil, h.clock.now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = incident.AttachTask(domain.TaskID("task-"+id.String()), h.clock.now)
+		if err := incident.Diagnose("CAUSE: drift", h.clock.now); err != nil {
+			t.Fatal(err)
+		}
+		return incident
+	}
+	phase := newFixPhase(h.deps)
+	orphan := diagnosed("inc-orphan", "gone")
+	if got, err := phase.launch(ctx, orphan, ""); err != nil || got.HasTask(domain.IncidentPhaseFix) {
+		t.Errorf("a gone triage bot: %v", err)
+	}
+	h.bots.listFail = errBoom
+	if _, err := phase.launch(ctx, diagnosed("inc-list", triage.ID()), ""); !errors.Is(err, errBoom) {
+		t.Errorf("listing the team: %v", err)
+	}
+	h.bots.listFail = nil
+	h.incs.fail = errBoom
+	if got, err := phase.launch(ctx, diagnosed("inc-save", triage.ID()), ""); !errors.Is(err, errBoom) || got.HasTask(domain.IncidentPhaseFix) {
+		t.Errorf("saving the incident: %v", err)
+	}
+	h.incs.fail = nil
+	h.tasks.fail = errBoom
+	if _, err := phase.launch(ctx, diagnosed("inc-submit", triage.ID()), ""); !errors.Is(err, errBoom) {
+		t.Errorf("submitting the task: %v", err)
 	}
 }

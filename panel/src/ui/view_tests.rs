@@ -1385,6 +1385,45 @@ fn an_incident_shows_its_alerts_diagnosis_and_tasks_and_resolves() {
 }
 
 #[test]
+fn a_proposed_incident_shows_its_fix_and_the_phase_of_each_task() {
+    use crate::domain::{IncidentPhase, IncidentStatus, IncidentTask};
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Incident("inc-latency".into())));
+    let mut proposed = app.incidents.detail.clone().unwrap();
+    let triage = proposed.task_ids[0].clone();
+    proposed.status = IncidentStatus::Proposed;
+    proposed.diagnosis = "Deployment web drifted: replicas 1, desired 3.".into();
+    proposed.proposal = "PROPOSAL (not applied): kubectl apply -f desired/web.yaml".into();
+    proposed.tasks = vec![IncidentTask {
+        task_id: triage.clone(),
+        bot_id: proposed.bot_id.clone(),
+        phase: IncidentPhase::Triage,
+        cycle: 1,
+    }];
+    app.apply(Message::IncidentLoaded("inc-latency".into(), Ok(proposed)));
+    let task = app
+        .fleet
+        .as_ref()
+        .unwrap()
+        .tasks
+        .iter()
+        .find(|t| t.id == triage)
+        .unwrap();
+    let line = format!("triage · {} · {}", task.bot_id, format::age(task.created_at, app.now));
+    shows(
+        &app,
+        &[
+            "Proposed",
+            "Diagnosis",
+            "Proposal · not applied",
+            line.as_str(),
+            "Resolve",
+        ],
+    );
+    reads(&app, ReaderKey::IncidentProposal, "kubectl apply -f desired/web.yaml");
+}
+
+#[test]
 fn a_finished_task_lists_its_files_and_saves_a_kept_one() {
     let mut app = connected();
     let done = app
