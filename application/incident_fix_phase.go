@@ -38,8 +38,9 @@ func newFixPhase(deps Dependencies) fixPhase {
 // with two the choice is not the control plane's, and a fix bot that
 // refuses the task (paused, a template that does not render) leaves it
 // Diagnosed too: both are audited, and the next alert of the group
-// tries again. The correlation id carries the triage task's trace on.
-// It returns the incident as it saved it.
+// tries again. The fix task carries the triage task's trace on: the
+// correlation given, or the triage task's own when none is. It returns
+// the incident as it saved it.
 func (f fixPhase) launch(ctx context.Context, incident domain.Incident, correlation domain.CorrelationID) (domain.Incident, error) {
 	if incident.Status() != domain.IncidentDiagnosed || incident.HasTask(domain.IncidentPhaseFix) {
 		return incident, nil
@@ -71,6 +72,11 @@ func (f fixPhase) launch(ctx context.Context, incident domain.Incident, correlat
 		return incident, nil
 	case len(takers) > 1:
 		return incident, f.refuse(ctx, incident, "teammates "+strings.Join(takers, ", ")+" all take the fix phase; one must")
+	}
+	if correlation == "" {
+		if triageTask, err := f.deps.Tasks.Get(ctx, incident.CurrentTaskID()); err == nil {
+			correlation = triageTask.CorrelationID()
+		}
 	}
 	fields, input := incidentFields(incident)
 	objective, err := fixObjective(trigger, incident, fields)

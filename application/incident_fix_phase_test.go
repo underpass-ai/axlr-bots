@@ -196,6 +196,9 @@ func TestIncidentFixPhaseStaysDiagnosed(t *testing.T) {
 	if stored.CurrentTaskID() != resumed.Incident.CurrentTaskID() {
 		t.Error("the fix task was not saved")
 	}
+	if fixTask, _ := h.tasks.Get(ctx, stored.CurrentTaskID()); fixTask.CorrelationID() != opened.Task.CorrelationID() {
+		t.Errorf("the recovered fix task's trace = %s, triage's %s", fixTask.CorrelationID(), opened.Task.CorrelationID())
+	}
 	// Once launched, another alert launches nothing more.
 	tasks := len(h.tasks.tasks)
 	if _, err := NewOpenIncident(h.deps).Execute(ctx, alert(triage, "fp-a")); err != nil || len(h.tasks.tasks) != tasks {
