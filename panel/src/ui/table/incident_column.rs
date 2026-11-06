@@ -57,9 +57,10 @@ fn rank(status: IncidentStatus) -> u8 {
     match status {
         IncidentStatus::Open => 0,
         IncidentStatus::Diagnosed => 1,
-        IncidentStatus::Escalated => 2,
-        IncidentStatus::Resolved => 3,
-        IncidentStatus::Unknown => 4,
+        IncidentStatus::Proposed => 2,
+        IncidentStatus::Escalated => 3,
+        IncidentStatus::Resolved => 4,
+        IncidentStatus::Unknown => 5,
     }
 }
 
@@ -111,6 +112,7 @@ mod tests {
         let statuses = [
             IncidentStatus::Open,
             IncidentStatus::Diagnosed,
+            IncidentStatus::Proposed,
             IncidentStatus::Escalated,
             IncidentStatus::Resolved,
             IncidentStatus::Unknown,

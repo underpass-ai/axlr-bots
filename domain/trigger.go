@@ -18,10 +18,13 @@ const (
 // Trigger is one way tasks reach the bot, as its definition declares it:
 // its type, a name unique within the bot (the type when not given), and
 // for a webhook or a timer the objective template each fire renders and
-// the credentials or the schedule.
+// the credentials or the schedule. An incident trigger names the phase
+// of the incident the bot takes: triage, or fix for a teammate's
+// incident once it is Diagnosed.
 type Trigger struct {
 	kind       TriggerType
 	name       string
+	phase      IncidentPhase
 	objective  string
 	secret     string
 	signingKey string
@@ -47,6 +50,9 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 	t := Trigger{kind: kind, name: name}
 	if (len(s.Events) > 0 || s.Interrupt) && kind != TriggerEvent {
 		return Trigger{}, invalid("trigger "+name, "only an event trigger takes events or interrupt")
+	}
+	if s.Phase != "" && kind != TriggerIncident {
+		return Trigger{}, invalid("trigger "+name, "only an incident trigger takes a phase")
 	}
 	t.interrupt = s.Interrupt
 	switch kind {
@@ -74,6 +80,9 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 	case TriggerIncident:
 		if s.Secret != "" || s.SigningKey != "" || s.Every != "" || s.Cron != "" {
 			return Trigger{}, invalid("trigger "+name, "an incident trigger takes no credentials or schedule")
+		}
+		if t.phase, err = ParseIncidentPhase(s.Phase); err != nil {
+			return Trigger{}, invalid("trigger "+name, err.Error())
 		}
 		if s.Objective == "" {
 			return t, nil
@@ -141,6 +150,10 @@ func (t Trigger) Ref() TriggerRef { return TriggerRef{Type: t.kind, Name: t.name
 // trigger that keeps the default (DefaultEventObjective).
 func (t Trigger) ObjectiveTemplate() string { return t.objective }
 
+// Phase is the incident's phase an incident trigger takes, triage by
+// default; empty for the other types.
+func (t Trigger) Phase() IncidentPhase { return t.phase }
+
 // Schedule is when a timer fires; zero for the other types.
 func (t Trigger) Schedule() Schedule { return t.schedule }
 
@@ -182,5 +195,10 @@ func (t Trigger) Snapshot() TriggerSnapshot {
 		s.Events = append(s.Events, pattern.String())
 	}
 	s.Interrupt = t.interrupt
+	if t.phase != IncidentPhaseTriage {
+		// Triage is the default: a definition that did not name it
+		// stores as it did before incident triggers had phases.
+		s.Phase = t.phase.String()
+	}
 	return s
 }

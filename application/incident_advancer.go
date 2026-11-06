@@ -7,12 +7,15 @@ import (
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
-// incidentAdvancer moves an incident on when its triage task ends: a
-// completed task is the diagnosis, a task that failed, expired or was
-// cancelled escalates it to a person, and every execution's cost is
-// added, a delegated child's included. Only the task of the incident's current cycle moves it; an
-// incident that is gone or already resolved is left as it is, audited,
-// because the task must settle whatever its incident did meanwhile.
+// incidentAdvancer moves an incident on when the task of its current
+// phase ends. A completed triage task is the diagnosis, and the control
+// plane then launches the fix phase; a completed fix task is the
+// proposal. A task of either phase that failed, expired or was cancelled
+// escalates the incident to a person, and every execution's cost is
+// added, a delegated child's included. Only the incident's current task
+// moves it; an incident that is gone or already resolved is left as it
+// is, audited, because the task must settle whatever its incident did
+// meanwhile.
 type incidentAdvancer struct {
 	deps Dependencies
 	rec  recorder
@@ -39,17 +42,26 @@ func (a incidentAdvancer) taskEnded(ctx context.Context, bot domain.Bot, task do
 		}
 		return err
 	}
-	if incident.CurrentTaskID() != task.ID() {
-		return a.rec.audit(ctx, "incident.advance", id.String(), domain.AuditDenied, map[string]string{"task": task.ID().String(), "reason": "not the task of the current cycle"})
+	current, ok := incident.CurrentTask()
+	if !ok || current.TaskID() != task.ID() {
+		return a.rec.audit(ctx, "incident.advance", id.String(), domain.AuditDenied, map[string]string{"task": task.ID().String(), "reason": "not the task of the current cycle and phase"})
 	}
+	phase := current.Phase()
 	now := a.deps.Clock.Now()
 	_ = incident.AddCost(execution.Usage(), now)
 	var (
 		kind    domain.EventType
-		payload = map[string]any{"taskId": task.ID().String(), "executionId": execution.ID().String(), "costUsd": incident.CostUSD()}
+		payload = map[string]any{"taskId": task.ID().String(), "executionId": execution.ID().String(), "phase": phase.String(), "costUsd": incident.CostUSD()}
 	)
-	switch task.Status() {
-	case domain.TaskCompleted:
+	switch {
+	case task.Status() == domain.TaskCompleted && phase == domain.IncidentPhaseFix:
+		answer := execution.Result().Answer
+		if answer == "" {
+			answer = "the fix task completed without an answer"
+		}
+		err, kind = incident.Propose(domain.IncidentText(answer, domain.MaxIncidentProposalLength), now), domain.EventIncidentProposed
+		payload["proposal"], payload["proposedBy"] = incident.Proposal(), current.BotID().String()
+	case task.Status() == domain.TaskCompleted:
 		answer := execution.Result().Answer
 		if answer == "" {
 			answer = "the triage task completed without an answer"
@@ -59,23 +71,25 @@ func (a incidentAdvancer) taskEnded(ctx context.Context, bot domain.Bot, task do
 	default:
 		reason := task.FailureReason()
 		if reason == "" {
-			reason = "the triage task was " + task.Status().String()
+			reason = "the " + phase.String() + " task was " + task.Status().String()
 		}
-		reason = domain.IncidentText("task "+task.ID().String()+" "+task.Status().String()+": "+reason, domain.MaxIncidentReasonLength)
+		reason = domain.IncidentText(phase.String()+" task "+task.ID().String()+" "+task.Status().String()+": "+reason, domain.MaxIncidentReasonLength)
 		err, kind = incident.Escalate(reason, now), domain.EventIncidentEscalated
 		payload["reason"] = incident.Reason()
 	}
 	var state domain.StateError
 	if err != nil && !errors.As(err, &state) {
 		// What the task wrote was refused even after IncidentText: a
-		// person looks at it rather than the incident staying Open with
-		// no task left to move it.
-		reason := domain.IncidentText("triage answer not usable: "+err.Error(), domain.MaxIncidentReasonLength)
+		// person looks at it rather than the incident staying with no
+		// task left to move it.
+		reason := domain.IncidentText(phase.String()+" answer not usable: "+err.Error(), domain.MaxIncidentReasonLength)
 		if err := incident.Escalate(reason, now); err != nil {
 			return err
 		}
 		kind = domain.EventIncidentEscalated
 		delete(payload, "diagnosis")
+		delete(payload, "proposal")
+		delete(payload, "proposedBy")
 		payload["reason"] = incident.Reason()
 	} else if err != nil {
 		// The incident moved on without this task (resolved by the
@@ -92,12 +106,16 @@ func (a incidentAdvancer) taskEnded(ctx context.Context, bot domain.Bot, task do
 	if err := a.rec.incidentEvent(ctx, kind, incident, payload); err != nil {
 		return err
 	}
-	return a.rec.audit(ctx, "incident.advance", id.String(), domain.AuditOK, map[string]string{"task": task.ID().String(), "status": incident.Status().String()})
+	if err := a.rec.audit(ctx, "incident.advance", id.String(), domain.AuditOK, map[string]string{"task": task.ID().String(), "phase": phase.String(), "status": incident.Status().String()}); err != nil {
+		return err
+	}
+	_, err = newFixPhase(a.deps).launch(ctx, incident, task.CorrelationID())
+	return err
 }
 
 // lateCost adds the cost an ended execution learnt late (its run
 // reported after a cancel) to the task's incident, or to the incident
-// of the triage task it descends from; nothing else of the incident
+// of the incident task it descends from; nothing else of the incident
 // changes.
 func (a incidentAdvancer) lateCost(ctx context.Context, task domain.Task, execution domain.Execution) error {
 	usage := execution.Usage()
@@ -124,11 +142,11 @@ func (a incidentAdvancer) lateCost(ctx context.Context, task domain.Task, execut
 	return a.rec.audit(ctx, "incident.cost", id.String(), domain.AuditOK, map[string]string{"task": task.ID().String(), "execution": execution.ID().String()})
 }
 
-// maxCostLineage bounds the walk from a delegated task up to the triage
+// maxCostLineage bounds the walk from a delegated task up to the phase
 // task of its incident.
 const maxCostLineage = 8
 
-// childEnded adds a delegated task's cost to the incident of the triage
+// childEnded adds a delegated task's cost to the incident of the phase
 // task it descends from; nothing else of the incident changes. On 31
 // October 2026 an incident's cost counted only triage's own executions,
 // and its diag-k8s children were summed by hand.

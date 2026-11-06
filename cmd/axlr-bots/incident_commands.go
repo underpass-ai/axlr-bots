@@ -51,7 +51,7 @@ func incidentList(ctx context.Context, service unixapi.Service, args []string, s
 	flags := flag.NewFlagSet("incident list", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	tenant := flags.String("tenant", "", "only this tenant")
-	status := flags.String("status", "", "only this status: Open, Diagnosed, Resolved or Escalated")
+	status := flags.String("status", "", "only this status: Open, Diagnosed, Proposed, Resolved or Escalated")
 	limit := flags.Int("limit", 0, "at most this many (100 when absent, up to 1000)")
 	positional, ok := parseAnywhere(flags, args)
 	if !ok {

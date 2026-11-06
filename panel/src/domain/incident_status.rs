@@ -1,11 +1,13 @@
 use serde::{Deserialize, Serialize};
 
-/// Where an incident stands: open and being triaged, diagnosed, closed,
-/// or handed to a person.
+/// Where an incident stands: open and being triaged, diagnosed, a fix
+/// proposed, closed, or handed to a person.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum IncidentStatus {
     Open,
     Diagnosed,
+    /// A fix and its rollback proposed, applied by nobody.
+    Proposed,
     Resolved,
     Escalated,
     /// A value this panel does not know: the control plane is newer. Read,
@@ -15,13 +17,20 @@ pub enum IncidentStatus {
 }
 
 impl IncidentStatus {
-    pub const ALL: [IncidentStatus; 4] = [Self::Open, Self::Diagnosed, Self::Resolved, Self::Escalated];
+    pub const ALL: [IncidentStatus; 5] = [
+        Self::Open,
+        Self::Diagnosed,
+        Self::Proposed,
+        Self::Resolved,
+        Self::Escalated,
+    ];
 
     /// The word the control plane uses, which is also the one shown.
     pub fn name(self) -> &'static str {
         match self {
             Self::Open => "Open",
             Self::Diagnosed => "Diagnosed",
+            Self::Proposed => "Proposed",
             Self::Resolved => "Resolved",
             Self::Escalated => "Escalated",
             Self::Unknown => "Unknown",

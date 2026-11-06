@@ -22,9 +22,11 @@ const (
 	// events its event triggers name or, declaring none, the ones
 	// addressed to it and the team's warnings.
 	TriggerEvent TriggerType = "event"
-	// TriggerIncident is the triage task of an incident the control plane
-	// opened: a bot takes them only when it declares this trigger, its
-	// consent, with an optional objective template over the incident.
+	// TriggerIncident is a phase's task of an incident the control plane
+	// opened: the triage task of the bot's own incidents, or, with phase
+	// fix, the fix task of a teammate's diagnosed incident. A bot takes
+	// them only when it declares this trigger, its consent, with an
+	// optional objective template over the incident.
 	TriggerIncident TriggerType = "incident"
 	// TriggerAlertmanager is a webhook that takes Alertmanager's own
 	// payload: a firing group opens, repeats or reopens an incident of

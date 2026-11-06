@@ -104,6 +104,9 @@ const (
 	// EventIncidentDiagnosed says the triage task completed: the payload
 	// holds the diagnosis.
 	EventIncidentDiagnosed EventType = "incident.diagnosed"
+	// EventIncidentProposed says the fix task completed: the payload
+	// holds the proposal, the change and its rollback, applied by nobody.
+	EventIncidentProposed EventType = "incident.proposed"
 	// EventIncidentEscalated says the bots gave the incident to a person:
 	// the payload says why.
 	EventIncidentEscalated EventType = "incident.escalated"
@@ -135,7 +138,7 @@ func ParseEventType(raw string) (EventType, error) {
 	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventBotDeleted, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
 		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventTaskDelegated, EventTaskMessage, EventTaskSaid, EventTaskProgress, EventDelegationRefused,
 		EventEventEmitted, EventEventRefused, EventEventHeard, EventSubscriptionChanged, EventSubscriptionAsked, EventGroupEventPublished,
-		EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentEscalated, EventIncidentResolved,
+		EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentProposed, EventIncidentEscalated, EventIncidentResolved,
 		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked, EventNodeRenewed,
 		EventExecutionAssigned, EventExecutionReported:
 		return EventType(raw), nil
@@ -149,7 +152,7 @@ func (t EventType) String() string { return string(t) }
 // incident and the bot that triages it.
 func (t EventType) AboutIncident() bool {
 	switch t {
-	case EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentEscalated, EventIncidentResolved:
+	case EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentProposed, EventIncidentEscalated, EventIncidentResolved:
 		return true
 	}
 	return false

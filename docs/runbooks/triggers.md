@@ -54,11 +54,15 @@ Check: the first firing group answers `201`, `"action": "opened"`, the incident 
 
 ## Incidents
 
-An incident is one alert group of a tenant and the triage tasks one bot ran for it ([operator API](../reference/operator-api.md#routes)). Alertmanager opens them through an `alertmanager` trigger (above); anything else, or a person, through `POST /v1/incidents` or `axlr-bots incident open`, for a bot that declares the `incident` trigger. One task per cycle: a repeated alert starts nothing.
+An incident is one alert group of a tenant and the tasks its phases ran for it ([operator API](../reference/operator-api.md#routes)): the triage task of the bot it belongs to, then the fix task of a teammate. Alertmanager opens them through an `alertmanager` trigger (above); anything else, or a person, through `POST /v1/incidents` or `axlr-bots incident open`, for a bot that declares the `incident` trigger. One task per phase in each cycle: a repeated alert starts nothing.
+
+Each phase is a task of its own, launched by the control plane when the incident reaches it, never by a bot that would wait through an approval. The fix phase belongs to the one teammate of the triage bot (same tenant, a shared team) that declares an `incident` trigger with `"phase": "fix"`. No such teammate: the incident stays `Diagnosed`, as it did before there was a fix phase. Two, or one that is not Enabled: it stays `Diagnosed` too, the refusal audited (`incident.fix`), and the next alert of the group tries again.
 
 ```text
 new group key ──▶ Open, cycle 1, a triage task ──task Completed──▶ Diagnosed (the answer is the diagnosis)
                       └──task Failed, Expired or Cancelled──▶ Escalated (a person must look)
+Diagnosed, a teammate takes the fix phase ──▶ its fix task ──task Completed──▶ Proposed (the answer is the proposal; nothing applied)
+                      └──task Failed, Expired or Cancelled──▶ Escalated
 same key while Escalated ──▶ Open, cycle + 1, a new task (twice; then a repeat, left to a person)
 same key, not Resolved ──▶ a repeat: its alerts added, no task
 resolved group, or incident resolve ──▶ Resolved ──same key within 30 minutes──▶ Open, cycle + 1, a new task
@@ -68,20 +72,22 @@ resolved group, or incident resolve ──▶ Resolved ──same key within 30 
 | Status | Means |
 |---|---|
 | `Open` | nobody has said the cause yet: its triage task is pending or running |
-| `Diagnosed` | the task completed; its answer, the cause with its evidence, is the incident's `diagnosis` |
-| `Escalated` | the task failed, expired or was cancelled; `reason` says which. The next alert of the group starts another triage (`"action": "reopened"`, the event's `retry` true), at most twice since the last diagnosis (`retries`); after that a person takes it from there |
+| `Diagnosed` | the triage task completed; its answer, the cause with its evidence, is the incident's `diagnosis`. Its fix task, when a teammate takes the fix phase, is pending or running |
+| `Proposed` | the fix task completed; its answer, the change and its rollback, is the incident's `proposal`. Nothing is applied: a person reads it, applies it or not, and resolves the incident |
+| `Escalated` | the triage or fix task failed, expired or was cancelled; `reason` says which. The next alert of the group starts another triage (`"action": "reopened"`, the event's `retry` true), at most twice since the last proposal or reopening (`retries`); after that a person takes it from there |
 | `Resolved` | its alerts went green, or a person closed it; a running task still settles and its cost is still added, but it moves the incident no further |
 
 ```bash
-axlr-bots bot update triage --file patch.json     # {"triggers": [{"type": "manual"}, {"type": "incident"}]}; the bot is Enabled
+axlr-bots bot update triage --file patch.json     # {"triggers": [{"type": "manual"}, {"type": "incident"}], "groups": ["sre"]}; the bot is Enabled
+axlr-bots bot update fix --file patch.json        # {"triggers": [{"type": "incident", "phase": "fix"}], "groups": ["sre"]}: the fix phase
 axlr-bots incident open --tenant default --bot triage --group-key "HighLatency/web" \
     --title "High latency in web" --severity sev2 --fingerprints a1
 axlr-bots incident list --status Open
-axlr-bots incident get inc-…                      # alerts, cycle, taskIds, diagnosis, reason, repeats, retries, costUsd (delegated children included)
+axlr-bots incident get inc-…                      # alerts, cycle, tasks (bot, phase, cycle), diagnosis, proposal, reason, repeats, retries, costUsd (every phase's, delegated children included)
 axlr-bots incident resolve inc-… --reason "rolled back"
 ```
 
-Check: the first `open` answers `created: true`, the incident `Open` at cycle 1 and its triage task, key `incident:<id>:1`, whose objective is the trigger's template or the default ("Incident … Find the cause with evidence and report it; change nothing") and whose `input` is the incident. The same group key again answers `created: false`, no task, and the incident with the new fingerprints and `repeats` one higher. After `resolve`, the same key within 30 minutes answers `reopened: true`, cycle 2 and a task keyed `…:2`. The bot's events show `incident.opened`, `incident.repeated`, `incident.resolved`, `incident.reopened`, and `incident.diagnosed` or `incident.escalated` when its task ends. Severity is `sev1` to `sev4` (`sev3` when absent); a bot without the `incident` trigger, or not Enabled, refuses the incident.
+Check: the first `open` answers `created: true`, the incident `Open` at cycle 1 and its triage task, key `incident:<id>:1`, whose objective is the trigger's template or the default ("Incident … Find the cause with evidence and report it; change nothing") and whose `input` is the incident. The same group key again answers `created: false`, no task, and the incident with the new fingerprints and `repeats` one higher. After `resolve`, the same key within 30 minutes answers `reopened: true`, cycle 2 and a task keyed `…:2`. The bot's events show `incident.opened`, `incident.repeated`, `incident.resolved`, `incident.reopened`, and `incident.diagnosed` or `incident.escalated` when its task ends. With a fix teammate, `Diagnosed` brings its task (key `incident:<id>:<cycle>:fix`, the incident as its `input`, the objective with the diagnosis, the triage task's trace), and its end `incident.proposed` (`proposal`, `proposedBy`) or `incident.escalated`; `incident get` lists both tasks and the cost of both. Severity is `sev1` to `sev4` (`sev3` when absent); a bot without the `incident` trigger, or not Enabled, refuses the incident.
 
 ## Check the catch-up
 

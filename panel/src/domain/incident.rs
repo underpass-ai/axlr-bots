@@ -1,11 +1,11 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{BotId, Cost, IncidentSeverity, IncidentStatus, TaskId};
+use super::{BotId, Cost, IncidentPhase, IncidentSeverity, IncidentStatus, IncidentTask, TaskId};
 
 /// One grouped fault, as the control plane reports it: what its alerts
-/// say, the bot that triages it, the tasks that worked on it and where
-/// it stands.
+/// say, the bot that triages it, the tasks of each phase that worked on
+/// it and where it stands.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Incident {
@@ -27,11 +27,19 @@ pub struct Incident {
     pub resolved_fingerprints: Vec<String>,
     #[serde(default)]
     pub cycle: u32,
-    /// The triage tasks, one per cycle, oldest first.
+    /// The tasks that worked on it, oldest first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub task_ids: Vec<TaskId>,
+    /// The same tasks with their bot, phase and cycle; empty from a
+    /// control plane older than the fix phase.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tasks: Vec<IncidentTask>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub diagnosis: String,
+    /// What the fix task proposed: the change and its rollback, applied
+    /// by nobody.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub proposal: String,
     /// Why it was escalated or resolved.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub reason: String,
@@ -66,6 +74,12 @@ impl Incident {
         Cost::new(self.cost_usd, u32::from(self.cost_unknown))
     }
 
+    /// The phase a task of the incident worked on, when the control plane
+    /// said.
+    pub fn phase_of(&self, task: &TaskId) -> Option<IncidentPhase> {
+        self.tasks.iter().find(|t| &t.task_id == task).map(|t| t.phase)
+    }
+
     /// The alerts still firing: those seen that the source has not said
     /// went green, oldest first.
     pub fn firing(&self) -> Vec<&str> {
@@ -98,6 +112,27 @@ mod tests {
         assert_eq!(incident.firing(), vec!["fp-b"]);
         assert_eq!((incident.repeats, incident.retries, incident.cycle), (4, 1, 2));
         assert!(incident.resolved_at.is_none());
+        let again: Incident = serde_json::from_str(&serde_json::to_string(&incident).unwrap()).unwrap();
+        assert_eq!(again, incident);
+    }
+
+    #[test]
+    fn reads_a_proposal_and_the_phase_of_each_task() {
+        let incident: Incident = serde_json::from_str(
+            r#"{"id":"inc-three","tenantId":"t","botId":"triage","groupKey":"g","title":"Drift in shop",
+            "status":"Proposed","cycle":1,"taskIds":["task-1","task-2"],
+            "tasks":[{"taskId":"task-1","botId":"triage","phase":"triage","cycle":1},
+                     {"taskId":"task-2","botId":"fix","phase":"fix","cycle":1}],
+            "diagnosis":"replicas 1, desired 3","proposal":"PROPOSAL: kubectl apply -f desired/web.yaml",
+            "openedAt":"2026-11-01T10:00:00Z","updatedAt":"2026-11-01T10:00:00Z","lastSeenAt":"2026-11-01T10:00:00Z"}"#,
+        )
+        .unwrap();
+        assert_eq!(incident.status, IncidentStatus::Proposed);
+        assert!(incident.proposal.starts_with("PROPOSAL"));
+        assert_eq!(incident.tasks[1].bot_id.as_str(), "fix");
+        let fix = TaskId::new("task-2").unwrap();
+        assert_eq!(incident.phase_of(&fix), Some(IncidentPhase::Fix));
+        assert_eq!(incident.phase_of(&TaskId::new("task-9").unwrap()), None);
         let again: Incident = serde_json::from_str(&serde_json::to_string(&incident).unwrap()).unwrap();
         assert_eq!(again, incident);
     }

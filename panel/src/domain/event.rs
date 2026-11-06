@@ -95,6 +95,7 @@ impl Event {
             "incident.repeated" => "Alert again".into(),
             "incident.reopened" => "Incident reopened".into(),
             "incident.diagnosed" => "Cause found".into(),
+            "incident.proposed" => "Fix proposed".into(),
             "incident.escalated" => "Needs a person".into(),
             "incident.resolved" => "Incident resolved".into(),
             "execution.assigned" => "Sent to node".into(),
@@ -127,7 +128,8 @@ impl Event {
             | "bot.task.cancelled"
             | "bot.event.refused"
             | "bot.delegation.refused" => EventTone::Bad,
-            "bot.task.preempted" | "incident.opened" | "incident.reopened" | "incident.escalated" => EventTone::Waiting,
+            "bot.task.preempted" | "incident.opened" | "incident.reopened" | "incident.proposed"
+            | "incident.escalated" => EventTone::Waiting,
             "bot.event.emitted" | "group.event.published" => match self.payload_text("severity").as_deref() {
                 Some("warning") | Some("critical") => EventTone::Waiting,
                 _ => EventTone::Neutral,
