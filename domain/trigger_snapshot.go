@@ -7,7 +7,8 @@ package domain
 // (an HMAC over the body); a timer runs Every (a duration) or on Cron
 // (five fields, the host's time zone). An event trigger hears the
 // event names or patterns Events lists and, with Interrupt, makes their
-// warnings and criticals urgent.
+// warnings and criticals urgent. An incident trigger's Phase is the
+// incident's phase the bot takes: triage (the default) or fix.
 type TriggerSnapshot struct {
 	Type       string   `json:"type"`
 	Name       string   `json:"name,omitempty"`
@@ -18,6 +19,7 @@ type TriggerSnapshot struct {
 	Cron       string   `json:"cron,omitempty"`
 	Events     []string `json:"events,omitempty"`
 	Interrupt  bool     `json:"interrupt,omitempty"`
+	Phase      string   `json:"phase,omitempty"`
 }
 
 // Redacted is the snapshot with its credentials hidden: what the API

@@ -86,7 +86,7 @@ func (uc OpenIncident) Execute(ctx context.Context, command OpenIncidentCommand)
 	if bot.TenantID() != tenant {
 		return OpenIncidentResult{}, domain.NotFoundError{Kind: "bot", ID: botID.String()}
 	}
-	trigger, ok := bot.Trigger(domain.TriggerIncident.String())
+	trigger, ok := bot.Triggers().Incident(domain.IncidentPhaseTriage)
 	if !ok {
 		_ = uc.rec.audit(ctx, "incident.open", botID.String(), domain.AuditDenied, map[string]string{"reason": "bot takes no incidents"})
 		return OpenIncidentResult{}, domain.StateError{Subject: "bot " + botID.String(), Current: "without an incident trigger", Attempted: "take an incident"}
@@ -108,7 +108,7 @@ func (uc OpenIncident) open(ctx context.Context, o opening) (OpenIncidentResult,
 		return OpenIncidentResult{}, err
 	}
 	switch {
-	case found && !existing.Status().IsResolved() && len(existing.TaskIDs()) < existing.Cycle():
+	case found && !existing.Status().IsResolved() && !existing.HasTask(domain.IncidentPhaseTriage):
 		// A crash between the incident's save and its task: the alert
 		// that comes again gives the cycle its task.
 		if err := existing.Repeat(o.fingerprints, now); err != nil {
@@ -140,7 +140,10 @@ func (uc OpenIncident) open(ctx context.Context, o opening) (OpenIncidentResult,
 	return uc.start(ctx, o, incident, domain.EventIncidentOpened, false)
 }
 
-// repeat records the alert on the open incident and starts nothing.
+// repeat records the alert on the open incident and starts nothing, but
+// the fix phase of a Diagnosed incident that has not got it: a crash
+// between the diagnosis and its fix task, or a fix bot that was paused
+// or not there yet.
 func (uc OpenIncident) repeat(ctx context.Context, bot domain.Bot, incident domain.Incident, fingerprints []string, now time.Time) (OpenIncidentResult, error) {
 	before := len(incident.Fingerprints())
 	if err := incident.Repeat(fingerprints, now); err != nil {
@@ -156,7 +159,26 @@ func (uc OpenIncident) repeat(ctx context.Context, bot domain.Bot, incident doma
 	if err := uc.rec.audit(ctx, "incident.open", incident.ID().String(), domain.AuditOK, map[string]string{"groupKey": incident.GroupKey(), "deduplicated": "true"}); err != nil {
 		return OpenIncidentResult{}, err
 	}
+	incident, err := newFixPhase(uc.deps).launch(ctx, incident, "")
+	if err != nil {
+		return OpenIncidentResult{}, err
+	}
 	return OpenIncidentResult{Incident: incident, Action: IncidentRepeated}, nil
+}
+
+// incidentFields is the incident as a phase's template sees it, and its
+// snapshot as the task's input.
+func incidentFields(incident domain.Incident) (map[string]any, []byte) {
+	snapshot, _ := json.Marshal(incident.Snapshot())
+	fields := map[string]any{}
+	_ = json.Unmarshal(snapshot, &fields)
+	if _, ok := fields["fingerprints"]; !ok {
+		// The snapshot leaves out an empty list, and the default
+		// templates name it: an incident opened by hand with no alert
+		// fingerprints still gets its tasks.
+		fields["fingerprints"] = []string{}
+	}
+	return fields, snapshot
 }
 
 // start saves the incident (new or reopened) and submits its triage
@@ -168,15 +190,7 @@ func (uc OpenIncident) start(ctx context.Context, o opening, incident domain.Inc
 	if err := uc.deps.Incidents.Save(ctx, incident); err != nil {
 		return OpenIncidentResult{}, err
 	}
-	snapshot, _ := json.Marshal(incident.Snapshot())
-	fields := map[string]any{}
-	_ = json.Unmarshal(snapshot, &fields)
-	if _, ok := fields["fingerprints"]; !ok {
-		// The snapshot leaves out an empty list, and the default
-		// template names it: an incident opened by hand with no alert
-		// fingerprints still gets its triage task.
-		fields["fingerprints"] = []string{}
-	}
+	fields, snapshot := incidentFields(incident)
 	for key, value := range o.fields {
 		fields[key] = value
 	}

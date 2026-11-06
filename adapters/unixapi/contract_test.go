@@ -37,7 +37,7 @@ func init() {
 		domain.NodeCapabilities{}, domain.NotifyTargetSnapshot{}, domain.PendingDecision{}, domain.PlacementSnapshot{},
 		domain.PolicyRecord{}, domain.Result{}, domain.TaskLineage{}, domain.ToolCall{}, domain.ToolRuleSnapshot{},
 		domain.ToolRulesSnapshot{}, domain.TriggerRef{}, domain.TriggerRefSnapshot{}, domain.TriggerSnapshot{}, domain.Usage{},
-		application.Overview{}, application.BotDefinition{}, application.OpenIncidentCommand{}, domain.IncidentSnapshot{}, OpenIncidentResponse{}, ResolveRequest{}, application.PublishGroupEventCommand{}, application.PublishAnswer{}, application.GroupTopic{}, application.TopicListener{}, application.BotPatch{}, application.Group{}, application.GroupMember{},
+		application.Overview{}, application.BotDefinition{}, application.OpenIncidentCommand{}, domain.IncidentSnapshot{}, domain.IncidentTaskSnapshot{}, OpenIncidentResponse{}, ResolveRequest{}, application.PublishGroupEventCommand{}, application.PublishAnswer{}, application.GroupTopic{}, application.TopicListener{}, application.BotPatch{}, application.Group{}, application.GroupMember{},
 		domain.RuntimeSnapshot{}, domain.JevProgramSnapshot{}, domain.JevActSnapshot{}, domain.JevTellSnapshot{},
 		application.BudgetsDefinition{}, application.ModelPolicyDefinition{},
 		SubmitRequest{}, TaskRequest{}, SubmitResponse{}, RunResponse{}, CancelResponse{}, ReportResponse{},
@@ -212,8 +212,8 @@ func TestContractEnumsAreTheDomains(t *testing.T) {
 			t.Errorf("%s: the domain has %q, the contract lists %q", name, want, got)
 		}
 	}
-	if checked < 9 {
-		t.Fatalf("checked %d enums, expected 9", checked)
+	if checked < 10 {
+		t.Fatalf("checked %d enums, expected 10", checked)
 	}
 }
 

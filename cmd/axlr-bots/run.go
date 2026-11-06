@@ -268,7 +268,7 @@ func printUsage(w io.Writer) {
                 [--fingerprints a,b] [--source <name>] [--objective "<text>"]
                                       report an alert group: a new incident and its triage task,
                                       a repeat of the one open for that key, or a reopening
-  incident list [--tenant <id>] [--status Open|Diagnosed|Resolved|Escalated] [--limit 100]
+  incident list [--tenant <id>] [--status Open|Diagnosed|Proposed|Resolved|Escalated] [--limit 100]
                                       the incidents, the last seen first
   incident get <incident-id>          show one incident: its alerts, tasks, diagnosis, cost
   incident resolve <incident-id> [--reason "<text>"]

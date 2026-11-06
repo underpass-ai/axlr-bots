@@ -7,12 +7,13 @@ import (
 	"time"
 )
 
-// Limits of an incident's text fields and of its alerts. The diagnosis
-// and reason limits are exported so that what a task wrote can be cut to
-// fit with IncidentText.
+// Limits of an incident's text fields and of its alerts. The diagnosis,
+// proposal and reason limits are exported so that what a task wrote can
+// be cut to fit with IncidentText.
 const (
 	maxIncidentTitleLength     = 200
 	MaxIncidentDiagnosisLength = 16000
+	MaxIncidentProposalLength  = 16000
 	MaxIncidentReasonLength    = 1000
 	maxIncidentFingerprints    = 64
 	// IncidentReopenWindow is how long after a resolution a new alert of
@@ -43,8 +44,9 @@ type Incident struct {
 	fingerprints []string
 	resolved     []string
 	cycle        int
-	tasks        []TaskID
+	tasks        []IncidentTask
 	diagnosis    string
+	proposal     string
 	reason       string
 	repeats      int
 	retries      int
@@ -179,20 +181,51 @@ func (i *Incident) MarkResolved(fingerprints []string, now time.Time) error {
 // each reopening.
 func (i Incident) Cycle() int { return i.cycle }
 
-// TaskIDs lists the triage tasks, one per cycle, oldest first.
-func (i Incident) TaskIDs() []TaskID { return append([]TaskID(nil), i.tasks...) }
+// Tasks lists the tasks that worked on the incident, oldest first: at
+// most one per phase in each cycle.
+func (i Incident) Tasks() []IncidentTask { return append([]IncidentTask(nil), i.tasks...) }
 
-// CurrentTaskID is the task of the current cycle, or empty before one
-// was attached.
-func (i Incident) CurrentTaskID() TaskID {
-	if len(i.tasks) == 0 {
-		return ""
+// TaskIDs lists the tasks that worked on the incident, oldest first.
+func (i Incident) TaskIDs() []TaskID {
+	var ids []TaskID
+	for _, task := range i.tasks {
+		ids = append(ids, task.task)
 	}
-	return i.tasks[len(i.tasks)-1]
+	return ids
+}
+
+// CurrentTask is the last task attached: the one whose end moves the
+// incident on. False before one was attached.
+func (i Incident) CurrentTask() (IncidentTask, bool) {
+	if len(i.tasks) == 0 {
+		return IncidentTask{}, false
+	}
+	return i.tasks[len(i.tasks)-1], true
+}
+
+// CurrentTaskID is the last task attached, or empty before one was.
+func (i Incident) CurrentTaskID() TaskID {
+	task, _ := i.CurrentTask()
+	return task.task
+}
+
+// HasTask reports a task of the phase attached in the current cycle.
+func (i Incident) HasTask(phase IncidentPhase) bool {
+	for _, task := range i.tasks {
+		if task.phase == phase && task.cycle == i.cycle {
+			return true
+		}
+	}
+	return false
 }
 
 // Diagnosis is what the last completed triage task said.
 func (i Incident) Diagnosis() string { return i.diagnosis }
+
+// Proposal is what the fix task of the current diagnosis proposed: the
+// change and its rollback, applied by nobody. Empty until a fix task
+// completes, and again once a new triage replaces the diagnosis.
+func (i Incident) Proposal() string { return i.proposal }
 
 // Reason says why the incident was escalated or resolved.
 func (i Incident) Reason() string { return i.reason }
@@ -225,18 +258,36 @@ func (i Incident) ResolvedAt() (time.Time, bool) {
 }
 
 // AttachTask records the triage task of the current cycle, once per
-// cycle, before the task runs.
+// cycle, before the task runs. The incident's own bot runs it.
 func (i *Incident) AttachTask(task TaskID, now time.Time) error {
 	if i.status.IsResolved() {
 		return i.refuse("attach a task")
 	}
+	return i.attach(task, i.bot, IncidentPhaseTriage, now)
+}
+
+// AttachFixTask records the fix task of the current cycle, once per
+// cycle, when the incident is Diagnosed: the bot is the teammate that
+// takes the fix phase.
+func (i *Incident) AttachFixTask(task TaskID, bot BotID, now time.Time) error {
+	if i.status != IncidentDiagnosed {
+		return i.refuse("attach a fix task")
+	}
+	return i.attach(task, bot, IncidentPhaseFix, now)
+}
+
+func (i *Incident) attach(task TaskID, bot BotID, phase IncidentPhase, now time.Time) error {
 	if task == "" {
 		return invalid("task id", "must not be empty")
 	}
-	if len(i.tasks) >= i.cycle {
-		return i.refuse("attach a second task in cycle " + strconv.Itoa(i.cycle))
+	if i.HasTask(phase) {
+		return i.refuse("attach a second " + phase.String() + " task in cycle " + strconv.Itoa(i.cycle))
 	}
-	i.tasks = append(i.tasks, task)
+	attached, err := NewIncidentTask(task, bot, phase, i.cycle)
+	if err != nil {
+		return err
+	}
+	i.tasks = append(i.tasks, attached)
 	i.updatedAt = now
 	return nil
 }
@@ -258,9 +309,11 @@ func (i *Incident) Repeat(fingerprints []string, now time.Time) error {
 
 // CanRetry reports an Escalated incident a new alert gives another
 // triage: fewer than IncidentEscalationRetries retries since its last
-// diagnosis. On 1 November 2026 a triage failed on a tool server that
-// was down, and its Escalated incident took every later alert of the
-// group as a repeat: nobody diagnosed the fault again.
+// proposal or reopening. On 1 November 2026 a triage failed on a tool
+// server that was down, and its Escalated incident took every later
+// alert of the group as a repeat: nobody diagnosed the fault again. A
+// diagnosis does not give the retries back: a fix task that fails every
+// time would otherwise start triage and fix again on every alert.
 func (i Incident) CanRetry() bool {
 	return i.status == IncidentEscalated && i.retries < IncidentEscalationRetries
 }
@@ -284,7 +337,7 @@ func (i *Incident) Retry(fingerprints []string, now time.Time) error {
 }
 
 // Retries counts the triages an alert started again on the Escalated
-// incident since its last diagnosis.
+// incident since its last proposal or reopening.
 func (i Incident) Retries() int { return i.retries }
 
 // CanReopen reports a resolved incident a new alert at now reopens: the
@@ -294,8 +347,8 @@ func (i Incident) CanReopen(now time.Time) bool {
 }
 
 // Reopen opens a resolved incident again, within the window: one more
-// cycle, Open, with the new alerts; the diagnosis and the reason of the
-// last cycle are kept until a new triage replaces them.
+// cycle, Open, with the new alerts; the diagnosis, the proposal and the
+// reason of the last cycle are kept until a new triage replaces them.
 func (i *Incident) Reopen(fingerprints []string, now time.Time) error {
 	if !i.CanReopen(now) {
 		return i.refuse("reopen")
@@ -313,7 +366,8 @@ func (i *Incident) Reopen(fingerprints []string, now time.Time) error {
 }
 
 // Diagnose records the cause the triage task found: Open becomes
-// Diagnosed.
+// Diagnosed. A proposal of an earlier cycle answered another diagnosis:
+// it is dropped.
 func (i *Incident) Diagnose(diagnosis string, now time.Time) error {
 	if i.status != IncidentOpen {
 		return i.refuse("diagnose")
@@ -323,8 +377,26 @@ func (i *Incident) Diagnose(diagnosis string, now time.Time) error {
 		return err
 	}
 	i.diagnosis = text
-	i.retries = 0
+	i.proposal = ""
 	i.status = IncidentDiagnosed
+	i.updatedAt = now
+	return nil
+}
+
+// Propose records the change and its rollback the fix task of the
+// current cycle proposed: Diagnosed becomes Proposed. Nothing is applied;
+// the incident has gone through its phases, so it gets its retries back.
+func (i *Incident) Propose(proposal string, now time.Time) error {
+	if i.status != IncidentDiagnosed || !i.HasTask(IncidentPhaseFix) {
+		return i.refuse("propose")
+	}
+	text, err := validateText("proposal", proposal, MaxIncidentProposalLength)
+	if err != nil {
+		return err
+	}
+	i.proposal = text
+	i.retries = 0
+	i.status = IncidentProposed
 	i.updatedAt = now
 	return nil
 }
@@ -391,9 +463,13 @@ func (i Incident) refuse(attempted string) error {
 
 // Snapshot returns the incident as plain data.
 func (i Incident) Snapshot() IncidentSnapshot {
-	var tasks []string
+	var (
+		ids   []string
+		tasks []IncidentTaskSnapshot
+	)
 	for _, task := range i.tasks {
-		tasks = append(tasks, task.String())
+		ids = append(ids, task.task.String())
+		tasks = append(tasks, task.Snapshot())
 	}
 	var resolvedAt *time.Time
 	if i.resolvedAt != nil {
@@ -403,9 +479,39 @@ func (i Incident) Snapshot() IncidentSnapshot {
 	return IncidentSnapshot{
 		ID: i.id.String(), TenantID: i.tenant.String(), BotID: i.bot.String(), GroupKey: i.groupKey, Source: i.source,
 		Title: i.title, Severity: i.severity.String(), Status: i.status.String(), Fingerprints: i.Fingerprints(), ResolvedFingerprints: i.ResolvedFingerprints(),
-		Cycle: i.cycle, TaskIDs: tasks, Diagnosis: i.diagnosis, Reason: i.reason, Repeats: i.repeats, Retries: i.retries, CostUSD: i.costUSD, CostUnknown: i.costUnknown,
+		Cycle: i.cycle, TaskIDs: ids, Tasks: tasks, Diagnosis: i.diagnosis, Proposal: i.proposal, Reason: i.reason, Repeats: i.repeats, Retries: i.retries, CostUSD: i.costUSD, CostUnknown: i.costUnknown,
 		OpenedAt: i.openedAt, UpdatedAt: i.updatedAt, LastSeenAt: i.lastSeenAt, ResolvedAt: resolvedAt,
 	}
+}
+
+// restoreTasks rebuilds the incident's tasks: from Tasks, or, for an
+// incident stored before its tasks had phases, from TaskIDs, which then
+// lists triage tasks of the incident's bot, one per cycle. Tasks run in
+// cycle order, one per phase in each cycle, none past the current cycle.
+func restoreTasks(s IncidentSnapshot) ([]IncidentTask, error) {
+	snapshots := s.Tasks
+	if len(snapshots) == 0 {
+		for n, raw := range s.TaskIDs {
+			snapshots = append(snapshots, IncidentTaskSnapshot{TaskID: raw, BotID: s.BotID, Phase: IncidentPhaseTriage.String(), Cycle: n + 1})
+		}
+	}
+	var tasks []IncidentTask
+	for _, snapshot := range snapshots {
+		task, err := restoreIncidentTask(snapshot)
+		if err != nil {
+			return nil, err
+		}
+		if task.cycle > s.Cycle {
+			return nil, invalid("tasks", "an incident has no task past its cycle")
+		}
+		for _, earlier := range tasks {
+			if earlier.cycle > task.cycle || (earlier.cycle == task.cycle && earlier.phase == task.phase) {
+				return nil, invalid("tasks", "an incident has one task per phase in each cycle, in cycle order")
+			}
+		}
+		tasks = append(tasks, task)
+	}
+	return tasks, nil
 }
 
 // RestoreIncident rebuilds an incident from a snapshot, validating every
@@ -442,8 +548,6 @@ func RestoreIncident(s IncidentSnapshot) (Incident, error) {
 		return Incident{}, invalid("last seen at", "must not be zero")
 	case s.Cycle < 1:
 		return Incident{}, invalid("cycle", "must be at least 1")
-	case len(s.TaskIDs) > s.Cycle:
-		return Incident{}, invalid("task ids", "an incident has at most one task per cycle")
 	case s.Repeats < 0 || s.Retries < 0 || s.CostUSD < 0:
 		return Incident{}, invalid("repeats, retries or cost", "must not be negative")
 	case status.IsResolved() && s.ResolvedAt == nil:
@@ -452,16 +556,19 @@ func RestoreIncident(s IncidentSnapshot) (Incident, error) {
 		return Incident{}, invalid("resolved at", "only a Resolved incident has it")
 	case status == IncidentEscalated && s.Reason == "":
 		return Incident{}, invalid("reason", "an Escalated incident needs it")
+	case status == IncidentProposed && s.Proposal == "":
+		return Incident{}, invalid("proposal", "a Proposed incident needs it")
 	}
-	for _, raw := range s.TaskIDs {
-		task, err := NewTaskID(raw)
-		if err != nil {
-			return Incident{}, err
-		}
-		incident.tasks = append(incident.tasks, task)
+	if incident.tasks, err = restoreTasks(s); err != nil {
+		return Incident{}, err
 	}
 	if s.Diagnosis != "" {
 		if incident.diagnosis, err = validateText("diagnosis", s.Diagnosis, MaxIncidentDiagnosisLength); err != nil {
+			return Incident{}, err
+		}
+	}
+	if s.Proposal != "" {
+		if incident.proposal, err = validateText("proposal", s.Proposal, MaxIncidentProposalLength); err != nil {
 			return Incident{}, err
 		}
 	}

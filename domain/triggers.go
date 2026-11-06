@@ -53,6 +53,17 @@ func (t Triggers) Named(name string) (Trigger, bool) {
 	return Trigger{}, false
 }
 
+// Incident finds the first incident trigger that takes the phase: the
+// bot's consent to that phase of an incident, and its template.
+func (t Triggers) Incident(phase IncidentPhase) (Trigger, bool) {
+	for _, trigger := range t.list {
+		if trigger.Type() == TriggerIncident && trigger.Phase() == phase {
+			return trigger, true
+		}
+	}
+	return Trigger{}, false
+}
+
 // List returns the triggers, copied.
 func (t Triggers) List() []Trigger { return append([]Trigger(nil), t.list...) }
 
