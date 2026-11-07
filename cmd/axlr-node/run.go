@@ -31,7 +31,7 @@ const (
 )
 
 // run parses the flags and serves until SIGTERM or SIGINT; `enroll`,
-// `check` and `mcp-relay` are the subcommands.
+// `check`, `mcp-relay` and `codex-proxy` are the subcommands.
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "enroll" {
 		return enroll(args[1:], stdout, stderr)
@@ -42,6 +42,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "mcp-relay" {
 		return mcpRelay(args[1:], stdinOf, stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "codex-proxy" {
+		ctx, stop := stopOnSignal(context.Background())
+		defer stop()
+		return codexProxy(ctx, args[1:], stderr, nil)
+	}
 	flags := flag.NewFlagSet("axlr-node", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() {
@@ -49,6 +54,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "       axlr-node enroll [flags]     enroll this host with a one-time token")
 		fmt.Fprintln(stderr, "       axlr-node check [flags]      check the control plane answers over TLS with the fleet CA")
 		fmt.Fprintln(stderr, "       axlr-node mcp-relay --socket <path>   the delegation tool's stdio server, which AXLR starts per execution")
+		fmt.Fprintln(stderr, "       axlr-node codex-proxy [flags]  a loopback Responses endpoint on the host user's Codex (ChatGPT) login")
 		flags.PrintDefaults()
 	}
 	control := flags.String("control", envOr("AXLR_NODE_CONTROL", ""), "the control plane: unix:///path/to/axlr-bots.sock on the same host, or https://host:7878 with the credentials enroll stored (also AXLR_NODE_CONTROL)")

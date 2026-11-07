@@ -25,6 +25,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | Run Jev bots, or read the pushes from a NATS broker, on a host or in a pod | [Install](runbooks/install.md#jev-bots-and-a-broker-on-a-host), [Sidecar](runbooks/sidecar.md#jev-bots-and-a-broker-in-a-pod) |
 | Start tasks from a webhook or on a timer and verify nothing fires twice; turn alert groups into incidents a bot triages and a teammate proposes the fix for | [Triggers](runbooks/triggers.md), [Incidents](runbooks/triggers.md#incidents) |
 | Approve or deny the write a bot wants to make, be notified of it, let it expire | [Approvals](runbooks/approvals.md) |
+| Run bots on the ChatGPT subscription of `codex login` instead of an API key | [Codex subscription](runbooks/codex-subscription.md) |
 | Let a bot ask another bot to do a task, within depth and budget limits that stop loops | [Delegation](reference/bot-definition.md#delegation), [ADR](architecture/delegation.md) |
 | Put bots in a team so they know each other and ask each other without naming targets | [Teams](reference/bot-definition.md#teams), [ADR](architecture/groups-and-events.md) |
 | Let a bot warn or stop its teammates with an event, and follow the team's timeline | [Events](reference/bot-definition.md#events), [ADR](architecture/groups-and-events.md) |
