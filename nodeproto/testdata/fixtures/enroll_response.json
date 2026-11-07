@@ -1,0 +1,39 @@
+{
+  "node": {
+    "id": "pi-garden",
+    "hostName": "pi-garden.local",
+    "labels": {
+      "arch": "aarch64",
+      "class": "sbc",
+      "ram": "512Mi",
+      "zone": "garden"
+    },
+    "operatorLabels": {
+      "zone": "garden"
+    },
+    "reportedLabels": {
+      "arch": "aarch64",
+      "class": "sbc",
+      "ram": "512Mi"
+    },
+    "capabilities": {
+      "axlrVersion": "microbot-0.1.0",
+      "policySupported": true,
+      "correlationSupported": true,
+      "dedicated": true,
+      "runtimes": [
+        "jev"
+      ]
+    },
+    "status": "Online",
+    "registeredAt": "2026-11-07T09:30:00Z",
+    "lastSeenAt": "2026-11-07T09:30:30Z",
+    "certificateSerial": "4f2a9c",
+    "certificateNotAfter": "2027-11-07T09:30:00Z",
+    "revokedAt": "2027-11-07T09:30:00Z"
+  },
+  "certificate": "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
+  "ca": "-----BEGIN CERTIFICATE-----\nMIIC\n-----END CERTIFICATE-----\n",
+  "serial": "4f2a9c",
+  "notAfter": "2027-11-07T09:30:00Z"
+}

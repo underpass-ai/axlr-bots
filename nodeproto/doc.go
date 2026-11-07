@@ -12,4 +12,8 @@
 //	node ──POST /v1/nodes/{id}/executions/{exec}/lease─▶        renew (idempotent)
 //	node ──PUT  /v1/nodes/{id}/executions/{exec}/artifacts/{name}▶ an artifact's bytes, before the report
 //	node ──POST /v1/nodes/{id}/executions/{exec}/report▶        result (idempotent: accepted once)
+//
+// testdata/fixtures holds the messages a node exchanges, as JSON with
+// every field filled; fixtures_test.go fails when a message changes until
+// they are rewritten (-update), and axlr-microbot vendors them.
 package nodeproto
