@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use super::{LiveStream, Screen};
 use crate::application::{
-    BotEdit, BulkAction, BulkTarget, ChatTurn, EventFeed, Notice, PanelConfig, SubscriptionChange,
+    BotEdit, BulkAction, BulkTarget, ChatTurn, EventFeed, Notice, PanelConfig, PanelSettings, SubscriptionChange,
 };
 use crate::domain::{AutonomyLevel, BotForm, BotId, Decision, ExecutionId, IdempotencyKey, NodeId, TaskId};
 
@@ -107,6 +107,16 @@ pub enum Effect {
         config: PanelConfig,
         save: bool,
     },
+    /// Keep the look and the New bot defaults; the control plane
+    /// section stays as saved.
+    SavePreferences {
+        settings: PanelSettings,
+        quiet: bool,
+    },
+    /// Write the settings to a file the operator picks.
+    ExportSettings(PanelSettings),
+    /// Read settings from a file the operator picks.
+    ImportSettings,
     /// One act on many rows: a call each, a few at a time.
     Bulk {
         action: BulkAction,

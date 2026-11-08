@@ -52,7 +52,7 @@ pub(crate) mod tests {
         CountingKeys, FakeConnector, FakeControlPlane, FixedClock, FixedShortcuts, MemoryConfigStore, MemoryFiles,
         RecordingNotifier,
     };
-    use crate::application::{Connect, PanelConfig};
+    use crate::application::{Connect, PanelConfig, PanelSettings};
     use crate::domain::ShortcutFile;
 
     /// An operator's buttons on the team `ops` of the sample bots.
@@ -80,6 +80,15 @@ message = "Stop."
         }
     }
 
+    /// The sample settings before a first Connect: the control plane
+    /// values filled from the install.
+    pub(crate) fn settings() -> PanelSettings {
+        PanelSettings {
+            control_plane: Some(config()),
+            ..PanelSettings::default()
+        }
+    }
+
     /// A panel over the sample bots, not connected yet.
     pub(crate) fn app() -> App {
         let now = "2026-10-25T10:00:00Z".parse().unwrap();
@@ -88,11 +97,22 @@ message = "Stop."
 
     /// A panel over the fake given, which a test keeps to change it.
     pub(crate) fn app_over(control_plane: Arc<FakeControlPlane>) -> App {
+        app_with(control_plane, Arc::new(MemoryFiles::default()))
+    }
+
+    /// A panel over the sample bots and the files given, which a test
+    /// keeps to add files to pick and to read what was saved.
+    pub(crate) fn app_with_files() -> (App, Arc<MemoryFiles>) {
+        let now = "2026-10-25T10:00:00Z".parse().unwrap();
+        let files = Arc::new(MemoryFiles::default());
+        (app_with(Arc::new(FakeControlPlane::sample(now)), files.clone()), files)
+    }
+
+    fn app_with(control_plane: Arc<FakeControlPlane>, files: Arc<MemoryFiles>) -> App {
         let now = "2026-10-25T10:00:00Z".parse().unwrap();
         let clock = Arc::new(FixedClock::new(now));
         let store = Arc::new(MemoryConfigStore::new(None, config()));
         let connector = Arc::new(FakeConnector::new("https://127.0.0.1:7879", control_plane));
-        let files = Arc::new(MemoryFiles::default());
         let services = Services {
             control_plane: None,
             clock: clock.clone(),
@@ -103,6 +123,6 @@ message = "Stop."
             notifier: Arc::new(RecordingNotifier::default()),
             shortcuts: Arc::new(FixedShortcuts(ShortcutFile::parse(SHORTCUTS).unwrap())),
         };
-        App::new(services, Launch::default(), &config(), false).0
+        App::new(services, Launch::default(), &settings(), false).0
     }
 }
