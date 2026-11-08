@@ -1181,8 +1181,17 @@
       "post": {
         "operationId": "fireTrigger",
         "security": [],
-        "description": "Authenticates with the trigger's own secret or signature, not the bearer token.",
+        "description": "Authenticates with the trigger's own secret or signature, not the bearer token; a cloudwatch trigger with Amazon SNS's own signature of the body (text/plain), verified against the certificate SNS names.",
         "parameters": [
+          {
+            "name": "x-amz-sns-message-type",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "A cloudwatch trigger: Notification, SubscriptionConfirmation or UnsubscribeConfirmation, as SNS sets it; it must agree with the body's Type."
+          },
           {
             "name": "Idempotency-Key",
             "in": "header",
@@ -2740,7 +2749,7 @@
           },
           "action": {
             "type": "string",
-            "description": "an alertmanager fire: opened, repeated, reopened, resolved or ignored"
+            "description": "an alertmanager or cloudwatch fire: opened, repeated, reopened, resolved or ignored; confirmed for an SNS subscription a cloudwatch trigger confirmed"
           }
         },
         "required": [
@@ -4003,6 +4012,21 @@
               "type": "string"
             },
             "description": "an incident trigger: the allow-list its phase's tasks run with, a subset of the bot's allowedTools (another tool is refused); absent or empty keeps the bot's"
+          },
+          "severity": {
+            "type": "string",
+            "description": "a cloudwatch trigger: the severity of the incidents it opens, sev1 to sev4 (sev3 when absent)"
+          },
+          "autoConfirm": {
+            "type": "boolean",
+            "description": "a cloudwatch trigger: confirm an SNS subscription by visiting its SubscribeURL; false (the default) leaves it to a person, who reads the URL in the audit log. True needs topics"
+          },
+          "topics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "a cloudwatch trigger: the SNS topic ARNs it takes messages from, at most 16; a message of another topic is refused (403). Absent: any topic SNS signed for"
           }
         },
         "required": [
@@ -4020,7 +4044,8 @@
           "delegation",
           "event",
           "incident",
-          "alertmanager"
+          "alertmanager",
+          "cloudwatch"
         ],
         "description": "A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
       },

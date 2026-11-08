@@ -1,0 +1,12 @@
+{
+  "Type": "Notification",
+  "MessageId": "9d8c7b6a-5f4e-5d3c-2b1a-0f9e8d7c6b5a",
+  "TopicArn": "arn:aws:sns:eu-west-1:123456789012:axlr-sre-alarms",
+  "Subject": "INSUFFICIENT_DATA: \"shop-web-5xx\" in EU (Ireland)",
+  "Message": "{\"AlarmName\":\"shop-web-5xx\",\"AlarmDescription\":\"5xx rate of the shop's web load balancer above 5 %\",\"AWSAccountId\":\"123456789012\",\"AlarmConfigurationUpdatedTimestamp\":\"2026-11-01T09:12:44.011+0000\",\"NewStateValue\":\"INSUFFICIENT_DATA\",\"NewStateReason\":\"Insufficient Data: 3 datapoints were unknown.\",\"StateChangeTime\":\"2026-11-08T10:15:00.000+0000\",\"Region\":\"EU (Ireland)\",\"AlarmArn\":\"arn:aws:cloudwatch:eu-west-1:123456789012:alarm:shop-web-5xx\",\"OldStateValue\":\"ALARM\",\"OKActions\":[\"arn:aws:sns:eu-west-1:123456789012:axlr-sre-alarms\"],\"AlarmActions\":[\"arn:aws:sns:eu-west-1:123456789012:axlr-sre-alarms\"],\"InsufficientDataActions\":[],\"Trigger\":{\"MetricName\":\"HTTPCode_Target_5XX_Count\",\"Namespace\":\"AWS/ApplicationELB\",\"StatisticType\":\"Statistic\",\"Statistic\":\"SUM\",\"Unit\":null,\"Dimensions\":[{\"value\":\"app/shop-web/50dc6c495c0c9188\",\"name\":\"LoadBalancer\"}],\"Period\":60,\"EvaluationPeriods\":3,\"DatapointsToAlarm\":3,\"ComparisonOperator\":\"GreaterThanThreshold\",\"Threshold\":50.0,\"TreatMissingData\":\"notBreaching\",\"EvaluateLowSampleCountPercentile\":\"\"}}",
+  "Timestamp": "2026-11-08T10:15:00.052Z",
+  "SignatureVersion": "1",
+  "Signature": "EXAMPLEpH+DcEwjAPg8O9mY8dReBSwksfg2S7WKQcikcNKWLQjwu6A4VbeS0QHVCkhRS7fUQvi2egU3N858fiTDN6bkkOxYDVrY0Ad8L10Hs3zH81mtnPk5uvvolIC1CXGu43obcgFxeL3khZl8IKvO61GWB6jI9b5+gLPoBc1Q=",
+  "SigningCertURL": "https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-9c6465fa7f48f5cacd23014631ec1136.pem",
+  "UnsubscribeURL": "https://sns.eu-west-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=arn:aws:sns:eu-west-1:123456789012:axlr-sre-alarms:2bcfbf39-05c3-41de-beaa-fcfcc21c8f55"
+}

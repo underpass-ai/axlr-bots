@@ -30,6 +30,7 @@ func TestDependenciesValidate(t *testing.T) {
 		func(d *Dependencies) { d.Outputs = nil },
 		func(d *Dependencies) { d.OutputDeliveries = nil },
 		func(d *Dependencies) { d.OutputSender = nil },
+		func(d *Dependencies) { d.SNS = nil },
 		func(d *Dependencies) { d.Clock = nil },
 		func(d *Dependencies) { d.IDs = nil },
 		func(d *Dependencies) { d.Actor = "" },

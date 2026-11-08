@@ -23,7 +23,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | Join a second host with a one-time token; rotate or revoke its certificate | [Add a host](runbooks/add-a-host.md) |
 | Run the node agent as a sidecar in a Kubernetes pod with Helm: the image, the tokens, the demo, your own chart, every value | [Sidecar](runbooks/sidecar.md) |
 | Run Jev bots, or read the pushes from a NATS broker, on a host or in a pod | [Install](runbooks/install.md#jev-bots-and-a-broker-on-a-host), [Sidecar](runbooks/sidecar.md#jev-bots-and-a-broker-in-a-pod) |
-| Start tasks from a webhook or on a timer and verify nothing fires twice; turn alert groups into incidents a bot triages and a teammate proposes the fix for | [Triggers](runbooks/triggers.md), [Incidents](runbooks/triggers.md#incidents) |
+| Start tasks from a webhook or on a timer and verify nothing fires twice; turn alert groups into incidents a bot triages and a teammate proposes the fix for, from Alertmanager or from CloudWatch through SNS | [Triggers](runbooks/triggers.md), [Incidents](runbooks/triggers.md#incidents) |
 | Let a teammate apply an incident's fix once a person approves it, verify it took, and give each phase its own level and tools | [Incidents](runbooks/triggers.md#incidents), [ADR](architecture/incident-phases.md) |
 | Approve or deny the write a bot wants to make, be notified of it, let it expire | [Approvals](runbooks/approvals.md) |
 | Say who may approve a bot's calls, and make a write in production wait for two different people | [Who may decide](runbooks/approvals.md#who-may-decide), [Two persons](runbooks/approvals.md#two-persons), [ADR](architecture/approvers.md) |

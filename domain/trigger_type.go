@@ -33,15 +33,20 @@ const (
 	// the bot and a resolved group closes it, instead of one task per
 	// delivery. It authenticates as a webhook does.
 	TriggerAlertmanager TriggerType = "alertmanager"
+	// TriggerCloudWatch takes Amazon SNS's HTTP/S deliveries of a topic a
+	// CloudWatch alarm publishes to: an ALARM opens, repeats or reopens
+	// an incident of the bot, an OK closes it. It authenticates by SNS's
+	// own signature, never by a secret: SNS sets no header of ours.
+	TriggerCloudWatch TriggerType = "cloudwatch"
 )
 
 // ParseTriggerType validates a trigger type.
 func ParseTriggerType(raw string) (TriggerType, error) {
 	switch TriggerType(raw) {
-	case TriggerManual, TriggerWebhook, TriggerTimer, TriggerDelegation, TriggerEvent, TriggerIncident, TriggerAlertmanager:
+	case TriggerManual, TriggerWebhook, TriggerTimer, TriggerDelegation, TriggerEvent, TriggerIncident, TriggerAlertmanager, TriggerCloudWatch:
 		return TriggerType(raw), nil
 	}
-	return "", invalid("trigger type", "is not a known trigger type (manual, webhook, timer, delegation, event, incident, alertmanager)")
+	return "", invalid("trigger type", "is not a known trigger type (manual, webhook, timer, delegation, event, incident, alertmanager, cloudwatch)")
 }
 
 func (t TriggerType) String() string { return string(t) }

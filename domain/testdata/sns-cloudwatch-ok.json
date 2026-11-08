@@ -1,0 +1,12 @@
+{
+  "Type": "Notification",
+  "MessageId": "2a3b4c5d-6e7f-5a8b-9c0d-1e2f3a4b5c6d",
+  "TopicArn": "arn:aws:sns:eu-west-1:123456789012:axlr-sre-alarms",
+  "Subject": "OK: \"shop-web-5xx\" in EU (Ireland)",
+  "Message": "{\"AlarmName\":\"shop-web-5xx\",\"AlarmDescription\":\"5xx rate of the shop's web load balancer above 5 %\",\"AWSAccountId\":\"123456789012\",\"AlarmConfigurationUpdatedTimestamp\":\"2026-11-01T09:12:44.011+0000\",\"NewStateValue\":\"OK\",\"NewStateReason\":\"Threshold Crossed: 3 out of the last 3 datapoints [4.0 (08/11/26 10:39:00), 2.0 (08/11/26 10:38:00), 0.0 (08/11/26 10:37:00)] were not greater than the threshold (50.0) (minimum 3 datapoints for ALARM -> OK transition).\",\"StateChangeTime\":\"2026-11-08T10:40:05.880+0000\",\"Region\":\"EU (Ireland)\",\"AlarmArn\":\"arn:aws:cloudwatch:eu-west-1:123456789012:alarm:shop-web-5xx\",\"OldStateValue\":\"ALARM\",\"OKActions\":[\"arn:aws:sns:eu-west-1:123456789012:axlr-sre-alarms\"],\"AlarmActions\":[\"arn:aws:sns:eu-west-1:123456789012:axlr-sre-alarms\"],\"InsufficientDataActions\":[],\"Trigger\":{\"MetricName\":\"HTTPCode_Target_5XX_Count\",\"Namespace\":\"AWS/ApplicationELB\",\"StatisticType\":\"Statistic\",\"Statistic\":\"SUM\",\"Unit\":null,\"Dimensions\":[{\"value\":\"app/shop-web/50dc6c495c0c9188\",\"name\":\"LoadBalancer\"}],\"Period\":60,\"EvaluationPeriods\":3,\"DatapointsToAlarm\":3,\"ComparisonOperator\":\"GreaterThanThreshold\",\"Threshold\":50.0,\"TreatMissingData\":\"notBreaching\",\"EvaluateLowSampleCountPercentile\":\"\"}}",
+  "Timestamp": "2026-11-08T10:40:05.931Z",
+  "SignatureVersion": "1",
+  "Signature": "EXAMPLEpH+DcEwjAPg8O9mY8dReBSwksfg2S7WKQcikcNKWLQjwu6A4VbeS0QHVCkhRS7fUQvi2egU3N858fiTDN6bkkOxYDVrY0Ad8L10Hs3zH81mtnPk5uvvolIC1CXGu43obcgFxeL3khZl8IKvO61GWB6jI9b5+gLPoBc1Q=",
+  "SigningCertURL": "https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-9c6465fa7f48f5cacd23014631ec1136.pem",
+  "UnsubscribeURL": "https://sns.eu-west-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=arn:aws:sns:eu-west-1:123456789012:axlr-sre-alarms:2bcfbf39-05c3-41de-beaa-fcfcc21c8f55"
+}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
+	"github.com/underpass-ai/axlr-bots/internal/snstest"
 )
 
 var t0 = time.Date(2026, 10, 23, 15, 0, 0, 0, time.UTC)
@@ -688,6 +689,7 @@ type harness struct {
 	outs    *memoryOutputs
 	outbox2 *memoryOutputDeliveries
 	sender  *fakeOutputSender
+	sns     *snstest.Transport
 	clock   *fixedClock
 }
 
@@ -713,12 +715,13 @@ func newHarness() *harness {
 		outs:    &memoryOutputs{},
 		outbox2: &memoryOutputDeliveries{},
 		sender:  &fakeOutputSender{},
+		sns:     &snstest.Transport{},
 		clock:   &fixedClock{now: t0},
 	}
 	h.deps = Dependencies{
 		Bots: h.bots, Tasks: h.tasks, Incidents: h.incs, Executions: h.execs, Timers: h.timers, Nodes: h.nodes, Enrollments: h.enrol, Certifier: h.ca, Denylist: h.deny, Events: h.log, EventReader: h.log, Audit: h.log,
 		Runtime: h.runtime, Decisions: h.decider, Traces: h.traces, Artifacts: h.store, Workspace: h.work, Deliveries: h.outbox, Notifier: h.notify,
-		Outputs: h.outs, OutputDeliveries: h.outbox2, OutputSender: h.sender,
+		Outputs: h.outs, OutputDeliveries: h.outbox2, OutputSender: h.sender, SNS: h.sns,
 		Clock: h.clock, IDs: &sequentialIDs{}, Actor: "test:operator",
 	}
 	return h

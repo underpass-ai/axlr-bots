@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"slices"
 	"strings"
 )
 
@@ -34,6 +35,9 @@ type Trigger struct {
 	interrupt  bool
 	level      AutonomyLevel
 	tools      AllowedTools
+	severity   IncidentSeverity
+	confirm    bool
+	topics     []string
 }
 
 // NewTrigger validates a trigger from its definition.
@@ -57,6 +61,9 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 	if (s.Phase != "" || s.Level != "" || len(s.Tools) > 0) && kind != TriggerIncident {
 		return Trigger{}, invalid("trigger "+name, "only an incident trigger takes a phase, a level or tools")
 	}
+	if (s.Severity != "" || s.AutoConfirm || len(s.Topics) > 0) && kind != TriggerCloudWatch {
+		return Trigger{}, invalid("trigger "+name, "only a cloudwatch trigger takes a severity, autoConfirm or topics")
+	}
 	t.interrupt = s.Interrupt
 	switch kind {
 	case TriggerManual, TriggerDelegation:
@@ -78,6 +85,29 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 			return Trigger{}, err
 		}
 		if kind == TriggerAlertmanager && s.Objective == "" {
+			return t, nil
+		}
+	case TriggerCloudWatch:
+		if s.Secret != "" || s.SigningKey != "" || s.Every != "" || s.Cron != "" {
+			// SNS sets no header of ours and a secret in the URL is a
+			// secret in every log: SNS's own signature is the credential.
+			return Trigger{}, invalid("trigger "+name, "a cloudwatch trigger takes no secret, signingKey or schedule: SNS's signature authenticates it")
+		}
+		t.severity, t.confirm = Sev3, s.AutoConfirm
+		if s.Severity != "" {
+			if t.severity, err = ParseIncidentSeverity(s.Severity); err != nil {
+				return Trigger{}, invalid("trigger "+name, err.Error())
+			}
+		}
+		if t.topics, err = validateSNSTopics(s.Topics); err != nil {
+			return Trigger{}, invalid("trigger "+name, err.Error())
+		}
+		if t.confirm && len(t.topics) == 0 {
+			// Without a list, confirming by itself would let any AWS
+			// account's topic subscribe the route and open incidents.
+			return Trigger{}, invalid("trigger "+name, "autoConfirm needs topics: the SNS topic ARNs the trigger takes")
+		}
+		if s.Objective == "" {
 			return t, nil
 		}
 	case TriggerIncident:
@@ -173,6 +203,24 @@ func (t Trigger) Level() (AutonomyLevel, bool) { return t.level, t.level != "" }
 // with, and false when it keeps the bot's (no list, or an empty one).
 func (t Trigger) Tools() (AllowedTools, bool) { return t.tools, t.tools.Len() > 0 }
 
+// Severity is the severity of the incidents a cloudwatch trigger opens;
+// zero for the other types.
+func (t Trigger) Severity() IncidentSeverity { return t.severity }
+
+// AutoConfirm reports whether a cloudwatch trigger confirms an SNS
+// subscription by itself; by default a person does.
+func (t Trigger) AutoConfirm() bool { return t.confirm }
+
+// Topics are the SNS topic ARNs a cloudwatch trigger takes messages
+// from; none means any topic SNS signed for.
+func (t Trigger) Topics() []string { return append([]string(nil), t.topics...) }
+
+// AllowsTopic reports whether a cloudwatch trigger takes a message of
+// the topic: any when it lists none.
+func (t Trigger) AllowsTopic(arn string) bool {
+	return len(t.topics) == 0 || slices.Contains(t.topics, arn)
+}
+
 // Schedule is when a timer fires; zero for the other types.
 func (t Trigger) Schedule() Schedule { return t.schedule }
 
@@ -214,6 +262,12 @@ func (t Trigger) Snapshot() TriggerSnapshot {
 		s.Events = append(s.Events, pattern.String())
 	}
 	s.Interrupt = t.interrupt
+	if t.kind == TriggerCloudWatch {
+		s.Severity, s.AutoConfirm = t.severity.String(), t.confirm
+		if len(t.topics) > 0 {
+			s.Topics = append([]string(nil), t.topics...)
+		}
+	}
 	s.Level = t.level.String()
 	if t.tools.Len() > 0 {
 		s.Tools = t.tools.Names()

@@ -221,6 +221,9 @@ func (c *Client) FireTrigger(ctx context.Context, request FireRequest) (FireResp
 	if request.DeliveryID != "" {
 		headers.Set(IdempotencyKeyHeader, request.DeliveryID)
 	}
+	if request.MessageType != "" {
+		headers.Set(SNSMessageTypeHeader, request.MessageType)
+	}
 	return response, c.callWith(ctx, http.MethodPost, "/v1/triggers/"+url.PathEscape(request.BotID)+"/"+url.PathEscape(request.Trigger), headers, request.Body, &response)
 }
 

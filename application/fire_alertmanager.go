@@ -48,7 +48,7 @@ func (uc FireTrigger) fireAlertmanager(ctx context.Context, bot domain.Bot, trig
 			result.IdempotencyKey = opened.Task.IdempotencyKey()
 		}
 	} else {
-		incident, err := uc.resolveGroup(ctx, bot, trigger, payload)
+		incident, err := uc.resolveGroup(ctx, bot, trigger, payload.GroupKey, payload.ResolvedFingerprints())
 		if err != nil {
 			return FireTriggerResult{}, err
 		}
@@ -57,35 +57,28 @@ func (uc FireTrigger) fireAlertmanager(ctx context.Context, bot domain.Bot, trig
 			result.Incident, result.Action = incident, IncidentClosed
 		}
 	}
-	fired["action"], fired["deduplicated"] = result.Action, result.Action == IncidentRepeated
-	var task domain.TaskID
-	var correlation domain.CorrelationID
-	if result.Incident != nil {
-		fired["incidentId"] = result.Incident.ID().String()
-	}
-	if result.Task != nil {
-		task, correlation = result.Task.ID(), result.Task.CorrelationID()
-		fired["taskId"], fired["idempotencyKey"], fired["created"] = task.String(), result.IdempotencyKey.String(), result.Created
-	}
-	if err := uc.rec.event(ctx, domain.EventTriggerFired, bot, task, correlation, fired); err != nil {
+	if err := uc.recordIncidentFire(ctx, bot, result, fired); err != nil {
 		return FireTriggerResult{}, err
 	}
 	return result, nil
 }
 
 // resolveGroup closes the incident a resolved group names, when the bot
-// has one open; a group nobody had, or one already resolved, changes
-// nothing.
-func (uc FireTrigger) resolveGroup(ctx context.Context, bot domain.Bot, trigger domain.Trigger, payload domain.AlertmanagerPayload) (*domain.Incident, error) {
-	incident, found, err := uc.deps.Incidents.FindNewestByGroupKey(ctx, bot.TenantID(), payload.GroupKey)
+// has one open, marking the fingerprints given (nil: every alert still
+// firing); a group nobody had, or one already resolved, changes nothing.
+func (uc FireTrigger) resolveGroup(ctx context.Context, bot domain.Bot, trigger domain.Trigger, groupKey string, fingerprints []string) (*domain.Incident, error) {
+	incident, found, err := uc.deps.Incidents.FindNewestByGroupKey(ctx, bot.TenantID(), groupKey)
 	if err != nil {
 		return nil, err
 	}
 	if !found || incident.Status().IsResolved() {
-		return nil, uc.rec.audit(ctx, "trigger.fire", bot.ID().String(), domain.AuditOK, map[string]string{"trigger": trigger.Name(), "groupKey": payload.GroupKey, "ignored": "no open incident for the resolved group"})
+		return nil, uc.rec.audit(ctx, "trigger.fire", bot.ID().String(), domain.AuditOK, map[string]string{"trigger": trigger.Name(), "groupKey": groupKey, "ignored": "no open incident for the resolved group"})
 	}
 	now := uc.deps.Clock.Now()
-	if err := incident.MarkResolved(payload.ResolvedFingerprints(), now); err != nil {
+	if fingerprints == nil {
+		fingerprints = incident.FiringFingerprints()
+	}
+	if err := incident.MarkResolved(fingerprints, now); err != nil {
 		return nil, err
 	}
 	reason := "every alert of the group resolved, said " + trigger.Name()

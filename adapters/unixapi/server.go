@@ -660,7 +660,10 @@ func (s *Server) cancelTask(w http.ResponseWriter, r *http.Request) {
 // fireTrigger is POST /v1/triggers/{bot}/{trigger}: the body is the
 // event. Over TLS (the operator address) the request must carry the
 // trigger's secret or a signature of the body under its signing key;
-// over the socket the caller is trusted, as for every other route.
+// over the socket the caller is trusted, as for every other route. A
+// cloudwatch trigger takes Amazon SNS's message (text/plain, its type in
+// x-amz-sns-message-type) and is authenticated by SNS's signature, which
+// the application verifies on every route.
 func (s *Server) fireTrigger(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, domain.MaxTaskInputBytes))
 	if err != nil {
@@ -674,7 +677,7 @@ func (s *Server) fireTrigger(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	response, err := s.service.FireTrigger(r.Context(), FireRequest{BotID: botID, Trigger: trigger, DeliveryID: r.Header.Get(IdempotencyKeyHeader), Body: body})
+	response, err := s.service.FireTrigger(r.Context(), FireRequest{BotID: botID, Trigger: trigger, DeliveryID: r.Header.Get(IdempotencyKeyHeader), Body: body, MessageType: r.Header.Get(SNSMessageTypeHeader)})
 	respond(w, createdStatus(response.Created), response, err)
 }
 
@@ -694,6 +697,11 @@ func (s *Server) authenticateWebhook(r *http.Request, botID, trigger string, bod
 	webhook, ok := bot.Trigger(trigger)
 	if !ok {
 		return refused
+	}
+	if webhook.Type() == domain.TriggerCloudWatch {
+		// SNS sets no header of ours: its signature, verified by the
+		// application, is the credential.
+		return nil
 	}
 	signature := r.Header.Get(WebhookSignatureHeader)
 	if signature == "" {

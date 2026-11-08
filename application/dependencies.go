@@ -32,10 +32,12 @@ type Dependencies struct {
 	Outputs          OutputRepository
 	OutputDeliveries OutputDeliveryRepository
 	OutputSender     OutputSender
-	Clock            Clock
-	IDs              IDGenerator
-	Actor            string
-	OperatorURL      string
+	// SNS is Amazon SNS as a cloudwatch trigger reaches it.
+	SNS         SNSTransport
+	Clock       Clock
+	IDs         IDGenerator
+	Actor       string
+	OperatorURL string
 	// PanelURL is the base of the panel link an incident output carries
 	// (<base>/incidents/<id>); empty leaves the link out unless the
 	// target names its own.
@@ -93,6 +95,8 @@ func (d Dependencies) Validate() error {
 		return errors.New("application: OutputDeliveryRepository is required")
 	case d.OutputSender == nil:
 		return errors.New("application: OutputSender is required")
+	case d.SNS == nil:
+		return errors.New("application: SNSTransport is required")
 	case d.Clock == nil:
 		return errors.New("application: Clock is required")
 	case d.IDs == nil:
