@@ -180,24 +180,30 @@ func phaseObjective(phase domain.IncidentPhase, trigger domain.Trigger, incident
 		template = defaultPhaseObjective(phase)
 	}
 	fields["diagnosis"], fields["proposal"] = "", ""
-	base, err := domain.RenderObjective(template, fields)
+	var named []string
+	for key, text := range map[string]string{"diagnosis": incident.Diagnosis(), "proposal": incident.Proposal()} {
+		if text != "" && strings.Contains(template, "."+key) {
+			named = append(named, key)
+		}
+	}
+	measure, err := measureObjective(template, fields, named, mission)
 	if err != nil {
 		return "", err
 	}
-	room := max(domain.ObjectiveRoomBeside(mission)-len(base.String()), minPhaseObjectiveText)
+	room := measure.room
 	diagnosisRoom := room
-	if strings.Contains(template, ".diagnosis") && strings.Contains(template, ".proposal") {
+	if len(named) == 2 {
 		diagnosisRoom = max(room/3, minPhaseObjectiveText)
 	}
 	if incident.Diagnosis() != "" {
-		fields["diagnosis"] = domain.IncidentText(incident.Diagnosis(), diagnosisRoom)
+		fields["diagnosis"] = domain.IncidentText(incident.Diagnosis(), measure.each("diagnosis", diagnosisRoom))
 	}
 	proposalRoom := room
-	if diagnosisRoom != room {
-		proposalRoom = max(room-len(fields["diagnosis"].(string)), minPhaseObjectiveText)
+	if len(named) == 2 {
+		proposalRoom = max(room-len(fields["diagnosis"].(string))*measure.times["diagnosis"], minPhaseObjectiveText)
 	}
 	if incident.Proposal() != "" {
-		fields["proposal"] = domain.IncidentText(incident.Proposal(), proposalRoom)
+		fields["proposal"] = domain.IncidentText(incident.Proposal(), measure.each("proposal", proposalRoom))
 	}
 	return domain.RenderObjective(template, fields)
 }

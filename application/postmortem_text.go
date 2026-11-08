@@ -101,7 +101,7 @@ func (t postmortemText) render(room int) string {
 		return cutTextMark
 	}
 	kept := domain.IncidentText(t.prose, keep)
-	return kept + "\n" + t.proseMark(len(t.prose)-len(kept))
+	return kept + "\n" + t.proseMark(len(t.prose)-len(strings.TrimSuffix(kept, incidentTextCutMark)))
 }
 
 // renderList keeps the newest items that fit with the mark, in order.
@@ -138,22 +138,23 @@ func (t postmortemText) renderList(room int) string {
 // recent cycle's items, a person's note and a draft, the diagnosis and
 // the proposal), sharing the room so a text shorter than its share keeps
 // all of it. Then what is left goes to the lists' older items, oldest
-// lost first. A text never holds more than the room it was given; only
-// the floor of a share can pass a room a template left almost none of,
-// and a task that does not fit is refused at its assignment.
-func postmortemTextFit(texts map[string]postmortemText, room int) map[string]string {
+// lost first. A text the template writes twice costs twice. No writing
+// holds more than the room it was given; only the floor of a share can
+// pass a room a template left almost none of, and a task that does not
+// fit is refused at its assignment.
+func postmortemTextFit(texts map[string]postmortemText, measure objectiveMeasure) map[string]string {
 	recent := make(map[string]int, len(texts))
 	for key, text := range texts {
-		recent[key] = text.recentBytes()
+		recent[key] = text.recentBytes() * measure.times[key]
 	}
-	rooms := shareBytes(recent, room, minPhaseObjectiveText)
-	left := room
+	rooms := shareBytes(recent, measure.room, minPhaseObjectiveText)
+	left := measure.room
 	for _, given := range rooms {
 		left -= given
 	}
 	more := map[string]int{}
 	for key, text := range texts {
-		if extra := text.wholeBytes() - rooms[key]; extra > 0 {
+		if extra := text.wholeBytes()*measure.times[key] - rooms[key]; extra > 0 {
 			more[key] = extra
 		}
 	}
@@ -164,7 +165,7 @@ func postmortemTextFit(texts map[string]postmortemText, room int) map[string]str
 	}
 	out := make(map[string]string, len(texts))
 	for key, text := range texts {
-		out[key] = text.render(rooms[key])
+		out[key] = text.render(measure.each(key, rooms[key]))
 	}
 	return out
 }

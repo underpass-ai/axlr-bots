@@ -50,9 +50,11 @@ The texts of a postmortem's objective are cut in one place, `postmortemTextFit`,
 | diagnosis, proposal, a person's note, the last draft: bounded, but each may pass the room | from the end | `[Cut to fit the prompt's limit: the last N of M bytes of this text are left out.]` |
 | the mission, the template's own words, the short fields (id, severity, title, cost) | never | |
 
+The room is measured by rendering the template with a stand-in for each text, so what a text brings with it counts: a section under `{{if .draft}}`, the blank lines before a last field. A text the template writes twice costs twice; a custom phase template is measured the same way.
+
 The room goes first to what cannot be lost without saying so: the most recent cycle's items, the note, the draft, the diagnosis and the proposal. What is left goes to the lists' older items. A template whose fixed words leave no room is not cut: the task is refused with the reason at its assignment, as any task whose prompt does not fit.
 
-A task whose mission and objective make no prompt (a mission lengthened after the task was queued, a template too long) **fails at once** with `prompt refused: …`, the sizes and the limit, at the node's poll or in a run in process. A postmortem or a phase records that reason. The poll does not fail, and the node's next task goes out on the same poll.
+A task whose mission and objective make no prompt (a mission lengthened after the task was queued, a template too long) **fails at once** with `prompt refused: …`, the sizes and the limit, at the node's poll or in a run in process. A postmortem or a phase records that reason. The poll does not fail, and the node's next task goes out on the same poll: the poll reads the pending list once and goes down it, so a run of such tasks costs one pass.
 
 ## How it is carried out
 

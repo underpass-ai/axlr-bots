@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -151,14 +152,17 @@ func (uc NextAssignment) refuse(ctx context.Context, bot domain.Bot, task *domai
 	return newSettler(uc.deps).settle(ctx, "task.assign", bot, task, execution, failed, nil, uc.deps.Clock.Now())
 }
 
-// startPending starts the oldest Pending task the node may run.
+// startPending starts the first Pending task the node may run: urgent
+// ones, then the oldest. It reads the list once and goes down it, so a
+// run of tasks that cannot start costs one pass under the runner's lock
+// and the poll answers within its wait.
 func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (Assignment, bool, error) {
 	pending, err := uc.deps.Tasks.ListByStatus(ctx, domain.TaskPending)
 	if err != nil {
 		return Assignment{}, false, err
 	}
-	var chosen *domain.Task
-	var bot domain.Bot
+	bots := map[domain.BotID]domain.Bot{}
+	var runnable []domain.Task
 	for i := range pending {
 		candidate, err := uc.deps.Bots.Get(ctx, pending[i].BotID())
 		if domain.IsNotFound(err) {
@@ -179,20 +183,53 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 			}
 			continue
 		}
-		if chosen == nil || goesBefore(pending[i], *chosen) {
-			chosen, bot = &pending[i], candidate
+		bots[candidate.ID()] = candidate
+		runnable = append(runnable, pending[i])
+	}
+	slices.SortStableFunc(runnable, func(a, b domain.Task) int {
+		switch {
+		case goesBefore(a, b):
+			return -1
+		case goesBefore(b, a):
+			return 1
+		}
+		return 0
+	})
+	for i, task := range runnable {
+		if i > 0 {
+			// The tasks ended before this one may have moved it (a
+			// cancelled child): the list is not read again, the task is.
+			fresh, err := uc.deps.Tasks.Get(ctx, task.ID())
+			if domain.IsNotFound(err) {
+				continue
+			}
+			if err != nil {
+				return Assignment{}, false, err
+			}
+			if fresh.Status() != domain.TaskPending {
+				continue
+			}
+			task = fresh
+		}
+		assignment, found, err := uc.start(ctx, node, bots[task.BotID()], task)
+		if err != nil || found {
+			return assignment, found, err
 		}
 	}
-	if chosen == nil {
-		return Assignment{}, false, nil
-	}
-	task := *chosen
+	return Assignment{}, false, nil
+}
+
+// start starts one task and assigns it to the node. False with no error
+// says it did not go out, for a reason of its own: the ladder held it,
+// or it was refused or missed its deadline, and is over with the reason.
+// The next task may go.
+func (uc NextAssignment) start(ctx context.Context, node domain.Node, bot domain.Bot, task domain.Task) (Assignment, bool, error) {
 	run, err := newLadderKeeper(uc.deps).recheck(ctx, bot, &task)
 	if err != nil {
 		return Assignment{}, false, err
 	}
 	if !run {
-		return uc.startPending(ctx, node)
+		return Assignment{}, false, nil
 	}
 	executionID, err := domain.NewExecutionID(uc.deps.IDs.NewID("exec-"))
 	if err != nil {
@@ -226,12 +263,7 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 	}
 	assignment, err := uc.describe(ctx, bot, task, execution)
 	if isRefusal(err) {
-		// One task that cannot run must not hold the node's others back:
-		// it is over now, so the next one goes out on this same poll.
-		if err := uc.refuse(ctx, bot, &task, &execution, err); err != nil {
-			return Assignment{}, false, err
-		}
-		return uc.startPending(ctx, node)
+		return Assignment{}, false, uc.refuse(ctx, bot, &task, &execution, err)
 	}
 	if errors.Is(err, errTooLate) {
 		// The deadline came while the task was being started.

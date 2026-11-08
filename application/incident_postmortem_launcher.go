@@ -200,9 +200,8 @@ func (l postmortemLauncher) audit(ctx context.Context, incident domain.Incident,
 	_ = l.rec.audit(ctx, postmortemAction, incident.ID().String(), outcome, details)
 }
 
-// incidentTextHolder stands for a text while the room around it is
-// measured.
-const incidentTextHolder = "…"
+// incidentTextCutMark is what domain.IncidentText ends a cut text with.
+const incidentTextCutMark = "…"
 
 // postmortemTexts are the texts an objective may carry that are cut to
 // fit.
@@ -226,21 +225,19 @@ func postmortemObjective(trigger domain.Trigger, incident domain.Incident, brief
 	for _, key := range postmortemTexts {
 		fields[key] = ""
 	}
-	if brief.Review != nil {
-		// A section the note opens counts in the room the template takes.
-		fields["note"] = incidentTextHolder
-	}
-	base, err := domain.RenderObjective(template, fields)
-	if err != nil {
-		return "", err
-	}
 	named := map[string]postmortemText{}
+	var keys []string
 	for _, key := range postmortemTexts {
 		if text, ok := texts[key]; ok && !text.empty() && strings.Contains(template, "."+key) {
 			named[key] = text
+			keys = append(keys, key)
 		}
 	}
-	for key, text := range postmortemTextFit(named, max(domain.ObjectiveRoomBeside(mission)-len(base.String()), minPhaseObjectiveText)) {
+	measure, err := measureObjective(template, fields, keys, mission)
+	if err != nil {
+		return "", err
+	}
+	for key, text := range postmortemTextFit(named, measure) {
 		fields[key] = text
 	}
 	return domain.RenderObjective(template, fields)
