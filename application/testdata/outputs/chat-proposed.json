@@ -1,0 +1,75 @@
+{
+  "text": "[sev2] KubePodCrashLooping in shop: Change proposed",
+  "blocks": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "SEV2 · KubePodCrashLooping in shop"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Change proposed* · `inc-18` · tenant `default`"
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Status*\nProposed"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Bot*\nfix"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Cycle*\n1"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Cost*\n$0.0200"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Cause*\nCAUSE: deployment web drifted: replicas 1, desired 3"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Proposal*\n```PROPOSAL: kubectl apply -f desired/web.yaml\nROLLBACK: replicas 1```"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Needs you*: approve or deny the change."
+      }
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Open in the panel"
+          },
+          "url": "https://ops.example.test/axlr/incidents/inc-18",
+          "action_id": "open-incident"
+        }
+      ]
+    }
+  ]
+}

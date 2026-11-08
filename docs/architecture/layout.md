@@ -42,6 +42,8 @@ One Go module, hexagonal: the domain depends on nothing, the application holds t
   policies/<exec-id>.json  correlation/<exec-id>.json  artifacts/<task-id>/report.md
   artifacts/executions/<exec-id>/<name> (+ .listing/<name>.json)   the artifacts an execution delivered
   deliveries/pending/<dlv-id>.json, deliveries/done/   the outbox of approval notifications
+  deliveries/outputs/pending/<dlv-id>.json, deliveries/outputs/done/   the outbox of incident outputs
+  outputs.json (0600)      the incident output targets, URLs and secrets included
   outbox/nats/<node>/<time>-<seq>.json   with serve --bus nats: the pushes the broker has not acknowledged yet
   traces/, workspaces/     (single-process runs; a node keeps its own under its state)
   .lock                    the daemon holds it while it runs (a command working on the files takes it too)

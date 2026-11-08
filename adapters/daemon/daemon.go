@@ -223,13 +223,15 @@ func expireApprovals(ctx context.Context, runner *application.SerialRunner, logg
 	}
 }
 
-// deliverLoop makes the notification attempts that are due, every
-// DeliverEvery, until ctx ends.
+// deliverLoop makes the notification and incident output attempts that
+// are due, every DeliverEvery, until ctx ends.
 func deliverLoop(ctx context.Context, deps application.Dependencies, options Options, logger interface{ Printf(string, ...any) }) {
 	ticker := time.NewTicker(options.deliverEvery())
 	defer ticker.Stop()
 	uc := application.NewDeliverNotifications(deps)
+	outputs := application.NewDeliverOutputs(deps)
 	for {
+		deliverOutputs(ctx, outputs, logger)
 		outcomes, err := uc.Execute(ctx)
 		for _, outcome := range outcomes {
 			d := outcome.Delivery
@@ -247,6 +249,23 @@ func deliverLoop(ctx context.Context, deps application.Dependencies, options Opt
 			return
 		case <-ticker.C:
 		}
+	}
+}
+
+// deliverOutputs makes one pass of the incident outputs and logs each
+// outcome: the target by name, never its URL.
+func deliverOutputs(ctx context.Context, uc application.DeliverOutputs, logger interface{ Printf(string, ...any) }) {
+	outcomes, err := uc.Execute(ctx)
+	for _, outcome := range outcomes {
+		d := outcome.Delivery
+		line := fmt.Sprintf("daemon: output %s of incident %s (%s) to %s: %s (attempt %d)", d.ID(), d.IncidentID(), d.Event(), d.Output(), d.Status(), d.Attempts())
+		if outcome.Reason != "" {
+			line += ": " + outcome.Reason
+		}
+		logger.Printf("%s", line)
+	}
+	if err != nil && ctx.Err() == nil {
+		logger.Printf("daemon: outputs: %v", err)
 	}
 }
 

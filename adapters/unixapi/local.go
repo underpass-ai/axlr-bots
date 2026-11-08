@@ -434,6 +434,18 @@ func (l *Local) ResolveIncident(ctx context.Context, id string, request ResolveR
 	return incident.Snapshot(), nil
 }
 
+func (l *Local) AddOutput(ctx context.Context, definition application.OutputDefinition) (application.OutputView, error) {
+	return application.NewAddOutput(l.deps).Execute(ctx, definition)
+}
+
+func (l *Local) ListOutputs(ctx context.Context) ([]application.OutputView, error) {
+	return application.NewListOutputs(l.deps).Execute(ctx)
+}
+
+func (l *Local) RemoveOutput(ctx context.Context, name string) (application.OutputView, error) {
+	return application.NewRemoveOutput(l.deps).Execute(ctx, name)
+}
+
 func (l *Local) GetReport(ctx context.Context, id string) (ReportResponse, error) {
 	taskID, err := domain.NewTaskID(id)
 	if err != nil {
