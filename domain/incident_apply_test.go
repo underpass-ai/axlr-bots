@@ -86,7 +86,7 @@ func TestIncidentDeniedTwiceEscalates(t *testing.T) {
 	if err := i.Deny("", t1); err == nil {
 		t.Error("a denial without a reason")
 	}
-	if err := i.Deny("apply denied by ops: not now", t1); err != nil || i.Status() != IncidentOpen || i.Cycle() != 2 || i.Denials() != 1 || i.Reason() != "apply denied by ops: not now" {
+	if err := i.Deny("apply denied by ops: not now", t1); err != nil || i.Status() != IncidentOpen || i.Cycle() != 2 || i.SendBacks() != 1 || i.Reason() != "apply denied by ops: not now" {
 		t.Fatalf("first denial: %v %+v", err, i.Snapshot())
 	}
 	if i.Proposal() == "" || i.Diagnosis() == "" {
@@ -110,21 +110,21 @@ func TestIncidentDeniedTwiceEscalates(t *testing.T) {
 			t.Fatalf("cycle 2 step %d: %v", n, err)
 		}
 	}
-	if err := i.Deny(strings.Repeat("approval expired ", 58), t1); err != nil || i.Status() != IncidentEscalated || i.Denials() != IncidentMaxDenials || !strings.HasSuffix(i.Reason(), "left to a person)") || len(i.Reason()) > MaxIncidentReasonLength {
+	if err := i.Deny(strings.Repeat("approval expired ", 58), t1); err != nil || i.Status() != IncidentEscalated || i.SendBacks() != IncidentMaxSendBacks || !strings.HasSuffix(i.Reason(), "left to a person)") || len(i.Reason()) > MaxIncidentReasonLength {
 		t.Fatalf("second denial: %v %+v", err, i.Snapshot())
 	}
 	if i.CanRetry() {
 		t.Error("an incident denied twice is retried")
 	}
 	back, err := RestoreIncident(i.Snapshot())
-	if err != nil || back.Denials() != IncidentMaxDenials || back.Status() != IncidentEscalated {
+	if err != nil || back.SendBacks() != IncidentMaxSendBacks || back.Status() != IncidentEscalated {
 		t.Fatalf("round trip: %v", err)
 	}
 	if err := i.Resolve("by hand", t1); err != nil {
 		t.Fatal(err)
 	}
-	if err := i.Reopen([]string{"fp-a"}, t1.Add(time.Minute)); err != nil || i.Denials() != 0 {
-		t.Errorf("a reopening keeps the denials: %v %d", err, i.Denials())
+	if err := i.Reopen([]string{"fp-a"}, t1.Add(time.Minute)); err != nil || i.SendBacks() != 0 {
+		t.Errorf("a reopening keeps the sendBacks: %v %d", err, i.SendBacks())
 	}
 }
 
@@ -133,7 +133,7 @@ func TestIncidentSentBackByAFailedApplyOrARedVerify(t *testing.T) {
 	i := proposedIncident(t, true)
 	t1 := t0.Add(time.Minute)
 	// The apply task failed before anyone approved it.
-	if err := i.SendBack("apply task task-a Failed: node lost", t1); err != nil || i.Status() != IncidentOpen || i.Cycle() != 2 || i.Denials() != 0 {
+	if err := i.SendBack("apply task task-a Failed: node lost", t1); err != nil || i.Status() != IncidentOpen || i.Cycle() != 2 || i.SendBacks() != 1 {
 		t.Fatalf("send back from Proposed: %v", err)
 	}
 	if err := i.SendBack("again", t1); !errors.As(err, &serr) {
@@ -173,8 +173,8 @@ func TestIncidentRestoresTheNewStatuses(t *testing.T) {
 			s.Status = "Verifying"
 			s.Proposal = ""
 		},
-		"negative denials":  func(s *IncidentSnapshot) { s.Denials = -1 },
-		"too many denials":  func(s *IncidentSnapshot) { s.Denials = IncidentMaxDenials + 1 },
+		"negative sendBacks":  func(s *IncidentSnapshot) { s.SendBacks = -1 },
+		"too many sendBacks":  func(s *IncidentSnapshot) { s.SendBacks = IncidentMaxSendBacks + 1 },
 		"unknown task kind": func(s *IncidentSnapshot) { s.Tasks[2].Phase = "rollback" },
 	} {
 		s := i.Snapshot()
@@ -261,7 +261,7 @@ func TestAnIncidentStoredBeforeTheApplyPhaseLoadsUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	incident, err := RestoreIncident(snapshot)
-	if err != nil || incident.Status() != IncidentProposed || incident.Denials() != 0 {
+	if err != nil || incident.Status() != IncidentProposed || incident.SendBacks() != 0 {
 		t.Fatalf("restore: %v", err)
 	}
 	again, _ := json.Marshal(incident.Snapshot())

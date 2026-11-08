@@ -49,15 +49,41 @@ func (b Bot) PolicyFor(ref TriggerRef) ExecutionPolicy {
 	return policy
 }
 
+// hostWriteTools are the runtime's own tools that write or run on the
+// host: a phase below act-with-approval may not list them, since no card
+// would stop them (observe with local_exec even runs at the runtime's
+// act-within-policy).
+var hostWriteTools = []ToolName{"local_write", "local_edit", "local_exec", "axlr_deliver"}
+
 // CheckTriggers refuses an incident trigger that would widen the bot's
-// policy: a level above the bot's, or a tool its allowedTools leave out.
+// policy, or remove a card the bot's level would show: a level above the
+// bot's; a tool its allowedTools leave out; a level below
+// act-with-approval without its own explicit tools, or with a host write
+// tool among them (the operator vouches that the MCP tools such a phase
+// lists are reads, as AXLR itself does under observe and propose); and a
+// level or tools on a bot whose runtime is a Jev program, which does not
+// take a narrowed policy.
 func (b Bot) CheckTriggers() error {
 	for _, trigger := range b.triggers.List() {
-		if level, ok := trigger.Level(); ok && !level.AtMost(b.level) {
+		level, leveled := trigger.Level()
+		tools, listed := trigger.Tools()
+		if (leveled || listed) && b.runtime.Kind() == RuntimeJev {
+			return invalid("trigger "+trigger.Name(), "a Jev program takes no level or tools of a phase")
+		}
+		if leveled && !level.AtMost(b.level) {
 			return invalid("trigger "+trigger.Name(), "level "+level.String()+" is above the bot's "+b.level.String())
 		}
-		tools, ok := trigger.Tools()
-		if !ok {
+		if leveled && !level.Writes() {
+			if !listed {
+				return invalid("trigger "+trigger.Name(), "a level below act-with-approval needs its own tools: the bot's could write without a card")
+			}
+			for _, write := range hostWriteTools {
+				if tools.Allows(write) {
+					return invalid("trigger "+trigger.Name(), "level "+level.String()+" may not list "+write.String()+": it would run without a card")
+				}
+			}
+		}
+		if !listed {
 			continue
 		}
 		for _, name := range tools.names {

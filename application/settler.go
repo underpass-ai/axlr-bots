@@ -102,6 +102,16 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 	if err := s.rec.audit(ctx, action, task.ID().String(), auditOutcome, details); err != nil {
 		return err
 	}
+	if waiting && (incidentStanding{deps: s.deps}).superseded(ctx, *task) {
+		// A phase task its incident went on without (a denied apply whose
+		// session asks again) waits for nobody: it is cancelled, so it
+		// never writes a proposal the incident no longer stands on.
+		if err := s.rec.audit(ctx, "incident.advance", task.IncidentID().String(), domain.AuditDenied, map[string]string{"task": task.ID().String(), "reason": "superseded by the incident's current task: cancelled"}); err != nil {
+			return err
+		}
+		_, err := NewCancelTask(s.deps).Execute(ctx, task.ID())
+		return err
+	}
 	if waiting {
 		if pending := execution.Result().PendingDecision; pending != nil {
 			if actor, ok := approvedByPolicy(bot, *pending); ok && s.autoApprove(ctx, *task, pending.CallID, actor) {

@@ -197,7 +197,7 @@ func TestARedVerifySendsTheIncidentBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	back, _ := h.incs.Get(ctx, incident.ID())
-	if back.Status() != domain.IncidentOpen || back.Cycle() != 2 || !strings.Contains(back.Reason(), "still red") || back.Denials() != 0 {
+	if back.Status() != domain.IncidentOpen || back.Cycle() != 2 || !strings.Contains(back.Reason(), "still red") || back.SendBacks() != 1 {
 		t.Fatalf("after a red verify: %+v", back.Snapshot())
 	}
 	// The new cycle's triage starts at once, without waiting for an alert.
@@ -233,10 +233,10 @@ func TestDeniedTwiceTheIncidentIsLeftToAPerson(t *testing.T) {
 		t.Fatal(err)
 	}
 	back, _ := h.incs.Get(ctx, incident.ID())
-	if back.Status() != domain.IncidentOpen || back.Cycle() != 2 || back.Denials() != 1 || !strings.Contains(back.Reason(), "local_write") || !strings.Contains(back.Reason(), "denied by "+h.deps.Actor) {
+	if back.Status() != domain.IncidentOpen || back.Cycle() != 2 || back.SendBacks() != 1 || !strings.Contains(back.Reason(), "local_write") || !strings.Contains(back.Reason(), "denied by "+h.deps.Actor) {
 		t.Fatalf("after a denial: %+v", back.Snapshot())
 	}
-	if reopened, ok := lastOf(h, domain.EventIncidentReopened); !ok || reopened.Payload["from"] != "Proposed" || reopened.Payload["denials"] != 1 {
+	if reopened, ok := lastOf(h, domain.EventIncidentReopened); !ok || reopened.Payload["from"] != "Proposed" || reopened.Payload["sendBacks"] != 1 {
 		t.Errorf("incident.reopened = %+v", reopened)
 	}
 	if _, ok := lastOf(h, domain.EventIncidentVerifying); ok {
@@ -263,7 +263,7 @@ func TestDeniedTwiceTheIncidentIsLeftToAPerson(t *testing.T) {
 		t.Fatalf("expire: %v %+v", err, done)
 	}
 	escalated, _ := h.incs.Get(ctx, incident.ID())
-	if escalated.Status() != domain.IncidentEscalated || escalated.Denials() != domain.IncidentMaxDenials || !strings.Contains(escalated.Reason(), "expired") || !strings.Contains(escalated.Reason(), "left to a person") {
+	if escalated.Status() != domain.IncidentEscalated || escalated.SendBacks() != domain.IncidentMaxSendBacks || !strings.Contains(escalated.Reason(), "expired") || !strings.Contains(escalated.Reason(), "left to a person") {
 		t.Fatalf("after the second denial: %+v", escalated.Snapshot())
 	}
 	if _, ok := lastOf(h, domain.EventIncidentEscalated); !ok {
@@ -271,7 +271,7 @@ func TestDeniedTwiceTheIncidentIsLeftToAPerson(t *testing.T) {
 	}
 	tasks := len(h.tasks.tasks)
 	if last, err := NewOpenIncident(h.deps).Execute(ctx, alert(triage, "fp-a")); err != nil || last.Action != IncidentRepeated || len(h.tasks.tasks) != tasks {
-		t.Errorf("an alert after two denials: %+v %v", last, err)
+		t.Errorf("an alert after two sendBacks: %+v %v", last, err)
 	}
 }
 
@@ -288,7 +288,7 @@ func TestAnExpiredOrFailedApply(t *testing.T) {
 		t.Fatalf("expire: %v %+v", err, done)
 	}
 	back, _ := h.incs.Get(ctx, incident.ID())
-	if back.Status() != domain.IncidentOpen || back.Denials() != 1 || !strings.Contains(back.Reason(), "expired") {
+	if back.Status() != domain.IncidentOpen || back.SendBacks() != 1 || !strings.Contains(back.Reason(), "expired") {
 		t.Fatalf("after a cancelling expiry: %+v", back.Snapshot())
 	}
 
@@ -300,7 +300,7 @@ func TestAnExpiredOrFailedApply(t *testing.T) {
 		t.Fatal(err)
 	}
 	failed, _ := h2.incs.Get(ctx, incident.ID())
-	if failed.Status() != domain.IncidentOpen || failed.Denials() != 0 || failed.Cycle() != 2 || !strings.HasPrefix(failed.Reason(), "apply task ") || !strings.Contains(failed.Reason(), "connection refused") {
+	if failed.Status() != domain.IncidentOpen || failed.SendBacks() != 1 || failed.Cycle() != 2 || !strings.HasPrefix(failed.Reason(), "apply task ") || !strings.Contains(failed.Reason(), "connection refused") {
 		t.Fatalf("after a failed apply: %+v", failed.Snapshot())
 	}
 }
@@ -503,5 +503,78 @@ func TestASentBackIncidentWhoseTriageCannotStartWaitsForTheNextAlert(t *testing.
 	again, err := NewOpenIncident(h.deps).Execute(ctx, alert(triage, "fp-a"))
 	if err != nil || again.Task == nil || again.Task.IdempotencyKey() != domain.IdempotencyKey("incident:"+back.ID().String()+":2") {
 		t.Fatalf("the next alert: %+v %v", again, err)
+	}
+}
+
+// Every send-back counts: an apply that keeps failing at once is
+// escalated at the second, never looping triage, fix and apply (review
+// of #133, R1).
+func TestAnApplyThatKeepsFailingIsEscalated(t *testing.T) {
+	h := newHarness()
+	triage := brigade(t, h, domain.ApprovalsSnapshot{})
+	ctx := context.Background()
+	incident := proposed(t, h, triage)
+	for n := 1; n <= domain.IncidentMaxSendBacks; n++ {
+		h.runtime.report = ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "kube-mcp down"}
+		if _, err := NewRunTask(h.deps).Execute(ctx, incident.CurrentTaskID()); err != nil {
+			t.Fatal(err)
+		}
+		back, _ := h.incs.Get(ctx, incident.ID())
+		if n < domain.IncidentMaxSendBacks {
+			if back.Status() != domain.IncidentOpen || back.SendBacks() != n {
+				t.Fatalf("send-back %d: %+v", n, back.Snapshot())
+			}
+			incident = throughFix(t, h, incident.ID())
+			continue
+		}
+		if back.Status() != domain.IncidentEscalated || !strings.HasSuffix(back.Reason(), "left to a person)") || back.CanRetry() {
+			t.Fatalf("send-back %d: %+v", n, back.Snapshot())
+		}
+		tasks := len(h.tasks.tasks)
+		if again, err := NewOpenIncident(h.deps).Execute(ctx, alert(triage, "fp-a")); err != nil || again.Action != IncidentRepeated || len(h.tasks.tasks) != tasks {
+			t.Errorf("an alert after the cap: %+v %v", again, err)
+		}
+	}
+}
+
+// A denied apply whose session asks again is cancelled, and one that
+// still waits can be denied but never approved once the incident went on
+// (review of #133, R6).
+func TestAStaleApplyIsNeverApproved(t *testing.T) {
+	h := newHarness()
+	triage := brigade(t, h, domain.ApprovalsSnapshot{})
+	ctx := context.Background()
+	incident := proposed(t, h, triage)
+	waiting := waitingApply(t, h, incident)
+	h.decider.report = ExecutionReport{Outcome: domain.ExecutionDecisionRequired, Result: domain.Result{SessionID: "sess-a", PendingDecision: &domain.PendingDecision{Tool: "local_write", CallID: "c-again", SessionID: "sess-a"}}}
+	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionDeny, ""); err != nil {
+		t.Fatal(err)
+	}
+	stale, _ := h.tasks.Get(ctx, waiting.ID())
+	if stale.Status() != domain.TaskCancelled {
+		t.Fatalf("the denied apply asking again is %s", stale.Status())
+	}
+	decisions := len(h.decider.requests)
+	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionApprove, "c-again"); err == nil || len(h.decider.requests) != decisions {
+		t.Fatalf("a stale apply was approved: %v", err)
+	}
+	// An apply still waiting when its incident is resolved by hand.
+	h2 := newHarness()
+	triage = brigade(t, h2, domain.ApprovalsSnapshot{})
+	incident = proposed(t, h2, triage)
+	waiting = waitingApply(t, h2, incident)
+	if _, err := NewResolveIncident(h2.deps).Execute(ctx, incident.ID(), "fixed by hand"); err != nil {
+		t.Fatal(err)
+	}
+	var state domain.StateError
+	if _, err := NewApproveTask(h2.deps).Execute(ctx, waiting.ID(), DecisionApprove, ""); !errors.As(err, &state) || !strings.Contains(err.Error(), "no longer stands on") {
+		t.Errorf("approve after the resolution: %v", err)
+	}
+	if audit := h2.log.audits[len(h2.log.audits)-1]; audit.Action != "task.decide" || audit.Outcome != domain.AuditDenied {
+		t.Errorf("the refusal was not audited: %+v", audit)
+	}
+	h2.decider.report = completes("not applied", 0)
+	if _, err := NewApproveTask(h2.deps).Execute(ctx, waiting.ID(), DecisionDeny, ""); err != nil {
+		t.Errorf("deny after the resolution: %v", err)
 	}
 }

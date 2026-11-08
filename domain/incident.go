@@ -25,11 +25,11 @@ const (
 	// that was down) gets another try when its alert comes again, and a
 	// fault that keeps failing stops costing.
 	IncidentEscalationRetries = 2
-	// IncidentMaxDenials is how many times a person may deny (or let
-	// expire) the apply of an incident's proposal before the incident is
-	// left to a person: each denial sends it back to Open for another
-	// triage and proposal, the last one escalates it.
-	IncidentMaxDenials = 2
+	// IncidentMaxSendBacks is how many times an incident may go back to
+	// Open from a proposal (its apply denied, expired, failed or
+	// cancelled, its verify red) before it is left to a person: each one
+	// starts another triage and proposal, the last one escalates it.
+	IncidentMaxSendBacks = 2
 )
 
 // Incident is one grouped fault of a tenant: what the alerts say, which
@@ -55,7 +55,7 @@ type Incident struct {
 	reason       string
 	repeats      int
 	retries      int
-	denials      int
+	sendBacks      int
 	costUSD      float64
 	costUnknown  bool
 	openedAt     time.Time
@@ -323,11 +323,11 @@ func (i *Incident) Repeat(fingerprints []string, now time.Time) error {
 // diagnosis does not give the retries back: a fix task that fails every
 // time would otherwise start triage and fix again on every alert.
 //
-// An incident escalated because its apply was denied IncidentMaxDenials
-// times is not retried: a person said no twice, and another proposal
+// An incident escalated because it was sent back IncidentMaxSendBacks
+// times is not retried: its fix was refused or failed twice, and another proposal
 // would only ask again.
 func (i Incident) CanRetry() bool {
-	return i.status == IncidentEscalated && i.retries < IncidentEscalationRetries && i.denials < IncidentMaxDenials
+	return i.status == IncidentEscalated && i.retries < IncidentEscalationRetries && i.sendBacks < IncidentMaxSendBacks
 }
 
 // Retry opens an Escalated incident again on a new alert: one more
@@ -371,7 +371,7 @@ func (i *Incident) Reopen(fingerprints []string, now time.Time) error {
 	i.unresolve(fingerprints)
 	i.cycle++
 	i.retries = 0
-	i.denials = 0
+	i.sendBacks = 0
 	i.status = IncidentOpen
 	i.resolvedAt = nil
 	i.lastSeenAt, i.updatedAt = now, now
@@ -493,7 +493,7 @@ func (i Incident) Snapshot() IncidentSnapshot {
 	return IncidentSnapshot{
 		ID: i.id.String(), TenantID: i.tenant.String(), BotID: i.bot.String(), GroupKey: i.groupKey, Source: i.source,
 		Title: i.title, Severity: i.severity.String(), Status: i.status.String(), Fingerprints: i.Fingerprints(), ResolvedFingerprints: i.ResolvedFingerprints(),
-		Cycle: i.cycle, TaskIDs: ids, Tasks: tasks, Diagnosis: i.diagnosis, Proposal: i.proposal, Reason: i.reason, Repeats: i.repeats, Retries: i.retries, Denials: i.denials, CostUSD: i.costUSD, CostUnknown: i.costUnknown,
+		Cycle: i.cycle, TaskIDs: ids, Tasks: tasks, Diagnosis: i.diagnosis, Proposal: i.proposal, Reason: i.reason, Repeats: i.repeats, Retries: i.retries, SendBacks: i.sendBacks, CostUSD: i.costUSD, CostUnknown: i.costUnknown,
 		OpenedAt: i.openedAt, UpdatedAt: i.updatedAt, LastSeenAt: i.lastSeenAt, ResolvedAt: resolvedAt,
 	}
 }
@@ -564,8 +564,8 @@ func RestoreIncident(s IncidentSnapshot) (Incident, error) {
 		return Incident{}, invalid("cycle", "must be at least 1")
 	case s.Repeats < 0 || s.Retries < 0 || s.CostUSD < 0:
 		return Incident{}, invalid("repeats, retries or cost", "must not be negative")
-	case s.Denials < 0 || s.Denials > IncidentMaxDenials:
-		return Incident{}, invalid("denials", "must be 0 to "+strconv.Itoa(IncidentMaxDenials))
+	case s.SendBacks < 0 || s.SendBacks > IncidentMaxSendBacks:
+		return Incident{}, invalid("sendBacks", "must be 0 to "+strconv.Itoa(IncidentMaxSendBacks))
 	case status.IsResolved() && s.ResolvedAt == nil:
 		return Incident{}, invalid("resolved at", "a Resolved incident needs it")
 	case !status.IsResolved() && s.ResolvedAt != nil:
@@ -605,7 +605,7 @@ func RestoreIncident(s IncidentSnapshot) (Incident, error) {
 			incident.resolved = append(incident.resolved, fingerprint)
 		}
 	}
-	incident.cycle, incident.repeats, incident.retries, incident.denials, incident.costUSD, incident.costUnknown = s.Cycle, s.Repeats, s.Retries, s.Denials, s.CostUSD, s.CostUnknown
+	incident.cycle, incident.repeats, incident.retries, incident.sendBacks, incident.costUSD, incident.costUnknown = s.Cycle, s.Repeats, s.Retries, s.SendBacks, s.CostUSD, s.CostUnknown
 	incident.status, incident.updatedAt, incident.lastSeenAt = status, s.UpdatedAt, s.LastSeenAt
 	return incident, nil
 }

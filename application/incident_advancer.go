@@ -90,7 +90,7 @@ func (a incidentAdvancer) taskEnded(ctx context.Context, bot domain.Bot, task do
 			return err
 		}
 		move.kinds = []domain.EventType{domain.EventIncidentEscalated}
-		for _, key := range []string{"diagnosis", "proposal", "proposedBy", "verdict", "from", "denials"} {
+		for _, key := range []string{"diagnosis", "proposal", "proposedBy", "verdict", "from", "sendBacks"} {
 			delete(move.payload, key)
 		}
 		move.payload["reason"] = incident.Reason()
@@ -142,9 +142,7 @@ func (a incidentAdvancer) end(incident *domain.Incident, current domain.Incident
 		// cancel on expiry: an expiry, as a denial is.
 		return a.deny(incident, "the apply call of task "+task.ID().String()+" expired before anyone decided it", move, now)
 	case phase == domain.IncidentPhaseApply:
-		move.kinds = []domain.EventType{domain.EventIncidentReopened}
-		move.payload["from"], move.payload["reason"] = incident.Status().String(), failure()
-		return incident.SendBack(failure(), now)
+		return a.sendBack(incident, failure(), move, now)
 	case phase == domain.IncidentPhaseVerify && completed:
 		verdict := domain.ParseVerifyVerdict(answer)
 		move.payload["verdict"] = verdict.String()
@@ -153,10 +151,7 @@ func (a incidentAdvancer) end(incident *domain.Incident, current domain.Incident
 			// incident; nothing moves before it.
 			return nil
 		}
-		reason := domain.IncidentText("verify task "+task.ID().String()+" says the alert is still red: "+answer, domain.MaxIncidentReasonLength)
-		move.kinds = []domain.EventType{domain.EventIncidentReopened}
-		move.payload["from"], move.payload["reason"] = incident.Status().String(), reason
-		return incident.SendBack(reason, now)
+		return a.sendBack(incident, "verify task "+task.ID().String()+" says the alert is still red: "+answer, move, now)
 	default:
 		move.kinds = []domain.EventType{domain.EventIncidentEscalated}
 		move.payload["reason"] = failure()
@@ -183,14 +178,22 @@ func (a incidentAdvancer) applied(incident *domain.Incident, task domain.Task, m
 	return incident.Verify(now)
 }
 
-// deny records a denial of the apply: back to Open, or escalated at the
-// last one.
+// deny records a denial of the apply, a send-back.
 func (a incidentAdvancer) deny(incident *domain.Incident, reason string, move *incidentMove, now time.Time) error {
+	if incident.Status() != domain.IncidentProposed {
+		return incident.Deny(reason, now)
+	}
+	return a.sendBack(incident, reason, move, now)
+}
+
+// sendBack sends the incident back to Open with the reason, or escalates
+// it at the last send-back (domain.IncidentMaxSendBacks).
+func (a incidentAdvancer) sendBack(incident *domain.Incident, reason string, move *incidentMove, now time.Time) error {
 	from := incident.Status()
-	if err := incident.Deny(domain.IncidentText(reason, domain.MaxIncidentReasonLength), now); err != nil {
+	if err := incident.SendBack(domain.IncidentText(reason, domain.MaxIncidentReasonLength), now); err != nil {
 		return err
 	}
-	move.payload["reason"], move.payload["denials"] = incident.Reason(), incident.Denials()
+	move.payload["reason"], move.payload["sendBacks"] = incident.Reason(), incident.SendBacks()
 	if incident.Status() == domain.IncidentEscalated {
 		move.kinds = []domain.EventType{domain.EventIncidentEscalated}
 		return nil

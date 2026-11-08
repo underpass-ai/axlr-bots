@@ -14,9 +14,9 @@ import "time"
 // triage task; Proposal the answer of the fix task of that diagnosis;
 // Reason says why it was escalated, resolved or sent back to Open. Repeats counts the
 // alerts received while it was already open; Retries the triages an alert
-// started again on it while it was Escalated, since its last proposal or reopening; Denials the applies of its
-// proposals a person denied or let expire since it was last reopened
-// (IncidentMaxDenials escalates it); CostUSD sums what its tasks'
+// started again on it while it was Escalated, since its last proposal or reopening; SendBacks the times it went back
+// to Open from a proposal (a denial, an expiry, a failed apply, a red
+// verify) since it was last reopened (IncidentMaxSendBacks escalates it); CostUSD sums what its tasks'
 // executions reported, and CostUnknown says one of them stopped before
 // it said what it cost (CostUSD is then a floor).
 type IncidentSnapshot struct {
@@ -38,7 +38,7 @@ type IncidentSnapshot struct {
 	Reason               string                 `json:"reason,omitempty"`
 	Repeats              int                    `json:"repeats,omitempty"`
 	Retries              int                    `json:"retries,omitempty"`
-	Denials              int                    `json:"denials,omitempty"`
+	SendBacks            int                    `json:"sendBacks,omitempty"`
 	CostUSD              float64                `json:"costUsd,omitempty"`
 	CostUnknown          bool                   `json:"costUnknown,omitempty"`
 	OpenedAt             time.Time              `json:"openedAt"`

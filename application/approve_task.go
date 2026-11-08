@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,6 +48,18 @@ func (uc ApproveTask) Execute(ctx context.Context, id domain.TaskID, decision, c
 	}
 	if task.Status() != domain.TaskWaitingApproval {
 		return ApproveTaskResult{}, uc.deny(ctx, id, domain.StateError{Subject: "task " + id.String(), Current: task.Status().String(), Attempted: "decide"})
+	}
+	if decision == DecisionApprove {
+		// A task of an incident is approved only while the incident stands
+		// on it; a deny only lets its session go on, and stays allowed.
+		stands, incident, err := incidentStanding{deps: uc.deps}.standsOn(ctx, task)
+		if err != nil {
+			return ApproveTaskResult{}, err
+		}
+		if !stands {
+			current := "a task incident " + incident.ID().String() + " no longer stands on (" + incident.Status().String() + ", cycle " + strconv.Itoa(incident.Cycle()) + ")"
+			return ApproveTaskResult{}, uc.deny(ctx, id, domain.StateError{Subject: "task " + id.String(), Current: current, Attempted: "approve"})
+		}
 	}
 	bot, err := uc.deps.Bots.Get(ctx, task.BotID())
 	if err != nil {

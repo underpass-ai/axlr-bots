@@ -101,3 +101,43 @@ func TestANarrowerListDropsTheAllowRulesOfToolsItLeavesOut(t *testing.T) {
 		t.Errorf("the bot's rules = %+v", whole.Snapshot())
 	}
 }
+
+// A phase below act-with-approval names its own tools and no host write
+// tool, and a Jev bot takes no phase policy (review of #133, R4, R5).
+func TestALowerPhaseLevelNeedsItsOwnReadTools(t *testing.T) {
+	bot := sampleBot(t)
+	tools, _ := NewAllowedTools([]string{"local_read", "local_write", "local_exec", "kubernetes.get_pods"})
+	if err := bot.Redefine(bot.Mission(), tools, bot.ModelPolicy(), bot.Budgets()); err != nil {
+		t.Fatal(err)
+	}
+	if err := bot.Govern(AutonomyActWithApproval, ToolRules{}); err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range map[string]struct {
+		trigger TriggerSnapshot
+		ok      bool
+	}{
+		"propose without tools":     {TriggerSnapshot{Type: "incident", Name: "p", Phase: "fix", Level: "propose"}, false},
+		"propose with local_write":  {TriggerSnapshot{Type: "incident", Name: "p", Phase: "fix", Level: "propose", Tools: []string{"local_read", "local_write"}}, false},
+		"observe with local_exec":   {TriggerSnapshot{Type: "incident", Name: "p", Level: "observe", Tools: []string{"local_exec"}}, false},
+		"propose with reads":        {TriggerSnapshot{Type: "incident", Name: "p", Phase: "fix", Level: "propose", Tools: []string{"local_read", "kubernetes.get_pods"}}, true},
+		"act-with-approval, writes": {TriggerSnapshot{Type: "incident", Name: "p", Phase: "apply", Level: "act-with-approval", Tools: []string{"local_write"}}, true},
+		"no level, no tools":        {TriggerSnapshot{Type: "incident", Name: "p", Phase: "apply"}, true},
+	} {
+		triggers, err := NewTriggers([]TriggerSnapshot{c.trigger})
+		if err != nil {
+			t.Fatal(err)
+		}
+		bot.Wire(triggers, bot.Placement())
+		if err := bot.CheckTriggers(); (err == nil) != c.ok {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	jev := bot
+	jev.runtime = Runtime{kind: RuntimeJev}
+	triggers, _ := NewTriggers([]TriggerSnapshot{{Type: "incident", Name: "p", Phase: "apply", Tools: []string{"local_read"}}})
+	jev.Wire(triggers, jev.Placement())
+	if err := jev.CheckTriggers(); err == nil {
+		t.Error("a Jev bot took a phase policy")
+	}
+}

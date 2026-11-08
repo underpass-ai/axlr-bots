@@ -116,9 +116,6 @@ func buildBot(d BotDefinition, now time.Time) (domain.Bot, error) {
 		return domain.Bot{}, err
 	}
 	bot.Wire(triggers, placement)
-	if err := bot.CheckTriggers(); err != nil {
-		return domain.Bot{}, err
-	}
 	approvals, err := domain.NewApprovals(d.Approvals)
 	if err != nil {
 		return domain.Bot{}, err
@@ -150,6 +147,10 @@ func buildBot(d BotDefinition, now time.Time) (domain.Bot, error) {
 		return domain.Bot{}, err
 	}
 	if err := bot.SetRuntime(runtime); err != nil {
+		return domain.Bot{}, err
+	}
+	// After the runtime: a Jev program takes no phase policy.
+	if err := bot.CheckTriggers(); err != nil {
 		return domain.Bot{}, err
 	}
 	return bot, nil
