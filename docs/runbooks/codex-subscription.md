@@ -89,7 +89,7 @@ Set `model.model` to the entry's id in the bot's definition and update the bot (
 
 ## Check it
 
-Run the bot (`axlr-bots task submit …`) and read the execution: `axlr-bots execution get <id>` shows the model `codex/…` and its tokens, and `journalctl --user -u axlr-codex-proxy` shows `/v1/responses 200` for each model call.
+`axlr-bots node get <id>` names `codex` under the capabilities' `providers` once the node started with the key in its environment or the proxy listening, and `local:codex/…` for each entry of step 3 (the node reads the settings at its start: restart it after adding one). Run the bot (`axlr-bots task submit …`) and read the execution: `axlr-bots execution get <id>` shows the model `codex/…` and its tokens, and `journalctl --user -u axlr-codex-proxy` shows `/v1/responses 200` for each model call.
 
 ## When it does not work
 
