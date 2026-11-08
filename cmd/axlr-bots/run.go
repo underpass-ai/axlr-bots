@@ -130,6 +130,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return autonomyList(ctx, service, rest, stdout, stderr)
 	case "autonomy get":
 		return autonomyGet(ctx, service, rest, stdout, stderr)
+	case "autonomy lower":
+		return autonomyLower(ctx, service, *actor, rest, stdout, stderr)
 	case "incident resolve":
 		return incidentResolve(ctx, service, rest, stdout, stderr)
 	case "output add":
@@ -287,6 +289,8 @@ func printUsage(w io.Writer) {
                                       mark the diagnosis of the current cycle, as --actor
   autonomy list [--tenant <id>] [--bot <id>] [--runbook <name>] [--namespace <ns>]
   autonomy get <autonomy-id>          a runbook's step, counters and history
+  autonomy lower <autonomy-id> [--reason "<text>"]
+                                      take a runbook one step down, as --actor
   incident resolve <incident-id> [--reason "<text>"]
                                       close it; a new alert within 30 minutes reopens it
   output add <name> --type webhook|slack|command [--url <url> | --url-file <file>|-] [--secret-file <file>|-]

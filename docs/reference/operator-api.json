@@ -1815,6 +1815,48 @@
           }
         }
       }
+    },
+    "/v1/autonomy/{id}/lower": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "autonomy id (ladder-…)"
+        }
+      ],
+      "post": {
+        "operationId": "lowerAutonomy",
+        "description": "a named person takes the runbook one step down and ends what was outstanding; a task already granted takes the card when it comes to run; 403 for nobody named, a machine or someone not among the apply bot's approvers",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LowerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutonomyResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4385,6 +4427,10 @@
               "type": "string"
             },
             "description": "every namespace the incident's alerts named, in order, when there are two or more (the first 32); approvals.twoPersons matches any of them"
+          },
+          "alertGroup": {
+            "type": "string",
+            "description": "what is known of its alerts: uniform (one alert), mixed, or absent (a hand-opened incident)"
           }
         },
         "required": [
@@ -4781,6 +4827,10 @@
           },
           "autonomy": {
             "$ref": "#/components/schemas/AutonomyResponse"
+          },
+          "alertGroup": {
+            "type": "string",
+            "description": "what is known of its alerts: uniform (one alert), mixed, or absent (a hand-opened incident)"
           }
         },
         "required": [
@@ -4987,12 +5037,13 @@
           },
           "earnedBefore": {
             "$ref": "#/components/schemas/AutonomyCounters"
+          },
+          "reason": {
+            "type": "string"
           }
         },
         "required": [
           "signal",
-          "incidentId",
-          "cycle",
           "at"
         ]
       },
@@ -5050,6 +5101,15 @@
           },
           "saved": {
             "type": "boolean"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "outstanding": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AutonomyOutstanding"
+            }
           }
         },
         "required": [
@@ -5133,7 +5193,7 @@
       "PinnedLadderSnapshot": {
         "type": "object",
         "x-go-type": "domain.PinnedLadderSnapshot",
-        "description": "what a ladder let the task do alone",
+        "description": "the unit of an apply task, whose signals fall on it; alone is what a ladder let it do without a card, maxToolCalls how many calls it may make",
         "properties": {
           "runbook": {
             "type": "string"
@@ -5143,6 +5203,12 @@
           },
           "namespace": {
             "type": "string"
+          },
+          "alone": {
+            "type": "boolean"
+          },
+          "maxToolCalls": {
+            "type": "integer"
           }
         },
         "required": [
@@ -5150,6 +5216,41 @@
           "tool",
           "namespace"
         ]
+      },
+      "AutonomyOutstanding": {
+        "type": "object",
+        "x-go-type": "domain.AutonomyOutstanding",
+        "description": "an apply whose end is not recorded: while one is, the runbook gets no grant",
+        "properties": {
+          "incidentId": {
+            "type": "string"
+          },
+          "cycle": {
+            "type": "integer"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "incidentId",
+          "cycle",
+          "at"
+        ]
+      },
+      "LowerRequest": {
+        "type": "object",
+        "x-go-type": "unixapi.LowerRequest",
+        "description": "a person takes a runbook one step down: who is loweredBy or X-Axlr-Actor (both given must agree), and why",
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "loweredBy": {
+            "type": "string"
+          }
+        }
       }
     }
   }

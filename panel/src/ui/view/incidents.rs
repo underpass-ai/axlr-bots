@@ -250,6 +250,15 @@ fn autonomy_card<'a>(app: &'a App, incident: &'a Incident, autonomy: &'a Autonom
         muted(autonomy.progress(), tokens),
     ]
     .spacing(8);
+    if !autonomy.outstanding.is_empty() {
+        body = body.push(muted(
+            format!(
+                "{} apply with no recorded end: the card stays",
+                autonomy.outstanding.len()
+            ),
+            tokens,
+        ));
+    }
     if !incident.diagnosis.is_empty() && autonomy.may_mark() {
         let press = |verdict: &str| (!app.incidents.marking).then(|| Message::MarkDiagnosis(verdict.to_string()));
         body = body.push(

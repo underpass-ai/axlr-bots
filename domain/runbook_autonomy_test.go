@@ -29,6 +29,7 @@ func record(t *testing.T, a *RunbookAutonomy, signal AutonomySignal, incident In
 // Reaching act-within-policy takes all three counters.
 func TestTheTopStepTakesAllThreeCounters(t *testing.T) {
 	a := newTestAutonomy(t, AutonomyActWithApproval)
+	a.BindTool("patch", ladderNow)
 	for n := 1; n <= 20; n++ {
 		record(t, &a, SignalProposalApproved, "inc-a", n, "tirso")
 		record(t, &a, SignalApplyVerified, "inc-a", n, "")
@@ -69,7 +70,7 @@ func TestEachCycleCountsOnceAndEveryCycleCounts(t *testing.T) {
 func TestOnlyAPersonIsCounted(t *testing.T) {
 	a := newTestAutonomy(t, AutonomyActWithApproval)
 	for _, actor := range []string{"", "policy:autoApprove", "policy:team-event", "a b"} {
-		for _, signal := range []AutonomySignal{SignalProposalApproved, SignalDiagnosisCorrect, SignalApplyDenied} {
+		for _, signal := range []AutonomySignal{SignalProposalApproved, SignalDiagnosisCorrect} {
 			if change := record(t, &a, signal, "inc-a", 1, actor); change.Recorded {
 				t.Fatalf("%s by %q recorded", signal, actor)
 			}
@@ -83,12 +84,13 @@ func TestOnlyAPersonIsCounted(t *testing.T) {
 // A green verify counts only for a cycle a person approved, as theirs.
 func TestAGreenCountsOnlyAnApprovedCycle(t *testing.T) {
 	a := newTestAutonomy(t, AutonomyActWithApproval)
-	if change := record(t, &a, SignalApplyVerified, "inc-a", 1, ""); change.Recorded {
+	record(t, &a, SignalApplyVerified, "inc-a", 1, "")
+	if a.Totals().Applies != 0 {
 		t.Fatal("a green nobody approved counted")
 	}
-	record(t, &a, SignalProposalApproved, "inc-a", 1, "tirso")
-	record(t, &a, SignalApplyVerified, "inc-a", 1, "")
-	if a.Totals().Applies != 1 || a.History()[1].Actor != "tirso" {
+	record(t, &a, SignalProposalApproved, "inc-a", 2, "tirso")
+	record(t, &a, SignalApplyVerified, "inc-a", 2, "")
+	if a.Totals().Applies != 1 || a.History()[2].Actor != "tirso" {
 		t.Fatalf("totals %+v history %+v", a.Totals(), a.History())
 	}
 }
@@ -260,7 +262,8 @@ func TestRunbookOf(t *testing.T) {
 		{"alertmanager", "KubePodCrashLooping in shop", "KubePodCrashLooping", true},
 		{"alertmanager", "KubePodCrashLooping", "KubePodCrashLooping", true},
 		{"manual", "Drift in drift-lab", "Drift", true},
-		{"cloudwatch", "HighCPU: Threshold crossed", "HighCPU", true},
+		{"cloudwatch", "HighCPU: Threshold crossed", "", false},
+		{"alertmanager", "A in b in shop", "", false},
 		{"alertmanager", "group key with spaces", "", false},
 		{"alertmanager", "", "", false},
 	} {
@@ -292,7 +295,7 @@ func TestAutonomyThresholds(t *testing.T) {
 }
 
 func TestSignalParsing(t *testing.T) {
-	for _, signal := range []AutonomySignal{SignalDiagnosisCorrect, SignalDiagnosisWrong, SignalProposalApproved, SignalApplyVerified, SignalApplyDenied, SignalVerifyRed, SignalApplyFailed} {
+	for _, signal := range []AutonomySignal{SignalDiagnosisCorrect, SignalDiagnosisWrong, SignalProposalApproved, SignalApplyVerified, SignalApplyDenied, SignalVerifyRed, SignalApplyFailed, SignalApplyOverrun, SignalLoweredByPerson, SignalToolChanged} {
 		if _, err := ParseAutonomySignal(signal.String()); err != nil {
 			t.Error(err)
 		}

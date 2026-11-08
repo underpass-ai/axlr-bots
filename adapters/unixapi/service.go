@@ -83,6 +83,8 @@ type Service interface {
 	MarkDiagnosis(ctx context.Context, id string, request DiagnosisRequest) (AutonomyResponse, error)
 	ListAutonomy(ctx context.Context, query application.AutonomyQuery) ([]AutonomyResponse, error)
 	GetAutonomy(ctx context.Context, id string) (AutonomyResponse, error)
+	// LowerAutonomy takes a runbook down by a person's hand.
+	LowerAutonomy(ctx context.Context, id string, request LowerRequest) (AutonomyResponse, error)
 	// AddOutput keeps a new incident output target; ListOutputs and
 	// RemoveOutput answer targets without their URL, secret or command,
 	// with a fingerprint instead.

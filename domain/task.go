@@ -90,6 +90,18 @@ func (t Task) Pinned() (ExecutionPolicy, bool) {
 	return *t.pinned, true
 }
 
+// RevokeAlone takes a grant back before the task runs: it keeps its
+// unit and takes the card. False when it held none.
+func (t *Task) RevokeAlone() bool {
+	if t.pinned == nil || !t.pinned.Unattended() {
+		return false
+	}
+	revoked := *t.pinned.grant
+	revoked.Alone, revoked.MaxToolCalls = false, 0
+	t.pinned.level, t.pinned.grant = AutonomyActWithApproval, &revoked
+	return true
+}
+
 // IncidentID is the incident the task triages; empty for any other task.
 func (t Task) IncidentID() IncidentID { return t.incident }
 

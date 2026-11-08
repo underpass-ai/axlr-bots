@@ -78,7 +78,7 @@ func (uc ApproveTask) decide(ctx context.Context, id domain.TaskID, decision, ca
 		if err != nil {
 			return ApproveTaskResult{}, err
 		}
-		if by.person && strings.HasPrefix(name, domain.PolicyActorPrefix) {
+		if by.person && domain.IsPolicyActor(name) {
 			// A person never decides as a policy (review of #139).
 			return ApproveTaskResult{}, uc.refuse(ctx, id, decision, name, domain.ForbiddenError{Reason: name + " is a policy's name: a person decides under their own"})
 		}
@@ -90,7 +90,9 @@ func (uc ApproveTask) decide(ctx context.Context, id domain.TaskID, decision, ca
 			uc = NewApproveTask(deps)
 		}
 		by.name = name
-		by.attested = by.person && personName(Dependencies{Daemon: uc.deps.Daemon, Actor: own}, name)
+		named := uc.deps
+		named.Actor = own
+		by.attested = by.person && personName(ctx, named, name)
 	}
 	task, err := uc.deps.Tasks.Get(ctx, id)
 	if err != nil {
@@ -356,7 +358,7 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 	// The decision of an incident's apply call moves the incident now,
 	// before the call runs: approved is Applying, denied or expired is
 	// back to Open (design §4).
-	newIncidentAdvancer(uc.deps).taskDecided(ctx, task, outcome, pending.CallID, pending.Tool, uc.deps.Actor, by.attested)
+	newIncidentAdvancer(uc.deps).taskDecided(ctx, task, decidedCall{outcome: outcome, callID: pending.CallID, tool: pending.Tool, effectiveTool: pending.EffectiveTool(), by: uc.deps.Actor, person: by.attested})
 	if previous.IsAssigned() {
 		// The node takes it on its next poll (NextAssignment) and reports.
 		details := map[string]string{"execution": executionID.String(), "queuedFor": previous.NodeID().String(), "decision": decision}

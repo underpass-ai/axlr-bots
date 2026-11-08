@@ -62,6 +62,9 @@ func (uc DeleteBot) Execute(ctx context.Context, id domain.BotID) (DeleteBotResu
 	if result.NamedBy, err = namedBy(ctx, uc.deps, id); err != nil {
 		return DeleteBotResult{}, err
 	}
+	if err := newLadderKeeper(uc.deps).purge(ctx, id); err != nil {
+		return DeleteBotResult{}, err
+	}
 	if err := uc.deps.Bots.Delete(ctx, id); err != nil {
 		return DeleteBotResult{}, err
 	}

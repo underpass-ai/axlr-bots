@@ -27,3 +27,6 @@ func ParseIncidentSeverity(raw string) (IncidentSeverity, error) {
 }
 
 func (s IncidentSeverity) String() string { return string(s) }
+
+// moreSevereThan reports a worse severity: sev1 is the worst.
+func (s IncidentSeverity) moreSevereThan(other IncidentSeverity) bool { return s < other }

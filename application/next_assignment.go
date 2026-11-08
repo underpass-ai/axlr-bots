@@ -169,6 +169,13 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 		return Assignment{}, false, nil
 	}
 	task := *chosen
+	run, err := newLadderKeeper(uc.deps).recheck(ctx, bot, &task)
+	if err != nil {
+		return Assignment{}, false, err
+	}
+	if !run {
+		return uc.startPending(ctx, node)
+	}
 	executionID, err := domain.NewExecutionID(uc.deps.IDs.NewID("exec-"))
 	if err != nil {
 		return Assignment{}, false, err

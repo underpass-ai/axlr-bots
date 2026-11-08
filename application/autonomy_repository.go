@@ -13,4 +13,6 @@ type AutonomyRepository interface {
 	Get(ctx context.Context, id domain.AutonomyID) (domain.RunbookAutonomy, error)
 	// List answers every record, in no particular order.
 	List(ctx context.Context) ([]domain.RunbookAutonomy, error)
+	// Delete removes a record; one that is gone is no error.
+	Delete(ctx context.Context, id domain.AutonomyID) error
 }

@@ -23,6 +23,12 @@ pub struct Autonomy {
     pub history: Vec<AutonomyEntry>,
     #[serde(default)]
     pub thresholds: Option<AutonomyCounters>,
+    /// The write it was earned with.
+    #[serde(default)]
+    pub tool: String,
+    /// The applies whose end is not recorded: while one is, the card stays.
+    #[serde(default)]
+    pub outstanding: Vec<serde_json::Value>,
     /// The verdict on the incident's diagnosis this cycle, when marked:
     /// `diagnosis-correct` or `diagnosis-wrong`.
     #[serde(default)]

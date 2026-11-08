@@ -133,7 +133,32 @@ func (p AlertmanagerPayload) Namespaces() []string {
 // Severity maps the severity label to an incident's: critical is sev1,
 // error sev2, warning sev3, info sev4; anything else, or none, sev3.
 func (p AlertmanagerPayload) Severity() IncidentSeverity {
-	switch strings.ToLower(p.label("severity")) {
+	return alertSeverity(p.label("severity"))
+}
+
+// Uniform reports a group that is one alert: every alert carries the
+// group's name and none is worse than the group's severity. The title
+// and severity are read from the first alert when the group's labels do
+// not say, so a mixed group's first alert would speak for all of it.
+func (p AlertmanagerPayload) Uniform() bool {
+	if p.TruncatedAlerts > 0 {
+		// Alerts nobody can read may be anything.
+		return false
+	}
+	name, severity := p.label("alertname"), p.Severity()
+	for _, alert := range p.Alerts {
+		if own := alert.Labels["alertname"]; own != "" && own != name {
+			return false
+		}
+		if alertSeverity(alert.Labels["severity"]).moreSevereThan(severity) {
+			return false
+		}
+	}
+	return name != ""
+}
+
+func alertSeverity(label string) IncidentSeverity {
+	switch strings.ToLower(label) {
 	case "critical", "page":
 		return Sev1
 	case "error", "major":

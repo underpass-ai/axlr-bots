@@ -31,7 +31,24 @@ func (p ExecutionPolicy) Rules() ToolRules { return p.rules }
 // step, so its one bound write takes no card. Below that level it is
 // false even when the task was pinned with a grant.
 func (p ExecutionPolicy) Unattended() bool {
-	return p.grant != nil && p.level == AutonomyActWithinPolicy
+	return p.grant != nil && p.grant.Alone && p.level == AutonomyActWithinPolicy
+}
+
+// LadderUnit is the unit pinned on the policy, and false when none was.
+func (p ExecutionPolicy) LadderUnit() (LadderGrant, bool) {
+	if p.grant == nil {
+		return LadderGrant{}, false
+	}
+	return *p.grant, true
+}
+
+// Tracked keeps the unit on a policy whose apply keeps its card: the
+// signals of the task fall on it.
+func (p ExecutionPolicy) Tracked(unit LadderGrant) ExecutionPolicy {
+	copied := unit
+	copied.Alone, copied.MaxToolCalls = false, 0
+	p.grant = &copied
+	return p
 }
 
 // Granted is the policy of an apply the ladder lets act alone: the top
@@ -55,6 +72,7 @@ func (p ExecutionPolicy) Granted(grant LadderGrant) (ExecutionPolicy, error) {
 		return ExecutionPolicy{}, err
 	}
 	copied := grant
+	copied.Alone, copied.MaxToolCalls = true, LadderMaxToolCalls
 	return ExecutionPolicy{level: AutonomyActWithinPolicy, tools: tools, rules: p.rules.Within(tools).bound(bound), narrowed: true, grant: &copied}, nil
 }
 
@@ -136,7 +154,7 @@ func (b Bot) PolicyOf(task Task) (policy ExecutionPolicy, gone bool, err error) 
 		policy.tools = AllowedTools{names: kept}
 	}
 	policy.rules = b.toolRules.Within(policy.tools)
-	if policy.grant != nil {
+	if policy.grant != nil && policy.grant.Alone {
 		// Held to the namespace of its grant at every level: lowering the
 		// bot takes away the running alone, never the bound.
 		if bound, err := policy.grant.boundRule(); err == nil {

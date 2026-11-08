@@ -135,11 +135,15 @@ func (m *memoryTasks) FindByIdempotencyKey(_ context.Context, bot domain.BotID, 
 }
 
 type memoryAutonomy struct {
-	records map[domain.AutonomyID]domain.RunbookAutonomy
-	fail    error
+	records  map[domain.AutonomyID]domain.RunbookAutonomy
+	fail     error
+	failSave error
 }
 
 func (m *memoryAutonomy) Save(_ context.Context, autonomy domain.RunbookAutonomy) error {
+	if m.failSave != nil {
+		return m.failSave
+	}
 	if m.fail != nil {
 		return m.fail
 	}
@@ -159,6 +163,11 @@ func (m *memoryAutonomy) Get(_ context.Context, id domain.AutonomyID) (domain.Ru
 		return domain.RunbookAutonomy{}, domain.NotFoundError{Kind: "autonomy", ID: id.String()}
 	}
 	return record, nil
+}
+
+func (m *memoryAutonomy) Delete(_ context.Context, id domain.AutonomyID) error {
+	delete(m.records, id)
+	return nil
 }
 
 func (m *memoryAutonomy) List(_ context.Context) ([]domain.RunbookAutonomy, error) {

@@ -48,6 +48,9 @@ func TestLadderPolicyFileRendering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if info, err := os.Stat(report.Policy.Path); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode: %v %v", info.Mode(), err)
+	}
 	got := strings.Join(strings.Fields(string(data)), "")
 	want := `{"policy":{"level":"act-within-policy","tools":{"allow":[{"name":"local_read"},{"name":"patch","arguments":{"namespace":"drift-lab"}}]}}}`
 	if got != want {

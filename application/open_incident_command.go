@@ -1,10 +1,17 @@
 package application
 
+import "github.com/underpass-ai/axlr-bots/domain"
+
 // OpenIncidentCommand reports an alert group to the control plane: the
 // bot that triages it, what the source groups the alerts by, and the
 // alerts themselves. The same tenant and group key again, while the
 // incident is open, is a repeat; soon after its resolution, a reopening.
 type OpenIncidentCommand struct {
+	// alerts is set only by the code, never by a person's report: a
+	// hand-opened incident is not known to be one alert and never acts
+	// alone.
+	alerts domain.AlertGroup
+
 	Tenant   string `json:"tenant"`
 	BotID    string `json:"botId"`
 	GroupKey string `json:"groupKey"`

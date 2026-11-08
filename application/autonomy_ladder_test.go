@@ -15,6 +15,9 @@ const ladderRunbook, ladderNamespace = "KubePodCrashLooping", "shop"
 // fix at act-within-policy applying at act-with-approval, verify.
 func ladderTeam(t *testing.T, h *harness, thresholds *domain.AutonomyThresholdsSnapshot, approvals domain.ApprovalsSnapshot) domain.Bot {
 	t.Helper()
+	if len(approvals.Approvers) == 0 {
+		approvals.Approvers = []string{"tirso"}
+	}
 	triage := teamBot(t, h, "triage", []string{"sre"}, func(d *BotDefinition) {
 		d.Triggers = []domain.TriggerSnapshot{{Type: "manual"}, {Type: "incident"}}
 	})
@@ -37,7 +40,7 @@ func ladderTeam(t *testing.T, h *harness, thresholds *domain.AutonomyThresholdsS
 
 func shopAlert(bot domain.Bot, severity, namespace string) OpenIncidentCommand {
 	command := alert(bot, "fp-a")
-	command.Severity, command.Namespace = severity, namespace
+	command.Severity, command.Namespace, command.alerts = severity, namespace, domain.AlertGroupUniform
 	return command
 }
 
@@ -175,9 +178,9 @@ func TestLadderCountsOnlyAPerson(t *testing.T) {
 	waiting := waitingApply(t, h, incident)
 	advancer := newIncidentAdvancer(h.deps)
 	h.decider.report = completes("applied", 0.01)
-	advancer.taskDecided(ctx, waiting, domain.ApprovalApproved, "c-apply", "patch", "policy:autoApprove", false)
-	if _, err := h.autos.Get(ctx, domain.AutonomyIDOf("default", "fix", ladderRunbook, ladderNamespace)); !domain.IsNotFound(err) {
-		t.Fatalf("a policy's approval reached the ladder: %v", err)
+	advancer.taskDecided(ctx, waiting, decidedCall{outcome: domain.ApprovalApproved, callID: "c-apply", tool: "patch", effectiveTool: "patch", by: "policy:autoApprove"})
+	if got := autonomyOf(t, h, incident).Totals(); got.Proposals != 0 {
+		t.Fatalf("a policy's approval reached the counters: %+v", got)
 	}
 	moved, _ := h.incs.Get(ctx, incident.ID())
 	if moved.Status() != domain.IncidentApplying {
@@ -187,15 +190,15 @@ func TestLadderCountsOnlyAPerson(t *testing.T) {
 	h2 := newHarness()
 	triage2 := ladderTeam(t, h2, nil, domain.ApprovalsSnapshot{})
 	other := ladderProposed(t, h2, shopAlert(triage2, "sev2", ladderNamespace))
-	decideApply(t, h2, other, DecisionApprove, "")
+	decideApply(t, h2, other, DecisionApprove, "tirso")
 	other = runCurrent(t, h2, other.ID(), completes("nothing to report", 0.01))
-	if len(h2.autos.records) != 0 {
-		t.Fatalf("an unnamed approval or no verdict reached the ladder: %+v", h2.autos.records)
+	if got := autonomyOf(t, h2, other).Totals(); got.Applies != 0 {
+		t.Fatalf("a verify with no verdict counted: %+v", got)
 	}
-	keeper := newLadderKeeper(h2.deps)
-	keeper.signal(ctx, other, other.Cycle(), domain.SignalApplyVerified, "")
-	if len(h2.autos.records) != 0 {
-		t.Fatal("a green of a cycle nobody approved counted")
+	third := ladderProposed(t, h2, otherIncident(triage2, "group-c", "fp-c"))
+	newLadderKeeper(h2.deps).signal(ctx, third, third.Cycle(), domain.SignalApplyVerified, "")
+	if got := autonomyOf(t, h2, other).Totals(); got.Applies != 0 {
+		t.Fatalf("a green of a cycle nobody approved counted: %+v", got)
 	}
 }
 
@@ -264,6 +267,7 @@ func topped(t *testing.T, h *harness, approvals domain.ApprovalsSnapshot) domain
 	if err != nil {
 		t.Fatal(err)
 	}
+	record.BindTool("patch", h.clock.now)
 	thresholds, _ := domain.NewAutonomyThresholds(domain.AutonomyThresholdsSnapshot{Diagnoses: 1, Proposals: 1, Applies: 1})
 	for _, signal := range []domain.AutonomySignal{domain.SignalDiagnosisCorrect, domain.SignalProposalApproved, domain.SignalApplyVerified} {
 		if _, err := record.Record(signal, "inc-old", 1, "tirso", thresholds, h.clock.now); err != nil {
@@ -329,7 +333,7 @@ func TestLadderLowersTwoWhenActingAloneFails(t *testing.T) {
 	h := newHarness()
 	triage := topped(t, h, domain.ApprovalsSnapshot{})
 	incident := ladderProposed(t, h, shopAlert(triage, "sev2", ladderNamespace))
-	runCurrent(t, h, incident.ID(), ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "kube refused"})
+	runCurrent(t, h, incident.ID(), ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "kube refused", Result: domain.Result{SessionID: "s", ToolCalls: []domain.ToolCall{{Name: "patch", Status: "failed"}}}})
 	if step := autonomyOf(t, h, incident).Step(); step != domain.AutonomyPropose {
 		t.Fatalf("step %s", step)
 	}
@@ -350,9 +354,9 @@ func cardReason(t *testing.T, h *harness, command OpenIncidentCommand, want stri
 
 func TestLadderKeepsTheCard(t *testing.T) {
 	prod := domain.ApprovalsSnapshot{Approvers: []string{"tirso", "oncall"}, TwoPersons: &domain.TwoPersonsSnapshot{Namespaces: []string{ladderNamespace}}}
-	t.Run("sev1 in production", func(t *testing.T) {
+	t.Run("sev1", func(t *testing.T) {
 		h := newHarness()
-		cardReason(t, h, shopAlert(topped(t, h, prod), "sev1", ladderNamespace), "sev1 in production")
+		cardReason(t, h, shopAlert(topped(t, h, domain.ApprovalsSnapshot{}), "sev1", ladderNamespace), "sev1 never acts alone")
 	})
 	t.Run("two persons", func(t *testing.T) {
 		h := newHarness()

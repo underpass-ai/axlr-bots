@@ -47,6 +47,13 @@ func (r LadderRunbook) Tool() ToolName { return r.tool }
 // Covers reports a namespace within the runbook's bounds.
 func (r LadderRunbook) Covers(namespace string) bool { return slices.Contains(r.namespaces, namespace) }
 
+// Titles reports the title is exactly "<runbook> in <namespace>": an
+// alert name holding the separator names a runbook of its own, never the
+// one before it.
+func (r LadderRunbook) Titles(title, namespace string) bool {
+	return title == r.name.String()+runbookTitleSeparator+namespace
+}
+
 func (r LadderRunbook) snapshot() LadderRunbookSnapshot {
 	return LadderRunbookSnapshot{Name: r.name.String(), Tool: r.tool.String(), Namespaces: append([]string(nil), r.namespaces...)}
 }

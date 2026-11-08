@@ -1,12 +1,20 @@
 package domain
 
-// LadderGrant is what an apply task may do alone: the one write tool of
-// its runbook, in its incident's namespace, pinned on the task when it
-// launches.
+// LadderMaxToolCalls is the most a run acting alone may call: its reads
+// and its one write (design §8.1, one apply per task).
+const LadderMaxToolCalls = 6
+
+// LadderGrant is the unit an apply task belongs to, pinned on it when it
+// launches: the runbook, its one write tool and the incident's namespace.
+// Its signals fall on this unit whatever the incident says later. Alone
+// is what a ladder lets the task do without a card, and MaxToolCalls how
+// many calls it may make.
 type LadderGrant struct {
-	Runbook   RunbookName
-	Tool      ToolName
-	Namespace string
+	Runbook      RunbookName
+	Tool         ToolName
+	Namespace    string
+	Alone        bool
+	MaxToolCalls int
 }
 
 // namespaceArgument is the argument a ladder's bound is rendered on.

@@ -80,7 +80,7 @@ func TestDiagnosisAndAutonomyCommands(t *testing.T) {
 	dir := t.TempDir()
 	team := map[string]string{
 		"triage": `{"id": "triage", "tenant": "ops", "name": "triage", "owner": "sre", "mission": "Find the cause of each incident with evidence.", "allowedTools": ["local_read"], "groups": ["sre"], "triggers": [{"type": "incident"}], "model": {"model": "anthropic/claude-haiku-5.5"}, "budgets": {"taskTimeoutSeconds": 60}}`,
-		"fix":    `{"id": "fix", "tenant": "ops", "name": "fix", "owner": "sre", "mission": "Propose and apply one change for each incident.", "level": "act-within-policy", "allowedTools": ["local_read", "patch"], "groups": ["sre"], "triggers": [{"type": "incident", "name": "fix", "phase": "fix", "level": "propose", "tools": ["local_read"]}, {"type": "incident", "name": "apply", "phase": "apply", "level": "act-with-approval", "tools": ["local_read", "patch"], "ladder": {"runbooks": [{"name": "KubePodCrashLooping", "tool": "patch", "namespaces": ["shop"]}]}}], "model": {"model": "anthropic/claude-haiku-5.5"}, "budgets": {"taskTimeoutSeconds": 60}}`,
+		"fix":    `{"id": "fix", "tenant": "ops", "name": "fix", "owner": "sre", "mission": "Propose and apply one change for each incident.", "level": "act-within-policy", "approvals": {"approvers": ["tirso"]}, "allowedTools": ["local_read", "patch"], "groups": ["sre"], "triggers": [{"type": "incident", "name": "fix", "phase": "fix", "level": "propose", "tools": ["local_read"]}, {"type": "incident", "name": "apply", "phase": "apply", "level": "act-with-approval", "tools": ["local_read", "patch"], "ladder": {"runbooks": [{"name": "KubePodCrashLooping", "tool": "patch", "namespaces": ["shop"]}]}}], "model": {"model": "anthropic/claude-haiku-5.5"}, "budgets": {"taskTimeoutSeconds": 60}}`,
 	}
 	for _, name := range []string{"triage", "fix"} {
 		definition := filepath.Join(dir, name+".json")
@@ -117,10 +117,14 @@ func TestDiagnosisAndAutonomyCommands(t *testing.T) {
 	if code != exitOK || len(got["history"].([]any)) != 1 {
 		t.Fatalf("get = %d %v", code, got)
 	}
+	code, lowered := c.json("--actor", "tirso", "autonomy", "lower", marked["id"].(string), "--reason", "stop")
+	if code != exitOK || lowered["step"] != "propose" {
+		t.Fatalf("lower = %d %v", code, lowered)
+	}
 	if code, _, errText := c.run("autonomy", "get", "nope"); code == exitOK || errText == "" {
 		t.Errorf("bad id: %d %s", code, errText)
 	}
-	for _, args := range [][]string{{"incident", "diagnosis", id}, {"autonomy", "get"}, {"autonomy", "list", "extra"}, {"autonomy", "list", "--bogus"}} {
+	for _, args := range [][]string{{"incident", "diagnosis", id}, {"autonomy", "get"}, {"autonomy", "lower"}, {"autonomy", "lower", "--bogus"}, {"autonomy", "list", "extra"}, {"autonomy", "list", "--bogus"}} {
 		if code, _, _ := c.run(args...); code != exitUsage {
 			t.Errorf("%v: exit %d", args, code)
 		}

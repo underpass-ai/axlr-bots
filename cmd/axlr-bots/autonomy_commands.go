@@ -48,3 +48,24 @@ func autonomyGet(ctx context.Context, service unixapi.Service, args []string, st
 	printJSON(stdout, response)
 	return exitOK
 }
+
+// autonomyLower takes a runbook one step down, as --actor.
+func autonomyLower(ctx context.Context, service unixapi.Service, actor string, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("autonomy lower", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	reason := flags.String("reason", "", "why it goes down")
+	positional, ok := parseAnywhere(flags, args)
+	if !ok {
+		return exitUsage
+	}
+	if len(positional) != 1 {
+		fmt.Fprintln(stderr, "axlr-bots: autonomy lower needs exactly one <autonomy-id>")
+		return exitUsage
+	}
+	response, err := service.LowerAutonomy(ctx, positional[0], unixapi.LowerRequest{Reason: *reason, LoweredBy: actor})
+	if err != nil {
+		return fail(stderr, err)
+	}
+	printJSON(stdout, response)
+	return exitOK
+}

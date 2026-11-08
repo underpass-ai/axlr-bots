@@ -31,6 +31,7 @@ func TestAutonomyOverTheSocket(t *testing.T) {
 	fix.Groups = []string{"sre"}
 	fix.AllowedTools = []string{"local_read", "patch"}
 	fix.ToolRules = domain.ToolRulesSnapshot{}
+	fix.Approvals = domain.ApprovalsSnapshot{Approvers: []string{"tirso"}}
 	fix.Triggers = []domain.TriggerSnapshot{
 		{Type: "incident", Name: "fix", Phase: "fix", Level: "propose", Tools: []string{"local_read"}},
 		{Type: "incident", Name: "apply", Phase: "apply", Level: "act-with-approval", Tools: []string{"local_read", "patch"}, Ladder: &domain.LadderSnapshot{Runbooks: []domain.LadderRunbookSnapshot{{Name: "KubePodCrashLooping", Tool: "patch", Namespaces: []string{"shop"}}}}},
@@ -62,6 +63,21 @@ func TestAutonomyOverTheSocket(t *testing.T) {
 	incident, err := client.GetIncident(ctx, id)
 	if err != nil || incident.Autonomy == nil || incident.Autonomy.DiagnosisMark != "diagnosis-correct" {
 		t.Fatalf("incident = %+v %v", incident.Autonomy, err)
+	}
+	lowered, err := client.LowerAutonomy(ctx, marked.ID, LowerRequest{Reason: "stop", LoweredBy: "tirso"})
+	if err != nil || lowered.Step != "propose" || lowered.History[len(lowered.History)-1].Reason != "stop" {
+		t.Fatalf("lower = %+v %v", lowered, err)
+	}
+	if status, body, err := client.doWith(ctx, http.MethodPost, "/v1/autonomy/"+marked.ID+"/lower", nil, nil); err != nil || status != http.StatusForbidden {
+		t.Errorf("lower by nobody: %d %s %v", status, body, err)
+	}
+	if _, err := client.LowerAutonomy(ctx, "not-a-ladder", LowerRequest{LoweredBy: "tirso"}); err == nil {
+		t.Error("a bad id was lowered")
+	}
+	header := http.Header{}
+	header.Set(ActorHeader, "tirso")
+	if status, body, err := client.doWith(ctx, http.MethodPost, "/v1/autonomy/"+marked.ID+"/lower", header, LowerRequest{LoweredBy: "mallory"}); err != nil || status != http.StatusBadRequest {
+		t.Errorf("two names: %d %s %v", status, body, err)
 	}
 	if _, err := client.GetAutonomy(ctx, "not-a-ladder"); err == nil {
 		t.Error("a bad id was read")

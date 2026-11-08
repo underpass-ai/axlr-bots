@@ -27,7 +27,7 @@ func (uc FireTrigger) fireAlertmanager(ctx context.Context, bot domain.Bot, trig
 	result := FireTriggerResult{Trigger: trigger.Ref()}
 	if payload.Firing() {
 		opened, err := NewOpenIncident(uc.deps).open(ctx, opening{
-			bot: bot, trigger: trigger, source: AlertmanagerSource, groupKey: payload.GroupKey, title: payload.Title(), severity: payload.Severity(), namespaces: payload.Namespaces(),
+			bot: bot, trigger: trigger, source: AlertmanagerSource, groupKey: payload.GroupKey, title: payload.Title(), severity: payload.Severity(), namespaces: payload.Namespaces(), alerts: alertGroupOf(payload),
 			fingerprints: payload.FiringFingerprints(), input: body, fields: map[string]any{"alert": payload.Fields()},
 		})
 		if err != nil {
@@ -96,4 +96,12 @@ func (uc FireTrigger) resolveGroup(ctx context.Context, bot domain.Bot, trigger 
 		return nil, err
 	}
 	return &incident, nil
+}
+
+// alertGroupOf says whether one alert speaks for the delivery.
+func alertGroupOf(payload domain.AlertmanagerPayload) domain.AlertGroup {
+	if payload.Uniform() {
+		return domain.AlertGroupUniform
+	}
+	return domain.AlertGroupMixed
 }

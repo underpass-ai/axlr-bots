@@ -33,6 +33,27 @@ const CLIActorPrefix = "cli:"
 // one.
 const PolicyActorPrefix = "policy:"
 
+// machineActorPrefixes start the names of what is not a person.
+var machineActorPrefixes = []string{PolicyActorPrefix, "bot:", "node:", "trigger:"}
+
+// IsPolicyActor reports a name a policy decides under, however it is
+// spelled (Policy:x, cli:policy:x): compared through ActorKey.
+func IsPolicyActor(actor string) bool {
+	return strings.HasPrefix(ActorKey(actor), PolicyActorPrefix)
+}
+
+// IsMachineActor reports a name that says it is no person: a policy, a
+// bot, a node or a trigger, compared through ActorKey.
+func IsMachineActor(actor string) bool {
+	key := ActorKey(actor)
+	for _, prefix := range machineActorPrefixes {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // ActorKey is the name two actors are compared by: without the CLI's
 // cli: prefix and in lower case, so tirso, cli:tirso and Tirso are one
 // person and never two approvals (review of #139, 8 November 2026).

@@ -54,7 +54,7 @@ func (uc MarkDiagnosis) Execute(ctx context.Context, id domain.IncidentID, verdi
 		}
 		return AutonomyView{}, uc.refuse(ctx, id, actor, domain.StateError{Subject: "incident " + id.String(), Current: "on no autonomy ladder: " + reason, Attempted: "mark its diagnosis"})
 	}
-	if err := uc.mayMark(taker, actor); err != nil {
+	if err := uc.mayMark(ctx, taker, actor); err != nil {
 		return AutonomyView{}, uc.refuse(ctx, id, actor, err)
 	}
 	diagnosed, err := uc.diagnosed(ctx, incident)
@@ -64,7 +64,10 @@ func (uc MarkDiagnosis) Execute(ctx context.Context, id domain.IncidentID, verdi
 	if !diagnosed {
 		return AutonomyView{}, uc.refuse(ctx, id, actor, domain.StateError{Subject: "incident " + id.String(), Current: "no diagnosis in cycle " + incident.Status().String(), Attempted: "mark its diagnosis"})
 	}
-	if _, err := keeper.apply(ctx, taker, trigger, unit, incident, incident.Cycle(), signal, actor); err != nil {
+	if err := uc.bind(ctx, keeper, taker, unit); err != nil {
+		return AutonomyView{}, err
+	}
+	if _, err := keeper.apply(ctx, taker.TenantID(), taker.ID(), unitGrant(unit), unit.Thresholds(), incident, incident.Cycle(), signal, actor); err != nil {
 		return AutonomyView{}, uc.refuse(ctx, id, actor, err)
 	}
 	view, err := keeper.view(ctx, incident)
@@ -72,6 +75,16 @@ func (uc MarkDiagnosis) Execute(ctx context.Context, id domain.IncidentID, verdi
 		return AutonomyView{}, err
 	}
 	return *view, nil
+}
+
+// bind starts a record earned with another tool over, as a launch does.
+func (uc MarkDiagnosis) bind(ctx context.Context, keeper ladderKeeper, taker domain.Bot, unit domain.LadderUnit) error {
+	grant := unitGrant(unit)
+	autonomy, stored, err := keeper.recordOf(ctx, taker.TenantID(), taker.ID(), grant)
+	if err != nil || !stored || !autonomy.BindTool(grant.Tool, uc.deps.Clock.Now()) {
+		return err
+	}
+	return uc.deps.Autonomy.Save(ctx, autonomy)
 }
 
 func diagnosisSignal(verdict string) (domain.AutonomySignal, error) {
@@ -87,12 +100,12 @@ func diagnosisSignal(verdict string) (domain.AutonomySignal, error) {
 // mayMark refuses who cannot speak for the diagnosis: nobody named, a
 // policy, the control plane's own name on a daemon, or an actor the
 // apply bot's approvers do not list.
-func (uc MarkDiagnosis) mayMark(taker domain.Bot, actor string) error {
+func (uc MarkDiagnosis) mayMark(ctx context.Context, taker domain.Bot, actor string) error {
 	name, err := domain.ValidateActor("actor", actor)
 	if err != nil {
 		return domain.ForbiddenError{Reason: "a diagnosis is marked by a named person: name who marks it (--actor, X-Axlr-Actor or decidedBy)"}
 	}
-	if !personName(uc.deps, name) {
+	if !personName(ctx, uc.deps, name) {
 		return domain.ForbiddenError{Reason: name + " is not a person's name: a person marks a diagnosis under their own"}
 	}
 	if !taker.Approvals().MayDecide(name) {

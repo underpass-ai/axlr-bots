@@ -9,7 +9,9 @@ use super::AutonomyCounters;
 #[serde(rename_all = "camelCase")]
 pub struct AutonomyEntry {
     pub signal: String,
+    #[serde(default)]
     pub incident_id: String,
+    #[serde(default)]
     pub cycle: u32,
     #[serde(default)]
     pub actor: String,
@@ -20,6 +22,8 @@ pub struct AutonomyEntry {
     pub to: String,
     #[serde(default)]
     pub earned_before: Option<AutonomyCounters>,
+    #[serde(default)]
+    pub reason: String,
 }
 
 impl AutonomyEntry {

@@ -33,21 +33,25 @@ func NewRunbookName(raw string) (RunbookName, error) {
 func (n RunbookName) String() string { return string(n) }
 
 // cloudWatchSource is the source of an incident a cloudwatch trigger
-// opened: its title is "<AlarmName>: <reason>".
+// opened: it names no namespace, so it never reaches a unit.
 const cloudWatchSource = "cloudwatch"
 
-// RunbookOf is the runbook an incident's title names, from its source:
-// "<AlarmName>: <reason>" for CloudWatch, and for every other source
-// "<alertname> in <namespace>" or "<alertname>" (AlertmanagerPayload.Title
-// writes them). False for a title that names none: one that holds no
-// valid name (a group key with spaces) matches no ladder, so the apply
-// keeps its card and the cycle counts nothing.
+// runbookTitleSeparator joins an alert name and its namespace in a title.
+const runbookTitleSeparator = " in "
+
+// RunbookOf is the alert name a title carries, for the audit: what comes
+// before the last " in " of "<alertname> in <namespace>", or the whole
+// title. False for a CloudWatch title (it has no namespace) and for a
+// name a runbook could not have. It decides nothing: only
+// LadderRunbook.Titles matches a title against a declared runbook.
 func RunbookOf(source, title string) (RunbookName, bool) {
-	separator := " in "
 	if source == cloudWatchSource {
-		separator = ": "
+		return "", false
 	}
-	name, _, _ := strings.Cut(title, separator)
+	name := title
+	if at := strings.LastIndex(title, runbookTitleSeparator); at >= 0 {
+		name = title[:at]
+	}
 	runbook, err := NewRunbookName(name)
 	return runbook, err == nil
 }
