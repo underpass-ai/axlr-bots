@@ -1,6 +1,6 @@
 package domain
 
-// ExecutionPolicy is the level and the tool allow-list one task's
+// ExecutionPolicy is the level, the tool allow-list and its rules one task's
 // executions run under: the bot's, or what the incident trigger the task
 // came through narrows them to for its phase (decided 8 November 2026).
 // Under observe and propose AXLR treats the allow-listed MCP tools as
@@ -9,6 +9,7 @@ package domain
 type ExecutionPolicy struct {
 	level    AutonomyLevel
 	tools    AllowedTools
+	rules    ToolRules
 	narrowed bool
 }
 
@@ -18,6 +19,11 @@ func (p ExecutionPolicy) Level() AutonomyLevel { return p.level }
 // Tools is the allow-list the executions run with.
 func (p ExecutionPolicy) Tools() AllowedTools { return p.tools }
 
+// Rules is the bot's tool rules within the allow-list: the allow rules
+// of the tools a narrower list leaves out are dropped, every deny rule is
+// kept.
+func (p ExecutionPolicy) Rules() ToolRules { return p.rules }
+
 // Narrowed reports a policy an incident trigger narrowed from the bot's.
 func (p ExecutionPolicy) Narrowed() bool { return p.narrowed }
 
@@ -26,7 +32,7 @@ func (p ExecutionPolicy) Narrowed() bool { return p.narrowed }
 // them, the bot's otherwise. A trigger the bot no longer has, or one of
 // another type, keeps the bot's.
 func (b Bot) PolicyFor(ref TriggerRef) ExecutionPolicy {
-	policy := ExecutionPolicy{level: b.level, tools: b.allowedTools}
+	policy := ExecutionPolicy{level: b.level, tools: b.allowedTools, rules: b.toolRules}
 	if ref.Type != TriggerIncident {
 		return policy
 	}
@@ -38,7 +44,7 @@ func (b Bot) PolicyFor(ref TriggerRef) ExecutionPolicy {
 		policy.level, policy.narrowed = level, level != b.level
 	}
 	if tools, ok := trigger.Tools(); ok {
-		policy.tools, policy.narrowed = tools, true
+		policy.tools, policy.rules, policy.narrowed = tools, b.toolRules.Within(tools), true
 	}
 	return policy
 }

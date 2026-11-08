@@ -3,19 +3,27 @@ package application
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // incidentAdvancer moves an incident on when the task of its current
-// phase ends. A completed triage task is the diagnosis, and the control
-// plane then launches the fix phase; a completed fix task is the
-// proposal. A task of either phase that failed, expired or was cancelled
-// escalates the incident to a person, and every execution's cost is
-// added, a delegated child's included. Only the incident's current task
-// moves it; an incident that is gone or already resolved is left as it
-// is, audited, because the task must settle whatever its incident did
-// meanwhile.
+// phase ends, and when a person decides its apply task's call. A
+// completed triage task is the diagnosis and a completed fix task the
+// proposal; a person's approval of the apply call moves the incident to
+// Applying, and the apply task's completion to Verifying; a verify task
+// that says the alert is still red sends it back to Open. A denied or
+// expired apply, and a failed one, send it back to Open too (the second
+// denial escalates it); a triage, fix or verify task that failed,
+// expired or was cancelled escalates it. After each move the control
+// plane launches the phase the incident reached. Every execution's cost
+// is added, a delegated child's included. Only the incident's current
+// task moves it; an incident that is gone, already resolved or moved on
+// without the task is left as it is, audited, because the task must
+// settle whatever its incident did meanwhile. A task never changes the
+// status by itself: the control plane knows which phase launched which
+// task (design §4).
 type incidentAdvancer struct {
 	deps Dependencies
 	rec  recorder
@@ -23,6 +31,13 @@ type incidentAdvancer struct {
 
 func newIncidentAdvancer(deps Dependencies) incidentAdvancer {
 	return incidentAdvancer{deps: deps, rec: recorder{deps: deps}}
+}
+
+// incidentMove is what a task's end or a decision did to its incident:
+// the events to publish, in order, with the payload they share.
+type incidentMove struct {
+	kinds   []domain.EventType
+	payload map[string]any
 }
 
 // taskEnded advances the task's incident, if it has one and the task is
@@ -49,34 +64,9 @@ func (a incidentAdvancer) taskEnded(ctx context.Context, bot domain.Bot, task do
 	phase := current.Phase()
 	now := a.deps.Clock.Now()
 	_ = incident.AddCost(execution.Usage(), now)
-	var (
-		kind    domain.EventType
-		payload = map[string]any{"taskId": task.ID().String(), "executionId": execution.ID().String(), "phase": phase.String(), "costUsd": incident.CostUSD()}
-	)
-	switch {
-	case task.Status() == domain.TaskCompleted && phase == domain.IncidentPhaseFix:
-		answer := execution.Result().Answer
-		if answer == "" {
-			answer = "the fix task completed without an answer"
-		}
-		err, kind = incident.Propose(domain.IncidentText(answer, domain.MaxIncidentProposalLength), now), domain.EventIncidentProposed
-		payload["proposal"], payload["proposedBy"] = incident.Proposal(), current.BotID().String()
-	case task.Status() == domain.TaskCompleted:
-		answer := execution.Result().Answer
-		if answer == "" {
-			answer = "the triage task completed without an answer"
-		}
-		err, kind = incident.Diagnose(domain.IncidentText(answer, domain.MaxIncidentDiagnosisLength), now), domain.EventIncidentDiagnosed
-		payload["diagnosis"] = incident.Diagnosis()
-	default:
-		reason := task.FailureReason()
-		if reason == "" {
-			reason = "the " + phase.String() + " task was " + task.Status().String()
-		}
-		reason = domain.IncidentText(phase.String()+" task "+task.ID().String()+" "+task.Status().String()+": "+reason, domain.MaxIncidentReasonLength)
-		err, kind = incident.Escalate(reason, now), domain.EventIncidentEscalated
-		payload["reason"] = incident.Reason()
-	}
+	from := incident.Status()
+	move := incidentMove{payload: map[string]any{"taskId": task.ID().String(), "executionId": execution.ID().String(), "phase": phase.String(), "costUsd": incident.CostUSD()}}
+	err = a.end(&incident, current, task, execution, &move, now)
 	var state domain.StateError
 	if err != nil && !errors.As(err, &state) {
 		// What the task wrote was refused even after IncidentText: a
@@ -86,31 +76,200 @@ func (a incidentAdvancer) taskEnded(ctx context.Context, bot domain.Bot, task do
 		if err := incident.Escalate(reason, now); err != nil {
 			return err
 		}
-		kind = domain.EventIncidentEscalated
-		delete(payload, "diagnosis")
-		delete(payload, "proposal")
-		delete(payload, "proposedBy")
-		payload["reason"] = incident.Reason()
+		move.kinds = []domain.EventType{domain.EventIncidentEscalated}
+		for _, key := range []string{"diagnosis", "proposal", "proposedBy", "verdict", "from", "denials"} {
+			delete(move.payload, key)
+		}
+		move.payload["reason"] = incident.Reason()
 	} else if err != nil {
 		// The incident moved on without this task (resolved by the
-		// source, or by a person): the cost is still kept.
+		// source or by a person, or sent back to Open by a denial): the
+		// cost is still kept.
 		if saveErr := a.deps.Incidents.Save(ctx, incident); saveErr != nil {
 			return saveErr
 		}
 		return a.rec.audit(ctx, "incident.advance", id.String(), domain.AuditDenied, map[string]string{"task": task.ID().String(), "reason": err.Error()})
 	}
+	return a.settle(ctx, incident, from, phase, task.ID(), task.CorrelationID(), move)
+}
+
+// end makes the move the task's end means for the incident: by the
+// phase that launched the task, what the task did, and where the
+// incident stands. A move the incident's status refuses is a StateError.
+func (a incidentAdvancer) end(incident *domain.Incident, current domain.IncidentTask, task domain.Task, execution domain.Execution, move *incidentMove, now time.Time) error {
+	phase := current.Phase()
+	completed := task.Status() == domain.TaskCompleted
+	answer := execution.Result().Answer
+	failure := func() string {
+		reason := task.FailureReason()
+		if reason == "" {
+			reason = "the " + phase.String() + " task was " + task.Status().String()
+		}
+		return domain.IncidentText(phase.String()+" task "+task.ID().String()+" "+task.Status().String()+": "+reason, domain.MaxIncidentReasonLength)
+	}
+	switch {
+	case phase == domain.IncidentPhaseTriage && completed:
+		if answer == "" {
+			answer = "the triage task completed without an answer"
+		}
+		move.kinds = []domain.EventType{domain.EventIncidentDiagnosed}
+		move.payload["diagnosis"] = domain.IncidentText(answer, domain.MaxIncidentDiagnosisLength)
+		return incident.Diagnose(domain.IncidentText(answer, domain.MaxIncidentDiagnosisLength), now)
+	case phase == domain.IncidentPhaseFix && completed:
+		if answer == "" {
+			answer = "the fix task completed without an answer"
+		}
+		move.kinds = []domain.EventType{domain.EventIncidentProposed}
+		move.payload["proposal"], move.payload["proposedBy"] = domain.IncidentText(answer, domain.MaxIncidentProposalLength), current.BotID().String()
+		return incident.Propose(domain.IncidentText(answer, domain.MaxIncidentProposalLength), now)
+	case phase == domain.IncidentPhaseApply && completed:
+		return a.applied(incident, task, move, now)
+	case phase == domain.IncidentPhaseApply && task.Status() == domain.TaskExpired && incident.Status() == domain.IncidentProposed:
+		// Nobody decided the apply call in time and the bot's approvals
+		// cancel on expiry: an expiry, as a denial is.
+		return a.deny(incident, "the apply call of task "+task.ID().String()+" expired before anyone decided it", move, now)
+	case phase == domain.IncidentPhaseApply:
+		move.kinds = []domain.EventType{domain.EventIncidentReopened}
+		move.payload["from"], move.payload["reason"] = incident.Status().String(), failure()
+		return incident.SendBack(failure(), now)
+	case phase == domain.IncidentPhaseVerify && completed:
+		verdict := domain.ParseVerifyVerdict(answer)
+		move.payload["verdict"] = verdict.String()
+		if !verdict.IsRed() {
+			// Green, or no verdict: the source's resolution closes the
+			// incident; nothing moves before it.
+			return nil
+		}
+		reason := domain.IncidentText("verify task "+task.ID().String()+" says the alert is still red: "+answer, domain.MaxIncidentReasonLength)
+		move.kinds = []domain.EventType{domain.EventIncidentReopened}
+		move.payload["from"], move.payload["reason"] = incident.Status().String(), reason
+		return incident.SendBack(reason, now)
+	default:
+		move.kinds = []domain.EventType{domain.EventIncidentEscalated}
+		move.payload["reason"] = failure()
+		return incident.Escalate(failure(), now)
+	}
+}
+
+// applied moves the incident whose apply task completed: Applying
+// becomes Verifying. One still Proposed was applied without a person's
+// approval reaching it (a level that asks nobody, or a decision whose
+// move was lost): it goes through Applying to Verifying, unless the task
+// kept a denied or expired wait, which is a denial.
+func (a incidentAdvancer) applied(incident *domain.Incident, task domain.Task, move *incidentMove, now time.Time) error {
+	if incident.Status() == domain.IncidentProposed {
+		if wait, ok := task.Approval(); ok && (wait.Outcome == domain.ApprovalDenied || wait.Outcome == domain.ApprovalExpired) {
+			return a.deny(incident, denialReason(task.ID(), wait.Tool, wait.Outcome, ""), move, now)
+		}
+		if err := incident.StartApplying(now); err != nil {
+			return err
+		}
+		move.kinds = append(move.kinds, domain.EventIncidentApplying)
+	}
+	move.kinds = append(move.kinds, domain.EventIncidentVerifying)
+	return incident.Verify(now)
+}
+
+// deny records a denial of the apply: back to Open, or escalated at the
+// last one.
+func (a incidentAdvancer) deny(incident *domain.Incident, reason string, move *incidentMove, now time.Time) error {
+	from := incident.Status()
+	if err := incident.Deny(domain.IncidentText(reason, domain.MaxIncidentReasonLength), now); err != nil {
+		return err
+	}
+	move.payload["reason"], move.payload["denials"] = incident.Reason(), incident.Denials()
+	if incident.Status() == domain.IncidentEscalated {
+		move.kinds = []domain.EventType{domain.EventIncidentEscalated}
+		return nil
+	}
+	move.kinds = []domain.EventType{domain.EventIncidentReopened}
+	move.payload["from"] = from.String()
+	return nil
+}
+
+// denialReason says who denied which call of the apply task, or that its
+// approval expired.
+func denialReason(task domain.TaskID, tool, outcome, by string) string {
+	call := "the apply call"
+	if tool != "" {
+		call += " " + tool
+	}
+	if outcome == domain.ApprovalExpired {
+		return call + " of task " + task.String() + " expired before anyone decided it"
+	}
+	if by == "" {
+		return call + " of task " + task.String() + " was denied"
+	}
+	return call + " of task " + task.String() + " was denied by " + by
+}
+
+// settle saves the moved incident, publishes its events, audits the move
+// and launches the phase it reached.
+func (a incidentAdvancer) settle(ctx context.Context, incident domain.Incident, from domain.IncidentStatus, phase domain.IncidentPhase, task domain.TaskID, correlation domain.CorrelationID, move incidentMove) error {
 	if err := a.deps.Incidents.Save(ctx, incident); err != nil {
 		return err
 	}
-	payload["status"] = incident.Status().String()
-	if err := a.rec.incidentEvent(ctx, kind, incident, payload); err != nil {
+	move.payload["status"] = incident.Status().String()
+	if incident.Status() == domain.IncidentOpen && from != domain.IncidentOpen {
+		move.payload["cycle"] = incident.Cycle()
+	}
+	for _, kind := range move.kinds {
+		if err := a.rec.incidentEvent(ctx, kind, incident, move.payload); err != nil {
+			return err
+		}
+	}
+	details := map[string]string{"task": task.String(), "phase": phase.String(), "status": incident.Status().String()}
+	if verdict, ok := move.payload["verdict"].(string); ok {
+		details["verdict"] = verdict
+	}
+	if err := a.rec.audit(ctx, "incident.advance", incident.ID().String(), domain.AuditOK, details); err != nil {
 		return err
 	}
-	if err := a.rec.audit(ctx, "incident.advance", id.String(), domain.AuditOK, map[string]string{"task": task.ID().String(), "phase": phase.String(), "status": incident.Status().String()}); err != nil {
-		return err
-	}
-	_, err = newFixPhase(a.deps).launch(ctx, incident, task.CorrelationID())
+	_, err := newPhaseLauncher(a.deps).launch(ctx, incident, correlation)
 	return err
+}
+
+// taskDecided moves the incident of an apply task whose call a person
+// decided, or whose approval expired: approved, Proposed becomes
+// Applying; denied or expired, the incident goes back to Open (or is
+// escalated at the last denial). Only the incident's current apply task
+// moves it, and only while it is Proposed: a call decided while Applying
+// moves nothing, the task's end does. A store that fails is audited and
+// the decision goes on: the task's end moves the incident then.
+func (a incidentAdvancer) taskDecided(ctx context.Context, task domain.Task, outcome, callID, tool, by string) {
+	id := task.IncidentID()
+	if id == "" {
+		return
+	}
+	if err := a.decided(ctx, task, outcome, callID, tool, by); err != nil {
+		_ = a.rec.audit(ctx, "incident.advance", id.String(), domain.AuditDenied, map[string]string{"task": task.ID().String(), "decision": outcome, "reason": err.Error()})
+	}
+}
+
+func (a incidentAdvancer) decided(ctx context.Context, task domain.Task, outcome, callID, tool, by string) error {
+	incident, err := a.deps.Incidents.Get(ctx, task.IncidentID())
+	if err != nil {
+		return err
+	}
+	current, ok := incident.CurrentTask()
+	if !ok || current.TaskID() != task.ID() || current.Phase() != domain.IncidentPhaseApply || incident.Status() != domain.IncidentProposed {
+		return nil
+	}
+	now := a.deps.Clock.Now()
+	move := incidentMove{payload: map[string]any{"taskId": task.ID().String(), "phase": domain.IncidentPhaseApply.String(), "callId": callID, "decision": outcome, "decidedBy": by}}
+	if tool != "" {
+		move.payload["tool"] = tool
+	}
+	from := incident.Status()
+	if outcome == domain.ApprovalApproved {
+		if err := incident.StartApplying(now); err != nil {
+			return err
+		}
+		move.kinds = []domain.EventType{domain.EventIncidentApplying}
+	} else if err := a.deny(&incident, denialReason(task.ID(), tool, outcome, by), &move, now); err != nil {
+		return err
+	}
+	return a.settle(ctx, incident, from, domain.IncidentPhaseApply, task.ID(), task.CorrelationID(), move)
 }
 
 // lateCost adds the cost an ended execution learnt late (its run

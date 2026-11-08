@@ -221,6 +221,9 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 		return Assignment{}, err
 	}
 	offer, events := delegationOffer(bot, task, mates), eventsOffer(bot, mates)
+	// The task's incident phase may narrow the bot's level and tools; the
+	// decision runs under the same policy as the run it continues.
+	policy := bot.PolicyFor(task.Trigger())
 	if execution.Kind() == domain.ExecutionDecide {
 		previous, decision, err := decisionOf(ctx, uc.deps, task, execution)
 		if err != nil {
@@ -233,7 +236,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 		}
 		assignment.Decide = &DecisionRequest{
 			ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), CorrelationID: task.CorrelationID(), SessionID: sessionID, CallID: pending.CallID, Decision: decision,
-			Level: bot.Level(), AllowedTools: allowedTools(bot, offer, events), ToolRules: bot.ToolRules(), Timeout: timeout, Delegation: offer, Events: events,
+			Level: policy.Level(), AllowedTools: allowedTools(policy.Tools(), offer, events), ToolRules: policy.Rules(), Timeout: timeout, Delegation: offer, Events: events,
 		}
 		return assignment, nil
 	}
@@ -243,8 +246,8 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 	}
 	assignment.Run = &ExecutionRequest{
 		ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), TenantID: bot.TenantID(), CorrelationID: task.CorrelationID(),
-		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: bot.Level(), AllowedTools: allowedTools(bot, offer, events),
-		ToolRules: bot.ToolRules(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer, Events: events,
+		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: policy.Level(), AllowedTools: allowedTools(policy.Tools(), offer, events),
+		ToolRules: policy.Rules(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer, Events: events,
 		Runtime: bot.Runtime(), Input: task.Input(),
 	}
 	return assignment, nil

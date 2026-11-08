@@ -78,3 +78,16 @@ func restoreRules(snapshots []ToolRuleSnapshot) ([]ToolRule, error) {
 	}
 	return rules, nil
 }
+
+// Within keeps the allow rules of the tools the list allows and every
+// deny rule: the rules of a narrower allow-list, which an allow rule of a
+// tool it leaves out would widen again.
+func (r ToolRules) Within(allowed AllowedTools) ToolRules {
+	narrowed := ToolRules{deny: append([]ToolRule(nil), r.deny...)}
+	for _, rule := range r.allow {
+		if allowed.Allows(rule.Tool()) {
+			narrowed.allow = append(narrowed.allow, rule)
+		}
+	}
+	return narrowed
+}

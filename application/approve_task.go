@@ -171,6 +171,10 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 	if err := uc.rec.executionEvent(ctx, domain.EventTaskDecided, bot, task.ID(), executionID, task.CorrelationID(), payload); err != nil {
 		return ApproveTaskResult{}, err
 	}
+	// The decision of an incident's apply call moves the incident now,
+	// before the call runs: approved is Applying, denied or expired is
+	// back to Open (design §4).
+	newIncidentAdvancer(uc.deps).taskDecided(ctx, task, outcome, pending.CallID, pending.Tool, uc.deps.Actor)
 	if previous.IsAssigned() {
 		// The node takes it on its next poll (NextAssignment) and reports.
 		details := map[string]string{"execution": executionID.String(), "queuedFor": previous.NodeID().String(), "decision": decision}
@@ -183,6 +187,7 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 		return ApproveTaskResult{Task: task, Execution: execution}, nil
 	}
 
+	policy := bot.PolicyFor(task.Trigger())
 	report, runErr := uc.deps.Decisions.Decide(ctx, DecisionRequest{
 		ExecutionID:   executionID,
 		TaskID:        task.ID(),
@@ -191,9 +196,9 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 		SessionID:     sessionID,
 		CallID:        pending.CallID,
 		Decision:      decision,
-		Level:         bot.Level(),
-		AllowedTools:  bot.AllowedTools().Names(),
-		ToolRules:     bot.ToolRules(),
+		Level:         policy.Level(),
+		AllowedTools:  policy.Tools().Names(),
+		ToolRules:     policy.Rules(),
 		Timeout:       timeout,
 	})
 	if err := uc.set.settle(ctx, "task.decide", bot, &task, &execution, report, runErr, now); err != nil {

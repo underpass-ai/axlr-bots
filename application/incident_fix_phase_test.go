@@ -266,7 +266,7 @@ func TestIncidentFixObjectiveFits(t *testing.T) {
 	}
 	trigger, _ := domain.NewTrigger(domain.TriggerSnapshot{Type: "incident", Phase: "fix", Objective: "Fix {{.nothing}}"})
 	fields, _ := incidentFields(incident)
-	if _, err := fixObjective(trigger, incident, fields); err == nil {
+	if _, err := phaseObjective(domain.IncidentPhaseFix, trigger, incident, fields); err == nil {
 		t.Error("a template naming a missing field rendered")
 	}
 }
@@ -289,7 +289,7 @@ func TestIncidentFixPhaseLaunchFailures(t *testing.T) {
 		}
 		return incident
 	}
-	phase := newFixPhase(h.deps)
+	phase := newPhaseLauncher(h.deps)
 	orphan := diagnosed("inc-orphan", "gone")
 	if got, err := phase.launch(ctx, orphan, ""); err != nil || got.HasTask(domain.IncidentPhaseFix) {
 		t.Errorf("a gone triage bot: %v", err)

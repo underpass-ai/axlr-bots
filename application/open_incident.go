@@ -141,9 +141,9 @@ func (uc OpenIncident) open(ctx context.Context, o opening) (OpenIncidentResult,
 }
 
 // repeat records the alert on the open incident and starts nothing, but
-// the fix phase of a Diagnosed incident that has not got it: a crash
-// between the diagnosis and its fix task, or a fix bot that was paused
-// or not there yet.
+// the phase the incident reached and has not got (fix when Diagnosed,
+// apply when Proposed, verify when Verifying): a crash between the move
+// and its task, or a bot that was paused or not there yet.
 func (uc OpenIncident) repeat(ctx context.Context, bot domain.Bot, incident domain.Incident, fingerprints []string, now time.Time) (OpenIncidentResult, error) {
 	before := len(incident.Fingerprints())
 	if err := incident.Repeat(fingerprints, now); err != nil {
@@ -159,7 +159,7 @@ func (uc OpenIncident) repeat(ctx context.Context, bot domain.Bot, incident doma
 	if err := uc.rec.audit(ctx, "incident.open", incident.ID().String(), domain.AuditOK, map[string]string{"groupKey": incident.GroupKey(), "deduplicated": "true"}); err != nil {
 		return OpenIncidentResult{}, err
 	}
-	incident, err := newFixPhase(uc.deps).launch(ctx, incident, "")
+	incident, err := newPhaseLauncher(uc.deps).launch(ctx, incident, "")
 	if err != nil {
 		return OpenIncidentResult{}, err
 	}
