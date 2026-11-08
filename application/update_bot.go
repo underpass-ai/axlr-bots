@@ -210,6 +210,10 @@ func applyPatch(bot *domain.Bot, patch BotPatch) ([]string, error) {
 	if err := bot.CheckRuntime(); err != nil {
 		return nil, err
 	}
+	// Nor an incident trigger's narrower policy for its phase.
+	if err := bot.CheckTriggers(); err != nil {
+		return nil, err
+	}
 	if subscribed {
 		subs, err := domain.NewSubscriptions(subscriptions)
 		if err != nil {

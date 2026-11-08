@@ -2431,6 +2431,8 @@
           "incident.reopened",
           "incident.diagnosed",
           "incident.proposed",
+          "incident.applying",
+          "incident.verifying",
           "incident.escalated",
           "incident.resolved"
         ],
@@ -3036,13 +3038,21 @@
             "type": "boolean"
           },
           "level": {
-            "type": "string"
+            "type": "string",
+            "description": "the autonomy level the execution ran at: the bot's, or the one its incident phase narrowed it to"
           },
           "path": {
             "type": "string"
           },
           "runtimeLevel": {
             "type": "string"
+          },
+          "allowedTools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the tool allow-list the execution was given: the bot's, or its incident phase's, with the node's own tools"
           }
         },
         "required": [
@@ -3823,7 +3833,18 @@
           },
           "phase": {
             "$ref": "#/components/schemas/IncidentPhase",
-            "description": "an incident trigger: the phase the bot takes, triage (the default) or fix for a teammate's diagnosed incident"
+            "description": "an incident trigger: the phase the bot takes, triage (the default), or fix, apply or verify for a teammate's incident once it reaches that phase"
+          },
+          "level": {
+            "$ref": "#/components/schemas/AutonomyLevel",
+            "description": "an incident trigger: the level its phase's tasks run at, at most the bot's (a higher one is refused); absent keeps the bot's"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "an incident trigger: the allow-list its phase's tasks run with, a subset of the bot's allowedTools (another tool is refused); absent or empty keeps the bot's"
           }
         },
         "required": [
@@ -3893,6 +3914,8 @@
           "Open",
           "Diagnosed",
           "Proposed",
+          "Applying",
+          "Verifying",
           "Resolved",
           "Escalated"
         ],
@@ -4018,6 +4041,10 @@
               "type": "string"
             },
             "description": "the alerts seen that the source said went green"
+          },
+          "denials": {
+            "type": "integer",
+            "description": "the applies of its proposals a person denied or let expire since it was last reopened; the second escalates it"
           }
         },
         "required": [
@@ -4046,7 +4073,7 @@
           },
           "botId": {
             "type": "string",
-            "description": "the bot that ran it: the incident's own for triage, the teammate that takes the fix phase for fix"
+            "description": "the bot that ran it: the incident's own for triage, the teammate that takes the phase for fix, apply and verify"
           },
           "phase": {
             "$ref": "#/components/schemas/IncidentPhase"
@@ -4069,9 +4096,11 @@
         "x-extensible-enum": true,
         "enum": [
           "triage",
-          "fix"
+          "fix",
+          "apply",
+          "verify"
         ],
-        "description": "the step of an incident a task works on: triage finds the cause, fix proposes the change and its rollback. A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
+        "description": "the step of an incident a task works on: triage finds the cause, fix proposes the change and its rollback, apply carries it out after a person approves its call, verify checks it took. A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
       },
       "OpenIncidentCommand": {
         "type": "object",

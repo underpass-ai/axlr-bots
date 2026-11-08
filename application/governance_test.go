@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -44,11 +45,11 @@ func TestRunTaskHandsThePolicyToTheRuntimeAndRecordsIt(t *testing.T) {
 	if req.Level != domain.AutonomyActWithApproval || !req.ToolRules.Constrains("local_exec") || len(req.AllowedTools) != 2 {
 		t.Errorf("request = %+v", req)
 	}
-	if res.Execution.Policy() != record {
+	if !reflect.DeepEqual(res.Execution.Policy(), record) {
 		t.Errorf("policy = %+v", res.Execution.Policy())
 	}
 	stored, _ := h.execs.Get(context.Background(), res.Execution.ID())
-	if stored.Policy() != record {
+	if !reflect.DeepEqual(stored.Policy(), record) {
 		t.Error("policy not persisted")
 	}
 

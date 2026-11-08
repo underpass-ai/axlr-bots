@@ -25,6 +25,11 @@ const (
 	// that was down) gets another try when its alert comes again, and a
 	// fault that keeps failing stops costing.
 	IncidentEscalationRetries = 2
+	// IncidentMaxDenials is how many times a person may deny (or let
+	// expire) the apply of an incident's proposal before the incident is
+	// left to a person: each denial sends it back to Open for another
+	// triage and proposal, the last one escalates it.
+	IncidentMaxDenials = 2
 )
 
 // Incident is one grouped fault of a tenant: what the alerts say, which
@@ -50,6 +55,7 @@ type Incident struct {
 	reason       string
 	repeats      int
 	retries      int
+	denials      int
 	costUSD      float64
 	costUnknown  bool
 	openedAt     time.Time
@@ -227,7 +233,8 @@ func (i Incident) Diagnosis() string { return i.diagnosis }
 // completes, and again once a new triage replaces the diagnosis.
 func (i Incident) Proposal() string { return i.proposal }
 
-// Reason says why the incident was escalated or resolved.
+// Reason says why the incident was escalated, resolved or sent back to
+// Open.
 func (i Incident) Reason() string { return i.reason }
 
 // Repeats counts the alerts received while the incident was open.
@@ -266,14 +273,15 @@ func (i *Incident) AttachTask(task TaskID, now time.Time) error {
 	return i.attach(task, i.bot, IncidentPhaseTriage, now)
 }
 
-// AttachFixTask records the fix task of the current cycle, once per
-// cycle, when the incident is Diagnosed: the bot is the teammate that
-// takes the fix phase.
-func (i *Incident) AttachFixTask(task TaskID, bot BotID, now time.Time) error {
-	if i.status != IncidentDiagnosed {
-		return i.refuse("attach a fix task")
+// AttachPhaseTask records the task of a phase after triage (fix, apply
+// or verify) of the current cycle, once per cycle, when the incident has
+// the status the phase is launched at (IncidentPhase.LaunchedAt): the bot
+// is the teammate that takes the phase.
+func (i *Incident) AttachPhaseTask(task TaskID, bot BotID, phase IncidentPhase, now time.Time) error {
+	if phase == IncidentPhaseTriage || i.status != phase.LaunchedAt() {
+		return i.refuse("attach a " + phase.String() + " task")
 	}
-	return i.attach(task, bot, IncidentPhaseFix, now)
+	return i.attach(task, bot, phase, now)
 }
 
 func (i *Incident) attach(task TaskID, bot BotID, phase IncidentPhase, now time.Time) error {
@@ -314,8 +322,12 @@ func (i *Incident) Repeat(fingerprints []string, now time.Time) error {
 // alert of the group as a repeat: nobody diagnosed the fault again. A
 // diagnosis does not give the retries back: a fix task that fails every
 // time would otherwise start triage and fix again on every alert.
+//
+// An incident escalated because its apply was denied IncidentMaxDenials
+// times is not retried: a person said no twice, and another proposal
+// would only ask again.
 func (i Incident) CanRetry() bool {
-	return i.status == IncidentEscalated && i.retries < IncidentEscalationRetries
+	return i.status == IncidentEscalated && i.retries < IncidentEscalationRetries && i.denials < IncidentMaxDenials
 }
 
 // Retry opens an Escalated incident again on a new alert: one more
@@ -359,6 +371,7 @@ func (i *Incident) Reopen(fingerprints []string, now time.Time) error {
 	i.unresolve(fingerprints)
 	i.cycle++
 	i.retries = 0
+	i.denials = 0
 	i.status = IncidentOpen
 	i.resolvedAt = nil
 	i.lastSeenAt, i.updatedAt = now, now
@@ -402,8 +415,9 @@ func (i *Incident) Propose(proposal string, now time.Time) error {
 }
 
 // Escalate hands the incident to a person: the bots could not go on.
+// Any status but Resolved and Escalated may be escalated.
 func (i *Incident) Escalate(reason string, now time.Time) error {
-	if i.status != IncidentOpen && i.status != IncidentDiagnosed {
+	if i.status.IsResolved() || i.status == IncidentEscalated {
 		return i.refuse("escalate")
 	}
 	text, err := validateText("reason", reason, MaxIncidentReasonLength)
@@ -479,7 +493,7 @@ func (i Incident) Snapshot() IncidentSnapshot {
 	return IncidentSnapshot{
 		ID: i.id.String(), TenantID: i.tenant.String(), BotID: i.bot.String(), GroupKey: i.groupKey, Source: i.source,
 		Title: i.title, Severity: i.severity.String(), Status: i.status.String(), Fingerprints: i.Fingerprints(), ResolvedFingerprints: i.ResolvedFingerprints(),
-		Cycle: i.cycle, TaskIDs: ids, Tasks: tasks, Diagnosis: i.diagnosis, Proposal: i.proposal, Reason: i.reason, Repeats: i.repeats, Retries: i.retries, CostUSD: i.costUSD, CostUnknown: i.costUnknown,
+		Cycle: i.cycle, TaskIDs: ids, Tasks: tasks, Diagnosis: i.diagnosis, Proposal: i.proposal, Reason: i.reason, Repeats: i.repeats, Retries: i.retries, Denials: i.denials, CostUSD: i.costUSD, CostUnknown: i.costUnknown,
 		OpenedAt: i.openedAt, UpdatedAt: i.updatedAt, LastSeenAt: i.lastSeenAt, ResolvedAt: resolvedAt,
 	}
 }
@@ -550,14 +564,16 @@ func RestoreIncident(s IncidentSnapshot) (Incident, error) {
 		return Incident{}, invalid("cycle", "must be at least 1")
 	case s.Repeats < 0 || s.Retries < 0 || s.CostUSD < 0:
 		return Incident{}, invalid("repeats, retries or cost", "must not be negative")
+	case s.Denials < 0 || s.Denials > IncidentMaxDenials:
+		return Incident{}, invalid("denials", "must be 0 to "+strconv.Itoa(IncidentMaxDenials))
 	case status.IsResolved() && s.ResolvedAt == nil:
 		return Incident{}, invalid("resolved at", "a Resolved incident needs it")
 	case !status.IsResolved() && s.ResolvedAt != nil:
 		return Incident{}, invalid("resolved at", "only a Resolved incident has it")
 	case status == IncidentEscalated && s.Reason == "":
 		return Incident{}, invalid("reason", "an Escalated incident needs it")
-	case status == IncidentProposed && s.Proposal == "":
-		return Incident{}, invalid("proposal", "a Proposed incident needs it")
+	case status.HasProposal() && s.Proposal == "":
+		return Incident{}, invalid("proposal", "a "+status.String()+" incident needs it")
 	}
 	if incident.tasks, err = restoreTasks(s); err != nil {
 		return Incident{}, err
@@ -589,7 +605,7 @@ func RestoreIncident(s IncidentSnapshot) (Incident, error) {
 			incident.resolved = append(incident.resolved, fingerprint)
 		}
 	}
-	incident.cycle, incident.repeats, incident.retries, incident.costUSD, incident.costUnknown = s.Cycle, s.Repeats, s.Retries, s.CostUSD, s.CostUnknown
+	incident.cycle, incident.repeats, incident.retries, incident.denials, incident.costUSD, incident.costUnknown = s.Cycle, s.Repeats, s.Retries, s.Denials, s.CostUSD, s.CostUnknown
 	incident.status, incident.updatedAt, incident.lastSeenAt = status, s.UpdatedAt, s.LastSeenAt
 	return incident, nil
 }

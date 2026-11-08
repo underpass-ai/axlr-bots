@@ -8,7 +8,10 @@ package domain
 // (five fields, the host's time zone). An event trigger hears the
 // event names or patterns Events lists and, with Interrupt, makes their
 // warnings and criticals urgent. An incident trigger's Phase is the
-// incident's phase the bot takes: triage (the default) or fix.
+// incident's phase the bot takes: triage (the default), fix, apply or
+// verify; its Level and Tools, when given, are the level and the
+// allow-list that phase's tasks run under: at most the bot's level, and
+// a subset of its allowedTools (Bot.CheckTriggers refuses more).
 type TriggerSnapshot struct {
 	Type       string   `json:"type"`
 	Name       string   `json:"name,omitempty"`
@@ -20,6 +23,8 @@ type TriggerSnapshot struct {
 	Events     []string `json:"events,omitempty"`
 	Interrupt  bool     `json:"interrupt,omitempty"`
 	Phase      string   `json:"phase,omitempty"`
+	Level      string   `json:"level,omitempty"`
+	Tools      []string `json:"tools,omitempty"`
 }
 
 // Redacted is the snapshot with its credentials hidden: what the API

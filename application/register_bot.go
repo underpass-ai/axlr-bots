@@ -116,6 +116,9 @@ func buildBot(d BotDefinition, now time.Time) (domain.Bot, error) {
 		return domain.Bot{}, err
 	}
 	bot.Wire(triggers, placement)
+	if err := bot.CheckTriggers(); err != nil {
+		return domain.Bot{}, err
+	}
 	approvals, err := domain.NewApprovals(d.Approvals)
 	if err != nil {
 		return domain.Bot{}, err

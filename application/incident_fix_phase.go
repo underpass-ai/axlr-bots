@@ -96,7 +96,7 @@ func (f fixPhase) launch(ctx context.Context, incident domain.Incident, correlat
 		return incident, err
 	}
 	launched := incident
-	if err := launched.AttachFixTask(result.Task.ID(), fixer.ID(), f.deps.Clock.Now()); err != nil {
+	if err := launched.AttachPhaseTask(result.Task.ID(), fixer.ID(), domain.IncidentPhaseFix, f.deps.Clock.Now()); err != nil {
 		return incident, err
 	}
 	if err := f.deps.Incidents.Save(ctx, launched); err != nil {
