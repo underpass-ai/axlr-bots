@@ -91,7 +91,7 @@ expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest
 assert hmac.compare_digest(expected, request.headers["X-Axlr-Signature"])
 ```
 
-**Slack, Teams and the rest.** There is no Slack or Teams adapter: a chat incoming webhook takes its own message shape and cannot check a signature. Put a small relay between them, a function or a service that receives the webhook, checks the signature, drops a repeated `deliveryId`, and posts a message (the bot, the objective, the tool and its arguments, the deadline) to the chat's incoming webhook. To approve from the chat, the relay holds the operator token and turns a button into the `POST` of `actions.approve.url` or `actions.deny.url`; the chat's user is then who decides, which the relay should log, since the control plane sees only its token.
+**Slack, Teams and the rest.** There is no Slack or Teams adapter for approval requests: a chat incoming webhook takes its own message shape and cannot check a signature, and a request needs an answer the control plane can trust. Telling a channel what an incident did is another matter, since nothing comes back: that is an [incident output](outputs.md), which has a Slack type. Put a small relay between them, a function or a service that receives the webhook, checks the signature, drops a repeated `deliveryId`, and posts a message (the bot, the objective, the tool and its arguments, the deadline) to the chat's incoming webhook. To approve from the chat, the relay holds the operator token and turns a button into the `POST` of `actions.approve.url` or `actions.deny.url`; the chat's user is then who decides, which the relay should log, since the control plane sees only its token.
 
 ### Command target
 

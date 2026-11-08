@@ -1,0 +1,61 @@
+{
+  "text": "[sev2] KubePodCrashLooping in shop: Cause found",
+  "blocks": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "SEV2 · KubePodCrashLooping in shop"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Cause found* · `inc-18` · tenant `default`"
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Status*\nDiagnosed"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Bot*\ntriage"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Cycle*\n1"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Cost*\n$0.0100"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Cause*\n```CAUSE: deployment web drifted: replicas 1, desired 3```"
+      }
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Open in the panel"
+          },
+          "url": "https://ops.example.test/axlr/incidents/inc-18",
+          "action_id": "open-incident"
+        }
+      ]
+    }
+  ]
+}

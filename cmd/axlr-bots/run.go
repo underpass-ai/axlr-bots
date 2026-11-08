@@ -126,6 +126,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return incidentGet(ctx, service, rest, stdout, stderr)
 	case "incident resolve":
 		return incidentResolve(ctx, service, rest, stdout, stderr)
+	case "output add":
+		return outputAdd(ctx, service, rest, stdout, stderr)
+	case "output list":
+		return outputList(ctx, service, rest, stdout, stderr)
+	case "output remove":
+		return outputRemove(ctx, service, rest, stdout, stderr)
 	case "task submit":
 		return taskSubmit(ctx, service, rest, stdout, stderr)
 	case "task list":
@@ -273,6 +279,14 @@ func printUsage(w io.Writer) {
   incident get <incident-id>          show one incident: its alerts, tasks, diagnosis, cost
   incident resolve <incident-id> [--reason "<text>"]
                                       close it; a new alert within 30 minutes reopens it
+  output add <name> --type webhook|slack|command [--url <url> | --url-file <file>|-] [--secret-file <file>|-]
+             [--events opened,diagnosed,…] [--tenants a,b] [--severities sev1,sev2] [--panel-url <url>]
+             [--file <output.json>] [-- <program> <args>…]
+                                      announce incidents to a signed webhook, a Slack incoming
+                                      webhook or a local command (see docs/runbooks/outputs.md)
+  output list                         the output targets: name, type, filters, a fingerprint;
+                                      never the URL, the secret or the command
+  output remove <name>                drop a target; its pending deliveries are skipped
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>] [--urgent]
                                       accept a task; the same key names the same task; --urgent
                                       goes first, cancels the bot's work in progress and drops

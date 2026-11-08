@@ -176,6 +176,9 @@ func (s *Server) operatorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/incidents", s.listIncidents)
 	mux.HandleFunc("GET /v1/incidents/{id}", s.getIncident)
 	mux.HandleFunc("POST /v1/incidents/{id}/resolve", s.resolveIncident)
+	mux.HandleFunc("GET /v1/outputs", s.listOutputs)
+	mux.HandleFunc("POST /v1/outputs", s.addOutput)
+	mux.HandleFunc("DELETE /v1/outputs/{name}", s.removeOutput)
 	mux.HandleFunc("GET /v1/nodes", s.listNodes)
 	mux.HandleFunc("GET /v1/nodes/{id}", s.getNode)
 	mux.HandleFunc("POST /v1/enrollments", s.createEnrollmentToken)
@@ -623,6 +626,29 @@ func (s *Server) resolveIncident(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	value, err := s.service.ResolveIncident(r.Context(), r.PathValue("id"), request)
+	respond(w, http.StatusOK, value, err)
+}
+
+// addOutput is POST /v1/outputs: a new incident output target, 201;
+// the answer has a fingerprint, never the URL or the secret.
+func (s *Server) addOutput(w http.ResponseWriter, r *http.Request) {
+	var definition application.OutputDefinition
+	if !readJSON(w, r, &definition) {
+		return
+	}
+	value, err := s.service.AddOutput(r.Context(), definition)
+	respond(w, http.StatusCreated, value, err)
+}
+
+func (s *Server) listOutputs(w http.ResponseWriter, r *http.Request) {
+	value, err := s.service.ListOutputs(r.Context())
+	respond(w, http.StatusOK, value, err)
+}
+
+// removeOutput is DELETE /v1/outputs/{name}; its pending deliveries are
+// skipped.
+func (s *Server) removeOutput(w http.ResponseWriter, r *http.Request) {
+	value, err := s.service.RemoveOutput(r.Context(), r.PathValue("name"))
 	respond(w, http.StatusOK, value, err)
 }
 

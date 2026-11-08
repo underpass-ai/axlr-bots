@@ -41,7 +41,8 @@ func (r recorder) executionEventID(ctx context.Context, kind domain.EventType, b
 // incidentEvent publishes an event about an incident, on the bot that
 // triages it and with the task of its current cycle. It names the bot
 // by the incident's own record, so an incident whose bot was deleted
-// still says what happened to it.
+// still says what happened to it. Once published, the event is queued
+// to every output target that wants it.
 func (r recorder) incidentEvent(ctx context.Context, kind domain.EventType, incident domain.Incident, payload map[string]any) error {
 	id, err := domain.NewEventID(r.deps.IDs.NewID("evt-"))
 	if err != nil {
@@ -54,7 +55,11 @@ func (r recorder) incidentEvent(ctx context.Context, kind domain.EventType, inci
 	if err := event.Validate(); err != nil {
 		return err
 	}
-	return r.deps.Events.Publish(ctx, event)
+	if err := r.deps.Events.Publish(ctx, event); err != nil {
+		return err
+	}
+	incidentOutputQueue{deps: r.deps, rec: r}.queue(ctx, event, incident)
+	return nil
 }
 
 // groupEvent publishes an event about a team.

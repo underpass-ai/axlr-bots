@@ -287,6 +287,21 @@ func (c *Client) ResolveIncident(ctx context.Context, id string, request Resolve
 	return incident, c.call(ctx, http.MethodPost, "/v1/incidents/"+url.PathEscape(id)+"/resolve", request, &incident)
 }
 
+func (c *Client) AddOutput(ctx context.Context, definition application.OutputDefinition) (application.OutputView, error) {
+	var view application.OutputView
+	return view, c.call(ctx, http.MethodPost, "/v1/outputs", definition, &view)
+}
+
+func (c *Client) ListOutputs(ctx context.Context) ([]application.OutputView, error) {
+	outputs := []application.OutputView{}
+	return outputs, c.call(ctx, http.MethodGet, "/v1/outputs", nil, &outputs)
+}
+
+func (c *Client) RemoveOutput(ctx context.Context, name string) (application.OutputView, error) {
+	var view application.OutputView
+	return view, c.call(ctx, http.MethodDelete, "/v1/outputs/"+url.PathEscape(name), nil, &view)
+}
+
 func (c *Client) GetTask(ctx context.Context, id string) (domain.TaskSnapshot, error) {
 	var task domain.TaskSnapshot
 	return task, c.call(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(id), nil, &task)
