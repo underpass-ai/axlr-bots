@@ -141,3 +141,66 @@ func TestALowerPhaseLevelNeedsItsOwnReadTools(t *testing.T) {
 		t.Error("a Jev bot took a phase policy")
 	}
 }
+
+func TestAPinnedPolicyIsHeldToTheBotAndKeptOnTheTask(t *testing.T) {
+	bot := sampleBot(t)
+	_ = bot.Govern(AutonomyActWithApproval, ToolRules{})
+	triggers, _ := NewTriggers([]TriggerSnapshot{{Type: "incident", Name: "apply", Phase: "apply", Tools: []string{"kubernetes.get_pods", "observability.query_logs"}}})
+	bot.Wire(triggers, bot.Placement())
+	task := sampleTask(t)
+	_ = task.Attribute(TriggerRef{Type: TriggerIncident, Name: "apply"}, nil)
+	task.Pin(bot.PolicyFor(task.Trigger()))
+	back, err := RestoreTask(task.Snapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, gone := bot.PolicyOf(back); gone || p.Tools().Len() != 2 || p.Level() != AutonomyActWithApproval {
+		t.Errorf("pinned: %v %v %s", p.Tools().Names(), gone, p.Level())
+	}
+	// The bot narrowed and lowered since: the pinned policy follows down, never up.
+	fewer, _ := NewAllowedTools([]string{"kubernetes.get_pods"})
+	_ = bot.Govern(AutonomyPropose, ToolRules{})
+	_ = bot.Redefine(bot.Mission(), fewer, bot.ModelPolicy(), bot.Budgets())
+	bot.Wire(DefaultTriggers(), bot.Placement())
+	if p, gone := bot.PolicyOf(back); !gone || p.Tools().Len() != 1 || p.Level() != AutonomyPropose {
+		t.Errorf("held: %v %v %s", p.Tools().Names(), gone, p.Level())
+	}
+	plain := sampleTask(t)
+	plain.Pin(bot.PolicyFor(ManualTrigger()))
+	if _, ok := plain.Pinned(); ok || plain.Snapshot().Policy != nil {
+		t.Error("a policy that narrows nothing was pinned")
+	}
+	broken := task.Snapshot()
+	broken.Policy.Level = "root"
+	if _, err := RestoreTask(broken); err == nil {
+		t.Error("a pinned policy with a bad level restored")
+	}
+}
+
+func TestAnIncidentAddsEachExecutionsCostOnce(t *testing.T) {
+	i := sampleIncident(t)
+	if added, err := i.AddExecutionCost("exec-1", Usage{CostUSD: 0.5}, t0); err != nil || !added || i.CostUSD() != 0.5 {
+		t.Fatalf("first: %v %v", added, err)
+	}
+	if added, _ := i.AddExecutionCost("exec-1", Usage{CostUSD: 0.5}, t0); added || i.CostUSD() != 0.5 {
+		t.Error("an execution counted twice")
+	}
+	if added, _ := i.AddExecutionCost("", Usage{CostUSD: 1}, t0); added {
+		t.Error("an execution without an id counted")
+	}
+	if _, err := i.AddExecutionCost("exec-2", Usage{CostUSD: -1}, t0); err == nil {
+		t.Error("a negative cost")
+	}
+	back, err := RestoreIncident(i.Snapshot())
+	if err != nil || len(back.Snapshot().CostedExecutions) != 1 {
+		t.Fatalf("round trip: %v", err)
+	}
+	if added, _ := back.AddExecutionCost("exec-1", Usage{CostUSD: 1}, t0); added {
+		t.Error("a restored incident forgot what it counted")
+	}
+	s := i.Snapshot()
+	s.CostedExecutions = []string{"Bad Id"}
+	if _, err := RestoreIncident(s); err == nil {
+		t.Error("a bad execution id restored")
+	}
+}

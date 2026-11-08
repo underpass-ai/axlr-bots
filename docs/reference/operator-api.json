@@ -3652,6 +3652,10 @@
             "type": "string",
             "description": "why a Pending task of a placed bot has not started: no node its placement admits is Online with its runtime (\"waiting for node web-1, which is Offline\"); filled when the task is read, absent otherwise",
             "example": "waiting for node web-1, which is Offline"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/PinnedPolicySnapshot",
+            "description": "an incident phase's task: the policy its phase narrowed the bot's to, pinned at submission"
           }
         },
         "required": [
@@ -4043,9 +4047,16 @@
             },
             "description": "the alerts seen that the source said went green"
           },
-          "denials": {
+          "sendBacks": {
             "type": "integer",
-            "description": "the applies of its proposals a person denied or let expire since it was last reopened; the second escalates it"
+            "description": "the times it went back to Open from a proposal (its apply denied, expired, failed or cancelled, its verify red) since it was last reopened; the second escalates it"
+          },
+          "costedExecutions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the executions of its own tasks whose cost it added, each once: a waiting run when it stopped, a report delivered twice only once"
           }
         },
         "required": [
@@ -4289,10 +4300,6 @@
             },
             "description": "the alerts seen that the source said went green"
           },
-          "denials": {
-            "type": "integer",
-            "description": "the applies of its proposals a person denied or let expire since it was last reopened; the second escalates it"
-          },
           "needsYou": {
             "type": "boolean",
             "description": "its current task waits for an approval where the incident stands (the phase its status launches, or the apply while Applying); a denied apply's later wait does not count. Absent is false"
@@ -4304,6 +4311,17 @@
           "approvals": {
             "$ref": "#/components/schemas/IncidentApprovalsResponse",
             "description": "get only: the approvals its tasks waited for, by how each ended"
+          },
+          "sendBacks": {
+            "type": "integer",
+            "description": "the times it went back to Open from a proposal (its apply denied, expired, failed or cancelled, its verify red) since it was last reopened; the second escalates it"
+          },
+          "costedExecutions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the executions of its own tasks whose cost it added, each once: a waiting run when it stopped, a report delivered twice only once"
           }
         },
         "required": [
@@ -4373,6 +4391,26 @@
           "denied",
           "expired",
           "waiting"
+        ]
+      },
+      "PinnedPolicySnapshot": {
+        "type": "object",
+        "x-go-type": "domain.PinnedPolicySnapshot",
+        "description": "the level and the allow-list a task's incident phase narrowed its bot's to, kept on the task when it was submitted; its runs and decisions are held to it (and to what the bot allows now), and a decision is refused once the bot no longer has that trigger",
+        "properties": {
+          "level": {
+            "type": "string"
+          },
+          "allowedTools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "level",
+          "allowedTools"
         ]
       }
     }

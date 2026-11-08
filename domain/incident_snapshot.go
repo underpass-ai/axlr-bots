@@ -18,7 +18,8 @@ import "time"
 // to Open from a proposal (a denial, an expiry, a failed apply, a red
 // verify) since it was last reopened (IncidentMaxSendBacks escalates it); CostUSD sums what its tasks'
 // executions reported, and CostUnknown says one of them stopped before
-// it said what it cost (CostUSD is then a floor).
+// it said what it cost (CostUSD is then a floor); CostedExecutions the
+// executions of its own tasks whose cost it added, each once.
 type IncidentSnapshot struct {
 	ID                   string                 `json:"id"`
 	TenantID             string                 `json:"tenantId"`
@@ -41,6 +42,7 @@ type IncidentSnapshot struct {
 	SendBacks            int                    `json:"sendBacks,omitempty"`
 	CostUSD              float64                `json:"costUsd,omitempty"`
 	CostUnknown          bool                   `json:"costUnknown,omitempty"`
+	CostedExecutions     []string               `json:"costedExecutions,omitempty"`
 	OpenedAt             time.Time              `json:"openedAt"`
 	UpdatedAt            time.Time              `json:"updatedAt"`
 	LastSeenAt           time.Time              `json:"lastSeenAt"`

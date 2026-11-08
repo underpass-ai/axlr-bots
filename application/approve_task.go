@@ -88,6 +88,11 @@ func (uc ApproveTask) Execute(ctx context.Context, id domain.TaskID, decision, c
 	if !bot.AcceptsTasks() {
 		return ApproveTaskResult{}, uc.deny(ctx, id, domain.StateError{Subject: "bot " + bot.ID().String(), Current: bot.Status().String(), Attempted: "decide a task"})
 	}
+	if _, gone := bot.PolicyOf(task); gone && decision == DecisionApprove {
+		// The incident trigger the task's policy was pinned by is gone:
+		// nothing says what the call may run under now (fail closed).
+		return ApproveTaskResult{}, uc.deny(ctx, id, domain.StateError{Subject: "task " + id.String(), Current: "pinned to trigger " + task.Trigger().Name + ", which bot " + bot.ID().String() + " no longer has", Attempted: "approve"})
+	}
 	if pending == nil {
 		return ApproveTaskResult{}, uc.deny(ctx, id, domain.StateError{Subject: "execution " + previous.ID().String(), Current: previous.Outcome().String(), Attempted: "decide a pending call"})
 	}
@@ -200,7 +205,7 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 		return ApproveTaskResult{Task: task, Execution: execution}, nil
 	}
 
-	policy := bot.PolicyFor(task.Trigger())
+	policy, _ := bot.PolicyOf(task)
 	report, runErr := uc.deps.Decisions.Decide(ctx, DecisionRequest{
 		ExecutionID:   executionID,
 		TaskID:        task.ID(),

@@ -102,6 +102,11 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 	if err := s.rec.audit(ctx, action, task.ID().String(), auditOutcome, details); err != nil {
 		return err
 	}
+	if waiting {
+		if err := newIncidentAdvancer(s.deps).executionWaited(ctx, *task, *execution); err != nil {
+			return err
+		}
+	}
 	if waiting && (incidentStanding{deps: s.deps}).superseded(ctx, *task) {
 		// A phase task its incident went on without (a denied apply whose
 		// session asks again) waits for nobody: it is cancelled, so it

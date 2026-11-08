@@ -83,7 +83,7 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 	if err != nil {
 		return RunTaskResult{}, err
 	}
-	policy := bot.PolicyFor(task.Trigger())
+	policy, _ := bot.PolicyOf(task)
 	report, runErr := uc.deps.Runtime.Execute(ctx, ExecutionRequest{
 		ExecutionID:   executionID,
 		TaskID:        task.ID(),

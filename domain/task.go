@@ -28,6 +28,7 @@ type Task struct {
 	grantedTools   int
 	priority       TaskPriority
 	incident       IncidentID
+	pinned         *ExecutionPolicy
 	createdAt      time.Time
 	updatedAt      time.Time
 }
@@ -68,6 +69,25 @@ func (t *Task) ForIncident(incident IncidentID) error {
 	}
 	t.incident = incident
 	return nil
+}
+
+// Pin keeps the policy the task's incident phase narrowed its bot's to,
+// before the task is first saved; a policy that narrows nothing is not
+// kept.
+func (t *Task) Pin(policy ExecutionPolicy) {
+	if !policy.Narrowed() {
+		return
+	}
+	pinned := ExecutionPolicy{level: policy.level, tools: policy.tools, narrowed: true}
+	t.pinned = &pinned
+}
+
+// Pinned is the policy kept by Pin, and false when none was.
+func (t Task) Pinned() (ExecutionPolicy, bool) {
+	if t.pinned == nil {
+		return ExecutionPolicy{}, false
+	}
+	return *t.pinned, true
 }
 
 // IncidentID is the incident the task triages; empty for any other task.
@@ -436,6 +456,7 @@ func (t Task) Snapshot() TaskSnapshot {
 		GrantedTools:   t.grantedTools,
 		Priority:       t.prioritySnapshot(),
 		IncidentID:     t.incident.String(),
+		Policy:         t.pinnedSnapshot(),
 		CreatedAt:      t.createdAt,
 		UpdatedAt:      t.updatedAt,
 	}
@@ -443,6 +464,13 @@ func (t Task) Snapshot() TaskSnapshot {
 		snapshot.Delegation = &lineage
 	}
 	return snapshot
+}
+
+func (t Task) pinnedSnapshot() *PinnedPolicySnapshot {
+	if t.pinned == nil {
+		return nil
+	}
+	return &PinnedPolicySnapshot{Level: t.pinned.level.String(), AllowedTools: t.pinned.tools.Names()}
 }
 
 // prioritySnapshot is the priority as stored: empty for normal, so a
@@ -542,6 +570,17 @@ func RestoreTask(s TaskSnapshot) (Task, error) {
 			return Task{}, err
 		}
 		task.incident = incident
+	}
+	if s.Policy != nil {
+		level, err := ParseAutonomyLevel(s.Policy.Level)
+		if err != nil {
+			return Task{}, err
+		}
+		tools, err := NewAllowedTools(s.Policy.AllowedTools)
+		if err != nil {
+			return Task{}, err
+		}
+		task.pinned = &ExecutionPolicy{level: level, tools: tools, narrowed: true}
 	}
 	task.status = status
 	task.failureReason = s.FailureReason

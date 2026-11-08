@@ -58,6 +58,7 @@ type Incident struct {
 	sendBacks    int
 	costUSD      float64
 	costUnknown  bool
+	costed       []ExecutionID
 	openedAt     time.Time
 	updatedAt    time.Time
 	lastSeenAt   time.Time
@@ -463,6 +464,22 @@ func (i *Incident) AddCost(usage Usage, now time.Time) error {
 	return nil
 }
 
+// AddExecutionCost adds what one execution of the incident's tasks
+// reported, once per execution: a report delivered twice, or a waiting
+// run counted when it stopped and seen again when its task ends, adds
+// nothing more. False when the execution was counted already. An
+// execution without an id (an expiry that ran nothing) adds nothing.
+func (i *Incident) AddExecutionCost(execution ExecutionID, usage Usage, now time.Time) (bool, error) {
+	if execution == "" || slices.Contains(i.costed, execution) {
+		return false, nil
+	}
+	if err := i.AddCost(usage, now); err != nil {
+		return false, err
+	}
+	i.costed = append(i.costed, execution)
+	return true, nil
+}
+
 // unresolve takes alerts that fire again out of the resolved ones.
 func (i *Incident) unresolve(fingerprints []string) {
 	for _, raw := range fingerprints {
@@ -493,9 +510,17 @@ func (i Incident) Snapshot() IncidentSnapshot {
 	return IncidentSnapshot{
 		ID: i.id.String(), TenantID: i.tenant.String(), BotID: i.bot.String(), GroupKey: i.groupKey, Source: i.source,
 		Title: i.title, Severity: i.severity.String(), Status: i.status.String(), Fingerprints: i.Fingerprints(), ResolvedFingerprints: i.ResolvedFingerprints(),
-		Cycle: i.cycle, TaskIDs: ids, Tasks: tasks, Diagnosis: i.diagnosis, Proposal: i.proposal, Reason: i.reason, Repeats: i.repeats, Retries: i.retries, SendBacks: i.sendBacks, CostUSD: i.costUSD, CostUnknown: i.costUnknown,
+		Cycle: i.cycle, TaskIDs: ids, Tasks: tasks, Diagnosis: i.diagnosis, Proposal: i.proposal, Reason: i.reason, Repeats: i.repeats, Retries: i.retries, SendBacks: i.sendBacks, CostUSD: i.costUSD, CostUnknown: i.costUnknown, CostedExecutions: i.costedSnapshot(),
 		OpenedAt: i.openedAt, UpdatedAt: i.updatedAt, LastSeenAt: i.lastSeenAt, ResolvedAt: resolvedAt,
 	}
+}
+
+func (i Incident) costedSnapshot() []string {
+	var ids []string
+	for _, id := range i.costed {
+		ids = append(ids, id.String())
+	}
+	return ids
 }
 
 // restoreTasks rebuilds the incident's tasks: from Tasks, or, for an
@@ -596,6 +621,13 @@ func RestoreIncident(s IncidentSnapshot) (Incident, error) {
 	if s.ResolvedAt != nil {
 		at := *s.ResolvedAt
 		incident.resolvedAt = &at
+	}
+	for _, raw := range s.CostedExecutions {
+		id, err := NewExecutionID(raw)
+		if err != nil {
+			return Incident{}, err
+		}
+		incident.costed = append(incident.costed, id)
 	}
 	for _, fingerprint := range s.ResolvedFingerprints {
 		if !slices.Contains(incident.fingerprints, fingerprint) {

@@ -55,6 +55,33 @@ func (b Bot) PolicyFor(ref TriggerRef) ExecutionPolicy {
 // act-within-policy).
 var hostWriteTools = []ToolName{"local_write", "local_edit", "local_exec", "axlr_deliver"}
 
+// PolicyOf is the policy a task's executions run under now: the one
+// pinned on the task at submission when its incident phase narrowed the
+// bot's (domain.Task.Pin), held to what the bot allows now (never wider:
+// a lower bot level or a narrower allow-list wins), or PolicyFor its
+// trigger. gone reports a pinned policy whose incident trigger the bot
+// no longer has: a decision under it is refused (fail closed).
+func (b Bot) PolicyOf(task Task) (policy ExecutionPolicy, gone bool) {
+	pinned, ok := task.Pinned()
+	if !ok {
+		return b.PolicyFor(task.Trigger()), false
+	}
+	trigger, found := b.triggers.Named(task.Trigger().Name)
+	gone = !found || trigger.Type() != TriggerIncident
+	level := pinned.level
+	if !level.AtMost(b.level) {
+		level = b.level
+	}
+	var names []string
+	for _, name := range pinned.tools.names {
+		if b.allowedTools.Allows(name) {
+			names = append(names, name.String())
+		}
+	}
+	tools, _ := NewAllowedTools(names)
+	return ExecutionPolicy{level: level, tools: tools, rules: b.toolRules.Within(tools), narrowed: true}, gone
+}
+
 // CheckTriggers refuses an incident trigger that would widen the bot's
 // policy, or remove a card the bot's level would show: a level above the
 // bot's; a tool its allowedTools leave out; a level below

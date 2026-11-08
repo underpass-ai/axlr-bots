@@ -36,7 +36,7 @@ func init() {
 		domain.CorrelationRecord{}, domain.DelegationGrant{}, domain.DelegationSnapshot{}, domain.ModelPolicySnapshot{},
 		domain.NodeCapabilities{}, domain.NotifyTargetSnapshot{}, domain.PendingDecision{}, domain.PlacementSnapshot{},
 		domain.PolicyRecord{}, domain.Result{}, domain.TaskLineage{}, domain.ToolCall{}, domain.ToolRuleSnapshot{},
-		domain.ToolRulesSnapshot{}, domain.TriggerRef{}, domain.TriggerRefSnapshot{}, domain.TriggerSnapshot{}, domain.Usage{},
+		domain.ToolRulesSnapshot{}, domain.TriggerRef{}, domain.TriggerRefSnapshot{}, domain.PinnedPolicySnapshot{}, domain.TriggerSnapshot{}, domain.Usage{},
 		application.Overview{}, application.BotDefinition{}, application.OpenIncidentCommand{}, domain.IncidentSnapshot{}, domain.IncidentTaskSnapshot{}, OpenIncidentResponse{}, IncidentResponse{}, IncidentCurrentTask{}, IncidentApprovalsResponse{}, ResolveRequest{}, application.PublishGroupEventCommand{}, application.PublishAnswer{}, application.GroupTopic{}, application.TopicListener{}, application.BotPatch{}, application.Group{}, application.GroupMember{},
 		domain.RuntimeSnapshot{}, domain.JevProgramSnapshot{}, domain.JevActSnapshot{}, domain.JevTellSnapshot{},
 		application.BudgetsDefinition{}, application.ModelPolicyDefinition{},

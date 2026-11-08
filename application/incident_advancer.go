@@ -64,19 +64,20 @@ func (a incidentAdvancer) taskEnded(ctx context.Context, bot domain.Bot, task do
 		// An earlier task of the incident (a denied apply whose session
 		// went on after the new cycle's triage started) moves nothing,
 		// but its cost is the incident's.
-		if slices.Contains(incident.TaskIDs(), task.ID()) && (execution.Usage().CostUSD > 0 || execution.Usage().CostUnknown) {
-			if err := incident.AddCost(execution.Usage(), a.deps.Clock.Now()); err != nil {
+		if slices.Contains(incident.TaskIDs(), task.ID()) {
+			if added, err := incident.AddExecutionCost(execution.ID(), execution.Usage(), a.deps.Clock.Now()); err != nil {
 				return err
-			}
-			if err := a.deps.Incidents.Save(ctx, incident); err != nil {
-				return err
+			} else if added {
+				if err := a.deps.Incidents.Save(ctx, incident); err != nil {
+					return err
+				}
 			}
 		}
 		return a.rec.audit(ctx, "incident.advance", id.String(), domain.AuditDenied, map[string]string{"task": task.ID().String(), "reason": "not the task of the current cycle and phase"})
 	}
 	phase := current.Phase()
 	now := a.deps.Clock.Now()
-	_ = incident.AddCost(execution.Usage(), now)
+	_, _ = incident.AddExecutionCost(execution.ID(), execution.Usage(), now)
 	from := incident.Status()
 	move := incidentMove{payload: map[string]any{"taskId": task.ID().String(), "executionId": execution.ID().String(), "phase": phase.String(), "costUsd": incident.CostUSD()}}
 	err = a.end(&incident, current, task, execution, &move, now)
@@ -313,6 +314,27 @@ func (a incidentAdvancer) decided(ctx context.Context, task domain.Task, outcome
 		return err
 	}
 	return a.settle(ctx, incident, from, domain.IncidentPhaseApply, task.ID(), task.CorrelationID(), move)
+}
+
+// executionWaited adds the cost of a run of an incident's task that
+// stopped on a call for a person: the apply's first run is often its
+// dearest, and its task's end would count only the decision's run.
+func (a incidentAdvancer) executionWaited(ctx context.Context, task domain.Task, execution domain.Execution) error {
+	if task.IncidentID() == "" {
+		return nil
+	}
+	incident, err := a.deps.Incidents.Get(ctx, task.IncidentID())
+	if domain.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	added, err := incident.AddExecutionCost(execution.ID(), execution.Usage(), a.deps.Clock.Now())
+	if err != nil || !added {
+		return err
+	}
+	return a.deps.Incidents.Save(ctx, incident)
 }
 
 // lateCost adds the cost an ended execution learnt late (its run
