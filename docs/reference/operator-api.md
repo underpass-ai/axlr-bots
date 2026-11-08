@@ -96,7 +96,7 @@ The execution also keeps AXLR's receipt (`axlr.execution-receipt/v1`: every requ
 
 ## Errors
 
-`{"kind": "validation|not_found|state|conflict|forbidden|unauthorized|too_large|approval_expired|internal", "error": "…"}` with the matching status (`400`, `404`, `409`, `409`, `403`, `401`, `413`, `409`, `500`). `approval_expired` is a decision that came after the pending call's deadline: it authorises nothing. A `not_found` also names what was missing: `resource` (`bot`, `task`, `execution`, `node`, `incident`, …) and `id`.
+`{"kind": "validation|not_found|state|conflict|forbidden|unauthorized|too_large|approval_expired|internal", "error": "…"}` with the matching status (`400`, `404`, `409`, `409`, `403`, `401`, `413`, `409`, `500`). `approval_expired` is a decision that came after the pending call's deadline: it authorises nothing. On the decide routes `forbidden` is an actor the bot's `approvals.approvers` do not list, or none named ([ADR](../architecture/approvers.md)). A `not_found` also names what was missing: `resource` (`bot`, `task`, `execution`, `node`, `incident`, …) and `id`.
 
 ## Examples
 

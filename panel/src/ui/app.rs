@@ -743,6 +743,15 @@ impl App {
             Message::Decided(result) => {
                 self.deciding = None;
                 match result {
+                    Ok(decided) if decided.task.status == TaskStatus::WaitingApproval => {
+                        // The first of two approvals: the call did not run,
+                        // a second, different person decides it.
+                        self.banner = Some(Banner::good(
+                            "First approval recorded",
+                            "Nothing ran: a second, different person decides",
+                            self.now,
+                        ));
+                    }
                     Ok(decided) => {
                         let title = if decided.execution.decision == "deny" {
                             "Denied"

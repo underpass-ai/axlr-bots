@@ -265,7 +265,7 @@ func printUsage(w io.Writer) {
                                       publish the operator's event on the team; stop.all stops everyone
                                       and drops their queued tasks
   incident open --tenant <id> --bot <bot-id> --group-key "<key>" --title "<text>" [--severity sev1..sev4]
-                [--fingerprints a,b] [--source <name>] [--objective "<text>"]
+                [--namespace <ns>] [--fingerprints a,b] [--source <name>] [--objective "<text>"]
                                       report an alert group: a new incident and its triage task,
                                       a repeat of the one open for that key, or a reopening
   incident list [--tenant <id>] [--status Open|Diagnosed|Proposed|Resolved|Escalated] [--limit 100]

@@ -58,7 +58,7 @@ How many people a wait needs is set when the task starts to wait (`approvalsNeed
 
 ### What an operator reads
 
-`task get` and `incident get` (its `currentTask.approval`) show the wait with `approvalsNeeded: 2` and `approvedBy: [{"actor": "tirso", "at": "…"}]`. The first approval answers with the task still `WaitingApproval` and the stopped execution (`task approve` exits 3, as a run that waits). `bot.task.waiting_approval` says `approvalsNeeded`; `bot.task.decided` says `decidedBy` (the named actor now) and, for a call that waited for two, `approvedBy`. The panel's Needs-you card on the incident says **1 of 2 approvals · approved by tirso**; its timeline says **First approval**. The audit log's `actor` is the named actor for every line of the decision.
+`task get` and `incident get` (its `currentTask.approval`) show the wait with `approvalsNeeded: 2` and `approvedBy: [{"actor": "tirso", "at": "…"}]`. The first approval answers with the task still `WaitingApproval` and the stopped execution (`task approve` exits 3, as a run that waits). `bot.task.waiting_approval` says `approvalsNeeded`; `bot.task.decided` says `decidedBy` (the named actor now) and, for a call that waited for two, `approvedBy`. The panel's Needs-you card on the incident says **1 of 2 approvals · approved by tirso**, and its banner after the first Approve says **First approval recorded** (nothing ran); its timeline says **First approval**. The audit log's `actor` is the named actor for every line of the decision.
 
 ### Where the namespace comes from
 
@@ -68,11 +68,11 @@ The incident keeps the `namespace` label of its Alertmanager group (the group la
 
 | Layer | What changed |
 |:--|:--|
-| domain | `Approvals` (approvers, twoPersons, `MayDecide`, `ApprovalsNeeded`), `TwoPersons`, `ValidateActor`, `ApprovalWait` (`approvalsNeeded`, `approvedBy`, `ApprovalMark`), `Task.AddApproval`, `FinalApproval`, `RaiseApprovalsNeeded`, `Incident.namespace`, `AlertmanagerPayload.Namespace`, event `bot.approval.first` |
+| domain | `Approvals` (approvers, twoPersons, `MayDecide`, `ApprovalsNeeded`), `TwoPersons`, `ValidateActor`, `ApprovalWait` (`approvalsNeeded`, `approvedBy`, `ApprovalMark`), `Task.AddApproval`, `FinalApproval`, `RaiseApprovalsNeeded`, `Incident.namespace`, `AlertmanagerPayload.Namespace`, event `bot.approval.first` (`domain/event_type.go`) |
 | application | `ApproveTask.Execute(…, actor)`: the named actor becomes the use case's actor (audit, events, incident); `mayDecide`, `first`; `approvalsNeeded` when a wait opens (settler) and the rule that `autoApprove` never decides a call that waits for two; `OpenIncidentCommand.namespace` |
 | adapters/unixapi | `X-Axlr-Actor` and `decidedBy` on the decide routes; the contract |
 | cmd/axlr-bots | `task approve|deny|decide` send `--actor`; `incident open --namespace` |
-| panel | `controlPlane.actor` ("Decide as"), sent as `X-Axlr-Actor`; the Needs-you card's progress; the event's words |
+| panel | `controlPlane.actor` ("Decide as"), sent as `X-Axlr-Actor`; the Needs-you card's progress; the banner after a first approval ("First approval recorded"); the event's words (`panel/src/domain/event.rs`) |
 
 ## Left out
 
