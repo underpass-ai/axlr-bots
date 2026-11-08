@@ -373,6 +373,32 @@ func TestOnePersonUnderTwoNamesIsOneApproval(t *testing.T) {
 	}
 }
 
+// Review of #139, P1, the other order: the CLI's name first and the
+// plain one after are still one person, and the call does not run.
+func TestOnePersonUnderTheCLINameFirstIsOneApproval(t *testing.T) {
+	h := newHarness()
+	_, task := incidentIn(t, h, domain.ApprovalsSnapshot{Approvers: pair, TwoPersons: &domain.TwoPersonsSnapshot{Severities: []string{"sev1"}}}, "prod", "sev1")
+	ctx := context.Background()
+	uc := NewApproveTask(h.deps)
+	if _, err := uc.Execute(ctx, task.ID(), DecisionApprove, "", "cli:tirso"); err != nil {
+		t.Fatal(err)
+	}
+	var state domain.StateError
+	for _, again := range []string{"tirso", "Tirso"} {
+		if _, err := uc.Execute(ctx, task.ID(), DecisionApprove, "", again); !errors.As(err, &state) {
+			t.Errorf("%s after cli:tirso: %v", again, err)
+		}
+	}
+	stored, _ := h.tasks.Get(ctx, task.ID())
+	if wait, _ := stored.Approval(); len(h.decider.requests) != 0 || len(wait.ApprovedBy) != 1 || stored.Status() != domain.TaskWaitingApproval {
+		t.Fatalf("one person ran a two-person call: decides=%d %s %+v", len(h.decider.requests), stored.Status(), wait)
+	}
+	h.decider.report = completes("APPLIED", 0)
+	if _, err := uc.Execute(ctx, task.ID(), DecisionApprove, "", "oncall"); err != nil || len(h.decider.requests) != 1 {
+		t.Fatalf("the second person: %v", err)
+	}
+}
+
 // Review of #139, P2: the team's events are not one of two approvals:
 // a call of the emit tool on a two-person wait resumes outright, as
 // before, and records nobody.
@@ -467,6 +493,63 @@ func TestAnIncidentKeepsEveryNamespace(t *testing.T) {
 	bad.Namespace, bad.GroupKey = "a b", "other"
 	if _, err := NewOpenIncident(h.deps).Execute(ctx, bad); err == nil {
 		t.Error("a person's bad namespace opened an incident")
+	}
+}
+
+// Review of #139, P4: a call that waits for one person takes two when a
+// later alert of the group names a namespace twoPersons lists, at the
+// decision: any namespace of the incident is enough.
+func TestALaterAlertInAListedNamespaceAsksForTwoPersons(t *testing.T) {
+	h := newHarness()
+	incident, task := incidentIn(t, h, domain.ApprovalsSnapshot{Approvers: pair, TwoPersons: &domain.TwoPersonsSnapshot{Namespaces: []string{"prod"}}}, "dev", "sev3")
+	ctx := context.Background()
+	if wait, _ := task.Approval(); wait.Needed() != 1 {
+		t.Fatalf("an incident in dev: %+v", wait)
+	}
+	bot, err := h.bots.Get(ctx, incident.BotID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (FireTrigger{deps: h.deps, rec: recorder{deps: h.deps}}).fireAlertmanager(ctx, bot, domain.Trigger{}, mixedGroup(t, incident.GroupKey(), "prod")); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := h.incs.Get(ctx, incident.ID())
+	if !slices.Equal(stored.Namespaces(), []string{"dev", "prod"}) || stored.Status() != domain.IncidentProposed {
+		t.Fatalf("incident = %v %s", stored.Namespaces(), stored.Status())
+	}
+	uc := NewApproveTask(h.deps)
+	first, err := uc.Execute(ctx, task.ID(), DecisionApprove, "", "tirso")
+	if err != nil || len(h.decider.requests) != 0 || first.Task.Status() != domain.TaskWaitingApproval {
+		t.Fatalf("the first approval: %v decides=%d", err, len(h.decider.requests))
+	}
+	h.decider.report = completes("APPLIED", 0)
+	if _, err := uc.Execute(ctx, task.ID(), DecisionApprove, "", "oncall"); err != nil || len(h.decider.requests) != 1 {
+		t.Fatalf("the second approval: %v decides=%d", err, len(h.decider.requests))
+	}
+}
+
+// Review of #139, P5: the first alert of a group whose only namespace
+// label is no namespace still opens the incident, and says so once.
+func TestAStrangeLabelOpensTheIncident(t *testing.T) {
+	h := newHarness()
+	triage := triageBot(t, h, "triage", "")
+	ctx := context.Background()
+	fire := FireTrigger{deps: h.deps, rec: recorder{deps: h.deps}}
+	res, err := fire.fireAlertmanager(ctx, triage, domain.Trigger{}, mixedGroup(t, "fresh-key", "a b"))
+	if err != nil {
+		t.Fatalf("a strange label refused the alert: %v", err)
+	}
+	if res.Incident == nil || res.Incident.Namespace() != "" || res.Incident.Namespaces() != nil {
+		t.Fatalf("incident = %+v", res.Incident)
+	}
+	ignored := 0
+	for _, audit := range auditsOf(h, "incident.open") {
+		if audit.Details["namespace"] == "a b" {
+			ignored++
+		}
+	}
+	if ignored != 1 {
+		t.Errorf("the label was audited %d times", ignored)
 	}
 }
 

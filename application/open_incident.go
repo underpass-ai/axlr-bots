@@ -119,8 +119,9 @@ func (uc OpenIncident) open(ctx context.Context, o opening) (OpenIncidentResult,
 	if err != nil {
 		return OpenIncidentResult{}, err
 	}
-	if found {
-		// A later alert of the group adds the namespaces it names.
+	if found && (!existing.Status().IsResolved() || existing.CanRetry() || existing.CanReopen(now)) {
+		// A later alert of the group adds the namespaces it names, to the
+		// incident it goes on: one too old to reopen is left as it was.
 		uc.recordNamespaces(ctx, &existing, o.namespaces)
 	}
 	switch {
