@@ -197,7 +197,10 @@ func TestCloudWatchRefusals(t *testing.T) {
 	if err := fire(forged, ""); !errors.As(err, &forbidden) {
 		t.Errorf("another key: %v", err)
 	}
-	offHost, _ := h.sns.Signer.Sign(raw, func(m *domain.SNSMessage) { m.SigningCertURL = "https://evil.example/cert.pem"; snstest.At(h.clock.now)(m) })
+	offHost, _ := h.sns.Signer.Sign(raw, func(m *domain.SNSMessage) {
+		m.SigningCertURL = "https://evil.example/cert.pem"
+		snstest.At(h.clock.now)(m)
+	})
 	fetched := len(h.sns.Fetched())
 	if err := fire(offHost, ""); !errors.As(err, &forbidden) || len(h.sns.Fetched()) != fetched {
 		t.Errorf("a certificate off SNS: %v, fetched %v", err, h.sns.Fetched())
