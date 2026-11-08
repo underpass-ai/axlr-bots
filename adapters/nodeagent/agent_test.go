@@ -88,7 +88,7 @@ func (f *fixture) agent(t *testing.T, scenario string) Agent {
 	return Agent{
 		Transport: f.client,
 		Executor:  axlr.NewExecutor(bin, f.nodeDir),
-		Options:   Options{NodeID: "web-1", HostName: "web-1.example", Labels: map[string]string{"host": "web-1"}, Heartbeat: 50 * time.Millisecond, PollWait: 200 * time.Millisecond, Renew: 30 * time.Millisecond, Log: log.New(f.logs, "", 0)},
+		Options:   Options{NodeID: "web-1", HostName: "web-1.example", Labels: map[string]string{"host": "web-1"}, Providers: []string{"openrouter", "local:codex/gpt-6.1-sol"}, Heartbeat: 50 * time.Millisecond, PollWait: 200 * time.Millisecond, Renew: 30 * time.Millisecond, Log: log.New(f.logs, "", 0)},
 	}
 }
 
@@ -128,6 +128,9 @@ func TestAgentRunsAssignedTasksAndDecisions(t *testing.T) {
 	if !node.Capabilities.PolicySupported || node.HostName != "web-1.example" || node.Labels["host"] != "web-1" {
 		t.Errorf("node = %+v", node)
 	}
+	if !node.Capabilities.HasProvider("openrouter") || !node.Capabilities.HasProvider("local:codex/gpt-6.1-sol") || len(node.Capabilities.Providers) != 2 {
+		t.Errorf("providers = %v", node.Capabilities.Providers)
+	}
 	if _, err := f.client.RegisterBot(ctx, application.BotDefinition{Tenant: "t", Name: "bot", Owner: "o", Mission: "do what each task asks", Level: "act-with-approval", AllowedTools: []string{"local_read", "local_write"}, Budgets: application.BudgetsDefinition{TaskTimeoutSeconds: 30}}); err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +166,7 @@ func TestAgentRunsAssignedTasksAndDecisions(t *testing.T) {
 	// The task is Completed once the control plane took the report; the
 	// agent writes its log line after the answer comes back, so wait for
 	// it rather than read the buffer once.
-	for _, want := range []string{"node: registered as web-1", "assigned, lease until", "reported DecisionRequired (accepted true)", "reported Completed (accepted true)"} {
+	for _, want := range []string{"node: registered as web-1", "providers [openrouter local:codex/gpt-6.1-sol]", "assigned, lease until", "reported DecisionRequired (accepted true)", "reported Completed (accepted true)"} {
 		deadline := time.Now().Add(5 * time.Second)
 		for !strings.Contains(f.logs.String(), want) {
 			if time.Now().After(deadline) {

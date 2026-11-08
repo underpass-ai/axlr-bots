@@ -2796,6 +2796,13 @@
               "type": "string"
             }
           },
+          "providers": {
+            "type": "array",
+            "description": "the model providers the node's bots can reach, by name: openrouter, codex, jev, local:<id> per local model its AXLR names; absent: the node did not say (an older node)",
+            "items": {
+              "type": "string"
+            }
+          },
           "policySupported": {
             "type": "boolean"
           }

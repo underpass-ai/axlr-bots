@@ -8,7 +8,7 @@ use super::widgets::{
 };
 use super::{grid, levels};
 use crate::application::BotNow;
-use crate::domain::{AutonomyLevel, Bot};
+use crate::domain::{AutonomyLevel, Bot, ModelFit, NodeCapabilities};
 use crate::ui::styles::{self, Kind};
 use crate::ui::table::{BotColumn, ColumnRef, List, RowRef, SortColumn};
 use crate::ui::{App, Icon, Message, NodeChoice, Screen, Tokens, Tone};
@@ -205,6 +205,33 @@ fn team_field<'a>(app: &'a App, value: &'a str, tokens: Tokens) -> El<'a> {
     .into()
 }
 
+/// A warning when the chosen node named its providers and none serves
+/// the model typed: the bot can still be added, so the operator decides.
+fn model_warning(app: &App, node: &str, model: &str) -> Option<String> {
+    let node = app
+        .fleet
+        .as_ref()?
+        .nodes
+        .iter()
+        .find(|n| n.id.as_str() == node.trim())?;
+    if node.capabilities.fit(model) != ModelFit::Missing {
+        return None;
+    }
+    let needs = NodeCapabilities::provider_for(model.trim());
+    let has: Vec<&str> = node
+        .capabilities
+        .providers
+        .iter()
+        .map(|p| p.strip_prefix("local:").unwrap_or(p))
+        .collect();
+    Some(format!(
+        "{} has no {needs} for {}: it has {}.",
+        node.id,
+        model.trim(),
+        has.join(", ")
+    ))
+}
+
 fn register_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let form = &app.register.form;
     let nodes: Vec<NodeChoice> = std::iter::once(NodeChoice::Any)
@@ -223,6 +250,25 @@ fn register_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             .cloned()
     };
     let busy = app.register.busy;
+    let mut where_it_runs = column![
+        bold("Where does it run?").size(SMALL),
+        pick_list(nodes, selected, Message::RegisterNode)
+            .padding(10)
+            .width(360)
+            .style(styles::picker(tokens))
+            .menu_style(styles::menu(tokens))
+    ]
+    .spacing(6);
+    if let Some(words) = model_warning(app, &form.node, &form.model) {
+        where_it_runs = where_it_runs.push(
+            row![
+                icon(Icon::Alert, 14.0, tokens.wait),
+                text(words).size(SMALL).color(tokens.wait)
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center),
+        );
+    }
     let mut body = column![
         row![
             section_title(Icon::Plus, "New bot", tokens),
@@ -248,15 +294,7 @@ fn register_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             tokens
         ),
         row![
-            column![
-                bold("Where does it run?").size(SMALL),
-                pick_list(nodes, selected, Message::RegisterNode)
-                    .padding(10)
-                    .width(360)
-                    .style(styles::picker(tokens))
-                    .menu_style(styles::menu(tokens))
-            ]
-            .spacing(6),
+            where_it_runs.width(360),
             container(team_field(app, &form.team, tokens)).width(360),
         ]
         .spacing(14)

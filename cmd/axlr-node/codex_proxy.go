@@ -28,7 +28,7 @@ const codexProxyKeyEnv = "AXLR_CODEX_PROXY_KEY"
 func codexProxy(ctx context.Context, args []string, stderr io.Writer, listening func(net.Addr)) int {
 	flags := flag.NewFlagSet("axlr-node codex-proxy", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	listen := flags.String("listen", envOr("AXLR_CODEX_PROXY_LISTEN", "127.0.0.1:8790"), "the loopback address to serve on (also AXLR_CODEX_PROXY_LISTEN)")
+	listen := flags.String("listen", envOr(codexProxyListenEnv, defaultCodexListen), "the loopback address to serve on (also AXLR_CODEX_PROXY_LISTEN)")
 	codexHome := flags.String("codex-home", envOr("CODEX_HOME", defaultCodexHome()), "the Codex home whose auth.json holds the ChatGPT login (also CODEX_HOME)")
 	upstream := flags.String("upstream", envOr("AXLR_CODEX_PROXY_UPSTREAM", codex.DefaultUpstream), "Codex's backend (also AXLR_CODEX_PROXY_UPSTREAM)")
 	tokenURL := flags.String("token-url", envOr("AXLR_CODEX_PROXY_TOKEN_URL", codex.DefaultTokenURL), "the OAuth endpoint the login is refreshed against (also AXLR_CODEX_PROXY_TOKEN_URL)")

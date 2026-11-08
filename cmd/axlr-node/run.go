@@ -164,10 +164,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	} else {
 		logger.Printf("node: TYPESAFE_API_KEY is not set: Jev bots are not run here")
 	}
+	// The providers the bots here can reach, by name, for the fleet to see.
+	providers := providerProbe{Runtimes: runtimes.Kinds(), Log: logger.Printf}.providers()
+	logger.Printf("node: providers %v", providers)
 	agent := nodeagent.Agent{
 		Transport: conn.transport,
 		Executor:  runtimes,
-		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Dedicated: *dedicated, Runtimes: runtimes.Kinds(), Heartbeat: *heartbeat, PollWait: *poll, RenewBefore: *renewBefore, Log: logger, SocketDir: filepath.Join(*stateDir, "run")},
+		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Dedicated: *dedicated, Runtimes: runtimes.Kinds(), Providers: providers, Heartbeat: *heartbeat, PollWait: *poll, RenewBefore: *renewBefore, Log: logger, SocketDir: filepath.Join(*stateDir, "run")},
 	}
 	if conn.certificate != nil {
 		agent.Certificate = conn.certificate

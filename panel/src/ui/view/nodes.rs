@@ -100,6 +100,9 @@ fn list<'a>(app: &'a App, nodes: &'a [Node], narrow: bool, tokens: Tokens) -> El
             if n.capabilities.dedicated {
                 cell = cell.push(chip("dedicated", tokens));
             }
+            if !n.capabilities.providers.is_empty() {
+                cell = cell.push(providers(n, tokens));
+            }
             cell.into()
         })
         .width(Length::FillPortion(if narrow { 3 } else { 2 })),
@@ -156,6 +159,19 @@ fn list<'a>(app: &'a App, nodes: &'a [Node], narrow: bool, tokens: Tokens) -> El
         }
     }));
     grid::sheet(columns, shown)
+}
+
+/// The model providers the node named, one chip each: a local model by
+/// its id, without the `local:`.
+fn providers<'a>(node: &Node, tokens: Tokens) -> El<'a> {
+    let mut chips = row![].spacing(6);
+    for provider in &node.capabilities.providers {
+        chips = chips.push(chip(
+            provider.strip_prefix("local:").unwrap_or(provider).to_string(),
+            tokens,
+        ));
+    }
+    chips.wrap().into()
 }
 
 fn certificate<'a>(node: &Node, now: chrono::DateTime<chrono::Utc>, tokens: Tokens) -> El<'a> {
