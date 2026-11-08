@@ -1858,7 +1858,7 @@ fn waiting_apply(app: &App) -> crate::domain::Incident {
         phase: IncidentPhase::Apply,
         status: TaskStatus::WaitingApproval,
         approval: Some(IncidentWait {
-            call_id: "call-1".into(),
+            call_id: "call-incident".into(),
             tool: "local_write".into(),
             deadline: app.now + chrono::Duration::minutes(2),
             outcome: String::new(),
@@ -1893,16 +1893,29 @@ fn an_incident_that_needs_you_offers_approve_and_deny_of_its_apply() {
             "Denials",
         ],
     );
+    // The fleet's read does not hold the call: the incident's own says it.
+    app.fleet.as_mut().unwrap().calls.clear();
     let effects = app.apply(Message::Approve(task.clone()));
     assert_eq!(
         effects,
         vec![crate::ui::Effect::Decide(
             task.clone(),
             crate::domain::Decision::Approve,
-            Some("call-1".into())
+            Some("call-incident".into())
         )]
     );
     shows(&app, &["Sending your answer…"]);
+    app.deciding = None;
+    assert!(app.apply(Message::AskDeny(task.clone())).is_empty());
+    assert_eq!(
+        app.apply(Message::ConfirmYes),
+        vec![crate::ui::Effect::Decide(
+            task.clone(),
+            crate::domain::Decision::Deny,
+            Some("call-incident".into())
+        )]
+    );
+    app.deciding = None;
     for (status, heading) in [
         (IncidentStatus::Applying, "Proposal · being applied"),
         (IncidentStatus::Verifying, "Proposal · applied, verifying"),
