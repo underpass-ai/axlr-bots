@@ -40,7 +40,7 @@ A bot has no role baked in: its definition is what an operator writes, and the s
 | `toolRules` | narrows the allowed tools by their arguments ([below](#tool-rules)) |
 | `triggers` | how tasks reach the bot: `manual` (the default), `webhook`, `timer`, `delegation`, `incident`, `alertmanager`; a bot that declares triggers takes only those ([below](#triggers)). A trigger of type `event` is read as a [subscription](#subscriptions), for one release |
 | `placement` | where the bot's tasks run: `{"nodes": ["web-1"]}`, `{"selector": {"zone": "eu"}}`, or nothing for any node but a dedicated one, such as a sidecar ([nodes](node-protocol.md)). A placed bot's task waits `Pending` for a node its placement admits, with `waiting` saying which; only a bot with no placement runs on the control plane when no node may take it ([the daemon](../architecture/control-plane-node-axlr.md#the-daemon)) |
-| `approvals` | how a pending call waits for a person: `ttl` (default `1h`), `onExpire` (`deny`, the default, or `cancel`) and the `notify` targets told when a task starts to wait ([below](#approvals)) |
+| `approvals` | how a pending call waits for a person: `ttl` (default `1h`), `onExpire` (`deny`, the default, or `cancel`), the `notify` targets told when a task starts to wait, who may decide (`approvers`) and which incidents wait for two people (`twoPersons`) ([below](#approvals)) |
 | `delegation` | the bots outside its teams this bot may ask to do a task, how deep a chain through it may go and the share of its task a child may take; absent: it asks only its teammates ([below](#delegation)) |
 | `groups` | the teams the bot belongs to, up to 8; the panel calls each a Team. Teammates know each other and may ask each other to do a task ([below](#teams)) |
 | `events` | what the bot may tell its teams: the names it may emit and how many a minute; absent: any name but `error.*` and `done.*`, 6 a minute ([below](#events)) |
@@ -64,7 +64,7 @@ How each level is handed to AXLR (`--approve`, the policy file) is in the [runti
 
 ## Approvals
 
-A call the policy leaves to a person stops the task in `WaitingApproval` ([runbook](../runbooks/approvals.md)). `approvals` says how long it waits, what happens when nobody decides, and who is told.
+A call the policy leaves to a person stops the task in `WaitingApproval` ([runbook](../runbooks/approvals.md)). `approvals` says how long it waits, what happens when nobody decides, who is told, who may decide and when two people must.
 
 ```json
 "approvals": {
@@ -73,7 +73,9 @@ A call the policy leaves to a person stops the task in `WaitingApproval` ([runbo
   "notify": [
     {"type": "webhook", "name": "ops", "url": "https://hooks.example.com/axlr", "secret": "<16 to 256 characters>"},
     {"type": "command", "name": "desktop", "command": ["/usr/local/bin/axlr-notify", "--urgency", "critical"]}
-  ]
+  ],
+  "approvers": ["tirso", "oncall"],
+  "twoPersons": {"namespaces": ["prod", "shop-prod"]}
 }
 ```
 
@@ -82,9 +84,11 @@ A call the policy leaves to a person stops the task in `WaitingApproval` ([runbo
 | `ttl` | a duration from `1m` to `720h`; the wait's deadline is when the task stopped plus the `ttl`, kept on the task (`approval.deadline`) so a restart keeps it |
 | `onExpire` | `deny`: at the deadline the call is denied as a person's deny would (a new execution hands the denial to the session, which goes on without the call); `cancel`: the task ends `Expired` and the session stays where it is. A denial whose run fails ends the task `Expired` too, and a paused bot's expired task ends `Expired` either way ([expiry](../runbooks/approvals.md#expiry)) |
 | `notify` | up to 8 targets, names unique (the type when not given). A `webhook` takes an absolute `http`/`https` `url` without credentials and the `secret` its deliveries are signed with; a `command` takes the program by its absolute path and its arguments, and runs with the JSON on its stdin in a minimal environment: `PATH`, `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_*`, `TZ`, `TMPDIR`, `XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS`, `DISPLAY` and `WAYLAND_DISPLAY` from the daemon's, and `AXLR_BOTS_DELIVERY_ID`, `AXLR_BOTS_TASK_ID`, `AXLR_BOTS_BOT_ID` and `AXLR_BOTS_EVENT`; nothing else of the daemon's (its API keys, the broker's credentials) reaches it |
-| `autoApprove` | up to 16 rules, as in `toolRules` (`{"tool": "rollback"}`, argument patterns allowed): a call that fits one is approved by the control plane at once, as actor `policy:autoApprove`, without a notification. An MCP call AXLR asks for as `axlr_call_tool` is judged by the tool it names. It costs one more execution (a few seconds): AXLR's `act-with-approval` asks for every call, so the decision is the control plane's. A bot paused meanwhile, or any other refusal, leaves the call to a person as usual |
+| `autoApprove` | up to 16 rules, as in `toolRules` (`{"tool": "rollback"}`, argument patterns allowed): a call that fits one is approved by the control plane at once, as actor `policy:autoApprove`, without a notification. An MCP call AXLR asks for as `axlr_call_tool` is judged by the tool it names. It costs one more execution (a few seconds): AXLR's `act-with-approval` asks for every call, so the decision is the control plane's. A bot paused meanwhile, or any other refusal, leaves the call to a person as usual. A rule never decides a call that waits for two people (`twoPersons`) |
+| `approvers` | up to 32 names: who may approve **and** deny the bot's calls, compared exactly with the actor a decision names (the CLI's `--actor`, the panel's `controlPlane.actor`, `X-Axlr-Actor` or `decidedBy`; `cli:tirso` is not `tirso`). Each without spaces or control characters, at most 128 characters, no repeats. Absent or empty: anyone with the token, as before. Another actor, or none named, is refused with `403 forbidden` and audited `approval.refused`. The name is the token holder's word, not a login ([ADR](../architecture/approvers.md)) |
+| `twoPersons` | `{"namespaces": [...]}`, `{"severities": ["sev1", "sev2"]}` or both, at least one entry, at most 32 of each: a call of a task of an **incident** whose `namespace` or `severity` is listed waits for two different people. The first approval is recorded (`approval.approvedBy`, `bot.approval.first`) and runs nothing; a second by another actor runs the call; the same actor again is refused; a denial ends the wait; the `ttl` covers the whole wait. A task of no incident waits for one person whatever the lists say. `twoPersons: true`, `{}` or an unknown key is refused |
 
-A decision that arrives after the deadline authorises nothing (vision §14): it is refused with `409 approval_expired`, whether the daemon has carried out the expiry yet or not, and the call never runs. The secret is stored with the bot and redacted in every answer, as a trigger's is; a `PATCH` of `approvals` replaces the whole value, secrets included. A bot defined before approvals waits an hour and then denies.
+A decision that arrives after the deadline authorises nothing (vision §14): it is refused with `409 approval_expired`, whether the daemon has carried out the expiry yet or not, and the call never runs. The secret is stored with the bot and redacted in every answer, as a trigger's is; a `PATCH` of `approvals` replaces the whole value, secrets included. A bot defined before approvals waits an hour and then denies; one without `approvers` or `twoPersons` decides as before.
 
 ## Delegation
 

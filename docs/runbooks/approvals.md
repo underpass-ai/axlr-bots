@@ -31,7 +31,7 @@ axlr-bots task deny task-…                 # or: the session goes on without t
 axlr-bots task approve task-… --call c-1   # refused unless the task waits on that call
 ```
 
-They are `POST /v1/tasks/{id}/approve?call=` and `/deny?call=` (no body), or `POST /v1/tasks/{id}/decide` with `{"decision": "approve", "callId": "…"}`; `task decide <id> approve|deny` is the same. The decision is a new execution of the task. When the stopped execution ran on a node, the decision is queued for that node (the AXLR session lives there); the node runs `axlr-tui --session <id> --decide approve --policy <file>` on its next poll and reports. A node carries one execution at a time and polls only when it is free, so a decision queued for a node busy with another task waits for that task's end: `bot.task.decided` says so with `busyWith` (the task ids the node is running). A decision queued for a node that is Offline (or gone) waits for it: the session lives on that node and no other can take it, and a node back from a reboot or a reinstall runs it. The reconcile pass tells the task's timeline once per state of the node, with a `node.offline` event (`nodeId`, `nodeStatus`, `waiting: waiting for node <id>, offline since HH:MM UTC`); only the bot's timeout and a minute fail the task, with `reconciled: its decision (…) waited for node <id>, which is Offline since …`. In single-process mode the control plane runs it itself.
+They are `POST /v1/tasks/{id}/approve?call=` and `/deny?call=` (no body), or `POST /v1/tasks/{id}/decide` with `{"decision": "approve", "callId": "…", "decidedBy": "…"}`; `task decide <id> approve|deny` is the same. The CLI decides as its global `--actor`, the API as `X-Axlr-Actor` or `decidedBy` ([who may decide](#who-may-decide)). The decision is a new execution of the task. When the stopped execution ran on a node, the decision is queued for that node (the AXLR session lives there); the node runs `axlr-tui --session <id> --decide approve --policy <file>` on its next poll and reports. A node carries one execution at a time and polls only when it is free, so a decision queued for a node busy with another task waits for that task's end: `bot.task.decided` says so with `busyWith` (the task ids the node is running). A decision queued for a node that is Offline (or gone) waits for it: the session lives on that node and no other can take it, and a node back from a reboot or a reinstall runs it. The reconcile pass tells the task's timeline once per state of the node, with a `node.offline` event (`nodeId`, `nodeStatus`, `waiting: waiting for node <id>, offline since HH:MM UTC`); only the bot's timeout and a minute fail the task, with `reconciled: its decision (…) waited for node <id>, which is Offline since …`. In single-process mode the control plane runs it itself.
 
 Check after `approve`: `task get` shows `approval.outcome: approved`, a second execution of `"kind": "decide"`, then `"status": "Completed"`; the file exists with its content; `task report` prints the answer. After `deny`: `approval.outcome: denied`, the task ends with the outcome of that execution and the file never appears. Either way the write never ran before the decision: `bot events bot-act-with-approval` shows `bot.task.decided` between the two executions.
 
@@ -91,7 +91,7 @@ expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest
 assert hmac.compare_digest(expected, request.headers["X-Axlr-Signature"])
 ```
 
-**Slack, Teams and the rest.** There is no Slack or Teams adapter: a chat incoming webhook takes its own message shape and cannot check a signature. Put a small relay between them, a function or a service that receives the webhook, checks the signature, drops a repeated `deliveryId`, and posts a message (the bot, the objective, the tool and its arguments, the deadline) to the chat's incoming webhook. To approve from the chat, the relay holds the operator token and turns a button into the `POST` of `actions.approve.url` or `actions.deny.url`; the chat's user is then who decides, which the relay should log, since the control plane sees only its token.
+**Slack, Teams and the rest.** There is no Slack or Teams adapter: a chat incoming webhook takes its own message shape and cannot check a signature. Put a small relay between them, a function or a service that receives the webhook, checks the signature, drops a repeated `deliveryId`, and posts a message (the bot, the objective, the tool and its arguments, the deadline) to the chat's incoming webhook. To approve from the chat, the relay holds the operator token and turns a button into the `POST` of `actions.approve.url` or `actions.deny.url` with the chat's user as `X-Axlr-Actor`: that name is who decides, checked against the bot's `approvers` ([who may decide](#who-may-decide)); the control plane trusts the relay to say it truly.
 
 ### Command target
 
@@ -121,6 +121,36 @@ A `WaitingApproval` task ends `Cancelled` with `approval.outcome: cancelled`; th
 
 The apply phase of an incident ([triggers](triggers.md#incidents)) waits here like any task: its bot runs at `act-with-approval`, its write call stops it in `WaitingApproval`, `warn.approval` and the notifications go out, and `task approve` or `task deny` (or the panel's **Approve** and **Deny**, on the task's page or the incident's) decides it. The decision moves the incident at once, before the call runs: approved is `Applying`, denied is back to `Open` with the reason, and the new cycle's triage starts at once. An expiry is a denial. Every return to `Open` counts (a denial, an expiry, a failed apply, a red verify): the second since the incident was last reopened escalates it. Only the task the incident stands on now can be approved: a task of a cycle the incident left, or of an incident resolved meanwhile, is refused (`409 state`) and may only be denied, and a superseded apply that asks again is cancelled. A wait of a task its incident no longer stands on (resolved meanwhile) notifies nobody; its expiry ends it. `incident get` counts the incident's `approvals`, one per task by its last wait: the product's rule is one per incident, shown and not enforced.
 
+## Who may decide
+
+`approvals.approvers` lists who may approve **and** deny the bot's calls ([reference](../reference/bot-definition.md#approvals), [ADR](../architecture/approvers.md)). The name is the actor a decision carries: the CLI's global `--actor` (default `cli:$USER`), the panel's **Decide as** (`controlPlane.actor` in its settings), or `X-Axlr-Actor` / `decidedBy` on the API. It is compared exactly, so list what people pass: with `"approvers": ["tirso", "oncall"]`, run `axlr-bots --actor tirso task approve task-…`.
+
+```bash
+axlr-bots task approve task-…                 # as cli:tirso: refused
+axlr-bots: forbidden: cli:tirso is not among the approvers of bot fix
+axlr-bots --actor tirso task approve task-…   # decided by tirso
+```
+
+A refusal changes nothing and is audited `approval.refused` with the actor and the decision; a bot that lists approvers refuses a decision that names nobody too (an old panel, a relay that sends no header). `bot.task.decided` says `decidedBy`, and every audit line of the decision has the named actor. A bot without `approvers` takes anyone, as before; a decision that names nobody is then the control plane's own actor. `autoApprove` and the team's events are the control plane's policy, not a person, and are not checked against the list.
+
+**The name is asserted, not proven.** Whoever holds the operator token can type any name; `approvers` stops mistakes and keeps an honest audit, not a token holder who lies. Per-actor tokens are [#137](https://github.com/underpass-ai/axlr-bots/issues/137).
+
+## Two persons
+
+`approvals.twoPersons` makes a call of an incident wait for two different people: `{"namespaces": ["prod", "shop-prod"]}` reads the incident's `namespace` (the alerts' `namespace` label, or `incident open --namespace`), `{"severities": ["sev1", "sev2"]}` its severity; both may be given, one match is enough. Set it on the bot that applies (the apply phase's).
+
+```text
+WaitingApproval (approvalsNeeded: 2) ──approve by tirso──▶ WaitingApproval, approvedBy [tirso]     bot.approval.first, nothing runs
+                                     ──approve by tirso──▶ 409 state (the same person)            approval.refused
+                                     ──approve by oncall─▶ Running (decide execution)              bot.task.decided {approvedBy: [tirso, oncall]}
+                                     ──deny by either───▶ the wait ends denied                    incident back to Open
+                                     ──deadline─────────▶ expired, approvedBy kept                 as any expiry
+```
+
+`task get` and `incident get` show `approval.approvalsNeeded: 2` and `approval.approvedBy: [{"actor": "tirso", "at": "…"}]`; the panel's Needs-you card on the incident says **1 of 2 approvals · approved by tirso**. The first approval exits 3 (the task still waits) and answers with the stopped execution; the incident stays `Proposed`. Both approvals name their actor: one that names nobody is refused. The deadline is the wait's from the start: the second person decides within the same `ttl`. An `autoApprove` rule never decides such a call. A task of no incident waits for one person whatever the lists say: two persons reads the incident.
+
+**Production.** Production stays at `propose` by default (axlr-sre Q6). The lab runs `act-with-approval` with `approvers` set to the judge's actor. Production goes to `act-with-approval` only with `approvers` and `twoPersons` on the bot that applies.
+
 ## Limits today
 
-Approval is a decision by whoever reaches the socket or holds the bearer token: there is no record of who may decide, beyond the actor the CLI names. There is no queue view of pending approvals beyond `task list --status WaitingApproval`. Notifications go to webhooks and local commands; chat services are reached through a relay. The `observe`, `propose` and `act-within-policy` levels never stop for a decision: the policy either allows the call or refuses it before any card.
+The actor is the token holder's word: one token, any name, until per-actor tokens ([#137](https://github.com/underpass-ai/axlr-bots/issues/137)). `approvers` is one list per bot, not per namespace. Two persons is for incidents only, and two at most. There is no queue view of pending approvals beyond `task list --status WaitingApproval`. Notifications go to webhooks and local commands; chat services are reached through a relay, which should send the chat user as `X-Axlr-Actor`. The `observe`, `propose` and `act-within-policy` levels never stop for a decision: the policy either allows the call or refuses it before any card.
