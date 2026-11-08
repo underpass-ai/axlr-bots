@@ -36,6 +36,11 @@ A person sent the last draft back, or asked for this postmortem, and says:
 The draft to rewrite:
 {{.draft}}{{end}}`
 
+// maxPostmortemLaunchRuns bounds the keys one launch tries when each
+// finds a task already over: a lost launch each, far past any real run
+// of store failures.
+const maxPostmortemLaunchRuns = 16
+
 // postmortemAction names the phase in the audit log.
 const postmortemAction = "incident.postmortem"
 
@@ -101,6 +106,10 @@ func (l postmortemLauncher) attempt(ctx context.Context, incident domain.Inciden
 	}
 	var result SubmitTaskResult
 	for run := 0; ; run++ {
+		if run > maxPostmortemLaunchRuns {
+			l.refuse(ctx, incident, "every key of this attempt found a task already over")
+			return incident, nil
+		}
 		attemptKey := key
 		if run > 0 {
 			attemptKey += ":r" + strconv.Itoa(run)

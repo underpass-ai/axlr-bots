@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -576,5 +577,43 @@ func TestAFailedPostmortemsOutputSaysOnlyThatItFailed(t *testing.T) {
 	payload := string(deliveries[0].Payload())
 	if strings.Contains(payload, "secret-stderr") || strings.Contains(payload, "alerts green") || !strings.Contains(payload, "Postmortem not written") || !strings.Contains(payload, "did not finish") {
 		t.Errorf("%s", payload)
+	}
+}
+
+// A launch whose every key found an ended task stops, audited.
+func TestALaunchStopsWhenEveryKeyFoundAnEndedTask(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness()
+	triage := postmortemTeam(t, h, nil)
+	opened, err := NewOpenIncident(h.deps).Execute(ctx, alert(triage, "fp-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	scribe, _ := h.bots.Get(ctx, "scribe")
+	base := "incident:" + opened.Incident.ID().String() + ":1:postmortem"
+	for run := 0; run <= maxPostmortemLaunchRuns; run++ {
+		key := base
+		if run > 0 {
+			key += ":r" + strconv.Itoa(run)
+		}
+		objective, _ := domain.NewObjective("lost")
+		idempotency, _ := domain.NewIdempotencyKey(key)
+		result, err := submitTask(ctx, h.deps, submission{action: postmortemAction, bot: scribe, trigger: domain.ManualTrigger(), objective: objective, key: idempotency})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewCancelTask(h.deps).Execute(ctx, result.Task.ID()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	resolved, err := NewResolveIncident(h.deps).Execute(ctx, opened.Incident.ID(), "green")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := resolved.Postmortem(); ok || resolved.Status() != domain.IncidentResolved {
+		t.Fatalf("%+v", resolved.Snapshot())
+	}
+	if audit := auditNamed(t, h, postmortemAction); audit.Outcome != domain.AuditDenied || !strings.Contains(audit.Details["reason"], "already over") {
+		t.Errorf("audit = %+v", audit)
 	}
 }
