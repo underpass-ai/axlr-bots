@@ -654,7 +654,7 @@ impl FakeState {
             reason: String::new(),
             repeats: 0,
             retries: 0,
-            denials: 0,
+            send_backs: 0,
             cost_usd: 0.0,
             cost_unknown: false,
             opened_at: now - Duration::minutes(ago + 10),

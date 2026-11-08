@@ -274,7 +274,7 @@ fn facts<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> El<'a> {
         fact("Cost", text(format::spend(incident.cost())), tokens),
         fact("Repeats", text(incident.repeats.to_string()), tokens),
         fact("Retries", text(incident.retries.to_string()), tokens),
-        fact("Denials", text(incident.denials.to_string()), tokens),
+        fact("Sent back", text(incident.send_backs.to_string()), tokens),
         fact("Cycle", text(incident.cycle.to_string()), tokens),
         fact(
             "Group",

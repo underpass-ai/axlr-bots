@@ -50,10 +50,11 @@ pub struct Incident {
     pub repeats: u32,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub retries: u32,
-    /// The applies of its proposals a person denied or let expire since
-    /// it was last reopened; the second leaves it to a person.
+    /// The times it went back to Open from a proposal (its apply denied,
+    /// expired, failed or cancelled, its verify red) since it was last
+    /// reopened; the second leaves it to a person.
     #[serde(default, skip_serializing_if = "is_zero")]
-    pub denials: u32,
+    pub send_backs: u32,
     #[serde(default, rename = "costUsd", skip_serializing_if = "is_free")]
     pub cost_usd: f64,
     /// One of its runs stopped before it said what it cost: `cost_usd`
@@ -168,13 +169,13 @@ mod tests {
     #[test]
     fn reads_what_it_waits_for_and_offers_the_decision_only_when_it_needs_you() {
         let raw = r#"{"id":"inc-4","tenantId":"t","botId":"triage","groupKey":"g","title":"Drift in shop",
-            "status":"Proposed","cycle":1,"proposal":"PROPOSAL: apply","denials":1,"needsYou":true,
+            "status":"Proposed","cycle":1,"proposal":"PROPOSAL: apply","sendBacks":1,"needsYou":true,
             "currentTask":{"taskId":"task-9","botId":"fix","phase":"apply","status":"WaitingApproval",
               "approval":{"callId":"c1","tool":"apply","since":"2026-11-08T10:00:00Z","deadline":"2026-11-08T10:02:00Z","onExpire":"deny"}},
             "approvals":{"approved":0,"denied":1,"expired":0,"waiting":1},
             "openedAt":"2026-11-08T10:00:00Z","updatedAt":"2026-11-08T10:00:00Z","lastSeenAt":"2026-11-08T10:00:00Z"}"#;
         let mut incident: Incident = serde_json::from_str(raw).unwrap();
-        assert_eq!(incident.denials, 1);
+        assert_eq!(incident.send_backs, 1);
         assert_eq!(incident.approvals.unwrap().summary(), "1 denied · 1 waiting");
         let (task, call) = incident.decision().unwrap();
         assert_eq!((task.as_str(), call), ("task-9", "c1"));

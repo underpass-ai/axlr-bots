@@ -1890,7 +1890,7 @@ fn an_incident_that_needs_you_offers_approve_and_deny_of_its_apply() {
             "Proposal · needs you",
             "Approvals",
             "1 waiting",
-            "Denials",
+            "Sent back",
         ],
     );
     // The fleet's read does not hold the call: the incident's own says it.
