@@ -306,10 +306,22 @@ fn the_nodes_screen_lists_the_nodes_and_mints_a_token() {
             assert!(wide.find(word).is_ok(), "{word} is not on the wide Nodes");
         }
     }
+    // Each node's providers are chips under it, a local model by its id.
+    shows(
+        &app,
+        &["openrouter", "codex", "jev", "codex/gpt-6.1-sol", "codex/gpt-6-luna"],
+    );
     if let Some(fleet) = app.fleet.as_mut() {
         fleet.nodes[1].capabilities.dedicated = true;
+        for node in &mut fleet.nodes {
+            node.capabilities.providers.clear();
+        }
     }
     shows(&app, &["dedicated"]);
+    assert!(
+        simulator_misses(&app, "codex/gpt-6.1-sol"),
+        "a node that named no provider shows no chip"
+    );
     assert!(matches!(
         messages_of_click(&app, "New host token").as_slice(),
         [Message::MintOpen]
@@ -398,6 +410,34 @@ fn the_bots_screen_lists_switches_and_adds() {
     );
     app.apply(Message::RegisterAdvanced(false));
     assert!(simulator_misses(&app, "Tools"));
+    // Where does it run? warns when the node named its providers and none
+    // serves the model typed; Add bot stays.
+    let wrx80 = crate::ui::NodeChoice::One(NodeId::new("wrx80").unwrap());
+    app.apply(Message::RegisterNode(wrx80.clone()));
+    assert!(
+        simulator_misses(&app, "has no"),
+        "wrx80 has OpenRouter for the default model"
+    );
+    app.apply(Message::RegisterModel("codex/gpt-6.1-sol".into()));
+    shows(
+        &app,
+        &[
+            "wrx80 has no codex for codex/gpt-6.1-sol: it has openrouter.",
+            "Add bot",
+        ],
+    );
+    app.apply(Message::RegisterNode(crate::ui::NodeChoice::One(
+        NodeId::new("gx10-ff95").unwrap(),
+    )));
+    assert!(simulator_misses(&app, "has no"), "gx10-ff95 has the Codex proxy");
+    app.apply(Message::RegisterNode(crate::ui::NodeChoice::Any));
+    assert!(simulator_misses(&app, "has no"), "any node: nothing to compare with");
+    app.apply(Message::RegisterNode(wrx80));
+    app.apply(Message::RegisterModel(String::new()));
+    assert!(
+        simulator_misses(&app, "has no"),
+        "no model typed: nothing to compare with"
+    );
     send(
         &mut app,
         Message::Go(Screen::Bot(BotId::new("bot-act-with-approval").unwrap())),

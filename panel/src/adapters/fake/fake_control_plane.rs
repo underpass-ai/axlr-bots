@@ -55,6 +55,13 @@ impl FakeControlPlane {
                 "gx10-ff95",
                 "gx10-ff95",
                 &[("host", "gx10-ff95")],
+                &[
+                    "openrouter",
+                    "codex",
+                    "jev",
+                    "local:codex/gpt-6.1-sol",
+                    "local:codex/gpt-6-luna",
+                ],
                 NodeStatus::Online,
                 now,
             );
@@ -62,6 +69,7 @@ impl FakeControlPlane {
                 "wrx80",
                 "wrx80-node1",
                 &[("host", "wrx80-node1"), ("gpu", "rtx3090")],
+                &["openrouter"],
                 NodeStatus::Online,
                 now,
             );
@@ -338,7 +346,15 @@ impl FakeState {
         format!("{prefix}-{:04}", self.serial)
     }
 
-    fn add_node(&mut self, id: &str, host: &str, labels: &[(&str, &str)], status: NodeStatus, now: DateTime<Utc>) {
+    fn add_node(
+        &mut self,
+        id: &str,
+        host: &str,
+        labels: &[(&str, &str)],
+        providers: &[&str],
+        status: NodeStatus,
+        now: DateTime<Utc>,
+    ) {
         let node = Node {
             id: NodeId::new(id).unwrap(),
             host_name: host.into(),
@@ -348,6 +364,12 @@ impl FakeState {
                 policy_supported: true,
                 correlation_supported: true,
                 dedicated: false,
+                runtimes: if providers.contains(&"jev") {
+                    vec!["jev".to_string()]
+                } else {
+                    Vec::new()
+                },
+                providers: providers.iter().map(|p| p.to_string()).collect(),
             },
             status,
             registered_at: now - Duration::days(1),

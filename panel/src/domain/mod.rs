@@ -110,7 +110,7 @@ pub use incident_status::IncidentStatus;
 pub use incident_task::IncidentTask;
 pub use model_policy::ModelPolicy;
 pub use node::{CertificateHealth, Node};
-pub use node_capabilities::NodeCapabilities;
+pub use node_capabilities::{ModelFit, NodeCapabilities};
 pub use node_id::NodeId;
 pub use node_status::NodeStatus;
 pub use node_wait::NodeWait;
