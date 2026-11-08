@@ -16,6 +16,9 @@ const (
 	MaxIncidentProposalLength  = 16000
 	MaxIncidentReasonLength    = 1000
 	maxIncidentFingerprints    = 64
+	// maxIncidentCostedExecutions is how many execution ids an incident
+	// remembers having counted the cost of: the last ones.
+	maxIncidentCostedExecutions = 64
 	// IncidentReopenWindow is how long after a resolution a new alert of
 	// the same group reopens the incident instead of opening another.
 	IncidentReopenWindow = 30 * time.Minute
@@ -25,6 +28,11 @@ const (
 	// that was down) gets another try when its alert comes again, and a
 	// fault that keeps failing stops costing.
 	IncidentEscalationRetries = 2
+	// IncidentMaxSendBacks is how many times an incident may go back to
+	// Open from a proposal (its apply denied, expired, failed or
+	// cancelled, its verify red) before it is left to a person: each one
+	// starts another triage and proposal, the last one escalates it.
+	IncidentMaxSendBacks = 2
 )
 
 // Incident is one grouped fault of a tenant: what the alerts say, which
@@ -50,8 +58,10 @@ type Incident struct {
 	reason       string
 	repeats      int
 	retries      int
+	sendBacks    int
 	costUSD      float64
 	costUnknown  bool
+	costed       []ExecutionID
 	openedAt     time.Time
 	updatedAt    time.Time
 	lastSeenAt   time.Time
@@ -227,7 +237,8 @@ func (i Incident) Diagnosis() string { return i.diagnosis }
 // completes, and again once a new triage replaces the diagnosis.
 func (i Incident) Proposal() string { return i.proposal }
 
-// Reason says why the incident was escalated or resolved.
+// Reason says why the incident was escalated, resolved or sent back to
+// Open.
 func (i Incident) Reason() string { return i.reason }
 
 // Repeats counts the alerts received while the incident was open.
@@ -266,14 +277,15 @@ func (i *Incident) AttachTask(task TaskID, now time.Time) error {
 	return i.attach(task, i.bot, IncidentPhaseTriage, now)
 }
 
-// AttachFixTask records the fix task of the current cycle, once per
-// cycle, when the incident is Diagnosed: the bot is the teammate that
-// takes the fix phase.
-func (i *Incident) AttachFixTask(task TaskID, bot BotID, now time.Time) error {
-	if i.status != IncidentDiagnosed {
-		return i.refuse("attach a fix task")
+// AttachPhaseTask records the task of a phase after triage (fix, apply
+// or verify) of the current cycle, once per cycle, when the incident has
+// the status the phase is launched at (IncidentPhase.LaunchedAt): the bot
+// is the teammate that takes the phase.
+func (i *Incident) AttachPhaseTask(task TaskID, bot BotID, phase IncidentPhase, now time.Time) error {
+	if phase == IncidentPhaseTriage || i.status != phase.LaunchedAt() {
+		return i.refuse("attach a " + phase.String() + " task")
 	}
-	return i.attach(task, bot, IncidentPhaseFix, now)
+	return i.attach(task, bot, phase, now)
 }
 
 func (i *Incident) attach(task TaskID, bot BotID, phase IncidentPhase, now time.Time) error {
@@ -314,8 +326,12 @@ func (i *Incident) Repeat(fingerprints []string, now time.Time) error {
 // alert of the group as a repeat: nobody diagnosed the fault again. A
 // diagnosis does not give the retries back: a fix task that fails every
 // time would otherwise start triage and fix again on every alert.
+//
+// An incident escalated because it was sent back IncidentMaxSendBacks
+// times is not retried: its fix was refused or failed twice, and another proposal
+// would only ask again.
 func (i Incident) CanRetry() bool {
-	return i.status == IncidentEscalated && i.retries < IncidentEscalationRetries
+	return i.status == IncidentEscalated && i.retries < IncidentEscalationRetries && i.sendBacks < IncidentMaxSendBacks
 }
 
 // Retry opens an Escalated incident again on a new alert: one more
@@ -359,6 +375,7 @@ func (i *Incident) Reopen(fingerprints []string, now time.Time) error {
 	i.unresolve(fingerprints)
 	i.cycle++
 	i.retries = 0
+	i.sendBacks = 0
 	i.status = IncidentOpen
 	i.resolvedAt = nil
 	i.lastSeenAt, i.updatedAt = now, now
@@ -402,8 +419,9 @@ func (i *Incident) Propose(proposal string, now time.Time) error {
 }
 
 // Escalate hands the incident to a person: the bots could not go on.
+// Any status but Resolved and Escalated may be escalated.
 func (i *Incident) Escalate(reason string, now time.Time) error {
-	if i.status != IncidentOpen && i.status != IncidentDiagnosed {
+	if i.status.IsResolved() || i.status == IncidentEscalated {
 		return i.refuse("escalate")
 	}
 	text, err := validateText("reason", reason, MaxIncidentReasonLength)
@@ -449,6 +467,27 @@ func (i *Incident) AddCost(usage Usage, now time.Time) error {
 	return nil
 }
 
+// AddExecutionCost adds what one execution of the incident's tasks
+// reported, once per execution: a report delivered twice, or a waiting
+// run counted when it stopped and seen again when its task ends, adds
+// nothing more. False when the execution was counted already. An
+// execution without an id (an expiry that ran nothing) adds nothing.
+func (i *Incident) AddExecutionCost(execution ExecutionID, usage Usage, now time.Time) (bool, error) {
+	if execution == "" || slices.Contains(i.costed, execution) {
+		return false, nil
+	}
+	if err := i.AddCost(usage, now); err != nil {
+		return false, err
+	}
+	i.costed = append(i.costed, execution)
+	if len(i.costed) > maxIncidentCostedExecutions {
+		// The oldest ids go; their cost stays added. A report of one of
+		// them coming back that late is not a redelivery to guard.
+		i.costed = append([]ExecutionID(nil), i.costed[len(i.costed)-maxIncidentCostedExecutions:]...)
+	}
+	return true, nil
+}
+
 // unresolve takes alerts that fire again out of the resolved ones.
 func (i *Incident) unresolve(fingerprints []string) {
 	for _, raw := range fingerprints {
@@ -479,9 +518,17 @@ func (i Incident) Snapshot() IncidentSnapshot {
 	return IncidentSnapshot{
 		ID: i.id.String(), TenantID: i.tenant.String(), BotID: i.bot.String(), GroupKey: i.groupKey, Source: i.source,
 		Title: i.title, Severity: i.severity.String(), Status: i.status.String(), Fingerprints: i.Fingerprints(), ResolvedFingerprints: i.ResolvedFingerprints(),
-		Cycle: i.cycle, TaskIDs: ids, Tasks: tasks, Diagnosis: i.diagnosis, Proposal: i.proposal, Reason: i.reason, Repeats: i.repeats, Retries: i.retries, CostUSD: i.costUSD, CostUnknown: i.costUnknown,
+		Cycle: i.cycle, TaskIDs: ids, Tasks: tasks, Diagnosis: i.diagnosis, Proposal: i.proposal, Reason: i.reason, Repeats: i.repeats, Retries: i.retries, SendBacks: i.sendBacks, CostUSD: i.costUSD, CostUnknown: i.costUnknown, CostedExecutions: i.costedSnapshot(),
 		OpenedAt: i.openedAt, UpdatedAt: i.updatedAt, LastSeenAt: i.lastSeenAt, ResolvedAt: resolvedAt,
 	}
+}
+
+func (i Incident) costedSnapshot() []string {
+	var ids []string
+	for _, id := range i.costed {
+		ids = append(ids, id.String())
+	}
+	return ids
 }
 
 // restoreTasks rebuilds the incident's tasks: from Tasks, or, for an
@@ -550,14 +597,16 @@ func RestoreIncident(s IncidentSnapshot) (Incident, error) {
 		return Incident{}, invalid("cycle", "must be at least 1")
 	case s.Repeats < 0 || s.Retries < 0 || s.CostUSD < 0:
 		return Incident{}, invalid("repeats, retries or cost", "must not be negative")
+	case s.SendBacks < 0 || s.SendBacks > IncidentMaxSendBacks:
+		return Incident{}, invalid("sendBacks", "must be 0 to "+strconv.Itoa(IncidentMaxSendBacks))
 	case status.IsResolved() && s.ResolvedAt == nil:
 		return Incident{}, invalid("resolved at", "a Resolved incident needs it")
 	case !status.IsResolved() && s.ResolvedAt != nil:
 		return Incident{}, invalid("resolved at", "only a Resolved incident has it")
 	case status == IncidentEscalated && s.Reason == "":
 		return Incident{}, invalid("reason", "an Escalated incident needs it")
-	case status == IncidentProposed && s.Proposal == "":
-		return Incident{}, invalid("proposal", "a Proposed incident needs it")
+	case status.HasProposal() && s.Proposal == "":
+		return Incident{}, invalid("proposal", "a "+status.String()+" incident needs it")
 	}
 	if incident.tasks, err = restoreTasks(s); err != nil {
 		return Incident{}, err
@@ -581,6 +630,13 @@ func RestoreIncident(s IncidentSnapshot) (Incident, error) {
 		at := *s.ResolvedAt
 		incident.resolvedAt = &at
 	}
+	for _, raw := range s.CostedExecutions {
+		id, err := NewExecutionID(raw)
+		if err != nil {
+			return Incident{}, err
+		}
+		incident.costed = append(incident.costed, id)
+	}
 	for _, fingerprint := range s.ResolvedFingerprints {
 		if !slices.Contains(incident.fingerprints, fingerprint) {
 			return Incident{}, invalid("resolved fingerprints", "must be alerts the incident saw")
@@ -589,7 +645,7 @@ func RestoreIncident(s IncidentSnapshot) (Incident, error) {
 			incident.resolved = append(incident.resolved, fingerprint)
 		}
 	}
-	incident.cycle, incident.repeats, incident.retries, incident.costUSD, incident.costUnknown = s.Cycle, s.Repeats, s.Retries, s.CostUSD, s.CostUnknown
+	incident.cycle, incident.repeats, incident.retries, incident.sendBacks, incident.costUSD, incident.costUnknown = s.Cycle, s.Repeats, s.Retries, s.SendBacks, s.CostUSD, s.CostUnknown
 	incident.status, incident.updatedAt, incident.lastSeenAt = status, s.UpdatedAt, s.LastSeenAt
 	return incident, nil
 }

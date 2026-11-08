@@ -70,8 +70,11 @@ type Service interface {
 	// triage task, repeats one already open, or reopens one resolved
 	// less than the window ago.
 	OpenIncident(ctx context.Context, command application.OpenIncidentCommand) (OpenIncidentResponse, error)
-	ListIncidents(ctx context.Context, query application.IncidentQuery) ([]domain.IncidentSnapshot, error)
-	GetIncident(ctx context.Context, id string) (domain.IncidentSnapshot, error)
+	// ListIncidents and GetIncident answer each incident with whether it
+	// needs a person now; GetIncident adds its current task and the count
+	// of its tasks' approvals.
+	ListIncidents(ctx context.Context, query application.IncidentQuery) ([]IncidentResponse, error)
+	GetIncident(ctx context.Context, id string) (IncidentResponse, error)
 	// ResolveIncident closes an incident; a resolved one is refused.
 	ResolveIncident(ctx context.Context, id string, request ResolveRequest) (domain.IncidentSnapshot, error)
 	// ListExecutions returns the task's executions, oldest first.

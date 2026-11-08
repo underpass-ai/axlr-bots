@@ -134,12 +134,12 @@ func TestIncidentValidation(t *testing.T) {
 		"fix by nobody": func() error {
 			i := sampleIncident(t)
 			_ = i.Diagnose("x", t0)
-			return i.AttachFixTask("task-2", "", t0)
+			return i.AttachPhaseTask("task-2", "", IncidentPhaseFix, t0)
 		},
 		"bad proposal": func() error {
 			i := sampleIncident(t)
 			_ = i.Diagnose("x", t0)
-			_ = i.AttachFixTask("task-2", "fix", t0)
+			_ = i.AttachPhaseTask("task-2", "fix", IncidentPhaseFix, t0)
 			return i.Propose(" ", t0)
 		},
 	}
@@ -207,7 +207,7 @@ func TestIncidentRetriesWhileEscalated(t *testing.T) {
 	if err := i.Diagnose("found it", t0); err != nil || i.Retries() != 1 {
 		t.Fatalf("diagnosed retries %d %v", i.Retries(), err)
 	}
-	_ = i.AttachFixTask("task-z", "fix", t0)
+	_ = i.AttachPhaseTask("task-z", "fix", IncidentPhaseFix, t0)
 	if err := i.Propose("rollout undo", t0); err != nil || i.Retries() != 0 {
 		t.Fatalf("proposed retries %d %v", i.Retries(), err)
 	}
@@ -245,7 +245,7 @@ func TestIncidentSnapshotRoundTrip(t *testing.T) {
 			s.Cycle = 2
 			s.Tasks = []IncidentTaskSnapshot{{"task-2", "triage", "triage", 2}, {"task-1", "triage", "triage", 1}}
 		},
-		"bad task phase":     func(s *IncidentSnapshot) { s.Tasks[0].Phase = "verify" },
+		"bad task phase":     func(s *IncidentSnapshot) { s.Tasks[0].Phase = "rollback" },
 		"bad task bot":       func(s *IncidentSnapshot) { s.Tasks[0].BotID = "" },
 		"legacy too many":    func(s *IncidentSnapshot) { s.Tasks = nil; s.TaskIDs = []string{"task-1", "task-2"} },
 		"legacy bad task id": func(s *IncidentSnapshot) { s.Tasks = nil; s.TaskIDs = []string{"Task One"} },
@@ -329,7 +329,7 @@ func TestIncidentResolvesOnlyTheAlertsItKept(t *testing.T) {
 func TestIncidentFixPhase(t *testing.T) {
 	i := sampleIncident(t)
 	var serr StateError
-	if err := i.AttachFixTask("task-f", "fix", t0); !errors.As(err, &serr) {
+	if err := i.AttachPhaseTask("task-f", "fix", IncidentPhaseFix, t0); !errors.As(err, &serr) {
 		t.Errorf("fix task while Open: %v", err)
 	}
 	_ = i.AttachTask("task-1", t0)
@@ -344,13 +344,13 @@ func TestIncidentFixPhase(t *testing.T) {
 		t.Fatal("phases before the fix task")
 	}
 	t1 := t0.Add(time.Minute)
-	if err := i.AttachFixTask("task-f", "fix", t1); err != nil || i.CurrentTaskID() != "task-f" || !i.HasTask(IncidentPhaseFix) {
+	if err := i.AttachPhaseTask("task-f", "fix", IncidentPhaseFix, t1); err != nil || i.CurrentTaskID() != "task-f" || !i.HasTask(IncidentPhaseFix) {
 		t.Fatalf("attach fix: %v", err)
 	}
 	if current, _ := i.CurrentTask(); current.BotID() != "fix" || current.Phase() != IncidentPhaseFix || current.Cycle() != 1 {
 		t.Errorf("current task = %+v", current.Snapshot())
 	}
-	if err := i.AttachFixTask("task-g", "fix", t1); !errors.As(err, &serr) {
+	if err := i.AttachPhaseTask("task-g", "fix", IncidentPhaseFix, t1); !errors.As(err, &serr) {
 		t.Errorf("second fix task: %v", err)
 	}
 	if err := i.Propose("PROPOSAL: kubectl apply -f desired/web.yaml\nROLLBACK: replicas 1", t1); err != nil || i.Status() != IncidentProposed || i.Proposal() == "" {
@@ -358,9 +358,6 @@ func TestIncidentFixPhase(t *testing.T) {
 	}
 	if err := i.Propose("twice", t1); !errors.As(err, &serr) {
 		t.Errorf("second proposal: %v", err)
-	}
-	if err := i.Escalate("why", t1); !errors.As(err, &serr) {
-		t.Errorf("escalate a proposal: %v", err)
 	}
 	if err := i.Repeat([]string{"fp-a"}, t1); err != nil || i.Status() != IncidentProposed {
 		t.Errorf("repeat while Proposed: %v", err)
@@ -384,7 +381,7 @@ func TestIncidentFixPhase(t *testing.T) {
 		t.Error("a new diagnosis kept the old proposal")
 	}
 	// A failed fix task escalates from Diagnosed.
-	_ = i.AttachFixTask("task-f2", "fix", t1)
+	_ = i.AttachPhaseTask("task-f2", "fix", IncidentPhaseFix, t1)
 	if err := i.Escalate("fix task task-f2 Failed: kube-mcp down", t1); err != nil || i.Status() != IncidentEscalated || i.Diagnosis() != "a new cause" {
 		t.Fatalf("escalate a failed fix: %v", err)
 	}
@@ -416,7 +413,7 @@ func TestIncidentPhase(t *testing.T) {
 			t.Errorf("%q = %q %v", raw, got, err)
 		}
 	}
-	if _, err := ParseIncidentPhase("verify"); err == nil {
+	if _, err := ParseIncidentPhase("rollback"); err == nil {
 		t.Error("an unknown phase parsed")
 	}
 	if _, err := NewIncidentTask("task-1", "fix", "", 1); err == nil {
@@ -433,7 +430,7 @@ func TestIncidentPhase(t *testing.T) {
 	if triage.Phase() != IncidentPhaseTriage || triage.Snapshot().Phase != "" {
 		t.Errorf("triage trigger phase %q, stored %q", triage.Phase(), triage.Snapshot().Phase)
 	}
-	for _, bad := range []TriggerSnapshot{{Type: "incident", Phase: "verify"}, {Type: "manual", Phase: "fix"}} {
+	for _, bad := range []TriggerSnapshot{{Type: "incident", Phase: "rollback"}, {Type: "manual", Phase: "fix"}} {
 		if _, err := NewTrigger(bad); err == nil {
 			t.Errorf("%+v validated", bad)
 		}

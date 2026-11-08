@@ -4,8 +4,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PolicyRecord {
+    /// The level the execution ran at: the bot's, or its incident
+    /// phase's.
     #[serde(default)]
     pub level: String,
+    /// The tools it was given: the bot's, or its incident phase's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed_tools: Vec<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub runtime_level: String,
     #[serde(default)]

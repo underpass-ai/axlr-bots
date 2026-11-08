@@ -83,6 +83,16 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 	if err != nil {
 		return RunTaskResult{}, err
 	}
+	policy, _, policyErr := bot.PolicyOf(task)
+	if policyErr != nil {
+		// An empty allow-list would let the level alone decide: the task
+		// fails with the reason instead of running.
+		failed := ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "policy refused: " + policyErr.Error()}
+		if err := uc.set.settle(ctx, "task.run", bot, &task, &execution, failed, nil, now); err != nil {
+			return RunTaskResult{}, err
+		}
+		return RunTaskResult{Task: task, Execution: execution}, nil
+	}
 	report, runErr := uc.deps.Runtime.Execute(ctx, ExecutionRequest{
 		ExecutionID:   executionID,
 		TaskID:        task.ID(),
@@ -92,9 +102,9 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 		Objective:     task.Objective(),
 		Prompt:        prompt,
 		Model:         bot.ModelPolicy().Model(),
-		Level:         bot.Level(),
-		AllowedTools:  bot.AllowedTools().Names(),
-		ToolRules:     bot.ToolRules(),
+		Level:         policy.Level(),
+		AllowedTools:  policy.Tools().Names(),
+		ToolRules:     policy.Rules(),
 		Budgets:       taskBudgets(bot, task),
 		Timeout:       timeout,
 	})

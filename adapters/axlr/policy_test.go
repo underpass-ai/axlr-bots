@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -102,8 +103,8 @@ func TestExecutePassesThePolicyAndRaisesTheApproval(t *testing.T) {
 	if !strings.Contains(args, "--approve local ") || !strings.Contains(args, "--policy "+policyPath+" ") {
 		t.Errorf("args = %s", args)
 	}
-	want := domain.PolicyRecord{Level: "observe", RuntimeLevel: "act-within-policy", Enforced: true, Path: policyPath}
-	if report.Policy == nil || *report.Policy != want {
+	want := domain.PolicyRecord{Level: "observe", AllowedTools: allowed, RuntimeLevel: "act-within-policy", Enforced: true, Path: policyPath}
+	if report.Policy == nil || !reflect.DeepEqual(*report.Policy, want) {
 		t.Errorf("policy = %+v", report.Policy)
 	}
 	raw, err := os.ReadFile(policyPath)

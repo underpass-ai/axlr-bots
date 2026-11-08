@@ -260,7 +260,7 @@ func (r *run) perform(ctx context.Context) application.ExecutionReport {
 	return application.ExecutionReport{
 		Outcome: outcome, FailureReason: reason, Receipt: receipt, TracePath: r.executor.tracePath(r.request.ExecutionID),
 		Result: domain.Result{Answer: answer, SessionID: r.request.ExecutionID.String(), ToolCalls: r.calls}, Usage: r.usage,
-		Policy:      &domain.PolicyRecord{Level: r.request.Level.String(), RuntimeLevel: "jev-program", Enforced: true},
+		Policy:      &domain.PolicyRecord{Level: r.request.Level.String(), AllowedTools: append([]string(nil), r.request.AllowedTools...), RuntimeLevel: "jev-program", Enforced: true},
 		Correlation: &domain.CorrelationRecord{BotID: r.request.BotID.String(), TaskID: r.request.TaskID.String(), ExecutionID: r.request.ExecutionID.String(), TraceID: r.request.CorrelationID.String(), Carried: true},
 	}
 }

@@ -15,8 +15,8 @@ func NewIncidentTask(task TaskID, bot BotID, phase IncidentPhase, cycle int) (In
 	if task == "" || bot == "" {
 		return IncidentTask{}, invalid("incident task", "needs a task and a bot")
 	}
-	if phase != IncidentPhaseTriage && phase != IncidentPhaseFix {
-		return IncidentTask{}, invalid("incident task", "needs a phase, triage or fix")
+	if _, err := ParseIncidentPhase(phase.String()); err != nil || phase == "" {
+		return IncidentTask{}, invalid("incident task", "needs a phase: triage, fix, apply or verify")
 	}
 	if cycle < 1 {
 		return IncidentTask{}, invalid("incident task", "cycle must be at least 1")

@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,6 +49,18 @@ func (uc ApproveTask) Execute(ctx context.Context, id domain.TaskID, decision, c
 	if task.Status() != domain.TaskWaitingApproval {
 		return ApproveTaskResult{}, uc.deny(ctx, id, domain.StateError{Subject: "task " + id.String(), Current: task.Status().String(), Attempted: "decide"})
 	}
+	if decision == DecisionApprove {
+		// A task of an incident is approved only while the incident stands
+		// on it; a deny only lets its session go on, and stays allowed.
+		stands, incident, err := incidentStanding{deps: uc.deps}.standsOn(ctx, task)
+		if err != nil {
+			return ApproveTaskResult{}, err
+		}
+		if !stands {
+			current := "a task incident " + incident.ID().String() + " no longer stands on (" + incident.Status().String() + ", cycle " + strconv.Itoa(incident.Cycle()) + ")"
+			return ApproveTaskResult{}, uc.deny(ctx, id, domain.StateError{Subject: "task " + id.String(), Current: current, Attempted: "approve"})
+		}
+	}
 	bot, err := uc.deps.Bots.Get(ctx, task.BotID())
 	if err != nil {
 		return ApproveTaskResult{}, err
@@ -74,6 +87,11 @@ func (uc ApproveTask) Execute(ctx context.Context, id domain.TaskID, decision, c
 	}
 	if !bot.AcceptsTasks() {
 		return ApproveTaskResult{}, uc.deny(ctx, id, domain.StateError{Subject: "bot " + bot.ID().String(), Current: bot.Status().String(), Attempted: "decide a task"})
+	}
+	if _, gone, _ := bot.PolicyOf(task); gone && decision == DecisionApprove {
+		// The incident trigger the task's policy was pinned by is gone:
+		// nothing says what the call may run under now (fail closed).
+		return ApproveTaskResult{}, uc.deny(ctx, id, domain.StateError{Subject: "task " + id.String(), Current: "pinned to trigger " + task.Trigger().Name + ", which bot " + bot.ID().String() + " no longer has", Attempted: "approve"})
 	}
 	if pending == nil {
 		return ApproveTaskResult{}, uc.deny(ctx, id, domain.StateError{Subject: "execution " + previous.ID().String(), Current: previous.Outcome().String(), Attempted: "decide a pending call"})
@@ -171,6 +189,21 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 	if err := uc.rec.executionEvent(ctx, domain.EventTaskDecided, bot, task.ID(), executionID, task.CorrelationID(), payload); err != nil {
 		return ApproveTaskResult{}, err
 	}
+	policy, _, policyErr := bot.PolicyOf(task)
+	if policyErr != nil {
+		// Nothing of the task's policy is left to run the decision under:
+		// an empty allow-list would let the level alone decide. The task
+		// fails with the reason, in process and for a node alike.
+		failed := ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "policy refused: " + policyErr.Error()}
+		if err := uc.set.settle(ctx, "task.decide", bot, &task, &execution, failed, nil, now); err != nil {
+			return ApproveTaskResult{}, err
+		}
+		return ApproveTaskResult{Task: task, Execution: execution}, nil
+	}
+	// The decision of an incident's apply call moves the incident now,
+	// before the call runs: approved is Applying, denied or expired is
+	// back to Open (design §4).
+	newIncidentAdvancer(uc.deps).taskDecided(ctx, task, outcome, pending.CallID, pending.Tool, uc.deps.Actor)
 	if previous.IsAssigned() {
 		// The node takes it on its next poll (NextAssignment) and reports.
 		details := map[string]string{"execution": executionID.String(), "queuedFor": previous.NodeID().String(), "decision": decision}
@@ -191,9 +224,9 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 		SessionID:     sessionID,
 		CallID:        pending.CallID,
 		Decision:      decision,
-		Level:         bot.Level(),
-		AllowedTools:  bot.AllowedTools().Names(),
-		ToolRules:     bot.ToolRules(),
+		Level:         policy.Level(),
+		AllowedTools:  policy.Tools().Names(),
+		ToolRules:     policy.Rules(),
 		Timeout:       timeout,
 	})
 	if err := uc.set.settle(ctx, "task.decide", bot, &task, &execution, report, runErr, now); err != nil {

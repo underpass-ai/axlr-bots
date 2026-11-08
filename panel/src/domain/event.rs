@@ -93,9 +93,12 @@ impl Event {
             "bot.delegation.refused" => "Ask refused".into(),
             "incident.opened" => "Incident opened".into(),
             "incident.repeated" => "Alert again".into(),
+            "incident.reopened" if self.payload_text("from").is_some() => "Sent back to Open".into(),
             "incident.reopened" => "Incident reopened".into(),
             "incident.diagnosed" => "Cause found".into(),
             "incident.proposed" => "Fix proposed".into(),
+            "incident.applying" => "Applying the fix".into(),
+            "incident.verifying" => "Fix applied".into(),
             "incident.escalated" => "Needs a person".into(),
             "incident.resolved" => "Incident resolved".into(),
             "execution.assigned" => "Sent to node".into(),
@@ -139,9 +142,8 @@ impl Event {
             "bot.task.waiting_approval" | "bot.paused" | "bot.task.expired" | "bot.approval.expired" => {
                 EventTone::Waiting
             }
-            "bot.task.started" | "bot.task.progress" | "execution.assigned" | "execution.reported" => {
-                EventTone::Working
-            }
+            "bot.task.started" | "bot.task.progress" | "execution.assigned" | "execution.reported"
+            | "incident.applying" | "incident.verifying" => EventTone::Working,
             "bot.task.decided" => match self.payload_text("decision").as_deref() {
                 Some("deny") => EventTone::Bad,
                 _ => EventTone::Good,
@@ -430,6 +432,13 @@ mod tests {
             ""
         );
         assert_eq!(event("bot.task.started", "{}").tone(), EventTone::Working);
+        assert_eq!(event("incident.applying", "{}").tone(), EventTone::Working);
+        assert_eq!(event("incident.verifying", "{}").label(), "Fix applied");
+        assert_eq!(
+            event("incident.reopened", r#"{"from":"Proposed"}"#).label(),
+            "Sent back to Open"
+        );
+        assert_eq!(event("incident.reopened", "{}").label(), "Incident reopened");
         assert_eq!(event("bot.task.started", "{}").detail(), "");
         for kind in [
             "bot.registered",

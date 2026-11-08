@@ -45,6 +45,12 @@ func TestIncidentCommands(t *testing.T) {
 	if code != exitOK || got["status"] != "Diagnosed" || got["diagnosis"] == "" || got["taskIds"].([]any)[0] != task {
 		t.Errorf("get = %d %v", code, got)
 	}
+	// get adds the current task and the approvals; needsYou only when true.
+	current, _ := got["currentTask"].(map[string]any)
+	approvals, _ := got["approvals"].(map[string]any)
+	if current["taskId"] != task || current["phase"] != "triage" || current["status"] != "Completed" || approvals["approved"] != float64(0) || got["needsYou"] != nil {
+		t.Errorf("get's current task %v, approvals %v", current, approvals)
+	}
 	code, resolved := c.json("incident", "resolve", id, "--reason", "fixed")
 	if code != exitOK || resolved["status"] != "Resolved" || resolved["reason"] != "fixed" {
 		t.Errorf("resolve = %d %v", code, resolved)

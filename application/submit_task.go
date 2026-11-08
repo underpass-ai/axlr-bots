@@ -132,6 +132,9 @@ func submitTask(ctx context.Context, deps Dependencies, s submission) (SubmitTas
 		if err := task.ForIncident(s.incident); err != nil {
 			return SubmitTaskResult{}, err
 		}
+		// The phase's policy as it is now, kept on the task: a trigger
+		// changed or removed later never widens its runs (review of #133).
+		task.Pin(s.bot.PolicyFor(s.trigger))
 	}
 	if err := deps.Tasks.Save(ctx, task); err != nil {
 		return SubmitTaskResult{}, err

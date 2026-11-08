@@ -103,10 +103,31 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 		return err
 	}
 	if waiting {
+		if err := newIncidentAdvancer(s.deps).executionWaited(ctx, *task, *execution); err != nil {
+			return err
+		}
+	}
+	if waiting && (incidentStanding{deps: s.deps}).superseded(ctx, *task) {
+		// A phase task its incident went on without (a denied apply whose
+		// session asks again) waits for nobody: it is cancelled, so it
+		// never writes a proposal the incident no longer stands on.
+		if err := s.rec.audit(ctx, "incident.advance", task.IncidentID().String(), domain.AuditDenied, map[string]string{"task": task.ID().String(), "reason": "superseded by the incident's current task: cancelled"}); err != nil {
+			return err
+		}
+		_, err := NewCancelTask(s.deps).Execute(ctx, task.ID())
+		return err
+	}
+	if waiting {
 		if pending := execution.Result().PendingDecision; pending != nil {
 			if actor, ok := approvedByPolicy(bot, *pending); ok && s.autoApprove(ctx, *task, pending.CallID, actor) {
 				return nil
 			}
+		}
+		if stands, _, err := (incidentStanding{deps: s.deps}).standsOn(ctx, *task); err == nil && !stands {
+			// Its incident no longer stands on it (resolved meanwhile):
+			// nobody is asked; an approve would be refused, the expiry
+			// ends the wait.
+			return s.rec.audit(ctx, "approval.notify", task.ID().String(), domain.AuditDenied, map[string]string{"reason": "its incident no longer stands on it"})
 		}
 		if err := newPlatformPublisher(s.deps).taskWaiting(ctx, bot, *task, execution.ID(), wait.Tool); err != nil {
 			return err

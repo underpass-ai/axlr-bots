@@ -121,13 +121,13 @@ impl Tone {
         }
     }
 
-    /// An incident: red while it fires, busy once diagnosed, amber when
-    /// a person must act (a fix proposed, or handed to them), green when
-    /// closed.
+    /// An incident: red while it fires, busy once diagnosed and while a
+    /// fix is applied and verified, amber when a person must act (a fix
+    /// proposed, or handed to them), green when closed.
     pub fn of_incident(status: IncidentStatus) -> Self {
         match status {
             IncidentStatus::Open => Self::Bad,
-            IncidentStatus::Diagnosed => Self::Busy,
+            IncidentStatus::Diagnosed | IncidentStatus::Applying | IncidentStatus::Verifying => Self::Busy,
             IncidentStatus::Proposed | IncidentStatus::Escalated => Self::Wait,
             IncidentStatus::Resolved => Self::Good,
             IncidentStatus::Unknown => Self::Idle,
@@ -201,6 +201,8 @@ mod tests {
         assert_eq!(Tone::of_incident(IncidentStatus::Escalated), Tone::Wait);
         assert_eq!(Tone::of_incident(IncidentStatus::Proposed), Tone::Wait);
         assert_eq!(Tone::of_incident(IncidentStatus::Resolved), Tone::Good);
+        assert_eq!(Tone::of_incident(IncidentStatus::Applying), Tone::Busy);
+        assert_eq!(Tone::of_incident(IncidentStatus::Verifying), Tone::Busy);
         assert_eq!(Tone::of_incident(IncidentStatus::Unknown), Tone::Idle);
         assert_eq!(Tone::of_severity(IncidentSeverity::Sev1), Tone::Bad);
         assert_eq!(Tone::of_severity(IncidentSeverity::Sev2), Tone::Wait);

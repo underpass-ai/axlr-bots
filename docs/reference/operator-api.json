@@ -1387,7 +1387,7 @@
     "/v1/incidents": {
       "get": {
         "operationId": "listIncidents",
-        "description": "the incidents the query selects, the last seen first",
+        "description": "the incidents the query selects, the last seen first, each with needsYou",
         "parameters": [
           {
             "name": "tenant",
@@ -1425,7 +1425,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/IncidentSnapshot"
+                    "$ref": "#/components/schemas/IncidentResponse"
                   }
                 }
               }
@@ -1496,7 +1496,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IncidentSnapshot"
+                  "$ref": "#/components/schemas/IncidentResponse"
                 }
               }
             }
@@ -1504,7 +1504,8 @@
           "default": {
             "$ref": "#/components/responses/Error"
           }
-        }
+        },
+        "description": "one incident with needsYou, its current task and the count of its tasks' approvals"
       }
     },
     "/v1/incidents/{id}/resolve": {
@@ -2431,6 +2432,8 @@
           "incident.reopened",
           "incident.diagnosed",
           "incident.proposed",
+          "incident.applying",
+          "incident.verifying",
           "incident.escalated",
           "incident.resolved"
         ],
@@ -3036,13 +3039,21 @@
             "type": "boolean"
           },
           "level": {
-            "type": "string"
+            "type": "string",
+            "description": "the autonomy level the execution ran at: the bot's, or the one its incident phase narrowed it to"
           },
           "path": {
             "type": "string"
           },
           "runtimeLevel": {
             "type": "string"
+          },
+          "allowedTools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the tool allow-list the execution was given: the bot's, or its incident phase's, with the node's own tools"
           }
         },
         "required": [
@@ -3641,6 +3652,10 @@
             "type": "string",
             "description": "why a Pending task of a placed bot has not started: no node its placement admits is Online with its runtime (\"waiting for node web-1, which is Offline\"); filled when the task is read, absent otherwise",
             "example": "waiting for node web-1, which is Offline"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/PinnedPolicySnapshot",
+            "description": "an incident phase's task: the policy its phase narrowed the bot's to, pinned at submission"
           }
         },
         "required": [
@@ -3823,7 +3838,18 @@
           },
           "phase": {
             "$ref": "#/components/schemas/IncidentPhase",
-            "description": "an incident trigger: the phase the bot takes, triage (the default) or fix for a teammate's diagnosed incident"
+            "description": "an incident trigger: the phase the bot takes, triage (the default), or fix, apply or verify for a teammate's incident once it reaches that phase"
+          },
+          "level": {
+            "$ref": "#/components/schemas/AutonomyLevel",
+            "description": "an incident trigger: the level its phase's tasks run at, at most the bot's (a higher one is refused); absent keeps the bot's"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "an incident trigger: the allow-list its phase's tasks run with, a subset of the bot's allowedTools (another tool is refused); absent or empty keeps the bot's"
           }
         },
         "required": [
@@ -3893,6 +3919,8 @@
           "Open",
           "Diagnosed",
           "Proposed",
+          "Applying",
+          "Verifying",
           "Resolved",
           "Escalated"
         ],
@@ -4018,6 +4046,17 @@
               "type": "string"
             },
             "description": "the alerts seen that the source said went green"
+          },
+          "sendBacks": {
+            "type": "integer",
+            "description": "the times it went back to Open from a proposal (its apply denied, expired, failed or cancelled, its verify red) since it was last reopened; the second escalates it"
+          },
+          "costedExecutions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the executions of its own tasks whose cost it added, each once: a waiting run when it stopped, a report delivered twice only once"
           }
         },
         "required": [
@@ -4046,7 +4085,7 @@
           },
           "botId": {
             "type": "string",
-            "description": "the bot that ran it: the incident's own for triage, the teammate that takes the fix phase for fix"
+            "description": "the bot that ran it: the incident's own for triage, the teammate that takes the phase for fix, apply and verify"
           },
           "phase": {
             "$ref": "#/components/schemas/IncidentPhase"
@@ -4069,9 +4108,11 @@
         "x-extensible-enum": true,
         "enum": [
           "triage",
-          "fix"
+          "fix",
+          "apply",
+          "verify"
         ],
-        "description": "the step of an incident a task works on: triage finds the cause, fix proposes the change and its rollback. A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
+        "description": "the step of an incident a task works on: triage finds the cause, fix proposes the change and its rollback, apply carries it out after a person approves its call, verify checks it took. A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
       },
       "OpenIncidentCommand": {
         "type": "object",
@@ -4149,6 +4190,228 @@
           }
         },
         "required": []
+      },
+      "IncidentResponse": {
+        "type": "object",
+        "x-go-type": "unixapi.IncidentResponse",
+        "description": "an incident as the list and get routes answer it: its snapshot's fields, whether it needs a person now and, from get only, its current task and the count of its tasks' approvals",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "inc-one"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "botId": {
+            "type": "string",
+            "description": "the bot that triages it"
+          },
+          "groupKey": {
+            "type": "string",
+            "description": "what the source groups the alerts by (Alertmanager's groupKey); the newest incident of a tenant and group key is the one an alert repeats or reopens"
+          },
+          "source": {
+            "type": "string",
+            "example": "alertmanager"
+          },
+          "title": {
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/IncidentSeverity"
+          },
+          "status": {
+            "$ref": "#/components/schemas/IncidentStatus"
+          },
+          "fingerprints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the alerts seen, oldest first"
+          },
+          "cycle": {
+            "type": "integer",
+            "description": "1 for the first opening, one more per reopening"
+          },
+          "taskIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the ids of tasks, in the same order (an incident stored before tasks had phases lists here its triage tasks, one per cycle, and has no tasks)"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IncidentTaskSnapshot"
+            },
+            "description": "the tasks that worked on it, oldest first, each with its bot, phase and cycle: one per phase in each cycle"
+          },
+          "diagnosis": {
+            "type": "string",
+            "description": "the answer of the last completed triage task"
+          },
+          "proposal": {
+            "type": "string",
+            "description": "the answer of the fix task of the current diagnosis: the change and its rollback, applied by nobody; dropped when a new triage diagnoses it"
+          },
+          "reason": {
+            "type": "string",
+            "description": "why it was escalated or resolved"
+          },
+          "repeats": {
+            "type": "integer",
+            "description": "alerts received while it was already open"
+          },
+          "retries": {
+            "type": "integer",
+            "description": "triages an alert started again while it was Escalated, since its last proposal or reopening"
+          },
+          "costUsd": {
+            "type": "number",
+            "description": "what its tasks' executions reported, delegated children included"
+          },
+          "costUnknown": {
+            "type": "boolean",
+            "description": "one of its executions stopped before it said what it cost: costUsd is at least what it says (absent when false)"
+          },
+          "openedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastSeenAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resolvedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resolvedFingerprints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the alerts seen that the source said went green"
+          },
+          "needsYou": {
+            "type": "boolean",
+            "description": "its current task waits for an approval where the incident stands (the phase its status launches, or the apply while Applying); a denied apply's later wait does not count. Absent is false"
+          },
+          "currentTask": {
+            "$ref": "#/components/schemas/IncidentCurrentTask",
+            "description": "get only: the task its next move waits on"
+          },
+          "approvals": {
+            "$ref": "#/components/schemas/IncidentApprovalsResponse",
+            "description": "get only: the approvals its tasks waited for, by how each ended"
+          },
+          "sendBacks": {
+            "type": "integer",
+            "description": "the times it went back to Open from a proposal (its apply denied, expired, failed or cancelled, its verify red) since it was last reopened; the second escalates it"
+          },
+          "costedExecutions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the executions of its own tasks whose cost it added, each once: a waiting run when it stopped, a report delivered twice only once"
+          }
+        },
+        "required": [
+          "id",
+          "tenantId",
+          "botId",
+          "groupKey",
+          "source",
+          "title",
+          "severity",
+          "status",
+          "cycle",
+          "openedAt",
+          "updatedAt",
+          "lastSeenAt"
+        ]
+      },
+      "IncidentCurrentTask": {
+        "type": "object",
+        "x-go-type": "unixapi.IncidentCurrentTask",
+        "description": "the task an incident's next move waits on; decide its call with POST /v1/tasks/{id}/decide",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "botId": {
+            "type": "string"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/IncidentPhase"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "approval": {
+            "$ref": "#/components/schemas/ApprovalWait",
+            "description": "the approval it waits for, or last waited for"
+          }
+        },
+        "required": [
+          "taskId",
+          "botId",
+          "phase",
+          "status"
+        ]
+      },
+      "IncidentApprovalsResponse": {
+        "type": "object",
+        "x-go-type": "unixapi.IncidentApprovalsResponse",
+        "description": "the approvals an incident's tasks waited for, by how each ended; a task keeps its last wait, so one that waited twice counts once. The product's rule is one approval per incident: shown, not enforced",
+        "properties": {
+          "approved": {
+            "type": "integer"
+          },
+          "denied": {
+            "type": "integer"
+          },
+          "expired": {
+            "type": "integer"
+          },
+          "waiting": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "approved",
+          "denied",
+          "expired",
+          "waiting"
+        ]
+      },
+      "PinnedPolicySnapshot": {
+        "type": "object",
+        "x-go-type": "domain.PinnedPolicySnapshot",
+        "description": "the level and the allow-list a task's incident phase narrowed its bot's to, kept on the task when it was submitted; its runs and decisions are held to it (and to what the bot allows now), and a decision is refused once the bot no longer has that trigger",
+        "properties": {
+          "level": {
+            "type": "string"
+          },
+          "allowedTools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "level",
+          "allowedTools"
+        ]
       }
     }
   }

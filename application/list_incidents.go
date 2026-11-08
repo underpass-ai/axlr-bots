@@ -18,8 +18,9 @@ type ListIncidents struct {
 func NewListIncidents(deps Dependencies) ListIncidents { return ListIncidents{deps: deps} }
 
 // Execute validates the query and answers at most its limit of
-// incidents, the last seen first.
-func (uc ListIncidents) Execute(ctx context.Context, query IncidentQuery) ([]domain.Incident, error) {
+// incidents, the last seen first, each with whether it needs a person
+// now: one read of the waiting tasks, not one per incident.
+func (uc ListIncidents) Execute(ctx context.Context, query IncidentQuery) ([]IncidentReport, error) {
 	var tenant domain.TenantID
 	if query.Tenant != "" {
 		parsed, err := domain.NewTenantID(query.Tenant)
@@ -65,5 +66,17 @@ func (uc ListIncidents) Execute(ctx context.Context, query IncidentQuery) ([]dom
 	if len(incidents) > limit {
 		incidents = incidents[:limit]
 	}
-	return incidents, nil
+	waiting, err := uc.deps.Tasks.ListByStatus(ctx, domain.TaskWaitingApproval)
+	if err != nil {
+		return nil, err
+	}
+	waits := make(map[domain.TaskID]bool, len(waiting))
+	for _, task := range waiting {
+		waits[task.ID()] = true
+	}
+	reports := make([]IncidentReport, 0, len(incidents))
+	for _, incident := range incidents {
+		reports = append(reports, IncidentReport{Incident: incident, NeedsPerson: incident.NeedsPerson(waits[incident.CurrentTaskID()])})
+	}
+	return reports, nil
 }
