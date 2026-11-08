@@ -578,3 +578,22 @@ func TestAStaleApplyIsNeverApproved(t *testing.T) {
 		t.Errorf("deny after the resolution: %v", err)
 	}
 }
+
+// An apply that starts waiting after its incident was resolved asks
+// nobody (re-check of #133, N3).
+func TestAWaitOfAnIncidentThatMovedOnNotifiesNobody(t *testing.T) {
+	h := newHarness()
+	triage := brigade(t, h, domain.ApprovalsSnapshot{Notify: []domain.NotifyTargetSnapshot{{Type: "webhook", URL: "https://example.test/hook", Secret: "0123456789abcdef-hook"}}})
+	ctx := context.Background()
+	incident := proposed(t, h, triage)
+	if _, err := NewResolveIncident(h.deps).Execute(ctx, incident.ID(), "green"); err != nil {
+		t.Fatal(err)
+	}
+	waitingApply(t, h, incident)
+	if len(h.outbox.deliveries) != 0 {
+		t.Errorf("notified %d", len(h.outbox.deliveries))
+	}
+	if audit := h.log.audits[len(h.log.audits)-1]; audit.Action != "approval.notify" || audit.Outcome != domain.AuditDenied {
+		t.Errorf("audit = %+v", audit)
+	}
+}

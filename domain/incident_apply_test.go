@@ -3,6 +3,7 @@ package domain
 import (
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -267,5 +268,23 @@ func TestAnIncidentStoredBeforeTheApplyPhaseLoadsUnchanged(t *testing.T) {
 	again, _ := json.Marshal(incident.Snapshot())
 	if string(again) != stored {
 		t.Errorf("stored again as\n%s\nnot\n%s", again, stored)
+	}
+}
+
+func TestAnIncidentRemembersTheLastCostedExecutions(t *testing.T) {
+	i := sampleIncident(t)
+	for n := 0; n < maxIncidentCostedExecutions+5; n++ {
+		if _, err := i.AddExecutionCost(ExecutionID("exec-"+strconv.Itoa(n)), Usage{CostUSD: 0.01}, t0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := len(i.Snapshot().CostedExecutions); got != maxIncidentCostedExecutions {
+		t.Errorf("remembers %d", got)
+	}
+	if added, _ := i.AddExecutionCost(ExecutionID("exec-"+strconv.Itoa(maxIncidentCostedExecutions+4)), Usage{CostUSD: 1}, t0); added {
+		t.Error("a recent execution counted twice")
+	}
+	if _, err := RestoreIncident(i.Snapshot()); err != nil {
+		t.Fatal(err)
 	}
 }

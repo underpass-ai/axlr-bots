@@ -154,7 +154,7 @@ func TestAPinnedPolicyIsHeldToTheBotAndKeptOnTheTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p, gone := bot.PolicyOf(back); gone || p.Tools().Len() != 2 || p.Level() != AutonomyActWithApproval {
+	if p, gone, _ := bot.PolicyOf(back); gone || p.Tools().Len() != 2 || p.Level() != AutonomyActWithApproval {
 		t.Errorf("pinned: %v %v %s", p.Tools().Names(), gone, p.Level())
 	}
 	// The bot narrowed and lowered since: the pinned policy follows down, never up.
@@ -162,7 +162,7 @@ func TestAPinnedPolicyIsHeldToTheBotAndKeptOnTheTask(t *testing.T) {
 	_ = bot.Govern(AutonomyPropose, ToolRules{})
 	_ = bot.Redefine(bot.Mission(), fewer, bot.ModelPolicy(), bot.Budgets())
 	bot.Wire(DefaultTriggers(), bot.Placement())
-	if p, gone := bot.PolicyOf(back); !gone || p.Tools().Len() != 1 || p.Level() != AutonomyPropose {
+	if p, gone, _ := bot.PolicyOf(back); !gone || p.Tools().Len() != 1 || p.Level() != AutonomyPropose {
 		t.Errorf("held: %v %v %s", p.Tools().Names(), gone, p.Level())
 	}
 	plain := sampleTask(t)
@@ -202,5 +202,46 @@ func TestAnIncidentAddsEachExecutionsCostOnce(t *testing.T) {
 	s.CostedExecutions = []string{"Bad Id"}
 	if _, err := RestoreIncident(s); err == nil {
 		t.Error("a bad execution id restored")
+	}
+}
+
+// A phase that inherits a bot level below act-with-approval may not
+// inherit a host write tool no allow rule narrows; an observe bot's
+// local_exec narrowed to read-only commands stays the designed exception
+// (re-check of #133, N2).
+func TestAnInheritedLowLevelKeepsNoUnnarrowedHostWrite(t *testing.T) {
+	bot := sampleBot(t)
+	tools, _ := NewAllowedTools([]string{"local_read", "local_exec", "local_write"})
+	_ = bot.Redefine(bot.Mission(), tools, bot.ModelPolicy(), bot.Budgets())
+	_ = bot.Govern(AutonomyObserve, ToolRules{})
+	triggers, _ := NewTriggers([]TriggerSnapshot{{Type: "incident"}})
+	bot.Wire(triggers, bot.Placement())
+	if err := bot.CheckTriggers(); err == nil {
+		t.Error("an observe phase inheriting local_write and local_exec unnarrowed")
+	}
+	reads, _ := NewAllowedTools([]string{"local_read", "local_exec"})
+	_ = bot.Govern(AutonomyObserve, ToolRules{})
+	_ = bot.Redefine(bot.Mission(), reads, bot.ModelPolicy(), bot.Budgets())
+	df, _ := NewToolRule("local_exec", map[string]string{"program": "df"})
+	rules, _ := NewToolRules([]ToolRule{df}, nil, reads)
+	_ = bot.Govern(AutonomyObserve, rules)
+	if err := bot.CheckTriggers(); err != nil {
+		t.Errorf("an observe triage with local_exec narrowed to df: %v", err)
+	}
+	task := sampleTask(t)
+	_ = task.Attribute(TriggerRef{Type: TriggerIncident, Name: "incident"}, nil)
+	_ = task.ForIncident("inc-1")
+	if p, _, err := bot.PolicyOf(task); err != nil || !p.Tools().Allows("local_exec") {
+		t.Errorf("the narrowed local_exec was dropped: %v %v", p.Tools().Names(), err)
+	}
+	// Without its rule the run keeps no local_exec, and with nothing left it is refused.
+	_ = bot.Govern(AutonomyObserve, ToolRules{})
+	if p, _, err := bot.PolicyOf(task); err != nil || p.Tools().Allows("local_exec") {
+		t.Errorf("an unnarrowed local_exec at observe: %v %v", p.Tools().Names(), err)
+	}
+	only, _ := NewAllowedTools([]string{"local_exec"})
+	_ = bot.Redefine(bot.Mission(), only, bot.ModelPolicy(), bot.Budgets())
+	if _, _, err := bot.PolicyOf(task); err == nil {
+		t.Error("an incident task left with no tool ran")
 	}
 }

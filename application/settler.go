@@ -123,6 +123,12 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 				return nil
 			}
 		}
+		if stands, _, err := (incidentStanding{deps: s.deps}).standsOn(ctx, *task); err == nil && !stands {
+			// Its incident no longer stands on it (resolved meanwhile):
+			// nobody is asked; an approve would be refused, the expiry
+			// ends the wait.
+			return s.rec.audit(ctx, "approval.notify", task.ID().String(), domain.AuditDenied, map[string]string{"reason": "its incident no longer stands on it"})
+		}
 		if err := newPlatformPublisher(s.deps).taskWaiting(ctx, bot, *task, execution.ID(), wait.Tool); err != nil {
 			return err
 		}

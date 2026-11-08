@@ -73,6 +73,14 @@ An independent review of this PR found these, fixed in it:
 | R4 | a Jev bot ignores a phase's level and tools | a Jev bot's triggers take neither (refused at register and update) |
 | R8 | on a node a narrowed phase also got the delegate, emit and subscribe tools, in process it did not | a narrowed phase gets exactly its tools on both paths |
 
+A re-check of the fixes found two more, fixed in the PR too:
+
+| # | Finding | Fix |
+|:--|:--|:--|
+| N1 | a pinned policy none of whose tools the bot still allows went out with an empty allow-list, which the runtime reads as "the level alone decides" | an incident task left with no tool fails with the reason (`policy refused: …`) instead of running, in process, on a node and at its decision |
+| N2 | a bot lowered after a task was pinned kept the pinned write tools at the lower level; a trigger inheriting a low bot level with host write tools was accepted | the rule applies to the effective level, the phase's, pinned or inherited: below act-with-approval an incident task keeps no host write tool its bot's allow rules do not narrow, and `CheckTriggers` refuses a trigger that would inherit one. The observe bot whose `local_exec` is narrowed to read-only commands by argument rules (the catalog's triage bots) is the designed exception |
+| N3 | a wait of a task its incident no longer stands on still notified; `costedExecutions` grew without bound | no notification for such a wait (audited `approval.notify`); the incident remembers the last 64 execution ids |
+
 Left as issues: a panel decision sent without a call id when the incident's page is stale (R9), and `autoApprove` per phase.
 
 ## Left out

@@ -16,6 +16,9 @@ const (
 	MaxIncidentProposalLength  = 16000
 	MaxIncidentReasonLength    = 1000
 	maxIncidentFingerprints    = 64
+	// maxIncidentCostedExecutions is how many execution ids an incident
+	// remembers having counted the cost of: the last ones.
+	maxIncidentCostedExecutions = 64
 	// IncidentReopenWindow is how long after a resolution a new alert of
 	// the same group reopens the incident instead of opening another.
 	IncidentReopenWindow = 30 * time.Minute
@@ -477,6 +480,11 @@ func (i *Incident) AddExecutionCost(execution ExecutionID, usage Usage, now time
 		return false, err
 	}
 	i.costed = append(i.costed, execution)
+	if len(i.costed) > maxIncidentCostedExecutions {
+		// The oldest ids go; their cost stays added. A report of one of
+		// them coming back that late is not a redelivery to guard.
+		i.costed = append([]ExecutionID(nil), i.costed[len(i.costed)-maxIncidentCostedExecutions:]...)
+	}
 	return true, nil
 }
 

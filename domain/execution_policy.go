@@ -1,5 +1,7 @@
 package domain
 
+import "slices"
+
 // ExecutionPolicy is the level, the tool allow-list and its rules one task's
 // executions run under: the bot's, or what the incident trigger the task
 // came through narrows them to for its phase (decided 8 November 2026).
@@ -59,27 +61,53 @@ var hostWriteTools = []ToolName{"local_write", "local_edit", "local_exec", "axlr
 // pinned on the task at submission when its incident phase narrowed the
 // bot's (domain.Task.Pin), held to what the bot allows now (never wider:
 // a lower bot level or a narrower allow-list wins), or PolicyFor its
-// trigger. gone reports a pinned policy whose incident trigger the bot
-// no longer has: a decision under it is refused (fail closed).
-func (b Bot) PolicyOf(task Task) (policy ExecutionPolicy, gone bool) {
+// trigger. For an incident's task, below act-with-approval the host write
+// tools the bot's allow rules do not narrow are dropped, whether the level
+// is the phase's, pinned, or the bot's own: no card would stop them (the
+// read-only host commands of an observe bot, local_exec narrowed by
+// argument rules, are kept). gone reports a pinned policy whose incident
+// trigger the bot no longer has: a decision under it is refused (fail
+// closed). An incident task left with no tool at all is refused (err):
+// the runtime reads an empty allow-list as "the level alone decides",
+// wider than any list.
+func (b Bot) PolicyOf(task Task) (policy ExecutionPolicy, gone bool, err error) {
 	pinned, ok := task.Pinned()
 	if !ok {
-		return b.PolicyFor(task.Trigger()), false
-	}
-	trigger, found := b.triggers.Named(task.Trigger().Name)
-	gone = !found || trigger.Type() != TriggerIncident
-	level := pinned.level
-	if !level.AtMost(b.level) {
-		level = b.level
-	}
-	var names []string
-	for _, name := range pinned.tools.names {
-		if b.allowedTools.Allows(name) {
-			names = append(names, name.String())
+		policy = b.PolicyFor(task.Trigger())
+	} else {
+		trigger, found := b.triggers.Named(task.Trigger().Name)
+		gone = !found || trigger.Type() != TriggerIncident
+		level := pinned.level
+		if !level.AtMost(b.level) {
+			level = b.level
 		}
+		var kept []ToolName
+		for _, name := range pinned.tools.names {
+			if b.allowedTools.Allows(name) {
+				kept = append(kept, name)
+			}
+		}
+		policy = ExecutionPolicy{level: level, tools: AllowedTools{names: kept}, narrowed: true}
 	}
-	tools, _ := NewAllowedTools(names)
-	return ExecutionPolicy{level: level, tools: tools, rules: b.toolRules.Within(tools), narrowed: true}, gone
+	if task.IncidentID() == "" {
+		return policy, gone, nil
+	}
+	if !policy.level.Writes() {
+		var kept []ToolName
+		for _, name := range policy.tools.names {
+			if slices.Contains(hostWriteTools, name) && !b.toolRules.Constrains(name) {
+				policy.narrowed = true
+				continue
+			}
+			kept = append(kept, name)
+		}
+		policy.tools = AllowedTools{names: kept}
+	}
+	policy.rules = b.toolRules.Within(policy.tools)
+	if policy.tools.Len() == 0 && (ok || b.allowedTools.Len() > 0) {
+		return ExecutionPolicy{}, gone, StateError{Subject: "task " + task.ID().String(), Current: "left with no tool its bot " + b.id.String() + " still allows at level " + policy.level.String(), Attempted: "run"}
+	}
+	return policy, gone, nil
 }
 
 // CheckTriggers refuses an incident trigger that would widen the bot's
@@ -89,7 +117,10 @@ func (b Bot) PolicyOf(task Task) (policy ExecutionPolicy, gone bool) {
 // tool among them (the operator vouches that the MCP tools such a phase
 // lists are reads, as AXLR itself does under observe and propose); and a
 // level or tools on a bot whose runtime is a Jev program, which does not
-// take a narrowed policy.
+// take a narrowed policy. A trigger that inherits a bot level below
+// act-with-approval is refused when the bot holds a host write tool its
+// allow rules do not narrow (an observe bot's local_exec narrowed to
+// read-only commands is the designed exception).
 func (b Bot) CheckTriggers() error {
 	for _, trigger := range b.triggers.List() {
 		level, leveled := trigger.Level()
@@ -100,13 +131,26 @@ func (b Bot) CheckTriggers() error {
 		if leveled && !level.AtMost(b.level) {
 			return invalid("trigger "+trigger.Name(), "level "+level.String()+" is above the bot's "+b.level.String())
 		}
-		if leveled && !level.Writes() {
-			if !listed {
+		effective := b.level
+		if leveled {
+			effective = level
+		}
+		if trigger.Type() == TriggerIncident && !effective.Writes() {
+			switch {
+			case leveled && !listed:
 				return invalid("trigger "+trigger.Name(), "a level below act-with-approval needs its own tools: the bot's could write without a card")
-			}
-			for _, write := range hostWriteTools {
-				if tools.Allows(write) {
-					return invalid("trigger "+trigger.Name(), "level "+level.String()+" may not list "+write.String()+": it would run without a card")
+			case listed:
+				for _, write := range hostWriteTools {
+					if tools.Allows(write) {
+						return invalid("trigger "+trigger.Name(), "level "+effective.String()+" may not list "+write.String()+": it would run without a card")
+					}
+				}
+			default:
+				// The phase inherits the bot's level and tools.
+				for _, write := range hostWriteTools {
+					if b.allowedTools.Allows(write) && !b.toolRules.Constrains(write) {
+						return invalid("trigger "+trigger.Name(), "the bot's level "+b.level.String()+" with "+write.String()+" and no allow rule narrowing it would run without a card")
+					}
 				}
 			}
 		}

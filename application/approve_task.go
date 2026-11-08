@@ -88,7 +88,7 @@ func (uc ApproveTask) Execute(ctx context.Context, id domain.TaskID, decision, c
 	if !bot.AcceptsTasks() {
 		return ApproveTaskResult{}, uc.deny(ctx, id, domain.StateError{Subject: "bot " + bot.ID().String(), Current: bot.Status().String(), Attempted: "decide a task"})
 	}
-	if _, gone := bot.PolicyOf(task); gone && decision == DecisionApprove {
+	if _, gone, _ := bot.PolicyOf(task); gone && decision == DecisionApprove {
 		// The incident trigger the task's policy was pinned by is gone:
 		// nothing says what the call may run under now (fail closed).
 		return ApproveTaskResult{}, uc.deny(ctx, id, domain.StateError{Subject: "task " + id.String(), Current: "pinned to trigger " + task.Trigger().Name + ", which bot " + bot.ID().String() + " no longer has", Attempted: "approve"})
@@ -189,6 +189,17 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 	if err := uc.rec.executionEvent(ctx, domain.EventTaskDecided, bot, task.ID(), executionID, task.CorrelationID(), payload); err != nil {
 		return ApproveTaskResult{}, err
 	}
+	policy, _, policyErr := bot.PolicyOf(task)
+	if policyErr != nil {
+		// Nothing of the task's policy is left to run the decision under:
+		// an empty allow-list would let the level alone decide. The task
+		// fails with the reason, in process and for a node alike.
+		failed := ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "policy refused: " + policyErr.Error()}
+		if err := uc.set.settle(ctx, "task.decide", bot, &task, &execution, failed, nil, now); err != nil {
+			return ApproveTaskResult{}, err
+		}
+		return ApproveTaskResult{Task: task, Execution: execution}, nil
+	}
 	// The decision of an incident's apply call moves the incident now,
 	// before the call runs: approved is Applying, denied or expired is
 	// back to Open (design §4).
@@ -205,7 +216,6 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 		return ApproveTaskResult{Task: task, Execution: execution}, nil
 	}
 
-	policy, _ := bot.PolicyOf(task)
 	report, runErr := uc.deps.Decisions.Decide(ctx, DecisionRequest{
 		ExecutionID:   executionID,
 		TaskID:        task.ID(),
