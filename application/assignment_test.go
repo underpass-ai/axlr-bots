@@ -167,7 +167,7 @@ func TestApproveTaskQueuesTheDecisionForTheNode(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.log.events = nil
-	decided, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, "")
+	decided, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,7 +456,7 @@ func TestAQueuedDecisionSaysWhatItWaitsFor(t *testing.T) {
 	decided := func(task domain.Task) domain.Event {
 		t.Helper()
 		h.log.events = nil
-		if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, ""); err != nil {
+		if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, "", ""); err != nil {
 			t.Fatal(err)
 		}
 		return h.log.events[len(h.log.events)-1]
@@ -485,7 +485,7 @@ func TestAQueuedDecisionSaysWhatItWaitsFor(t *testing.T) {
 		t.Errorf("an Offline node: %+v", event.Payload)
 	}
 	h.nodes.getFail = errBoom
-	if _, err := NewApproveTask(h.deps).Execute(ctx, broken.ID(), DecisionApprove, ""); !errors.Is(err, errBoom) {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, broken.ID(), DecisionApprove, "", ""); !errors.Is(err, errBoom) {
 		t.Errorf("a failing node store: %v", err)
 	}
 	if stored, _ := h.tasks.Get(ctx, broken.ID()); stored.Status() != domain.TaskWaitingApproval {

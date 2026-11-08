@@ -22,6 +22,7 @@ func incidentOpen(ctx context.Context, service unixapi.Service, args []string, s
 	source := flags.String("source", "", "where the alerts come from (default manual)")
 	title := flags.String("title", "", "the incident in one line")
 	severity := flags.String("severity", "", "sev1, sev2, sev3 (the default) or sev4")
+	namespace := flags.String("namespace", "", "the Kubernetes namespace the alerts are about (what approvals.twoPersons reads)")
 	fingerprints := flags.String("fingerprints", "", "the alerts, comma-separated")
 	objective := flags.String("objective", "", "what the triage task asks for (default: the trigger's template, or the built-in one)")
 	positional, ok := parseAnywhere(flags, args)
@@ -32,7 +33,7 @@ func incidentOpen(ctx context.Context, service unixapi.Service, args []string, s
 		fmt.Fprintln(stderr, `axlr-bots: incident open needs --tenant, --bot, --group-key and --title`)
 		return exitUsage
 	}
-	command := application.OpenIncidentCommand{Tenant: *tenant, BotID: *bot, GroupKey: *groupKey, Source: *source, Title: *title, Severity: *severity, Objective: *objective}
+	command := application.OpenIncidentCommand{Tenant: *tenant, BotID: *bot, GroupKey: *groupKey, Source: *source, Title: *title, Severity: *severity, Namespace: *namespace, Objective: *objective}
 	for _, fingerprint := range strings.Split(*fingerprints, ",") {
 		if fingerprint = strings.TrimSpace(fingerprint); fingerprint != "" {
 			command.Fingerprints = append(command.Fingerprints, fingerprint)

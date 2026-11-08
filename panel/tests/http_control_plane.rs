@@ -29,6 +29,7 @@ struct Recorded {
     path: String,
     authorization: String,
     idempotency_key: String,
+    actor: String,
     body: String,
 }
 
@@ -65,6 +66,7 @@ async fn route(
         path: path.clone(),
         authorization: header("authorization"),
         idempotency_key: header("idempotency-key"),
+        actor: header("x-axlr-actor"),
         body: String::from_utf8_lossy(&body).to_string(),
     });
     if header("authorization") != format!("Bearer {TOKEN}") {
@@ -175,6 +177,7 @@ impl TestServer {
             api_url: format!("https://127.0.0.1:{}/", self.address.port()),
             ca_path: self.dir.path().join("ca.crt"),
             token_file: self.dir.path().join("api.token"),
+            actor: None,
         }
     }
 
@@ -426,8 +429,16 @@ async fn sends_the_acts_with_their_bodies() {
         .unwrap();
     assert_eq!(decided.execution.kind.name(), "decide");
     assert_eq!(server.last().body, r#"{"decision":"approve","callId":"call-1"}"#);
-    api.decide_task(task_id, Decision::Deny, None).await.unwrap();
+    api.decide_task(task_id.clone(), Decision::Deny, None).await.unwrap();
     assert_eq!(server.last().body, r#"{"decision":"deny"}"#);
+    assert_eq!(server.last().actor, "", "no actor set: none sent");
+
+    // The actor of the settings goes with every request: who decides.
+    let mut config = server.config();
+    config.actor = Some("tirso".into());
+    let named = HttpControlPlane::new(&config).unwrap();
+    named.decide_task(task_id, Decision::Approve, None).await.unwrap();
+    assert_eq!(server.last().actor, "tirso");
 }
 
 #[tokio::test]
@@ -535,6 +546,7 @@ fn refuses_settings_it_cannot_use() {
         api_url: "https://127.0.0.1:7879".into(),
         ca_path: dir.path().join(ca),
         token_file: dir.path().join(token),
+        actor: None,
     };
     std::fs::write(dir.path().join("bad.crt"), "not a certificate").unwrap();
     std::fs::write(dir.path().join("empty.token"), "\n").unwrap();

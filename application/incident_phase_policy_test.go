@@ -40,11 +40,11 @@ func TestAPhaseTaskKeepsThePolicyItWasSubmittedWith(t *testing.T) {
 	}
 	decisions := len(h.decider.requests)
 	var state domain.StateError
-	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionApprove, ""); !errors.As(err, &state) || len(h.decider.requests) != decisions {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionApprove, "", ""); !errors.As(err, &state) || len(h.decider.requests) != decisions {
 		t.Fatalf("approve under a removed trigger: %v", err)
 	}
 	h.decider.report = completes("not applied", 0)
-	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionDeny, ""); err != nil {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionDeny, "", ""); err != nil {
 		t.Fatalf("deny under a removed trigger: %v", err)
 	}
 	if d := h.decider.requests[len(h.decider.requests)-1]; slices.Contains(d.AllowedTools, "local_search") || d.Level != domain.AutonomyActWithApproval {
@@ -123,7 +123,7 @@ func TestAPhaseTaskLeftWithNoToolFails(t *testing.T) {
 	waiting := waitingApply(t, h, incident)
 	retool(t, h)
 	decisions := len(h.decider.requests)
-	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionDeny, ""); err != nil {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionDeny, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if len(h.decider.requests) != decisions {

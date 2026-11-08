@@ -316,7 +316,7 @@ func (l *Local) DecideTask(ctx context.Context, id string, request DecideRequest
 	if err != nil {
 		return RunResponse{}, err
 	}
-	result, err := l.runner.Decide(ctx, taskID, request.Decision, request.CallID)
+	result, err := l.runner.Decide(ctx, taskID, request.Decision, request.CallID, request.DecidedBy)
 	if err != nil {
 		return RunResponse{}, err
 	}

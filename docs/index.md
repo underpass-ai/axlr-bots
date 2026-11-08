@@ -26,6 +26,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | Start tasks from a webhook or on a timer and verify nothing fires twice; turn alert groups into incidents a bot triages and a teammate proposes the fix for, from Alertmanager or from CloudWatch through SNS | [Triggers](runbooks/triggers.md), [Incidents](runbooks/triggers.md#incidents) |
 | Let a teammate apply an incident's fix once a person approves it, verify it took, and give each phase its own level and tools | [Incidents](runbooks/triggers.md#incidents), [ADR](architecture/incident-phases.md) |
 | Approve or deny the write a bot wants to make, be notified of it, let it expire | [Approvals](runbooks/approvals.md) |
+| Say who may approve a bot's calls, and make a write in production wait for two different people | [Who may decide](runbooks/approvals.md#who-may-decide), [Two persons](runbooks/approvals.md#two-persons), [ADR](architecture/approvers.md) |
 | Tell a Slack channel, a signed webhook or a script what each incident did: opened, the cause, the change waiting for you, resolved | [Outputs](runbooks/outputs.md), [ADR](architecture/incident-outputs.md) |
 | Run bots on the ChatGPT subscription of `codex login` instead of an API key | [Codex subscription](runbooks/codex-subscription.md) |
 | Let a bot ask another bot to do a task, within depth and budget limits that stop loops | [Delegation](reference/bot-definition.md#delegation), [ADR](architecture/delegation.md) |

@@ -1,6 +1,7 @@
 //! The control plane's resources as the panel sees them: value types
 //! mirroring the operator API's JSON, validated as they are read.
 
+mod approval_mark;
 mod artifact;
 mod autonomy_level;
 mod bot;
@@ -78,6 +79,7 @@ mod trigger_ref;
 mod trigger_type;
 mod usage;
 
+pub use approval_mark::ApprovalMark;
 pub use artifact::Artifact;
 pub use autonomy_level::AutonomyLevel;
 pub use bot::Bot;

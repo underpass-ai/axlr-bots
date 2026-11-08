@@ -22,6 +22,10 @@ const (
 	// posts to a cloudwatch trigger: Notification, SubscriptionConfirmation
 	// or UnsubscribeConfirmation. It must agree with the body's Type.
 	SNSMessageTypeHeader = "X-Amz-Sns-Message-Type"
+	// ActorHeader names who decides on the decide, approve and deny
+	// routes, as the token holder asserts it: what a bot's approvers are
+	// compared with (decidedBy in the decide body says the same).
+	ActorHeader = "X-Axlr-Actor"
 )
 
 // bearer requires `Authorization: Bearer <token>` on every request but

@@ -27,7 +27,7 @@ func (uc FireTrigger) fireAlertmanager(ctx context.Context, bot domain.Bot, trig
 	result := FireTriggerResult{Trigger: trigger.Ref()}
 	if payload.Firing() {
 		opened, err := NewOpenIncident(uc.deps).open(ctx, opening{
-			bot: bot, trigger: trigger, source: AlertmanagerSource, groupKey: payload.GroupKey, title: payload.Title(), severity: payload.Severity(),
+			bot: bot, trigger: trigger, source: AlertmanagerSource, groupKey: payload.GroupKey, title: payload.Title(), severity: payload.Severity(), namespaces: payload.Namespaces(),
 			fingerprints: payload.FiringFingerprints(), input: body, fields: map[string]any{"alert": payload.Fields()},
 		})
 		if err != nil {

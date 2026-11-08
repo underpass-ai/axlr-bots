@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"time"
 )
@@ -106,6 +107,27 @@ func (p AlertmanagerPayload) Title() string {
 		return name + " in " + namespace
 	}
 	return name
+}
+
+// Namespaces are the namespaces the group names: its group or common
+// namespace label when it has one, else every alert's own, in order and
+// once each; none when no alert carries one. A group of mixed alerts
+// names them all, so two persons in any of them is not missed (review
+// of #139).
+func (p AlertmanagerPayload) Namespaces() []string {
+	if value := p.GroupLabels["namespace"]; value != "" {
+		return []string{value}
+	}
+	if value := p.CommonLabels["namespace"]; value != "" {
+		return []string{value}
+	}
+	var out []string
+	for _, alert := range p.Alerts {
+		if value := alert.Labels["namespace"]; value != "" && !slices.Contains(out, value) {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 // Severity maps the severity label to an incident's: critical is sev1,

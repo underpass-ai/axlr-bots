@@ -110,7 +110,7 @@ func TestSerialRunnerServesTheNodesWhileARunIsInTheRuntime(t *testing.T) {
 	// axlr-tui at a time, and Decide may be one.
 	decided := make(chan error, 1)
 	go func() {
-		_, err := runner.Decide(ctx, waiting.ID(), DecisionApprove, "")
+		_, err := runner.Decide(ctx, waiting.ID(), DecisionApprove, "", "")
 		decided <- err
 	}()
 	select {
