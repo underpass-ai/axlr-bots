@@ -46,7 +46,8 @@ type Executor struct {
 	// Args go before the contract's own flags (tests use them to reach a
 	// helper process).
 	Args []string
-	// StateDir holds traces/<execution>.jsonl and workspaces/<bot>/.
+	// StateDir holds traces/<execution>.jsonl, workspaces/<bot>/ and
+	// kmp/<bot>/, the bot's memory store.
 	StateDir string
 	// Approve is the run's approval level: none (default), local or all.
 	Approve string
@@ -290,7 +291,12 @@ func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot do
 	timeout := e.timeout(requested)
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	memory, err := e.memoryStoreArgs(ctx, bot)
+	if err != nil {
+		return application.ExecutionReport{}, fmt.Errorf("axlr: memory store: %w", err)
+	}
 	full := append(append([]string{}, e.Args...), args...)
+	full = append(full, memory...)
 	full = append(full, "--root", workspace)
 	cmd := exec.CommandContext(runCtx, e.binary(), full...)
 	cmd.Dir = workspace

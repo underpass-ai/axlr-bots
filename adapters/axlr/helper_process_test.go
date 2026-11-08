@@ -49,6 +49,9 @@ func TestHelperProcess(t *testing.T) {
 			if os.Getenv("FAKE_AXLR_EXECUTION") != "" {
 				fmt.Fprintln(os.Stderr, "  -execution string\n    \ta JSON file with the execution's policy, budget and correlation")
 			}
+			if os.Getenv("FAKE_AXLR_KMP_STORE") != "" {
+				fmt.Fprintln(os.Stderr, "  -kmp-store string\n    \tabsolute directory of the KMP store this launch opens")
+			}
 			if os.Getenv("FAKE_AXLR_STEER") != "" {
 				fmt.Fprintln(os.Stderr, "  -steer-file string\n    \ta JSON lines file of messages to the run, read between model steps")
 			}
