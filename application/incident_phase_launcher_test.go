@@ -266,7 +266,7 @@ func TestIncidentFixObjectiveFits(t *testing.T) {
 	}
 	trigger, _ := domain.NewTrigger(domain.TriggerSnapshot{Type: "incident", Phase: "fix", Objective: "Fix {{.nothing}}"})
 	fields, _ := incidentFields(incident)
-	if _, err := phaseObjective(domain.IncidentPhaseFix, trigger, incident, fields); err == nil {
+	if _, err := phaseObjective(domain.IncidentPhaseFix, trigger, incident, fields, domain.Mission("Fix.")); err == nil {
 		t.Error("a template naming a missing field rendered")
 	}
 }

@@ -34,3 +34,31 @@ func TestPromptRefusesWhatDoesNotFit(t *testing.T) {
 		t.Fatal("a 9000-character prompt was accepted")
 	}
 }
+
+// The room an objective has beside a mission is exactly what makes a
+// prompt: one byte more is refused, and the objective's own limit caps it.
+func TestObjectiveRoomBesideAMissionIsExact(t *testing.T) {
+	mission, err := NewMission(strings.Repeat("m", 2000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	room := ObjectiveRoomBeside(mission)
+	objective, err := NewObjective(strings.Repeat("o", room))
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := NewPrompt(mission, objective)
+	if err != nil || len(prompt.String()) != MaxPromptLength {
+		t.Errorf("at the room: %d bytes, %v", len(prompt.String()), err)
+	}
+	over, err := NewObjective(strings.Repeat("o", room+1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewPrompt(mission, over); err == nil {
+		t.Error("one byte over the room made a prompt")
+	}
+	if short, _ := NewMission("Hi."); ObjectiveRoomBeside(short) > MaxObjectiveLength {
+		t.Errorf("room %d is over the objective's limit", ObjectiveRoomBeside(short))
+	}
+}

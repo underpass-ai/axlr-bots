@@ -25,6 +25,7 @@ type PostmortemInput struct {
 	Diagnosis       string                    `json:"diagnosis,omitempty"`
 	Proposal        string                    `json:"proposal,omitempty"`
 	Timeline        []PostmortemTimelineEntry `json:"timeline"`
+	TimelineOmitted int                       `json:"timelineOmitted,omitempty"`
 	Decisions       []PostmortemDecision      `json:"decisions"`
 	Verdicts        []PostmortemVerdict       `json:"verdicts"`
 	CostUSD         float64                   `json:"costUsd"`

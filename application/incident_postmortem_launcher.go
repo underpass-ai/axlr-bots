@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -87,7 +88,7 @@ func (l postmortemLauncher) attempt(ctx context.Context, incident domain.Inciden
 	if err != nil {
 		return incident, err
 	}
-	objective, err := postmortemObjective(trigger, incident, brief)
+	objective, err := postmortemObjective(trigger, incident, brief, taker.Mission())
 	if err != nil {
 		l.refuse(ctx, incident, err.Error())
 		return incident, nil
@@ -199,50 +200,63 @@ func (l postmortemLauncher) audit(ctx context.Context, incident domain.Incident,
 	_ = l.rec.audit(ctx, postmortemAction, incident.ID().String(), outcome, details)
 }
 
-// incidentTextHolder stands for a text while the room around it is
-// measured.
-const incidentTextHolder = "…"
+// incidentTextCutMark is what domain.IncidentText ends a cut text with.
+const incidentTextCutMark = "…"
 
-// postmortemTexts are the long texts an objective may carry, in the
-// order the room is shared among them.
-var postmortemTexts = []string{"timeline", "diagnosis", "proposal", "decisions", "note", "draft"}
+// postmortemTexts are the texts an objective may carry that are cut to
+// fit.
+var postmortemTexts = []string{"timeline", "diagnosis", "proposal", "decisions", "verdict", "note", "draft"}
 
 // postmortemObjective renders the trigger's template, or the default,
-// over the incident and the brief. Whatever the template names is cut to
-// fit an objective: the short texts whole, the long ones sharing what is
-// left, and the task's input carries them all whole.
-func postmortemObjective(trigger domain.Trigger, incident domain.Incident, brief PostmortemInput) (domain.Objective, error) {
+// over the incident and the brief. The room is what the bot's mission
+// and the template leave of a prompt, so the objective fits by
+// construction, however long the incident lived: what the template
+// names is cut by postmortemTextFit, which says in the text what it cut.
+// The fixed instructions and the mission are never cut, and the task's
+// input carries the texts whole.
+func postmortemObjective(trigger domain.Trigger, incident domain.Incident, brief PostmortemInput, mission domain.Mission) (domain.Objective, error) {
 	template := trigger.ObjectiveTemplate()
 	if template == "" {
 		template = DefaultPostmortemObjective
 	}
 	fields, _ := incidentFields(incident)
-	fields["verdict"], fields["cost"] = verdictLine(brief.Verdicts), costLine(brief.CostUSD, brief.CostUnknown)
-	texts := map[string]string{"timeline": timelineLines(brief.Timeline), "diagnosis": quoted(brief.Diagnosis), "proposal": quoted(brief.Proposal), "decisions": decisionLines(brief.Decisions)}
-	if brief.Review != nil {
-		texts["note"], texts["draft"] = quoted(brief.Review.Note), quoted(brief.Review.Draft)
-	}
+	fields["cost"] = costLine(brief.CostUSD, brief.CostUnknown)
+	texts := postmortemTextsOf(brief)
 	for _, key := range postmortemTexts {
 		fields[key] = ""
 	}
-	if brief.Review != nil {
-		// A section the note opens counts in the room the template takes.
-		fields["note"] = incidentTextHolder
+	named := map[string]postmortemText{}
+	var keys []string
+	for _, key := range postmortemTexts {
+		if text, ok := texts[key]; ok && !text.empty() && strings.Contains(template, "."+key) {
+			named[key] = text
+			keys = append(keys, key)
+		}
 	}
-	base, err := domain.RenderObjective(template, fields)
+	measure, err := measureObjective(template, fields, keys, mission)
 	if err != nil {
 		return "", err
 	}
-	named := []string{}
-	for _, key := range postmortemTexts {
-		if texts[key] != "" && strings.Contains(template, "."+key) {
-			named = append(named, key)
-		}
-	}
-	for key, text := range shareRoom(texts, named, max(domain.MaxObjectiveLength-len(base.String()), minPhaseObjectiveText)) {
+	for key, text := range postmortemTextFit(named, measure) {
 		fields[key] = text
 	}
 	return domain.RenderObjective(template, fields)
+}
+
+// postmortemTextsOf writes the brief's texts for the objective. The most
+// recent cycle's lines are told apart: they are the last to go.
+func postmortemTextsOf(brief PostmortemInput) map[string]postmortemText {
+	texts := map[string]postmortemText{
+		"timeline":  postmortemListOf(timelineLines(brief.Timeline), slices.IndexFunc(brief.Timeline, func(e PostmortemTimelineEntry) bool { return e.Cycle == brief.Cycle }), brief.TimelineOmitted, "timeline entries", "\n"),
+		"decisions": postmortemListOf(decisionLines(brief.Decisions), slices.IndexFunc(brief.Decisions, func(d PostmortemDecision) bool { return d.Cycle == brief.Cycle }), 0, "decisions", "\n"),
+		"verdict":   postmortemListOf(verdictParts(brief.Verdicts), slices.IndexFunc(brief.Verdicts, func(v PostmortemVerdict) bool { return v.Cycle == brief.Cycle }), 0, "verdicts", ", "),
+		"diagnosis": postmortemProse(quoted(brief.Diagnosis)),
+		"proposal":  postmortemProse(quoted(brief.Proposal)),
+	}
+	if brief.Review != nil {
+		texts["note"], texts["draft"] = postmortemProse(quoted(brief.Review.Note)), postmortemProse(quoted(brief.Review.Draft))
+	}
+	return texts
 }
 
 // quoted marks every line of what a bot or a person wrote, so none of
@@ -252,31 +266,4 @@ func quoted(text string) string {
 		return ""
 	}
 	return "| " + strings.ReplaceAll(strings.TrimSpace(text), "\n", "\n| ")
-}
-
-// shareRoom cuts the named texts to fit room together: a text shorter
-// than its share keeps all of it and leaves the rest to the others.
-func shareRoom(texts map[string]string, named []string, room int) map[string]string {
-	out := map[string]string{}
-	left := append([]string(nil), named...)
-	for len(left) > 0 {
-		share := max(room/len(left), minPhaseObjectiveText)
-		var longer []string
-		for _, key := range left {
-			if len(texts[key]) <= share {
-				out[key] = domain.IncidentText(texts[key], share)
-				room -= len(out[key])
-			} else {
-				longer = append(longer, key)
-			}
-		}
-		if len(longer) == len(left) {
-			for _, key := range longer {
-				out[key] = domain.IncidentText(texts[key], share)
-			}
-			break
-		}
-		left = longer
-	}
-	return out
 }

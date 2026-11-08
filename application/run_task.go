@@ -88,9 +88,15 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 	if err != nil {
 		return RunTaskResult{}, err
 	}
-	prompt, err := domain.NewTeamPrompt(bot.Mission(), task.Objective(), directoryOf(bot, mates), task.Notes())
+	prompt, err := composedPrompt(bot, task, mates)
 	if err != nil {
-		return RunTaskResult{}, err
+		// Saved Running, it would stay so until the reconciler said the
+		// process was gone: the task fails with the reason instead.
+		failed := ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: err.Error()}
+		if err := uc.set.settle(ctx, "task.run", bot, &task, &execution, failed, nil, now); err != nil {
+			return RunTaskResult{}, err
+		}
+		return RunTaskResult{Task: task, Execution: execution}, nil
 	}
 	policy, _, policyErr := bot.PolicyOf(task)
 	if policyErr != nil {

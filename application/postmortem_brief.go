@@ -40,8 +40,9 @@ func (b postmortemBrief) input(ctx context.Context, incident domain.Incident) (P
 	input := PostmortemInput{
 		Schema: PostmortemInputSchema, Untrusted: postmortemUntrustedFields, IncidentID: s.ID, Title: s.Title, Severity: s.Severity, Source: s.Source, Namespaces: incident.Namespaces(),
 		Cycle: s.Cycle, OpenedAt: s.OpenedAt, Reason: s.Reason, Diagnosis: s.Diagnosis, Proposal: s.Proposal, CostUSD: s.CostUSD, CostUnknown: s.CostUnknown,
-		Timeline: timelineOf(events, incident), Decisions: decisionsOf(events, incident), Verdicts: b.verdicts(ctx, incident),
+		Decisions: decisionsOf(events, incident), Verdicts: b.verdicts(ctx, incident),
 	}
+	input.Timeline, input.TimelineOmitted = timelineOf(events, incident)
 	if at, ok := incident.ResolvedAt(); ok {
 		input.ResolvedAt, input.DurationSeconds = at, int64(at.Sub(s.OpenedAt).Seconds())
 	}
@@ -130,7 +131,9 @@ func inTimeline(kind domain.EventType) bool {
 	return kind.AboutIncident()
 }
 
-func timelineOf(events []domain.Event, incident domain.Incident) []PostmortemTimelineEntry {
+// timelineOf tells the events, newest maxPostmortemTimeline, and says
+// how many older ones it left out.
+func timelineOf(events []domain.Event, incident domain.Incident) ([]PostmortemTimelineEntry, int) {
 	tasks := attachedTasks(incident)
 	timeline := []PostmortemTimelineEntry{}
 	for _, event := range events {
@@ -153,10 +156,8 @@ func timelineOf(events []domain.Event, incident domain.Incident) []PostmortemTim
 		}
 		timeline = append(timeline, entry)
 	}
-	if len(timeline) > maxPostmortemTimeline {
-		timeline = timeline[len(timeline)-maxPostmortemTimeline:]
-	}
-	return timeline
+	omitted := max(len(timeline)-maxPostmortemTimeline, 0)
+	return timeline[omitted:], omitted
 }
 
 // decisionsOf reads who decided what from the decision events; the
@@ -228,7 +229,7 @@ func firstText(event domain.Event, keys ...string) string {
 func oneLine(text string) string { return strings.Join(strings.Fields(text), " ") }
 
 // timelineLines writes the timeline for the objective, one entry a line.
-func timelineLines(timeline []PostmortemTimelineEntry) string {
+func timelineLines(timeline []PostmortemTimelineEntry) []string {
 	lines := make([]string, 0, len(timeline))
 	for _, entry := range timeline {
 		line := []string{entry.At.UTC().Format(postmortemTimeLayout), entry.Event}
@@ -242,13 +243,13 @@ func timelineLines(timeline []PostmortemTimelineEntry) string {
 		}
 		lines = append(lines, strings.Join(line, " "))
 	}
-	return strings.Join(lines, "\n")
+	return lines
 }
 
 // decisionLines writes who decided what for the objective.
-func decisionLines(decisions []PostmortemDecision) string {
+func decisionLines(decisions []PostmortemDecision) []string {
 	if len(decisions) == 0 {
-		return "No call waited for a decision."
+		return []string{"No call waited for a decision."}
 	}
 	lines := make([]string, 0, len(decisions))
 	for _, decision := range decisions {
@@ -258,19 +259,20 @@ func decisionLines(decisions []PostmortemDecision) string {
 		}
 		lines = append(lines, line)
 	}
-	return strings.Join(lines, "\n")
+	return lines
 }
 
-// verdictLine writes verify's verdicts for the objective.
-func verdictLine(verdicts []PostmortemVerdict) string {
+// verdictParts writes verify's verdicts for the objective, one part a
+// verdict.
+func verdictParts(verdicts []PostmortemVerdict) []string {
 	if len(verdicts) == 0 {
-		return "no verify task ran"
+		return []string{"no verify task ran"}
 	}
 	parts := make([]string, 0, len(verdicts))
 	for _, verdict := range verdicts {
 		parts = append(parts, "cycle "+strconv.Itoa(verdict.Cycle)+": "+verdict.Verdict)
 	}
-	return strings.Join(parts, ", ")
+	return parts
 }
 
 // costLine writes the incident's cost for the objective.
