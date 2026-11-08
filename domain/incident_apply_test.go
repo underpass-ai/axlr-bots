@@ -173,9 +173,9 @@ func TestIncidentRestoresTheNewStatuses(t *testing.T) {
 			s.Status = "Verifying"
 			s.Proposal = ""
 		},
-		"negative sendBacks":  func(s *IncidentSnapshot) { s.SendBacks = -1 },
-		"too many sendBacks":  func(s *IncidentSnapshot) { s.SendBacks = IncidentMaxSendBacks + 1 },
-		"unknown task kind": func(s *IncidentSnapshot) { s.Tasks[2].Phase = "rollback" },
+		"negative sendBacks": func(s *IncidentSnapshot) { s.SendBacks = -1 },
+		"too many sendBacks": func(s *IncidentSnapshot) { s.SendBacks = IncidentMaxSendBacks + 1 },
+		"unknown task kind":  func(s *IncidentSnapshot) { s.Tasks[2].Phase = "rollback" },
 	} {
 		s := i.Snapshot()
 		change(&s)

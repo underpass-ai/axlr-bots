@@ -55,7 +55,7 @@ type Incident struct {
 	reason       string
 	repeats      int
 	retries      int
-	sendBacks      int
+	sendBacks    int
 	costUSD      float64
 	costUnknown  bool
 	openedAt     time.Time
