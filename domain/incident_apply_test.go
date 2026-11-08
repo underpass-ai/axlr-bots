@@ -109,7 +109,7 @@ func TestIncidentDeniedTwiceEscalates(t *testing.T) {
 			t.Fatalf("cycle 2 step %d: %v", n, err)
 		}
 	}
-	if err := i.Deny("approval expired", t1); err != nil || i.Status() != IncidentEscalated || i.Denials() != IncidentMaxDenials || !strings.Contains(i.Reason(), "left to a person") {
+	if err := i.Deny(strings.Repeat("approval expired ", 58), t1); err != nil || i.Status() != IncidentEscalated || i.Denials() != IncidentMaxDenials || !strings.HasSuffix(i.Reason(), "left to a person)") || len(i.Reason()) > MaxIncidentReasonLength {
 		t.Fatalf("second denial: %v %+v", err, i.Snapshot())
 	}
 	if i.CanRetry() {

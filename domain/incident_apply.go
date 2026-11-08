@@ -55,7 +55,8 @@ func (i *Incident) Deny(reason string, now time.Time) error {
 	}
 	i.denials++
 	if i.denials >= IncidentMaxDenials {
-		i.reason = IncidentText(text+" (denied "+strconv.Itoa(i.denials)+" times: left to a person)", MaxIncidentReasonLength)
+		suffix := " (denied " + strconv.Itoa(i.denials) + " times: left to a person)"
+		i.reason = IncidentText(text, MaxIncidentReasonLength-len(suffix)) + suffix
 		i.status = IncidentEscalated
 		i.updatedAt = now
 		return nil

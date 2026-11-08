@@ -408,3 +408,23 @@ func TestApplyOnANode(t *testing.T) {
 		t.Fatalf("after the node's apply: %s", verifying.Status())
 	}
 }
+
+// With no teammate taking the verify phase, the incident waits in
+// Verifying for the source to resolve it.
+func TestWithoutAVerifyBotTheIncidentWaitsInVerifying(t *testing.T) {
+	h := newHarness()
+	triage := brigade(t, h, domain.ApprovalsSnapshot{})
+	ctx := context.Background()
+	incident := proposed(t, h, triage)
+	if _, err := NewDeleteBot(h.deps).Execute(ctx, "verify"); err != nil {
+		t.Fatal(err)
+	}
+	h.runtime.report = completes("APPLIED", 0)
+	if _, err := NewRunTask(h.deps).Execute(ctx, incident.CurrentTaskID()); err != nil {
+		t.Fatal(err)
+	}
+	waiting, _ := h.incs.Get(ctx, incident.ID())
+	if current, _ := waiting.CurrentTask(); waiting.Status() != domain.IncidentVerifying || current.Phase() != domain.IncidentPhaseApply {
+		t.Fatalf("without a verify bot: %+v", waiting.Snapshot())
+	}
+}
