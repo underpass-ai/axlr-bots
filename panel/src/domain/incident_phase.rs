@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 
 /// The step of an incident a task works on: triage finds the cause, fix
 /// proposes the change and its rollback, apply carries it out once a
-/// person approves its call, verify checks it took.
+/// person approves its call, verify checks it took, postmortem writes
+/// down a resolved incident.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IncidentPhase {
@@ -11,13 +12,14 @@ pub enum IncidentPhase {
     Fix,
     Apply,
     Verify,
+    Postmortem,
     /// A value this panel does not know: the control plane is newer.
     #[serde(other)]
     Unknown,
 }
 
 impl IncidentPhase {
-    pub const ALL: [IncidentPhase; 4] = [Self::Triage, Self::Fix, Self::Apply, Self::Verify];
+    pub const ALL: [IncidentPhase; 5] = [Self::Triage, Self::Fix, Self::Apply, Self::Verify, Self::Postmortem];
 
     /// The word the control plane uses, which is also the one shown.
     pub fn name(self) -> &'static str {
@@ -26,6 +28,7 @@ impl IncidentPhase {
             Self::Fix => "fix",
             Self::Apply => "apply",
             Self::Verify => "verify",
+            Self::Postmortem => "postmortem",
             Self::Unknown => "unknown",
         }
     }

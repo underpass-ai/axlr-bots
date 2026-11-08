@@ -317,6 +317,18 @@ func (c *Client) LowerAutonomy(ctx context.Context, id string, request LowerRequ
 	return response, c.call(ctx, http.MethodPost, "/v1/autonomy/"+url.PathEscape(id)+"/lower", request, &response)
 }
 
+// ApprovePostmortem approves an incident's postmortem.
+func (c *Client) ApprovePostmortem(ctx context.Context, id string, request PostmortemReviewRequest) (domain.IncidentSnapshot, error) {
+	var incident domain.IncidentSnapshot
+	return incident, c.call(ctx, http.MethodPost, "/v1/incidents/"+url.PathEscape(id)+"/postmortem/approve", request, &incident)
+}
+
+// SendBackPostmortem sends an incident's postmortem back with a note.
+func (c *Client) SendBackPostmortem(ctx context.Context, id string, request PostmortemReviewRequest) (domain.IncidentSnapshot, error) {
+	var incident domain.IncidentSnapshot
+	return incident, c.call(ctx, http.MethodPost, "/v1/incidents/"+url.PathEscape(id)+"/postmortem/send-back", request, &incident)
+}
+
 func (c *Client) AddOutput(ctx context.Context, definition application.OutputDefinition) (application.OutputView, error) {
 	var view application.OutputView
 	return view, c.call(ctx, http.MethodPost, "/v1/outputs", definition, &view)

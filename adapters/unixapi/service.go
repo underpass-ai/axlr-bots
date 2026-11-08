@@ -85,6 +85,10 @@ type Service interface {
 	GetAutonomy(ctx context.Context, id string) (AutonomyResponse, error)
 	// LowerAutonomy takes a runbook down by a person's hand.
 	LowerAutonomy(ctx context.Context, id string, request LowerRequest) (AutonomyResponse, error)
+	// ApprovePostmortem and SendBackPostmortem are a person's answer to
+	// an incident's postmortem.
+	ApprovePostmortem(ctx context.Context, id string, request PostmortemReviewRequest) (domain.IncidentSnapshot, error)
+	SendBackPostmortem(ctx context.Context, id string, request PostmortemReviewRequest) (domain.IncidentSnapshot, error)
 	// AddOutput keeps a new incident output target; ListOutputs and
 	// RemoveOutput answer targets without their URL, secret or command,
 	// with a fingerprint instead.

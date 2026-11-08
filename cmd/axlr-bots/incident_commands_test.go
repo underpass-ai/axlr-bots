@@ -130,3 +130,64 @@ func TestDiagnosisAndAutonomyCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestPostmortemCommands(t *testing.T) {
+	c := cli{t: t, state: t.TempDir(), axlr: fakeAXLR(t, "completed"), socket: ""}
+	dir := t.TempDir()
+	for _, bot := range []struct{ name, triggers string }{
+		{"triage", `[{"type": "incident"}]`},
+		{"scribe", `[{"type": "incident", "phase": "postmortem"}]`},
+	} {
+		file := filepath.Join(dir, bot.name+".json")
+		_ = os.WriteFile(file, []byte(`{"id": "`+bot.name+`", "tenant": "ops", "name": "`+bot.name+`", "owner": "sre", "groups": ["sre"], "mission": "Keep the incident's record.", "allowedTools": ["local_read"], "triggers": `+bot.triggers+`, "model": {"model": "anthropic/claude-haiku-5.5"}, "budgets": {"taskTimeoutSeconds": 60}}`), 0o600)
+		if code, _, errText := c.run("bot", "register", "--file", file); code != exitOK {
+			t.Fatalf("register: %s", errText)
+		}
+		if code, _, errText := c.run("bot", "enable", bot.name); code != exitOK {
+			t.Fatalf("enable: %s", errText)
+		}
+	}
+	_, opened := c.json("incident", "open", "--tenant", "ops", "--bot", "triage", "--group-key", "g", "--title", "Disk full", "--severity", "sev1")
+	id := opened["incident"].(map[string]any)["id"].(string)
+	if code, _, errText := c.run("incident", "postmortem", "show", id); code != exitError || !strings.Contains(errText, "no postmortem") {
+		t.Errorf("show before: %d %s", code, errText)
+	}
+	code, resolved := c.json("incident", "resolve", id)
+	if code != exitOK {
+		t.Fatalf("resolve = %d %v", code, resolved)
+	}
+	task := resolved["postmortem"].(map[string]any)["taskId"].(string)
+	if code, _, errText := c.run("task", "run", task); code != exitOK {
+		t.Fatalf("run: %s", errText)
+	}
+	code, out, errText := c.run("incident", "postmortem", "show", id)
+	if code != exitOK || strings.TrimSpace(out) == "" || !strings.Contains(errText, "Draft") || !strings.Contains(errText, "author-task "+task) {
+		t.Errorf("show = %d %q %q", code, out, errText)
+	}
+	code, back := c.json("--actor", "tirso", "incident", "postmortem", "send-back", id, "--note", "add the owner", "--author-task", task)
+	if code != exitOK || back["postmortem"].(map[string]any)["reviewedBy"] != "tirso" {
+		t.Fatalf("send-back = %d %v", code, back)
+	}
+	rewrite := back["postmortem"].(map[string]any)["taskId"].(string)
+	if code, _, errText := c.run("task", "run", rewrite); code != exitOK {
+		t.Fatalf("run: %s", errText)
+	}
+	code, approved := c.json("--actor", "tirso", "incident", "postmortem", "approve", id, "--author-task", rewrite)
+	if code != exitOK || approved["postmortem"].(map[string]any)["approvedBy"] != "tirso" {
+		t.Fatalf("approve = %d %v", code, approved)
+	}
+	if code, _, _ := c.run("incident", "postmortem", "approve", id, "--author-task", rewrite); code == exitOK {
+		t.Error("approved twice")
+	}
+	for _, args := range [][]string{
+		{"incident", "postmortem"}, {"incident", "postmortem", "show"}, {"incident", "postmortem", "burn", id},
+		{"incident", "postmortem", "send-back", id}, {"incident", "postmortem", "approve", id, "--bogus"}, {"incident", "postmortem", "approve", id},
+	} {
+		if code, _, _ := c.run(args...); code != exitUsage {
+			t.Errorf("%v: exit %d", args, code)
+		}
+	}
+	if code, _, _ := c.run("incident", "postmortem", "show", "inc-ghost"); code == exitOK {
+		t.Error("ghost")
+	}
+}

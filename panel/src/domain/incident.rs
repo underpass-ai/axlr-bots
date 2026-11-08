@@ -2,8 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Autonomy, BotId, Cost, IncidentApprovals, IncidentCurrentTask, IncidentPhase, IncidentSeverity, IncidentStatus,
-    IncidentTask, TaskId,
+    Autonomy, BotId, Cost, IncidentApprovals, IncidentCurrentTask, IncidentPhase, IncidentPostmortem, IncidentSeverity,
+    IncidentStatus, IncidentTask, TaskId,
 };
 
 /// One grouped fault, as the control plane reports it: what its alerts
@@ -80,6 +80,10 @@ pub struct Incident {
     /// only when read on its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub autonomy: Option<Autonomy>,
+    /// What its postmortem task wrote and where it stands; absent before
+    /// one started.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub postmortem: Option<IncidentPostmortem>,
 }
 
 fn is_zero(n: &u32) -> bool {
@@ -111,6 +115,19 @@ impl Incident {
         let current = self.current_task.as_ref()?;
         let call = current.waiting_call().map_or("", |w| w.call_id.as_str());
         Some((&current.task_id, call))
+    }
+
+    /// The postmortem a person can still answer: the one of this cycle of
+    /// a resolved incident. A reopening leaves an earlier one to read only.
+    pub fn reviewable_postmortem(&self) -> Option<&IncidentPostmortem> {
+        self.postmortem
+            .as_ref()
+            .filter(|p| self.status == IncidentStatus::Resolved && p.cycle == self.cycle)
+    }
+
+    /// Its postmortem waits for a person to approve it or send it back.
+    pub fn postmortem_waits(&self) -> bool {
+        self.reviewable_postmortem().is_some_and(|p| p.can_approve())
     }
 
     /// The alerts still firing: those seen that the source has not said
@@ -189,6 +206,23 @@ mod tests {
         assert!(!serde_json::to_string(&incident).unwrap().contains("needsYou"));
         let again: Incident = serde_json::from_str(&serde_json::to_string(&incident).unwrap()).unwrap();
         assert_eq!(again, incident);
+    }
+
+    #[test]
+    fn a_postmortem_is_reviewable_in_its_own_cycle_of_a_resolved_incident() {
+        let raw = r##"{"id":"inc-5","tenantId":"t","botId":"triage","groupKey":"g","title":"Disk full",
+            "status":"Resolved","cycle":2,"resolvedAt":"2026-11-08T10:00:00Z",
+            "postmortem":{"state":"Draft","cycle":2,"taskId":"task-9","botId":"scribe","authorTaskId":"task-9","markdown":"# Text"},
+            "openedAt":"2026-11-08T10:00:00Z","updatedAt":"2026-11-08T10:00:00Z","lastSeenAt":"2026-11-08T10:00:00Z"}"##;
+        let mut incident: Incident = serde_json::from_str(raw).unwrap();
+        assert!(incident.postmortem_waits());
+        let again: Incident = serde_json::from_str(&serde_json::to_string(&incident).unwrap()).unwrap();
+        assert_eq!(again, incident);
+        incident.cycle = 3;
+        assert!(incident.reviewable_postmortem().is_none() && !incident.postmortem_waits());
+        incident.cycle = 2;
+        incident.status = IncidentStatus::Open;
+        assert!(incident.reviewable_postmortem().is_none());
     }
 
     #[test]

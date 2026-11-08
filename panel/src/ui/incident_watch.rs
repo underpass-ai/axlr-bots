@@ -13,6 +13,7 @@ pub struct IncidentWatch {
     pub resolve: ResolveForm,
     /// A mark of the incident's diagnosis is on its way.
     pub marking: bool,
+    pub review: PostmortemForm,
 }
 
 /// Closing an incident by hand: a reason, optional, then Resolve.
@@ -24,6 +25,24 @@ pub struct ResolveForm {
 }
 
 impl ResolveForm {
+    pub fn opened() -> Self {
+        Self {
+            open: true,
+            ..Self::default()
+        }
+    }
+}
+
+/// Answering an incident's postmortem: the note a send-back carries, and
+/// the answer on its way.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PostmortemForm {
+    pub open: bool,
+    pub note: String,
+    pub busy: bool,
+}
+
+impl PostmortemForm {
     pub fn opened() -> Self {
         Self {
             open: true,

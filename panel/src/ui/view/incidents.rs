@@ -1,6 +1,7 @@
 //! Incidents: the grouped faults the bots triage, the ones that need you
 //! first, one incident's alerts, diagnosis, proposal and tasks, the
-//! Approve and Deny of its apply, and closing one by hand.
+//! Approve and Deny of its apply, its postmortem and the answers to it,
+//! and closing one by hand.
 
 use iced::widget::text::Wrapping;
 use iced::widget::{Space, column, container, responsive, row, scrollable, table, text, text_input};
@@ -11,7 +12,7 @@ use super::widgets::{
     BODY, El, PILL_SLOT, Voice, action, bold, card, empty, fact, link, muted, pill, pill_with, reader, section, slot,
     title,
 };
-use crate::domain::{Autonomy, Incident, IncidentPhase, IncidentStatus, TaskId};
+use crate::domain::{Autonomy, Incident, IncidentPhase, IncidentPostmortem, IncidentStatus, PostmortemState, TaskId};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
 use crate::ui::table::{ColumnRef, IncidentColumn, List, RowRef, SortColumn, needs_you_first};
@@ -221,6 +222,13 @@ pub fn detail<'a>(app: &'a App, id: &'a str, tokens: Tokens) -> El<'a> {
             tokens,
         ));
     }
+    match &incident.postmortem {
+        Some(postmortem) => page = page.push(postmortem_section(app, incident, postmortem, tokens)),
+        None if incident.status == IncidentStatus::Resolved => {
+            page = page.push(section(Icon::Tasks, "Postmortem", ask_for_one(app, tokens), tokens));
+        }
+        None => {}
+    }
     page = page.push(
         row![
             container(section(Icon::Alert, "Alerts", alerts(app, incident, tokens), tokens))
@@ -380,6 +388,185 @@ fn proposal_heading(incident: &Incident) -> &'static str {
     }
 }
 
+/// The postmortem: where it stands, its text as text, and the answers a
+/// person may give while it is this cycle's. One of an earlier cycle, or
+/// one nobody can answer any more, is only read.
+fn postmortem_section<'a>(
+    app: &'a App,
+    incident: &'a Incident,
+    postmortem: &'a IncidentPostmortem,
+    tokens: Tokens,
+) -> El<'a> {
+    let current = incident.reviewable_postmortem().is_some();
+    let mut facts = row![pill(
+        postmortem_tone(postmortem.state),
+        postmortem.state.label(),
+        tokens
+    )]
+    .spacing(10)
+    .align_y(Alignment::Center);
+    if let Some(author) = &postmortem.author_task_id {
+        let bot = postmortem.bot_id.as_ref().map_or_else(String::new, ToString::to_string);
+        facts = facts.push(link(
+            format!("by {bot} · {author}"),
+            Message::Go(Screen::Task(author.clone())),
+            tokens,
+        ));
+    }
+    if !postmortem.approved_by.is_empty() {
+        facts = facts.push(muted(format!("approved by {}", postmortem.approved_by), tokens));
+    }
+    if postmortem.send_backs > 0 {
+        facts = facts.push(muted(format!("sent back {}×", postmortem.send_backs), tokens));
+    }
+    if !current {
+        facts = facts.push(muted(
+            format!("written for cycle {}: the incident opened again", postmortem.cycle),
+            tokens,
+        ));
+    }
+    let mut body = column![facts].spacing(12);
+    if !postmortem.reason.is_empty() {
+        body = body.push(muted(format!("Not written: {}", postmortem.reason), tokens));
+    }
+    if !postmortem.note.is_empty() {
+        let by = if postmortem.reviewed_by.is_empty() {
+            "the reviewer"
+        } else {
+            postmortem.reviewed_by.as_str()
+        };
+        body = body.push(muted(format!("Asked by {by}: {}", postmortem.note), tokens));
+    }
+    if postmortem.markdown.is_empty() {
+        body = body.push(muted("No text yet.", tokens));
+    } else {
+        body = body.push(reader(
+            &app.readers,
+            ReaderKey::IncidentPostmortem,
+            postmortem.markdown.clone(),
+            Voice::Body,
+            tokens,
+        ));
+    }
+    if let Some(answers) = current.then(|| postmortem_answers(app, postmortem, tokens)).flatten() {
+        body = body.push(answers);
+    } else if !current && incident.status == IncidentStatus::Resolved {
+        body = body.push(ask_for_one(app, tokens));
+    }
+    section(Icon::Tasks, "Postmortem", body, tokens)
+}
+
+fn postmortem_tone(state: PostmortemState) -> Tone {
+    match state {
+        PostmortemState::Approved => Tone::Good,
+        PostmortemState::Writing => Tone::Busy,
+        PostmortemState::Draft | PostmortemState::SentBack | PostmortemState::LeftToPerson => Tone::Wait,
+        PostmortemState::Failed => Tone::Bad,
+        PostmortemState::Unknown => Tone::Idle,
+    }
+}
+
+/// A resolved incident with no postmortem of its cycle: a person asks
+/// for one, when its first launch could not start.
+fn ask_for_one<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
+    let form = &app.incidents.review;
+    if !form.open {
+        return column![
+            muted("None was written for this resolution.", tokens),
+            row![
+                action(
+                    Kind::Secondary,
+                    Icon::Tasks,
+                    "Ask for it",
+                    Some(Message::PostmortemBackOpen),
+                    tokens
+                ),
+                Space::new().width(Length::Fill),
+            ],
+        ]
+        .spacing(12)
+        .into();
+    }
+    note_form(
+        app,
+        "The teammate that takes the phase writes it, for a severity its trigger lists.",
+        "Ask for it",
+        tokens,
+    )
+}
+
+/// The note, and the buttons that send it or close the form.
+fn note_form<'a>(app: &'a App, says: &'a str, send: &'a str, tokens: Tokens) -> El<'a> {
+    let form = &app.incidents.review;
+    let note = text_input("What should it say or change?", &form.note)
+        .on_input(Message::PostmortemBackNote)
+        .on_submit(Message::PostmortemBackSend)
+        .padding(12)
+        .size(BODY)
+        .style(styles::field(tokens));
+    column![
+        muted(says, tokens),
+        note,
+        row![
+            action(
+                Kind::Primary,
+                Icon::Back,
+                if form.busy { "Sending…" } else { send },
+                (!form.busy).then_some(Message::PostmortemBackSend),
+                tokens
+            ),
+            action(
+                Kind::Ghost,
+                Icon::Cross,
+                "Keep it",
+                Some(Message::PostmortemBackClose),
+                tokens
+            ),
+            Space::new().width(Length::Fill),
+        ]
+        .spacing(12)
+        .align_y(Alignment::Center),
+    ]
+    .spacing(12)
+    .into()
+}
+
+/// Approve and Send back, or the note a send-back carries.
+fn postmortem_answers<'a>(app: &'a App, postmortem: &'a IncidentPostmortem, tokens: Tokens) -> Option<El<'a>> {
+    let form = &app.incidents.review;
+    if form.open && postmortem.can_send_back() {
+        let says = if postmortem.last_send_back() {
+            "This is the last send-back: no task writes it again, and it is left to a person."
+        } else {
+            "Its task writes it again with your note."
+        };
+        return Some(note_form(app, says, "Send it back", tokens));
+    }
+    if !postmortem.can_approve() && !postmortem.can_send_back() {
+        return None;
+    }
+    let mut buttons = row![].spacing(12).align_y(Alignment::Center);
+    if postmortem.can_approve() {
+        buttons = buttons.push(action(
+            Kind::Good,
+            Icon::Check,
+            if form.busy { "Sending…" } else { "Approve" },
+            (!form.busy).then_some(Message::PostmortemApprove),
+            tokens,
+        ));
+    }
+    if postmortem.can_send_back() {
+        buttons = buttons.push(action(
+            Kind::Secondary,
+            Icon::Back,
+            "Send back",
+            (!form.busy).then_some(Message::PostmortemBackOpen),
+            tokens,
+        ));
+    }
+    Some(buttons.into())
+}
+
 /// The amber mark of an incident whose current task waits for you.
 fn needs_you<'a>(tokens: Tokens) -> El<'a> {
     pill_with(Icon::Alert, Tone::Wait, "needs you", tokens)
@@ -389,6 +576,10 @@ fn needs_you<'a>(tokens: Tokens) -> El<'a> {
 fn status_and_wait<'a>(incident: &Incident, tokens: Tokens) -> El<'a> {
     if incident.needs_you {
         column![status(incident, tokens), needs_you(tokens)].spacing(4).into()
+    } else if incident.postmortem_waits() {
+        column![status(incident, tokens), pill(Tone::Wait, "postmortem", tokens)]
+            .spacing(4)
+            .into()
     } else {
         status(incident, tokens)
     }

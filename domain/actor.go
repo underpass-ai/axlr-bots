@@ -33,25 +33,21 @@ const CLIActorPrefix = "cli:"
 // one.
 const PolicyActorPrefix = "policy:"
 
-// machineActorPrefixes start the names of what is not a person.
-var machineActorPrefixes = []string{PolicyActorPrefix, "bot:", "node:", "trigger:"}
+// TriggerActorPrefix starts the names a trigger acts under in an
+// incident's events (trigger:alerts): no person may claim one.
+const TriggerActorPrefix = "trigger:"
 
 // IsPolicyActor reports a name a policy decides under, however it is
-// spelled (Policy:x, cli:policy:x): compared through ActorKey.
+// spelt: POLICY:x and cli:policy:x are policy:x.
 func IsPolicyActor(actor string) bool {
 	return strings.HasPrefix(ActorKey(actor), PolicyActorPrefix)
 }
 
-// IsMachineActor reports a name that says it is no person: a policy, a
-// bot, a node or a trigger, compared through ActorKey.
+// IsMachineActor reports a name that says it is no person's: a policy's,
+// a trigger's, a bot's or a node's.
 func IsMachineActor(actor string) bool {
 	key := ActorKey(actor)
-	for _, prefix := range machineActorPrefixes {
-		if strings.HasPrefix(key, prefix) {
-			return true
-		}
-	}
-	return false
+	return IsPolicyActor(actor) || strings.HasPrefix(key, TriggerActorPrefix) || strings.HasPrefix(key, "bot:") || strings.HasPrefix(key, "node:")
 }
 
 // ActorKey is the name two actors are compared by: without the CLI's

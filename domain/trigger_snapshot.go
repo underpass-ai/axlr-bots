@@ -8,8 +8,9 @@ package domain
 // (five fields, the host's time zone). An event trigger hears the
 // event names or patterns Events lists and, with Interrupt, makes their
 // warnings and criticals urgent. An incident trigger's Phase is the
-// incident's phase the bot takes: triage (the default), fix, apply or
-// verify; its Level and Tools, when given, are the level and the
+// incident's phase the bot takes: triage (the default), fix, apply,
+// verify or postmortem; its Severities, for the postmortem phase only,
+// are the incidents it writes one for (sev1 and sev2 when absent); its Level and Tools, when given, are the level and the
 // allow-list that phase's tasks run under: at most the bot's level, and
 // a subset of its allowedTools (Bot.CheckTriggers refuses more). A
 // cloudwatch trigger's Severity is its incidents' (sev3 when absent) and
@@ -33,6 +34,7 @@ type TriggerSnapshot struct {
 	Severity    string          `json:"severity,omitempty"`
 	AutoConfirm bool            `json:"autoConfirm,omitempty"`
 	Topics      []string        `json:"topics,omitempty"`
+	Severities  []string        `json:"severities,omitempty"`
 	Ladder      *LadderSnapshot `json:"ladder,omitempty"`
 }
 

@@ -75,6 +75,9 @@ fn incident(incident: &Incident) -> Vec<(ReaderKey, String)> {
     if !incident.proposal.is_empty() {
         passages.push((ReaderKey::IncidentProposal, incident.proposal.clone()));
     }
+    if let Some(postmortem) = incident.postmortem.as_ref().filter(|p| !p.markdown.is_empty()) {
+        passages.push((ReaderKey::IncidentPostmortem, postmortem.markdown.clone()));
+    }
     for fingerprint in incident.fingerprints.iter().chain(&incident.resolved_fingerprints) {
         passages.push((ReaderKey::Fingerprint(fingerprint.clone()), fingerprint.clone()));
     }

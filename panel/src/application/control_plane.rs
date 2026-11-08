@@ -78,6 +78,12 @@ pub trait ControlPlane: Send + Sync {
     /// Marks the diagnosis of the incident's current cycle, as the panel's
     /// actor: `correct` or `wrong`.
     fn mark_diagnosis(&self, id: String, verdict: String) -> PortFuture<'_, Autonomy>;
+    /// Approves the postmortem text of the `author` task, the one on
+    /// screen, as the actor the panel decides as.
+    fn approve_postmortem(&self, id: String, author: String) -> PortFuture<'_, Incident>;
+    /// Sends back the text of the `author` task with the person's note; no
+    /// author when none was read, which asks for one if none started.
+    fn send_back_postmortem(&self, id: String, note: String, author: Option<String>) -> PortFuture<'_, Incident>;
 
     /// A task's timeline after the event `after` names, oldest first;
     /// with `wait_seconds`, the control plane answers as soon as there is

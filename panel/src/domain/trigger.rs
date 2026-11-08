@@ -45,6 +45,10 @@ pub struct Trigger {
     /// of the bot never drops the opt-in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ladder: Option<serde_json::Value>,
+    /// The postmortem phase: the severities it writes one for; empty is
+    /// sev1 and sev2.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub severities: Vec<String>,
 }
 
 impl Trigger {
@@ -111,6 +115,14 @@ mod tests {
         let trigger: Trigger = serde_json::from_str(raw).unwrap();
         assert_eq!((trigger.phase.as_str(), trigger.level.as_str()), ("fix", "propose"));
         assert_eq!(trigger.tools, vec!["diff".to_string(), "get".to_string()]);
+        assert_eq!(serde_json::to_string(&trigger).unwrap(), raw);
+    }
+
+    #[test]
+    fn keeps_the_severities_of_the_postmortem_phase() {
+        let raw = r#"{"type":"incident","name":"scribe","phase":"postmortem","severities":["sev1","sev3"]}"#;
+        let trigger: Trigger = serde_json::from_str(raw).unwrap();
+        assert_eq!(trigger.severities, vec!["sev1".to_string(), "sev3".to_string()]);
         assert_eq!(serde_json::to_string(&trigger).unwrap(), raw);
     }
 

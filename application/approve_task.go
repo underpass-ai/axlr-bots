@@ -341,6 +341,11 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 	for key, value := range extra {
 		payload[key] = value
 	}
+	if outcome == domain.ApprovalExpired {
+		// Nobody decided it: the deadline did.
+		delete(payload, "decidedBy")
+		payload["outcome"] = outcome
+	}
 	if err := uc.rec.executionEvent(ctx, domain.EventTaskDecided, bot, task.ID(), executionID, task.CorrelationID(), payload); err != nil {
 		return ApproveTaskResult{}, err
 	}

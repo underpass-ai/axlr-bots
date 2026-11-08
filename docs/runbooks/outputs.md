@@ -1,6 +1,6 @@
 # Runbook: tell Slack, a webhook or a script about incidents
 
-An output tells a place people read what an incident did: opened, the cause, the change proposed and waiting for you, applied, verified, resolved, escalated. The control plane keeps a list of output targets and posts one message per incident event to each target that wants it. Nothing comes back: to approve, use the panel, `task approve` or the [approval notifications](approvals.md#notifications). The decisions are in the [ADR](../architecture/incident-outputs.md).
+An output tells a place people read what an incident did: opened, the cause, the change proposed and waiting for you, applied, verified, resolved, escalated, and its [postmortem](postmortem.md) approved (`postmortem_approved`, in the default list, with the text cut to 2 KiB; `postmortem_drafted`, `postmortem_failed` and `postmortem_sent_back` may be named). The control plane keeps a list of output targets and posts one message per incident event to each target that wants it. Nothing comes back: to approve, use the panel, `task approve` or the [approval notifications](approvals.md#notifications). The decisions are in the [ADR](../architecture/incident-outputs.md).
 
 ```text
 incident.<event> ──▶ each target whose events, tenants and severities want it

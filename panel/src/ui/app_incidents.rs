@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use super::{App, Banner, Effect, Screen};
 use crate::application::PanelError;
 use crate::domain::{Autonomy, ExecutionId, Incident};
-use crate::ui::incident_watch::ResolveForm;
+use crate::ui::incident_watch::{PostmortemForm, ResolveForm};
 
 impl App {
     pub(super) fn incidents_loaded(&mut self, result: Result<Vec<Incident>, PanelError>) -> Vec<Effect> {
@@ -101,6 +101,69 @@ impl App {
             Err(error) => self.banner = Some(Banner::error(&error, self.now)),
         }
         Vec::new()
+    }
+
+    /// The task whose text is on screen: what an answer says was read.
+    fn author_on_screen(&self, id: &str) -> Option<String> {
+        let incident = self.incidents.detail.as_ref().filter(|i| i.id == id)?;
+        let author = incident.reviewable_postmortem()?.author_task_id.as_ref()?;
+        Some(author.to_string())
+    }
+
+    /// Approves the postmortem of the incident on screen, once at a time.
+    pub(super) fn postmortem_approve(&mut self) -> Vec<Effect> {
+        let Screen::Incident(id) = &self.screen else {
+            return Vec::new();
+        };
+        if self.incidents.review.busy {
+            return Vec::new();
+        }
+        let waits = self.incidents.detail.as_ref().is_some_and(Incident::postmortem_waits);
+        let Some(author) = self.author_on_screen(id).filter(|_| waits) else {
+            return Vec::new();
+        };
+        let id = id.clone();
+        self.incidents.review.busy = true;
+        vec![Effect::ApprovePostmortem { id, author }]
+    }
+
+    /// Sends the postmortem back with the note, once at a time.
+    pub(super) fn postmortem_back_send(&mut self) -> Vec<Effect> {
+        let Screen::Incident(id) = &self.screen else {
+            return Vec::new();
+        };
+        if self.incidents.review.busy {
+            return Vec::new();
+        }
+        let author = self.author_on_screen(id);
+        let id = id.clone();
+        self.incidents.review.busy = true;
+        vec![Effect::SendBackPostmortem {
+            id,
+            note: self.incidents.review.note.clone(),
+            author,
+        }]
+    }
+
+    /// The answer: the incident as it stands now, or the reason with the
+    /// note kept.
+    pub(super) fn postmortem_reviewed(&mut self, result: Result<Incident, PanelError>) -> Vec<Effect> {
+        self.incidents.review.busy = false;
+        match result {
+            Ok(incident) => {
+                let state = incident.postmortem.as_ref().map_or("", |p| p.state.label());
+                self.banner = Some(Banner::good(format!("Postmortem {state}"), "", self.now));
+                self.incidents.review = PostmortemForm::default();
+                if let Some(listed) = self.incidents.list.iter_mut().flatten().find(|i| i.id == incident.id) {
+                    *listed = incident.clone();
+                }
+                if self.incidents.detail.as_ref().is_some_and(|d| d.id == incident.id) {
+                    self.incidents.detail = Some(incident);
+                }
+            }
+            Err(error) => self.banner = Some(Banner::error(&error, self.now)),
+        }
+        self.reload_screen()
     }
 
     pub(super) fn download(&mut self, execution: ExecutionId, name: String) -> Vec<Effect> {

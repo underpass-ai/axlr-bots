@@ -7,10 +7,10 @@ use crate::application::{ControlPlane, PanelError, PortFuture, WaitingCall};
 use crate::domain::{
     Artifact, Autonomy, Bot, BotDefinition, BotId, BotPatch, BotReference, BotStatus, Budgets, CancelledTask,
     DecidedTask, Decision, DeletedBot, EnrollmentRequest, EnrollmentToken, Event, Execution, ExecutionId,
-    ExecutionKind, ExecutionOutcome, ExecutionResult, Incident, IncidentSeverity, IncidentStatus, Node,
-    NodeCapabilities, NodeId, NodeStatus, Overview, PendingDecision, Publication, Published, RevokedNode, Secret,
-    SentTaskMessage, StoppedBotAnswer, SubmittedTask, Subscription, Task, TaskFilter, TaskId, TaskStatus,
-    TaskSubmission, ToolCall, Topic, TopicListener, TriggerRef, Usage,
+    ExecutionKind, ExecutionOutcome, ExecutionResult, Incident, IncidentPostmortem, IncidentSeverity, IncidentStatus,
+    Node, NodeCapabilities, NodeId, NodeStatus, Overview, PendingDecision, PostmortemState, Publication, Published,
+    RevokedNode, Secret, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Subscription, Task, TaskFilter, TaskId,
+    TaskStatus, TaskSubmission, ToolCall, Topic, TopicListener, TriggerRef, Usage,
 };
 
 /// The control plane in memory: what the use cases and the interface are
@@ -665,6 +665,7 @@ impl FakeState {
             current_task: None,
             approvals: None,
             autonomy: None,
+            postmortem: None,
         };
         let mut open = incident(
             "inc-latency",
@@ -703,6 +704,22 @@ impl FakeState {
         resolved.resolved_fingerprints = vec!["fp-cert".into()];
         resolved.reason = "Renewed by hand.".into();
         resolved.resolved_at = Some(now - Duration::minutes(90));
+        let scribe = TaskId::new("task-scribe").unwrap();
+        resolved.postmortem = Some(IncidentPostmortem {
+            state: PostmortemState::Draft,
+            cycle: resolved.cycle,
+            task_id: Some(scribe.clone()),
+            bot_id: Some(BotId::new("scribe").unwrap()),
+            author_task_id: Some(scribe),
+            markdown: "# Postmortem\n\nThe certificate was renewed by hand.".into(),
+            note: String::new(),
+            reviewed_by: String::new(),
+            reviewed_at: None,
+            reason: String::new(),
+            send_backs: 0,
+            approved_by: String::new(),
+            approved_at: None,
+        });
         self.incidents = vec![open, escalated, resolved];
     }
 
@@ -1486,6 +1503,74 @@ impl ControlPlane for FakeControlPlane {
             incident.status = IncidentStatus::Resolved;
             incident.reason = reason.unwrap_or_default();
             incident.resolved_at = Some(now);
+            incident.updated_at = now;
+            Ok(incident.clone())
+        })
+    }
+
+    fn approve_postmortem(&self, id: String, author: String) -> PortFuture<'_, Incident> {
+        self.call(format!("approve_postmortem {id}"), move |s| {
+            let now = s.clock();
+            let incident = s.incident_mut(&id)?;
+            let cycle = incident.cycle;
+            let postmortem = incident
+                .postmortem
+                .as_mut()
+                .filter(|p| p.cycle == cycle && p.can_approve())
+                .filter(|p| p.author_task_id.as_ref().is_some_and(|a| a.as_str() == author))
+                .ok_or_else(|| PanelError::State(format!("incident {id} has no such draft to approve")))?;
+            postmortem.state = PostmortemState::Approved;
+            postmortem.approved_by = "fake".into();
+            postmortem.approved_at = Some(now);
+            incident.updated_at = now;
+            Ok(incident.clone())
+        })
+    }
+
+    fn send_back_postmortem(&self, id: String, note: String, author: Option<String>) -> PortFuture<'_, Incident> {
+        self.call(format!("send_back_postmortem {id}"), move |s| {
+            let now = s.clock();
+            let incident = s.incident_mut(&id)?;
+            if incident.status != IncidentStatus::Resolved {
+                return Err(PanelError::State(format!("incident {id} is not Resolved")));
+            }
+            let cycle = incident.cycle;
+            let written = incident.postmortem.as_ref().is_some_and(|p| p.cycle == cycle);
+            if !written {
+                incident.postmortem = Some(IncidentPostmortem {
+                    state: PostmortemState::Writing,
+                    cycle,
+                    task_id: Some(TaskId::new("task-asked").unwrap()),
+                    bot_id: Some(BotId::new("scribe").unwrap()),
+                    author_task_id: None,
+                    markdown: String::new(),
+                    note,
+                    reviewed_by: "fake".into(),
+                    reviewed_at: Some(now),
+                    reason: String::new(),
+                    send_backs: 0,
+                    approved_by: String::new(),
+                    approved_at: None,
+                });
+                return Ok(incident.clone());
+            }
+            let postmortem = incident
+                .postmortem
+                .as_mut()
+                .filter(|p| p.can_send_back() && p.author_task_id.as_ref().map(ToString::to_string) == author)
+                .ok_or_else(|| PanelError::State(format!("incident {id}'s postmortem cannot go back")))?;
+            let last = postmortem.last_send_back();
+            if postmortem.state == PostmortemState::Draft {
+                postmortem.send_backs += 1;
+            }
+            postmortem.note = note;
+            postmortem.reviewed_by = "fake".into();
+            postmortem.reviewed_at = Some(now);
+            postmortem.state = if last {
+                PostmortemState::LeftToPerson
+            } else {
+                PostmortemState::Writing
+            };
             incident.updated_at = now;
             Ok(incident.clone())
         })

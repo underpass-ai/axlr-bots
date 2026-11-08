@@ -180,6 +180,8 @@ func (s *Server) operatorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/autonomy", s.listAutonomy)
 	mux.HandleFunc("GET /v1/autonomy/{id}", s.getAutonomy)
 	mux.HandleFunc("POST /v1/autonomy/{id}/lower", s.lowerAutonomy)
+	mux.HandleFunc("POST /v1/incidents/{id}/postmortem/approve", s.reviewPostmortem(s.service.ApprovePostmortem))
+	mux.HandleFunc("POST /v1/incidents/{id}/postmortem/send-back", s.reviewPostmortem(s.service.SendBackPostmortem))
 	mux.HandleFunc("GET /v1/outputs", s.listOutputs)
 	mux.HandleFunc("POST /v1/outputs", s.addOutput)
 	mux.HandleFunc("DELETE /v1/outputs/{name}", s.removeOutput)
@@ -683,6 +685,27 @@ func (s *Server) lowerAutonomy(w http.ResponseWriter, r *http.Request) {
 	}
 	value, err := s.service.LowerAutonomy(r.Context(), r.PathValue("id"), request)
 	respond(w, http.StatusOK, value, err)
+}
+
+// reviewPostmortem is POST /v1/incidents/{id}/postmortem/approve and
+// /send-back; the body may be empty when the header names who answers.
+func (s *Server) reviewPostmortem(review func(context.Context, string, PostmortemReviewRequest) (domain.IncidentSnapshot, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var request PostmortemReviewRequest
+		if r.ContentLength != 0 && !readJSON(w, r, &request) {
+			return
+		}
+		header := r.Header.Get(ActorHeader)
+		if request.DecidedBy != "" && header != "" && request.DecidedBy != header {
+			respond(w, 0, nil, domain.ValidationError{Field: "decidedBy", Reason: "names another actor than " + ActorHeader})
+			return
+		}
+		if request.DecidedBy == "" {
+			request.DecidedBy = header
+		}
+		value, err := review(r.Context(), r.PathValue("id"), request)
+		respond(w, http.StatusOK, value, err)
+	}
 }
 
 // addOutput is POST /v1/outputs: a new incident output target, 201;

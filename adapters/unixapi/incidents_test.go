@@ -3,6 +3,7 @@ package unixapi
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -96,5 +97,91 @@ func TestIncidentsOverTheSocket(t *testing.T) {
 	}
 	if _, err := client.ResolveIncident(ctx, "Bad Id", ResolveRequest{}); err == nil || !strings.Contains(err.Error(), "incident id") {
 		t.Errorf("bad id: %v", err)
+	}
+}
+
+func TestAPostmortemOverTheSocket(t *testing.T) {
+	client, local, _ := serve(t, "completed")
+	ctx := context.Background()
+	team := func(name string, triggers ...domain.TriggerSnapshot) {
+		d := definition(name, "observe")
+		d.Triggers, d.Groups = triggers, []string{"sre"}
+		d.Approvals = domain.ApprovalsSnapshot{Approvers: []string{"tirso"}}
+		if _, err := client.RegisterBot(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := client.EnableBot(ctx, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	team("triage", domain.TriggerSnapshot{Type: "incident"})
+	team("scribe", domain.TriggerSnapshot{Type: "incident", Phase: "postmortem", Severities: []string{"sev2"}})
+	if got, _ := client.GetBot(ctx, "scribe"); got.Triggers[0].Severities[0] != "sev2" {
+		t.Fatalf("the trigger's severities: %+v", got.Triggers)
+	}
+	opened, err := client.OpenIncident(ctx, application.OpenIncidentCommand{Tenant: "ops", BotID: "triage", GroupKey: "g", Title: "Disk full", Severity: "sev2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := client.ResolveIncident(ctx, opened.Incident.ID, ResolveRequest{Reason: "green"})
+	if err != nil || resolved.Postmortem == nil || resolved.Postmortem.State != "Writing" {
+		t.Fatalf("resolve = %+v %v", resolved.Postmortem, err)
+	}
+	if _, err := local.RunTask(ctx, resolved.Postmortem.TaskID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := client.GetIncident(ctx, opened.Incident.ID)
+	if err != nil || got.Status != "Resolved" || got.Postmortem == nil || got.Postmortem.State != "Draft" || got.Postmortem.Markdown == "" || got.Postmortem.AuthorTaskID != resolved.Postmortem.TaskID {
+		t.Fatalf("drafted = %+v %v", got.Postmortem, err)
+	}
+	path := "/v1/incidents/" + opened.Incident.ID + "/postmortem"
+	as := func(actor string) http.Header {
+		header := http.Header{}
+		if actor != "" {
+			header.Set(ActorHeader, actor)
+		}
+		return header
+	}
+	for _, c := range []struct {
+		route, actor string
+		body         any
+		want         int
+	}{
+		{"/approve", "", nil, http.StatusForbidden},
+		{"/approve", "mallory", nil, http.StatusForbidden},
+		{"/send-back", "tirso", PostmortemReviewRequest{AuthorTaskID: got.Postmortem.AuthorTaskID}, http.StatusBadRequest},
+		{"/approve", "tirso", PostmortemReviewRequest{DecidedBy: "oncall"}, http.StatusBadRequest},
+		{"/approve", "tirso", nil, http.StatusConflict},
+		{"/approve", "tirso", PostmortemReviewRequest{AuthorTaskID: "task-other"}, http.StatusConflict},
+		{"/approve", "tirso", PostmortemReviewRequest{AuthorTaskID: "no spaces"}, http.StatusBadRequest},
+	} {
+		if status, body, err := client.doWith(ctx, http.MethodPost, path+c.route, as(c.actor), c.body); err != nil || status != c.want {
+			t.Errorf("%s as %q: %d %s %v", c.route, c.actor, status, body, err)
+		}
+	}
+	back, err := client.SendBackPostmortem(ctx, opened.Incident.ID, PostmortemReviewRequest{DecidedBy: "tirso", Note: "add the owner", AuthorTaskID: got.Postmortem.AuthorTaskID})
+	if err != nil || back.Postmortem.State != "Writing" || back.Postmortem.SendBacks != 1 || back.Postmortem.Note != "add the owner" || back.Postmortem.ReviewedBy != "tirso" {
+		t.Fatalf("send-back = %+v %v", back.Postmortem, err)
+	}
+	if _, err := local.RunTask(ctx, back.Postmortem.TaskID); err != nil {
+		t.Fatal(err)
+	}
+	status, body, err := client.doWith(ctx, http.MethodPost, path+"/approve", as("tirso"), PostmortemReviewRequest{AuthorTaskID: back.Postmortem.TaskID})
+	if err != nil || status != http.StatusOK || !strings.Contains(string(body), `"approvedBy":"tirso"`) {
+		t.Fatalf("approve: %d %s %v", status, body, err)
+	}
+	if _, err := client.ApprovePostmortem(ctx, opened.Incident.ID, PostmortemReviewRequest{DecidedBy: "tirso"}); err == nil {
+		t.Error("approved twice")
+	}
+	for _, call := range []func(context.Context, string, PostmortemReviewRequest) (domain.IncidentSnapshot, error){local.ApprovePostmortem, local.SendBackPostmortem} {
+		if _, err := call(ctx, "no spaces allowed", PostmortemReviewRequest{DecidedBy: "tirso", Note: "x"}); err == nil {
+			t.Error("a bad id")
+		}
+		if _, err := call(ctx, "inc-ghost", PostmortemReviewRequest{DecidedBy: "tirso", Note: "x", AuthorTaskID: "no spaces"}); err == nil {
+			t.Error("a bad task")
+		}
+		if _, err := call(ctx, "inc-ghost", PostmortemReviewRequest{DecidedBy: "tirso", Note: "x"}); !domain.IsNotFound(err) {
+			t.Errorf("ghost: %v", err)
+		}
 	}
 }

@@ -19,7 +19,7 @@ const maxOutputFilters = 64
 // it comes every repeat interval of the source. It can be named.
 var DefaultOutputEvents = []EventType{
 	EventIncidentOpened, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentProposed, EventIncidentApplying,
-	EventIncidentVerifying, EventIncidentResolved, EventIncidentEscalated,
+	EventIncidentVerifying, EventIncidentResolved, EventIncidentEscalated, EventIncidentPostmortemApproved,
 }
 
 // OutputTarget is one place the control plane announces incidents: a
@@ -33,6 +33,7 @@ type OutputTarget struct {
 	secret     string
 	command    []string
 	events     []EventType
+	named      bool
 	tenants    []TenantID
 	severities []IncidentSeverity
 	panelURL   string
@@ -82,6 +83,7 @@ func NewOutputTarget(s OutputTargetSnapshot) (OutputTarget, error) {
 	if t.events, err = outputEvents(field, s.Events); err != nil {
 		return OutputTarget{}, err
 	}
+	t.named = len(s.Events) > 0
 	if t.tenants, err = outputTenants(field, s.Tenants); err != nil {
 		return OutputTarget{}, err
 	}
@@ -105,7 +107,7 @@ func ParseOutputEvent(raw string) (EventType, error) {
 	}
 	event := EventType(name)
 	if !event.AboutIncident() {
-		return "", invalid("output event", "must be an incident event: opened, repeated, reopened, diagnosed, proposed, applying, verifying, resolved or escalated")
+		return "", invalid("output event", "must be an incident event: opened, repeated, reopened, diagnosed, proposed, applying, verifying, resolved, escalated, postmortem_drafted, postmortem_failed, postmortem_sent_back or postmortem_approved")
 	}
 	return event, nil
 }
@@ -257,8 +259,12 @@ func (t OutputTarget) Sign(body []byte) string {
 // what the repository stores. Never print it.
 func (t OutputTarget) Snapshot() OutputTargetSnapshot {
 	s := OutputTargetSnapshot{Name: t.name.String(), Type: t.kind.String(), URL: t.url, Secret: t.secret, Command: t.Command(), PanelURL: t.panelURL}
-	for _, event := range t.events {
-		s.Events = append(s.Events, event.String())
+	if t.named {
+		// A target that named none stays so when it is stored: it hears
+		// what the default comes to include.
+		for _, event := range t.events {
+			s.Events = append(s.Events, event.String())
+		}
 	}
 	for _, tenant := range t.tenants {
 		s.Tenants = append(s.Tenants, tenant.String())

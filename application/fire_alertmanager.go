@@ -95,6 +95,7 @@ func (uc FireTrigger) resolveGroup(ctx context.Context, bot domain.Bot, trigger 
 	if err := uc.rec.audit(ctx, "incident.resolve", incident.ID().String(), domain.AuditOK, map[string]string{"trigger": trigger.Name(), "reason": reason}); err != nil {
 		return nil, err
 	}
+	incident = newPostmortemLauncher(uc.deps).launch(ctx, incident)
 	return &incident, nil
 }
 

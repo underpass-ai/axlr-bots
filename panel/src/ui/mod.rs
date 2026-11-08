@@ -70,7 +70,7 @@ pub use connection::Connection;
 pub use delete_form::DeleteForm;
 pub use effect::Effect;
 pub use icon::{Icon, brand};
-pub use incident_watch::{IncidentWatch, ResolveForm};
+pub use incident_watch::{IncidentWatch, PostmortemForm, ResolveForm};
 pub use keypress::Keypress;
 pub use launch::{Command, Launch, USAGE};
 pub use listen_form::{ListenForm, ModeChoice};
