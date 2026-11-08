@@ -13,12 +13,12 @@ import (
 const maxOutputFilters = 64
 
 // DefaultOutputEvents are what an output hears when it names no event:
-// every move of an incident a person cares about. A repeat and a
-// reopening are left out: the first comes every repeat interval of the
-// source, the second is followed at once by a new triage. Either can be
-// named.
+// every move of an incident a person cares about, a reopening among them
+// (a resolved incident that fired again, or a proposal sent back: a
+// denied, expired or failed apply, a red verify). A repeat is left out:
+// it comes every repeat interval of the source. It can be named.
 var DefaultOutputEvents = []EventType{
-	EventIncidentOpened, EventIncidentDiagnosed, EventIncidentProposed, EventIncidentApplying,
+	EventIncidentOpened, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentProposed, EventIncidentApplying,
 	EventIncidentVerifying, EventIncidentResolved, EventIncidentEscalated,
 }
 

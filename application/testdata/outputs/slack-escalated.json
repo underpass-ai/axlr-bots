@@ -40,7 +40,7 @@
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "*Cause*\nPVC data-0 at 100 %"
+        "text": "*Cause*\n```PVC data-0 at 100 %```"
       }
     },
     {

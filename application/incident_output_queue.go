@@ -107,7 +107,7 @@ func (q incidentOutputQueue) body(ctx context.Context, event domain.Event, incid
 		Status: incident.Status().String(), Cycle: incident.Cycle(), GroupKey: incident.GroupKey(), Source: incident.Source(),
 		Reason: incident.Reason(), CostUSD: incident.CostUSD(), CostUnknown: incident.CostUnknown(),
 		OpenedAt: incident.OpenedAt(), UpdatedAt: incident.UpdatedAt(),
-		NeedsYou: incident.Status() == domain.IncidentProposed || incident.Status() == domain.IncidentEscalated,
+		NeedsYou: q.needsYou(ctx, incident),
 		Links:    IncidentOutputLinks{Incident: ApprovalAction{Method: "GET", Path: path}},
 	}
 	body.Diagnosis, body.DiagnosisTruncated = outputExcerpt(incident.Diagnosis())
@@ -121,6 +121,18 @@ func (q incidentOutputQueue) body(ctx context.Context, event domain.Event, incid
 		body.DurationSeconds = int64(resolvedAt.Sub(incident.OpenedAt()).Seconds())
 	}
 	return body
+}
+
+// needsYou is what GET /v1/incidents/{id} answers as needsYou: the
+// incident's current task waits for an approval where the incident
+// stands. A task that cannot be read counts as not waiting.
+func (q incidentOutputQueue) needsYou(ctx context.Context, incident domain.Incident) bool {
+	current := incident.CurrentTaskID()
+	if current == "" {
+		return false
+	}
+	task, err := q.deps.Tasks.Get(ctx, current)
+	return err == nil && incident.NeedsPerson(task.Status() == domain.TaskWaitingApproval)
 }
 
 // outputExcerpt cuts a text to MaxOutputExcerpt and says whether it did.

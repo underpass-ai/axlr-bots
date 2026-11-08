@@ -13,6 +13,7 @@ type OutputDeliveryRepository interface {
 	Save(ctx context.Context, delivery domain.OutputDelivery) error
 	// Get returns a domain.NotFoundError when no delivery has the id.
 	Get(ctx context.Context, id domain.DeliveryID) (domain.OutputDelivery, error)
-	// ListPending returns every delivery with an attempt to come, in id order.
+	// ListPending returns every delivery with an attempt to come, oldest
+	// first (by creation, then id).
 	ListPending(ctx context.Context) ([]domain.OutputDelivery, error)
 }

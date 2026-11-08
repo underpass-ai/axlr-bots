@@ -40,7 +40,7 @@
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "*Cause*\nCAUSE: deployment web drifted: replicas 1, desired 3"
+        "text": "*Cause*\n```CAUSE: deployment web drifted: replicas 1, desired 3```"
       }
     },
     {

@@ -18,7 +18,7 @@
   "source": "alertmanager",
   "diagnosis": "CAUSE: deployment web drifted: replicas 1, desired 3",
   "proposal": "PROPOSAL: kubectl apply -f desired/web.yaml\nROLLBACK: replicas 1",
-  "needsYou": true,
+  "needsYou": false,
   "costUsd": 0.02,
   "openedAt": "2026-10-23T15:00:00Z",
   "updatedAt": "2026-10-23T15:00:00Z",

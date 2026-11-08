@@ -2,7 +2,9 @@ package application
 
 import (
 	"context"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -24,18 +26,36 @@ func NewDeliverOutputs(deps Dependencies) DeliverOutputs {
 	return DeliverOutputs{deps: deps, rec: recorder{deps: deps}}
 }
 
-// Execute makes the attempts that are due and reports each outcome.
+// Execute makes the attempts that are due, oldest first, and reports
+// each outcome. Two rules keep a pass short and a channel in order:
+//   - an incident's delivery to a target waits while an earlier one of
+//     the same incident to the same target is still pending (not due
+//     yet, retrying, or held), so a channel never reads "resolved"
+//     before "opened";
+//   - a target whose attempt failed in this pass gets no other attempt
+//     in it: a host that does not answer costs one timeout per pass,
+//     not one per delivery.
 func (uc DeliverOutputs) Execute(ctx context.Context) ([]OutputDeliveryOutcome, error) {
 	pending, err := uc.deps.OutputDeliveries.ListPending(ctx)
 	if err != nil {
 		return nil, err
 	}
+	slices.SortStableFunc(pending, func(a, b domain.OutputDelivery) int {
+		if c := a.CreatedAt().Compare(b.CreatedAt()); c != 0 {
+			return c
+		}
+		return strings.Compare(a.ID().String(), b.ID().String())
+	})
+	held := map[string]bool{}
+	down := map[domain.OutputName]bool{}
 	var outcomes []OutputDeliveryOutcome
 	for _, delivery := range pending {
 		if ctx.Err() != nil {
 			break
 		}
-		if !delivery.Due(uc.deps.Clock.Now()) {
+		line := delivery.IncidentID().String() + "\x00" + delivery.Output().String()
+		if held[line] || down[delivery.Output()] || !delivery.Due(uc.deps.Clock.Now()) {
+			held[line] = true
 			continue
 		}
 		outcome, err := uc.attempt(ctx, delivery)
@@ -43,6 +63,9 @@ func (uc DeliverOutputs) Execute(ctx context.Context) ([]OutputDeliveryOutcome, 
 			return outcomes, err
 		}
 		outcomes = append(outcomes, outcome)
+		if outcome.Delivery.Status() == domain.DeliveryPending {
+			held[line], down[delivery.Output()] = true, true
+		}
 	}
 	return outcomes, nil
 }

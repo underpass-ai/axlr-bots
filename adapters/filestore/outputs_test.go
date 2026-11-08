@@ -2,6 +2,8 @@ package filestore
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -145,5 +147,34 @@ func TestOutputDeliveryRepositoryMovesADeliveryOnceItIsDone(t *testing.T) {
 	}
 	if err := repo.Save(ctx, domain.OutputDelivery{}); err == nil {
 		t.Error("a delivery without an id was saved")
+	}
+}
+
+// The pending deliveries come oldest first, whatever their ids' order
+// (review of #136: proposed, diagnosed, resolved, opened).
+func TestOutputDeliveryRepositoryListsOldestFirst(t *testing.T) {
+	repo := NewOutputDeliveryRepository(t.TempDir())
+	target, _ := domain.NewOutputTarget(domain.OutputTargetSnapshot{Name: "ops", Type: "slack", URL: "https://hooks.slack.test/services/T/B/X"})
+	incident, _ := domain.NewIncident("inc-1", "ops", "triage", "g", "manual", "t", domain.Sev2, nil, t0)
+	events := []domain.EventType{domain.EventIncidentOpened, domain.EventIncidentDiagnosed, domain.EventIncidentProposed, domain.EventIncidentResolved}
+	for i, event := range events {
+		id := domain.EventID("evt-" + string(rune('a'+i)))
+		sum := sha256.Sum256([]byte("incident.output\x00" + id.String() + "\x00ops"))
+		d, err := domain.NewOutputDelivery(domain.DeliveryID("dlv-"+hex.EncodeToString(sum[:12])), target, incident, id, event, []byte(`{}`), t0.Add(time.Duration(i)*time.Second))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.Save(context.Background(), d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list, err := repo.ListPending(context.Background())
+	if err != nil || len(list) != len(events) {
+		t.Fatalf("list = %d %v", len(list), err)
+	}
+	for i, d := range list {
+		if d.Event() != events[i] {
+			t.Errorf("%d: %s, want %s", i, d.Event(), events[i])
+		}
 	}
 }

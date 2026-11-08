@@ -409,3 +409,145 @@ func TestSlackIncidentMessage(t *testing.T) {
 		}
 	}
 }
+
+// The body's needsYou is the API's: the incident's current task waits
+// for an approval where the incident stands; a proposal whose apply has
+// not asked yet is not.
+func TestOutputNeedsYouIsTheAPIs(t *testing.T) {
+	h := newHarness()
+	triage := brigade(t, h, domain.ApprovalsSnapshot{})
+	ctx := context.Background()
+	incident := proposed(t, h, triage)
+	q := incidentOutputQueue{deps: h.deps, rec: recorder{deps: h.deps}}
+	if q.body(ctx, domain.Event{Type: domain.EventIncidentProposed}, incident).NeedsYou {
+		t.Error("a pending apply needs you")
+	}
+	waitingApply(t, h, incident)
+	incident, _ = h.incs.Get(ctx, incident.ID())
+	report, err := NewGetIncident(h.deps).Execute(ctx, incident.ID())
+	if err != nil || !report.NeedsPerson || !q.body(ctx, domain.Event{Type: domain.EventIncidentProposed}, incident).NeedsYou {
+		t.Errorf("a waiting apply: API %v, body %v", report.NeedsPerson, err)
+	}
+	if q.needsYou(ctx, domain.Incident{}) {
+		t.Error("an incident without a task needs you")
+	}
+}
+
+// What a bot wrote cannot break the message: escaped after the cut, so
+// the section stays within Block Kit's limit; its backticks cannot close
+// the fence; the fences stay whole; prose loses its marks.
+func TestSlackMessageKeepsABotsTextInItsPlace(t *testing.T) {
+	nasty := strings.Repeat("<!channel> & `x` ``` *b* ", MaxOutputExcerpt/24)
+	message := NewSlackIncidentMessage(IncidentOutputEvent{
+		Event: "incident.proposed", IncidentID: "inc-1", TenantID: "t", BotName: "fix", Title: "t", Severity: "sev2", Status: "Proposed",
+		Diagnosis: strings.Repeat("&", 3000), Proposal: nasty,
+	})
+	var cause, proposal string
+	for _, block := range message.Blocks {
+		if block.Text == nil {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(block.Text.Text, "*Cause*"):
+			cause = block.Text.Text
+		case strings.HasPrefix(block.Text.Text, "*Proposal*"):
+			proposal = block.Text.Text
+		}
+	}
+	for name, text := range map[string]string{"cause": cause, "proposal": proposal} {
+		body := strings.TrimSuffix(strings.SplitN(text, "\n", 2)[1], "```")
+		if n := len([]rune(text)); n > slackSectionLimit || !strings.HasSuffix(text, "```") || !strings.HasPrefix(body, "```") || strings.Contains(strings.TrimPrefix(body, "```"), "```") {
+			t.Errorf("%s: %d characters, fences broken: %q…", name, n, text[:80])
+		}
+	}
+	if !strings.Contains(cause, "&amp;…```") || strings.Contains(proposal, "<!channel>") || !strings.Contains(proposal, "&lt;!channel&gt; &amp; ˋxˋ") {
+		t.Errorf("escaping: cause %q, proposal %q", cause[len(cause)-20:], proposal[:60])
+	}
+	if got := slackProse("> quoted *bold* `code` ~strike~\n>> again <@U1>"); got != "› quoted ∗bold∗ ˋcodeˋ ∼strike∼\n›&gt; again &lt;@U1&gt;" {
+		t.Errorf("prose = %q", got)
+	}
+	if got := slackFit("abc", 3); got != "abc" {
+		t.Errorf("fit exact = %q", got)
+	}
+	if got := slackFit("a&cd", 4); got != "a…" {
+		t.Errorf("fit an entity = %q", got)
+	}
+}
+
+func deliveryOfEvent(t *testing.T, h *harness, target domain.OutputTarget, incident domain.Incident, event string, kind domain.EventType, at time.Time) domain.OutputDelivery {
+	t.Helper()
+	d, err := domain.NewOutputDelivery(domain.DeliveryID("dlv-"+event), target, incident, domain.EventID(event), kind, []byte(`{}`), at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.outbox2.Save(context.Background(), d); err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+// A pass goes oldest first, holds an incident's later deliveries to a
+// target while an earlier one is still pending, and tries a target that
+// failed no more in the same pass.
+func TestDeliverOutputsKeepsTheOrderAndStopsAtADeadTarget(t *testing.T) {
+	h := newHarness()
+	chat := addOutputTarget(t, h, OutputDefinition{Name: "chat", Type: "slack", URL: slackURL})
+	other := addOutputTarget(t, h, OutputDefinition{Name: "other", Type: "slack", URL: slackURL})
+	one, _ := domain.NewIncident("inc-1", "ops", "triage", "g1", "manual", "t", domain.Sev2, nil, t0)
+	two, _ := domain.NewIncident("inc-2", "ops", "triage", "g2", "manual", "t", domain.Sev2, nil, t0)
+	// Ids in the reverse of the events' order: the store's order is not theirs.
+	deliveryOfEvent(t, h, chat, one, "z-opened", domain.EventIncidentOpened, t0)
+	deliveryOfEvent(t, h, chat, one, "y-diagnosed", domain.EventIncidentDiagnosed, t0.Add(time.Second))
+	deliveryOfEvent(t, h, chat, one, "x-resolved", domain.EventIncidentResolved, t0.Add(2*time.Second))
+	deliveryOfEvent(t, h, chat, two, "w-opened", domain.EventIncidentOpened, t0.Add(3*time.Second))
+	deliveryOfEvent(t, h, other, two, "v-opened", domain.EventIncidentOpened, t0.Add(4*time.Second))
+	h.clock.now = t0.Add(time.Minute)
+	uc := NewDeliverOutputs(h.deps)
+	ctx := context.Background()
+	outcomes, err := uc.Execute(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var order []string
+	for _, o := range outcomes {
+		order = append(order, o.Delivery.EventID().String())
+	}
+	if strings.Join(order, ",") != "z-opened,y-diagnosed,x-resolved,w-opened,v-opened" {
+		t.Errorf("order = %v", order)
+	}
+	// chat fails: its first delivery retries, nothing else goes to it in
+	// the pass, and the other target is still tried.
+	for _, id := range []string{"z2", "y2", "x2"} {
+		deliveryOfEvent(t, h, chat, one, id, domain.EventIncidentReopened, h.clock.now.Add(time.Duration(len(id))*time.Millisecond))
+	}
+	deliveryOfEvent(t, h, chat, two, "w2", domain.EventIncidentResolved, h.clock.now.Add(time.Second))
+	deliveryOfEvent(t, h, other, two, "v2", domain.EventIncidentResolved, h.clock.now.Add(2*time.Second))
+	h.sender.failures, h.sender.sent = 1, nil
+	h.clock.now = h.clock.now.Add(time.Minute)
+	outcomes, err = uc.Execute(ctx)
+	if err != nil || len(outcomes) != 2 || outcomes[0].Delivery.Status() != domain.DeliveryPending || outcomes[1].Delivery.Output() != "other" {
+		t.Fatalf("pass with chat down = %+v %v", outcomes, err)
+	}
+	// Next pass, before chat's retry is due: its later deliveries of that
+	// incident wait behind it; another incident's go.
+	h.clock.now = h.clock.now.Add(time.Second)
+	outcomes, _ = uc.Execute(ctx)
+	if len(outcomes) != 1 || outcomes[0].Delivery.EventID() != "w2" {
+		t.Errorf("pass while the retry waits = %+v", outcomes)
+	}
+	h.clock.now = h.clock.now.Add(time.Minute)
+	outcomes, _ = uc.Execute(ctx)
+	if len(outcomes) != 3 {
+		t.Errorf("pass after the retry = %d outcomes", len(outcomes))
+	}
+}
+
+func addOutputTarget(t *testing.T, h *harness, definition OutputDefinition) domain.OutputTarget {
+	t.Helper()
+	addOutput(t, h, definition)
+	target, err := h.outs.Get(context.Background(), domain.OutputName(definition.Name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return target
+}

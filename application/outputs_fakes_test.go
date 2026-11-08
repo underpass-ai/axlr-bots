@@ -100,6 +100,7 @@ func (m *memoryOutputDeliveries) ListPending(context.Context) ([]domain.OutputDe
 			out = append(out, d)
 		}
 	}
+	// Id order, as a directory lists them: the use case orders them.
 	slices.SortFunc(out, func(a, b domain.OutputDelivery) int { return strings.Compare(a.ID().String(), b.ID().String()) })
 	return out, nil
 }

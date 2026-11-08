@@ -40,7 +40,7 @@
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "*Cause*\nCAUSE: deployment web drifted: replicas 1, desired 3"
+        "text": "*Cause*\n```CAUSE: deployment web drifted: replicas 1, desired 3```"
       }
     },
     {
@@ -54,7 +54,7 @@
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "*Needs you*: approve or deny the change."
+        "text": "*Needs you*: the change waits for a person to approve or deny it."
       }
     },
     {

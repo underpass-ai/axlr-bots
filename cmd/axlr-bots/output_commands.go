@@ -34,7 +34,7 @@ func outputAdd(ctx context.Context, service unixapi.Service, args []string, stdo
 	targetURL := flags.String("url", "", "where a webhook or slack target posts (a slack URL is its secret: prefer --url-file)")
 	urlFile := flags.String("url-file", "", "a file holding the URL, - for stdin")
 	secretFile := flags.String("secret-file", "", "a file holding a webhook's signing secret (16 to 256 characters), - for stdin")
-	events := flags.String("events", "", "incident events, comma-separated, short (opened) or full (incident.opened); default opened,diagnosed,proposed,applying,verifying,resolved,escalated")
+	events := flags.String("events", "", "incident events, comma-separated, short (opened) or full (incident.opened); default opened,reopened,diagnosed,proposed,applying,verifying,resolved,escalated")
 	tenants := flags.String("tenants", "", "only these tenants, comma-separated (default all)")
 	severities := flags.String("severities", "", "only these severities, comma-separated: sev1..sev4 (default all)")
 	panelURL := flags.String("panel-url", "", "the panel base this target links to, <base>/incidents/<id> (default serve --panel-url)")

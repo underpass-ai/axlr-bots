@@ -14,9 +14,9 @@ const MaxOutputExcerpt = 2 << 10
 // an incident event: the incident where it stands after the event, the
 // diagnosis and the proposal cut to MaxOutputExcerpt, the cost, and the
 // links. DeliveryID is the same on every attempt, so a receiver can drop
-// a repeat. NeedsYou is set when a person is expected next: the
-// incident's proposal waits for a decision (Proposed) or the bots gave it
-// up (Escalated).
+// a repeat. NeedsYou is what GET /v1/incidents/{id} answers: the
+// incident's current task waits for a person's approval where the
+// incident stands.
 type IncidentOutputEvent struct {
 	Schema             string              `json:"schema"`
 	DeliveryID         string              `json:"deliveryId"`

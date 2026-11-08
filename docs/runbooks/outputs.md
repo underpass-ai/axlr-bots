@@ -5,7 +5,7 @@ An output tells a place people read what an incident did: opened, the cause, the
 ```text
 incident.<event> ──▶ each target whose events, tenants and severities want it
                      ──▶ one delivery in <state>/deliveries/outputs/ (durable)
-                         ──▶ the daemon posts it: 10 s, 30 s, 1 min, 5 min, 15 min, then gives up
+                         ──▶ the daemon posts it, oldest first: 10 s, 30 s, 1 min, 5 min, 15 min, then gives up
 ```
 
 | Type | What it posts | Takes |
@@ -20,9 +20,8 @@ incident.<event> ──▶ each target whose events, tenants and severities want
 2. Keep it out of the shell's history and give it to the control plane from a file or stdin:
 
 ```bash
-umask 077; cat > /tmp/slack.url        # paste the URL, then Ctrl-D
-axlr-bots output add ops-slack --type slack --url-file /tmp/slack.url --severities sev1,sev2
-rm /tmp/slack.url
+axlr-bots output add ops-slack --type slack --url-file - --severities sev1,sev2
+# paste the URL, then Enter and Ctrl-D: it is read from stdin and never written anywhere else
 ```
 
 3. Check it. The list shows the host and a fingerprint, never the URL:
@@ -33,7 +32,7 @@ axlr-bots output list
 
 ```json
 [{"name": "ops-slack", "type": "slack", "fingerprint": "sha256:3f1c0a9b2e7d", "host": "hooks.slack.com",
-  "events": ["incident.opened", "incident.diagnosed", "incident.proposed", "incident.applying", "incident.verifying", "incident.resolved", "incident.escalated"],
+  "events": ["incident.opened", "incident.reopened", "incident.diagnosed", "incident.proposed", "incident.applying", "incident.verifying", "incident.resolved", "incident.escalated"],
   "severities": ["sev1", "sev2"]}]
 ```
 
@@ -97,7 +96,7 @@ With the control plane serving (its delivery pass runs every 2 s), the receiver 
   "groupKey": "{}/{alertname=\"KubePodCrashLooping\"}", "source": "alertmanager",
   "diagnosis": "CAUSE: deployment web drifted: replicas 1, desired 3",
   "proposal": "PROPOSAL: kubectl apply -f desired/web.yaml\nROLLBACK: replicas 1",
-  "needsYou": true, "costUsd": 0.02,
+  "needsYou": false, "costUsd": 0.02,
   "openedAt": "2026-10-23T15:00:00Z", "updatedAt": "2026-10-23T15:00:00Z",
   "links": {
     "incident": {"method": "GET", "path": "/v1/incidents/inc-18", "url": "https://cp.example.test:7879/v1/incidents/inc-18"},
@@ -111,7 +110,7 @@ With the control plane serving (its delivery pass runs every 2 s), the receiver 
 | `botId`, `botName` | the bot of the incident's current task (the one working on it now), or the triage bot before one |
 | `diagnosis`, `proposal` | cut to 2 KiB with a trailing `…`; `diagnosisTruncated`, `proposalTruncated` say so. `GET /v1/incidents/{id}` has them whole |
 | `reason` | why it was resolved, escalated or sent back |
-| `needsYou` | a person is expected next: the incident is `Proposed` or `Escalated`. Not the rule of `needsYou` on `GET /v1/incidents`, which looks at a task waiting for an approval |
+| `needsYou` | what `GET /v1/incidents/{id}` answers: the incident's current task waits for a person's approval where the incident stands. An event is a move, so it is seldom true in a body: the apply task asks after `proposed` was posted |
 | `costUsd`, `costUnknown` | what its executions reported; `costUnknown` makes `costUsd` a floor |
 | `resolvedAt`, `durationSeconds` | when resolved: when, and how long since it opened |
 | `links.incident` | the operator API's route; `url` when the control plane knows its operator address (`serve --api-url`, `--api-listen`), and it needs the bearer token |
@@ -129,7 +128,7 @@ A command gets the same JSON on stdin and `AXLR_BOTS_DELIVERY_ID`, `AXLR_BOTS_IN
   {"type": "section", "fields": [
     {"type": "mrkdwn", "text": "*Status*\nDiagnosed"}, {"type": "mrkdwn", "text": "*Bot*\ntriage"},
     {"type": "mrkdwn", "text": "*Cycle*\n1"}, {"type": "mrkdwn", "text": "*Cost*\n$0.0100"}]},
-  {"type": "section", "text": {"type": "mrkdwn", "text": "*Cause*\nCAUSE: deployment web drifted: replicas 1, desired 3"}},
+  {"type": "section", "text": {"type": "mrkdwn", "text": "*Cause*\n```CAUSE: deployment web drifted: replicas 1, desired 3```"}},
   {"type": "actions", "elements": [{"type": "button", "text": {"type": "plain_text", "text": "Open in the panel"},
     "url": "https://ops.example.test/axlr/incidents/inc-18", "action_id": "open-incident"}]}]}
 ```
@@ -138,11 +137,15 @@ A command gets the same JSON on stdin and `AXLR_BOTS_DELIVERY_ID`, `AXLR_BOTS_IN
 |:--|:--|
 | opened, reopened, repeated | nothing more |
 | diagnosed, applying, verifying | the cause |
-| proposed | the cause, the proposal in a code block, **Needs you**: approve or deny the change |
+| proposed | the cause, the proposal in a code block, **Needs you**: the change waits for a person to approve or deny it |
 | resolved | the cause, "Resolved after 12m 30s" and the reason |
 | escalated | the cause, the reason, **Needs you**: the bots gave it to a person |
 
-`&`, `<` and `>` are escaped as Slack asks; the header is cut to 150 characters. The goldens the tests compare with are in `application/testdata/outputs/`.
+What a bot wrote can neither format nor break the message: the cause and the proposal sit in code blocks, their backticks turned into `ˋ` so they cannot close the fence; a reason loses its marks (`*`, `~`, a backtick, a leading `>`); `&`, `<` and `>` are escaped as Slack asks (so `<!channel>` pings nobody), after the cut, so a section stays within Block Kit's 3000 characters; the header is cut to 150. The goldens the tests compare with are in `application/testdata/outputs/`.
+
+## Delivery: at least once, in order
+
+A delivery is made, then recorded. If the control plane stops between the two, it sends the same delivery again when it starts: a webhook or a command drops the repeat by `deliveryId` (also `Idempotency-Key`); a Slack channel cannot, and may show the message twice. An incident's messages to a target go in the order of its events: a later one waits while an earlier one to that target is still being retried. A target that fails gets no other attempt until the next pass (2 s later), and the outputs run apart from the approval notifications, so a dead Slack webhook never delays a "needs you" notification.
 
 ## What the control plane records
 

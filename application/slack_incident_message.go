@@ -62,27 +62,27 @@ func NewSlackIncidentMessage(event IncidentOutputEvent) SlackIncidentMessage {
 		}},
 	)
 	if event.Diagnosis != "" && event.Status != domain.IncidentOpen.String() {
-		message.Blocks = append(message.Blocks, slackSection("*Cause*\n"+slackEscape(event.Diagnosis)))
+		message.Blocks = append(message.Blocks, slackCode("*Cause*\n", event.Diagnosis))
 	}
 	switch event.Status {
 	case domain.IncidentProposed.String():
 		if event.Proposal != "" {
-			message.Blocks = append(message.Blocks, slackSection("*Proposal*\n```"+slackEscape(event.Proposal)+"```"))
+			message.Blocks = append(message.Blocks, slackCode("*Proposal*\n", event.Proposal))
 		}
-		message.Blocks = append(message.Blocks, slackSection("*Needs you*: approve or deny the change."))
+		message.Blocks = append(message.Blocks, slackSection("*Needs you*: the change waits for a person to approve or deny it."))
 	case domain.IncidentResolved.String():
 		line := "*Resolved*"
 		if event.DurationSeconds > 0 {
 			line += " after " + slackDuration(event.DurationSeconds)
 		}
 		if event.Reason != "" {
-			line += ": " + slackEscape(event.Reason)
+			line += ": " + slackProse(event.Reason)
 		}
 		message.Blocks = append(message.Blocks, slackSection(line))
 	case domain.IncidentEscalated.String():
 		line := "*Escalated*"
 		if event.Reason != "" {
-			line += ": " + slackEscape(event.Reason)
+			line += ": " + slackProse(event.Reason)
 		}
 		message.Blocks = append(message.Blocks, slackSection(line+"\n*Needs you*: the bots gave it to a person."))
 	}
@@ -94,8 +94,61 @@ func NewSlackIncidentMessage(event IncidentOutputEvent) SlackIncidentMessage {
 	return message
 }
 
+// slackSection is a section of text the message wrote itself, already
+// escaped where it holds the incident's words.
 func slackSection(text string) SlackBlock {
 	return SlackBlock{Type: "section", Text: &SlackText{Type: "mrkdwn", Text: slackCut(text, slackSectionLimit)}}
+}
+
+// slackCode is a section with a label and what a bot wrote in a code
+// block, where Slack reads no formatting: its backticks become ˋ so it
+// cannot close the fence, it is escaped, and it is cut to fit with the
+// fences kept outside the cut.
+func slackCode(label, raw string) SlackBlock {
+	const fence = "```"
+	text := strings.ReplaceAll(raw, "`", "ˋ")
+	room := slackSectionLimit - len([]rune(label)) - 2*len(fence)
+	return SlackBlock{Type: "section", Text: &SlackText{Type: "mrkdwn", Text: label + fence + slackFit(text, room) + fence}}
+}
+
+// slackProse is a bot's or a person's words outside a code block:
+// escaped, with the marks Slack would read as code, bold or strike
+// turned into look-alikes, and a line that starts a quote unquoted.
+func slackProse(raw string) string {
+	text := strings.NewReplacer("`", "ˋ", "*", "∗", "~", "∼").Replace(raw)
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, ">") {
+			lines[i] = "›" + line[1:]
+		}
+	}
+	return slackFit(strings.Join(lines, "\n"), slackSectionLimit/2)
+}
+
+// slackFit escapes text and cuts it so the escaped text holds at most
+// max characters, a trailing "…" included: the cut is made on the text
+// before escaping, so it never splits an entity, and the escaped length
+// is what counts (an & is five characters once escaped).
+func slackFit(text string, max int) string {
+	var out strings.Builder
+	length := 0
+	runes := []rune(text)
+	for i, r := range runes {
+		piece := slackEscape(string(r))
+		size := len([]rune(piece))
+		// Room for the "…" unless this is the last character.
+		reserve := 1
+		if i == len(runes)-1 {
+			reserve = 0
+		}
+		if length+size+reserve > max {
+			out.WriteString("…")
+			return out.String()
+		}
+		out.WriteString(piece)
+		length += size
+	}
+	return out.String()
 }
 
 // slackEventWords says the event in a few words.

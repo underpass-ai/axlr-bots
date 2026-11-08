@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -61,7 +63,7 @@ func (r OutputDeliveryRepository) Get(_ context.Context, id domain.DeliveryID) (
 	return domain.RestoreOutputDelivery(snapshot)
 }
 
-// ListPending reads every pending delivery, in id order; a file that
+// ListPending reads every pending delivery, oldest first; a file that
 // does not parse is set aside like any other record's.
 func (r OutputDeliveryRepository) ListPending(_ context.Context) ([]domain.OutputDelivery, error) {
 	ids, err := r.pending.ids()
@@ -84,5 +86,12 @@ func (r OutputDeliveryRepository) ListPending(_ context.Context) ([]domain.Outpu
 		}
 		return nil, err
 	}
+	// Oldest first: the events of an incident in the order they happened.
+	slices.SortStableFunc(deliveries, func(a, b domain.OutputDelivery) int {
+		if c := a.CreatedAt().Compare(b.CreatedAt()); c != 0 {
+			return c
+		}
+		return strings.Compare(a.ID().String(), b.ID().String())
+	})
 	return deliveries, nil
 }

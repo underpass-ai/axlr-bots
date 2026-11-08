@@ -4245,7 +4245,7 @@
       "OutputDefinition": {
         "type": "object",
         "x-go-type": "application.OutputDefinition",
-        "description": "an incident output target as the operator gives it: a webhook takes url and secret, slack its incoming-webhook url alone, command an absolute program and its arguments; events take the short (opened) or full (incident.opened) name, none is opened, diagnosed, proposed, applying, verifying, resolved and escalated; no tenants or severities is all of them",
+        "description": "an incident output target as the operator gives it: a webhook takes url and secret, slack its incoming-webhook url alone, command an absolute program and its arguments; events take the short (opened) or full (incident.opened) name, none is opened, reopened, diagnosed, proposed, applying, verifying, resolved and escalated; no tenants or severities is all of them",
         "properties": {
           "name": {
             "type": "string"

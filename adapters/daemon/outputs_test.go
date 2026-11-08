@@ -60,3 +60,42 @@ func TestDaemonAnnouncesAnIncidentToItsOutputs(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+// An output that hangs holds up no approval notification: they go out
+// on loops of their own (review of #136).
+func TestAHangingOutputDelaysNoApprovalNotification(t *testing.T) {
+	f := newFixture(t, "approval-flow")
+	notified := filepath.Join(f.dir, "notified.json")
+	client, stop := f.start(t)
+	defer stop()
+	ctx := context.Background()
+	definition := application.BotDefinition{
+		Tenant: "ops", Name: "writer", Owner: "o", Mission: "do what each task asks", Level: "act-with-approval", AllowedTools: []string{"local_read", "local_write"},
+		Triggers:  []domain.TriggerSnapshot{{Type: "incident"}},
+		Approvals: domain.ApprovalsSnapshot{TTL: "2m", Notify: []domain.NotifyTargetSnapshot{{Type: "command", Name: "file", Command: []string{"/bin/sh", "-c", `cat > "$1"`, "notify", notified}}}},
+	}
+	if _, err := client.RegisterBot(ctx, definition); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.EnableBot(ctx, "writer"); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"slow-a", "slow-b"} {
+		if _, err := client.AddOutput(ctx, application.OutputDefinition{Name: name, Type: "command", Command: []string{"/bin/sh", "-c", "sleep 8"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	started := time.Now()
+	if _, err := client.OpenIncident(ctx, application.OpenIncidentCommand{Tenant: "ops", BotID: "writer", GroupKey: "g", Title: "Disk full"}); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		if raw, err := os.ReadFile(notified); err == nil && len(raw) > 0 {
+			break
+		}
+		if time.Since(started) > 6*time.Second {
+			t.Fatalf("the notification waited behind the outputs:\n%s", f.logs.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
