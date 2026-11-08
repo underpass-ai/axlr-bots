@@ -780,6 +780,8 @@ impl App {
                 Vec::new()
             }
             Message::IncidentResolved(result) => self.incident_resolved(result),
+            Message::MarkDiagnosis(verdict) => self.mark_diagnosis(verdict),
+            Message::DiagnosisMarked(id, result) => self.diagnosis_marked(id, result),
             Message::PostmortemApprove => self.postmortem_approve(),
             Message::PostmortemBackOpen => {
                 self.incidents.review = PostmortemForm::opened();

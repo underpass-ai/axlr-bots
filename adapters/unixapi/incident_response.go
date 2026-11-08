@@ -15,6 +15,9 @@ type IncidentResponse struct {
 	NeedsYou    bool                       `json:"needsYou,omitempty"`
 	CurrentTask *IncidentCurrentTask       `json:"currentTask,omitempty"`
 	Approvals   *IncidentApprovalsResponse `json:"approvals,omitempty"`
+	// Autonomy is the runbook's standing on its apply bot's ladder, for
+	// an incident read on its own that is on one.
+	Autonomy *AutonomyResponse `json:"autonomy,omitempty"`
 }
 
 // newIncidentResponse maps the application's report.
@@ -33,6 +36,10 @@ func newIncidentResponse(report application.IncidentReport) IncidentResponse {
 	if report.Whole {
 		a := report.Approvals
 		response.Approvals = &IncidentApprovalsResponse{Approved: a.Approved, Denied: a.Denied, Expired: a.Expired, Waiting: a.Waiting}
+	}
+	if report.Autonomy != nil {
+		autonomy := newAutonomyResponse(*report.Autonomy)
+		response.Autonomy = &autonomy
 	}
 	return response
 }

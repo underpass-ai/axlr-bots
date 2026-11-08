@@ -47,6 +47,10 @@ func (uc UpdateBot) Execute(ctx context.Context, id domain.BotID, patch BotPatch
 		}
 	}
 	bot.Touch(uc.deps.Clock.Now())
+	if err := checkLadderApprovers(ctx, uc.deps, bot); err != nil {
+		_ = uc.rec.audit(ctx, "bot.update", id.String(), domain.AuditDenied, map[string]string{"reason": err.Error()})
+		return domain.Bot{}, err
+	}
 	if err := uc.deps.Bots.Save(ctx, bot); err != nil {
 		return domain.Bot{}, err
 	}

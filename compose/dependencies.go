@@ -35,6 +35,7 @@ func Dependencies(stateDir, axlrBin, actor string) (application.Dependencies, er
 		Bots:             filestore.NewBotRepository(stateDir),
 		Tasks:            filestore.NewTaskRepository(stateDir),
 		Incidents:        filestore.NewIncidentRepository(stateDir),
+		Autonomy:         filestore.NewAutonomyRepository(stateDir),
 		Executions:       filestore.NewExecutionRepository(stateDir),
 		Timers:           filestore.NewTimerRepository(stateDir),
 		Nodes:            filestore.NewNodeRepository(stateDir),

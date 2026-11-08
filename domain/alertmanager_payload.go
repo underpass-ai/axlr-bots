@@ -133,7 +133,55 @@ func (p AlertmanagerPayload) Namespaces() []string {
 // Severity maps the severity label to an incident's: critical is sev1,
 // error sev2, warning sev3, info sev4; anything else, or none, sev3.
 func (p AlertmanagerPayload) Severity() IncidentSeverity {
-	switch strings.ToLower(p.label("severity")) {
+	return alertSeverity(p.label("severity"))
+}
+
+// Uniform reports a group that is one alert: every alert carries the
+// group's name and none is worse than the group's severity. The title
+// and severity are read from the first alert when the group's labels do
+// not say, so a mixed group's first alert would speak for all of it.
+func (p AlertmanagerPayload) Uniform() bool {
+	if p.TruncatedAlerts > 0 {
+		// Alerts nobody can read may be anything.
+		return false
+	}
+	name, severity := p.label("alertname"), p.Severity()
+	for _, alert := range p.Alerts {
+		if own := alert.Labels["alertname"]; own != "" && own != name {
+			return false
+		}
+		if alertSeverity(alert.Labels["severity"]).moreSevereThan(severity) {
+			return false
+		}
+	}
+	return name != ""
+}
+
+// SeverityNamed reports a group whose severity label, and every alert's
+// own, is one the mapping names: a label it would read as sev3 by default
+// (P1, high, or none at all) says nothing a grant can rely on.
+func (p AlertmanagerPayload) SeverityNamed() bool {
+	if !severityLabelNamed(p.label("severity")) {
+		return false
+	}
+	for _, alert := range p.Alerts {
+		if own := alert.Labels["severity"]; own != "" && !severityLabelNamed(own) {
+			return false
+		}
+	}
+	return true
+}
+
+func severityLabelNamed(label string) bool {
+	switch strings.ToLower(label) {
+	case "critical", "page", "error", "major", "warning", "info", "none":
+		return true
+	}
+	return false
+}
+
+func alertSeverity(label string) IncidentSeverity {
+	switch strings.ToLower(label) {
 	case "critical", "page":
 		return Sev1
 	case "error", "major":

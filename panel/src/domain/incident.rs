@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    BotId, Cost, IncidentApprovals, IncidentCurrentTask, IncidentPhase, IncidentPostmortem, IncidentSeverity,
+    Autonomy, BotId, Cost, IncidentApprovals, IncidentCurrentTask, IncidentPhase, IncidentPostmortem, IncidentSeverity,
     IncidentStatus, IncidentTask, TaskId,
 };
 
@@ -76,6 +76,10 @@ pub struct Incident {
     /// The approvals its tasks waited for; only when read on its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approvals: Option<IncidentApprovals>,
+    /// Its runbook's standing on its apply bot's ladder, when it is on one;
+    /// only when read on its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub autonomy: Option<Autonomy>,
     /// What its postmortem task wrote and where it stands; absent before
     /// one started.
     #[serde(default, skip_serializing_if = "Option::is_none")]

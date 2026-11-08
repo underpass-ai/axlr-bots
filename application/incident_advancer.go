@@ -64,7 +64,8 @@ func (a incidentAdvancer) taskEnded(ctx context.Context, bot domain.Bot, task do
 	if !ok || current.TaskID() != task.ID() {
 		// An earlier task of the incident (a denied apply whose session
 		// went on after the new cycle's triage started) moves nothing,
-		// but its cost is the incident's.
+		// but its cost and what it says of its cycle are the incident's.
+		a.ladderEnded(ctx, incident, task, execution)
 		if slices.Contains(incident.TaskIDs(), task.ID()) {
 			if added, err := incident.AddExecutionCost(execution.ID(), execution.Usage(), a.deps.Clock.Now()); err != nil {
 				return err
@@ -77,6 +78,7 @@ func (a incidentAdvancer) taskEnded(ctx context.Context, bot domain.Bot, task do
 		return a.rec.audit(ctx, "incident.advance", id.String(), domain.AuditDenied, map[string]string{"task": task.ID().String(), "reason": "not the task of the current cycle and phase"})
 	}
 	phase := current.Phase()
+	a.ladderEnded(ctx, incident, task, execution)
 	now := a.deps.Clock.Now()
 	_, _ = incident.AddExecutionCost(execution.ID(), execution.Usage(), now)
 	from := incident.Status()
@@ -106,6 +108,70 @@ func (a incidentAdvancer) taskEnded(ctx context.Context, bot domain.Bot, task do
 		return a.rec.audit(ctx, "incident.advance", id.String(), domain.AuditDenied, map[string]string{"task": task.ID().String(), "reason": err.Error()})
 	}
 	return a.settle(ctx, incident, from, phase, task.ID(), task.CorrelationID(), move)
+}
+
+// ladderEnded gives the ladder what the task's end says of its cycle,
+// whatever the incident did meanwhile: a green verify, a red one, more
+// than the one write a run acting alone may make, or an apply that
+// failed once its write was under way. A failure the runtime reports with
+// no tool call wrote nothing: it counts nothing and ends the entry. No
+// verdict counts for nothing.
+func (a incidentAdvancer) ladderEnded(ctx context.Context, incident domain.Incident, task domain.Task, execution domain.Execution) {
+	var attached domain.IncidentTask
+	found := false
+	for _, candidate := range incident.Tasks() {
+		if candidate.TaskID() == task.ID() {
+			attached, found = candidate, true
+		}
+	}
+	if !found {
+		return
+	}
+	keeper := newLadderKeeper(a.deps)
+	cycle := attached.Cycle()
+	switch attached.Phase() {
+	case domain.IncidentPhaseVerify:
+		if task.Status() != domain.TaskCompleted {
+			return
+		}
+		switch domain.ParseVerifyVerdict(execution.Result().Answer) {
+		case domain.VerdictGreen:
+			keeper.signal(ctx, incident, cycle, domain.SignalApplyVerified, "")
+		case domain.VerdictRed:
+			keeper.signal(ctx, incident, cycle, domain.SignalVerifyRed, "")
+		}
+	case domain.IncidentPhaseApply:
+		a.ladderApplied(ctx, keeper, incident, cycle, task, execution)
+	}
+}
+
+func (a incidentAdvancer) ladderApplied(ctx context.Context, keeper ladderKeeper, incident domain.Incident, cycle int, task domain.Task, execution domain.Execution) {
+	unit, ok := pinnedUnit(task)
+	if !ok {
+		return
+	}
+	calls := execution.Result().ToolCalls
+	if actedAlone(task) && domain.CountWrites(calls, unit.Tool) > 1 {
+		keeper.signal(ctx, incident, cycle, domain.SignalApplyOverrun, "")
+	}
+	if task.Status() != domain.TaskFailed {
+		return
+	}
+	wait, waited := task.Approval()
+	if !actedAlone(task) && !(waited && wait.Outcome == domain.ApprovalApproved) {
+		return
+	}
+	if execution.Result().SessionID != "" && len(calls) == 0 && execution.Usage().ToolCalls == 0 {
+		keeper.abandon(ctx, incident, task.BotID(), unit, cycle)
+		return
+	}
+	keeper.signal(ctx, incident, cycle, domain.SignalApplyFailed, "")
+}
+
+// actedAlone reports an apply task a ladder let run without a card.
+func actedAlone(task domain.Task) bool {
+	pinned, ok := task.Pinned()
+	return ok && pinned.Unattended()
 }
 
 // end makes the move the task's end means for the incident: by the
@@ -300,40 +366,79 @@ func (a incidentAdvancer) retriage(ctx context.Context, incident domain.Incident
 // moves it, and only while it is Proposed: a call decided while Applying
 // moves nothing, the task's end does. A store that fails is audited and
 // the decision goes on: the task's end moves the incident then.
-func (a incidentAdvancer) taskDecided(ctx context.Context, task domain.Task, outcome, callID, tool, by string) {
+func (a incidentAdvancer) taskDecided(ctx context.Context, task domain.Task, call decidedCall) {
 	id := task.IncidentID()
 	if id == "" {
 		return
 	}
-	if err := a.decided(ctx, task, outcome, callID, tool, by); err != nil {
-		_ = a.rec.audit(ctx, "incident.advance", id.String(), domain.AuditDenied, map[string]string{"task": task.ID().String(), "decision": outcome, "reason": err.Error()})
+	if err := a.decided(ctx, task, call); err != nil {
+		_ = a.rec.audit(ctx, "incident.advance", id.String(), domain.AuditDenied, map[string]string{"task": task.ID().String(), "decision": call.outcome, "reason": err.Error()})
 	}
 }
 
-func (a incidentAdvancer) decided(ctx context.Context, task domain.Task, outcome, callID, tool, by string) error {
+func (a incidentAdvancer) decided(ctx context.Context, task domain.Task, call decidedCall) error {
 	incident, err := a.deps.Incidents.Get(ctx, task.IncidentID())
 	if err != nil {
 		return err
 	}
 	current, ok := incident.CurrentTask()
-	if !ok || current.TaskID() != task.ID() || current.Phase() != domain.IncidentPhaseApply || incident.Status() != domain.IncidentProposed {
+	if !ok || current.TaskID() != task.ID() || current.Phase() != domain.IncidentPhaseApply {
+		return nil
+	}
+	_, laddered := pinnedUnit(task)
+	deniedApplying := laddered && incident.Status() == domain.IncidentApplying && call.outcome == domain.ApprovalDenied
+	if incident.Status() != domain.IncidentProposed && !deniedApplying {
 		return nil
 	}
 	now := a.deps.Clock.Now()
-	move := incidentMove{payload: map[string]any{"taskId": task.ID().String(), "phase": domain.IncidentPhaseApply.String(), "callId": callID, "decision": outcome, "decidedBy": by}}
-	if tool != "" {
-		move.payload["tool"] = tool
+	move := incidentMove{payload: map[string]any{"taskId": task.ID().String(), "phase": domain.IncidentPhaseApply.String(), "callId": call.callID, "decision": call.outcome, "decidedBy": call.by}}
+	if call.tool != "" {
+		move.payload["tool"] = call.tool
 	}
 	from := incident.Status()
-	if outcome == domain.ApprovalApproved {
+	cycle := incident.Cycle()
+	switch {
+	case call.outcome == domain.ApprovalApproved:
 		if err := incident.StartApplying(now); err != nil {
 			return err
 		}
 		move.kinds = []domain.EventType{domain.EventIncidentApplying}
-	} else if err := a.deny(&incident, denialReason(task.ID(), tool, outcome, by), &move, now); err != nil {
-		return err
+	case deniedApplying:
+		// A write denied while the apply runs fails the phase: the
+		// incident never reaches Verifying on a change a person refused.
+		if err := a.sendBack(&incident, denialReason(task.ID(), call.tool, call.outcome, call.by), &move, now); err != nil {
+			return err
+		}
+	default:
+		if err := a.deny(&incident, denialReason(task.ID(), call.tool, call.outcome, call.by), &move, now); err != nil {
+			return err
+		}
 	}
-	return a.settle(ctx, incident, from, domain.IncidentPhaseApply, task.ID(), task.CorrelationID(), move)
+	err = a.settle(ctx, incident, from, domain.IncidentPhaseApply, task.ID(), task.CorrelationID(), move)
+	a.ladderDecided(ctx, incident, cycle, task, call)
+	return err
+}
+
+// ladderDecided gives the ladder the decision: an approval begins the
+// apply and counts when a person gave it to the runbook's own tool; any
+// denial lowers, named or not; an expiry is neither.
+func (a incidentAdvancer) ladderDecided(ctx context.Context, incident domain.Incident, cycle int, task domain.Task, call decidedCall) {
+	unit, ok := pinnedUnit(task)
+	if !ok {
+		return
+	}
+	keeper := newLadderKeeper(a.deps)
+	switch call.outcome {
+	case domain.ApprovalApproved:
+		if err := keeper.begin(ctx, incident, task.BotID(), unit, cycle); err != nil {
+			_ = a.rec.audit(ctx, "autonomy.signal", incident.ID().String(), domain.AuditDenied, map[string]string{"signal": "begin", "cycle": strconv.Itoa(cycle), "reason": err.Error()})
+		}
+		if call.person && call.effectiveTool == unit.Tool.String() {
+			keeper.signal(ctx, incident, cycle, domain.SignalProposalApproved, call.by)
+		}
+	case domain.ApprovalDenied:
+		keeper.signal(ctx, incident, cycle, domain.SignalApplyDenied, call.by)
+	}
 }
 
 // executionWaited adds the cost of a run of an incident's task that

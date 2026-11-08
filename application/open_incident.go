@@ -55,6 +55,7 @@ type opening struct {
 	title        string
 	severity     domain.IncidentSeverity
 	namespaces   []string
+	alerts       domain.AlertGroup
 	fingerprints []string
 	objective    string
 	input        []byte
@@ -106,7 +107,7 @@ func (uc OpenIncident) Execute(ctx context.Context, command OpenIncidentCommand)
 		_ = uc.rec.audit(ctx, "incident.open", botID.String(), domain.AuditDenied, map[string]string{"reason": "bot takes no incidents"})
 		return OpenIncidentResult{}, domain.StateError{Subject: "bot " + botID.String(), Current: "without an incident trigger", Attempted: "take an incident"}
 	}
-	return uc.open(ctx, opening{bot: bot, trigger: trigger, source: source, groupKey: command.GroupKey, title: command.Title, severity: severity, namespaces: namespaces, fingerprints: command.Fingerprints, objective: command.Objective})
+	return uc.open(ctx, opening{bot: bot, trigger: trigger, source: source, groupKey: command.GroupKey, title: command.Title, severity: severity, namespaces: namespaces, alerts: command.alerts, fingerprints: command.Fingerprints, objective: command.Objective})
 }
 
 // open finds what the group already has and opens, repeats or reopens.
@@ -126,6 +127,7 @@ func (uc OpenIncident) open(ctx context.Context, o opening) (OpenIncidentResult,
 		// A later alert of the group adds the namespaces it names, to the
 		// incident it goes on: one too old to reopen is left as it was.
 		uc.recordNamespaces(ctx, &existing, o.namespaces)
+		existing.ObserveAlerts(o.alerts, o.title, o.severity)
 	}
 	switch {
 	case found && !existing.Status().IsResolved() && !existing.HasTask(domain.IncidentPhaseTriage):
@@ -158,6 +160,7 @@ func (uc OpenIncident) open(ctx context.Context, o opening) (OpenIncidentResult,
 		return OpenIncidentResult{}, err
 	}
 	uc.recordNamespaces(ctx, &incident, o.namespaces)
+	incident.StartAlerts(o.alerts)
 	return uc.start(ctx, o, incident, domain.EventIncidentOpened, false)
 }
 

@@ -108,6 +108,21 @@ func incidentResolve(ctx context.Context, service unixapi.Service, args []string
 	return exitOK
 }
 
+// incidentDiagnosis marks the diagnosis of the incident's current cycle
+// correct or wrong, as --actor.
+func incidentDiagnosis(ctx context.Context, service unixapi.Service, actor string, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 2 {
+		fmt.Fprintln(stderr, "axlr-bots: incident diagnosis needs <incident-id> and correct or wrong")
+		return exitUsage
+	}
+	response, err := service.MarkDiagnosis(ctx, args[0], unixapi.DiagnosisRequest{Verdict: args[1], MarkedBy: actor})
+	if err != nil {
+		return fail(stderr, err)
+	}
+	printJSON(stdout, response)
+	return exitOK
+}
+
 // incidentPostmortem shows an incident's postmortem, or answers it as
 // --actor: approve, or send-back with --note, naming the text read with
 // --author-task. On a resolved incident with no postmortem, send-back

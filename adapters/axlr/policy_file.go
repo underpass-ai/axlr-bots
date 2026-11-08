@@ -74,5 +74,5 @@ func (e *Executor) writePolicy(execution domain.ExecutionID, object policyObject
 	if err != nil {
 		return "", err
 	}
-	return path, os.WriteFile(path, append(data, '\n'), 0o644)
+	return path, os.WriteFile(path, append(data, '\n'), 0o600)
 }

@@ -69,7 +69,14 @@ func throughFix(t *testing.T, h *harness, id domain.IncidentID) domain.Incident 
 // waitingApply runs the incident's apply task until its write call waits.
 func waitingApply(t *testing.T, h *harness, incident domain.Incident) domain.Task {
 	t.Helper()
-	h.runtime.report = ExecutionReport{Outcome: domain.ExecutionDecisionRequired, Result: domain.Result{SessionID: "sess-a", PendingDecision: &domain.PendingDecision{Tool: "local_write", CallID: "c-apply", SessionID: "sess-a"}}}
+	// The write of the apply phase: a laddered runbook's own tool.
+	tool := "local_write"
+	if task, err := h.tasks.Get(context.Background(), incident.CurrentTaskID()); err == nil {
+		if unit, ok := pinnedUnit(task); ok {
+			tool = unit.Tool.String()
+		}
+	}
+	h.runtime.report = ExecutionReport{Outcome: domain.ExecutionDecisionRequired, Result: domain.Result{SessionID: "sess-a", PendingDecision: &domain.PendingDecision{Tool: tool, CallID: "c-apply", SessionID: "sess-a"}}}
 	res, err := NewRunTask(h.deps).Execute(context.Background(), incident.CurrentTaskID())
 	if err != nil || res.Task.Status() != domain.TaskWaitingApproval {
 		t.Fatalf("apply run: %v %v", err, res.Task.Status())
@@ -315,14 +322,14 @@ func TestAFailedVerifyAndForeignDecisions(t *testing.T) {
 	fixTask := incident.Tasks()[1]
 	task, _ := h.tasks.Get(ctx, fixTask.TaskID())
 	before := len(h.log.events)
-	newIncidentAdvancer(h.deps).taskDecided(ctx, task, domain.ApprovalApproved, "c", "local_write", "ops")
+	newIncidentAdvancer(h.deps).taskDecided(ctx, task, decidedCall{outcome: domain.ApprovalApproved, callID: "c", tool: "local_write", effectiveTool: "local_write", by: "ops", person: true})
 	if len(h.log.events) != before {
 		t.Error("a decision on the fix task moved the incident")
 	}
-	newIncidentAdvancer(h.deps).taskDecided(ctx, domain.Task{}, domain.ApprovalApproved, "c", "", "ops")
+	newIncidentAdvancer(h.deps).taskDecided(ctx, domain.Task{}, decidedCall{outcome: domain.ApprovalApproved, callID: "c", tool: "", effectiveTool: "", by: "ops", person: true})
 	applyTask, _ := h.tasks.Get(ctx, incident.CurrentTaskID())
 	h.incs.fail = errBoom
-	newIncidentAdvancer(h.deps).taskDecided(ctx, applyTask, domain.ApprovalApproved, "c", "", "ops")
+	newIncidentAdvancer(h.deps).taskDecided(ctx, applyTask, decidedCall{outcome: domain.ApprovalApproved, callID: "c", tool: "", effectiveTool: "", by: "ops", person: true})
 	h.incs.fail = nil
 	if audit := h.log.audits[len(h.log.audits)-1]; audit.Outcome != domain.AuditDenied || audit.Details["decision"] != "approved" {
 		t.Errorf("a store that failed was not audited: %+v", audit)

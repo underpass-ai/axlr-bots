@@ -434,6 +434,66 @@ func (l *Local) ResolveIncident(ctx context.Context, id string, request ResolveR
 	return incident.Snapshot(), nil
 }
 
+func (l *Local) MarkDiagnosis(ctx context.Context, id string, request DiagnosisRequest) (AutonomyResponse, error) {
+	incidentID, err := domain.NewIncidentID(id)
+	if err != nil {
+		return AutonomyResponse{}, err
+	}
+	view, err := l.runner.MarkDiagnosis(ctx, incidentID, request.Verdict, request.MarkedBy)
+	if err != nil {
+		return AutonomyResponse{}, err
+	}
+	return newAutonomyResponse(view), nil
+}
+
+func (l *Local) ListAutonomy(ctx context.Context, query application.AutonomyQuery) ([]AutonomyResponse, error) {
+	views, err := application.NewListAutonomy(l.deps).Execute(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AutonomyResponse, 0, len(views))
+	for _, view := range views {
+		out = append(out, newAutonomyResponse(view))
+	}
+	return out, nil
+}
+
+func (l *Local) GetAutonomy(ctx context.Context, id string) (AutonomyResponse, error) {
+	autonomyID, err := domain.NewAutonomyID(id)
+	if err != nil {
+		return AutonomyResponse{}, err
+	}
+	view, err := application.NewGetAutonomy(l.deps).Execute(ctx, autonomyID)
+	if err != nil {
+		return AutonomyResponse{}, err
+	}
+	return newAutonomyResponse(view), nil
+}
+
+func (l *Local) ClearAutonomy(ctx context.Context, id string, request ClearRequest) (AutonomyResponse, error) {
+	autonomyID, err := domain.NewAutonomyID(id)
+	if err != nil {
+		return AutonomyResponse{}, err
+	}
+	view, err := l.runner.ClearAutonomy(ctx, autonomyID, request.ClearedBy, request.Reason)
+	if err != nil {
+		return AutonomyResponse{}, err
+	}
+	return newAutonomyResponse(view), nil
+}
+
+func (l *Local) LowerAutonomy(ctx context.Context, id string, request LowerRequest) (AutonomyResponse, error) {
+	autonomyID, err := domain.NewAutonomyID(id)
+	if err != nil {
+		return AutonomyResponse{}, err
+	}
+	view, err := l.runner.LowerAutonomy(ctx, autonomyID, request.LoweredBy, request.Reason)
+	if err != nil {
+		return AutonomyResponse{}, err
+	}
+	return newAutonomyResponse(view), nil
+}
+
 // readTask validates the task a reviewer says they read; empty is none.
 func readTask(raw string) (domain.TaskID, error) {
 	if raw == "" {

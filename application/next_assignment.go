@@ -79,6 +79,17 @@ func (uc NextAssignment) queued(ctx context.Context, node domain.Node) (Assignme
 			}
 			continue
 		}
+		if execution.Kind() == domain.ExecutionRun {
+			// A run re-delivered after a crash before its lease is asked
+			// again, as a first delivery is.
+			run, err := newLadderKeeper(uc.deps).recheck(ctx, bot, &task)
+			if err != nil {
+				return Assignment{}, false, err
+			}
+			if !run {
+				continue
+			}
+		}
 		assignment, err := uc.describe(ctx, bot, task, execution)
 		var refused errPolicyRefused
 		switch {
@@ -169,6 +180,13 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 		return Assignment{}, false, nil
 	}
 	task := *chosen
+	run, err := newLadderKeeper(uc.deps).recheck(ctx, bot, &task)
+	if err != nil {
+		return Assignment{}, false, err
+	}
+	if !run {
+		return uc.startPending(ctx, node)
+	}
 	executionID, err := domain.NewExecutionID(uc.deps.IDs.NewID("exec-"))
 	if err != nil {
 		return Assignment{}, false, err
@@ -281,7 +299,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 	assignment.Run = &ExecutionRequest{
 		ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), TenantID: bot.TenantID(), CorrelationID: task.CorrelationID(),
 		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: policy.Level(), AllowedTools: tools,
-		ToolRules: policy.Rules(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer, Events: events,
+		ToolRules: policy.Rules(), Unattended: policy.Unattended(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer, Events: events,
 		Runtime: bot.Runtime(), Input: task.Input(),
 	}
 	return assignment, nil

@@ -46,6 +46,26 @@ func chainDepthLimit(bot domain.Bot, task domain.Task) int {
 // task's grant (the bot's own limit where the grant sets none), else
 // the bot's budgets.
 func taskBudgets(bot domain.Bot, task domain.Task) domain.Budgets {
+	budgets := delegatedBudgets(bot, task)
+	pinned, ok := task.Pinned()
+	if !ok || !pinned.Unattended() {
+		return budgets
+	}
+	// One apply per task (§8.1): a run acting alone has its reads and its
+	// one write, whatever the bot's budget says.
+	unit, _ := pinned.LadderUnit()
+	tools := budgets.MaxToolCallsPerTask()
+	if tools == 0 || tools > unit.MaxToolCalls {
+		tools = unit.MaxToolCalls
+	}
+	capped, err := domain.NewBudgets(budgets.MaxModelCallsPerTask(), tools, budgets.MaxDelegationDepth(), budgets.TaskTimeout())
+	if err != nil {
+		return budgets
+	}
+	return capped
+}
+
+func delegatedBudgets(bot domain.Bot, task domain.Task) domain.Budgets {
 	lineage, ok := task.Lineage()
 	if !ok {
 		return bot.Budgets()

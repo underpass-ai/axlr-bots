@@ -77,6 +77,16 @@ type Service interface {
 	GetIncident(ctx context.Context, id string) (IncidentResponse, error)
 	// ResolveIncident closes an incident; a resolved one is refused.
 	ResolveIncident(ctx context.Context, id string, request ResolveRequest) (domain.IncidentSnapshot, error)
+	// MarkDiagnosis records a person's verdict on an incident's diagnosis
+	// and answers its runbook's standing; ListAutonomy and GetAutonomy read
+	// the runbooks on ladders (docs/architecture/autonomy-ladder.md).
+	MarkDiagnosis(ctx context.Context, id string, request DiagnosisRequest) (AutonomyResponse, error)
+	ListAutonomy(ctx context.Context, query application.AutonomyQuery) ([]AutonomyResponse, error)
+	GetAutonomy(ctx context.Context, id string) (AutonomyResponse, error)
+	// LowerAutonomy takes a runbook down by a person's hand.
+	LowerAutonomy(ctx context.Context, id string, request LowerRequest) (AutonomyResponse, error)
+	// ClearAutonomy ends a runbook's outstanding applies by a person's hand.
+	ClearAutonomy(ctx context.Context, id string, request ClearRequest) (AutonomyResponse, error)
 	// ApprovePostmortem and SendBackPostmortem are a person's answer to
 	// an incident's postmortem.
 	ApprovePostmortem(ctx context.Context, id string, request PostmortemReviewRequest) (domain.IncidentSnapshot, error)

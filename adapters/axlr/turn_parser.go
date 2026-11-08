@@ -20,6 +20,7 @@ type turnParser struct {
 	sessions  []string
 	answer    strings.Builder
 	calls     []domain.ToolCall
+	previews  map[string]bool
 	index     map[string]int
 	ended     string
 	failure   string
@@ -112,6 +113,12 @@ func (p *turnParser) session(id string) {
 }
 
 func (p *turnParser) call(event eventLine, status string) {
+	if previewCall(event.Arguments) && event.CallID != "" {
+		if p.previews == nil {
+			p.previews = map[string]bool{}
+		}
+		p.previews[event.CallID] = true
+	}
 	if i, ok := p.index[event.CallID]; ok && event.CallID != "" {
 		p.calls[i].Status = status
 		if event.Decision != "" {
@@ -120,7 +127,7 @@ func (p *turnParser) call(event eventLine, status string) {
 		return
 	}
 	p.index[event.CallID] = len(p.calls)
-	p.calls = append(p.calls, domain.ToolCall{Name: event.Tool, CallID: event.CallID, Decision: event.Decision, Status: status})
+	p.calls = append(p.calls, domain.ToolCall{Name: event.Tool, CallID: event.CallID, Decision: event.Decision, Status: status, Preview: p.previews[event.CallID]})
 }
 
 // interrupted reports a run the control plane stopped (timeout,
@@ -174,7 +181,7 @@ func (p *turnParser) fromResult(r *resultObject) application.ExecutionReport {
 		result.Sessions = p.sessions
 	}
 	for _, c := range r.ToolCalls {
-		result.ToolCalls = append(result.ToolCalls, domain.ToolCall{Name: c.Tool, CallID: c.CallID, Decision: c.Decision, Status: c.Status})
+		result.ToolCalls = append(result.ToolCalls, domain.ToolCall{Name: c.Tool, CallID: c.CallID, Decision: c.Decision, Status: c.Status, Preview: p.previews[c.CallID]})
 	}
 	for _, a := range r.Artifacts {
 		result.Artifacts = append(result.Artifacts, domain.Artifact{

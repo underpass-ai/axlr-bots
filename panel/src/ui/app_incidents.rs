@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use super::{App, Banner, Effect, Screen};
 use crate::application::PanelError;
-use crate::domain::{ExecutionId, Incident};
+use crate::domain::{Autonomy, ExecutionId, Incident};
 use crate::ui::incident_watch::{PostmortemForm, ResolveForm};
 
 impl App {
@@ -72,6 +72,35 @@ impl App {
             Err(error) => self.banner = Some(Banner::error(&error, self.now)),
         }
         self.reload_screen()
+    }
+
+    /// Sends the mark of the incident on screen, once at a time.
+    pub(super) fn mark_diagnosis(&mut self, verdict: String) -> Vec<Effect> {
+        let Screen::Incident(id) = &self.screen else {
+            return Vec::new();
+        };
+        if self.incidents.marking {
+            return Vec::new();
+        }
+        self.incidents.marking = true;
+        vec![Effect::MarkDiagnosis {
+            id: id.clone(),
+            verdict,
+        }]
+    }
+
+    /// The mark's answer: the runbook's standing on the page, or why not.
+    pub(super) fn diagnosis_marked(&mut self, id: String, result: Result<Autonomy, PanelError>) -> Vec<Effect> {
+        self.incidents.marking = false;
+        match result {
+            Ok(autonomy) => {
+                if let Some(detail) = self.incidents.detail.as_mut().filter(|d| d.id == id) {
+                    detail.autonomy = Some(autonomy);
+                }
+            }
+            Err(error) => self.banner = Some(Banner::error(&error, self.now)),
+        }
+        Vec::new()
     }
 
     /// The task whose text is on screen: what an answer says was read.

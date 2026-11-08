@@ -33,6 +33,7 @@ type IncidentSnapshot struct {
 	Severity             string                 `json:"severity"`
 	Namespace            string                 `json:"namespace,omitempty"`
 	Namespaces           []string               `json:"namespaces,omitempty"`
+	AlertGroup           string                 `json:"alertGroup,omitempty"`
 	Status               string                 `json:"status"`
 	Fingerprints         []string               `json:"fingerprints,omitempty"`
 	ResolvedFingerprints []string               `json:"resolvedFingerprints,omitempty"`

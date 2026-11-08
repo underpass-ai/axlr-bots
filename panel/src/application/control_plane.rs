@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 
 use super::PortFuture;
 use crate::domain::{
-    Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, DeletedBot, EnrollmentRequest,
+    Autonomy, Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, DeletedBot, EnrollmentRequest,
     EnrollmentToken, Event, Execution, ExecutionId, Incident, IncidentStatus, Node, NodeId, Overview, Publication,
     Published, RevokedNode, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId, TaskSubmission,
     Topic,
@@ -75,6 +75,9 @@ pub trait ControlPlane: Send + Sync {
     /// Closes the incident, with the operator's reason if they gave one.
     /// One already resolved is a state error.
     fn resolve_incident(&self, id: String, reason: Option<String>) -> PortFuture<'_, Incident>;
+    /// Marks the diagnosis of the incident's current cycle, as the panel's
+    /// actor: `correct` or `wrong`.
+    fn mark_diagnosis(&self, id: String, verdict: String) -> PortFuture<'_, Autonomy>;
     /// Approves the postmortem text of the `author` task, the one on
     /// screen, as the actor the panel decides as.
     fn approve_postmortem(&self, id: String, author: String) -> PortFuture<'_, Incident>;

@@ -41,6 +41,10 @@ pub struct Trigger {
     /// bot's; empty keeps the bot's.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tools: Vec<String>,
+    /// An apply trigger's ladder, kept as the definition says it: an edit
+    /// of the bot never drops the opt-in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ladder: Option<serde_json::Value>,
     /// The postmortem phase: the severities it writes one for; empty is
     /// sev1 and sev2.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -77,6 +81,15 @@ impl Trigger {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keeps_a_ladder_through_a_save() {
+        let raw = r#"{"type":"incident","name":"apply","phase":"apply","level":"act-with-approval","tools":["patch"],"ladder":{"runbooks":[{"name":"Drift","tool":"patch","namespaces":["shop"]}]}}"#;
+        let trigger: Trigger = serde_json::from_str(raw).unwrap();
+        assert!(trigger.ladder.is_some());
+        let again = serde_json::to_value(&trigger).unwrap();
+        assert_eq!(again["ladder"]["runbooks"][0]["tool"], "patch");
+    }
 
     #[test]
     fn keeps_the_events_an_event_trigger_hears() {

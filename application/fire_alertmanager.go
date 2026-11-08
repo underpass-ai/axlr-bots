@@ -27,7 +27,7 @@ func (uc FireTrigger) fireAlertmanager(ctx context.Context, bot domain.Bot, trig
 	result := FireTriggerResult{Trigger: trigger.Ref()}
 	if payload.Firing() {
 		opened, err := NewOpenIncident(uc.deps).open(ctx, opening{
-			bot: bot, trigger: trigger, source: AlertmanagerSource, groupKey: payload.GroupKey, title: payload.Title(), severity: payload.Severity(), namespaces: payload.Namespaces(),
+			bot: bot, trigger: trigger, source: AlertmanagerSource, groupKey: payload.GroupKey, title: payload.Title(), severity: payload.Severity(), namespaces: payload.Namespaces(), alerts: alertGroupOf(payload),
 			fingerprints: payload.FiringFingerprints(), input: body, fields: map[string]any{"alert": payload.Fields()},
 		})
 		if err != nil {
@@ -97,4 +97,17 @@ func (uc FireTrigger) resolveGroup(ctx context.Context, bot domain.Bot, trigger 
 	}
 	incident = newPostmortemLauncher(uc.deps).launch(ctx, incident)
 	return &incident, nil
+}
+
+// alertGroupOf says whether one alert speaks for the delivery. A severity
+// the mapping does not name leaves it unknown: it counts, and never acts
+// alone.
+func alertGroupOf(payload domain.AlertmanagerPayload) domain.AlertGroup {
+	switch {
+	case !payload.Uniform():
+		return domain.AlertGroupMixed
+	case !payload.SeverityNamed():
+		return domain.AlertGroupUnknown
+	}
+	return domain.AlertGroupUniform
 }

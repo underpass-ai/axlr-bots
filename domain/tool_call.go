@@ -9,4 +9,7 @@ type ToolCall struct {
 	CallID   string `json:"callId"`
 	Decision string `json:"decision,omitempty"`
 	Status   string `json:"status,omitempty"`
+	// Preview is a call that said confirm: false: it showed a change and
+	// made none.
+	Preview bool `json:"preview,omitempty"`
 }

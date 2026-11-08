@@ -457,6 +457,10 @@ fn without_a_connection_nothing_is_asked_of_the_control_plane() {
             id: "inc-disk".into(),
             reason: String::new(),
         },
+        Effect::MarkDiagnosis {
+            id: "inc-disk".into(),
+            verdict: "correct".into(),
+        },
         Effect::Download(crate::domain::ExecutionId::new("e").unwrap(), "a.md".into()),
     ] {
         let message = futures::executor::block_on(app.services.clone().execute(effect.clone())).unwrap();
@@ -1400,6 +1404,38 @@ fn the_first_of_two_approvals_says_nothing_ran() {
     let banner = app.banner.as_ref().unwrap();
     assert_eq!(banner.title, "First approval recorded");
     assert!(banner.detail.contains("second, different person"), "{}", banner.detail);
+}
+
+#[test]
+fn marking_a_diagnosis_goes_once_at_a_time_and_shows_the_answer() {
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Incident("inc-disk".into())));
+    let incident = app.incidents.detail.clone().expect("the incident");
+    let effects = app.apply(Message::MarkDiagnosis("correct".into()));
+    assert_eq!(
+        effects,
+        vec![Effect::MarkDiagnosis {
+            id: "inc-disk".into(),
+            verdict: "correct".into(),
+        }]
+    );
+    assert!(
+        app.apply(Message::MarkDiagnosis("wrong".into())).is_empty(),
+        "one mark at a time"
+    );
+    let mut autonomy: crate::domain::Autonomy = serde_json::from_str(
+        r#"{"id":"ladder-1","runbook":"Drift","namespace":"shop","step":"act-with-approval","earned":{"diagnoses":1}}"#,
+    )
+    .unwrap();
+    autonomy.diagnosis_mark = "diagnosis-correct".into();
+    app.apply(Message::DiagnosisMarked(incident.id.clone(), Ok(autonomy.clone())));
+    assert!(!app.incidents.marking);
+    assert_eq!(app.incidents.detail.as_ref().unwrap().autonomy, Some(autonomy));
+    app.apply(Message::DiagnosisMarked(
+        incident.id,
+        Err(crate::application::PanelError::State("refused".into())),
+    ));
+    assert!(app.banner.is_some());
 }
 
 #[test]

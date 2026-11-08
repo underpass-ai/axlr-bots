@@ -51,6 +51,7 @@ type Incident struct {
 	title        string
 	severity     IncidentSeverity
 	namespaces   []string
+	alerts       AlertGroup
 	status       IncidentStatus
 	fingerprints []string
 	resolved     []string
@@ -198,6 +199,28 @@ func (i *Incident) RecordNamespaces(raw ...string) []string {
 		i.namespaces = append(i.namespaces, namespace)
 	}
 	return ignored
+}
+
+// AlertGroup says what is known of the incident's alerts.
+func (i Incident) AlertGroup() AlertGroup { return i.alerts }
+
+// StartAlerts is what the delivery that opened the incident says of its
+// group. Only this may say uniform: an incident that began unknown (by
+// hand, or stored by an older version) stays unknown.
+func (i *Incident) StartAlerts(group AlertGroup) { i.alerts = group }
+
+// ObserveAlerts takes what a later delivery says of the group. Mixed is
+// for the incident's life: a delivery that is mixed, names another alert
+// or is worse than the incident's severity makes it so. One that cannot
+// say takes a uniform group back to unknown; nothing raises one.
+func (i *Incident) ObserveAlerts(group AlertGroup, title string, severity IncidentSeverity) {
+	switch {
+	case i.alerts == AlertGroupMixed:
+	case group == AlertGroupMixed, group != AlertGroupUnknown && (title != i.title || severity.moreSevereThan(i.severity)):
+		i.alerts = AlertGroupMixed
+	case group == AlertGroupUnknown:
+		i.alerts = AlertGroupUnknown
+	}
 }
 
 // Status is where the incident stands.
@@ -578,7 +601,7 @@ func (i Incident) Snapshot() IncidentSnapshot {
 	}
 	return IncidentSnapshot{
 		ID: i.id.String(), TenantID: i.tenant.String(), BotID: i.bot.String(), GroupKey: i.groupKey, Source: i.source,
-		Title: i.title, Severity: i.severity.String(), Namespace: i.Namespace(), Namespaces: i.namespacesSnapshot(), Status: i.status.String(), Fingerprints: i.Fingerprints(), ResolvedFingerprints: i.ResolvedFingerprints(),
+		Title: i.title, Severity: i.severity.String(), Namespace: i.Namespace(), Namespaces: i.namespacesSnapshot(), AlertGroup: i.alerts.String(), Status: i.status.String(), Fingerprints: i.Fingerprints(), ResolvedFingerprints: i.ResolvedFingerprints(),
 		Cycle: i.cycle, TaskIDs: ids, Tasks: tasks, Diagnosis: i.diagnosis, Proposal: i.proposal, Reason: i.reason, Repeats: i.repeats, Retries: i.retries, SendBacks: i.sendBacks, CostUSD: i.costUSD, CostUnknown: i.costUnknown, CostedExecutions: i.costedSnapshot(),
 		OpenedAt: i.openedAt, UpdatedAt: i.updatedAt, LastSeenAt: i.lastSeenAt, ResolvedAt: resolvedAt, Postmortem: postmortem,
 	}
@@ -666,6 +689,9 @@ func RestoreIncident(s IncidentSnapshot) (Incident, error) {
 	}
 	if ignored := incident.RecordNamespaces(stored...); len(ignored) > 0 {
 		return Incident{}, invalid("namespaces", "a stored namespace is not valid: "+ignored[0])
+	}
+	if incident.alerts, err = ParseAlertGroup(s.AlertGroup); err != nil {
+		return Incident{}, err
 	}
 	if s.Namespace != "" && incident.Namespace() != strings.TrimSpace(s.Namespace) {
 		return Incident{}, invalid("namespace", "must be the first of namespaces")

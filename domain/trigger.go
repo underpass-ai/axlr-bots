@@ -35,6 +35,7 @@ type Trigger struct {
 	interrupt  bool
 	level      AutonomyLevel
 	tools      AllowedTools
+	ladder     *Ladder
 	severity   IncidentSeverity
 	confirm    bool
 	topics     []string
@@ -61,6 +62,9 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 	}
 	if (s.Phase != "" || s.Level != "" || len(s.Tools) > 0) && kind != TriggerIncident {
 		return Trigger{}, invalid("trigger "+name, "only an incident trigger takes a phase, a level or tools")
+	}
+	if s.Ladder != nil && kind != TriggerIncident {
+		return Trigger{}, invalid("trigger "+name, "only an incident trigger of the apply phase takes a ladder")
 	}
 	if len(s.Severities) > 0 && kind != TriggerIncident {
 		return Trigger{}, invalid("trigger "+name, "only an incident trigger of the postmortem phase takes severities")
@@ -128,6 +132,16 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 		}
 		if t.tools, err = NewAllowedTools(s.Tools); err != nil {
 			return Trigger{}, invalid("trigger "+name, err.Error())
+		}
+		if s.Ladder != nil {
+			if t.phase != IncidentPhaseApply {
+				return Trigger{}, invalid("trigger "+name, "only an incident trigger of the apply phase takes a ladder")
+			}
+			ladder, err := NewLadder(*s.Ladder)
+			if err != nil {
+				return Trigger{}, invalid("trigger "+name, err.Error())
+			}
+			t.ladder = &ladder
 		}
 		if t.severities, err = postmortemSeverities(t.phase, s.Severities); err != nil {
 			return Trigger{}, invalid("trigger "+name, err.Error())
@@ -205,6 +219,15 @@ func (t Trigger) Phase() IncidentPhase { return t.phase }
 // Level is the level an incident trigger runs its phase's tasks at, and
 // false when it keeps the bot's.
 func (t Trigger) Level() (AutonomyLevel, bool) { return t.level, t.level != "" }
+
+// Ladder is the apply trigger's progressive autonomy, and false for a
+// trigger without one: a bot's explicit opt-in.
+func (t Trigger) Ladder() (Ladder, bool) {
+	if t.ladder == nil {
+		return Ladder{}, false
+	}
+	return *t.ladder, true
+}
 
 // Tools is the allow-list an incident trigger runs its phase's tasks
 // with, and false when it keeps the bot's (no list, or an empty one).
@@ -321,6 +344,10 @@ func (t Trigger) Snapshot() TriggerSnapshot {
 	s.Level = t.level.String()
 	if t.tools.Len() > 0 {
 		s.Tools = t.tools.Names()
+	}
+	if t.ladder != nil {
+		ladder := t.ladder.Snapshot()
+		s.Ladder = &ladder
 	}
 	for _, severity := range t.severities {
 		s.Severities = append(s.Severities, severity.String())

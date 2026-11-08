@@ -39,6 +39,15 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 		_ = uc.rec.audit(ctx, "task.run", id.String(), domain.AuditDenied, map[string]string{"reason": "bot is " + bot.Status().String()})
 		return RunTaskResult{}, domain.StateError{Subject: "bot " + bot.ID().String(), Current: bot.Status().String(), Attempted: "run a task"}
 	}
+	if task.Status() == domain.TaskPending {
+		run, err := newLadderKeeper(uc.deps).recheck(ctx, bot, &task)
+		if err != nil {
+			return RunTaskResult{}, err
+		}
+		if !run {
+			return RunTaskResult{}, domain.StateError{Subject: "task " + id.String(), Current: "cancelled: its incident no longer stands on it", Attempted: "run alone"}
+		}
+	}
 	now := uc.deps.Clock.Now()
 	timeout, inTime := runTimeout(bot, task, now)
 	if task.Status() == domain.TaskPending && !inTime {
@@ -105,6 +114,7 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 		Level:         policy.Level(),
 		AllowedTools:  policy.Tools().Names(),
 		ToolRules:     policy.Rules(),
+		Unattended:    policy.Unattended(),
 		Budgets:       taskBudgets(bot, task),
 		Timeout:       timeout,
 	})

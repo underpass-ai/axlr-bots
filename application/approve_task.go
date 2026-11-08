@@ -63,6 +63,9 @@ func (uc ApproveTask) byPolicy(ctx context.Context, id domain.TaskID, callID str
 type decider struct {
 	name   string
 	person bool
+	// attested is a person who named themselves: the only decision the
+	// autonomy ladder counts. A daemon's own name is not one.
+	attested bool
 }
 
 func (uc ApproveTask) decide(ctx context.Context, id domain.TaskID, decision, callID string, by decider) (ApproveTaskResult, error) {
@@ -87,6 +90,9 @@ func (uc ApproveTask) decide(ctx context.Context, id domain.TaskID, decision, ca
 			uc = NewApproveTask(deps)
 		}
 		by.name = name
+		named := uc.deps
+		named.Actor = own
+		by.attested = by.person && personName(ctx, named, name)
 	}
 	task, err := uc.deps.Tasks.Get(ctx, id)
 	if err != nil {
@@ -170,7 +176,7 @@ func (uc ApproveTask) decide(ctx context.Context, id domain.TaskID, decision, ca
 			return uc.first(ctx, bot, task, previous)
 		}
 	}
-	return uc.resume(ctx, bot, task, previous, decision, outcome, by.person, nil)
+	return uc.resume(ctx, bot, task, previous, decision, outcome, by, nil)
 }
 
 // needed is how many people the task's open wait needs: what it was
@@ -261,7 +267,7 @@ func expiredWait(task domain.Task, bot domain.Bot, now time.Time) (time.Time, bo
 // resume hands the decision to the session under a new execution and
 // closes the wait with the outcome (approved, denied, or expired when the
 // deadline denied the call). extra joins the decided event's payload.
-func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Task, previous domain.Execution, decision, outcome string, person bool, extra map[string]any) (ApproveTaskResult, error) {
+func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Task, previous domain.Execution, decision, outcome string, by decider, extra map[string]any) (ApproveTaskResult, error) {
 	pending := previous.Result().PendingDecision
 	sessionID := pending.SessionID
 	if sessionID == "" {
@@ -282,7 +288,7 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 		}
 		return ApproveTaskResult{}, uc.deny(ctx, task.ID(), domain.StateError{Subject: "task " + task.ID().String(), Current: "past its delegation's deadline", Attempted: "decide"})
 	}
-	if outcome == domain.ApprovalApproved && person {
+	if outcome == domain.ApprovalApproved && by.person {
 		// A call that waits for two keeps both names on its closed wait.
 		if err := task.FinalApproval(uc.deps.Actor, now); err != nil {
 			return ApproveTaskResult{}, uc.deny(ctx, task.ID(), err)
@@ -357,7 +363,7 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 	// The decision of an incident's apply call moves the incident now,
 	// before the call runs: approved is Applying, denied or expired is
 	// back to Open (design §4).
-	newIncidentAdvancer(uc.deps).taskDecided(ctx, task, outcome, pending.CallID, pending.Tool, uc.deps.Actor)
+	newIncidentAdvancer(uc.deps).taskDecided(ctx, task, decidedCall{outcome: outcome, callID: pending.CallID, tool: pending.Tool, effectiveTool: pending.EffectiveTool(), by: uc.deps.Actor, person: by.attested})
 	if previous.IsAssigned() {
 		// The node takes it on its next poll (NextAssignment) and reports.
 		details := map[string]string{"execution": executionID.String(), "queuedFor": previous.NodeID().String(), "decision": decision}

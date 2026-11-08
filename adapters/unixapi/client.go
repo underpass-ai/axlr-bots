@@ -287,6 +287,41 @@ func (c *Client) ResolveIncident(ctx context.Context, id string, request Resolve
 	return incident, c.call(ctx, http.MethodPost, "/v1/incidents/"+url.PathEscape(id)+"/resolve", request, &incident)
 }
 
+func (c *Client) MarkDiagnosis(ctx context.Context, id string, request DiagnosisRequest) (AutonomyResponse, error) {
+	var response AutonomyResponse
+	return response, c.call(ctx, http.MethodPost, "/v1/incidents/"+url.PathEscape(id)+"/diagnosis", request, &response)
+}
+
+func (c *Client) ListAutonomy(ctx context.Context, query application.AutonomyQuery) ([]AutonomyResponse, error) {
+	list := []AutonomyResponse{}
+	values := url.Values{}
+	for key, value := range map[string]string{"tenant": query.Tenant, "bot": query.Bot, "runbook": query.Runbook, "namespace": query.Namespace} {
+		if value != "" {
+			values.Set(key, value)
+		}
+	}
+	path := "/v1/autonomy"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	return list, c.call(ctx, http.MethodGet, path, nil, &list)
+}
+
+func (c *Client) GetAutonomy(ctx context.Context, id string) (AutonomyResponse, error) {
+	var response AutonomyResponse
+	return response, c.call(ctx, http.MethodGet, "/v1/autonomy/"+url.PathEscape(id), nil, &response)
+}
+
+func (c *Client) ClearAutonomy(ctx context.Context, id string, request ClearRequest) (AutonomyResponse, error) {
+	var response AutonomyResponse
+	return response, c.call(ctx, http.MethodPost, "/v1/autonomy/"+url.PathEscape(id)+"/clear", request, &response)
+}
+
+func (c *Client) LowerAutonomy(ctx context.Context, id string, request LowerRequest) (AutonomyResponse, error) {
+	var response AutonomyResponse
+	return response, c.call(ctx, http.MethodPost, "/v1/autonomy/"+url.PathEscape(id)+"/lower", request, &response)
+}
+
 // ApprovePostmortem approves an incident's postmortem.
 func (c *Client) ApprovePostmortem(ctx context.Context, id string, request PostmortemReviewRequest) (domain.IncidentSnapshot, error) {
 	var incident domain.IncidentSnapshot

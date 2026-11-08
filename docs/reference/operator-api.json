@@ -1763,6 +1763,226 @@
           }
         }
       }
+    },
+    "/v1/incidents/{id}/diagnosis": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "incident id"
+        }
+      ],
+      "post": {
+        "operationId": "markDiagnosis",
+        "description": "a person marks the diagnosis of the incident's current cycle correct or wrong (X-Axlr-Actor or markedBy names them); 409 when the incident is on no ladder, has no diagnosis this cycle, or was marked the other way",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiagnosisRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutonomyResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/autonomy": {
+      "get": {
+        "operationId": "listAutonomy",
+        "description": "the runbooks on ladders, by runbook and namespace, with their step, counters and history",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "one tenant"
+          },
+          {
+            "name": "bot",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "one apply bot"
+          },
+          {
+            "name": "runbook",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "one runbook (alert name)"
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "one namespace"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AutonomyResponse"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/autonomy/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "autonomy id (ladder-…)"
+        }
+      ],
+      "get": {
+        "operationId": "getAutonomy",
+        "description": "one runbook's step, counters and history",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutonomyResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/autonomy/{id}/lower": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "autonomy id (ladder-…)"
+        }
+      ],
+      "post": {
+        "operationId": "lowerAutonomy",
+        "description": "a named person takes the runbook one step down and ends what was outstanding; a task already granted takes the card when it comes to run; 403 for nobody named, a machine or someone not among the apply bot's approvers",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LowerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutonomyResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/autonomy/{id}/clear": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "autonomy id (ladder-…)"
+        }
+      ],
+      "post": {
+        "operationId": "clearAutonomy",
+        "description": "a named approver ends the runbook's outstanding applies, lowering and zeroing nothing",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClearRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutonomyResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3951,6 +4171,10 @@
           },
           "status": {
             "type": "string"
+          },
+          "preview": {
+            "type": "boolean",
+            "description": "the call said confirm: false: it showed a change and made none"
           }
         },
         "required": [
@@ -4122,6 +4346,9 @@
               "type": "string"
             },
             "description": "the postmortem phase's incident trigger: the severities it writes one for, sev1 and sev2 when absent"
+          },
+          "ladder": {
+            "$ref": "#/components/schemas/LadderSnapshot"
           }
         },
         "required": [
@@ -4344,6 +4571,10 @@
           },
           "postmortem": {
             "$ref": "#/components/schemas/IncidentPostmortemSnapshot"
+          },
+          "alertGroup": {
+            "type": "string",
+            "description": "what is known of its alerts: uniform (one alert), mixed, or absent (a hand-opened incident)"
           }
         },
         "required": [
@@ -4741,6 +4972,13 @@
           },
           "postmortem": {
             "$ref": "#/components/schemas/IncidentPostmortemSnapshot"
+          },
+          "autonomy": {
+            "$ref": "#/components/schemas/AutonomyResponse"
+          },
+          "alertGroup": {
+            "type": "string",
+            "description": "what is known of its alerts: uniform (one alert), mixed, or absent (a hand-opened incident)"
           }
         },
         "required": [
@@ -4825,6 +5063,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "ladder": {
+            "$ref": "#/components/schemas/PinnedLadderSnapshot"
           }
         },
         "required": [
@@ -4973,6 +5214,300 @@
           "state",
           "cycle"
         ]
+      },
+      "AutonomyCounters": {
+        "type": "object",
+        "x-go-type": "domain.AutonomyCounters",
+        "description": "the three counts a runbook climbs by",
+        "properties": {
+          "diagnoses": {
+            "type": "integer"
+          },
+          "proposals": {
+            "type": "integer"
+          },
+          "applies": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "diagnoses",
+          "proposals",
+          "applies"
+        ]
+      },
+      "AutonomyThresholdsSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.AutonomyThresholdsSnapshot",
+        "description": "how many of each signal a ladder asks for since the last lowering; 0 or absent is the default (5, 10, 20)",
+        "properties": {
+          "diagnoses": {
+            "type": "integer"
+          },
+          "proposals": {
+            "type": "integer"
+          },
+          "applies": {
+            "type": "integer"
+          }
+        }
+      },
+      "AutonomyEntry": {
+        "type": "object",
+        "x-go-type": "domain.AutonomyEntry",
+        "description": "one signal of a runbook's history; from, to and earnedBefore are present on a step it moved",
+        "properties": {
+          "signal": {
+            "type": "string"
+          },
+          "incidentId": {
+            "type": "string"
+          },
+          "cycle": {
+            "type": "integer"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "earnedBefore": {
+            "$ref": "#/components/schemas/AutonomyCounters"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal",
+          "at"
+        ]
+      },
+      "AutonomyResponse": {
+        "type": "object",
+        "x-go-type": "unixapi.AutonomyResponse",
+        "description": "a runbook's standing on its ladder: its step, its counters and its history; saved is false until its first signal comes; diagnosisMark, read through an incident, is the verdict on that incident's diagnosis this cycle",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "botId": {
+            "type": "string"
+          },
+          "runbook": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "step": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/AutonomyCounters"
+          },
+          "earned": {
+            "$ref": "#/components/schemas/AutonomyCounters"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AutonomyEntry"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "thresholds": {
+            "$ref": "#/components/schemas/AutonomyThresholdsSnapshot"
+          },
+          "diagnosisMark": {
+            "type": "string"
+          },
+          "saved": {
+            "type": "boolean"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "outstanding": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AutonomyOutstanding"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "tenantId",
+          "botId",
+          "runbook",
+          "namespace",
+          "step",
+          "start",
+          "totals",
+          "earned",
+          "createdAt",
+          "updatedAt",
+          "saved"
+        ]
+      },
+      "DiagnosisRequest": {
+        "type": "object",
+        "x-go-type": "unixapi.DiagnosisRequest",
+        "description": "a person's verdict on an incident's diagnosis; who marks it is markedBy or X-Axlr-Actor (both given must agree)",
+        "properties": {
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "correct",
+              "wrong"
+            ]
+          },
+          "markedBy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict"
+        ]
+      },
+      "LadderRunbookSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.LadderRunbookSnapshot",
+        "description": "one runbook of a ladder: its alert name, the one write tool it may run alone and the namespaces it may run it in",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "namespaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "tool",
+          "namespaces"
+        ]
+      },
+      "LadderSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.LadderSnapshot",
+        "description": "an apply trigger's opt-in to progressive autonomy",
+        "properties": {
+          "runbooks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LadderRunbookSnapshot"
+            }
+          },
+          "thresholds": {
+            "$ref": "#/components/schemas/AutonomyThresholdsSnapshot"
+          }
+        },
+        "required": [
+          "runbooks"
+        ]
+      },
+      "PinnedLadderSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.PinnedLadderSnapshot",
+        "description": "the unit of an apply task, whose signals fall on it; alone is what a ladder let it do without a card, maxToolCalls how many calls it may make",
+        "properties": {
+          "runbook": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "alone": {
+            "type": "boolean"
+          },
+          "maxToolCalls": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "runbook",
+          "tool",
+          "namespace"
+        ]
+      },
+      "AutonomyOutstanding": {
+        "type": "object",
+        "x-go-type": "domain.AutonomyOutstanding",
+        "description": "an apply whose end is not recorded: while one is, the runbook gets no grant",
+        "properties": {
+          "incidentId": {
+            "type": "string"
+          },
+          "cycle": {
+            "type": "integer"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "incidentId",
+          "cycle",
+          "at"
+        ]
+      },
+      "LowerRequest": {
+        "type": "object",
+        "x-go-type": "unixapi.LowerRequest",
+        "description": "a person takes a runbook one step down: who is loweredBy or X-Axlr-Actor (both given must agree), and why",
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "loweredBy": {
+            "type": "string"
+          }
+        }
+      },
+      "ClearRequest": {
+        "type": "object",
+        "x-go-type": "unixapi.ClearRequest",
+        "description": "a person ends a runbook's outstanding applies: who is clearedBy or X-Axlr-Actor (both given must agree), and why",
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "clearedBy": {
+            "type": "string"
+          }
+        }
       }
     }
   }

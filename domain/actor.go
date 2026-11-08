@@ -43,10 +43,11 @@ func IsPolicyActor(actor string) bool {
 	return strings.HasPrefix(ActorKey(actor), PolicyActorPrefix)
 }
 
-// IsMachineActor reports a name that says it is no person's: a policy's
-// or a trigger's.
+// IsMachineActor reports a name that says it is no person's: a policy's,
+// a trigger's, a bot's or a node's.
 func IsMachineActor(actor string) bool {
-	return IsPolicyActor(actor) || strings.HasPrefix(ActorKey(actor), TriggerActorPrefix)
+	key := ActorKey(actor)
+	return IsPolicyActor(actor) || strings.HasPrefix(key, TriggerActorPrefix) || strings.HasPrefix(key, "bot:") || strings.HasPrefix(key, "node:")
 }
 
 // ActorKey is the name two actors are compared by: without the CLI's

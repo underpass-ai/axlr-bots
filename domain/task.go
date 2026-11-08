@@ -78,7 +78,7 @@ func (t *Task) Pin(policy ExecutionPolicy) {
 	if !policy.Narrowed() {
 		return
 	}
-	pinned := ExecutionPolicy{level: policy.level, tools: policy.tools, narrowed: true}
+	pinned := ExecutionPolicy{level: policy.level, tools: policy.tools, narrowed: true, grant: policy.grant}
 	t.pinned = &pinned
 }
 
@@ -88,6 +88,18 @@ func (t Task) Pinned() (ExecutionPolicy, bool) {
 		return ExecutionPolicy{}, false
 	}
 	return *t.pinned, true
+}
+
+// RevokeAlone takes a grant back before the task runs: it keeps its
+// unit and takes the card. False when it held none.
+func (t *Task) RevokeAlone() bool {
+	if t.pinned == nil || !t.pinned.Unattended() {
+		return false
+	}
+	revoked := *t.pinned.grant
+	revoked.Alone, revoked.MaxToolCalls = false, 0
+	t.pinned.level, t.pinned.grant = AutonomyActWithApproval, &revoked
+	return true
 }
 
 // IncidentID is the incident the task triages; empty for any other task.
@@ -537,7 +549,7 @@ func (t Task) pinnedSnapshot() *PinnedPolicySnapshot {
 	if t.pinned == nil {
 		return nil
 	}
-	return &PinnedPolicySnapshot{Level: t.pinned.level.String(), AllowedTools: t.pinned.tools.Names()}
+	return &PinnedPolicySnapshot{Level: t.pinned.level.String(), AllowedTools: t.pinned.tools.Names(), Ladder: t.pinned.ladderSnapshot()}
 }
 
 // prioritySnapshot is the priority as stored: empty for normal, so a
@@ -647,7 +659,11 @@ func RestoreTask(s TaskSnapshot) (Task, error) {
 		if err != nil {
 			return Task{}, err
 		}
-		task.pinned = &ExecutionPolicy{level: level, tools: tools, narrowed: true}
+		grant, err := restoreLadderGrant(s.Policy.Ladder)
+		if err != nil {
+			return Task{}, err
+		}
+		task.pinned = &ExecutionPolicy{level: level, tools: tools, narrowed: true, grant: grant}
 	}
 	task.status = status
 	task.failureReason = s.FailureReason

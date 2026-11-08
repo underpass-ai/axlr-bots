@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use super::{ControlPlane, PanelError};
-use crate::domain::Incident;
+use crate::domain::{Autonomy, Incident};
 
 /// How many incidents the list reads: the control plane's own default.
 pub const INCIDENTS: u32 = 100;
@@ -51,6 +51,21 @@ impl ResolveIncident {
         let reason = reason.trim();
         let reason = (!reason.is_empty()).then(|| reason.to_string());
         self.control_plane.resolve_incident(id, reason).await
+    }
+}
+
+/// Marks the diagnosis of an incident's current cycle correct or wrong.
+pub struct MarkDiagnosis {
+    control_plane: Arc<dyn ControlPlane>,
+}
+
+impl MarkDiagnosis {
+    pub fn new(control_plane: Arc<dyn ControlPlane>) -> Self {
+        Self { control_plane }
+    }
+
+    pub async fn execute(&self, id: String, verdict: String) -> Result<Autonomy, PanelError> {
+        self.control_plane.mark_diagnosis(id, verdict).await
     }
 }
 

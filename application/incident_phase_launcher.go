@@ -108,7 +108,23 @@ func (l phaseLauncher) launch(ctx context.Context, incident domain.Incident, cor
 		return incident, err
 	}
 	action := "incident." + phase.String()
-	result, err := submitTask(ctx, l.deps, submission{action: action, bot: taker, trigger: trigger.Ref(), objective: objective, key: key, correlation: correlation, input: input, incident: incident.ID()})
+	keeper := newLadderKeeper(l.deps)
+	var ladder domain.LadderDecision
+	if phase == domain.IncidentPhaseApply {
+		ladder = keeper.decide(ctx, taker, trigger, incident)
+		if ladder.Grant != nil {
+			// Outstanding before the grant exists: a record that cannot be
+			// written is no grant.
+			if err := keeper.begin(ctx, incident, taker.ID(), *ladder.Grant, incident.Cycle()); err != nil {
+				ladder.Grant, ladder.Reason = nil, "the apply could not be recorded outstanding: "+err.Error()
+			}
+		}
+	}
+	unit := ladder.Unit
+	if ladder.Grant != nil {
+		unit = ladder.Grant
+	}
+	result, err := submitTask(ctx, l.deps, submission{action: action, bot: taker, trigger: trigger.Ref(), objective: objective, key: key, correlation: correlation, input: input, incident: incident.ID(), unit: unit})
 	if err != nil {
 		var state domain.StateError
 		if errors.As(err, &state) {
@@ -125,6 +141,25 @@ func (l phaseLauncher) launch(ctx context.Context, incident domain.Incident, cor
 	}
 	policy := taker.PolicyFor(trigger.Ref())
 	details := map[string]string{"task": result.Task.ID().String(), "bot": taker.ID().String(), "cycle": strconv.Itoa(launched.Cycle()), "level": policy.Level().String()}
+	if ladder.Laddered {
+		// Every apply on a ladder says why it has its card or has none, of
+		// the task it really is: a re-attach through the idempotency key
+		// finds the first launch's, whatever the ladder says now.
+		details["ladder"] = ladder.Reason
+		carried := actedAlone(result.Task)
+		switch {
+		case carried:
+			details["level"], details["ladder"] = domain.AutonomyActWithinPolicy.String(), domain.AutonomyActWithinPolicy.String()
+			if held, ok := pinnedUnit(result.Task); ok {
+				if err := keeper.begin(ctx, launched, taker.ID(), held, launched.Cycle()); err != nil {
+					details["ladder"] += " (not recorded outstanding: " + err.Error() + ")"
+				}
+			}
+		case ladder.Grant != nil:
+			keeper.abandon(ctx, launched, taker.ID(), *ladder.Grant, launched.Cycle())
+			details["ladder"] = "the task found through its idempotency key holds no grant"
+		}
+	}
 	return launched, l.rec.audit(ctx, action, launched.ID().String(), domain.AuditOK, details)
 }
 
