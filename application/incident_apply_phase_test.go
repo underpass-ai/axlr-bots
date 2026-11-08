@@ -428,3 +428,42 @@ func TestWithoutAVerifyBotTheIncidentWaitsInVerifying(t *testing.T) {
 		t.Fatalf("without a verify bot: %+v", waiting.Snapshot())
 	}
 }
+
+// An incident read on its own says whether it needs a person, its
+// current task and the approvals its tasks waited for; a list says only
+// whether it needs a person, from one read of the waiting tasks.
+func TestAnIncidentSaysWhenItNeedsAPerson(t *testing.T) {
+	h := newHarness()
+	triage := brigade(t, h, domain.ApprovalsSnapshot{})
+	ctx := context.Background()
+	incident := proposed(t, h, triage)
+	report, err := NewGetIncident(h.deps).Execute(ctx, incident.ID())
+	if err != nil || report.NeedsPerson || report.Current == nil || report.Current.Status() != domain.TaskPending || report.Approvals != (IncidentApprovals{}) {
+		t.Fatalf("pending apply: %+v %v", report, err)
+	}
+	waiting := waitingApply(t, h, incident)
+	report, _ = NewGetIncident(h.deps).Execute(ctx, incident.ID())
+	if !report.NeedsPerson || report.Current.ID() != waiting.ID() || report.Approvals.Waiting != 1 {
+		t.Fatalf("waiting apply: %+v", report)
+	}
+	list, err := NewListIncidents(h.deps).Execute(ctx, IncidentQuery{})
+	if err != nil || len(list) != 1 || !list[0].NeedsPerson || list[0].Current != nil {
+		t.Fatalf("list: %+v %v", list, err)
+	}
+	h.decider.report = completes("Not applied.", 0)
+	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionDeny, ""); err != nil {
+		t.Fatal(err)
+	}
+	report, _ = NewGetIncident(h.deps).Execute(ctx, incident.ID())
+	if report.NeedsPerson || report.Approvals.Denied != 1 || report.Approvals.Waiting != 0 {
+		t.Fatalf("after a denial: %+v", report)
+	}
+	h.tasks.listFail = errBoom
+	if _, err := NewListIncidents(h.deps).Execute(ctx, IncidentQuery{}); !errors.Is(err, errBoom) {
+		t.Errorf("a task store that fails: %v", err)
+	}
+	h.tasks.listFail = nil
+	if _, err := NewGetIncident(h.deps).Execute(ctx, "inc-none"); !domain.IsNotFound(err) {
+		t.Errorf("a missing incident: %v", err)
+	}
+}

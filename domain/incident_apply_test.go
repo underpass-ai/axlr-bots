@@ -225,3 +225,27 @@ func TestVerifyVerdict(t *testing.T) {
 		t.Error("verdict predicates")
 	}
 }
+
+func TestIncidentNeedsAPersonOnlyWhereItStands(t *testing.T) {
+	i := proposedIncident(t, true)
+	if !i.NeedsPerson(true) || i.NeedsPerson(false) {
+		t.Error("a waiting apply of a Proposed incident")
+	}
+	_ = i.StartApplying(t0)
+	if !i.NeedsPerson(true) {
+		t.Error("a second wait while Applying")
+	}
+	i = proposedIncident(t, true)
+	_ = i.Deny("no", t0)
+	if i.NeedsPerson(true) {
+		t.Error("the denied apply's next wait needs a person")
+	}
+	if fresh := sampleIncident(t); fresh.NeedsPerson(true) {
+		t.Error("an incident without a task")
+	}
+	triage := sampleIncident(t)
+	_ = triage.AttachTask("task-t", t0)
+	if !triage.NeedsPerson(true) {
+		t.Error("a waiting triage of an Open incident")
+	}
+}

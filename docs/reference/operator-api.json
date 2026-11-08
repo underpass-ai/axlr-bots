@@ -1387,7 +1387,7 @@
     "/v1/incidents": {
       "get": {
         "operationId": "listIncidents",
-        "description": "the incidents the query selects, the last seen first",
+        "description": "the incidents the query selects, the last seen first, each with needsYou",
         "parameters": [
           {
             "name": "tenant",
@@ -1425,7 +1425,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/IncidentSnapshot"
+                    "$ref": "#/components/schemas/IncidentResponse"
                   }
                 }
               }
@@ -1496,7 +1496,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IncidentSnapshot"
+                  "$ref": "#/components/schemas/IncidentResponse"
                 }
               }
             }
@@ -1504,7 +1504,8 @@
           "default": {
             "$ref": "#/components/responses/Error"
           }
-        }
+        },
+        "description": "one incident with needsYou, its current task and the count of its tasks' approvals"
       }
     },
     "/v1/incidents/{id}/resolve": {
@@ -4178,6 +4179,201 @@
           }
         },
         "required": []
+      },
+      "IncidentResponse": {
+        "type": "object",
+        "x-go-type": "unixapi.IncidentResponse",
+        "description": "an incident as the list and get routes answer it: its snapshot's fields, whether it needs a person now and, from get only, its current task and the count of its tasks' approvals",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "inc-one"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "botId": {
+            "type": "string",
+            "description": "the bot that triages it"
+          },
+          "groupKey": {
+            "type": "string",
+            "description": "what the source groups the alerts by (Alertmanager's groupKey); the newest incident of a tenant and group key is the one an alert repeats or reopens"
+          },
+          "source": {
+            "type": "string",
+            "example": "alertmanager"
+          },
+          "title": {
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/IncidentSeverity"
+          },
+          "status": {
+            "$ref": "#/components/schemas/IncidentStatus"
+          },
+          "fingerprints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the alerts seen, oldest first"
+          },
+          "cycle": {
+            "type": "integer",
+            "description": "1 for the first opening, one more per reopening"
+          },
+          "taskIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the ids of tasks, in the same order (an incident stored before tasks had phases lists here its triage tasks, one per cycle, and has no tasks)"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IncidentTaskSnapshot"
+            },
+            "description": "the tasks that worked on it, oldest first, each with its bot, phase and cycle: one per phase in each cycle"
+          },
+          "diagnosis": {
+            "type": "string",
+            "description": "the answer of the last completed triage task"
+          },
+          "proposal": {
+            "type": "string",
+            "description": "the answer of the fix task of the current diagnosis: the change and its rollback, applied by nobody; dropped when a new triage diagnoses it"
+          },
+          "reason": {
+            "type": "string",
+            "description": "why it was escalated or resolved"
+          },
+          "repeats": {
+            "type": "integer",
+            "description": "alerts received while it was already open"
+          },
+          "retries": {
+            "type": "integer",
+            "description": "triages an alert started again while it was Escalated, since its last proposal or reopening"
+          },
+          "costUsd": {
+            "type": "number",
+            "description": "what its tasks' executions reported, delegated children included"
+          },
+          "costUnknown": {
+            "type": "boolean",
+            "description": "one of its executions stopped before it said what it cost: costUsd is at least what it says (absent when false)"
+          },
+          "openedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastSeenAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resolvedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resolvedFingerprints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the alerts seen that the source said went green"
+          },
+          "denials": {
+            "type": "integer",
+            "description": "the applies of its proposals a person denied or let expire since it was last reopened; the second escalates it"
+          },
+          "needsYou": {
+            "type": "boolean",
+            "description": "its current task waits for an approval where the incident stands (the phase its status launches, or the apply while Applying); a denied apply's later wait does not count. Absent is false"
+          },
+          "currentTask": {
+            "$ref": "#/components/schemas/IncidentCurrentTask",
+            "description": "get only: the task its next move waits on"
+          },
+          "approvals": {
+            "$ref": "#/components/schemas/IncidentApprovalsResponse",
+            "description": "get only: the approvals its tasks waited for, by how each ended"
+          }
+        },
+        "required": [
+          "id",
+          "tenantId",
+          "botId",
+          "groupKey",
+          "source",
+          "title",
+          "severity",
+          "status",
+          "cycle",
+          "openedAt",
+          "updatedAt",
+          "lastSeenAt"
+        ]
+      },
+      "IncidentCurrentTask": {
+        "type": "object",
+        "x-go-type": "unixapi.IncidentCurrentTask",
+        "description": "the task an incident's next move waits on; decide its call with POST /v1/tasks/{id}/decide",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "botId": {
+            "type": "string"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/IncidentPhase"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "approval": {
+            "$ref": "#/components/schemas/ApprovalWait",
+            "description": "the approval it waits for, or last waited for"
+          }
+        },
+        "required": [
+          "taskId",
+          "botId",
+          "phase",
+          "status"
+        ]
+      },
+      "IncidentApprovalsResponse": {
+        "type": "object",
+        "x-go-type": "unixapi.IncidentApprovalsResponse",
+        "description": "the approvals an incident's tasks waited for, by how each ended; a task keeps its last wait, so one that waited twice counts once. The product's rule is one approval per incident: shown, not enforced",
+        "properties": {
+          "approved": {
+            "type": "integer"
+          },
+          "denied": {
+            "type": "integer"
+          },
+          "expired": {
+            "type": "integer"
+          },
+          "waiting": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "approved",
+          "denied",
+          "expired",
+          "waiting"
+        ]
       }
     }
   }

@@ -86,3 +86,17 @@ func (i *Incident) sendBack(reason string, now time.Time) {
 	i.status = IncidentOpen
 	i.updatedAt = now
 }
+
+// NeedsPerson reports that the incident waits for a person's decision:
+// its current task, which waits for an approval when taskWaits, is the
+// one where the incident stands (the phase its status launches, or the
+// apply while Applying). A task of a cycle the incident has left, a
+// denied apply whose session asked again, does not count: deciding it
+// would act on a proposal the incident no longer stands on.
+func (i Incident) NeedsPerson(taskWaits bool) bool {
+	current, ok := i.CurrentTask()
+	if !taskWaits || !ok || current.cycle != i.cycle {
+		return false
+	}
+	return current.phase.LaunchedAt() == i.status || (current.phase == IncidentPhaseApply && i.status == IncidentApplying)
+}
