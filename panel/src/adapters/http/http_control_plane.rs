@@ -178,6 +178,12 @@ struct ResolveBody {
     reason: Option<String>,
 }
 
+#[derive(Serialize)]
+struct PostmortemReviewBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
+}
+
 /// How long an artifact's bytes may take to come: one may be large.
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -373,6 +379,20 @@ impl ControlPlane for HttpControlPlane {
 
     fn resolve_incident(&self, id: String, reason: Option<String>) -> PortFuture<'_, Incident> {
         self.post(format!("/v1/incidents/{id}/resolve"), Some(ResolveBody { reason }))
+    }
+
+    fn approve_postmortem(&self, id: String) -> PortFuture<'_, Incident> {
+        self.post(
+            format!("/v1/incidents/{id}/postmortem/approve"),
+            Some(PostmortemReviewBody { note: None }),
+        )
+    }
+
+    fn send_back_postmortem(&self, id: String, note: String) -> PortFuture<'_, Incident> {
+        self.post(
+            format!("/v1/incidents/{id}/postmortem/send-back"),
+            Some(PostmortemReviewBody { note: Some(note) }),
+        )
     }
 
     fn task_events_after(&self, id: TaskId, after: Option<String>, wait_seconds: u32) -> PortFuture<'_, Vec<Event>> {

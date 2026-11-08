@@ -9,7 +9,8 @@ import (
 // ResolveIncident closes an incident: the operator says it is over, or
 // the source said its alerts went green. The reason is kept on the
 // incident and in its event. The bot is not read: an incident whose bot
-// is gone can still be closed.
+// is gone can still be closed. A severity that qualifies starts its
+// postmortem; whatever becomes of that, the incident is resolved.
 type ResolveIncident struct {
 	deps Dependencies
 	rec  recorder
@@ -41,5 +42,5 @@ func (uc ResolveIncident) Execute(ctx context.Context, id domain.IncidentID, rea
 	if err := uc.rec.audit(ctx, "incident.resolve", id.String(), domain.AuditOK, map[string]string{"reason": reason}); err != nil {
 		return domain.Incident{}, err
 	}
-	return incident, nil
+	return newPostmortemLauncher(uc.deps).launch(ctx, incident), nil
 }

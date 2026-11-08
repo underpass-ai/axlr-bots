@@ -75,6 +75,10 @@ pub trait ControlPlane: Send + Sync {
     /// Closes the incident, with the operator's reason if they gave one.
     /// One already resolved is a state error.
     fn resolve_incident(&self, id: String, reason: Option<String>) -> PortFuture<'_, Incident>;
+    /// Approves the incident's postmortem, as the actor the panel decides as.
+    fn approve_postmortem(&self, id: String) -> PortFuture<'_, Incident>;
+    /// Sends the incident's postmortem back with the person's note.
+    fn send_back_postmortem(&self, id: String, note: String) -> PortFuture<'_, Incident>;
 
     /// A task's timeline after the event `after` names, oldest first;
     /// with `wait_seconds`, the control plane answers as soon as there is

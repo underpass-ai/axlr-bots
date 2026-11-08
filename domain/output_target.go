@@ -19,8 +19,13 @@ const maxOutputFilters = 64
 // it comes every repeat interval of the source. It can be named.
 var DefaultOutputEvents = []EventType{
 	EventIncidentOpened, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentProposed, EventIncidentApplying,
-	EventIncidentVerifying, EventIncidentResolved, EventIncidentEscalated,
+	EventIncidentVerifying, EventIncidentResolved, EventIncidentEscalated, EventIncidentPostmortemApproved,
 }
+
+// outputEventsBeforePostmortem is the default list as a target stored it
+// before postmortems: a target that named no event hears the approval
+// too, so that list reads as the default.
+var outputEventsBeforePostmortem = DefaultOutputEvents[:len(DefaultOutputEvents)-1]
 
 // OutputTarget is one place the control plane announces incidents: a
 // signed webhook, a chat's incoming webhook or a local command, with the
@@ -105,7 +110,7 @@ func ParseOutputEvent(raw string) (EventType, error) {
 	}
 	event := EventType(name)
 	if !event.AboutIncident() {
-		return "", invalid("output event", "must be an incident event: opened, repeated, reopened, diagnosed, proposed, applying, verifying, resolved or escalated")
+		return "", invalid("output event", "must be an incident event: opened, repeated, reopened, diagnosed, proposed, applying, verifying, resolved, escalated, postmortem_drafted, postmortem_failed, postmortem_sent_back or postmortem_approved")
 	}
 	return event, nil
 }
@@ -126,6 +131,9 @@ func outputEvents(field string, raw []string) ([]EventType, error) {
 		if !slices.Contains(events, event) {
 			events = append(events, event)
 		}
+	}
+	if slices.Equal(events, outputEventsBeforePostmortem) {
+		return slices.Clone(DefaultOutputEvents), nil
 	}
 	return events, nil
 }

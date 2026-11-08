@@ -1826,6 +1826,81 @@ fn a_bots_edit_and_delete_say_what_they_do_in_words() {
     );
 }
 
+#[test]
+fn an_incident_shows_its_postmortem_and_the_answers_to_it() {
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Incidents));
+    shows(&app, &["postmortem"]);
+    send(&mut app, Message::Go(Screen::Incident("inc-cert".into())));
+    shows(&app, &["Postmortem", "draft, needs review", "Approve", "Send back"]);
+    reads(
+        &app,
+        ReaderKey::IncidentPostmortem,
+        "# Postmortem\n\nThe certificate was renewed by hand.",
+    );
+    assert!(matches!(
+        messages_of_click(&app, "Approve").as_slice(),
+        [Message::PostmortemApprove]
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Send back").as_slice(),
+        [Message::PostmortemBackOpen]
+    ));
+    app.apply(Message::PostmortemBackOpen);
+    shows(
+        &app,
+        &["Its task writes it again with your note.", "Send it back", "Keep it"],
+    );
+    assert!(matches!(
+        messages_of_click(&app, "Keep it").as_slice(),
+        [Message::PostmortemBackClose]
+    ));
+    let incident = app.incidents.detail.as_mut().unwrap();
+    let postmortem = incident.postmortem.as_mut().unwrap();
+    postmortem.send_backs = 1;
+    postmortem.note = "add the owner".into();
+    postmortem.reviewed_by = "tirso".into();
+    shows(
+        &app,
+        &[
+            "This is the last send-back: no task writes it again, and it is left to a person.",
+            "Asked by tirso: add the owner",
+            "sent back 1×",
+        ],
+    );
+    app.apply(Message::PostmortemBackClose);
+
+    // A failed one says why; one of an earlier cycle is only read; an
+    // approved one says who.
+    let incident = app.incidents.detail.as_mut().unwrap();
+    let postmortem = incident.postmortem.as_mut().unwrap();
+    postmortem.state = crate::domain::PostmortemState::Failed;
+    postmortem.reason = "the model was down".into();
+    postmortem.markdown.clear();
+    shows(
+        &app,
+        &[
+            "not written",
+            "Not written: the model was down",
+            "No text yet.",
+            "Send back",
+        ],
+    );
+    let incident = app.incidents.detail.as_mut().unwrap();
+    incident.cycle += 1;
+    shows(&app, &["the incident opened again"]);
+    assert!(messages_of_click(&app, "Send back").is_empty());
+    let incident = app.incidents.detail.as_mut().unwrap();
+    incident.cycle -= 1;
+    let postmortem = incident.postmortem.as_mut().unwrap();
+    postmortem.state = crate::domain::PostmortemState::Approved;
+    postmortem.approved_by = "tirso".into();
+    postmortem.markdown = "# Text".into();
+    postmortem.note.clear();
+    postmortem.reason.clear();
+    shows(&app, &["approved by tirso"]);
+}
+
 /// A Proposed incident whose apply task waits on its write call.
 fn waiting_apply(app: &App) -> crate::domain::Incident {
     use crate::domain::{

@@ -69,6 +69,7 @@ type Incident struct {
 	updatedAt    time.Time
 	lastSeenAt   time.Time
 	resolvedAt   *time.Time
+	postmortem   *IncidentPostmortem
 }
 
 // NewIncident opens an incident on its first alert: cycle 1, Open, with
@@ -246,7 +247,8 @@ func (i *Incident) MarkResolved(fingerprints []string, now time.Time) error {
 func (i Incident) Cycle() int { return i.cycle }
 
 // Tasks lists the tasks that worked on the incident, oldest first: at
-// most one per phase in each cycle.
+// most one per phase in each cycle, and one more postmortem task per
+// send-back.
 func (i Incident) Tasks() []IncidentTask { return append([]IncidentTask(nil), i.tasks...) }
 
 // TaskIDs lists the tasks that worked on the incident, oldest first.
@@ -336,7 +338,7 @@ func (i *Incident) AttachTask(task TaskID, now time.Time) error {
 // the status the phase is launched at (IncidentPhase.LaunchedAt): the bot
 // is the teammate that takes the phase.
 func (i *Incident) AttachPhaseTask(task TaskID, bot BotID, phase IncidentPhase, now time.Time) error {
-	if phase == IncidentPhaseTriage || i.status != phase.LaunchedAt() {
+	if phase == IncidentPhaseTriage || phase == IncidentPhasePostmortem || i.status != phase.LaunchedAt() {
 		return i.refuse("attach a " + phase.String() + " task")
 	}
 	return i.attach(task, bot, phase, now)
@@ -346,7 +348,7 @@ func (i *Incident) attach(task TaskID, bot BotID, phase IncidentPhase, now time.
 	if task == "" {
 		return invalid("task id", "must not be empty")
 	}
-	if i.HasTask(phase) {
+	if phase != IncidentPhasePostmortem && i.HasTask(phase) {
 		return i.refuse("attach a second " + phase.String() + " task in cycle " + strconv.Itoa(i.cycle))
 	}
 	attached, err := NewIncidentTask(task, bot, phase, i.cycle)
@@ -569,11 +571,16 @@ func (i Incident) Snapshot() IncidentSnapshot {
 		at := *i.resolvedAt
 		resolvedAt = &at
 	}
+	var postmortem *IncidentPostmortemSnapshot
+	if i.postmortem != nil {
+		s := i.postmortem.Snapshot()
+		postmortem = &s
+	}
 	return IncidentSnapshot{
 		ID: i.id.String(), TenantID: i.tenant.String(), BotID: i.bot.String(), GroupKey: i.groupKey, Source: i.source,
 		Title: i.title, Severity: i.severity.String(), Namespace: i.Namespace(), Namespaces: i.namespacesSnapshot(), Status: i.status.String(), Fingerprints: i.Fingerprints(), ResolvedFingerprints: i.ResolvedFingerprints(),
 		Cycle: i.cycle, TaskIDs: ids, Tasks: tasks, Diagnosis: i.diagnosis, Proposal: i.proposal, Reason: i.reason, Repeats: i.repeats, Retries: i.retries, SendBacks: i.sendBacks, CostUSD: i.costUSD, CostUnknown: i.costUnknown, CostedExecutions: i.costedSnapshot(),
-		OpenedAt: i.openedAt, UpdatedAt: i.updatedAt, LastSeenAt: i.lastSeenAt, ResolvedAt: resolvedAt,
+		OpenedAt: i.openedAt, UpdatedAt: i.updatedAt, LastSeenAt: i.lastSeenAt, ResolvedAt: resolvedAt, Postmortem: postmortem,
 	}
 }
 
@@ -616,7 +623,7 @@ func restoreTasks(s IncidentSnapshot) ([]IncidentTask, error) {
 			return nil, invalid("tasks", "an incident has no task past its cycle")
 		}
 		for _, earlier := range tasks {
-			if earlier.cycle > task.cycle || (earlier.cycle == task.cycle && earlier.phase == task.phase) {
+			if earlier.cycle > task.cycle || (earlier.cycle == task.cycle && earlier.phase == task.phase && task.phase != IncidentPhasePostmortem) {
 				return nil, invalid("tasks", "an incident has one task per phase in each cycle, in cycle order")
 			}
 		}
@@ -719,6 +726,13 @@ func RestoreIncident(s IncidentSnapshot) (Incident, error) {
 		if !slices.Contains(incident.resolved, fingerprint) {
 			incident.resolved = append(incident.resolved, fingerprint)
 		}
+	}
+	if s.Postmortem != nil {
+		postmortem, err := restoreIncidentPostmortem(*s.Postmortem, s.Cycle)
+		if err != nil {
+			return Incident{}, err
+		}
+		incident.postmortem = &postmortem
 	}
 	incident.cycle, incident.repeats, incident.retries, incident.sendBacks, incident.costUSD, incident.costUnknown = s.Cycle, s.Repeats, s.Retries, s.SendBacks, s.CostUSD, s.CostUnknown
 	incident.status, incident.updatedAt, incident.lastSeenAt = status, s.UpdatedAt, s.LastSeenAt

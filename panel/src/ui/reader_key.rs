@@ -13,6 +13,7 @@ pub enum ReaderKey {
     IncidentReason,
     IncidentDiagnosis,
     IncidentProposal,
+    IncidentPostmortem,
     IncidentSource,
     IncidentGroup,
     /// One alert of the incident on screen, by its fingerprint.

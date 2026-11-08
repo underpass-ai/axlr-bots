@@ -9,6 +9,7 @@ import (
 
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // incidentOpen reports an alert group by hand: a new incident and its
@@ -104,5 +105,71 @@ func incidentResolve(ctx context.Context, service unixapi.Service, args []string
 		return fail(stderr, err)
 	}
 	printJSON(stdout, incident)
+	return exitOK
+}
+
+// incidentPostmortem shows an incident's postmortem, or answers it as
+// --actor: approve, or send-back with --note.
+func incidentPostmortem(ctx context.Context, service unixapi.Service, actor string, args []string, stdout, stderr io.Writer) int {
+	const usage = "axlr-bots: incident postmortem needs show|approve|send-back and one <incident-id>"
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, usage)
+		return exitUsage
+	}
+	verb := args[0]
+	flags := flag.NewFlagSet("incident postmortem "+verb, flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	note := flags.String("note", "", "what the rewrite should change (send-back needs it)")
+	positional, ok := parseAnywhere(flags, args[1:])
+	if !ok {
+		return exitUsage
+	}
+	if len(positional) != 1 {
+		fmt.Fprintln(stderr, usage)
+		return exitUsage
+	}
+	id := positional[0]
+	var (
+		incident domain.IncidentSnapshot
+		err      error
+	)
+	switch verb {
+	case "show":
+		return incidentPostmortemShow(ctx, service, id, stdout, stderr)
+	case "approve":
+		incident, err = service.ApprovePostmortem(ctx, id, unixapi.PostmortemReviewRequest{DecidedBy: actor})
+	case "send-back":
+		if strings.TrimSpace(*note) == "" {
+			fmt.Fprintln(stderr, "axlr-bots: incident postmortem send-back needs --note")
+			return exitUsage
+		}
+		incident, err = service.SendBackPostmortem(ctx, id, unixapi.PostmortemReviewRequest{DecidedBy: actor, Note: *note})
+	default:
+		fmt.Fprintln(stderr, usage)
+		return exitUsage
+	}
+	if err != nil {
+		return fail(stderr, err)
+	}
+	printJSON(stdout, incident)
+	return exitOK
+}
+
+// incidentPostmortemShow prints the postmortem's Markdown as it is, and
+// its state on stderr so a pipe gets the text alone.
+func incidentPostmortemShow(ctx context.Context, service unixapi.Service, id string, stdout, stderr io.Writer) int {
+	incident, err := service.GetIncident(ctx, id)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	postmortem := incident.Postmortem
+	if postmortem == nil {
+		fmt.Fprintln(stderr, "axlr-bots: incident "+id+" has no postmortem")
+		return exitError
+	}
+	fmt.Fprintf(stderr, "%s, cycle %d, task %s\n", postmortem.State, postmortem.Cycle, postmortem.TaskID)
+	if postmortem.Markdown != "" {
+		fmt.Fprintln(stdout, postmortem.Markdown)
+	}
 	return exitOK
 }

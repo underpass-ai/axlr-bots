@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -18,7 +19,8 @@ import (
 // that says the alert is still red sends it back to Open. A denied or
 // expired apply, and a failed one, send it back to Open too (the second
 // denial escalates it); a triage, fix or verify task that failed,
-// expired or was cancelled escalates it. After each move the control
+// expired or was cancelled escalates it. A postmortem task's end is
+// stored on the postmortem and moves nothing else. After each move the control
 // plane launches the phase the incident reached. Every execution's cost
 // is added, a delegated child's included. Only the incident's current
 // task moves it; an incident that is gone, already resolved or moved on
@@ -82,7 +84,7 @@ func (a incidentAdvancer) taskEnded(ctx context.Context, bot domain.Bot, task do
 	move := incidentMove{payload: map[string]any{"taskId": task.ID().String(), "executionId": execution.ID().String(), "phase": phase.String(), "costUsd": incident.CostUSD()}}
 	err = a.end(&incident, current, task, execution, &move, now)
 	var state domain.StateError
-	if err != nil && !errors.As(err, &state) {
+	if err != nil && !errors.As(err, &state) && phase != domain.IncidentPhasePostmortem {
 		// What the task wrote was refused even after IncidentText: a
 		// person looks at it rather than the incident staying with no
 		// task left to move it.
@@ -122,6 +124,8 @@ func (a incidentAdvancer) end(incident *domain.Incident, current domain.Incident
 		return domain.IncidentText(phase.String()+" task "+task.ID().String()+" "+task.Status().String()+": "+reason, domain.MaxIncidentReasonLength)
 	}
 	switch {
+	case phase == domain.IncidentPhasePostmortem:
+		return a.postmortemEnded(incident, task, answer, failure, move, now)
 	case phase == domain.IncidentPhaseTriage && completed:
 		if answer == "" {
 			answer = "the triage task completed without an answer"
@@ -158,6 +162,23 @@ func (a incidentAdvancer) end(incident *domain.Incident, current domain.Incident
 		move.payload["reason"] = failure()
 		return incident.Escalate(failure(), now)
 	}
+}
+
+// postmortemEnded stores what the postmortem's task wrote, or why it did
+// not, on the postmortem: the incident's status never moves. A task that
+// answered nothing is a failure, not a text for a person to approve.
+func (a incidentAdvancer) postmortemEnded(incident *domain.Incident, task domain.Task, answer string, failure func() string, move *incidentMove, now time.Time) error {
+	if task.Status() != domain.TaskCompleted || strings.TrimSpace(answer) == "" {
+		reason := failure()
+		if task.Status() == domain.TaskCompleted {
+			reason = "postmortem task " + task.ID().String() + " completed without an answer"
+		}
+		move.kinds = []domain.EventType{domain.EventIncidentPostmortemFailed}
+		move.payload["reason"] = reason
+		return incident.FailPostmortem(task.ID(), reason, now)
+	}
+	move.kinds = []domain.EventType{domain.EventIncidentPostmortemDrafted}
+	return incident.RecordPostmortem(task.ID(), domain.IncidentText(answer, domain.MaxIncidentPostmortemLength), now)
 }
 
 // applied moves the incident whose apply task completed: Applying

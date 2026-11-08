@@ -182,6 +182,14 @@ pub enum Message {
     ResolveSend,
     ResolveClose,
     IncidentResolved(Result<Incident, PanelError>),
+    /// Answer the postmortem of the incident on screen: approve it, or
+    /// open the form, give a note, send it back.
+    PostmortemApprove,
+    PostmortemBackOpen,
+    PostmortemBackNote(String),
+    PostmortemBackSend,
+    PostmortemBackClose,
+    PostmortemReviewed(Result<Incident, PanelError>),
     /// Save an execution's artifact, and where it went; `None` when the
     /// person cancelled.
     Download(ExecutionId, String),

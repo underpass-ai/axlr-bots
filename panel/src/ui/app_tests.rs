@@ -4,7 +4,7 @@ use super::test_runtime::{connected, drive, send};
 use super::view::tests::{app, config, settings};
 use super::*;
 use crate::application::{PanelError, PanelSettings};
-use crate::domain::{AutonomyLevel, BotId, BotStatus, NodeId, NodeStatus, TaskId, TaskStatus};
+use crate::domain::{AutonomyLevel, BotId, BotStatus, NodeId, NodeStatus, PostmortemState, TaskId, TaskStatus};
 
 fn task_in(app: &App, status: TaskStatus) -> TaskId {
     app.fleet
@@ -1398,4 +1398,62 @@ fn the_first_of_two_approvals_says_nothing_ran() {
     let banner = app.banner.as_ref().unwrap();
     assert_eq!(banner.title, "First approval recorded");
     assert!(banner.detail.contains("second, different person"), "{}", banner.detail);
+}
+
+#[test]
+fn a_postmortem_is_approved_or_sent_back_from_its_incident() {
+    let mut app = connected();
+    let effects = app.apply(Message::Go(Screen::Incident("inc-cert".into())));
+    drive(&mut app, effects);
+    assert!(app.incidents.detail.as_ref().unwrap().postmortem_waits());
+
+    app.apply(Message::PostmortemBackOpen);
+    assert!(app.incidents.review.open);
+    app.apply(Message::PostmortemBackNote("add the owner".into()));
+    let effects = app.apply(Message::PostmortemBackSend);
+    assert_eq!(
+        effects,
+        vec![Effect::SendBackPostmortem {
+            id: "inc-cert".into(),
+            note: "add the owner".into()
+        }]
+    );
+    assert!(
+        app.apply(Message::PostmortemBackSend).is_empty(),
+        "one answer at a time"
+    );
+    assert!(app.apply(Message::PostmortemApprove).is_empty(), "one answer at a time");
+    drive(&mut app, effects);
+    assert!(!app.incidents.review.open);
+    let back = app.incidents.detail.as_ref().unwrap().postmortem.clone().unwrap();
+    assert_eq!((back.state, back.send_backs), (PostmortemState::Writing, 1));
+    assert_eq!(app.banner.as_ref().unwrap().title, "Postmortem being written");
+
+    // A refusal keeps the page as it was and says why.
+    let effects = app.apply(Message::PostmortemApprove);
+    assert_eq!(effects, vec![Effect::ApprovePostmortem("inc-cert".into())]);
+    drive(&mut app, effects);
+    assert_eq!(app.banner.as_ref().unwrap().title, "Not now");
+    assert!(!app.incidents.review.busy);
+
+    app.apply(Message::PostmortemBackOpen);
+    app.apply(Message::PostmortemBackClose);
+    assert!(!app.incidents.review.open);
+    app.apply(Message::PostmortemBackOpen);
+    send(&mut app, Message::Go(Screen::Incident("inc-disk".into())));
+    assert!(!app.incidents.review.open, "leaving the page closes the form");
+    send(&mut app, Message::Go(Screen::Incidents));
+    assert!(app.apply(Message::PostmortemApprove).is_empty());
+    assert!(app.apply(Message::PostmortemBackSend).is_empty());
+}
+
+#[test]
+fn an_approved_postmortem_says_who_in_the_banner() {
+    let mut app = connected();
+    let effects = app.apply(Message::Go(Screen::Incident("inc-cert".into())));
+    drive(&mut app, effects);
+    send(&mut app, Message::PostmortemApprove);
+    assert_eq!(app.banner.as_ref().unwrap().title, "Postmortem approved");
+    let approved = app.incidents.detail.as_ref().unwrap().postmortem.clone().unwrap();
+    assert_eq!(approved.state, PostmortemState::Approved);
 }

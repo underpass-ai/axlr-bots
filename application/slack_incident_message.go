@@ -64,6 +64,10 @@ func NewSlackIncidentMessage(event IncidentOutputEvent) SlackIncidentMessage {
 	if event.Diagnosis != "" && event.Status != domain.IncidentOpen.String() {
 		message.Blocks = append(message.Blocks, slackCode("*Cause*\n", event.Diagnosis))
 	}
+	if event.Event == domain.EventIncidentPostmortemApproved.String() {
+		message.Blocks = append(message.Blocks, slackSection("*Postmortem approved* by "+slackProse(event.PostmortemBy)), slackCode("*Postmortem*\n", event.Postmortem))
+		return slackWithPanel(message, event)
+	}
 	switch event.Status {
 	case domain.IncidentProposed.String():
 		if event.Proposal != "" {
@@ -86,6 +90,12 @@ func NewSlackIncidentMessage(event IncidentOutputEvent) SlackIncidentMessage {
 		}
 		message.Blocks = append(message.Blocks, slackSection(line+"\n*Needs you*: the bots gave it to a person."))
 	}
+	return slackWithPanel(message, event)
+}
+
+// slackWithPanel ends the message with the panel's button, when a panel
+// URL is known.
+func slackWithPanel(message SlackIncidentMessage, event IncidentOutputEvent) SlackIncidentMessage {
 	if event.Links.Panel != "" {
 		message.Blocks = append(message.Blocks, SlackBlock{Type: "actions", Elements: []SlackButton{{
 			Type: "button", Text: SlackText{Type: "plain_text", Text: "Open in the panel"}, URL: event.Links.Panel, ActionID: "open-incident",
@@ -172,6 +182,14 @@ func slackEventWords(event string) string {
 		return "Incident resolved"
 	case domain.EventIncidentEscalated:
 		return "Incident escalated"
+	case domain.EventIncidentPostmortemDrafted:
+		return "Postmortem drafted"
+	case domain.EventIncidentPostmortemFailed:
+		return "Postmortem not written"
+	case domain.EventIncidentPostmortemSentBack:
+		return "Postmortem sent back"
+	case domain.EventIncidentPostmortemApproved:
+		return "Postmortem approved"
 	}
 	return event
 }

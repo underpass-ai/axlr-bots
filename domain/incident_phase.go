@@ -4,7 +4,8 @@ package domain
 // a task of its own, launched by the control plane when the incident
 // reaches it, never by a bot that would wait through an approval: triage
 // when an alert opens the incident, fix once it is Diagnosed, apply once
-// it is Proposed, verify once the apply task completed.
+// it is Proposed, verify once the apply task completed, postmortem once
+// it is Resolved.
 type IncidentPhase string
 
 const (
@@ -22,6 +23,10 @@ const (
 	// completed task that says the alert is still red sends the incident
 	// back to Open; otherwise the source's resolution closes it.
 	IncidentPhaseVerify IncidentPhase = "verify"
+	// IncidentPhasePostmortem writes down a resolved incident: its
+	// completed task is the incident's postmortem, for a person to
+	// approve or send back. Its failure changes nothing of the incident.
+	IncidentPhasePostmortem IncidentPhase = "postmortem"
 )
 
 // ParseIncidentPhase validates a phase; empty is triage.
@@ -29,15 +34,15 @@ func ParseIncidentPhase(raw string) (IncidentPhase, error) {
 	switch IncidentPhase(raw) {
 	case "":
 		return IncidentPhaseTriage, nil
-	case IncidentPhaseTriage, IncidentPhaseFix, IncidentPhaseApply, IncidentPhaseVerify:
+	case IncidentPhaseTriage, IncidentPhaseFix, IncidentPhaseApply, IncidentPhaseVerify, IncidentPhasePostmortem:
 		return IncidentPhase(raw), nil
 	}
-	return "", invalid("incident phase", "must be triage, fix, apply or verify")
+	return "", invalid("incident phase", "must be triage, fix, apply, verify or postmortem")
 }
 
 // LaunchedAt is the status the incident has when the control plane
 // launches the phase's task: Open for triage, Diagnosed for fix,
-// Proposed for apply, Verifying for verify.
+// Proposed for apply, Verifying for verify, Resolved for postmortem.
 func (p IncidentPhase) LaunchedAt() IncidentStatus {
 	switch p {
 	case IncidentPhaseFix:
@@ -46,6 +51,8 @@ func (p IncidentPhase) LaunchedAt() IncidentStatus {
 		return IncidentProposed
 	case IncidentPhaseVerify:
 		return IncidentVerifying
+	case IncidentPhasePostmortem:
+		return IncidentResolved
 	}
 	return IncidentOpen
 }
