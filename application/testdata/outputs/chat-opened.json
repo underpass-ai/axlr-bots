@@ -1,0 +1,54 @@
+{
+  "text": "[sev2] KubePodCrashLooping in shop: Incident opened",
+  "blocks": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "SEV2 · KubePodCrashLooping in shop"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Incident opened* · `inc-18` · tenant `default`"
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Status*\nOpen"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Bot*\ntriage"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Cycle*\n1"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Cost*\n$0.0000"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Open in the panel"
+          },
+          "url": "https://ops.example.test/axlr/incidents/inc-18",
+          "action_id": "open-incident"
+        }
+      ]
+    }
+  ]
+}

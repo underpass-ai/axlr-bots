@@ -1,0 +1,31 @@
+{
+  "schema": "axlr-bots.incident-event/v1",
+  "deliveryId": "dlv-3794e631bd2a453499c50713",
+  "event": "incident.opened",
+  "eventId": "evt-23",
+  "target": "hook",
+  "occurredAt": "2026-10-23T15:00:00Z",
+  "incidentId": "inc-18",
+  "tenantId": "default",
+  "botId": "triage",
+  "botName": "triage",
+  "taskId": "task-20",
+  "title": "KubePodCrashLooping in shop",
+  "severity": "sev2",
+  "status": "Open",
+  "cycle": 1,
+  "groupKey": "{}/{alertname=\"KubePodCrashLooping\"}",
+  "source": "alertmanager",
+  "needsYou": false,
+  "costUsd": 0,
+  "openedAt": "2026-10-23T15:00:00Z",
+  "updatedAt": "2026-10-23T15:00:00Z",
+  "links": {
+    "incident": {
+      "method": "GET",
+      "path": "/v1/incidents/inc-18",
+      "url": "https://cp.example.test:7879/v1/incidents/inc-18"
+    },
+    "panel": "https://panel.example.test/incidents/inc-18"
+  }
+}

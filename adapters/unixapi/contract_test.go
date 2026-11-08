@@ -37,7 +37,7 @@ func init() {
 		domain.NodeCapabilities{}, domain.NotifyTargetSnapshot{}, domain.PendingDecision{}, domain.PlacementSnapshot{},
 		domain.PolicyRecord{}, domain.Result{}, domain.TaskLineage{}, domain.ToolCall{}, domain.ToolRuleSnapshot{},
 		domain.ToolRulesSnapshot{}, domain.TriggerRef{}, domain.TriggerRefSnapshot{}, domain.PinnedPolicySnapshot{}, domain.TriggerSnapshot{}, domain.Usage{},
-		application.Overview{}, application.BotDefinition{}, application.OpenIncidentCommand{}, domain.IncidentSnapshot{}, domain.IncidentTaskSnapshot{}, OpenIncidentResponse{}, IncidentResponse{}, IncidentCurrentTask{}, IncidentApprovalsResponse{}, ResolveRequest{}, application.PublishGroupEventCommand{}, application.PublishAnswer{}, application.GroupTopic{}, application.TopicListener{}, application.BotPatch{}, application.Group{}, application.GroupMember{},
+		application.Overview{}, application.BotDefinition{}, application.OpenIncidentCommand{}, domain.IncidentSnapshot{}, domain.IncidentTaskSnapshot{}, OpenIncidentResponse{}, IncidentResponse{}, IncidentCurrentTask{}, IncidentApprovalsResponse{}, ResolveRequest{}, application.PublishGroupEventCommand{}, application.PublishAnswer{}, application.GroupTopic{}, application.TopicListener{}, application.BotPatch{}, application.Group{}, application.GroupMember{}, application.OutputDefinition{}, application.OutputView{},
 		domain.RuntimeSnapshot{}, domain.JevProgramSnapshot{}, domain.JevActSnapshot{}, domain.JevTellSnapshot{},
 		application.BudgetsDefinition{}, application.ModelPolicyDefinition{},
 		SubmitRequest{}, TaskRequest{}, SubmitResponse{}, RunResponse{}, CancelResponse{}, ReportResponse{},

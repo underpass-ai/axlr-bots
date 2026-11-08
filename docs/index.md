@@ -27,6 +27,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | Let a teammate apply an incident's fix once a person approves it, verify it took, and give each phase its own level and tools | [Incidents](runbooks/triggers.md#incidents), [ADR](architecture/incident-phases.md) |
 | Approve or deny the write a bot wants to make, be notified of it, let it expire | [Approvals](runbooks/approvals.md) |
 | Say who may approve a bot's calls, and make a write in production wait for two different people | [Who may decide](runbooks/approvals.md#who-may-decide), [Two persons](runbooks/approvals.md#two-persons), [ADR](architecture/approvers.md) |
+| Tell a Slack channel, a signed webhook or a script what each incident did: opened, the cause, the change waiting for you, resolved | [Outputs](runbooks/outputs.md), [ADR](architecture/incident-outputs.md) |
 | Run bots on the ChatGPT subscription of `codex login` instead of an API key | [Codex subscription](runbooks/codex-subscription.md) |
 | Let a bot ask another bot to do a task, within depth and budget limits that stop loops | [Delegation](reference/bot-definition.md#delegation), [ADR](architecture/delegation.md) |
 | Put bots in a team so they know each other and ask each other without naming targets | [Teams](reference/bot-definition.md#teams), [ADR](architecture/groups-and-events.md) |
@@ -44,6 +45,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | How a node runs AXLR, the policy it passes, how it reads the result; the Jev runtime | [Runtime contract](architecture/runtime-contract.md) |
 | How a push reaches a node: its own stream, or a NATS broker, and what a broker needs | [Bus port](architecture/bus-port.md) |
 | How a running task's progress gets from the run to the panel without slowing the run | [Live progress](architecture/live-progress.md) |
+| How incidents are told to Slack, a webhook or a command: the targets, the filters, the outbox and its retries, what never leaves the control plane | [Incident outputs](architecture/incident-outputs.md) |
 | How a world (a simulation, a camera, a sensor, an operator's hand) reaches the bots as text, through the tools, the bus and the notes that exist | [Input adapters](architecture/input-adapters.md) |
 | The product and architecture vision this implements | [Vision](architecture/vision.md) |
 

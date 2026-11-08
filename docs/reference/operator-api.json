@@ -1585,6 +1585,91 @@
           }
         }
       }
+    },
+    "/v1/outputs": {
+      "get": {
+        "operationId": "listOutputs",
+        "description": "the incident output targets, in name order; never a URL, a secret or a command, a fingerprint instead",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OutputView"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "addOutput",
+        "description": "keep a new incident output target (webhook, slack or command); a name already taken is 409, a definition the control plane refuses 400",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutputDefinition"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutputView"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/outputs/{name}": {
+      "parameters": [
+        {
+          "name": "name",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "output name"
+        }
+      ],
+      "delete": {
+        "operationId": "removeOutput",
+        "description": "drop the target and answer what it was; its pending deliveries are skipped; none of that name is 404",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutputView"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4238,6 +4323,119 @@
           "botId",
           "groupKey",
           "title"
+        ]
+      },
+      "OutputDefinition": {
+        "type": "object",
+        "x-go-type": "application.OutputDefinition",
+        "description": "an incident output target as the operator gives it: a webhook takes url and secret, slack its incoming-webhook url alone, command an absolute program and its arguments; events take the short (opened) or full (incident.opened) name, none is opened, reopened, diagnosed, proposed, applying, verifying, resolved and escalated; no tenants or severities is all of them",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/OutputKind"
+          },
+          "url": {
+            "type": "string",
+            "description": "where a webhook or slack target posts; a slack URL is its secret"
+          },
+          "secret": {
+            "type": "string",
+            "description": "a webhook's signing secret, 16 to 256 characters"
+          },
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "a command target's program (an absolute path) and its arguments"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tenants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "severities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IncidentSeverity"
+            }
+          },
+          "panelUrl": {
+            "type": "string",
+            "description": "the panel base this target links to, <base>/incidents/<id>; default serve --panel-url"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      },
+      "OutputKind": {
+        "type": "string",
+        "x-go-enum": "domain.OutputKind",
+        "x-extensible-enum": true,
+        "enum": [
+          "webhook",
+          "slack",
+          "command"
+        ]
+      },
+      "OutputView": {
+        "type": "object",
+        "x-go-type": "application.OutputView",
+        "description": "an output target as anyone may read it: never its URL, secret or command",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/OutputKind"
+          },
+          "fingerprint": {
+            "type": "string",
+            "description": "sha256: and 12 hex digits; changes with the URL, the secret or the command"
+          },
+          "host": {
+            "type": "string",
+            "description": "the host a webhook or slack target posts to"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the incident events it hears, full names"
+          },
+          "tenants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "severities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IncidentSeverity"
+            }
+          },
+          "panelUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "fingerprint",
+          "events"
         ]
       },
       "OpenIncidentResponse": {

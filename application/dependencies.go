@@ -5,7 +5,8 @@ import "errors"
 // Dependencies are the ports every use case may need, wired once by the
 // composition root. Actor names who is acting, for the audit log;
 // OperatorURL is the operator API's base URL (https://host:7879), for
-// the approve and deny links a notification carries, and may be empty.
+// the approve and deny links a notification carries and the incident
+// link of an output, and may be empty.
 type Dependencies struct {
 	Bots        BotRepository
 	Tasks       TaskRepository
@@ -26,10 +27,19 @@ type Dependencies struct {
 	Workspace   Workspace
 	Deliveries  DeliveryRepository
 	Notifier    NotificationSender
-	Clock       Clock
-	IDs         IDGenerator
-	Actor       string
-	OperatorURL string
+	// Outputs, OutputDeliveries and OutputSender announce incidents to
+	// the control plane's output targets.
+	Outputs          OutputRepository
+	OutputDeliveries OutputDeliveryRepository
+	OutputSender     OutputSender
+	Clock            Clock
+	IDs              IDGenerator
+	Actor            string
+	OperatorURL      string
+	// PanelURL is the base of the panel link an incident output carries
+	// (<base>/incidents/<id>); empty leaves the link out unless the
+	// target names its own.
+	PanelURL string
 	// Daemon says the process serves others (axlr-bots serve): Actor is
 	// then the control plane's own name, which no decision that names
 	// its actor may claim where names count (approvers, two persons).
@@ -77,6 +87,12 @@ func (d Dependencies) Validate() error {
 		return errors.New("application: DeliveryRepository is required")
 	case d.Notifier == nil:
 		return errors.New("application: NotificationSender is required")
+	case d.Outputs == nil:
+		return errors.New("application: OutputRepository is required")
+	case d.OutputDeliveries == nil:
+		return errors.New("application: OutputDeliveryRepository is required")
+	case d.OutputSender == nil:
+		return errors.New("application: OutputSender is required")
 	case d.Clock == nil:
 		return errors.New("application: Clock is required")
 	case d.IDs == nil:
