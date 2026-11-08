@@ -78,3 +78,26 @@ func TestAutonomyLevelOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestANarrowerListDropsTheAllowRulesOfToolsItLeavesOut(t *testing.T) {
+	bot := sampleBot(t)
+	logs, _ := NewToolRule("observability.query_logs", map[string]string{"service": "web"})
+	pods, _ := NewToolRule("kubernetes.get_pods", map[string]string{"namespace": "shop"})
+	never, _ := NewToolRule("kubernetes.delete", nil)
+	rules, err := NewToolRules([]ToolRule{logs, pods}, []ToolRule{never}, bot.AllowedTools())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bot.Govern(AutonomyPropose, rules); err != nil {
+		t.Fatal(err)
+	}
+	triggers, _ := NewTriggers([]TriggerSnapshot{{Type: "incident", Name: "triage", Tools: []string{"kubernetes.get_pods"}}})
+	bot.Wire(triggers, bot.Placement())
+	narrowed := bot.PolicyFor(TriggerRef{Type: TriggerIncident, Name: "triage"}).Rules()
+	if allow := narrowed.Allow(); len(allow) != 1 || allow[0].Tool() != "kubernetes.get_pods" || len(narrowed.Deny()) != 1 {
+		t.Errorf("rules = %+v", narrowed.Snapshot())
+	}
+	if whole := bot.PolicyFor(ManualTrigger()).Rules(); len(whole.Allow()) != 2 {
+		t.Errorf("the bot's rules = %+v", whole.Snapshot())
+	}
+}
