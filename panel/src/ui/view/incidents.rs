@@ -372,10 +372,8 @@ fn postmortem_section<'a>(
             tokens,
         ));
     }
-    if current {
-        if let Some(answers) = postmortem_answers(app, postmortem, tokens) {
-            body = body.push(answers);
-        }
+    if let Some(answers) = current.then(|| postmortem_answers(app, postmortem, tokens)).flatten() {
+        body = body.push(answers);
     }
     section(Icon::Tasks, "Postmortem", body, tokens)
 }

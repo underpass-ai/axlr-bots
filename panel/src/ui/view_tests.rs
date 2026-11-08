@@ -1887,9 +1887,10 @@ fn an_incident_shows_its_postmortem_and_the_answers_to_it() {
         ],
     );
     let incident = app.incidents.detail.as_mut().unwrap();
+    let written_for = format!("written for cycle {}: the incident opened again", incident.cycle);
     incident.cycle += 1;
-    shows(&app, &["the incident opened again"]);
-    assert!(messages_of_click(&app, "Send back").is_empty());
+    shows(&app, &[written_for.as_str()]);
+    assert!(simulator_misses(&app, "Send back"));
     let incident = app.incidents.detail.as_mut().unwrap();
     incident.cycle -= 1;
     let postmortem = incident.postmortem.as_mut().unwrap();
