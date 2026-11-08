@@ -157,6 +157,29 @@ func (p AlertmanagerPayload) Uniform() bool {
 	return name != ""
 }
 
+// SeverityNamed reports a group whose severity label, and every alert's
+// own, is one the mapping names: a label it would read as sev3 by default
+// (P1, high, or none at all) says nothing a grant can rely on.
+func (p AlertmanagerPayload) SeverityNamed() bool {
+	if !severityLabelNamed(p.label("severity")) {
+		return false
+	}
+	for _, alert := range p.Alerts {
+		if own := alert.Labels["severity"]; own != "" && !severityLabelNamed(own) {
+			return false
+		}
+	}
+	return true
+}
+
+func severityLabelNamed(label string) bool {
+	switch strings.ToLower(label) {
+	case "critical", "page", "error", "major", "warning", "info", "none":
+		return true
+	}
+	return false
+}
+
 func alertSeverity(label string) IncidentSeverity {
 	switch strings.ToLower(label) {
 	case "critical", "page":

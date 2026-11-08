@@ -123,6 +123,22 @@ func (k ladderKeeper) abandon(ctx context.Context, incident domain.Incident, bot
 	}
 }
 
+// endUnrun ends the outstanding entry of a granted task stopped before
+// it ran: nothing wrote.
+func (k ladderKeeper) endUnrun(ctx context.Context, task domain.Task) {
+	unit, ok := pinnedUnit(task)
+	if !ok {
+		return
+	}
+	incident, err := k.deps.Incidents.Get(ctx, task.IncidentID())
+	if err != nil {
+		return
+	}
+	if cycle, ok := applyCycle(incident, task.ID()); ok {
+		k.abandon(ctx, incident, task.BotID(), unit, cycle)
+	}
+}
+
 // applyTaskOf is the apply task of the incident's cycle and the unit
 // pinned on it: where the cycle's signals fall, whatever the incident
 // says now. False when the cycle's apply carries no unit.

@@ -79,6 +79,17 @@ func (uc NextAssignment) queued(ctx context.Context, node domain.Node) (Assignme
 			}
 			continue
 		}
+		if execution.Kind() == domain.ExecutionRun {
+			// A run re-delivered after a crash before its lease is asked
+			// again, as a first delivery is.
+			run, err := newLadderKeeper(uc.deps).recheck(ctx, bot, &task)
+			if err != nil {
+				return Assignment{}, false, err
+			}
+			if !run {
+				continue
+			}
+		}
 		assignment, err := uc.describe(ctx, bot, task, execution)
 		var refused errPolicyRefused
 		switch {

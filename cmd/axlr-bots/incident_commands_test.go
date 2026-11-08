@@ -121,10 +121,16 @@ func TestDiagnosisAndAutonomyCommands(t *testing.T) {
 	if code != exitOK || lowered["step"] != "propose" {
 		t.Fatalf("lower = %d %v", code, lowered)
 	}
+	if code, _ := c.json("--actor", "tirso", "autonomy", "clear", marked["id"].(string), "--reason", "looked"); code != exitOK {
+		t.Fatalf("clear = %d", code)
+	}
+	if code, _, errText := c.run("autonomy", "clear", "nope"); code == exitOK || errText == "" {
+		t.Errorf("clear, bad id: %d %s", code, errText)
+	}
 	if code, _, errText := c.run("autonomy", "get", "nope"); code == exitOK || errText == "" {
 		t.Errorf("bad id: %d %s", code, errText)
 	}
-	for _, args := range [][]string{{"incident", "diagnosis", id}, {"autonomy", "get"}, {"autonomy", "lower"}, {"autonomy", "lower", "--bogus"}, {"autonomy", "list", "extra"}, {"autonomy", "list", "--bogus"}} {
+	for _, args := range [][]string{{"incident", "diagnosis", id}, {"autonomy", "get"}, {"autonomy", "lower"}, {"autonomy", "lower", "--bogus"}, {"autonomy", "clear"}, {"autonomy", "clear", "--bogus"}, {"autonomy", "list", "extra"}, {"autonomy", "list", "--bogus"}} {
 		if code, _, _ := c.run(args...); code != exitUsage {
 			t.Errorf("%v: exit %d", args, code)
 		}

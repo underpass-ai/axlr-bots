@@ -68,6 +68,19 @@ func TestAutonomyOverTheSocket(t *testing.T) {
 	if err != nil || lowered.Step != "propose" || lowered.History[len(lowered.History)-1].Reason != "stop" {
 		t.Fatalf("lower = %+v %v", lowered, err)
 	}
+	cleared, err := client.ClearAutonomy(ctx, marked.ID, ClearRequest{Reason: "looked", ClearedBy: "tirso"})
+	if err != nil || cleared.Step != "propose" {
+		t.Fatalf("clear = %+v %v", cleared, err)
+	}
+	if _, err := client.ClearAutonomy(ctx, "not-a-ladder", ClearRequest{ClearedBy: "tirso"}); err == nil {
+		t.Error("a bad id was cleared")
+	}
+	if status, body, err := client.doWith(ctx, http.MethodPost, "/v1/autonomy/"+marked.ID+"/clear", http.Header{ActorHeader: {"tirso"}}, ClearRequest{ClearedBy: "mallory"}); err != nil || status != http.StatusBadRequest {
+		t.Errorf("clear, two names: %d %s %v", status, body, err)
+	}
+	if status, body, err := client.doWith(ctx, http.MethodPost, "/v1/autonomy/"+marked.ID+"/clear", nil, nil); err != nil || status != http.StatusForbidden {
+		t.Errorf("clear by nobody: %d %s %v", status, body, err)
+	}
 	if status, body, err := client.doWith(ctx, http.MethodPost, "/v1/autonomy/"+marked.ID+"/lower", nil, nil); err != nil || status != http.StatusForbidden {
 		t.Errorf("lower by nobody: %d %s %v", status, body, err)
 	}

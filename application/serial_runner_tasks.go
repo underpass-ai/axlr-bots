@@ -89,6 +89,14 @@ func (r *SerialRunner) LowerAutonomy(ctx context.Context, id domain.AutonomyID, 
 	return NewLowerAutonomy(r.deps).Execute(ctx, id, actor, reason)
 }
 
+// ClearAutonomy ends a runbook's outstanding applies by a person's hand,
+// as ClearAutonomy does.
+func (r *SerialRunner) ClearAutonomy(ctx context.Context, id domain.AutonomyID, actor, reason string) (AutonomyView, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return NewClearAutonomy(r.deps).Execute(ctx, id, actor, reason)
+}
+
 // MarkDiagnosis records a person's verdict on an incident's diagnosis, as
 // MarkDiagnosis does, beside a report's or a settle's signals of the same
 // runbook.

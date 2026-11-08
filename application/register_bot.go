@@ -35,6 +35,10 @@ func (uc RegisterBot) Execute(ctx context.Context, definition BotDefinition) (do
 	if err := checkLadderApprovers(ctx, uc.deps, bot); err != nil {
 		return domain.Bot{}, err
 	}
+	if err := checkNotAnApprover(ctx, uc.deps, bot.ID()); err != nil {
+		_ = uc.rec.audit(ctx, "bot.register", bot.ID().String(), domain.AuditDenied, map[string]string{"reason": err.Error()})
+		return domain.Bot{}, err
+	}
 	// Whatever a bot of this id left behind is not this bot's to inherit.
 	if err := newLadderKeeper(uc.deps).purge(ctx, bot.ID()); err != nil {
 		return domain.Bot{}, err

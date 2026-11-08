@@ -137,7 +137,7 @@ func ladderIncident(t *testing.T, severity IncidentSeverity, namespaces ...strin
 		t.Fatal(err)
 	}
 	incident.RecordNamespaces(namespaces...)
-	incident.ObserveAlerts(AlertGroupUniform, incident.Title(), severity)
+	incident.StartAlerts(AlertGroupUniform)
 	return incident
 }
 
@@ -324,6 +324,17 @@ func TestAMixedGroupHasNoUnit(t *testing.T) {
 	if incident.AlertGroup() != AlertGroupMixed {
 		t.Error("mixed is for life")
 	}
+	unknown := ladderIncident(t, Sev2, "shop")
+	unknown.StartAlerts(AlertGroupUnknown)
+	unknown.ObserveAlerts(AlertGroupUniform, unknown.Title(), Sev2)
+	if unknown.AlertGroup() != AlertGroupUnknown {
+		t.Error("a later delivery raised an unknown group")
+	}
+	lowered := ladderIncident(t, Sev2, "shop")
+	lowered.ObserveAlerts(AlertGroupUnknown, lowered.Title(), Sev2)
+	if lowered.AlertGroup() != AlertGroupUnknown {
+		t.Error("a delivery that cannot say left the group uniform")
+	}
 	hand := ladderIncident(t, Sev2, "shop")
 	hand.alerts = AlertGroupUnknown
 	if d := bot.DecideLadder(trigger, hand, topAutonomy(t), true); d.Grant != nil || !strings.Contains(d.Reason, "not known") {
@@ -450,8 +461,8 @@ func TestTheHistoryIsCappedAndKeepsTheLowerings(t *testing.T) {
 }
 
 func TestCountWritesAndEffectiveTool(t *testing.T) {
-	calls := []ToolCall{{Name: "local_read", Status: "completed"}, {Name: "patch", Status: "completed"}, {Name: "axlr_call_tool", Status: "failed"}, {Name: "patch", Status: "denied"}, {Name: "axlr_call_tool", Status: "pending"}}
-	if got := CountWrites(calls, "patch"); got != 2 {
+	calls := []ToolCall{{Name: "local_read", Status: "completed"}, {Name: "patch", Status: "completed"}, {Name: "axlr_call_tool", Status: "failed"}, {Name: "patch", Status: "denied"}, {Name: "axlr_call_tool", Status: "pending"}, {Name: "patch", Status: "completed", Preview: true}}
+	if got := CountWrites(calls, "patch"); got != 1 {
 		t.Errorf("writes %d", got)
 	}
 	bridged := PendingDecision{Tool: "axlr_call_tool", Arguments: []byte(`{"name":"patch","arguments":{}}`)}
@@ -491,5 +502,55 @@ func TestRevokeAloneKeepsTheUnitAtTheCard(t *testing.T) {
 	}
 	if _, ok := bot.PolicyFor(TriggerRef{}).LadderUnit(); ok {
 		t.Fatal("a manual policy has a unit")
+	}
+}
+
+func TestClearAndTheReasonsItKeeps(t *testing.T) {
+	a := topAutonomy(t)
+	if n, err := a.Clear("tirso", "x", ladderNow); n != 0 || err != nil {
+		t.Fatalf("%d %v", n, err)
+	}
+	before := len(a.History())
+	a.Begin("inc-b", 1, ladderNow)
+	if _, err := a.Clear("bot:x", "", ladderNow); err == nil {
+		t.Fatal("a machine cleared")
+	}
+	n, err := a.Clear("tirso", strings.Repeat("y", 5000)+"\x1b", ladderNow)
+	if err != nil || n != 1 || len(a.Outstanding()) != 0 || a.Step() != AutonomyActWithinPolicy {
+		t.Fatalf("%d %v %+v", n, err, a.Snapshot())
+	}
+	last := a.History()[before]
+	if last.Signal != "outstanding-cleared" || len(last.Reason) > MaxIncidentReasonLength || strings.Contains(last.Reason, "\x1b") {
+		t.Fatalf("entry %+v", last)
+	}
+	if _, err := RestoreRunbookAutonomy(a.Snapshot()); err != nil {
+		t.Fatal(err)
+	}
+	if autonomyReason("  ") != "" {
+		t.Error("spaces are no reason")
+	}
+	b := topAutonomy(t)
+	b.Begin("inc-b", 1, ladderNow)
+	b.BindTool("scale", ladderNow)
+	if len(b.Outstanding()) != 0 {
+		t.Error("a tool change left the entry")
+	}
+}
+
+func TestSeverityNamed(t *testing.T) {
+	with := func(labels ...string) AlertmanagerPayload {
+		p := AlertmanagerPayload{}
+		for _, label := range labels {
+			p.Alerts = append(p.Alerts, AlertmanagerAlert{Labels: map[string]string{"alertname": "A", "severity": label}})
+		}
+		return p
+	}
+	for _, c := range []struct {
+		labels []string
+		want   bool
+	}{{[]string{"warning"}, true}, {[]string{"INFO", "warning"}, true}, {[]string{"P1"}, false}, {[]string{"warning", "high"}, false}, {[]string{""}, false}} {
+		if got := with(c.labels...).SeverityNamed(); got != c.want {
+			t.Errorf("%v: %v", c.labels, got)
+		}
 	}
 }

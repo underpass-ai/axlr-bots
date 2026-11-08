@@ -99,10 +99,15 @@ func (uc FireTrigger) resolveGroup(ctx context.Context, bot domain.Bot, trigger 
 	return &incident, nil
 }
 
-// alertGroupOf says whether one alert speaks for the delivery.
+// alertGroupOf says whether one alert speaks for the delivery. A severity
+// the mapping does not name leaves it unknown: it counts, and never acts
+// alone.
 func alertGroupOf(payload domain.AlertmanagerPayload) domain.AlertGroup {
-	if payload.Uniform() {
-		return domain.AlertGroupUniform
+	switch {
+	case !payload.Uniform():
+		return domain.AlertGroupMixed
+	case !payload.SeverityNamed():
+		return domain.AlertGroupUnknown
 	}
-	return domain.AlertGroupMixed
+	return domain.AlertGroupUniform
 }

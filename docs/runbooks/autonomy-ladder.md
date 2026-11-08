@@ -1,12 +1,14 @@
 # Autonomy ladder
 
+> **The limit you must accept before opting in.** The control plane cannot tell a real alert from a rule-authored twin of it. Anyone who can write an alert rule can raise an alert with the same `alertname` and `namespace` as a runbook, with text of their choosing in its annotations, and the group is uniform: at the top step the bot may act on it with no card, inside the runbook's bounds. Alert rules are part of the trust boundary. Deploy with Prometheus Operator's `enforcedNamespaceLabel` or an equivalent, and let only people you would let approve an apply write rules in those namespaces.
+
 Let one runbook, in one namespace, earn the right to apply without a card ([ADR](../architecture/autonomy-ladder.md)). Until it has earned it, nothing about the apply changes.
 
 ## Opt a bot in
 
 The bot that applies declares the ladder on its apply trigger, runs at `act-within-policy` and lists `approvals.approvers`; the trigger itself stays at `act-with-approval`. A bot without approvers is refused.
 
-**Alert rules are part of the trust boundary.** A runbook and its namespace are read from the alert: whoever can write a rule can name them. Deploy with Prometheus Operator's `enforcedNamespaceLabel` or an equivalent before opting a bot in.
+A grant also needs every alert of the group to carry a `severity` label the mapping names (`critical`, `page`, `error`, `major`, `warning`, `info`, `none`), and none of them to be sev1: `P1`, `high` or no label at all count, and take the card. A bot may not be registered under the name of any bot's approver.
 
 ```json
 {
@@ -78,11 +80,21 @@ axlr-bots autonomy get ladder-…
 axlr-bots --actor tirso autonomy lower ladder-… --reason "the last two applies looked wrong"
 ```
 
-One step down, for a named approver, audited. It ends every outstanding apply; a task already granted takes the card when it comes to run.
+One step down, for a named approver, audited. It ends every outstanding apply and cancels any run of this runbook already acting alone; a task granted but not started takes the card when it comes to run.
 
 ## A runbook stuck on the card
 
-`outstanding` lists the applies whose end is not recorded: a verify with no verdict, a run cancelled halfway, a lowering the store lost. While one is there the runbook gets no grant. It ends on a recorded green or lowering; otherwise look at the apply and `autonomy lower` it.
+`outstanding` lists the applies whose end is not recorded: a verify with no verdict, a run cancelled halfway, a lowering the store lost. While one is there the runbook gets no grant. It ends on a recorded green or lowering. Otherwise look at the apply, and:
+
+```bash
+axlr-bots --actor tirso autonomy clear ladder-… --reason "checked the rollout by hand"
+```
+
+Nothing is lowered and nothing earned is lost. If the apply did harm, use `autonomy lower` instead.
+
+## An unreadable record
+
+`autonomy get` answers an error, `autonomy list` skips it (the daemon's log says which), every apply of that runbook takes the card, and `lower` and `clear` refuse it. The file stays at `<state>/autonomy/<id>.json`. Look at it: repair it from a backup, or move it away, which starts the runbook over at its trigger's step with nothing earned.
 
 `step` is where it stands; `earned` is what counts since it was last lowered; `totals` falls only when the runbook's tool changes; `history` lists the signals. A lowering's entry has `from`, `to` and `earnedBefore`: what it took back.
 

@@ -85,6 +85,8 @@ type Service interface {
 	GetAutonomy(ctx context.Context, id string) (AutonomyResponse, error)
 	// LowerAutonomy takes a runbook down by a person's hand.
 	LowerAutonomy(ctx context.Context, id string, request LowerRequest) (AutonomyResponse, error)
+	// ClearAutonomy ends a runbook's outstanding applies by a person's hand.
+	ClearAutonomy(ctx context.Context, id string, request ClearRequest) (AutonomyResponse, error)
 	// ApprovePostmortem and SendBackPostmortem are a person's answer to
 	// an incident's postmortem.
 	ApprovePostmortem(ctx context.Context, id string, request PostmortemReviewRequest) (domain.IncidentSnapshot, error)

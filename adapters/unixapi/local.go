@@ -470,6 +470,18 @@ func (l *Local) GetAutonomy(ctx context.Context, id string) (AutonomyResponse, e
 	return newAutonomyResponse(view), nil
 }
 
+func (l *Local) ClearAutonomy(ctx context.Context, id string, request ClearRequest) (AutonomyResponse, error) {
+	autonomyID, err := domain.NewAutonomyID(id)
+	if err != nil {
+		return AutonomyResponse{}, err
+	}
+	view, err := l.runner.ClearAutonomy(ctx, autonomyID, request.ClearedBy, request.Reason)
+	if err != nil {
+		return AutonomyResponse{}, err
+	}
+	return newAutonomyResponse(view), nil
+}
+
 func (l *Local) LowerAutonomy(ctx context.Context, id string, request LowerRequest) (AutonomyResponse, error) {
 	autonomyID, err := domain.NewAutonomyID(id)
 	if err != nil {

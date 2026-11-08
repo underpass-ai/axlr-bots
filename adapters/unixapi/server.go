@@ -180,6 +180,7 @@ func (s *Server) operatorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/autonomy", s.listAutonomy)
 	mux.HandleFunc("GET /v1/autonomy/{id}", s.getAutonomy)
 	mux.HandleFunc("POST /v1/autonomy/{id}/lower", s.lowerAutonomy)
+	mux.HandleFunc("POST /v1/autonomy/{id}/clear", s.clearAutonomy)
 	mux.HandleFunc("POST /v1/incidents/{id}/postmortem/approve", s.reviewPostmortem(s.service.ApprovePostmortem))
 	mux.HandleFunc("POST /v1/incidents/{id}/postmortem/send-back", s.reviewPostmortem(s.service.SendBackPostmortem))
 	mux.HandleFunc("GET /v1/outputs", s.listOutputs)
@@ -665,6 +666,25 @@ func (s *Server) listAutonomy(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getAutonomy(w http.ResponseWriter, r *http.Request) {
 	value, err := s.service.GetAutonomy(r.Context(), r.PathValue("id"))
+	respond(w, http.StatusOK, value, err)
+}
+
+// clearAutonomy is POST /v1/autonomy/{id}/clear: a person ends a
+// runbook's outstanding applies.
+func (s *Server) clearAutonomy(w http.ResponseWriter, r *http.Request) {
+	var request ClearRequest
+	if r.ContentLength != 0 && !readJSON(w, r, &request) {
+		return
+	}
+	header := r.Header.Get(ActorHeader)
+	if request.ClearedBy != "" && header != "" && request.ClearedBy != header {
+		respond(w, 0, nil, domain.ValidationError{Field: "clearedBy", Reason: "names another actor than " + ActorHeader})
+		return
+	}
+	if request.ClearedBy == "" {
+		request.ClearedBy = header
+	}
+	value, err := s.service.ClearAutonomy(r.Context(), r.PathValue("id"), request)
 	respond(w, http.StatusOK, value, err)
 }
 

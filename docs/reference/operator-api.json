@@ -1941,6 +1941,48 @@
           }
         }
       }
+    },
+    "/v1/autonomy/{id}/clear": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "autonomy id (ladder-…)"
+        }
+      ],
+      "post": {
+        "operationId": "clearAutonomy",
+        "description": "a named approver ends the runbook's outstanding applies, lowering and zeroing nothing",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClearRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutonomyResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4129,6 +4171,10 @@
           },
           "status": {
             "type": "string"
+          },
+          "preview": {
+            "type": "boolean",
+            "description": "the call said confirm: false: it showed a change and made none"
           }
         },
         "required": [
@@ -5446,6 +5492,19 @@
             "type": "string"
           },
           "loweredBy": {
+            "type": "string"
+          }
+        }
+      },
+      "ClearRequest": {
+        "type": "object",
+        "x-go-type": "unixapi.ClearRequest",
+        "description": "a person ends a runbook's outstanding applies: who is clearedBy or X-Axlr-Actor (both given must agree), and why",
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "clearedBy": {
             "type": "string"
           }
         }

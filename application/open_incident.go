@@ -160,7 +160,7 @@ func (uc OpenIncident) open(ctx context.Context, o opening) (OpenIncidentResult,
 		return OpenIncidentResult{}, err
 	}
 	uc.recordNamespaces(ctx, &incident, o.namespaces)
-	incident.ObserveAlerts(o.alerts, o.title, o.severity)
+	incident.StartAlerts(o.alerts)
 	return uc.start(ctx, o, incident, domain.EventIncidentOpened, false)
 }
 

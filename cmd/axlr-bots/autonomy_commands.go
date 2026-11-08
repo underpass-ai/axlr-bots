@@ -69,3 +69,24 @@ func autonomyLower(ctx context.Context, service unixapi.Service, actor string, a
 	printJSON(stdout, response)
 	return exitOK
 }
+
+// autonomyClear ends a runbook's outstanding applies, as --actor.
+func autonomyClear(ctx context.Context, service unixapi.Service, actor string, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("autonomy clear", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	reason := flags.String("reason", "", "what you looked at")
+	positional, ok := parseAnywhere(flags, args)
+	if !ok {
+		return exitUsage
+	}
+	if len(positional) != 1 {
+		fmt.Fprintln(stderr, "axlr-bots: autonomy clear needs exactly one <autonomy-id>")
+		return exitUsage
+	}
+	response, err := service.ClearAutonomy(ctx, positional[0], unixapi.ClearRequest{Reason: *reason, ClearedBy: actor})
+	if err != nil {
+		return fail(stderr, err)
+	}
+	printJSON(stdout, response)
+	return exitOK
+}

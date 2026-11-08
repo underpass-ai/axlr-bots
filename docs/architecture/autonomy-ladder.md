@@ -11,7 +11,7 @@ An apply phase has always stopped on a card. §8.3 wants a runbook to earn the r
 | # | Decision |
 |:--|:--|
 | 1 | **Unit: one runbook in one namespace.** A new aggregate, `RunbookAutonomy`, with its own repository (`<state>/autonomy/<id>.json`, 0600), independent of `Incident`. Its id is minted from the tenant, the apply bot, the runbook and the namespace, so a lookup is a read, not a scan |
-| 2 | **The runbook is named by the alert name the incident already carries, matched exactly.** The title must be `<runbook> in <namespace>` for a runbook the trigger declares and the incident's one namespace (`LadderRunbook.Titles`), never a cut at the first ` in `. A CloudWatch incident names no namespace and has no unit. A group whose alerts differ in name, whose worst alert is worse than its first, or that was truncated is `mixed`: no unit and no counts. Only a delivery known to be one alert may be granted, so a hand-opened incident counts but always keeps its card |
+| 2 | **The runbook is named by the alert name the incident already carries, matched exactly.** The title must be `<runbook> in <namespace>` for a runbook the trigger declares and the incident's one namespace (`LadderRunbook.Titles`), never a cut at the first ` in `. A CloudWatch incident names no namespace and has no unit. A group whose alerts differ in name, whose worst alert is worse than its first, or that was truncated is `mixed`: no unit and no counts. A severity label the mapping does not name (`P1`, `high`, none) leaves the group unknown. Only the opening delivery can say uniform and no later one raises unknown, so a hand-opened incident counts but always keeps its card |
 | 3 | **Opt-in on the apply trigger**: `ladder: {runbooks: [{name, tool, namespaces}], thresholds?}`. A bot without it behaves exactly as before; the launcher audits nothing new and the task is pinned as before |
 | 4 | **D13: count by cycle.** Each signal is idempotent per incident, cycle and signal, read from the history. Twenty reopened cycles of one incident count twenty; one cycle never counts twice |
 | 5 | **D14: only `act-within-policy` removes the card.** Every lower step keeps the apply phase with its card. A runbook starts at the level the apply trigger declares; reaching the top takes all three counters: 5 diagnoses, 10 proposals, 20 applies, configurable in `thresholds`, and never lowered for the lab (D8) |
@@ -20,10 +20,10 @@ An apply phase has always stopped on a card. §8.3 wants a runbook to earn the r
 | 8 | **Lowering clears nothing silently.** The history keeps every entry, a lowering entry says the step it moved and what had been earned (`earnedBefore`), and the panel shows it |
 | 9 | **Effective level computed at launch and pinned** on the apply task, as #133 pins the phase's policy: the grant is the level, the tools and the namespace. Every apply on a ladder pins its unit, whose signals fall on it whatever the incident says later |
 | 10 | **A sev1 never acts alone**, in any namespace and whatever the operator listed as production. The card stays, with the reason audited on `incident.apply` |
-| 11 | **Bounds**: per runbook, the one write tool it may run alone and its namespaces. Outside them the apply takes the card, audited. A run acting alone is pinned a budget of `LadderMaxToolCalls` (6) calls: its reads and its one write (§8.1) |
-| 12 | **The grant is asked again before the run** (review of #143). Immediately before an unattended run starts, in process and when a node takes it, `ladderKeeper.recheck` asks whether the incident still stands on the task and whether the ladder still grants it. Not standing: the task is cancelled, nothing runs. Standing but no longer granted: the grant is taken back and the run takes the card. Both are audited on `incident.apply`, and a re-attach through the idempotency key audits the grant the task really carries |
-| 13 | **A person can stop it**: `autonomy lower <id>` (`POST /v1/autonomy/{id}/lower`), a named approver, one step, audited. `checkLadder` refuses a lower bot level while a ladder exists, so this is the brake |
-| 14 | **A lost lowering costs the card, not a count.** An apply is recorded **outstanding** durably when it is granted and when a person approves it, and while one is outstanding the runbook gets no other grant. A record that cannot be written is no grant. The entry ends on a recorded green or a recorded lowering, or when the task wrote nothing (refused before it ran, taken back, failed with no call). A verify with no verdict ends nothing: the runbook keeps its card until a person lowers it |
+| 11 | **Bounds**: per runbook, the one write tool it may run alone and its namespaces. Outside them the apply takes the card, audited. A run acting alone is pinned a budget of `LadderMaxToolCalls` (4) calls: the bridge lookup, the reads of its runbook and manifest and its one write (§8.1); only completed writes that are no `confirm: false` preview count toward the one |
+| 12 | **The grant is asked again before the run** (review of #143). Immediately before an unattended run starts, in process, when a node takes it and when it is re-delivered after a crash, `ladderKeeper.recheck` asks whether the incident still stands on the task and whether the ladder still grants it. Not standing: the task is cancelled, nothing runs. Standing but no longer granted: the grant is taken back and the run takes the card. Both are audited on `incident.apply`, and a re-attach through the idempotency key audits the grant the task really carries |
+| 13 | **A person can stop it**: `autonomy lower <id>` (`POST /v1/autonomy/{id}/lower`), a named approver, one step, audited, and it cancels the unit's runs already acting alone. `checkLadder` refuses a lower bot level while a ladder exists, so this is the brake |
+| 14 | **A lost lowering costs the card, not a count.** An apply is recorded **outstanding** durably when it is granted and when a person approves it, and while one is outstanding the runbook gets no other grant. A record that cannot be written is no grant. The entry ends on a recorded green or a recorded lowering, or when the task wrote nothing (refused before it ran, taken back, failed with no call). A verify with no verdict ends nothing: the runbook keeps its card until a person lowers it or runs `autonomy clear`, which ends the entries and costs nothing earned. A tool change resets the entries with the record |
 | 15 | **The tool is part of what was earned.** A record is bound to its write tool; changing the runbook's tool starts it over, history kept. Deleting a bot removes its records, and registering a bot removes what a bot of that id left: it earns from zero |
 | 16 | **A read never sets a record aside.** An unreadable or unknown record is an error, the card, and the file stays for a person: a fresh record in its place would forget a lowering |
 
@@ -88,6 +88,7 @@ task about to run ─▶ recheck: not standing ─▶ cancelled, no run
 | `apply-overrun` | a run acting alone with more than one write | two steps down |
 | `lowered-by-person` | `autonomy lower` | one step down, ends every outstanding entry |
 | `tool-changed` | the runbook's write tool changed on the ladder | starts over, history kept |
+| `outstanding-cleared` | `autonomy clear` | ends every outstanding entry, nothing else |
 
 A store that fails is audited (`autonomy.signal`) and the incident goes on. A lost count is a lost count; a lost lowering leaves the apply's outstanding entry, so it costs the runbook's next apply its card (decision 14). A record that cannot be read keeps the card. Signals run under the `SerialRunner`'s `mu`, like the settle that carries them, so two of one runbook never lose a count.
 
@@ -100,9 +101,9 @@ A store that fails is audited (`autonomy.signal`) and the incident goes on. A lo
 | Layer | What changed |
 |:--|:--|
 | domain | `AlertGroup`, `AutonomyOutstanding`, `RunbookAutonomy`, `AutonomySignal`, `AutonomyCounters`, `AutonomyThresholds`, `AutonomyEntry`, `AutonomyID`, `RunbookName`, `Ladder`, `LadderRunbook`, `LadderUnit`, `LadderGrant`, `LadderDecision`; `Trigger.Ladder`, `Bot.DecideLadder`, `ExecutionPolicy.Granted` and `Unattended`, the pin |
-| application | `AutonomyRepository`, `ladderKeeper` and its `recheck`, `MarkDiagnosis`, `LowerAutonomy`, `ListAutonomy`, `GetAutonomy`; hooks in `incidentAdvancer` and `phaseLauncher`; `ExecutionRequest.Unattended` |
+| application | `AutonomyRepository`, `ladderKeeper` and its `recheck`, `MarkDiagnosis`, `LowerAutonomy`, `ClearAutonomy`, `ListAutonomy`, `GetAutonomy`; hooks in `incidentAdvancer` and `phaseLauncher`; `ExecutionRequest.Unattended` |
 | adapters | `filestore.AutonomyRepository`; `axlr.preparedPolicy.actAlone`; the routes and the contract; `nodeproto.RunMessage.unattended` |
-| cmd, panel | `autonomy list|get|lower`, `incident diagnosis`; the incident page, the mark, and a bot edit that keeps a trigger's `ladder` |
+| cmd, panel | `autonomy list|get|lower|clear`, `incident diagnosis`; the incident page, the mark, and a bot edit that keeps a trigger's `ladder` |
 
 ## Alternatives
 
@@ -114,12 +115,12 @@ A store that fails is audited (`autonomy.signal`) and the incident goes on. A lo
 
 ## Trust boundary
 
-The alert rules are part of what this trusts. A runbook is named by an alert's `alertname` and its namespace by the alert's `namespace` label, so whoever can write an alert rule can name a runbook and a namespace, and reach an unattended write inside the runbook's bounds. **Before opting a bot in, deploy with Prometheus Operator's `enforcedNamespaceLabel` or an equivalent**, so a tenant's rule cannot claim another namespace, and treat the rules of those namespaces as you treat the bot's definition.
+**A rule-authored twin of a real alert cannot be told from it, and is uniform: this is a limit of the design, held by deployment and not by code.** The alert rules are part of what this trusts. A runbook is named by an alert's `alertname` and its namespace by the alert's `namespace` label, so whoever can write an alert rule can name a runbook and a namespace, and reach an unattended write inside the runbook's bounds. **Before opting a bot in, deploy with Prometheus Operator's `enforcedNamespaceLabel` or an equivalent**, so a tenant's rule cannot claim another namespace, and treat the rules of those namespaces as you treat the bot's definition.
 
 ## Consequences
 
-- A bot opts in only with: `approvals.approvers` naming people, the bot at `act-within-policy`, the apply trigger at `act-with-approval` with its own `tools`, and rules deployed under the trust boundary above.
-- An apply with no green leaves the runbook on the card until a person lowers it, and a person's `task cancel` of a pending grant does the same.
+- A bot opts in only with: `approvals.approvers` naming people (and no bot may later be registered under one of those names), the bot at `act-within-policy`, the apply trigger at `act-with-approval` with its own `tools`, and rules deployed under the trust boundary above.
+- An apply with no green leaves the runbook on the card until a person runs `autonomy clear` or `autonomy lower`. A pending grant cancelled before it ran ends its own entry.
 - A bot on a ladder must be at `act-within-policy`, and its other triggers are held to that level. Its incident triggers name their own; its **manual** tasks run at the bot's level with `--approve local` (local writes run, MCP writes still ask). Keep the local write tools off such a bot, or drop its manual trigger.
 - An exit run of phase 3 needs a verify phase: without a green verdict nothing counts toward the applies.
 - The history keeps the last 4096 lines, dropping first those that moved no step. Counters stay exact; a redelivery of a cycle older than that would count again.

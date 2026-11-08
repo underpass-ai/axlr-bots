@@ -204,19 +204,23 @@ func (i *Incident) RecordNamespaces(raw ...string) []string {
 // AlertGroup says what is known of the incident's alerts.
 func (i Incident) AlertGroup() AlertGroup { return i.alerts }
 
-// ObserveAlerts takes what one delivery says of the group. Mixed is for
-// the incident's life: a delivery that is mixed, names another alert or
-// is worse than the incident's severity makes it so. Unknown, a hand's
-// report, changes nothing.
+// StartAlerts is what the delivery that opened the incident says of its
+// group. Only this may say uniform: an incident that began unknown (by
+// hand, or stored by an older version) stays unknown.
+func (i *Incident) StartAlerts(group AlertGroup) { i.alerts = group }
+
+// ObserveAlerts takes what a later delivery says of the group. Mixed is
+// for the incident's life: a delivery that is mixed, names another alert
+// or is worse than the incident's severity makes it so. One that cannot
+// say takes a uniform group back to unknown; nothing raises one.
 func (i *Incident) ObserveAlerts(group AlertGroup, title string, severity IncidentSeverity) {
-	if group == AlertGroupUnknown || i.alerts == AlertGroupMixed {
-		return
-	}
-	if group == AlertGroupMixed || title != i.title || severity.moreSevereThan(i.severity) {
+	switch {
+	case i.alerts == AlertGroupMixed:
+	case group == AlertGroupMixed, group != AlertGroupUnknown && (title != i.title || severity.moreSevereThan(i.severity)):
 		i.alerts = AlertGroupMixed
-		return
+	case group == AlertGroupUnknown:
+		i.alerts = AlertGroupUnknown
 	}
-	i.alerts = AlertGroupUniform
 }
 
 // Status is where the incident stands.

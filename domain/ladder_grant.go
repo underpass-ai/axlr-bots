@@ -1,8 +1,9 @@
 package domain
 
-// LadderMaxToolCalls is the most a run acting alone may call: its reads
-// and its one write (design §8.1, one apply per task).
-const LadderMaxToolCalls = 6
+// LadderMaxToolCalls is the most a run acting alone may call: the bridge
+// lookup, the reads of its runbook and manifest, and its one write
+// (design §8.1, one apply per task).
+const LadderMaxToolCalls = 4
 
 // LadderGrant is the unit an apply task belongs to, pinned on it when it
 // launches: the runbook, its one write tool and the incident's namespace.

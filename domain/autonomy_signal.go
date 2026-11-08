@@ -36,12 +36,15 @@ const (
 	// SignalToolChanged is the runbook's write tool changed on the ladder:
 	// what was earned with the old tool is not the new one's.
 	SignalToolChanged AutonomySignal = "tool-changed"
+	// SignalOutstandingCleared is a person ending the outstanding applies
+	// by hand: nothing lowers and nothing counts.
+	SignalOutstandingCleared AutonomySignal = "outstanding-cleared"
 )
 
 // ParseAutonomySignal validates a signal.
 func ParseAutonomySignal(raw string) (AutonomySignal, error) {
 	switch AutonomySignal(raw) {
-	case SignalDiagnosisCorrect, SignalDiagnosisWrong, SignalProposalApproved, SignalApplyVerified, SignalApplyDenied, SignalVerifyRed, SignalApplyFailed, SignalApplyOverrun, SignalLoweredByPerson, SignalToolChanged:
+	case SignalDiagnosisCorrect, SignalDiagnosisWrong, SignalProposalApproved, SignalApplyVerified, SignalApplyDenied, SignalVerifyRed, SignalApplyFailed, SignalApplyOverrun, SignalLoweredByPerson, SignalToolChanged, SignalOutstandingCleared:
 		return AutonomySignal(raw), nil
 	}
 	return "", invalid("autonomy signal", "is not one the ladder records: "+raw)
@@ -71,7 +74,7 @@ func (s AutonomySignal) settles() bool { return s == SignalApplyVerified || s.lo
 
 // belongsToAnIncident reports a signal that names its incident and cycle.
 func (s AutonomySignal) belongsToAnIncident() bool {
-	return s != SignalLoweredByPerson && s != SignalToolChanged
+	return s != SignalLoweredByPerson && s != SignalToolChanged && s != SignalOutstandingCleared
 }
 
 // lowers is how many steps the signal takes the runbook down.

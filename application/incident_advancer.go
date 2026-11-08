@@ -161,7 +161,7 @@ func (a incidentAdvancer) ladderApplied(ctx context.Context, keeper ladderKeeper
 	if !actedAlone(task) && !(waited && wait.Outcome == domain.ApprovalApproved) {
 		return
 	}
-	if execution.Result().SessionID != "" && len(calls) == 0 {
+	if execution.Result().SessionID != "" && len(calls) == 0 && execution.Usage().ToolCalls == 0 {
 		keeper.abandon(ctx, incident, task.BotID(), unit, cycle)
 		return
 	}

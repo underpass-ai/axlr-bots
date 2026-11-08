@@ -312,6 +312,11 @@ func (c *Client) GetAutonomy(ctx context.Context, id string) (AutonomyResponse, 
 	return response, c.call(ctx, http.MethodGet, "/v1/autonomy/"+url.PathEscape(id), nil, &response)
 }
 
+func (c *Client) ClearAutonomy(ctx context.Context, id string, request ClearRequest) (AutonomyResponse, error) {
+	var response AutonomyResponse
+	return response, c.call(ctx, http.MethodPost, "/v1/autonomy/"+url.PathEscape(id)+"/clear", request, &response)
+}
+
 func (c *Client) LowerAutonomy(ctx context.Context, id string, request LowerRequest) (AutonomyResponse, error) {
 	var response AutonomyResponse
 	return response, c.call(ctx, http.MethodPost, "/v1/autonomy/"+url.PathEscape(id)+"/lower", request, &response)

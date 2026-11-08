@@ -77,6 +77,7 @@ func (a *RunbookAutonomy) BindTool(tool ToolName, now time.Time) bool {
 	before := a.earned
 	entry.EarnedBefore = &before
 	a.tool, a.step, a.totals, a.earned = tool, a.start, AutonomyCounters{}, AutonomyCounters{}
+	a.open = nil
 	a.remember(entry, now)
 	return true
 }
@@ -123,8 +124,32 @@ func (a *RunbookAutonomy) Lower(actor, reason string, now time.Time) error {
 	before, from := a.earned, a.step
 	a.step, a.earned = a.step.lowered(SignalLoweredByPerson.lowers()), AutonomyCounters{}
 	a.open = nil
-	a.remember(AutonomyEntry{Signal: SignalLoweredByPerson.String(), Actor: actor, At: now, From: from.String(), To: a.step.String(), EarnedBefore: &before, Reason: reason}, now)
+	a.remember(AutonomyEntry{Signal: SignalLoweredByPerson.String(), Actor: actor, At: now, From: from.String(), To: a.step.String(), EarnedBefore: &before, Reason: autonomyReason(reason)}, now)
 	return nil
+}
+
+// Clear ends every outstanding apply by a person's hand, lowering and
+// zeroing nothing. It answers how many it ended; none records nothing.
+func (a *RunbookAutonomy) Clear(actor, reason string, now time.Time) (int, error) {
+	if !isPerson(actor) {
+		return 0, invalid("actor", "outstanding applies are cleared by a named person")
+	}
+	cleared := len(a.open)
+	if cleared == 0 {
+		return 0, nil
+	}
+	a.open = nil
+	a.remember(AutonomyEntry{Signal: SignalOutstandingCleared.String(), Actor: actor, At: now, Reason: autonomyReason(reason)}, now)
+	return cleared, nil
+}
+
+// autonomyReason bounds and cleans what a person wrote, as an incident's
+// reason is; nothing usable is no reason.
+func autonomyReason(raw string) string {
+	if IncidentTextIsEmpty(raw) {
+		return ""
+	}
+	return IncidentText(raw, MaxIncidentReasonLength)
 }
 
 // Step is where the runbook stands now.
