@@ -11,6 +11,8 @@ pub struct IncidentWatch {
     pub detail: Option<Incident>,
     pub detail_loading: bool,
     pub resolve: ResolveForm,
+    /// A mark of the incident's diagnosis is on its way.
+    pub marking: bool,
 }
 
 /// Closing an incident by hand: a reason, optional, then Resolve.

@@ -13,6 +13,7 @@ type ExecutionPolicy struct {
 	tools    AllowedTools
 	rules    ToolRules
 	narrowed bool
+	grant    *LadderGrant
 }
 
 // Level is the autonomy level the executions run at.
@@ -25,6 +26,37 @@ func (p ExecutionPolicy) Tools() AllowedTools { return p.tools }
 // of the tools a narrower list leaves out are dropped, every deny rule is
 // kept.
 func (p ExecutionPolicy) Rules() ToolRules { return p.rules }
+
+// Unattended reports a run that acts alone: a ladder granted it the top
+// step, so its one bound write takes no card. Below that level it is
+// false even when the task was pinned with a grant.
+func (p ExecutionPolicy) Unattended() bool {
+	return p.grant != nil && p.level == AutonomyActWithinPolicy
+}
+
+// Granted is the policy of an apply the ladder lets act alone: the top
+// step, the runtime's reads the phase lists plus the one write tool, and
+// that tool's calls held to the incident's namespace. Nothing else of
+// the phase's list stays: at act-within-policy the allow list is all
+// that bounds it.
+func (p ExecutionPolicy) Granted(grant LadderGrant) (ExecutionPolicy, error) {
+	bound, err := grant.boundRule()
+	if err != nil {
+		return ExecutionPolicy{}, err
+	}
+	kept := []string{}
+	for _, name := range p.tools.names {
+		if name == grant.Tool || slices.Contains(runtimeReadTools, name) {
+			kept = append(kept, name.String())
+		}
+	}
+	tools, err := NewAllowedTools(kept)
+	if err != nil {
+		return ExecutionPolicy{}, err
+	}
+	copied := grant
+	return ExecutionPolicy{level: AutonomyActWithinPolicy, tools: tools, rules: p.rules.Within(tools).bound(bound), narrowed: true, grant: &copied}, nil
+}
 
 // Narrowed reports a policy an incident trigger narrowed from the bot's.
 func (p ExecutionPolicy) Narrowed() bool { return p.narrowed }
@@ -87,7 +119,7 @@ func (b Bot) PolicyOf(task Task) (policy ExecutionPolicy, gone bool, err error) 
 				kept = append(kept, name)
 			}
 		}
-		policy = ExecutionPolicy{level: level, tools: AllowedTools{names: kept}, narrowed: true}
+		policy = ExecutionPolicy{level: level, tools: AllowedTools{names: kept}, narrowed: true, grant: pinned.grant}
 	}
 	if task.IncidentID() == "" {
 		return policy, gone, nil
@@ -104,6 +136,13 @@ func (b Bot) PolicyOf(task Task) (policy ExecutionPolicy, gone bool, err error) 
 		policy.tools = AllowedTools{names: kept}
 	}
 	policy.rules = b.toolRules.Within(policy.tools)
+	if policy.grant != nil {
+		// Held to the namespace of its grant at every level: lowering the
+		// bot takes away the running alone, never the bound.
+		if bound, err := policy.grant.boundRule(); err == nil {
+			policy.rules = policy.rules.bound(bound)
+		}
+	}
 	if policy.tools.Len() == 0 && (ok || b.allowedTools.Len() > 0) {
 		return ExecutionPolicy{}, gone, StateError{Subject: "task " + task.ID().String(), Current: "left with no tool its bot " + b.id.String() + " still allows at level " + policy.level.String(), Attempted: "run"}
 	}
@@ -123,6 +162,9 @@ func (b Bot) PolicyOf(task Task) (policy ExecutionPolicy, gone bool, err error) 
 // read-only commands is the designed exception).
 func (b Bot) CheckTriggers() error {
 	for _, trigger := range b.triggers.List() {
+		if err := b.checkLadder(trigger); err != nil {
+			return err
+		}
 		level, leveled := trigger.Level()
 		tools, listed := trigger.Tools()
 		if (leveled || listed) && b.runtime.Kind() == RuntimeJev {

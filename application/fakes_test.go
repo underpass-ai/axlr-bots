@@ -134,6 +134,44 @@ func (m *memoryTasks) FindByIdempotencyKey(_ context.Context, bot domain.BotID, 
 	return domain.Task{}, false, nil
 }
 
+type memoryAutonomy struct {
+	records map[domain.AutonomyID]domain.RunbookAutonomy
+	fail    error
+}
+
+func (m *memoryAutonomy) Save(_ context.Context, autonomy domain.RunbookAutonomy) error {
+	if m.fail != nil {
+		return m.fail
+	}
+	if m.records == nil {
+		m.records = map[domain.AutonomyID]domain.RunbookAutonomy{}
+	}
+	m.records[autonomy.ID()] = autonomy
+	return nil
+}
+
+func (m *memoryAutonomy) Get(_ context.Context, id domain.AutonomyID) (domain.RunbookAutonomy, error) {
+	if m.fail != nil {
+		return domain.RunbookAutonomy{}, m.fail
+	}
+	record, ok := m.records[id]
+	if !ok {
+		return domain.RunbookAutonomy{}, domain.NotFoundError{Kind: "autonomy", ID: id.String()}
+	}
+	return record, nil
+}
+
+func (m *memoryAutonomy) List(_ context.Context) ([]domain.RunbookAutonomy, error) {
+	if m.fail != nil {
+		return nil, m.fail
+	}
+	var out []domain.RunbookAutonomy
+	for _, record := range m.records {
+		out = append(out, record)
+	}
+	return out, nil
+}
+
 type memoryIncidents struct {
 	incidents map[domain.IncidentID]domain.Incident
 	fail      error
@@ -672,6 +710,7 @@ type harness struct {
 	bots    *memoryBots
 	tasks   *memoryTasks
 	incs    *memoryIncidents
+	autos   *memoryAutonomy
 	execs   *memoryExecutions
 	timers  *memoryTimers
 	nodes   *memoryNodes
@@ -697,6 +736,7 @@ func newHarness() *harness {
 	h := &harness{
 		bots:    &memoryBots{},
 		tasks:   &memoryTasks{},
+		autos:   &memoryAutonomy{},
 		incs:    &memoryIncidents{},
 		execs:   &memoryExecutions{},
 		timers:  &memoryTimers{},
@@ -719,7 +759,7 @@ func newHarness() *harness {
 		clock:   &fixedClock{now: t0},
 	}
 	h.deps = Dependencies{
-		Bots: h.bots, Tasks: h.tasks, Incidents: h.incs, Executions: h.execs, Timers: h.timers, Nodes: h.nodes, Enrollments: h.enrol, Certifier: h.ca, Denylist: h.deny, Events: h.log, EventReader: h.log, Audit: h.log,
+		Bots: h.bots, Tasks: h.tasks, Incidents: h.incs, Autonomy: h.autos, Executions: h.execs, Timers: h.timers, Nodes: h.nodes, Enrollments: h.enrol, Certifier: h.ca, Denylist: h.deny, Events: h.log, EventReader: h.log, Audit: h.log,
 		Runtime: h.runtime, Decisions: h.decider, Traces: h.traces, Artifacts: h.store, Workspace: h.work, Deliveries: h.outbox, Notifier: h.notify,
 		Outputs: h.outs, OutputDeliveries: h.outbox2, OutputSender: h.sender, SNS: h.sns,
 		Clock: h.clock, IDs: &sequentialIDs{}, Actor: "test:operator",

@@ -124,6 +124,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return incidentList(ctx, service, rest, stdout, stderr)
 	case "incident get":
 		return incidentGet(ctx, service, rest, stdout, stderr)
+	case "incident diagnosis":
+		return incidentDiagnosis(ctx, service, *actor, rest, stdout, stderr)
+	case "autonomy list":
+		return autonomyList(ctx, service, rest, stdout, stderr)
+	case "autonomy get":
+		return autonomyGet(ctx, service, rest, stdout, stderr)
 	case "incident resolve":
 		return incidentResolve(ctx, service, rest, stdout, stderr)
 	case "output add":
@@ -277,6 +283,10 @@ func printUsage(w io.Writer) {
   incident list [--tenant <id>] [--status Open|Diagnosed|Proposed|Resolved|Escalated] [--limit 100]
                                       the incidents, the last seen first
   incident get <incident-id>          show one incident: its alerts, tasks, diagnosis, cost
+  incident diagnosis <incident-id> correct|wrong
+                                      mark the diagnosis of the current cycle, as --actor
+  autonomy list [--tenant <id>] [--bot <id>] [--runbook <name>] [--namespace <ns>]
+  autonomy get <autonomy-id>          a runbook's step, counters and history
   incident resolve <incident-id> [--reason "<text>"]
                                       close it; a new alert within 30 minutes reopens it
   output add <name> --type webhook|slack|command [--url <url> | --url-file <file>|-] [--secret-file <file>|-]

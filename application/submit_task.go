@@ -77,6 +77,9 @@ type submission struct {
 	// work in progress and drops its queue; why says who made it urgent.
 	priority domain.TaskPriority
 	why      string
+	// grant is what a ladder lets an apply task do alone; nil keeps the
+	// phase's own policy.
+	grant *domain.LadderGrant
 }
 
 // submitTask creates the task unless the key already names one. The
@@ -134,7 +137,13 @@ func submitTask(ctx context.Context, deps Dependencies, s submission) (SubmitTas
 		}
 		// The phase's policy as it is now, kept on the task: a trigger
 		// changed or removed later never widens its runs (review of #133).
-		task.Pin(s.bot.PolicyFor(s.trigger))
+		policy := s.bot.PolicyFor(s.trigger)
+		if s.grant != nil {
+			if policy, err = policy.Granted(*s.grant); err != nil {
+				return SubmitTaskResult{}, err
+			}
+		}
+		task.Pin(policy)
 	}
 	if err := deps.Tasks.Save(ctx, task); err != nil {
 		return SubmitTaskResult{}, err

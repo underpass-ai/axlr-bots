@@ -315,14 +315,14 @@ func TestAFailedVerifyAndForeignDecisions(t *testing.T) {
 	fixTask := incident.Tasks()[1]
 	task, _ := h.tasks.Get(ctx, fixTask.TaskID())
 	before := len(h.log.events)
-	newIncidentAdvancer(h.deps).taskDecided(ctx, task, domain.ApprovalApproved, "c", "local_write", "ops")
+	newIncidentAdvancer(h.deps).taskDecided(ctx, task, domain.ApprovalApproved, "c", "local_write", "ops", true)
 	if len(h.log.events) != before {
 		t.Error("a decision on the fix task moved the incident")
 	}
-	newIncidentAdvancer(h.deps).taskDecided(ctx, domain.Task{}, domain.ApprovalApproved, "c", "", "ops")
+	newIncidentAdvancer(h.deps).taskDecided(ctx, domain.Task{}, domain.ApprovalApproved, "c", "", "ops", true)
 	applyTask, _ := h.tasks.Get(ctx, incident.CurrentTaskID())
 	h.incs.fail = errBoom
-	newIncidentAdvancer(h.deps).taskDecided(ctx, applyTask, domain.ApprovalApproved, "c", "", "ops")
+	newIncidentAdvancer(h.deps).taskDecided(ctx, applyTask, domain.ApprovalApproved, "c", "", "ops", true)
 	h.incs.fail = nil
 	if audit := h.log.audits[len(h.log.audits)-1]; audit.Outcome != domain.AuditDenied || audit.Details["decision"] != "approved" {
 		t.Errorf("a store that failed was not audited: %+v", audit)

@@ -53,3 +53,9 @@ func (l AutonomyLevel) rank() int {
 // AtMost reports a level no higher than the other: what a phase of an
 // incident may narrow a bot's level to, never raise it.
 func (l AutonomyLevel) AtMost(other AutonomyLevel) bool { return l.rank() <= other.rank() }
+
+// lowered is the level n steps down, observe at the bottom.
+func (l AutonomyLevel) lowered(n int) AutonomyLevel {
+	levels := []AutonomyLevel{AutonomyObserve, AutonomyPropose, AutonomyActWithApproval, AutonomyActWithinPolicy}
+	return levels[max(l.rank()-n, 0)]
+}

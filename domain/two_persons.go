@@ -57,6 +57,12 @@ func NewTwoPersons(s TwoPersonsSnapshot) (TwoPersons, error) {
 // nothing and asks for two persons nowhere.
 func (t TwoPersons) Set() bool { return len(t.namespaces) > 0 || len(t.severities) > 0 }
 
+// NamesNamespace reports a namespace the setting lists: what a ladder
+// reads as production (docs/architecture/autonomy-ladder.md).
+func (t TwoPersons) NamesNamespace(namespace string) bool {
+	return slices.Contains(t.namespaces, namespace)
+}
+
 // Applies reports whether an incident of the namespaces and severity
 // waits for two persons: any namespace listed is enough. No namespace
 // matches no namespace and an empty severity no severity: a task of no

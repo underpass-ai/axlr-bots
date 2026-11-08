@@ -176,6 +176,9 @@ func (s *Server) operatorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/incidents", s.listIncidents)
 	mux.HandleFunc("GET /v1/incidents/{id}", s.getIncident)
 	mux.HandleFunc("POST /v1/incidents/{id}/resolve", s.resolveIncident)
+	mux.HandleFunc("POST /v1/incidents/{id}/diagnosis", s.markDiagnosis)
+	mux.HandleFunc("GET /v1/autonomy", s.listAutonomy)
+	mux.HandleFunc("GET /v1/autonomy/{id}", s.getAutonomy)
 	mux.HandleFunc("GET /v1/outputs", s.listOutputs)
 	mux.HandleFunc("POST /v1/outputs", s.addOutput)
 	mux.HandleFunc("DELETE /v1/outputs/{name}", s.removeOutput)
@@ -626,6 +629,39 @@ func (s *Server) resolveIncident(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	value, err := s.service.ResolveIncident(r.Context(), r.PathValue("id"), request)
+	respond(w, http.StatusOK, value, err)
+}
+
+// markDiagnosis is POST /v1/incidents/{id}/diagnosis: a person's verdict
+// on the diagnosis of the incident's current cycle.
+func (s *Server) markDiagnosis(w http.ResponseWriter, r *http.Request) {
+	var request DiagnosisRequest
+	if !readJSON(w, r, &request) {
+		return
+	}
+	header := r.Header.Get(ActorHeader)
+	if request.MarkedBy != "" && header != "" && request.MarkedBy != header {
+		respond(w, 0, nil, domain.ValidationError{Field: "markedBy", Reason: "names another actor than " + ActorHeader})
+		return
+	}
+	if request.MarkedBy == "" {
+		request.MarkedBy = header
+	}
+	value, err := s.service.MarkDiagnosis(r.Context(), r.PathValue("id"), request)
+	respond(w, http.StatusOK, value, err)
+}
+
+// listAutonomy is GET /v1/autonomy, narrowed by ?tenant=, ?bot=,
+// ?runbook= and ?namespace=.
+func (s *Server) listAutonomy(w http.ResponseWriter, r *http.Request) {
+	values := r.URL.Query()
+	query := application.AutonomyQuery{Tenant: values.Get("tenant"), Bot: values.Get("bot"), Runbook: values.Get("runbook"), Namespace: values.Get("namespace")}
+	value, err := s.service.ListAutonomy(r.Context(), query)
+	respond(w, http.StatusOK, value, err)
+}
+
+func (s *Server) getAutonomy(w http.ResponseWriter, r *http.Request) {
+	value, err := s.service.GetAutonomy(r.Context(), r.PathValue("id"))
 	respond(w, http.StatusOK, value, err)
 }
 

@@ -2,8 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    BotId, Cost, IncidentApprovals, IncidentCurrentTask, IncidentPhase, IncidentSeverity, IncidentStatus, IncidentTask,
-    TaskId,
+    Autonomy, BotId, Cost, IncidentApprovals, IncidentCurrentTask, IncidentPhase, IncidentSeverity, IncidentStatus,
+    IncidentTask, TaskId,
 };
 
 /// One grouped fault, as the control plane reports it: what its alerts
@@ -76,6 +76,10 @@ pub struct Incident {
     /// The approvals its tasks waited for; only when read on its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approvals: Option<IncidentApprovals>,
+    /// Its runbook's standing on its apply bot's ladder, when it is on one;
+    /// only when read on its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub autonomy: Option<Autonomy>,
 }
 
 fn is_zero(n: &u32) -> bool {

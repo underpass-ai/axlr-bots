@@ -1973,3 +1973,43 @@ fn the_incidents_that_need_you_come_first_and_say_so() {
     let shown = crate::ui::table::needs_you_first(state.sort.order(app.incidents.list.as_ref().unwrap()));
     assert_eq!(shown[0].id, id);
 }
+
+#[test]
+fn an_incident_on_a_ladder_shows_its_step_history_and_the_mark() {
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Incident("inc-latency".into())));
+    let raw = r#"{"id":"ladder-1","runbook":"Drift","namespace":"shop","step":"act-with-approval","earned":{"diagnoses":3},"thresholds":{"diagnoses":5,"proposals":10,"applies":20},"history":[{"signal":"apply-denied","incidentId":"inc-1","cycle":2,"actor":"tirso","at":"2026-11-08T12:00:00Z","from":"act-with-approval","to":"propose"}]}"#;
+    let autonomy: crate::domain::Autonomy = serde_json::from_str(raw).unwrap();
+    {
+        let detail = app.incidents.detail.as_mut().unwrap();
+        detail.diagnosis = "the pool is full".into();
+        detail.autonomy = Some(autonomy);
+    }
+    shows(
+        &app,
+        &[
+            "Autonomy",
+            "Drift in shop: act-with-approval",
+            "3/5 diagnoses · 0/10 proposals · 0/20 applies",
+            "Diagnosis correct",
+            "History, newest first",
+        ],
+    );
+    assert!(matches!(
+        messages_of_click(&app, "Diagnosis correct").as_slice(),
+        [Message::MarkDiagnosis(verdict)] if verdict == "correct"
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Diagnosis wrong").as_slice(),
+        [Message::MarkDiagnosis(verdict)] if verdict == "wrong"
+    ));
+    app.incidents
+        .detail
+        .as_mut()
+        .unwrap()
+        .autonomy
+        .as_mut()
+        .unwrap()
+        .diagnosis_mark = "diagnosis-correct".into();
+    shows(&app, &["Marked: diagnosis-correct"]);
+}

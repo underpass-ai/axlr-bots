@@ -4,9 +4,9 @@ use super::{BotView, Connection, Effect, Message};
 use crate::application::{
     ApplyInBulk, BulkOutcome, CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader, DeleteBot,
     DownloadArtifact, ExportSettings, FilePicker, FollowBotEvents, FollowTaskEvents, FollowTeamEvents, ImportSettings,
-    KeySource, ListIncidents, ListTopics, LoadChat, LoadTaskDetail, MintEnrollmentToken, Notifier, PanelError,
-    PatchBot, PublishEvent, RefreshFleet, RegisterBot, ResolveIncident, RevokeNode, SaveBotEdit, SaveSubscriptions,
-    SendChat, ShortcutSource, ShowIncident, StopBot, SubmitTask, SwitchBot,
+    KeySource, ListIncidents, ListTopics, LoadChat, LoadTaskDetail, MarkDiagnosis, MintEnrollmentToken, Notifier,
+    PanelError, PatchBot, PublishEvent, RefreshFleet, RegisterBot, ResolveIncident, RevokeNode, SaveBotEdit,
+    SaveSubscriptions, SendChat, ShortcutSource, ShowIncident, StopBot, SubmitTask, SwitchBot,
 };
 use crate::domain::BotPatch;
 
@@ -268,6 +268,13 @@ impl Services {
                     Err(e) => Err(e),
                 };
                 Message::IncidentLoaded(id, result)
+            }
+            Effect::MarkDiagnosis { id, verdict } => {
+                let result = match self.control_plane() {
+                    Ok(cp) => MarkDiagnosis::new(cp).execute(id.clone(), verdict).await,
+                    Err(error) => Err(error),
+                };
+                Message::DiagnosisMarked(id, result)
             }
             Effect::ResolveIncident { id, reason } => Message::IncidentResolved(match self.control_plane() {
                 Ok(cp) => ResolveIncident::new(cp).execute(id, &reason).await,

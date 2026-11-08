@@ -15,23 +15,25 @@ package domain
 // cloudwatch trigger's Severity is its incidents' (sev3 when absent) and
 // AutoConfirm says whether it confirms an SNS subscription by itself;
 // Topics, when given, are the SNS topic ARNs it takes messages from, and
-// AutoConfirm needs them.
+// AutoConfirm needs them. Ladder, on an apply phase's trigger only, is
+// the bot's opt-in to progressive autonomy (docs/architecture/autonomy-ladder.md).
 type TriggerSnapshot struct {
-	Type        string   `json:"type"`
-	Name        string   `json:"name,omitempty"`
-	Objective   string   `json:"objective,omitempty"`
-	Secret      string   `json:"secret,omitempty"`
-	SigningKey  string   `json:"signingKey,omitempty"`
-	Every       string   `json:"every,omitempty"`
-	Cron        string   `json:"cron,omitempty"`
-	Events      []string `json:"events,omitempty"`
-	Interrupt   bool     `json:"interrupt,omitempty"`
-	Phase       string   `json:"phase,omitempty"`
-	Level       string   `json:"level,omitempty"`
-	Tools       []string `json:"tools,omitempty"`
-	Severity    string   `json:"severity,omitempty"`
-	AutoConfirm bool     `json:"autoConfirm,omitempty"`
-	Topics      []string `json:"topics,omitempty"`
+	Type        string          `json:"type"`
+	Name        string          `json:"name,omitempty"`
+	Objective   string          `json:"objective,omitempty"`
+	Secret      string          `json:"secret,omitempty"`
+	SigningKey  string          `json:"signingKey,omitempty"`
+	Every       string          `json:"every,omitempty"`
+	Cron        string          `json:"cron,omitempty"`
+	Events      []string        `json:"events,omitempty"`
+	Interrupt   bool            `json:"interrupt,omitempty"`
+	Phase       string          `json:"phase,omitempty"`
+	Level       string          `json:"level,omitempty"`
+	Tools       []string        `json:"tools,omitempty"`
+	Severity    string          `json:"severity,omitempty"`
+	AutoConfirm bool            `json:"autoConfirm,omitempty"`
+	Topics      []string        `json:"topics,omitempty"`
+	Ladder      *LadderSnapshot `json:"ladder,omitempty"`
 }
 
 // Redacted is the snapshot with its credentials hidden: what the API

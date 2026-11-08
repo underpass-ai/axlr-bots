@@ -780,6 +780,8 @@ impl App {
                 Vec::new()
             }
             Message::IncidentResolved(result) => self.incident_resolved(result),
+            Message::MarkDiagnosis(verdict) => self.mark_diagnosis(verdict),
+            Message::DiagnosisMarked(id, result) => self.diagnosis_marked(id, result),
             Message::Download(execution, name) => self.download(execution, name),
             Message::Downloaded(result) => self.downloaded(result),
 

@@ -15,6 +15,9 @@ type IncidentReport struct {
 	Current *domain.Task
 	// Approvals counts the decisions its tasks waited for; zero in a list.
 	Approvals IncidentApprovals
+	// Autonomy is the runbook's standing on the ladder of the incident's
+	// apply bot; nil when it has none, or in a list.
+	Autonomy *AutonomyView
 	// Whole is set for an incident read on its own: Current and Approvals
 	// were read.
 	Whole bool

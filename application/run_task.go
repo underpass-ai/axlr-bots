@@ -105,6 +105,7 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 		Level:         policy.Level(),
 		AllowedTools:  policy.Tools().Names(),
 		ToolRules:     policy.Rules(),
+		Unattended:    policy.Unattended(),
 		Budgets:       taskBudgets(bot, task),
 		Timeout:       timeout,
 	})

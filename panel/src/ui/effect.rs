@@ -89,6 +89,10 @@ pub enum Effect {
     Decide(TaskId, Decision, Option<String>),
     LoadIncidents,
     LoadIncident(String),
+    MarkDiagnosis {
+        id: String,
+        verdict: String,
+    },
     ResolveIncident {
         id: String,
         reason: String,

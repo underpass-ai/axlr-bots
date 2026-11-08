@@ -79,6 +79,7 @@ func (a incidentAdvancer) taskEnded(ctx context.Context, bot domain.Bot, task do
 	now := a.deps.Clock.Now()
 	_, _ = incident.AddExecutionCost(execution.ID(), execution.Usage(), now)
 	from := incident.Status()
+	cycle := incident.Cycle()
 	move := incidentMove{payload: map[string]any{"taskId": task.ID().String(), "executionId": execution.ID().String(), "phase": phase.String(), "costUsd": incident.CostUSD()}}
 	err = a.end(&incident, current, task, execution, &move, now)
 	var state domain.StateError
@@ -103,8 +104,32 @@ func (a incidentAdvancer) taskEnded(ctx context.Context, bot domain.Bot, task do
 			return saveErr
 		}
 		return a.rec.audit(ctx, "incident.advance", id.String(), domain.AuditDenied, map[string]string{"task": task.ID().String(), "reason": err.Error()})
+	} else {
+		a.ladderEnded(ctx, incident, cycle, from, phase, task, move)
 	}
 	return a.settle(ctx, incident, from, phase, task.ID(), task.CorrelationID(), move)
+}
+
+// ladderEnded gives the ladder what the task's end says of its cycle: a
+// green verify, a red one, or an apply that failed once its write was
+// under way (approved while Applying, or acting alone). No verdict
+// counts for nothing.
+func (a incidentAdvancer) ladderEnded(ctx context.Context, incident domain.Incident, cycle int, from domain.IncidentStatus, phase domain.IncidentPhase, task domain.Task, move incidentMove) {
+	keeper := newLadderKeeper(a.deps)
+	switch {
+	case phase == domain.IncidentPhaseVerify && move.payload["verdict"] == domain.VerdictGreen.String():
+		keeper.signal(ctx, incident, cycle, domain.SignalApplyVerified, "")
+	case phase == domain.IncidentPhaseVerify && move.payload["verdict"] == domain.VerdictRed.String():
+		keeper.signal(ctx, incident, cycle, domain.SignalVerifyRed, "")
+	case phase == domain.IncidentPhaseApply && task.Status() == domain.TaskFailed && (from == domain.IncidentApplying || actedAlone(task)):
+		keeper.signal(ctx, incident, cycle, domain.SignalApplyFailed, "")
+	}
+}
+
+// actedAlone reports an apply task a ladder let run without a card.
+func actedAlone(task domain.Task) bool {
+	pinned, ok := task.Pinned()
+	return ok && pinned.Unattended()
 }
 
 // end makes the move the task's end means for the incident: by the
@@ -280,17 +305,17 @@ func (a incidentAdvancer) retriage(ctx context.Context, incident domain.Incident
 // moves it, and only while it is Proposed: a call decided while Applying
 // moves nothing, the task's end does. A store that fails is audited and
 // the decision goes on: the task's end moves the incident then.
-func (a incidentAdvancer) taskDecided(ctx context.Context, task domain.Task, outcome, callID, tool, by string) {
+func (a incidentAdvancer) taskDecided(ctx context.Context, task domain.Task, outcome, callID, tool, by string, person bool) {
 	id := task.IncidentID()
 	if id == "" {
 		return
 	}
-	if err := a.decided(ctx, task, outcome, callID, tool, by); err != nil {
+	if err := a.decided(ctx, task, outcome, callID, tool, by, person); err != nil {
 		_ = a.rec.audit(ctx, "incident.advance", id.String(), domain.AuditDenied, map[string]string{"task": task.ID().String(), "decision": outcome, "reason": err.Error()})
 	}
 }
 
-func (a incidentAdvancer) decided(ctx context.Context, task domain.Task, outcome, callID, tool, by string) error {
+func (a incidentAdvancer) decided(ctx context.Context, task domain.Task, outcome, callID, tool, by string, person bool) error {
 	incident, err := a.deps.Incidents.Get(ctx, task.IncidentID())
 	if err != nil {
 		return err
@@ -305,6 +330,7 @@ func (a incidentAdvancer) decided(ctx context.Context, task domain.Task, outcome
 		move.payload["tool"] = tool
 	}
 	from := incident.Status()
+	cycle := incident.Cycle()
 	if outcome == domain.ApprovalApproved {
 		if err := incident.StartApplying(now); err != nil {
 			return err
@@ -313,7 +339,18 @@ func (a incidentAdvancer) decided(ctx context.Context, task domain.Task, outcome
 	} else if err := a.deny(&incident, denialReason(task.ID(), tool, outcome, by), &move, now); err != nil {
 		return err
 	}
-	return a.settle(ctx, incident, from, domain.IncidentPhaseApply, task.ID(), task.CorrelationID(), move)
+	err = a.settle(ctx, incident, from, domain.IncidentPhaseApply, task.ID(), task.CorrelationID(), move)
+	if person {
+		// Only a person's decision is a signal: a policy decider, or a
+		// wait that expired, counts nothing.
+		switch outcome {
+		case domain.ApprovalApproved:
+			newLadderKeeper(a.deps).signal(ctx, incident, cycle, domain.SignalProposalApproved, by)
+		case domain.ApprovalDenied:
+			newLadderKeeper(a.deps).signal(ctx, incident, cycle, domain.SignalApplyDenied, by)
+		}
+	}
+	return err
 }
 
 // executionWaited adds the cost of a run of an incident's task that

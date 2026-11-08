@@ -3,6 +3,9 @@
 
 mod approval_mark;
 mod artifact;
+mod autonomy;
+mod autonomy_counters;
+mod autonomy_entry;
 mod autonomy_level;
 mod bot;
 mod bot_approvals;
@@ -81,6 +84,9 @@ mod usage;
 
 pub use approval_mark::ApprovalMark;
 pub use artifact::Artifact;
+pub use autonomy::Autonomy;
+pub use autonomy_counters::AutonomyCounters;
+pub use autonomy_entry::AutonomyEntry;
 pub use autonomy_level::AutonomyLevel;
 pub use bot::Bot;
 pub use bot_approvals::BotApprovals;

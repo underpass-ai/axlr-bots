@@ -5,12 +5,12 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::application::{ControlPlane, PanelError, PortFuture, WaitingCall};
 use crate::domain::{
-    Artifact, Bot, BotDefinition, BotId, BotPatch, BotReference, BotStatus, Budgets, CancelledTask, DecidedTask,
-    Decision, DeletedBot, EnrollmentRequest, EnrollmentToken, Event, Execution, ExecutionId, ExecutionKind,
-    ExecutionOutcome, ExecutionResult, Incident, IncidentSeverity, IncidentStatus, Node, NodeCapabilities, NodeId,
-    NodeStatus, Overview, PendingDecision, Publication, Published, RevokedNode, Secret, SentTaskMessage,
-    StoppedBotAnswer, SubmittedTask, Subscription, Task, TaskFilter, TaskId, TaskStatus, TaskSubmission, ToolCall,
-    Topic, TopicListener, TriggerRef, Usage,
+    Artifact, Autonomy, Bot, BotDefinition, BotId, BotPatch, BotReference, BotStatus, Budgets, CancelledTask,
+    DecidedTask, Decision, DeletedBot, EnrollmentRequest, EnrollmentToken, Event, Execution, ExecutionId,
+    ExecutionKind, ExecutionOutcome, ExecutionResult, Incident, IncidentSeverity, IncidentStatus, Node,
+    NodeCapabilities, NodeId, NodeStatus, Overview, PendingDecision, Publication, Published, RevokedNode, Secret,
+    SentTaskMessage, StoppedBotAnswer, SubmittedTask, Subscription, Task, TaskFilter, TaskId, TaskStatus,
+    TaskSubmission, ToolCall, Topic, TopicListener, TriggerRef, Usage,
 };
 
 /// The control plane in memory: what the use cases and the interface are
@@ -664,6 +664,7 @@ impl FakeState {
             needs_you: false,
             current_task: None,
             approvals: None,
+            autonomy: None,
         };
         let mut open = incident(
             "inc-latency",
@@ -1458,6 +1459,21 @@ impl ControlPlane for FakeControlPlane {
 
     fn get_incident(&self, id: String) -> PortFuture<'_, Incident> {
         self.call(format!("get_incident {id}"), move |s| s.incident_mut(&id).cloned())
+    }
+
+    fn mark_diagnosis(&self, id: String, verdict: String) -> PortFuture<'_, Autonomy> {
+        self.call(format!("mark_diagnosis {id} {verdict}"), move |s| {
+            let incident = s.incident_mut(&id)?;
+            let Some(autonomy) = incident.autonomy.as_mut() else {
+                return Err(PanelError::State(format!("incident {id} is on no autonomy ladder")));
+            };
+            autonomy.diagnosis_mark = format!("diagnosis-{verdict}");
+            if verdict == "correct" {
+                autonomy.totals.diagnoses += 1;
+                autonomy.earned.diagnoses += 1;
+            }
+            Ok(autonomy.clone())
+        })
     }
 
     fn resolve_incident(&self, id: String, reason: Option<String>) -> PortFuture<'_, Incident> {

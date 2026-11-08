@@ -8,7 +8,7 @@ use serde::de::DeserializeOwned;
 use super::api_error::ApiError;
 use crate::application::{ControlPlane, LIVE_FEED_SIZE, PanelConfig, PanelError, PortFuture};
 use crate::domain::{
-    Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, DeletedBot, EnrollmentRequest,
+    Autonomy, Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, DeletedBot, EnrollmentRequest,
     EnrollmentToken, Event, Execution, ExecutionId, Incident, IncidentStatus, Node, NodeId, Overview, Publication,
     Published, RevokedNode, Secret, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId,
     TaskSubmission, Topic,
@@ -170,6 +170,11 @@ const POLL_MARGIN: Duration = Duration::from_secs(10);
 #[derive(Serialize)]
 struct TextBody {
     text: String,
+}
+
+#[derive(Serialize)]
+struct DiagnosisBody {
+    verdict: String,
 }
 
 #[derive(Serialize)]
@@ -373,6 +378,10 @@ impl ControlPlane for HttpControlPlane {
 
     fn resolve_incident(&self, id: String, reason: Option<String>) -> PortFuture<'_, Incident> {
         self.post(format!("/v1/incidents/{id}/resolve"), Some(ResolveBody { reason }))
+    }
+
+    fn mark_diagnosis(&self, id: String, verdict: String) -> PortFuture<'_, Autonomy> {
+        self.post(format!("/v1/incidents/{id}/diagnosis"), Some(DiagnosisBody { verdict }))
     }
 
     fn task_events_after(&self, id: TaskId, after: Option<String>, wait_seconds: u32) -> PortFuture<'_, Vec<Event>> {

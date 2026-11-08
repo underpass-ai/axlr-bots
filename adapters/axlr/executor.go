@@ -91,6 +91,7 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 	if err != nil {
 		return application.ExecutionReport{}, err
 	}
+	policy.actAlone(request.Unattended)
 	if err := e.wireDelegation(request.ExecutionID, request.NodeTools(), request.DelegationSocket, &policy); err != nil {
 		return application.ExecutionReport{}, fmt.Errorf("axlr: delegation manifest: %w", err)
 	}
@@ -207,6 +208,20 @@ func (e *Executor) preparePolicy(ctx context.Context, execution domain.Execution
 		}
 	}
 	return prepared, nil
+}
+
+// actAlone raises the run's approval level to all for an execution a
+// ladder granted act-within-policy: AXLR's approval level local
+// auto-approves only local tools, so the one MCP write the allow list
+// names would otherwise still stop on a card (verified against AXLR
+// v0.16.0, docs/architecture/autonomy-ladder.md). The allow list, not the
+// approval level, is what bounds the run. Only when the runtime enforces
+// the policy, and only at that level: every other execution keeps the
+// approval level approveForLevel gives it.
+func (p *preparedPolicy) actAlone(unattended bool) {
+	if unattended && p.record.Enforced && p.object.Level == string(domain.AutonomyActWithinPolicy) {
+		p.approve = "all"
+	}
 }
 
 // approveForLevel is the run's approval level the runtime level needs:

@@ -108,7 +108,11 @@ func (l phaseLauncher) launch(ctx context.Context, incident domain.Incident, cor
 		return incident, err
 	}
 	action := "incident." + phase.String()
-	result, err := submitTask(ctx, l.deps, submission{action: action, bot: taker, trigger: trigger.Ref(), objective: objective, key: key, correlation: correlation, input: input, incident: incident.ID()})
+	var ladder domain.LadderDecision
+	if phase == domain.IncidentPhaseApply {
+		ladder = newLadderKeeper(l.deps).decide(ctx, taker, trigger, incident)
+	}
+	result, err := submitTask(ctx, l.deps, submission{action: action, bot: taker, trigger: trigger.Ref(), objective: objective, key: key, correlation: correlation, input: input, incident: incident.ID(), grant: ladder.Grant})
 	if err != nil {
 		var state domain.StateError
 		if errors.As(err, &state) {
@@ -125,6 +129,13 @@ func (l phaseLauncher) launch(ctx context.Context, incident domain.Incident, cor
 	}
 	policy := taker.PolicyFor(trigger.Ref())
 	details := map[string]string{"task": result.Task.ID().String(), "bot": taker.ID().String(), "cycle": strconv.Itoa(launched.Cycle()), "level": policy.Level().String()}
+	if ladder.Laddered {
+		// Every apply on a ladder says why it has its card or has none.
+		details["ladder"] = ladder.Reason
+		if ladder.Grant != nil {
+			details["level"] = domain.AutonomyActWithinPolicy.String()
+		}
+	}
 	return launched, l.rec.audit(ctx, action, launched.ID().String(), domain.AuditOK, details)
 }
 

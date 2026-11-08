@@ -23,6 +23,11 @@ func (uc GetIncident) Execute(ctx context.Context, id domain.IncidentID) (Incide
 		return IncidentReport{}, err
 	}
 	report := IncidentReport{Incident: incident, Whole: true}
+	// What the ladder says is shown when it can be read: a record that
+	// cannot be must not cost the operator the incident.
+	if view, err := newLadderKeeper(uc.deps).view(ctx, incident); err == nil {
+		report.Autonomy = view
+	}
 	current := incident.CurrentTaskID()
 	for _, taskID := range incident.TaskIDs() {
 		task, err := uc.deps.Tasks.Get(ctx, taskID)

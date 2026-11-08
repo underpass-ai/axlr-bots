@@ -287,6 +287,31 @@ func (c *Client) ResolveIncident(ctx context.Context, id string, request Resolve
 	return incident, c.call(ctx, http.MethodPost, "/v1/incidents/"+url.PathEscape(id)+"/resolve", request, &incident)
 }
 
+func (c *Client) MarkDiagnosis(ctx context.Context, id string, request DiagnosisRequest) (AutonomyResponse, error) {
+	var response AutonomyResponse
+	return response, c.call(ctx, http.MethodPost, "/v1/incidents/"+url.PathEscape(id)+"/diagnosis", request, &response)
+}
+
+func (c *Client) ListAutonomy(ctx context.Context, query application.AutonomyQuery) ([]AutonomyResponse, error) {
+	list := []AutonomyResponse{}
+	values := url.Values{}
+	for key, value := range map[string]string{"tenant": query.Tenant, "bot": query.Bot, "runbook": query.Runbook, "namespace": query.Namespace} {
+		if value != "" {
+			values.Set(key, value)
+		}
+	}
+	path := "/v1/autonomy"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	return list, c.call(ctx, http.MethodGet, path, nil, &list)
+}
+
+func (c *Client) GetAutonomy(ctx context.Context, id string) (AutonomyResponse, error) {
+	var response AutonomyResponse
+	return response, c.call(ctx, http.MethodGet, "/v1/autonomy/"+url.PathEscape(id), nil, &response)
+}
+
 func (c *Client) AddOutput(ctx context.Context, definition application.OutputDefinition) (application.OutputView, error) {
 	var view application.OutputView
 	return view, c.call(ctx, http.MethodPost, "/v1/outputs", definition, &view)

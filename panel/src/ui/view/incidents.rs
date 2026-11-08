@@ -11,7 +11,7 @@ use super::widgets::{
     BODY, El, PILL_SLOT, Voice, action, bold, card, empty, fact, link, muted, pill, pill_with, reader, section, slot,
     title,
 };
-use crate::domain::{Incident, IncidentPhase, IncidentStatus, TaskId};
+use crate::domain::{Autonomy, Incident, IncidentPhase, IncidentStatus, TaskId};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
 use crate::ui::table::{ColumnRef, IncidentColumn, List, RowRef, SortColumn, needs_you_first};
@@ -199,6 +199,14 @@ pub fn detail<'a>(app: &'a App, id: &'a str, tokens: Tokens) -> El<'a> {
             tokens,
         ));
     }
+    if let Some(autonomy) = &incident.autonomy {
+        page = page.push(section(
+            Icon::Check,
+            "Autonomy",
+            autonomy_card(app, incident, autonomy, tokens),
+            tokens,
+        ));
+    }
     if !incident.proposal.is_empty() {
         page = page.push(section(
             Icon::Wrench,
@@ -229,6 +237,60 @@ pub fn detail<'a>(app: &'a App, id: &'a str, tokens: Tokens) -> El<'a> {
     .id(super::widgets::PAGE)
     .height(Length::Fill)
     .into()
+}
+
+/// The runbook's step, what it earned and its whole history, with the
+/// buttons that mark this cycle's diagnosis (design §8.3).
+fn autonomy_card<'a>(app: &'a App, incident: &'a Incident, autonomy: &'a Autonomy, tokens: Tokens) -> El<'a> {
+    let mut body = column![
+        text(format!(
+            "{} in {}: {}",
+            autonomy.runbook, autonomy.namespace, autonomy.step
+        )),
+        muted(autonomy.progress(), tokens),
+    ]
+    .spacing(8);
+    if !incident.diagnosis.is_empty() && autonomy.may_mark() {
+        let press = |verdict: &str| (!app.incidents.marking).then(|| Message::MarkDiagnosis(verdict.to_string()));
+        body = body.push(
+            row![
+                action(
+                    Kind::Secondary,
+                    Icon::Check,
+                    "Diagnosis correct",
+                    press("correct"),
+                    tokens
+                ),
+                action(Kind::Ghost, Icon::Alert, "Diagnosis wrong", press("wrong"), tokens),
+            ]
+            .spacing(8),
+        );
+    } else if !autonomy.diagnosis_mark.is_empty() {
+        body = body.push(muted(format!("Marked: {}", autonomy.diagnosis_mark), tokens));
+    }
+    if !autonomy.history.is_empty() {
+        let lines = autonomy
+            .history
+            .iter()
+            .rev()
+            .fold(column![].spacing(4), |lines, entry| {
+                let mut line = format!(
+                    "{} · {} · cycle {}",
+                    format::age(entry.at, app.now),
+                    entry.signal,
+                    entry.cycle
+                );
+                if !entry.actor.is_empty() {
+                    line.push_str(&format!(" · {}", entry.actor));
+                }
+                if let Some(moved) = entry.moved() {
+                    line.push_str(&format!(" · {moved}"));
+                }
+                lines.push(text(line).wrapping(Wrapping::WordOrGlyph))
+            });
+        body = body.push(column![muted("History, newest first".to_string(), tokens), lines].spacing(4));
+    }
+    body.into()
 }
 
 fn facts<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> El<'a> {
