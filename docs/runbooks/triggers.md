@@ -1,6 +1,6 @@
 # Runbook: start tasks from a webhook or on a timer
 
-Give a bot automatic triggers, fire them, and verify that a redelivery or a restart creates nothing twice; point Alertmanager at a bot and verify that a group resent thirty times is one incident; open, follow and close an incident by hand. The trigger types, their fields and their keys are in the [bot definition](../reference/bot-definition.md#triggers).
+Give a bot automatic triggers, fire them, and verify that a redelivery or a restart creates nothing twice; point Alertmanager at a bot and verify that a group resent thirty times is one incident; point a CloudWatch alarm at a bot through Amazon SNS; open, follow and close an incident by hand. The trigger types, their fields and their keys are in the [bot definition](../reference/bot-definition.md#triggers).
 
 ## Add the triggers
 
@@ -52,9 +52,60 @@ The secret is a mounted file (`files:`), not inline (`secrets:`): prometheus-ope
 
 Check: the first firing group answers `201`, `"action": "opened"`, the incident and its triage task; every resend of the same group (`repeat_interval`) answers `200`, `"action": "repeated"`, no task, and `incident get` shows `repeats` growing and the new alerts under `fingerprints`; when the group goes green, `"action": "resolved"`, the incident is `Resolved` and no task was started; a group that fires again within 30 minutes answers `"action": "reopened"` with a new task and `"cycle": 2`. After an hour of resends, `incident list` holds one incident for the group. A body that is not Alertmanager's answers `400`.
 
+## CloudWatch through SNS
+
+A CloudWatch alarm reaches a bot through an Amazon SNS topic with an HTTPS subscription to the trigger's route. Give the bot a `cloudwatch` trigger: no secret (SNS cannot send one), a severity for its incidents, and `autoConfirm` left `false`.
+
+```json
+{"triggers": [{"type": "cloudwatch", "name": "cw", "severity": "sev3", "autoConfirm": false,
+               "objective": "CloudWatch alarm {{.alarmName}} fired: {{.reason}}. Find the cause with evidence and report it; change nothing."}]}
+```
+
+```bash
+axlr-bots bot update triage --file patch.json
+topic=$(aws sns create-topic --name axlr-sre-alarms --query TopicArn --output text)
+aws cloudwatch put-metric-alarm --alarm-name shop-web-5xx ... --alarm-actions "$topic" --ok-actions "$topic"
+aws sns subscribe --topic-arn "$topic" --protocol https \
+    --notification-endpoint https://cp.example.internal:7879/v1/triggers/triage/cw
+```
+
+`--ok-actions` is what closes the incident, as `send_resolved` does for Alertmanager. SNS must reach the operator address and trust its certificate: SNS only delivers to HTTPS endpoints whose certificate a public CA signed, so put the route behind a proxy or load balancer with a public certificate when the fleet CA signs the operator address.
+
+**Confirm the subscription by hand.** SNS posts a `SubscriptionConfirmation` first. The trigger verifies it, answers `200` with `"action": "ignored"`, and records the `SubscribeURL` in the audit log (`<state>/audit.jsonl`, action `trigger.subscription`, with the `topicArn`). Read it there and open it, or confirm with the token:
+
+```bash
+grep '"trigger.subscription"' ~/.local/state/axlr-bots/audit.jsonl | tail -n 1   # check topicArn is yours
+curl -s "$subscribe_url"                                                       # or: aws sns confirm-subscription --topic-arn "$topic" --token "$token"
+aws sns list-subscriptions-by-topic --topic-arn "$topic"                      # SubscriptionArn is no longer PendingConfirmation
+```
+
+Why by hand: the signature proves that a message came from SNS, not from whose topic. Any AWS account can subscribe this URL to a topic of its own; confirming every request would let that topic open incidents here. With `"autoConfirm": true` the trigger visits the URL itself (`"action": "confirmed"`, audited as `trigger.subscription.confirm`); use it only where nobody outside can reach the route.
+
+**Test it** with a message shaped like an alarm's (SNS signs it like any other):
+
+```bash
+aws sns publish --topic-arn "$topic" --message '{"AlarmName":"shop-web-5xx","NewStateValue":"ALARM","NewStateReason":"test from the runbook","StateChangeTime":"2026-11-08T10:00:00.000+0000","AlarmArn":"arn:aws:cloudwatch:eu-west-1:123456789012:alarm:shop-web-5xx"}'
+aws sns publish --topic-arn "$topic" --message '{"AlarmName":"shop-web-5xx","NewStateValue":"OK","NewStateReason":"test from the runbook","StateChangeTime":"2026-11-08T10:05:00.000+0000","AlarmArn":"arn:aws:cloudwatch:eu-west-1:123456789012:alarm:shop-web-5xx"}'
+# or the alarm itself: aws cloudwatch set-alarm-state --alarm-name shop-web-5xx --state-value ALARM --state-reason test
+```
+
+Check: the ALARM answers `201`, `"action": "opened"`, an incident with source `cloudwatch`, group key `cloudwatch:<AlarmArn>`, title `shop-web-5xx: test from the runbook`, and its triage task with the alarm's JSON as `input`; the same message again (SNS retries) and an ALARM with a new `StateChangeTime` while it is open answer `200`, `"repeated"`; the OK answers `"resolved"` and starts nothing; an ALARM within 30 minutes of it `"reopened"`, cycle 2; a later one opens a new incident. `INSUFFICIENT_DATA` answers `"ignored"` and is audited. A body whose signature does not verify, or whose `SigningCertURL` is not `https://sns.<region>.amazonaws.com/…`, is `403`; a body that is not SNS's `400`.
+
+| SNS message | Alarm state | Action | Incident | Task |
+|---|---|---|---|---|
+| `SubscriptionConfirmation` | | `ignored` (`confirmed` with `autoConfirm`) | none | none |
+| `UnsubscribeConfirmation` | | `ignored`, audited | none | none |
+| `Notification` | `ALARM`, a new group key | `opened` | new, Open, cycle 1 | triage |
+| `Notification` | `ALARM`, the group open | `repeated` | the `StateChangeTime` added | none |
+| `Notification` | `ALARM`, resolved less than 30 minutes ago | `reopened` | cycle + 1 | triage |
+| `Notification` | `OK` | `resolved` (`ignored` when nothing is open) | Resolved, its alarms marked resolved | none |
+| `Notification` | `INSUFFICIENT_DATA` | `ignored`, audited | unchanged | none |
+
+The signature is checked as AWS documents it: the certificate at `SigningCertURL` is fetched over HTTPS from `sns.<region>.amazonaws.com` only, no redirect followed, at most 64 KiB, kept for an hour (never past its expiry), and the body's fields are verified against its RSA key, SHA1 for `SignatureVersion` 1 and SHA256 for 2. The check runs on every route, the socket included. The tests use bodies composed from AWS's documented formats under `domain/testdata/sns-*.json` (not captured from a real topic), re-signed with a key each test makes (`internal/snstest`).
+
 ## Incidents
 
-An incident is one alert group of a tenant and the tasks its phases ran for it ([operator API](../reference/operator-api.md#routes)): the triage task of the bot it belongs to, then the fix, apply and verify tasks of its teammates ([ADR](../architecture/incident-phases.md)). Alertmanager opens them through an `alertmanager` trigger (above); anything else, or a person, through `POST /v1/incidents` or `axlr-bots incident open`, for a bot that declares the `incident` trigger. One task per phase in each cycle: a repeated alert starts nothing.
+An incident is one alert group of a tenant and the tasks its phases ran for it ([operator API](../reference/operator-api.md#routes)): the triage task of the bot it belongs to, then the fix, apply and verify tasks of its teammates ([ADR](../architecture/incident-phases.md)). Alertmanager opens them through an `alertmanager` trigger and CloudWatch through a `cloudwatch` trigger (above); anything else, or a person, through `POST /v1/incidents` or `axlr-bots incident open`, for a bot that declares the `incident` trigger. One task per phase in each cycle: a repeated alert starts nothing.
 
 Each phase is a task of its own, launched by the control plane when the incident reaches it, never by a bot that would wait through an approval: fix once it is `Diagnosed`, apply once it is `Proposed`, verify once it is `Verifying`. A phase belongs to the one teammate of the triage bot (same tenant, a shared team) that declares an `incident` trigger with that `phase`. No such teammate: the incident stays where it is (`Diagnosed`, `Proposed` or `Verifying`), as it did before the phase existed. Two, or one that is not Enabled: it stays there too, the refusal audited (`incident.<phase>`), and the next alert of the group tries again.
 

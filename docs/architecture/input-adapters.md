@@ -1,6 +1,6 @@
 # ADR: input adapters
 
-Status: proposed, 29 October 2026 (the product owner: «SI» to a page and a template, in the design conversation of 29 October on the next worlds: an orchestra of 36 chairs conducted by hand, an anthill of 300 bots, a pyramid being built). Principle «no se tiene que trasladar la complejidad al usuario»; builds on [publish/subscribe events](pubsub-events.md), the [sidecar](../runbooks/sidecar.md) and the port fleet (private repo `axlr-bots-examples`, where the files named below live). This page names a pattern over primitives that exist; it adds nothing to the control plane.
+Status: proposed, 29 October 2026; amended 8 November 2026 with the [CloudWatch decision](#decision-8-november-2026-cloudwatch-through-sns) (the product owner: «SI» to a page and a template, in the design conversation of 29 October on the next worlds: an orchestra of 36 chairs conducted by hand, an anthill of 300 bots, a pyramid being built). Principle «no se tiene que trasladar la complejidad al usuario»; builds on [publish/subscribe events](pubsub-events.md), the [sidecar](../runbooks/sidecar.md) and the port fleet (private repo `axlr-bots-examples`, where the files named below live). This page names a pattern over primitives that exist; it adds nothing to the control plane.
 
 ## Context
 
@@ -86,7 +86,20 @@ Acceptance for a new adapter, before a world is announced:
 
 ## Where it goes in the code
 
-Nowhere in `domain/`, `application/` or `adapters/`: the control plane has every primitive. A new world adds `<world>/` to the private repo `axlr-bots-examples` with its service, its adapter, a bot definition per creature and a Helm release of its own; the port fleet's files stay as they are.
+Nowhere in `domain/`, `application/` or `adapters/`: the control plane has every primitive. The exception is a source that already speaks a standard protocol and that opens incidents: it is a trigger type, a door of the control plane, as `alertmanager` is and `cloudwatch` is (below), not a process beside a world. A new world adds `<world>/` to the private repo `axlr-bots-examples` with its service, its adapter, a bot definition per creature and a Helm release of its own; the port fleet's files stay as they are.
+
+## Decision, 8 November 2026: CloudWatch through SNS
+
+[axlr-sre](https://github.com/underpass-ai/axlr-sre)'s design (§5, phase 2) takes CloudWatch alarms as an input, keyed by the alarm and `StateChangeTime`, `ALARM` opening and `OK` closing. CloudWatch publishes an alarm's state change to an SNS topic; SNS posts it to an HTTPS subscription. The control plane takes it as a trigger type of its own, `cloudwatch`, on the trigger route `POST /v1/triggers/{bot}/{trigger}`, with no adapter process in between.
+
+| Question | Decision | Why |
+|---|---|---|
+| Transport | SNS HTTP/S delivery: `Notification`, `SubscriptionConfirmation`, `UnsubscribeConfirmation`, told apart by `x-amz-sns-message-type` and the body's `Type`, which must agree | what SNS does without a Lambda or a queue of ours |
+| Credential | SNS's own signature of the message, mandatory, on every route (the socket included); the trigger takes no `secret` or `signingKey` | SNS sets no header of ours, so `X-Axlr-Secret` cannot be sent; a secret in the URL's path or query lands in every proxy's and load balancer's log, so it is not accepted |
+| The signing certificate | fetched only from `https://sns.<region>.amazonaws.com/…`, no redirect, at most 64 KiB, cached an hour and never past its expiry; `SignatureVersion` 1 (SHA1withRSA) and 2 (SHA256withRSA), the string to sign as AWS documents it | a body names its own certificate's URL: anything but SNS's host would let a forger sign with a key of its own, or make the control plane fetch an address of its choosing |
+| Subscription | audited with its `SubscribeURL`; confirmed by the control plane only when the trigger says `"autoConfirm": true`; by default a person confirms it | the signature proves the message came from SNS, not from whose topic: any AWS account can subscribe the URL to its own topic, and confirming it would let that topic open incidents |
+| Mapping | `ALARM` opens or repeats an incident with group key `cloudwatch:<AlarmArn>` (the alarm's name without one), fingerprint `StateChangeTime`, title `<AlarmName>: <NewStateReason>`, the trigger's `severity` (sev3), source `cloudwatch`, the triage task with the alarm's JSON as `input`; `OK` resolves it; `INSUFFICIENT_DATA` is audited; repeat, reopen within 30 minutes and a new incident later follow the incident's rules | the incident aggregate is the same for every source; only the parse is CloudWatch's |
+| Severity and namespace | the trigger's `severity`; no namespace | an alarm's tags are not in its notification: reading them is a `cloudwatch:ListTagsForResource` call with an AWS credential the control plane does not hold |
 
 ## Consequences
 
@@ -103,6 +116,7 @@ Nowhere in `domain/`, `application/` or `adapters/`: the control plane has every
 
 ## Left out
 
+- For `cloudwatch`: a list of allowed topic ARNs on the trigger, the alarm's tags (severity, namespace) through the CloudWatch API, a maximum age of a message's `Timestamp` against replays, the China partition (`amazonaws.com.cn`), and SNS's raw message delivery (which carries no signature, so it is refused).
 - A credential of the adapter's own: today it holds the operator token or a trigger's secret.
 - The way out: a bot's `move` or `play` is a tool the world serves, as `run_mission` is; this page is about the way in.
 - A rate on the publish route per caller: the adapter paces itself.
