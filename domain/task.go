@@ -323,6 +323,73 @@ func (t *Task) RecordApproval(wait ApprovalWait) error {
 	return nil
 }
 
+// AddApproval records one person's approval of a call that waits for
+// more than one: the task keeps waiting, under the same deadline, and
+// nothing runs. The same actor twice is refused, and so is an approval
+// that would be the last one (that one resumes the task with Resume).
+func (t *Task) AddApproval(actor string, now time.Time) error {
+	if t.status != TaskWaitingApproval || t.approval == nil || !t.approval.Open() {
+		return t.refuse("record an approval")
+	}
+	if actor == "" {
+		return invalid("approval actor", "must not be empty")
+	}
+	if t.approval.ApprovedByActor(actor) {
+		return StateError{Subject: "task " + t.id.String(), Current: "already approved by " + actor, Attempted: "approve again as the same person"}
+	}
+	if len(t.approval.ApprovedBy)+1 >= t.approval.Needed() {
+		return t.refuse("record the last approval without resuming")
+	}
+	// A copy, not the shared wait, as closeApproval does.
+	wait := *t.approval
+	wait.ApprovedBy = append(append([]ApprovalMark(nil), wait.ApprovedBy...), ApprovalMark{Actor: actor, At: now})
+	t.approval = &wait
+	t.updatedAt = now
+	return nil
+}
+
+// RaiseApprovalsNeeded makes the open wait need n people when it needed
+// fewer: a bot that asks for two persons since the wait began gets them.
+// It never lowers what a wait needs.
+func (t *Task) RaiseApprovalsNeeded(n int) error {
+	if t.status != TaskWaitingApproval || t.approval == nil || !t.approval.Open() {
+		return t.refuse("raise the approvals it needs")
+	}
+	if n <= t.approval.Needed() {
+		return nil
+	}
+	wait := *t.approval
+	wait.ApprovalsNeeded = n
+	if err := wait.Validate(); err != nil {
+		return err
+	}
+	t.approval = &wait
+	return nil
+}
+
+// FinalApproval adds the last approver to a call that waits for more
+// than one, just before Resume closes the wait approved: the closed
+// wait then lists everyone who approved it. A call that waits for one
+// is left as it is.
+func (t *Task) FinalApproval(actor string, now time.Time) error {
+	if t.status != TaskWaitingApproval || t.approval == nil || !t.approval.Open() {
+		return t.refuse("record an approval")
+	}
+	if t.approval.Needed() < 2 {
+		return nil
+	}
+	if t.approval.ApprovedByActor(actor) {
+		return StateError{Subject: "task " + t.id.String(), Current: "already approved by " + actor, Attempted: "approve again as the same person"}
+	}
+	if len(t.approval.ApprovedBy)+1 < t.approval.Needed() {
+		return t.refuse("record the last approval before the others")
+	}
+	wait := *t.approval
+	wait.ApprovedBy = append(append([]ApprovalMark(nil), wait.ApprovedBy...), ApprovalMark{Actor: actor, At: now})
+	t.approval = &wait
+	return nil
+}
+
 // Approval is the last wait for a person's decision, open or closed,
 // and false when the task never waited under a deadline.
 func (t Task) Approval() (ApprovalWait, bool) {

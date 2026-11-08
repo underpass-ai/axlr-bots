@@ -65,7 +65,7 @@ func TestAnUrgentTaskPreemptsTheWorkInProgress(t *testing.T) {
 	if wait, _ := taskOf(t, h, waiting.ID()).Approval(); wait.Open() {
 		t.Error("the preempted wait is still open")
 	}
-	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionApprove, ""); err == nil {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionApprove, "", ""); err == nil {
 		t.Error("a late approval of a preempted task was taken")
 	}
 	if task := taskOf(t, h, queued.ID()); task.Status() != domain.TaskCancelled || task.FailureReason() != "dropped from the queue by the urgent task "+urgent.ID().String()+" (the operator submitted it as urgent)" {

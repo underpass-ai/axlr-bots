@@ -130,7 +130,7 @@ func TestApplyAndVerifyPhases(t *testing.T) {
 
 	h.decider.report = completes("APPLIED: kubectl apply -f desired/web.yaml", 0.02)
 	h.clock.now = h.clock.now.Add(time.Minute)
-	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionApprove, ""); err != nil {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionApprove, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	decide := h.decider.requests[len(h.decider.requests)-1]
@@ -229,7 +229,7 @@ func TestDeniedTwiceTheIncidentIsLeftToAPerson(t *testing.T) {
 	incident := proposed(t, h, triage)
 	waiting := waitingApply(t, h, incident)
 	h.decider.report = completes("Not applied: the call was denied.", 0.01)
-	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionDeny, ""); err != nil {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionDeny, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	back, _ := h.incs.Get(ctx, incident.ID())
@@ -399,7 +399,7 @@ func TestApplyOnANode(t *testing.T) {
 	if _, err := NewReportExecution(h.deps).Execute(ctx, node.ID(), first.ExecutionID, pending); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewApproveTask(h.deps).Execute(ctx, incident.CurrentTaskID(), DecisionApprove, "c-n"); err != nil {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, incident.CurrentTaskID(), DecisionApprove, "c-n", ""); err != nil {
 		t.Fatal(err)
 	}
 	if queued, _ := h.incs.Get(ctx, incident.ID()); queued.Status() != domain.IncidentApplying {
@@ -459,7 +459,7 @@ func TestAnIncidentSaysWhenItNeedsAPerson(t *testing.T) {
 		t.Fatalf("list: %+v %v", list, err)
 	}
 	h.decider.report = completes("Not applied.", 0)
-	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionDeny, ""); err != nil {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionDeny, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	report, _ = NewGetIncident(h.deps).Execute(ctx, incident.ID())
@@ -547,7 +547,7 @@ func TestAStaleApplyIsNeverApproved(t *testing.T) {
 	incident := proposed(t, h, triage)
 	waiting := waitingApply(t, h, incident)
 	h.decider.report = ExecutionReport{Outcome: domain.ExecutionDecisionRequired, Result: domain.Result{SessionID: "sess-a", PendingDecision: &domain.PendingDecision{Tool: "local_write", CallID: "c-again", SessionID: "sess-a"}}}
-	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionDeny, ""); err != nil {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionDeny, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	stale, _ := h.tasks.Get(ctx, waiting.ID())
@@ -555,7 +555,7 @@ func TestAStaleApplyIsNeverApproved(t *testing.T) {
 		t.Fatalf("the denied apply asking again is %s", stale.Status())
 	}
 	decisions := len(h.decider.requests)
-	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionApprove, "c-again"); err == nil || len(h.decider.requests) != decisions {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.ID(), DecisionApprove, "c-again", ""); err == nil || len(h.decider.requests) != decisions {
 		t.Fatalf("a stale apply was approved: %v", err)
 	}
 	// An apply still waiting when its incident is resolved by hand.
@@ -567,14 +567,14 @@ func TestAStaleApplyIsNeverApproved(t *testing.T) {
 		t.Fatal(err)
 	}
 	var state domain.StateError
-	if _, err := NewApproveTask(h2.deps).Execute(ctx, waiting.ID(), DecisionApprove, ""); !errors.As(err, &state) || !strings.Contains(err.Error(), "no longer stands on") {
+	if _, err := NewApproveTask(h2.deps).Execute(ctx, waiting.ID(), DecisionApprove, "", ""); !errors.As(err, &state) || !strings.Contains(err.Error(), "no longer stands on") {
 		t.Errorf("approve after the resolution: %v", err)
 	}
 	if audit := h2.log.audits[len(h2.log.audits)-1]; audit.Action != "task.decide" || audit.Outcome != domain.AuditDenied {
 		t.Errorf("the refusal was not audited: %+v", audit)
 	}
 	h2.decider.report = completes("not applied", 0)
-	if _, err := NewApproveTask(h2.deps).Execute(ctx, waiting.ID(), DecisionDeny, ""); err != nil {
+	if _, err := NewApproveTask(h2.deps).Execute(ctx, waiting.ID(), DecisionDeny, "", ""); err != nil {
 		t.Errorf("deny after the resolution: %v", err)
 	}
 }

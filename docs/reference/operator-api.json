@@ -953,7 +953,19 @@
           "default": {
             "$ref": "#/components/responses/Error"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "X-Axlr-Actor",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "who decides, as the token holder asserts it: what the bot's approvals.approvers are compared with"
+          }
+        ],
+        "description": "403 forbidden when the actor is not among the bot's approvers, or names nobody on a bot that lists them; a call that waits for two persons answers its first approval with the task still WaitingApproval (approval.approvedBy) and the stopped execution."
       }
     },
     "/v1/tasks/{id}/approve": {
@@ -984,7 +996,19 @@
           "default": {
             "$ref": "#/components/responses/Error"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "X-Axlr-Actor",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "who decides, as the token holder asserts it: what the bot's approvals.approvers are compared with"
+          }
+        ],
+        "description": "403 forbidden when the actor is not among the bot's approvers, or names nobody on a bot that lists them; a call that waits for two persons answers its first approval with the task still WaitingApproval (approval.approvedBy) and the stopped execution."
       }
     },
     "/v1/tasks/{id}/deny": {
@@ -1015,7 +1039,19 @@
           "default": {
             "$ref": "#/components/responses/Error"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "X-Axlr-Actor",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "who decides, as the token holder asserts it: what the bot's approvals.approvers are compared with"
+          }
+        ],
+        "description": "403 forbidden when the actor is not among the bot's approvers, or names nobody on a bot that lists them; a call that waits for two persons answers its first approval with the task still WaitingApproval (approval.approvedBy) and the stopped execution."
       }
     },
     "/v1/tasks/{id}/report": {
@@ -1695,6 +1731,19 @@
           "tool": {
             "type": "string",
             "example": "local_write"
+          },
+          "approvalsNeeded": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2,
+            "description": "how many different people must approve the call; absent: one. 2 when the bot's approvals.twoPersons names the task's incident"
+          },
+          "approvedBy": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApprovalMark"
+            },
+            "description": "for a call that waits for two: who approved it and when, in order"
           }
         },
         "required": [
@@ -1725,6 +1774,20 @@
               "$ref": "#/components/schemas/ToolRuleSnapshot"
             },
             "description": "calls the control plane approves without a person (actor policy:autoApprove)"
+          },
+          "approvers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "who may approve or deny the bot's calls, compared exactly with the actor a decision names; absent: anyone with the token",
+            "example": [
+              "tirso",
+              "oncall"
+            ]
+          },
+          "twoPersons": {
+            "$ref": "#/components/schemas/TwoPersonsSnapshot"
           }
         }
       },
@@ -2165,6 +2228,10 @@
           },
           "decision": {
             "type": "string"
+          },
+          "decidedBy": {
+            "type": "string",
+            "description": "who decides, as the token holder asserts it (the X-Axlr-Actor header says the same; both given must agree); absent: the control plane's own actor, which a bot that lists approvers, or a call that waits for two persons, refuses with 403"
           }
         },
         "required": [
@@ -2503,6 +2570,7 @@
           "bot.subscription.changed",
           "bot.subscription.asked",
           "bot.approval.expired",
+          "bot.approval.first",
           "execution.assigned",
           "execution.reported",
           "group.event.published",
@@ -4142,6 +4210,17 @@
               "type": "string"
             },
             "description": "the executions of its own tasks whose cost it added, each once: a waiting run when it stopped, a report delivered twice only once"
+          },
+          "namespace": {
+            "type": "string",
+            "description": "the first namespace label of the incident's alerts; absent when they carry none"
+          },
+          "namespaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "every namespace the incident's alerts named, in order, when there are two or more (the first 32); approvals.twoPersons matches any of them"
           }
         },
         "required": [
@@ -4233,6 +4312,10 @@
           "objective": {
             "type": "string",
             "description": "what the triage task asks for; absent: the trigger's template, or the default, rendered over the incident"
+          },
+          "namespace": {
+            "type": "string",
+            "description": "the Kubernetes namespace the alerts are about: what approvals.twoPersons reads"
           }
         },
         "required": [
@@ -4520,6 +4603,17 @@
               "type": "string"
             },
             "description": "the executions of its own tasks whose cost it added, each once: a waiting run when it stopped, a report delivered twice only once"
+          },
+          "namespace": {
+            "type": "string",
+            "description": "the first namespace label of the incident's alerts; absent when they carry none"
+          },
+          "namespaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "every namespace the incident's alerts named, in order, when there are two or more (the first 32); approvals.twoPersons matches any of them"
           }
         },
         "required": [
@@ -4610,6 +4704,52 @@
           "level",
           "allowedTools"
         ]
+      },
+      "ApprovalMark": {
+        "type": "object",
+        "x-go-type": "domain.ApprovalMark",
+        "description": "one person's approval of a call that waits for two",
+        "properties": {
+          "actor": {
+            "type": "string",
+            "example": "tirso"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "actor",
+          "at"
+        ]
+      },
+      "TwoPersonsSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.TwoPersonsSnapshot",
+        "description": "the incidents whose calls wait for two different people: those of a namespace or of a severity listed (one match is enough)",
+        "properties": {
+          "namespaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "prod",
+              "shop-prod"
+            ]
+          },
+          "severities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IncidentSeverity"
+            },
+            "example": [
+              "sev1",
+              "sev2"
+            ]
+          }
+        }
       }
     }
   }

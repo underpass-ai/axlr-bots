@@ -337,10 +337,14 @@ func TestEndExpiredEndsAWaitThatExpiredWithoutADenial(t *testing.T) {
 	if _, err := RestoreTask(task.Snapshot()); err != nil {
 		t.Errorf("restore: %v", err)
 	}
-	for wait, want := range map[ApprovalWait]string{
-		{Since: t0, Deadline: t0.Add(time.Hour), OnExpire: ExpireCancel}:                "approval expired: nobody decided the call by 2026-10-23T16:00:00Z",
-		{CallID: "c-9", Since: t0, Deadline: t0.Add(time.Hour), OnExpire: ExpireCancel}: "approval expired: nobody decided the call c-9 by 2026-10-23T16:00:00Z",
+	for _, c := range []struct {
+		wait ApprovalWait
+		want string
+	}{
+		{ApprovalWait{Since: t0, Deadline: t0.Add(time.Hour), OnExpire: ExpireCancel}, "approval expired: nobody decided the call by 2026-10-23T16:00:00Z"},
+		{ApprovalWait{CallID: "c-9", Since: t0, Deadline: t0.Add(time.Hour), OnExpire: ExpireCancel}, "approval expired: nobody decided the call c-9 by 2026-10-23T16:00:00Z"},
 	} {
+		wait, want := c.wait, c.want
 		other := sampleTask(t)
 		_ = other.Start("exec-1", t0)
 		_ = other.AwaitApproval(wait, t0)

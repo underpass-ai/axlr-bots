@@ -25,7 +25,12 @@ pub struct HttpControlPlane {
     client: Client,
     base: String,
     token: Secret,
+    /// Who the panel decides as, sent as X-Axlr-Actor on every request.
+    actor: Option<String>,
 }
+
+/// The header that names who decides.
+const ACTOR_HEADER: &str = "X-Axlr-Actor";
 
 impl HttpControlPlane {
     /// A client for the settings: reads the CA and the token file now, so
@@ -65,14 +70,20 @@ impl HttpControlPlane {
             client,
             base: config.base_url(),
             token: Secret::new(token),
+            actor: config.actor.clone(),
         })
     }
 
     fn request(&self, method: Method, path: &str, timeout: Duration) -> RequestBuilder {
-        self.client
+        let request = self
+            .client
             .request(method, format!("{}{path}", self.base))
             .bearer_auth(self.token.expose())
-            .timeout(timeout)
+            .timeout(timeout);
+        match &self.actor {
+            Some(actor) => request.header(ACTOR_HEADER, actor),
+            None => request,
+        }
     }
 
     fn get<T: DeserializeOwned + Send + 'static>(&self, path: String) -> PortFuture<'_, T> {

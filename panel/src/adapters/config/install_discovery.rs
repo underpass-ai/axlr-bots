@@ -77,6 +77,7 @@ impl InstallDiscovery {
             api_url: format!("https://{}", reachable(&api)),
             ca_path: state.join("ca/ca.crt"),
             token_file,
+            actor: None,
         }
     }
 

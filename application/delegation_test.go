@@ -483,7 +483,7 @@ func TestDelegatedTasksPastTheirDeadlineAreFailedWhereTheyWait(t *testing.T) {
 	if _, err := NewRenewLease(h.deps).Execute(ctx, "web-1", parent.ExecutionID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.TaskID, DecisionApprove, ""); err == nil {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, waiting.TaskID, DecisionApprove, "", ""); err == nil {
 		t.Error("a decision after the delegation's deadline was taken")
 	}
 	result, err := NewReconcileTasks(h.deps).Execute(ctx, time.Hour)

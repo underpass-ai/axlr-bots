@@ -57,7 +57,9 @@ func taskRun(ctx context.Context, service unixapi.Service, args []string, stdout
 	return exitCodeFor(result.Execution.Outcome)
 }
 
-func taskDecide(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+// taskDecide is task decide <id> approve|deny, decided as the global
+// --actor: the name a bot's approvers are compared with.
+func taskDecide(ctx context.Context, service unixapi.Service, actor string, args []string, stdout, stderr io.Writer) int {
 	positional, call, ok := decideArgs("task decide", args, stderr)
 	if !ok {
 		return exitUsage
@@ -70,11 +72,11 @@ func taskDecide(ctx context.Context, service unixapi.Service, args []string, std
 		fmt.Fprintf(stderr, "axlr-bots: task decide takes approve or deny, not %q\n", positional[1])
 		return exitUsage
 	}
-	return decide(ctx, service, positional[0], unixapi.DecideRequest{Decision: positional[1], CallID: call}, stdout, stderr)
+	return decide(ctx, service, positional[0], unixapi.DecideRequest{Decision: positional[1], CallID: call, DecidedBy: actor}, stdout, stderr)
 }
 
 // taskDecideAs is task approve and task deny: the decision is the verb.
-func taskDecideAs(ctx context.Context, service unixapi.Service, decision string, args []string, stdout, stderr io.Writer) int {
+func taskDecideAs(ctx context.Context, service unixapi.Service, actor, decision string, args []string, stdout, stderr io.Writer) int {
 	positional, call, ok := decideArgs("task "+decision, args, stderr)
 	if !ok {
 		return exitUsage
@@ -83,7 +85,7 @@ func taskDecideAs(ctx context.Context, service unixapi.Service, decision string,
 		fmt.Fprintf(stderr, "axlr-bots: task %s needs exactly one <task-id>\n", decision)
 		return exitUsage
 	}
-	return decide(ctx, service, positional[0], unixapi.DecideRequest{Decision: decision, CallID: call}, stdout, stderr)
+	return decide(ctx, service, positional[0], unixapi.DecideRequest{Decision: decision, CallID: call, DecidedBy: actor}, stdout, stderr)
 }
 
 // decideArgs reads --call, before or after the positional arguments.

@@ -128,6 +128,18 @@ fn control_plane<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
                 "The token stays in its file. The panel reads it and never shows it.",
                 tokens
             ),
+            field(
+                "Decide as",
+                "tirso",
+                &form.actor,
+                Message::SettingsActor,
+                submit.clone(),
+                tokens
+            ),
+            muted(
+                "Who you approve and deny as. A bot that lists approvers takes only the names it lists; it is your word, not a login.",
+                tokens
+            ),
             row![
                 action(Kind::Primary, Icon::Play, label, submit, tokens),
                 status,

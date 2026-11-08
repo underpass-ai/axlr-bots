@@ -66,7 +66,11 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 		}
 		report.Result.Artifacts = append(report.Result.Artifacts, domain.Artifact{Name: ReportArtifactName, MediaType: ReportMediaType, Reference: reference, Source: domain.ArtifactSourceAnswer})
 	}
-	eventType, err := apply(task, execution, report, bot.Approvals(), ended)
+	needed := 1
+	if report.Outcome == domain.ExecutionDecisionRequired {
+		needed = approvalsNeeded(ctx, s.deps, bot, *task)
+	}
+	eventType, err := apply(task, execution, report, bot.Approvals(), needed, ended)
 	if err != nil {
 		return err
 	}
@@ -87,6 +91,9 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 	waiting = waiting && wait.Open() && task.Status() == domain.TaskWaitingApproval
 	if waiting {
 		payload["callId"], payload["tool"], payload["deadline"], payload["onExpire"] = wait.CallID, wait.Tool, wait.Deadline, wait.OnExpire.String()
+		if wait.Needed() > 1 {
+			payload["approvalsNeeded"] = wait.Needed()
+		}
 	}
 	if stored := storedNames(execution.Result().Artifacts); len(stored) > 0 {
 		payload["artifacts"] = stored
@@ -119,7 +126,7 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 	}
 	if waiting {
 		if pending := execution.Result().PendingDecision; pending != nil {
-			if actor, ok := approvedByPolicy(bot, *pending); ok && s.autoApprove(ctx, *task, pending.CallID, actor) {
+			if actor, ok := approvedByPolicy(bot, *pending); ok && policyDecides(actor, wait.Needed()) && s.autoApprove(ctx, *task, pending.CallID, actor) {
 				return nil
 			}
 		}
@@ -165,13 +172,21 @@ func approvedByPolicy(bot domain.Bot, pending domain.PendingDecision) (string, b
 	return "", false
 }
 
+// policyDecides says whether a policy approves a call that waits for
+// needed people: the team's events always (they are not writes, and the
+// control plane checks each one itself), an autoApprove rule only a call
+// one person would decide; two people decide the rest (design §8.1).
+func policyDecides(actor string, needed int) bool {
+	return actor == TeamEventActor || needed < 2
+}
+
 // autoApprove decides the call the task stopped on as the policy says,
 // without a person; false when it could not (the bot was paused
 // meanwhile), and then a person is asked as usual.
 func (s settler) autoApprove(ctx context.Context, task domain.Task, callID, actor string) bool {
 	deps := s.deps
 	deps.Actor = actor
-	if _, err := NewApproveTask(deps).Execute(ctx, task.ID(), DecisionApprove, callID); err != nil {
+	if _, err := NewApproveTask(deps).byPolicy(ctx, task.ID(), callID); err != nil {
 		_ = s.rec.audit(ctx, "task.decide", task.ID().String(), domain.AuditFailed, map[string]string{"actor": actor, "reason": err.Error()})
 		return false
 	}
@@ -214,8 +229,8 @@ func (s settler) dropIfEnded(ctx context.Context, action string, task *domain.Ta
 
 // apply moves the execution and the task to where the report says and
 // names the event that tells it. A task that stops on a call waits for
-// the bot's approval time to live.
-func apply(task *domain.Task, execution *domain.Execution, report ExecutionReport, approvals domain.Approvals, ended time.Time) (domain.EventType, error) {
+// the bot's approval time to live, for as many people as needed.
+func apply(task *domain.Task, execution *domain.Execution, report ExecutionReport, approvals domain.Approvals, needed int, ended time.Time) (domain.EventType, error) {
 	switch report.Outcome {
 	case domain.ExecutionCompleted:
 		if err := execution.Complete(report.Result, report.Usage, report.TracePath, ended); err != nil {
@@ -228,6 +243,9 @@ func apply(task *domain.Task, execution *domain.Execution, report ExecutionRepor
 		}
 		pending := report.Result.PendingDecision
 		wait := domain.ApprovalWait{CallID: pending.CallID, Tool: pending.Tool, Since: ended, Deadline: ended.Add(approvals.TTL()), OnExpire: approvals.OnExpire()}
+		if needed > 1 {
+			wait.ApprovalsNeeded = needed
+		}
 		return domain.EventTaskWaitingApproval, task.AwaitApproval(wait, ended)
 	default:
 		reason := report.FailureReason

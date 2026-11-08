@@ -26,6 +26,7 @@ fn live_config() -> Option<PanelConfig> {
         token_file: var("AXLR_PANEL_TOKEN_FILE")
             .map(PathBuf::from)
             .unwrap_or_else(|| state.join("api.token")),
+        actor: None,
     })
 }
 

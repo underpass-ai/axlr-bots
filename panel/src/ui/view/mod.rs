@@ -77,6 +77,7 @@ message = "Stop."
             api_url: "https://127.0.0.1:7879".into(),
             ca_path: "/ca.crt".into(),
             token_file: "/api.token".into(),
+            actor: None,
         }
     }
 

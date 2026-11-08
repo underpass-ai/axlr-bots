@@ -40,6 +40,10 @@ type Dependencies struct {
 	// (<base>/incidents/<id>); empty leaves the link out unless the
 	// target names its own.
 	PanelURL string
+	// Daemon says the process serves others (axlr-bots serve): Actor is
+	// then the control plane's own name, which no decision that names
+	// its actor may claim where names count (approvers, two persons).
+	Daemon bool
 }
 
 // Validate reports the first missing dependency.

@@ -8,6 +8,9 @@ pub struct SettingsForm {
     pub api_url: String,
     pub ca_path: String,
     pub token_file: String,
+    /// Who the panel decides as (controlPlane.actor); empty is nobody
+    /// named, as before approvers existed.
+    pub actor: String,
     /// The New bot defaults: the model proposed and the models offered,
     /// comma-separated.
     pub default_model: String,
@@ -29,6 +32,7 @@ impl SettingsForm {
             api_url: config.map_or(String::new(), |c| c.api_url.clone()),
             ca_path: config.map_or(String::new(), |c| c.ca_path.display().to_string()),
             token_file: config.map_or(String::new(), |c| c.token_file.display().to_string()),
+            actor: config.and_then(|c| c.actor.clone()).unwrap_or_default(),
             default_model: settings.new_bot.model.clone(),
             models: settings.new_bot.models.join(", "),
             busy: false,
@@ -46,6 +50,7 @@ impl SettingsForm {
             self.api_url = filled.api_url;
             self.ca_path = filled.ca_path;
             self.token_file = filled.token_file;
+            self.actor = filled.actor;
         }
         self.default_model = filled.default_model;
         self.models = filled.models;
@@ -57,6 +62,7 @@ impl SettingsForm {
             api_url: self.api_url.trim().to_string(),
             ca_path: PathBuf::from(self.ca_path.trim()),
             token_file: PathBuf::from(self.token_file.trim()),
+            actor: Some(self.actor.trim().to_string()).filter(|a| !a.is_empty()),
         }
     }
 
@@ -100,6 +106,7 @@ mod tests {
                 api_url: "https://h:1".into(),
                 ca_path: "/ca".into(),
                 token_file: "/t".into(),
+                actor: None,
             }),
             theme: Theme::Dark,
             new_bot: NewBotDefaults {
@@ -124,6 +131,13 @@ mod tests {
         other.take(&PanelSettings::default());
         assert_eq!(other.api_url, "https://h:1", "no control plane section: the three stay");
         assert_eq!(other.models, "anthropic/claude-haiku-5.5");
+        form.actor = " tirso ".into();
+        assert_eq!(form.config().actor.as_deref(), Some("tirso"));
+        let mut named = settings();
+        named.control_plane.as_mut().unwrap().actor = Some("tirso".into());
+        assert_eq!(SettingsForm::from_settings(&named, true).actor, "tirso");
+        other.take(&named);
+        assert_eq!(other.actor, "tirso");
     }
 
     #[test]

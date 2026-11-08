@@ -453,7 +453,7 @@ func queuedDecision(t *testing.T, h *harness) (domain.Task, ApproveTaskResult) {
 	if _, err := NewReportExecution(h.deps).Execute(ctx, node.ID(), first.ExecutionID, pending); err != nil {
 		t.Fatal(err)
 	}
-	decided, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionDeny, "")
+	decided, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionDeny, "", "")
 	if err != nil || !decided.Execution.LeaseUntil().IsZero() {
 		t.Fatalf("decided = %+v %v", decided.Execution.Snapshot(), err)
 	}

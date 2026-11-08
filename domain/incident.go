@@ -16,6 +16,8 @@ const (
 	MaxIncidentProposalLength  = 16000
 	MaxIncidentReasonLength    = 1000
 	maxIncidentFingerprints    = 64
+	maxIncidentNamespaceLength = 253
+	maxIncidentNamespaces      = 32
 	// maxIncidentCostedExecutions is how many execution ids an incident
 	// remembers having counted the cost of: the last ones.
 	maxIncidentCostedExecutions = 64
@@ -48,6 +50,7 @@ type Incident struct {
 	source       string
 	title        string
 	severity     IncidentSeverity
+	namespaces   []string
 	status       IncidentStatus
 	fingerprints []string
 	resolved     []string
@@ -144,6 +147,57 @@ func (i Incident) Title() string { return i.title }
 
 // Severity ranks the incident.
 func (i Incident) Severity() IncidentSeverity { return i.severity }
+
+// Namespace is the first Kubernetes namespace the incident's alerts
+// named (their namespace label), empty when they named none: what a
+// person reads first. Namespaces has them all.
+func (i Incident) Namespace() string {
+	if len(i.namespaces) == 0 {
+		return ""
+	}
+	return i.namespaces[0]
+}
+
+// Namespaces are every namespace the incident's alerts named, in the
+// order they came, the first 32: what the bot's approvals.twoPersons
+// reads (any one listed is enough).
+func (i Incident) Namespaces() []string { return append([]string(nil), i.namespaces...) }
+
+// ValidateNamespace checks a namespace an alert or a person names: not
+// empty, at most 253 characters, no spaces or control characters.
+func ValidateNamespace(raw string) (string, error) {
+	namespace, err := validateText("namespace", raw, maxIncidentNamespaceLength)
+	if err != nil {
+		return "", err
+	}
+	if strings.ContainsAny(namespace, " \t\n") {
+		return "", invalid("namespace", "must not contain spaces")
+	}
+	return namespace, nil
+}
+
+// RecordNamespaces adds the namespaces the incident's alerts name that
+// it has not seen, up to 32; empty ones change nothing. An invalid one
+// is left out and returned, so a strange label never refuses an alert
+// (review of #139): the caller audits it.
+func (i *Incident) RecordNamespaces(raw ...string) []string {
+	var ignored []string
+	for _, value := range raw {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		namespace, err := ValidateNamespace(value)
+		if err != nil {
+			ignored = append(ignored, value)
+			continue
+		}
+		if slices.Contains(i.namespaces, namespace) || len(i.namespaces) >= maxIncidentNamespaces {
+			continue
+		}
+		i.namespaces = append(i.namespaces, namespace)
+	}
+	return ignored
+}
 
 // Status is where the incident stands.
 func (i Incident) Status() IncidentStatus { return i.status }
@@ -517,10 +571,20 @@ func (i Incident) Snapshot() IncidentSnapshot {
 	}
 	return IncidentSnapshot{
 		ID: i.id.String(), TenantID: i.tenant.String(), BotID: i.bot.String(), GroupKey: i.groupKey, Source: i.source,
-		Title: i.title, Severity: i.severity.String(), Status: i.status.String(), Fingerprints: i.Fingerprints(), ResolvedFingerprints: i.ResolvedFingerprints(),
+		Title: i.title, Severity: i.severity.String(), Namespace: i.Namespace(), Namespaces: i.namespacesSnapshot(), Status: i.status.String(), Fingerprints: i.Fingerprints(), ResolvedFingerprints: i.ResolvedFingerprints(),
 		Cycle: i.cycle, TaskIDs: ids, Tasks: tasks, Diagnosis: i.diagnosis, Proposal: i.proposal, Reason: i.reason, Repeats: i.repeats, Retries: i.retries, SendBacks: i.sendBacks, CostUSD: i.costUSD, CostUnknown: i.costUnknown, CostedExecutions: i.costedSnapshot(),
 		OpenedAt: i.openedAt, UpdatedAt: i.updatedAt, LastSeenAt: i.lastSeenAt, ResolvedAt: resolvedAt,
 	}
+}
+
+// namespacesSnapshot lists the namespaces when there are two or more:
+// one is said by namespace alone, so an incident of one namespace reads
+// back as it was written.
+func (i Incident) namespacesSnapshot() []string {
+	if len(i.namespaces) < 2 {
+		return nil
+	}
+	return i.Namespaces()
 }
 
 func (i Incident) costedSnapshot() []string {
@@ -587,6 +651,17 @@ func RestoreIncident(s IncidentSnapshot) (Incident, error) {
 	incident, err := NewIncident(id, tenant, bot, s.GroupKey, s.Source, s.Title, severity, s.Fingerprints, s.OpenedAt)
 	if err != nil {
 		return Incident{}, err
+	}
+	stored := s.Namespaces
+	if len(stored) == 0 && s.Namespace != "" {
+		// Stored when the incident kept one namespace only.
+		stored = []string{s.Namespace}
+	}
+	if ignored := incident.RecordNamespaces(stored...); len(ignored) > 0 {
+		return Incident{}, invalid("namespaces", "a stored namespace is not valid: "+ignored[0])
+	}
+	if s.Namespace != "" && incident.Namespace() != strings.TrimSpace(s.Namespace) {
+		return Incident{}, invalid("namespace", "must be the first of namespaces")
 	}
 	switch {
 	case s.UpdatedAt.IsZero():

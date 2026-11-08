@@ -70,11 +70,11 @@ func (r *SerialRunner) Run(ctx context.Context, id domain.TaskID) (RunTaskResult
 // does; callID, when given, must name it. It holds the slot even for a
 // decision a node carries: it cannot know which until it has read the
 // task, and that read must come after the slot to keep the lock order.
-func (r *SerialRunner) Decide(ctx context.Context, id domain.TaskID, decision, callID string) (ApproveTaskResult, error) {
+func (r *SerialRunner) Decide(ctx context.Context, id domain.TaskID, decision, callID, actor string) (ApproveTaskResult, error) {
 	defer r.lockSlot()()
 	runCtx, done := r.track(ctx, id)
 	defer done()
-	return NewApproveTask(r.slotDeps).Execute(runCtx, id, decision, callID)
+	return NewApproveTask(r.slotDeps).Execute(runCtx, id, decision, callID, actor)
 }
 
 // ExpireApprovals carries out every deadline that has passed, as

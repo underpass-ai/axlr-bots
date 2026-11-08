@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -13,16 +14,21 @@ const (
 	MinApprovalTTL     = time.Minute
 	MaxApprovalTTL     = 30 * 24 * time.Hour
 	maxNotifyTargets   = 8
+	maxApprovers       = 32
 )
 
 // Approvals is how a bot's pending calls wait for a person: for how long,
-// what happens when nobody decides in time and who is told (vision §14:
-// an expired approval does not authorise the operation).
+// what happens when nobody decides in time, who is told (vision §14:
+// an expired approval does not authorise the operation), who may decide
+// (approvers; none listed is anyone with the token) and which incidents
+// wait for two different people (twoPersons).
 type Approvals struct {
 	ttl         time.Duration
 	onExpire    ApprovalExpiry
 	notify      []NotifyTarget
 	autoApprove []ToolRule
+	approvers   []string
+	twoPersons  TwoPersons
 }
 
 // DefaultApprovals is what a definition without approvals means: an
@@ -74,7 +80,64 @@ func NewApprovals(s ApprovalsSnapshot) (Approvals, error) {
 		}
 		a.autoApprove = append(a.autoApprove, rule)
 	}
+	if len(s.Approvers) > maxApprovers {
+		return Approvals{}, invalid("approvals approvers", "takes at most 32 names")
+	}
+	for _, raw := range s.Approvers {
+		actor, err := ValidateActor("approvals approvers", raw)
+		if err != nil {
+			return Approvals{}, err
+		}
+		if strings.HasPrefix(actor, PolicyActorPrefix) {
+			return Approvals{}, invalid("approvals approvers", actor+" is a policy's name, not a person's")
+		}
+		if slices.ContainsFunc(a.approvers, func(other string) bool { return ActorKey(other) == ActorKey(actor) }) {
+			return Approvals{}, invalid("approvals approvers", "repeat the name "+actor+" (names are compared without cli: and case)")
+		}
+		a.approvers = append(a.approvers, actor)
+	}
+	if s.TwoPersons != nil {
+		twoPersons, err := NewTwoPersons(*s.TwoPersons)
+		if err != nil {
+			return Approvals{}, err
+		}
+		if len(a.approvers) < 2 {
+			// Without a list, any name typed with the token is a person:
+			// one person could be two names (review of #139).
+			return Approvals{}, invalid("approvals twoPersons", "needs approvers listing at least two people")
+		}
+		a.twoPersons = twoPersons
+	}
 	return a, nil
+}
+
+// Approvers are who may decide the bot's calls, copied; none means
+// anyone who holds the operator token, as before approvers existed.
+func (a Approvals) Approvers() []string { return append([]string(nil), a.approvers...) }
+
+// MayDecide reports whether the actor may approve or deny the bot's
+// calls: any actor when no approvers are listed, else one of them,
+// compared by ActorKey (cli:tirso is tirso).
+func (a Approvals) MayDecide(actor string) bool {
+	if len(a.approvers) == 0 {
+		return true
+	}
+	key := ActorKey(actor)
+	return slices.ContainsFunc(a.approvers, func(approver string) bool { return ActorKey(approver) == key })
+}
+
+// TwoPersons is which incidents wait for two different people.
+func (a Approvals) TwoPersons() TwoPersons { return a.twoPersons }
+
+// ApprovalsNeeded is how many different people must approve a call of
+// a task of an incident of the namespaces and severity: two when
+// twoPersons names any of the namespaces or the severity, else one. A
+// task of no incident passes none and needs one.
+func (a Approvals) ApprovalsNeeded(namespaces []string, severity IncidentSeverity) int {
+	if a.twoPersons.Applies(namespaces, severity) {
+		return 2
+	}
+	return 1
 }
 
 // maxAutoApproveRules bounds the calls approved without a person.
@@ -176,6 +239,8 @@ func (a Approvals) Snapshot() ApprovalsSnapshot {
 	for _, rule := range a.autoApprove {
 		s.AutoApprove = append(s.AutoApprove, rule.Snapshot())
 	}
+	s.Approvers = a.Approvers()
+	s.TwoPersons = a.twoPersons.Snapshot()
 	return s
 }
 

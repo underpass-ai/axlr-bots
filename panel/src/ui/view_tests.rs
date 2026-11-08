@@ -1862,6 +1862,8 @@ fn waiting_apply(app: &App) -> crate::domain::Incident {
             tool: "local_write".into(),
             deadline: app.now + chrono::Duration::minutes(2),
             outcome: String::new(),
+            approvals_needed: 0,
+            approved_by: Vec::new(),
         }),
     });
     incident.approvals = Some(IncidentApprovals {
@@ -1928,6 +1930,34 @@ fn an_incident_that_needs_you_offers_approve_and_deny_of_its_apply() {
         shows(&app, &[status.name(), heading]);
         assert!(simulator_misses(&app, "Needs you"), "{status:?} offers a decision");
     }
+}
+
+#[test]
+fn a_call_that_waits_for_two_people_says_how_far_it_is() {
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Incident("inc-latency".into())));
+    let mut incident = waiting_apply(&app);
+    let wait = incident.current_task.as_mut().unwrap().approval.as_mut().unwrap();
+    wait.approvals_needed = 2;
+    wait.approved_by = vec![crate::domain::ApprovalMark {
+        actor: "tirso".into(),
+        at: app.now,
+    }];
+    app.apply(Message::IncidentLoaded("inc-latency".into(), Ok(incident.clone())));
+    shows(
+        &app,
+        &["Needs you", "1 of 2 approvals · approved by tirso", "Approve", "Deny"],
+    );
+    let mut one = waiting_apply(&app);
+    one.current_task
+        .as_mut()
+        .unwrap()
+        .approval
+        .as_mut()
+        .unwrap()
+        .approvals_needed = 0;
+    app.apply(Message::IncidentLoaded("inc-latency".into(), Ok(one)));
+    assert!(simulator_misses(&app, "of 2 approvals"));
 }
 
 #[test]

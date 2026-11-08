@@ -156,7 +156,7 @@ func (uc ExpireApprovals) Expire(ctx context.Context, id domain.TaskID) (Expired
 	if previous.Result().PendingDecision == nil {
 		return ExpiredApproval{}, domain.StateError{Subject: "execution " + previous.ID().String(), Current: previous.Outcome().String(), Attempted: "deny a pending call"}
 	}
-	result, err := uc.approve.resume(ctx, bot, task, previous, DecisionDeny, domain.ApprovalExpired, map[string]any{"reason": "approval expired"})
+	result, err := uc.approve.resume(ctx, bot, task, previous, DecisionDeny, domain.ApprovalExpired, false, map[string]any{"reason": "approval expired"})
 	if err != nil {
 		return ExpiredApproval{}, err
 	}

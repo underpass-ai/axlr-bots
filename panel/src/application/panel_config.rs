@@ -6,12 +6,17 @@ use super::PanelError;
 
 /// Where the control plane's operator API is and how to trust and reach
 /// it: its https address, the fleet CA and the file holding the bearer
-/// token (never the token itself).
+/// token (never the token itself), and who the panel decides as: the
+/// actor sent with every request (X-Axlr-Actor), which a bot's
+/// approvers are compared with. The token holder asserts it; absent,
+/// decisions are the control plane's own actor, as before.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PanelConfig {
     pub api_url: String,
     pub ca_path: PathBuf,
     pub token_file: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor: Option<String>,
 }
 
 impl PanelConfig {
@@ -32,6 +37,13 @@ impl PanelConfig {
         if self.token_file.as_os_str().is_empty() {
             return Err(PanelError::Config("the token file is missing".into()));
         }
+        if let Some(actor) = &self.actor
+            && (actor.is_empty() || actor.len() > 128 || actor.chars().any(|c| c.is_whitespace() || c.is_control()))
+        {
+            return Err(PanelError::Config(
+                "the actor is one name of at most 128 characters, without spaces, like tirso".into(),
+            ));
+        }
         Ok(())
     }
 
@@ -50,6 +62,7 @@ mod tests {
             api_url: url.into(),
             ca_path: "ca.crt".into(),
             token_file: "api.token".into(),
+            actor: None,
         }
     }
 
@@ -58,6 +71,11 @@ mod tests {
         assert!(config("https://127.0.0.1:7879/").validate().is_ok());
         assert_eq!(config(" https://127.0.0.1:7879/ ").base_url(), "https://127.0.0.1:7879");
         assert!(config("http://127.0.0.1:7879").validate().is_err());
+        for (actor, ok) in [("tirso", true), ("cli:tirso", true), ("", false), ("two words", false)] {
+            let mut with = config("https://h");
+            with.actor = Some(actor.into());
+            assert_eq!(with.validate().is_ok(), ok, "{actor:?}");
+        }
         assert!(config("https://").validate().is_err());
         assert!(config("https://a b").validate().is_err());
         let mut no_ca = config("https://h");

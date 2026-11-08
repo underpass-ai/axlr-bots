@@ -31,6 +31,8 @@ fn the_first_run_saves_the_settings_once_the_control_plane_answers() {
     app.apply(Message::SettingsUrl("https://127.0.0.1:7879".into()));
     app.apply(Message::SettingsCa("/ca.crt".into()));
     app.apply(Message::SettingsToken("/api.token".into()));
+    app.apply(Message::SettingsActor("tirso".into()));
+    assert_eq!(app.settings.config().actor.as_deref(), Some("tirso"));
     send(&mut app, Message::SettingsSave);
     assert!(app.connected() && app.settings.saved);
     assert_eq!(app.screen, Screen::Overview);
@@ -1371,4 +1373,29 @@ fn a_broken_connection_wakes_connect_up_as_reconnect() {
     send(&mut app, Message::SettingsSave);
     assert!(app.fleet_error.is_none() && !app.can_connect());
     assert_eq!(app.banner.as_ref().unwrap().title, "Connected");
+}
+
+#[test]
+fn the_first_of_two_approvals_says_nothing_ran() {
+    let mut app = connected();
+    let waiting = app
+        .fleet
+        .as_ref()
+        .unwrap()
+        .tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::WaitingApproval)
+        .unwrap()
+        .clone();
+    let execution: crate::domain::Execution = serde_json::from_str(
+        r#"{"id":"exec-1","taskId":"task-1","botId":"bot-wrx80","startedAt":"2026-10-24T22:32:26Z","outcome":"DecisionRequired","kind":"run"}"#,
+    )
+    .unwrap();
+    app.apply(Message::Decided(Ok(crate::domain::DecidedTask {
+        task: waiting,
+        execution,
+    })));
+    let banner = app.banner.as_ref().unwrap();
+    assert_eq!(banner.title, "First approval recorded");
+    assert!(banner.detail.contains("second, different person"), "{}", banner.detail);
 }

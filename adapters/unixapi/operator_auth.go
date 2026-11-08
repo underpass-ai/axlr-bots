@@ -18,6 +18,10 @@ const (
 	// the trigger's signing key, as `sha256=<hex>`; X-Hub-Signature-256
 	// (GitHub's) is read too.
 	WebhookSignatureHeader = "X-Axlr-Signature"
+	// ActorHeader names who decides on the decide, approve and deny
+	// routes, as the token holder asserts it: what a bot's approvers are
+	// compared with (decidedBy in the decide body says the same).
+	ActorHeader = "X-Axlr-Actor"
 )
 
 // bearer requires `Authorization: Bearer <token>` on every request but
