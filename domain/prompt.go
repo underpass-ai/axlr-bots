@@ -17,10 +17,24 @@ type Prompt string
 // then run it unchanged.
 const MaxPromptLength = 8000
 
+// promptHead opens a prompt and promptTask introduces its objective:
+// what surrounds the mission and the objective in every prompt.
+const (
+	promptHead = "You are a bot. Your mission, set by your operator:\n"
+	promptTask = "\n\nThe task:\n"
+)
+
+// ObjectiveRoomBeside is the most an objective may hold and still make a
+// prompt with this mission: the room of a text that grows, rendered for
+// the bot that will read it. The objective's own limit caps it.
+func ObjectiveRoomBeside(mission Mission) int {
+	return min(MaxObjectiveLength, MaxPromptLength-len(promptHead)-len(mission)-len(promptTask))
+}
+
 // NewPrompt composes a bot's mission and a task's objective. A mission
 // and an objective that do not fit together are refused, not cut.
 func NewPrompt(mission Mission, objective Objective) (Prompt, error) {
-	value, err := validateText("prompt", "You are a bot. Your mission, set by your operator:\n"+mission.String()+"\n\nThe task:\n"+objective.String(), MaxPromptLength)
+	value, err := validateText("prompt", promptHead+mission.String()+promptTask+objective.String(), MaxPromptLength)
 	if err != nil {
 		return "", err
 	}
@@ -38,8 +52,8 @@ func NewTeamPrompt(mission Mission, objective Objective, directory TeamDirectory
 	if err != nil || directory.Empty() && notes.Empty() {
 		return plain, err
 	}
-	head := "You are a bot. Your mission, set by your operator:\n" + mission.String() + "\n\n"
-	tail := "\n\nThe task:\n" + objective.String()
+	head := promptHead + mission.String() + "\n\n"
+	tail := promptTask + objective.String()
 	room := MaxPromptLength - len(head) - len(tail)
 	var blocks []string
 	if rendered := directory.Render(room); rendered != "" {

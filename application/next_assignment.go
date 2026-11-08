@@ -91,10 +91,9 @@ func (uc NextAssignment) queued(ctx context.Context, node domain.Node) (Assignme
 			}
 		}
 		assignment, err := uc.describe(ctx, bot, task, execution)
-		var refused errPolicyRefused
 		switch {
-		case errors.As(err, &refused):
-			if err := uc.refuse(ctx, bot, &task, &execution, refused); err != nil {
+		case isRefusal(err):
+			if err := uc.refuse(ctx, bot, &task, &execution, err); err != nil {
 				return Assignment{}, false, err
 			}
 			continue
@@ -137,9 +136,17 @@ func (uc NextAssignment) orphan(ctx context.Context, execution *domain.Execution
 	return uc.rec.audit(ctx, "execution.orphaned", execution.ID().String(), domain.AuditOK, details)
 }
 
-// refuse fails the task whose policy left nothing to run it under,
-// with the reason, instead of handing it to the node.
-func (uc NextAssignment) refuse(ctx context.Context, bot domain.Bot, task *domain.Task, execution *domain.Execution, refused errPolicyRefused) error {
+// isRefusal reports a task describe found cannot be handed to a node:
+// the task fails, the poll does not.
+func isRefusal(err error) bool {
+	var policy errPolicyRefused
+	var prompt errPromptRefused
+	return errors.As(err, &policy) || errors.As(err, &prompt)
+}
+
+// refuse fails the task that cannot be handed to the node (no policy to
+// run it under, no prompt that fits), with the reason.
+func (uc NextAssignment) refuse(ctx context.Context, bot domain.Bot, task *domain.Task, execution *domain.Execution, refused error) error {
 	failed := ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: refused.Error()}
 	return newSettler(uc.deps).settle(ctx, "task.assign", bot, task, execution, failed, nil, uc.deps.Clock.Now())
 }
@@ -218,9 +225,13 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 		return Assignment{}, false, err
 	}
 	assignment, err := uc.describe(ctx, bot, task, execution)
-	var refused errPolicyRefused
-	if errors.As(err, &refused) {
-		return Assignment{}, false, uc.refuse(ctx, bot, &task, &execution, refused)
+	if isRefusal(err) {
+		// One task that cannot run must not hold the node's others back:
+		// it is over now, so the next one goes out on this same poll.
+		if err := uc.refuse(ctx, bot, &task, &execution, err); err != nil {
+			return Assignment{}, false, err
+		}
+		return uc.startPending(ctx, node)
 	}
 	if errors.Is(err, errTooLate) {
 		// The deadline came while the task was being started.
@@ -292,7 +303,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 		}
 		return assignment, nil
 	}
-	prompt, err := domain.NewTeamPrompt(bot.Mission(), task.Objective(), directoryOf(bot, mates), task.Notes())
+	prompt, err := composedPrompt(bot, task, mates)
 	if err != nil {
 		return Assignment{}, err
 	}

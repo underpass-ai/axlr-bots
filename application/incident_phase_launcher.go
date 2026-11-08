@@ -99,7 +99,7 @@ func (l phaseLauncher) launch(ctx context.Context, incident domain.Incident, cor
 		}
 	}
 	fields, input := incidentFields(incident)
-	objective, err := phaseObjective(phase, trigger, incident, fields)
+	objective, err := phaseObjective(phase, trigger, incident, fields, taker.Mission())
 	if err != nil {
 		return incident, l.refuse(ctx, incident, phase, err.Error())
 	}
@@ -172,9 +172,9 @@ func (l phaseLauncher) refuse(ctx context.Context, incident domain.Incident, pha
 // phaseObjective renders the phase trigger's template, or the phase's
 // default, over the incident. A diagnosis or a proposal may each be
 // longer than an objective: they are cut to the room the template
-// leaves (a third for the diagnosis when the template names both), and
-// the task's input carries them whole.
-func phaseObjective(phase domain.IncidentPhase, trigger domain.Trigger, incident domain.Incident, fields map[string]any) (domain.Objective, error) {
+// leaves beside the taking bot's mission (a third for the diagnosis when
+// the template names both), and the task's input carries them whole.
+func phaseObjective(phase domain.IncidentPhase, trigger domain.Trigger, incident domain.Incident, fields map[string]any, mission domain.Mission) (domain.Objective, error) {
 	template := trigger.ObjectiveTemplate()
 	if template == "" {
 		template = defaultPhaseObjective(phase)
@@ -184,7 +184,7 @@ func phaseObjective(phase domain.IncidentPhase, trigger domain.Trigger, incident
 	if err != nil {
 		return "", err
 	}
-	room := max(domain.MaxObjectiveLength-len(base.String()), minPhaseObjectiveText)
+	room := max(domain.ObjectiveRoomBeside(mission)-len(base.String()), minPhaseObjectiveText)
 	diagnosisRoom := room
 	if strings.Contains(template, ".diagnosis") && strings.Contains(template, ".proposal") {
 		diagnosisRoom = max(room/3, minPhaseObjectiveText)

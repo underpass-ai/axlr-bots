@@ -538,7 +538,7 @@ func TestAPostmortemObjectiveFits(t *testing.T) {
 	incident := resolvedIncidentOf(t, h, triage, "sev1")
 	trigger := domain.Trigger{}
 	brief := PostmortemInput{Diagnosis: strings.Repeat("d", 16000), Proposal: strings.Repeat("p", 16000), Review: &PostmortemReview{Attempt: 2, Note: "a short note", Draft: strings.Repeat("r", 32000)}}
-	objective, err := postmortemObjective(trigger, incident, brief)
+	objective, err := postmortemObjective(trigger, incident, brief, domain.Mission("Write it."))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -549,7 +549,7 @@ func TestAPostmortemObjectiveFits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := postmortemObjective(custom, incident, brief); err == nil {
+	if _, err := postmortemObjective(custom, incident, brief, domain.Mission("Write it.")); err == nil {
 		t.Error("a template naming an unknown field rendered")
 	}
 	unknown := costLine(0.5, true)
