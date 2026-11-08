@@ -47,7 +47,7 @@ func TestAPostmortemIsWrittenApprovedAndKeptThroughARestore(t *testing.T) {
 	if err := i.AttachPostmortemTask("task-3", "scribe", t0); !errors.As(err, &state) {
 		t.Errorf("second launch: %v", err)
 	}
-	if err := i.ApprovePostmortem("tirso", t0); !errors.As(err, &state) {
+	if err := i.ApprovePostmortem("tirso", "task-2", t0); !errors.As(err, &state) {
 		t.Errorf("approve while Writing: %v", err)
 	}
 	if err := i.RecordPostmortem("task-9", "# text", t0); !errors.As(err, &state) {
@@ -67,17 +67,17 @@ func TestAPostmortemIsWrittenApprovedAndKeptThroughARestore(t *testing.T) {
 		t.Errorf("draft: %+v", p.Snapshot())
 	}
 	at := t0.Add(time.Hour)
-	if err := i.ApprovePostmortem("tirso", at); err != nil {
+	if err := i.ApprovePostmortem("tirso", "task-2", at); err != nil {
 		t.Fatal(err)
 	}
 	p = wantState(t, i, PostmortemApproved)
 	if p.ApprovedBy() != "tirso" || p.Reason() != "" {
 		t.Errorf("approved: %+v", p.Snapshot())
 	}
-	if err := i.ApprovePostmortem("again", at); !errors.As(err, &state) {
+	if err := i.ApprovePostmortem("again", "task-2", at); !errors.As(err, &state) {
 		t.Errorf("approved twice: %v", err)
 	}
-	if err := i.SendBackPostmortem("tirso", "no", at); !errors.As(err, &state) {
+	if err := i.SendBackPostmortem("tirso", "no", "task-2", at); !errors.As(err, &state) {
 		t.Errorf("sent back once approved: %v", err)
 	}
 	restored, err := RestoreIncident(i.Snapshot())
@@ -97,10 +97,10 @@ func TestSendingAPostmortemBackIsCappedAndLeavesItToAPerson(t *testing.T) {
 	if err := i.RecordPostmortem("task-2", "draft one", t0); err != nil {
 		t.Fatal(err)
 	}
-	if err := i.SendBackPostmortem("tirso", "   ", t0); err == nil {
+	if err := i.SendBackPostmortem("tirso", "   ", "task-2", t0); err == nil {
 		t.Error("a send-back without a note")
 	}
-	if err := i.SendBackPostmortem("tirso", "add the owner", t0); err != nil {
+	if err := i.SendBackPostmortem("tirso", "add the owner", "task-2", t0); err != nil {
 		t.Fatal(err)
 	}
 	p := wantState(t, i, PostmortemSentBack)
@@ -109,7 +109,7 @@ func TestSendingAPostmortemBackIsCappedAndLeavesItToAPerson(t *testing.T) {
 	}
 	// A launch that did not start: sending back again replaces the note
 	// and does not count.
-	if err := i.SendBackPostmortem("oncall", "and the date", t0); err != nil {
+	if err := i.SendBackPostmortem("oncall", "and the date", "task-2", t0); err != nil {
 		t.Fatal(err)
 	}
 	if p = wantState(t, i, PostmortemSentBack); p.SendBacks() != 1 || p.Note() != "and the date" {
@@ -133,37 +133,57 @@ func TestSendingAPostmortemBackIsCappedAndLeavesItToAPerson(t *testing.T) {
 		t.Fatalf("failed: %+v", p.Snapshot())
 	}
 	var state StateError
-	if err := i.ApprovePostmortem("tirso", t0); !errors.As(err, &state) {
+	if err := i.ApprovePostmortem("tirso", "task-2", t0); !errors.As(err, &state) {
 		t.Errorf("approved a failed rewrite: %v", err)
 	}
 	if i.Status() != IncidentResolved {
 		t.Fatalf("a failure moved the incident: %s", i.Status())
 	}
-	if err := i.SendBackPostmortem("tirso", "once more", t0); err != nil {
+	// A failure spends nothing: no text was reviewed.
+	if err := i.SendBackPostmortem("tirso", "once more", "task-2", t0); err != nil {
+		t.Fatal(err)
+	}
+	if p = wantState(t, i, PostmortemSentBack); p.SendBacks() != 1 {
+		t.Fatalf("a failure counted: %+v", p.Snapshot())
+	}
+	if err := i.AttachPostmortemTask("task-4", "scribe", t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := i.RecordPostmortem("task-4", "draft two", t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := i.SendBackPostmortem("tirso", "no", "task-2", t0); !errors.As(err, &state) {
+		t.Errorf("a stale send-back burnt the last one: %v", err)
+	}
+	if err := i.SendBackPostmortem("tirso", "no", "task-4", t0); err != nil {
 		t.Fatal(err)
 	}
 	if p = wantState(t, i, PostmortemLeftToPerson); p.SendBacks() != IncidentMaxPostmortemSendBacks || i.PostmortemDue() {
 		t.Fatalf("left: %+v", p.Snapshot())
 	}
-	if err := i.SendBackPostmortem("tirso", "again", t0); !errors.As(err, &state) {
+	if err := i.SendBackPostmortem("tirso", "again", "task-4", t0); !errors.As(err, &state) {
 		t.Errorf("sent back past the cap: %v", err)
 	}
 	if _, err := RestoreIncident(i.Snapshot()); err != nil {
 		t.Fatalf("left to a person: %v", err)
 	}
+	if err := i.ApprovePostmortem("tirso", "task-2", t0); !errors.As(err, &state) {
+		t.Errorf("approved a text not read: %v", err)
+	}
 	// The person may still take the last draft.
-	if err := i.ApprovePostmortem("tirso", t0); err != nil {
+	if err := i.ApprovePostmortem("tirso", "task-4", t0); err != nil {
 		t.Fatal(err)
 	}
 	wantState(t, i, PostmortemApproved)
 }
 
-func TestApostmortemLeftWithoutADraftHasNothingToApprove(t *testing.T) {
+// Failures never leave it where nothing can move it.
+func TestFailuresAreNeverADeadEnd(t *testing.T) {
 	i := resolvedIncident(t)
 	if err := i.AttachPostmortemTask("task-2", "scribe", t0); err != nil {
 		t.Fatal(err)
 	}
-	for n, task := range []TaskID{"task-2", "task-3"} {
+	for n, task := range []TaskID{"task-2", "task-3", "task-4"} {
 		if n > 0 {
 			if err := i.AttachPostmortemTask(task, "scribe", t0); err != nil {
 				t.Fatal(err)
@@ -172,14 +192,98 @@ func TestApostmortemLeftWithoutADraftHasNothingToApprove(t *testing.T) {
 		if err := i.FailPostmortem(task, "boom", t0); err != nil {
 			t.Fatal(err)
 		}
-		if err := i.SendBackPostmortem("tirso", "try again", t0); err != nil {
+		if err := i.SendBackPostmortem("tirso", "try again", "", t0); err != nil {
 			t.Fatal(err)
 		}
+		if p := wantState(t, i, PostmortemSentBack); p.SendBacks() != 0 {
+			t.Fatalf("counted: %+v", p.Snapshot())
+		}
 	}
-	wantState(t, i, PostmortemLeftToPerson)
+}
+
+// With none started, a send-back asks for one; a request has no task
+// yet and a restore keeps it.
+func TestASendBackAsksForAPostmortemNoneStarted(t *testing.T) {
+	i := resolvedIncident(t)
 	var state StateError
-	if err := i.ApprovePostmortem("tirso", t0); !errors.As(err, &state) {
-		t.Errorf("approved nothing: %v", err)
+	if err := i.SendBackPostmortem("tirso", "please", "task-9", t0); !errors.As(err, &state) {
+		t.Errorf("a text read of a postmortem that does not exist: %v", err)
+	}
+	if _, ok := i.Postmortem(); ok {
+		t.Fatal("a refusal left a postmortem")
+	}
+	if err := i.SendBackPostmortem("tirso", "please", "", t0); err != nil {
+		t.Fatal(err)
+	}
+	p := wantState(t, i, PostmortemSentBack)
+	if p.TaskID() != "" || p.BotID() != "" || p.Note() != "please" || !i.PostmortemDue() {
+		t.Fatalf("asked: %+v", p.Snapshot())
+	}
+	if _, err := RestoreIncident(i.Snapshot()); err != nil {
+		t.Fatalf("restore a request: %v", err)
+	}
+	s := i.Snapshot()
+	s.Postmortem.TaskID = "task-1"
+	if _, err := RestoreIncident(s); err == nil {
+		t.Error("a task without a bot")
+	}
+	open := sampleIncident(t)
+	if err := open.SendBackPostmortem("tirso", "x", "", t0); !errors.As(err, &state) {
+		t.Errorf("asked on an open incident: %v", err)
+	}
+	if err := i.AttachPostmortemTask("task-2", "scribe", t0); err != nil {
+		t.Fatal(err)
+	}
+	if p := wantState(t, i, PostmortemWriting); p.Note() != "please" {
+		t.Errorf("the note: %+v", p.Snapshot())
+	}
+}
+
+// Moving a copy of an incident does not reach the original.
+func TestACopyOfAnIncidentDoesNotShareItsPostmortem(t *testing.T) {
+	i := resolvedIncident(t)
+	if err := i.SendBackPostmortem("tirso", "please", "", t0); err != nil {
+		t.Fatal(err)
+	}
+	launched := i
+	if err := launched.AttachPostmortemTask("task-2", "scribe", t0); err != nil {
+		t.Fatal(err)
+	}
+	wantState(t, i, PostmortemSentBack)
+	if err := launched.FailPostmortem("task-2", "boom", t0); err != nil {
+		t.Fatal(err)
+	}
+	copied := launched
+	if err := copied.SendBackPostmortem("tirso", "again", "", t0); err != nil {
+		t.Fatal(err)
+	}
+	wantState(t, launched, PostmortemFailed)
+}
+
+func TestWhatATaskWroteLosesControlsAndATitleItsLines(t *testing.T) {
+	if got := IncidentText("ok \u009b2J\u009d text \x7f", 100); got != "ok 2J text" {
+		t.Errorf("%q", got)
+	}
+	if !IncidentTextIsEmpty("\x01 \n\u0085\x7f") || IncidentTextIsEmpty(" x ") {
+		t.Error("empty")
+	}
+	i, err := NewIncident("inc-1", "ops", "triage", "g", "manual", "Disk\n\nfull\tnow", Sev2, nil, t0)
+	if err != nil || i.Title() != "Disk  full now" {
+		t.Errorf("%q %v", i.Title(), err)
+	}
+}
+
+func TestEverySpellingOfAMachineNameIsOne(t *testing.T) {
+	for _, name := range []string{"policy:x", "POLICY:x", "Policy:x", "cli:policy:x", "cli:POLICY:x", "trigger:am", "TRIGGER:am", "cli:trigger:am"} {
+		if !IsMachineActor(name) {
+			t.Errorf("%s", name)
+		}
+	}
+	if IsMachineActor("tirso") || IsMachineActor("cli:tirso") || IsPolicyActor("trigger:am") {
+		t.Error("a person")
+	}
+	if _, err := NewApprovals(ApprovalsSnapshot{Approvers: []string{"cli:POLICY:x"}}); err == nil {
+		t.Error("a policy listed as an approver")
 	}
 }
 
@@ -198,10 +302,10 @@ func TestAReopeningLeavesThePostmortemOfItsCycleBehind(t *testing.T) {
 		t.Fatal(err)
 	}
 	var state StateError
-	if err := i.ApprovePostmortem("tirso", t1); !errors.As(err, &state) {
+	if err := i.ApprovePostmortem("tirso", "task-2", t1); !errors.As(err, &state) {
 		t.Errorf("approved while Open: %v", err)
 	}
-	if err := i.SendBackPostmortem("tirso", "x", t1); !errors.As(err, &state) {
+	if err := i.SendBackPostmortem("tirso", "x", "task-2", t1); !errors.As(err, &state) {
 		t.Errorf("sent back while Open: %v", err)
 	}
 	if err := i.RecordPostmortem("task-2", "late", t1); !errors.As(err, &state) {
@@ -219,7 +323,7 @@ func TestAReopeningLeavesThePostmortemOfItsCycleBehind(t *testing.T) {
 	if err := i.Resolve("green again", t1); err != nil {
 		t.Fatal(err)
 	}
-	if err := i.ApprovePostmortem("tirso", t1); !errors.As(err, &state) {
+	if err := i.ApprovePostmortem("tirso", "task-2", t1); !errors.As(err, &state) {
 		t.Errorf("approved a draft of another cycle: %v", err)
 	}
 	if !i.PostmortemDue() {
@@ -321,12 +425,17 @@ func TestAnOutputThatNamedNoEventHearsTheApproval(t *testing.T) {
 	if !fresh.Wants(EventIncidentPostmortemApproved, i) || fresh.Wants(EventIncidentPostmortemDrafted, i) {
 		t.Error("the default")
 	}
-	for _, event := range outputEventsBeforePostmortem {
+	// Stored as absent, so it hears what the default comes to include.
+	if fresh.Snapshot().Events != nil || len(fresh.Events()) != len(DefaultOutputEvents) {
+		t.Errorf("stored %v, reads %v", fresh.Snapshot().Events, fresh.Events())
+	}
+	// Exactly the eight of before, named today: eight, stored as eight.
+	for _, event := range DefaultOutputEvents[:len(DefaultOutputEvents)-1] {
 		definition.Events = append(definition.Events, event.String())
 	}
-	stored, err := NewOutputTarget(definition)
-	if err != nil || !stored.Wants(EventIncidentPostmortemApproved, i) {
-		t.Errorf("stored before postmortems: %v", err)
+	named, err := NewOutputTarget(definition)
+	if err != nil || named.Wants(EventIncidentPostmortemApproved, i) || len(named.Snapshot().Events) != len(DefaultOutputEvents)-1 {
+		t.Errorf("named: %v %v", named.Snapshot().Events, err)
 	}
 	definition.Events = []string{"opened"}
 	chosen, _ := NewOutputTarget(definition)

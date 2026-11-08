@@ -112,6 +112,14 @@ func (q incidentOutputQueue) body(ctx context.Context, event domain.Event, incid
 	}
 	body.Diagnosis, body.DiagnosisTruncated = outputExcerpt(incident.Diagnosis())
 	body.Proposal, body.ProposalTruncated = outputExcerpt(incident.Proposal())
+	if isPostmortemEvent(event.Type) {
+		// The incident's reason says why it resolved; a failed task's own
+		// reason may hold a runtime's stderr and stays in the control plane.
+		body.Reason = ""
+	}
+	if event.Type == domain.EventIncidentPostmortemFailed {
+		body.Reason = "The postmortem task did not finish; a person may send it back."
+	}
 	if postmortem, ok := incident.Postmortem(); ok && event.Type == domain.EventIncidentPostmortemApproved {
 		body.Postmortem, body.PostmortemTruncated = outputExcerpt(postmortem.Markdown())
 		body.PostmortemBy = postmortem.ApprovedBy()
@@ -125,6 +133,14 @@ func (q incidentOutputQueue) body(ctx context.Context, event domain.Event, incid
 		body.DurationSeconds = int64(resolvedAt.Sub(incident.OpenedAt()).Seconds())
 	}
 	return body
+}
+
+func isPostmortemEvent(kind domain.EventType) bool {
+	switch kind {
+	case domain.EventIncidentPostmortemDrafted, domain.EventIncidentPostmortemFailed, domain.EventIncidentPostmortemSentBack, domain.EventIncidentPostmortemApproved:
+		return true
+	}
+	return false
 }
 
 // needsYou is what GET /v1/incidents/{id} answers as needsYou: the

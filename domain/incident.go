@@ -89,7 +89,7 @@ func NewIncident(id IncidentID, tenant TenantID, bot BotID, groupKey, source, ti
 	if err != nil {
 		return Incident{}, err
 	}
-	title, err = validateText("title", title, maxIncidentTitleLength)
+	title, err = validateText("title", strings.NewReplacer("\r", " ", "\n", " ", "\t", " ").Replace(title), maxIncidentTitleLength)
 	if err != nil {
 		return Incident{}, err
 	}

@@ -38,22 +38,27 @@ func (i *Incident) AttachPostmortemTask(task TaskID, bot BotID, now time.Time) e
 	if err := i.attach(task, bot, IncidentPhasePostmortem, now); err != nil {
 		return err
 	}
-	if i.postmortem == nil || i.postmortem.cycle < i.cycle {
-		i.postmortem = &IncidentPostmortem{cycle: i.cycle}
+	postmortem := IncidentPostmortem{cycle: i.cycle}
+	if i.postmortem != nil && i.postmortem.cycle == i.cycle {
+		postmortem = *i.postmortem
 	}
-	i.postmortem.state, i.postmortem.task, i.postmortem.bot, i.postmortem.reason = PostmortemWriting, task, bot, ""
+	postmortem.state, postmortem.task, postmortem.bot, postmortem.reason = PostmortemWriting, task, bot, ""
+	i.postmortem = &postmortem
 	return nil
 }
 
-// reviewable is the postmortem of the current cycle of a resolved
-// incident, when it is in one of the states; refused otherwise under the
-// attempt's name.
+// reviewable is a copy of the postmortem of the current cycle of a
+// resolved incident, put in its place so that moving it never reaches
+// another copy of the incident, when it is in one of the states; refused
+// otherwise under the attempt's name.
 func (i *Incident) reviewable(attempted string, states ...IncidentPostmortemState) (*IncidentPostmortem, error) {
 	if !i.status.IsResolved() || i.postmortem == nil || i.postmortem.cycle != i.cycle {
 		return nil, i.refuse(attempted)
 	}
 	for _, state := range states {
 		if i.postmortem.state == state {
+			postmortem := *i.postmortem
+			i.postmortem = &postmortem
 			return i.postmortem, nil
 		}
 	}
@@ -100,9 +105,24 @@ func (i *Incident) FailPostmortem(task TaskID, reason string, now time.Time) err
 	return nil
 }
 
-// ApprovePostmortem records that the person approved the postmortem's
-// text: a Draft, or the last draft of one left to a person.
-func (i *Incident) ApprovePostmortem(actor string, now time.Time) error {
+// checkRead refuses an answer given on another text than the one the
+// postmortem holds: read names the task whose text the person read, empty
+// when they read none.
+func (i *Incident) checkRead(postmortem *IncidentPostmortem, read TaskID, attempted string) error {
+	if read == postmortem.author {
+		return nil
+	}
+	current := "holding no text"
+	if postmortem.author != "" {
+		current = "holding the text of task " + postmortem.author.String()
+	}
+	return StateError{Subject: "postmortem of incident " + i.id.String(), Current: current, Attempted: attempted + " on the text of task " + read.String()}
+}
+
+// ApprovePostmortem records that the person approved the text of the
+// task read: a Draft, or the last draft of one left to a person. A text
+// they did not read is refused, a StateError.
+func (i *Incident) ApprovePostmortem(actor string, read TaskID, now time.Time) error {
 	postmortem, err := i.reviewable("approve the postmortem", PostmortemDraft, PostmortemLeftToPerson)
 	if err != nil {
 		return err
@@ -110,34 +130,54 @@ func (i *Incident) ApprovePostmortem(actor string, now time.Time) error {
 	if postmortem.markdown == "" {
 		return StateError{Subject: "postmortem of incident " + i.id.String(), Current: "without a draft", Attempted: "approve the postmortem"}
 	}
+	if err := i.checkRead(postmortem, read, "approve the postmortem"); err != nil {
+		return err
+	}
 	at := now
 	postmortem.state, postmortem.approvedBy, postmortem.approvedAt = PostmortemApproved, actor, &at
 	i.updatedAt = now
 	return nil
 }
 
-// SendBackPostmortem records that the person sent the postmortem back
-// with a note: a Draft or a Failed one becomes SentBack, for the control
-// plane to launch its task again, or, at the
-// IncidentMaxPostmortemSendBacks-th time, LeftToPerson. Sending back one
-// already SentBack, whose launch did not start, only replaces the note:
-// nothing was rewritten, so it counts once.
-func (i *Incident) SendBackPostmortem(actor, note string, now time.Time) error {
-	postmortem, err := i.reviewable("send the postmortem back", PostmortemDraft, PostmortemFailed, PostmortemSentBack)
-	if err != nil {
-		return err
+// SendBackPostmortem records the person's note on the text of the task
+// read. A Draft counts: it becomes SentBack for the control plane to
+// launch its task again, or LeftToPerson at the
+// IncidentMaxPostmortemSendBacks-th time. A Failed one becomes SentBack
+// and does not count, nobody reviewed a text; nor does one already
+// SentBack, whose launch did not start: the note is replaced. A resolved
+// incident with no postmortem of this cycle gets a request for one, the
+// way out when its first launch could not start.
+func (i *Incident) SendBackPostmortem(actor, note string, read TaskID, now time.Time) error {
+	if !i.status.IsResolved() {
+		return i.refuse("send the postmortem back")
 	}
 	text, err := validateText("postmortem note", note, MaxIncidentReasonLength)
 	if err != nil {
 		return err
 	}
-	if postmortem.state != PostmortemSentBack {
+	var postmortem *IncidentPostmortem
+	if i.postmortem == nil || i.postmortem.cycle < i.cycle {
+		postmortem = &IncidentPostmortem{cycle: i.cycle}
+		if read != "" {
+			return i.checkRead(postmortem, read, "send the postmortem back")
+		}
+		i.postmortem = postmortem
+	} else {
+		if postmortem, err = i.reviewable("send the postmortem back", PostmortemDraft, PostmortemFailed, PostmortemSentBack); err != nil {
+			return err
+		}
+		if err := i.checkRead(postmortem, read, "send the postmortem back"); err != nil {
+			return err
+		}
+	}
+	counts := postmortem.state == PostmortemDraft
+	if counts {
 		postmortem.sendBacks++
 	}
 	at := now
 	postmortem.note, postmortem.reviewedBy, postmortem.reviewedAt = text, actor, &at
 	postmortem.state = PostmortemSentBack
-	if postmortem.sendBacks >= IncidentMaxPostmortemSendBacks {
+	if counts && postmortem.sendBacks >= IncidentMaxPostmortemSendBacks {
 		postmortem.state = PostmortemLeftToPerson
 	}
 	i.updatedAt = now

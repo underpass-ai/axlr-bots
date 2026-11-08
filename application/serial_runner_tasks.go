@@ -44,18 +44,18 @@ func (r *SerialRunner) ResolveIncident(ctx context.Context, id domain.IncidentID
 
 // ApprovePostmortem approves an incident's postmortem, as
 // ReviewPostmortem does, never at the moment a task's end moves it.
-func (r *SerialRunner) ApprovePostmortem(ctx context.Context, id domain.IncidentID, actor string) (domain.Incident, error) {
+func (r *SerialRunner) ApprovePostmortem(ctx context.Context, id domain.IncidentID, actor string, read domain.TaskID) (domain.Incident, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return NewReviewPostmortem(r.deps).Approve(ctx, id, actor)
+	return NewReviewPostmortem(r.deps).Approve(ctx, id, actor, read)
 }
 
 // SendBackPostmortem sends an incident's postmortem back with a note, as
 // ReviewPostmortem does.
-func (r *SerialRunner) SendBackPostmortem(ctx context.Context, id domain.IncidentID, actor, note string) (domain.Incident, error) {
+func (r *SerialRunner) SendBackPostmortem(ctx context.Context, id domain.IncidentID, actor, note string, read domain.TaskID) (domain.Incident, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return NewReviewPostmortem(r.deps).SendBack(ctx, id, actor, note)
+	return NewReviewPostmortem(r.deps).SendBack(ctx, id, actor, note, read)
 }
 
 // SubmitTask accepts a manual task, as SubmitTask does; an urgent one

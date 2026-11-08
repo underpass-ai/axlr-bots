@@ -109,7 +109,9 @@ func incidentResolve(ctx context.Context, service unixapi.Service, args []string
 }
 
 // incidentPostmortem shows an incident's postmortem, or answers it as
-// --actor: approve, or send-back with --note.
+// --actor: approve, or send-back with --note, naming the text read with
+// --author-task. On a resolved incident with no postmortem, send-back
+// asks for one.
 func incidentPostmortem(ctx context.Context, service unixapi.Service, actor string, args []string, stdout, stderr io.Writer) int {
 	const usage = "axlr-bots: incident postmortem needs show|approve|send-back and one <incident-id>"
 	if len(args) == 0 {
@@ -120,6 +122,7 @@ func incidentPostmortem(ctx context.Context, service unixapi.Service, actor stri
 	flags := flag.NewFlagSet("incident postmortem "+verb, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	note := flags.String("note", "", "what the rewrite should change (send-back needs it)")
+	author := flags.String("author-task", "", "the task whose text you read, as show prints it (approve needs it; send-back when there is a text)")
 	positional, ok := parseAnywhere(flags, args[1:])
 	if !ok {
 		return exitUsage
@@ -137,13 +140,17 @@ func incidentPostmortem(ctx context.Context, service unixapi.Service, actor stri
 	case "show":
 		return incidentPostmortemShow(ctx, service, id, stdout, stderr)
 	case "approve":
-		incident, err = service.ApprovePostmortem(ctx, id, unixapi.PostmortemReviewRequest{DecidedBy: actor})
+		if *author == "" {
+			fmt.Fprintln(stderr, "axlr-bots: incident postmortem approve needs --author-task: the task whose text you read")
+			return exitUsage
+		}
+		incident, err = service.ApprovePostmortem(ctx, id, unixapi.PostmortemReviewRequest{DecidedBy: actor, AuthorTaskID: *author})
 	case "send-back":
 		if strings.TrimSpace(*note) == "" {
 			fmt.Fprintln(stderr, "axlr-bots: incident postmortem send-back needs --note")
 			return exitUsage
 		}
-		incident, err = service.SendBackPostmortem(ctx, id, unixapi.PostmortemReviewRequest{DecidedBy: actor, Note: *note})
+		incident, err = service.SendBackPostmortem(ctx, id, unixapi.PostmortemReviewRequest{DecidedBy: actor, Note: *note, AuthorTaskID: *author})
 	default:
 		fmt.Fprintln(stderr, usage)
 		return exitUsage
@@ -167,7 +174,7 @@ func incidentPostmortemShow(ctx context.Context, service unixapi.Service, id str
 		fmt.Fprintln(stderr, "axlr-bots: incident "+id+" has no postmortem")
 		return exitError
 	}
-	fmt.Fprintf(stderr, "%s, cycle %d, task %s\n", postmortem.State, postmortem.Cycle, postmortem.TaskID)
+	fmt.Fprintf(stderr, "%s, cycle %d, task %s, author-task %s\n", postmortem.State, postmortem.Cycle, postmortem.TaskID, postmortem.AuthorTaskID)
 	if postmortem.Markdown != "" {
 		fmt.Fprintln(stdout, postmortem.Markdown)
 	}

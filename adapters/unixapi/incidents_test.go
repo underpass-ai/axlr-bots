@@ -149,21 +149,24 @@ func TestAPostmortemOverTheSocket(t *testing.T) {
 	}{
 		{"/approve", "", nil, http.StatusForbidden},
 		{"/approve", "mallory", nil, http.StatusForbidden},
-		{"/send-back", "tirso", PostmortemReviewRequest{}, http.StatusBadRequest},
+		{"/send-back", "tirso", PostmortemReviewRequest{AuthorTaskID: got.Postmortem.AuthorTaskID}, http.StatusBadRequest},
 		{"/approve", "tirso", PostmortemReviewRequest{DecidedBy: "oncall"}, http.StatusBadRequest},
+		{"/approve", "tirso", nil, http.StatusConflict},
+		{"/approve", "tirso", PostmortemReviewRequest{AuthorTaskID: "task-other"}, http.StatusConflict},
+		{"/approve", "tirso", PostmortemReviewRequest{AuthorTaskID: "no spaces"}, http.StatusBadRequest},
 	} {
 		if status, body, err := client.doWith(ctx, http.MethodPost, path+c.route, as(c.actor), c.body); err != nil || status != c.want {
 			t.Errorf("%s as %q: %d %s %v", c.route, c.actor, status, body, err)
 		}
 	}
-	back, err := client.SendBackPostmortem(ctx, opened.Incident.ID, PostmortemReviewRequest{DecidedBy: "tirso", Note: "add the owner"})
+	back, err := client.SendBackPostmortem(ctx, opened.Incident.ID, PostmortemReviewRequest{DecidedBy: "tirso", Note: "add the owner", AuthorTaskID: got.Postmortem.AuthorTaskID})
 	if err != nil || back.Postmortem.State != "Writing" || back.Postmortem.SendBacks != 1 || back.Postmortem.Note != "add the owner" || back.Postmortem.ReviewedBy != "tirso" {
 		t.Fatalf("send-back = %+v %v", back.Postmortem, err)
 	}
 	if _, err := local.RunTask(ctx, back.Postmortem.TaskID); err != nil {
 		t.Fatal(err)
 	}
-	status, body, err := client.doWith(ctx, http.MethodPost, path+"/approve", as("tirso"), nil)
+	status, body, err := client.doWith(ctx, http.MethodPost, path+"/approve", as("tirso"), PostmortemReviewRequest{AuthorTaskID: back.Postmortem.TaskID})
 	if err != nil || status != http.StatusOK || !strings.Contains(string(body), `"approvedBy":"tirso"`) {
 		t.Fatalf("approve: %d %s %v", status, body, err)
 	}
@@ -173,6 +176,9 @@ func TestAPostmortemOverTheSocket(t *testing.T) {
 	for _, call := range []func(context.Context, string, PostmortemReviewRequest) (domain.IncidentSnapshot, error){local.ApprovePostmortem, local.SendBackPostmortem} {
 		if _, err := call(ctx, "no spaces allowed", PostmortemReviewRequest{DecidedBy: "tirso", Note: "x"}); err == nil {
 			t.Error("a bad id")
+		}
+		if _, err := call(ctx, "inc-ghost", PostmortemReviewRequest{DecidedBy: "tirso", Note: "x", AuthorTaskID: "no spaces"}); err == nil {
+			t.Error("a bad task")
 		}
 		if _, err := call(ctx, "inc-ghost", PostmortemReviewRequest{DecidedBy: "tirso", Note: "x"}); !domain.IsNotFound(err) {
 			t.Errorf("ghost: %v", err)

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -168,7 +167,7 @@ func (a incidentAdvancer) end(incident *domain.Incident, current domain.Incident
 // not, on the postmortem: the incident's status never moves. A task that
 // answered nothing is a failure, not a text for a person to approve.
 func (a incidentAdvancer) postmortemEnded(incident *domain.Incident, task domain.Task, answer string, failure func() string, move *incidentMove, now time.Time) error {
-	if task.Status() != domain.TaskCompleted || strings.TrimSpace(answer) == "" {
+	if task.Status() != domain.TaskCompleted || domain.IncidentTextIsEmpty(answer) {
 		reason := failure()
 		if task.Status() == domain.TaskCompleted {
 			reason = "postmortem task " + task.ID().String() + " completed without an answer"

@@ -13,8 +13,9 @@ const (
 	// PostmortemDraft is a postmortem whose task answered: a person
 	// approves it or sends it back.
 	PostmortemDraft IncidentPostmortemState = "Draft"
-	// PostmortemSentBack is a postmortem a person sent back, whose next
-	// task has not started: the launch failed or is about to happen.
+	// PostmortemSentBack is a postmortem a person sent back, or asked for
+	// when none started, whose next task has not started: the launch
+	// failed or is about to happen.
 	PostmortemSentBack IncidentPostmortemState = "SentBack"
 	// PostmortemFailed is a postmortem whose task failed, expired or was
 	// cancelled: a person may send it back to try again.

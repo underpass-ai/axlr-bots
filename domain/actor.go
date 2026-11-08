@@ -33,6 +33,22 @@ const CLIActorPrefix = "cli:"
 // one.
 const PolicyActorPrefix = "policy:"
 
+// TriggerActorPrefix starts the names a trigger acts under in an
+// incident's events (trigger:alerts): no person may claim one.
+const TriggerActorPrefix = "trigger:"
+
+// IsPolicyActor reports a name a policy decides under, however it is
+// spelt: POLICY:x and cli:policy:x are policy:x.
+func IsPolicyActor(actor string) bool {
+	return strings.HasPrefix(ActorKey(actor), PolicyActorPrefix)
+}
+
+// IsMachineActor reports a name that says it is no person's: a policy's
+// or a trigger's.
+func IsMachineActor(actor string) bool {
+	return IsPolicyActor(actor) || strings.HasPrefix(ActorKey(actor), TriggerActorPrefix)
+}
+
 // ActorKey is the name two actors are compared by: without the CLI's
 // cli: prefix and in lower case, so tirso, cli:tirso and Tirso are one
 // person and never two approvals (review of #139, 8 November 2026).

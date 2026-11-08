@@ -278,11 +278,11 @@ func printUsage(w io.Writer) {
                                       a repeat of the one open for that key, or a reopening
   incident postmortem show <incident-id>
                                       print a resolved incident's postmortem as Markdown
-  incident postmortem approve <incident-id>
-                                      approve it as --actor; the incident's outputs announce it
-  incident postmortem send-back <incident-id> --note "<text>"
-                                      send it back to be rewritten, as --actor; the second send-back
-                                      leaves it to a person
+  incident postmortem approve <incident-id> --author-task <task-id>
+                                      approve the text you read as --actor; the outputs announce it
+  incident postmortem send-back <incident-id> --note "<text>" [--author-task <task-id>]
+                                      send the text you read back, as --actor; the second send-back of
+                                      a text leaves it to a person. With no postmortem, asks for one
   incident list [--tenant <id>] [--status Open|Diagnosed|Proposed|Resolved|Escalated] [--limit 100]
                                       the incidents, the last seen first
   incident get <incident-id>          show one incident: its alerts, tasks, diagnosis, cost

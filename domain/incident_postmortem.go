@@ -10,9 +10,11 @@ const (
 	// bytes: what a task wrote is cut to fit with IncidentText.
 	MaxIncidentPostmortemLength = 32000
 	// IncidentMaxPostmortemSendBacks is how many times a person may send
-	// a postmortem back: each one but the last launches its task again,
-	// the last leaves it to a person, as IncidentMaxSendBacks does for a
-	// proposal. It has its own count: a reopening resets the incident's.
+	// a postmortem's text back: each one but the last launches its task
+	// again, the last leaves it to a person, as IncidentMaxSendBacks does
+	// for a proposal. Sending back a task that failed costs nothing: no
+	// text was reviewed. It has its own count: a reopening resets the
+	// incident's.
 	IncidentMaxPostmortemSendBacks = 2
 )
 
@@ -42,11 +44,12 @@ func (p IncidentPostmortem) State() IncidentPostmortemState { return p.state }
 // Cycle is the incident's cycle it was written for.
 func (p IncidentPostmortem) Cycle() int { return p.cycle }
 
-// TaskID is the last task launched to write it.
+// TaskID is the last task launched to write it; empty when a person
+// asked for one and no task has started.
 func (p IncidentPostmortem) TaskID() TaskID { return p.task }
 
 // BotID is the bot that took the postmortem phase: whose approvers
-// review it.
+// review it. Empty before a task started.
 func (p IncidentPostmortem) BotID() BotID { return p.bot }
 
 // AuthorTaskID is the task whose answer Markdown is; empty before one
@@ -95,13 +98,18 @@ func restoreIncidentPostmortem(s IncidentPostmortemSnapshot, cycle int) (Inciden
 	if err != nil {
 		return IncidentPostmortem{}, err
 	}
-	task, err := NewTaskID(s.TaskID)
-	if err != nil {
-		return IncidentPostmortem{}, err
-	}
-	bot, err := NewBotID(s.BotID)
-	if err != nil {
-		return IncidentPostmortem{}, err
+	var (
+		task TaskID
+		bot  BotID
+	)
+	// A person's request that has not started a task has neither yet.
+	if state != PostmortemSentBack || s.TaskID != "" || s.BotID != "" {
+		if task, err = NewTaskID(s.TaskID); err != nil {
+			return IncidentPostmortem{}, err
+		}
+		if bot, err = NewBotID(s.BotID); err != nil {
+			return IncidentPostmortem{}, err
+		}
 	}
 	p := IncidentPostmortem{
 		state: state, cycle: s.Cycle, task: task, bot: bot, reviewedBy: s.ReviewedBy, reviewedAt: copyTime(s.ReviewedAt),

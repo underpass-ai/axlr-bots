@@ -64,8 +64,8 @@ impl ApprovePostmortem {
         Self { control_plane }
     }
 
-    pub async fn execute(&self, id: String) -> Result<Incident, PanelError> {
-        self.control_plane.approve_postmortem(id).await
+    pub async fn execute(&self, id: String, author: String) -> Result<Incident, PanelError> {
+        self.control_plane.approve_postmortem(id, author).await
     }
 }
 
@@ -80,12 +80,14 @@ impl SendBackPostmortem {
         Self { control_plane }
     }
 
-    pub async fn execute(&self, id: String, note: &str) -> Result<Incident, PanelError> {
+    pub async fn execute(&self, id: String, note: &str, author: Option<String>) -> Result<Incident, PanelError> {
         let note = note.trim();
         if note.is_empty() {
             return Err(PanelError::Invalid("say what the rewrite should change".into()));
         }
-        self.control_plane.send_back_postmortem(id, note.to_string()).await
+        self.control_plane
+            .send_back_postmortem(id, note.to_string(), author)
+            .await
     }
 }
 
@@ -98,24 +100,30 @@ mod tests {
     #[test]
     fn approves_a_postmortem_and_sends_one_back() {
         let (control_plane, _) = fleet();
+        let scribe = || Some("task-scribe".to_string());
         assert!(matches!(
-            run(SendBackPostmortem::new(control_plane.clone()).execute("inc-cert".into(), "  ")),
+            run(SendBackPostmortem::new(control_plane.clone()).execute("inc-cert".into(), "  ", scribe())),
             Err(PanelError::Invalid(_))
         ));
-        let back = run(SendBackPostmortem::new(control_plane.clone()).execute("inc-cert".into(), " add the owner "))
-            .unwrap()
-            .postmortem
-            .unwrap();
+        assert!(matches!(
+            run(ApprovePostmortem::new(control_plane.clone()).execute("inc-cert".into(), "task-other".into())),
+            Err(PanelError::State(_))
+        ));
+        let back =
+            run(SendBackPostmortem::new(control_plane.clone()).execute("inc-cert".into(), " add the owner ", scribe()))
+                .unwrap()
+                .postmortem
+                .unwrap();
         assert_eq!(
             (back.state, back.note.as_str()),
             (PostmortemState::Writing, "add the owner")
         );
         assert!(matches!(
-            run(ApprovePostmortem::new(control_plane.clone()).execute("inc-cert".into())),
+            run(ApprovePostmortem::new(control_plane.clone()).execute("inc-cert".into(), "task-scribe".into())),
             Err(PanelError::State(_))
         ));
         assert!(matches!(
-            run(ApprovePostmortem::new(control_plane.clone()).execute("inc-none".into())),
+            run(ApprovePostmortem::new(control_plane.clone()).execute("inc-none".into(), "task-scribe".into())),
             Err(PanelError::NotFound(_))
         ));
     }

@@ -4,7 +4,9 @@ use super::test_runtime::{connected, drive, send};
 use super::view::tests::{app, config, settings};
 use super::*;
 use crate::application::{PanelError, PanelSettings};
-use crate::domain::{AutonomyLevel, BotId, BotStatus, NodeId, NodeStatus, PostmortemState, TaskId, TaskStatus};
+use crate::domain::{
+    AutonomyLevel, BotId, BotStatus, Incident, NodeId, NodeStatus, PostmortemState, TaskId, TaskStatus,
+};
 
 fn task_in(app: &App, status: TaskStatus) -> TaskId {
     app.fleet
@@ -1415,7 +1417,8 @@ fn a_postmortem_is_approved_or_sent_back_from_its_incident() {
         effects,
         vec![Effect::SendBackPostmortem {
             id: "inc-cert".into(),
-            note: "add the owner".into()
+            note: "add the owner".into(),
+            author: Some("task-scribe".into())
         }]
     );
     assert!(
@@ -1430,11 +1433,32 @@ fn a_postmortem_is_approved_or_sent_back_from_its_incident() {
     assert_eq!(app.banner.as_ref().unwrap().title, "Postmortem being written");
 
     // A refusal keeps the page as it was and says why.
+    assert!(
+        app.apply(Message::PostmortemApprove).is_empty(),
+        "no text on screen, nothing to approve"
+    );
+    assert!(!app.incidents.review.busy);
+    let stale = Incident::clone(app.incidents.detail.as_ref().unwrap());
+    app.incidents
+        .detail
+        .as_mut()
+        .unwrap()
+        .postmortem
+        .as_mut()
+        .unwrap()
+        .state = PostmortemState::Draft;
     let effects = app.apply(Message::PostmortemApprove);
-    assert_eq!(effects, vec![Effect::ApprovePostmortem("inc-cert".into())]);
+    assert_eq!(
+        effects,
+        vec![Effect::ApprovePostmortem {
+            id: "inc-cert".into(),
+            author: "task-scribe".into()
+        }]
+    );
     drive(&mut app, effects);
     assert_eq!(app.banner.as_ref().unwrap().title, "Not now");
     assert!(!app.incidents.review.busy);
+    app.incidents.detail = Some(stale);
 
     app.apply(Message::PostmortemBackOpen);
     app.apply(Message::PostmortemBackClose);
@@ -1445,6 +1469,24 @@ fn a_postmortem_is_approved_or_sent_back_from_its_incident() {
     send(&mut app, Message::Go(Screen::Incidents));
     assert!(app.apply(Message::PostmortemApprove).is_empty());
     assert!(app.apply(Message::PostmortemBackSend).is_empty());
+}
+
+#[test]
+fn a_resolved_incident_without_a_postmortem_can_ask_for_one() {
+    let mut app = connected();
+    let effects = app.apply(Message::Go(Screen::Incident("inc-cert".into())));
+    drive(&mut app, effects);
+    app.incidents.detail.as_mut().unwrap().postmortem = None;
+    app.apply(Message::PostmortemBackOpen);
+    app.apply(Message::PostmortemBackNote("please".into()));
+    assert_eq!(
+        app.apply(Message::PostmortemBackSend),
+        vec![Effect::SendBackPostmortem {
+            id: "inc-cert".into(),
+            note: "please".into(),
+            author: None
+        }]
+    );
 }
 
 #[test]

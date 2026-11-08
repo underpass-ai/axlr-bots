@@ -1609,7 +1609,7 @@
       ],
       "post": {
         "operationId": "approvePostmortem",
-        "description": "approve the postmortem of a resolved incident as who the X-Axlr-Actor header or decidedBy names; the incident outputs announce it. Refused 403 without a name, under a policy: name or the daemon's own, or by an actor the approvers of the bot that wrote it do not list; 409 when it is not a Draft, or left to a person with a draft",
+        "description": "approve the postmortem of a resolved incident as who the X-Axlr-Actor header or decidedBy names, naming the text read in authorTaskId; the incident outputs announce it. Refused 403 without a name, under a policy: or trigger: name, a registered bot's id or the daemon's own, or by an actor the approvers of the bot that wrote it do not list; 409 when it is not a Draft, or left to a person with a draft, or holds another text than the one named",
         "requestBody": {
           "required": false,
           "content": {
@@ -1651,7 +1651,7 @@
       ],
       "post": {
         "operationId": "sendBackPostmortem",
-        "description": "send the postmortem back with a note: its task is launched again; the second send-back leaves it to a person. Who may do it as for approve; a missing note is 400, a postmortem past the cap is 409",
+        "description": "send the text read back with a note: its task is launched again; the second send-back of a text leaves it to a person, and a failed task's costs nothing. On a resolved incident with no postmortem of its cycle it asks for one. Who may do it as for approve; a missing note is 400, another text than the one named or a postmortem past the cap is 409",
         "requestBody": {
           "required": false,
           "content": {
@@ -4890,6 +4890,10 @@
           "decidedBy": {
             "type": "string",
             "description": "who answers, as the token holder asserts it"
+          },
+          "authorTaskId": {
+            "type": "string",
+            "description": "the task whose text the person read, as the postmortem's authorTaskId said; empty only when they read none. Another text than the one held now is 409"
           }
         },
         "required": []
@@ -4906,7 +4910,7 @@
           "LeftToPerson",
           "Approved"
         ],
-        "description": "where a postmortem is: its task writing it, a draft for a person, sent back and not relaunched yet, its task failed, left to a person at the send-back cap, or approved. The incident stays Resolved through all of them. A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
+        "description": "where a postmortem is: its task writing it, a draft for a person, sent back or asked for and not launched yet, its task failed, left to a person at the send-back cap, or approved. The incident stays Resolved through all of them. A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
       },
       "IncidentPostmortemSnapshot": {
         "type": "object",
@@ -4922,11 +4926,11 @@
           },
           "taskId": {
             "type": "string",
-            "description": "the last task launched to write it"
+            "description": "the last task launched to write it; absent when a person asked for one and no task has started"
           },
           "botId": {
             "type": "string",
-            "description": "the bot that took the postmortem phase: its approvers review it"
+            "description": "the bot that took the postmortem phase, its approvers review it; absent before a task started"
           },
           "authorTaskId": {
             "type": "string",
@@ -4954,7 +4958,7 @@
           },
           "sendBacks": {
             "type": "integer",
-            "description": "the times a person sent it back; the second leaves it to a person"
+            "description": "the times a person sent its text back; the second leaves it to a person. Sending back a task that failed does not count"
           },
           "approvedBy": {
             "type": "string",
@@ -4967,9 +4971,7 @@
         },
         "required": [
           "state",
-          "cycle",
-          "taskId",
-          "botId"
+          "cycle"
         ]
       }
     }

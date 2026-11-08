@@ -707,8 +707,8 @@ impl FakeState {
         resolved.postmortem = Some(IncidentPostmortem {
             state: PostmortemState::Draft,
             cycle: resolved.cycle,
-            task_id: scribe.clone(),
-            bot_id: BotId::new("scribe").unwrap(),
+            task_id: Some(scribe.clone()),
+            bot_id: Some(BotId::new("scribe").unwrap()),
             author_task_id: Some(scribe),
             markdown: "# Postmortem\n\nThe certificate was renewed by hand.".into(),
             note: String::new(),
@@ -1492,7 +1492,7 @@ impl ControlPlane for FakeControlPlane {
         })
     }
 
-    fn approve_postmortem(&self, id: String) -> PortFuture<'_, Incident> {
+    fn approve_postmortem(&self, id: String, author: String) -> PortFuture<'_, Incident> {
         self.call(format!("approve_postmortem {id}"), move |s| {
             let now = s.clock();
             let incident = s.incident_mut(&id)?;
@@ -1501,7 +1501,8 @@ impl ControlPlane for FakeControlPlane {
                 .postmortem
                 .as_mut()
                 .filter(|p| p.cycle == cycle && p.can_approve())
-                .ok_or_else(|| PanelError::State(format!("incident {id} has no draft to approve")))?;
+                .filter(|p| p.author_task_id.as_ref().is_some_and(|a| a.as_str() == author))
+                .ok_or_else(|| PanelError::State(format!("incident {id} has no such draft to approve")))?;
             postmortem.state = PostmortemState::Approved;
             postmortem.approved_by = "fake".into();
             postmortem.approved_at = Some(now);
@@ -1510,20 +1511,46 @@ impl ControlPlane for FakeControlPlane {
         })
     }
 
-    fn send_back_postmortem(&self, id: String, note: String) -> PortFuture<'_, Incident> {
+    fn send_back_postmortem(&self, id: String, note: String, author: Option<String>) -> PortFuture<'_, Incident> {
         self.call(format!("send_back_postmortem {id}"), move |s| {
             let now = s.clock();
             let incident = s.incident_mut(&id)?;
+            if incident.status != IncidentStatus::Resolved {
+                return Err(PanelError::State(format!("incident {id} is not Resolved")));
+            }
+            let cycle = incident.cycle;
+            let written = incident.postmortem.as_ref().is_some_and(|p| p.cycle == cycle);
+            if !written {
+                incident.postmortem = Some(IncidentPostmortem {
+                    state: PostmortemState::Writing,
+                    cycle,
+                    task_id: Some(TaskId::new("task-asked").unwrap()),
+                    bot_id: Some(BotId::new("scribe").unwrap()),
+                    author_task_id: None,
+                    markdown: String::new(),
+                    note,
+                    reviewed_by: "fake".into(),
+                    reviewed_at: Some(now),
+                    reason: String::new(),
+                    send_backs: 0,
+                    approved_by: String::new(),
+                    approved_at: None,
+                });
+                return Ok(incident.clone());
+            }
             let postmortem = incident
                 .postmortem
                 .as_mut()
-                .filter(|p| p.can_send_back())
+                .filter(|p| p.can_send_back() && p.author_task_id.as_ref().map(ToString::to_string) == author)
                 .ok_or_else(|| PanelError::State(format!("incident {id}'s postmortem cannot go back")))?;
-            postmortem.send_backs += 1;
+            let last = postmortem.last_send_back();
+            if postmortem.state == PostmortemState::Draft {
+                postmortem.send_backs += 1;
+            }
             postmortem.note = note;
             postmortem.reviewed_by = "fake".into();
             postmortem.reviewed_at = Some(now);
-            postmortem.state = if postmortem.send_backs >= 2 {
+            postmortem.state = if last {
                 PostmortemState::LeftToPerson
             } else {
                 PostmortemState::Writing

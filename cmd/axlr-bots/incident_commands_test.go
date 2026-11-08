@@ -105,10 +105,10 @@ func TestPostmortemCommands(t *testing.T) {
 		t.Fatalf("run: %s", errText)
 	}
 	code, out, errText := c.run("incident", "postmortem", "show", id)
-	if code != exitOK || strings.TrimSpace(out) == "" || !strings.Contains(errText, "Draft") {
+	if code != exitOK || strings.TrimSpace(out) == "" || !strings.Contains(errText, "Draft") || !strings.Contains(errText, "author-task "+task) {
 		t.Errorf("show = %d %q %q", code, out, errText)
 	}
-	code, back := c.json("--actor", "tirso", "incident", "postmortem", "send-back", id, "--note", "add the owner")
+	code, back := c.json("--actor", "tirso", "incident", "postmortem", "send-back", id, "--note", "add the owner", "--author-task", task)
 	if code != exitOK || back["postmortem"].(map[string]any)["reviewedBy"] != "tirso" {
 		t.Fatalf("send-back = %d %v", code, back)
 	}
@@ -116,16 +116,16 @@ func TestPostmortemCommands(t *testing.T) {
 	if code, _, errText := c.run("task", "run", rewrite); code != exitOK {
 		t.Fatalf("run: %s", errText)
 	}
-	code, approved := c.json("--actor", "tirso", "incident", "postmortem", "approve", id)
+	code, approved := c.json("--actor", "tirso", "incident", "postmortem", "approve", id, "--author-task", rewrite)
 	if code != exitOK || approved["postmortem"].(map[string]any)["approvedBy"] != "tirso" {
 		t.Fatalf("approve = %d %v", code, approved)
 	}
-	if code, _, _ := c.run("incident", "postmortem", "approve", id); code == exitOK {
+	if code, _, _ := c.run("incident", "postmortem", "approve", id, "--author-task", rewrite); code == exitOK {
 		t.Error("approved twice")
 	}
 	for _, args := range [][]string{
 		{"incident", "postmortem"}, {"incident", "postmortem", "show"}, {"incident", "postmortem", "burn", id},
-		{"incident", "postmortem", "send-back", id}, {"incident", "postmortem", "approve", id, "--bogus"},
+		{"incident", "postmortem", "send-back", id}, {"incident", "postmortem", "approve", id, "--bogus"}, {"incident", "postmortem", "approve", id},
 	} {
 		if code, _, _ := c.run(args...); code != exitUsage {
 			t.Errorf("%v: exit %d", args, code)

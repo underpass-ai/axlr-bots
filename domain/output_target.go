@@ -22,11 +22,6 @@ var DefaultOutputEvents = []EventType{
 	EventIncidentVerifying, EventIncidentResolved, EventIncidentEscalated, EventIncidentPostmortemApproved,
 }
 
-// outputEventsBeforePostmortem is the default list as a target stored it
-// before postmortems: a target that named no event hears the approval
-// too, so that list reads as the default.
-var outputEventsBeforePostmortem = DefaultOutputEvents[:len(DefaultOutputEvents)-1]
-
 // OutputTarget is one place the control plane announces incidents: a
 // signed webhook, a chat's incoming webhook or a local command, with the
 // events, tenants and severities it wants. Outputs belong to the control
@@ -38,6 +33,7 @@ type OutputTarget struct {
 	secret     string
 	command    []string
 	events     []EventType
+	named      bool
 	tenants    []TenantID
 	severities []IncidentSeverity
 	panelURL   string
@@ -87,6 +83,7 @@ func NewOutputTarget(s OutputTargetSnapshot) (OutputTarget, error) {
 	if t.events, err = outputEvents(field, s.Events); err != nil {
 		return OutputTarget{}, err
 	}
+	t.named = len(s.Events) > 0
 	if t.tenants, err = outputTenants(field, s.Tenants); err != nil {
 		return OutputTarget{}, err
 	}
@@ -131,9 +128,6 @@ func outputEvents(field string, raw []string) ([]EventType, error) {
 		if !slices.Contains(events, event) {
 			events = append(events, event)
 		}
-	}
-	if slices.Equal(events, outputEventsBeforePostmortem) {
-		return slices.Clone(DefaultOutputEvents), nil
 	}
 	return events, nil
 }
@@ -265,8 +259,12 @@ func (t OutputTarget) Sign(body []byte) string {
 // what the repository stores. Never print it.
 func (t OutputTarget) Snapshot() OutputTargetSnapshot {
 	s := OutputTargetSnapshot{Name: t.name.String(), Type: t.kind.String(), URL: t.url, Secret: t.secret, Command: t.Command(), PanelURL: t.panelURL}
-	for _, event := range t.events {
-		s.Events = append(s.Events, event.String())
+	if t.named {
+		// A target that named none stays so when it is stored: it hears
+		// what the default comes to include.
+		for _, event := range t.events {
+			s.Events = append(s.Events, event.String())
+		}
 	}
 	for _, tenant := range t.tenants {
 		s.Tenants = append(s.Tenants, tenant.String())

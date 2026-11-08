@@ -93,10 +93,14 @@ pub enum Effect {
         id: String,
         reason: String,
     },
-    ApprovePostmortem(String),
+    ApprovePostmortem {
+        id: String,
+        author: String,
+    },
     SendBackPostmortem {
         id: String,
         note: String,
+        author: Option<String>,
     },
     /// Fetch an artifact and ask where to save it.
     Download(ExecutionId, String),

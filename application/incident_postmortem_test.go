@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -65,6 +66,18 @@ func postmortemState(t *testing.T, incident domain.Incident) domain.IncidentPost
 		t.Fatalf("no postmortem: %+v", incident.Snapshot())
 	}
 	return postmortem.State()
+}
+
+// authorOf is the task whose text a person who read the postmortem now
+// has read.
+func authorOf(t *testing.T, h *harness, id domain.IncidentID) domain.TaskID {
+	t.Helper()
+	incident, err := h.deps.Incidents.Get(context.Background(), id)
+	if err != nil {
+		return ""
+	}
+	postmortem, _ := incident.Postmortem()
+	return postmortem.AuthorTaskID()
 }
 
 func auditNamed(t *testing.T, h *harness, action string) domain.AuditEntry {
@@ -130,6 +143,9 @@ func TestAResolvedIncidentGetsItsPostmortemApprovedAndAnnounced(t *testing.T) {
 	if err := json.Unmarshal(task.Input(), &input); err != nil {
 		t.Fatal(err)
 	}
+	if !slices.Equal(input.Untrusted, []string{"diagnosis", "proposal", "review.draft"}) {
+		t.Errorf("untrusted = %v", input.Untrusted)
+	}
 	if input.Schema != PostmortemInputSchema || !strings.Contains(input.Diagnosis, "replicas 1, desired 3") || !strings.Contains(input.Proposal, "kubectl apply") || input.CostUSD <= 0 || input.ResolvedAt.IsZero() {
 		t.Errorf("input = %+v", input)
 	}
@@ -169,7 +185,7 @@ func TestAResolvedIncidentGetsItsPostmortemApprovedAndAnnounced(t *testing.T) {
 		t.Error("no drafted event")
 	}
 	before := len(h.outbox2.all())
-	final, err := NewReviewPostmortem(h.deps).Approve(ctx, incident.ID(), "tirso")
+	final, err := NewReviewPostmortem(h.deps).Approve(ctx, incident.ID(), "tirso", authorOf(t, h, incident.ID()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,10 +319,10 @@ func TestSendingBackRelaunchesWithTheNoteThenLeavesItToAPerson(t *testing.T) {
 	first := incident.CurrentTaskID()
 	draftOf(t, h, incident, "draft one")
 	review := NewReviewPostmortem(h.deps)
-	if _, err := review.SendBack(ctx, incident.ID(), "tirso", "  "); err == nil {
+	if _, err := review.SendBack(ctx, incident.ID(), "tirso", "  ", authorOf(t, h, incident.ID())); err == nil {
 		t.Fatal("a send-back without a note")
 	}
-	back, err := review.SendBack(ctx, incident.ID(), "tirso", "name the owner of each action")
+	back, err := review.SendBack(ctx, incident.ID(), "tirso", "name the owner of each action", authorOf(t, h, incident.ID()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,20 +353,20 @@ func TestSendingBackRelaunchesWithTheNoteThenLeavesItToAPerson(t *testing.T) {
 	}
 	tasks := len(h.tasks.tasks)
 	draftOf(t, h, back, "draft two")
-	left, err := review.SendBack(ctx, incident.ID(), "tirso", "still wrong")
+	left, err := review.SendBack(ctx, incident.ID(), "tirso", "still wrong", authorOf(t, h, incident.ID()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if postmortemState(t, left) != domain.PostmortemLeftToPerson || left.Status() != domain.IncidentResolved || len(h.tasks.tasks) != tasks {
 		t.Fatalf("left: %+v", left.Snapshot())
 	}
-	if _, err := review.SendBack(ctx, incident.ID(), "tirso", "again"); !isState(err) {
+	if _, err := review.SendBack(ctx, incident.ID(), "tirso", "again", authorOf(t, h, incident.ID())); !isState(err) {
 		t.Errorf("past the cap: %v", err)
 	}
 	if audit := auditNamed(t, h, "incident.postmortem.refused"); audit.Actor != "tirso" || audit.Details["decision"] != DecisionSendBack {
 		t.Errorf("audit = %+v", audit)
 	}
-	final, err := review.Approve(ctx, incident.ID(), "tirso")
+	final, err := review.Approve(ctx, incident.ID(), "tirso", authorOf(t, h, incident.ID()))
 	if err != nil || postmortemState(t, final) != domain.PostmortemApproved {
 		t.Fatalf("the person took the last draft: %v", err)
 	}
@@ -371,14 +387,14 @@ func TestASendBackWhoseTaskCannotStartIsTriedAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	review := NewReviewPostmortem(h.deps)
-	stuck, err := review.SendBack(ctx, incident.ID(), "tirso", "more")
+	stuck, err := review.SendBack(ctx, incident.ID(), "tirso", "more", authorOf(t, h, incident.ID()))
 	if err != nil || postmortemState(t, stuck) != domain.PostmortemSentBack {
 		t.Fatalf("%v %+v", err, stuck.Snapshot())
 	}
 	if _, err := NewEnableBot(h.deps).Execute(ctx, "scribe"); err != nil {
 		t.Fatal(err)
 	}
-	again, err := review.SendBack(ctx, incident.ID(), "oncall", "more, please")
+	again, err := review.SendBack(ctx, incident.ID(), "oncall", "more, please", authorOf(t, h, incident.ID()))
 	if err != nil || postmortemState(t, again) != domain.PostmortemWriting {
 		t.Fatalf("%v %+v", err, again.Snapshot())
 	}
@@ -397,24 +413,24 @@ func TestWhoMayReviewAPostmortem(t *testing.T) {
 	daemon.Daemon, daemon.Actor = true, "axlr-daemon"
 	review := NewReviewPostmortem(daemon)
 	for name, actor := range map[string]string{"nobody": "", "a policy": "policy:autoApprove", "the daemon": "cli:AXLR-daemon", "not listed": "mallory"} {
-		if _, err := review.Approve(ctx, incident.ID(), actor); !domain.IsForbidden(err) {
+		if _, err := review.Approve(ctx, incident.ID(), actor, authorOf(t, h, incident.ID())); !domain.IsForbidden(err) {
 			t.Errorf("%s: %v", name, err)
 		}
-		if _, err := review.SendBack(ctx, incident.ID(), actor, "x"); !domain.IsForbidden(err) {
+		if _, err := review.SendBack(ctx, incident.ID(), actor, "x", authorOf(t, h, incident.ID())); !domain.IsForbidden(err) {
 			t.Errorf("%s send-back: %v", name, err)
 		}
 		if audit := auditNamed(t, h, "incident.postmortem.refused"); audit.Outcome != domain.AuditDenied || audit.Details["actor"] != actor {
 			t.Errorf("%s: audit = %+v", name, audit)
 		}
 	}
-	if _, err := review.Approve(ctx, incident.ID(), "two words"); err == nil {
+	if _, err := review.Approve(ctx, incident.ID(), "two words", authorOf(t, h, incident.ID())); err == nil {
 		t.Error("an actor with a space")
 	}
 	unchanged, _ := h.incs.Get(ctx, incident.ID())
 	if postmortemState(t, unchanged) != domain.PostmortemDraft {
 		t.Fatalf("a refusal changed it: %+v", unchanged.Snapshot())
 	}
-	if final, err := review.Approve(ctx, incident.ID(), "cli:Tirso"); err != nil || postmortemState(t, final) != domain.PostmortemApproved {
+	if final, err := review.Approve(ctx, incident.ID(), "cli:Tirso", authorOf(t, h, incident.ID())); err != nil || postmortemState(t, final) != domain.PostmortemApproved {
 		t.Fatalf("the approver: %v", err)
 	}
 	if audit := auditNamed(t, h, "incident.postmortem.approve"); audit.Actor != "cli:Tirso" {
@@ -423,10 +439,10 @@ func TestWhoMayReviewAPostmortem(t *testing.T) {
 
 	bare := newHarness()
 	sev3 := resolvedIncidentOf(t, bare, postmortemTeam(t, bare, nil), "sev3")
-	if _, err := NewReviewPostmortem(bare.deps).Approve(ctx, sev3.ID(), "tirso"); !isState(err) {
+	if _, err := NewReviewPostmortem(bare.deps).Approve(ctx, sev3.ID(), "tirso", ""); !isState(err) {
 		t.Errorf("no postmortem: %v", err)
 	}
-	if _, err := review.Approve(ctx, "inc-none", "tirso"); !domain.IsNotFound(err) {
+	if _, err := review.Approve(ctx, "inc-none", "tirso", ""); !domain.IsNotFound(err) {
 		t.Errorf("no incident: %v", err)
 	}
 }
@@ -440,7 +456,7 @@ func TestReviewAfterTheWriterIsGoneFailsClosed(t *testing.T) {
 	if err := h.bots.Delete(ctx, "scribe"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewReviewPostmortem(h.deps).Approve(ctx, incident.ID(), "tirso"); !domain.IsForbidden(err) {
+	if _, err := NewReviewPostmortem(h.deps).Approve(ctx, incident.ID(), "tirso", authorOf(t, h, incident.ID())); !domain.IsForbidden(err) {
 		t.Errorf("bot gone: %v", err)
 	}
 }

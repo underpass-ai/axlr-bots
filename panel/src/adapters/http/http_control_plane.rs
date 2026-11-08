@@ -179,9 +179,12 @@ struct ResolveBody {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct PostmortemReviewBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     note: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    author_task_id: Option<String>,
 }
 
 /// How long an artifact's bytes may take to come: one may be large.
@@ -381,17 +384,23 @@ impl ControlPlane for HttpControlPlane {
         self.post(format!("/v1/incidents/{id}/resolve"), Some(ResolveBody { reason }))
     }
 
-    fn approve_postmortem(&self, id: String) -> PortFuture<'_, Incident> {
+    fn approve_postmortem(&self, id: String, author: String) -> PortFuture<'_, Incident> {
         self.post(
             format!("/v1/incidents/{id}/postmortem/approve"),
-            Some(PostmortemReviewBody { note: None }),
+            Some(PostmortemReviewBody {
+                note: None,
+                author_task_id: Some(author),
+            }),
         )
     }
 
-    fn send_back_postmortem(&self, id: String, note: String) -> PortFuture<'_, Incident> {
+    fn send_back_postmortem(&self, id: String, note: String, author: Option<String>) -> PortFuture<'_, Incident> {
         self.post(
             format!("/v1/incidents/{id}/postmortem/send-back"),
-            Some(PostmortemReviewBody { note: Some(note) }),
+            Some(PostmortemReviewBody {
+                note: Some(note),
+                author_task_id: author,
+            }),
         )
     }
 

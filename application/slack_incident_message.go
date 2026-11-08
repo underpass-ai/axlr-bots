@@ -68,6 +68,15 @@ func NewSlackIncidentMessage(event IncidentOutputEvent) SlackIncidentMessage {
 		message.Blocks = append(message.Blocks, slackSection("*Postmortem approved* by "+slackProse(event.PostmortemBy)), slackCode("*Postmortem*\n", event.Postmortem))
 		return slackWithPanel(message, event)
 	}
+	if isPostmortemEvent(domain.EventType(event.Event)) {
+		// Not the incident's end again: only what became of the postmortem.
+		line := "*" + slackEscape(slackEventWords(event.Event)) + "*"
+		if event.Reason != "" {
+			line += ": " + slackProse(event.Reason)
+		}
+		message.Blocks = append(message.Blocks, slackSection(line))
+		return slackWithPanel(message, event)
+	}
 	switch event.Status {
 	case domain.IncidentProposed.String():
 		if event.Proposal != "" {

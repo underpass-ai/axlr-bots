@@ -1889,8 +1889,25 @@ fn an_incident_shows_its_postmortem_and_the_answers_to_it() {
     let incident = app.incidents.detail.as_mut().unwrap();
     let written_for = format!("written for cycle {}: the incident opened again", incident.cycle);
     incident.cycle += 1;
-    shows(&app, &[written_for.as_str()]);
+    shows(
+        &app,
+        &[
+            written_for.as_str(),
+            "None was written for this resolution.",
+            "Ask for it",
+        ],
+    );
     assert!(simulator_misses(&app, "Send back"));
+    assert!(matches!(
+        messages_of_click(&app, "Ask for it").as_slice(),
+        [Message::PostmortemBackOpen]
+    ));
+    app.apply(Message::PostmortemBackOpen);
+    shows(
+        &app,
+        &["The teammate that takes the phase writes it, for a severity its trigger lists."],
+    );
+    app.apply(Message::PostmortemBackClose);
     let incident = app.incidents.detail.as_mut().unwrap();
     incident.cycle -= 1;
     let postmortem = incident.postmortem.as_mut().unwrap();

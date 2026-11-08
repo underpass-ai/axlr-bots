@@ -88,7 +88,7 @@ func NewApprovals(s ApprovalsSnapshot) (Approvals, error) {
 		if err != nil {
 			return Approvals{}, err
 		}
-		if strings.HasPrefix(actor, PolicyActorPrefix) {
+		if IsPolicyActor(actor) {
 			return Approvals{}, invalid("approvals approvers", actor+" is a policy's name, not a person's")
 		}
 		if slices.ContainsFunc(a.approvers, func(other string) bool { return ActorKey(other) == ActorKey(actor) }) {

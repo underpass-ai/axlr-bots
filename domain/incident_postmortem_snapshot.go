@@ -13,8 +13,8 @@ import "time"
 type IncidentPostmortemSnapshot struct {
 	State        string     `json:"state"`
 	Cycle        int        `json:"cycle"`
-	TaskID       string     `json:"taskId"`
-	BotID        string     `json:"botId"`
+	TaskID       string     `json:"taskId,omitempty"`
+	BotID        string     `json:"botId,omitempty"`
 	AuthorTaskID string     `json:"authorTaskId,omitempty"`
 	Markdown     string     `json:"markdown,omitempty"`
 	Note         string     `json:"note,omitempty"`

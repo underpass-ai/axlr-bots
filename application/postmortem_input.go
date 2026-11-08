@@ -6,9 +6,12 @@ import "time"
 // plane knows of the incident, each field named on purpose. It holds no
 // trigger, output or notification credential, no alert payload and no
 // tool call's arguments or output; the diagnosis and the proposal are
-// the bots' own words (docs/architecture/incident-postmortem.md).
+// the bots' own words, and Untrusted names the fields that are; a
+// runtime failure's text never enters
+// (docs/architecture/incident-postmortem.md).
 type PostmortemInput struct {
 	Schema          string                    `json:"schema"`
+	Untrusted       []string                  `json:"untrusted"`
 	IncidentID      string                    `json:"incidentId"`
 	Title           string                    `json:"title"`
 	Severity        string                    `json:"severity"`

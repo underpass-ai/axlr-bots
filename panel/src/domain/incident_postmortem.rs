@@ -63,8 +63,11 @@ pub struct IncidentPostmortem {
     pub state: PostmortemState,
     #[serde(default)]
     pub cycle: u32,
-    pub task_id: TaskId,
-    pub bot_id: BotId,
+    /// Absent when a person asked for one and no task has started.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<TaskId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot_id: Option<BotId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author_task_id: Option<TaskId>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -85,6 +88,10 @@ pub struct IncidentPostmortem {
     pub approved_at: Option<DateTime<Utc>>,
 }
 
+/// How many send-backs of a text leave a postmortem to a person: the
+/// control plane's cap, said here so the form can warn.
+const SEND_BACKS: u32 = 2;
+
 fn is_zero(n: &u32) -> bool {
     *n == 0
 }
@@ -94,6 +101,11 @@ impl IncidentPostmortem {
     /// of one left to a person.
     pub fn can_approve(&self) -> bool {
         matches!(self.state, PostmortemState::Draft | PostmortemState::LeftToPerson) && !self.markdown.is_empty()
+    }
+
+    /// Whether sending it back now would be its last: only a text counts.
+    pub fn last_send_back(&self) -> bool {
+        self.state == PostmortemState::Draft && self.send_backs + 1 >= SEND_BACKS
     }
 
     /// Whether a person may send it back to be written again.
@@ -116,6 +128,9 @@ mod tests {
         let mut postmortem: IncidentPostmortem = serde_json::from_str(raw).unwrap();
         assert_eq!((postmortem.state, postmortem.cycle), (PostmortemState::Draft, 2));
         assert!(postmortem.can_approve() && postmortem.can_send_back());
+        assert!(postmortem.last_send_back());
+        postmortem.state = PostmortemState::SentBack;
+        assert!(!postmortem.last_send_back(), "nothing counts while it is not a draft");
         postmortem.state = PostmortemState::LeftToPerson;
         assert!(postmortem.can_approve() && !postmortem.can_send_back());
         postmortem.markdown.clear();
@@ -126,6 +141,13 @@ mod tests {
         assert!(!postmortem.can_send_back());
         let again: IncidentPostmortem = serde_json::from_str(&serde_json::to_string(&postmortem).unwrap()).unwrap();
         assert_eq!(again, postmortem);
+    }
+
+    #[test]
+    fn a_request_has_no_task_yet() {
+        let postmortem: IncidentPostmortem =
+            serde_json::from_str(r##"{"state":"SentBack","cycle":1,"note":"please"}"##).unwrap();
+        assert!(postmortem.task_id.is_none() && postmortem.bot_id.is_none() && postmortem.can_send_back());
     }
 
     #[test]

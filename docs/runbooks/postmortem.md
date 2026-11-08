@@ -5,7 +5,8 @@ When an incident of a qualifying severity is resolved, the control plane asks a 
 ```text
 Resolved ──▶ Writing ──answer──▶ Draft ──approve──▶ Approved ──▶ the outputs announce it
                 │                  └──send back──▶ Writing (once) ──▶ Draft ──send back──▶ LeftToPerson
-                └──fails──▶ Failed ──send back──▶ Writing
+                └──fails──▶ Failed ──send back──▶ Writing (does not count)
+none started ──a person asks (send back with a note)──▶ Writing
 ```
 
 ## Give a team a scribe
@@ -33,27 +34,31 @@ The trigger's optional `objective` may name `{{.timeline}}`, `{{.diagnosis}}`, `
 ## Read and answer it
 
 ```console
-$ axlr-bots incident postmortem show inc-18              # the Markdown on stdout, its state on stderr
-$ axlr-bots --actor tirso incident postmortem approve inc-18
-$ axlr-bots --actor tirso incident postmortem send-back inc-18 --note "name an owner for each action"
+$ axlr-bots incident postmortem show inc-18              # the Markdown on stdout; state and author-task on stderr
+$ axlr-bots --actor tirso incident postmortem approve inc-18 --author-task task-41
+$ axlr-bots --actor tirso incident postmortem send-back inc-18 --author-task task-41 --note "name an owner for each action"
 ```
 
+`--author-task` is the task whose text you read. Another text than the one held now (a rewrite, a later cycle) is refused with `409`: read it first. A failed task with no text takes no `--author-task`.
+
 On the panel: **Incidents**, the incident, section **Postmortem**, with **Approve** and **Send back**; the list marks one that waits with `postmortem`. The panel answers as its **Decide as** name.
+
+The scribe must stay read-only through its own policy (a level and tools with no write): text that reaches it is marked as data, which is a help and not a boundary.
 
 Check: `incident get` answers `postmortem` with `state`, `markdown`, `authorTaskId`, `approvedBy` and `approvedAt`; the audit log has `incident.postmortem.approve` with the actor; a target that hears the default events got `incident.postmortem_approved`.
 
 ## Who may answer
 
-A name is required. `approvals.approvers` of the bot that took the phase apply when it lists them, compared as on a task's decision. A `policy:` name is refused, and so is the daemon's own name: a unit started without `--actor` is `cli:$USER`, so start it with `--actor <name>` or that user's answers are refused. A refusal changes nothing and is audited `incident.postmortem.refused`.
+A name is required. Only `approvals.approvers` of the bot that took the phase apply, compared as on a task's decision: **a brigade that wants to limit who approves its postmortems lists them on the scribe**, whatever its other bots list. `policy:` and `trigger:` names however spelt and any registered bot's id are refused, and so is the daemon's own name: a unit started without `--actor` is `cli:$USER`, so start it with `--actor <name>` or that user's answers are refused. A refusal changes nothing and is audited `incident.postmortem.refused`.
 
 ## When it does not work
 
 | What you see | Why | What to do |
 |:--|:--|:--|
 | no `postmortem` on a resolved incident, audit says `skipped` | the severity is not on the trigger | add it to `severities` |
-| audit `incident.postmortem` denied | no teammate takes the phase, two do, or the scribe is paused | fix the team; a later resolution launches it |
+| audit `incident.postmortem` denied, no `postmortem` | no teammate takes the phase, two do, or the scribe was paused | fix the team, then ask for it: `incident postmortem send-back <id> --note "…"` without `--author-task`, or **Ask for it** on the panel |
 | `Failed` | the task failed, expired, was cancelled or answered nothing; `reason` says which | send it back with a note |
 | `SentBack` and no task | the rewrite could not start (see the audit) | fix it and send it back again; it does not count twice |
-| `LeftToPerson` | sent back twice | approve the last draft, or write it outside the control plane |
+| `LeftToPerson` | its text was sent back twice | approve the last draft, or write it outside the control plane |
 | `403 forbidden` | no name, a `policy:` name, the daemon's own, or not an approver | decide as yourself |
-| `409` on an old postmortem | the incident reopened: it belongs to an earlier cycle | wait for the next resolution |
+| `409` naming another task | the text changed since you read it, or the incident reopened | read it again, or wait for the next resolution |

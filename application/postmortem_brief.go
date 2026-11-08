@@ -20,6 +20,8 @@ const (
 	maxPostmortemTimeline = 200
 	// maxPostmortemEntryText bounds an entry's reason.
 	maxPostmortemEntryText = 200
+	// postmortemTimeLayout writes a moment on a line of the objective.
+	postmortemTimeLayout = "2006-01-02T15:04:05Z"
 )
 
 // postmortemBrief gathers what a postmortem's task is told, from the
@@ -36,7 +38,7 @@ func (b postmortemBrief) input(ctx context.Context, incident domain.Incident) (P
 	}
 	s := incident.Snapshot()
 	input := PostmortemInput{
-		Schema: PostmortemInputSchema, IncidentID: s.ID, Title: s.Title, Severity: s.Severity, Source: s.Source, Namespaces: incident.Namespaces(),
+		Schema: PostmortemInputSchema, Untrusted: postmortemUntrustedFields, IncidentID: s.ID, Title: s.Title, Severity: s.Severity, Source: s.Source, Namespaces: incident.Namespaces(),
 		Cycle: s.Cycle, OpenedAt: s.OpenedAt, Reason: s.Reason, Diagnosis: s.Diagnosis, Proposal: s.Proposal, CostUSD: s.CostUSD, CostUnknown: s.CostUnknown,
 		Timeline: timelineOf(events, incident), Decisions: decisionsOf(events, incident), Verdicts: b.verdicts(ctx, incident),
 	}
@@ -48,6 +50,10 @@ func (b postmortemBrief) input(ctx context.Context, incident domain.Incident) (P
 	}
 	return input, nil
 }
+
+// postmortemUntrustedFields names the input's fields that hold what a
+// bot wrote: data, never instructions.
+var postmortemUntrustedFields = []string{"diagnosis", "proposal", "review.draft"}
 
 // events are the incident's own events and those of its tasks, once
 // each, oldest first.
@@ -128,15 +134,19 @@ func timelineOf(events []domain.Event, incident domain.Incident) []PostmortemTim
 	tasks := attachedTasks(incident)
 	timeline := []PostmortemTimelineEntry{}
 	for _, event := range events {
-		if !inTimeline(event.Type) {
+		if !inTimeline(event.Type) || expiredDecision(event) {
 			continue
 		}
 		entry := PostmortemTimelineEntry{
 			At: event.CreatedAt, Event: event.Type.String(), TaskID: event.TaskID.String(), Actor: firstText(event, "decidedBy", "approvedBy", "by"),
 			Decision: payloadText(event, "decision"), Tool: payloadText(event, "tool"), Status: payloadText(event, "status"), From: payloadText(event, "from"), Verdict: payloadText(event, "verdict"),
 		}
-		if reason := payloadText(event, "reason"); reason != "" {
-			entry.Reason = domain.IncidentText(reason, maxPostmortemEntryText)
+		if event.Type == domain.EventIncidentResolved {
+			// The one reason that is a person's or the source's words: a
+			// failure's holds a runtime's stderr, which may hold a secret.
+			if reason := payloadText(event, "reason"); reason != "" {
+				entry.Reason = domain.IncidentText(reason, maxPostmortemEntryText)
+			}
 		}
 		if attached, ok := tasks[event.TaskID]; ok {
 			entry.Phase, entry.Cycle, entry.BotID = attached.Phase().String(), attached.Cycle(), attached.BotID().String()
@@ -163,6 +173,9 @@ func decisionsOf(events []domain.Event, incident domain.Incident) []PostmortemDe
 		decision := PostmortemDecision{At: event.CreatedAt, TaskID: event.TaskID.String(), Tool: tools[call]}
 		switch event.Type {
 		case domain.EventTaskDecided:
+			if expiredDecision(event) {
+				continue
+			}
 			decision.Outcome, decision.By = domain.ApprovalDenied, payloadText(event, "decidedBy")
 			if payloadText(event, "decision") == DecisionApprove {
 				decision.Outcome = domain.ApprovalApproved
@@ -180,6 +193,12 @@ func decisionsOf(events []domain.Event, incident domain.Incident) []PostmortemDe
 		decisions = append(decisions, decision)
 	}
 	return decisions
+}
+
+// expiredDecision reports the decided event of a call whose deadline
+// denied it: nobody decided it, and its approval.expired says so.
+func expiredDecision(event domain.Event) bool {
+	return event.Type == domain.EventTaskDecided && payloadText(event, "outcome") == domain.ApprovalExpired
 }
 
 func attachedTasks(incident domain.Incident) map[domain.TaskID]domain.IncidentTask {
@@ -205,18 +224,21 @@ func firstText(event domain.Event, keys ...string) string {
 	return ""
 }
 
+// oneLine keeps a value on the line it is written on.
+func oneLine(text string) string { return strings.Join(strings.Fields(text), " ") }
+
 // timelineLines writes the timeline for the objective, one entry a line.
 func timelineLines(timeline []PostmortemTimelineEntry) string {
 	lines := make([]string, 0, len(timeline))
 	for _, entry := range timeline {
-		line := []string{entry.At.UTC().Format("2006-01-02T15:04:05Z"), entry.Event}
+		line := []string{entry.At.UTC().Format(postmortemTimeLayout), entry.Event}
 		for _, part := range [][2]string{{"phase", entry.Phase}, {"bot", entry.BotID}, {"by", entry.Actor}, {"decision", entry.Decision}, {"tool", entry.Tool}, {"status", entry.Status}, {"verdict", entry.Verdict}} {
 			if part[1] != "" {
-				line = append(line, part[0]+"="+part[1])
+				line = append(line, part[0]+"="+oneLine(part[1]))
 			}
 		}
 		if entry.Reason != "" {
-			line = append(line, "reason: "+strings.ReplaceAll(entry.Reason, "\n", " "))
+			line = append(line, "reason: "+oneLine(entry.Reason))
 		}
 		lines = append(lines, strings.Join(line, " "))
 	}
@@ -230,9 +252,9 @@ func decisionLines(decisions []PostmortemDecision) string {
 	}
 	lines := make([]string, 0, len(decisions))
 	for _, decision := range decisions {
-		line := decision.At.UTC().Format("2006-01-02T15:04:05Z") + " " + cmp.Or(decision.Phase, "task") + " " + cmp.Or(decision.Tool, "call") + ": " + decision.Outcome
+		line := decision.At.UTC().Format(postmortemTimeLayout) + " " + cmp.Or(decision.Phase, "task") + " " + oneLine(cmp.Or(decision.Tool, "call")) + ": " + decision.Outcome
 		if decision.By != "" {
-			line += " by " + decision.By
+			line += " by " + oneLine(decision.By)
 		}
 		lines = append(lines, line)
 	}

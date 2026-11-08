@@ -214,8 +214,12 @@ pub fn detail<'a>(app: &'a App, id: &'a str, tokens: Tokens) -> El<'a> {
             tokens,
         ));
     }
-    if let Some(postmortem) = &incident.postmortem {
-        page = page.push(postmortem_section(app, incident, postmortem, tokens));
+    match &incident.postmortem {
+        Some(postmortem) => page = page.push(postmortem_section(app, incident, postmortem, tokens)),
+        None if incident.status == IncidentStatus::Resolved => {
+            page = page.push(section(Icon::Tasks, "Postmortem", ask_for_one(app, tokens), tokens));
+        }
+        None => {}
     }
     page = page.push(
         row![
@@ -331,8 +335,9 @@ fn postmortem_section<'a>(
     .spacing(10)
     .align_y(Alignment::Center);
     if let Some(author) = &postmortem.author_task_id {
+        let bot = postmortem.bot_id.as_ref().map_or_else(String::new, ToString::to_string);
         facts = facts.push(link(
-            format!("by {} · {author}", postmortem.bot_id),
+            format!("by {bot} · {author}"),
             Message::Go(Screen::Task(author.clone())),
             tokens,
         ));
@@ -374,6 +379,8 @@ fn postmortem_section<'a>(
     }
     if let Some(answers) = current.then(|| postmortem_answers(app, postmortem, tokens)).flatten() {
         body = body.push(answers);
+    } else if !current && incident.status == IncidentStatus::Resolved {
+        body = body.push(ask_for_one(app, tokens));
     }
     section(Icon::Tasks, "Postmortem", body, tokens)
 }
@@ -388,49 +395,81 @@ fn postmortem_tone(state: PostmortemState) -> Tone {
     }
 }
 
+/// A resolved incident with no postmortem of its cycle: a person asks
+/// for one, when its first launch could not start.
+fn ask_for_one<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
+    let form = &app.incidents.review;
+    if !form.open {
+        return column![
+            muted("None was written for this resolution.", tokens),
+            row![
+                action(
+                    Kind::Secondary,
+                    Icon::Tasks,
+                    "Ask for it",
+                    Some(Message::PostmortemBackOpen),
+                    tokens
+                ),
+                Space::new().width(Length::Fill),
+            ],
+        ]
+        .spacing(12)
+        .into();
+    }
+    note_form(
+        app,
+        "The teammate that takes the phase writes it, for a severity its trigger lists.",
+        "Ask for it",
+        tokens,
+    )
+}
+
+/// The note, and the buttons that send it or close the form.
+fn note_form<'a>(app: &'a App, says: &'a str, send: &'a str, tokens: Tokens) -> El<'a> {
+    let form = &app.incidents.review;
+    let note = text_input("What should it say or change?", &form.note)
+        .on_input(Message::PostmortemBackNote)
+        .on_submit(Message::PostmortemBackSend)
+        .padding(12)
+        .size(BODY)
+        .style(styles::field(tokens));
+    column![
+        muted(says, tokens),
+        note,
+        row![
+            action(
+                Kind::Primary,
+                Icon::Back,
+                if form.busy { "Sending…" } else { send },
+                (!form.busy).then_some(Message::PostmortemBackSend),
+                tokens
+            ),
+            action(
+                Kind::Ghost,
+                Icon::Cross,
+                "Keep it",
+                Some(Message::PostmortemBackClose),
+                tokens
+            ),
+            Space::new().width(Length::Fill),
+        ]
+        .spacing(12)
+        .align_y(Alignment::Center),
+    ]
+    .spacing(12)
+    .into()
+}
+
 /// Approve and Send back, or the note a send-back carries.
 fn postmortem_answers<'a>(app: &'a App, postmortem: &'a IncidentPostmortem, tokens: Tokens) -> Option<El<'a>> {
     let form = &app.incidents.review;
     if form.open && postmortem.can_send_back() {
-        let note = text_input("What should the rewrite change?", &form.note)
-            .on_input(Message::PostmortemBackNote)
-            .on_submit(Message::PostmortemBackSend)
-            .padding(12)
-            .size(BODY)
-            .style(styles::field(tokens));
-        let last = postmortem.send_backs + 1 >= POSTMORTEM_SEND_BACKS;
-        let says = if last {
+        let says = if postmortem.last_send_back() {
             "This is the last send-back: no task writes it again, and it is left to a person."
         } else {
             "Its task writes it again with your note."
         };
-        return Some(
-            column![
-                muted(says, tokens),
-                note,
-                row![
-                    action(
-                        Kind::Primary,
-                        Icon::Back,
-                        if form.busy { "Sending…" } else { "Send it back" },
-                        (!form.busy).then_some(Message::PostmortemBackSend),
-                        tokens
-                    ),
-                    action(
-                        Kind::Ghost,
-                        Icon::Cross,
-                        "Keep it",
-                        Some(Message::PostmortemBackClose),
-                        tokens
-                    ),
-                    Space::new().width(Length::Fill),
-                ]
-                .spacing(12)
-                .align_y(Alignment::Center),
-            ]
-            .spacing(12)
-            .into(),
-        );
+        return Some(note_form(app, says, "Send it back", tokens));
     }
     if !postmortem.can_approve() && !postmortem.can_send_back() {
         return None;
@@ -456,10 +495,6 @@ fn postmortem_answers<'a>(app: &'a App, postmortem: &'a IncidentPostmortem, toke
     }
     Some(buttons.into())
 }
-
-/// How many send-backs leave a postmortem to a person: the control
-/// plane's cap, said here so the form can warn.
-const POSTMORTEM_SEND_BACKS: u32 = 2;
 
 /// The amber mark of an incident whose current task waits for you.
 fn needs_you<'a>(tokens: Tokens) -> El<'a> {
