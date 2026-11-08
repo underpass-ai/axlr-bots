@@ -43,6 +43,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | What the control plane, the node and AXLR each keep, decide and trust; what is next and what is left out | [Control plane, node and AXLR](architecture/control-plane-node-axlr.md) |
 | The packages, the state directory, how to build and test | [Layout](architecture/layout.md) |
 | How a node runs AXLR, the policy it passes, how it reads the result; the Jev runtime | [Runtime contract](architecture/runtime-contract.md) |
+| Why each bot has its own KMP store under the node's state, and how the node names it to AXLR | [Memory store per bot (ADR)](architecture/memory-store-per-bot.md) |
 | How a push reaches a node: its own stream, or a NATS broker, and what a broker needs | [Bus port](architecture/bus-port.md) |
 | How a running task's progress gets from the run to the panel without slowing the run | [Live progress](architecture/live-progress.md) |
 | How incidents are told to Slack, a webhook or a command: the targets, the filters, the outbox and its retries, what never leaves the control plane | [Incident outputs](architecture/incident-outputs.md) |

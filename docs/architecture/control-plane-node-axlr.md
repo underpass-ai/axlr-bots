@@ -24,7 +24,7 @@ The control plane decides *when, where, as whom and under which permissions* a u
 
 | | Control plane (`axlr-bots serve`) | Node (`axlr-node`) | AXLR (`axlr-tui --exec`) |
 |---|---|---|---|
-| Keeps | bots, tasks, executions, incidents, nodes, timers, enrollments, events, audit, reports | its credentials, the traces, policy files and workspaces of what it ran (on the host, or on its pod's volume) | the session: transcript, tool calls, decisions, usage |
+| Keeps | bots, tasks, executions, incidents, nodes, timers, enrollments, events, audit, reports | its credentials, the traces, policy files, workspaces and KMP stores (one per bot, [ADR](memory-store-per-bot.md)) of what it ran (on the host, or on its pod's volume) | the session: transcript, tool calls, decisions, usage |
 | Decides | which task runs, where, as which bot, with which policy and budget; whether a fire or a report is new | nothing: it runs what it is assigned and reports | each model call and tool call, within the policy; when to stop for a person |
 | Talks to | the CLI (socket), operators and webhooks (TLS, bearer token or the trigger's secret), the nodes (TLS, client certificates); a broker, with `--bus nats` | the control plane only, outbound; a broker too, with `--bus nats` | the model provider, with the key in the host's environment |
 | Trusts | the socket's owner; a certificate the fleet CA signed, for that node id only; the bearer token; a trigger's own credential | the CA the token carried | the policy file and the approval level it was given |
