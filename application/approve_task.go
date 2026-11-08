@@ -75,7 +75,7 @@ func (uc ApproveTask) decide(ctx context.Context, id domain.TaskID, decision, ca
 		if err != nil {
 			return ApproveTaskResult{}, err
 		}
-		if by.person && strings.HasPrefix(name, domain.PolicyActorPrefix) {
+		if by.person && domain.IsPolicyActor(name) {
 			// A person never decides as a policy (review of #139).
 			return ApproveTaskResult{}, uc.refuse(ctx, id, decision, name, domain.ForbiddenError{Reason: name + " is a policy's name: a person decides under their own"})
 		}
@@ -334,6 +334,11 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 	}
 	for key, value := range extra {
 		payload[key] = value
+	}
+	if outcome == domain.ApprovalExpired {
+		// Nobody decided it: the deadline did.
+		delete(payload, "decidedBy")
+		payload["outcome"] = outcome
 	}
 	if err := uc.rec.executionEvent(ctx, domain.EventTaskDecided, bot, task.ID(), executionID, task.CorrelationID(), payload); err != nil {
 		return ApproveTaskResult{}, err

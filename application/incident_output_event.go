@@ -18,36 +18,41 @@ const MaxOutputExcerpt = 2 << 10
 // incident's current task waits for a person's approval where the
 // incident stands.
 type IncidentOutputEvent struct {
-	Schema             string              `json:"schema"`
-	DeliveryID         string              `json:"deliveryId"`
-	Event              string              `json:"event"`
-	EventID            string              `json:"eventId"`
-	Target             string              `json:"target"`
-	OccurredAt         time.Time           `json:"occurredAt"`
-	IncidentID         string              `json:"incidentId"`
-	TenantID           string              `json:"tenantId"`
-	BotID              string              `json:"botId"`
-	BotName            string              `json:"botName"`
-	TaskID             string              `json:"taskId,omitempty"`
-	Title              string              `json:"title"`
-	Severity           string              `json:"severity"`
-	Status             string              `json:"status"`
-	Cycle              int                 `json:"cycle"`
-	GroupKey           string              `json:"groupKey"`
-	Source             string              `json:"source"`
-	Diagnosis          string              `json:"diagnosis,omitempty"`
-	DiagnosisTruncated bool                `json:"diagnosisTruncated,omitempty"`
-	Proposal           string              `json:"proposal,omitempty"`
-	ProposalTruncated  bool                `json:"proposalTruncated,omitempty"`
-	Reason             string              `json:"reason,omitempty"`
-	NeedsYou           bool                `json:"needsYou"`
-	CostUSD            float64             `json:"costUsd"`
-	CostUnknown        bool                `json:"costUnknown,omitempty"`
-	OpenedAt           time.Time           `json:"openedAt"`
-	UpdatedAt          time.Time           `json:"updatedAt"`
-	ResolvedAt         *time.Time          `json:"resolvedAt,omitempty"`
-	DurationSeconds    int64               `json:"durationSeconds,omitempty"`
-	Links              IncidentOutputLinks `json:"links"`
+	Schema             string    `json:"schema"`
+	DeliveryID         string    `json:"deliveryId"`
+	Event              string    `json:"event"`
+	EventID            string    `json:"eventId"`
+	Target             string    `json:"target"`
+	OccurredAt         time.Time `json:"occurredAt"`
+	IncidentID         string    `json:"incidentId"`
+	TenantID           string    `json:"tenantId"`
+	BotID              string    `json:"botId"`
+	BotName            string    `json:"botName"`
+	TaskID             string    `json:"taskId,omitempty"`
+	Title              string    `json:"title"`
+	Severity           string    `json:"severity"`
+	Status             string    `json:"status"`
+	Cycle              int       `json:"cycle"`
+	GroupKey           string    `json:"groupKey"`
+	Source             string    `json:"source"`
+	Diagnosis          string    `json:"diagnosis,omitempty"`
+	DiagnosisTruncated bool      `json:"diagnosisTruncated,omitempty"`
+	Proposal           string    `json:"proposal,omitempty"`
+	ProposalTruncated  bool      `json:"proposalTruncated,omitempty"`
+	Reason             string    `json:"reason,omitempty"`
+	// Postmortem is the approved text, cut to MaxOutputExcerpt, and who
+	// approved it: on the postmortem_approved event only.
+	Postmortem          string              `json:"postmortem,omitempty"`
+	PostmortemTruncated bool                `json:"postmortemTruncated,omitempty"`
+	PostmortemBy        string              `json:"postmortemApprovedBy,omitempty"`
+	NeedsYou            bool                `json:"needsYou"`
+	CostUSD             float64             `json:"costUsd"`
+	CostUnknown         bool                `json:"costUnknown,omitempty"`
+	OpenedAt            time.Time           `json:"openedAt"`
+	UpdatedAt           time.Time           `json:"updatedAt"`
+	ResolvedAt          *time.Time          `json:"resolvedAt,omitempty"`
+	DurationSeconds     int64               `json:"durationSeconds,omitempty"`
+	Links               IncidentOutputLinks `json:"links"`
 }
 
 // IncidentOutputLinks are where to read the incident: the operator API's

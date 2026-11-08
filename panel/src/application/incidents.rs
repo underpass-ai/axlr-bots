@@ -54,11 +54,79 @@ impl ResolveIncident {
     }
 }
 
+/// Approves an incident's postmortem, as who the panel decides as.
+pub struct ApprovePostmortem {
+    control_plane: Arc<dyn ControlPlane>,
+}
+
+impl ApprovePostmortem {
+    pub fn new(control_plane: Arc<dyn ControlPlane>) -> Self {
+        Self { control_plane }
+    }
+
+    pub async fn execute(&self, id: String, author: String) -> Result<Incident, PanelError> {
+        self.control_plane.approve_postmortem(id, author).await
+    }
+}
+
+/// Sends an incident's postmortem back; a rewrite needs words to go on,
+/// and the panel says so before asking the control plane.
+pub struct SendBackPostmortem {
+    control_plane: Arc<dyn ControlPlane>,
+}
+
+impl SendBackPostmortem {
+    pub fn new(control_plane: Arc<dyn ControlPlane>) -> Self {
+        Self { control_plane }
+    }
+
+    pub async fn execute(&self, id: String, note: &str, author: Option<String>) -> Result<Incident, PanelError> {
+        let note = note.trim();
+        if note.is_empty() {
+            return Err(PanelError::Invalid("say what the rewrite should change".into()));
+        }
+        self.control_plane
+            .send_back_postmortem(id, note.to_string(), author)
+            .await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::application::test_support::{fleet, run};
-    use crate::domain::IncidentStatus;
+    use crate::domain::{IncidentStatus, PostmortemState};
+
+    #[test]
+    fn approves_a_postmortem_and_sends_one_back() {
+        let (control_plane, _) = fleet();
+        let scribe = || Some("task-scribe".to_string());
+        assert!(matches!(
+            run(SendBackPostmortem::new(control_plane.clone()).execute("inc-cert".into(), "  ", scribe())),
+            Err(PanelError::Invalid(_))
+        ));
+        assert!(matches!(
+            run(ApprovePostmortem::new(control_plane.clone()).execute("inc-cert".into(), "task-other".into())),
+            Err(PanelError::State(_))
+        ));
+        let back =
+            run(SendBackPostmortem::new(control_plane.clone()).execute("inc-cert".into(), " add the owner ", scribe()))
+                .unwrap()
+                .postmortem
+                .unwrap();
+        assert_eq!(
+            (back.state, back.note.as_str()),
+            (PostmortemState::Writing, "add the owner")
+        );
+        assert!(matches!(
+            run(ApprovePostmortem::new(control_plane.clone()).execute("inc-cert".into(), "task-scribe".into())),
+            Err(PanelError::State(_))
+        ));
+        assert!(matches!(
+            run(ApprovePostmortem::new(control_plane.clone()).execute("inc-none".into(), "task-scribe".into())),
+            Err(PanelError::NotFound(_))
+        ));
+    }
 
     #[test]
     fn lists_shows_and_resolves_incidents() {

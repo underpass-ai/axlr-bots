@@ -108,7 +108,7 @@ pub use follow_task_events::{FollowTaskEvents, LIVE_FEED_SIZE, LIVE_WAIT_SECONDS
 pub use follow_team_events::{FollowTeamEvents, TEAM_FEED_SIZE, TEAM_WAIT_SECONDS};
 pub use get_overview::GetOverview;
 pub use import_settings::ImportSettings;
-pub use incidents::{INCIDENTS, ListIncidents, ResolveIncident, ShowIncident};
+pub use incidents::{ApprovePostmortem, INCIDENTS, ListIncidents, ResolveIncident, SendBackPostmortem, ShowIncident};
 pub use key_source::KeySource;
 pub use list_bots::ListBots;
 pub use list_executions::ListExecutions;

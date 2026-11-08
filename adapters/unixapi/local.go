@@ -434,6 +434,51 @@ func (l *Local) ResolveIncident(ctx context.Context, id string, request ResolveR
 	return incident.Snapshot(), nil
 }
 
+// readTask validates the task a reviewer says they read; empty is none.
+func readTask(raw string) (domain.TaskID, error) {
+	if raw == "" {
+		return "", nil
+	}
+	return domain.NewTaskID(raw)
+}
+
+// ApprovePostmortem approves an incident's postmortem.
+func (l *Local) ApprovePostmortem(ctx context.Context, id string, request PostmortemReviewRequest) (domain.IncidentSnapshot, error) {
+	incidentID, err := domain.NewIncidentID(id)
+	if err != nil {
+		return domain.IncidentSnapshot{}, err
+	}
+	read, err := readTask(request.AuthorTaskID)
+	if err != nil {
+		return domain.IncidentSnapshot{}, err
+	}
+	incident, err := l.runner.ApprovePostmortem(ctx, incidentID, request.DecidedBy, read)
+	if err != nil {
+		return domain.IncidentSnapshot{}, err
+	}
+	return incident.Snapshot(), nil
+}
+
+// SendBackPostmortem holds the submissions lock, then the runner's: a
+// send-back may submit the rewrite's task.
+func (l *Local) SendBackPostmortem(ctx context.Context, id string, request PostmortemReviewRequest) (domain.IncidentSnapshot, error) {
+	incidentID, err := domain.NewIncidentID(id)
+	if err != nil {
+		return domain.IncidentSnapshot{}, err
+	}
+	read, err := readTask(request.AuthorTaskID)
+	if err != nil {
+		return domain.IncidentSnapshot{}, err
+	}
+	l.submits.Lock()
+	defer l.submits.Unlock()
+	incident, err := l.runner.SendBackPostmortem(ctx, incidentID, request.DecidedBy, request.Note, read)
+	if err != nil {
+		return domain.IncidentSnapshot{}, err
+	}
+	return incident.Snapshot(), nil
+}
+
 func (l *Local) AddOutput(ctx context.Context, definition application.OutputDefinition) (application.OutputView, error) {
 	return application.NewAddOutput(l.deps).Execute(ctx, definition)
 }

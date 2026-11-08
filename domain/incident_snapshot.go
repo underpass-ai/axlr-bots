@@ -10,8 +10,8 @@ import "time"
 // alerts seen in it, the first 64, and ResolvedFingerprints those of them
 // the source said went green. Cycle counts the opens: 1 for the first, one more
 // for each reopening; Tasks lists the tasks that worked on it, oldest
-// first, each with its bot, its phase (triage, fix, apply or verify) and its cycle, one
-// per phase in each cycle, and TaskIDs their ids in the same order (an
+// first, each with its bot, its phase (triage, fix, apply, verify or postmortem) and its cycle, one
+// per phase in each cycle (one more postmortem task per send-back), and TaskIDs their ids in the same order (an
 // incident stored before tasks had phases has only TaskIDs: its triage
 // tasks, one per cycle). Diagnosis is the answer of the last completed
 // triage task; Proposal the answer of the fix task of that diagnosis;
@@ -52,4 +52,7 @@ type IncidentSnapshot struct {
 	UpdatedAt            time.Time              `json:"updatedAt"`
 	LastSeenAt           time.Time              `json:"lastSeenAt"`
 	ResolvedAt           *time.Time             `json:"resolvedAt,omitempty"`
+	// Postmortem is what a resolved incident's postmortem task wrote and
+	// where it stands; absent before one started.
+	Postmortem *IncidentPostmortemSnapshot `json:"postmortem,omitempty"`
 }

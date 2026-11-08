@@ -2,11 +2,12 @@ use std::sync::Arc;
 
 use super::{BotView, Connection, Effect, Message};
 use crate::application::{
-    ApplyInBulk, BulkOutcome, CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader, DeleteBot,
-    DownloadArtifact, ExportSettings, FilePicker, FollowBotEvents, FollowTaskEvents, FollowTeamEvents, ImportSettings,
-    KeySource, ListIncidents, ListTopics, LoadChat, LoadTaskDetail, MintEnrollmentToken, Notifier, PanelError,
-    PatchBot, PublishEvent, RefreshFleet, RegisterBot, ResolveIncident, RevokeNode, SaveBotEdit, SaveSubscriptions,
-    SendChat, ShortcutSource, ShowIncident, StopBot, SubmitTask, SwitchBot,
+    ApplyInBulk, ApprovePostmortem, BulkOutcome, CancelTask, Clock, Connect, ControlPlane, DecideTask,
+    DefinitionReader, DeleteBot, DownloadArtifact, ExportSettings, FilePicker, FollowBotEvents, FollowTaskEvents,
+    FollowTeamEvents, ImportSettings, KeySource, ListIncidents, ListTopics, LoadChat, LoadTaskDetail,
+    MintEnrollmentToken, Notifier, PanelError, PatchBot, PublishEvent, RefreshFleet, RegisterBot, ResolveIncident,
+    RevokeNode, SaveBotEdit, SaveSubscriptions, SendBackPostmortem, SendChat, ShortcutSource, ShowIncident, StopBot,
+    SubmitTask, SwitchBot,
 };
 use crate::domain::BotPatch;
 
@@ -273,6 +274,16 @@ impl Services {
                 Ok(cp) => ResolveIncident::new(cp).execute(id, &reason).await,
                 Err(e) => Err(e),
             }),
+            Effect::ApprovePostmortem { id, author } => Message::PostmortemReviewed(match self.control_plane() {
+                Ok(cp) => ApprovePostmortem::new(cp).execute(id, author).await,
+                Err(e) => Err(e),
+            }),
+            Effect::SendBackPostmortem { id, note, author } => {
+                Message::PostmortemReviewed(match self.control_plane() {
+                    Ok(cp) => SendBackPostmortem::new(cp).execute(id, &note, author).await,
+                    Err(e) => Err(e),
+                })
+            }
             Effect::Download(execution, name) => Message::Downloaded(match self.control_plane() {
                 Ok(cp) => {
                     DownloadArtifact::new(cp, self.picker.clone())

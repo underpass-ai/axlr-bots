@@ -20,8 +20,12 @@ type OutputView struct {
 // NewOutputView reads a target without its secrets.
 func NewOutputView(target domain.OutputTarget) OutputView {
 	s := target.Snapshot()
+	events := make([]string, 0, len(target.Events()))
+	for _, event := range target.Events() {
+		events = append(events, event.String())
+	}
 	return OutputView{
 		Name: s.Name, Type: s.Type, Fingerprint: target.Fingerprint(), Host: target.Host(),
-		Events: s.Events, Tenants: s.Tenants, Severities: s.Severities, PanelURL: s.PanelURL,
+		Events: events, Tenants: s.Tenants, Severities: s.Severities, PanelURL: s.PanelURL,
 	}
 }

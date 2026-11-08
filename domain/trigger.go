@@ -20,8 +20,8 @@ const (
 // its type, a name unique within the bot (the type when not given), and
 // for a webhook or a timer the objective template each fire renders and
 // the credentials or the schedule. An incident trigger names the phase
-// of the incident the bot takes (triage, or fix, apply or verify for a
-// teammate's incident once it reaches that phase) and may narrow the
+// of the incident the bot takes (triage, or fix, apply, verify or
+// postmortem for a teammate's incident once it reaches that phase) and may narrow the
 // bot's level and tools for that phase's tasks (Bot.PolicyFor).
 type Trigger struct {
 	kind       TriggerType
@@ -38,6 +38,7 @@ type Trigger struct {
 	severity   IncidentSeverity
 	confirm    bool
 	topics     []string
+	severities []IncidentSeverity
 }
 
 // NewTrigger validates a trigger from its definition.
@@ -60,6 +61,9 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 	}
 	if (s.Phase != "" || s.Level != "" || len(s.Tools) > 0) && kind != TriggerIncident {
 		return Trigger{}, invalid("trigger "+name, "only an incident trigger takes a phase, a level or tools")
+	}
+	if len(s.Severities) > 0 && kind != TriggerIncident {
+		return Trigger{}, invalid("trigger "+name, "only an incident trigger of the postmortem phase takes severities")
 	}
 	if (s.Severity != "" || s.AutoConfirm || len(s.Topics) > 0) && kind != TriggerCloudWatch {
 		return Trigger{}, invalid("trigger "+name, "only a cloudwatch trigger takes a severity, autoConfirm or topics")
@@ -123,6 +127,9 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 			}
 		}
 		if t.tools, err = NewAllowedTools(s.Tools); err != nil {
+			return Trigger{}, invalid("trigger "+name, err.Error())
+		}
+		if t.severities, err = postmortemSeverities(t.phase, s.Severities); err != nil {
 			return Trigger{}, invalid("trigger "+name, err.Error())
 		}
 		if s.Objective == "" {
@@ -221,6 +228,49 @@ func (t Trigger) AllowsTopic(arn string) bool {
 	return len(t.topics) == 0 || slices.Contains(t.topics, arn)
 }
 
+// DefaultPostmortemSeverities are the severities a postmortem is written
+// for when the trigger of the postmortem phase does not say (axlr-sre
+// design §4).
+func DefaultPostmortemSeverities() []IncidentSeverity { return []IncidentSeverity{Sev1, Sev2} }
+
+// TriggerWritesPostmortemByDefault reports a severity a postmortem is
+// written for when no trigger says otherwise.
+func TriggerWritesPostmortemByDefault(severity IncidentSeverity) bool {
+	return slices.Contains(DefaultPostmortemSeverities(), severity)
+}
+
+// postmortemSeverities validates what the postmortem phase's trigger
+// lists: only that phase takes a list, no repeats, and an empty entry is
+// a mistake rather than sev3. An absent list stays absent, so a
+// definition reads back as it was written.
+func postmortemSeverities(phase IncidentPhase, raw []string) ([]IncidentSeverity, error) {
+	if len(raw) > 0 && phase != IncidentPhasePostmortem {
+		return nil, invalid("severities", "only the postmortem phase takes them")
+	}
+	var severities []IncidentSeverity
+	for _, value := range raw {
+		severity, err := ParseIncidentSeverity(value)
+		if err != nil || value == "" {
+			return nil, invalid("severities", "must be sev1, sev2, sev3 or sev4")
+		}
+		if slices.Contains(severities, severity) {
+			return nil, invalid("severities", "repeat "+value)
+		}
+		severities = append(severities, severity)
+	}
+	return severities, nil
+}
+
+// WritesPostmortemFor reports whether the trigger of the postmortem phase
+// writes one for an incident of the severity: the severities it lists, or
+// DefaultPostmortemSeverities when it lists none.
+func (t Trigger) WritesPostmortemFor(severity IncidentSeverity) bool {
+	if len(t.severities) == 0 {
+		return TriggerWritesPostmortemByDefault(severity)
+	}
+	return slices.Contains(t.severities, severity)
+}
+
 // Schedule is when a timer fires; zero for the other types.
 func (t Trigger) Schedule() Schedule { return t.schedule }
 
@@ -271,6 +321,9 @@ func (t Trigger) Snapshot() TriggerSnapshot {
 	s.Level = t.level.String()
 	if t.tools.Len() > 0 {
 		s.Tools = t.tools.Names()
+	}
+	for _, severity := range t.severities {
+		s.Severities = append(s.Severities, severity.String())
 	}
 	if t.phase != IncidentPhaseTriage {
 		// Triage is the default: a definition that did not name it

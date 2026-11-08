@@ -1595,6 +1595,90 @@
         }
       }
     },
+    "/v1/incidents/{id}/postmortem/approve": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "incident id"
+        }
+      ],
+      "post": {
+        "operationId": "approvePostmortem",
+        "description": "approve the postmortem of a resolved incident as who the X-Axlr-Actor header or decidedBy names, naming the text read in authorTaskId; the incident outputs announce it. Refused 403 without a name, under a policy: or trigger: name, a registered bot's id or the daemon's own, or by an actor the approvers of the bot that wrote it do not list; 409 when it is not a Draft, or left to a person with a draft, or holds another text than the one named",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostmortemReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentSnapshot"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/incidents/{id}/postmortem/send-back": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "incident id"
+        }
+      ],
+      "post": {
+        "operationId": "sendBackPostmortem",
+        "description": "send the text read back with a note: its task is launched again; the second send-back of a text leaves it to a person, and a failed task's costs nothing. On a resolved incident with no postmortem of its cycle it asks for one. Who may do it as for approve; a missing note is 400, another text than the one named or a postmortem past the cap is 409",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostmortemReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentSnapshot"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/outputs": {
       "get": {
         "operationId": "listOutputs",
@@ -2597,7 +2681,11 @@
           "incident.applying",
           "incident.verifying",
           "incident.escalated",
-          "incident.resolved"
+          "incident.resolved",
+          "incident.postmortem_drafted",
+          "incident.postmortem_failed",
+          "incident.postmortem_sent_back",
+          "incident.postmortem_approved"
         ],
         "description": "A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
       },
@@ -4000,7 +4088,7 @@
           },
           "phase": {
             "$ref": "#/components/schemas/IncidentPhase",
-            "description": "an incident trigger: the phase the bot takes, triage (the default), or fix, apply or verify for a teammate's incident once it reaches that phase"
+            "description": "an incident trigger: the phase the bot takes, triage (the default), or fix, apply, verify or postmortem for a teammate's incident once it reaches that phase"
           },
           "level": {
             "$ref": "#/components/schemas/AutonomyLevel",
@@ -4027,6 +4115,13 @@
               "type": "string"
             },
             "description": "a cloudwatch trigger: the SNS topic ARNs it takes messages from, at most 16; a message of another topic is refused (403). Absent: any topic SNS signed for"
+          },
+          "severities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the postmortem phase's incident trigger: the severities it writes one for, sev1 and sev2 when absent"
           }
         },
         "required": [
@@ -4246,6 +4341,9 @@
               "type": "string"
             },
             "description": "every namespace the incident's alerts named, in order, when there are two or more (the first 32); approvals.twoPersons matches any of them"
+          },
+          "postmortem": {
+            "$ref": "#/components/schemas/IncidentPostmortemSnapshot"
           }
         },
         "required": [
@@ -4299,9 +4397,10 @@
           "triage",
           "fix",
           "apply",
-          "verify"
+          "verify",
+          "postmortem"
         ],
-        "description": "the step of an incident a task works on: triage finds the cause, fix proposes the change and its rollback, apply carries it out after a person approves its call, verify checks it took. A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
+        "description": "the step of an incident a task works on: triage finds the cause, fix proposes the change and its rollback, apply carries it out after a person approves its call, verify checks it took, postmortem writes down a resolved incident. A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
       },
       "OpenIncidentCommand": {
         "type": "object",
@@ -4353,7 +4452,7 @@
       "OutputDefinition": {
         "type": "object",
         "x-go-type": "application.OutputDefinition",
-        "description": "an incident output target as the operator gives it: a webhook takes url and secret, slack its incoming-webhook url alone, command an absolute program and its arguments; events take the short (opened) or full (incident.opened) name, none is opened, reopened, diagnosed, proposed, applying, verifying, resolved and escalated; no tenants or severities is all of them",
+        "description": "an incident output target as the operator gives it: a webhook takes url and secret, slack its incoming-webhook url alone, command an absolute program and its arguments; events take the short (opened) or full (incident.opened) name, none is opened, reopened, diagnosed, proposed, applying, verifying, resolved, escalated and postmortem_approved; no tenants or severities is all of them",
         "properties": {
           "name": {
             "type": "string"
@@ -4639,6 +4738,9 @@
               "type": "string"
             },
             "description": "every namespace the incident's alerts named, in order, when there are two or more (the first 32); approvals.twoPersons matches any of them"
+          },
+          "postmortem": {
+            "$ref": "#/components/schemas/IncidentPostmortemSnapshot"
           }
         },
         "required": [
@@ -4775,6 +4877,102 @@
             ]
           }
         }
+      },
+      "PostmortemReviewRequest": {
+        "type": "object",
+        "x-go-type": "unixapi.PostmortemReviewRequest",
+        "description": "a person's answer to an incident's postmortem; who answers is decidedBy or the X-Axlr-Actor header, and one is required",
+        "properties": {
+          "note": {
+            "type": "string",
+            "description": "what the rewrite should change; required to send it back, not read on an approval"
+          },
+          "decidedBy": {
+            "type": "string",
+            "description": "who answers, as the token holder asserts it"
+          },
+          "authorTaskId": {
+            "type": "string",
+            "description": "the task whose text the person read, as the postmortem's authorTaskId said; empty only when they read none. Another text than the one held now is 409"
+          }
+        },
+        "required": []
+      },
+      "IncidentPostmortemState": {
+        "type": "string",
+        "x-go-enum": "domain.IncidentPostmortemState",
+        "x-extensible-enum": true,
+        "enum": [
+          "Writing",
+          "Draft",
+          "SentBack",
+          "Failed",
+          "LeftToPerson",
+          "Approved"
+        ],
+        "description": "where a postmortem is: its task writing it, a draft for a person, sent back or asked for and not launched yet, its task failed, left to a person at the send-back cap, or approved. The incident stays Resolved through all of them. A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
+      },
+      "IncidentPostmortemSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.IncidentPostmortemSnapshot",
+        "description": "what a resolved incident's postmortem task wrote and where it stands",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/IncidentPostmortemState"
+          },
+          "cycle": {
+            "type": "integer",
+            "description": "the incident's cycle it was written for; a reopening leaves it behind"
+          },
+          "taskId": {
+            "type": "string",
+            "description": "the last task launched to write it; absent when a person asked for one and no task has started"
+          },
+          "botId": {
+            "type": "string",
+            "description": "the bot that took the postmortem phase, its approvers review it; absent before a task started"
+          },
+          "authorTaskId": {
+            "type": "string",
+            "description": "the task whose answer markdown is"
+          },
+          "markdown": {
+            "type": "string",
+            "description": "the postmortem, in Markdown"
+          },
+          "note": {
+            "type": "string",
+            "description": "what the person who last sent it back asked for"
+          },
+          "reviewedBy": {
+            "type": "string",
+            "description": "who last sent it back"
+          },
+          "reviewedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string",
+            "description": "why its last task did not write it"
+          },
+          "sendBacks": {
+            "type": "integer",
+            "description": "the times a person sent its text back; the second leaves it to a person. Sending back a task that failed does not count"
+          },
+          "approvedBy": {
+            "type": "string",
+            "description": "who approved it, as the token holder asserted it"
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "state",
+          "cycle"
+        ]
       }
     }
   }

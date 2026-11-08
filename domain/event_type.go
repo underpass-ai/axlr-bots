@@ -126,6 +126,18 @@ const (
 	EventIncidentEscalated EventType = "incident.escalated"
 	// EventIncidentResolved says the incident was closed, by whom and why.
 	EventIncidentResolved EventType = "incident.resolved"
+	// EventIncidentPostmortemDrafted says the postmortem's task answered:
+	// a person approves the draft or sends it back.
+	EventIncidentPostmortemDrafted EventType = "incident.postmortem_drafted"
+	// EventIncidentPostmortemFailed says the postmortem's task failed,
+	// expired or was cancelled; the incident stays Resolved.
+	EventIncidentPostmortemFailed EventType = "incident.postmortem_failed"
+	// EventIncidentPostmortemSentBack says a person sent the postmortem
+	// back, with who and how many times.
+	EventIncidentPostmortemSentBack EventType = "incident.postmortem_sent_back"
+	// EventIncidentPostmortemApproved says a person approved the
+	// postmortem; it is what the incident's outputs announce.
+	EventIncidentPostmortemApproved EventType = "incident.postmortem_approved"
 	// EventNodeRegistered says a node registered (or registered again).
 	EventNodeRegistered EventType = "node.registered"
 	// EventNodeHeartbeat says a node was heard from.
@@ -152,7 +164,7 @@ func ParseEventType(raw string) (EventType, error) {
 	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventBotDeleted, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
 		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventApprovalFirst, EventTaskDelegated, EventTaskMessage, EventTaskSaid, EventTaskProgress, EventDelegationRefused,
 		EventEventEmitted, EventEventRefused, EventEventHeard, EventSubscriptionChanged, EventSubscriptionAsked, EventGroupEventPublished,
-		EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentProposed, EventIncidentApplying, EventIncidentVerifying, EventIncidentEscalated, EventIncidentResolved,
+		EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentProposed, EventIncidentApplying, EventIncidentVerifying, EventIncidentEscalated, EventIncidentResolved, EventIncidentPostmortemDrafted, EventIncidentPostmortemFailed, EventIncidentPostmortemSentBack, EventIncidentPostmortemApproved,
 		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked, EventNodeRenewed,
 		EventExecutionAssigned, EventExecutionReported:
 		return EventType(raw), nil
@@ -166,7 +178,7 @@ func (t EventType) String() string { return string(t) }
 // incident and the bot that triages it.
 func (t EventType) AboutIncident() bool {
 	switch t {
-	case EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentProposed, EventIncidentApplying, EventIncidentVerifying, EventIncidentEscalated, EventIncidentResolved:
+	case EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentProposed, EventIncidentApplying, EventIncidentVerifying, EventIncidentEscalated, EventIncidentResolved, EventIncidentPostmortemDrafted, EventIncidentPostmortemFailed, EventIncidentPostmortemSentBack, EventIncidentPostmortemApproved:
 		return true
 	}
 	return false

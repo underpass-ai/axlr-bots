@@ -2,9 +2,9 @@ use chrono::{DateTime, Duration, Utc};
 
 use super::{
     Answer, Banner, BotChoice, BotEditForm, BotView, Confirm, DeleteForm, Effect, IncidentWatch, Keypress, Launch,
-    ListenForm, LiveStream, LiveTask, Message, MintForm, NodeChoice, OrderForm, PublishForm, Readers, RegisterForm,
-    ResolveForm, Screen, Services, SettingsForm, SettingsJson, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode,
-    passages,
+    ListenForm, LiveStream, LiveTask, Message, MintForm, NodeChoice, OrderForm, PostmortemForm, PublishForm, Readers,
+    RegisterForm, ResolveForm, Screen, Services, SettingsForm, SettingsJson, SubmitForm, TaskViewFilter, TeamWatch,
+    ThemeMode, passages,
 };
 use crate::application::SubscriptionChange;
 use crate::application::{EventFeed, Fleet, NewBotDefaults, PanelError, PanelSettings, TaskDetail};
@@ -780,6 +780,21 @@ impl App {
                 Vec::new()
             }
             Message::IncidentResolved(result) => self.incident_resolved(result),
+            Message::PostmortemApprove => self.postmortem_approve(),
+            Message::PostmortemBackOpen => {
+                self.incidents.review = PostmortemForm::opened();
+                Vec::new()
+            }
+            Message::PostmortemBackNote(value) => {
+                self.incidents.review.note = value;
+                Vec::new()
+            }
+            Message::PostmortemBackSend => self.postmortem_back_send(),
+            Message::PostmortemBackClose => {
+                self.incidents.review = PostmortemForm::default();
+                Vec::new()
+            }
+            Message::PostmortemReviewed(result) => self.postmortem_reviewed(result),
             Message::Download(execution, name) => self.download(execution, name),
             Message::Downloaded(result) => self.downloaded(result),
 
@@ -1096,6 +1111,7 @@ impl App {
             self.bot_loading = false;
             self.incidents.list_loading = false;
             self.incidents.detail_loading = false;
+            self.incidents.review = PostmortemForm::default();
             self.incidents.resolve = ResolveForm::default();
             // The picked rows belong to the list left; its order stays.
             self.tables.clear_all();

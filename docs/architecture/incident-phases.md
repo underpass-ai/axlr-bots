@@ -85,4 +85,4 @@ Left as issues: a panel decision sent without a call id when the incident's page
 
 ## Left out
 
-The autonomy ladder (phase 3 sets the apply phase's `level` per runbook), who may approve and two persons in production, Slack, CloudWatch, the scribe and the postmortem. The axlr-sre bots (`bots/fix.json`) do not declare the apply phase yet, and no verify bot exists there. The panel's bot editor keeps a trigger's `phase`, `level` and `tools` when it reads a definition but does not edit them.
+The autonomy ladder (phase 3 sets the apply phase's `level` per runbook), who may approve and two persons in production, Slack, CloudWatch. The scribe and the postmortem came later: see their [ADR](incident-postmortem.md). The axlr-sre bots (`bots/fix.json`) do not declare the apply phase yet, and no verify bot exists there. The panel's bot editor keeps a trigger's `phase`, `level` and `tools` when it reads a definition but does not edit them.

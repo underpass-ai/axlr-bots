@@ -102,6 +102,10 @@ impl Event {
             "incident.verifying" => "Fix applied".into(),
             "incident.escalated" => "Needs a person".into(),
             "incident.resolved" => "Incident resolved".into(),
+            "incident.postmortem_drafted" => "Postmortem drafted".into(),
+            "incident.postmortem_failed" => "Postmortem not written".into(),
+            "incident.postmortem_sent_back" => "Postmortem sent back".into(),
+            "incident.postmortem_approved" => "Postmortem approved".into(),
             "execution.assigned" => "Sent to node".into(),
             "execution.reported" => "Node reported".into(),
             "node.registered" => "Node joined".into(),
@@ -124,16 +128,28 @@ impl Event {
 
     pub fn tone(&self) -> EventTone {
         match self.event_type.as_str() {
-            "bot.task.completed" | "bot.enabled" | "node.registered" | "node.enrolled" | "node.renewed"
-            | "incident.diagnosed" | "incident.resolved" => EventTone::Good,
+            "bot.task.completed"
+            | "bot.enabled"
+            | "node.registered"
+            | "node.enrolled"
+            | "node.renewed"
+            | "incident.diagnosed"
+            | "incident.resolved"
+            | "incident.postmortem_approved" => EventTone::Good,
             "bot.task.failed"
             | "node.offline"
             | "node.revoked"
             | "bot.task.cancelled"
             | "bot.event.refused"
-            | "bot.delegation.refused" => EventTone::Bad,
-            "bot.task.preempted" | "incident.opened" | "incident.reopened" | "incident.proposed"
-            | "incident.escalated" => EventTone::Waiting,
+            | "bot.delegation.refused"
+            | "incident.postmortem_failed" => EventTone::Bad,
+            "bot.task.preempted"
+            | "incident.opened"
+            | "incident.reopened"
+            | "incident.proposed"
+            | "incident.escalated"
+            | "incident.postmortem_drafted"
+            | "incident.postmortem_sent_back" => EventTone::Waiting,
             "bot.event.emitted" | "group.event.published" => match self.payload_text("severity").as_deref() {
                 Some("warning") | Some("critical") => EventTone::Waiting,
                 _ => EventTone::Neutral,
