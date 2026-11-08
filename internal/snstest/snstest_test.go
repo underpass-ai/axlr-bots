@@ -9,7 +9,7 @@ import (
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
-const body = `{"Type":"Notification","MessageId":"m-1","TopicArn":"arn:aws:sns:eu-west-1:123456789012:t","Message":"{}","Timestamp":"2026-11-08T10:00:00.000Z","SignatureVersion":"1","Signature":"x","SigningCertURL":"https://sns.eu-west-1.amazonaws.com/c.pem"}`
+const body = `{"Type":"Notification","MessageId":"m-1","TopicArn":"arn:aws:sns:eu-west-1:123456789012:t","Message":"{}","Timestamp":"2026-11-08T10:00:00.000Z","SignatureVersion":"1","Signature":"x","SigningCertURL":"https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-c.pem"}`
 
 func TestSignedMessagesVerify(t *testing.T) {
 	s, err := NewSigner(time.Now())

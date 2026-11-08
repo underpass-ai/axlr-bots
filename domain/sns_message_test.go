@@ -157,8 +157,8 @@ func TestParseSNSMessageRefusesWhatIsNotSNS(t *testing.T) {
 	if _, err := domain.ParseSNSMessage([]byte(subscribe)); !errors.As(err, &forbidden) {
 		t.Errorf("subscribe URL off SNS: %v", err)
 	}
-	for _, allowed := range []string{"https://sns.us-east-1.amazonaws.com/a.pem", "https://sns.us-gov-west-1.amazonaws.com/a.pem", "https://sns.ap-southeast-5.amazonaws.com/a.pem"} {
-		if !domain.SNSURLAllowed(allowed) {
+	for _, allowed := range []string{"https://sns.us-east-1.amazonaws.com/SimpleNotificationService-a1.pem", "https://sns.us-gov-west-1.amazonaws.com/SimpleNotificationService-a1.pem", "https://sns.ap-southeast-5.amazonaws.com/SimpleNotificationService-a1.pem"} {
+		if got, err := domain.SNSCertificateURL(allowed); err != nil || got != allowed {
 			t.Errorf("%s refused", allowed)
 		}
 	}

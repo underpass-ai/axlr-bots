@@ -113,6 +113,12 @@ func TestCloudWatchThroughSNSOnTheOperatorAddress(t *testing.T) {
 	if status, _ := o.post(t, "/v1/triggers/triage/other", sns(domain.SNSNotification), snsBody(t, fake, "cloudwatch-alarm", nil)); status != http.StatusForbidden {
 		t.Errorf("unknown trigger: %d", status)
 	}
+	metadata := snsBody(t, fake, "cloudwatch-alarm", func(m *domain.SNSMessage) {
+		m.SigningCertURL = "https://169.254.169.254/SimpleNotificationService-1a.pem"
+	})
+	if status, decoded := o.post(t, path, sns(domain.SNSNotification), metadata); status != http.StatusForbidden || decoded["kind"] != KindForbidden {
+		t.Errorf("certificate at the metadata address: %d %v", status, decoded)
+	}
 	stale := snsBody(t, fake, "cloudwatch-alarm", snstest.At(time.Now().Add(-domain.SNSMaxMessageAge-time.Minute)))
 	if status, decoded := o.post(t, path, sns(domain.SNSNotification), stale); status != http.StatusForbidden || decoded["kind"] != KindForbidden {
 		t.Errorf("replayed: %d %v", status, decoded)

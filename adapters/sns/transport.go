@@ -1,9 +1,11 @@
 // Package sns is Amazon SNS as a cloudwatch trigger reaches it: the
 // signing certificate fetched from a message's SigningCertURL and kept
 // for a bounded time, and the visit of a SubscribeURL that confirms a
-// subscription. Every URL must be on sns.<region>.amazonaws.com over
-// HTTPS (domain.SNSURLAllowed) and no redirect is followed, so a forged
-// message cannot make the control plane fetch an address of its choosing.
+// subscription. Only the URL domain.SNSCertificateURL or
+// domain.SNSSubscribeURL builds from the parts it checked is requested,
+// never the text a message carried, and no redirect is followed, so a
+// forged message cannot make the control plane fetch an address of its
+// choosing.
 package sns
 
 import (
@@ -67,9 +69,10 @@ func NewTransportWith(client *http.Client, ttl time.Duration, now func() time.Ti
 
 // SigningCertificate returns the certificate at the URL, from the cache
 // while it is fresh. A certificate outside its validity is refused.
-func (t *Transport) SigningCertificate(ctx context.Context, url string) (*x509.Certificate, error) {
-	if !domain.SNSURLAllowed(url) {
-		return nil, fmt.Errorf("sns: %q is not on sns.<region>.amazonaws.com over HTTPS", url)
+func (t *Transport) SigningCertificate(ctx context.Context, raw string) (*x509.Certificate, error) {
+	url, err := domain.SNSCertificateURL(raw)
+	if err != nil {
+		return nil, fmt.Errorf("sns: %w", err)
 	}
 	now := t.now()
 	t.mu.Lock()
@@ -125,11 +128,12 @@ func (t *Transport) store(url string, e entry, now time.Time) {
 
 // ConfirmSubscription visits the SubscribeURL: SNS confirms the
 // subscription when it answers 200.
-func (t *Transport) ConfirmSubscription(ctx context.Context, url string) error {
-	if !domain.SNSURLAllowed(url) {
-		return fmt.Errorf("sns: %q is not on sns.<region>.amazonaws.com over HTTPS", url)
+func (t *Transport) ConfirmSubscription(ctx context.Context, raw string) error {
+	url, err := domain.SNSSubscribeURL(raw)
+	if err != nil {
+		return fmt.Errorf("sns: %w", err)
 	}
-	_, err := t.get(ctx, url)
+	_, err = t.get(ctx, url)
 	return err
 }
 

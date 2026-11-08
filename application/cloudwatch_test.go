@@ -264,6 +264,57 @@ func TestCloudWatchRefusesReplaysAndOtherTopics(t *testing.T) {
 	}
 }
 
+func TestCloudWatchRefusesHostileURLsBeforeAnyFetch(t *testing.T) {
+	h := newHarness()
+	bot := cloudWatchBot(t, h, domain.TriggerSnapshot{AutoConfirm: true, Topics: []string{"arn:aws:sns:eu-west-1:123456789012:axlr-sre-alarms"}})
+	raw, _ := os.ReadFile(filepath.Join("..", "domain", "testdata", "sns-subscription-confirmation.json"))
+	var forbidden domain.ForbiddenError
+	for name, edit := range map[string]func(*domain.SNSMessage){
+		"the metadata address": func(m *domain.SNSMessage) {
+			m.SigningCertURL = "https://169.254.169.254/SimpleNotificationService-1a.pem"
+		},
+		"a look-alike": func(m *domain.SNSMessage) {
+			m.SigningCertURL = "https://sns.eu-west-1.amazonaws.com.evil.example/SimpleNotificationService-1a.pem"
+		},
+		"another path":        func(m *domain.SNSMessage) { m.SigningCertURL = "https://sns.eu-west-1.amazonaws.com/latest/meta-data" },
+		"a subscribe off SNS": func(m *domain.SNSMessage) { m.SubscribeURL = "https://user@evil.example/?Action=ConfirmSubscription" },
+		"another subscribe": func(m *domain.SNSMessage) {
+			m.SubscribeURL = "http://sns.eu-west-1.amazonaws.com/?Action=ConfirmSubscription"
+		},
+	} {
+		body, err := h.sns.Signer.Sign(raw, func(m *domain.SNSMessage) { snstest.At(h.clock.now)(m); edit(m) })
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.log.audits = nil
+		_, err = NewFireTrigger(h.deps).Execute(context.Background(), FireTriggerCommand{BotID: bot.ID().String(), TriggerName: "cw", Body: body})
+		if !errors.As(err, &forbidden) {
+			t.Errorf("%s: %v", name, err)
+		}
+		if entry, ok := lastAudit(h, "trigger.fire"); !ok || entry.Outcome != domain.AuditDenied {
+			t.Errorf("%s: audit = %+v", name, entry)
+		}
+	}
+	if len(h.sns.Fetched()) != 0 || len(h.sns.Confirmed()) != 0 {
+		t.Errorf("fetched %v, confirmed %v", h.sns.Fetched(), h.sns.Confirmed())
+	}
+}
+
+func TestCloudWatchUnverifiedConfirmationIsNotVisited(t *testing.T) {
+	h := newHarness()
+	bot := cloudWatchBot(t, h, domain.TriggerSnapshot{AutoConfirm: true, Topics: []string{"arn:aws:sns:eu-west-1:123456789012:axlr-sre-alarms"}})
+	raw, _ := os.ReadFile(filepath.Join("..", "domain", "testdata", "sns-subscription-confirmation.json"))
+	stranger, err := snstest.NewSigner(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	forged, _ := stranger.Sign(raw, snstest.At(h.clock.now))
+	var forbidden domain.ForbiddenError
+	if _, err := NewFireTrigger(h.deps).Execute(context.Background(), FireTriggerCommand{BotID: bot.ID().String(), TriggerName: "cw", Body: forged}); !errors.As(err, &forbidden) || len(h.sns.Confirmed()) != 0 {
+		t.Errorf("forged: %v, confirmed %v", err, h.sns.Confirmed())
+	}
+}
+
 func TestCloudWatchAutoConfirmNeedsTopics(t *testing.T) {
 	h := newHarness()
 	definition := sampleDefinition()

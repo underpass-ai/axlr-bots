@@ -14,7 +14,7 @@ import (
 	"github.com/underpass-ai/axlr-bots/internal/snstest"
 )
 
-const certURL = "https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-test.pem"
+const certURL = "https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-1a2b.pem"
 
 // served is a TLS server that answers for sns.<region>.amazonaws.com: the
 // client dials it whatever the host, and verifies its certificate as
@@ -37,6 +37,23 @@ func served(t *testing.T, handler http.HandlerFunc) (*http.Client, *int32) {
 	return client, &hits
 }
 
+// hostileURLs are refused before any request; each is well shaped but
+// for the one thing it tries.
+var hostileURLs = []string{
+	"http://sns.eu-west-1.amazonaws.com/SimpleNotificationService-1a2b.pem",
+	"https://sns.eu-west-1.amazonaws.com.evil.example/SimpleNotificationService-1a2b.pem",
+	"https://evil.example/SimpleNotificationService-1a2b.pem",
+	"https://sns.eu-west-1.amazonaws.com@evil.example/SimpleNotificationService-1a2b.pem",
+	"https://user:pass@sns.eu-west-1.amazonaws.com/SimpleNotificationService-1a2b.pem",
+	"https://sns.eu-west-1.amazonaws.com:444/SimpleNotificationService-1a2b.pem",
+	"https://169.254.169.254/SimpleNotificationService-1a2b.pem",
+	"https://127.0.0.1/SimpleNotificationService-1a2b.pem",
+	"https://[::1]/SimpleNotificationService-1a2b.pem",
+	"https://sns.eu-west-1.amazonaws.com/latest/meta-data/",
+	"https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-1a2b.pem?x=1",
+	"https://169.254.169.254/?Action=ConfirmSubscription&TopicArn=arn:aws:sns:eu-west-1:123456789012:t&Token=abc",
+}
+
 func TestSigningCertificateIsFetchedAndCached(t *testing.T) {
 	now := time.Now()
 	signer, err := snstest.NewSigner(now)
@@ -44,7 +61,7 @@ func TestSigningCertificateIsFetchedAndCached(t *testing.T) {
 		t.Fatal(err)
 	}
 	client, hits := served(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/SimpleNotificationService-test.pem" {
+		if r.URL.Path != "/SimpleNotificationService-1a2b.pem" {
 			http.NotFound(w, r)
 			return
 		}
@@ -69,7 +86,7 @@ func TestSigningCertificateIsFetchedAndCached(t *testing.T) {
 	if _, err := transport.SigningCertificate(ctx, certURL); err == nil || !strings.Contains(err.Error(), "validity") {
 		t.Errorf("expired: %v", err)
 	}
-	if _, err := transport.SigningCertificate(ctx, "https://sns.eu-west-1.amazonaws.com/missing.pem"); err == nil || !strings.Contains(err.Error(), "404") {
+	if _, err := transport.SigningCertificate(ctx, "https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-missing.pem"); err == nil || !strings.Contains(err.Error(), "404") {
 		t.Errorf("missing: %v", err)
 	}
 }
@@ -78,9 +95,9 @@ func TestSigningCertificateRefusals(t *testing.T) {
 	answer := "not a certificate"
 	client, hits := served(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/redirect.pem":
+		case "/SimpleNotificationService-redirect.pem":
 			http.Redirect(w, r, "https://evil.example/cert.pem", http.StatusFound)
-		case "/large.pem":
+		case "/SimpleNotificationService-large.pem":
 			_, _ = w.Write([]byte(strings.Repeat("x", maxBodyBytes+10)))
 		default:
 			_, _ = w.Write([]byte(answer))
@@ -88,7 +105,7 @@ func TestSigningCertificateRefusals(t *testing.T) {
 	})
 	transport := NewTransportWith(client, time.Hour, time.Now)
 	ctx := context.Background()
-	for _, url := range []string{"https://evil.example/cert.pem", "http://sns.eu-west-1.amazonaws.com/cert.pem", "https://sns.eu-west-1.amazonaws.com:444/cert.pem"} {
+	for _, url := range hostileURLs {
 		if _, err := transport.SigningCertificate(ctx, url); err == nil {
 			t.Errorf("%s fetched", url)
 		}
@@ -99,10 +116,10 @@ func TestSigningCertificateRefusals(t *testing.T) {
 	if atomic.LoadInt32(hits) != 0 {
 		t.Errorf("a refused URL was fetched: %d", *hits)
 	}
-	if _, err := transport.SigningCertificate(ctx, "https://sns.eu-west-1.amazonaws.com/redirect.pem"); err == nil || !strings.Contains(err.Error(), "redirect") {
+	if _, err := transport.SigningCertificate(ctx, "https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-redirect.pem"); err == nil || !strings.Contains(err.Error(), "redirect") {
 		t.Errorf("redirect: %v", err)
 	}
-	if _, err := transport.SigningCertificate(ctx, "https://sns.eu-west-1.amazonaws.com/large.pem"); err == nil || !strings.Contains(err.Error(), "too large") {
+	if _, err := transport.SigningCertificate(ctx, "https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-large.pem"); err == nil || !strings.Contains(err.Error(), "too large") {
 		t.Errorf("large: %v", err)
 	}
 	if _, err := transport.SigningCertificate(ctx, certURL); err == nil || !strings.Contains(err.Error(), "PEM") {
@@ -134,10 +151,10 @@ func TestConfirmSubscription(t *testing.T) {
 	})
 	transport := NewTransportWith(client, time.Hour, time.Now)
 	ctx := context.Background()
-	if err := transport.ConfirmSubscription(ctx, "https://sns.eu-west-1.amazonaws.com/?Action=ConfirmSubscription&Token=abc"); err != nil || !strings.Contains(query, "Token=abc") {
+	if err := transport.ConfirmSubscription(ctx, "https://sns.eu-west-1.amazonaws.com/?Action=ConfirmSubscription&TopicArn=arn:aws:sns:eu-west-1:123456789012:t&Token=abc"); err != nil || !strings.Contains(query, "Token=abc") {
 		t.Errorf("confirm: %v %q", err, query)
 	}
-	if err := transport.ConfirmSubscription(ctx, "https://sns.eu-west-1.amazonaws.com/?Action=ConfirmSubscription&Token=bad"); err == nil || !strings.Contains(err.Error(), "403") {
+	if err := transport.ConfirmSubscription(ctx, "https://sns.eu-west-1.amazonaws.com/?Action=ConfirmSubscription&TopicArn=arn:aws:sns:eu-west-1:123456789012:t&Token=bad"); err == nil || !strings.Contains(err.Error(), "403") {
 		t.Errorf("refused: %v", err)
 	}
 }
@@ -153,7 +170,7 @@ func TestCacheStaysBounded(t *testing.T) {
 	transport := NewTransportWith(client, time.Hour, func() time.Time { return clock })
 	for n := 0; n < maxCached+5; n++ {
 		clock = clock.Add(time.Second)
-		if _, err := transport.SigningCertificate(context.Background(), "https://sns.eu-west-1.amazonaws.com/c"+strings.Repeat("x", n)+".pem"); err != nil {
+		if _, err := transport.SigningCertificate(context.Background(), "https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-c"+strings.Repeat("x", n)+".pem"); err != nil {
 			t.Fatal(err)
 		}
 	}

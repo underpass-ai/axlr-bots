@@ -8,8 +8,6 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	"net/url"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -25,10 +23,6 @@ const (
 	// or one stamped in the future, is refused.
 	SNSMaxMessageAge = 15 * time.Minute
 )
-
-// snsHost is the host SNS signs from and confirms on: sns.<region>.amazonaws.com.
-// The China partition (amazonaws.com.cn) is left out.
-var snsHost = regexp.MustCompile(`^sns\.[a-z]{2}(-[a-z]+)+-[0-9]+\.amazonaws\.com$`)
 
 // SNSMessage is the JSON body Amazon SNS posts to an HTTP/S endpoint: a
 // notification (the published Message) or a subscription's confirmation
@@ -71,30 +65,19 @@ func ParseSNSMessage(body []byte) (SNSMessage, error) {
 		return SNSMessage{}, invalid("SignatureVersion", "must be 1 or 2")
 	case m.Signature == "":
 		return SNSMessage{}, invalid("Signature", "must not be empty")
-	case !SNSURLAllowed(m.SigningCertURL):
-		return SNSMessage{}, ForbiddenError{Reason: "the SigningCertURL is not on sns.<region>.amazonaws.com over HTTPS"}
+	}
+	if _, err := SNSCertificateURL(m.SigningCertURL); err != nil {
+		return SNSMessage{}, err
 	}
 	if m.Type != SNSNotification {
 		if m.Token == "" {
 			return SNSMessage{}, invalid("Token", "a confirmation carries its token")
 		}
-		if !SNSURLAllowed(m.SubscribeURL) {
-			return SNSMessage{}, ForbiddenError{Reason: "the SubscribeURL is not on sns.<region>.amazonaws.com over HTTPS"}
+		if _, err := SNSSubscribeURL(m.SubscribeURL); err != nil {
+			return SNSMessage{}, err
 		}
 	}
 	return m, nil
-}
-
-// SNSURLAllowed reports whether a URL SNS gave is one the control plane
-// may fetch: HTTPS, no credentials, no port, on sns.<region>.amazonaws.com.
-// Anything else would let a forged body make the control plane fetch an
-// address of the sender's choosing.
-func SNSURLAllowed(raw string) bool {
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.User != nil || u.Port() != "" {
-		return false
-	}
-	return snsHost.MatchString(u.Hostname())
 }
 
 // StringToSign is what SNS signed, as AWS documents it: the covered
