@@ -117,6 +117,10 @@ axlr-bots task cancel task-…
 
 A `WaitingApproval` task ends `Cancelled` with `approval.outcome: cancelled`; the decision is never asked, pending notifications are skipped, and the session stays where it is.
 
+## An incident's apply
+
+The apply phase of an incident ([triggers](triggers.md#incidents)) waits here like any task: its bot runs at `act-with-approval`, its write call stops it in `WaitingApproval`, `warn.approval` and the notifications go out, and `task approve` or `task deny` (or the panel's **Approve** and **Deny**, on the task's page or the incident's) decides it. The decision moves the incident at once, before the call runs: approved is `Applying`, denied is back to `Open` with the reason. An expiry is a denial; the second denial since the incident was last reopened escalates it. `incident get` counts the incident's `approvals`, one per task by its last wait: the product's rule is one per incident, shown and not enforced.
+
 ## Limits today
 
 Approval is a decision by whoever reaches the socket or holds the bearer token: there is no record of who may decide, beyond the actor the CLI names. There is no queue view of pending approvals beyond `task list --status WaitingApproval`. Notifications go to webhooks and local commands; chat services are reached through a relay. The `observe`, `propose` and `act-within-policy` levels never stop for a decision: the policy either allows the call or refuses it before any card.

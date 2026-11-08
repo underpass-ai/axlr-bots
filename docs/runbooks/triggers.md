@@ -54,15 +54,26 @@ Check: the first firing group answers `201`, `"action": "opened"`, the incident 
 
 ## Incidents
 
-An incident is one alert group of a tenant and the tasks its phases ran for it ([operator API](../reference/operator-api.md#routes)): the triage task of the bot it belongs to, then the fix task of a teammate. Alertmanager opens them through an `alertmanager` trigger (above); anything else, or a person, through `POST /v1/incidents` or `axlr-bots incident open`, for a bot that declares the `incident` trigger. One task per phase in each cycle: a repeated alert starts nothing.
+An incident is one alert group of a tenant and the tasks its phases ran for it ([operator API](../reference/operator-api.md#routes)): the triage task of the bot it belongs to, then the fix, apply and verify tasks of its teammates ([ADR](../architecture/incident-phases.md)). Alertmanager opens them through an `alertmanager` trigger (above); anything else, or a person, through `POST /v1/incidents` or `axlr-bots incident open`, for a bot that declares the `incident` trigger. One task per phase in each cycle: a repeated alert starts nothing.
 
-Each phase is a task of its own, launched by the control plane when the incident reaches it, never by a bot that would wait through an approval. The fix phase belongs to the one teammate of the triage bot (same tenant, a shared team) that declares an `incident` trigger with `"phase": "fix"`. No such teammate: the incident stays `Diagnosed`, as it did before there was a fix phase. Two, or one that is not Enabled: it stays `Diagnosed` too, the refusal audited (`incident.fix`), and the next alert of the group tries again.
+Each phase is a task of its own, launched by the control plane when the incident reaches it, never by a bot that would wait through an approval: fix once it is `Diagnosed`, apply once it is `Proposed`, verify once it is `Verifying`. A phase belongs to the one teammate of the triage bot (same tenant, a shared team) that declares an `incident` trigger with that `phase`. No such teammate: the incident stays where it is (`Diagnosed`, `Proposed` or `Verifying`), as it did before the phase existed. Two, or one that is not Enabled: it stays there too, the refusal audited (`incident.<phase>`), and the next alert of the group tries again.
+
+The apply phase's approval is the task's own ([approvals](approvals.md)): its bot runs at `act-with-approval`, its write call stops the task in `WaitingApproval` (with `warn.approval` and the notifications as for any task) and the incident stays `Proposed` while it waits, marked `needsYou`. **Approve** moves it to `Applying` at once; the task's completion to `Verifying` and the verify task. **Deny**, or an expiry, sends it back to `Open` in a new cycle with the reason; the second denial since it was last reopened escalates it, and its alerts are then only repeats. The verify task's answer says `VERDICT: red` when the fault is still there (the incident goes back to `Open`) or `VERDICT: green` when it took; green, or no verdict, leaves it `Verifying` until the group resolves. Back in `Open`, the next alert of the group starts the new cycle's triage: Alertmanager resends a firing group every `repeat_interval` (2 minutes in the lab, 4 hours by its default).
+
+An incident trigger may narrow the bot's policy for its phase: `level` at most the bot's, `tools` some of its `allowedTools` ([bot definition](../reference/bot-definition.md#triggers)). Under `observe` and `propose` AXLR treats the allow-listed MCP tools as reads, so a fix phase whose list held `apply` would apply without asking: give the fix phase `propose` and its read tools, the apply phase `act-with-approval` and `apply`.
 
 ```text
 new group key ──▶ Open, cycle 1, a triage task ──task Completed──▶ Diagnosed (the answer is the diagnosis)
                       └──task Failed, Expired or Cancelled──▶ Escalated (a person must look)
 Diagnosed, a teammate takes the fix phase ──▶ its fix task ──task Completed──▶ Proposed (the answer is the proposal; nothing applied)
                       └──task Failed, Expired or Cancelled──▶ Escalated
+Proposed, a teammate takes the apply phase ──▶ its apply task ──write call waits──▶ Proposed, needsYou
+                      ├──a person approves──▶ Applying ──task Completed──▶ Verifying, the verify task
+                      ├──a person denies, or the approval expires──▶ Open, cycle + 1 (the second time: Escalated)
+                      └──task Failed or Cancelled──▶ Open, cycle + 1
+Verifying ──verify says VERDICT: red──▶ Open, cycle + 1 · green or nothing: Verifying until the group resolves
+          └──verify task Failed, Expired or Cancelled──▶ Escalated
+Open after Proposed, Applying or Verifying ──next alert of the group──▶ the triage of the new cycle
 same key while Escalated ──▶ Open, cycle + 1, a new task (twice; then a repeat, left to a person)
 same key, not Resolved ──▶ a repeat: its alerts added, no task
 resolved group, or incident resolve ──▶ Resolved ──same key within 30 minutes──▶ Open, cycle + 1, a new task
@@ -73,21 +84,28 @@ resolved group, or incident resolve ──▶ Resolved ──same key within 30 
 |---|---|
 | `Open` | nobody has said the cause yet: its triage task is pending or running |
 | `Diagnosed` | the triage task completed; its answer, the cause with its evidence, is the incident's `diagnosis`. Its fix task, when a teammate takes the fix phase, is pending or running |
-| `Proposed` | the fix task completed; its answer, the change and its rollback, is the incident's `proposal`. Nothing is applied: a person reads it, applies it or not, and resolves the incident |
-| `Escalated` | the triage or fix task failed, expired or was cancelled; `reason` says which. The next alert of the group starts another triage (`"action": "reopened"`, the event's `retry` true), at most twice since the last proposal or reopening (`retries`); after that a person takes it from there |
+| `Proposed` | the fix task completed; its answer, the change and its rollback, is the incident's `proposal`. Nothing is applied. With a teammate taking the apply phase, its apply task is pending, running or waiting for your approval (`needsYou`); without one, a person reads it, applies it or not, and resolves the incident |
+| `Applying` | a person approved the apply task's call: the change is being carried out |
+| `Verifying` | the apply task completed; the verify task, when a teammate takes the phase, checks it, and the group's resolution closes the incident |
+| `Escalated` | the triage, fix or verify task failed, expired or was cancelled, or a person denied the apply twice (`denials`); `reason` says which. The next alert of the group starts another triage (`"action": "reopened"`, the event's `retry` true), at most twice since the last proposal or reopening (`retries`), never after two denials; after that a person takes it from there |
 | `Resolved` | its alerts went green, or a person closed it; a running task still settles and its cost is still added, but it moves the incident no further |
 
 ```bash
 axlr-bots bot update triage --file patch.json     # {"triggers": [{"type": "manual"}, {"type": "incident"}], "groups": ["sre"]}; the bot is Enabled
 axlr-bots bot update fix --file patch.json        # {"triggers": [{"type": "incident", "phase": "fix"}], "groups": ["sre"]}: the fix phase
+# one bot, two phases: {"level": "act-with-approval", "allowedTools": ["get", "diff", "apply"], "triggers": [
+#   {"type": "incident", "name": "fix", "phase": "fix", "level": "propose", "tools": ["get", "diff"]},
+#   {"type": "incident", "name": "apply", "phase": "apply", "tools": ["get", "diff", "apply"]}]}
+axlr-bots bot update verify --file patch.json     # {"triggers": [{"type": "incident", "phase": "verify"}], "groups": ["sre"]}: the verify phase
 axlr-bots incident open --tenant default --bot triage --group-key "HighLatency/web" \
     --title "High latency in web" --severity sev2 --fingerprints a1
 axlr-bots incident list --status Open
-axlr-bots incident get inc-…                      # alerts, cycle, tasks (bot, phase, cycle), diagnosis, proposal, reason, repeats, retries, costUsd (every phase's, delegated children included)
+axlr-bots incident get inc-…                      # alerts, cycle, tasks (bot, phase, cycle), diagnosis, proposal, reason, repeats, retries, denials, costUsd (every phase's, delegated children included), needsYou, currentTask, approvals
+axlr-bots task approve task-…                     # the apply task's call: the incident is Applying; task deny sends it back to Open
 axlr-bots incident resolve inc-… --reason "rolled back"
 ```
 
-Check: the first `open` answers `created: true`, the incident `Open` at cycle 1 and its triage task, key `incident:<id>:1`, whose objective is the trigger's template or the default ("Incident … Find the cause with evidence and report it; change nothing") and whose `input` is the incident. The same group key again answers `created: false`, no task, and the incident with the new fingerprints and `repeats` one higher. After `resolve`, the same key within 30 minutes answers `reopened: true`, cycle 2 and a task keyed `…:2`. The bot's events show `incident.opened`, `incident.repeated`, `incident.resolved`, `incident.reopened`, and `incident.diagnosed` or `incident.escalated` when its task ends. With a fix teammate, `Diagnosed` brings its task (key `incident:<id>:<cycle>:fix`, the incident as its `input`, the objective with the diagnosis, the triage task's trace), and its end `incident.proposed` (`proposal`, `proposedBy`) or `incident.escalated`; `incident get` lists both tasks and the cost of both. Severity is `sev1` to `sev4` (`sev3` when absent); a bot without the `incident` trigger, or not Enabled, refuses the incident.
+Check: the first `open` answers `created: true`, the incident `Open` at cycle 1 and its triage task, key `incident:<id>:1`, whose objective is the trigger's template or the default ("Incident … Find the cause with evidence and report it; change nothing") and whose `input` is the incident. The same group key again answers `created: false`, no task, and the incident with the new fingerprints and `repeats` one higher. After `resolve`, the same key within 30 minutes answers `reopened: true`, cycle 2 and a task keyed `…:2`. The bot's events show `incident.opened`, `incident.repeated`, `incident.resolved`, `incident.reopened`, and `incident.diagnosed` or `incident.escalated` when its task ends. With a fix teammate, `Diagnosed` brings its task (key `incident:<id>:<cycle>:fix`, the incident as its `input`, the objective with the diagnosis, the triage task's trace), and its end `incident.proposed` (`proposal`, `proposedBy`) or `incident.escalated`; `incident get` lists both tasks and the cost of both. With an apply teammate, `Proposed` brings its task (key `…:<cycle>:apply`, the objective with the proposal and the diagnosis, its trigger's narrowed level and tools in the execution's `policy`); its wait marks the incident `needsYou`; `task approve` publishes `incident.applying`, its completion `incident.verifying` and the verify task (key `…:<cycle>:verify`, the default objective asking for the `VERDICT:` line); `task deny` publishes `incident.reopened` with `from: Proposed`, the `reason` and `denials`, and no task. `incident get` counts the `approvals` of its tasks: the product's rule is one per incident, shown and not enforced. Severity is `sev1` to `sev4` (`sev3` when absent); a bot without the `incident` trigger, or not Enabled, refuses the incident.
 
 ## Check the catch-up
 
