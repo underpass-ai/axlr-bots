@@ -3,6 +3,7 @@ package domain
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -156,7 +157,7 @@ func TestBotGovernance(t *testing.T) {
 
 func TestExecutionPolicyRecord(t *testing.T) {
 	e := sampleExecution(t)
-	if e.Policy() != (PolicyRecord{}) || e.Snapshot().Policy != nil {
+	if !reflect.DeepEqual(e.Policy(), PolicyRecord{}) || e.Snapshot().Policy != nil {
 		t.Fatal("a new execution has a policy")
 	}
 	if err := e.RecordPolicy(PolicyRecord{}); err == nil {
@@ -173,7 +174,7 @@ func TestExecutionPolicyRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	back, err := RestoreExecution(snap)
-	if err != nil || back.Policy() != record {
+	if err != nil || !reflect.DeepEqual(back.Policy(), record) {
 		t.Errorf("restored policy = %v %+v", err, back.Policy())
 	}
 	snap.Policy = &PolicyRecord{}

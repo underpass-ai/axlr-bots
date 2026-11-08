@@ -198,7 +198,7 @@ func (e *Executor) preparePolicy(ctx context.Context, execution domain.Execution
 	prepared := preparedPolicy{
 		approve: e.approve(),
 		object:  object,
-		record:  domain.PolicyRecord{Level: parsed.String(), RuntimeLevel: object.Level, Enforced: enforced, Path: path},
+		record:  domain.PolicyRecord{Level: parsed.String(), AllowedTools: append([]string(nil), allowed...), RuntimeLevel: object.Level, Enforced: enforced, Path: path},
 	}
 	if enforced {
 		prepared.args = []string{"--policy", path}

@@ -25,6 +25,11 @@ impl MemoryFiles {
         files
     }
 
+    /// Adds a file, or replaces its text.
+    pub fn put(&self, path: &str, text: &str) {
+        self.files.lock().unwrap().insert(PathBuf::from(path), text.to_string());
+    }
+
     pub fn pick(&self, path: Option<&str>) {
         *self.picked.lock().unwrap() = path.map(PathBuf::from);
     }
@@ -57,6 +62,10 @@ impl FilePicker for MemoryFiles {
     fn pick_definition(&self) -> PortFuture<'_, Option<PathBuf>> {
         let picked = self.picked.lock().unwrap().clone();
         Box::pin(async move { Ok(picked) })
+    }
+
+    fn pick_settings(&self) -> PortFuture<'_, Option<PathBuf>> {
+        self.pick_definition()
     }
 
     fn save_as(&self, name: String, bytes: Vec<u8>) -> PortFuture<'_, Option<PathBuf>> {

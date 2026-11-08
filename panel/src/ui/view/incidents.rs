@@ -1,5 +1,6 @@
-//! Incidents: the grouped faults the bots triage, one incident's alerts,
-//! diagnosis, proposal and tasks, and closing one by hand.
+//! Incidents: the grouped faults the bots triage, the ones that need you
+//! first, one incident's alerts, diagnosis, proposal and tasks, the
+//! Approve and Deny of its apply, and closing one by hand.
 
 use iced::widget::text::Wrapping;
 use iced::widget::{Space, column, container, responsive, row, scrollable, table, text, text_input};
@@ -7,15 +8,16 @@ use iced::{Alignment, Length};
 
 use super::grid;
 use super::widgets::{
-    BODY, El, PILL_SLOT, Voice, action, card, empty, fact, link, muted, pill, pill_with, reader, section, slot, title,
+    BODY, El, PILL_SLOT, Voice, action, bold, card, empty, fact, link, muted, pill, pill_with, reader, section, slot,
+    title,
 };
-use crate::domain::{Incident, TaskId};
+use crate::domain::{Incident, IncidentPhase, IncidentStatus, TaskId};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
-use crate::ui::table::{ColumnRef, IncidentColumn, List, RowRef, SortColumn};
+use crate::ui::table::{ColumnRef, IncidentColumn, List, RowRef, SortColumn, needs_you_first};
 use crate::ui::{App, Icon, Message, ReaderKey, Screen, Tokens, Tone};
 
-/// Every incident, the last seen first.
+/// Every incident, the ones that need you first, then the last seen.
 pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let mut page = column![row![title(Icon::Alert, "Incidents", tokens)].align_y(Alignment::Center)].spacing(18);
     let Some(incidents) = &app.incidents.list else {
@@ -50,7 +52,7 @@ const NARROW: f32 = 900.0;
 fn table_of<'a>(app: &'a App, incidents: &'a [Incident], narrow: bool, tokens: Tokens) -> El<'a> {
     let now = app.now;
     let state = &app.tables.incidents;
-    let shown = state.sort.order(incidents);
+    let shown = needs_you_first(state.sort.order(incidents));
     let head = |c: IncidentColumn| {
         grid::header(
             c.label(),
@@ -74,14 +76,18 @@ fn table_of<'a>(app: &'a App, incidents: &'a [Incident], narrow: bool, tokens: T
     if narrow {
         columns.push(table::column(
             column![head(IncidentColumn::Severity), head(IncidentColumn::Status)].spacing(2),
-            move |i: &'a Incident| -> El<'a> { column![severity(i, tokens), status(i, tokens)].spacing(4).into() },
+            move |i: &'a Incident| -> El<'a> {
+                column![severity(i, tokens), status_and_wait(i, tokens)]
+                    .spacing(4)
+                    .into()
+            },
         ));
     } else {
         columns.push(table::column(head(IncidentColumn::Severity), move |i: &'a Incident| {
             severity(i, tokens)
         }));
         columns.push(table::column(head(IncidentColumn::Status), move |i: &'a Incident| {
-            status(i, tokens)
+            status_and_wait(i, tokens)
         }));
     }
     // The title takes what the other columns leave and wraps there, so
@@ -139,6 +145,9 @@ pub fn detail<'a>(app: &'a App, id: &'a str, tokens: Tokens) -> El<'a> {
     ]
     .spacing(12)
     .align_y(Alignment::Center);
+    if incident.needs_you {
+        header = header.push(needs_you(tokens));
+    }
     if incident.status.can_resolve() && !form.open {
         header = header.push(action(
             Kind::Secondary,
@@ -149,14 +158,18 @@ pub fn detail<'a>(app: &'a App, id: &'a str, tokens: Tokens) -> El<'a> {
         ));
     }
     let mut page = column![header].spacing(16);
+    if let Some(card) = decision_card(app, incident, tokens) {
+        page = page.push(card);
+    }
     if form.open && incident.status.can_resolve() {
         page = page.push(resolve_form(app, tokens));
     }
     page = page.push(facts(app, incident, tokens));
     if !incident.reason.is_empty() {
         let why = match incident.status {
-            crate::domain::IncidentStatus::Resolved => "Why it was resolved",
-            crate::domain::IncidentStatus::Escalated => "Why it was escalated",
+            IncidentStatus::Resolved => "Why it was resolved",
+            IncidentStatus::Escalated => "Why it was escalated",
+            IncidentStatus::Open if incident.cycle > 1 => "Why it is open again",
             _ => "Reason",
         };
         page = page.push(section(
@@ -189,7 +202,7 @@ pub fn detail<'a>(app: &'a App, id: &'a str, tokens: Tokens) -> El<'a> {
     if !incident.proposal.is_empty() {
         page = page.push(section(
             Icon::Wrench,
-            "Proposal · not applied",
+            proposal_heading(incident),
             reader(
                 &app.readers,
                 ReaderKey::IncidentProposal,
@@ -261,6 +274,7 @@ fn facts<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> El<'a> {
         fact("Cost", text(format::spend(incident.cost())), tokens),
         fact("Repeats", text(incident.repeats.to_string()), tokens),
         fact("Retries", text(incident.retries.to_string()), tokens),
+        fact("Sent back", text(incident.send_backs.to_string()), tokens),
         fact("Cycle", text(incident.cycle.to_string()), tokens),
         fact(
             "Group",
@@ -276,7 +290,104 @@ fn facts<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> El<'a> {
     ]
     .spacing(8)
     .width(Length::FillPortion(1));
+    let right = match incident.approvals {
+        Some(approvals) => right.push(fact("Approvals", text(approvals.summary()), tokens)),
+        None => right,
+    };
     card(row![left, right].spacing(20), tokens).into()
+}
+
+/// What the proposal is now: waiting for you, being applied, applied and
+/// being verified, or the last one, which the incident went back from.
+fn proposal_heading(incident: &Incident) -> &'static str {
+    match incident.status {
+        IncidentStatus::Proposed if incident.needs_you => "Proposal · needs you",
+        IncidentStatus::Proposed => "Proposal · not applied",
+        IncidentStatus::Applying => "Proposal · being applied",
+        IncidentStatus::Verifying => "Proposal · applied, verifying",
+        _ => "Last proposal",
+    }
+}
+
+/// The amber mark of an incident whose current task waits for you.
+fn needs_you<'a>(tokens: Tokens) -> El<'a> {
+    pill_with(Icon::Alert, Tone::Wait, "needs you", tokens)
+}
+
+/// The status, and under it the mark when the incident needs you.
+fn status_and_wait<'a>(incident: &Incident, tokens: Tokens) -> El<'a> {
+    if incident.needs_you {
+        column![status(incident, tokens), needs_you(tokens)].spacing(4).into()
+    } else {
+        status(incident, tokens)
+    }
+}
+
+/// The decision the incident waits for: which task asks to call which
+/// tool, with Approve and Deny, the Tasks screen's own. Approve lets the
+/// apply run and moves the incident to Applying; Deny sends it back to
+/// Open (the second denial leaves it to a person).
+fn decision_card<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> Option<El<'a>> {
+    let (task, _) = incident.decision()?;
+    let current = incident.current_task.as_ref()?;
+    let tool = current.waiting_call().map_or("a write", |w| w.tool.as_str());
+    let what = match current.phase {
+        IncidentPhase::Apply => "Approve to apply the proposal; Deny sends the incident back to Open.",
+        _ => "Approve to let the call run; Deny refuses it.",
+    };
+    let buttons: El<'a> = if app.deciding.as_ref() == Some(task) {
+        row![
+            super::widgets::icon(Icon::Hourglass, 18.0, tokens.wait),
+            bold("Sending your answer…")
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center)
+        .into()
+    } else {
+        row![
+            action(
+                Kind::Good,
+                Icon::Check,
+                "Approve",
+                Some(Message::Approve(task.clone())),
+                tokens
+            ),
+            action(
+                Kind::Danger,
+                Icon::Cross,
+                "Deny",
+                Some(Message::AskDeny(task.clone())),
+                tokens
+            ),
+            Space::new().width(Length::Fill),
+            link(
+                format!("{} · {}", current.phase.name(), current.bot_id),
+                Message::Go(Screen::Task(task.clone())),
+                tokens
+            ),
+        ]
+        .spacing(12)
+        .align_y(Alignment::Center)
+        .into()
+    };
+    Some(
+        card(
+            column![
+                super::widgets::section_title(Icon::Alert, "Needs you", tokens),
+                row![
+                    muted("The task asks to call", tokens),
+                    bold(tool.to_string()).size(20.0)
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center),
+                muted(what, tokens),
+                buttons,
+            ]
+            .spacing(12),
+            tokens,
+        )
+        .into(),
+    )
 }
 
 fn severity<'a>(incident: &Incident, tokens: Tokens) -> El<'a> {

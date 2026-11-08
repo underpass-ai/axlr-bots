@@ -21,7 +21,7 @@ axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>]
   group topics <group> [--tenant <id>]   who publishes, who listens, nobody listens
   group publish <group> <name> --message "<text>" [--data '{…}'] [--to a,b] [--key <k>] [--tenant <id>]   the operator's event; stop.all stops everyone and drops their queued tasks
   incident open --tenant <id> --bot <bot-id> --group-key "<key>" --title "<text>" [--severity sev1..sev4] [--fingerprints a,b] [--source <name>] [--objective "<text>"]   report an alert group: a new incident and its triage task, a repeat, or a reopening; sev3 without `--severity`
-  incident list [--tenant <id>] [--status Open|Diagnosed|Proposed|Resolved|Escalated] [--limit 100] | incident get <incident-id> | incident resolve <incident-id> [--reason "<text>"]   the incidents, one incident, close one
+  incident list [--tenant <id>] [--status Open|Diagnosed|Proposed|Applying|Verifying|Resolved|Escalated] [--limit 100] | incident get <incident-id> | incident resolve <incident-id> [--reason "<text>"]   the incidents (needsYou on each that waits for you), one incident (with its currentTask and approvals), close one
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>] [--urgent]   --urgent goes first, cancels the bot's work in progress and drops its queued tasks
   trigger fire <bot-id> <trigger> --body '<json>' | --file <event.json> [--delivery <id>]
   task run <task-id>                           in process (exit 0 completed, 3 decision required, 1 failed)

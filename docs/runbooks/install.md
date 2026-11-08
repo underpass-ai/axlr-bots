@@ -72,7 +72,7 @@ Both units read the environment file (`EnvironmentFile=-~/.config/axlr-bots/env`
 | `AXLR_BOTS_BUS=nats`, `AXLR_BOTS_NATS_URL=tls://…:4222`, `AXLR_BOTS_NATS_CERT=`, `AXLR_BOTS_NATS_KEY=`, `AXLR_BOTS_NATS_CA=` | the control plane also publishes its pushes to a broker ([deploy a broker](../architecture/bus-port.md#deploy-a-broker)) |
 | `AXLR_NODE_BUS=nats`, `AXLR_NODE_NATS_URL=tls://…:4222`, `AXLR_NODE_NATS_CA=` | the node reads its pushes from the broker; over `https://` it shows the broker its own certificate from enrollment |
 
-Check: the node's journal says `node: jev runtime on (jev-1.13.0)`, or `node: TYPESAFE_API_KEY is not set: Jev bots are not run here`; `axlr-bots node get <id>` lists `jev` under the capabilities' `runtimes`.
+Check: the node's journal says `node: jev runtime on (jev-1.13.0)`, or `node: TYPESAFE_API_KEY is not set: Jev bots are not run here`; `axlr-bots node get <id>` lists `jev` under the capabilities' `runtimes`, and the model providers the host has under `providers` (`openrouter`, `codex`, `jev`, `local:<id>`; [node protocol](../reference/node-protocol.md#the-agents-loop)): a key the node could not see at its start is a provider it does not name, so restart `axlr-node` after editing the env file.
 
 ## Keep it running after logout
 

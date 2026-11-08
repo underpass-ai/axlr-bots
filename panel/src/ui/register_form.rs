@@ -1,3 +1,4 @@
+use crate::application::NewBotDefaults;
 use crate::domain::{AutonomyLevel, BotForm};
 
 /// The form that registers a bot.
@@ -12,14 +13,14 @@ pub struct RegisterForm {
 
 impl RegisterForm {
     /// A fresh form with sensible defaults: the tools a reading bot needs,
-    /// and it asks before acting.
-    pub fn opened() -> Self {
+    /// the model the panel's settings propose, and it asks before acting.
+    pub fn opened(defaults: &NewBotDefaults) -> Self {
         Self {
             open: true,
             form: BotForm {
                 level: AutonomyLevel::ActWithApproval,
                 tools: "local_read, local_list, local_search".into(),
-                model: "anthropic/claude-haiku-5.5".into(),
+                model: defaults.model.clone(),
                 ..BotForm::default()
             },
             busy: false,
@@ -34,8 +35,12 @@ mod tests {
 
     #[test]
     fn a_new_bot_asks_before_acting_with_advanced_closed() {
-        let form = RegisterForm::opened();
+        let form = RegisterForm::opened(&NewBotDefaults {
+            model: "codex/gpt-6-luna".into(),
+            models: vec![],
+        });
         assert!(form.open && !form.advanced && !form.busy);
+        assert_eq!(form.form.model, "codex/gpt-6-luna");
         assert_eq!(form.form.level, AutonomyLevel::ActWithApproval);
         assert!(form.form.tools.contains("local_read"));
         assert!(!RegisterForm::default().open);

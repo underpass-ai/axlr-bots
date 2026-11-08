@@ -398,28 +398,28 @@ func (l *Local) OpenIncident(ctx context.Context, command application.OpenIncide
 	return response, nil
 }
 
-func (l *Local) ListIncidents(ctx context.Context, query application.IncidentQuery) ([]domain.IncidentSnapshot, error) {
-	incidents, err := application.NewListIncidents(l.deps).Execute(ctx, query)
+func (l *Local) ListIncidents(ctx context.Context, query application.IncidentQuery) ([]IncidentResponse, error) {
+	reports, err := application.NewListIncidents(l.deps).Execute(ctx, query)
 	if err != nil {
 		return nil, err
 	}
-	snapshots := make([]domain.IncidentSnapshot, 0, len(incidents))
-	for _, incident := range incidents {
-		snapshots = append(snapshots, incident.Snapshot())
+	incidents := make([]IncidentResponse, 0, len(reports))
+	for _, report := range reports {
+		incidents = append(incidents, newIncidentResponse(report))
 	}
-	return snapshots, nil
+	return incidents, nil
 }
 
-func (l *Local) GetIncident(ctx context.Context, id string) (domain.IncidentSnapshot, error) {
+func (l *Local) GetIncident(ctx context.Context, id string) (IncidentResponse, error) {
 	incidentID, err := domain.NewIncidentID(id)
 	if err != nil {
-		return domain.IncidentSnapshot{}, err
+		return IncidentResponse{}, err
 	}
-	incident, err := application.NewGetIncident(l.deps).Execute(ctx, incidentID)
+	report, err := application.NewGetIncident(l.deps).Execute(ctx, incidentID)
 	if err != nil {
-		return domain.IncidentSnapshot{}, err
+		return IncidentResponse{}, err
 	}
-	return incident.Snapshot(), nil
+	return newIncidentResponse(report), nil
 }
 
 func (l *Local) ResolveIncident(ctx context.Context, id string, request ResolveRequest) (domain.IncidentSnapshot, error) {

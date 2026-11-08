@@ -99,7 +99,10 @@ const (
 	EventIncidentRepeated EventType = "incident.repeated"
 	// EventIncidentReopened says an alert came soon after the incident
 	// was resolved, or came again while it was Escalated (the payload's
-	// retry is true): a new cycle and a new triage task.
+	// retry is true): a new cycle and a new triage task. It also says an
+	// incident went back to Open from Proposed, Applying or Verifying (the
+	// payload's from names the status, reason why; no task: the next
+	// alert of the group starts the triage).
 	EventIncidentReopened EventType = "incident.reopened"
 	// EventIncidentDiagnosed says the triage task completed: the payload
 	// holds the diagnosis.
@@ -107,6 +110,13 @@ const (
 	// EventIncidentProposed says the fix task completed: the payload
 	// holds the proposal, the change and its rollback, applied by nobody.
 	EventIncidentProposed EventType = "incident.proposed"
+	// EventIncidentApplying says a person approved the apply task's call:
+	// the proposal is being carried out. The payload names the task, the
+	// call and who decided.
+	EventIncidentApplying EventType = "incident.applying"
+	// EventIncidentVerifying says the apply task completed: the verify
+	// task, when a teammate takes the phase, checks the change.
+	EventIncidentVerifying EventType = "incident.verifying"
 	// EventIncidentEscalated says the bots gave the incident to a person:
 	// the payload says why.
 	EventIncidentEscalated EventType = "incident.escalated"
@@ -138,7 +148,7 @@ func ParseEventType(raw string) (EventType, error) {
 	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventBotDeleted, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
 		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventTaskDelegated, EventTaskMessage, EventTaskSaid, EventTaskProgress, EventDelegationRefused,
 		EventEventEmitted, EventEventRefused, EventEventHeard, EventSubscriptionChanged, EventSubscriptionAsked, EventGroupEventPublished,
-		EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentProposed, EventIncidentEscalated, EventIncidentResolved,
+		EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentProposed, EventIncidentApplying, EventIncidentVerifying, EventIncidentEscalated, EventIncidentResolved,
 		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked, EventNodeRenewed,
 		EventExecutionAssigned, EventExecutionReported:
 		return EventType(raw), nil
@@ -152,7 +162,7 @@ func (t EventType) String() string { return string(t) }
 // incident and the bot that triages it.
 func (t EventType) AboutIncident() bool {
 	switch t {
-	case EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentProposed, EventIncidentEscalated, EventIncidentResolved:
+	case EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentProposed, EventIncidentApplying, EventIncidentVerifying, EventIncidentEscalated, EventIncidentResolved:
 		return true
 	}
 	return false

@@ -86,7 +86,7 @@ func TestOpenIncidentOpensOnceAndRepeats(t *testing.T) {
 		t.Fatalf("second group = %+v %v", second, err)
 	}
 	list, err := NewListIncidents(h.deps).Execute(ctx, IncidentQuery{})
-	if err != nil || len(list) != 2 || list[0].ID() != second.Incident.ID() {
+	if err != nil || len(list) != 2 || list[0].Incident.ID() != second.Incident.ID() {
 		t.Errorf("list = %d %v", len(list), err)
 	}
 	open, _ := NewListIncidents(h.deps).Execute(ctx, IncidentQuery{Status: "Open", Tenant: bot.TenantID().String(), Limit: 1})
@@ -98,7 +98,7 @@ func TestOpenIncidentOpensOnceAndRepeats(t *testing.T) {
 			t.Errorf("query %+v accepted", query)
 		}
 	}
-	if got, err := NewGetIncident(h.deps).Execute(ctx, first.Incident.ID()); err != nil || got.ID() != first.Incident.ID() {
+	if got, err := NewGetIncident(h.deps).Execute(ctx, first.Incident.ID()); err != nil || got.Incident.ID() != first.Incident.ID() {
 		t.Errorf("get: %v", err)
 	}
 }

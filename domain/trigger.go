@@ -19,8 +19,9 @@ const (
 // its type, a name unique within the bot (the type when not given), and
 // for a webhook or a timer the objective template each fire renders and
 // the credentials or the schedule. An incident trigger names the phase
-// of the incident the bot takes: triage, or fix for a teammate's
-// incident once it is Diagnosed.
+// of the incident the bot takes (triage, or fix, apply or verify for a
+// teammate's incident once it reaches that phase) and may narrow the
+// bot's level and tools for that phase's tasks (Bot.PolicyFor).
 type Trigger struct {
 	kind       TriggerType
 	name       string
@@ -31,6 +32,8 @@ type Trigger struct {
 	schedule   Schedule
 	events     []EventPattern
 	interrupt  bool
+	level      AutonomyLevel
+	tools      AllowedTools
 }
 
 // NewTrigger validates a trigger from its definition.
@@ -51,8 +54,8 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 	if (len(s.Events) > 0 || s.Interrupt) && kind != TriggerEvent {
 		return Trigger{}, invalid("trigger "+name, "only an event trigger takes events or interrupt")
 	}
-	if s.Phase != "" && kind != TriggerIncident {
-		return Trigger{}, invalid("trigger "+name, "only an incident trigger takes a phase")
+	if (s.Phase != "" || s.Level != "" || len(s.Tools) > 0) && kind != TriggerIncident {
+		return Trigger{}, invalid("trigger "+name, "only an incident trigger takes a phase, a level or tools")
 	}
 	t.interrupt = s.Interrupt
 	switch kind {
@@ -82,6 +85,14 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 			return Trigger{}, invalid("trigger "+name, "an incident trigger takes no credentials or schedule")
 		}
 		if t.phase, err = ParseIncidentPhase(s.Phase); err != nil {
+			return Trigger{}, invalid("trigger "+name, err.Error())
+		}
+		if s.Level != "" {
+			if t.level, err = ParseAutonomyLevel(s.Level); err != nil {
+				return Trigger{}, invalid("trigger "+name, err.Error())
+			}
+		}
+		if t.tools, err = NewAllowedTools(s.Tools); err != nil {
 			return Trigger{}, invalid("trigger "+name, err.Error())
 		}
 		if s.Objective == "" {
@@ -154,6 +165,14 @@ func (t Trigger) ObjectiveTemplate() string { return t.objective }
 // default; empty for the other types.
 func (t Trigger) Phase() IncidentPhase { return t.phase }
 
+// Level is the level an incident trigger runs its phase's tasks at, and
+// false when it keeps the bot's.
+func (t Trigger) Level() (AutonomyLevel, bool) { return t.level, t.level != "" }
+
+// Tools is the allow-list an incident trigger runs its phase's tasks
+// with, and false when it keeps the bot's (no list, or an empty one).
+func (t Trigger) Tools() (AllowedTools, bool) { return t.tools, t.tools.Len() > 0 }
+
 // Schedule is when a timer fires; zero for the other types.
 func (t Trigger) Schedule() Schedule { return t.schedule }
 
@@ -195,6 +214,10 @@ func (t Trigger) Snapshot() TriggerSnapshot {
 		s.Events = append(s.Events, pattern.String())
 	}
 	s.Interrupt = t.interrupt
+	s.Level = t.level.String()
+	if t.tools.Len() > 0 {
+		s.Tools = t.tools.Names()
+	}
 	if t.phase != IncidentPhaseTriage {
 		// Triage is the default: a definition that did not name it
 		// stores as it did before incident triggers had phases.

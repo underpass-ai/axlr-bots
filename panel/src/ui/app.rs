@@ -3,10 +3,11 @@ use chrono::{DateTime, Duration, Utc};
 use super::{
     Answer, Banner, BotChoice, BotEditForm, BotView, Confirm, DeleteForm, Effect, IncidentWatch, Keypress, Launch,
     ListenForm, LiveStream, LiveTask, Message, MintForm, NodeChoice, OrderForm, PublishForm, Readers, RegisterForm,
-    ResolveForm, Screen, Services, SettingsForm, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode, passages,
+    ResolveForm, Screen, Services, SettingsForm, SettingsJson, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode,
+    passages,
 };
 use crate::application::SubscriptionChange;
-use crate::application::{EventFeed, Fleet, PanelConfig, PanelError, TaskDetail};
+use crate::application::{EventFeed, Fleet, NewBotDefaults, PanelError, PanelSettings, TaskDetail};
 use crate::domain::{Decision, Shortcut, TaskId, TaskStatus};
 use crate::ui::format;
 use crate::ui::table::Tables;
@@ -44,6 +45,10 @@ pub struct App {
     pub register: RegisterForm,
     pub submit: SubmitForm,
     pub settings: SettingsForm,
+    /// The settings as JSON text, when open to edit.
+    pub settings_json: SettingsJson,
+    /// The New bot defaults as saved: what a new form starts with.
+    pub new_bot: NewBotDefaults,
     pub filter: TaskViewFilter,
     pub confirm: Option<Confirm>,
     pub banner: Option<Banner>,
@@ -84,12 +89,13 @@ pub struct App {
 
 impl App {
     /// The panel at start: connecting with saved settings, or on the
-    /// settings screen the first time.
-    pub fn new(services: Services, launch: Launch, config: &PanelConfig, saved: bool) -> (Self, Vec<Effect>) {
+    /// settings screen the first time. `saved` says whether the control
+    /// plane section was saved before.
+    pub fn new(services: Services, launch: Launch, settings: &PanelSettings, saved: bool) -> (Self, Vec<Effect>) {
         let now = services.clock.now();
         let mut app = Self {
             services,
-            mode: launch.theme,
+            mode: launch.theme.unwrap_or(settings.theme),
             screen: if saved { launch.screen.clone() } else { Screen::Settings },
             now,
             fleet: None,
@@ -108,7 +114,9 @@ impl App {
             mint: MintForm::default(),
             register: RegisterForm::default(),
             submit: SubmitForm::default(),
-            settings: SettingsForm::from_config(config, saved),
+            settings: SettingsForm::from_settings(settings, saved),
+            settings_json: SettingsJson::default(),
+            new_bot: settings.new_bot.clone(),
             filter: TaskViewFilter::default(),
             confirm: None,
             banner: None,
@@ -140,14 +148,20 @@ impl App {
         }
         let effects = if saved {
             app.settings.busy = true;
+            app.settings.trying = Some(app.settings.config());
             vec![Effect::Connect {
-                config: config.clone(),
+                config: app.settings.config(),
                 save: false,
             }]
         } else {
             Vec::new()
         };
         (app, effects)
+    }
+
+    /// Everything the settings screen shows, as settings.
+    pub fn current_settings(&self) -> PanelSettings {
+        self.settings.settings(self.mode)
     }
 
     pub fn connected(&self) -> bool {
@@ -194,11 +208,11 @@ impl App {
             }
             Message::ToggleTheme => {
                 self.mode = self.mode.toggled();
-                Vec::new()
+                self.save_preferences(self.new_bot.clone(), true)
             }
             Message::SetTheme(mode) => {
                 self.mode = mode;
-                Vec::new()
+                self.save_preferences(self.new_bot.clone(), true)
             }
             Message::DismissBanner => {
                 self.banner = None;
@@ -366,7 +380,7 @@ impl App {
             }
 
             Message::RegisterOpen => {
-                self.register = RegisterForm::opened();
+                self.register = RegisterForm::opened(&self.new_bot);
                 Vec::new()
             }
             Message::RegisterClose => {
@@ -789,21 +803,95 @@ impl App {
                 Vec::new()
             }
             Message::SettingsSave => {
-                if self.settings.busy {
+                if !self.can_connect() {
                     return Vec::new();
                 }
                 self.settings.busy = true;
+                self.settings.trying = Some(self.settings.config());
                 vec![Effect::Connect {
                     config: self.settings.config(),
                     save: true,
                 }]
             }
+            Message::SettingsModel(value) => {
+                self.settings.default_model = value;
+                Vec::new()
+            }
+            Message::SettingsModels(value) => {
+                self.settings.models = value;
+                Vec::new()
+            }
+            Message::SettingsSavePreferences => self.save_preferences(self.settings.new_bot(), false),
+            Message::PreferencesSaved { result, quiet } => self.preferences_saved(result, quiet),
+            Message::SettingsJsonOpen => {
+                self.settings_json.open_with(&self.current_settings().to_json());
+                Vec::new()
+            }
+            Message::SettingsJsonEdit(action) => {
+                self.settings_json.content.perform(action);
+                self.settings_json.error = None;
+                Vec::new()
+            }
+            Message::SettingsJsonApply => match PanelSettings::from_json(&self.settings_json.text()) {
+                Ok(settings) => {
+                    self.settings_json.close();
+                    self.take_settings(settings, "Applied")
+                }
+                Err(error) => {
+                    self.settings_json.error = Some(match error {
+                        PanelError::Config(words) => words,
+                        other => other.to_string(),
+                    });
+                    Vec::new()
+                }
+            },
+            Message::SettingsJsonClose => {
+                self.settings_json.close();
+                Vec::new()
+            }
+            Message::SettingsExport => vec![Effect::ExportSettings(self.current_settings())],
+            Message::SettingsExported(result) => {
+                match result {
+                    Ok(Some(path)) => {
+                        self.banner = Some(Banner::good("Settings exported", path.display().to_string(), self.now));
+                    }
+                    Ok(None) => {}
+                    Err(error) => self.banner = Some(Banner::error(&error, self.now)),
+                }
+                Vec::new()
+            }
+            Message::SettingsImport => vec![Effect::ImportSettings],
+            Message::SettingsImported(result) => match result {
+                Ok(Some(settings)) => self.take_settings(settings, "Settings imported"),
+                Ok(None) => Vec::new(),
+                Err(error) => {
+                    self.banner = Some(Banner::error(&error, self.now));
+                    Vec::new()
+                }
+            },
+            Message::SettingsReset => {
+                let (control_plane, new_bot) = self.services.connect.defaults();
+                let settings = PanelSettings {
+                    control_plane: Some(control_plane),
+                    theme: ThemeMode::default(),
+                    new_bot,
+                };
+                self.take_settings(settings, "Back to the defaults")
+            }
             Message::Connected { result, saved } => {
                 self.settings.busy = false;
+                let tried = self.settings.trying.take();
                 match result {
                     Ok(connection) => {
                         self.services.control_plane = Some(connection.0);
-                        self.endpoint = Some(format::endpoint(&self.settings.api_url));
+                        self.settings.connected = tried;
+                        self.endpoint = Some(format::endpoint(
+                            &self
+                                .settings
+                                .connected
+                                .as_ref()
+                                .map_or(String::new(), |c| c.api_url.clone()),
+                        ));
                         self.fleet_error = None;
                         if saved {
                             self.settings.saved = true;
@@ -837,6 +925,53 @@ impl App {
             Message::AskBulk(list, action) => self.ask_bulk(list, action),
             Message::BulkDone(outcome) => self.bulk_done(outcome),
         }
+    }
+
+    /// Connect has something to do: the values typed are not the ones
+    /// connected, or the connection broke (a control plane restarted, a
+    /// token rotated) and these values are worth trying again.
+    pub fn can_connect(&self) -> bool {
+        self.settings.can_connect() || (!self.settings.busy && self.fleet_error.is_some())
+    }
+
+    /// Keeps the look as it is and the New bot defaults given: the saved
+    /// ones on a theme switch, so a half-typed field is not committed;
+    /// the typed ones on Save.
+    fn save_preferences(&mut self, new_bot: NewBotDefaults, quiet: bool) -> Vec<Effect> {
+        let settings = PanelSettings {
+            new_bot,
+            ..self.current_settings()
+        };
+        vec![Effect::SavePreferences { settings, quiet }]
+    }
+
+    fn preferences_saved(&mut self, result: Result<PanelSettings, PanelError>, quiet: bool) -> Vec<Effect> {
+        match result {
+            Ok(kept) => {
+                self.new_bot = kept.new_bot;
+                if !quiet {
+                    self.banner = Some(Banner::good("Settings saved", "The New bot defaults", self.now));
+                }
+            }
+            Err(error) => self.banner = Some(Banner::error(&error, self.now)),
+        }
+        Vec::new()
+    }
+
+    /// Settings that arrived whole (the JSON applied, a file imported, the
+    /// defaults): the screen takes them, the look and the New bot
+    /// defaults are kept at once, and the control plane values wait for
+    /// Connect when they differ from the connection.
+    fn take_settings(&mut self, settings: PanelSettings, title: &str) -> Vec<Effect> {
+        self.settings.take(&settings);
+        self.mode = settings.theme;
+        let words = if self.settings.changed() || (!self.connected() && !self.settings.busy) {
+            "Press Connect to try the control plane values"
+        } else {
+            "Look and New bot defaults kept"
+        };
+        self.banner = Some(Banner::good(title, words, self.now));
+        self.save_preferences(settings.new_bot, true)
     }
 
     fn tick(&mut self, now: DateTime<Utc>) -> Vec<Effect> {
@@ -1018,7 +1153,17 @@ impl App {
             .filter(|d| d.task.id == id)
             .and_then(|d| d.pending_call())
             .or_else(|| self.fleet.as_ref().and_then(|f| f.call_of(&id)))
-            .map(|c| c.call_id.clone());
+            .map(|c| c.call_id.clone())
+            .or_else(|| {
+                // Decided from the incident's page: the call it says its
+                // current task waits on.
+                self.incidents
+                    .detail
+                    .as_ref()
+                    .and_then(|i| i.decision())
+                    .filter(|(task, call)| *task == &id && !call.is_empty())
+                    .map(|(_, call)| call.to_string())
+            });
         vec![Effect::Decide(id, decision, call_id)]
     }
 

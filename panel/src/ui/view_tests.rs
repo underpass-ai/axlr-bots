@@ -133,6 +133,84 @@ fn the_first_run_shows_the_settings_and_connects_on_a_click() {
     assert!(matches!(sent.as_slice(), [Message::SettingsSave]));
 }
 
+/// Connected, the settings screen says so and Connect has nothing to
+/// press; the other sections, the JSON editor and the file acts are
+/// there, and a bot's configuration is not.
+#[test]
+fn the_settings_screen_shows_its_sections_and_rests_connect_once_connected() {
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Settings));
+    shows(
+        &app,
+        &[
+            "Control plane",
+            "Connected",
+            "Look",
+            "New bot",
+            "Model proposed",
+            "Settings file",
+            "Edit as JSON",
+            "Export…",
+            "Import…",
+            "Reset to defaults",
+            "~/.config/axlr-bots-panel/settings.json",
+        ],
+    );
+    assert!(simulator_misses(&app, "Welcome. Check these three values."));
+    assert!(simulator_misses(&app, "Mission"));
+    assert!(messages_of_click(&app, "Connected").is_empty(), "nothing to connect");
+    assert!(matches!(
+        messages_of_click(&app, "Export…").as_slice(),
+        [Message::SettingsExport]
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Edit as JSON").as_slice(),
+        [Message::SettingsJsonOpen]
+    ));
+    app.apply(Message::SettingsCa("/other.crt".into()));
+    shows(&app, &["Changed", "Connect"]);
+    assert!(matches!(
+        messages_of_click(&app, "Connect").as_slice(),
+        [Message::SettingsSave]
+    ));
+    app.apply(Message::SettingsJsonOpen);
+    shows(&app, &["Apply", "Close"]);
+    assert!(
+        simulator_misses(&app, "Model proposed"),
+        "the file takes the form's place"
+    );
+    app.settings_json.content = iced::widget::text_editor::Content::with_text("{\"look.theme\": 1}");
+    app.apply(Message::SettingsJsonApply);
+    assert!(
+        app.settings_json
+            .error
+            .as_deref()
+            .unwrap()
+            .starts_with("settings line 1, column 16")
+    );
+    shows(&app, &["Apply"]);
+}
+
+/// The New bot form offers the settings' models as one-click chips.
+#[test]
+fn the_new_bot_form_offers_the_models_the_settings_name() {
+    let mut app = connected();
+    app.apply(Message::SettingsModels("codex/gpt-6-luna".into()));
+    send(&mut app, Message::SettingsSavePreferences);
+    send(&mut app, Message::Go(Screen::Bots));
+    send(&mut app, Message::RegisterOpen);
+    app.apply(Message::RegisterAdvanced(true));
+    shows(&app, &["anthropic/claude-haiku-5.5", "codex/gpt-6-luna"]);
+    assert!(matches!(
+        messages_of_click(&app, "codex/gpt-6-luna").as_slice(),
+        [Message::RegisterModel(m)] if m == "codex/gpt-6-luna"
+    ));
+    assert!(
+        messages_of_click(&app, "anthropic/claude-haiku-5.5").is_empty(),
+        "the one in the field is lit"
+    );
+}
+
 /// Home lists the five newest calls and the way to all of them, and
 /// the nodes that are not online before the others.
 #[test]
@@ -306,10 +384,22 @@ fn the_nodes_screen_lists_the_nodes_and_mints_a_token() {
             assert!(wide.find(word).is_ok(), "{word} is not on the wide Nodes");
         }
     }
+    // Each node's providers are chips under it, a local model by its id.
+    shows(
+        &app,
+        &["openrouter", "codex", "jev", "codex/gpt-6.1-sol", "codex/gpt-6-luna"],
+    );
     if let Some(fleet) = app.fleet.as_mut() {
         fleet.nodes[1].capabilities.dedicated = true;
+        for node in &mut fleet.nodes {
+            node.capabilities.providers.clear();
+        }
     }
     shows(&app, &["dedicated"]);
+    assert!(
+        simulator_misses(&app, "codex/gpt-6.1-sol"),
+        "a node that named no provider shows no chip"
+    );
     assert!(matches!(
         messages_of_click(&app, "New host token").as_slice(),
         [Message::MintOpen]
@@ -398,6 +488,34 @@ fn the_bots_screen_lists_switches_and_adds() {
     );
     app.apply(Message::RegisterAdvanced(false));
     assert!(simulator_misses(&app, "Tools"));
+    // Where does it run? warns when the node named its providers and none
+    // serves the model typed; Add bot stays.
+    let wrx80 = crate::ui::NodeChoice::One(NodeId::new("wrx80").unwrap());
+    app.apply(Message::RegisterNode(wrx80.clone()));
+    assert!(
+        simulator_misses(&app, "has no"),
+        "wrx80 has OpenRouter for the default model"
+    );
+    app.apply(Message::RegisterModel("codex/gpt-6.1-sol".into()));
+    shows(
+        &app,
+        &[
+            "wrx80 has no codex for codex/gpt-6.1-sol: it has openrouter.",
+            "Add bot",
+        ],
+    );
+    app.apply(Message::RegisterNode(crate::ui::NodeChoice::One(
+        NodeId::new("gx10-ff95").unwrap(),
+    )));
+    assert!(simulator_misses(&app, "has no"), "gx10-ff95 has the Codex proxy");
+    app.apply(Message::RegisterNode(crate::ui::NodeChoice::Any));
+    assert!(simulator_misses(&app, "has no"), "any node: nothing to compare with");
+    app.apply(Message::RegisterNode(wrx80));
+    app.apply(Message::RegisterModel(String::new()));
+    assert!(
+        simulator_misses(&app, "has no"),
+        "no model typed: nothing to compare with"
+    );
     send(
         &mut app,
         Message::Go(Screen::Bot(BotId::new("bot-act-with-approval").unwrap())),
@@ -1706,4 +1824,122 @@ fn a_bots_edit_and_delete_say_what_they_do_in_words() {
             "Keep it",
         ],
     );
+}
+
+/// A Proposed incident whose apply task waits on its write call.
+fn waiting_apply(app: &App) -> crate::domain::Incident {
+    use crate::domain::{
+        IncidentApprovals, IncidentCurrentTask, IncidentPhase, IncidentStatus, IncidentTask, IncidentWait,
+    };
+    let waiting = app
+        .fleet
+        .as_ref()
+        .unwrap()
+        .tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::WaitingApproval)
+        .unwrap()
+        .clone();
+    let mut incident = app.incidents.detail.clone().unwrap();
+    incident.status = IncidentStatus::Proposed;
+    incident.diagnosis = "Deployment web drifted: replicas 1, desired 3.".into();
+    incident.proposal = "PROPOSAL: kubectl apply -f desired/web.yaml".into();
+    incident.task_ids.push(waiting.id.clone());
+    incident.tasks = vec![IncidentTask {
+        task_id: waiting.id.clone(),
+        bot_id: waiting.bot_id.clone(),
+        phase: IncidentPhase::Apply,
+        cycle: 1,
+    }];
+    incident.needs_you = true;
+    incident.current_task = Some(IncidentCurrentTask {
+        task_id: waiting.id.clone(),
+        bot_id: waiting.bot_id.clone(),
+        phase: IncidentPhase::Apply,
+        status: TaskStatus::WaitingApproval,
+        approval: Some(IncidentWait {
+            call_id: "call-incident".into(),
+            tool: "local_write".into(),
+            deadline: app.now + chrono::Duration::minutes(2),
+            outcome: String::new(),
+        }),
+    });
+    incident.approvals = Some(IncidentApprovals {
+        waiting: 1,
+        ..Default::default()
+    });
+    incident
+}
+
+#[test]
+fn an_incident_that_needs_you_offers_approve_and_deny_of_its_apply() {
+    use crate::domain::IncidentStatus;
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Incident("inc-latency".into())));
+    let incident = waiting_apply(&app);
+    let task = incident.current_task.as_ref().unwrap().task_id.clone();
+    app.apply(Message::IncidentLoaded("inc-latency".into(), Ok(incident.clone())));
+    shows(
+        &app,
+        &[
+            "Needs you",
+            "needs you",
+            "local_write",
+            "Approve",
+            "Deny",
+            "Proposal · needs you",
+            "Approvals",
+            "1 waiting",
+            "Sent back",
+        ],
+    );
+    // The fleet's read does not hold the call: the incident's own says it.
+    app.fleet.as_mut().unwrap().calls.clear();
+    let effects = app.apply(Message::Approve(task.clone()));
+    assert_eq!(
+        effects,
+        vec![crate::ui::Effect::Decide(
+            task.clone(),
+            crate::domain::Decision::Approve,
+            Some("call-incident".into())
+        )]
+    );
+    shows(&app, &["Sending your answer…"]);
+    app.deciding = None;
+    assert!(app.apply(Message::AskDeny(task.clone())).is_empty());
+    assert_eq!(
+        app.apply(Message::ConfirmYes),
+        vec![crate::ui::Effect::Decide(
+            task.clone(),
+            crate::domain::Decision::Deny,
+            Some("call-incident".into())
+        )]
+    );
+    app.deciding = None;
+    for (status, heading) in [
+        (IncidentStatus::Applying, "Proposal · being applied"),
+        (IncidentStatus::Verifying, "Proposal · applied, verifying"),
+        (IncidentStatus::Open, "Last proposal"),
+    ] {
+        let mut moved = incident.clone();
+        moved.status = status;
+        moved.needs_you = false;
+        app.apply(Message::IncidentLoaded("inc-latency".into(), Ok(moved)));
+        shows(&app, &[status.name(), heading]);
+        assert!(simulator_misses(&app, "Needs you"), "{status:?} offers a decision");
+    }
+}
+
+#[test]
+fn the_incidents_that_need_you_come_first_and_say_so() {
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Incidents));
+    let list = app.incidents.list.as_mut().unwrap();
+    let last = list.len() - 1;
+    list[last].needs_you = true;
+    let id = list[last].id.clone();
+    shows(&app, &["needs you"]);
+    let state = &app.tables.incidents;
+    let shown = crate::ui::table::needs_you_first(state.sort.order(app.incidents.list.as_ref().unwrap()));
+    assert_eq!(shown[0].id, id);
 }

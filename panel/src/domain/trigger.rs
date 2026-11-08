@@ -4,7 +4,10 @@ use super::TriggerType;
 
 /// What starts a bot's task: by hand, a webhook (credentials redacted by
 /// the control plane), a timer, another bot, or the events of a
-/// teammate it hears (`events`, names or patterns).
+/// teammate it hears (`events`, names or patterns), or an incident's
+/// phase (`phase`, with the `level` and `tools` it narrows the bot's to).
+/// Kept as the control plane says them, so a definition read from a file
+/// is sent back whole.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Trigger {
@@ -27,6 +30,17 @@ pub struct Trigger {
     /// An event trigger whose warnings and criticals make urgent tasks.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub interrupt: bool,
+    /// An incident trigger: the phase the bot takes (triage when empty).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub phase: String,
+    /// An incident trigger: the level its phase runs at, at most the
+    /// bot's; empty keeps the bot's.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub level: String,
+    /// An incident trigger: the tools its phase runs with, some of the
+    /// bot's; empty keeps the bot's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<String>,
 }
 
 impl Trigger {
@@ -76,6 +90,15 @@ mod tests {
             serde_json::from_str(r#"{"type":"event","events":["stop.halt"],"interrupt":true}"#).unwrap();
         assert!(loud.interrupt);
         assert!(!serde_json::to_string(&Trigger::manual()).unwrap().contains("interrupt"));
+    }
+
+    #[test]
+    fn keeps_an_incident_phase_and_the_policy_it_narrows_to() {
+        let raw = r#"{"type":"incident","name":"fix","phase":"fix","level":"propose","tools":["diff","get"]}"#;
+        let trigger: Trigger = serde_json::from_str(raw).unwrap();
+        assert_eq!((trigger.phase.as_str(), trigger.level.as_str()), ("fix", "propose"));
+        assert_eq!(trigger.tools, vec!["diff".to_string(), "get".to_string()]);
+        assert_eq!(serde_json::to_string(&trigger).unwrap(), raw);
     }
 
     #[test]

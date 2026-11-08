@@ -25,7 +25,28 @@ make install        # ~/.local/bin/axlr-bots-panel, the icon, and the menu entry
 axlr-bots-panel
 ```
 
-The first run opens **Settings** with three values read from this host's install: the API address (`https://127.0.0.1:7879`), the fleet CA (`~/.local/state/axlr-bots/ca/ca.crt`) and the token file (`~/.local/state/axlr-bots/api.token`). **Connect** checks them against the control plane and saves them in `~/.config/axlr-bots-panel/config.toml`. The token stays in its file: the panel reads it and never shows or logs it.
+The first run opens **Settings** with three values read from this host's install: the API address (`https://127.0.0.1:7879`), the fleet CA (`~/.local/state/axlr-bots/ca/ca.crt`) and the token file (`~/.local/state/axlr-bots/api.token`). **Connect** checks them against the control plane and saves them in `~/.config/axlr-bots-panel/settings.json`; connected, it rests until a value changes. The token stays in its file: the panel reads it and never shows or logs it. A `config.toml` an older panel wrote is read once and left in place.
+
+The settings file holds the panel's own settings only, as flat keys dotted by section, like an editor's `settings.json`; a bot's configuration lives in the bot's definition, never here:
+
+```json
+{
+  "controlPlane.apiUrl": "https://127.0.0.1:7879",
+  "controlPlane.caFile": "/home/op/.local/state/axlr-bots/ca/ca.crt",
+  "controlPlane.tokenFile": "/home/op/.local/state/axlr-bots/api.token",
+  "look.theme": "light",
+  "newBot.defaultModel": "anthropic/claude-haiku-5.5",
+  "newBot.models": ["anthropic/claude-haiku-5.5", "codex/gpt-6-luna"]
+}
+```
+
+| Key | Does |
+|---|---|
+| `controlPlane.*` | where the operator API is and how to trust it; the three go together, and only Connect saves them, once the control plane answers |
+| `look.theme` | `light` or `dark`, kept as you switch; `--theme` overrides it for one run |
+| `newBot.defaultModel`, `newBot.models` | what the New bot form proposes and the models it offers as one-click chips; on this host they start from the local AXLR's `~/.config/axlr/settings.json` (its `model` and the ids of its `local_models`, never a key). A bot keeps its own model in its definition |
+
+The Settings screen edits the file in place (**Edit as JSON**, with the line and column of a mistake; an unknown key is one), **Export…** writes it where you say and **Import…** reads one back: the look and the New bot defaults take at once, new control plane values wait for Connect. Plain JSON: no comments, no trailing commas.
 
 | Flag or variable | Does |
 |---|---|
@@ -40,7 +61,7 @@ The panel reads the control plane every 3 seconds, in the background; the window
 | Screen | Light | Dark |
 |:--|:--:|:--:|
 | **Home**: nodes online, bots on, tasks running, waiting, failed and expired today, cost today; the tasks that need you; the nodes; the latest tasks | <img src="docs/screenshots/overview-light.png" width="300"> | <img src="docs/screenshots/overview-dark.png" width="300"> |
-| **Nodes**: status, labels, last heartbeat, certificate expiry, AXLR version; a one-time host token with copy buttons; revoke with a second click | <img src="docs/screenshots/nodes-light.png" width="300"> | <img src="docs/screenshots/nodes-dark.png" width="300"> |
+| **Nodes**: status, labels, last heartbeat, certificate expiry, AXLR version, and the model providers each node has as chips (OpenRouter, the Codex proxy, Jev, its local models); a one-time host token with copy buttons; revoke with a second click. New bot warns under «Where does it run?» when the chosen node named its providers and none serves the model typed, and adds the bot all the same | <img src="docs/screenshots/nodes-light.png" width="300"> | <img src="docs/screenshots/nodes-dark.png" width="300"> |
 | **Bots**: status, level, model, placement, triggers; turn on or pause; add one from a form or a definition file | <img src="docs/screenshots/bots-light.png" width="300"> | <img src="docs/screenshots/bots-dark.png" width="300"> |
 | **Now**: what each bot is doing right now, in the Bots list and on its page: waits for you, working on a task (for how long, its newest step), queued, idle or paused, with a link to the task | <img src="docs/screenshots/now-bots-light.png" width="300"> | <img src="docs/screenshots/now-bot-light.png" width="300"> |
 | **Steps**: each run lists its tool calls in order, when each started and how long it took, why it ran or not in words (Allowed by its rules, You approved it, It asked you, Blocked by its rules, You denied it), how it ended, and the bot's own rules about that tool | <img src="docs/screenshots/steps-light.png" width="300"> | |
@@ -58,8 +79,9 @@ The panel reads the control plane every 3 seconds, in the background; the window
 | **Teams**: each team the bots name, its members (what each is for, its tools, where it runs), "only one bot: a typo?"; a team's timeline as it happens (who told whom what, the urgent tasks, what was stopped and why), a banner wherever you are when a teammate warns. **Team** in New bot and on a bot's page; **Urgent order** on a bot's page and beside each member of a team (type the order in one line: it runs as an urgent task that goes first and stops what the bot was doing); **Urgent** in New task ([guide](../docs/runbooks/teams-and-events.md)) | | |
 | **Topics** ([publish/subscribe](../docs/architecture/pubsub-events.md)): a bot's page shows what it **Listens to** (topic · mode · from, **Remove**) and **Listen to a topic** (the mode defaults by the topic's kind, shown as you type); a bot's ask to listen is a card with **Approve** / **Deny**, and counts in "need you". A team's page shows its **Topics** (who publishes, who listens and how, the last event, **nobody listens** in red) and **Publish an event** (`stop.all` stops every Enabled member: each gets an urgent task, and its queued tasks are dropped; `stop.*` and `danger.*` stop the bots that hear them, `warn.*` reaches them while they work, `info.*` is a note for their next task), and the operator's **Shortcuts** for that team: one button per event written in `~/.config/axlr-bots-panel/shortcuts.toml` (`[[shortcut]]` with `team`, `label`, `name`, `message`, optional `data`), each press published at once with a key of its own, a `stop.*` or `danger.*` in red; a bad file is a banner at start, no file no buttons. The timeline says what each event did: «got a task», «told … while it worked», «noted for …». A task an event made shows **Told by** and what it **Knew**; a teammate's message shows in the bot's chat. Against an older control plane the Topics part says so and nothing else changes | | |
 | **Desktop notices**: when a task starts waiting for your OK ("bot asks for your OK", what it wants to call) or a teammate warns, the desktop shows a notice with the control plane it comes from; a click opens the task or the teams and brings the panel forward. The first read after connecting stays quiet | | |
-| **Incidents**: the grouped faults the bots triage, the last seen first: severity, status, title, bot, repeats, last seen. One incident's page: the alerts still firing and those gone green, the diagnosis, why it was escalated or resolved, its cost, its triage tasks with a link to each, and **Resolve** with an optional reason | <img src="docs/screenshots/incidents-light.png" width="300"> | <img src="docs/screenshots/incident-light.png" width="300"> |
-| **Settings**: the API address, the CA and the token file; the theme | <img src="docs/screenshots/settings-light.png" width="300"> | <img src="docs/screenshots/settings-dark.png" width="300"> |
+| **Incidents**: the grouped faults the bots triage, the ones that **need you** first (their current task waits for your approval), then the last seen: severity, status (Open, Diagnosed, Proposed, Applying, Verifying, Escalated, Resolved), title, bot, repeats, last seen. One incident's page: the alerts still firing and those gone green, the diagnosis, the proposal and what it is now (needs you, being applied, applied and verifying, the last one), why it was escalated, resolved or opened again, its cost, how often it was sent back and its approvals, its tasks with their phase and a link to each, and **Resolve** with an optional reason. When it needs you, a card names the call its task waits on with **Approve** and **Deny** (Deny asks first): approved, the incident is Applying; denied, it goes back to Open | <img src="docs/screenshots/incidents-light.png" width="300"> | <img src="docs/screenshots/incident-light.png" width="300"> |
+| **Settings**: the control plane (Connect rests while connected with these values), the look, what New bot proposes, and the settings file: edit as JSON, export, import, reset | <img src="docs/screenshots/settings-light.png" width="300"> | <img src="docs/screenshots/settings-dark.png" width="300"> |
+| **Settings as JSON**: the file as it is, edited in place; Apply says where a mistake is | <img src="docs/screenshots/settings-json-light.png" width="300"> | |
 
 The screenshots are drawn headless from the panel's in-memory sample (two nodes, three bots, a task waiting for a person), with the panel's typefaces at its window size, light and dark; one ignored test draws them again (see Development). [The live run](docs/live-run.md) shows a task sent to a node and a write approved, both from the panel.
 
@@ -84,7 +106,7 @@ Words are set in [Lexend](https://www.lexend.com) (made for reading fluency) and
     │  ports: ControlPlane · Clock · KeySource · FilePicker · DefinitionReader · ConfigStore · Connector
     ▼
  adapters           http (reqwest + rustls, fleet CA only, bearer token) · system (clock, uuid keys, files,
-                    XDG file dialog) · config (TOML settings, defaults from the axlr-bots unit) · fake (in memory)
+                    XDG file dialog) · config (JSON settings, defaults from the axlr-bots unit and the local AXLR) · fake (in memory)
     │
     ▼
  domain             Node · Bot · Task · Execution · ExecutionResult · Event · Overview · EnrollmentToken …

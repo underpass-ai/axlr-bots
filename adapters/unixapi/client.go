@@ -255,8 +255,8 @@ func (c *Client) OpenIncident(ctx context.Context, command application.OpenIncid
 }
 
 // ListIncidents asks for the incidents the query selects, last seen first.
-func (c *Client) ListIncidents(ctx context.Context, query application.IncidentQuery) ([]domain.IncidentSnapshot, error) {
-	incidents := []domain.IncidentSnapshot{}
+func (c *Client) ListIncidents(ctx context.Context, query application.IncidentQuery) ([]IncidentResponse, error) {
+	incidents := []IncidentResponse{}
 	values := url.Values{}
 	if query.Tenant != "" {
 		values.Set("tenant", query.Tenant)
@@ -274,8 +274,8 @@ func (c *Client) ListIncidents(ctx context.Context, query application.IncidentQu
 	return incidents, c.call(ctx, http.MethodGet, path, nil, &incidents)
 }
 
-func (c *Client) GetIncident(ctx context.Context, id string) (domain.IncidentSnapshot, error) {
-	var incident domain.IncidentSnapshot
+func (c *Client) GetIncident(ctx context.Context, id string) (IncidentResponse, error) {
+	var incident IncidentResponse
 	return incident, c.call(ctx, http.MethodGet, "/v1/incidents/"+url.PathEscape(id), nil, &incident)
 }
 

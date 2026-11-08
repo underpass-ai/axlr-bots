@@ -46,12 +46,13 @@ func incidentOpen(ctx context.Context, service unixapi.Service, args []string, s
 	return exitOK
 }
 
-// incidentList prints the incidents, the last seen first.
+// incidentList prints the incidents, the last seen first, each with
+// needsYou when it waits for a person.
 func incidentList(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("incident list", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	tenant := flags.String("tenant", "", "only this tenant")
-	status := flags.String("status", "", "only this status: Open, Diagnosed, Proposed, Resolved or Escalated")
+	status := flags.String("status", "", "only this status: Open, Diagnosed, Proposed, Applying, Verifying, Resolved or Escalated")
 	limit := flags.Int("limit", 0, "at most this many (100 when absent, up to 1000)")
 	positional, ok := parseAnywhere(flags, args)
 	if !ok {
@@ -69,7 +70,8 @@ func incidentList(ctx context.Context, service unixapi.Service, args []string, s
 	return exitOK
 }
 
-// incidentGet prints one incident.
+// incidentGet prints one incident, with needsYou, its current task and
+// the count of its tasks' approvals.
 func incidentGet(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "axlr-bots: incident get needs exactly one <incident-id>")

@@ -41,6 +41,11 @@ type Options struct {
 	// Runtimes names the runtimes the node has beside AXLR (jev): the
 	// control plane assigns it a bot of another runtime only when named.
 	Runtimes []string
+	// Providers names the model providers the node's bots can reach
+	// (openrouter, codex, jev, local:<id>), names only: the control plane
+	// shows them, and the panel warns when a bot's model names one the
+	// node lacks.
+	Providers []string
 	// Heartbeat is how often the agent reports it is alive.
 	Heartbeat time.Duration
 	// PollWait is how long one long poll for an assignment waits.

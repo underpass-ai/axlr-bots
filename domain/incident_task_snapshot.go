@@ -1,7 +1,7 @@
 package domain
 
 // IncidentTaskSnapshot is a task of an incident as plain data: the task,
-// the bot that ran it, the phase it worked on (triage or fix) and the
+// the bot that ran it, the phase it worked on (triage, fix, apply or verify) and the
 // incident's cycle it belongs to.
 type IncidentTaskSnapshot struct {
 	TaskID string `json:"taskId"`

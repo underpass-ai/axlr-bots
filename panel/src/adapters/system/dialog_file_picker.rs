@@ -18,10 +18,21 @@ impl FilePicker for DialogFilePicker {
         })
     }
 
+    fn pick_settings(&self) -> PortFuture<'_, Option<PathBuf>> {
+        Box::pin(async move {
+            let picked = rfd::AsyncFileDialog::new()
+                .set_title("Panel settings to import")
+                .add_filter("JSON", &["json"])
+                .pick_file()
+                .await;
+            Ok(picked.map(|handle| handle.path().to_path_buf()))
+        })
+    }
+
     fn save_as(&self, name: String, bytes: Vec<u8>) -> PortFuture<'_, Option<PathBuf>> {
         Box::pin(async move {
             let Some(handle) = rfd::AsyncFileDialog::new()
-                .set_title("Save artifact")
+                .set_title("Save as")
                 .set_file_name(&name)
                 .save_file()
                 .await

@@ -3,10 +3,10 @@ use std::sync::Arc;
 use super::{BotView, Connection, Effect, Message};
 use crate::application::{
     ApplyInBulk, BulkOutcome, CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader, DeleteBot,
-    DownloadArtifact, FilePicker, FollowBotEvents, FollowTaskEvents, FollowTeamEvents, KeySource, ListIncidents,
-    ListTopics, LoadChat, LoadTaskDetail, MintEnrollmentToken, Notifier, PanelError, PatchBot, PublishEvent,
-    RefreshFleet, RegisterBot, ResolveIncident, RevokeNode, SaveBotEdit, SaveSubscriptions, SendChat, ShortcutSource,
-    ShowIncident, StopBot, SubmitTask, SwitchBot,
+    DownloadArtifact, ExportSettings, FilePicker, FollowBotEvents, FollowTaskEvents, FollowTeamEvents, ImportSettings,
+    KeySource, ListIncidents, ListTopics, LoadChat, LoadTaskDetail, MintEnrollmentToken, Notifier, PanelError,
+    PatchBot, PublishEvent, RefreshFleet, RegisterBot, ResolveIncident, RevokeNode, SaveBotEdit, SaveSubscriptions,
+    SendChat, ShortcutSource, ShowIncident, StopBot, SubmitTask, SwitchBot,
 };
 use crate::domain::BotPatch;
 
@@ -55,6 +55,18 @@ impl Services {
                     saved: save,
                 }
             }
+            Effect::SavePreferences { settings, quiet } => Message::PreferencesSaved {
+                result: self.connect.save_preferences(&settings),
+                quiet,
+            },
+            Effect::ExportSettings(settings) => {
+                Message::SettingsExported(ExportSettings::new(self.picker.clone()).execute(&settings).await)
+            }
+            Effect::ImportSettings => Message::SettingsImported(
+                ImportSettings::new(self.picker.clone(), self.reader.clone())
+                    .execute()
+                    .await,
+            ),
             Effect::PickFile => Message::FilePicked(self.picker.pick_definition().await),
             Effect::Refresh { generation } => {
                 let result = match self.control_plane() {

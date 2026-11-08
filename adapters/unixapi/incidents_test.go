@@ -2,6 +2,7 @@ package unixapi
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -39,6 +40,17 @@ func TestIncidentsOverTheSocket(t *testing.T) {
 	got, err := client.GetIncident(ctx, opened.Incident.ID)
 	if err != nil || got.TaskIDs[0] != opened.Task.ID || len(got.Fingerprints) != 1 {
 		t.Fatalf("get = %+v %v", got, err)
+	}
+	if got.NeedsYou || got.CurrentTask == nil || got.CurrentTask.TaskID != opened.Task.ID || got.CurrentTask.Phase != "triage" || got.CurrentTask.Status != "Pending" || got.CurrentTask.Approval != nil ||
+		got.Approvals == nil || *got.Approvals != (IncidentApprovalsResponse{}) {
+		t.Errorf("get's current task and approvals = %+v %+v", got.CurrentTask, got.Approvals)
+	}
+	if listed[0].CurrentTask != nil || listed[0].Approvals != nil || listed[0].NeedsYou {
+		t.Errorf("a listed incident carries more than needsYou: %+v", listed[0])
+	}
+	raw, _ := json.Marshal(got)
+	if !strings.Contains(string(raw), `"id":"`+opened.Incident.ID+`"`) || strings.Contains(string(raw), "needsYou") || !strings.Contains(string(raw), `"currentTask":{"taskId"`) {
+		t.Errorf("the response is not the snapshot's fields and more: %s", raw)
 	}
 	if _, err := client.GetIncident(ctx, "inc-ghost"); !domain.IsNotFound(err) {
 		t.Errorf("ghost: %v", err)

@@ -1,13 +1,20 @@
 use serde::{Deserialize, Serialize};
 
 /// Where an incident stands: open and being triaged, diagnosed, a fix
-/// proposed, closed, or handed to a person.
+/// proposed, being applied after a person approved it, applied and being
+/// verified, closed, or handed to a person.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum IncidentStatus {
     Open,
     Diagnosed,
-    /// A fix and its rollback proposed, applied by nobody.
+    /// A fix and its rollback proposed, applied by nobody yet; its apply
+    /// task may wait for a person's approval.
     Proposed,
+    /// A person approved the apply: the fix is being carried out.
+    Applying,
+    /// The fix was applied: a verify task checks it, the alerts going
+    /// green close it.
+    Verifying,
     Resolved,
     Escalated,
     /// A value this panel does not know: the control plane is newer. Read,
@@ -17,10 +24,12 @@ pub enum IncidentStatus {
 }
 
 impl IncidentStatus {
-    pub const ALL: [IncidentStatus; 5] = [
+    pub const ALL: [IncidentStatus; 7] = [
         Self::Open,
         Self::Diagnosed,
         Self::Proposed,
+        Self::Applying,
+        Self::Verifying,
         Self::Resolved,
         Self::Escalated,
     ];
@@ -31,6 +40,8 @@ impl IncidentStatus {
             Self::Open => "Open",
             Self::Diagnosed => "Diagnosed",
             Self::Proposed => "Proposed",
+            Self::Applying => "Applying",
+            Self::Verifying => "Verifying",
             Self::Resolved => "Resolved",
             Self::Escalated => "Escalated",
             Self::Unknown => "Unknown",
@@ -41,6 +52,11 @@ impl IncidentStatus {
     /// refuses one already resolved.
     pub fn can_resolve(self) -> bool {
         self != Self::Resolved
+    }
+
+    /// Whether it stands on a proposal: Proposed, Applying or Verifying.
+    pub fn has_proposal(self) -> bool {
+        matches!(self, Self::Proposed | Self::Applying | Self::Verifying)
     }
 }
 
@@ -61,5 +77,7 @@ mod tests {
         assert_eq!(IncidentStatus::Unknown.name(), "Unknown");
         assert!(IncidentStatus::Escalated.can_resolve());
         assert!(!IncidentStatus::Resolved.can_resolve());
+        assert!(IncidentStatus::Applying.has_proposal() && IncidentStatus::Verifying.has_proposal());
+        assert!(!IncidentStatus::Open.has_proposal());
     }
 }

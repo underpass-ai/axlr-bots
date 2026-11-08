@@ -1,7 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{BotId, Cost, IncidentPhase, IncidentSeverity, IncidentStatus, IncidentTask, TaskId};
+use super::{
+    BotId, Cost, IncidentApprovals, IncidentCurrentTask, IncidentPhase, IncidentSeverity, IncidentStatus, IncidentTask,
+    TaskId,
+};
 
 /// One grouped fault, as the control plane reports it: what its alerts
 /// say, the bot that triages it, the tasks of each phase that worked on
@@ -47,6 +50,11 @@ pub struct Incident {
     pub repeats: u32,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub retries: u32,
+    /// The times it went back to Open from a proposal (its apply denied,
+    /// expired, failed or cancelled, its verify red) since it was last
+    /// reopened; the second leaves it to a person.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub send_backs: u32,
     #[serde(default, rename = "costUsd", skip_serializing_if = "is_free")]
     pub cost_usd: f64,
     /// One of its runs stopped before it said what it cost: `cost_usd`
@@ -58,6 +66,16 @@ pub struct Incident {
     pub last_seen_at: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_at: Option<DateTime<Utc>>,
+    /// Its current task waits for a person's approval where the incident
+    /// stands: Approve or Deny moves it on.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub needs_you: bool,
+    /// The task its next move waits on; only when read on its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_task: Option<IncidentCurrentTask>,
+    /// The approvals its tasks waited for; only when read on its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approvals: Option<IncidentApprovals>,
 }
 
 fn is_zero(n: &u32) -> bool {
@@ -78,6 +96,17 @@ impl Incident {
     /// said.
     pub fn phase_of(&self, task: &TaskId) -> Option<IncidentPhase> {
         self.tasks.iter().find(|t| &t.task_id == task).map(|t| t.phase)
+    }
+
+    /// The task a person decides now, with the call it waits on: only
+    /// while the incident needs you.
+    pub fn decision(&self) -> Option<(&TaskId, &str)> {
+        if !self.needs_you {
+            return None;
+        }
+        let current = self.current_task.as_ref()?;
+        let call = current.waiting_call().map_or("", |w| w.call_id.as_str());
+        Some((&current.task_id, call))
     }
 
     /// The alerts still firing: those seen that the source has not said
@@ -133,6 +162,27 @@ mod tests {
         let fix = TaskId::new("task-2").unwrap();
         assert_eq!(incident.phase_of(&fix), Some(IncidentPhase::Fix));
         assert_eq!(incident.phase_of(&TaskId::new("task-9").unwrap()), None);
+        let again: Incident = serde_json::from_str(&serde_json::to_string(&incident).unwrap()).unwrap();
+        assert_eq!(again, incident);
+    }
+
+    #[test]
+    fn reads_what_it_waits_for_and_offers_the_decision_only_when_it_needs_you() {
+        let raw = r#"{"id":"inc-4","tenantId":"t","botId":"triage","groupKey":"g","title":"Drift in shop",
+            "status":"Proposed","cycle":1,"proposal":"PROPOSAL: apply","sendBacks":1,"needsYou":true,
+            "currentTask":{"taskId":"task-9","botId":"fix","phase":"apply","status":"WaitingApproval",
+              "approval":{"callId":"c1","tool":"apply","since":"2026-11-08T10:00:00Z","deadline":"2026-11-08T10:02:00Z","onExpire":"deny"}},
+            "approvals":{"approved":0,"denied":1,"expired":0,"waiting":1},
+            "openedAt":"2026-11-08T10:00:00Z","updatedAt":"2026-11-08T10:00:00Z","lastSeenAt":"2026-11-08T10:00:00Z"}"#;
+        let mut incident: Incident = serde_json::from_str(raw).unwrap();
+        assert_eq!(incident.send_backs, 1);
+        assert_eq!(incident.approvals.unwrap().summary(), "1 denied · 1 waiting");
+        let (task, call) = incident.decision().unwrap();
+        assert_eq!((task.as_str(), call), ("task-9", "c1"));
+        assert_eq!(incident.current_task.as_ref().unwrap().phase, IncidentPhase::Apply);
+        incident.needs_you = false;
+        assert!(incident.decision().is_none());
+        assert!(!serde_json::to_string(&incident).unwrap().contains("needsYou"));
         let again: Incident = serde_json::from_str(&serde_json::to_string(&incident).unwrap()).unwrap();
         assert_eq!(again, incident);
     }

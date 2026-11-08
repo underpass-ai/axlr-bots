@@ -42,6 +42,14 @@ impl SortColumn for IncidentColumn {
     }
 }
 
+/// The incidents that need you first, each part in the order given: the
+/// design's "need you" on top, whatever the table is sorted by.
+pub fn needs_you_first(rows: Vec<&Incident>) -> Vec<&Incident> {
+    let (mut first, rest): (Vec<&Incident>, Vec<&Incident>) = rows.into_iter().partition(|i| i.needs_you);
+    first.extend(rest);
+    first
+}
+
 fn severity(severity: IncidentSeverity) -> u8 {
     match severity {
         IncidentSeverity::Sev1 => 0,
@@ -52,15 +60,18 @@ fn severity(severity: IncidentSeverity) -> u8 {
     }
 }
 
-/// Still firing first, closed last.
+/// Still firing first, then on its way to a fix, then handed to a
+/// person, closed last.
 fn rank(status: IncidentStatus) -> u8 {
     match status {
         IncidentStatus::Open => 0,
         IncidentStatus::Diagnosed => 1,
         IncidentStatus::Proposed => 2,
-        IncidentStatus::Escalated => 3,
-        IncidentStatus::Resolved => 4,
-        IncidentStatus::Unknown => 5,
+        IncidentStatus::Applying => 3,
+        IncidentStatus::Verifying => 4,
+        IncidentStatus::Escalated => 5,
+        IncidentStatus::Resolved => 6,
+        IncidentStatus::Unknown => 7,
     }
 }
 
@@ -75,6 +86,19 @@ mod tests {
         let (cp, _) = fleet();
         let incidents = run(cp.list_incidents(None, None, 50)).unwrap();
         spec.order(&incidents).into_iter().map(|i| i.id.clone()).collect()
+    }
+
+    #[test]
+    fn puts_the_incidents_that_need_you_first() {
+        let (cp, _) = fleet();
+        let mut incidents = run(cp.list_incidents(None, None, 50)).unwrap();
+        incidents[2].needs_you = true;
+        let order = SortSpec::by(IncidentColumn::LastSeen, SortDirection::Ascending);
+        let shown: Vec<&str> = needs_you_first(order.order(&incidents))
+            .iter()
+            .map(|i| i.id.as_str())
+            .collect();
+        assert_eq!(shown, vec!["inc-cert", "inc-latency", "inc-disk"]);
     }
 
     #[test]
@@ -113,6 +137,8 @@ mod tests {
             IncidentStatus::Open,
             IncidentStatus::Diagnosed,
             IncidentStatus::Proposed,
+            IncidentStatus::Applying,
+            IncidentStatus::Verifying,
             IncidentStatus::Escalated,
             IncidentStatus::Resolved,
             IncidentStatus::Unknown,

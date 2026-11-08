@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use axlr_bots_panel::adapters::config::{InstallDiscovery, TomlConfigStore, TomlShortcuts};
+use axlr_bots_panel::adapters::config::{InstallDiscovery, JsonSettingsStore, TomlShortcuts};
 use axlr_bots_panel::adapters::http::HttpConnector;
 use axlr_bots_panel::adapters::system::{DesktopNotifier, DialogFilePicker, FsDefinitionReader, SystemClock, UuidKeys};
 use axlr_bots_panel::application::Connect;
@@ -27,9 +27,11 @@ fn main() -> std::process::ExitCode {
         }
     };
     let discovery = InstallDiscovery::from_env();
-    let store = Arc::new(TomlConfigStore::new(
+    let store = Arc::new(JsonSettingsStore::new(
+        discovery.config_dir().join("axlr-bots-panel/settings.json"),
         discovery.config_dir().join("axlr-bots-panel/config.toml"),
         discovery.discover(),
+        discovery.new_bot_defaults(),
     ));
     let shortcuts = Arc::new(TomlShortcuts::new(
         discovery.config_dir().join("axlr-bots-panel/shortcuts.toml"),
@@ -37,7 +39,7 @@ fn main() -> std::process::ExitCode {
     let clock = Arc::new(SystemClock);
     let connect = Arc::new(Connect::new(Arc::new(HttpConnector), store, clock.clone()));
     let result = launch(move || {
-        let (config, saved) = connect.initial();
+        let (settings, saved) = connect.initial();
         let services = Services {
             control_plane: None,
             clock: clock.clone(),
@@ -48,7 +50,7 @@ fn main() -> std::process::ExitCode {
             notifier: Arc::new(DesktopNotifier),
             shortcuts: shortcuts.clone(),
         };
-        App::new(services, launch_options.clone(), &config, saved)
+        App::new(services, launch_options.clone(), &settings, saved)
     });
     match result {
         Ok(()) => std::process::ExitCode::SUCCESS,

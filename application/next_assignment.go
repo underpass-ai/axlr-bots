@@ -80,7 +80,13 @@ func (uc NextAssignment) queued(ctx context.Context, node domain.Node) (Assignme
 			continue
 		}
 		assignment, err := uc.describe(ctx, bot, task, execution)
+		var refused errPolicyRefused
 		switch {
+		case errors.As(err, &refused):
+			if err := uc.refuse(ctx, bot, &task, &execution, refused); err != nil {
+				return Assignment{}, false, err
+			}
+			continue
 		case errors.Is(err, errTooLate):
 			if err := newDeadlineKeeper(uc.deps).miss(ctx, bot, &task, &execution); err != nil {
 				return Assignment{}, false, err
@@ -118,6 +124,13 @@ func (uc NextAssignment) orphan(ctx context.Context, execution *domain.Execution
 	}
 	details := map[string]string{"task": execution.TaskID().String(), "node": execution.NodeID().String(), "reason": cause.Error()}
 	return uc.rec.audit(ctx, "execution.orphaned", execution.ID().String(), domain.AuditOK, details)
+}
+
+// refuse fails the task whose policy left nothing to run it under,
+// with the reason, instead of handing it to the node.
+func (uc NextAssignment) refuse(ctx context.Context, bot domain.Bot, task *domain.Task, execution *domain.Execution, refused errPolicyRefused) error {
+	failed := ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: refused.Error()}
+	return newSettler(uc.deps).settle(ctx, "task.assign", bot, task, execution, failed, nil, uc.deps.Clock.Now())
 }
 
 // startPending starts the oldest Pending task the node may run.
@@ -187,6 +200,10 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 		return Assignment{}, false, err
 	}
 	assignment, err := uc.describe(ctx, bot, task, execution)
+	var refused errPolicyRefused
+	if errors.As(err, &refused) {
+		return Assignment{}, false, uc.refuse(ctx, bot, &task, &execution, refused)
+	}
 	if errors.Is(err, errTooLate) {
 		// The deadline came while the task was being started.
 		return Assignment{}, false, newDeadlineKeeper(uc.deps).miss(ctx, bot, &task, &execution)
@@ -221,6 +238,26 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 		return Assignment{}, err
 	}
 	offer, events := delegationOffer(bot, task, mates), eventsOffer(bot, mates)
+	// The task's incident phase may narrow the bot's level and tools; the
+	// decision runs under the same policy as the run it continues. A
+	// narrowed phase gets exactly its tools, as in process: the node's
+	// delegate, emit and subscribe tools only when it lists them.
+	policy, _, policyErr := bot.PolicyOf(task)
+	if policyErr != nil {
+		return Assignment{}, errPolicyRefused{cause: policyErr}
+	}
+	if policy.Narrowed() {
+		if !policy.Tools().Allows(DelegateToolName) {
+			offer = nil
+		}
+		if !policy.Tools().Allows(EmitEventToolName) && !policy.Tools().Allows(SubscribeToolName) {
+			events = nil
+		}
+	}
+	tools := allowedTools(policy.Tools(), offer, events)
+	if policy.Narrowed() {
+		tools = policy.Tools().Names()
+	}
 	if execution.Kind() == domain.ExecutionDecide {
 		previous, decision, err := decisionOf(ctx, uc.deps, task, execution)
 		if err != nil {
@@ -233,7 +270,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 		}
 		assignment.Decide = &DecisionRequest{
 			ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), CorrelationID: task.CorrelationID(), SessionID: sessionID, CallID: pending.CallID, Decision: decision,
-			Level: bot.Level(), AllowedTools: allowedTools(bot, offer, events), ToolRules: bot.ToolRules(), Timeout: timeout, Delegation: offer, Events: events,
+			Level: policy.Level(), AllowedTools: tools, ToolRules: policy.Rules(), Timeout: timeout, Delegation: offer, Events: events,
 		}
 		return assignment, nil
 	}
@@ -243,8 +280,8 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 	}
 	assignment.Run = &ExecutionRequest{
 		ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), TenantID: bot.TenantID(), CorrelationID: task.CorrelationID(),
-		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: bot.Level(), AllowedTools: allowedTools(bot, offer, events),
-		ToolRules: bot.ToolRules(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer, Events: events,
+		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: policy.Level(), AllowedTools: tools,
+		ToolRules: policy.Rules(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer, Events: events,
 		Runtime: bot.Runtime(), Input: task.Input(),
 	}
 	return assignment, nil

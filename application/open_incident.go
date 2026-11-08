@@ -58,6 +58,9 @@ type opening struct {
 	// retry is set when the alert starts another triage of an Escalated
 	// incident.
 	retry bool
+	// extra joins the event's payload, under the keys it does not set:
+	// why the control plane sent the incident back to Open.
+	extra map[string]any
 }
 
 // Execute opens, repeats or reopens the incident by hand: the bot's
@@ -140,10 +143,31 @@ func (uc OpenIncident) open(ctx context.Context, o opening) (OpenIncidentResult,
 	return uc.start(ctx, o, incident, domain.EventIncidentOpened, false)
 }
 
+// retriage starts the triage of the new cycle of an incident the control
+// plane sent back to Open (an apply denied, expired, failed or
+// cancelled, a verify that says red), at once and without an alert: the
+// alert is still firing, and a production repeat_interval can be hours
+// (decided 8 November 2026). The denial cap bounds the loop. The
+// reopened event says why (extra) and names the new task. A bot that is
+// gone, paused or takes no incidents refuses it; the next alert of the
+// group then starts the triage, as after a crash.
+func (uc OpenIncident) retriage(ctx context.Context, incident domain.Incident, extra map[string]any) (OpenIncidentResult, error) {
+	bot, err := uc.deps.Bots.Get(ctx, incident.BotID())
+	if err != nil {
+		return OpenIncidentResult{}, err
+	}
+	trigger, ok := bot.Triggers().Incident(domain.IncidentPhaseTriage)
+	if !ok || !bot.AcceptsTasks() {
+		return OpenIncidentResult{}, domain.StateError{Subject: "bot " + bot.ID().String(), Current: bot.Status().String() + ", or without an incident trigger", Attempted: "take the new cycle's triage"}
+	}
+	o := opening{bot: bot, trigger: trigger, source: incident.Source(), groupKey: incident.GroupKey(), title: incident.Title(), severity: incident.Severity(), extra: extra}
+	return uc.start(ctx, o, incident, domain.EventIncidentReopened, true)
+}
+
 // repeat records the alert on the open incident and starts nothing, but
-// the fix phase of a Diagnosed incident that has not got it: a crash
-// between the diagnosis and its fix task, or a fix bot that was paused
-// or not there yet.
+// the phase the incident reached and has not got (fix when Diagnosed,
+// apply when Proposed, verify when Verifying): a crash between the move
+// and its task, or a bot that was paused or not there yet.
 func (uc OpenIncident) repeat(ctx context.Context, bot domain.Bot, incident domain.Incident, fingerprints []string, now time.Time) (OpenIncidentResult, error) {
 	before := len(incident.Fingerprints())
 	if err := incident.Repeat(fingerprints, now); err != nil {
@@ -159,7 +183,7 @@ func (uc OpenIncident) repeat(ctx context.Context, bot domain.Bot, incident doma
 	if err := uc.rec.audit(ctx, "incident.open", incident.ID().String(), domain.AuditOK, map[string]string{"groupKey": incident.GroupKey(), "deduplicated": "true"}); err != nil {
 		return OpenIncidentResult{}, err
 	}
-	incident, err := newFixPhase(uc.deps).launch(ctx, incident, "")
+	incident, err := newPhaseLauncher(uc.deps).launch(ctx, incident, "")
 	if err != nil {
 		return OpenIncidentResult{}, err
 	}
@@ -236,6 +260,11 @@ func (uc OpenIncident) start(ctx context.Context, o opening, incident domain.Inc
 	}
 	if o.retry {
 		payload["retry"], payload["retries"] = true, incident.Retries()
+	}
+	for key, value := range o.extra {
+		if _, set := payload[key]; !set {
+			payload[key] = value
+		}
 	}
 	if err := uc.rec.incidentEvent(ctx, kind, incident, payload); err != nil {
 		return OpenIncidentResult{}, err

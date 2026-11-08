@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -31,6 +32,16 @@ func TestNodeRegistersRunsAndStops(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	bin, _, _ := fakeaxlr.Write(dir, fakeaxlr.Options{Scenario: "completed"})
+	// The host has OpenRouter's key, a Codex proxy listening and two local
+	// models in its AXLR settings: the node names them, and only them.
+	t.Setenv("HOME", dir)
+	t.Setenv(openRouterKeyEnv, "sk-or-test")
+	t.Setenv(codexProxyKeyEnv, "")
+	t.Setenv("TYPESAFE_API_KEY", "")
+	proxy := listenLoopback(t)
+	t.Setenv(codexProxyListenEnv, proxy.Addr().String())
+	_ = os.MkdirAll(filepath.Join(dir, ".config", "axlr"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, ".config", "axlr", "settings.json"), []byte(`{"local_models":[{"id":"codex/gpt-6.1-sol","api_key_env":"AXLR_CODEX_PROXY_KEY"},{"id":"codex/gpt-6-luna"}]}`), 0o600)
 	var stdout, stderr bytes.Buffer
 	done := make(chan int, 1)
 	go func() {
@@ -40,6 +51,9 @@ func TestNodeRegistersRunsAndStops(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if node, err := client.GetNode(context.Background(), "test-node"); err == nil && node.Status == "Online" && node.Labels["zone"] == "eu" {
+			if want := []string{"openrouter", "codex", "local:codex/gpt-6.1-sol", "local:codex/gpt-6-luna"}; !slices.Equal(node.Capabilities.Providers, want) {
+				t.Fatalf("providers = %v, want %v", node.Capabilities.Providers, want)
+			}
 			break
 		}
 		if time.Now().After(deadline) {
