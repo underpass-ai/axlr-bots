@@ -802,6 +802,10 @@ impl App {
                 self.settings.token_file = value;
                 Vec::new()
             }
+            Message::SettingsActor(value) => {
+                self.settings.actor = value;
+                Vec::new()
+            }
             Message::SettingsSave => {
                 if !self.can_connect() {
                     return Vec::new();

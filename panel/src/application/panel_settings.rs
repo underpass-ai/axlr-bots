@@ -50,6 +50,7 @@ mod tests {
                 api_url: "https://127.0.0.1:7879".into(),
                 ca_path: "/s/ca.crt".into(),
                 token_file: "/s/api.token".into(),
+                actor: None,
             }),
             theme: Theme::Dark,
             new_bot: NewBotDefaults {
@@ -95,8 +96,31 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(&http, PanelError::Config(m) if m.contains("https://")));
+        let lone_actor = PanelSettings::from_json("{\"controlPlane.actor\": \"tirso\"}").unwrap_err();
+        assert!(matches!(&lone_actor, PanelError::Config(m) if m.contains("controlPlane.actor")));
+        let spaced = PanelSettings::from_json(
+            "{\"controlPlane.apiUrl\": \"https://h\", \"controlPlane.caFile\": \"/c\", \"controlPlane.tokenFile\": \"/t\", \"controlPlane.actor\": \"two words\"}",
+        )
+        .unwrap_err();
+        assert!(matches!(&spaced, PanelError::Config(m) if m.contains("actor")));
         let trailing = PanelSettings::from_json("{\"look.theme\": \"dark\",}").unwrap_err();
         assert!(matches!(&trailing, PanelError::Config(m) if m.contains("line 1")));
+    }
+
+    #[test]
+    fn keeps_who_the_panel_decides_as() {
+        let mut with = settings();
+        with.control_plane.as_mut().unwrap().actor = Some("tirso".into());
+        let text = with.to_json();
+        assert!(text.contains("\"controlPlane.actor\": \"tirso\""));
+        assert_eq!(PanelSettings::from_json(&text).unwrap(), with);
+        let blank = text.replace("\"tirso\"", "\" \"");
+        assert_eq!(
+            PanelSettings::from_json(&blank).unwrap(),
+            settings(),
+            "a blank actor is none"
+        );
+        assert!(settings().to_json().contains("\"controlPlane.actor\": null"));
     }
 
     #[test]

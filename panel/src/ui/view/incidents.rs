@@ -370,24 +370,23 @@ fn decision_card<'a>(app: &'a App, incident: &'a Incident, tokens: Tokens) -> Op
         .align_y(Alignment::Center)
         .into()
     };
-    Some(
-        card(
-            column![
-                super::widgets::section_title(Icon::Alert, "Needs you", tokens),
-                row![
-                    muted("The task asks to call", tokens),
-                    bold(tool.to_string()).size(20.0)
-                ]
-                .spacing(10)
-                .align_y(Alignment::Center),
-                muted(what, tokens),
-                buttons,
-            ]
-            .spacing(12),
-            tokens,
-        )
-        .into(),
-    )
+    let mut body = column![
+        super::widgets::section_title(Icon::Alert, "Needs you", tokens),
+        row![
+            muted("The task asks to call", tokens),
+            bold(tool.to_string()).size(20.0)
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center),
+        muted(what, tokens),
+    ]
+    .spacing(12);
+    // A call that waits for two people says how far it is and who
+    // approved: the first Approve runs nothing.
+    if let Some(progress) = current.waiting_call().and_then(|w| w.progress()) {
+        body = body.push(pill_with(Icon::Hourglass, Tone::Wait, progress, tokens));
+    }
+    Some(card(body.push(buttons), tokens).into())
 }
 
 fn severity<'a>(incident: &Incident, tokens: Tokens) -> El<'a> {

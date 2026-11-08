@@ -100,6 +100,7 @@ mod tests {
             api_url: url.into(),
             ca_path: "/ca.crt".into(),
             token_file: "/api.token".into(),
+            actor: None,
         }
     }
 

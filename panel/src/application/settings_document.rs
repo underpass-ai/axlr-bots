@@ -16,6 +16,9 @@ pub struct SettingsDocument {
     pub ca_file: Option<PathBuf>,
     #[serde(rename = "controlPlane.tokenFile", default)]
     pub token_file: Option<PathBuf>,
+    /// Who the panel decides as; optional, with the other three.
+    #[serde(rename = "controlPlane.actor", default)]
+    pub actor: Option<String>,
     #[serde(rename = "look.theme", default)]
     pub theme: Theme,
     #[serde(rename = "newBot.defaultModel", default = "default_model")]
@@ -39,6 +42,7 @@ impl From<&PanelSettings> for SettingsDocument {
             api_url: control_plane.map(|c| c.api_url.clone()),
             ca_file: control_plane.map(|c| c.ca_path.clone()),
             token_file: control_plane.map(|c| c.token_file.clone()),
+            actor: control_plane.and_then(|c| c.actor.clone()),
             theme: settings.theme,
             default_model: settings.new_bot.model.clone(),
             models: settings.new_bot.models.clone(),
@@ -50,12 +54,20 @@ impl TryFrom<SettingsDocument> for PanelSettings {
     type Error = PanelError;
 
     fn try_from(document: SettingsDocument) -> Result<Self, PanelError> {
+        let actor = document.actor.map(|a| a.trim().to_string()).filter(|a| !a.is_empty());
         let control_plane = match (document.api_url, document.ca_file, document.token_file) {
+            (None, None, None) if actor.is_some() => {
+                return Err(PanelError::Config(
+                    "controlPlane.actor goes with controlPlane.apiUrl, controlPlane.caFile and controlPlane.tokenFile"
+                        .into(),
+                ));
+            }
             (None, None, None) => None,
             (Some(api_url), Some(ca_path), Some(token_file)) => Some(PanelConfig {
                 api_url,
                 ca_path,
                 token_file,
+                actor,
             }),
             _ => {
                 return Err(PanelError::Config(

@@ -71,6 +71,7 @@ impl Event {
             "bot.task.progress" => "Working".into(),
             "bot.task.expired" => "Expired".into(),
             "bot.approval.expired" => "Approval expired".into(),
+            "bot.approval.first" => "First approval".into(),
             "bot.event.emitted" => match self.payload_text("severity").as_deref() {
                 Some("critical") => "Alarm to the team".into(),
                 Some("warning") => "Warning to the team".into(),
@@ -139,9 +140,11 @@ impl Event {
             },
             "bot.event.heard" if self.payload_text("degraded").is_some() => EventTone::Waiting,
             "bot.subscription.asked" => EventTone::Waiting,
-            "bot.task.waiting_approval" | "bot.paused" | "bot.task.expired" | "bot.approval.expired" => {
-                EventTone::Waiting
-            }
+            "bot.task.waiting_approval"
+            | "bot.paused"
+            | "bot.task.expired"
+            | "bot.approval.expired"
+            | "bot.approval.first" => EventTone::Waiting,
             "bot.task.started" | "bot.task.progress" | "execution.assigned" | "execution.reported"
             | "incident.applying" | "incident.verifying" => EventTone::Working,
             "bot.task.decided" => match self.payload_text("decision").as_deref() {
@@ -272,6 +275,10 @@ impl Event {
                     format!("{steps} steps")
                 };
             }
+            "bot.approval.first" => {
+                let by = self.payload_text("approvedBy").unwrap_or_default();
+                return format!("by {by}; a second, different person decides");
+            }
             "bot.subscription.asked" => {
                 let topic = self.payload_text("topic").unwrap_or_default();
                 let why = self.payload_text("why").unwrap_or_default();
@@ -399,6 +406,10 @@ mod tests {
         assert_eq!(event("bot.task.expired", "{}").label(), "Expired");
         assert_eq!(event("bot.task.expired", "{}").tone(), EventTone::Waiting);
         assert_eq!(event("bot.approval.expired", "{}").label(), "Approval expired");
+        let first = event("bot.approval.first", r#"{"approvedBy":"tirso","approvalsNeeded":2}"#);
+        assert_eq!(first.label(), "First approval");
+        assert_eq!(first.tone(), EventTone::Waiting);
+        assert_eq!(first.detail(), "by tirso; a second, different person decides");
         assert_eq!(
             event("bot.task.waiting_approval", r#"{"tool":"local_write"}"#).tone(),
             EventTone::Waiting

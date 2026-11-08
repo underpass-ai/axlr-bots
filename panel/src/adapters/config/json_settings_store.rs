@@ -98,6 +98,7 @@ mod tests {
             api_url: "https://127.0.0.1:7879".into(),
             ca_path: "/s/ca.crt".into(),
             token_file: "/s/api.token".into(),
+            actor: None,
         }
     }
 

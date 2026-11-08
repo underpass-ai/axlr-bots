@@ -193,6 +193,8 @@ pub enum Message {
     SettingsUrl(String),
     SettingsCa(String),
     SettingsToken(String),
+    /// Who the panel decides as: the actor a bot's approvers name.
+    SettingsActor(String),
     SettingsSave,
     /// The New bot defaults typed: the model proposed, the models offered.
     SettingsModel(String),
