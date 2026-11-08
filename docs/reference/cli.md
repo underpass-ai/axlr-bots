@@ -5,7 +5,7 @@ Two commands come out of this module: `axlr-bots`, the control plane and the ope
 ```text
 axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>] <command>
 
-  serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--api-token-file <path>] [--api-url <url>]
+  serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--api-token-file <path>] [--api-url <url>] [--panel-url <url>]
         [--bus direct|nats] [--nats-url <url>] [--nats-creds <file>]              pushes to the nodes also over a broker (bus port)
         [--nats-cert <file> --nats-key <file>] [--nats-ca <file>]                  mutual TLS to the broker
         [--tick 2s] [--reconcile-every 1m] [--grace <duration>]
@@ -22,6 +22,8 @@ axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>]
   group publish <group> <name> --message "<text>" [--data '{…}'] [--to a,b] [--key <k>] [--tenant <id>]   the operator's event; stop.all stops everyone and drops their queued tasks
   incident open --tenant <id> --bot <bot-id> --group-key "<key>" --title "<text>" [--severity sev1..sev4] [--fingerprints a,b] [--source <name>] [--objective "<text>"]   report an alert group: a new incident and its triage task, a repeat, or a reopening; sev3 without `--severity`
   incident list [--tenant <id>] [--status Open|Diagnosed|Proposed|Applying|Verifying|Resolved|Escalated] [--limit 100] | incident get <incident-id> | incident resolve <incident-id> [--reason "<text>"]   the incidents (needsYou on each that waits for you), one incident (with its currentTask and approvals), close one
+  output add <name> --type webhook|slack|command [--url <url> | --url-file <file>|-] [--secret-file <file>|-] [--events opened,diagnosed,…] [--tenants a,b] [--severities sev1,sev2] [--panel-url <url>] [--file <output.json>] [-- <program> <args>…]   announce incidents ([outputs](../runbooks/outputs.md))
+  output list | output remove <name>   the targets with a fingerprint, never a URL, secret or command; drop one (its pending deliveries are skipped)
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>] [--urgent]   --urgent goes first, cancels the bot's work in progress and drops its queued tasks
   trigger fire <bot-id> <trigger> --body '<json>' | --file <event.json> [--delivery <id>]
   task run <task-id>                           in process (exit 0 completed, 3 decision required, 1 failed)
@@ -62,6 +64,7 @@ axlr-node codex-proxy [--listen 127.0.0.1:8790] [--codex-home ~/.codex] [--refre
 | node address, server names, operator address | `serve --listen`, `--server-names`, `--api-listen` | `AXLR_BOTS_LISTEN`, `AXLR_BOTS_SERVER_NAMES`, `AXLR_BOTS_API_LISTEN` | none: the socket only |
 | operator token file | `serve --api-token-file` | | `<state>/api.token` |
 | the operator API's base URL in approval notifications | `serve --api-url` | `AXLR_BOTS_API_URL` | `https://` and the `--api-listen` address (the host's name for a wildcard address) |
+| the panel base of incident outputs' links (`<base>/incidents/<id>`) | `serve --panel-url` (or an output's own `--panel-url`) | `AXLR_BOTS_PANEL_URL` | none: a Slack message has no panel button |
 | control plane: bus | `serve --bus direct\|nats`, `--nats-url`, `--nats-creds`, `--nats-cert`, `--nats-key`, `--nats-ca` | `AXLR_BOTS_BUS`, `AXLR_BOTS_NATS_URL`, `AXLR_BOTS_NATS_CREDS`, `AXLR_BOTS_NATS_CERT`, `AXLR_BOTS_NATS_KEY`, `AXLR_BOTS_NATS_CA` | `direct`: the nodes' own streams only; `nats` also publishes every push to the broker ([bus port](../architecture/bus-port.md#configuration)) |
 | who acts (audit) | `--actor` | | `cli:<$USER>` (`cli:unknown` when `USER` is unset) |
 | node: control plane, id, labels, state | `--control`, `--node-id`, `--labels`, `--state` | `AXLR_NODE_CONTROL`, `AXLR_NODE_ID`, `AXLR_NODE_LABELS`, `AXLR_NODE_STATE` | the state is `~/.local/state/axlr-node`; over the socket the id is the host name; over `https://` it is the certificate's, and a `--node-id` that disagrees is refused |

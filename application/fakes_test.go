@@ -685,6 +685,9 @@ type harness struct {
 	work    *fakeWorkspace
 	outbox  *memoryDeliveries
 	notify  *fakeNotifier
+	outs    *memoryOutputs
+	outbox2 *memoryOutputDeliveries
+	sender  *fakeOutputSender
 	clock   *fixedClock
 }
 
@@ -707,11 +710,15 @@ func newHarness() *harness {
 		work:    &fakeWorkspace{files: map[string]string{}},
 		outbox:  &memoryDeliveries{},
 		notify:  &fakeNotifier{},
+		outs:    &memoryOutputs{},
+		outbox2: &memoryOutputDeliveries{},
+		sender:  &fakeOutputSender{},
 		clock:   &fixedClock{now: t0},
 	}
 	h.deps = Dependencies{
 		Bots: h.bots, Tasks: h.tasks, Incidents: h.incs, Executions: h.execs, Timers: h.timers, Nodes: h.nodes, Enrollments: h.enrol, Certifier: h.ca, Denylist: h.deny, Events: h.log, EventReader: h.log, Audit: h.log,
 		Runtime: h.runtime, Decisions: h.decider, Traces: h.traces, Artifacts: h.store, Workspace: h.work, Deliveries: h.outbox, Notifier: h.notify,
+		Outputs: h.outs, OutputDeliveries: h.outbox2, OutputSender: h.sender,
 		Clock: h.clock, IDs: &sequentialIDs{}, Actor: "test:operator",
 	}
 	return h

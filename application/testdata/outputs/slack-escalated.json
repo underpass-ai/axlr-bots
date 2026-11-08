@@ -1,0 +1,54 @@
+{
+  "text": "[sev1] Disk \u0026lt;full\u0026gt; \u0026amp; more: Incident escalated",
+  "blocks": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "SEV1 · Disk \u003cfull\u003e \u0026 more"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Incident escalated* · `inc-9` · tenant `shop`"
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Status*\nEscalated"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Bot*\ntriage"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Cycle*\n2"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Cost*\n$0.1250 (a run did not report)"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Cause*\n```PVC data-0 at 100 %```"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Escalated*: the fix was denied twice\n*Needs you*: the bots gave it to a person."
+      }
+    }
+  ]
+}

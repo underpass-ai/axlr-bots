@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -50,7 +51,8 @@ func operatorURL(explicit, apiListen string) string {
 // client certificates verified against that CA; with --api-listen it
 // serves the operator routes over TLS on another address, behind the
 // bearer token in --api-token-file (generated when the file is missing),
-// and --api-url is the base the approval notifications link to.
+// and --api-url is the base the approval notifications link to;
+// --panel-url is the base of the incident outputs' panel link.
 func serve(ctx context.Context, app application.Dependencies, stateDir, socketPath string, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -59,6 +61,7 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 	apiListen := flags.String("api-listen", os.Getenv("AXLR_BOTS_API_LISTEN"), "a TLS address to serve operators and webhook senders on, such as 127.0.0.1:7879 (also AXLR_BOTS_API_LISTEN); needs ca init")
 	apiTokenFile := flags.String("api-token-file", "", "the file with the operator bearer token (default <state>/api.token; generated when missing)")
 	apiURL := flags.String("api-url", os.Getenv("AXLR_BOTS_API_URL"), "the operator API's base URL that approval notifications link to (also AXLR_BOTS_API_URL; default https://<api-listen>)")
+	panelURL := flags.String("panel-url", os.Getenv("AXLR_BOTS_PANEL_URL"), "the base of the panel link incident outputs carry, <base>/incidents/<id> (also AXLR_BOTS_PANEL_URL; none: no link unless the output names one)")
 	tick := flags.Duration("tick", daemon.DefaultTick, "how often to look for Pending tasks")
 	reconcileEvery := flags.Duration("reconcile-every", daemon.DefaultReconcileEvery, "how often to fail the tasks a dead run left Running")
 	grace := flags.Duration("grace", 0, "reconciliation grace (default: the bot's task timeout plus 1m)")
@@ -155,6 +158,14 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 	app.OperatorURL = operatorURL(*apiURL, *apiListen)
 	if app.OperatorURL != "" {
 		options.Log.Printf("daemon: approval notifications link to %s", app.OperatorURL)
+	}
+	if *panelURL != "" {
+		if parsed, err := url.Parse(*panelURL); err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
+			fmt.Fprintln(stderr, "axlr-bots: serve --panel-url must be an absolute http or https URL")
+			return exitUsage
+		}
+		app.PanelURL = strings.TrimRight(*panelURL, "/")
+		options.Log.Printf("daemon: incident outputs link to the panel at %s", app.PanelURL)
 	}
 	if err := daemon.Run(ctx, app, options); err != nil {
 		fmt.Fprintln(stderr, "axlr-bots:", err)

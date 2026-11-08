@@ -77,6 +77,12 @@ type Service interface {
 	GetIncident(ctx context.Context, id string) (IncidentResponse, error)
 	// ResolveIncident closes an incident; a resolved one is refused.
 	ResolveIncident(ctx context.Context, id string, request ResolveRequest) (domain.IncidentSnapshot, error)
+	// AddOutput keeps a new incident output target; ListOutputs and
+	// RemoveOutput answer targets without their URL, secret or command,
+	// with a fingerprint instead.
+	AddOutput(ctx context.Context, definition application.OutputDefinition) (application.OutputView, error)
+	ListOutputs(ctx context.Context) ([]application.OutputView, error)
+	RemoveOutput(ctx context.Context, name string) (application.OutputView, error)
 	// ListExecutions returns the task's executions, oldest first.
 	ListExecutions(ctx context.Context, id string) ([]domain.ExecutionSnapshot, error)
 	GetReport(ctx context.Context, id string) (ReportResponse, error)
