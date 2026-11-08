@@ -154,6 +154,9 @@ fn screenshots() {
         "/home/operator/.local/state/axlr-bots/api.token".into(),
     ));
     camera.both(&mut app, "settings");
+    app.apply(Message::SettingsJsonOpen);
+    camera.shoot(&mut app, "settings-json-light");
+    app.apply(Message::SettingsJsonClose);
 
     // A message to a running task, and what its run says back.
     let fake = Arc::new(FakeControlPlane::sample("2026-10-25T10:00:00Z".parse().unwrap()));

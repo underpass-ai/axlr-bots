@@ -371,6 +371,7 @@ fn register_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
                         None,
                         tokens
                     ),
+                    model_choices(app, &form.model, tokens),
                     muted("It starts when you give it a task.", tokens),
                 ]
                 .spacing(14)
@@ -391,4 +392,21 @@ fn level_promise(level: AutonomyLevel) -> &'static str {
         AutonomyLevel::Propose => "only proposes",
         AutonomyLevel::Unknown => "follows a level this panel does not know",
     }
+}
+
+/// The models the settings offer, one click each; the one in the field
+/// is lit. The list comes from the panel's settings, not from any bot.
+fn model_choices<'a>(app: &'a App, current: &str, tokens: Tokens) -> El<'a> {
+    let mut chips = row![].spacing(6);
+    for model in app.new_bot.choices() {
+        let picked = model == current;
+        chips = chips.push(action(
+            Kind::Chip(picked),
+            Icon::Chip,
+            model.clone(),
+            (!picked).then_some(Message::RegisterModel(model)),
+            tokens,
+        ));
+    }
+    chips.wrap().into()
 }

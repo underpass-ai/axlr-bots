@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::application::PanelConfig;
+use crate::application::{NewBotDefaults, PanelConfig};
 
 /// The operator address the install runbook uses.
 const DEFAULT_API: &str = "127.0.0.1:7879";
@@ -78,6 +78,40 @@ impl InstallDiscovery {
             ca_path: state.join("ca/ca.crt"),
             token_file,
         }
+    }
+
+    /// What the New bot form proposes on this host: the model the local
+    /// AXLR is set to and the local models it names, read from its
+    /// `settings.json`; the panel's own defaults when there is none.
+    /// Only names are read, never a key or the variable that holds one.
+    pub fn new_bot_defaults(&self) -> NewBotDefaults {
+        let text = std::fs::read_to_string(self.config_dir().join("axlr/settings.json")).ok();
+        Self::new_bot_from_axlr(text.as_deref())
+    }
+
+    /// The New bot defaults an AXLR `settings.json` gives.
+    pub fn new_bot_from_axlr(settings: Option<&str>) -> NewBotDefaults {
+        let Some(value) = settings.and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok()) else {
+            return NewBotDefaults::default();
+        };
+        let panel = NewBotDefaults::default();
+        let model = value["model"]
+            .as_str()
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+            .map_or(panel.model.clone(), str::to_string);
+        let mut models = vec![model.clone()];
+        if !models.contains(&panel.model) {
+            models.push(panel.model.clone());
+        }
+        for local in value["local_models"].as_array().into_iter().flatten() {
+            if let Some(id) = local["id"].as_str().map(str::trim).filter(|id| !id.is_empty())
+                && !models.iter().any(|m| m == id)
+            {
+                models.push(id.to_string());
+            }
+        }
+        NewBotDefaults { model, models }
     }
 
     fn default_state(&self) -> PathBuf {
@@ -159,6 +193,30 @@ mod tests {
     }
 
     #[test]
+    fn proposes_the_local_axlr_models_and_never_a_key() {
+        let axlr = r#"{"model": "codex/gpt-6.1-sol", "local_models": [
+            {"id": "codex/gpt-6.1-sol", "api_key_env": "AXLR_CODEX_PROXY_KEY"},
+            {"id": "codex/gpt-6-luna", "api_key_env": "AXLR_CODEX_PROXY_KEY"},
+            {"id": " "}, {"name": "no id"}]}"#;
+        let defaults = InstallDiscovery::new_bot_from_axlr(Some(axlr));
+        assert_eq!(defaults.model, "codex/gpt-6.1-sol");
+        assert_eq!(
+            defaults.models,
+            vec!["codex/gpt-6.1-sol", "anthropic/claude-haiku-5.5", "codex/gpt-6-luna"]
+        );
+        assert!(!format!("{defaults:?}").contains("AXLR_CODEX_PROXY_KEY"));
+        assert_eq!(InstallDiscovery::new_bot_from_axlr(None), NewBotDefaults::default());
+        assert_eq!(
+            InstallDiscovery::new_bot_from_axlr(Some("{")),
+            NewBotDefaults::default()
+        );
+        assert_eq!(
+            InstallDiscovery::new_bot_from_axlr(Some(r#"{"model": " "}"#)),
+            NewBotDefaults::default()
+        );
+    }
+
+    #[test]
     fn discovers_from_the_files_on_disk() {
         let home = tempfile::tempdir().unwrap();
         let units = home.path().join(".config/systemd/user");
@@ -170,6 +228,10 @@ mod tests {
         .unwrap();
         let discovery = InstallDiscovery::new(home.path().to_path_buf(), None, None);
         assert_eq!(discovery.discover().api_url, "https://127.0.0.1:7999");
+        assert_eq!(discovery.new_bot_defaults(), NewBotDefaults::default());
+        std::fs::create_dir_all(home.path().join(".config/axlr")).unwrap();
+        std::fs::write(home.path().join(".config/axlr/settings.json"), r#"{"model": "x/y"}"#).unwrap();
+        assert_eq!(discovery.new_bot_defaults().model, "x/y");
         let _ = InstallDiscovery::from_env().config_dir();
     }
 }

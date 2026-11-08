@@ -6,8 +6,8 @@ use super::ModeChoice;
 use super::table::{ColumnRef, List, RowRef};
 use super::{BotChoice, BotView, Connection, Keypress, NodeChoice, ReaderKey, Screen, ThemeMode};
 use crate::application::{
-    BulkAction, BulkOutcome, ChatSent, DeletePreview, EventFeed, Fleet, PanelError, SavedEdit, StoppedBot,
-    SubscriptionChange, TaskDetail,
+    BulkAction, BulkOutcome, ChatSent, DeletePreview, EventFeed, Fleet, PanelError, PanelSettings, SavedEdit,
+    StoppedBot, SubscriptionChange, TaskDetail,
 };
 use crate::domain::{
     AutonomyLevel, Bot, BotId, CancelledTask, DecidedTask, DeletedBot, EnrollmentToken, ExecutionId, Incident, NodeId,
@@ -194,6 +194,27 @@ pub enum Message {
     SettingsCa(String),
     SettingsToken(String),
     SettingsSave,
+    /// The New bot defaults typed: the model proposed, the models offered.
+    SettingsModel(String),
+    SettingsModels(String),
+    /// Keep the look and the New bot defaults.
+    SettingsSavePreferences,
+    PreferencesSaved {
+        result: Result<PanelSettings, PanelError>,
+        /// Saved on the way, no word needed: the theme switch.
+        quiet: bool,
+    },
+    /// The settings as JSON text: open, edit, apply, close.
+    SettingsJsonOpen,
+    SettingsJsonEdit(iced::widget::text_editor::Action),
+    SettingsJsonApply,
+    SettingsJsonClose,
+    SettingsExport,
+    SettingsExported(Result<Option<PathBuf>, PanelError>),
+    SettingsImport,
+    SettingsImported(Result<Option<PanelSettings>, PanelError>),
+    /// Back to the install's values and the panel's own defaults.
+    SettingsReset,
     Connected {
         result: Result<Connection, PanelError>,
         saved: bool,

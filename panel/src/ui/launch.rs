@@ -3,7 +3,8 @@ use super::{Screen, ThemeMode};
 /// How the panel starts: `--theme light|dark` and `--screen <place>`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Launch {
-    pub theme: ThemeMode,
+    /// `--theme`, overriding the saved look for this run.
+    pub theme: Option<ThemeMode>,
     pub screen: Screen,
 }
 
@@ -18,8 +19,9 @@ pub enum Command {
 pub const USAGE: &str =
     "usage: axlr-bots-panel [--theme light|dark] [--screen overview|nodes|bots|bot:<id>|tasks|task:<id>|teams|team:<name>|incidents|incident:<id>|settings]
 
-The AXLR Bots control panel. Settings live in ~/.config/axlr-bots-panel/config.toml;
-the first run fills them from the local install. ICED_BACKEND=tiny-skia draws without a GPU.";
+The AXLR Bots control panel. Settings live in ~/.config/axlr-bots-panel/settings.json
+(flat dotted keys, editable from the Settings screen, exportable and importable); the
+first run fills them from the local install. ICED_BACKEND=tiny-skia draws without a GPU.";
 
 impl Command {
     pub fn parse(args: &[String]) -> Result<Self, String> {
@@ -41,7 +43,7 @@ impl Command {
                 "-V" | "--version" => return Ok(Self::Version),
                 "--theme" => {
                     let raw = value()?;
-                    launch.theme = ThemeMode::parse(&raw).ok_or(format!("--theme is light or dark, not {raw}"))?;
+                    launch.theme = Some(ThemeMode::parse(&raw).ok_or(format!("--theme is light or dark, not {raw}"))?);
                 }
                 "--screen" => {
                     let raw = value()?;
@@ -68,7 +70,7 @@ mod tests {
         assert_eq!(
             parse(&["--theme", "dark", "--screen=nodes"]),
             Ok(Command::Run(Launch {
-                theme: ThemeMode::Dark,
+                theme: Some(ThemeMode::Dark),
                 screen: Screen::Nodes
             }))
         );

@@ -1,9 +1,9 @@
 use chrono::Duration;
 
 use super::test_runtime::{connected, drive, send};
-use super::view::tests::{app, config};
+use super::view::tests::{app, config, settings};
 use super::*;
-use crate::application::PanelError;
+use crate::application::{PanelError, PanelSettings};
 use crate::domain::{AutonomyLevel, BotId, BotStatus, NodeId, NodeStatus, TaskId, TaskStatus};
 
 fn task_in(app: &App, status: TaskStatus) -> TaskId {
@@ -45,10 +45,10 @@ fn the_first_run_saves_the_settings_once_the_control_plane_answers() {
 fn saved_settings_connect_at_start_and_open_the_asked_screen() {
     let base = app();
     let launch = Launch {
-        theme: ThemeMode::Dark,
+        theme: Some(ThemeMode::Dark),
         screen: Screen::Nodes,
     };
-    let (mut started, effects) = App::new(base.services.clone(), launch, &config(), true);
+    let (mut started, effects) = App::new(base.services.clone(), launch, &settings(), true);
     assert_eq!(
         effects,
         vec![Effect::Connect {
@@ -61,8 +61,8 @@ fn saved_settings_connect_at_start_and_open_the_asked_screen() {
     assert_eq!((started.screen.clone(), started.mode), (Screen::Nodes, ThemeMode::Dark));
     assert!(started.fleet.is_some() && !started.settings.busy);
 
-    let mut bad = config();
-    bad.api_url = "https://10.9.9.9:7879".into();
+    let mut bad = settings();
+    bad.control_plane.as_mut().unwrap().api_url = "https://10.9.9.9:7879".into();
     let (mut failing, effects) = App::new(base.services.clone(), Launch::default(), &bad, true);
     drive(&mut failing, effects);
     assert_eq!(failing.screen, Screen::Settings);
@@ -1183,4 +1183,192 @@ fn a_bot_page_holds_readers_that_keep_a_selection_over_a_refresh() {
     assert_eq!(reader.content().selection().as_deref(), Some(mission.as_str()));
     send(&mut app, Message::Go(Screen::Bots));
     assert!(app.readers.is_empty());
+}
+
+#[test]
+fn connect_has_nothing_to_press_while_connected_with_the_same_values() {
+    let mut app = connected();
+    assert!(!app.settings.can_connect());
+    assert_eq!(app.settings.connected, Some(config()));
+    assert!(app.apply(Message::SettingsSave).is_empty(), "a press does nothing");
+    app.apply(Message::SettingsCa("/other.crt".into()));
+    assert!(app.settings.can_connect() && app.settings.changed());
+    app.apply(Message::SettingsCa("/ca.crt".into()));
+    assert!(!app.settings.can_connect() && !app.settings.changed());
+    app.apply(Message::SettingsUrl("https://10.9.9.9:7879".into()));
+    send(&mut app, Message::SettingsSave);
+    assert!(app.settings.can_connect(), "a failed try leaves Connect to press");
+    assert_eq!(
+        app.settings.connected,
+        Some(config()),
+        "the connection kept is the old one"
+    );
+}
+
+#[test]
+fn the_look_and_the_new_bot_defaults_are_kept_as_they_change() {
+    let mut app = app();
+    assert!(!app.settings.saved);
+    send(&mut app, Message::ToggleTheme);
+    assert_eq!(app.mode, ThemeMode::Dark);
+    assert!(app.banner.is_none(), "the theme switch says nothing");
+    let (initial, saved) = app.services.connect.initial();
+    assert_eq!(
+        (initial.theme, saved),
+        (ThemeMode::Dark, false),
+        "saved without a control plane"
+    );
+    app.apply(Message::SettingsModel(" codex/gpt-6-luna ".into()));
+    app.apply(Message::SettingsModels(
+        "codex/gpt-6-luna, anthropic/claude-haiku-5.5,".into(),
+    ));
+    assert_ne!(app.settings.new_bot(), app.new_bot);
+    send(&mut app, Message::ToggleTheme);
+    assert_eq!(
+        app.new_bot,
+        Default::default(),
+        "a theme switch commits no half-typed field"
+    );
+    assert_ne!(
+        app.settings.new_bot(),
+        app.new_bot,
+        "the typed values stay on the screen"
+    );
+    send(&mut app, Message::ToggleTheme);
+    send(&mut app, Message::SettingsSavePreferences);
+    assert_eq!(app.new_bot.model, "codex/gpt-6-luna");
+    assert_eq!(app.new_bot.choices().len(), 2);
+    assert_eq!(app.banner.as_ref().unwrap().title, "Settings saved");
+    send(&mut app, Message::RegisterOpen);
+    assert_eq!(app.register.form.model, "codex/gpt-6-luna");
+    send(&mut app, Message::SettingsSave);
+    let kept = app.services.connect.initial().0;
+    assert!(kept.control_plane.is_some() && kept.theme == ThemeMode::Dark);
+    assert_eq!(kept.new_bot.model, "codex/gpt-6-luna");
+}
+
+#[test]
+fn the_settings_are_edited_as_json_and_applied() {
+    let mut app = connected();
+    app.apply(Message::SettingsJsonOpen);
+    assert!(app.settings_json.open);
+    let text = app.settings_json.text();
+    assert!(text.contains("\"controlPlane.apiUrl\": \"https://127.0.0.1:7879\""));
+    assert!(text.contains("\"look.theme\": \"light\""));
+    let edited = text
+        .replace("\"look.theme\": \"light\"", "\"look.theme\": \"dark\"")
+        .replace("127.0.0.1:7879", "cp.example:7879");
+    app.settings_json.content = iced::widget::text_editor::Content::with_text(&edited);
+    send(&mut app, Message::SettingsJsonApply);
+    assert!(!app.settings_json.open && app.settings_json.error.is_none());
+    assert_eq!(app.mode, ThemeMode::Dark);
+    assert_eq!(app.settings.api_url, "https://cp.example:7879");
+    assert!(app.settings.changed() && app.settings.can_connect());
+    assert!(app.connected(), "the connection stays until Connect");
+    let banner = app.banner.as_ref().unwrap();
+    assert!(banner.title == "Applied" && banner.detail.contains("Connect"));
+    assert_eq!(app.services.connect.initial().0.theme, ThemeMode::Dark);
+    assert_eq!(
+        app.services.connect.initial().0.control_plane,
+        Some(config()),
+        "the control plane section waits for Connect"
+    );
+
+    app.apply(Message::SettingsJsonOpen);
+    app.settings_json.content = iced::widget::text_editor::Content::with_text("{\"look.theme\": \"blue\",\n}");
+    send(&mut app, Message::SettingsJsonApply);
+    assert!(app.settings_json.open);
+    assert!(app.settings_json.error.as_deref().unwrap().contains("line 1"));
+    app.apply(Message::SettingsJsonEdit(iced::widget::text_editor::Action::Move(
+        iced::widget::text_editor::Motion::End,
+    )));
+    assert!(app.settings_json.error.is_none(), "editing clears the error");
+    app.apply(Message::SettingsJsonClose);
+    assert!(!app.settings_json.open);
+}
+
+#[test]
+fn the_settings_are_exported_imported_and_reset() {
+    let (mut app, store) = super::view::tests::app_with_files();
+    send(&mut app, Message::SettingsSave);
+    assert!(app.connected());
+    send(&mut app, Message::SettingsExport);
+    let banner = app.banner.as_ref().unwrap();
+    assert_eq!(banner.title, "Settings exported");
+    assert!(
+        banner.detail.ends_with("axlr-bots-panel.settings.json"),
+        "{}",
+        banner.detail
+    );
+    let exported = store.saved().into_values().next().unwrap();
+    assert_eq!(
+        PanelSettings::from_json(std::str::from_utf8(&exported).unwrap()).unwrap(),
+        app.current_settings()
+    );
+
+    let imported = PanelSettings {
+        control_plane: Some(config()),
+        theme: ThemeMode::Dark,
+        new_bot: crate::application::NewBotDefaults {
+            model: "codex/gpt-6-luna".into(),
+            models: vec![],
+        },
+    };
+    store.put("/in/settings.json", &imported.to_json());
+    store.pick(Some("/in/settings.json"));
+    send(&mut app, Message::SettingsImport);
+    let banner = app.banner.as_ref().unwrap();
+    assert_eq!(banner.title, "Settings imported");
+    assert!(banner.detail.contains("kept"), "same control plane: nothing to connect");
+    assert_eq!(
+        (app.mode, app.new_bot.model.as_str()),
+        (ThemeMode::Dark, "codex/gpt-6-luna")
+    );
+    assert!(!app.settings.changed());
+
+    store.put("/in/look.json", "{\"look.theme\": \"light\"}");
+    store.pick(Some("/in/look.json"));
+    send(&mut app, Message::SettingsImport);
+    assert_eq!(app.settings.config(), config(), "no control plane keys: the three stay");
+    assert_eq!((app.mode, app.new_bot.clone()), (ThemeMode::Light, Default::default()));
+    assert!(!app.settings.changed());
+
+    store.put("/in/bad.json", "{\"bots\": 1}");
+    store.pick(Some("/in/bad.json"));
+    send(&mut app, Message::SettingsImport);
+    assert_eq!(app.banner.as_ref().unwrap().title, "Check settings");
+    store.pick(None);
+    send(&mut app, Message::SettingsImport);
+    assert_eq!(
+        app.banner.as_ref().unwrap().title,
+        "Check settings",
+        "a cancel says nothing new"
+    );
+
+    app.apply(Message::SettingsCa("/elsewhere.crt".into()));
+    send(&mut app, Message::SettingsReset);
+    assert_eq!(app.settings.config(), config());
+    assert_eq!((app.mode, app.new_bot.clone()), (ThemeMode::Light, Default::default()));
+    assert_eq!(app.banner.as_ref().unwrap().title, "Back to the defaults");
+}
+
+#[test]
+fn a_broken_connection_wakes_connect_up_as_reconnect() {
+    use crate::adapters::fake::FakeControlPlane;
+    let fake = std::sync::Arc::new(FakeControlPlane::sample("2026-10-25T10:00:00Z".parse().unwrap()));
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    assert!(app.connected() && !app.can_connect());
+    fake.fail_with(Some(PanelError::Unauthorized("token rotated".into())));
+    let now = app.now + Duration::seconds(30);
+    send(&mut app, Message::Tick(now));
+    assert!(matches!(app.fleet_error, Some(PanelError::Unauthorized(_))));
+    assert!(
+        app.can_connect() && !app.settings.changed(),
+        "the same values, worth trying again"
+    );
+    fake.fail_with(None);
+    send(&mut app, Message::SettingsSave);
+    assert!(app.fleet_error.is_none() && !app.can_connect());
+    assert_eq!(app.banner.as_ref().unwrap().title, "Connected");
 }

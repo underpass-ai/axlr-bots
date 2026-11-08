@@ -133,6 +133,84 @@ fn the_first_run_shows_the_settings_and_connects_on_a_click() {
     assert!(matches!(sent.as_slice(), [Message::SettingsSave]));
 }
 
+/// Connected, the settings screen says so and Connect has nothing to
+/// press; the other sections, the JSON editor and the file acts are
+/// there, and a bot's configuration is not.
+#[test]
+fn the_settings_screen_shows_its_sections_and_rests_connect_once_connected() {
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Settings));
+    shows(
+        &app,
+        &[
+            "Control plane",
+            "Connected",
+            "Look",
+            "New bot",
+            "Model proposed",
+            "Settings file",
+            "Edit as JSON",
+            "Export…",
+            "Import…",
+            "Reset to defaults",
+            "~/.config/axlr-bots-panel/settings.json",
+        ],
+    );
+    assert!(simulator_misses(&app, "Welcome. Check these three values."));
+    assert!(simulator_misses(&app, "Mission"));
+    assert!(messages_of_click(&app, "Connected").is_empty(), "nothing to connect");
+    assert!(matches!(
+        messages_of_click(&app, "Export…").as_slice(),
+        [Message::SettingsExport]
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Edit as JSON").as_slice(),
+        [Message::SettingsJsonOpen]
+    ));
+    app.apply(Message::SettingsCa("/other.crt".into()));
+    shows(&app, &["Changed", "Connect"]);
+    assert!(matches!(
+        messages_of_click(&app, "Connect").as_slice(),
+        [Message::SettingsSave]
+    ));
+    app.apply(Message::SettingsJsonOpen);
+    shows(&app, &["Apply", "Close"]);
+    assert!(
+        simulator_misses(&app, "Model proposed"),
+        "the file takes the form's place"
+    );
+    app.settings_json.content = iced::widget::text_editor::Content::with_text("{\"look.theme\": 1}");
+    app.apply(Message::SettingsJsonApply);
+    assert!(
+        app.settings_json
+            .error
+            .as_deref()
+            .unwrap()
+            .starts_with("settings line 1, column 16")
+    );
+    shows(&app, &["Apply"]);
+}
+
+/// The New bot form offers the settings' models as one-click chips.
+#[test]
+fn the_new_bot_form_offers_the_models_the_settings_name() {
+    let mut app = connected();
+    app.apply(Message::SettingsModels("codex/gpt-6-luna".into()));
+    send(&mut app, Message::SettingsSavePreferences);
+    send(&mut app, Message::Go(Screen::Bots));
+    send(&mut app, Message::RegisterOpen);
+    app.apply(Message::RegisterAdvanced(true));
+    shows(&app, &["anthropic/claude-haiku-5.5", "codex/gpt-6-luna"]);
+    assert!(matches!(
+        messages_of_click(&app, "codex/gpt-6-luna").as_slice(),
+        [Message::RegisterModel(m)] if m == "codex/gpt-6-luna"
+    ));
+    assert!(
+        messages_of_click(&app, "anthropic/claude-haiku-5.5").is_empty(),
+        "the one in the field is lit"
+    );
+}
+
 /// Home lists the five newest calls and the way to all of them, and
 /// the nodes that are not online before the others.
 #[test]
