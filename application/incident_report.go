@@ -15,4 +15,7 @@ type IncidentReport struct {
 	Current *domain.Task
 	// Approvals counts the decisions its tasks waited for; zero in a list.
 	Approvals IncidentApprovals
+	// Whole is set for an incident read on its own: Current and Approvals
+	// were read.
+	Whole bool
 }

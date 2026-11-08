@@ -25,9 +25,13 @@ func TestAnIncidentResponseCarriesTheWaitOfItsCurrentTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response := newIncidentResponse(application.IncidentReport{Incident: incident, NeedsPerson: true, Current: &task, Approvals: application.IncidentApprovals{Waiting: 1}})
+	response := newIncidentResponse(application.IncidentReport{Incident: incident, NeedsPerson: true, Current: &task, Approvals: application.IncidentApprovals{Waiting: 1}, Whole: true})
 	if !response.NeedsYou || response.CurrentTask == nil || response.CurrentTask.Phase != "triage" || response.CurrentTask.Status != "WaitingApproval" ||
 		response.CurrentTask.Approval == nil || response.CurrentTask.Approval.Tool != "local_write" || response.Approvals.Waiting != 1 || response.ID != "inc-1" {
 		t.Errorf("response = %+v %+v", response, response.CurrentTask)
+	}
+	gone := newIncidentResponse(application.IncidentReport{Incident: incident, Whole: true})
+	if gone.CurrentTask != nil || gone.Approvals == nil {
+		t.Errorf("a get whose current task is gone: %+v", gone)
 	}
 }

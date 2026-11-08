@@ -22,7 +22,7 @@ func (uc GetIncident) Execute(ctx context.Context, id domain.IncidentID) (Incide
 	if err != nil {
 		return IncidentReport{}, err
 	}
-	report := IncidentReport{Incident: incident}
+	report := IncidentReport{Incident: incident, Whole: true}
 	current := incident.CurrentTaskID()
 	for _, taskID := range incident.TaskIDs() {
 		task, err := uc.deps.Tasks.Get(ctx, taskID)

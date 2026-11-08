@@ -29,6 +29,8 @@ func newIncidentResponse(report application.IncidentReport) IncidentResponse {
 			current.Approval = &wait
 		}
 		response.CurrentTask = &current
+	}
+	if report.Whole {
 		a := report.Approvals
 		response.Approvals = &IncidentApprovalsResponse{Approved: a.Approved, Denied: a.Denied, Expired: a.Expired, Waiting: a.Waiting}
 	}
