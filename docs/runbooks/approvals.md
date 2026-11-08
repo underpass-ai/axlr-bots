@@ -123,21 +123,21 @@ The apply phase of an incident ([triggers](triggers.md#incidents)) waits here li
 
 ## Who may decide
 
-`approvals.approvers` lists who may approve **and** deny the bot's calls ([reference](../reference/bot-definition.md#approvals), [ADR](../architecture/approvers.md)). The name is the actor a decision carries: the CLI's global `--actor` (default `cli:$USER`), the panel's **Decide as** (`controlPlane.actor` in its settings), or `X-Axlr-Actor` / `decidedBy` on the API. It is compared exactly, so list what people pass: with `"approvers": ["tirso", "oncall"]`, run `axlr-bots --actor tirso task approve task-…`.
+`approvals.approvers` lists who may approve **and** deny the bot's calls ([reference](../reference/bot-definition.md#approvals), [ADR](../architecture/approvers.md)). The name is the actor a decision carries: the CLI's global `--actor` (default `cli:$USER`), the panel's **Decide as** (`controlPlane.actor` in its settings), or `X-Axlr-Actor` / `decidedBy` on the API. It is compared without the CLI's `cli:` prefix and without case (`tirso`, `cli:tirso` and `Tirso` are one person), so the CLI's default `cli:tirso` matches `"approvers": ["tirso", "oncall"]`.
 
 ```bash
-axlr-bots task approve task-…                 # as cli:tirso: refused
-axlr-bots: forbidden: cli:tirso is not among the approvers of bot fix
-axlr-bots --actor tirso task approve task-…   # decided by tirso
+axlr-bots task approve task-…                  # as cli:tirso: decided by tirso
+axlr-bots --actor mallory task approve task-…  # refused
+axlr-bots: forbidden: mallory is not among the approvers of bot fix
 ```
 
-A refusal changes nothing and is audited `approval.refused` with the actor and the decision; a bot that lists approvers refuses a decision that names nobody too (an old panel, a relay that sends no header). `bot.task.decided` says `decidedBy`, and every audit line of the decision has the named actor. A bot without `approvers` takes anyone, as before; a decision that names nobody is then the control plane's own actor. `autoApprove` and the team's events are the control plane's policy, not a person, and are not checked against the list.
+A refusal changes nothing and is audited `approval.refused` with the actor and the decision; a bot that lists approvers refuses a decision that names nobody too (an old panel, a relay that sends no header). `bot.task.decided` says `decidedBy`, and every audit line of the decision has the named actor. A bot without `approvers` takes anyone, as before; a decision that names nobody is then the control plane's own actor. `autoApprove` and the team's events are the control plane's policy, not a person, and are not checked against the list; no person may decide as `policy:…`, nor, on a daemon of a bot with approvers or two persons, as the control plane's own actor.
 
 **The name is asserted, not proven.** Whoever holds the operator token can type any name; `approvers` stops mistakes and keeps an honest audit, not a token holder who lies. Per-actor tokens are [#137](https://github.com/underpass-ai/axlr-bots/issues/137).
 
 ## Two persons
 
-`approvals.twoPersons` makes a call of an incident wait for two different people: `{"namespaces": ["prod", "shop-prod"]}` reads the incident's `namespace` (the alerts' `namespace` label, or `incident open --namespace`), `{"severities": ["sev1", "sev2"]}` its severity; both may be given, one match is enough. Set it on the bot that applies (the apply phase's).
+`approvals.twoPersons` makes a call of an incident wait for two different people, and needs `approvers` listing at least two: `{"namespaces": ["prod", "shop-prod"]}` reads the incident's namespaces (every `namespace` label its alerts carried, or `incident open --namespace`; any one listed is enough), `{"severities": ["sev1", "sev2"]}` its severity; both may be given, one match is enough. Set it on the bot that applies (the apply phase's).
 
 ```text
 WaitingApproval (approvalsNeeded: 2) ──approve by tirso──▶ WaitingApproval, approvedBy [tirso]     bot.approval.first, nothing runs
@@ -147,7 +147,7 @@ WaitingApproval (approvalsNeeded: 2) ──approve by tirso──▶ WaitingAppr
                                      ──deadline─────────▶ expired, approvedBy kept                 as any expiry
 ```
 
-`task get` and `incident get` show `approval.approvalsNeeded: 2` and `approval.approvedBy: [{"actor": "tirso", "at": "…"}]`; the panel's Needs-you card on the incident says **1 of 2 approvals · approved by tirso**. The first approval exits 3 (the task still waits) and answers with the stopped execution; the incident stays `Proposed`. Both approvals name their actor: one that names nobody is refused. The deadline is the wait's from the start: the second person decides within the same `ttl`. An `autoApprove` rule never decides such a call. A task of no incident waits for one person whatever the lists say: two persons reads the incident.
+`task get` and `incident get` show `approval.approvalsNeeded: 2` and `approval.approvedBy: [{"actor": "tirso", "at": "…"}]`; the panel's Needs-you card on the incident says **1 of 2 approvals · approved by tirso**. The first approval exits 3 (the task still waits) and answers with the stopped execution; the incident stays `Proposed`. Both approvals name their actor: one that names nobody is refused. The deadline is the wait's from the start: the second person decides within the same `ttl`. An `autoApprove` rule never decides such a call; the team's events (emit, subscribe) are approved outright as before and are not one of the two. A task of no incident waits for one person whatever the lists say: two persons reads the incident.
 
 **Production.** Production stays at `propose` by default (axlr-sre Q6). The lab runs `act-with-approval` with `approvers` set to the judge's actor. Production goes to `act-with-approval` only with `approvers` and `twoPersons` on the bot that applies.
 

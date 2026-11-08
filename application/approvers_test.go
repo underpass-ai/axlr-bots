@@ -2,13 +2,18 @@ package application
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
 )
+
+// pair is two approvers, what twoPersons needs.
+var pair = []string{"tirso", "oncall"}
 
 // auditsOf lists the audits of an action.
 func auditsOf(h *harness, action string) []domain.AuditEntry {
@@ -59,7 +64,7 @@ func TestApproversRefuseAnActorTheyDoNotList(t *testing.T) {
 	ctx := context.Background()
 	uc := NewApproveTask(h.deps)
 	for _, c := range []struct{ decision, actor string }{
-		{DecisionApprove, "mallory"}, {DecisionDeny, "mallory"}, {DecisionApprove, ""}, {DecisionDeny, ""}, {DecisionApprove, "cli:tirso"},
+		{DecisionApprove, "mallory"}, {DecisionDeny, "mallory"}, {DecisionApprove, ""}, {DecisionDeny, ""}, {DecisionApprove, "cli:mallory"},
 	} {
 		_, err := uc.Execute(ctx, task.ID(), c.decision, "", c.actor)
 		if !domain.IsForbidden(err) {
@@ -114,7 +119,7 @@ func TestWithoutApproversAnyoneDecides(t *testing.T) {
 // the call and moves the incident.
 func TestTwoPersonsInANamespace(t *testing.T) {
 	h := newHarness()
-	incident, task := incidentIn(t, h, domain.ApprovalsSnapshot{TwoPersons: &domain.TwoPersonsSnapshot{Namespaces: []string{"prod", "shop-prod"}}}, "shop-prod", "sev3")
+	incident, task := incidentIn(t, h, domain.ApprovalsSnapshot{Approvers: pair, TwoPersons: &domain.TwoPersonsSnapshot{Namespaces: []string{"prod", "shop-prod"}}}, "shop-prod", "sev3")
 	ctx := context.Background()
 	if wait, _ := task.Approval(); wait.Needed() != 2 || wait.ApprovalsNeeded != 2 {
 		t.Fatalf("wait = %+v", wait)
@@ -213,7 +218,7 @@ func TestTwoPersonsADenialEndsTheWait(t *testing.T) {
 // authorises nothing.
 func TestTwoPersonsExpiryKeepsTheFirstApproval(t *testing.T) {
 	h := newHarness()
-	_, task := incidentIn(t, h, domain.ApprovalsSnapshot{TTL: "2m", TwoPersons: &domain.TwoPersonsSnapshot{Namespaces: []string{"prod"}}}, "prod", "sev3")
+	_, task := incidentIn(t, h, domain.ApprovalsSnapshot{TTL: "2m", Approvers: pair, TwoPersons: &domain.TwoPersonsSnapshot{Namespaces: []string{"prod"}}}, "prod", "sev3")
 	ctx := context.Background()
 	runner := NewSerialRunner(h.deps)
 	if _, err := runner.Decide(ctx, task.ID(), DecisionApprove, "", "tirso"); err != nil {
@@ -242,7 +247,7 @@ func TestTwoPersonsExpiryKeepsTheFirstApproval(t *testing.T) {
 // lists say, wait for one person.
 func TestTwoPersonsLeavesOtherTasksAlone(t *testing.T) {
 	h := newHarness()
-	_, task := incidentIn(t, h, domain.ApprovalsSnapshot{TwoPersons: &domain.TwoPersonsSnapshot{Namespaces: []string{"prod"}, Severities: []string{"sev1"}}}, "dev", "sev3")
+	_, task := incidentIn(t, h, domain.ApprovalsSnapshot{Approvers: pair, TwoPersons: &domain.TwoPersonsSnapshot{Namespaces: []string{"prod"}, Severities: []string{"sev1"}}}, "dev", "sev3")
 	if wait, _ := task.Approval(); wait.Needed() != 1 || wait.ApprovalsNeeded != 0 {
 		t.Fatalf("dev sev3 wait = %+v", wait)
 	}
@@ -252,12 +257,12 @@ func TestTwoPersonsLeavesOtherTasksAlone(t *testing.T) {
 	}
 
 	h = newHarness()
-	_, plain := waitingWith(t, h, domain.ApprovalsSnapshot{TwoPersons: &domain.TwoPersonsSnapshot{Severities: []string{"sev1", "sev2", "sev3", "sev4"}}})
+	_, plain := waitingWith(t, h, domain.ApprovalsSnapshot{Approvers: pair, TwoPersons: &domain.TwoPersonsSnapshot{Severities: []string{"sev1", "sev2", "sev3", "sev4"}}})
 	if wait, _ := plain.Approval(); wait.Needed() != 1 {
 		t.Fatalf("a task of no incident waits for %d", wait.Needed())
 	}
 	h.decider.report = ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "done", SessionID: "sess-1"}}
-	if _, err := NewApproveTask(h.deps).Execute(context.Background(), plain.ID(), DecisionApprove, "", ""); err != nil || len(h.decider.requests) != 1 {
+	if _, err := NewApproveTask(h.deps).Execute(context.Background(), plain.ID(), DecisionApprove, "", "tirso"); err != nil || len(h.decider.requests) != 1 {
 		t.Fatalf("a task of no incident: %v", err)
 	}
 }
@@ -269,7 +274,7 @@ func TestTwoPersonsSinceTheWaitBegan(t *testing.T) {
 	_, task := incidentIn(t, h, domain.ApprovalsSnapshot{}, "prod", "sev3")
 	ctx := context.Background()
 	fix, _ := h.bots.Get(ctx, task.BotID())
-	governBot(t, h, fix, domain.ApprovalsSnapshot{TwoPersons: &domain.TwoPersonsSnapshot{Namespaces: []string{"prod"}}})
+	governBot(t, h, fix, domain.ApprovalsSnapshot{Approvers: pair, TwoPersons: &domain.TwoPersonsSnapshot{Namespaces: []string{"prod"}}})
 	res, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, "", "tirso")
 	if err != nil || len(h.decider.requests) != 0 || res.Task.Status() != domain.TaskWaitingApproval {
 		t.Fatalf("raised wait: %v %d", err, len(h.decider.requests))
@@ -288,7 +293,7 @@ func TestTwoPersonsSinceTheWaitBegan(t *testing.T) {
 // and a policy is no person: approvers do not apply to it.
 func TestPolicyAndTwoPersons(t *testing.T) {
 	h := newHarness()
-	_, task := incidentIn(t, h, domain.ApprovalsSnapshot{AutoApprove: []domain.ToolRuleSnapshot{{Tool: "local_write"}}, TwoPersons: &domain.TwoPersonsSnapshot{Namespaces: []string{"prod"}}}, "prod", "sev3")
+	_, task := incidentIn(t, h, domain.ApprovalsSnapshot{Approvers: pair, AutoApprove: []domain.ToolRuleSnapshot{{Tool: "local_write"}}, TwoPersons: &domain.TwoPersonsSnapshot{Namespaces: []string{"prod"}}}, "prod", "sev3")
 	if task.Status() != domain.TaskWaitingApproval || len(h.decider.requests) != 0 {
 		t.Fatalf("autoApprove decided a two-person call: %s", task.Status())
 	}
@@ -342,4 +347,140 @@ func TestAnIncidentKeepsItsAlertsNamespace(t *testing.T) {
 	if _, err := NewOpenIncident(h.deps).Execute(ctx, bad); err == nil {
 		t.Error("a namespace with a space opened an incident")
 	}
+}
+
+// Review of #139, P1: one person under two spellings is one approval.
+func TestOnePersonUnderTwoNamesIsOneApproval(t *testing.T) {
+	h := newHarness()
+	_, task := incidentIn(t, h, domain.ApprovalsSnapshot{Approvers: pair, TwoPersons: &domain.TwoPersonsSnapshot{Severities: []string{"sev1"}}}, "prod", "sev1")
+	ctx := context.Background()
+	uc := NewApproveTask(h.deps)
+	if _, err := uc.Execute(ctx, task.ID(), DecisionApprove, "", "tirso"); err != nil {
+		t.Fatal(err)
+	}
+	var state domain.StateError
+	for _, again := range []string{"cli:tirso", "Tirso", "CLI:TIRSO"} {
+		if _, err := uc.Execute(ctx, task.ID(), DecisionApprove, "", again); !errors.As(err, &state) {
+			t.Errorf("%s after tirso: %v", again, err)
+		}
+	}
+	if len(h.decider.requests) != 0 {
+		t.Fatal("one person ran a two-person call")
+	}
+	h.decider.report = completes("APPLIED", 0)
+	if _, err := uc.Execute(ctx, task.ID(), DecisionApprove, "", "cli:oncall"); err != nil || len(h.decider.requests) != 1 {
+		t.Fatalf("a second person under the CLI's name: %v", err)
+	}
+}
+
+// Review of #139, P2: the team's events are not one of two approvals:
+// a call of the emit tool on a two-person wait resumes outright, as
+// before, and records nobody.
+func TestATeamEventOnATwoPersonWaitResumesOutright(t *testing.T) {
+	h := newHarness()
+	triage := brigade(t, h, domain.ApprovalsSnapshot{Approvers: pair, TwoPersons: &domain.TwoPersonsSnapshot{Severities: []string{"sev1"}}})
+	ctx := context.Background()
+	command := alert(triage, "fp-a")
+	command.Severity = "sev1"
+	opened, err := NewOpenIncident(h.deps).Execute(ctx, command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	incident := throughFix(t, h, opened.Incident.ID())
+	h.runtime.report = ExecutionReport{Outcome: domain.ExecutionDecisionRequired, Result: domain.Result{SessionID: "s", PendingDecision: &domain.PendingDecision{Tool: EmitEventToolName, CallID: "c-emit", SessionID: "s", Arguments: []byte(`{"name":"x"}`)}}}
+	h.decider.report = completes("emitted", 0)
+	res, err := NewRunTask(h.deps).Execute(ctx, incident.CurrentTaskID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := h.tasks.Get(ctx, res.Task.ID())
+	wait, _ := stored.Approval()
+	if len(h.decider.requests) != 1 || wait.Outcome != domain.ApprovalApproved || len(wait.ApprovedBy) != 0 {
+		t.Fatalf("emit on a two-person wait: decides=%d wait=%+v", len(h.decider.requests), wait)
+	}
+	if _, ok := lastOf(h, domain.EventApprovalFirst); ok {
+		t.Error("a policy was recorded as the first of two")
+	}
+	if decided, _ := lastOf(h, domain.EventTaskDecided); decided.Payload["decidedBy"] != TeamEventActor {
+		t.Errorf("decided = %+v", decided.Payload)
+	}
+	if policyDecides(PolicyActor, 2) || !policyDecides(PolicyActor, 1) || !policyDecides(TeamEventActor, 2) {
+		t.Error("policyDecides")
+	}
+}
+
+// Review of #139, P3: a person never decides as a policy, nor, on a
+// daemon and where names count, as the control plane itself.
+func TestNoPersonClaimsAPolicyOrTheDaemon(t *testing.T) {
+	h := newHarness()
+	_, task := incidentIn(t, h, domain.ApprovalsSnapshot{Approvers: []string{"tirso", "oncall", "test:operator"}, TwoPersons: &domain.TwoPersonsSnapshot{Severities: []string{"sev1"}}}, "prod", "sev1")
+	ctx := context.Background()
+	for _, name := range []string{"policy:autoApprove", "policy:team-event"} {
+		if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, "", name); !domain.IsForbidden(err) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, "", "test:operator"); err != nil {
+		t.Errorf("in process, the CLI's own actor decides: %v", err)
+	}
+	daemon := h.deps
+	daemon.Daemon = true
+	if _, err := NewApproveTask(daemon).Execute(ctx, task.ID(), DecisionApprove, "", "test:operator"); !domain.IsForbidden(err) {
+		t.Errorf("the daemon's own name: %v", err)
+	}
+	if refused := auditsOf(h, "approval.refused"); len(refused) != 3 {
+		t.Errorf("refusals = %+v", refused)
+	}
+	if len(h.decider.requests) != 0 {
+		t.Fatal("a claimed name ran the call")
+	}
+}
+
+// Review of #139, P4 and P5: a mixed group names every namespace, a
+// later alert adds its own, and a label that is no namespace is left out
+// and audited instead of refusing the alert.
+func TestAnIncidentKeepsEveryNamespace(t *testing.T) {
+	h := newHarness()
+	triage := triageBot(t, h, "triage", "")
+	ctx := context.Background()
+	first := alert(triage, "fp-a")
+	first.Namespace = "dev"
+	opened, err := NewOpenIncident(h.deps).Execute(ctx, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (FireTrigger{deps: h.deps, rec: recorder{deps: h.deps}}).fireAlertmanager(ctx, triage, domain.Trigger{}, mixedGroup(t, first.GroupKey, "prod", "a b")); err != nil {
+		t.Fatalf("a strange label refused the alert: %v", err)
+	}
+	stored, _ := h.incs.Get(ctx, opened.Incident.ID())
+	if !slices.Equal(stored.Namespaces(), []string{"dev", "prod"}) || stored.Namespace() != "dev" {
+		t.Errorf("namespaces = %v", stored.Namespaces())
+	}
+	ignored := false
+	for _, audit := range auditsOf(h, "incident.open") {
+		ignored = ignored || audit.Details["namespace"] == "a b"
+	}
+	if !ignored {
+		t.Error("the ignored label was not audited")
+	}
+	bad := alert(triage, "fp-z")
+	bad.Namespace, bad.GroupKey = "a b", "other"
+	if _, err := NewOpenIncident(h.deps).Execute(ctx, bad); err == nil {
+		t.Error("a person's bad namespace opened an incident")
+	}
+}
+
+// mixedGroup is an Alertmanager group of alerts in several namespaces,
+// with no group or common namespace label.
+func mixedGroup(t *testing.T, groupKey string, namespaces ...string) []byte {
+	t.Helper()
+	var alerts []map[string]any
+	for n, namespace := range namespaces {
+		alerts = append(alerts, map[string]any{"status": "firing", "fingerprint": "fp-m" + strconv.Itoa(n), "labels": map[string]string{"alertname": "Drift", "namespace": namespace}})
+	}
+	body, err := json.Marshal(map[string]any{"version": "4", "groupKey": groupKey, "status": "firing", "receiver": "r", "groupLabels": map[string]string{}, "commonLabels": map[string]string{"alertname": "Drift"}, "alerts": alerts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
 }

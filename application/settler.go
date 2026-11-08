@@ -126,9 +126,7 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 	}
 	if waiting {
 		if pending := execution.Result().PendingDecision; pending != nil {
-			// A call that waits for two persons is never approved by an
-			// autoApprove rule: two people decide it (design §8.1).
-			if actor, ok := approvedByPolicy(bot, *pending); ok && (actor != PolicyActor || wait.Needed() < 2) && s.autoApprove(ctx, *task, pending.CallID, actor) {
+			if actor, ok := approvedByPolicy(bot, *pending); ok && policyDecides(actor, wait.Needed()) && s.autoApprove(ctx, *task, pending.CallID, actor) {
 				return nil
 			}
 		}
@@ -172,6 +170,14 @@ func approvedByPolicy(bot domain.Bot, pending domain.PendingDecision) (string, b
 		return PolicyActor, true
 	}
 	return "", false
+}
+
+// policyDecides says whether a policy approves a call that waits for
+// needed people: the team's events always (they are not writes, and the
+// control plane checks each one itself), an autoApprove rule only a call
+// one person would decide; two people decide the rest (design §8.1).
+func policyDecides(actor string, needed int) bool {
+	return actor == TeamEventActor || needed < 2
 }
 
 // autoApprove decides the call the task stopped on as the policy says,

@@ -8,8 +8,7 @@ const maxActorLength = 128
 // ValidateActor checks the name a person decides under, as the token
 // holder asserts it (the CLI's --actor, the panel's operator.actor, the
 // X-Axlr-Actor header): not empty, at most 128 characters, no spaces
-// and no control characters. Names are compared exactly: cli:tirso is
-// not tirso.
+// and no control characters. Names are compared by ActorKey.
 func ValidateActor(field, raw string) (string, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
@@ -24,4 +23,19 @@ func ValidateActor(field, raw string) (string, error) {
 		}
 	}
 	return value, nil
+}
+
+// CLIActorPrefix is what the CLI puts before $USER in its default actor.
+const CLIActorPrefix = "cli:"
+
+// PolicyActorPrefix starts the names the control plane decides under as
+// a policy (policy:autoApprove, policy:team-event): no person may claim
+// one.
+const PolicyActorPrefix = "policy:"
+
+// ActorKey is the name two actors are compared by: without the CLI's
+// cli: prefix and in lower case, so tirso, cli:tirso and Tirso are one
+// person and never two approvals (review of #139, 8 November 2026).
+func ActorKey(actor string) string {
+	return strings.TrimPrefix(strings.ToLower(strings.TrimSpace(actor)), CLIActorPrefix)
 }

@@ -69,10 +69,15 @@ func (uc ApproveTask) decide(ctx context.Context, id domain.TaskID, decision, ca
 	if !IsDecision(decision) {
 		return ApproveTaskResult{}, domain.ValidationError{Field: "decision", Reason: "must be approve or deny"}
 	}
+	own := uc.deps.Actor
 	if by.name != "" {
 		name, err := domain.ValidateActor("decidedBy", by.name)
 		if err != nil {
 			return ApproveTaskResult{}, err
+		}
+		if by.person && strings.HasPrefix(name, domain.PolicyActorPrefix) {
+			// A person never decides as a policy (review of #139).
+			return ApproveTaskResult{}, uc.refuse(ctx, id, decision, name, domain.ForbiddenError{Reason: name + " is a policy's name: a person decides under their own"})
 		}
 		if name != uc.deps.Actor {
 			// The asserted actor is who the audit, the events and the
@@ -111,7 +116,7 @@ func (uc ApproveTask) decide(ctx context.Context, id domain.TaskID, decision, ca
 	}
 	needed := uc.needed(ctx, bot, &task)
 	if by.person {
-		if err := uc.mayDecide(ctx, bot, task, decision, by.name, needed); err != nil {
+		if err := uc.mayDecide(ctx, bot, task, decision, by.name, own, needed); err != nil {
 			return ApproveTaskResult{}, err
 		}
 	}
@@ -153,7 +158,10 @@ func (uc ApproveTask) decide(ctx context.Context, id domain.TaskID, decision, ca
 	if decision == DecisionDeny {
 		outcome = domain.ApprovalDenied
 	}
-	if decision == DecisionApprove && needed > 1 {
+	// Only a person's approval counts as one of two: a policy decider
+	// (the team's events) resumes the call outright, and an autoApprove
+	// rule never gets here for a call that waits for two (settler).
+	if by.person && decision == DecisionApprove && needed > 1 {
 		wait, _ := task.Approval()
 		if wait.ApprovedByActor(uc.deps.Actor) {
 			return ApproveTaskResult{}, uc.refuse(ctx, task.ID(), decision, uc.deps.Actor, domain.StateError{Subject: "task " + id.String(), Current: "already approved by " + uc.deps.Actor + ", waiting for a second, different person", Attempted: "approve again as the same person"})
@@ -162,7 +170,7 @@ func (uc ApproveTask) decide(ctx context.Context, id domain.TaskID, decision, ca
 			return uc.first(ctx, bot, task, previous)
 		}
 	}
-	return uc.resume(ctx, bot, task, previous, decision, outcome, nil)
+	return uc.resume(ctx, bot, task, previous, decision, outcome, by.person, nil)
 }
 
 // needed is how many people the task's open wait needs: what it was
@@ -187,9 +195,12 @@ func (uc ApproveTask) needed(ctx context.Context, bot domain.Bot, task *domain.T
 // bot that lists approvers, or an approval without a named actor of a
 // call that waits for two persons (two names are what tell two people
 // apart). Each refusal is audited approval.refused with the actor.
-func (uc ApproveTask) mayDecide(ctx context.Context, bot domain.Bot, task domain.Task, decision, asserted string, needed int) error {
+func (uc ApproveTask) mayDecide(ctx context.Context, bot domain.Bot, task domain.Task, decision, asserted, own string, needed int) error {
 	approvals := bot.Approvals()
+	names := len(approvals.Approvers()) > 0 || needed > 1
 	switch {
+	case names && uc.deps.Daemon && asserted != "" && domain.ActorKey(asserted) == domain.ActorKey(own):
+		return uc.refuse(ctx, task.ID(), decision, asserted, domain.ForbiddenError{Reason: asserted + " is the control plane's own name: a person decides under their own"})
 	case asserted == "" && len(approvals.Approvers()) > 0:
 		return uc.refuse(ctx, task.ID(), decision, "", domain.ForbiddenError{Reason: "bot " + bot.ID().String() + " lists who may decide its calls: name who decides (--actor, the panel's operator.actor, X-Axlr-Actor or decidedBy)"})
 	case asserted == "" && needed > 1 && decision == DecisionApprove:
@@ -250,7 +261,7 @@ func expiredWait(task domain.Task, bot domain.Bot, now time.Time) (time.Time, bo
 // resume hands the decision to the session under a new execution and
 // closes the wait with the outcome (approved, denied, or expired when the
 // deadline denied the call). extra joins the decided event's payload.
-func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Task, previous domain.Execution, decision, outcome string, extra map[string]any) (ApproveTaskResult, error) {
+func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Task, previous domain.Execution, decision, outcome string, person bool, extra map[string]any) (ApproveTaskResult, error) {
 	pending := previous.Result().PendingDecision
 	sessionID := pending.SessionID
 	if sessionID == "" {
@@ -271,7 +282,7 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 		}
 		return ApproveTaskResult{}, uc.deny(ctx, task.ID(), domain.StateError{Subject: "task " + task.ID().String(), Current: "past its delegation's deadline", Attempted: "decide"})
 	}
-	if outcome == domain.ApprovalApproved {
+	if outcome == domain.ApprovalApproved && person {
 		// A call that waits for two keeps both names on its closed wait.
 		if err := task.FinalApproval(uc.deps.Actor, now); err != nil {
 			return ApproveTaskResult{}, uc.deny(ctx, task.ID(), err)

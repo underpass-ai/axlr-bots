@@ -60,7 +60,7 @@ func TestTheDecideRoutesNameWhoDecides(t *testing.T) {
 			t.Errorf("%s: %s", c.path, body)
 		}
 	}
-	if _, err := client.DecideTask(ctx, id, DecideRequest{Decision: "deny", DecidedBy: "cli:tirso"}); !domain.IsForbidden(err) {
+	if _, err := client.DecideTask(ctx, id, DecideRequest{Decision: "deny", DecidedBy: "cli:mallory"}); !domain.IsForbidden(err) {
 		t.Errorf("the client lost the refusal: %v", err)
 	}
 	if task, _ := client.GetTask(ctx, id); task.Status != "WaitingApproval" {

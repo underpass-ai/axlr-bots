@@ -88,8 +88,11 @@ func NewApprovals(s ApprovalsSnapshot) (Approvals, error) {
 		if err != nil {
 			return Approvals{}, err
 		}
-		if slices.Contains(a.approvers, actor) {
-			return Approvals{}, invalid("approvals approvers", "repeat the name "+actor)
+		if strings.HasPrefix(actor, PolicyActorPrefix) {
+			return Approvals{}, invalid("approvals approvers", actor+" is a policy's name, not a person's")
+		}
+		if slices.ContainsFunc(a.approvers, func(other string) bool { return ActorKey(other) == ActorKey(actor) }) {
+			return Approvals{}, invalid("approvals approvers", "repeat the name "+actor+" (names are compared without cli: and case)")
 		}
 		a.approvers = append(a.approvers, actor)
 	}
@@ -97,6 +100,11 @@ func NewApprovals(s ApprovalsSnapshot) (Approvals, error) {
 		twoPersons, err := NewTwoPersons(*s.TwoPersons)
 		if err != nil {
 			return Approvals{}, err
+		}
+		if len(a.approvers) < 2 {
+			// Without a list, any name typed with the token is a person:
+			// one person could be two names (review of #139).
+			return Approvals{}, invalid("approvals twoPersons", "needs approvers listing at least two people")
 		}
 		a.twoPersons = twoPersons
 	}
@@ -109,20 +117,24 @@ func (a Approvals) Approvers() []string { return append([]string(nil), a.approve
 
 // MayDecide reports whether the actor may approve or deny the bot's
 // calls: any actor when no approvers are listed, else one of them,
-// compared exactly.
+// compared by ActorKey (cli:tirso is tirso).
 func (a Approvals) MayDecide(actor string) bool {
-	return len(a.approvers) == 0 || slices.Contains(a.approvers, actor)
+	if len(a.approvers) == 0 {
+		return true
+	}
+	key := ActorKey(actor)
+	return slices.ContainsFunc(a.approvers, func(approver string) bool { return ActorKey(approver) == key })
 }
 
 // TwoPersons is which incidents wait for two different people.
 func (a Approvals) TwoPersons() TwoPersons { return a.twoPersons }
 
 // ApprovalsNeeded is how many different people must approve a call of
-// a task of an incident of the namespace and severity: two when
-// twoPersons names either, else one. A task of no incident passes
-// empty values and needs one.
-func (a Approvals) ApprovalsNeeded(namespace string, severity IncidentSeverity) int {
-	if a.twoPersons.Applies(namespace, severity) {
+// a task of an incident of the namespaces and severity: two when
+// twoPersons names any of the namespaces or the severity, else one. A
+// task of no incident passes none and needs one.
+func (a Approvals) ApprovalsNeeded(namespaces []string, severity IncidentSeverity) int {
+	if a.twoPersons.Applies(namespaces, severity) {
 		return 2
 	}
 	return 1

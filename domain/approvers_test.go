@@ -14,7 +14,7 @@ func TestApproversAndTwoPersonsAreValidated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(a.Approvers(), []string{"tirso", "oncall"}) || !a.MayDecide("oncall") || a.MayDecide("cli:tirso") || a.MayDecide("") {
+	if !reflect.DeepEqual(a.Approvers(), []string{"tirso", "oncall"}) || !a.MayDecide("oncall") || !a.MayDecide("cli:tirso") || !a.MayDecide("Tirso") || a.MayDecide("cli:mallory") || a.MayDecide("") {
 		t.Errorf("approvers = %v", a.Approvers())
 	}
 	for _, c := range []struct {
@@ -22,7 +22,7 @@ func TestApproversAndTwoPersonsAreValidated(t *testing.T) {
 		severity  IncidentSeverity
 		want      int
 	}{{"prod", Sev3, 2}, {"shop-prod", Sev4, 2}, {"dev", Sev1, 2}, {"dev", Sev2, 2}, {"dev", Sev3, 1}, {"", "", 1}, {"", Sev3, 1}} {
-		if got := a.ApprovalsNeeded(c.namespace, c.severity); got != c.want {
+		if got := a.ApprovalsNeeded([]string{c.namespace}, c.severity); got != c.want {
 			t.Errorf("%q %q needs %d, want %d", c.namespace, c.severity, got, c.want)
 		}
 	}
@@ -39,7 +39,7 @@ func TestApproversAndTwoPersonsAreValidated(t *testing.T) {
 		t.Errorf("autoApprove dropped the approvers: %+v %v", kept.Snapshot(), err)
 	}
 	none := DefaultApprovals()
-	if !none.MayDecide("anyone") || none.MayDecide("anyone") != true || none.ApprovalsNeeded("prod", Sev1) != 1 || none.Snapshot().TwoPersons != nil || none.Snapshot().Approvers != nil {
+	if !none.MayDecide("anyone") || none.MayDecide("anyone") != true || none.ApprovalsNeeded([]string{"prod"}, Sev1) != 1 || none.Snapshot().TwoPersons != nil || none.Snapshot().Approvers != nil {
 		t.Errorf("defaults = %+v", none.Snapshot())
 	}
 	many := make([]string, 33)
@@ -50,15 +50,19 @@ func TestApproversAndTwoPersonsAreValidated(t *testing.T) {
 		"empty approver":    {Approvers: []string{" "}},
 		"approver space":    {Approvers: []string{"tirso garcia"}},
 		"approver repeated": {Approvers: []string{"tirso", "tirso"}},
+		"same person twice": {Approvers: []string{"tirso", "cli:Tirso"}},
+		"policy approver":   {Approvers: []string{"policy:autoApprove"}},
+		"two persons alone": {TwoPersons: &TwoPersonsSnapshot{Severities: []string{"sev1"}}},
+		"one approver":      {Approvers: []string{"tirso"}, TwoPersons: &TwoPersonsSnapshot{Severities: []string{"sev1"}}},
 		"approver too long": {Approvers: []string{strings.Repeat("a", 129)}},
 		"too many":          {Approvers: many},
-		"empty twoPersons":  {TwoPersons: &TwoPersonsSnapshot{}},
-		"bad namespace":     {TwoPersons: &TwoPersonsSnapshot{Namespaces: []string{"Prod"}}},
-		"repeated ns":       {TwoPersons: &TwoPersonsSnapshot{Namespaces: []string{"prod", "prod"}}},
-		"empty severity":    {TwoPersons: &TwoPersonsSnapshot{Severities: []string{""}}},
-		"bad severity":      {TwoPersons: &TwoPersonsSnapshot{Severities: []string{"critical"}}},
-		"repeated severity": {TwoPersons: &TwoPersonsSnapshot{Severities: []string{"sev1", "sev1"}}},
-		"too many ns":       {TwoPersons: &TwoPersonsSnapshot{Namespaces: make([]string, 33)}},
+		"empty twoPersons":  {Approvers: []string{"a", "b"}, TwoPersons: &TwoPersonsSnapshot{}},
+		"bad namespace":     {Approvers: []string{"a", "b"}, TwoPersons: &TwoPersonsSnapshot{Namespaces: []string{"Prod"}}},
+		"repeated ns":       {Approvers: []string{"a", "b"}, TwoPersons: &TwoPersonsSnapshot{Namespaces: []string{"prod", "prod"}}},
+		"empty severity":    {Approvers: []string{"a", "b"}, TwoPersons: &TwoPersonsSnapshot{Severities: []string{""}}},
+		"bad severity":      {Approvers: []string{"a", "b"}, TwoPersons: &TwoPersonsSnapshot{Severities: []string{"critical"}}},
+		"repeated severity": {Approvers: []string{"a", "b"}, TwoPersons: &TwoPersonsSnapshot{Severities: []string{"sev1", "sev1"}}},
+		"too many ns":       {Approvers: []string{"a", "b"}, TwoPersons: &TwoPersonsSnapshot{Namespaces: make([]string, 33)}},
 	} {
 		if _, err := NewApprovals(s); err == nil {
 			t.Errorf("%s accepted", name)
@@ -247,34 +251,80 @@ func TestStoredJSONBeforeApproversRoundTrips(t *testing.T) {
 	}
 }
 
-func TestIncidentNamespace(t *testing.T) {
+func TestActorKey(t *testing.T) {
+	for _, same := range []string{"tirso", "cli:tirso", " Tirso ", "CLI:tirso"} {
+		if ActorKey(same) != ActorKey("tirso") {
+			t.Errorf("%q is not tirso", same)
+		}
+	}
+	if ActorKey("cli:tirso") == ActorKey("oncall") {
+		t.Error("two people are one")
+	}
+	wait := ApprovalWait{ApprovedBy: []ApprovalMark{{Actor: "tirso", At: t0}}}
+	if !wait.ApprovedByActor("cli:tirso") || wait.ApprovedByActor("oncall") {
+		t.Error("cli:tirso after tirso is another person")
+	}
+}
+
+func TestIncidentNamespaces(t *testing.T) {
 	incident := sampleIncident(t)
-	if err := incident.RecordNamespace(" "); err != nil || incident.Namespace() != "" {
-		t.Errorf("blank namespace: %v %q", err, incident.Namespace())
+	if ignored := incident.RecordNamespaces(" "); ignored != nil || incident.Namespace() != "" || incident.Namespaces() != nil {
+		t.Errorf("blank namespace: %v %q", ignored, incident.Namespace())
 	}
-	if err := incident.RecordNamespace("a b"); err == nil {
-		t.Error("a namespace with a space was kept")
+	if ignored := incident.RecordNamespaces("a b", strings.Repeat("n", 254), "shop"); len(ignored) != 2 || incident.Namespace() != "shop" {
+		t.Fatalf("ignored = %q, namespace = %q", ignored, incident.Namespace())
 	}
-	if err := incident.RecordNamespace(strings.Repeat("n", 254)); err == nil {
-		t.Error("a namespace too long was kept")
+	raw, _ := json.Marshal(incident.Snapshot())
+	if !strings.Contains(string(raw), `"namespace":"shop"`) || strings.Contains(string(raw), "namespaces") {
+		t.Errorf("one namespace wrote %s", raw)
 	}
-	if err := incident.RecordNamespace("shop"); err != nil || incident.Namespace() != "shop" {
-		t.Fatalf("namespace = %q %v", incident.Namespace(), err)
+	incident.RecordNamespaces("shop", "prod")
+	if !reflect.DeepEqual(incident.Namespaces(), []string{"shop", "prod"}) || incident.Namespace() != "shop" {
+		t.Errorf("namespaces = %v", incident.Namespaces())
 	}
-	if err := incident.RecordNamespace("other"); err != nil || incident.Namespace() != "shop" {
-		t.Errorf("the first namespace did not stay: %q", incident.Namespace())
+	many := make([]string, 40)
+	for n := range many {
+		many[n] = "ns-" + strings.Repeat("x", n+1)
+	}
+	incident.RecordNamespaces(many...)
+	if len(incident.Namespaces()) != 32 {
+		t.Errorf("kept %d namespaces", len(incident.Namespaces()))
 	}
 	restored, err := RestoreIncident(incident.Snapshot())
-	if err != nil || restored.Namespace() != "shop" {
-		t.Errorf("restored = %q %v", restored.Namespace(), err)
+	if err != nil || !reflect.DeepEqual(restored.Namespaces(), incident.Namespaces()) {
+		t.Errorf("restored = %v %v", restored.Namespaces(), err)
+	}
+	old := sampleIncident(t).Snapshot()
+	old.Namespace = "shop"
+	if back, err := RestoreIncident(old); err != nil || !reflect.DeepEqual(back.Namespaces(), []string{"shop"}) {
+		t.Errorf("a one-namespace incident: %v %v", back.Namespaces(), err)
 	}
 	broken := incident.Snapshot()
-	broken.Namespace = "a\x01b"
+	broken.Namespaces[1] = "a\x01b"
 	if _, err := RestoreIncident(broken); err == nil {
 		t.Error("a broken namespace was restored")
 	}
+	disagree := incident.Snapshot()
+	disagree.Namespace = "prod"
+	if _, err := RestoreIncident(disagree); err == nil {
+		t.Error("a namespace other than the first was restored")
+	}
 	firing, err := ParseAlertmanagerPayload(alertmanagerBody(t, "firing"))
-	if err != nil || firing.Namespace() != "shop" {
-		t.Errorf("payload namespace = %q %v", firing.Namespace(), err)
+	if err != nil || !reflect.DeepEqual(firing.Namespaces(), []string{"shop"}) {
+		t.Errorf("payload namespaces = %v %v", firing.Namespaces(), err)
+	}
+	mixed := AlertmanagerPayload{Alerts: []AlertmanagerAlert{{Labels: map[string]string{"namespace": "dev"}}, {Labels: map[string]string{"namespace": "prod"}}, {Labels: map[string]string{"namespace": "dev"}}, {Labels: map[string]string{}}}}
+	if got := mixed.Namespaces(); !reflect.DeepEqual(got, []string{"dev", "prod"}) {
+		t.Errorf("mixed group = %v", got)
+	}
+	if got := (AlertmanagerPayload{CommonLabels: map[string]string{"namespace": "prod"}}).Namespaces(); !reflect.DeepEqual(got, []string{"prod"}) {
+		t.Errorf("common = %v", got)
+	}
+	if (AlertmanagerPayload{}).Namespaces() != nil {
+		t.Error("no alert named a namespace")
+	}
+	two, _ := NewApprovals(ApprovalsSnapshot{Approvers: []string{"a", "b"}, TwoPersons: &TwoPersonsSnapshot{Namespaces: []string{"prod"}}})
+	if two.ApprovalsNeeded([]string{"dev", "prod"}, Sev4) != 2 || two.ApprovalsNeeded([]string{"dev"}, Sev4) != 1 || two.ApprovalsNeeded(nil, Sev4) != 1 {
+		t.Error("any listed namespace is not enough")
 	}
 }

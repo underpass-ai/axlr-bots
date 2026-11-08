@@ -4128,7 +4128,14 @@
           },
           "namespace": {
             "type": "string",
-            "description": "the namespace label of the incident's alerts; absent when they carry none"
+            "description": "the first namespace label of the incident's alerts; absent when they carry none"
+          },
+          "namespaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "every namespace the incident's alerts named, in order, when there are two or more (the first 32); approvals.twoPersons matches any of them"
           }
         },
         "required": [
@@ -4401,7 +4408,14 @@
           },
           "namespace": {
             "type": "string",
-            "description": "the namespace label of the incident's alerts; absent when they carry none"
+            "description": "the first namespace label of the incident's alerts; absent when they carry none"
+          },
+          "namespaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "every namespace the incident's alerts named, in order, when there are two or more (the first 32); approvals.twoPersons matches any of them"
           }
         },
         "required": [

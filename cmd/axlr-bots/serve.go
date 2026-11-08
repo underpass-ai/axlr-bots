@@ -153,6 +153,7 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 		}
 	}
 	app.OperatorURL = operatorURL(*apiURL, *apiListen)
+	app.Daemon = true
 	if app.OperatorURL != "" {
 		options.Log.Printf("daemon: approval notifications link to %s", app.OperatorURL)
 	}

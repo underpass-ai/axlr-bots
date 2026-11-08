@@ -48,10 +48,11 @@ func (w ApprovalWait) Needed() int {
 	return w.ApprovalsNeeded
 }
 
-// ApprovedByActor reports whether the actor already approved the call.
+// ApprovedByActor reports whether the actor already approved the call,
+// compared by ActorKey: cli:tirso after tirso is the same person.
 func (w ApprovalWait) ApprovedByActor(actor string) bool {
 	for _, mark := range w.ApprovedBy {
-		if mark.Actor == actor {
+		if ActorKey(mark.Actor) == ActorKey(actor) {
 			return true
 		}
 	}
@@ -80,10 +81,10 @@ func (w ApprovalWait) Validate() error {
 		if mark.Actor == "" || mark.At.IsZero() {
 			return invalid("approval approvedBy", "needs an actor and a time")
 		}
-		if seen[mark.Actor] {
+		if seen[ActorKey(mark.Actor)] {
 			return invalid("approval approvedBy", "repeats "+mark.Actor+": two approvals are two different people")
 		}
-		seen[mark.Actor] = true
+		seen[ActorKey(mark.Actor)] = true
 	}
 	switch w.Outcome {
 	case "":
