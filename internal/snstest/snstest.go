@@ -83,6 +83,12 @@ func (s *Signer) Sign(body []byte, edit func(*domain.SNSMessage)) ([]byte, error
 	return json.Marshal(m)
 }
 
+// At is an edit for Sign that stamps the message at the time given, as
+// SNS does when it sends it.
+func At(now time.Time) func(*domain.SNSMessage) {
+	return func(m *domain.SNSMessage) { m.Timestamp = now.UTC().Format("2006-01-02T15:04:05.000Z") }
+}
+
 // Transport is a fake SNS transport: it serves the signer's certificate
 // for any URL, and records the confirmations asked of it.
 type Transport struct {

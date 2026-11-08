@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // The three kinds of message Amazon SNS posts to an HTTP/S subscription,
@@ -19,6 +20,10 @@ const (
 	SNSSubscriptionConfirmation = "SubscriptionConfirmation"
 	SNSNotification             = "Notification"
 	SNSUnsubscribeConfirmation  = "UnsubscribeConfirmation"
+	// SNSMaxMessageAge is how far a message's Timestamp may be from the
+	// control plane's clock, either way: a signed message replayed later,
+	// or one stamped in the future, is refused.
+	SNSMaxMessageAge = 15 * time.Minute
 )
 
 // snsHost is the host SNS signs from and confirms on: sns.<region>.amazonaws.com.
@@ -119,6 +124,21 @@ func (m SNSMessage) StringToSign() string {
 		out.WriteByte('\n')
 	}
 	return out.String()
+}
+
+// CheckFresh refuses a message whose Timestamp is more than
+// SNSMaxMessageAge from now, before or after, or is not a time: a signed
+// message stays valid for good, and its Timestamp, which the signature
+// covers, is what bounds a replay. A refusal is a ForbiddenError.
+func (m SNSMessage) CheckFresh(now time.Time) error {
+	at, err := time.Parse(time.RFC3339Nano, m.Timestamp)
+	if err != nil {
+		return ForbiddenError{Reason: "the SNS message's Timestamp is not a time"}
+	}
+	if age := now.Sub(at); age > SNSMaxMessageAge || age < -SNSMaxMessageAge {
+		return ForbiddenError{Reason: "the SNS message's Timestamp " + m.Timestamp + " is more than 15 minutes from now: a replay, or a clock out of step"}
+	}
+	return nil
 }
 
 // Verify checks the message's signature against the signing

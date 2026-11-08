@@ -54,10 +54,11 @@ Check: the first firing group answers `201`, `"action": "opened"`, the incident 
 
 ## CloudWatch through SNS
 
-A CloudWatch alarm reaches a bot through an Amazon SNS topic with an HTTPS subscription to the trigger's route. Give the bot a `cloudwatch` trigger: no secret (SNS cannot send one), a severity for its incidents, and `autoConfirm` left `false`.
+A CloudWatch alarm reaches a bot through an Amazon SNS topic with an HTTPS subscription to the trigger's route. Give the bot a `cloudwatch` trigger: no secret (SNS cannot send one), a severity for its incidents, the topic it takes messages from in `topics`, and `autoConfirm` left `false`.
 
 ```json
 {"triggers": [{"type": "cloudwatch", "name": "cw", "severity": "sev3", "autoConfirm": false,
+               "topics": ["arn:aws:sns:eu-west-1:123456789012:axlr-sre-alarms"],
                "objective": "CloudWatch alarm {{.alarmName}} fired: {{.reason}}. Find the cause with evidence and report it; change nothing."}]}
 ```
 
@@ -79,7 +80,7 @@ curl -s "$subscribe_url"                                                       #
 aws sns list-subscriptions-by-topic --topic-arn "$topic"                      # SubscriptionArn is no longer PendingConfirmation
 ```
 
-Why by hand: the signature proves that a message came from SNS, not from whose topic. Any AWS account can subscribe this URL to a topic of its own; confirming every request would let that topic open incidents here. With `"autoConfirm": true` the trigger visits the URL itself (`"action": "confirmed"`, audited as `trigger.subscription.confirm`); use it only where nobody outside can reach the route.
+Why by hand: the signature proves that a message came from SNS, not from whose topic. Any AWS account can subscribe this URL to a topic of its own; confirming every request would let that topic open incidents here. With `"autoConfirm": true` the trigger visits the URL itself (`"action": "confirmed"`, audited as `trigger.subscription.confirm`); the trigger refuses it without `topics`, so only the topics listed can be confirmed. `topics` lists up to 16 SNS topic ARNs; a message of another topic is `403` and audited (`trigger.fire`, outcome `denied`). Without `topics` any topic SNS signed for is taken.
 
 **Test it** with a message shaped like an alarm's (SNS signs it like any other), the ALARM first and the OK after it:
 
@@ -89,7 +90,7 @@ aws sns publish --topic-arn "$topic" --message '{"AlarmName":"shop-web-5xx","New
 # or the alarm itself: aws cloudwatch set-alarm-state --alarm-name shop-web-5xx --state-value ALARM --state-reason test
 ```
 
-Check: the ALARM answers `201`, `"action": "opened"`, an incident with source `cloudwatch`, group key `cloudwatch:<AlarmArn>`, title `shop-web-5xx: test from the runbook`, and its triage task with the alarm's JSON as `input`; the same message again (SNS retries) and an ALARM with a new `StateChangeTime` while it is open answer `200`, `"repeated"`; the OK answers `"resolved"` and starts nothing; an ALARM within 30 minutes of it `"reopened"`, cycle 2; a later one opens a new incident. `INSUFFICIENT_DATA` answers `"ignored"` and is audited. A body whose signature does not verify, or whose `SigningCertURL` is not `https://sns.<region>.amazonaws.com/…`, is `403`; a body that is not SNS's `400`.
+Check: the ALARM answers `201`, `"action": "opened"`, an incident with source `cloudwatch`, group key `cloudwatch:<AlarmArn>`, title `shop-web-5xx: test from the runbook`, and its triage task with the alarm's JSON as `input`; the same message again (SNS retries) and an ALARM with a new `StateChangeTime` while it is open answer `200`, `"repeated"`; the OK answers `"resolved"` and starts nothing; an ALARM within 30 minutes of it `"reopened"`, cycle 2; a later one opens a new incident. `INSUFFICIENT_DATA` answers `"ignored"` and is audited. A body whose signature does not verify, or whose `SigningCertURL` is not `https://sns.<region>.amazonaws.com/…`, is `403`; so is a message of a topic not in `topics`, and one whose `Timestamp` is more than 15 minutes from the control plane's clock, either way (a replay, or a clock out of step: keep the host on NTP); each refusal is audited as `trigger.fire`, outcome `denied`, with the reason. A body that is not SNS's is `400`.
 
 | SNS message | Alarm state | Action | Incident | Task |
 |---|---|---|---|---|

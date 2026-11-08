@@ -13,7 +13,9 @@ package domain
 // allow-list that phase's tasks run under: at most the bot's level, and
 // a subset of its allowedTools (Bot.CheckTriggers refuses more). A
 // cloudwatch trigger's Severity is its incidents' (sev3 when absent) and
-// AutoConfirm says whether it confirms an SNS subscription by itself.
+// AutoConfirm says whether it confirms an SNS subscription by itself;
+// Topics, when given, are the SNS topic ARNs it takes messages from, and
+// AutoConfirm needs them.
 type TriggerSnapshot struct {
 	Type        string   `json:"type"`
 	Name        string   `json:"name,omitempty"`
@@ -29,6 +31,7 @@ type TriggerSnapshot struct {
 	Tools       []string `json:"tools,omitempty"`
 	Severity    string   `json:"severity,omitempty"`
 	AutoConfirm bool     `json:"autoConfirm,omitempty"`
+	Topics      []string `json:"topics,omitempty"`
 }
 
 // Redacted is the snapshot with its credentials hidden: what the API

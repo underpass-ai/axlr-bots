@@ -37,7 +37,12 @@ func snsBody(t *testing.T, fake *snstest.Transport, name string, edit func(*doma
 	if fake == nil {
 		return raw
 	}
-	body, err := fake.Signer.Sign(raw, edit)
+	body, err := fake.Signer.Sign(raw, func(m *domain.SNSMessage) {
+		snstest.At(time.Now())(m)
+		if edit != nil {
+			edit(m)
+		}
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +51,7 @@ func snsBody(t *testing.T, fake *snstest.Transport, name string, edit func(*doma
 
 func cloudWatchDefinition(autoConfirm bool) application.BotDefinition {
 	d := definition("triage", "observe")
-	d.Triggers = []domain.TriggerSnapshot{{Type: "cloudwatch", Name: "cw", Objective: "Alarm {{.alarmName}}: {{.reason}}", Severity: "sev3", AutoConfirm: autoConfirm}}
+	d.Triggers = []domain.TriggerSnapshot{{Type: "cloudwatch", Name: "cw", Objective: "Alarm {{.alarmName}}: {{.reason}}", Severity: "sev3", AutoConfirm: autoConfirm, Topics: []string{"arn:aws:sns:eu-west-1:123456789012:axlr-sre-alarms"}}}
 	return d
 }
 
@@ -108,6 +113,18 @@ func TestCloudWatchThroughSNSOnTheOperatorAddress(t *testing.T) {
 	if status, _ := o.post(t, "/v1/triggers/triage/other", sns(domain.SNSNotification), snsBody(t, fake, "cloudwatch-alarm", nil)); status != http.StatusForbidden {
 		t.Errorf("unknown trigger: %d", status)
 	}
+	stale := snsBody(t, fake, "cloudwatch-alarm", snstest.At(time.Now().Add(-domain.SNSMaxMessageAge-time.Minute)))
+	if status, decoded := o.post(t, path, sns(domain.SNSNotification), stale); status != http.StatusForbidden || decoded["kind"] != KindForbidden {
+		t.Errorf("replayed: %d %v", status, decoded)
+	}
+	ahead := snsBody(t, fake, "cloudwatch-alarm", snstest.At(time.Now().Add(domain.SNSMaxMessageAge+time.Minute)))
+	if status, _ := o.post(t, path, sns(domain.SNSNotification), ahead); status != http.StatusForbidden {
+		t.Errorf("stamped ahead: %d", status)
+	}
+	otherTopic := snsBody(t, fake, "cloudwatch-alarm", func(m *domain.SNSMessage) { m.TopicArn = "arn:aws:sns:eu-west-1:999999999999:axlr-sre-alarms" })
+	if status, decoded := o.post(t, path, sns(domain.SNSNotification), otherTopic); status != http.StatusForbidden || decoded["kind"] != KindForbidden {
+		t.Errorf("another topic: %d %v", status, decoded)
+	}
 	incidents, err := o.api.ListIncidents(ctx, application.IncidentQuery{Tenant: "ops"})
 	if err != nil || len(incidents) != 1 || incidents[0].Cycle != 2 {
 		t.Errorf("incidents = %+v %v", incidents, err)
@@ -118,6 +135,11 @@ func TestCloudWatchOverTheSocketIsVerifiedToo(t *testing.T) {
 	fake, change := snsFake(t)
 	client, _, _ := serveWith(t, "completed", change)
 	ctx := context.Background()
+	unlisted := cloudWatchDefinition(true)
+	unlisted.Triggers[0].Topics = nil
+	if _, err := client.RegisterBot(ctx, unlisted); remoteKind(err) != KindValidation {
+		t.Errorf("autoConfirm without topics: %v", err)
+	}
 	if _, err := client.RegisterBot(ctx, cloudWatchDefinition(true)); err != nil {
 		t.Fatal(err)
 	}

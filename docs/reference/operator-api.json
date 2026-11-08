@@ -3951,7 +3951,14 @@
           },
           "autoConfirm": {
             "type": "boolean",
-            "description": "a cloudwatch trigger: confirm an SNS subscription by visiting its SubscribeURL; false (the default) leaves it to a person, who reads the URL in the audit log"
+            "description": "a cloudwatch trigger: confirm an SNS subscription by visiting its SubscribeURL; false (the default) leaves it to a person, who reads the URL in the audit log. True needs topics"
+          },
+          "topics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "a cloudwatch trigger: the SNS topic ARNs it takes messages from, at most 16; a message of another topic is refused (403). Absent: any topic SNS signed for"
           }
         },
         "required": [

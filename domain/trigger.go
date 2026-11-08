@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"slices"
 	"strings"
 )
 
@@ -36,6 +37,7 @@ type Trigger struct {
 	tools      AllowedTools
 	severity   IncidentSeverity
 	confirm    bool
+	topics     []string
 }
 
 // NewTrigger validates a trigger from its definition.
@@ -59,8 +61,8 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 	if (s.Phase != "" || s.Level != "" || len(s.Tools) > 0) && kind != TriggerIncident {
 		return Trigger{}, invalid("trigger "+name, "only an incident trigger takes a phase, a level or tools")
 	}
-	if (s.Severity != "" || s.AutoConfirm) && kind != TriggerCloudWatch {
-		return Trigger{}, invalid("trigger "+name, "only a cloudwatch trigger takes a severity or autoConfirm")
+	if (s.Severity != "" || s.AutoConfirm || len(s.Topics) > 0) && kind != TriggerCloudWatch {
+		return Trigger{}, invalid("trigger "+name, "only a cloudwatch trigger takes a severity, autoConfirm or topics")
 	}
 	t.interrupt = s.Interrupt
 	switch kind {
@@ -96,6 +98,14 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 			if t.severity, err = ParseIncidentSeverity(s.Severity); err != nil {
 				return Trigger{}, invalid("trigger "+name, err.Error())
 			}
+		}
+		if t.topics, err = validateSNSTopics(s.Topics); err != nil {
+			return Trigger{}, invalid("trigger "+name, err.Error())
+		}
+		if t.confirm && len(t.topics) == 0 {
+			// Without a list, confirming by itself would let any AWS
+			// account's topic subscribe the route and open incidents.
+			return Trigger{}, invalid("trigger "+name, "autoConfirm needs topics: the SNS topic ARNs the trigger takes")
 		}
 		if s.Objective == "" {
 			return t, nil
@@ -201,6 +211,16 @@ func (t Trigger) Severity() IncidentSeverity { return t.severity }
 // subscription by itself; by default a person does.
 func (t Trigger) AutoConfirm() bool { return t.confirm }
 
+// Topics are the SNS topic ARNs a cloudwatch trigger takes messages
+// from; none means any topic SNS signed for.
+func (t Trigger) Topics() []string { return append([]string(nil), t.topics...) }
+
+// AllowsTopic reports whether a cloudwatch trigger takes a message of
+// the topic: any when it lists none.
+func (t Trigger) AllowsTopic(arn string) bool {
+	return len(t.topics) == 0 || slices.Contains(t.topics, arn)
+}
+
 // Schedule is when a timer fires; zero for the other types.
 func (t Trigger) Schedule() Schedule { return t.schedule }
 
@@ -244,6 +264,9 @@ func (t Trigger) Snapshot() TriggerSnapshot {
 	s.Interrupt = t.interrupt
 	if t.kind == TriggerCloudWatch {
 		s.Severity, s.AutoConfirm = t.severity.String(), t.confirm
+		if len(t.topics) > 0 {
+			s.Topics = append([]string(nil), t.topics...)
+		}
 	}
 	s.Level = t.level.String()
 	if t.tools.Len() > 0 {

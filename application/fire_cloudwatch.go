@@ -14,7 +14,9 @@ const CloudWatchSource = "cloudwatch"
 // fireCloudWatch takes what Amazon SNS posts to the bot's cloudwatch
 // trigger. The message's signature is verified first, whatever route it
 // came by: SNS sets no header of ours, so its own signature is the only
-// credential (decided 8 November 2026). Then, by the message's type:
+// credential (decided 8 November 2026). A message of a topic the trigger
+// does not list, or stamped more than 15 minutes from now (a replay), is
+// refused. Then, by the message's type:
 //
 //   - SubscriptionConfirmation: audited with its SubscribeURL; the
 //     subscription is confirmed (the URL visited) only when the trigger
@@ -37,6 +39,15 @@ func (uc FireTrigger) fireCloudWatch(ctx context.Context, bot domain.Bot, trigge
 	}
 	if command.MessageType != "" && command.MessageType != message.Type {
 		return deny(domain.ValidationError{Field: "x-amz-sns-message-type", Reason: "says " + command.MessageType + " and the body's Type " + message.Type})
+	}
+	// Checked before the certificate is fetched, so a refused message
+	// costs no fetch; the topic and the Timestamp are signed, so a forger
+	// gains nothing by changing them, and Verify below refuses it.
+	if !trigger.AllowsTopic(message.TopicArn) {
+		return deny(domain.ForbiddenError{Reason: "the SNS topic " + message.TopicArn + " is not among the trigger's topics"})
+	}
+	if err := message.CheckFresh(uc.deps.Clock.Now()); err != nil {
+		return deny(err)
 	}
 	certificate, err := uc.deps.SNS.SigningCertificate(ctx, message.SigningCertURL)
 	if err != nil {

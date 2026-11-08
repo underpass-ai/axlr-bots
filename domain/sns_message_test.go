@@ -218,3 +218,36 @@ func TestParseCloudWatchAlarmChangeRefusals(t *testing.T) {
 		}
 	}
 }
+
+func TestSNSMessageFreshness(t *testing.T) {
+	m, err := domain.ParseSNSMessage(snsBody(t, "cloudwatch-alarm"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	at, err := time.Parse(time.RFC3339Nano, m.Timestamp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, now := range map[string]time.Time{
+		"now":           at,
+		"15 min later":  at.Add(domain.SNSMaxMessageAge),
+		"15 min before": at.Add(-domain.SNSMaxMessageAge),
+	} {
+		if err := m.CheckFresh(now); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	var forbidden domain.ForbiddenError
+	for name, now := range map[string]time.Time{
+		"replayed":  at.Add(domain.SNSMaxMessageAge + time.Second),
+		"in future": at.Add(-domain.SNSMaxMessageAge - time.Second),
+	} {
+		if err := m.CheckFresh(now); !errors.As(err, &forbidden) || !strings.Contains(err.Error(), "15 minutes") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	m.Timestamp = "yesterday"
+	if err := m.CheckFresh(at); !errors.As(err, &forbidden) {
+		t.Errorf("not a time: %v", err)
+	}
+}

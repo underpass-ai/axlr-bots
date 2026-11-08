@@ -49,7 +49,7 @@ func snsSigned(t *testing.T, h *harness, name string) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, err := h.sns.Signer.Sign(raw, nil)
+	body, err := h.sns.Signer.Sign(raw, snstest.At(h.clock.now))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestCloudWatchSubscriptionIsConfirmedByAPersonByDefault(t *testing.T) {
 
 func TestCloudWatchAutoConfirm(t *testing.T) {
 	h := newHarness()
-	bot := cloudWatchBot(t, h, domain.TriggerSnapshot{AutoConfirm: true})
+	bot := cloudWatchBot(t, h, domain.TriggerSnapshot{AutoConfirm: true, Topics: []string{"arn:aws:sns:eu-west-1:123456789012:axlr-sre-alarms"}})
 	body := snsSigned(t, h, "subscription-confirmation")
 	result := fireSNS(t, h, bot, body, domain.SNSSubscriptionConfirmation)
 	if result.Action != IncidentConfirmed || len(h.sns.Confirmed()) != 1 || !strings.Contains(h.sns.Confirmed()[0], "Action=ConfirmSubscription") {
@@ -193,11 +193,11 @@ func TestCloudWatchRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	forged, _ := stranger.Sign(raw, nil)
+	forged, _ := stranger.Sign(raw, snstest.At(h.clock.now))
 	if err := fire(forged, ""); !errors.As(err, &forbidden) {
 		t.Errorf("another key: %v", err)
 	}
-	offHost, _ := h.sns.Signer.Sign(raw, func(m *domain.SNSMessage) { m.SigningCertURL = "https://evil.example/cert.pem" })
+	offHost, _ := h.sns.Signer.Sign(raw, func(m *domain.SNSMessage) { m.SigningCertURL = "https://evil.example/cert.pem"; snstest.At(h.clock.now)(m) })
 	fetched := len(h.sns.Fetched())
 	if err := fire(offHost, ""); !errors.As(err, &forbidden) || len(h.sns.Fetched()) != fetched {
 		t.Errorf("a certificate off SNS: %v, fetched %v", err, h.sns.Fetched())
@@ -208,7 +208,7 @@ func TestCloudWatchRefusals(t *testing.T) {
 	if err := fire([]byte(`{"version":"4"}`), ""); !errors.As(err, &validation) {
 		t.Errorf("not SNS: %v", err)
 	}
-	notAlarm, _ := h.sns.Signer.Sign(raw, func(m *domain.SNSMessage) { m.Message = "hello" })
+	notAlarm, _ := h.sns.Signer.Sign(raw, func(m *domain.SNSMessage) { m.Message = "hello"; snstest.At(h.clock.now)(m) })
 	if err := fire(notAlarm, ""); !errors.As(err, &validation) {
 		t.Errorf("a message that is not an alarm: %v", err)
 	}
@@ -221,5 +221,61 @@ func TestCloudWatchRefusals(t *testing.T) {
 	}
 	if len(h.incs.incidents) != 0 {
 		t.Errorf("incidents = %d", len(h.incs.incidents))
+	}
+}
+
+func TestCloudWatchRefusesReplaysAndOtherTopics(t *testing.T) {
+	h := newHarness()
+	bot := cloudWatchBot(t, h, domain.TriggerSnapshot{Topics: []string{"arn:aws:sns:eu-west-1:123456789012:axlr-sre-alarms"}})
+	ctx := context.Background()
+	raw, _ := os.ReadFile(filepath.Join("..", "domain", "testdata", "sns-cloudwatch-alarm.json"))
+	var forbidden domain.ForbiddenError
+	for name, edit := range map[string]func(*domain.SNSMessage){
+		"replayed":      snstest.At(h.clock.now.Add(-domain.SNSMaxMessageAge - time.Minute)),
+		"in the future": snstest.At(h.clock.now.Add(domain.SNSMaxMessageAge + time.Minute)),
+		"another topic": func(m *domain.SNSMessage) {
+			snstest.At(h.clock.now)(m)
+			m.TopicArn = "arn:aws:sns:eu-west-1:999999999999:axlr-sre-alarms"
+		},
+	} {
+		body, err := h.sns.Signer.Sign(raw, edit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.log.audits = nil
+		fetched := len(h.sns.Fetched())
+		_, err = NewFireTrigger(h.deps).Execute(ctx, FireTriggerCommand{BotID: bot.ID().String(), TriggerName: "cw", Body: body})
+		if !errors.As(err, &forbidden) || len(h.sns.Fetched()) != fetched {
+			t.Errorf("%s: %v, fetched %v", name, err, h.sns.Fetched())
+		}
+		if entry, ok := lastAudit(h, "trigger.fire"); !ok || entry.Outcome != domain.AuditDenied || entry.Details["reason"] != err.Error() {
+			t.Errorf("%s: audit = %+v", name, entry)
+		}
+	}
+	if len(h.incs.incidents) != 0 {
+		t.Errorf("incidents = %d", len(h.incs.incidents))
+	}
+	// A listed topic, stamped now, still opens one.
+	if result := fireSNS(t, h, bot, snsSigned(t, h, "cloudwatch-alarm"), domain.SNSNotification); result.Action != IncidentOpened {
+		t.Errorf("listed topic: %+v", result)
+	}
+}
+
+func TestCloudWatchAutoConfirmNeedsTopics(t *testing.T) {
+	h := newHarness()
+	definition := sampleDefinition()
+	definition.Triggers = []domain.TriggerSnapshot{{Type: "cloudwatch", Name: "cw", AutoConfirm: true}}
+	var validation domain.ValidationError
+	if _, err := NewRegisterBot(h.deps).Execute(context.Background(), definition); !errors.As(err, &validation) || !strings.Contains(err.Error(), "autoConfirm needs topics") {
+		t.Errorf("register: %v", err)
+	}
+	bot := cloudWatchBot(t, h, domain.TriggerSnapshot{})
+	patch := []domain.TriggerSnapshot{{Type: "cloudwatch", Name: "cw", AutoConfirm: true}}
+	if _, err := NewUpdateBot(h.deps).Execute(context.Background(), bot.ID(), BotPatch{Triggers: &patch}); !errors.As(err, &validation) {
+		t.Errorf("update: %v", err)
+	}
+	patch[0].Topics = []string{"arn:aws:sns:eu-west-1:123456789012:axlr-sre-alarms"}
+	if _, err := NewUpdateBot(h.deps).Execute(context.Background(), bot.ID(), BotPatch{Triggers: &patch}); err != nil {
+		t.Errorf("update with topics: %v", err)
 	}
 }
