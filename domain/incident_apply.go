@@ -12,7 +12,8 @@ import (
 // an expiry of that approval, a failed apply and a verify that says the
 // alert is still red send the incident back to Open: one more cycle, the
 // diagnosis and the proposal kept until a new triage replaces them, and
-// the next alert of the group starts that triage. The IncidentMaxDenials-th
+// the control plane starts that triage at once (the next alert of the group
+// when it cannot). The IncidentMaxDenials-th
 // denial escalates it instead.
 
 // Denials counts the applies of the incident's proposals a person denied

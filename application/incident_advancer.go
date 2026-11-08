@@ -3,6 +3,8 @@ package application
 import (
 	"context"
 	"errors"
+	"slices"
+	"strconv"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -59,6 +61,17 @@ func (a incidentAdvancer) taskEnded(ctx context.Context, bot domain.Bot, task do
 	}
 	current, ok := incident.CurrentTask()
 	if !ok || current.TaskID() != task.ID() {
+		// An earlier task of the incident (a denied apply whose session
+		// went on after the new cycle's triage started) moves nothing,
+		// but its cost is the incident's.
+		if slices.Contains(incident.TaskIDs(), task.ID()) && (execution.Usage().CostUSD > 0 || execution.Usage().CostUnknown) {
+			if err := incident.AddCost(execution.Usage(), a.deps.Clock.Now()); err != nil {
+				return err
+			}
+			if err := a.deps.Incidents.Save(ctx, incident); err != nil {
+				return err
+			}
+		}
 		return a.rec.audit(ctx, "incident.advance", id.String(), domain.AuditDenied, map[string]string{"task": task.ID().String(), "reason": "not the task of the current cycle and phase"})
 	}
 	phase := current.Phase()
@@ -210,10 +223,15 @@ func (a incidentAdvancer) settle(ctx context.Context, incident domain.Incident, 
 		return err
 	}
 	move.payload["status"] = incident.Status().String()
-	if incident.Status() == domain.IncidentOpen && from != domain.IncidentOpen {
+	sentBack := incident.Status() == domain.IncidentOpen && from != domain.IncidentOpen
+	if sentBack {
 		move.payload["cycle"] = incident.Cycle()
 	}
 	for _, kind := range move.kinds {
+		if sentBack && kind == domain.EventIncidentReopened {
+			// Published with the new cycle's triage task, below.
+			continue
+		}
 		if err := a.rec.incidentEvent(ctx, kind, incident, move.payload); err != nil {
 			return err
 		}
@@ -225,8 +243,30 @@ func (a incidentAdvancer) settle(ctx context.Context, incident domain.Incident, 
 	if err := a.rec.audit(ctx, "incident.advance", incident.ID().String(), domain.AuditOK, details); err != nil {
 		return err
 	}
+	if sentBack {
+		return a.retriage(ctx, incident, move.payload)
+	}
 	_, err := newPhaseLauncher(a.deps).launch(ctx, incident, correlation)
 	return err
+}
+
+// retriage launches the triage of the incident's new cycle at once. One
+// that does not start is audited and the reopened event is published
+// without a task: the next alert of the group starts it.
+func (a incidentAdvancer) retriage(ctx context.Context, incident domain.Incident, payload map[string]any) error {
+	extra := map[string]any{}
+	for key, value := range payload {
+		if key != "taskId" && key != "executionId" {
+			extra[key] = value
+		}
+	}
+	extra["endedTaskId"] = payload["taskId"]
+	if _, err := NewOpenIncident(a.deps).retriage(ctx, incident, extra); err == nil {
+		return nil
+	} else if auditErr := a.rec.audit(ctx, "incident.open", incident.ID().String(), domain.AuditDenied, map[string]string{"reason": err.Error(), "cycle": strconv.Itoa(incident.Cycle())}); auditErr != nil {
+		return auditErr
+	}
+	return a.rec.incidentEvent(ctx, domain.EventIncidentReopened, incident, payload)
 }
 
 // taskDecided moves the incident of an apply task whose call a person

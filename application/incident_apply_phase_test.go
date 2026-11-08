@@ -200,12 +200,21 @@ func TestARedVerifySendsTheIncidentBack(t *testing.T) {
 	if back.Status() != domain.IncidentOpen || back.Cycle() != 2 || !strings.Contains(back.Reason(), "still red") || back.Denials() != 0 {
 		t.Fatalf("after a red verify: %+v", back.Snapshot())
 	}
+	// The new cycle's triage starts at once, without waiting for an alert.
+	triageTask, err := h.tasks.Get(ctx, back.CurrentTaskID())
+	if err != nil || triageTask.IdempotencyKey() != domain.IdempotencyKey("incident:"+back.ID().String()+":2") || triageTask.BotID() != "triage" {
+		t.Fatalf("the new cycle's triage: %+v %v", triageTask, err)
+	}
 	reopened, ok := lastOf(h, domain.EventIncidentReopened)
-	if !ok || reopened.Payload["from"] != "Verifying" || reopened.Payload["cycle"] != 2 || reopened.Payload["verdict"] != "red" {
+	if !ok || reopened.Payload["from"] != "Verifying" || reopened.Payload["cycle"] != 2 || reopened.Payload["verdict"] != "red" ||
+		reopened.Payload["taskId"] != triageTask.ID().String() || reopened.Payload["endedTaskId"] == nil {
 		t.Errorf("incident.reopened = %+v", reopened)
 	}
-	again, err := NewOpenIncident(h.deps).Execute(ctx, alert(triage, "fp-a"))
-	if err != nil || again.Task == nil || again.Task.IdempotencyKey() != domain.IdempotencyKey("incident:"+back.ID().String()+":2") {
+	if count := strings.Count(strings.Join(h.log.eventTypes(), ","), "incident.reopened"); count != 1 {
+		t.Errorf("incident.reopened published %d times", count)
+	}
+	tasks := len(h.tasks.tasks)
+	if again, err := NewOpenIncident(h.deps).Execute(ctx, alert(triage, "fp-a")); err != nil || again.Action != IncidentRepeated || len(h.tasks.tasks) != tasks {
 		t.Fatalf("the next alert: %+v %v", again, err)
 	}
 }
@@ -240,9 +249,8 @@ func TestDeniedTwiceTheIncidentIsLeftToAPerson(t *testing.T) {
 		t.Errorf("the denied apply's cost was lost: %v", back.CostUSD())
 	}
 
-	again, err := NewOpenIncident(h.deps).Execute(ctx, alert(triage, "fp-a"))
-	if err != nil || again.Task == nil {
-		t.Fatalf("the next alert: %+v %v", again, err)
+	if current, _ := back.CurrentTask(); current.Phase() != domain.IncidentPhaseTriage || current.Cycle() != 2 {
+		t.Fatalf("the new cycle's triage did not start: %+v", back.Snapshot())
 	}
 	incident = throughFix(t, h, incident.ID())
 	if incident.Cycle() != 2 {
@@ -465,5 +473,35 @@ func TestAnIncidentSaysWhenItNeedsAPerson(t *testing.T) {
 	h.tasks.listFail = nil
 	if _, err := NewGetIncident(h.deps).Execute(ctx, "inc-none"); !domain.IsNotFound(err) {
 		t.Errorf("a missing incident: %v", err)
+	}
+}
+
+// A send-back whose triage cannot start (its bot paused) is published
+// without a task, and the next alert of the group starts it.
+func TestASentBackIncidentWhoseTriageCannotStartWaitsForTheNextAlert(t *testing.T) {
+	h := newHarness()
+	triage := brigade(t, h, domain.ApprovalsSnapshot{})
+	ctx := context.Background()
+	incident := proposed(t, h, triage)
+	if _, err := NewPauseBot(h.deps).Execute(ctx, triage.ID()); err != nil {
+		t.Fatal(err)
+	}
+	h.runtime.report = ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "rollout failed"}
+	if _, err := NewRunTask(h.deps).Execute(ctx, incident.CurrentTaskID()); err != nil {
+		t.Fatal(err)
+	}
+	back, _ := h.incs.Get(ctx, incident.ID())
+	if back.Status() != domain.IncidentOpen || back.HasTask(domain.IncidentPhaseTriage) {
+		t.Fatalf("after a failed apply with triage paused: %+v", back.Snapshot())
+	}
+	if reopened, ok := lastOf(h, domain.EventIncidentReopened); !ok || reopened.Payload["from"] != "Proposed" {
+		t.Errorf("incident.reopened = %+v", reopened)
+	}
+	if _, err := NewEnableBot(h.deps).Execute(ctx, triage.ID()); err != nil {
+		t.Fatal(err)
+	}
+	again, err := NewOpenIncident(h.deps).Execute(ctx, alert(triage, "fp-a"))
+	if err != nil || again.Task == nil || again.Task.IdempotencyKey() != domain.IdempotencyKey("incident:"+back.ID().String()+":2") {
+		t.Fatalf("the next alert: %+v %v", again, err)
 	}
 }

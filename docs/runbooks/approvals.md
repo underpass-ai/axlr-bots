@@ -119,7 +119,7 @@ A `WaitingApproval` task ends `Cancelled` with `approval.outcome: cancelled`; th
 
 ## An incident's apply
 
-The apply phase of an incident ([triggers](triggers.md#incidents)) waits here like any task: its bot runs at `act-with-approval`, its write call stops it in `WaitingApproval`, `warn.approval` and the notifications go out, and `task approve` or `task deny` (or the panel's **Approve** and **Deny**, on the task's page or the incident's) decides it. The decision moves the incident at once, before the call runs: approved is `Applying`, denied is back to `Open` with the reason. An expiry is a denial; the second denial since the incident was last reopened escalates it. `incident get` counts the incident's `approvals`, one per task by its last wait: the product's rule is one per incident, shown and not enforced.
+The apply phase of an incident ([triggers](triggers.md#incidents)) waits here like any task: its bot runs at `act-with-approval`, its write call stops it in `WaitingApproval`, `warn.approval` and the notifications go out, and `task approve` or `task deny` (or the panel's **Approve** and **Deny**, on the task's page or the incident's) decides it. The decision moves the incident at once, before the call runs: approved is `Applying`, denied is back to `Open` with the reason, and the new cycle's triage starts at once. An expiry is a denial; the second denial since the incident was last reopened escalates it. `incident get` counts the incident's `approvals`, one per task by its last wait: the product's rule is one per incident, shown and not enforced.
 
 ## Limits today
 
