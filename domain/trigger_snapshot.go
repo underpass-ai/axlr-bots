@@ -11,20 +11,24 @@ package domain
 // incident's phase the bot takes: triage (the default), fix, apply or
 // verify; its Level and Tools, when given, are the level and the
 // allow-list that phase's tasks run under: at most the bot's level, and
-// a subset of its allowedTools (Bot.CheckTriggers refuses more).
+// a subset of its allowedTools (Bot.CheckTriggers refuses more). A
+// cloudwatch trigger's Severity is its incidents' (sev3 when absent) and
+// AutoConfirm says whether it confirms an SNS subscription by itself.
 type TriggerSnapshot struct {
-	Type       string   `json:"type"`
-	Name       string   `json:"name,omitempty"`
-	Objective  string   `json:"objective,omitempty"`
-	Secret     string   `json:"secret,omitempty"`
-	SigningKey string   `json:"signingKey,omitempty"`
-	Every      string   `json:"every,omitempty"`
-	Cron       string   `json:"cron,omitempty"`
-	Events     []string `json:"events,omitempty"`
-	Interrupt  bool     `json:"interrupt,omitempty"`
-	Phase      string   `json:"phase,omitempty"`
-	Level      string   `json:"level,omitempty"`
-	Tools      []string `json:"tools,omitempty"`
+	Type        string   `json:"type"`
+	Name        string   `json:"name,omitempty"`
+	Objective   string   `json:"objective,omitempty"`
+	Secret      string   `json:"secret,omitempty"`
+	SigningKey  string   `json:"signingKey,omitempty"`
+	Every       string   `json:"every,omitempty"`
+	Cron        string   `json:"cron,omitempty"`
+	Events      []string `json:"events,omitempty"`
+	Interrupt   bool     `json:"interrupt,omitempty"`
+	Phase       string   `json:"phase,omitempty"`
+	Level       string   `json:"level,omitempty"`
+	Tools       []string `json:"tools,omitempty"`
+	Severity    string   `json:"severity,omitempty"`
+	AutoConfirm bool     `json:"autoConfirm,omitempty"`
 }
 
 // Redacted is the snapshot with its credentials hidden: what the API

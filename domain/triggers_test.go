@@ -379,3 +379,41 @@ func TestBotRedefineAndRedaction(t *testing.T) {
 		t.Error("execution id not in the event")
 	}
 }
+
+func TestCloudWatchTriggerDefinitions(t *testing.T) {
+	plain, err := NewTrigger(TriggerSnapshot{Type: "cloudwatch", Name: "cw"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.Type() != TriggerCloudWatch || plain.Severity() != Sev3 || plain.AutoConfirm() || plain.ObjectiveTemplate() != "" || plain.Authenticates(testSecret, "", nil) {
+		t.Errorf("plain = %+v", plain.Snapshot())
+	}
+	full, err := NewTrigger(TriggerSnapshot{Type: "cloudwatch", Name: "cw", Objective: "Alarm {{.alarmName}}: {{.reason}}", Severity: "sev2", AutoConfirm: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := full.Snapshot()
+	if full.Severity() != Sev2 || !full.AutoConfirm() || snap.Severity != "sev2" || !snap.AutoConfirm || snap.Objective != "Alarm {{.alarmName}}: {{.reason}}" {
+		t.Errorf("full = %+v", snap)
+	}
+	if back, err := NewTrigger(snap); err != nil || back.Severity() != Sev2 || !back.AutoConfirm() {
+		t.Errorf("round trip = %+v %v", back.Snapshot(), err)
+	}
+	raw, _ := json.Marshal(snap)
+	if string(raw) != `{"type":"cloudwatch","name":"cw","objective":"Alarm {{.alarmName}}: {{.reason}}","severity":"sev2","autoConfirm":true}` {
+		t.Errorf("json = %s", raw)
+	}
+	for name, bad := range map[string]TriggerSnapshot{
+		"secret":            {Type: "cloudwatch", Secret: testSecret},
+		"signing key":       {Type: "cloudwatch", SigningKey: testSecret},
+		"schedule":          {Type: "cloudwatch", Every: "1m"},
+		"bad severity":      {Type: "cloudwatch", Severity: "high"},
+		"bad template":      {Type: "cloudwatch", Objective: "{{"},
+		"severity elsewise": {Type: "alertmanager", Secret: testSecret, Severity: "sev1"},
+		"confirm elsewise":  {Type: "webhook", Secret: testSecret, Objective: "x", AutoConfirm: true},
+	} {
+		if _, err := NewTrigger(bad); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

@@ -233,7 +233,7 @@ func (l *Local) FireTrigger(ctx context.Context, request FireRequest) (FireRespo
 	l.submits.Lock()
 	defer l.submits.Unlock()
 	result, err := l.runner.FireTrigger(ctx, application.FireTriggerCommand{
-		BotID: request.BotID, TriggerName: request.Trigger, DeliveryID: request.DeliveryID, Body: request.Body,
+		BotID: request.BotID, TriggerName: request.Trigger, DeliveryID: request.DeliveryID, Body: request.Body, MessageType: request.MessageType,
 	})
 	if err != nil {
 		return FireResponse{}, err

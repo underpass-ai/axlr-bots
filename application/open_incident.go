@@ -24,6 +24,9 @@ const (
 	IncidentReopened = "reopened"
 	IncidentClosed   = "resolved"
 	IncidentIgnored  = "ignored"
+	// IncidentConfirmed is a cloudwatch trigger's answer to an SNS
+	// subscription it confirmed: no incident.
+	IncidentConfirmed = "confirmed"
 )
 
 // OpenIncident takes an alert group: it opens an incident and the triage

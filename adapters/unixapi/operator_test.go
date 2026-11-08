@@ -322,6 +322,13 @@ type operatorAddress struct {
 
 func serveOperatorAddress(t *testing.T) *operatorAddress {
 	t.Helper()
+	return serveOperatorAddressWith(t, nil)
+}
+
+// serveOperatorAddressWith is serveOperatorAddress with a change to the
+// dependencies (a fake SNS transport).
+func serveOperatorAddressWith(t *testing.T, change func(*application.Dependencies)) *operatorAddress {
+	t.Helper()
 	dir := t.TempDir()
 	bin, _, err := fakeaxlr.Write(dir, fakeaxlr.Options{Scenario: "completed"})
 	if err != nil {
@@ -331,6 +338,9 @@ func serveOperatorAddress(t *testing.T) *operatorAddress {
 	deps, err := compose.Dependencies(state, bin, "test:api")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if change != nil {
+		change(&deps)
 	}
 	ca, err := pki.Generate(filepath.Join(state, pki.CADirName))
 	if err != nil {

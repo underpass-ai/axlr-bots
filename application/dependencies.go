@@ -26,6 +26,7 @@ type Dependencies struct {
 	Workspace   Workspace
 	Deliveries  DeliveryRepository
 	Notifier    NotificationSender
+	SNS         SNSTransport
 	Clock       Clock
 	IDs         IDGenerator
 	Actor       string
@@ -73,6 +74,8 @@ func (d Dependencies) Validate() error {
 		return errors.New("application: DeliveryRepository is required")
 	case d.Notifier == nil:
 		return errors.New("application: NotificationSender is required")
+	case d.SNS == nil:
+		return errors.New("application: SNSTransport is required")
 	case d.Clock == nil:
 		return errors.New("application: Clock is required")
 	case d.IDs == nil:

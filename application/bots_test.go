@@ -27,6 +27,7 @@ func TestDependenciesValidate(t *testing.T) {
 		func(d *Dependencies) { d.Decisions = nil },
 		func(d *Dependencies) { d.Traces = nil },
 		func(d *Dependencies) { d.Artifacts = nil },
+		func(d *Dependencies) { d.SNS = nil },
 		func(d *Dependencies) { d.Clock = nil },
 		func(d *Dependencies) { d.IDs = nil },
 		func(d *Dependencies) { d.Actor = "" },
