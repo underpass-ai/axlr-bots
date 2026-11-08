@@ -138,7 +138,7 @@ func TestParseSNSMessageRefusesWhatIsNotSNS(t *testing.T) {
 		"unknown type":   strings.Replace(good, `"Type": "Notification"`, `"Type": "Publish"`, 1),
 		"no message id":  strings.Replace(good, `"MessageId": "5f1d0c2e-8a7b-5c3d-9e4f-0a1b2c3d4e5f"`, `"MessageId": ""`, 1),
 		"version 3":      strings.Replace(good, `"SignatureVersion": "1"`, `"SignatureVersion": "3"`, 1),
-		"no signature":   strings.Replace(good, `"Signature": "EXAMPLEw6JRN...composed, re-signed by the tests"`, `"Signature": ""`, 1),
+		"no signature":   strings.Replace(good, `"Signature": "EXAMPLEpH+DcEwjAPg8O9mY8dReBSwksfg2S7WKQcikcNKWLQjwu6A4VbeS0QHVCkhRS7fUQvi2egU3N858fiTDN6bkkOxYDVrY0Ad8L10Hs3zH81mtnPk5uvvolIC1CXGu43obcgFxeL3khZl8IKvO61GWB6jI9b5+gLPoBc1Q="`, `"Signature": ""`, 1),
 		"confirm no tok": strings.Replace(confirmation, `"Token": "2336412f37fb687f5d51e6e2425f004aed3d0ea5d8a5c8b1f0b2a1e9c0d7f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1"`, `"Token": ""`, 1),
 	}
 	for name, body := range cases {

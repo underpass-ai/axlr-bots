@@ -81,7 +81,7 @@ aws sns list-subscriptions-by-topic --topic-arn "$topic"                      # 
 
 Why by hand: the signature proves that a message came from SNS, not from whose topic. Any AWS account can subscribe this URL to a topic of its own; confirming every request would let that topic open incidents here. With `"autoConfirm": true` the trigger visits the URL itself (`"action": "confirmed"`, audited as `trigger.subscription.confirm`); use it only where nobody outside can reach the route.
 
-**Test it** with a message shaped like an alarm's (SNS signs it like any other):
+**Test it** with a message shaped like an alarm's (SNS signs it like any other), the ALARM first and the OK after it:
 
 ```bash
 aws sns publish --topic-arn "$topic" --message '{"AlarmName":"shop-web-5xx","NewStateValue":"ALARM","NewStateReason":"test from the runbook","StateChangeTime":"2026-11-08T10:00:00.000+0000","AlarmArn":"arn:aws:cloudwatch:eu-west-1:123456789012:alarm:shop-web-5xx"}'
