@@ -51,6 +51,7 @@ type opening struct {
 	groupKey     string
 	title        string
 	severity     domain.IncidentSeverity
+	namespace    string
 	fingerprints []string
 	objective    string
 	input        []byte
@@ -94,7 +95,7 @@ func (uc OpenIncident) Execute(ctx context.Context, command OpenIncidentCommand)
 		_ = uc.rec.audit(ctx, "incident.open", botID.String(), domain.AuditDenied, map[string]string{"reason": "bot takes no incidents"})
 		return OpenIncidentResult{}, domain.StateError{Subject: "bot " + botID.String(), Current: "without an incident trigger", Attempted: "take an incident"}
 	}
-	return uc.open(ctx, opening{bot: bot, trigger: trigger, source: source, groupKey: command.GroupKey, title: command.Title, severity: severity, fingerprints: command.Fingerprints, objective: command.Objective})
+	return uc.open(ctx, opening{bot: bot, trigger: trigger, source: source, groupKey: command.GroupKey, title: command.Title, severity: severity, namespace: command.Namespace, fingerprints: command.Fingerprints, objective: command.Objective})
 }
 
 // open finds what the group already has and opens, repeats or reopens.
@@ -109,6 +110,13 @@ func (uc OpenIncident) open(ctx context.Context, o opening) (OpenIncidentResult,
 	existing, found, err := uc.deps.Incidents.FindNewestByGroupKey(ctx, bot.TenantID(), o.groupKey)
 	if err != nil {
 		return OpenIncidentResult{}, err
+	}
+	if found {
+		// An incident opened without one takes the namespace a later
+		// alert of its group names; the first one stays.
+		if err := existing.RecordNamespace(o.namespace); err != nil {
+			return OpenIncidentResult{}, err
+		}
 	}
 	switch {
 	case found && !existing.Status().IsResolved() && !existing.HasTask(domain.IncidentPhaseTriage):
@@ -138,6 +146,9 @@ func (uc OpenIncident) open(ctx context.Context, o opening) (OpenIncidentResult,
 	}
 	incident, err := domain.NewIncident(id, bot.TenantID(), bot.ID(), o.groupKey, o.source, o.title, o.severity, o.fingerprints, now)
 	if err != nil {
+		return OpenIncidentResult{}, err
+	}
+	if err := incident.RecordNamespace(o.namespace); err != nil {
 		return OpenIncidentResult{}, err
 	}
 	return uc.start(ctx, o, incident, domain.EventIncidentOpened, false)
@@ -257,6 +268,9 @@ func (uc OpenIncident) start(ctx context.Context, o opening, incident domain.Inc
 	payload := map[string]any{
 		"groupKey": incident.GroupKey(), "source": incident.Source(), "title": incident.Title(), "severity": incident.Severity().String(),
 		"fingerprints": incident.Fingerprints(), "cycle": incident.Cycle(), "taskId": result.Task.ID().String(), "trigger": o.trigger.Name(),
+	}
+	if incident.Namespace() != "" {
+		payload["namespace"] = incident.Namespace()
 	}
 	if o.retry {
 		payload["retry"], payload["retries"] = true, incident.Retries()

@@ -97,7 +97,7 @@ func TestExpiryDeniesTheCallInProcess(t *testing.T) {
 	}
 	// A decision now authorises nothing, whatever it says.
 	for _, decision := range []string{DecisionApprove, DecisionDeny} {
-		_, err := runner.Decide(ctx, task.ID(), decision, "")
+		_, err := runner.Decide(ctx, task.ID(), decision, "", "")
 		var expiredErr domain.ApprovalExpiredError
 		if !errors.As(err, &expiredErr) || expiredErr.CallID != "c1" || !expiredErr.Deadline.Equal(t0.Add(2*time.Minute)) {
 			t.Errorf("late %s: %v", decision, err)
@@ -115,7 +115,7 @@ func TestALateDecisionIsRefusedBeforeTheExpiryRuns(t *testing.T) {
 	h := newHarness()
 	_, task := waitingWith(t, h, domain.ApprovalsSnapshot{TTL: "2m"})
 	h.clock.now = t0.Add(2*time.Minute + time.Second)
-	_, err := NewApproveTask(h.deps).Execute(context.Background(), task.ID(), DecisionApprove, "c1")
+	_, err := NewApproveTask(h.deps).Execute(context.Background(), task.ID(), DecisionApprove, "c1", "")
 	if !domain.IsApprovalExpired(err) {
 		t.Fatalf("late approve: %v", err)
 	}
@@ -134,12 +134,12 @@ func TestALateDecisionIsRefusedBeforeTheExpiryRuns(t *testing.T) {
 func TestADecisionNamesThePendingCall(t *testing.T) {
 	h := newHarness()
 	_, task := waitingWith(t, h, domain.ApprovalsSnapshot{})
-	_, err := NewApproveTask(h.deps).Execute(context.Background(), task.ID(), DecisionApprove, "c2")
+	_, err := NewApproveTask(h.deps).Execute(context.Background(), task.ID(), DecisionApprove, "c2", "")
 	var state domain.StateError
 	if !errors.As(err, &state) || !strings.Contains(err.Error(), "waiting on call c1") {
 		t.Fatalf("another call: %v", err)
 	}
-	res, err := NewApproveTask(h.deps).Execute(context.Background(), task.ID(), DecisionApprove, "c1")
+	res, err := NewApproveTask(h.deps).Execute(context.Background(), task.ID(), DecisionApprove, "c1", "")
 	if err != nil || res.Task.Status() != domain.TaskCompleted {
 		t.Fatalf("the pending call: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestADecisionNamesThePendingCall(t *testing.T) {
 	}
 	// The task is over: an approve link for the call it waited on is a
 	// state refusal, not an expiry.
-	if _, err := NewApproveTask(h.deps).Execute(context.Background(), task.ID(), DecisionApprove, "c1"); domain.IsApprovalExpired(err) || !errors.As(err, &state) {
+	if _, err := NewApproveTask(h.deps).Execute(context.Background(), task.ID(), DecisionApprove, "c1", ""); domain.IsApprovalExpired(err) || !errors.As(err, &state) {
 		t.Errorf("after the decision: %v", err)
 	}
 }
@@ -176,7 +176,7 @@ func TestExpiryQueuesTheDenialForTheNode(t *testing.T) {
 	if err != nil || !found || assignment.Decide == nil || assignment.Decide.Decision != DecisionDeny || assignment.Decide.CallID != "c1" {
 		t.Fatalf("assignment: %v %+v", err, assignment)
 	}
-	if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, ""); !domain.IsApprovalExpired(err) {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, "", ""); !domain.IsApprovalExpired(err) {
 		t.Errorf("late approve while the denial runs: %v", err)
 	}
 }
@@ -206,7 +206,7 @@ func TestAnExpiredApprovalWhoseDenialFailsEndsExpiredNotFailed(t *testing.T) {
 	expired := waitOn("watch-1")
 	// A person approves the other one, and its run fails: a real failure.
 	approved := waitOn("watch-2")
-	if _, err := NewApproveTask(h.deps).Execute(ctx, approved, DecisionApprove, ""); err != nil {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, approved, DecisionApprove, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	run, _, _ := NewNextAssignment(h.deps).Execute(ctx, node.ID())
@@ -296,7 +296,7 @@ func TestExpiryEndsTheTaskExpiredWhenTheBotSaysCancel(t *testing.T) {
 	if len(h.decider.requests) != 0 {
 		t.Error("an expired task's session was asked to decide")
 	}
-	if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, ""); !domain.IsApprovalExpired(err) {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, "", ""); !domain.IsApprovalExpired(err) {
 		t.Errorf("late approve: %v", err)
 	}
 	audit := h.log.audits[0]
@@ -363,7 +363,7 @@ func TestAWaitFromBeforeDeadlinesGetsOne(t *testing.T) {
 	}
 	_ = h.tasks.Save(ctx, legacy)
 	h.clock.now = t0.Add(5 * time.Minute)
-	if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, "c9"); domain.IsApprovalExpired(err) {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, "c9", ""); domain.IsApprovalExpired(err) {
 		t.Fatalf("refused as expired within the bot's ttl: %v", err)
 	}
 	due, err := NewExpireApprovals(h.deps).Due(ctx)
@@ -377,7 +377,7 @@ func TestAWaitFromBeforeDeadlinesGetsOne(t *testing.T) {
 	}
 	_ = h.tasks.Save(ctx, legacy)
 	h.clock.now = t0.Add(11 * time.Minute)
-	if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, ""); !domain.IsApprovalExpired(err) {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, "", ""); !domain.IsApprovalExpired(err) {
 		t.Errorf("a legacy wait past the bot's ttl: %v", err)
 	}
 	if due, err := NewExpireApprovals(h.deps).Due(ctx); err != nil || len(due) != 1 {
@@ -541,7 +541,7 @@ func TestADeliveryIsSkippedOnceItsWaitEnded(t *testing.T) {
 	h := newHarness()
 	_, task := waitingWith(t, h, domain.ApprovalsSnapshot{Notify: []domain.NotifyTargetSnapshot{{Type: "command", Command: []string{"/bin/true"}}}})
 	ctx := context.Background()
-	if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, ""); err != nil {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	outcomes, err := NewDeliverNotifications(h.deps).Execute(ctx)

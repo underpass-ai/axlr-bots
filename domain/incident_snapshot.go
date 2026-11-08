@@ -2,7 +2,9 @@ package domain
 
 import "time"
 
-// IncidentSnapshot is an incident as plain data. GroupKey is what the
+// IncidentSnapshot is an incident as plain data. Namespace is the
+// namespace label its alerts carry (absent when they carry none, and on
+// an incident stored before it was kept). GroupKey is what the
 // source groups alerts by (Alertmanager's groupKey); Fingerprints are the
 // alerts seen in it, the first 64, and ResolvedFingerprints those of them
 // the source said went green. Cycle counts the opens: 1 for the first, one more
@@ -28,6 +30,7 @@ type IncidentSnapshot struct {
 	Source               string                 `json:"source"`
 	Title                string                 `json:"title"`
 	Severity             string                 `json:"severity"`
+	Namespace            string                 `json:"namespace,omitempty"`
 	Status               string                 `json:"status"`
 	Fingerprints         []string               `json:"fingerprints,omitempty"`
 	ResolvedFingerprints []string               `json:"resolvedFingerprints,omitempty"`

@@ -108,6 +108,10 @@ func (p AlertmanagerPayload) Title() string {
 	return name
 }
 
+// Namespace is the namespace label of the group, of the common labels
+// or of the first alert; empty when none carries one.
+func (p AlertmanagerPayload) Namespace() string { return p.label("namespace") }
+
 // Severity maps the severity label to an incident's: critical is sev1,
 // error sev2, warning sev3, info sev4; anything else, or none, sev3.
 func (p AlertmanagerPayload) Severity() IncidentSeverity {

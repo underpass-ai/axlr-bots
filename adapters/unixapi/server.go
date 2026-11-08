@@ -694,16 +694,25 @@ func (s *Server) decideTask(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &request) {
 		return
 	}
+	header := r.Header.Get(ActorHeader)
+	if request.DecidedBy != "" && header != "" && request.DecidedBy != header {
+		respond(w, 0, nil, domain.ValidationError{Field: "decidedBy", Reason: "names another actor than " + ActorHeader})
+		return
+	}
+	if request.DecidedBy == "" {
+		request.DecidedBy = header
+	}
 	value, err := s.service.DecideTask(r.Context(), r.PathValue("id"), request)
 	respond(w, http.StatusOK, value, err)
 }
 
 // decideAs is POST /v1/tasks/{id}/approve and /deny: the decision is the
 // route, the pending call the optional ?call= (what a notification's
-// links carry), and no body is read.
+// links carry), who decides the X-Axlr-Actor header, and no body is
+// read.
 func (s *Server) decideAs(decision string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		request := DecideRequest{Decision: decision, CallID: r.URL.Query().Get("call")}
+		request := DecideRequest{Decision: decision, CallID: r.URL.Query().Get("call"), DecidedBy: r.Header.Get(ActorHeader)}
 		value, err := s.service.DecideTask(r.Context(), r.PathValue("id"), request)
 		respond(w, http.StatusOK, value, err)
 	}

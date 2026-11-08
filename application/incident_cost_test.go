@@ -24,7 +24,7 @@ func TestAnIncidentCountsEachExecutionOnce(t *testing.T) {
 		t.Fatalf("the waiting run's cost: %v", after.CostUSD()-before)
 	}
 	h.decider.report = completes("APPLIED", 0.02)
-	decided, err := NewApproveTask(h.deps).Execute(ctx, waiting.Task.ID(), DecisionApprove, "")
+	decided, err := NewApproveTask(h.deps).Execute(ctx, waiting.Task.ID(), DecisionApprove, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

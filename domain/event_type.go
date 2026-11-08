@@ -90,6 +90,10 @@ const (
 	// deadline: the call was denied or the task ended Expired, as the
 	// bot's approvals say.
 	EventApprovalExpired EventType = "bot.approval.expired"
+	// EventApprovalFirst says the first of the two people a call waits
+	// for approved it: the call did not run, the task still waits for a
+	// second, different person under the same deadline.
+	EventApprovalFirst EventType = "bot.approval.first"
 	// EventIncidentOpened says the control plane opened an incident on an
 	// alert, and the triage task it made: the payload holds the group
 	// key, the source, the title, the severity and the alerts.
@@ -146,7 +150,7 @@ const (
 func ParseEventType(raw string) (EventType, error) {
 	switch EventType(raw) {
 	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventBotDeleted, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
-		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventTaskDelegated, EventTaskMessage, EventTaskSaid, EventTaskProgress, EventDelegationRefused,
+		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventApprovalFirst, EventTaskDelegated, EventTaskMessage, EventTaskSaid, EventTaskProgress, EventDelegationRefused,
 		EventEventEmitted, EventEventRefused, EventEventHeard, EventSubscriptionChanged, EventSubscriptionAsked, EventGroupEventPublished,
 		EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentProposed, EventIncidentApplying, EventIncidentVerifying, EventIncidentEscalated, EventIncidentResolved,
 		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked, EventNodeRenewed,

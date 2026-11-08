@@ -16,6 +16,7 @@ const (
 	MaxIncidentProposalLength  = 16000
 	MaxIncidentReasonLength    = 1000
 	maxIncidentFingerprints    = 64
+	maxIncidentNamespaceLength = 253
 	// maxIncidentCostedExecutions is how many execution ids an incident
 	// remembers having counted the cost of: the last ones.
 	maxIncidentCostedExecutions = 64
@@ -48,6 +49,7 @@ type Incident struct {
 	source       string
 	title        string
 	severity     IncidentSeverity
+	namespace    string
 	status       IncidentStatus
 	fingerprints []string
 	resolved     []string
@@ -144,6 +146,28 @@ func (i Incident) Title() string { return i.title }
 
 // Severity ranks the incident.
 func (i Incident) Severity() IncidentSeverity { return i.severity }
+
+// Namespace is the Kubernetes namespace the incident's alerts name
+// (their namespace label), empty when they name none: what the bot's
+// approvals.twoPersons reads.
+func (i Incident) Namespace() string { return i.namespace }
+
+// RecordNamespace keeps the namespace the alerts name: the first one
+// given stays, an empty one changes nothing.
+func (i *Incident) RecordNamespace(raw string) error {
+	if strings.TrimSpace(raw) == "" || i.namespace != "" {
+		return nil
+	}
+	namespace, err := validateText("namespace", raw, maxIncidentNamespaceLength)
+	if err != nil {
+		return err
+	}
+	if strings.ContainsAny(namespace, " \t\n") {
+		return invalid("namespace", "must not contain spaces")
+	}
+	i.namespace = namespace
+	return nil
+}
 
 // Status is where the incident stands.
 func (i Incident) Status() IncidentStatus { return i.status }
@@ -517,7 +541,7 @@ func (i Incident) Snapshot() IncidentSnapshot {
 	}
 	return IncidentSnapshot{
 		ID: i.id.String(), TenantID: i.tenant.String(), BotID: i.bot.String(), GroupKey: i.groupKey, Source: i.source,
-		Title: i.title, Severity: i.severity.String(), Status: i.status.String(), Fingerprints: i.Fingerprints(), ResolvedFingerprints: i.ResolvedFingerprints(),
+		Title: i.title, Severity: i.severity.String(), Namespace: i.namespace, Status: i.status.String(), Fingerprints: i.Fingerprints(), ResolvedFingerprints: i.ResolvedFingerprints(),
 		Cycle: i.cycle, TaskIDs: ids, Tasks: tasks, Diagnosis: i.diagnosis, Proposal: i.proposal, Reason: i.reason, Repeats: i.repeats, Retries: i.retries, SendBacks: i.sendBacks, CostUSD: i.costUSD, CostUnknown: i.costUnknown, CostedExecutions: i.costedSnapshot(),
 		OpenedAt: i.openedAt, UpdatedAt: i.updatedAt, LastSeenAt: i.lastSeenAt, ResolvedAt: resolvedAt,
 	}
@@ -586,6 +610,9 @@ func RestoreIncident(s IncidentSnapshot) (Incident, error) {
 	}
 	incident, err := NewIncident(id, tenant, bot, s.GroupKey, s.Source, s.Title, severity, s.Fingerprints, s.OpenedAt)
 	if err != nil {
+		return Incident{}, err
+	}
+	if err := incident.RecordNamespace(s.Namespace); err != nil {
 		return Incident{}, err
 	}
 	switch {

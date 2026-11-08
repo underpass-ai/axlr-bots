@@ -22,7 +22,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	stateDir := flags.String("state", defaultStateDir(), "state directory (bots, tasks, executions, events, audit, traces, artifacts)")
 	axlrBin := flags.String("axlr-bin", defaultAXLRBinary(), "the axlr-tui to run tasks with (also AXLR_TUI)")
-	actor := flags.String("actor", defaultActor(), "who is acting, for the audit log")
+	actor := flags.String("actor", defaultActor(), "who is acting, for the audit log; task approve, deny and decide send it as who decides (a bot's approvers name it exactly)")
 	socket := flags.String("socket", defaultSocket(), "the daemon's socket (also AXLR_BOTS_SOCKET; default <state>/axlr-bots.sock; empty: never use a daemon)")
 	flags.Usage = func() { printUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
@@ -141,11 +141,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "task run":
 		return taskRun(ctx, service, rest, stdout, stderr)
 	case "task decide":
-		return taskDecide(ctx, service, rest, stdout, stderr)
+		return taskDecide(ctx, service, *actor, rest, stdout, stderr)
 	case "task approve":
-		return taskDecideAs(ctx, service, application.DecisionApprove, rest, stdout, stderr)
+		return taskDecideAs(ctx, service, *actor, application.DecisionApprove, rest, stdout, stderr)
 	case "task deny":
-		return taskDecideAs(ctx, service, application.DecisionDeny, rest, stdout, stderr)
+		return taskDecideAs(ctx, service, *actor, application.DecisionDeny, rest, stdout, stderr)
 	case "task get":
 		return taskGet(ctx, service, rest, stdout, stderr)
 	case "task report":
