@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -247,5 +248,24 @@ func TestIncidentNeedsAPersonOnlyWhereItStands(t *testing.T) {
 	_ = triage.AttachTask("task-t", t0)
 	if !triage.NeedsPerson(true) {
 		t.Error("a waiting triage of an Open incident")
+	}
+}
+
+// An incident stored before the apply and verify phases loads unchanged
+// and is stored again byte for byte: the new fields appear only with the
+// new phases.
+func TestAnIncidentStoredBeforeTheApplyPhaseLoadsUnchanged(t *testing.T) {
+	stored := `{"id":"inc-1","tenantId":"ops","botId":"triage","groupKey":"g","source":"alertmanager","title":"Drift in shop","severity":"sev3","status":"Proposed","fingerprints":["fp-a"],"cycle":1,"taskIds":["task-1","task-2"],"tasks":[{"taskId":"task-1","botId":"triage","phase":"triage","cycle":1},{"taskId":"task-2","botId":"fix","phase":"fix","cycle":1}],"diagnosis":"drift","proposal":"PROPOSAL: apply","costUsd":0.02,"openedAt":"2026-11-06T10:00:00Z","updatedAt":"2026-11-06T10:05:00Z","lastSeenAt":"2026-11-06T10:00:00Z"}`
+	var snapshot IncidentSnapshot
+	if err := json.Unmarshal([]byte(stored), &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	incident, err := RestoreIncident(snapshot)
+	if err != nil || incident.Status() != IncidentProposed || incident.Denials() != 0 {
+		t.Fatalf("restore: %v", err)
+	}
+	again, _ := json.Marshal(incident.Snapshot())
+	if string(again) != stored {
+		t.Errorf("stored again as\n%s\nnot\n%s", again, stored)
 	}
 }
