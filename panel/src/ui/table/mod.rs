@@ -23,7 +23,7 @@ mod team_column;
 pub use bot_column::BotColumn;
 pub use bulk_plan::BulkPlan;
 pub use column_ref::ColumnRef;
-pub use incident_column::IncidentColumn;
+pub use incident_column::{IncidentColumn, needs_you_first};
 pub use list::List;
 pub use node_column::NodeColumn;
 pub use row_ref::RowRef;

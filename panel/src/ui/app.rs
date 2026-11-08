@@ -1153,7 +1153,17 @@ impl App {
             .filter(|d| d.task.id == id)
             .and_then(|d| d.pending_call())
             .or_else(|| self.fleet.as_ref().and_then(|f| f.call_of(&id)))
-            .map(|c| c.call_id.clone());
+            .map(|c| c.call_id.clone())
+            .or_else(|| {
+                // Decided from the incident's page: the call it says its
+                // current task waits on.
+                self.incidents
+                    .detail
+                    .as_ref()
+                    .and_then(|i| i.decision())
+                    .filter(|(task, call)| *task == &id && !call.is_empty())
+                    .map(|(_, call)| call.to_string())
+            });
         vec![Effect::Decide(id, decision, call_id)]
     }
 

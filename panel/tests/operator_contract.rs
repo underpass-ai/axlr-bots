@@ -150,6 +150,7 @@ fn reads_every_answer_it_asks_for() {
     reads::<DecidedTask>(&spec, "RunResponse");
     reads::<Execution>(&spec, "ExecutionSnapshot");
     reads::<Incident>(&spec, "IncidentSnapshot");
+    reads::<Incident>(&spec, "IncidentResponse");
 }
 
 fn values(spec: &Value, name: &str) -> Vec<String> {

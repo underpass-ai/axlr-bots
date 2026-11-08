@@ -141,7 +141,8 @@ impl Icon {
     pub fn of_incident(status: IncidentStatus) -> Self {
         match status {
             IncidentStatus::Diagnosed => Self::Lens,
-            IncidentStatus::Proposed => Self::Wrench,
+            IncidentStatus::Proposed | IncidentStatus::Applying => Self::Wrench,
+            IncidentStatus::Verifying => Self::Lens,
             other => super::Tone::of_incident(other).icon(),
         }
     }
@@ -190,6 +191,8 @@ mod tests {
         assert_ne!(Icon::of_severity(IncidentSeverity::Sev4), Icon::Pause);
         assert_eq!(Icon::of_incident(IncidentStatus::Diagnosed), Icon::Lens);
         assert_eq!(Icon::of_incident(IncidentStatus::Proposed), Icon::Wrench);
+        assert_eq!(Icon::of_incident(IncidentStatus::Applying), Icon::Wrench);
+        assert_eq!(Icon::of_incident(IncidentStatus::Verifying), Icon::Lens);
         assert_eq!(Icon::of_incident(IncidentStatus::Open), Icon::Cross);
         assert_eq!(Icon::of_incident(IncidentStatus::Resolved), Icon::Check);
     }

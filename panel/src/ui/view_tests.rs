@@ -1825,3 +1825,108 @@ fn a_bots_edit_and_delete_say_what_they_do_in_words() {
         ],
     );
 }
+
+/// A Proposed incident whose apply task waits on its write call.
+fn waiting_apply(app: &App) -> crate::domain::Incident {
+    use crate::domain::{
+        IncidentApprovals, IncidentCurrentTask, IncidentPhase, IncidentStatus, IncidentTask, IncidentWait,
+    };
+    let waiting = app
+        .fleet
+        .as_ref()
+        .unwrap()
+        .tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::WaitingApproval)
+        .unwrap()
+        .clone();
+    let mut incident = app.incidents.detail.clone().unwrap();
+    incident.status = IncidentStatus::Proposed;
+    incident.diagnosis = "Deployment web drifted: replicas 1, desired 3.".into();
+    incident.proposal = "PROPOSAL: kubectl apply -f desired/web.yaml".into();
+    incident.task_ids.push(waiting.id.clone());
+    incident.tasks = vec![IncidentTask {
+        task_id: waiting.id.clone(),
+        bot_id: waiting.bot_id.clone(),
+        phase: IncidentPhase::Apply,
+        cycle: 1,
+    }];
+    incident.needs_you = true;
+    incident.current_task = Some(IncidentCurrentTask {
+        task_id: waiting.id.clone(),
+        bot_id: waiting.bot_id.clone(),
+        phase: IncidentPhase::Apply,
+        status: TaskStatus::WaitingApproval,
+        approval: Some(IncidentWait {
+            call_id: "call-1".into(),
+            tool: "local_write".into(),
+            deadline: app.now + chrono::Duration::minutes(2),
+            outcome: String::new(),
+        }),
+    });
+    incident.approvals = Some(IncidentApprovals {
+        waiting: 1,
+        ..Default::default()
+    });
+    incident
+}
+
+#[test]
+fn an_incident_that_needs_you_offers_approve_and_deny_of_its_apply() {
+    use crate::domain::IncidentStatus;
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Incident("inc-latency".into())));
+    let incident = waiting_apply(&app);
+    let task = incident.current_task.as_ref().unwrap().task_id.clone();
+    app.apply(Message::IncidentLoaded("inc-latency".into(), Ok(incident.clone())));
+    shows(
+        &app,
+        &[
+            "Needs you",
+            "needs you",
+            "local_write",
+            "Approve",
+            "Deny",
+            "Proposal · needs you",
+            "Approvals",
+            "1 waiting",
+            "Denials",
+        ],
+    );
+    let effects = app.apply(Message::Approve(task.clone()));
+    assert_eq!(
+        effects,
+        vec![crate::ui::Effect::Decide(
+            task.clone(),
+            crate::domain::Decision::Approve,
+            Some("call-1".into())
+        )]
+    );
+    shows(&app, &["Sending your answer…"]);
+    for (status, heading) in [
+        (IncidentStatus::Applying, "Proposal · being applied"),
+        (IncidentStatus::Verifying, "Proposal · applied, verifying"),
+        (IncidentStatus::Open, "Last proposal"),
+    ] {
+        let mut moved = incident.clone();
+        moved.status = status;
+        moved.needs_you = false;
+        app.apply(Message::IncidentLoaded("inc-latency".into(), Ok(moved)));
+        shows(&app, &[status.name(), heading]);
+        assert!(simulator_misses(&app, "Needs you"), "{status:?} offers a decision");
+    }
+}
+
+#[test]
+fn the_incidents_that_need_you_come_first_and_say_so() {
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Incidents));
+    let list = app.incidents.list.as_mut().unwrap();
+    let last = list.len() - 1;
+    list[last].needs_you = true;
+    let id = list[last].id.clone();
+    shows(&app, &["needs you"]);
+    let state = &app.tables.incidents;
+    let shown = crate::ui::table::needs_you_first(state.sort.order(app.incidents.list.as_ref().unwrap()));
+    assert_eq!(shown[0].id, id);
+}

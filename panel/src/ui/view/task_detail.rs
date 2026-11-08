@@ -498,6 +498,16 @@ fn execution_card<'a>(app: &'a App, execution: &'a Execution, tokens: Tokens) ->
                 if policy.enforced { tokens.good } else { tokens.wait },
             ))
             .push(muted(enforced, tokens));
+        // The level and tools it ran with: its incident phase may have
+        // narrowed the bot's.
+        if !policy.level.is_empty() {
+            let tools = match policy.allowed_tools.len() {
+                0 => String::new(),
+                1 => format!(" · {}", policy.allowed_tools[0]),
+                n => format!(" · {n} tools"),
+            };
+            ids = ids.push(muted(format!("{}{tools}", policy.level), tokens));
+        }
     }
     body = body.push(ids);
     container(body)

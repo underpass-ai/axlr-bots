@@ -1,26 +1,31 @@
 use serde::{Deserialize, Serialize};
 
 /// The step of an incident a task works on: triage finds the cause, fix
-/// proposes the change and its rollback.
+/// proposes the change and its rollback, apply carries it out once a
+/// person approves its call, verify checks it took.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IncidentPhase {
     #[default]
     Triage,
     Fix,
+    Apply,
+    Verify,
     /// A value this panel does not know: the control plane is newer.
     #[serde(other)]
     Unknown,
 }
 
 impl IncidentPhase {
-    pub const ALL: [IncidentPhase; 2] = [Self::Triage, Self::Fix];
+    pub const ALL: [IncidentPhase; 4] = [Self::Triage, Self::Fix, Self::Apply, Self::Verify];
 
     /// The word the control plane uses, which is also the one shown.
     pub fn name(self) -> &'static str {
         match self {
             Self::Triage => "triage",
             Self::Fix => "fix",
+            Self::Apply => "apply",
+            Self::Verify => "verify",
             Self::Unknown => "unknown",
         }
     }
@@ -37,7 +42,7 @@ mod tests {
             assert_eq!(json, format!("\"{}\"", phase.name()));
         }
         assert_eq!(
-            serde_json::from_str::<IncidentPhase>("\"verify\"").unwrap(),
+            serde_json::from_str::<IncidentPhase>("\"rollback\"").unwrap(),
             IncidentPhase::Unknown
         );
         assert_eq!(IncidentPhase::Unknown.name(), "unknown");
