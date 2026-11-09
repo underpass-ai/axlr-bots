@@ -173,12 +173,7 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 		if err != nil {
 			return Assignment{}, false, err
 		}
-		if !candidate.AcceptsTasks() || !nodeCanRun(candidate, node) {
-			continue
-		}
-		if !pending[i].Skills().IsEmpty() && !node.Capabilities().SkillsSupported {
-			// The task keeps the skills it was submitted with, whatever
-			// its bot has now: a node that cannot read them does not take it.
+		if !candidate.AcceptsTasks() || !nodeCanRun(candidate, pending[i].Skills(), node) {
 			continue
 		}
 		if pending[i].DeadlinePassed(uc.deps.Clock.Now()) {

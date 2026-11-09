@@ -143,8 +143,9 @@ func TestOnlyANodeThatReadsSkillsTakesATaskWithThem(t *testing.T) {
 	}
 }
 
-// The task's own pins decide, even once its bot has none.
-func TestATaskWithSkillsStaysOffAnOldNodeAfterItsBotDropsThem(t *testing.T) {
+// The task's own pins decide, even once its bot has none: a placed task
+// waits for a node that can read them and says so.
+func TestAPlacedTaskWithSkillsWaitsAfterItsBotDropsThem(t *testing.T) {
 	h := newHarness()
 	ctx := context.Background()
 	bot := skilledBot(t, h, domain.PlacementSnapshot{Nodes: []string{"web-1"}})
@@ -155,11 +156,57 @@ func TestATaskWithSkillsStaysOffAnOldNodeAfterItsBotDropsThem(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, found, err := NewNextAssignment(h.deps).Execute(ctx, "web-1"); err != nil || found {
-		t.Errorf("assigned: %v %v", err, found)
+		t.Errorf("an old node took a task with skills: %v %v", err, found)
 	}
-	stored, _ := h.tasks.Get(ctx, task.ID())
-	if stored.Status() != domain.TaskPending {
-		t.Errorf("status = %s", stored.Status())
+	if got := waitOf(t, h, task.ID()); !strings.Contains(got, "takes no pinned skills") {
+		t.Errorf("wait = %q", got)
+	}
+	skilledNode(t, h, "web-1")
+	assignment, found, err := NewNextAssignment(h.deps).Execute(ctx, "web-1")
+	if err != nil || !found || assignment.Run.Skills.All()[0].Version() != "1.0.0" {
+		t.Errorf("a node that reads skills: %v %v %+v", err, found, assignment.Run)
+	}
+}
+
+// An unplaced one runs in process, where the run still reads its skills.
+func TestAnUnplacedTaskWithSkillsRunsInProcessAfterItsBotDropsThem(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	bot := skilledBot(t, h, domain.PlacementSnapshot{})
+	onlineNode(t, h, "web-1")
+	task := submit(t, h, bot, "k-1").Task
+	none := []domain.SkillPinSnapshot{}
+	if _, err := NewUpdateBot(h.deps).Execute(ctx, bot.ID(), BotPatch{Skills: &none}); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := NewNextAssignment(h.deps).Execute(ctx, "web-1"); err != nil || found {
+		t.Errorf("an old node took a task with skills: %v %v", err, found)
+	}
+	if _, ran, err := NewRunNextPending(h.deps).Execute(ctx); err != nil || !ran {
+		t.Fatalf("not run in process: %v %v", ran, err)
+	}
+	if got := h.runtime.requests[0]; got.TaskID != task.ID() || got.Skills.All()[0].Version() != "1.0.0" {
+		t.Errorf("request = %+v", got)
+	}
+}
+
+// A task without pins asks nothing of a node, whatever its bot gained.
+func TestATaskWithoutSkillsStillRunsOnAnOldNodeAfterItsBotGainsThem(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	bot := placedBot(t, h, sampleDefinition(), domain.PlacementSnapshot{Nodes: []string{"web-1"}})
+	onlineNode(t, h, "web-1")
+	task := submit(t, h, bot, "k-1").Task
+	pins := oomPin("1.0.0")
+	if _, err := NewUpdateBot(h.deps).Execute(ctx, bot.ID(), BotPatch{Skills: &pins}); err != nil {
+		t.Fatal(err)
+	}
+	if got := waitOf(t, h, task.ID()); got != "" {
+		t.Errorf("wait = %q", got)
+	}
+	assignment, found, err := NewNextAssignment(h.deps).Execute(ctx, "web-1")
+	if err != nil || !found || assignment.Run.TaskID != task.ID() || !assignment.Run.Skills.IsEmpty() {
+		t.Errorf("assignment: %v %v %+v", err, found, assignment.Run)
 	}
 }
 

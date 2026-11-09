@@ -15,9 +15,9 @@ import (
 // Offline", "waiting for a node labelled zone=lab: web-2 lacks the jev
 // runtime". A bot that takes no task now, a bot with an empty placement
 // and a bot a node may run wait for no node, and answer false.
-func placementWait(bot domain.Bot, nodes []domain.Node) (string, bool) {
+func placementWait(bot domain.Bot, skills domain.SkillPins, nodes []domain.Node) (string, bool) {
 	placement := bot.Placement()
-	if placement.IsEmpty() || !bot.AcceptsTasks() || hasOnlineNode(bot, nodes) {
+	if placement.IsEmpty() || !bot.AcceptsTasks() || hasOnlineNode(bot, skills, nodes) {
 		return "", false
 	}
 	registered := make(map[domain.NodeID]domain.Node, len(nodes))
@@ -54,7 +54,7 @@ func placementWait(bot domain.Bot, nodes []domain.Node) (string, bool) {
 
 // keptBy says what keeps an admitted node from the bot's task: it is not
 // registered, not Online, or Online without the bot's runtime or without
-// a way to read the bot's skills.
+// a way to read the task's skills.
 func keptBy(bot domain.Bot, node domain.Node, found bool) string {
 	kind := bot.Runtime().Kind()
 	switch {

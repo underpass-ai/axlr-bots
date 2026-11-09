@@ -74,6 +74,6 @@ func (k deadlineKeeper) waiting(ctx context.Context, bot domain.Bot, task domain
 	if err != nil {
 		return "", err
 	}
-	waiting, _ := placementWait(bot, nodes)
+	waiting, _ := placementWait(bot, task.Skills(), nodes)
 	return waiting, nil
 }

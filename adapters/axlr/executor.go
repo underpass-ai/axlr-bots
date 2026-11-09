@@ -70,9 +70,11 @@ type Executor struct {
 
 	detect   sync.Once
 	features features
-	// skillsMu serialises the installs: a lent slot can run two executions
-	// of this node at once, and neither may see the other's half-done work.
-	skillsMu sync.Mutex
+	// skillsSlot serialises the installs: a lent slot can run two
+	// executions of this node at once, and neither may see the other's
+	// half-done work. A channel, so that a cancelled waiter stops waiting.
+	skillsOnce sync.Once
+	skillsSlot chan struct{}
 }
 
 // NewExecutor runs binary (axlr-tui on PATH when empty) with its traces
@@ -95,8 +97,11 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 		return application.ExecutionReport{}, err
 	}
 	policy.actAlone(request.Unattended)
-	skills, err := e.prepareSkills(ctx, request.ExecutionID, request.Skills, e.timeout(request.Timeout))
+	skills, spent, err := e.prepareSkills(ctx, request.ExecutionID, request.Skills, e.timeout(request.Timeout))
 	if err != nil {
+		return skillsRefused(err, policy), nil
+	}
+	if request.Timeout, err = e.afterInstall(request.Timeout, spent); err != nil {
 		return skillsRefused(err, policy), nil
 	}
 	if err := e.wireDelegation(request.ExecutionID, request.NodeTools(), request.DelegationSocket, &policy); err != nil {
@@ -150,10 +155,6 @@ func (e *Executor) Decide(ctx context.Context, request application.DecisionReque
 	if err != nil {
 		return application.ExecutionReport{}, err
 	}
-	skills, err := e.prepareSkills(ctx, request.ExecutionID, request.Skills, e.timeout(request.Timeout))
-	if err != nil {
-		return skillsRefused(err, policy), nil
-	}
 	if err := e.wireDelegation(request.ExecutionID, request.NodeTools(), request.DelegationSocket, &policy); err != nil {
 		return application.ExecutionReport{}, fmt.Errorf("axlr: delegation manifest: %w", err)
 	}
@@ -162,7 +163,6 @@ func (e *Executor) Decide(ctx context.Context, request application.DecisionReque
 		args = append(args, "--call", request.CallID)
 	}
 	args = append(args, e.mcpConfigArgs()...)
-	args = append(args, skills...)
 	correlation, err := e.prepareCorrelation(ctx, request.ExecutionID, request.TaskID, request.BotID, request.CorrelationID, domain.Budgets{}, e.timeout(request.Timeout), &policy)
 	if err != nil {
 		return application.ExecutionReport{}, err
@@ -349,7 +349,9 @@ func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot do
 	progress := newProgressTracker(tell)
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxLineBytes)
+	lines := 0
 	for scanner.Scan() {
+		lines++
 		line := scanner.Bytes()
 		_, _ = trace.Write(line)
 		_, _ = trace.Write([]byte{'\n'})
@@ -386,6 +388,7 @@ func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot do
 		report = parser.interrupted("reading runtime output: " + scanErr.Error())
 	default:
 		report = parser.report(exitCode, tail.lastLine())
+		report.Result.NotStarted = pinRefused(exitCode, lines, tail.lastLine())
 	}
 	report.TracePath = tracePath
 	return report, nil

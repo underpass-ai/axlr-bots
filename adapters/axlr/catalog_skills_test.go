@@ -68,8 +68,8 @@ func TestExecuteInstallsAMissingPinAndPassesTheSkills(t *testing.T) {
 	if err != nil || report.Outcome != domain.ExecutionCompleted {
 		t.Fatalf("report = %+v %v", report, err)
 	}
-	if got := installLines(t, installs); len(got) != 1 || got[0] != "install oom@1.0.0 --from axlr --yes" {
-		t.Errorf("installs = %v", got)
+	if got := installLines(t, installs); len(got) != 2 || got[0] != "list --refresh" || got[1] != "install oom@1.0.0 --from axlr --yes" {
+		t.Errorf("a missing pin refreshes the index, then installs: %v", got)
 	}
 	file := flagValue(readArgs(t, args), "--skills")
 	raw, err := os.ReadFile(file)
@@ -91,8 +91,8 @@ func TestExecuteInstallsAMissingPinAndPassesTheSkills(t *testing.T) {
 	if _, err := e.Execute(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}
-	if got := installLines(t, installs); len(got) != 1 {
-		t.Errorf("reinstalled: %v", got)
+	if got := installLines(t, installs); len(got) != 2 {
+		t.Errorf("a pin already here reached for the network: %v", got)
 	}
 }
 
@@ -180,27 +180,147 @@ func TestABotWithoutPinsReadsNoInstalledSkill(t *testing.T) {
 	}
 }
 
-func TestDecideInstallsAndPassesTheSkills(t *testing.T) {
+// A decision goes on with the pins its session resolved: passing them
+// again would take a bundle reinstalled while the approval waited.
+func TestDecideKeepsTheSessionsPinsAndItsSkillTool(t *testing.T) {
 	e, args, installs := skilled(t, "result-completed", "ok")
 	decision := application.DecisionRequest{ExecutionID: "exec-2", TaskID: "task-1", BotID: "sii", SessionID: "sess-1", CallID: "c1", Decision: application.DecisionApprove, AllowedTools: []string{"local_read"}, Timeout: 5 * time.Second, Skills: pinsOf(t, "1.0.0")}
 	report, err := e.Decide(context.Background(), decision)
 	if err != nil || report.Outcome != domain.ExecutionCompleted {
 		t.Fatalf("report = %+v %v", report, err)
 	}
-	if flagValue(readArgs(t, args), "--skills") == "" || len(installLines(t, installs)) != 1 || !slices.Contains(report.Policy.AllowedTools, "axlr_skill") {
-		t.Errorf("args = %v", readArgs(t, args))
+	if slices.Contains(readArgs(t, args), "--skills") || installLines(t, installs) != nil {
+		t.Errorf("args = %v installs = %v", readArgs(t, args), installLines(t, installs))
+	}
+	if !slices.Contains(report.Policy.AllowedTools, "axlr_skill") {
+		t.Errorf("policy = %+v", report.Policy)
 	}
 }
 
-func TestDecideRefusedWithoutItsSkill(t *testing.T) {
-	e, args, _ := skilled(t, "result-completed", "refused")
+// axlr-tui's own refusal of a pin, before any request, is a run that did
+// not start, for a run and for a decision.
+func TestAPinRefusedByTheRuntimeDidNotStart(t *testing.T) {
+	const reason = "the execution's skills are unavailable here"
+	e, _, installs := skilled(t, "pin-refused", "ok")
+	installed := filepath.Join(os.Getenv("XDG_STATE_HOME"), "axlr", "skills", "axlr", "oom", "1.0.0")
+	if err := os.MkdirAll(installed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installed, "skill.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	req := request(5 * time.Second)
+	req.Skills = pinsOf(t, "1.0.0")
+	report, err := e.Execute(context.Background(), req)
+	if err != nil || report.Outcome != domain.ExecutionFailed || !report.Result.NotStarted || !strings.Contains(report.FailureReason, reason) {
+		t.Fatalf("run = %+v %v", report, err)
+	}
+	if got := installLines(t, installs); got != nil {
+		t.Errorf("installs = %v", got)
+	}
 	decision := application.DecisionRequest{ExecutionID: "exec-2", TaskID: "task-1", BotID: "sii", SessionID: "sess-1", CallID: "c1", Decision: application.DecisionApprove, AllowedTools: []string{"local_read"}, Timeout: 5 * time.Second, Skills: pinsOf(t, "1.0.0")}
-	report, err := e.Decide(context.Background(), decision)
-	if err != nil || report.Outcome != domain.ExecutionFailed || !report.Result.NotStarted {
+	report, err = e.Decide(context.Background(), decision)
+	if err != nil || report.Outcome != domain.ExecutionFailed || !report.Result.NotStarted || !strings.Contains(report.FailureReason, reason) {
+		t.Fatalf("decision = %+v %v", report, err)
+	}
+}
+
+func TestARunThatStartedIsNeverNotStarted(t *testing.T) {
+	e, _ := fake(t, "pin-refused-late")
+	report, err := e.Execute(context.Background(), request(5*time.Second))
+	if err != nil || report.Result.NotStarted {
 		t.Fatalf("report = %+v %v", report, err)
 	}
+	for _, c := range []struct {
+		code, lines int
+		line        string
+		want        bool
+	}{
+		{exitFailed, 0, "axlr-tui: the execution's skills are unavailable here: x", true},
+		{exitFailed, 1, "axlr-tui: the execution's skills are unavailable here: x", false},
+		{exitNeedsDecision, 0, "axlr-tui: the execution's skills are unavailable here: x", false},
+		{exitFailed, 0, "axlr-tui: no model provider", false},
+	} {
+		if got := pinRefused(c.code, c.lines, c.line); got != c.want {
+			t.Errorf("%+v = %v", c, got)
+		}
+	}
+}
+
+// A refresh that fails changes nothing: the install still answers.
+func TestARefreshThatFailsLeavesTheInstallToAnswer(t *testing.T) {
+	e, _, installs := skilled(t, "result-completed", "refresh-fails")
+	req := request(5 * time.Second)
+	req.Skills = pinsOf(t, "1.0.0")
+	report, err := e.Execute(context.Background(), req)
+	if err != nil || report.Outcome != domain.ExecutionCompleted {
+		t.Fatalf("report = %+v %v", report, err)
+	}
+	if got := installLines(t, installs); len(got) != 2 {
+		t.Errorf("installs = %v", got)
+	}
+}
+
+// A waiter stops at its cancel, not at the end of the other's install.
+func TestACancelledWaiterStopsWaitingForTheInstall(t *testing.T) {
+	e, args, installs := skilled(t, "result-completed", "hang")
+	e.WaitDelay = 100 * time.Millisecond
+	req := func(id domain.ExecutionID) application.ExecutionRequest {
+		r := request(4 * time.Second)
+		r.ExecutionID, r.Skills = id, pinsOf(t, "1.0.0")
+		return r
+	}
+	holder := make(chan struct{})
+	go func() {
+		defer close(holder)
+		_, _ = e.Execute(context.Background(), req("exec-holder"))
+	}()
+	t.Cleanup(func() { <-holder })
+	for deadline := time.Now().Add(3 * time.Second); len(installLines(t, installs)) < 2; {
+		if time.Now().After(deadline) {
+			t.Fatal("the holder never started its install")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan application.ExecutionReport, 1)
+	go func() {
+		report, _ := e.Execute(ctx, req("exec-waiter"))
+		done <- report
+	}()
+	time.Sleep(100 * time.Millisecond)
+	cancelled := time.Now()
+	cancel()
+	select {
+	case report := <-done:
+		if waited := time.Since(cancelled); waited > time.Second {
+			t.Errorf("it waited %s after its cancel", waited)
+		}
+		if !report.Result.NotStarted || !strings.Contains(report.FailureReason, "stopped waiting") {
+			t.Errorf("report = %+v", report)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the waiter did not stop")
+	}
 	if _, err := os.Stat(args); !os.IsNotExist(err) {
-		t.Error("the decision ran without its skill")
+		t.Error("a run started")
+	}
+}
+
+// What installing took comes out of the run's time.
+func TestAfterInstallDeductsWhatInstallingTook(t *testing.T) {
+	e := NewExecutor("x", t.TempDir())
+	if got, err := e.afterInstall(time.Minute, 0); err != nil || got != time.Minute {
+		t.Errorf("nothing installed: %v %v", got, err)
+	}
+	if got, err := e.afterInstall(time.Minute, 20*time.Second); err != nil || got != 40*time.Second {
+		t.Errorf("deducted: %v %v", got, err)
+	}
+	if got, err := e.afterInstall(0, time.Minute); err != nil || got != defaultTimeout-time.Minute {
+		t.Errorf("default: %v %v", got, err)
+	}
+	if _, err := e.afterInstall(time.Minute, time.Minute); err == nil || !strings.Contains(err.Error(), "all of its timeout") {
+		t.Errorf("spent: %v", err)
 	}
 }
 

@@ -210,14 +210,14 @@ func TestTheWaitNamesEveryAdmittedNode(t *testing.T) {
 		d := sampleDefinition()
 		d.ID = "bot-" + string(rune('a'+i))
 		bot := placedBot(t, h, d, c.placement)
-		if got, waits := placementWait(bot, nodes); !waits || got != c.want {
+		if got, waits := placementWait(bot, domain.SkillPins{}, nodes); !waits || got != c.want {
 			t.Errorf("%+v: wait = %q %v, want %q", c.placement, got, waits, c.want)
 		}
 	}
 	// A paused bot waits for itself, not for a node.
 	paused := placedBot(t, h, sampleDefinition(), domain.PlacementSnapshot{Nodes: []string{"web-1"}})
 	paused, _ = NewPauseBot(h.deps).Execute(ctx, paused.ID())
-	if got, waits := placementWait(paused, nodes); waits {
+	if got, waits := placementWait(paused, domain.SkillPins{}, nodes); waits {
 		t.Errorf("a paused bot waits: %q", got)
 	}
 }

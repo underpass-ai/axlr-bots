@@ -83,6 +83,13 @@ func TestHelperProcess(t *testing.T) {
 	)
 	resultCompleted := `{"type":"result","session":"sess-1","result":{"schema":"axlr.execution-result/v1","status":"completed","session_id":"sess-1","sessions":["sess-0","sess-1"],"answer":"The spike came from pod api-3.","tool_calls":[{"call_id":"c1","tool":"local_read","decision":"auto_approve","status":"completed"}],"usage":{"requests":2,"prompt_tokens":3120,"cached_tokens":2048,"cache_write_tokens":0,"completion_tokens":96,"reasoning_tokens":40,"cost_usd":0.0021,"cost_requests":2,"unmetered_requests":0},"artifacts":[{"name":"report.md","media_type":"text/markdown","reference":"artifacts/report.md"}]}}`
 	switch scenario {
+	case "pin-refused":
+		fmt.Fprintln(os.Stderr, "axlr-tui: the execution's skills are unavailable here: oom is not installed")
+		os.Exit(1)
+	case "pin-refused-late":
+		say(session)
+		fmt.Fprintln(os.Stderr, "axlr-tui: the execution's skills are unavailable here: oom is not installed")
+		os.Exit(1)
 	case "result-delivered":
 		artifact := `{"name":"notes.md","media_type":"text/markdown","size":8,"sha256":"` + strings.Repeat("ab", 32) + `","reference":".axlr/deliverables/sess-1/notes.md","description":"What I found","source":"inline","session_id":"sess-1","call_id":"deliver-1"}`
 		say(session, `{"type":"artifact","artifact":`+artifact+`}`,
@@ -211,6 +218,12 @@ func fakeSkillsCommand(args []string) {
 		file, _ := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 		fmt.Fprintln(file, strings.Join(args, " "))
 		file.Close()
+	}
+	if len(args) > 0 && args[0] == "list" {
+		if os.Getenv("FAKE_AXLR_INSTALL") == "refresh-fails" {
+			os.Exit(1)
+		}
+		os.Exit(0)
 	}
 	switch os.Getenv("FAKE_AXLR_INSTALL") {
 	case "refused":
