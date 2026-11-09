@@ -47,6 +47,10 @@ type Dependencies struct {
 	// then the control plane's own name, which no decision that names
 	// its actor may claim where names count (approvers, two persons).
 	Daemon bool
+	// ModelGateway and JudgeGateway answer the calls of a node with no
+	// key; nil refuses them.
+	ModelGateway ModelGateway
+	JudgeGateway JudgeGateway
 }
 
 // Validate reports the first missing dependency.

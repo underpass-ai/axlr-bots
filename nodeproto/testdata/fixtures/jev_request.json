@@ -1,0 +1,8 @@
+{
+  "state": "soil at 12%",
+  "question": "water?",
+  "options": [
+    "water",
+    "wait"
+  ]
+}

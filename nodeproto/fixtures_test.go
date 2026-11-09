@@ -35,10 +35,10 @@ var (
 )
 
 func fixtureNode() domain.NodeSnapshot {
-	labels := map[string]string{"arch": "aarch64", "class": "sbc", "ram": "512Mi"}
+	labels := map[string]string{"arch": "aarch64", "class": "sbc", "ram": "512mi"}
 	return domain.NodeSnapshot{
 		ID: "pi-garden", HostName: "pi-garden.local",
-		Labels:         map[string]string{"arch": "aarch64", "class": "sbc", "ram": "512Mi", "zone": "garden"},
+		Labels:         map[string]string{"arch": "aarch64", "class": "sbc", "ram": "512mi", "zone": "garden"},
 		OperatorLabels: map[string]string{"zone": "garden"},
 		ReportedLabels: labels,
 		Capabilities:   fixtureCapabilities(),
@@ -62,12 +62,22 @@ func fixtures() []fixture {
 	}
 	return []fixture{
 		{name: "enroll_request", message: EnrollRequest{TokenID: "tok-1", Secret: "s3cr3t", HostName: "pi-garden.local", CSR: "-----BEGIN CERTIFICATE REQUEST-----\nMIIB\n-----END CERTIFICATE REQUEST-----\n"}},
-		{name: "enroll_response", message: enrolled},
-		{name: "register_request", message: RegisterRequest{ID: "pi-garden", HostName: "pi-garden.local", Labels: map[string]string{"arch": "aarch64", "class": "sbc", "ram": "512Mi"}, Capabilities: fixtureCapabilities()}},
+		{name: "enroll_response", skip: []string{"NodeCapabilities.Providers", "NodeCapabilities.SkillsSupported"}, message: enrolled},
+		{name: "register_request", skip: []string{"NodeCapabilities.Providers", "NodeCapabilities.SkillsSupported"}, message: RegisterRequest{ID: "pi-garden", HostName: "pi-garden.local", Labels: map[string]string{"arch": "aarch64", "class": "sbc", "ram": "512mi"}, Capabilities: fixtureCapabilities()}},
 		// The control plane answers a registration and a heartbeat with
 		// the node as it knows it; a heartbeat has no body.
-		{name: "node_snapshot", message: fixtureNode()},
-		{name: "assignment_run", skip: []string{"AssignmentMessage.Decide", "RunMessage.Delegation", "RunMessage.Events"}, message: AssignmentMessage{
+		{name: "node_snapshot", skip: []string{"NodeCapabilities.Providers", "NodeCapabilities.SkillsSupported"}, message: fixtureNode()},
+		{name: "model_request", message: ModelRequest{
+			Messages: []ModelChatMessage{{Role: "user", Content: "turn on the lamp"}},
+			Tools:    []ModelToolMessage{{Name: "gpio_write", Description: "Set a pin", Parameters: json.RawMessage(`{"type":"object"}`)}},
+		}},
+		{name: "model_reply", message: ModelReply{
+			Text: "done", PromptTokens: 12, CompletionTokens: 4,
+			ToolCalls: []ModelToolCallMessage{{CallID: "call-1", Name: "gpio_write", Arguments: json.RawMessage(`{"pin":"2"}`)}},
+		}},
+		{name: "jev_request", message: JevRequest{State: "soil at 12%", Question: "water?", Options: []string{"water", "wait"}}},
+		{name: "jev_reply", message: JevReply{Choice: "water", Probability: 0.8, Confidence: 0.6}},
+		{name: "assignment_run", skip: []string{"AssignmentMessage.Decide", "RunMessage.Delegation", "RunMessage.Events", "RunMessage.Unattended", "RunMessage.Skills"}, message: AssignmentMessage{
 			ExecutionID: "exec-1", Kind: "run", LeaseUntil: fixtureAt.Add(time.Minute),
 			Run: &RunMessage{
 				TaskID: "task-1", BotID: "garden", TenantID: "home", CorrelationID: "corr-1", Objective: "water the bed if the soil is dry", Model: "jev-default",
@@ -80,7 +90,7 @@ func fixtures() []fixture {
 				Input: json.RawMessage(`{"moisture":0.12}`),
 			},
 		}},
-		{name: "assignment_decide", skip: []string{"AssignmentMessage.Run", "DecideMessage.Delegation", "DecideMessage.Events"}, message: AssignmentMessage{
+		{name: "assignment_decide", skip: []string{"AssignmentMessage.Run", "DecideMessage.Delegation", "DecideMessage.Events", "DecideMessage.Skills"}, message: AssignmentMessage{
 			ExecutionID: "exec-2", Kind: "decide", LeaseUntil: fixtureAt.Add(time.Minute),
 			Decide: &DecideMessage{
 				TaskID: "task-1", BotID: "garden", CorrelationID: "corr-1", SessionID: "sess-1", CallID: "call-1", Decision: "approve",
@@ -89,7 +99,7 @@ func fixtures() []fixture {
 		}},
 		// A lease is renewed with an empty POST; this is the answer.
 		{name: "lease_response", message: LeaseMessage{LeaseUntil: fixtureAt.Add(2 * time.Minute)}},
-		{name: "report_request", message: ReportMessage{
+		{name: "report_request", skip: []string{"Usage.CostUnknown", "PolicyRecord.AllowedTools", "ToolCall.Preview", "Result.NotStarted"}, message: ReportMessage{
 			Outcome: "Completed",
 			Result: domain.Result{
 				Answer: "watered for 30 s", SessionID: "sess-1", Sessions: []string{"sess-1"},

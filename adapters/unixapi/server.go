@@ -43,11 +43,13 @@ type Server struct {
 	// stream is never idle, so a graceful shutdown would wait for it.
 	closing   chan struct{}
 	closeOnce sync.Once
+	// models answers the model and Jev calls of a node with no key.
+	models *application.ModelProxy
 }
 
 // NewServer serves the local service.
 func NewServer(service *Local) *Server {
-	return &Server{service: service, timeouts: DefaultTimeouts, closing: make(chan struct{})}
+	return &Server{service: service, timeouts: DefaultTimeouts, closing: make(chan struct{}), models: application.NewModelProxy(service.Dependencies())}
 }
 
 // Timeouts bound a connection: Read the whole request, uploads
@@ -214,6 +216,8 @@ func (s *Server) nodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/subscriptions", s.authenticated(s.subscribe))
 	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/messages", s.authenticated(s.executionMessages))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/said", s.authenticated(s.said))
+	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/model", s.authenticated(s.proxyModel))
+	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/jev", s.authenticated(s.proxyJev))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/progress", s.authenticated(s.progress))
 }
 
