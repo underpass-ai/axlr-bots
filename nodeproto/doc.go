@@ -15,5 +15,5 @@
 //
 // testdata/fixtures holds the messages a node exchanges, as JSON with
 // every field filled; fixtures_test.go fails when a message changes until
-// they are rewritten (-update), and axlr-microbot vendors them.
+// they are rewritten (-update), and axlr-nanobot vendors them.
 package nodeproto

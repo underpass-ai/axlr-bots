@@ -19,9 +19,9 @@ import (
 var updateFixtures = flag.Bool("update", false, "rewrite the nodeproto fixtures")
 
 // fixture is one message as it travels, kept in testdata/fixtures so a
-// client in another language (axlr-microbot vendors them) can check it
+// client in another language (axlr-nanobot vendors them) can check it
 // reads and writes the same JSON. skip names the fields left empty on
-// purpose: the other branch of a message, or what the microbot does not
+// purpose: the other branch of a message, or what the nanobot does not
 // take part in (delegation, events).
 type fixture struct {
 	name    string
@@ -48,7 +48,7 @@ func fixtureNode() domain.NodeSnapshot {
 }
 
 func fixtureCapabilities() domain.NodeCapabilities {
-	return domain.NodeCapabilities{AXLRVersion: "microbot-0.1.0", PolicySupported: true, CorrelationSupported: true, Dedicated: true, Runtimes: []string{"jev"}}
+	return domain.NodeCapabilities{AXLRVersion: "nanobot-0.1.0", PolicySupported: true, CorrelationSupported: true, Dedicated: true, Runtimes: []string{"jev"}}
 }
 
 func fixtures() []fixture {
@@ -110,8 +110,8 @@ func fixtures() []fixture {
 }
 
 // TestFixtures keeps testdata/fixtures equal to the messages: a change to
-// a message the microbot reads or writes fails here until the fixtures
-// are rewritten (-update), and then fails the microbot's checksum gate
+// a message the nanobot reads or writes fails here until the fixtures
+// are rewritten (-update), and then fails the nanobot's checksum gate
 // until it vendors them again.
 func TestFixtures(t *testing.T) {
 	dir := filepath.Join("testdata", "fixtures")
@@ -140,7 +140,7 @@ func TestFixtures(t *testing.T) {
 				t.Fatalf("%v (go test ./nodeproto -run TestFixtures -update)", err)
 			}
 			if !bytes.Equal(got, want) {
-				t.Errorf("%s changed; rewrite it with -update and vendor it again in axlr-microbot:\n%s", path, want)
+				t.Errorf("%s changed; rewrite it with -update and vendor it again in axlr-nanobot:\n%s", path, want)
 			}
 		})
 	}
