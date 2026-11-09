@@ -1,0 +1,17 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "turn on the lamp"
+    }
+  ],
+  "tools": [
+    {
+      "name": "gpio_write",
+      "description": "Set a pin",
+      "parameters": {
+        "type": "object"
+      }
+    }
+  ]
+}

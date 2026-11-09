@@ -1,0 +1,68 @@
+{
+  "executionId": "exec-1",
+  "kind": "run",
+  "leaseUntil": "2026-11-07T09:31:00Z",
+  "run": {
+    "taskId": "task-1",
+    "botId": "garden",
+    "tenantId": "home",
+    "correlationId": "corr-1",
+    "objective": "water the bed if the soil is dry",
+    "model": "jev-default",
+    "level": "act-within-policy",
+    "allowedTools": [
+      "gpio_write",
+      "soil_read"
+    ],
+    "toolRules": {
+      "allow": [
+        {
+          "tool": "gpio_write",
+          "arguments": {
+            "pin": "17"
+          }
+        }
+      ],
+      "deny": [
+        {
+          "tool": "shell",
+          "arguments": {
+            "command": "rm *"
+          }
+        }
+      ]
+    },
+    "timeoutSeconds": 90,
+    "budgets": {
+      "maxModelCalls": 4,
+      "maxToolCalls": 8
+    },
+    "runtime": {
+      "kind": "jev",
+      "jev": {
+        "server": "in-process",
+        "start": "soil_read",
+        "act": {
+          "tool": "gpio_write",
+          "choice": "open the valve?",
+          "verdict": "yes",
+          "pass": [
+            "pin"
+          ]
+        },
+        "wait": "30s",
+        "stop": "soil is wet",
+        "tell": {
+          "name": "watered",
+          "fields": [
+            "moisture"
+          ]
+        },
+        "model": "jev-default"
+      }
+    },
+    "input": {
+      "moisture": 0.12
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "tokenId": "tok-1",
+  "secret": "s3cr3t",
+  "hostName": "pi-garden.local",
+  "csr": "-----BEGIN CERTIFICATE REQUEST-----\nMIIB\n-----END CERTIFICATE REQUEST-----\n"
+}

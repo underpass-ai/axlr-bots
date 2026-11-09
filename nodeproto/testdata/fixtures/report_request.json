@@ -1,0 +1,70 @@
+{
+  "outcome": "Completed",
+  "result": {
+    "answer": "watered for 30 s",
+    "sessionId": "sess-1",
+    "sessions": [
+      "sess-1"
+    ],
+    "artifacts": [
+      {
+        "name": "moisture.csv",
+        "mediaType": "text/csv",
+        "reference": "node:moisture.csv",
+        "size": 42,
+        "sha256": "ab12",
+        "description": "readings",
+        "source": "soil_read",
+        "sessionId": "sess-1",
+        "callId": "call-1",
+        "stored": true
+      }
+    ],
+    "toolCalls": [
+      {
+        "name": "gpio_write",
+        "callId": "call-1",
+        "decision": "approved",
+        "status": "ok"
+      }
+    ],
+    "pendingDecision": {
+      "tool": "gpio_write",
+      "callId": "call-2",
+      "sessionId": "sess-1",
+      "arguments": {
+        "pin": "17"
+      }
+    }
+  },
+  "usage": {
+    "requests": 1,
+    "promptTokens": 120,
+    "cachedTokens": 20,
+    "completionTokens": 8,
+    "reasoningTokens": 4,
+    "toolCalls": 2,
+    "costUsd": 0.0012
+  },
+  "failureReason": "none",
+  "traceReference": "node:trace/exec-1.jsonl",
+  "policy": {
+    "level": "act-within-policy",
+    "runtimeLevel": "act-within-policy",
+    "enforced": true,
+    "path": "policy/exec-1.json",
+    "delegation": "none"
+  },
+  "correlation": {
+    "botId": "garden",
+    "taskId": "task-1",
+    "executionId": "exec-1",
+    "traceId": "trace-1",
+    "carried": true,
+    "path": "correlation/exec-1.json"
+  },
+  "receipt": {
+    "runtime": "jev",
+    "steps": 2
+  }
+}

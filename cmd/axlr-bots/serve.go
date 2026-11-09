@@ -94,6 +94,7 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 		fmt.Fprintln(stderr, "axlr-bots: --nats-cert and --nats-key go together")
 		return exitUsage
 	}
+	app = withModelProxy(app, stderr)
 	options := daemon.Options{StateDir: stateDir, SocketPath: socketPath, Tick: *tick, ReconcileEvery: *reconcileEvery, Grace: *grace}
 	if *listen != "" || *apiListen != "" {
 		authority, err := pki.Load(caDir(stateDir))

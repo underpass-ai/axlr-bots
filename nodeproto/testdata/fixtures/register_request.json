@@ -1,0 +1,18 @@
+{
+  "id": "pi-garden",
+  "hostName": "pi-garden.local",
+  "labels": {
+    "arch": "aarch64",
+    "class": "sbc",
+    "ram": "512mi"
+  },
+  "capabilities": {
+    "axlrVersion": "nanobot-0.1.0",
+    "policySupported": true,
+    "correlationSupported": true,
+    "dedicated": true,
+    "runtimes": [
+      "jev"
+    ]
+  }
+}

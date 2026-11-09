@@ -1,0 +1,36 @@
+{
+  "executionId": "exec-2",
+  "kind": "decide",
+  "leaseUntil": "2026-11-07T09:31:00Z",
+  "decide": {
+    "taskId": "task-1",
+    "botId": "garden",
+    "correlationId": "corr-1",
+    "sessionId": "sess-1",
+    "callId": "call-1",
+    "decision": "approve",
+    "level": "act-with-approval",
+    "allowedTools": [
+      "gpio_write"
+    ],
+    "toolRules": {
+      "allow": [
+        {
+          "tool": "gpio_write",
+          "arguments": {
+            "pin": "17"
+          }
+        }
+      ],
+      "deny": [
+        {
+          "tool": "shell",
+          "arguments": {
+            "command": "rm *"
+          }
+        }
+      ]
+    },
+    "timeoutSeconds": 60
+  }
+}
