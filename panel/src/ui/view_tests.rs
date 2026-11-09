@@ -1010,6 +1010,40 @@ fn the_teams_screen_shows_who_is_in_each_and_what_happens() {
 }
 
 #[test]
+fn a_new_bot_shows_the_id_and_the_teams_its_words_become() {
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Bots));
+    app.apply(Message::RegisterOpen);
+    app.apply(Message::RegisterName("NanoBot secured on ESP32".into()));
+    app.apply(Message::RegisterTeam("NANOTEAM".into()));
+    shows(
+        &app,
+        &[
+            "Its id will be nanobot-secured-on-esp32",
+            "It will be saved as nanoteam",
+        ],
+    );
+    app.apply(Message::RegisterMission("Watch.".into()));
+    assert!(matches!(
+        messages_of_click(&app, "Add bot").as_slice(),
+        [Message::RegisterSubmit]
+    ));
+    app.apply(Message::RegisterName("¡¡!!".into()));
+    shows(&app, &["bot name needs a letter or a digit to make the bot's id from"]);
+}
+
+#[test]
+fn a_name_whose_id_is_taken_cannot_be_added() {
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Bots));
+    app.apply(Message::RegisterOpen);
+    app.apply(Message::RegisterName("Bot WRX80".into()));
+    app.apply(Message::RegisterMission("Watch.".into()));
+    shows(&app, &["The id bot-wrx80 is taken: choose another name"]);
+    assert!(messages_of_click(&app, "Add bot").is_empty());
+}
+
+#[test]
 fn a_bot_page_shows_its_team_and_an_urgent_order() {
     let mut app = connected();
     send(&mut app, Message::Go(Screen::Bots));

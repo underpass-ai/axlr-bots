@@ -362,6 +362,20 @@ async fn sends_the_acts_with_their_bodies() {
     assert_eq!(registered.status.name(), "Registered");
     assert!(server.last().body.contains(r#""mission":"Do it.""#));
 
+    let form = BotForm {
+        name: "NanoBot secured on ESP32".into(),
+        team: "NANOTEAM".into(),
+        mission: "Do it.".into(),
+        ..Default::default()
+    };
+    api.register_bot(BotDefinition::from_form(&form).unwrap())
+        .await
+        .unwrap();
+    let body = server.last().body;
+    assert!(body.contains(r#""id":"nanobot-secured-on-esp32""#), "{body}");
+    assert!(body.contains(r#""name":"NanoBot secured on ESP32""#), "{body}");
+    assert!(body.contains(r#""groups":["nanoteam"]"#), "{body}");
+
     let patch = BotPatch {
         mission: Some("New".into()),
         ..Default::default()

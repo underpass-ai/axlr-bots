@@ -8,7 +8,7 @@ use super::widgets::{
 };
 use super::{grid, levels};
 use crate::application::BotNow;
-use crate::domain::{AutonomyLevel, Bot, ModelFit, NodeCapabilities};
+use crate::domain::{AutonomyLevel, Bot, BotForm, ModelFit, NodeCapabilities, team_names};
 use crate::ui::styles::{self, Kind};
 use crate::ui::table::{BotColumn, ColumnRef, List, RowRef, SortColumn};
 use crate::ui::{App, Icon, Message, NodeChoice, Screen, Tokens, Tone};
@@ -183,26 +183,63 @@ fn list<'a>(app: &'a App, fleet: &'a crate::application::Fleet, narrow: bool, to
 
 /// The Team question: a name its teammates share, with the teams there
 /// are.
-fn team_field<'a>(app: &'a App, value: &'a str, tokens: Tokens) -> El<'a> {
+fn team_field<'a>(app: &'a App, form: &'a BotForm, tokens: Tokens) -> El<'a> {
     let names: Vec<String> = app.teams().into_iter().map(|t| t.name).collect();
     let hint = if names.is_empty() {
         "a name its teammates share; empty: on its own".to_string()
     } else {
         format!("teams now: {}", names.join(", "))
     };
-    column![
+    let mut column = column![
         field(
             "Which team is it in?",
             "ops",
-            value,
+            &form.team,
             Message::RegisterTeam,
             None,
             tokens
         ),
         muted(hint, tokens),
     ]
-    .spacing(4)
+    .spacing(4);
+    let teams = form.teams();
+    if teams != team_names(&form.team) {
+        column = column.push(warning(format!("It will be saved as {}", teams.join(", ")), tokens));
+    }
+    column.into()
+}
+
+/// A line that asks the operator to look before adding the bot.
+fn warning<'a>(words: String, tokens: Tokens) -> El<'a> {
+    row![
+        icon(Icon::Alert, 14.0, tokens.wait),
+        text(words).size(SMALL).color(tokens.wait)
+    ]
+    .spacing(6)
+    .align_y(Alignment::Center)
     .into()
+}
+
+/// Whether a bot already has the id this form's name gives: the control
+/// plane would refuse the new one.
+fn id_taken(app: &App, form: &BotForm) -> bool {
+    let (Some(fleet), Ok(id)) = (&app.fleet, form.bot_id()) else {
+        return false;
+    };
+    fleet.bots.iter().any(|b| b.id.as_str() == id)
+}
+
+/// What the name becomes: the id the bot will have, or why it has none.
+/// Nothing until a name is typed.
+fn id_note<'a>(app: &App, form: &BotForm, tokens: Tokens) -> Option<El<'a>> {
+    if form.name.trim().is_empty() {
+        return None;
+    }
+    Some(match form.bot_id() {
+        Ok(id) if id_taken(app, form) => warning(format!("The id {id} is taken: choose another name"), tokens),
+        Ok(id) => muted(format!("Its id will be {id}"), tokens).into(),
+        Err(error) => warning(error.to_string(), tokens),
+    })
 }
 
 /// A warning when the chosen node named its providers and none serves
@@ -260,14 +297,19 @@ fn register_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     ]
     .spacing(6);
     if let Some(words) = model_warning(app, &form.node, &form.model) {
-        where_it_runs = where_it_runs.push(
-            row![
-                icon(Icon::Alert, 14.0, tokens.wait),
-                text(words).size(SMALL).color(tokens.wait)
-            ]
-            .spacing(6)
-            .align_y(Alignment::Center),
-        );
+        where_it_runs = where_it_runs.push(warning(words, tokens));
+    }
+    let mut name = column![field(
+        "Name",
+        "Deploy watch",
+        &form.name,
+        Message::RegisterName,
+        None,
+        tokens
+    )]
+    .spacing(4);
+    if let Some(note) = id_note(app, form, tokens) {
+        name = name.push(note);
     }
     let mut body = column![
         row![
@@ -276,15 +318,7 @@ fn register_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             icon_button(Icon::Cross, "Close", Some(Message::RegisterClose), tokens)
         ]
         .align_y(Alignment::Center),
-        container(field(
-            "Name",
-            "deploy-watch",
-            &form.name,
-            Message::RegisterName,
-            None,
-            tokens
-        ))
-        .width(360),
+        container(name).width(360),
         field(
             "What should it do?",
             "In your words: what it watches, what it does, what it tells you",
@@ -295,7 +329,7 @@ fn register_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         ),
         row![
             where_it_runs.width(360),
-            container(team_field(app, &form.team, tokens)).width(360),
+            container(team_field(app, form, tokens)).width(360),
         ]
         .spacing(14)
         .align_y(Alignment::Start),
@@ -317,7 +351,7 @@ fn register_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
                 Kind::Primary,
                 Icon::Plus,
                 if busy { "Adding…" } else { "Add bot" },
-                (!busy).then_some(Message::RegisterSubmit),
+                (!busy && !id_taken(app, form)).then_some(Message::RegisterSubmit),
                 tokens
             ),
             action(

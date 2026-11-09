@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::identifier::{validate_identifier, validate_text};
+use super::identifier::{derive_identifier, validate_identifier, validate_text};
 use super::{AutonomyLevel, Budgets, DomainError, ModelPolicy, NodeId, Placement, ToolRules, Trigger, TriggerType};
 
 /// A bot to register, as a definition file writes it. The panel checks
@@ -73,6 +73,28 @@ pub fn team_names(raw: &str) -> Vec<String> {
     names
 }
 
+impl BotForm {
+    /// The id the name gives the bot, or why it gives none.
+    pub fn bot_id(&self) -> Result<String, DomainError> {
+        let name = validate_text("bot name", &self.name, 120)?;
+        derive_identifier(&name)
+            .ok_or_else(|| DomainError::new("bot name", "needs a letter or a digit to make the bot's id from"))
+    }
+
+    /// The teams the bot joins: the names typed, as the control plane
+    /// takes them. A word with no letter or digit stays, to be refused.
+    pub fn teams(&self) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        for typed in team_names(&self.team) {
+            let name = derive_identifier(&typed).unwrap_or(typed);
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+        names
+    }
+}
+
 impl BotDefinition {
     /// Reads a definition file's JSON and checks it.
     pub fn from_json(text: &str) -> Result<Self, DomainError> {
@@ -83,9 +105,9 @@ impl BotDefinition {
     }
 
     /// Builds a definition from the form: tenant `default`, owner
-    /// `operator`, a manual trigger, the id taken from the name.
+    /// `operator`, a manual trigger, the id made from the name.
     pub fn from_form(form: &BotForm) -> Result<Self, DomainError> {
-        let id = validate_identifier("bot name", &form.name)?;
+        let id = form.bot_id()?;
         let tools: Vec<String> = form
             .tools
             .split([',', ' '])
@@ -104,9 +126,9 @@ impl BotDefinition {
         };
         let model = form.model.trim();
         let definition = Self {
-            id: id.clone(),
+            id,
             tenant: "default".into(),
-            name: id,
+            name: form.name.trim().to_string(),
             owner: "operator".into(),
             mission: form.mission.trim().to_string(),
             allowed_tools: tools,
@@ -127,7 +149,7 @@ impl BotDefinition {
             budgets: Budgets::default(),
             approvals: None,
             delegation: None,
-            groups: team_names(&form.team),
+            groups: form.teams(),
             events: None,
             runtime: None,
             skills: None,
@@ -270,10 +292,56 @@ mod tests {
         assert!(plain.groups.is_empty() && plain.approvals.is_none());
         assert!(!serde_json::to_string(&plain).unwrap().contains("groups"));
         let bad = BotForm {
-            team: "Ops".into(),
+            team: "日本".into(),
             ..form
         };
         assert!(BotDefinition::from_form(&bad).is_err());
+    }
+
+    fn named(name: &str) -> BotForm {
+        BotForm {
+            name: name.into(),
+            mission: "Watch.".into(),
+            ..BotForm::default()
+        }
+    }
+
+    #[test]
+    fn a_name_is_free_text_and_the_id_comes_from_it() {
+        let definition = BotDefinition::from_form(&named("  NanoBot secured on ESP32 ")).unwrap();
+        assert_eq!(definition.name, "NanoBot secured on ESP32");
+        assert_eq!(definition.id, "nanobot-secured-on-esp32");
+        let out = serde_json::to_value(&definition).unwrap();
+        assert_eq!(out["id"], "nanobot-secured-on-esp32");
+        assert_eq!(out["name"], "NanoBot secured on ESP32");
+    }
+
+    #[test]
+    fn a_name_with_nothing_for_an_id_says_so() {
+        let error = BotDefinition::from_form(&named("¡¡!!")).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "bot name needs a letter or a digit to make the bot's id from"
+        );
+        assert_eq!(
+            BotDefinition::from_form(&named("  ")).unwrap_err().to_string(),
+            "bot name must not be empty"
+        );
+        assert!(BotDefinition::from_form(&named(&"n".repeat(121))).is_err());
+        assert!(BotDefinition::from_form(&named(&"n".repeat(120))).is_ok());
+    }
+
+    #[test]
+    fn the_teams_of_a_form_are_written_as_the_control_plane_takes_them() {
+        let form = BotForm {
+            team: "NANOTEAM, Ops ops Peñón".into(),
+            ..named("b")
+        };
+        assert_eq!(form.teams(), vec!["nanoteam", "ops", "penon"]);
+        assert_eq!(
+            BotDefinition::from_form(&form).unwrap().groups,
+            vec!["nanoteam", "ops", "penon"]
+        );
     }
 
     #[test]
@@ -320,7 +388,7 @@ mod tests {
         assert_eq!(bare.placement.describe(), "any node");
         assert!(
             BotDefinition::from_form(&BotForm {
-                name: "Bad Name".into(),
+                name: "".into(),
                 mission: "m".into(),
                 ..Default::default()
             })
