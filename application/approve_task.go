@@ -388,6 +388,7 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 		AllowedTools:  policy.Tools().Names(),
 		ToolRules:     policy.Rules(),
 		Timeout:       timeout,
+		Skills:        task.Skills(),
 	})
 	if err := uc.set.settle(ctx, "task.decide", bot, &task, &execution, report, runErr, now); err != nil {
 		return ApproveTaskResult{}, err

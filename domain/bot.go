@@ -24,6 +24,7 @@ type Bot struct {
 	events       EventPolicy
 	subs         Subscriptions
 	runtime      Runtime
+	skills       SkillPins
 	status       BotStatus
 	createdAt    time.Time
 	updatedAt    time.Time
@@ -207,9 +208,25 @@ func (b *Bot) SetRuntime(runtime Runtime) error {
 }
 
 // CheckRuntime refuses a bot whose tools or level no longer carry its
-// Jev program: a change that narrows them is checked with it once all
-// of it is applied.
-func (b Bot) CheckRuntime() error { return b.runtime.fits(b.allowedTools, b.level) }
+// Jev program, and a Jev bot given skills: no model would read them. A
+// change that narrows them is checked with it once all of it is applied.
+func (b Bot) CheckRuntime() error {
+	if err := b.runtime.fits(b.allowedTools, b.level); err != nil {
+		return err
+	}
+	if _, jev := b.runtime.Jev(); jev && !b.skills.IsEmpty() {
+		return invalid("skills", "a jev program has no language model to read a skill")
+	}
+	return nil
+}
+
+// Skills are the catalog skills the bot is given, each at one exact
+// version.
+func (b Bot) Skills() SkillPins { return b.skills }
+
+// SetSkills replaces the bot's skills; CheckRuntime holds them to its
+// runtime.
+func (b *Bot) SetSkills(skills SkillPins) { b.skills = skills }
 
 // Touch records that the bot's definition changed.
 func (b *Bot) Touch(now time.Time) { b.updatedAt = now }
@@ -305,6 +322,7 @@ func (b Bot) Snapshot() BotSnapshot {
 		Events:        b.events.Snapshot(),
 		Subscriptions: b.subs.Snapshot(),
 		Runtime:       b.runtime.Snapshot(),
+		Skills:        b.skills.Snapshot(),
 		Status:        b.status.String(),
 		CreatedAt:     b.createdAt,
 		UpdatedAt:     b.updatedAt,
@@ -411,6 +429,14 @@ func RestoreBot(s BotSnapshot) (Bot, error) {
 		return Bot{}, err
 	}
 	if err := bot.SetRuntime(runtime); err != nil {
+		return Bot{}, err
+	}
+	skills, err := NewSkillPins(s.Skills)
+	if err != nil {
+		return Bot{}, err
+	}
+	bot.SetSkills(skills)
+	if err := bot.CheckRuntime(); err != nil {
 		return Bot{}, err
 	}
 	if s.UpdatedAt.IsZero() {

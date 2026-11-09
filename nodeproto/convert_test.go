@@ -41,7 +41,29 @@ func TestAssignmentRoundTrip(t *testing.T) {
 	if err != nil || back.Decide == nil || back.Decide.SessionID != "sess-1" || back.Decide.Decision != "approve" || back.Decide.Timeout != time.Minute || back.Run != nil {
 		t.Errorf("decide = %v %+v", err, back.Decide)
 	}
+	pins, _ := domain.NewSkillPins([]domain.SkillPinSnapshot{{Name: "oom", Version: "1.0.0", Catalog: "axlr"}})
+	run.Run.Skills, decide.Decide.Skills = pins, pins
+	for _, a := range []application.Assignment{run, decide} {
+		raw, _ := json.Marshal(FromAssignment(a))
+		var m AssignmentMessage
+		_ = json.Unmarshal(raw, &m)
+		back, err := ToAssignment(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := domain.SkillPins{}
+		if back.Run != nil {
+			got = back.Run.Skills
+		} else {
+			got = back.Decide.Skills
+		}
+		if all := got.All(); len(all) != 1 || all[0].Key() != "axlr/oom@1.0.0" {
+			t.Errorf("skills = %+v", all)
+		}
+	}
 	bad := []AssignmentMessage{
+		{ExecutionID: "exec-1", Kind: "run", Run: &RunMessage{BotID: "bot", Objective: "o", Level: "observe", AllowedTools: []string{"local_read"}, Skills: []domain.SkillPinSnapshot{{Name: "oom", Version: "latest", Catalog: "axlr"}}}},
+		{ExecutionID: "exec-2", Kind: "decide", Decide: &DecideMessage{BotID: "bot", SessionID: "s", Decision: "approve", Level: "observe", AllowedTools: []string{"local_read"}, Skills: []domain.SkillPinSnapshot{{Name: "oom", Version: "latest", Catalog: "axlr"}}}},
 		{ExecutionID: "", Kind: "run"},
 		{ExecutionID: "exec-1", Kind: "odd"},
 		{ExecutionID: "exec-1", Kind: "run"},

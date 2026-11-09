@@ -29,6 +29,7 @@ type Executor interface {
 	application.Workspace
 	SupportsPolicy(ctx context.Context) bool
 	SupportsCorrelation(ctx context.Context) bool
+	SupportsSkills(ctx context.Context) bool
 	Version(ctx context.Context) string
 }
 
@@ -248,13 +249,13 @@ func (a Agent) register(ctx context.Context, id domain.NodeID) error {
 	}
 	registration := application.NodeRegistration{
 		ID: id.String(), HostName: host, Labels: a.Options.Labels,
-		Capabilities: domain.NodeCapabilities{AXLRVersion: a.Executor.Version(ctx), PolicySupported: a.Executor.SupportsPolicy(ctx), CorrelationSupported: a.Executor.SupportsCorrelation(ctx), Dedicated: a.Options.Dedicated, Runtimes: a.Options.Runtimes, Providers: a.Options.Providers},
+		Capabilities: domain.NodeCapabilities{AXLRVersion: a.Executor.Version(ctx), PolicySupported: a.Executor.SupportsPolicy(ctx), CorrelationSupported: a.Executor.SupportsCorrelation(ctx), Dedicated: a.Options.Dedicated, Runtimes: a.Options.Runtimes, Providers: a.Options.Providers, SkillsSupported: a.Executor.SupportsSkills(ctx)},
 	}
 	node, err := a.Transport.Register(ctx, registration)
 	if err != nil {
 		return err
 	}
-	a.Options.log().Printf("node: registered as %s (%s), axlr %q policy %v correlation %v dedicated %v runtimes %v providers %v", node.ID, node.HostName, registration.Capabilities.AXLRVersion, registration.Capabilities.PolicySupported, registration.Capabilities.CorrelationSupported, registration.Capabilities.Dedicated, append([]string{"axlr"}, registration.Capabilities.Runtimes...), registration.Capabilities.Providers)
+	a.Options.log().Printf("node: registered as %s (%s), axlr %q policy %v correlation %v skills %v dedicated %v runtimes %v providers %v", node.ID, node.HostName, registration.Capabilities.AXLRVersion, registration.Capabilities.PolicySupported, registration.Capabilities.CorrelationSupported, registration.Capabilities.SkillsSupported, registration.Capabilities.Dedicated, append([]string{"axlr"}, registration.Capabilities.Runtimes...), registration.Capabilities.Providers)
 	return nil
 }
 

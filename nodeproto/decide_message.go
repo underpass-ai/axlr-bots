@@ -17,4 +17,6 @@ type DecideMessage struct {
 	TimeoutSeconds int                      `json:"timeoutSeconds"`
 	Delegation     *DelegationOfferMessage  `json:"delegation,omitempty"`
 	Events         *EventsOfferMessage      `json:"events,omitempty"`
+	// Skills are the catalog skills the session goes on reading.
+	Skills []domain.SkillPinSnapshot `json:"skills,omitempty"`
 }

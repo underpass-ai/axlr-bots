@@ -20,7 +20,6 @@ func placementWait(bot domain.Bot, nodes []domain.Node) (string, bool) {
 	if placement.IsEmpty() || !bot.AcceptsTasks() || hasOnlineNode(bot, nodes) {
 		return "", false
 	}
-	kind := bot.Runtime().Kind()
 	registered := make(map[domain.NodeID]domain.Node, len(nodes))
 	for _, node := range nodes {
 		registered[node.ID()] = node
@@ -29,13 +28,13 @@ func placementWait(bot domain.Bot, nodes []domain.Node) (string, bool) {
 	var states []string
 	for _, id := range named {
 		node, found := registered[id]
-		states = append(states, id.String()+" "+keptBy(node, found, kind))
+		states = append(states, id.String()+" "+keptBy(bot, node, found))
 	}
 	head := "waiting for " + placement.Wanted()
 	if len(placement.Selector()) == 0 {
 		if len(named) == 1 {
 			node, found := registered[named[0]]
-			return head + ", which " + keptBy(node, found, kind), true
+			return head + ", which " + keptBy(bot, node, found), true
 		}
 		return head + ": " + strings.Join(states, ", "), true
 	}
@@ -45,7 +44,7 @@ func placementWait(bot domain.Bot, nodes []domain.Node) (string, bool) {
 			continue
 		}
 		matched = true
-		states = append(states, node.ID().String()+" "+keptBy(node, true, kind))
+		states = append(states, node.ID().String()+" "+keptBy(bot, node, true))
 	}
 	if !matched {
 		states = append(states, "no node has these labels")
@@ -54,13 +53,17 @@ func placementWait(bot domain.Bot, nodes []domain.Node) (string, bool) {
 }
 
 // keptBy says what keeps an admitted node from the bot's task: it is not
-// registered, not Online, or Online without the bot's runtime.
-func keptBy(node domain.Node, found bool, kind domain.RuntimeKind) string {
+// registered, not Online, or Online without the bot's runtime or without
+// a way to read the bot's skills.
+func keptBy(bot domain.Bot, node domain.Node, found bool) string {
+	kind := bot.Runtime().Kind()
 	switch {
 	case !found:
 		return "is not registered"
-	case node.IsOnline():
+	case node.IsOnline() && !node.Capabilities().Runs(kind):
 		return "lacks the " + kind.String() + " runtime"
+	case node.IsOnline():
+		return "has an axlr-tui that takes no pinned skills"
 	case node.Status() == domain.NodeRegistered:
 		return "is Registered but not yet Online"
 	}

@@ -123,6 +123,7 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 		Unattended:    policy.Unattended(),
 		Budgets:       taskBudgets(bot, task),
 		Timeout:       timeout,
+		Skills:        task.Skills(),
 	})
 	if err := uc.set.settle(ctx, "task.run", bot, &task, &execution, report, runErr, now); err != nil {
 		return RunTaskResult{}, err

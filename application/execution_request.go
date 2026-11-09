@@ -34,6 +34,8 @@ type ExecutionRequest struct {
 	Timeout    time.Duration
 	// Runtime is what runs the task on the node: AXLR, or a Jev program.
 	Runtime domain.Runtime
+	// Skills are the catalog skills the run reads, pinned on its task.
+	Skills domain.SkillPins
 	// Input is the task's input as it was created: the event's fields for
 	// a task an event made. A Jev program reads the event's name and data
 	// from it; AXLR reads the objective.

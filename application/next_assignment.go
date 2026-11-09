@@ -176,6 +176,11 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 		if !candidate.AcceptsTasks() || !nodeCanRun(candidate, node) {
 			continue
 		}
+		if !pending[i].Skills().IsEmpty() && !node.Capabilities().SkillsSupported {
+			// The task keeps the skills it was submitted with, whatever
+			// its bot has now: a node that cannot read them does not take it.
+			continue
+		}
 		if pending[i].DeadlinePassed(uc.deps.Clock.Now()) {
 			// A delegated task that waited past its deadline never runs.
 			if err := newDeadlineKeeper(uc.deps).miss(ctx, candidate, &pending[i], nil); err != nil {
@@ -332,6 +337,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 		assignment.Decide = &DecisionRequest{
 			ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), CorrelationID: task.CorrelationID(), SessionID: sessionID, CallID: pending.CallID, Decision: decision,
 			Level: policy.Level(), AllowedTools: tools, ToolRules: policy.Rules(), Timeout: timeout, Delegation: offer, Events: events,
+			Skills: task.Skills(),
 		}
 		return assignment, nil
 	}
@@ -343,7 +349,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 		ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), TenantID: bot.TenantID(), CorrelationID: task.CorrelationID(),
 		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: policy.Level(), AllowedTools: tools,
 		ToolRules: policy.Rules(), Unattended: policy.Unattended(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer, Events: events,
-		Runtime: bot.Runtime(), Input: task.Input(),
+		Runtime: bot.Runtime(), Input: task.Input(), Skills: task.Skills(),
 	}
 	return assignment, nil
 }

@@ -88,12 +88,13 @@ func hasOnlineNode(bot domain.Bot, nodes []domain.Node) bool {
 }
 
 // nodeCanRun reports whether the node may take the bot's tasks: it is
-// Online, the bot's placement admits it and it has the bot's runtime.
+// Online, the bot's placement admits it, it has the bot's runtime and, for
+// a bot given skills, it can read them.
 // NextAssignment asks it of the node that polls; Pick asks it of every
 // node for a bot with an empty placement, which runs in process while
 // no node may run it (none Online, or the only Online one lacks its
 // runtime). A placed bot's task no node may run stays Pending until one
 // may, and placementWait says what it waits for.
 func nodeCanRun(bot domain.Bot, node domain.Node) bool {
-	return node.IsOnline() && bot.Placement().Admits(node) && node.Capabilities().Runs(bot.Runtime().Kind())
+	return node.IsOnline() && bot.Placement().Admits(node) && node.Capabilities().Runs(bot.Runtime().Kind()) && (bot.Skills().IsEmpty() || node.Capabilities().SkillsSupported)
 }

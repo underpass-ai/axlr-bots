@@ -30,4 +30,7 @@ type RunMessage struct {
 	// Input is the task's input: the event's fields for a task an event
 	// made, which a Jev program reads.
 	Input json.RawMessage `json:"input,omitempty"`
+	// Skills are the catalog skills the run reads. The control plane gives
+	// a task with skills only to a node that says it can read them.
+	Skills []domain.SkillPinSnapshot `json:"skills,omitempty"`
 }

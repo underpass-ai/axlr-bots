@@ -33,6 +33,11 @@ type Options struct {
 	// Steer makes --help advertise -steer-file, like a build that reads
 	// what a person writes to a run while it works.
 	Steer bool
+	// Skills makes --help advertise -skills and answers `skills install`,
+	// appending its arguments to skills.txt beside the stand-in.
+	Skills bool
+	// SkillInstallError makes `skills install` fail with this reason.
+	SkillInstallError string
 }
 
 const resultCompleted = `{"type":"result","session":"sess-1","result":{"schema":"axlr.execution-result/v1","status":"completed","session_id":"sess-1","sessions":["sess-1"],"answer":"%s","tool_calls":[%s],"usage":{"requests":1,"prompt_tokens":10,"completion_tokens":1,"cost_usd":0.001},"artifacts":[]}}`
@@ -60,8 +65,9 @@ exit 0`
 func Write(dir string, options Options) (bin, argsFile string, err error) {
 	argsFile = filepath.Join(dir, "args.txt")
 	script := "#!/bin/sh\n" +
-		"for a in \"$@\"; do if [ \"$a\" = --help ]; then echo '  -exec string' >&2; " + helpPolicy(options.NoPolicy) + helpCorrelation(options.Correlation) + helpSteer(options.Steer) + "exit 0; fi; " +
+		"for a in \"$@\"; do if [ \"$a\" = --help ]; then echo '  -exec string' >&2; " + helpPolicy(options.NoPolicy) + helpCorrelation(options.Correlation) + helpSteer(options.Steer) + helpSkills(options.Skills) + "exit 0; fi; " +
 		"if [ \"$a\" = --version ]; then echo 'axlr-tui 0.0.0-fake'; exit 0; fi; done\n" +
+		skillsCommand(dir, options) +
 		"printf '%s\\n' \"$@\" > '" + argsFile + "'\n" +
 		body(options) + "\n"
 	bin = filepath.Join(dir, "fake-axlr-tui")
@@ -80,6 +86,25 @@ func helpCorrelation(correlation bool) string {
 		return ""
 	}
 	return "echo '  -correlation string' >&2; echo '  -budget string' >&2; "
+}
+
+func helpSkills(skills bool) string {
+	if !skills {
+		return ""
+	}
+	return "echo '  -skills string' >&2; "
+}
+
+// skillsCommand answers `axlr-tui skills`, before a run records anything.
+func skillsCommand(dir string, options Options) string {
+	if !options.Skills {
+		return ""
+	}
+	failure := "exit 0"
+	if options.SkillInstallError != "" {
+		failure = "echo '" + options.SkillInstallError + "' >&2; exit 1"
+	}
+	return "if [ \"$1\" = skills ]; then shift; echo \"$@\" >> '" + filepath.Join(dir, "skills.txt") + "'; " + failure + "; fi\n"
 }
 
 func helpSteer(steer bool) string {

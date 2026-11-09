@@ -206,7 +206,7 @@ bus:
 | `/var/lib/axlr-node`: `pki/` (key 0600, certificate, CA, `enrollment.json` with the token id), traces, policies, correlation | the replica's PVC (`axlr-node-state`) | the pod's deletion and rescheduling |
 | `/var/lib/axlr-node/workspaces` | an emptyDir of its own: scratch space for the bots without a volume | a container's restart, not the pod's |
 | `/var/lib/axlr-node/workspaces/<bot>` | the service's volume, read-only (`sidecar.workspaces`), mounted inside the one above | whatever that volume does |
-| `/tmp`: AXLR's `XDG_STATE_HOME` (diagnostics, sessions) | tmpfs (emptyDir, medium Memory) | a container's restart, not the pod's |
+| `/tmp`: AXLR's `XDG_STATE_HOME` (diagnostics, sessions, the installed [catalog skills](../reference/bot-definition.md#skills)) | tmpfs (emptyDir, medium Memory) | a container's restart, not the pod's |
 | `/etc/axlr-node/enroll/<node id>` | the token Secret, read-only, optional | read at a first start only |
 | `/etc/axlr-node/mcp/mcp.json` | the ConfigMap in `sidecar.mcp.existingConfigMap`, read-only | read when a Jev bot's execution starts |
 

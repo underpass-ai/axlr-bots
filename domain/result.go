@@ -11,4 +11,7 @@ type Result struct {
 	Artifacts       []Artifact       `json:"artifacts,omitempty"`
 	ToolCalls       []ToolCall       `json:"toolCalls,omitempty"`
 	PendingDecision *PendingDecision `json:"pendingDecision,omitempty"`
+	// NotStarted says the runtime never ran: what the execution needed
+	// beforehand (a catalog skill) could not be had. It wrote nothing.
+	NotStarted bool `json:"notStarted,omitempty"`
 }
