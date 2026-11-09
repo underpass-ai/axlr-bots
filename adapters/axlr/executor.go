@@ -70,6 +70,11 @@ type Executor struct {
 
 	detect   sync.Once
 	features features
+	// skillsSlot serialises the installs: a lent slot can run two
+	// executions of this node at once, and neither may see the other's
+	// half-done work. A channel, so that a cancelled waiter stops waiting.
+	skillsOnce sync.Once
+	skillsSlot chan struct{}
 }
 
 // NewExecutor runs binary (axlr-tui on PATH when empty) with its traces
@@ -87,11 +92,18 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 	if request.Objective == "" {
 		return application.ExecutionReport{}, errors.New("axlr: the request has no objective")
 	}
-	policy, err := e.preparePolicy(ctx, request.ExecutionID, request.Level, request.AllowedTools, request.ToolRules)
+	policy, err := e.preparePolicy(ctx, request.ExecutionID, request.Level, withSkillTool(request.AllowedTools, request.Skills), request.ToolRules)
 	if err != nil {
 		return application.ExecutionReport{}, err
 	}
 	policy.actAlone(request.Unattended)
+	skills, spent, err := e.prepareSkills(ctx, request.ExecutionID, request.Skills, e.timeout(request.Timeout))
+	if err != nil {
+		return skillsRefused(err, policy), nil
+	}
+	if request.Timeout, err = e.afterInstall(request.Timeout, spent); err != nil {
+		return skillsRefused(err, policy), nil
+	}
 	if err := e.wireDelegation(request.ExecutionID, request.NodeTools(), request.DelegationSocket, &policy); err != nil {
 		return application.ExecutionReport{}, fmt.Errorf("axlr: delegation manifest: %w", err)
 	}
@@ -103,6 +115,7 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 		args = append(args, "--mode", e.Mode)
 	}
 	args = append(args, e.mcpConfigArgs()...)
+	args = append(args, skills...)
 	// The correlation ids and the budget go with the run when the binary
 	// takes them (docs/runtime-contract.md, the reserved fields); the
 	// correlation file is written either way and the record says whether
@@ -138,7 +151,7 @@ func (e *Executor) Decide(ctx context.Context, request application.DecisionReque
 	if err := request.Validate(); err != nil {
 		return application.ExecutionReport{}, fmt.Errorf("axlr: %w", err)
 	}
-	policy, err := e.preparePolicy(ctx, request.ExecutionID, request.Level, request.AllowedTools, request.ToolRules)
+	policy, err := e.preparePolicy(ctx, request.ExecutionID, request.Level, withSkillTool(request.AllowedTools, request.Skills), request.ToolRules)
 	if err != nil {
 		return application.ExecutionReport{}, err
 	}
@@ -336,7 +349,9 @@ func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot do
 	progress := newProgressTracker(tell)
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxLineBytes)
+	lines := 0
 	for scanner.Scan() {
+		lines++
 		line := scanner.Bytes()
 		_, _ = trace.Write(line)
 		_, _ = trace.Write([]byte{'\n'})
@@ -373,6 +388,7 @@ func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot do
 		report = parser.interrupted("reading runtime output: " + scanErr.Error())
 	default:
 		report = parser.report(exitCode, tail.lastLine())
+		report.Result.NotStarted = pinRefused(exitCode, lines, tail.lastLine())
 	}
 	report.TracePath = tracePath
 	return report, nil

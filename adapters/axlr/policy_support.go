@@ -23,7 +23,7 @@ const helpTimeout = 15 * time.Second
 
 // features is what the binary's --help advertised.
 type features struct {
-	policy, correlation, budget, execution, steer, kmpStore bool
+	policy, correlation, budget, execution, steer, kmpStore, skills bool
 }
 
 // SupportsPolicy reports whether the binary takes --policy: what a node
@@ -80,6 +80,7 @@ func (e *Executor) detectFeatures(ctx context.Context) features {
 			execution:   strings.Contains(help, executionFlag),
 			steer:       strings.Contains(help, steerFlag),
 			kmpStore:    strings.Contains(help, kmpStoreFlag),
+			skills:      strings.Contains(help, skillsFlag),
 		}
 	})
 	return e.features

@@ -12,8 +12,10 @@ import "github.com/underpass-ai/axlr-bots/domain"
 // Delegation which bots outside its teams it may ask to do a task (none
 // when absent), Groups the teams it belongs to (none when absent) and
 // Subscriptions the topics it listens to in them (none when absent; an
-// event trigger is read as one, for one release) and Runtime what runs its
-// tasks on the node (AXLR when absent; a Jev program otherwise).
+// event trigger is read as one, for one release), Runtime what runs its
+// tasks on the node (AXLR when absent; a Jev program otherwise) and Skills
+// the signed catalog skills it is given, each at one exact version (none
+// when absent).
 type BotDefinition struct {
 	ID            string                        `json:"id,omitempty"`
 	Tenant        string                        `json:"tenant"`
@@ -31,6 +33,7 @@ type BotDefinition struct {
 	Events        *domain.EventsSnapshot        `json:"events,omitempty"`
 	Subscriptions []domain.SubscriptionSnapshot `json:"subscriptions,omitempty"`
 	Runtime       *domain.RuntimeSnapshot       `json:"runtime,omitempty"`
+	Skills        []domain.SkillPinSnapshot     `json:"skills,omitempty"`
 	Model         ModelPolicyDefinition         `json:"model"`
 	Budgets       BudgetsDefinition             `json:"budgets"`
 }

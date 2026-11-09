@@ -149,6 +149,9 @@ func submitTask(ctx context.Context, deps Dependencies, s submission) (SubmitTas
 		}
 		task.Pin(policy)
 	}
+	// The skills as they are now, kept on the task: a bot updated later
+	// never changes what this task reads.
+	task.PinSkills(s.bot.Skills())
 	if err := deps.Tasks.Save(ctx, task); err != nil {
 		return SubmitTaskResult{}, err
 	}

@@ -50,6 +50,7 @@ func (r *recordingExecutor) OpenDelivered(domain.BotID, string) (io.ReadCloser, 
 }
 func (r *recordingExecutor) SupportsPolicy(context.Context) bool      { return true }
 func (r *recordingExecutor) SupportsCorrelation(context.Context) bool { return false }
+func (*recordingExecutor) SupportsSkills(context.Context) bool        { return false }
 func (r *recordingExecutor) Version(context.Context) string           { return "fake 1" }
 
 // A run goes to its runtime; a decision, the workspace and the
@@ -131,6 +132,7 @@ func (deafOnly) OpenDelivered(domain.BotID, string) (io.ReadCloser, error) {
 }
 func (deafOnly) SupportsPolicy(context.Context) bool      { return false }
 func (deafOnly) SupportsCorrelation(context.Context) bool { return false }
+func (deafOnly) SupportsSkills(context.Context) bool      { return false }
 func (deafOnly) Version(context.Context) string           { return "" }
 
 // silentRuntime runs but does not hear.
@@ -139,3 +141,15 @@ type silentRuntime struct{}
 func (silentRuntime) Execute(context.Context, application.ExecutionRequest) (application.ExecutionReport, error) {
 	return application.ExecutionReport{}, nil
 }
+
+// The node says what its axlr-tui can do, so the control plane gives it
+// no task it would run without its skills.
+func TestRuntimesReportTheDefaultsSkillsSupport(t *testing.T) {
+	if NewRuntimes(skillsExecutor{}).SupportsSkills(context.Background()) != true {
+		t.Error("the default takes skills")
+	}
+}
+
+type skillsExecutor struct{ Executor }
+
+func (skillsExecutor) SupportsSkills(context.Context) bool { return true }

@@ -64,7 +64,7 @@ func (uc RunNextPending) Pick(ctx context.Context) (domain.TaskID, bool, error) 
 		if err != nil {
 			return "", false, err
 		}
-		if !bot.AcceptsTasks() || !bot.Placement().IsEmpty() || hasOnlineNode(bot, nodes) {
+		if !bot.AcceptsTasks() || !bot.Placement().IsEmpty() || hasOnlineNode(bot, pending[i].Skills(), nodes) {
 			continue
 		}
 		if oldest == nil || pending[i].CreatedAt().Before(oldest.CreatedAt()) {
@@ -77,23 +77,26 @@ func (uc RunNextPending) Pick(ctx context.Context) (domain.TaskID, bool, error) 
 	return oldest.ID(), true, nil
 }
 
-// hasOnlineNode reports a bot an Online node may run.
-func hasOnlineNode(bot domain.Bot, nodes []domain.Node) bool {
+// hasOnlineNode reports whether an Online node may run a task of the bot
+// that was submitted with the skills.
+func hasOnlineNode(bot domain.Bot, skills domain.SkillPins, nodes []domain.Node) bool {
 	for _, node := range nodes {
-		if nodeCanRun(bot, node) {
+		if nodeCanRun(bot, skills, node) {
 			return true
 		}
 	}
 	return false
 }
 
-// nodeCanRun reports whether the node may take the bot's tasks: it is
-// Online, the bot's placement admits it and it has the bot's runtime.
+// nodeCanRun reports whether the node may take a task of the bot: it is
+// Online, the bot's placement admits it, it has the bot's runtime and,
+// for a task submitted with skills, it can read them. The skills are the
+// task's, not the bot's: they are what the run will ask for.
 // NextAssignment asks it of the node that polls; Pick asks it of every
 // node for a bot with an empty placement, which runs in process while
 // no node may run it (none Online, or the only Online one lacks its
 // runtime). A placed bot's task no node may run stays Pending until one
 // may, and placementWait says what it waits for.
-func nodeCanRun(bot domain.Bot, node domain.Node) bool {
-	return node.IsOnline() && bot.Placement().Admits(node) && node.Capabilities().Runs(bot.Runtime().Kind())
+func nodeCanRun(bot domain.Bot, skills domain.SkillPins, node domain.Node) bool {
+	return node.IsOnline() && bot.Placement().Admits(node) && node.Capabilities().Runs(bot.Runtime().Kind()) && (skills.IsEmpty() || node.Capabilities().SkillsSupported)
 }

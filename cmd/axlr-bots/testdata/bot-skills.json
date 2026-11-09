@@ -1,0 +1,23 @@
+{
+  "id": "bot-skills",
+  "tenant": "default",
+  "name": "bot-skills",
+  "owner": "operator",
+  "mission": "Triage what each task asks, following the runbook skill that fits.",
+  "level": "observe",
+  "allowedTools": ["local_read", "local_search", "local_list"],
+  "triggers": [{"type": "manual"}],
+  "skills": [{"name": "crashloop", "version": "1.0.0", "catalog": "axlr"}],
+  "model": {
+    "model": "anthropic/claude-haiku-5.5",
+    "routingPolicy": "cost-optimized",
+    "allowRemoteProviders": true,
+    "maxContextTokens": 32000
+  },
+  "budgets": {
+    "maxModelCallsPerTask": 10,
+    "maxToolCallsPerTask": 20,
+    "maxDelegationDepth": 0,
+    "taskTimeoutSeconds": 300
+  }
+}

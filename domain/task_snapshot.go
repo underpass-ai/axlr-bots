@@ -13,7 +13,9 @@ import (
 // tasks this one delegated, and the granted counts what it handed them.
 // Priority is urgent for a task that goes first; empty for normal.
 // IncidentID names the incident a phase task works on; Policy the
-// level and tools its phase narrowed the bot's to, pinned at submission. Waiting says
+// level and tools its phase narrowed the bot's to, pinned at submission;
+// Skills the catalog skills the task runs with, pinned at submission too.
+// Waiting says
 // why a Pending task of a placed bot has not started: no node its
 // placement admits is Online with its runtime. The control plane fills
 // it when the task is read; it is never stored.
@@ -36,6 +38,7 @@ type TaskSnapshot struct {
 	Priority       string                `json:"priority,omitempty"`
 	IncidentID     string                `json:"incidentId,omitempty"`
 	Policy         *PinnedPolicySnapshot `json:"policy,omitempty"`
+	Skills         []SkillPinSnapshot    `json:"skills,omitempty"`
 	Waiting        string                `json:"waiting,omitempty"`
 	CreatedAt      time.Time             `json:"createdAt"`
 	UpdatedAt      time.Time             `json:"updatedAt"`

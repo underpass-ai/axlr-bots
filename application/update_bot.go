@@ -210,7 +210,16 @@ func applyPatch(bot *domain.Bot, patch BotPatch) ([]string, error) {
 		}
 		changed = append(changed, "runtime")
 	}
-	// Narrower tools or a lower level may no longer carry a Jev program.
+	if patch.Skills != nil {
+		skills, err := domain.NewSkillPins(*patch.Skills)
+		if err != nil {
+			return nil, err
+		}
+		bot.SetSkills(skills)
+		changed = append(changed, "skills")
+	}
+	// Narrower tools or a lower level may no longer carry a Jev program,
+	// and a Jev program reads no skill.
 	if err := bot.CheckRuntime(); err != nil {
 		return nil, err
 	}

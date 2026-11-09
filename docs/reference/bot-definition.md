@@ -48,6 +48,7 @@ A bot has no role baked in: its definition is what an operator writes, and the s
 | `model` | the model policy: `model` is passed to AXLR as `--model`; `routingPolicy` is `cost-optimized` (the default when absent), `quality-optimized` or `fixed`, and `fixed` requires `model`; `routingPolicy`, `allowRemoteProviders` and `maxContextTokens` are validated and stored with the bot |
 | `budgets` | `taskTimeoutSeconds` bounds every execution (15 minutes when absent); `maxModelCallsPerTask` and `maxToolCallsPerTask` go to AXLR as the execution's budget when the build takes `--budget` ([runtime contract](../architecture/runtime-contract.md)); `maxDelegationDepth` is the depth limit of a [delegation](#delegation) that names none. For a Jev bot the model calls are Jev's and the tool calls the program's |
 | `runtime` | what runs the bot's tasks on its node: absent (or `kind: axlr`) is an AXLR session, a language model planning the run; `kind: jev` with its `jev` program is a fixed sequence of tool calls whose every decision is one question to Jev, with no language model ([below](#runtime)) |
+| `skills` | the signed catalog skills the bot is given: up to 32 `{name, version, catalog}`, each at one exact `major.minor.patch` ([below](#skills)). Absent: none |
 
 ## Autonomy levels
 
@@ -256,6 +257,30 @@ Catch-up: a daemon that comes back after a long stop finds the slot in the past,
 
 The procedure, with the checks, is the [triggers runbook](../runbooks/triggers.md).
 
+## Skills
+
+A bot can be given signed catalog skills, the versioned procedures its model opens with `axlr_skill`:
+
+```json
+"skills": [{"name": "crashloop", "version": "1.0.0", "catalog": "axlr"}]
+```
+
+| Field | Rule |
+|---|---|
+| `name` | 2-48 lowercase letters, digits or underscores, starting with a letter |
+| `version` | one exact `major.minor.patch`; no range, no `latest` |
+| `catalog` | a catalog named in the node's `~/.config/axlr/settings.json`; `axlr` is built in |
+
+Register and update refuse anything else, and a Jev bot takes none. The rules, and why, are in the [ADR](../architecture/bot-catalog-skills.md).
+
+- **A task keeps the versions its bot had when it was submitted** (`skills` on the task). Change the list and later tasks read the new versions; a task already queued does not.
+- **The node installs a missing version before the run.** A skill that cannot be installed or verified fails the task with the reason (`catalog skill axlr/crashloop@1.0.0 could not be installed on this node…`), and nothing runs without it.
+- **Only a node that can read them takes the task**: its `axlr-tui` must take `--skills` (`capabilities.skillsSupported`). A placed bot's task waits for one and says so.
+- **Every skill of the bot is offered to each of its tasks**; the model opens the one that fits. An incident does not pick one ([not decided yet](../architecture/bot-catalog-skills.md#how-an-incidents-task-picks-a-runbook-not-decided-here)).
+- **A bot without skills reads none**, even with skills installed on its node for another bot.
+
+An example definition: [`cmd/axlr-bots/testdata/bot-skills.json`](../../cmd/axlr-bots/testdata/bot-skills.json).
+
 ## Runtime
 
 A bot's tasks run as an AXLR session unless its definition says otherwise: a model reads the mission and the objective and calls the tools. A **Jev bot** has no model. Its node runs a fixed program over one MCP server, and every decision in it is one question to [Jev](https://typesafe.ai), TypeSafe's judgement model, which answers a choice among options in about 0.2 s. The world being acted on (the MCP server) writes the questions; the program only carries them to Jev and carries the answer back. It is for a bot whose steps are known and whose only open point is a choice: a worker that takes the batch Jev picks from a queue, say.
@@ -303,7 +328,7 @@ axlr-bots bot events bot --limit 100                 # the bot's newest events, 
 
 A task's `priority` is `urgent` when it went first ([urgent tasks](#urgent-tasks)), absent otherwise.
 
-A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `delegation`, `groups`, `events`, `subscriptions`, `runtime`, `model`, `budgets`) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`cmd/axlr-bots/testdata/bot-triggers-patch.json`](../../cmd/axlr-bots/testdata/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`cmd/axlr-bots/testdata/bot-act-with-approval.json`](../../cmd/axlr-bots/testdata/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
+A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `delegation`, `groups`, `events`, `subscriptions`, `runtime`, `skills`, `model`, `budgets`) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`cmd/axlr-bots/testdata/bot-triggers-patch.json`](../../cmd/axlr-bots/testdata/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`cmd/axlr-bots/testdata/bot-act-with-approval.json`](../../cmd/axlr-bots/testdata/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
 
 ## Tasks
 

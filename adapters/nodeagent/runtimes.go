@@ -106,4 +106,5 @@ func (r *Runtimes) SupportsPolicy(ctx context.Context) bool { return r.Default.S
 func (r *Runtimes) SupportsCorrelation(ctx context.Context) bool {
 	return r.Default.SupportsCorrelation(ctx)
 }
-func (r *Runtimes) Version(ctx context.Context) string { return r.Default.Version(ctx) }
+func (r *Runtimes) SupportsSkills(ctx context.Context) bool { return r.Default.SupportsSkills(ctx) }
+func (r *Runtimes) Version(ctx context.Context) string      { return r.Default.Version(ctx) }

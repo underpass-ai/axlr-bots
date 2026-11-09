@@ -24,6 +24,7 @@ type BotPatch struct {
 	Events        *domain.EventsSnapshot         `json:"events,omitempty"`
 	Subscriptions *[]domain.SubscriptionSnapshot `json:"subscriptions,omitempty"`
 	Runtime       *domain.RuntimeSnapshot        `json:"runtime,omitempty"`
+	Skills        *[]domain.SkillPinSnapshot     `json:"skills,omitempty"`
 	Model         *ModelPolicyDefinition         `json:"model,omitempty"`
 	Budgets       *BudgetsDefinition             `json:"budgets,omitempty"`
 }

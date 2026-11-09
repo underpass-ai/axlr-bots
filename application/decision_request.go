@@ -28,6 +28,8 @@ type DecisionRequest struct {
 	AllowedTools  []string
 	ToolRules     domain.ToolRules
 	Timeout       time.Duration
+	// Skills are the catalog skills the session goes on reading.
+	Skills domain.SkillPins
 	// Delegation, Events and DelegationSocket are as on an
 	// ExecutionRequest: the session goes on with the tools it had.
 	Delegation       *DelegationOffer

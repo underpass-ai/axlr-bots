@@ -82,3 +82,30 @@ func TestScenarios(t *testing.T) {
 		t.Error("write under a missing dir succeeded")
 	}
 }
+
+func TestWriteAnswersTheSkillsCommand(t *testing.T) {
+	dir := t.TempDir()
+	bin, args, err := Write(dir, Options{Scenario: "completed", Skills: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	help, _ := exec.Command(bin, "--help").CombinedOutput()
+	if !strings.Contains(string(help), "-skills string") {
+		t.Errorf("help = %s", help)
+	}
+	if out, err := exec.Command(bin, "skills", "install", "oom@1.0.0", "--from", "axlr", "--yes").CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "skills.txt"))
+	if strings.TrimSpace(string(raw)) != "install oom@1.0.0 --from axlr --yes" {
+		t.Errorf("recorded = %q", raw)
+	}
+	if _, err := os.Stat(args); !os.IsNotExist(err) {
+		t.Error("the install was recorded as a run")
+	}
+	bin, _, _ = Write(t.TempDir(), Options{Skills: true, SkillInstallError: "no such skill"})
+	out, err := exec.Command(bin, "skills", "install", "x@1.0.0", "--from", "a", "--yes").CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "no such skill") {
+		t.Errorf("failure = %v %s", err, out)
+	}
+}

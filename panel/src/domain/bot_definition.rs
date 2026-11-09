@@ -44,6 +44,9 @@ pub struct BotDefinition {
     /// program); passed through as written.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime: Option<serde_json::Value>,
+    /// The signed catalog skills it is given; passed through as written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills: Option<serde_json::Value>,
 }
 
 /// The few fields of the register form.
@@ -127,6 +130,7 @@ impl BotDefinition {
             groups: team_names(&form.team),
             events: None,
             runtime: None,
+            skills: None,
         };
         definition.validate()?;
         Ok(definition)
@@ -171,6 +175,21 @@ impl BotDefinition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keeps_the_skills_of_a_definition() {
+        let text = r#"{"tenant": "default", "name": "triage", "owner": "ops", "mission": "Triage.",
+          "triggers": [{"type": "manual"}],
+          "skills": [{"name": "crashloop", "version": "1.0.0", "catalog": "axlr"}]}"#;
+        let definition = BotDefinition::from_json(text).unwrap();
+        let out = serde_json::to_value(&definition).unwrap();
+        assert_eq!(out["skills"][0]["version"], "1.0.0");
+        let without = BotDefinition::from_json(
+            r#"{"tenant": "default", "name": "triage", "owner": "ops", "mission": "Triage.", "triggers": [{"type": "manual"}]}"#,
+        )
+        .unwrap();
+        assert!(serde_json::to_value(&without).unwrap().get("skills").is_none());
+    }
 
     #[test]
     fn keeps_the_approvals_and_the_delegation_of_a_definition() {

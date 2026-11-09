@@ -2226,6 +2226,12 @@
             "items": {
               "$ref": "#/components/schemas/SubscriptionSnapshot"
             }
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillPinSnapshot"
+            }
           }
         },
         "required": [
@@ -2317,6 +2323,12 @@
             "items": {
               "$ref": "#/components/schemas/SubscriptionSnapshot"
             }
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillPinSnapshot"
+            }
           }
         }
       },
@@ -2406,6 +2418,12 @@
             "description": "the topics the bot listens to in its teams, at most 16, one per pattern; with or without them the bot hears what is addressed to it and the team's danger.* and stop.*",
             "items": {
               "$ref": "#/components/schemas/SubscriptionSnapshot"
+            }
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillPinSnapshot"
             }
           }
         },
@@ -3278,6 +3296,9 @@
           },
           "policySupported": {
             "type": "boolean"
+          },
+          "skillsSupported": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -3709,6 +3730,9 @@
               "$ref": "#/components/schemas/ToolCall"
             },
             "type": "array"
+          },
+          "notStarted": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -4126,6 +4150,12 @@
           "policy": {
             "$ref": "#/components/schemas/PinnedPolicySnapshot",
             "description": "an incident phase's task: the policy its phase narrowed the bot's to, pinned at submission"
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillPinSnapshot"
+            }
           }
         },
         "required": [
@@ -5505,6 +5535,26 @@
             "type": "string"
           },
           "clearedBy": {
+            "type": "string"
+          }
+        }
+      },
+      "SkillPinSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.SkillPinSnapshot",
+        "required": [
+          "name",
+          "version",
+          "catalog"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "catalog": {
             "type": "string"
           }
         }

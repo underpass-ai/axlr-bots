@@ -123,6 +123,7 @@ func (s *scriptedExecutor) OpenDelivered(domain.BotID, string) (io.ReadCloser, e
 }
 func (s *scriptedExecutor) SupportsPolicy(context.Context) bool      { return true }
 func (s *scriptedExecutor) SupportsCorrelation(context.Context) bool { return true }
+func (*scriptedExecutor) SupportsSkills(context.Context) bool        { return false }
 func (s *scriptedExecutor) Version(context.Context) string           { return "scripted" }
 
 // delegatingFleet registers bot-a, which may ask bot-b, and bot-b, which

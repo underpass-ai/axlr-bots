@@ -17,7 +17,7 @@ func FromAssignment(a application.Assignment) AssignmentMessage {
 			TaskID: r.TaskID.String(), BotID: r.BotID.String(), TenantID: r.TenantID.String(), CorrelationID: r.CorrelationID.String(),
 			Objective: r.PromptText(), Model: r.Model, Level: r.Level.String(), AllowedTools: r.AllowedTools,
 			ToolRules: r.ToolRules.Snapshot(), Unattended: r.Unattended, TimeoutSeconds: wholeSeconds(r.Timeout), Delegation: fromOffer(r.Delegation),
-			Events: fromEventsOffer(r.Events), Runtime: r.Runtime.Snapshot(), Input: r.Input,
+			Events: fromEventsOffer(r.Events), Runtime: r.Runtime.Snapshot(), Input: r.Input, Skills: r.Skills.Snapshot(),
 		}
 		if model, tools := r.Budgets.MaxModelCallsPerTask(), r.Budgets.MaxToolCallsPerTask(); model > 0 || tools > 0 {
 			m.Run.Budgets = &BudgetsMessage{MaxModelCalls: model, MaxToolCalls: tools}
@@ -28,7 +28,7 @@ func FromAssignment(a application.Assignment) AssignmentMessage {
 		m.Decide = &DecideMessage{
 			TaskID: d.TaskID.String(), BotID: d.BotID.String(), CorrelationID: d.CorrelationID.String(), SessionID: d.SessionID, CallID: d.CallID, Decision: d.Decision, Level: d.Level.String(),
 			AllowedTools: d.AllowedTools, ToolRules: d.ToolRules.Snapshot(), TimeoutSeconds: wholeSeconds(d.Timeout), Delegation: fromOffer(d.Delegation),
-			Events: fromEventsOffer(d.Events),
+			Events: fromEventsOffer(d.Events), Skills: d.Skills.Snapshot(),
 		}
 	}
 	return m
@@ -72,10 +72,14 @@ func ToAssignment(m AssignmentMessage) (application.Assignment, error) {
 		if err != nil {
 			return application.Assignment{}, err
 		}
+		skills, err := domain.NewSkillPins(r.Skills)
+		if err != nil {
+			return application.Assignment{}, err
+		}
 		a.Run = &application.ExecutionRequest{
 			ExecutionID: executionID, TaskID: domain.TaskID(r.TaskID), BotID: botID, TenantID: domain.TenantID(r.TenantID), CorrelationID: domain.CorrelationID(r.CorrelationID),
 			Objective: objective, Model: r.Model, Level: level, AllowedTools: tools.Names(), ToolRules: rules, Unattended: r.Unattended, Timeout: time.Duration(r.TimeoutSeconds) * time.Second,
-			Delegation: toOffer(r.Delegation), Events: toEventsOffer(r.Events), Runtime: runtime, Input: r.Input,
+			Delegation: toOffer(r.Delegation), Events: toEventsOffer(r.Events), Runtime: runtime, Input: r.Input, Skills: skills,
 		}
 		if r.Budgets != nil {
 			budgets, err := domain.NewBudgets(r.Budgets.MaxModelCalls, r.Budgets.MaxToolCalls, 0, a.Run.Timeout)
@@ -94,10 +98,14 @@ func ToAssignment(m AssignmentMessage) (application.Assignment, error) {
 		if err != nil {
 			return application.Assignment{}, err
 		}
+		skills, err := domain.NewSkillPins(d.Skills)
+		if err != nil {
+			return application.Assignment{}, err
+		}
 		a.Decide = &application.DecisionRequest{
 			ExecutionID: executionID, TaskID: domain.TaskID(d.TaskID), BotID: botID, CorrelationID: domain.CorrelationID(d.CorrelationID), SessionID: d.SessionID, CallID: d.CallID, Decision: d.Decision,
 			Level: level, AllowedTools: tools.Names(), ToolRules: rules, Timeout: time.Duration(d.TimeoutSeconds) * time.Second,
-			Delegation: toOffer(d.Delegation), Events: toEventsOffer(d.Events),
+			Delegation: toOffer(d.Delegation), Events: toEventsOffer(d.Events), Skills: skills,
 		}
 		if err := a.Decide.Validate(); err != nil {
 			return application.Assignment{}, err

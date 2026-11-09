@@ -9,6 +9,9 @@ package domain
 // bots can reach, by name only (`openrouter`, `codex`, `jev`, `local:<id>`
 // for each local model its AXLR names): never a key, nor where it is kept.
 // A node older than the field names none, which says nothing.
+// SkillsSupported says its axlr-tui takes pinned catalog skills: a task
+// with skills is given to no other node, since an older one would ignore
+// them and run without.
 type NodeCapabilities struct {
 	AXLRVersion          string   `json:"axlrVersion,omitempty"`
 	PolicySupported      bool     `json:"policySupported"`
@@ -16,6 +19,7 @@ type NodeCapabilities struct {
 	Dedicated            bool     `json:"dedicated,omitempty"`
 	Runtimes             []string `json:"runtimes,omitempty"`
 	Providers            []string `json:"providers,omitempty"`
+	SkillsSupported      bool     `json:"skillsSupported,omitempty"`
 }
 
 // HasProvider reports whether the node named the provider.

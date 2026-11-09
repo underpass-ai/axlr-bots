@@ -13,7 +13,7 @@ One Go module, hexagonal: the domain depends on nothing, the application holds t
 | `adapters/filestore` | One JSON file per aggregate under the state directory, written atomically (temp file, fsync, rename); the timers; the enrollments (the hash of each token, never the token); the denylist of revoked certificate serials; the report artifacts |
 | `adapters/jsonl` | Append-only `events.jsonl` (read back per bot for `GET /v1/bots/{id}/events`) and `audit.jsonl` |
 | `adapters/notify` | One attempt at an approval notification: a signed webhook `POST` or a local command with the JSON on stdin |
-| `adapters/axlr` | Runs `axlr-tui --exec --json [--policy <file>] [--correlation <file> --budget <file>]` as a subprocess and reads the execution result object; keeps the raw lines as the trace and the policy and correlation files as evidence. Used by the node, and by the control plane in single-process mode |
+| `adapters/axlr` | Runs `axlr-tui --exec --json [--policy <file>] [--correlation <file> --budget <file>] [--skills <file>]` as a subprocess, after installing the catalog skills the task pins, and reads the execution result object; keeps the raw lines as the trace and the policy and correlation files as evidence. Used by the node, and by the control plane in single-process mode |
 | `adapters/unixapi` | The API: a `Service` interface with `Local` (in process) and `Client` (HTTP) implementations; the `Server` serves everything on the Unix socket, the node protocol alone on the node TLS address and the operator routes alone on the operator TLS address; the `Client` is also the node's `NodeTransport` |
 | `adapters/daemon` | The control plane as a service: the API on the socket and the two TLS addresses, in-process runs for bots no node may run, the timer triggers on every tick, reconciliation and offline nodes on a timer |
 | `adapters/jev` | The jev runtime on the node: a bot's fixed program over its MCP server, each decision one question to Jev through TypeSafe's API; the receipt of each decision ([bot definition](../reference/bot-definition.md#runtime)) |
@@ -39,7 +39,7 @@ One Go module, hexagonal: the domain depends on nothing, the application holds t
   timers/<bot-id>~<trigger>.json (the next fire)      api.token (0600, with --api-listen)
   enrollments/<enr-id>.json (the hash of each token)  ca/ca.key (0600), ca/ca.crt   pki/revoked.json
   events.jsonl             audit.jsonl               axlr-bots.sock (while the daemon runs)
-  policies/<exec-id>.json  correlation/<exec-id>.json  artifacts/<task-id>/report.md
+  policies/<exec-id>.json  correlation/<exec-id>.json  skills/<exec-id>.json  artifacts/<task-id>/report.md
   artifacts/executions/<exec-id>/<name> (+ .listing/<name>.json)   the artifacts an execution delivered
   deliveries/pending/<dlv-id>.json, deliveries/done/   the outbox of approval notifications
   deliveries/outputs/pending/<dlv-id>.json, deliveries/outputs/done/   the outbox of incident outputs
@@ -51,7 +51,7 @@ One Go module, hexagonal: the domain depends on nothing, the application holds t
 
 <node-state>/
   pki/node.key (0600), pki/node.crt, pki/ca.crt, pki/enrollment.json (with the token's id)   (once enrolled)
-  traces/, policies/, correlation/, workspaces/<bot-id>/
+  traces/, policies/, correlation/, skills/, workspaces/<bot-id>/
   steer/<exec-id>.jsonl    the messages to a running execution, read by its axlr-tui (--steer-file)
   run/<exec-id>.sock (0700 directory, while an execution that may delegate runs)   mcp/<exec-id>.json (its MCP manifest)
 ```

@@ -173,7 +173,7 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 		if err != nil {
 			return Assignment{}, false, err
 		}
-		if !candidate.AcceptsTasks() || !nodeCanRun(candidate, node) {
+		if !candidate.AcceptsTasks() || !nodeCanRun(candidate, pending[i].Skills(), node) {
 			continue
 		}
 		if pending[i].DeadlinePassed(uc.deps.Clock.Now()) {
@@ -332,6 +332,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 		assignment.Decide = &DecisionRequest{
 			ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), CorrelationID: task.CorrelationID(), SessionID: sessionID, CallID: pending.CallID, Decision: decision,
 			Level: policy.Level(), AllowedTools: tools, ToolRules: policy.Rules(), Timeout: timeout, Delegation: offer, Events: events,
+			Skills: task.Skills(),
 		}
 		return assignment, nil
 	}
@@ -343,7 +344,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 		ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), TenantID: bot.TenantID(), CorrelationID: task.CorrelationID(),
 		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: policy.Level(), AllowedTools: tools,
 		ToolRules: policy.Rules(), Unattended: policy.Unattended(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer, Events: events,
-		Runtime: bot.Runtime(), Input: task.Input(),
+		Runtime: bot.Runtime(), Input: task.Input(), Skills: task.Skills(),
 	}
 	return assignment, nil
 }

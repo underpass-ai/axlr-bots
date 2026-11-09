@@ -29,6 +29,7 @@ type Task struct {
 	priority       TaskPriority
 	incident       IncidentID
 	pinned         *ExecutionPolicy
+	skills         SkillPins
 	createdAt      time.Time
 	updatedAt      time.Time
 }
@@ -81,6 +82,14 @@ func (t *Task) Pin(policy ExecutionPolicy) {
 	pinned := ExecutionPolicy{level: policy.level, tools: policy.tools, narrowed: true, grant: policy.grant}
 	t.pinned = &pinned
 }
+
+// PinSkills keeps the catalog skills the task runs with, before the task
+// is first saved: a bot updated later never changes what a task already
+// submitted reads.
+func (t *Task) PinSkills(skills SkillPins) { t.skills = skills }
+
+// Skills are the catalog skills the task runs with, pinned at submission.
+func (t Task) Skills() SkillPins { return t.skills }
 
 // Pinned is the policy kept by Pin, and false when none was.
 func (t Task) Pinned() (ExecutionPolicy, bool) {
@@ -536,6 +545,7 @@ func (t Task) Snapshot() TaskSnapshot {
 		Priority:       t.prioritySnapshot(),
 		IncidentID:     t.incident.String(),
 		Policy:         t.pinnedSnapshot(),
+		Skills:         t.skills.Snapshot(),
 		CreatedAt:      t.createdAt,
 		UpdatedAt:      t.updatedAt,
 	}
@@ -650,6 +660,11 @@ func RestoreTask(s TaskSnapshot) (Task, error) {
 		}
 		task.incident = incident
 	}
+	skills, err := NewSkillPins(s.Skills)
+	if err != nil {
+		return Task{}, err
+	}
+	task.skills = skills
 	if s.Policy != nil {
 		level, err := ParseAutonomyLevel(s.Policy.Level)
 		if err != nil {

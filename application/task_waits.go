@@ -49,7 +49,7 @@ func (uc TaskWaits) Execute(ctx context.Context, tasks []domain.Task) (map[domai
 			}
 			nodes, read = listed, true
 		}
-		if waiting, ok := placementWait(*bot, nodes); ok {
+		if waiting, ok := placementWait(*bot, task.Skills(), nodes); ok {
 			waits[task.ID()] = waiting
 		}
 	}

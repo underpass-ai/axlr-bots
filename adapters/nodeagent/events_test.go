@@ -96,6 +96,7 @@ func (s *emittingExecutor) OpenDelivered(domain.BotID, string) (io.ReadCloser, e
 }
 func (s *emittingExecutor) SupportsPolicy(context.Context) bool      { return true }
 func (s *emittingExecutor) SupportsCorrelation(context.Context) bool { return true }
+func (*emittingExecutor) SupportsSkills(context.Context) bool        { return false }
 func (s *emittingExecutor) Version(context.Context) string           { return "scripted" }
 
 func TestTheWatcherWarnsWorkerOneThroughTheNode(t *testing.T) {
