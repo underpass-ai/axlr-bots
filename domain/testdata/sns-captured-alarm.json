@@ -1,0 +1,12 @@
+{
+  "Type": "Notification",
+  "MessageId": "6d57f162-d321-5505-8b9e-9209c216d952",
+  "TopicArn": "arn:aws:sns:eu-west-1:123456789012:axlr-sre-test-alarms",
+  "Subject": "ALARM: \"axlr-sre-test-probe\" in EU (Ireland)",
+  "Message": "{\"AlarmName\":\"axlr-sre-test-probe\",\"AlarmDescription\":\"axlr-sre test alarm, see cloud/aws/test\",\"AWSAccountId\":\"123456789012\",\"AlarmConfigurationUpdatedTimestamp\":\"2026-11-09T00:06:00.445+0000\",\"NewStateValue\":\"ALARM\",\"NewStateReason\":\"axlr-sre test: forced alarm\",\"StateChangeTime\":\"2026-11-09T00:08:23.076+0000\",\"Region\":\"EU (Ireland)\",\"AlarmArn\":\"arn:aws:cloudwatch:eu-west-1:123456789012:alarm:axlr-sre-test-probe\",\"OldStateValue\":\"OK\",\"ActionExecutedAfterMuteWindow\":false,\"OKActions\":[\"arn:aws:sns:eu-west-1:123456789012:axlr-sre-test-alarms\"],\"AlarmActions\":[\"arn:aws:sns:eu-west-1:123456789012:axlr-sre-test-alarms\"],\"InsufficientDataActions\":[],\"Trigger\":{\"MetricName\":\"Probe\",\"Namespace\":\"AxlrSreTest\",\"StatisticType\":\"Statistic\",\"Statistic\":\"MAXIMUM\",\"Unit\":null,\"Dimensions\":[],\"Period\":60,\"EvaluationPeriods\":1,\"ComparisonOperator\":\"GreaterThanOrEqualToThreshold\",\"Threshold\":1.0,\"TreatMissingData\":\"notBreaching\",\"EvaluateLowSampleCountPercentile\":\"\"}}",
+  "Timestamp": "2026-11-09T00:08:23.093Z",
+  "SignatureVersion": "1",
+  "Signature": "EXAMPLEcapturedAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+  "SigningCertURL": "https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-1e59c4574facfe41babdb2d652f8ebef.pem",
+  "UnsubscribeURL": "https://sns.eu-west-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=arn:aws:sns:eu-west-1:123456789012:axlr-sre-test-alarms:6a00e569-0f52-4037-8ca8-b5e55d5a7b20"
+}

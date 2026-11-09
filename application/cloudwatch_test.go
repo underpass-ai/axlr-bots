@@ -13,7 +13,7 @@ import (
 	"github.com/underpass-ai/axlr-bots/internal/snstest"
 )
 
-// The SNS bodies are composed from AWS's documented formats, not
+// Most SNS bodies are composed from AWS's documented formats, not
 // captured (domain/testdata/sns-*); each test re-signs them with a key it
 // makes, and the harness's fake transport serves that key's certificate.
 

@@ -16,7 +16,7 @@ import (
 	"github.com/underpass-ai/axlr-bots/internal/snstest"
 )
 
-// The bodies under testdata/sns-* are composed from AWS's documented
+// The bodies under testdata/sns-* (but sns-captured-*) are composed from AWS's documented
 // formats (SNS's HTTP/S JSON and CloudWatch's alarm message), not
 // captured from a real topic: their signatures are placeholders, and
 // each test re-signs them with a key it makes (snstest).
