@@ -134,3 +134,19 @@ func TestNodeUsage(t *testing.T) {
 		t.Error("XDG_STATE_HOME ignored")
 	}
 }
+
+// --memory-teams takes team names or "*", and refuses what is no team.
+func TestParseMemoryTeams(t *testing.T) {
+	if teams, err := parseMemoryTeams(""); err != nil || teams != nil {
+		t.Fatalf("empty: %v %v", teams, err)
+	}
+	if teams, err := parseMemoryTeams(" qa , dev ,"); err != nil || strings.Join(teams, "|") != "qa|dev" {
+		t.Fatalf("names: %v %v", teams, err)
+	}
+	if teams, err := parseMemoryTeams("*"); err != nil || strings.Join(teams, "|") != "*" {
+		t.Fatalf("star: %v %v", teams, err)
+	}
+	if _, err := parseMemoryTeams("qa,Not A Team"); err == nil || !strings.Contains(err.Error(), "--memory-teams") {
+		t.Fatalf("bad name: %v", err)
+	}
+}

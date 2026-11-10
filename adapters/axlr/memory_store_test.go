@@ -100,6 +100,7 @@ func TestExecuteGivesATeamsMembersOneMemoryStore(t *testing.T) {
 	t.Setenv("FAKE_AXLR_KMP_STORE", "1")
 	t.Setenv("FAKE_AXLR_MEMORY_TEAM", "1")
 	e, argsFile := fake(t, "result-completed")
+	e.MemoryTeams = []string{"qa", "qa.eu"}
 	store := filepath.Join(e.StateDir, "kmp", "qa")
 	for execution, bot := range map[string]string{"exec-1": "qa-jefe", "exec-2": "qa-explorador"} {
 		member := request(0)
@@ -153,6 +154,7 @@ func TestExecuteGivesATeamsMembersOneMemoryStore(t *testing.T) {
 func TestExecuteKeepsAStorePerBotUnderARuntimeWithoutMemoryTeams(t *testing.T) {
 	t.Setenv("FAKE_AXLR_KMP_STORE", "1")
 	e, argsFile := fake(t, "result-completed")
+	e.MemoryTeams = []string{"*"}
 	member := request(0)
 	member.BotID, member.MemoryTeam = "qa-jefe", "qa"
 	if _, err := e.Execute(context.Background(), member); err != nil {
@@ -166,5 +168,46 @@ func TestExecuteKeepsAStorePerBotUnderARuntimeWithoutMemoryTeams(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(e.StateDir, "kmp", "qa")); !os.IsNotExist(err) {
 		t.Fatalf("the team's store was made: %v", err)
+	}
+}
+
+// A team's memory is turned on team by team: on a node that names qa,
+// the bots of qa share a store and a bot of dev keeps its own; with no
+// team named every bot keeps its own, as before; "*" is every team. On
+// 10 November 2026 the node about to be installed would have moved the
+// thirty bots of nine teams at once, the marketing bots into three
+// stores by squad, with playbooks that still wrote project:underpass-*.
+func TestANodeSharesOnlyTheMemoryOfTheTeamsItNames(t *testing.T) {
+	t.Setenv("FAKE_AXLR_KMP_STORE", "1")
+	t.Setenv("FAKE_AXLR_MEMORY_TEAM", "1")
+	for name, tc := range map[string]struct {
+		teams   []string
+		qa, dev string
+	}{
+		"none named": {nil, "qa-jefe", "dev-go"},
+		"qa named":   {[]string{"qa"}, "qa", "dev-go"},
+		"every team": {[]string{"*"}, "qa", "dev"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e, argsFile := fake(t, "result-completed")
+			e.MemoryTeams = tc.teams
+			for execution, run := range map[string][3]string{"exec-1": {"qa-jefe", "qa", tc.qa}, "exec-2": {"dev-go", "dev", tc.dev}} {
+				member := request(0)
+				member.ExecutionID, member.BotID, member.MemoryTeam = domain.ExecutionID(execution), domain.BotID(run[0]), domain.TeamName(run[1])
+				if _, err := e.Execute(context.Background(), member); err != nil {
+					t.Fatal(err)
+				}
+				if args := strings.Join(readArgs(t, argsFile), " "); !strings.Contains(args, " --kmp-store "+filepath.Join(e.StateDir, "kmp", run[2])+" ") {
+					t.Fatalf("%s args = %s", run[0], args)
+				}
+				want := ""
+				if run[2] == run[1] {
+					want = run[1]
+				}
+				if team := policyMemoryOf(t, e, execution); team != want {
+					t.Fatalf("%s policy shares memory with %q, want %q", run[0], team, want)
+				}
+			}
+		})
 	}
 }

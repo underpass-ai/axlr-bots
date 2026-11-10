@@ -23,19 +23,31 @@ const kmpStoreFlag = "-kmp-store"
 const memoryTeamField = "memory.team"
 
 // memoryTeam is the team whose store the bot's run opens: the bot's
-// memory team when the binary takes both the store and the team, else
-// none, and the run opens the bot's own store as before. A name with a
-// dot is no team here: AXLR writes a member's about as
-// project:<team>.<member>, so a dot in the team would read as another
-// team's member, and the runtime refuses it.
+// memory team when this node shares that team's memory (MemoryTeams) and
+// the binary takes both the store and the team, else none, and the run
+// opens the bot's own store as before. A name with a dot is no team
+// here: AXLR writes a member's about as project:<team>.<member>, so a
+// dot in the team would read as another team's member, and the runtime
+// refuses it.
 func (e *Executor) memoryTeam(ctx context.Context, team domain.TeamName) string {
-	if team == "" || strings.Contains(team.String(), ".") {
+	if team == "" || strings.Contains(team.String(), ".") || !e.sharesMemoryOf(team) {
 		return ""
 	}
 	if f := e.detectFeatures(ctx); !f.kmpStore || !f.memoryTeam || !f.policy {
 		return ""
 	}
 	return team.String()
+}
+
+// sharesMemoryOf reports a team whose memory this node shares among its
+// bots: one MemoryTeams names, or any team when it holds "*".
+func (e *Executor) sharesMemoryOf(team domain.TeamName) bool {
+	for _, name := range e.MemoryTeams {
+		if name == "*" || name == team.String() {
+			return true
+		}
+	}
+	return false
 }
 
 // memoryStore is the KMP store of a run on this host: the team's,

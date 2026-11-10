@@ -10,7 +10,7 @@ A team is already a thing the control plane knows: each name in a bot's `groups`
 
 ## Decision
 
-The bots of a team open one store, `<state>/kmp/<team>`, and the node tells AXLR whose it is.
+The bots of a team open one store, `<state>/kmp/<team>`, and the node tells AXLR whose it is. A node shares the memory of the teams it names, `axlr-node --memory-teams qa,dev` (`AXLR_NODE_MEMORY_TEAMS`; `*` for every team), and of no team when it names none.
 
 ```text
  <state>/
@@ -21,6 +21,7 @@ The bots of a team open one store, `<state>/kmp/<team>`, and the node tells AXLR
 
 | What | How |
 |---|---|
+| Which teams share | The ones the node names with `--memory-teams`. None by default: a team's memory is turned on team by team, once its playbooks write the team's about. On 10 November 2026 a node without the list would have moved the thirty bots of nine teams at once, the marketing bots into three stores by squad, with playbooks that still wrote `project:underpass-marketing` |
 | Which team | The first of the bot's teams as the control plane keeps them, which is sorted by name (`application/memory_team.go`). It travels with the assignment as `memoryTeam`, on a run and on the decision that continues it |
 | The store | `axlr-tui … --kmp-store <state>/kmp/<team>`, the directory made 0700 before the run |
 | Whose it is | The run's policy file carries `"memory": {"team": "<team>"}` ([AXLR's contract](https://github.com/underpass-ai/AXLR/blob/main/docs/runtime-contract.md), "Policy per execution") |
@@ -37,6 +38,8 @@ KMP's store takes several processes at once: it is SQLite in WAL mode, and a sec
 | Case | Why |
 |---|---|
 | A bot in no team | It has nobody to share with |
+| A team the node does not name in `--memory-teams` | Its memory is not turned on here |
+| A run in process, on the control plane with no node online | The control plane names no team |
 | A build of `axlr-tui` that does not read `memory.team` (its `--help` does not name the field) | It would refuse the policy, and would hold no member to its own about |
 | A team whose name has a dot | AXLR writes a member's about as `project:<team>.<member>`: the dot would read as another team's member, and AXLR refuses the name |
 | An older node | It ignores `memoryTeam` in the assignment |
