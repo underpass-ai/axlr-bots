@@ -41,7 +41,12 @@ func TestHelperProcess(t *testing.T) {
 			// is -policy unless the build is older than the policy.
 			fmt.Fprintln(os.Stderr, "  -exec string\n    \trun one prompt without the console")
 			if os.Getenv("FAKE_AXLR_NO_POLICY") == "" {
-				fmt.Fprintln(os.Stderr, "  -policy string\n    \twith --exec or --decide: a JSON file with the execution's policy")
+				policyHelp := "  -policy string\n    \twith --exec or --decide: a JSON file with the execution's policy"
+				if os.Getenv("FAKE_AXLR_MEMORY_TEAM") != "" {
+					// A build that shares a team's memory names the field.
+					policyHelp += ": its autonomy level, the tools it may use and, as memory.team, the team it shares its memory with"
+				}
+				fmt.Fprintln(os.Stderr, policyHelp)
 			}
 			if os.Getenv("FAKE_AXLR_CORRELATION") != "" {
 				fmt.Fprintln(os.Stderr, "  -correlation string\n    \ta JSON file with the execution's correlation ids")

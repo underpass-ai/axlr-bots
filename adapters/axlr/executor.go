@@ -92,7 +92,8 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 	if request.Objective == "" {
 		return application.ExecutionReport{}, errors.New("axlr: the request has no objective")
 	}
-	policy, err := e.preparePolicy(ctx, request.ExecutionID, request.Level, withSkillTool(request.AllowedTools, request.Skills), request.ToolRules)
+	team := e.memoryTeam(ctx, request.MemoryTeam)
+	policy, err := e.preparePolicy(ctx, request.ExecutionID, request.Level, withSkillTool(request.AllowedTools, request.Skills), request.ToolRules, team)
 	if err != nil {
 		return application.ExecutionReport{}, err
 	}
@@ -129,7 +130,7 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 	args = append(args, correlation.args...)
 	args = append(args, e.steerArgs(ctx, request.ExecutionID)...)
 	defer e.dropSteer(request.ExecutionID)
-	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout, request.OnSaid, request.OnProgress)
+	report, err := e.run(ctx, request.ExecutionID, request.BotID, team, args, request.Timeout, request.OnSaid, request.OnProgress)
 	report.Policy = &policy.record
 	correlate(&report, correlation)
 	return report, err
@@ -151,7 +152,8 @@ func (e *Executor) Decide(ctx context.Context, request application.DecisionReque
 	if err := request.Validate(); err != nil {
 		return application.ExecutionReport{}, fmt.Errorf("axlr: %w", err)
 	}
-	policy, err := e.preparePolicy(ctx, request.ExecutionID, request.Level, withSkillTool(request.AllowedTools, request.Skills), request.ToolRules)
+	team := e.memoryTeam(ctx, request.MemoryTeam)
+	policy, err := e.preparePolicy(ctx, request.ExecutionID, request.Level, withSkillTool(request.AllowedTools, request.Skills), request.ToolRules, team)
 	if err != nil {
 		return application.ExecutionReport{}, err
 	}
@@ -172,7 +174,7 @@ func (e *Executor) Decide(ctx context.Context, request application.DecisionReque
 	args = append(args, correlation.args...)
 	args = append(args, e.steerArgs(ctx, request.ExecutionID)...)
 	defer e.dropSteer(request.ExecutionID)
-	report, err := e.run(ctx, request.ExecutionID, request.BotID, args, request.Timeout, request.OnSaid, request.OnProgress)
+	report, err := e.run(ctx, request.ExecutionID, request.BotID, team, args, request.Timeout, request.OnSaid, request.OnProgress)
 	explainLostSession(&report, request.SessionID)
 	report.Policy = &policy.record
 	correlate(&report, correlation)
@@ -195,7 +197,7 @@ type preparedPolicy struct {
 // policy needs. The level is only raised to local, which lets the
 // policy's allowed commands and writes run, when the runtime enforces
 // the policy; without enforcement every command waits for a person.
-func (e *Executor) preparePolicy(ctx context.Context, execution domain.ExecutionID, level domain.AutonomyLevel, allowed []string, rules domain.ToolRules) (preparedPolicy, error) {
+func (e *Executor) preparePolicy(ctx context.Context, execution domain.ExecutionID, level domain.AutonomyLevel, allowed []string, rules domain.ToolRules, team string) (preparedPolicy, error) {
 	if execution == "" {
 		return preparedPolicy{}, errors.New("axlr: the request needs an execution id")
 	}
@@ -204,6 +206,11 @@ func (e *Executor) preparePolicy(ctx context.Context, execution domain.Execution
 		return preparedPolicy{}, fmt.Errorf("axlr: %w", err)
 	}
 	object := renderPolicy(parsed, allowed, rules)
+	if team != "" {
+		// The run opens its team's store: the policy says whose it is,
+		// so the runtime holds the bot to its own about and the team's.
+		object.Memory = &policyMemory{Team: team}
+	}
 	path, err := e.writePolicy(execution, object)
 	if err != nil {
 		return preparedPolicy{}, fmt.Errorf("axlr: policy file: %w", err)
@@ -293,7 +300,7 @@ func (e *Executor) waitDelay() time.Duration {
 
 // run starts the process, keeps every stdout line in the trace file and
 // stderr beside it, and turns what it saw into a report.
-func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot domain.BotID, args []string, requested time.Duration, hear func(application.SaidReply), tell func(application.ProgressItem)) (application.ExecutionReport, error) {
+func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot domain.BotID, team string, args []string, requested time.Duration, hear func(application.SaidReply), tell func(application.ProgressItem)) (application.ExecutionReport, error) {
 	if execution == "" || bot == "" {
 		return application.ExecutionReport{}, errors.New("axlr: the request needs an execution id and a bot id")
 	}
@@ -319,7 +326,7 @@ func (e *Executor) run(ctx context.Context, execution domain.ExecutionID, bot do
 	timeout := e.timeout(requested)
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	memory, err := e.memoryStoreArgs(ctx, bot)
+	memory, err := e.memoryStoreArgs(ctx, bot, team)
 	if err != nil {
 		return application.ExecutionReport{}, fmt.Errorf("axlr: memory store: %w", err)
 	}

@@ -2,6 +2,7 @@ package axlr
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // A binary that takes --kmp-store gets each bot its own store under the
@@ -68,5 +70,101 @@ func TestMemoryStoreRefusesAStateItCannotWrite(t *testing.T) {
 	}
 	if _, err := e.Execute(context.Background(), request(0)); err == nil || !strings.Contains(err.Error(), "memory store") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// policyMemoryOf reads the team the execution's policy file shares its
+// memory with, "" when it names none.
+func policyMemoryOf(t *testing.T, e *Executor, execution string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(e.StateDir, "policies", execution+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file policyFile
+	if err := json.Unmarshal(data, &file); err != nil {
+		t.Fatal(err)
+	}
+	if file.Policy.Memory == nil {
+		return ""
+	}
+	return file.Policy.Memory.Team
+}
+
+// The members of a team open one store, the team's, on the execution and
+// on the decision that continues it, and each policy says whose it is, so
+// the runtime holds a member to its own about and the team's. On 10
+// November 2026 each QA bot had a store to itself, and qa-jefe's weekly
+// plan never saw the charters qa-explorador recorded.
+func TestExecuteGivesATeamsMembersOneMemoryStore(t *testing.T) {
+	t.Setenv("FAKE_AXLR_KMP_STORE", "1")
+	t.Setenv("FAKE_AXLR_MEMORY_TEAM", "1")
+	e, argsFile := fake(t, "result-completed")
+	store := filepath.Join(e.StateDir, "kmp", "qa")
+	for execution, bot := range map[string]string{"exec-1": "qa-jefe", "exec-2": "qa-explorador"} {
+		member := request(0)
+		member.ExecutionID, member.BotID, member.MemoryTeam = domain.ExecutionID(execution), domain.BotID(bot), "qa"
+		if _, err := e.Execute(context.Background(), member); err != nil {
+			t.Fatal(err)
+		}
+		if args := strings.Join(readArgs(t, argsFile), " "); !strings.Contains(args, " --kmp-store "+store+" --root "+filepath.Join(e.StateDir, "workspaces", bot)) {
+			t.Fatalf("%s args = %s", bot, args)
+		}
+		if team := policyMemoryOf(t, e, execution); team != "qa" {
+			t.Fatalf("%s policy shares memory with %q", bot, team)
+		}
+	}
+	if info, err := os.Stat(store); err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
+		t.Fatalf("store %v %v", info, err)
+	}
+	if _, err := os.Stat(filepath.Join(e.StateDir, "kmp", "qa-jefe")); !os.IsNotExist(err) {
+		t.Fatalf("a member of a team got a store of its own: %v", err)
+	}
+	if _, err := e.Decide(context.Background(), application.DecisionRequest{ExecutionID: "exec-3", BotID: "qa-jefe", SessionID: "sess-1", CallID: "c2", Decision: "approve", Timeout: time.Minute, MemoryTeam: "qa"}); err != nil {
+		t.Fatal(err)
+	}
+	if args := strings.Join(readArgs(t, argsFile), " "); !strings.Contains(args, " --kmp-store "+store+" ") || policyMemoryOf(t, e, "exec-3") != "qa" {
+		t.Fatalf("decision args = %s", args)
+	}
+	// A bot in no team keeps its own store and a policy that names none.
+	alone := request(0)
+	alone.ExecutionID = "exec-4"
+	if _, err := e.Execute(context.Background(), alone); err != nil {
+		t.Fatal(err)
+	}
+	if args := strings.Join(readArgs(t, argsFile), " "); !strings.Contains(args, " --kmp-store "+filepath.Join(e.StateDir, "kmp", "sii")+" ") || policyMemoryOf(t, e, "exec-4") != "" {
+		t.Fatalf("args = %s", args)
+	}
+	// A team's name with a dot would read as another team's member in
+	// project:<team>.<member>: such a bot keeps its own store.
+	dotted := request(0)
+	dotted.ExecutionID, dotted.MemoryTeam = "exec-5", "qa.eu"
+	if _, err := e.Execute(context.Background(), dotted); err != nil {
+		t.Fatal(err)
+	}
+	if args := strings.Join(readArgs(t, argsFile), " "); !strings.Contains(args, " --kmp-store "+filepath.Join(e.StateDir, "kmp", "sii")+" ") || policyMemoryOf(t, e, "exec-5") != "" {
+		t.Fatalf("args = %s", args)
+	}
+}
+
+// A binary that does not read memory.team would refuse a policy that
+// carries it and would hold no member to its own about: its bots keep a
+// store each, as before.
+func TestExecuteKeepsAStorePerBotUnderARuntimeWithoutMemoryTeams(t *testing.T) {
+	t.Setenv("FAKE_AXLR_KMP_STORE", "1")
+	e, argsFile := fake(t, "result-completed")
+	member := request(0)
+	member.BotID, member.MemoryTeam = "qa-jefe", "qa"
+	if _, err := e.Execute(context.Background(), member); err != nil {
+		t.Fatal(err)
+	}
+	if args := strings.Join(readArgs(t, argsFile), " "); !strings.Contains(args, " --kmp-store "+filepath.Join(e.StateDir, "kmp", "qa-jefe")+" ") {
+		t.Fatalf("args = %s", args)
+	}
+	if team := policyMemoryOf(t, e, member.ExecutionID.String()); team != "" {
+		t.Fatalf("the policy names a team the runtime does not read: %q", team)
+	}
+	if _, err := os.Stat(filepath.Join(e.StateDir, "kmp", "qa")); !os.IsNotExist(err) {
+		t.Fatalf("the team's store was made: %v", err)
 	}
 }
