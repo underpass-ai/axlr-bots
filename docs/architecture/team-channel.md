@@ -214,6 +214,8 @@ Settled by the product owner on 10 November 2026, while cut 4 was being built, o
 | A2 | the question task had 300 s | **Two hours** from the ask, waiting for the responder included; past it the asker hears `no_answer` | a question behind a developer's hour-long task must not expire |
 | A3 | D7: a second node slot for questions | **Withdrawn.** A question waits for its responder like any task | with two hours, the wait fits; a node keeps running one execution at a time |
 | A4 | the responder capped at 6 model calls, 12 tool calls, 300 s | **Its own budgets and timeout** | a cap that cuts an answer short is worse than a slow answer |
+| A5 | under `act-with-approval`, `axlr_bots_ask_team` waited for a person, as `axlr_bots_delegate` does | **Asking needs no approval**: the teams' installers put `axlr_bots_ask_team` in the askers' `approvals.autoApprove` | asking only reads another team's context, already bounded by the matrix and the limits; a card would stop the asker, which is what A1 removes |
+| A6 | an asker heard nothing until the answer or `answered: false` after two hours | **Cut 5.5**: a tool to read the question's state from the control plane's records (queued and why, running since, its last step, waiting for a person, its deadline) and to give it up; never a message to the responder's model | a stuck responder must be visible without interrupting it or spending its tokens |
 
 ## Where it goes in the code
 
@@ -240,7 +242,8 @@ Each from `origin/main`, base `main`; control plane, then nodes, then panel; che
 | 2 | domain: `ask`, the triggers, refusals, events, `MemoryTeams` | a bot without the new fields is unchanged; coverage ≥ 80 % |
 | 3 | `ask_team.go`, candidates, the pick, the child, idempotency | two questions at once to one team land on two bots; a repeat returns the same child; an old node is never picked |
 | 4 | the amendment, the tool, the route, the memory teams in the registration | asker and responder on two nodes: the tool answers at once with the id and the responder; the question task waits for its node with two hours and its own budgets |
-| 5 | the return leg | the asker ended: a `question_answer` task; still running: a message; the child failed or expired: `no_answer` |
+| 5 | the return leg | the asker ended: a `question_answer` task; still running: a message; the child failed, expired or was cancelled: `answered: false` with the reason |
+| 5.5 | the state of a question and giving it up (A6) | the asker reads queued and why, running since, the last step, a wait for a person and the deadline; giving up cancels the question and its answer says so; the responder is never interrupted |
 | 6 | the panel | the timeline lines, the links, `partial` |
 | 7 | playbooks and bots, one live link qa→dev | with the product owner's go-ahead, behind a node switch, off by default |
 | 8 | the node writes memory (D6, later) | after the MCP write from the node is verified |
