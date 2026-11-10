@@ -176,6 +176,11 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 		if !candidate.AcceptsTasks() || !nodeCanRun(candidate, pending[i].Skills(), node) {
 			continue
 		}
+		if pending[i].Trigger().Type == domain.TriggerQuestion && !answersOn(candidate, node) {
+			// A question is answered from the team's store: only a node
+			// that opens it takes the task.
+			continue
+		}
 		if pending[i].DeadlinePassed(uc.deps.Clock.Now()) {
 			// A delegated task that waited past its deadline never runs.
 			if err := newDeadlineKeeper(uc.deps).miss(ctx, candidate, &pending[i], nil); err != nil {
@@ -286,8 +291,9 @@ func goesBefore(a, b domain.Task) bool {
 
 // describe builds what the node needs for the execution: a delegated
 // task runs with its grant and until its deadline, a bot that may
-// delegate gets the delegation tool in its allow-list, and a bot in a
-// team reads its teammates between its mission and the task.
+// delegate gets the delegation tool in its allow-list (never on a
+// question's task), and a bot in a team reads its teammates between its
+// mission and the task.
 func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task domain.Task, execution domain.Execution) (Assignment, error) {
 	assignment := Assignment{ExecutionID: execution.ID(), Kind: execution.Kind()}
 	timeout, ok := runTimeout(bot, task, uc.deps.Clock.Now())
@@ -306,6 +312,11 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 	policy, _, policyErr := bot.PolicyOf(task)
 	if policyErr != nil {
 		return Assignment{}, errPolicyRefused{cause: policyErr}
+	}
+	if task.Trigger().Type == domain.TriggerQuestion {
+		// A bot answering another team's question asks, delegates, emits
+		// and subscribes nothing: one hop between teams, no further.
+		offer, events = nil, nil
 	}
 	if policy.Narrowed() {
 		if !policy.Tools().Allows(DelegateToolName) {

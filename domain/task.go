@@ -24,6 +24,7 @@ type Task struct {
 	approval       *ApprovalWait
 	lineage        *TaskLineage
 	children       []TaskID
+	questions      []TaskID
 	grantedModel   int
 	grantedTools   int
 	priority       TaskPriority
@@ -177,6 +178,25 @@ func (t *Task) AdoptChild(child TaskID, grant DelegationGrant, now time.Time) er
 	t.children = append(t.children, child)
 	t.grantedModel += grant.MaxModelCalls
 	t.grantedTools += grant.MaxToolCalls
+	t.updatedAt = now
+	return nil
+}
+
+// Questions lists the questions this task asked other teams, oldest
+// first: tasks of the bots that answer them.
+func (t Task) Questions() []TaskID { return append([]TaskID(nil), t.questions...) }
+
+// AdoptQuestion records a question this Running task asked another team:
+// apart from its children, since a question takes nothing of the task's
+// budgets and outlives it (the answer then comes back as a new task).
+func (t *Task) AdoptQuestion(child TaskID, now time.Time) error {
+	if t.status != TaskRunning {
+		return t.refuse("ask a team")
+	}
+	if child == "" || child == t.id {
+		return invalid("question task", "must be another task")
+	}
+	t.questions = append(t.questions, child)
 	t.updatedAt = now
 	return nil
 }
@@ -523,9 +543,12 @@ func (t Task) Snapshot() TaskSnapshot {
 		copied := *t.approval
 		approval = &copied
 	}
-	var children []string
+	var children, questions []string
 	for _, child := range t.children {
 		children = append(children, child.String())
+	}
+	for _, question := range t.questions {
+		questions = append(questions, question.String())
 	}
 	snapshot := TaskSnapshot{
 		ID:             t.id.String(),
@@ -540,6 +563,7 @@ func (t Task) Snapshot() TaskSnapshot {
 		FailureReason:  t.failureReason,
 		Approval:       approval,
 		Children:       children,
+		Questions:      questions,
 		GrantedModel:   t.grantedModel,
 		GrantedTools:   t.grantedTools,
 		Priority:       t.prioritySnapshot(),
@@ -645,6 +669,13 @@ func RestoreTask(s TaskSnapshot) (Task, error) {
 			return Task{}, err
 		}
 		task.children = append(task.children, child)
+	}
+	for _, raw := range s.Questions {
+		question, err := NewTaskID(raw)
+		if err != nil {
+			return Task{}, err
+		}
+		task.questions = append(task.questions, question)
 	}
 	if s.GrantedModel < 0 || s.GrantedTools < 0 {
 		return Task{}, invalid("granted", "must not be negative")

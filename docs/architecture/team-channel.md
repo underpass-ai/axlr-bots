@@ -101,7 +101,7 @@ Checked in this order; the first that fails is the refusal (`bot.question.refuse
 | 7 | The team's queue of Pending questions | `team_busy` |
 | 8 | A candidate exists | `team_unavailable` |
 
-**Idempotency.** The key is `question:<parent task>:<sha256 of team and question>`. Keys are per bot today (`FindByIdempotencyKey`), and the responder is not known before the pick, so the repeat is found among the parent task's children: the same ask again returns the same child, unless that child failed or expired, when it makes a new one.
+**Idempotency.** The key is `question:<parent task>:<sha256 of team and question>`. Keys are per bot today (`FindByIdempotencyKey`), and the responder is not known before the pick, so the repeat is found among the parent task's questions, which the task keeps apart from its delegated children (a question takes nothing of its budgets or its `maxChildren`, and cancelling the asker does not cancel it): the same ask again returns the same child, unless that child failed, expired or was cancelled, when it makes a new one under the key with `:2`, `:3`… appended.
 
 ### The question task
 

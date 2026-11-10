@@ -225,3 +225,14 @@ func (r *SerialRunner) Delegate(ctx context.Context, node domain.NodeID, executi
 	defer r.mu.Unlock()
 	return NewDelegateTask(r.deps).Execute(ctx, node, execution, command)
 }
+
+// Ask creates the task an execution asks another team for, as AskTeam
+// does, under the same lock as the assignments and the reports: two
+// questions to one team are picked one after the other and never land on
+// one bot's single free slot, and the asking task is never changed by two
+// of them at once.
+func (r *SerialRunner) Ask(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, command AskTeamCommand) (QuestionAnswer, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return NewAskTeam(r.deps).Execute(ctx, node, execution, command)
+}
