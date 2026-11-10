@@ -190,6 +190,8 @@ func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution 
 	if ask != nil {
 		q := asker{transport: a.Transport, node: id, execution: execution, log: a.Options.log()}
 		handlers = append(handlers, mcpHandler{tool: askTool(*ask), call: q.call})
+		status := questionReader{transport: a.Transport, node: id, execution: execution, log: a.Options.log()}
+		handlers = append(handlers, mcpHandler{tool: questionStatusTool(), call: status.call})
 	}
 	server, err := serveMCP(ctx, path, a.Executor.Version(ctx), handlers...)
 	if err != nil {

@@ -213,6 +213,7 @@ func (s *Server) nodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/delegations", s.authenticated(s.delegate))
 	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/delegations/{task}", s.authenticated(s.awaitDelegation))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/questions", s.authenticated(s.ask))
+	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/questions/{task}", s.authenticated(s.questionState))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/events", s.authenticated(s.emit))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/subscriptions", s.authenticated(s.subscribe))
 	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/messages", s.authenticated(s.executionMessages))
@@ -1075,6 +1076,26 @@ func (s *Server) ask(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusCreated
 	}
 	respond(w, status, nodeproto.FromQuestion(answer), nil)
+}
+
+// questionState is GET .../questions/{task}: where a question the
+// execution's task asked stands, from the control plane's records.
+func (s *Server) questionState(w http.ResponseWriter, r *http.Request) {
+	id, executionID, ok := nodeExecution(w, r)
+	if !ok {
+		return
+	}
+	question, err := domain.NewTaskID(r.PathValue("task"))
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	view, err := application.NewGetQuestion(s.service.Dependencies()).Execute(r.Context(), id, executionID, question)
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	respond(w, http.StatusOK, nodeproto.FromQuestionView(view), nil)
 }
 
 // emit is POST .../events: the execution tells its teams an event.

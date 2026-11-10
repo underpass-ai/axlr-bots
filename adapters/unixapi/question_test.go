@@ -61,6 +61,17 @@ func TestAQuestionOverTheSocket(t *testing.T) {
 	if err != nil || len(parent.Questions) != 1 || parent.Questions[0] != answer.TaskID.String() {
 		t.Errorf("GET /v1/tasks/{parent}: %v %v", err, parent.Questions)
 	}
+	// The asker reads where it stands.
+	state, err := client.QuestionState(ctx, "qa-node", assignment.ExecutionID, answer.TaskID)
+	if err != nil || state.Status != domain.TaskPending || state.Responder != "dev-a" || state.Team != "dev" || state.Waiting == "" || state.Deadline.IsZero() {
+		t.Errorf("state: %v %+v", err, state)
+	}
+	if _, err := client.QuestionState(ctx, "qa-node", assignment.ExecutionID, "task-404"); err == nil {
+		t.Error("an unknown question was read")
+	}
+	if err := client.call(ctx, http.MethodGet, "/v1/nodes/qa-node/executions/"+assignment.ExecutionID.String()+"/questions/Bad%20Id", nil, &map[string]any{}); err == nil {
+		t.Error("a bad question id was read")
+	}
 	// The question goes to the node that shares dev's memory.
 	next, found, err := client.NextAssignment(ctx, "dev-node", time.Second)
 	if err != nil || !found || next.Run.TaskID != answer.TaskID || next.Run.Ask != nil {

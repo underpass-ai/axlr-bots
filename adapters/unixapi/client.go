@@ -630,6 +630,17 @@ func (c *Client) Ask(ctx context.Context, node domain.NodeID, execution domain.E
 	return nodeproto.ToQuestion(message)
 }
 
+// QuestionState reads where a question the execution's task asked
+// stands.
+func (c *Client) QuestionState(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, question domain.TaskID) (application.QuestionView, error) {
+	var message nodeproto.QuestionStateMessage
+	path := "/v1/nodes/" + url.PathEscape(node.String()) + "/executions/" + url.PathEscape(execution.String()) + "/questions/" + url.PathEscape(question.String())
+	if err := c.call(ctx, http.MethodGet, path, nil, &message); err != nil {
+		return application.QuestionView{}, err
+	}
+	return nodeproto.ToQuestionView(message)
+}
+
 // AwaitDelegation waits up to wait for the child to end and answers its
 // state.
 func (c *Client) AwaitDelegation(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, child domain.TaskID, wait time.Duration) (application.DelegationAnswer, error) {

@@ -74,7 +74,7 @@ func TestAQuestionBecomesOneTaskOfOneConsentingMember(t *testing.T) {
 	if parent.Run.Ask == nil || len(parent.Run.Ask.Teams) != 1 || parent.Run.Ask.Teams[0] != "dev" {
 		t.Fatalf("the asker is offered no ask tool: %+v", parent.Run.Ask)
 	}
-	if !slices.Contains(parent.Run.NodeTools(), AskToolName) || !slices.Contains(parent.Run.AllowedTools, AskToolName) {
+	if !slices.Contains(parent.Run.NodeTools(), AskToolName) || !slices.Contains(parent.Run.AllowedTools, AskToolName) || !slices.Contains(parent.Run.NodeTools(), QuestionStatusToolName) || !slices.Contains(parent.Run.AllowedTools, QuestionStatusToolName) {
 		t.Errorf("node tools %v allowed %v", parent.Run.NodeTools(), parent.Run.AllowedTools)
 	}
 	answer := askTeam(t, h, "qa-node", parent.ExecutionID, "dev", "Which release fixed the importer?")

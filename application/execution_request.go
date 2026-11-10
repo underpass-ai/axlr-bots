@@ -70,7 +70,7 @@ type ExecutionRequest struct {
 }
 
 // NodeTools names the tools the node serves the execution on its
-// socket: the delegation tool, the emit tools and the ask tool, as
+// socket: the delegation tool, the emit tools and the ask tools, as
 // offered.
 func (r ExecutionRequest) NodeTools() []string { return nodeTools(r.Delegation, r.Events, r.Ask) }
 
@@ -83,7 +83,7 @@ func nodeTools(delegation *DelegationOffer, events *EventsOffer, ask *AskOffer) 
 		tools = append(tools, EmitEventToolName, SubscribeToolName)
 	}
 	if ask != nil {
-		tools = append(tools, AskToolName)
+		tools = append(tools, AskToolName, QuestionStatusToolName)
 	}
 	return tools
 }
