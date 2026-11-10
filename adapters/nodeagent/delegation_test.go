@@ -109,8 +109,12 @@ func (s *scriptedExecutor) Execute(ctx context.Context, request application.Exec
 		if request.DelegationSocket == "" {
 			return application.ExecutionReport{}, errors.New("no delegation socket for " + request.BotID.String())
 		}
-		text, isError, err := callDelegate(request.DelegationSocket, arguments)
-		if s.tool != "" {
+		var text string
+		var isError bool
+		var err error
+		if s.tool == "" {
+			text, isError, err = callDelegate(request.DelegationSocket, arguments)
+		} else {
 			_, text, isError, err = callTool(request.DelegationSocket, s.tool, arguments)
 		}
 		if err != nil {
