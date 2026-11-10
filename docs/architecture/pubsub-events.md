@@ -311,7 +311,7 @@ The pilots emit `stop.recall` instead of `recall` with a severity; the fleet's d
 ## Left out
 
 - Topics with their own settings (description, retention, a required `data` schema): a topic is still only a name until a team aggregate exists.
-- Subscriptions across teams and global topics (decision 1).
+- Subscriptions across teams and global topics (decision 1). The answer to a [team question](team-channel.md) is the one addressed exception: it goes only to the bot that asked.
 - Replay of missed events to a bot that was Paused: it gets its notes, not the tasks.
 - A message delivery into a Pending task (only Running tasks take messages; a Pending task gets the event as a note).
 - `warn.budget` and other control plane facts beyond the three named; add a kind entry and a publisher call each.
