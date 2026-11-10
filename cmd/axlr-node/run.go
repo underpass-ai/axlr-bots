@@ -70,6 +70,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	retry := flags.Duration("enroll-retry", 10*time.Second, "with --token-file, how long to wait between enrollment attempts")
 	dedicated := flags.Bool("dedicated", envOr("AXLR_NODE_DEDICATED", "") == "true", "run only the bots whose placement names this node or selects its labels, never those placed on any node (also AXLR_NODE_DEDICATED=true): a sidecar")
 	axlrMCPConfig := flags.String("axlr-mcp-config", envOr("AXLR_NODE_AXLR_MCP_CONFIG", ""), "the mcp.json every AXLR execution loads instead of the operator's ~/.config/axlr/mcp.json, so a server the operator added does not join the bots' runs (also AXLR_NODE_AXLR_MCP_CONFIG; an absolute path that exists)")
+	memoryTeams := flags.String("memory-teams", envOr("AXLR_NODE_MEMORY_TEAMS", ""), "the teams whose bots share one KMP store on this node, a,b, or * for every team; a bot of any other team keeps a store of its own (also AXLR_NODE_MEMORY_TEAMS; default: none)")
 	mcpConfig := flags.String("mcp-config", envOr("AXLR_NODE_MCP_CONFIG", ""), "the mcp.json a Jev bot's program finds its MCP server in (also AXLR_NODE_MCP_CONFIG; default: ~/.config/axlr/mcp.json, the node's AXLR's)")
 	jevModel := flags.String("jev-model", envOr("AXLR_NODE_JEV_MODEL", jev.DefaultModel), "the pinned Jev version the jev runtime asks (also AXLR_NODE_JEV_MODEL)")
 	bus := flags.String("bus", envOr("AXLR_NODE_BUS", "direct"), "how the control plane's pushes reach this node: direct (a stream over the node's own connection) or nats (also AXLR_NODE_BUS)")
@@ -93,6 +94,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 	parsedLabels, err := parseLabels(*labels)
+	if err != nil {
+		fmt.Fprintln(stderr, "axlr-node:", err)
+		return exitUsage
+	}
+	sharedMemory, err := parseMemoryTeams(*memoryTeams)
 	if err != nil {
 		fmt.Fprintln(stderr, "axlr-node:", err)
 		return exitUsage
@@ -144,6 +150,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	logger.Printf("node: control plane %s, %s", *control, conn.identity)
 	executor := axlr.NewExecutor(*axlrBin, *stateDir)
 	executor.MCPConfig = *axlrMCPConfig
+	executor.MemoryTeams = sharedMemory
+	if len(sharedMemory) > 0 {
+		logger.Printf("node: the bots of these teams share one memory store each: %s", strings.Join(sharedMemory, ", "))
+	}
 	// AXLR reaches the delegation tool through this binary's mcp-relay.
 	if self, err := os.Executable(); err == nil {
 		executor.Relay = self
@@ -261,6 +271,25 @@ func parseLabels(raw string) (map[string]string, error) {
 		labels[strings.TrimSpace(key)] = strings.TrimSpace(value)
 	}
 	return labels, nil
+}
+
+// parseMemoryTeams reads --memory-teams: team names, or "*" for every
+// team, separated by commas; none when empty.
+func parseMemoryTeams(raw string) ([]string, error) {
+	var teams []string
+	for _, name := range strings.Split(raw, ",") {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if name != "*" {
+			if _, err := domain.NewTeamName(name); err != nil {
+				return nil, fmt.Errorf("--memory-teams: %w", err)
+			}
+		}
+		teams = append(teams, name)
+	}
+	return teams, nil
 }
 
 func defaultNodeID() string {

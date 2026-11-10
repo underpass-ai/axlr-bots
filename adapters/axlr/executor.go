@@ -67,6 +67,12 @@ type Executor struct {
 	// a documentation server in the operator's file could not be
 	// reached.
 	MCPConfig string
+	// MemoryTeams are the teams whose bots share one KMP store on this
+	// node (docs/architecture/memory-store-per-team.md); "*" is every
+	// team. A bot of a team not listed keeps a store of its own, and so
+	// does every bot when the list is empty: a team's memory is turned
+	// on team by team, once its playbooks name the team's about.
+	MemoryTeams []string
 
 	detect   sync.Once
 	features features
