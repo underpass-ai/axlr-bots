@@ -65,4 +65,4 @@ KMP's store takes several processes at once: it is SQLite in WAL mode, and a sec
 
 - A team whose bots run on more than one node of a host, or on more than one host (a sidecar, another machine, a microcontroller): the store is a directory of one node's state. KMP served over the network is the next step (decision D4).
 - KMP's other verbs that write (`kmp_ingest`, `kmp_relabel`, `kmp_curate`, `kmp_condense`): AXLR holds `axlr_remember` and `kmp_write_memory` to the member's abouts, and a policy that allow-lists another vouches for it.
-- Asking another team for its context: a team's store holds that team's memory alone.
+- Asking another team for its context: a team's store holds that team's memory alone. A bot asks the other team instead ([team channel](team-channel.md)).
