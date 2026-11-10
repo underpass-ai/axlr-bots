@@ -377,6 +377,7 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 	}
 
 	report, runErr := uc.deps.Decisions.Decide(ctx, DecisionRequest{
+		MemoryTeam:    memoryTeamOf(bot),
 		ExecutionID:   executionID,
 		TaskID:        task.ID(),
 		BotID:         bot.ID(),

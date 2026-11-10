@@ -35,6 +35,9 @@ type DecisionRequest struct {
 	Delegation       *DelegationOffer
 	Events           *EventsOffer
 	DelegationSocket string
+	// MemoryTeam is as on an ExecutionRequest: the decision's turn opens
+	// the store the execution wrote.
+	MemoryTeam domain.TeamName
 	// OnSaid is as on an ExecutionRequest.
 	OnSaid func(SaidReply) `json:"-"`
 	// OnProgress is as on an ExecutionRequest.

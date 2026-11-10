@@ -220,7 +220,7 @@ func TestPolicyFileErrors(t *testing.T) {
 	if _, err := blocked.Execute(context.Background(), request(time.Minute)); err == nil || !strings.Contains(err.Error(), "policy file") {
 		t.Errorf("blocked state dir: %v", err)
 	}
-	if _, err := blocked.preparePolicy(context.Background(), "", domain.AutonomyObserve, nil, domain.ToolRules{}); err == nil {
+	if _, err := blocked.preparePolicy(context.Background(), "", domain.AutonomyObserve, nil, domain.ToolRules{}, ""); err == nil {
 		t.Error("empty execution accepted")
 	}
 }

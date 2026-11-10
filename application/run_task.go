@@ -109,6 +109,7 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 		return RunTaskResult{Task: task, Execution: execution}, nil
 	}
 	report, runErr := uc.deps.Runtime.Execute(ctx, ExecutionRequest{
+		MemoryTeam:    memoryTeamOf(bot),
 		ExecutionID:   executionID,
 		TaskID:        task.ID(),
 		BotID:         bot.ID(),

@@ -41,6 +41,25 @@ func TestAssignmentRoundTrip(t *testing.T) {
 	if err != nil || back.Decide == nil || back.Decide.SessionID != "sess-1" || back.Decide.Decision != "approve" || back.Decide.Timeout != time.Minute || back.Run != nil {
 		t.Errorf("decide = %v %+v", err, back.Decide)
 	}
+	// The team a bot shares its memory with travels with the run and with
+	// the decision that continues it; a message without one names none.
+	if back.Decide.MemoryTeam != "" {
+		t.Errorf("a decision with no team names %q", back.Decide.MemoryTeam)
+	}
+	run.Run.MemoryTeam, decide.Decide.MemoryTeam = "qa", "qa"
+	for _, a := range []application.Assignment{run, decide} {
+		raw, _ := json.Marshal(FromAssignment(a))
+		var m AssignmentMessage
+		_ = json.Unmarshal(raw, &m)
+		back, err := ToAssignment(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if (back.Run != nil && back.Run.MemoryTeam != "qa") || (back.Decide != nil && back.Decide.MemoryTeam != "qa") {
+			t.Errorf("memory team lost: %+v %+v", back.Run, back.Decide)
+		}
+	}
+	run.Run.MemoryTeam, decide.Decide.MemoryTeam = "", ""
 	pins, _ := domain.NewSkillPins([]domain.SkillPinSnapshot{{Name: "oom", Version: "1.0.0", Catalog: "axlr"}})
 	run.Run.Skills, decide.Decide.Skills = pins, pins
 	for _, a := range []application.Assignment{run, decide} {
@@ -64,6 +83,8 @@ func TestAssignmentRoundTrip(t *testing.T) {
 	bad := []AssignmentMessage{
 		{ExecutionID: "exec-1", Kind: "run", Run: &RunMessage{BotID: "bot", Objective: "o", Level: "observe", AllowedTools: []string{"local_read"}, Skills: []domain.SkillPinSnapshot{{Name: "oom", Version: "latest", Catalog: "axlr"}}}},
 		{ExecutionID: "exec-2", Kind: "decide", Decide: &DecideMessage{BotID: "bot", SessionID: "s", Decision: "approve", Level: "observe", AllowedTools: []string{"local_read"}, Skills: []domain.SkillPinSnapshot{{Name: "oom", Version: "latest", Catalog: "axlr"}}}},
+		{ExecutionID: "exec-1", Kind: "run", Run: &RunMessage{BotID: "bot", Objective: "o", Level: "observe", AllowedTools: []string{"local_read"}, MemoryTeam: "Not A Team"}},
+		{ExecutionID: "exec-2", Kind: "decide", Decide: &DecideMessage{BotID: "bot", SessionID: "s", Decision: "approve", Level: "observe", AllowedTools: []string{"local_read"}, MemoryTeam: "Not A Team"}},
 		{ExecutionID: "", Kind: "run"},
 		{ExecutionID: "exec-1", Kind: "odd"},
 		{ExecutionID: "exec-1", Kind: "run"},

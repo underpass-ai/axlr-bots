@@ -77,7 +77,7 @@ func fixtures() []fixture {
 		}},
 		{name: "jev_request", message: JevRequest{State: "soil at 12%", Question: "water?", Options: []string{"water", "wait"}}},
 		{name: "jev_reply", message: JevReply{Choice: "water", Probability: 0.8, Confidence: 0.6}},
-		{name: "assignment_run", skip: []string{"AssignmentMessage.Decide", "RunMessage.Delegation", "RunMessage.Events", "RunMessage.Unattended", "RunMessage.Skills"}, message: AssignmentMessage{
+		{name: "assignment_run", skip: []string{"AssignmentMessage.Decide", "RunMessage.Delegation", "RunMessage.Events", "RunMessage.Unattended", "RunMessage.Skills", "RunMessage.MemoryTeam"}, message: AssignmentMessage{
 			ExecutionID: "exec-1", Kind: "run", LeaseUntil: fixtureAt.Add(time.Minute),
 			Run: &RunMessage{
 				TaskID: "task-1", BotID: "garden", TenantID: "home", CorrelationID: "corr-1", Objective: "water the bed if the soil is dry", Model: "jev-default",
@@ -90,7 +90,7 @@ func fixtures() []fixture {
 				Input: json.RawMessage(`{"moisture":0.12}`),
 			},
 		}},
-		{name: "assignment_decide", skip: []string{"AssignmentMessage.Run", "DecideMessage.Delegation", "DecideMessage.Events", "DecideMessage.Skills"}, message: AssignmentMessage{
+		{name: "assignment_decide", skip: []string{"AssignmentMessage.Run", "DecideMessage.Delegation", "DecideMessage.Events", "DecideMessage.Skills", "DecideMessage.MemoryTeam"}, message: AssignmentMessage{
 			ExecutionID: "exec-2", Kind: "decide", LeaseUntil: fixtureAt.Add(time.Minute),
 			Decide: &DecideMessage{
 				TaskID: "task-1", BotID: "garden", CorrelationID: "corr-1", SessionID: "sess-1", CallID: "call-1", Decision: "approve",

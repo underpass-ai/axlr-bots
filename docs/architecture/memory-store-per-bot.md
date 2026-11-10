@@ -2,6 +2,8 @@
 
 Status: accepted, 8 November 2026 (the QA of the bots' memory cycle, `artifacts/qa-kmp-bots/qa.md` in the workspace, F1). Vision §12.3 (the execution's evidence) and the [runtime contract](runtime-contract.md): the control plane and the node decide where and as whom a bot runs; AXLR decides how.
 
+Since 10 November 2026 this holds for a bot in no team; the bots of a team share one store ([memory store per team](memory-store-per-team.md)).
+
 ## Context
 
 A bot's memory is written by `axlr-tui`, which opens a KMP store per launch: the checkout's `.kernel` when the workspace is a git repository, else the directory `mcp.json` pins, else the per-user default. The node runs every bot in `<state>/workspaces/<bot>`, a plain directory, with the operator's `~/.config/axlr/mcp.json`, whose installer pin of the per-user default AXLR reads as the installer's old one and sets aside. So every bot on this host resolved to the operator's own store, `~/.local/share/kmp/default`: 1 093 bot sessions had landed in it by 8 November 2026, beside the operator's memory, and two bots on one host shared one store, apart only by their abouts. The node passed nothing about memory: `--axlr-mcp-config` gives one `mcp.json` to every run, which is one store for all bots.

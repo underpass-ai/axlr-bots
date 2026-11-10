@@ -18,6 +18,7 @@ func FromAssignment(a application.Assignment) AssignmentMessage {
 			Objective: r.PromptText(), Model: r.Model, Level: r.Level.String(), AllowedTools: r.AllowedTools,
 			ToolRules: r.ToolRules.Snapshot(), Unattended: r.Unattended, TimeoutSeconds: wholeSeconds(r.Timeout), Delegation: fromOffer(r.Delegation),
 			Events: fromEventsOffer(r.Events), Runtime: r.Runtime.Snapshot(), Input: r.Input, Skills: r.Skills.Snapshot(),
+			MemoryTeam: r.MemoryTeam.String(),
 		}
 		if model, tools := r.Budgets.MaxModelCallsPerTask(), r.Budgets.MaxToolCallsPerTask(); model > 0 || tools > 0 {
 			m.Run.Budgets = &BudgetsMessage{MaxModelCalls: model, MaxToolCalls: tools}
@@ -28,7 +29,7 @@ func FromAssignment(a application.Assignment) AssignmentMessage {
 		m.Decide = &DecideMessage{
 			TaskID: d.TaskID.String(), BotID: d.BotID.String(), CorrelationID: d.CorrelationID.String(), SessionID: d.SessionID, CallID: d.CallID, Decision: d.Decision, Level: d.Level.String(),
 			AllowedTools: d.AllowedTools, ToolRules: d.ToolRules.Snapshot(), TimeoutSeconds: wholeSeconds(d.Timeout), Delegation: fromOffer(d.Delegation),
-			Events: fromEventsOffer(d.Events), Skills: d.Skills.Snapshot(),
+			Events: fromEventsOffer(d.Events), Skills: d.Skills.Snapshot(), MemoryTeam: d.MemoryTeam.String(),
 		}
 	}
 	return m
@@ -76,10 +77,14 @@ func ToAssignment(m AssignmentMessage) (application.Assignment, error) {
 		if err != nil {
 			return application.Assignment{}, err
 		}
+		team, err := toMemoryTeam(r.MemoryTeam)
+		if err != nil {
+			return application.Assignment{}, err
+		}
 		a.Run = &application.ExecutionRequest{
 			ExecutionID: executionID, TaskID: domain.TaskID(r.TaskID), BotID: botID, TenantID: domain.TenantID(r.TenantID), CorrelationID: domain.CorrelationID(r.CorrelationID),
 			Objective: objective, Model: r.Model, Level: level, AllowedTools: tools.Names(), ToolRules: rules, Unattended: r.Unattended, Timeout: time.Duration(r.TimeoutSeconds) * time.Second,
-			Delegation: toOffer(r.Delegation), Events: toEventsOffer(r.Events), Runtime: runtime, Input: r.Input, Skills: skills,
+			Delegation: toOffer(r.Delegation), Events: toEventsOffer(r.Events), Runtime: runtime, Input: r.Input, Skills: skills, MemoryTeam: team,
 		}
 		if r.Budgets != nil {
 			budgets, err := domain.NewBudgets(r.Budgets.MaxModelCalls, r.Budgets.MaxToolCalls, 0, a.Run.Timeout)
@@ -102,10 +107,14 @@ func ToAssignment(m AssignmentMessage) (application.Assignment, error) {
 		if err != nil {
 			return application.Assignment{}, err
 		}
+		team, err := toMemoryTeam(d.MemoryTeam)
+		if err != nil {
+			return application.Assignment{}, err
+		}
 		a.Decide = &application.DecisionRequest{
 			ExecutionID: executionID, TaskID: domain.TaskID(d.TaskID), BotID: botID, CorrelationID: domain.CorrelationID(d.CorrelationID), SessionID: d.SessionID, CallID: d.CallID, Decision: d.Decision,
 			Level: level, AllowedTools: tools.Names(), ToolRules: rules, Timeout: time.Duration(d.TimeoutSeconds) * time.Second,
-			Delegation: toOffer(d.Delegation), Events: toEventsOffer(d.Events), Skills: skills,
+			Delegation: toOffer(d.Delegation), Events: toEventsOffer(d.Events), Skills: skills, MemoryTeam: team,
 		}
 		if err := a.Decide.Validate(); err != nil {
 			return application.Assignment{}, err
@@ -114,6 +123,15 @@ func ToAssignment(m AssignmentMessage) (application.Assignment, error) {
 		return application.Assignment{}, fmt.Errorf("nodeproto: assignment %s of kind %s carries no %s", m.ExecutionID, kind, kind)
 	}
 	return a, nil
+}
+
+// toMemoryTeam reads the team a run shares its memory with: none when
+// the message names none, as an older control plane's does.
+func toMemoryTeam(name string) (domain.TeamName, error) {
+	if name == "" {
+		return "", nil
+	}
+	return domain.NewTeamName(name)
 }
 
 func fromOffer(o *application.DelegationOffer) *DelegationOfferMessage {

@@ -46,6 +46,10 @@ type ExecutionRequest struct {
 	// Events is set when the bot is in a team: the node then serves the
 	// emit tool to the execution.
 	Events *EventsOffer
+	// MemoryTeam is the team the bot shares its memory with, empty for a
+	// bot in no team: the node then opens the team's store for the run,
+	// not the bot's own (docs/architecture/memory-store-per-team.md).
+	MemoryTeam domain.TeamName
 	// DelegationSocket is where the node serves those tools for this
 	// execution; the node sets it, it never travels.
 	DelegationSocket string

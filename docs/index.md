@@ -45,6 +45,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | The packages, the state directory, how to build and test | [Layout](architecture/layout.md) |
 | How a node runs AXLR, the policy it passes, how it reads the result; the Jev runtime | [Runtime contract](architecture/runtime-contract.md) |
 | Why each bot has its own KMP store under the node's state, and how the node names it to AXLR | [Memory store per bot (ADR)](architecture/memory-store-per-bot.md) |
+| Why the bots of a team share one KMP store, what each may write in it, and which team is a bot's | [Memory store per team (ADR)](architecture/memory-store-per-team.md) |
 | How a push reaches a node: its own stream, or a NATS broker, and what a broker needs | [Bus port](architecture/bus-port.md) |
 | How a running task's progress gets from the run to the panel without slowing the run | [Live progress](architecture/live-progress.md) |
 | Why a postmortem is a field on a Resolved incident, who answers it, what its task is told | [Incident postmortem](architecture/incident-postmortem.md) |

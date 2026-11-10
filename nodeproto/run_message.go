@@ -24,6 +24,9 @@ type RunMessage struct {
 	Budgets        *BudgetsMessage         `json:"budgets,omitempty"`
 	Delegation     *DelegationOfferMessage `json:"delegation,omitempty"`
 	Events         *EventsOfferMessage     `json:"events,omitempty"`
+	// MemoryTeam is the team whose memory store the run opens; an older
+	// node ignores it and the bot keeps a store of its own.
+	MemoryTeam string `json:"memoryTeam,omitempty"`
 	// Runtime is what runs the task: absent for AXLR, a Jev program
 	// otherwise; an older node ignores it and runs AXLR.
 	Runtime *domain.RuntimeSnapshot `json:"runtime,omitempty"`

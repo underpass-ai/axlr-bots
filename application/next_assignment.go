@@ -332,7 +332,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 		assignment.Decide = &DecisionRequest{
 			ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), CorrelationID: task.CorrelationID(), SessionID: sessionID, CallID: pending.CallID, Decision: decision,
 			Level: policy.Level(), AllowedTools: tools, ToolRules: policy.Rules(), Timeout: timeout, Delegation: offer, Events: events,
-			Skills: task.Skills(),
+			Skills: task.Skills(), MemoryTeam: memoryTeamOf(bot),
 		}
 		return assignment, nil
 	}
@@ -344,7 +344,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 		ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), TenantID: bot.TenantID(), CorrelationID: task.CorrelationID(),
 		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: policy.Level(), AllowedTools: tools,
 		ToolRules: policy.Rules(), Unattended: policy.Unattended(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer, Events: events,
-		Runtime: bot.Runtime(), Input: task.Input(), Skills: task.Skills(),
+		Runtime: bot.Runtime(), Input: task.Input(), Skills: task.Skills(), MemoryTeam: memoryTeamOf(bot),
 	}
 	return assignment, nil
 }
