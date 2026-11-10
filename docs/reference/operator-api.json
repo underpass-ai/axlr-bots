@@ -4122,6 +4122,13 @@
             },
             "type": "array"
           },
+          "questions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the questions the task asked other teams through the team channel: tasks of the bots that answer them, apart from its children (they take nothing of its budgets)"
+          },
           "correlationId": {
             "type": "string"
           },

@@ -45,7 +45,8 @@ func (uc RunNextPending) Execute(ctx context.Context) (RunTaskResult, bool, erro
 // no task now (Paused, not yet enabled) or is gone is passed over too,
 // as NextAssignment passes it over: RunTask would refuse it, it would
 // stay Pending and stay the oldest, and every task behind it would wait
-// for ever.
+// for ever. A question's task never runs in process: it is answered from
+// a team's store, which only a node opens.
 func (uc RunNextPending) Pick(ctx context.Context) (domain.TaskID, bool, error) {
 	pending, err := uc.deps.Tasks.ListByStatus(ctx, domain.TaskPending)
 	if err != nil {
@@ -65,6 +66,11 @@ func (uc RunNextPending) Pick(ctx context.Context) (domain.TaskID, bool, error) 
 			return "", false, err
 		}
 		if !bot.AcceptsTasks() || !bot.Placement().IsEmpty() || hasOnlineNode(bot, pending[i].Skills(), nodes) {
+			continue
+		}
+		if pending[i].Trigger().Type == domain.TriggerQuestion {
+			// The control plane has no team's store: a question waits for
+			// a node that opens it.
 			continue
 		}
 		if oldest == nil || pending[i].CreatedAt().Before(oldest.CreatedAt()) {

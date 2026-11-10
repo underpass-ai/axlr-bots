@@ -10,7 +10,9 @@ import (
 // has no input). Approval is the last wait for a person's decision:
 // its deadline while the task waits, its outcome once it ended.
 // Delegation is where a delegated task came from; Children are the
-// tasks this one delegated, and the granted counts what it handed them.
+// tasks this one delegated, and the granted counts what it handed them;
+// Questions are the questions it asked other teams (team channel), kept
+// apart: they take nothing of its budgets.
 // Priority is urgent for a task that goes first; empty for normal.
 // IncidentID names the incident a phase task works on; Policy the
 // level and tools its phase narrowed the bot's to, pinned at submission;
@@ -33,6 +35,7 @@ type TaskSnapshot struct {
 	Approval       *ApprovalWait         `json:"approval,omitempty"`
 	Delegation     *TaskLineage          `json:"delegation,omitempty"`
 	Children       []string              `json:"children,omitempty"`
+	Questions      []string              `json:"questions,omitempty"`
 	GrantedModel   int                   `json:"grantedModelCalls,omitempty"`
 	GrantedTools   int                   `json:"grantedToolCalls,omitempty"`
 	Priority       string                `json:"priority,omitempty"`
