@@ -212,6 +212,7 @@ func (s *Server) nodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/report", s.authenticated(s.report))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/delegations", s.authenticated(s.delegate))
 	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/delegations/{task}", s.authenticated(s.awaitDelegation))
+	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/questions", s.authenticated(s.ask))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/events", s.authenticated(s.emit))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/subscriptions", s.authenticated(s.subscribe))
 	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/messages", s.authenticated(s.executionMessages))
@@ -1049,6 +1050,31 @@ func (s *Server) delegate(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusCreated
 	}
 	respond(w, status, nodeproto.FromDelegation(answer), nil)
+}
+
+// ask is POST /v1/nodes/{id}/executions/{exec}/questions: the execution
+// asks another team a question. It answers at once, 201 with the
+// question's task or 200 with the same ask's or a refusal; the answer
+// comes back to the bot later.
+func (s *Server) ask(w http.ResponseWriter, r *http.Request) {
+	id, executionID, ok := nodeExecution(w, r)
+	if !ok {
+		return
+	}
+	var message nodeproto.AskMessage
+	if !readJSON(w, r, &message) {
+		return
+	}
+	answer, err := s.service.Runner().Ask(r.Context(), id, executionID, application.AskTeamCommand{Team: message.Team, Question: message.Question})
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	status := http.StatusOK
+	if answer.Created {
+		status = http.StatusCreated
+	}
+	respond(w, status, nodeproto.FromQuestion(answer), nil)
 }
 
 // emit is POST .../events: the execution tells its teams an event.

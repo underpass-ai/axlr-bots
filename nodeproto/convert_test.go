@@ -206,3 +206,36 @@ func TestARunCarriesItsRuntimeAndInput(t *testing.T) {
 		t.Errorf("plain = %v %+v", err, back.Run)
 	}
 }
+
+// An ask offer and a question's answer cross the wire and back.
+func TestAQuestionAndItsOfferRoundTrip(t *testing.T) {
+	assignment := application.Assignment{ExecutionID: "exec-1", Kind: domain.ExecutionRun, Run: &application.ExecutionRequest{
+		TaskID: "task-1", BotID: "qa-jefe", TenantID: "t", Objective: "Lead QA", Level: domain.AutonomyObserve, Ask: &application.AskOffer{Teams: []string{"dev", "producto"}},
+	}}
+	back, err := ToAssignment(FromAssignment(assignment))
+	if err != nil || back.Run.Ask == nil || len(back.Run.Ask.Teams) != 2 || back.Run.Ask.Teams[1] != "producto" {
+		t.Fatalf("run: %v %+v", err, back.Run)
+	}
+	decide := application.Assignment{ExecutionID: "exec-2", Kind: domain.ExecutionDecide, Decide: &application.DecisionRequest{
+		TaskID: "task-1", BotID: "qa-jefe", SessionID: "sess-1", CallID: "call-1", Decision: "approve", Level: domain.AutonomyActWithApproval, Ask: &application.AskOffer{Teams: []string{"dev"}},
+	}}
+	if back, err := ToAssignment(FromAssignment(decide)); err != nil || back.Decide.Ask == nil || back.Decide.Ask.Teams[0] != "dev" {
+		t.Fatalf("decide: %v %+v", err, back.Decide)
+	}
+	if none, _ := ToAssignment(FromAssignment(application.Assignment{ExecutionID: "exec-3", Kind: domain.ExecutionRun, Run: &application.ExecutionRequest{TaskID: "task-1", BotID: "b", TenantID: "t", Objective: "o", Level: domain.AutonomyObserve}})); none.Run.Ask != nil {
+		t.Errorf("an ask offer from nowhere: %+v", none.Run.Ask)
+	}
+	answer := application.QuestionAnswer{TaskID: "task-9", BotID: "dev-a", Status: domain.TaskPending, Created: true}
+	if got, err := ToQuestion(FromQuestion(answer)); err != nil || got != answer {
+		t.Errorf("answer: %v %+v", err, got)
+	}
+	refusal := application.QuestionAnswer{Refused: &domain.QuestionRefusal{Reason: domain.RefusedTeamBusy, Message: "later"}}
+	if got, err := ToQuestion(FromQuestion(refusal)); err != nil || got.Refused == nil || got.Refused.Reason != domain.RefusedTeamBusy || got.TaskID != "" {
+		t.Errorf("refusal: %v %+v", err, got)
+	}
+	for _, bad := range []QuestionMessage{{TaskID: "Bad Id", BotID: "b", Status: "Pending"}, {TaskID: "task-1", BotID: "Bad Id", Status: "Pending"}, {TaskID: "task-1", BotID: "b", Status: "Sleeping"}} {
+		if _, err := ToQuestion(bad); err == nil {
+			t.Errorf("read %+v", bad)
+		}
+	}
+}

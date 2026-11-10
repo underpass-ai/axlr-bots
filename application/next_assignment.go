@@ -304,7 +304,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 	if err != nil {
 		return Assignment{}, err
 	}
-	offer, events := delegationOffer(bot, task, mates), eventsOffer(bot, mates)
+	offer, events, ask := delegationOffer(bot, task, mates), eventsOffer(bot, mates), askOffer(bot, task)
 	// The task's incident phase may narrow the bot's level and tools; the
 	// decision runs under the same policy as the run it continues. A
 	// narrowed phase gets exactly its tools, as in process: the node's
@@ -325,8 +325,11 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 		if !policy.Tools().Allows(EmitEventToolName) && !policy.Tools().Allows(SubscribeToolName) {
 			events = nil
 		}
+		if !policy.Tools().Allows(AskToolName) {
+			ask = nil
+		}
 	}
-	tools := allowedTools(policy.Tools(), offer, events)
+	tools := allowedTools(policy.Tools(), offer, events, ask)
 	if policy.Narrowed() {
 		tools = policy.Tools().Names()
 	}
@@ -342,7 +345,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 		}
 		assignment.Decide = &DecisionRequest{
 			ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), CorrelationID: task.CorrelationID(), SessionID: sessionID, CallID: pending.CallID, Decision: decision,
-			Level: policy.Level(), AllowedTools: tools, ToolRules: policy.Rules(), Timeout: timeout, Delegation: offer, Events: events,
+			Level: policy.Level(), AllowedTools: tools, ToolRules: policy.Rules(), Timeout: timeout, Delegation: offer, Events: events, Ask: ask,
 			Skills: task.Skills(), MemoryTeam: memoryTeamOf(bot),
 		}
 		return assignment, nil
@@ -354,7 +357,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 	assignment.Run = &ExecutionRequest{
 		ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), TenantID: bot.TenantID(), CorrelationID: task.CorrelationID(),
 		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: policy.Level(), AllowedTools: tools,
-		ToolRules: policy.Rules(), Unattended: policy.Unattended(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer, Events: events,
+		ToolRules: policy.Rules(), Unattended: policy.Unattended(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer, Events: events, Ask: ask,
 		Runtime: bot.Runtime(), Input: task.Input(), Skills: task.Skills(), MemoryTeam: memoryTeamOf(bot),
 	}
 	return assignment, nil

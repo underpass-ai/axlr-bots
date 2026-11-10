@@ -619,6 +619,17 @@ func (c *Client) Subscribe(ctx context.Context, node domain.NodeID, execution do
 	return nodeproto.ToSubscribed(message), nil
 }
 
+// Ask asks another team a question for the execution; it answers at once
+// with the question's task or the refusal.
+func (c *Client) Ask(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, command application.AskTeamCommand) (application.QuestionAnswer, error) {
+	var message nodeproto.QuestionMessage
+	path := "/v1/nodes/" + url.PathEscape(node.String()) + "/executions/" + url.PathEscape(execution.String()) + "/questions"
+	if err := c.call(ctx, http.MethodPost, path, nodeproto.AskMessage{Team: command.Team, Question: command.Question}, &message); err != nil {
+		return application.QuestionAnswer{}, err
+	}
+	return nodeproto.ToQuestion(message)
+}
+
 // AwaitDelegation waits up to wait for the child to end and answers its
 // state.
 func (c *Client) AwaitDelegation(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, child domain.TaskID, wait time.Duration) (application.DelegationAnswer, error) {

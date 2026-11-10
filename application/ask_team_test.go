@@ -62,7 +62,7 @@ func channel(t *testing.T) (*harness, Assignment) {
 
 func askTeam(t *testing.T, h *harness, node domain.NodeID, execution domain.ExecutionID, team, question string) QuestionAnswer {
 	t.Helper()
-	answer, err := NewAskTeam(h.deps).Execute(context.Background(), node, execution, AskTeamCommand{Team: team, Question: question, Wait: true})
+	answer, err := NewAskTeam(h.deps).Execute(context.Background(), node, execution, AskTeamCommand{Team: team, Question: question})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,6 +71,12 @@ func askTeam(t *testing.T, h *harness, node domain.NodeID, execution domain.Exec
 
 func TestAQuestionBecomesOneTaskOfOneConsentingMember(t *testing.T) {
 	h, parent := channel(t)
+	if parent.Run.Ask == nil || len(parent.Run.Ask.Teams) != 1 || parent.Run.Ask.Teams[0] != "dev" {
+		t.Fatalf("the asker is offered no ask tool: %+v", parent.Run.Ask)
+	}
+	if !slices.Contains(parent.Run.NodeTools(), AskToolName) || !slices.Contains(parent.Run.AllowedTools, AskToolName) {
+		t.Errorf("node tools %v allowed %v", parent.Run.NodeTools(), parent.Run.AllowedTools)
+	}
 	answer := askTeam(t, h, "qa-node", parent.ExecutionID, "dev", "Which release fixed the importer?")
 	if answer.Refused != nil || !answer.Created || answer.BotID != "dev-a" || answer.Status != domain.TaskPending {
 		t.Fatalf("answer = %+v %+v", answer, answer.Refused)
@@ -94,10 +100,11 @@ func TestAQuestionBecomesOneTaskOfOneConsentingMember(t *testing.T) {
 	if !ok || lineage.ParentTaskID != parentTask.ID().String() || lineage.Depth != 1 || lineage.MaxDepth != 1 || lineage.Chain[0] != "qa-jefe" {
 		t.Errorf("lineage = %+v", lineage)
 	}
-	if lineage.Grant.MaxModelCalls != QuestionModelCalls || lineage.Grant.MaxToolCalls != QuestionToolCalls || !lineage.Grant.Deadline.Equal(t0.Add(QuestionTimeout)) {
+	// Its own budgets, and two hours from the ask.
+	if lineage.Grant.MaxModelCalls != 0 || lineage.Grant.MaxToolCalls != 0 || !lineage.Grant.Deadline.Equal(t0.Add(2*time.Hour)) {
 		t.Errorf("grant = %+v", lineage.Grant)
 	}
-	if !strings.Contains(string(child.Input()), `"fromTeam":"qa"`) || !strings.Contains(string(child.Input()), `"wait":true`) || strings.Contains(string(child.Input()), "nonce") {
+	if !strings.Contains(string(child.Input()), `"fromTeam":"qa"`) || strings.Contains(string(child.Input()), "wait") || strings.Contains(string(child.Input()), "nonce") {
 		t.Errorf("input = %s", child.Input())
 	}
 	// The question takes nothing of the asker's budgets.
@@ -251,8 +258,12 @@ func TestTheAnswerRunsWithoutTheNodesTools(t *testing.T) {
 	if len(tools) != 1 || tools[0] != "local_read" {
 		t.Errorf("tools = %v", tools)
 	}
-	if got.Run.Budgets.MaxModelCallsPerTask() != QuestionModelCalls || got.Run.MemoryTeam != "dev" {
-		t.Errorf("budgets %+v memory %q", got.Run.Budgets, got.Run.MemoryTeam)
+	// Its own budgets and timeout: no caps of the channel's.
+	if got.Run.Budgets.MaxModelCallsPerTask() != 20 || got.Run.Budgets.MaxToolCallsPerTask() != 60 || got.Run.Timeout != 900*time.Second || got.Run.MemoryTeam != "dev" {
+		t.Errorf("budgets %+v timeout %s memory %q", got.Run.Budgets, got.Run.Timeout, got.Run.MemoryTeam)
+	}
+	if got.Run.Ask != nil {
+		t.Errorf("an ask offer on a question: %+v", got.Run.Ask)
 	}
 	// A teammate's ordinary task still gets them.
 	if _, err := NewSubmitTask(h.deps).Execute(context.Background(), SubmitTaskCommand{BotID: "dev-b", Objective: "Look", IdempotencyKey: "look-1"}); err != nil {
@@ -299,6 +310,9 @@ func TestAQuestionIsRefusedInTheADRsOrder(t *testing.T) {
 		t.Fatalf("picked %s", q.BotID)
 	}
 	answering := nextFor(t, h, "dev-node")
+	if answering.Run.Ask != nil || slices.Contains(answering.Run.AllowedTools, AskToolName) {
+		t.Errorf("a bot answering a question may ask: %+v %v", answering.Run.Ask, answering.Run.AllowedTools)
+	}
 	if got := refusal("dev-node", answering.ExecutionID, "qa", "And you?"); got != domain.RefusedDepthExceeded {
 		t.Errorf("a question asking: %s", got)
 	}

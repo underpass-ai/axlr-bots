@@ -34,6 +34,7 @@ type DecisionRequest struct {
 	// ExecutionRequest: the session goes on with the tools it had.
 	Delegation       *DelegationOffer
 	Events           *EventsOffer
+	Ask              *AskOffer
 	DelegationSocket string
 	// MemoryTeam is as on an ExecutionRequest: the decision's turn opens
 	// the store the execution wrote.
@@ -61,4 +62,4 @@ func IsDecision(word string) bool {
 }
 
 // NodeTools names the tools the node serves the decision's execution.
-func (r DecisionRequest) NodeTools() []string { return nodeTools(r.Delegation, r.Events) }
+func (r DecisionRequest) NodeTools() []string { return nodeTools(r.Delegation, r.Events, r.Ask) }

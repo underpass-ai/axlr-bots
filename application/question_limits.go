@@ -14,12 +14,9 @@ import (
 // Limits of the team channel the control plane holds, whatever a bot
 // says (docs/architecture/team-channel.md).
 const (
-	// QuestionModelCalls caps the model calls of a question's task.
-	QuestionModelCalls = 6
-	// QuestionToolCalls caps its tool calls.
-	QuestionToolCalls = 12
-	// QuestionTimeout caps how long it may take, from when it is asked.
-	QuestionTimeout = 300 * time.Second
+	// QuestionTimeout is how long a question has to be answered, from
+	// when it is asked, waiting for its responder included.
+	QuestionTimeout = 2 * time.Hour
 	// QuestionsPerTrace is the most questions one trace may ask.
 	QuestionsPerTrace = 3
 	// QuestionQueuePerTeam is the most questions that may wait Pending
@@ -43,21 +40,10 @@ func questionKey(parent domain.TaskID, team domain.TeamName, question domain.Que
 }
 
 // questionGrant is what a question's task runs with: its own bot's
-// budgets, capped by the channel's limits, until a deadline from now.
-func questionGrant(responder domain.Bot, now time.Time) domain.DelegationGrant {
-	own := responder.Budgets()
-	model, tools := own.MaxModelCallsPerTask(), own.MaxToolCallsPerTask()
-	if model == 0 || model > QuestionModelCalls {
-		model = QuestionModelCalls
-	}
-	if tools == 0 || tools > QuestionToolCalls {
-		tools = QuestionToolCalls
-	}
-	span := own.TaskTimeoutOr(DefaultTaskTimeout)
-	if span > QuestionTimeout {
-		span = QuestionTimeout
-	}
-	return domain.DelegationGrant{MaxModelCalls: model, MaxToolCalls: tools, Deadline: now.Add(span)}
+// budgets and timeout (a grant of 0 calls leaves the bot's own), and a
+// deadline two hours from the ask.
+func questionGrant(now time.Time) domain.DelegationGrant {
+	return domain.DelegationGrant{Deadline: now.Add(QuestionTimeout)}
 }
 
 // questionNonce draws the nonce that closes a question's block in its

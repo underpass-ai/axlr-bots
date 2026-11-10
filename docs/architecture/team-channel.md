@@ -1,6 +1,6 @@
 # ADR: a team asks another team for its context
 
-Status: accepted, 10 November 2026; not built yet. The product owner settled decisions D1 to D9 of the team channel design (`artifacts/team-channel-2026-11-10/diseno.md` in the workspace) one by one; D4 went against the design's recommendation, and this document records the choice and what it moves. It builds on [delegation](delegation.md), [teams and events](groups-and-events.md), [publish/subscribe events](pubsub-events.md) and [one KMP store per team](memory-store-per-team.md), and is written so that a session can build it in the ordered PRs at the end.
+Status: accepted, 10 November 2026; amended the same day: **every question is asynchronous**. The product owner settled decisions D1 to D9 of the team channel design (`artifacts/team-channel-2026-11-10/diseno.md` in the workspace) one by one; D4 went against the design's recommendation, and this document records the choice and what it moves. While cut 4 was being built, the product owner dropped the synchronous wait: a waiting asker held its node, and a question behind a long task expired within 300 s. The tool now answers at once with the question's id, the answer always comes back later, a question has two hours, the responder runs on its own budgets, and there is no second slot (see [the amendment](#amendment-every-question-is-asynchronous)). It builds on [delegation](delegation.md), [teams and events](groups-and-events.md), [publish/subscribe events](pubsub-events.md) and [one KMP store per team](memory-store-per-team.md), and is written so that a session can build it in the ordered PRs at the end.
 
 ## Context
 
@@ -22,17 +22,17 @@ What QA and the developers exchange today (the QA findings `dev-cola` reads from
 
 ## Decision
 
-A bot asks a **team**. The control plane picks, under `mu`, the first free member of that team that consented, and creates one task for it. The answer comes back to the bot that asked: as the tool's result, as a message into its running task, or as a new task.
+A bot asks a **team**. The control plane picks, under `mu`, the first free member of that team that consented, and creates one task for it. The tool answers at once with the question's id; the answer comes back to the bot that asked later, as a message into its running task or as a new task.
 
 ```text
  team qa                         control plane (under mu)                  team dev
  qa-jefe
-   └ axlr_bots_ask_team {team: dev, question, wait}
+   └ axlr_bots_ask_team {team: dev, question}   ◀─ at once: the question's id
                               ─▶ link qa→dev? rate? depth?
                                  pick the first free member of dev ──────▶ dev-go: a task, trigger question
                                  bot.question.asked                         its own tools, less ask, delegate, emit
-   ◀─ wait: true: the answer ─── bot.question.answered ◀──────────────── its final message
-   ◀─ wait: false: a message into its run, or a new task (question_answer)
+   ◀─ later: a message into its run ── bot.question.answered ◀─────────── its final message
+      or, once it ended, a new task (question_answer)
 
  qa's timeline: asked, answered            dev's timeline: submitted, answered
 ```
@@ -41,13 +41,13 @@ A bot asks a **team**. The control plane picks, under `mu`, the first free membe
 
 | # | Question | Decision |
 |---|---|---|
-| D1 | How a question travels | **As a delegation to a team.** A new node tool creates a child task in the other team, with the delegation's wait, lineage, idempotency and audit. Events have no return leg, and a ceremony or an issue is too heavy for a question |
+| D1 | How a question travels | **As a delegation to a team.** A new node tool creates a child task in the other team, with the delegation's lineage, idempotency and audit, and answers at once: never a wait (amended). Events have no return leg, and a ceremony or an issue is too heavy for a question |
 | D2 | Who answers | **Picked when the task is created**, under `mu`, among the members that declare the `question` trigger. One task, one bot: two bots never answer the same question. This narrows "the first free bot of the team" to the bots that consented, so a reviewer that must keep a clean context (`dev-revisor`) never answers |
 | D3 | Where the permissions live | **On each bot**, both sides denied by default, as delegation: `ask.teams` on the asker, the `question` trigger with `from` on the responder. The panel shows the matrix derived from them. No team aggregate |
 | D4 | What the responder may do | **Its own tools and policy, less asking, delegating, emitting and subscribing.** The design recommended reading its memory only (`kmp_wake`, `kmp_ask`); the product owner chose the bot's usual tools. So one cross-team hop, and the defence against another team's text is the framing, the matrix and the bot's own rules and approvals (below) |
 | D5 | The answer when the asker has ended | **A new task for the asking bot**, trigger `question_answer` |
 | D6 | What memory keeps | The control plane's history is the record, always. Phase 1: each side's bot records the question and the answer in its own about, `project:<team>.<bot>`, by its playbook. Later, in a PR of its own: the node writes it, without a model, into `project:<team>.canal` of each team's store |
-| D7 | A node's single slot | **One more slot per node, for questions only**, each under 300 s |
+| D7 | A node's single slot | ~~One more slot per node, for questions only, each under 300 s~~ **Withdrawn (amended)**: a question waits for its responder like any task, within two hours |
 | D8 | A team on several nodes (`sre`) | **One seat**: only the bots of one node declare `question`. For `sre`, the `sre-ro` bots; `fix` (on `sre-rw`, with `apply`, `patch`, `scale`) never answers |
 | D9 | Limits | The numbers below, measured for two weeks before anyone changes them |
 
@@ -63,7 +63,7 @@ A member of the asked team is a candidate when all hold:
 | 4 | Some node may run it (`nodeCanRun`) and that node is Online | yes |
 | 5 | That node shares the memory of the asked team: nodes report their `--memory-teams` in their capabilities; an older node reports none and is never picked | new |
 
-Among the candidates, the first free one by id, where **free** is: no Running, WaitingApproval or Pending task, and a node with no execution in its question slot. With none free, the candidate with the fewest open tasks, then by id. With no candidate: `team_unavailable`.
+Among the candidates, the first free one by id, where **free** is: no Running, WaitingApproval or Pending task. With none free, the candidate with the fewest open tasks, then by id. With no candidate: `team_unavailable`.
 
 A pick is final. A chosen bot that is preempted by an urgent task makes the question wait or fail like any task; phase 1 neither reassigns nor retries.
 
@@ -79,8 +79,7 @@ Served by the node agent on the execution's socket, beside `axlr_bots_delegate`,
     "type": "object",
     "properties": {
       "team":     {"type": "string", "enum": ["dev"], "description": "only the teams you may ask"},
-      "question": {"type": "string", "minLength": 1, "maxLength": 2000, "description": "complete, in full"},
-      "wait":     {"type": "boolean", "default": true, "description": "true: wait for the answer; false: get it later, as a message while you run or as a new task"}
+      "question": {"type": "string", "minLength": 1, "maxLength": 2000, "description": "complete, in full"}
     },
     "required": ["team", "question"],
     "additionalProperties": false
@@ -111,8 +110,8 @@ Checked in this order; the first that fails is the refusal (`bot.question.refuse
 | Objective | the template below |
 | Lineage | the asker's trace id and chain; it does not count against the chain's `maxDepth` (a bot in a delegated task at depth 1 may still ask); the cross-team hop is counted on its own and is at most one |
 | Policy | the bot's own level, allowed tools and rules; the node offers it no delegate, emit, subscribe or ask tool |
-| Budget and timeout | its own bot's, capped at 6 model calls, 12 tool calls and 300 s |
-| Priority | never urgent; it runs in the node's question slot (D7) |
+| Budget and timeout | its own bot's budgets and timeout (amended: no caps of the channel's); the question must be answered within **two hours** of the ask, waiting included |
+| Priority | never urgent; it waits for its responder like any task |
 | Answer | its final message, cut to 4000 characters. "I do not know" is an answer |
 
 ```text
@@ -131,9 +130,8 @@ The nonce is fresh for each question, so the question cannot close the block its
 
 | Case | Delivery |
 |---|---|
-| `wait: true`, the child ends before `min(the parent's deadline − 10 s, 300 s)` | the tool's result: status, the answer, the responder, its node and store, `partial` |
-| `wait: true`, the wait ends first | the tool answers `pending` with the question's id; the question goes on as `wait: false` |
-| `wait: false`, or after the wait, the asking task still runs with a leased execution | a `bot.task.message` on that task, `from: question:<id>`, framed as data from team X |
+| At once | the tool's result: the question's id, the responder picked, its status, and a note that the answer comes later |
+| The asking task still runs with a leased execution when the child settles | a `bot.task.message` on that task, `from: question:<id>`, framed as data from team X: the answer, the responder, its node and store, `partial` |
 | The asking task has ended | a new task for the asking bot, trigger `question_answer`, key `answer:<child task id>`, objective framed as above, on the asker's own budgets; it carries the trace and counts against the trace's limit |
 | The child failed or expired | the same paths, with the status and the reason instead of an answer (`no_answer`) |
 
@@ -143,7 +141,7 @@ This is the one addressed exception to decision 1 of [publish/subscribe](pubsub-
 
 | Event | On the stream of |
 |---|---|
-| `bot.question.asked` (team, question, wait, the child, the responder) | the asker |
+| `bot.question.asked` (team, question, the child, the responder) | the asker |
 | `bot.task.submitted` with trigger `question` | the responder |
 | `bot.question.answered` (status, the answer cut at 280 chars, node, store, `partial`) | both |
 | `bot.question.refused` (reason, message) | the asker |
@@ -203,18 +201,25 @@ Later, in its own PR, the node of each side writes the exchange into its team's 
 
 A question is answered from one store. The answer names the responder's node and store, and says `partial: true` when the team's consenting bots open more than one store. For `sre` (`sre-ro`: five bots that read the cluster; `sre-rw`: `fix`, which writes it; one host, one user) only the `sre-ro` bots declare `question`. On 10 November 2026 neither node had a `kmp/sre` yet. A team across hosts stays `partial` until KMP is served over the network ([memory store per team](memory-store-per-team.md), decision D4).
 
-### The question slot
+### Amendment: every question is asynchronous
 
-A node runs one execution at a time, and a developer's task may hold it for an hour. The agent gets a second slot for questions only: when the main slot is busy it polls for a question alone (`NextAssignment` with the question lane), and a question never takes the main slot from a task. Heavy programs keep their own lock (`bots-work-teams`' `heavy.lock`), so a question that runs one still waits for it.
+Settled by the product owner on 10 November 2026, while cut 4 was being built, one decision at a time:
+
+| # | Was | Now | Why |
+|---|---|---|---|
+| A1 | `wait: true` returned the answer as the tool's result | **No `wait`.** The tool answers at once with the question's id; the answer comes back as a message or a `question_answer` task | a waiting asker holds its node and its model; nobody waits, which is cheaper |
+| A2 | the question task had 300 s | **Two hours** from the ask, waiting for the responder included; past it the asker hears `no_answer` | a question behind a developer's hour-long task must not expire |
+| A3 | D7: a second node slot for questions | **Withdrawn.** A question waits for its responder like any task | with two hours, the wait fits; a node keeps running one execution at a time |
+| A4 | the responder capped at 6 model calls, 12 tool calls, 300 s | **Its own budgets and timeout** | a cap that cuts an answer short is worse than a slow answer |
 
 ## Where it goes in the code
 
 | Repo | Layer | New or changed |
 |---|---|---|
 | axlr-bots | `domain/` | `ask_policy.go` (`ask.teams`, rates), the `question` and `question_answer` trigger types with `from`, `question_refusal.go`, the question objective template, event types `bot.question.*`, `NodeCapabilities.MemoryTeams`, the reserved bot id `canal` |
-| axlr-bots | `application/` | `ask_team.go` (checks, pick under `mu`, the child), `question_candidates.go`, `deliver_answer.go` (called when a child settles: message or new task), the question lane in `next_assignment.go`, `describe` without node tools on a question task, `ask_offer.go` |
-| axlr-bots | `adapters/nodeagent/` | `ask_tool.go`, the relay's dispatch, the second slot, the memory teams in the registration |
-| axlr-bots | `adapters/unixapi/` | the node routes (ask, read a question), the derived matrix for the panel, `contract_test.go` |
+| axlr-bots | `application/` | `ask_team.go` (checks, pick under `mu`, the child), `question_candidates.go`, `deliver_answer.go` (called when a child settles: message or new task), `describe` without node tools on a question task, `ask_offer.go` |
+| axlr-bots | `adapters/nodeagent/` | `ask_tool.go`, the relay's dispatch, the memory teams in the registration |
+| axlr-bots | `adapters/unixapi/` | the node route to ask, the derived matrix for the panel, `contract_test.go` |
 | axlr-bots | `panel/` | the timeline lines, a team's links, `partial` on an answer |
 | axlr-bots | `docs/reference/` | `bot-definition.md` (`ask`, `question`), `node-protocol.md`, `operator-api`, `cli.md` |
 | AXLR | — | nothing in phase 1 |
@@ -231,12 +236,11 @@ Each from `origin/main`, base `main`; control plane, then nodes, then panel; che
 | 1 | this ADR | links resolve; `memory-store-per-team.md` and `pubsub-events.md` point here |
 | 2 | domain: `ask`, the triggers, refusals, events, `MemoryTeams` | a bot without the new fields is unchanged; coverage ≥ 80 % |
 | 3 | `ask_team.go`, candidates, the pick, the child, idempotency | two questions at once to one team land on two bots; a repeat returns the same child; an old node is never picked |
-| 4 | the tool and `wait: true` | asker and responder on two nodes, fake model: the answer is the tool's result; a slow responder answers `pending` |
-| 5 | the return leg | `wait: false` with the asker ended: a `question_answer` task; still running: a message |
-| 6 | the question slot | a question answered while the node runs a long task |
-| 7 | the panel | the timeline lines, the links, `partial` |
-| 8 | playbooks and bots, one live link qa→dev | with the product owner's go-ahead, behind a node switch, off by default |
-| 9 | the node writes memory (D6, later) | after the MCP write from the node is verified |
+| 4 | the amendment, the tool, the route, the memory teams in the registration | asker and responder on two nodes: the tool answers at once with the id and the responder; the question task waits for its node with two hours and its own budgets |
+| 5 | the return leg | the asker ended: a `question_answer` task; still running: a message; the child failed or expired: `no_answer` |
+| 6 | the panel | the timeline lines, the links, `partial` |
+| 7 | playbooks and bots, one live link qa→dev | with the product owner's go-ahead, behind a node switch, off by default |
+| 8 | the node writes memory (D6, later) | after the MCP write from the node is verified |
 
 ## Alternatives
 
@@ -255,7 +259,7 @@ Each from `origin/main`, base `main`; control plane, then nodes, then panel; che
 
 - A bot with `ask.teams` gets one more tool; a bot with neither field sees no change.
 - The responder runs its usual tools on another team's text. That is the product owner's choice (D4); the matrix and the bot's own rules are the boundary, and each link is turned on only after its playbook is tried with injected questions.
-- A node runs up to two executions at once, the second a question under 300 s.
+- Nobody waits for an answer: an asker goes on, and its answer arrives as a message or a new task. A node still runs one execution at a time.
 - **Upgrade order**: control plane, then nodes (an old node is never picked to answer and never offers the tool), then the panel (an old one shows the new events as `Unknown`).
 
 ## Left out

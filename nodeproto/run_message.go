@@ -24,6 +24,9 @@ type RunMessage struct {
 	Budgets        *BudgetsMessage         `json:"budgets,omitempty"`
 	Delegation     *DelegationOfferMessage `json:"delegation,omitempty"`
 	Events         *EventsOfferMessage     `json:"events,omitempty"`
+	// Ask names the other teams the bot may ask; an older node ignores it
+	// and serves no ask tool.
+	Ask *AskOfferMessage `json:"ask,omitempty"`
 	// MemoryTeam is the team whose memory store the run opens; an older
 	// node ignores it and the bot keeps a store of its own.
 	MemoryTeam string `json:"memoryTeam,omitempty"`

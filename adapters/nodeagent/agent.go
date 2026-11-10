@@ -162,10 +162,10 @@ func (a Agent) sweepSockets() {
 }
 
 // serveDelegation opens the execution's socket when its bot may
-// delegate or emit events, and says where it is; "" when no tool is
-// served.
-func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, offer *application.DelegationOffer, events *application.EventsOffer, progress func(application.ProgressItem)) (string, func()) {
-	if (offer == nil && events == nil) || a.Options.SocketDir == "" || a.slots == nil {
+// delegate, emit events or ask other teams, and says where it is; ""
+// when no tool is served.
+func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, offer *application.DelegationOffer, events *application.EventsOffer, ask *application.AskOffer, progress func(application.ProgressItem)) (string, func()) {
+	if (offer == nil && events == nil && ask == nil) || a.Options.SocketDir == "" || a.slots == nil {
 		return "", func() {}
 	}
 	if strings.ContainsAny(execution.String(), `/\`) || strings.Contains(execution.String(), "..") {
@@ -187,6 +187,10 @@ func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution 
 		ask := subscriber{transport: a.Transport, node: id, execution: execution, log: a.Options.log()}
 		handlers = append(handlers, mcpHandler{tool: subscribeTool(), call: ask.call})
 	}
+	if ask != nil {
+		q := asker{transport: a.Transport, node: id, execution: execution, log: a.Options.log()}
+		handlers = append(handlers, mcpHandler{tool: askTool(*ask), call: q.call})
+	}
 	server, err := serveMCP(ctx, path, a.Executor.Version(ctx), handlers...)
 	if err != nil {
 		a.Options.log().Printf("node: execution %s: delegation socket: %v; the delegation and emit tools are off", execution, err)
@@ -197,6 +201,9 @@ func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution 
 	}
 	if events != nil {
 		a.Options.log().Printf("node: execution %s may emit events to %s", execution, strings.Join(events.Teammates, ", "))
+	}
+	if ask != nil {
+		a.Options.log().Printf("node: execution %s may ask the teams %s", execution, strings.Join(ask.Teams, ", "))
 	}
 	return path, server.Close
 }
@@ -249,13 +256,16 @@ func (a Agent) register(ctx context.Context, id domain.NodeID) error {
 	}
 	registration := application.NodeRegistration{
 		ID: id.String(), HostName: host, Labels: a.Options.Labels,
-		Capabilities: domain.NodeCapabilities{AXLRVersion: a.Executor.Version(ctx), PolicySupported: a.Executor.SupportsPolicy(ctx), CorrelationSupported: a.Executor.SupportsCorrelation(ctx), Dedicated: a.Options.Dedicated, Runtimes: a.Options.Runtimes, Providers: a.Options.Providers, SkillsSupported: a.Executor.SupportsSkills(ctx)},
+		Capabilities: domain.NodeCapabilities{AXLRVersion: a.Executor.Version(ctx), PolicySupported: a.Executor.SupportsPolicy(ctx), CorrelationSupported: a.Executor.SupportsCorrelation(ctx), Dedicated: a.Options.Dedicated, Runtimes: a.Options.Runtimes, Providers: a.Options.Providers, SkillsSupported: a.Executor.SupportsSkills(ctx), MemoryTeams: a.Options.MemoryTeams},
 	}
 	node, err := a.Transport.Register(ctx, registration)
 	if err != nil {
 		return err
 	}
 	a.Options.log().Printf("node: registered as %s (%s), axlr %q policy %v correlation %v skills %v dedicated %v runtimes %v providers %v", node.ID, node.HostName, registration.Capabilities.AXLRVersion, registration.Capabilities.PolicySupported, registration.Capabilities.CorrelationSupported, registration.Capabilities.SkillsSupported, registration.Capabilities.Dedicated, append([]string{"axlr"}, registration.Capabilities.Runtimes...), registration.Capabilities.Providers)
+	if len(registration.Capabilities.MemoryTeams) > 0 {
+		a.Options.log().Printf("node: shares the memory of the teams %s", strings.Join(registration.Capabilities.MemoryTeams, ", "))
+	}
 	return nil
 }
 
@@ -278,7 +288,7 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	case assignment.Run != nil:
 		bot = assignment.Run.BotID
 		request := *assignment.Run
-		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events, progress.push)
+		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events, request.Ask, progress.push)
 		request.DelegationSocket = socket
 		request.OnSaid = a.say(runCtx, id, assignment.ExecutionID)
 		request.OnProgress = progress.push
@@ -292,7 +302,7 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	case assignment.Decide != nil:
 		bot = assignment.Decide.BotID
 		request := *assignment.Decide
-		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events, progress.push)
+		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events, request.Ask, progress.push)
 		request.DelegationSocket = socket
 		request.OnSaid = a.say(runCtx, id, assignment.ExecutionID)
 		request.OnProgress = progress.push

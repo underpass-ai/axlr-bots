@@ -40,7 +40,6 @@ type asking struct {
 	team      domain.TeamName
 	rawTeam   string
 	question  domain.Question
-	wait      bool
 }
 
 // Execute creates the question's task, finds the one the same ask
@@ -135,7 +134,7 @@ func (uc AskTeam) load(ctx context.Context, node domain.NodeID, executionID doma
 	// A team name that is no identifier is no team the bot may ask: the
 	// model reads it as a refusal, not as the node's error.
 	team, _ := domain.NewTeamName(strings.TrimSpace(command.Team))
-	return asking{node: node, execution: execution, task: task, bot: bot, from: memoryTeamOf(bot), team: team, rawTeam: command.Team, question: question, wait: command.Wait}, nil
+	return asking{node: node, execution: execution, task: task, bot: bot, from: memoryTeamOf(bot), team: team, rawTeam: command.Team, question: question}, nil
 }
 
 // repeat finds the task the same ask made before, among the asking
@@ -192,11 +191,11 @@ func (uc AskTeam) create(ctx context.Context, a asking, responder domain.Bot, at
 	depth := a.task.Depth() + 1
 	lineage := domain.TaskLineage{
 		ParentTaskID: a.task.ID().String(), ParentExecutionID: a.execution.ID().String(), ParentBotID: a.bot.ID().String(),
-		Depth: depth, MaxDepth: depth, Chain: append(parent.Chain, a.bot.ID().String()), Grant: questionGrant(responder, now),
+		Depth: depth, MaxDepth: depth, Chain: append(parent.Chain, a.bot.ID().String()), Grant: questionGrant(now),
 	}
 	input, _ := json.Marshal(map[string]any{
 		"question": a.question.String(), "fromTeam": a.from.String(), "fromBot": a.bot.ID().String(),
-		"parentTaskId": a.task.ID().String(), "parentExecutionId": a.execution.ID().String(), "wait": a.wait,
+		"parentTaskId": a.task.ID().String(), "parentExecutionId": a.execution.ID().String(),
 	})
 	created, err := submitTask(ctx, uc.deps, submission{
 		action: "task.question", bot: responder, trigger: domain.TriggerRef{Type: domain.TriggerQuestion, Name: a.from.String()},
@@ -216,7 +215,7 @@ func (uc AskTeam) create(ctx context.Context, a asking, responder domain.Bot, at
 
 func (uc AskTeam) recordAsked(ctx context.Context, a asking, child domain.Task, deduplicated bool) error {
 	payload := map[string]any{
-		"team": a.team.String(), "question": a.question.String(), "wait": a.wait,
+		"team": a.team.String(), "question": a.question.String(),
 		"childTaskId": child.ID().String(), "responder": child.BotID().String(), "deduplicated": deduplicated,
 	}
 	if err := uc.rec.executionEvent(ctx, domain.EventQuestionAsked, a.bot, a.task.ID(), a.execution.ID(), a.task.CorrelationID(), payload); err != nil {
