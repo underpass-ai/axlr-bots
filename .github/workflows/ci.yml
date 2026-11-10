@@ -1,7 +1,9 @@
 name: CI
 
 # The panel has its own workflow (panel.yml); a change to panel/ alone runs
-# nothing here.
+# no job here but `changes` and `gate`. A pull request carries no path filter:
+# `gate` is a check branch protection requires, so it has to report on every
+# one, and `changes` decides what the rest does.
 on:
   push:
     branches: [main]
@@ -9,9 +11,6 @@ on:
       - panel/**
       - .github/workflows/panel.yml
   pull_request:
-    paths-ignore:
-      - panel/**
-      - .github/workflows/panel.yml
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -21,7 +20,31 @@ permissions:
   contents: read
 
 jobs:
+  # What a pull request changes outside the panel. A push to main has already
+  # passed the path filter above.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.paths.outputs.run }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          # The merge commit and its first parent, the base branch.
+          fetch-depth: 2
+      - name: Changed paths
+        id: paths
+        shell: bash
+        run: |
+          run=true
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            git diff --name-only HEAD^1 HEAD > "$RUNNER_TEMP/changed"
+            grep -qvE '^(panel/|\.github/workflows/panel\.yml$)' "$RUNNER_TEMP/changed" || run=false
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
   go:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
@@ -62,6 +85,8 @@ jobs:
           ' test.log
 
   chart:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
@@ -118,6 +143,8 @@ jobs:
           refused $https --set-string demo.https.host=Bad_Host
 
   node-image:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
@@ -130,3 +157,21 @@ jobs:
           docker buildx build -f distribution/node.Dockerfile --platform linux/amd64 -t axlr-bots-node:ci --load .
           docker run --rm --read-only axlr-bots-node:ci --help 2>&1 | grep -q 'axlr-node check'
           test "$(docker run --rm --read-only --entrypoint /usr/local/bin/axlr-tui axlr-bots-node:ci --version 2>&1)" = "$(sed -n 's/^ARG AXLR_VERSION=//p' distribution/node.Dockerfile)"
+
+  # The check branch protection requires from this workflow. It reports on
+  # every pull request and passes only when no job above failed; a job the
+  # change does not reach is skipped, and that is a pass.
+  gate:
+    if: always()
+    needs: [changes, go, chart, node-image]
+    runs-on: ubuntu-latest
+    steps:
+      - name: No job failed
+        shell: bash
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "$RESULTS"
+          for result in $RESULTS; do
+            case "$result" in success | skipped) ;; *) exit 1 ;; esac
+          done
