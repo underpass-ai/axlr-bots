@@ -92,6 +92,9 @@ impl Event {
             "bot.task.preempted" => "Stopped for urgent".into(),
             "bot.task.delegated" => "Asked a bot".into(),
             "bot.delegation.refused" => "Ask refused".into(),
+            "bot.question.asked" => "Asked a team".into(),
+            "bot.question.answered" => "Question answered".into(),
+            "bot.question.refused" => "Question refused".into(),
             "incident.opened" => "Incident opened".into(),
             "incident.repeated" => "Alert again".into(),
             "incident.reopened" if self.payload_text("from").is_some() => "Sent back to Open".into(),
@@ -142,6 +145,7 @@ impl Event {
             | "bot.task.cancelled"
             | "bot.event.refused"
             | "bot.delegation.refused"
+            | "bot.question.refused"
             | "incident.postmortem_failed" => EventTone::Bad,
             "bot.task.preempted"
             | "incident.opened"
@@ -372,6 +376,9 @@ mod tests {
         assert_eq!(by_policy.detail(), "by its policy, no person needed");
         assert_eq!(event("bot.task.delegated", "{}").label(), "Asked a bot");
         assert_eq!(event("bot.delegation.refused", "{}").tone(), EventTone::Bad);
+        assert_eq!(event("bot.question.refused", "{}").tone(), EventTone::Bad);
+        assert_eq!(event("bot.question.asked", "{}").label(), "Asked a team");
+        assert_eq!(event("bot.question.answered", "{}").label(), "Question answered");
     }
 
     #[test]

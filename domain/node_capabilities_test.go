@@ -36,3 +36,29 @@ func TestNodeCapabilitiesNameTheProviders(t *testing.T) {
 		t.Fatalf("providers on the wire: %s", out)
 	}
 }
+
+// A node names the teams whose memory it shares; one older than the field
+// names none and is never picked to answer a team's question.
+func TestNodeCapabilitiesNameTheMemoryTeams(t *testing.T) {
+	var old NodeCapabilities
+	if err := json.Unmarshal([]byte(`{"policySupported":true,"correlationSupported":true}`), &old); err != nil {
+		t.Fatal(err)
+	}
+	if old.MemoryTeams != nil || old.SharesMemoryOf("qa") {
+		t.Fatalf("an old node shares no team's memory: %v", old.MemoryTeams)
+	}
+	if out, _ := json.Marshal(old); string(out) != `{"policySupported":true,"correlationSupported":true}` {
+		t.Errorf("no memoryTeams field for a node that named none: %s", out)
+	}
+	named := NodeCapabilities{MemoryTeams: []string{"qa", "dev"}}
+	if !named.SharesMemoryOf("dev") || named.SharesMemoryOf("marketing") || named.SharesMemoryOf("") {
+		t.Errorf("named = %v", named.MemoryTeams)
+	}
+	every := NodeCapabilities{MemoryTeams: []string{AllMemoryTeams}}
+	if !every.SharesMemoryOf("marketing") || every.SharesMemoryOf("") {
+		t.Error("* shares every team's memory, and a bot in no team has none")
+	}
+	if out, _ := json.Marshal(every); string(out) != `{"policySupported":false,"correlationSupported":false,"memoryTeams":["*"]}` {
+		t.Errorf("written: %s", out)
+	}
+}

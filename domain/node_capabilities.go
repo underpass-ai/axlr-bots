@@ -11,7 +11,10 @@ package domain
 // A node older than the field names none, which says nothing.
 // SkillsSupported says its axlr-tui takes pinned catalog skills: a task
 // with skills is given to no other node, since an older one would ignore
-// them and run without.
+// them and run without. MemoryTeams are the teams whose bots share one
+// KMP store on the node (its --memory-teams; `*` for every team): only
+// such a node is picked to answer a team's question, and an older node
+// that names none never is.
 type NodeCapabilities struct {
 	AXLRVersion          string   `json:"axlrVersion,omitempty"`
 	PolicySupported      bool     `json:"policySupported"`
@@ -20,6 +23,25 @@ type NodeCapabilities struct {
 	Runtimes             []string `json:"runtimes,omitempty"`
 	Providers            []string `json:"providers,omitempty"`
 	SkillsSupported      bool     `json:"skillsSupported,omitempty"`
+	MemoryTeams          []string `json:"memoryTeams,omitempty"`
+}
+
+// AllMemoryTeams is what a node reports in MemoryTeams when every team's
+// bots share their team's store on it.
+const AllMemoryTeams = "*"
+
+// SharesMemoryOf reports whether the node opens the team's store for
+// the team's bots: it named the team, or every team.
+func (c NodeCapabilities) SharesMemoryOf(team TeamName) bool {
+	if team == "" {
+		return false
+	}
+	for _, name := range c.MemoryTeams {
+		if name == AllMemoryTeams || name == team.String() {
+			return true
+		}
+	}
+	return false
 }
 
 // HasProvider reports whether the node named the provider.

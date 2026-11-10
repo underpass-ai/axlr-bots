@@ -33,7 +33,7 @@ func init() {
 	for _, value := range []any{
 		domain.BotSnapshot{}, domain.TaskSnapshot{}, domain.ExecutionSnapshot{}, domain.NodeSnapshot{}, domain.Event{},
 		domain.ApprovalWait{}, domain.ApprovalMark{}, domain.ApprovalsSnapshot{}, domain.TwoPersonsSnapshot{}, domain.EventsSnapshot{}, domain.EmitRuleSnapshot{}, domain.SubscriptionSnapshot{}, domain.Artifact{}, domain.BudgetsSnapshot{},
-		domain.CorrelationRecord{}, domain.DelegationGrant{}, domain.DelegationSnapshot{}, domain.ModelPolicySnapshot{},
+		domain.CorrelationRecord{}, domain.DelegationGrant{}, domain.DelegationSnapshot{}, domain.AskSnapshot{}, domain.ModelPolicySnapshot{},
 		domain.NodeCapabilities{}, domain.NotifyTargetSnapshot{}, domain.PendingDecision{}, domain.PlacementSnapshot{},
 		domain.PolicyRecord{}, domain.Result{}, domain.TaskLineage{}, domain.ToolCall{}, domain.ToolRuleSnapshot{},
 		domain.ToolRulesSnapshot{}, domain.TriggerRef{}, domain.TriggerRefSnapshot{}, domain.PinnedPolicySnapshot{}, domain.PinnedLadderSnapshot{}, domain.LadderSnapshot{}, domain.LadderRunbookSnapshot{}, domain.AutonomyCounters{}, domain.AutonomyThresholdsSnapshot{}, domain.AutonomyEntry{}, domain.AutonomyOutstanding{}, AutonomyResponse{}, DiagnosisRequest{}, LowerRequest{}, ClearRequest{}, domain.TriggerSnapshot{}, domain.Usage{},

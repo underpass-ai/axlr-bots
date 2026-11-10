@@ -64,6 +64,17 @@ func (t Triggers) Incident(phase IncidentPhase) (Trigger, bool) {
 	return Trigger{}, false
 }
 
+// Question finds the first question trigger that answers the team: the
+// bot's consent to that team's questions.
+func (t Triggers) Question(from TeamName) (Trigger, bool) {
+	for _, trigger := range t.list {
+		if trigger.AnswersFrom(from) {
+			return trigger, true
+		}
+	}
+	return Trigger{}, false
+}
+
 // List returns the triggers, copied.
 func (t Triggers) List() []Trigger { return append([]Trigger(nil), t.list...) }
 

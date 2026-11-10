@@ -62,11 +62,11 @@ func fixtures() []fixture {
 	}
 	return []fixture{
 		{name: "enroll_request", message: EnrollRequest{TokenID: "tok-1", Secret: "s3cr3t", HostName: "pi-garden.local", CSR: "-----BEGIN CERTIFICATE REQUEST-----\nMIIB\n-----END CERTIFICATE REQUEST-----\n"}},
-		{name: "enroll_response", skip: []string{"NodeCapabilities.Providers", "NodeCapabilities.SkillsSupported"}, message: enrolled},
-		{name: "register_request", skip: []string{"NodeCapabilities.Providers", "NodeCapabilities.SkillsSupported"}, message: RegisterRequest{ID: "pi-garden", HostName: "pi-garden.local", Labels: map[string]string{"arch": "aarch64", "class": "sbc", "ram": "512mi"}, Capabilities: fixtureCapabilities()}},
+		{name: "enroll_response", skip: []string{"NodeCapabilities.Providers", "NodeCapabilities.SkillsSupported", "NodeCapabilities.MemoryTeams"}, message: enrolled},
+		{name: "register_request", skip: []string{"NodeCapabilities.Providers", "NodeCapabilities.SkillsSupported", "NodeCapabilities.MemoryTeams"}, message: RegisterRequest{ID: "pi-garden", HostName: "pi-garden.local", Labels: map[string]string{"arch": "aarch64", "class": "sbc", "ram": "512mi"}, Capabilities: fixtureCapabilities()}},
 		// The control plane answers a registration and a heartbeat with
 		// the node as it knows it; a heartbeat has no body.
-		{name: "node_snapshot", skip: []string{"NodeCapabilities.Providers", "NodeCapabilities.SkillsSupported"}, message: fixtureNode()},
+		{name: "node_snapshot", skip: []string{"NodeCapabilities.Providers", "NodeCapabilities.SkillsSupported", "NodeCapabilities.MemoryTeams"}, message: fixtureNode()},
 		{name: "model_request", message: ModelRequest{
 			Messages: []ModelChatMessage{{Role: "user", Content: "turn on the lamp"}},
 			Tools:    []ModelToolMessage{{Name: "gpio_write", Description: "Set a pin", Parameters: json.RawMessage(`{"type":"object"}`)}},

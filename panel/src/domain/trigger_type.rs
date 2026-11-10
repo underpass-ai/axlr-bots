@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 /// What starts a bot's task: a person, a webhook, a timer, another bot
-/// that delegates to it, a teammate's event, or an incident the control
-/// plane opened for it, from Alertmanager or from CloudWatch through SNS.
+/// that delegates to it, a teammate's event, an incident the control
+/// plane opened for it, from Alertmanager or from CloudWatch through SNS,
+/// another team's question, or the answer to a question it asked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TriggerType {
@@ -15,6 +16,9 @@ pub enum TriggerType {
     Incident,
     Alertmanager,
     Cloudwatch,
+    Question,
+    #[serde(rename = "question_answer")]
+    QuestionAnswer,
     /// A value this panel does not know: the control plane is newer. Read,
     /// shown as unknown, never refused.
     #[serde(other)]
@@ -32,6 +36,8 @@ impl TriggerType {
             Self::Incident => "incident",
             Self::Alertmanager => "alertmanager",
             Self::Cloudwatch => "cloudwatch",
+            Self::Question => "question",
+            Self::QuestionAnswer => "question_answer",
             Self::Unknown => "unknown",
         }
     }
@@ -46,6 +52,8 @@ impl TriggerType {
             Self::Incident => "An incident",
             Self::Alertmanager => "Alertmanager",
             Self::Cloudwatch => "CloudWatch",
+            Self::Question => "Another team's question",
+            Self::QuestionAnswer => "The answer it asked for",
             Self::Unknown => "Unknown",
         }
     }
@@ -97,6 +105,20 @@ mod tests {
             TriggerType::Alertmanager
         );
         assert_eq!(TriggerType::Alertmanager.label(), "Alertmanager");
+    }
+
+    #[test]
+    fn reads_the_team_channel_s_triggers() {
+        assert_eq!(
+            serde_json::from_str::<TriggerType>("\"question\"").unwrap(),
+            TriggerType::Question
+        );
+        assert_eq!(
+            serde_json::from_str::<TriggerType>("\"question_answer\"").unwrap(),
+            TriggerType::QuestionAnswer
+        );
+        assert_eq!(TriggerType::QuestionAnswer.name(), "question_answer");
+        assert_eq!(TriggerType::Question.label(), "Another team's question");
     }
 
     #[test]

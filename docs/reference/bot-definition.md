@@ -38,10 +38,11 @@ A bot has no role baked in: its definition is what an operator writes, and the s
 | `level` | the autonomy level ([below](#autonomy-levels)); default `observe` |
 | `allowedTools` | AXLR's tool names (`local_read`, `local_search`, `local_list`, `local_write`, `local_exec`, …); nothing else may be called |
 | `toolRules` | narrows the allowed tools by their arguments ([below](#tool-rules)) |
-| `triggers` | how tasks reach the bot: `manual` (the default), `webhook`, `timer`, `delegation`, `incident`, `alertmanager`, `cloudwatch`; a bot that declares triggers takes only those ([below](#triggers)). A trigger of type `event` is read as a [subscription](#subscriptions), for one release |
+| `triggers` | how tasks reach the bot: `manual` (the default), `webhook`, `timer`, `delegation`, `incident`, `alertmanager`, `cloudwatch`, `question`; a bot that declares triggers takes only those ([below](#triggers)). A trigger of type `event` is read as a [subscription](#subscriptions), for one release |
 | `placement` | where the bot's tasks run: `{"nodes": ["web-1"]}`, `{"selector": {"zone": "eu"}}`, or nothing for any node but a dedicated one, such as a sidecar ([nodes](node-protocol.md)). A placed bot's task waits `Pending` for a node its placement admits, with `waiting` saying which; only a bot with no placement runs on the control plane when no node may take it ([the daemon](../architecture/control-plane-node-axlr.md#the-daemon)) |
 | `approvals` | how a pending call waits for a person: `ttl` (default `1h`), `onExpire` (`deny`, the default, or `cancel`), the `notify` targets told when a task starts to wait, who may decide (`approvers`) and which incidents wait for two people (`twoPersons`) ([below](#approvals)) |
 | `delegation` | the bots outside its teams this bot may ask to do a task, how deep a chain through it may go and the share of its task a child may take; absent: it asks only its teammates ([below](#delegation)) |
+| `ask` | the other teams this bot may ask for context through the team channel, how many questions a minute and how many unanswered at once; absent: it asks no team ([below](#the-team-channel)) |
 | `groups` | the teams the bot belongs to, up to 8; the panel calls each a Team. Teammates know each other and may ask each other to do a task ([below](#teams)) |
 | `events` | what the bot may tell its teams: the names it may emit and how many a minute; absent: any name but `error.*` and `done.*`, 6 a minute ([below](#events)) |
 | `subscriptions` | the topics the bot listens to in its teams, at most 16; with or without them it hears what is addressed to it and the team's `danger.*` and `stop.*` ([below](#subscriptions)) |
@@ -111,6 +112,24 @@ A bot may ask another bot to do a task while it runs: the model calls the tool `
 The target takes delegated tasks when its `triggers` include `{"type": "delegation"}` (no options, like `manual`) or when the asking bot is its teammate ([teams](#teams)); the asking bot's tenant must be its tenant, and it must be Enabled. An ask is refused, with an event `bot.delegation.refused` and its reason, when the target is neither in `to` nor a teammate (`not_allowed`), cannot take it (`target_unavailable`), the chain would be deeper than allowed (`depth_exceeded`), the target already asked along the chain (`cycle`: A→B→A), or there is too little left to share (`budget_exhausted`: the task already asked `maxChildren` bots, "maxChildren reached", or the grant is under one model or tool call, or under 30 seconds). The child is granted, of each limit the asking task has, the share of what it has not granted yet (`geometric`) or the share of the whole limit over `maxChildren` (`even`), never more than the target's own budgets; its deadline is the share of the asking task's time left, under either split. To give each of *N* children its whole budget *c*, size the pool at `N × c / budgetShare` with `even` ([ADR](../architecture/delegation.md#3-how-depth-and-budget-propagate)). It runs with that grant, under its own mission, level and tools, with the asking task's trace id; a child that cannot end by its deadline (it waited for a node or a person past it) fails with the reason `deadline`.
 
 [`cmd/axlr-bots/testdata/bot-delegating.json`](../../cmd/axlr-bots/testdata/bot-delegating.json) asks [`cmd/axlr-bots/testdata/bot-delegate-target.json`](../../cmd/axlr-bots/testdata/bot-delegate-target.json); the tool's schema and the wiring are in the [ADR](../architecture/delegation.md#1-how-the-model-asks).
+
+## The team channel
+
+A bot will ask another **team** for context it holds, and one member of that team that consents will answer ([ADR](../architecture/team-channel.md)). The definition carries both sides; the control plane stores and checks them now, and acts on them once the channel is built (the ADR's order of PRs).
+
+```json
+"ask": {"teams": ["dev"], "perMinute": 2, "maxOpen": 3},
+"triggers": [{"type": "manual"}, {"type": "question", "from": ["qa", "producto"]}]
+```
+
+| Field | Meaning |
+|---|---|
+| `ask.teams` | the teams this bot may ask, up to 8 distinct names, none of its own `groups` (inside a team it delegates); a patch that makes the bot join a team it asks is refused |
+| `ask.perMinute` | questions a minute, 1 to 10; absent: 2 |
+| `ask.maxOpen` | questions waiting for an answer at once, 1 to 8; absent: 3 |
+| trigger `question` | the bot's consent to answer the questions of the teams `from` lists (required, up to 8 distinct names); it takes no objective, credentials or schedule |
+
+`question_answer` names the task that carries the answer back when the asking task has ended; no definition declares it, since asking is the consent. The id `canal` is reserved for the channel's record in each team's memory: no bot may take it.
 
 ## Urgent tasks
 
@@ -328,7 +347,7 @@ axlr-bots bot events bot --limit 100                 # the bot's newest events, 
 
 A task's `priority` is `urgent` when it went first ([urgent tasks](#urgent-tasks)), absent otherwise.
 
-A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `delegation`, `groups`, `events`, `subscriptions`, `runtime`, `skills`, `model`, `budgets`) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`cmd/axlr-bots/testdata/bot-triggers-patch.json`](../../cmd/axlr-bots/testdata/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`cmd/axlr-bots/testdata/bot-act-with-approval.json`](../../cmd/axlr-bots/testdata/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
+A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `delegation`, `ask`, `groups`, `events`, `subscriptions`, `runtime`, `skills`, `model`, `budgets`) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`cmd/axlr-bots/testdata/bot-triggers-patch.json`](../../cmd/axlr-bots/testdata/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`cmd/axlr-bots/testdata/bot-act-with-approval.json`](../../cmd/axlr-bots/testdata/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
 
 ## Tasks
 
