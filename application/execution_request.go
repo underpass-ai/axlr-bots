@@ -46,6 +46,9 @@ type ExecutionRequest struct {
 	// Events is set when the bot is in a team: the node then serves the
 	// emit tool to the execution.
 	Events *EventsOffer
+	// Ask is set when the bot may ask other teams: the node then serves
+	// the ask tool on the same socket.
+	Ask *AskOffer
 	// MemoryTeam is the team the bot shares its memory with, empty for a
 	// bot in no team: the node then opens the team's store for the run,
 	// not the bot's own (docs/architecture/memory-store-per-team.md).
@@ -67,16 +70,20 @@ type ExecutionRequest struct {
 }
 
 // NodeTools names the tools the node serves the execution on its
-// socket: the delegation tool and the emit tool, as offered.
-func (r ExecutionRequest) NodeTools() []string { return nodeTools(r.Delegation, r.Events) }
+// socket: the delegation tool, the emit tools and the ask tool, as
+// offered.
+func (r ExecutionRequest) NodeTools() []string { return nodeTools(r.Delegation, r.Events, r.Ask) }
 
-func nodeTools(delegation *DelegationOffer, events *EventsOffer) []string {
+func nodeTools(delegation *DelegationOffer, events *EventsOffer, ask *AskOffer) []string {
 	var tools []string
 	if delegation != nil {
 		tools = append(tools, DelegateToolName)
 	}
 	if events != nil {
 		tools = append(tools, EmitEventToolName, SubscribeToolName)
+	}
+	if ask != nil {
+		tools = append(tools, AskToolName)
 	}
 	return tools
 }

@@ -115,7 +115,7 @@ The target takes delegated tasks when its `triggers` include `{"type": "delegati
 
 ## The team channel
 
-A bot will ask another **team** for context it holds, and one member of that team that consents will answer ([ADR](../architecture/team-channel.md)). The definition carries both sides; the control plane stores and checks them now, and acts on them once the channel is built (the ADR's order of PRs).
+A bot asks another **team** for context it holds, and one member of that team that consents answers ([ADR](../architecture/team-channel.md)). A bot with `ask.teams` is offered the tool `axlr_bots_ask_team {team, question}` on its node; the call answers at once with the question's id and the bot picked to answer, and never waits. The member's task runs with its own budgets and timeout and must be answered within two hours of the ask. The answer coming back to the asker, as a message or a new task, is the next step of the ADR's order of PRs; no link is live until the teams' installers turn one on. Under `act-with-approval` the call waits for a person, as `axlr_bots_delegate` does, unless `approvals.autoApprove` names `axlr_bots_ask_team`.
 
 ```json
 "ask": {"teams": ["dev"], "perMinute": 2, "maxOpen": 3},

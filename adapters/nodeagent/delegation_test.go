@@ -93,7 +93,10 @@ func callDelegate(socket string, arguments map[string]any) (string, bool, error)
 type scriptedExecutor struct {
 	mu     sync.Mutex
 	script map[domain.BotID]map[string]any
-	seen   []application.ExecutionRequest
+	// tool is the node tool the script calls; the delegation tool when
+	// empty.
+	tool string
+	seen []application.ExecutionRequest
 }
 
 func (s *scriptedExecutor) Execute(ctx context.Context, request application.ExecutionRequest) (application.ExecutionReport, error) {
@@ -107,6 +110,9 @@ func (s *scriptedExecutor) Execute(ctx context.Context, request application.Exec
 			return application.ExecutionReport{}, errors.New("no delegation socket for " + request.BotID.String())
 		}
 		text, isError, err := callDelegate(request.DelegationSocket, arguments)
+		if s.tool != "" {
+			_, text, isError, err = callTool(request.DelegationSocket, s.tool, arguments)
+		}
 		if err != nil {
 			return application.ExecutionReport{}, err
 		}
@@ -163,10 +169,17 @@ func shortDir(t *testing.T) string {
 
 func runAgent(t *testing.T, f *fixture, executor Executor) context.CancelFunc {
 	t.Helper()
+	return runNode(t, f, executor, "web-1")
+}
+
+// runNode runs an agent as the node, sharing the memory of the teams
+// named.
+func runNode(t *testing.T, f *fixture, executor Executor, node string, memoryTeams ...string) context.CancelFunc {
+	t.Helper()
 	agent := Agent{
 		Transport: f.client,
 		Executor:  executor,
-		Options:   Options{NodeID: "web-1", HostName: "web-1", Heartbeat: 50 * time.Millisecond, PollWait: 200 * time.Millisecond, Renew: 50 * time.Millisecond, SocketDir: shortDir(t) + "/run", Log: log.New(f.logs, "", 0)},
+		Options:   Options{NodeID: node, HostName: node, MemoryTeams: memoryTeams, Heartbeat: 50 * time.Millisecond, PollWait: 200 * time.Millisecond, Renew: 50 * time.Millisecond, SocketDir: shortDir(t) + "/run", Log: log.New(f.logs, "", 0)},
 	}
 	ctx, stop := context.WithCancel(context.Background())
 	done := make(chan error, 1)
