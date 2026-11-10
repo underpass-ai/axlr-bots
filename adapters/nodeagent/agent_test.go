@@ -295,6 +295,9 @@ func (f *fakeTransport) AwaitDelegation(context.Context, domain.NodeID, domain.E
 func (f *fakeTransport) Ask(context.Context, domain.NodeID, domain.ExecutionID, application.AskTeamCommand) (application.QuestionAnswer, error) {
 	return application.QuestionAnswer{}, errors.New("not served")
 }
+func (f *fakeTransport) QuestionState(context.Context, domain.NodeID, domain.ExecutionID, domain.TaskID) (application.QuestionView, error) {
+	return application.QuestionView{}, errors.New("not served")
+}
 func (f *fakeTransport) Emit(context.Context, domain.NodeID, domain.ExecutionID, application.EmitEventCommand) (application.EmitAnswer, error) {
 	return application.EmitAnswer{}, errors.New("not served")
 }

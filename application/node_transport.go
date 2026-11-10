@@ -46,6 +46,9 @@ type NodeTransport interface {
 	// Ask asks another team, for the execution, a question; it answers at
 	// once with the question's task or the refusal, never the answer.
 	Ask(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, command AskTeamCommand) (QuestionAnswer, error)
+	// QuestionState reads where a question the execution's task asked
+	// stands, from the control plane's records.
+	QuestionState(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, question domain.TaskID) (QuestionView, error)
 	// Emit tells the execution's teams an event; a refusal is an
 	// answer, not an error.
 	Emit(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, command EmitEventCommand) (EmitAnswer, error)

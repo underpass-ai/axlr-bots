@@ -239,3 +239,26 @@ func TestAQuestionAndItsOfferRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// A question's state crosses the wire and back, the times that do not
+// apply left out.
+func TestAQuestionsStateRoundTrips(t *testing.T) {
+	at := time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC)
+	view := application.QuestionView{
+		Question: "task-9", Team: "dev", AskedBy: "qa-jefe", Responder: "dev-a", Status: domain.TaskRunning, AskedAt: at, Deadline: at.Add(2 * time.Hour), Now: at.Add(time.Minute),
+		OpenTasks: 1, RunningSince: at.Add(30 * time.Second), LastStep: "tool_call kmp_wake ok", LastStepAt: at.Add(40 * time.Second),
+	}
+	message := FromQuestionView(view)
+	if message.ApprovalSince != nil || message.RunningSince == nil {
+		t.Errorf("message = %+v", message)
+	}
+	back, err := ToQuestionView(message)
+	if err != nil || back != view {
+		t.Errorf("back: %v %+v", err, back)
+	}
+	for _, bad := range []QuestionStateMessage{{Question: "task-9", Status: "Sleeping"}, {Question: "Bad Id", Status: "Pending"}} {
+		if _, err := ToQuestionView(bad); err == nil {
+			t.Errorf("read %+v", bad)
+		}
+	}
+}

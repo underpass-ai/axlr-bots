@@ -7,6 +7,10 @@ import "github.com/underpass-ai/axlr-bots/domain"
 // tools, so the policy names it like any other.
 const AskToolName = "axlr_bots_ask_team"
 
+// QuestionStatusToolName is the tool that reads where the bot's question
+// stands; it is served with the ask tool, and only reads.
+const QuestionStatusToolName = "axlr_bots_question_status"
+
 // AskOffer tells the node that the execution's bot may ask other teams:
 // the teams it may ask (the tool's enum). The control plane checks every
 // call again; the offer only describes the tool.

@@ -190,6 +190,9 @@ func allowedTools(allowed domain.AllowedTools, offer *DelegationOffer, events *E
 	if ask != nil && !allowed.Allows(AskToolName) {
 		tools = append(tools, AskToolName)
 	}
+	if ask != nil && !allowed.Allows(QuestionStatusToolName) {
+		tools = append(tools, QuestionStatusToolName)
+	}
 	return tools
 }
 
