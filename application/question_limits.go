@@ -46,9 +46,9 @@ func questionGrant(now time.Time) domain.DelegationGrant {
 	return domain.DelegationGrant{Deadline: now.Add(QuestionTimeout)}
 }
 
-// questionNonce draws the nonce that closes a question's block in its
-// objective: fresh for each question, so the question cannot close it.
-func questionNonce() (string, error) {
+// channelNonce draws the nonce that closes a question's or an answer's
+// block: fresh for each, so the text cannot close it itself.
+func channelNonce() (string, error) {
 	var raw [8]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		return "", err

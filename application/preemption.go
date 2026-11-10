@@ -97,6 +97,9 @@ func stopTask(ctx context.Context, deps Dependencies, bot domain.Bot, task domai
 	if err := newIncidentAdvancer(deps).taskEnded(ctx, bot, task, ended); err != nil {
 		return CancelTaskResult{}, err
 	}
+	if err := newAnswerDeliverer(deps).taskEnded(ctx, bot, task, ended); err != nil {
+		return CancelTaskResult{}, err
+	}
 	return CancelTaskResult{Task: task, Execution: cancelled, Changed: true}, nil
 }
 

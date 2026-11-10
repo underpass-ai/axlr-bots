@@ -280,6 +280,9 @@ func (uc ReconcileTasks) reconcile(ctx context.Context, task domain.Task, grace 
 	if err := newIncidentAdvancer(uc.deps).taskEnded(ctx, bot, task, execution); err != nil {
 		return false, err
 	}
+	if err := newAnswerDeliverer(uc.deps).taskEnded(ctx, bot, task, execution); err != nil {
+		return false, err
+	}
 	if err := newPlatformPublisher(uc.deps).taskEnded(ctx, bot, task, execution); err != nil {
 		return false, err
 	}

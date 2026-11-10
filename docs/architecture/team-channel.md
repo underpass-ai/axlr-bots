@@ -131,9 +131,12 @@ The nonce is fresh for each question, so the question cannot close the block its
 | Case | Delivery |
 |---|---|
 | At once | the tool's result: the question's id, the responder picked, its status, and a note that the answer comes later |
-| The asking task still runs with a leased execution when the child settles | a `bot.task.message` on that task, `from: question:<id>`, framed as data from team X: the answer, the responder, its node and store, `partial` |
-| The asking task has ended | a new task for the asking bot, trigger `question_answer`, key `answer:<child task id>`, objective framed as above, on the asker's own budgets; it carries the trace and counts against the trace's limit |
-| The child failed or expired | the same paths, with the status and the reason instead of an answer (`no_answer`) |
+| The asking task (that very task, never another of the bot) still runs on a node when the child ends | a `bot.task.message` on its execution, `from: question:<id>`, the answer between two `ANSWER-<nonce>` lines marked as another team's data; `data` holds the responder, its node, the store (`kmp/<team>`), `partial`, the status |
+| The asking task has ended | a new task for the asking bot, trigger `question_answer`, key `answer:<child task id>`, objective framed the same way, on the asker's own budgets and trace, with no lineage; its `input` holds the same facts |
+| The child failed, expired or was cancelled | the same paths, with the status and the reason instead of an answer (`answered: false`) |
+| The asker is gone, or takes no task when the asking task has ended | nothing is created; the audit `question.answer` says why, and the child's end stands |
+
+The answer is cut to 4000 characters, and to what an objective's bytes hold. It is delivered once per question, from every way a task ends (a report, a cancel or preemption, a missed deadline, an expired approval, a reconcile, a revoked node): `bot.question.answered` on the child says it was. `partial` is conservative: more than one Online node could answer for the team, even two of one host that share a store.
 
 This is the one addressed exception to decision 1 of [publish/subscribe](pubsub-events.md), which keeps topics inside a team: it carries only the answer of a question the matrix allowed, to the bot that asked.
 

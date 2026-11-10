@@ -98,6 +98,9 @@ func (uc RevokeNode) failExecutions(ctx context.Context, node domain.Node, now t
 		if err := newIncidentAdvancer(uc.deps).taskEnded(ctx, bot, task, execution); err != nil {
 			return nil, err
 		}
+		if err := newAnswerDeliverer(uc.deps).taskEnded(ctx, bot, task, execution); err != nil {
+			return nil, err
+		}
 		if err := newPlatformPublisher(uc.deps).taskEnded(ctx, bot, task, execution); err != nil {
 			return nil, err
 		}

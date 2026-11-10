@@ -176,7 +176,7 @@ func (uc AskTeam) create(ctx context.Context, a asking, responder domain.Bot, at
 	if err != nil {
 		return domain.Task{}, err
 	}
-	nonce, err := questionNonce()
+	nonce, err := channelNonce()
 	if err != nil {
 		return domain.Task{}, err
 	}
