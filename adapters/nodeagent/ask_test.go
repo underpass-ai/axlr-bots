@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -68,6 +69,37 @@ func TestAgentAsksAnotherTeamAndGoesOn(t *testing.T) {
 	answered, err := f.client.ListExecutions(ctx, child.ID)
 	if err != nil || len(answered) != 1 || answered[0].Result.Answer != "I am dev-a" || answered[0].NodeID != "dev-node" {
 		t.Errorf("the answer: %v %+v", err, answered)
+	}
+	// The answer comes back: qa-jefe has ended, so it gets a task of its
+	// own with dev-a's answer, framed as another team's data.
+	// The child's end is published before the answer goes back: wait
+	// for bot.question.answered.
+	var answerTask string
+	var timeline []domain.Event
+	for deadline := time.Now().Add(10 * time.Second); answerTask == "" && time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		if timeline, err = f.client.ListTaskEvents(ctx, application.TaskEventsQuery{ID: domain.TaskID(child.ID)}); err != nil {
+			t.Fatal(err)
+		}
+		for _, event := range timeline {
+			if event.Type == domain.EventQuestionAnswered {
+				delivery, _ := event.Payload["delivery"].(map[string]any)
+				answerTask, _ = delivery["taskId"].(string)
+				if delivery["mode"] != "task" || event.Payload["node"] != "dev-node" {
+					t.Errorf("answered = %+v", event.Payload)
+				}
+			}
+		}
+	}
+	if answerTask == "" {
+		t.Fatalf("no answer delivered: %+v (%s)", timeline, f.logs.String())
+	}
+	back := waitFor(t, f.client, answerTask, "Completed")
+	if back.BotID != "qa-jefe" || back.Trigger.Type != "question_answer" || !strings.Contains(back.Objective, "I am dev-a") || !strings.Contains(back.Objective, "ANSWER-") {
+		t.Errorf("answer task = %+v", back)
+	}
+	read, err := f.client.ListExecutions(ctx, back.ID)
+	if err != nil || len(read) != 1 || !strings.Contains(read[0].Result.Answer, "Team dev answered your question") || strings.Contains(read[0].Result.Answer, "asked:") {
+		t.Errorf("qa-jefe read: %v %+v", err, read)
 	}
 	node, err := f.client.GetNode(ctx, "dev-node")
 	if err != nil || len(node.Capabilities.MemoryTeams) != 1 || node.Capabilities.MemoryTeams[0] != "dev" {

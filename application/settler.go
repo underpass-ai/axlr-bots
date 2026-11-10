@@ -144,6 +144,9 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 	if err := newIncidentAdvancer(s.deps).taskEnded(ctx, bot, *task, *execution); err != nil {
 		return err
 	}
+	if err := newAnswerDeliverer(s.deps).taskEnded(ctx, bot, *task, *execution); err != nil {
+		return err
+	}
 	return newPlatformPublisher(s.deps).taskEnded(ctx, bot, *task, *execution)
 }
 

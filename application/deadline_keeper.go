@@ -58,6 +58,9 @@ func (k deadlineKeeper) miss(ctx context.Context, bot domain.Bot, task *domain.T
 	if err := newIncidentAdvancer(k.deps).taskEnded(ctx, bot, *task, domain.Execution{}); err != nil {
 		return err
 	}
+	if err := newAnswerDeliverer(k.deps).taskEnded(ctx, bot, *task, domain.Execution{}); err != nil {
+		return err
+	}
 	if err := newPlatformPublisher(k.deps).taskEnded(ctx, bot, *task, domain.Execution{}); err != nil {
 		return err
 	}

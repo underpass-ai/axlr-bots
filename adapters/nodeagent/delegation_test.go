@@ -105,6 +105,10 @@ func (s *scriptedExecutor) Execute(ctx context.Context, request application.Exec
 	arguments, asks := s.script[request.BotID]
 	s.mu.Unlock()
 	answer := "I am " + request.BotID.String()
+	if strings.Contains(string(request.Input), "questionTaskId") {
+		// The answer to a question it asked: it reads it and asks nothing.
+		asks, answer = false, answer+"; read: "+request.Objective.String()
+	}
 	if asks {
 		if request.DelegationSocket == "" {
 			return application.ExecutionReport{}, errors.New("no delegation socket for " + request.BotID.String())

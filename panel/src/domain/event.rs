@@ -66,6 +66,9 @@ impl Event {
             "bot.task.message" if self.payload_text("from").is_some_and(|f| f.starts_with("event:")) => {
                 "A teammate told it".into()
             }
+            "bot.task.message" if self.payload_text("from").is_some_and(|f| f.starts_with("question:")) => {
+                "Another team answered".into()
+            }
             "bot.task.message" => "You wrote".into(),
             "bot.task.said" => "It answered".into(),
             "bot.task.progress" => "Working".into(),
@@ -379,6 +382,10 @@ mod tests {
         assert_eq!(event("bot.question.refused", "{}").tone(), EventTone::Bad);
         assert_eq!(event("bot.question.asked", "{}").label(), "Asked a team");
         assert_eq!(event("bot.question.answered", "{}").label(), "Question answered");
+        assert_eq!(
+            event("bot.task.message", r#"{"from":"question:task-9"}"#).label(),
+            "Another team answered"
+        );
     }
 
     #[test]
