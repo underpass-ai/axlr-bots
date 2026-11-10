@@ -4,7 +4,9 @@ package domain
 // the API or the command; a webhook is a request from outside with the
 // trigger's secret; a timer is the control plane's own scheduler; a
 // delegation is another bot's execution asking; an event is a
-// teammate's execution telling its team something happened.
+// teammate's execution telling its team something happened; a question
+// is another team asking for context, and a question's answer comes back
+// to the bot that asked.
 type TriggerType string
 
 const (
@@ -38,15 +40,24 @@ const (
 	// an incident of the bot, an OK closes it. It authenticates by SNS's
 	// own signature, never by a secret: SNS sets no header of ours.
 	TriggerCloudWatch TriggerType = "cloudwatch"
+	// TriggerQuestion is a question another team asked through the team
+	// channel: a bot answers them only when it declares this trigger, its
+	// consent, and its from names the asking team.
+	TriggerQuestion TriggerType = "question"
+	// TriggerQuestionAnswer is the answer to a question the bot asked,
+	// when the task that asked it has ended: a new task for the asking
+	// bot. It names a task's trigger only; no definition declares it,
+	// since asking is the consent.
+	TriggerQuestionAnswer TriggerType = "question_answer"
 )
 
 // ParseTriggerType validates a trigger type.
 func ParseTriggerType(raw string) (TriggerType, error) {
 	switch TriggerType(raw) {
-	case TriggerManual, TriggerWebhook, TriggerTimer, TriggerDelegation, TriggerEvent, TriggerIncident, TriggerAlertmanager, TriggerCloudWatch:
+	case TriggerManual, TriggerWebhook, TriggerTimer, TriggerDelegation, TriggerEvent, TriggerIncident, TriggerAlertmanager, TriggerCloudWatch, TriggerQuestion, TriggerQuestionAnswer:
 		return TriggerType(raw), nil
 	}
-	return "", invalid("trigger type", "is not a known trigger type (manual, webhook, timer, delegation, event, incident, alertmanager, cloudwatch)")
+	return "", invalid("trigger type", "is not a known trigger type (manual, webhook, timer, delegation, event, incident, alertmanager, cloudwatch, question, question_answer)")
 }
 
 func (t TriggerType) String() string { return string(t) }

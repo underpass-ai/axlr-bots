@@ -18,6 +18,8 @@ package domain
 // Topics, when given, are the SNS topic ARNs it takes messages from, and
 // AutoConfirm needs them. Ladder, on an apply phase's trigger only, is
 // the bot's opt-in to progressive autonomy (docs/architecture/autonomy-ladder.md).
+// A question trigger's From lists the teams whose questions the bot
+// answers (docs/architecture/team-channel.md).
 type TriggerSnapshot struct {
 	Type        string          `json:"type"`
 	Name        string          `json:"name,omitempty"`
@@ -36,6 +38,7 @@ type TriggerSnapshot struct {
 	Topics      []string        `json:"topics,omitempty"`
 	Severities  []string        `json:"severities,omitempty"`
 	Ladder      *LadderSnapshot `json:"ladder,omitempty"`
+	From        []string        `json:"from,omitempty"`
 }
 
 // Redacted is the snapshot with its credentials hidden: what the API

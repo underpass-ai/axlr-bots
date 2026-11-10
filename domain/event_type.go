@@ -64,6 +64,18 @@ const (
 	// and the control plane refused: the payload names the target and
 	// the check that refused it.
 	EventDelegationRefused EventType = "bot.delegation.refused"
+	// EventQuestionAsked says a bot asked another team through the team
+	// channel: the payload names the team, the question, whether the bot
+	// waits, the child task and the bot picked to answer.
+	EventQuestionAsked EventType = "bot.question.asked"
+	// EventQuestionAnswered says a question was answered, on the streams
+	// of both the asker and the responder: the payload holds the status,
+	// the answer cut to 280 characters, the responder's node and store,
+	// and partial when the team's memory is split across stores.
+	EventQuestionAnswered EventType = "bot.question.answered"
+	// EventQuestionRefused says a bot asked another team and the control
+	// plane refused: the payload names the reason and the message.
+	EventQuestionRefused EventType = "bot.question.refused"
 	// EventEventEmitted says a bot told its team something happened: the
 	// payload names the event, its severity, message and data, and who
 	// got a task from it and who did not, and why.
@@ -163,6 +175,7 @@ func ParseEventType(raw string) (EventType, error) {
 	switch EventType(raw) {
 	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventBotDeleted, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
 		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventApprovalFirst, EventTaskDelegated, EventTaskMessage, EventTaskSaid, EventTaskProgress, EventDelegationRefused,
+		EventQuestionAsked, EventQuestionAnswered, EventQuestionRefused,
 		EventEventEmitted, EventEventRefused, EventEventHeard, EventSubscriptionChanged, EventSubscriptionAsked, EventGroupEventPublished,
 		EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentProposed, EventIncidentApplying, EventIncidentVerifying, EventIncidentEscalated, EventIncidentResolved, EventIncidentPostmortemDrafted, EventIncidentPostmortemFailed, EventIncidentPostmortemSentBack, EventIncidentPostmortemApproved,
 		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked, EventNodeRenewed,

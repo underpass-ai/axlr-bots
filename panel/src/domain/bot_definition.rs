@@ -34,6 +34,9 @@ pub struct BotDefinition {
     /// The bots this bot may delegate to; passed through as written.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delegation: Option<serde_json::Value>,
+    /// The other teams it may ask for context; passed through as written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ask: Option<serde_json::Value>,
     /// The teams it belongs to: the panel's Team.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub groups: Vec<String>,
@@ -149,6 +152,7 @@ impl BotDefinition {
             budgets: Budgets::default(),
             approvals: None,
             delegation: None,
+            ask: None,
             groups: form.teams(),
             events: None,
             runtime: None,
@@ -227,6 +231,23 @@ mod tests {
         assert_eq!(definition.delegation.as_ref().unwrap()["to"][0], "worker-0");
         let out = serde_json::to_value(&definition).unwrap();
         assert_eq!(out["approvals"]["ttl"], "20m");
+    }
+
+    #[test]
+    fn keeps_the_teams_a_bot_asks() {
+        let text = r#"{"tenant": "default", "name": "qa-jefe", "owner": "ops", "mission": "Lead QA.", "groups": ["qa"],
+          "triggers": [{"type": "manual"}, {"type": "question", "from": ["dev"]}],
+          "ask": {"teams": ["dev"], "perMinute": 2, "maxOpen": 3}}"#;
+        let definition = BotDefinition::from_json(text).unwrap();
+        let out = serde_json::to_value(&definition).unwrap();
+        assert_eq!(out["ask"]["teams"][0], "dev");
+        assert_eq!(out["triggers"][1]["from"][0], "dev");
+        assert!(
+            serde_json::to_value(BotDefinition::from_json(EXAMPLE).unwrap())
+                .unwrap()
+                .get("ask")
+                .is_none()
+        );
     }
 
     const EXAMPLE: &str = r#"{

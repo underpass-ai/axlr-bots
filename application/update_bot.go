@@ -184,6 +184,14 @@ func applyPatch(bot *domain.Bot, patch BotPatch) ([]string, error) {
 		}
 		changed = append(changed, "delegation")
 	}
+	if patch.Ask != nil {
+		ask, err := domain.NewAskPolicy(*patch.Ask)
+		if err != nil {
+			return nil, err
+		}
+		bot.SetAsk(ask)
+		changed = append(changed, "ask")
+	}
 	if patch.Groups != nil {
 		teams, err := domain.NewTeams(*patch.Groups)
 		if err != nil {
@@ -225,6 +233,10 @@ func applyPatch(bot *domain.Bot, patch BotPatch) ([]string, error) {
 	}
 	// Nor an incident trigger's narrower policy for its phase.
 	if err := bot.CheckTriggers(); err != nil {
+		return nil, err
+	}
+	// New teams may hold a team the bot asks.
+	if err := bot.CheckAsk(); err != nil {
 		return nil, err
 	}
 	if subscribed {

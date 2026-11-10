@@ -2174,6 +2174,9 @@
           "delegation": {
             "$ref": "#/components/schemas/DelegationSnapshot"
           },
+          "ask": {
+            "$ref": "#/components/schemas/AskSnapshot"
+          },
           "id": {
             "type": "string"
           },
@@ -2283,6 +2286,9 @@
           "delegation": {
             "$ref": "#/components/schemas/DelegationSnapshot"
           },
+          "ask": {
+            "$ref": "#/components/schemas/AskSnapshot"
+          },
           "level": {
             "type": "string"
           },
@@ -2354,6 +2360,9 @@
           },
           "delegation": {
             "$ref": "#/components/schemas/DelegationSnapshot"
+          },
+          "ask": {
+            "$ref": "#/components/schemas/AskSnapshot"
           },
           "id": {
             "type": "string",
@@ -2716,6 +2725,28 @@
           }
         }
       },
+      "AskSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.AskSnapshot",
+        "description": "the other teams the bot may ask for context through the team channel (docs/architecture/team-channel.md); absent: it is not offered the tool",
+        "properties": {
+          "teams": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the memory teams the bot may ask, at most 8, none of its own"
+          },
+          "perMinute": {
+            "type": "integer",
+            "description": "questions a minute, 1 to 10; absent: 2"
+          },
+          "maxOpen": {
+            "type": "integer",
+            "description": "questions waiting for an answer at once, 1 to 8; absent: 3"
+          }
+        }
+      },
       "EmitRuleSnapshot": {
         "type": "object",
         "x-go-type": "domain.EmitRuleSnapshot",
@@ -2895,6 +2926,9 @@
           "bot.task.said",
           "bot.task.progress",
           "bot.delegation.refused",
+          "bot.question.asked",
+          "bot.question.answered",
+          "bot.question.refused",
           "bot.event.emitted",
           "bot.event.refused",
           "bot.event.heard",
@@ -3299,6 +3333,13 @@
           },
           "skillsSupported": {
             "type": "boolean"
+          },
+          "memoryTeams": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the teams whose bots share one KMP store on the node (its --memory-teams), * for every team; absent: none, and the node is never picked to answer a team's question (an older node)"
           }
         },
         "required": [
@@ -4379,6 +4420,13 @@
           },
           "ladder": {
             "$ref": "#/components/schemas/LadderSnapshot"
+          },
+          "from": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "a question trigger: the teams whose questions the bot answers, required, at most 8"
           }
         },
         "required": [
@@ -4397,7 +4445,9 @@
           "event",
           "incident",
           "alertmanager",
-          "cloudwatch"
+          "cloudwatch",
+          "question",
+          "question_answer"
         ],
         "description": "A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
       },

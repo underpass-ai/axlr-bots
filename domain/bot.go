@@ -20,6 +20,7 @@ type Bot struct {
 	placement    Placement
 	approvals    Approvals
 	delegation   Delegation
+	ask          AskPolicy
 	teams        Teams
 	events       EventPolicy
 	subs         Subscriptions
@@ -31,8 +32,12 @@ type Bot struct {
 }
 
 // NewBot creates a bot in Draft status at the observe level, with no
-// tool rules; Govern raises the level or narrows the tools.
+// tool rules; Govern raises the level or narrows the tools. A reserved
+// id is refused.
 func NewBot(id BotID, tenant TenantID, name BotName, owner Owner, mission Mission, tools AllowedTools, model ModelPolicy, budgets Budgets, now time.Time) (Bot, error) {
+	if id.Reserved() {
+		return Bot{}, invalid("bot id", id.String()+" is reserved for the team channel")
+	}
 	if now.IsZero() {
 		return Bot{}, invalid("created at", "must not be zero")
 	}
@@ -108,6 +113,31 @@ func (b Bot) DelegationDepth() int {
 		return min(b.budgets.MaxDelegationDepth(), MaxDelegationDepthLimit)
 	}
 	return DefaultDelegationDepth
+}
+
+// Ask says which other teams the bot may ask for context.
+func (b Bot) Ask() AskPolicy { return b.ask }
+
+// SetAsk replaces which other teams the bot may ask; CheckAsk holds it
+// to the bot's teams once the whole change is applied.
+func (b *Bot) SetAsk(ask AskPolicy) { b.ask = ask }
+
+// CheckAsk refuses an ask that names one of the bot's own teams: inside
+// a team, a bot delegates.
+func (b Bot) CheckAsk() error {
+	for _, team := range b.ask.Teams() {
+		if b.teams.Has(team) {
+			return invalid("ask teams", "names "+team.String()+", a team of the bot: inside a team, delegate")
+		}
+	}
+	return nil
+}
+
+// AnswersQuestionsFrom reports whether the bot consents to answer the
+// team's questions: it declares a question trigger whose from names it.
+func (b Bot) AnswersQuestionsFrom(team TeamName) bool {
+	_, ok := b.triggers.Question(team)
+	return ok
 }
 
 // Teams are the teams the bot belongs to.
@@ -318,6 +348,7 @@ func (b Bot) Snapshot() BotSnapshot {
 		Placement:     b.placement.Snapshot(),
 		Approvals:     b.approvals.Snapshot(),
 		Delegation:    b.delegation.Snapshot(),
+		Ask:           b.ask.Snapshot(),
 		Groups:        b.teams.Snapshot(),
 		Events:        b.events.Snapshot(),
 		Subscriptions: b.subs.Snapshot(),
@@ -412,11 +443,21 @@ func RestoreBot(s BotSnapshot) (Bot, error) {
 			return Bot{}, err
 		}
 	}
+	if s.Ask != nil {
+		ask, err := NewAskPolicy(*s.Ask)
+		if err != nil {
+			return Bot{}, err
+		}
+		bot.SetAsk(ask)
+	}
 	teams, err := NewTeams(s.Groups)
 	if err != nil {
 		return Bot{}, err
 	}
 	bot.JoinTeams(teams)
+	if err := bot.CheckAsk(); err != nil {
+		return Bot{}, err
+	}
 	if s.Events != nil {
 		events, err := NewEventPolicy(*s.Events)
 		if err != nil {

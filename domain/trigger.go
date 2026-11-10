@@ -22,7 +22,8 @@ const (
 // the credentials or the schedule. An incident trigger names the phase
 // of the incident the bot takes (triage, or fix, apply, verify or
 // postmortem for a teammate's incident once it reaches that phase) and may narrow the
-// bot's level and tools for that phase's tasks (Bot.PolicyFor).
+// bot's level and tools for that phase's tasks (Bot.PolicyFor). A
+// question trigger names the teams whose questions the bot answers.
 type Trigger struct {
 	kind       TriggerType
 	name       string
@@ -40,6 +41,7 @@ type Trigger struct {
 	confirm    bool
 	topics     []string
 	severities []IncidentSeverity
+	from       []TeamName
 }
 
 // NewTrigger validates a trigger from its definition.
@@ -72,8 +74,24 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 	if (s.Severity != "" || s.AutoConfirm || len(s.Topics) > 0) && kind != TriggerCloudWatch {
 		return Trigger{}, invalid("trigger "+name, "only a cloudwatch trigger takes a severity, autoConfirm or topics")
 	}
+	if len(s.From) > 0 && kind != TriggerQuestion {
+		return Trigger{}, invalid("trigger "+name, "only a question trigger takes from")
+	}
 	t.interrupt = s.Interrupt
 	switch kind {
+	case TriggerQuestionAnswer:
+		return Trigger{}, invalid("trigger "+name, "a bot does not declare question_answer: asking is its consent to the answer")
+	case TriggerQuestion:
+		if s.Objective != "" || s.Secret != "" || s.SigningKey != "" || s.Every != "" || s.Cron != "" {
+			return Trigger{}, invalid("trigger "+name, "a question trigger takes no objective, credentials or schedule")
+		}
+		if len(s.From) == 0 {
+			return Trigger{}, invalid("trigger "+name, "a question trigger names in from the teams it answers")
+		}
+		if t.from, err = parseTeamList("trigger "+name+" from", s.From); err != nil {
+			return Trigger{}, err
+		}
+		return t, nil
 	case TriggerManual, TriggerDelegation:
 		if s.Objective != "" || s.Secret != "" || s.SigningKey != "" || s.Every != "" || s.Cron != "" {
 			return Trigger{}, invalid("trigger "+name, "a "+kind.String()+" trigger takes no objective, credentials or schedule")
@@ -294,6 +312,16 @@ func (t Trigger) WritesPostmortemFor(severity IncidentSeverity) bool {
 	return slices.Contains(t.severities, severity)
 }
 
+// From lists the teams whose questions a question trigger answers; none
+// for the other types.
+func (t Trigger) From() []TeamName { return slices.Clone(t.from) }
+
+// AnswersFrom reports whether a question trigger answers the team's
+// questions.
+func (t Trigger) AnswersFrom(team TeamName) bool {
+	return t.kind == TriggerQuestion && slices.Contains(t.from, team)
+}
+
 // Schedule is when a timer fires; zero for the other types.
 func (t Trigger) Schedule() Schedule { return t.schedule }
 
@@ -352,6 +380,7 @@ func (t Trigger) Snapshot() TriggerSnapshot {
 	for _, severity := range t.severities {
 		s.Severities = append(s.Severities, severity.String())
 	}
+	s.From = teamStrings(t.from)
 	if t.phase != IncidentPhaseTriage {
 		// Triage is the default: a definition that did not name it
 		// stores as it did before incident triggers had phases.
