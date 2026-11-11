@@ -2,6 +2,8 @@
 
 Status: accepted, 11 November 2026. The product owner settled each question below one by one (`artifacts/lead-role-2026-11-11/decisiones.md` in the workspace). It builds on [publish/subscribe events](pubsub-events.md) and reuses the pick of [the team channel](team-channel.md).
 
+Amended 12 November 2026 (proposed): an event that crossed from another team is never coalesced, and a team on several nodes gets a FIFO queue with a claim: see [the team's FIFO queue](team-topics.md#the-teams-fifo-queue).
+
 ## Context
 
 The product owner's vision: *the responsible of a team is a role, not a fixed bot; bots are horizontal, to avoid bottlenecks.* While this design was settled he went further: **everything is horizontal**. There is no fixed lead; any member of the team may take any round, event or question.
