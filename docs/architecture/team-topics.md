@@ -60,6 +60,7 @@ Decided 12 November 2026: *"there are domain events and idempotency."*
 | Its identity | `evt-` + sha256 of the emitter's memory team, the name and `data.id`: not the emitting task. Two members of QA that publish `incidencia.nueva` for the same finding publish **one** event |
 | On the listener's side | the task's key is `event:<identity>:team:<team>`: a repeat finds the task the first one made and delivers nothing new, even after a crash |
 | A new fact about the same thing | a new name (`incidencia.completada`), never the same name again: a fix reopened is `incidencia.reabierta`, so a repeat is always a repeat |
+| Its context | when it helps, `data.context` names the KMP key (an about of the emitter's team, `project:qa.hallazgo.<id>`) where the context lives; 1 to 256 characters, no spaces. The listener does not open the other team's store: it asks that team through the [team channel](team-channel.md), naming the key, and the answer comes from whoever holds it. Decided 12 November 2026: *"if needed, the domain event sends the KMP key so they can consult the context"* |
 | The programs | stay idempotent too: what the task does with the id (`dev-cola`, `arreglo`, `hallazgo`) refuses to do it twice |
 
 ### The listener's side
