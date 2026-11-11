@@ -219,6 +219,34 @@ Settled by the product owner on 10 November 2026, while cut 4 was being built, o
 | A5 | under `act-with-approval`, `axlr_bots_ask_team` waited for a person, as `axlr_bots_delegate` does | **Asking needs no approval**: the teams' installers put `axlr_bots_ask_team` in the askers' `approvals.autoApprove` | asking only reads another team's context, already bounded by the matrix and the limits; a card would stop the asker, which is what A1 removes |
 | A6 | an asker heard nothing until the answer or `answered: false` after two hours | **Cut 5.5, revised 11 November 2026.** The asker only **reads** its question's state, `axlr_bots_question_status`, from the control plane's records (queued and why, running since, its last step, waiting for a person, its deadline). **Giving a question up is decided by a Jev watcher, one per asking team**: a Jev bot whose program names the reserved server `axlr-bots` and lists the watch tools; it is put each open question of its team, with that state, and Jev chooses to wait or abandon; abandon cancels the question with Jev's verdict as the reason, and the asker hears `answered: false`. Never a message to the responder's model | a stuck responder must be visible without interrupting it or spending its tokens; a choice between options goes to Jev, which costs far less than a language model, and one rule per question beats two voices |
 
+### The Jev watcher
+
+What cut 5.5b ships, for A6. One watcher per asking team; the asker itself never gives a question up.
+
+```text
+ qa-vigia (Jev, timer every 5 min)        node, in process          control plane (under mu)
+   start/wait: axlr_bots_watch_next ───▶ POST …/watch {after} ───▶ a Jev bot of server axlr-bots? its team?
+                                                                     the next open question of qa, ≥ 5 min old,
+                                                                     oldest first, after the cursor
+   Jev ◀── {ask: {state, question, [wait, abandon]}} ◀──────────── its state (axlr_bots_question_status's)
+   act: axlr_bots_watch_decide ───────▶ POST …/watch/decisions ─▶ wait: nothing
+                                                                     abandon: cancel the question's task,
+                                                                     reason "abandoned by qa-vigia: Jev chose
+                                                                     abandon (p=0.83, c=0.71)"
+                                                                     ─▶ bot.question.answered (answered: false)
+                                                                        to qa-jefe, as for any cancel
+```
+
+| Piece | What it is |
+|---|---|
+| The watcher | a Jev bot whose program names the reserved server `axlr-bots`; on that server the domain takes only the watcher's program (start and wait `axlr_bots_watch_next`, act `axlr_bots_watch_decide` with `choice` and `verdict`, no stop), so `fits` puts both tools in its `allowedTools` at level `act-within-policy` |
+| Its team | its memory team (the first of its groups); a question is its team's when its trigger names the team and its asker's memory team is the same |
+| `WatchAfter` | 5 minutes, a constant of the control plane: a younger question is not offered and cannot be decided |
+| A round | one task of the watcher, on a timer every 5 minutes that the team's installer writes (cut 7). Each question once, in a stable order (asked first, then id); the node keeps only the question being decided and the cursor |
+| The tools | served by the node in process, with the execution's identity, through the node's channel to the control plane, never over HTTP to an MCP server; the Jev runtime checks the reserved name before reading `mcp.json` |
+| Authorization | in the control plane: the routes refuse a bot that is not such a Jev watcher (`403`, audit `question.watch`) and never show or touch another team's question (`404`) |
+| The record | no event of its own: the cancel (`bot.task.cancelled`, with the watcher and Jev's verdict), the audit `question.abandon`, and cut 5's `bot.question.answered` with `answered: false` and the reason naming the watcher |
+
 ## Where it goes in the code
 
 | Repo | Layer | New or changed |
@@ -226,6 +254,7 @@ Settled by the product owner on 10 November 2026, while cut 4 was being built, o
 | axlr-bots | `domain/` | `ask_policy.go` (`ask.teams`, rates), the `question` and `question_answer` trigger types with `from`, `question_refusal.go`, the question objective template, event types `bot.question.*`, `NodeCapabilities.MemoryTeams`, the reserved bot id `canal` |
 | axlr-bots | `application/` | `ask_team.go` (checks, pick under `mu`, the child), `question_candidates.go`, `deliver_answer.go` (called when a child settles: message or new task), `describe` without node tools on a question task, `ask_offer.go` |
 | axlr-bots | `adapters/nodeagent/` | `ask_tool.go`, the relay's dispatch, the memory teams in the registration |
+| axlr-bots | the watcher (A6) | `domain/jev_watch.go`; `application/watch_next.go`, `decide_watch.go`, `question_watcher.go`; the two node routes; `adapters/jev/node_tool_client.go`; `adapters/nodeagent/watcher.go` |
 | axlr-bots | `adapters/unixapi/` | the node route to ask, the derived matrix for the panel, `contract_test.go` |
 | axlr-bots | `panel/` | the timeline lines, a team's links, `partial` on an answer |
 | axlr-bots | `docs/reference/` | `bot-definition.md` (`ask`, `question`), `node-protocol.md`, `operator-api`, `cli.md` |
@@ -246,7 +275,7 @@ Each from `origin/main`, base `main`; control plane, then nodes, then panel; che
 | 4 | the amendment, the tool, the route, the memory teams in the registration | asker and responder on two nodes: the tool answers at once with the id and the responder; the question task waits for its node with two hours and its own budgets |
 | 5 | the return leg | the asker ended: a `question_answer` task; still running: a message; the child failed, expired or was cancelled: `answered: false` with the reason |
 | 5.5a | the state of a question (A6) | the asker reads queued and why, running since, the last step, a wait for a person and the deadline, only of its own task's questions; the responder is never interrupted |
-| 5.5b | the Jev watcher (A6) | a Jev bot of the asking team, with a fake judge, abandons a stuck question and the asker hears `answered: false` naming it; `wait` changes nothing; it never touches another team's questions; a bot that is not Jev cannot watch |
+| 5.5b | the Jev watcher (A6), [above](#the-jev-watcher) | a Jev bot of the asking team, with a fake judge, abandons a stuck question and the asker hears `answered: false` naming it; `wait` changes nothing; it never touches another team's questions; a bot that is not Jev cannot watch; a question younger than 5 minutes is not offered |
 | 6 | the panel | the timeline lines, the links, `partial` |
 | 7 | playbooks and bots, one live link qa→dev | with the product owner's go-ahead, behind a node switch, off by default |
 | 8 | the node writes memory (D6, later) | after the MCP write from the node is verified |

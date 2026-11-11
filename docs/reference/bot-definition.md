@@ -129,7 +129,7 @@ A bot asks another **team** for context it holds, and one member of that team th
 | `ask.maxOpen` | questions waiting for an answer at once, 1 to 8; absent: 3 |
 | trigger `question` | the bot's consent to answer the questions of the teams `from` lists (required, up to 8 distinct names); it takes no objective, credentials or schedule |
 
-`question_answer` names the task that carries the answer back when the asking task has ended; no definition declares it, since asking is the consent. The id `canal` is reserved for the channel's record in each team's memory: no bot may take it.
+The asker never gives a question up: its team's [Jev watcher](#a-teams-question-watcher) does. `question_answer` names the task that carries the answer back when the asking task has ended; no definition declares it, since asking is the consent. The id `canal` is reserved for the channel's record in each team's memory: no bot may take it.
 
 ## Urgent tasks
 
@@ -334,6 +334,46 @@ The program, for a task that an event made (a notice such as `info.notice.load`)
 The program's tools must be in `allowedTools`, and the level must be `act-within-policy`: the program calls its tools without asking a person. A definition or an update that narrows them past the program is refused. The execution's report carries the tool calls, the usage (Jev's calls and input tokens, the cost at TypeSafe's price) and a receipt, `axlr-bots.jev-receipt/v1`, with each decision: a hash of the question, the choice, its probability, Jev's confidence, the latency and whether the act was taken. The trace stays on the node, as AXLR's does.
 
 A node runs Jev bots only when it has `TYPESAFE_API_KEY` in its environment: it then registers the runtime `jev` in its capabilities, and the control plane assigns a Jev bot to no other node. `axlr-node --mcp-config` names another `mcp.json`; `--jev-model` another pinned version. Where the key goes: the env file on a host ([install](../runbooks/install.md#jev-bots-and-a-broker-on-a-host)), `sidecar.env` in a pod ([sidecar](../runbooks/sidecar.md#jev-bots-and-a-broker-in-a-pod)).
+
+### A team's question watcher
+
+A team that asks other teams gives its open questions up through one **Jev watcher** ([ADR, A6](../architecture/team-channel.md#the-jev-watcher)): a Jev bot of that team whose program names the reserved server `axlr-bots`. No `mcp.json` entry is read for it: the node serves its two tools in process, with the execution's identity, and the control plane answers them. [`cmd/axlr-bots/testdata/bot-watcher.json`](../../cmd/axlr-bots/testdata/bot-watcher.json):
+
+```json
+{
+  "id": "qa-vigia",
+  "tenant": "default",
+  "name": "qa-vigia",
+  "owner": "operator",
+  "mission": "Decide, for each open question team qa asked, whether qa keeps waiting for the answer or abandons it.",
+  "groups": ["qa"],
+  "level": "act-within-policy",
+  "allowedTools": ["axlr_bots_watch_next", "axlr_bots_watch_decide"],
+  "runtime": {
+    "kind": "jev",
+    "jev": {
+      "server": "axlr-bots",
+      "start": "axlr_bots_watch_next",
+      "act": {"tool": "axlr_bots_watch_decide", "choice": "choice", "verdict": "verdict"},
+      "wait": "axlr_bots_watch_next"
+    }
+  },
+  "triggers": [
+    {"type": "manual"},
+    {"type": "timer", "name": "round", "every": "5m", "objective": "Watch team qa's open questions (the round fired at {{.firedAt}})."}
+  ],
+  "budgets": {"maxModelCallsPerTask": 20, "maxToolCallsPerTask": 60, "taskTimeoutSeconds": 300}
+}
+```
+
+| Rule | Why |
+|---|---|
+| `server: axlr-bots` takes exactly this program: `start` and `wait` are `axlr_bots_watch_next`, `act` is `axlr_bots_watch_decide` with `choice` and `verdict`, no `stop` (`pass` and `tell` as for any program) | the node's tools read those arguments; any other program on the reserved server is refused |
+| both tools in `allowedTools`, level `act-within-policy` | as for any Jev program |
+| its team is its first `groups` name, as for memory | it watches only the questions whose asker's team is that one; a watcher in no team is refused |
+| a `timer` every 5 minutes | each round puts to Jev every open question of the team asked 5 minutes ago or more (`WatchAfter`), oldest first, each once; the next round starts again |
+
+Each question is put as `{state, question: "Should team qa keep waiting for this answer or abandon the question?", options: [wait, abandon]}`; the state is what [`axlr_bots_question_status`](#the-team-channel) reads (queued and why, running since and its last step, a wait for a person, the deadline). `wait` changes nothing. `abandon` cancels the question's task with the reason `abandoned by qa-vigia: Jev chose abandon (p=0.83, c=0.71)`, audited as `question.abandon`, and the asker hears `answered: false` with that reason, as for any question that ended without an answer. A bot that is not such a Jev bot is refused by the control plane (`403`, audit `question.watch`).
 
 ## Register, enable, update
 

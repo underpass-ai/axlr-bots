@@ -650,6 +650,28 @@ func (c *Client) QuestionState(ctx context.Context, node domain.NodeID, executio
 	return nodeproto.ToQuestionView(message)
 }
 
+// WatchNext asks, for a team's Jev watcher, the next question of its
+// round after the cursor (application.NodeTransport).
+func (c *Client) WatchNext(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, after domain.TaskID) (application.WatchedQuestion, error) {
+	var message nodeproto.WatchedMessage
+	path := "/v1/nodes/" + url.PathEscape(node.String()) + "/executions/" + url.PathEscape(execution.String()) + "/watch"
+	if err := c.call(ctx, http.MethodPost, path, nodeproto.WatchMessage{After: after.String()}, &message); err != nil {
+		return application.WatchedQuestion{}, err
+	}
+	return nodeproto.ToWatched(message)
+}
+
+// DecideWatch hands over the watcher's decision for one question.
+func (c *Client) DecideWatch(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, decision application.WatchDecision) (application.WatchDecided, error) {
+	var message nodeproto.WatchDecidedMessage
+	path := "/v1/nodes/" + url.PathEscape(node.String()) + "/executions/" + url.PathEscape(execution.String()) + "/watch/decisions"
+	request := nodeproto.WatchDecisionMessage{Question: decision.Question.String(), Choice: decision.Choice, Probability: decision.Probability, Confidence: decision.Confidence}
+	if err := c.call(ctx, http.MethodPost, path, request, &message); err != nil {
+		return application.WatchDecided{}, err
+	}
+	return nodeproto.ToWatchDecided(message)
+}
+
 // AwaitDelegation waits up to wait for the child to end and answers its
 // state.
 func (c *Client) AwaitDelegation(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, child domain.TaskID, wait time.Duration) (application.DelegationAnswer, error) {

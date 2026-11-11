@@ -236,3 +236,21 @@ func (r *SerialRunner) Ask(ctx context.Context, node domain.NodeID, execution do
 	defer r.mu.Unlock()
 	return NewAskTeam(r.deps).Execute(ctx, node, execution, command)
 }
+
+// WatchNext answers a team's Jev watcher the next question of its round,
+// as WatchNext does, under the same lock as the assignments and the
+// reports: what it reads is never half changed.
+func (r *SerialRunner) WatchNext(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, after domain.TaskID) (WatchedQuestion, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return NewWatchNext(r.deps).Execute(ctx, node, execution, after)
+}
+
+// DecideWatch carries out a watcher's decision, as DecideWatch does,
+// under the same lock: a question is never abandoned while a node is
+// handed it or reports it.
+func (r *SerialRunner) DecideWatch(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, decision WatchDecision) (WatchDecided, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return NewDecideWatch(r.deps).Execute(ctx, node, execution, decision)
+}
