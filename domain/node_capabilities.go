@@ -14,7 +14,10 @@ package domain
 // them and run without. MemoryTeams are the teams whose bots share one
 // KMP store on the node (its --memory-teams; `*` for every team): only
 // such a node is picked to answer a team's question, and an older node
-// that names none never is.
+// that names none never is. TeamChannel says the node runs the team
+// channel (axlr-node --team-channel, off by default): only then are its
+// runs offered the ask tool, its bots picked to answer, and a watcher
+// served; an older node reports none, which is off.
 type NodeCapabilities struct {
 	AXLRVersion          string   `json:"axlrVersion,omitempty"`
 	PolicySupported      bool     `json:"policySupported"`
@@ -24,6 +27,7 @@ type NodeCapabilities struct {
 	Providers            []string `json:"providers,omitempty"`
 	SkillsSupported      bool     `json:"skillsSupported,omitempty"`
 	MemoryTeams          []string `json:"memoryTeams,omitempty"`
+	TeamChannel          bool     `json:"teamChannel,omitempty"`
 }
 
 // AllMemoryTeams is what a node reports in MemoryTeams when every team's
@@ -42,6 +46,12 @@ func (c NodeCapabilities) SharesMemoryOf(team TeamName) bool {
 		}
 	}
 	return false
+}
+
+// AnswersFor reports whether the node may answer the team's questions:
+// it runs the team channel and opens the team's store.
+func (c NodeCapabilities) AnswersFor(team TeamName) bool {
+	return c.TeamChannel && c.SharesMemoryOf(team)
 }
 
 // HasProvider reports whether the node named the provider.

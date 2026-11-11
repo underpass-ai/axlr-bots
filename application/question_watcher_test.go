@@ -24,6 +24,7 @@ func watching(t *testing.T, team string) (*harness, Assignment, Assignment) {
 	h, parent := channel(t)
 	r := registration("jev-node")
 	r.Capabilities.Runtimes = []string{"jev"}
+	r.Capabilities.TeamChannel = true
 	if _, err := NewRegisterNode(h.deps).Execute(context.Background(), r); err != nil {
 		t.Fatal(err)
 	}

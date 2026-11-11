@@ -3,6 +3,7 @@ package application
 import (
 	"cmp"
 	"context"
+	"errors"
 	"slices"
 
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -19,8 +20,9 @@ type questionWatcher struct {
 	team domain.TeamName
 }
 
-// watcherOf finds the watcher behind a node's execution. A bot that is
-// not a Jev watcher, or is in no team, is refused.
+// watcherOf finds the watcher behind a node's execution. A node with the
+// team channel off, a bot that is not a Jev watcher, or one in no team,
+// is refused.
 func watcherOf(ctx context.Context, deps Dependencies, node domain.NodeID, executionID domain.ExecutionID, attempted string) (questionWatcher, error) {
 	execution, err := runningExecutionOf(ctx, deps, node, executionID, attempted)
 	if err != nil {
@@ -31,6 +33,13 @@ func watcherOf(ctx context.Context, deps Dependencies, node domain.NodeID, execu
 		return questionWatcher{}, err
 	}
 	w := questionWatcher{deps: deps, bot: bot, team: memoryTeamOf(bot)}
+	if _, err := channelNodeOf(ctx, deps, node, attempted); err != nil {
+		var forbidden domain.ForbiddenError
+		if errors.As(err, &forbidden) {
+			return questionWatcher{}, w.refuse(ctx, attempted, forbidden.Reason)
+		}
+		return questionWatcher{}, err
+	}
 	switch {
 	case !bot.WatchesQuestions():
 		return questionWatcher{}, w.refuse(ctx, attempted, "bot "+bot.ID().String()+" is not a Jev watcher: only a Jev bot whose program names the server "+domain.WatchServer+" watches its team's questions")

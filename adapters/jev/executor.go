@@ -136,7 +136,7 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 func (e *Executor) client(program domain.JevProgram, request application.ExecutionRequest) (toolClient, error) {
 	if program.Server() == domain.WatchServer {
 		if request.OnNodeTool == nil {
-			return nil, errors.New("this node serves no " + domain.WatchServer + " tools to the run")
+			return nil, errors.New("this node serves no " + domain.WatchServer + " tools to the run: a team's watcher runs only on a node with the team channel on (axlr-node --team-channel)")
 		}
 		return nodeToolClient{call: request.OnNodeTool}, nil
 	}

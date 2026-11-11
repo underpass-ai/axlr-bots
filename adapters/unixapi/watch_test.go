@@ -42,9 +42,9 @@ func TestTheWatchRoutesOverTheSocket(t *testing.T) {
 		}
 	}
 	for _, node := range []application.NodeRegistration{
-		{ID: "qa-node", HostName: "qa-node", Capabilities: domain.NodeCapabilities{PolicySupported: true}},
-		{ID: "dev-node", HostName: "dev-node", Capabilities: domain.NodeCapabilities{PolicySupported: true, MemoryTeams: []string{"dev"}}},
-		{ID: "jev-node", HostName: "jev-node", Capabilities: domain.NodeCapabilities{PolicySupported: true, Runtimes: []string{"jev"}}},
+		{ID: "qa-node", HostName: "qa-node", Capabilities: domain.NodeCapabilities{PolicySupported: true, TeamChannel: true}},
+		{ID: "dev-node", HostName: "dev-node", Capabilities: domain.NodeCapabilities{PolicySupported: true, MemoryTeams: []string{"dev"}, TeamChannel: true}},
+		{ID: "jev-node", HostName: "jev-node", Capabilities: domain.NodeCapabilities{PolicySupported: true, Runtimes: []string{"jev"}, TeamChannel: true}},
 	} {
 		if _, err := client.Register(ctx, node); err != nil {
 			t.Fatal(err)
@@ -115,5 +115,15 @@ func TestTheWatchRoutesOverTheSocket(t *testing.T) {
 	}
 	if err := client.call(ctx, http.MethodPost, "/v1/nodes/Bad/executions/"+watch.ExecutionID.String()+"/watch/decisions", map[string]any{}, &map[string]any{}); err == nil {
 		t.Error("a bad node id was taken")
+	}
+	// The node switched its team channel off: the watcher is forbidden.
+	if _, err := client.Register(ctx, application.NodeRegistration{ID: "jev-node", HostName: "jev-node", Capabilities: domain.NodeCapabilities{PolicySupported: true, Runtimes: []string{"jev"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.WatchNext(ctx, "jev-node", watch.ExecutionID, ""); !domain.IsForbidden(err) || !strings.Contains(err.Error(), "team channel off") {
+		t.Errorf("a watcher on a node with the channel off: %v", err)
+	}
+	if _, err := client.Ask(ctx, "jev-node", watch.ExecutionID, application.AskTeamCommand{Team: "dev", Question: "Who?"}); err == nil {
+		t.Error("a node with the channel off asked")
 	}
 }

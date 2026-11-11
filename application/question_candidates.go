@@ -68,7 +68,8 @@ func readQuestionRoster(ctx context.Context, deps Dependencies, tenant domain.Te
 // candidates are the members of the team that may answer the asking
 // team now (docs/architecture/team-channel.md, "Who is free"): the team
 // is their memory team, they consent to the asking team, they take tasks,
-// and an Online node may run them and shares the team's memory. By id.
+// and an Online node with the team channel on may run them and shares
+// the team's memory. By id.
 func (r questionRoster) candidates(team, asking domain.TeamName) []domain.Bot {
 	var out []domain.Bot
 	for _, bot := range r.bots {
@@ -99,8 +100,9 @@ func (r questionRoster) pick(candidates []domain.Bot) (domain.Bot, bool) {
 }
 
 // answersOn reports whether the node may run the bot's questions: it may
-// run the bot, and it opens the store of the bot's memory team. A node
-// older than the team channel names no memory team and never answers.
+// run the bot, it runs the team channel (axlr-node --team-channel), and
+// it opens the store of the bot's memory team. A node with the switch
+// off, or older than it, never answers.
 func answersOn(bot domain.Bot, node domain.Node) bool {
-	return nodeCanRun(bot, domain.SkillPins{}, node) && node.Capabilities().SharesMemoryOf(memoryTeamOf(bot))
+	return nodeCanRun(bot, domain.SkillPins{}, node) && node.Capabilities().AnswersFor(memoryTeamOf(bot))
 }

@@ -115,7 +115,7 @@ The target takes delegated tasks when its `triggers` include `{"type": "delegati
 
 ## The team channel
 
-A bot asks another **team** for context it holds, and one member of that team that consents answers ([ADR](../architecture/team-channel.md)). A bot with `ask.teams` is offered the tools `axlr_bots_ask_team {team, question}` and `axlr_bots_question_status {question}` (where its question stands, read only) on its node; the call answers at once with the question's id and the bot picked to answer, and never waits. The member's task runs with its own budgets and timeout and must be answered within two hours of the ask. The answer comes back once the member's task ends: a message into the asking task while it still runs, else a new task of the asking bot, trigger `question_answer`, with the answer framed as another team's data (or why there is none). No link is live until the teams' installers turn one on. Under `act-with-approval` the call waits for a person, as `axlr_bots_delegate` does, unless `approvals.autoApprove` names `axlr_bots_ask_team`.
+A bot asks another **team** for context it holds, and one member of that team that consents answers ([ADR](../architecture/team-channel.md)). A bot with `ask.teams` is offered the tools `axlr_bots_ask_team {team, question}` and `axlr_bots_question_status {question}` (where its question stands, read only) on a node that runs the team channel (`axlr-node --team-channel`, off by default); the call answers at once with the question's id and the bot picked to answer, and never waits. The member's task runs with its own budgets and timeout and must be answered within two hours of the ask. The answer comes back once the member's task ends: a message into the asking task while it still runs, else a new task of the asking bot, trigger `question_answer`, with the answer framed as another team's data (or why there is none). No link is live until the teams' installers turn one on, and only bots on nodes with the switch on ask or answer ([runbook](../runbooks/team-channel.md)). Under `act-with-approval` the call waits for a person, as `axlr_bots_delegate` does, unless `approvals.autoApprove` names `axlr_bots_ask_team`.
 
 ```json
 "ask": {"teams": ["dev"], "perMinute": 2, "maxOpen": 3},
@@ -337,7 +337,7 @@ A node runs Jev bots only when it has `TYPESAFE_API_KEY` in its environment: it 
 
 ### A team's question watcher
 
-A team that asks other teams gives its open questions up through one **Jev watcher** ([ADR, A6](../architecture/team-channel.md#the-jev-watcher)): a Jev bot of that team whose program names the reserved server `axlr-bots`. No `mcp.json` entry is read for it: the node serves its two tools in process, with the execution's identity, and the control plane answers them. [`cmd/axlr-bots/testdata/bot-watcher.json`](../../cmd/axlr-bots/testdata/bot-watcher.json):
+A team that asks other teams gives its open questions up through one **Jev watcher** ([ADR, A6](../architecture/team-channel.md#the-jev-watcher)): a Jev bot of that team whose program names the reserved server `axlr-bots`. No `mcp.json` entry is read for it: the node serves its two tools in process, with the execution's identity, and the control plane answers them; only a node with the team channel on (`--team-channel`) does, and it needs `TYPESAFE_API_KEY` for the `jev` runtime. [`cmd/axlr-bots/testdata/bot-watcher.json`](../../cmd/axlr-bots/testdata/bot-watcher.json):
 
 ```json
 {

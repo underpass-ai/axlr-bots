@@ -42,8 +42,8 @@ func TestAQuestionOverTheSocket(t *testing.T) {
 		t.Errorf("a missing team's links: %v", err)
 	}
 	for _, node := range []application.NodeRegistration{
-		{ID: "qa-node", HostName: "qa-node", Capabilities: domain.NodeCapabilities{PolicySupported: true}},
-		{ID: "dev-node", HostName: "dev-node", Capabilities: domain.NodeCapabilities{PolicySupported: true, MemoryTeams: []string{"dev"}}},
+		{ID: "qa-node", HostName: "qa-node", Capabilities: domain.NodeCapabilities{PolicySupported: true, TeamChannel: true}},
+		{ID: "dev-node", HostName: "dev-node", Capabilities: domain.NodeCapabilities{PolicySupported: true, MemoryTeams: []string{"dev"}, TeamChannel: true}},
 	} {
 		if _, err := client.Register(ctx, node); err != nil {
 			t.Fatal(err)

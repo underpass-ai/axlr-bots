@@ -73,6 +73,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	dedicated := flags.Bool("dedicated", envOr("AXLR_NODE_DEDICATED", "") == "true", "run only the bots whose placement names this node or selects its labels, never those placed on any node (also AXLR_NODE_DEDICATED=true): a sidecar")
 	axlrMCPConfig := flags.String("axlr-mcp-config", envOr("AXLR_NODE_AXLR_MCP_CONFIG", ""), "the mcp.json every AXLR execution loads instead of the operator's ~/.config/axlr/mcp.json, so a server the operator added does not join the bots' runs (also AXLR_NODE_AXLR_MCP_CONFIG; an absolute path that exists)")
 	memoryTeams := flags.String("memory-teams", envOr("AXLR_NODE_MEMORY_TEAMS", ""), "the teams whose bots share one KMP store on this node, a,b, or * for every team; a bot of any other team keeps a store of its own; only a node that names a team answers its questions (also AXLR_NODE_MEMORY_TEAMS; default: none)")
+	teamChannel := flags.Bool("team-channel", envOr("AXLR_NODE_TEAM_CHANNEL", "") == "true", "run the team channel on this node: its runs may ask other teams (axlr_bots_ask_team, axlr_bots_question_status), its bots answer the teams --memory-teams names, and a team's Jev watcher runs here; off, the control plane offers none of it here and the node serves none (also AXLR_NODE_TEAM_CHANNEL=true; default: off)")
 	channelMemory := flags.Bool("team-channel-memory", envOr("AXLR_NODE_TEAM_CHANNEL_MEMORY", "") == "true", "write each team channel question this node's bots ask or answer into the team's KMP store, about project:<team>.canal, without a model; only for the teams --memory-teams names (also AXLR_NODE_TEAM_CHANNEL_MEMORY=true; default: off)")
 	kmpMCP := flags.String("kmp-mcp", envOr("AXLR_NODE_KMP_MCP", "kmp-mcp"), "with --team-channel-memory, the kmp-mcp that writes into the team's store (also AXLR_NODE_KMP_MCP)")
 	mcpConfig := flags.String("mcp-config", envOr("AXLR_NODE_MCP_CONFIG", ""), "the mcp.json a Jev bot's program finds its MCP server in (also AXLR_NODE_MCP_CONFIG; default: ~/.config/axlr/mcp.json, the node's AXLR's)")
@@ -193,10 +194,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 	agent := nodeagent.Agent{
 		Transport: conn.transport,
 		Executor:  runtimes,
-		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Dedicated: *dedicated, Runtimes: runtimes.Kinds(), Providers: providers, MemoryTeams: sharedMemory, Heartbeat: *heartbeat, PollWait: *poll, RenewBefore: *renewBefore, Log: logger, SocketDir: filepath.Join(*stateDir, "run")},
+		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Dedicated: *dedicated, Runtimes: runtimes.Kinds(), Providers: providers, MemoryTeams: sharedMemory, TeamChannel: *teamChannel, Heartbeat: *heartbeat, PollWait: *poll, RenewBefore: *renewBefore, Log: logger, SocketDir: filepath.Join(*stateDir, "run")},
 	}
 	if conn.certificate != nil {
 		agent.Certificate = conn.certificate
+	}
+	if *teamChannel {
+		logger.Printf("node: team channel on (--team-channel)")
+		if len(sharedMemory) == 0 {
+			logger.Printf("node: team channel on but --memory-teams names no team: its bots may ask, never answer")
+		}
 	}
 	if memoryWriter != nil {
 		agent.Memory = memoryWriter

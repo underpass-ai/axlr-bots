@@ -113,7 +113,7 @@ func TestARefusedDecisionIsTheToolsError(t *testing.T) {
 func TestAWatcherNeedsTheNodesTools(t *testing.T) {
 	dir := t.TempDir()
 	executor := NewExecutor(fixedJudge{choice: "wait"}, MCPConfig{}, dir)
-	if _, err := executor.Execute(context.Background(), watcherRequest(t, nil)); err == nil || !strings.Contains(err.Error(), "serves no axlr-bots tools") {
+	if _, err := executor.Execute(context.Background(), watcherRequest(t, nil)); err == nil || !strings.Contains(err.Error(), "serves no axlr-bots tools") || !strings.Contains(err.Error(), "--team-channel") {
 		t.Errorf("without the node's tools: %v", err)
 	}
 	client := nodeToolClient{call: (&nodeTools{}).call}

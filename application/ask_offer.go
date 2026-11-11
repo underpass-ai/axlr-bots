@@ -18,10 +18,13 @@ type AskOffer struct {
 	Teams []string
 }
 
-// askOffer is the bot's offer, or nil when it asks no team or the task
-// answers another team's question: one hop between teams, no further.
-func askOffer(bot domain.Bot, task domain.Task) *AskOffer {
-	if !bot.Ask().Enabled() || task.Trigger().Type == domain.TriggerQuestion {
+// askOffer is the bot's offer, or nil when it asks no team, the task
+// answers another team's question (one hop between teams, no further), or
+// the node that runs it has the team channel off (axlr-node
+// --team-channel): such a node is offered neither the ask tool nor the
+// status tool.
+func askOffer(bot domain.Bot, task domain.Task, node domain.Node) *AskOffer {
+	if !bot.Ask().Enabled() || task.Trigger().Type == domain.TriggerQuestion || !node.Capabilities().TeamChannel {
 		return nil
 	}
 	return &AskOffer{Teams: teamNames(bot.Ask().Teams())}

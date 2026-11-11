@@ -61,7 +61,7 @@ A member of the asked team is a candidate when all hold:
 | 2 | It declares the `question` trigger and its `from` names the asker's memory team | new |
 | 3 | `AcceptsTasks` (Enabled) | yes |
 | 4 | Some node may run it (`nodeCanRun`) and that node is Online | yes |
-| 5 | That node shares the memory of the asked team: nodes report their `--memory-teams` in their capabilities; an older node reports none and is never picked | new |
+| 5 | That node shares the memory of the asked team and runs the team channel: nodes report their `--memory-teams` and their [switch](#the-switch) in their capabilities; an older node reports neither and is never picked | new |
 
 Among the candidates, the first free one by id, where **free** is: no Running, WaitingApproval or Pending task. With none free, the candidate with the fewest open tasks, then by id. With no candidate: `team_unavailable`.
 
@@ -69,7 +69,7 @@ A pick is final. A chosen bot that is preempted by an urgent task makes the ques
 
 ### The tool
 
-Served by the node agent on the execution's socket, beside `axlr_bots_delegate`, to a bot whose `ask.teams` names at least one team, never on a `question` task.
+Served by the node agent on the execution's socket, beside `axlr_bots_delegate`, to a bot whose `ask.teams` names at least one team, never on a `question` task, and only on a node with the team channel [switched on](#the-switch).
 
 ```json
 {
@@ -200,7 +200,7 @@ Framing is a help, never a proof. Before a link is turned on live, the responder
 
 Phase 1 adds nothing to AXLR or KMP. Each side's playbook records the exchange in its own about, `project:<team>.<bot>`, citing the other team and the question id; never in the team's common about.
 
-Phase 2, cut 8: the node of each side writes the exchange into its team's store, about `project:<team>.canal`, with an agent of its own, without a model. Nobody else can write there: the control plane refuses a bot named `canal` (`ChannelBotID`), and AXLR holds a member to its own about and the team's. The node is switched on by hand, `axlr-node --team-channel-memory` (`AXLR_NODE_TEAM_CHANNEL_MEMORY=true`), off by default, and writes only for the teams its `--memory-teams` names. Only the write is behind the switch: the control plane hands every node its side's record and audits it, and a node switched off, or an older one, leaves it unwritten.
+Phase 2, cut 8: the node of each side writes the exchange into its team's store, about `project:<team>.canal`, with an agent of its own, without a model. Nobody else can write there: the control plane refuses a bot named `canal` (`ChannelBotID`), and AXLR holds a member to its own about and the team's. The node is switched on by hand, `axlr-node --team-channel-memory` (`AXLR_NODE_TEAM_CHANNEL_MEMORY=true`), off by default and apart from the channel's own [switch](#the-switch), and writes only for the teams its `--memory-teams` names. Only the write is behind the switch: the control plane hands every node its side's record and audits it, and a node switched off, or an older one, leaves it unwritten.
 
 ```text
  question qa→dev ends
@@ -226,6 +226,30 @@ Phase 2, cut 8: the node of each side writes the exchange into its team's store,
 Checked before it was built, on 10 November 2026 with KMP 0.26.0, in a sandbox with a home and a store of its own: `initialize`, `tools/list`, `kmp_write_memory` into `project:qa.canal` as `kmp/qa#canal` (`Ingested 1 entry`), read back with `kmp_inspect` (`writer_actor`) and `kmp-mcp memories --json`; the same write again `Replayed`, the same key with other bytes refused; a 6 KB UTF-8 evidence taken. A write takes under 0.1 s.
 
 What phase 2 leaves out: a question that ends without a report from the answering node (it expired in the queue, was cancelled, reconciled or its node revoked) gets no record on the answering side; an answer that reaches the asking run in its last seconds may not be read, and its record with it; the node does not tell the control plane whether it wrote.
+
+### The switch
+
+Cut 7b. Each node runs the channel only when its operator says so: `axlr-node --team-channel` (`AXLR_NODE_TEAM_CHANNEL=true`), **off by default**. The node reports it in its capabilities (`teamChannel`); an older node reports none, which is off. The control plane honours it, so a bot's `ask.teams` and `question` trigger do nothing on a node that is off:
+
+| On a node with the switch off | What happens |
+|---|---|
+| a run of a bot with `ask.teams` | no `ask` offer, and neither `axlr_bots_ask_team` nor `axlr_bots_question_status` in its allowed tools, even when the bot lists them |
+| the pick of who answers | its bots are never candidates (`team_unavailable` when no other node may answer); a Pending question waits for a node that is on |
+| the ask, status and watch routes | `403` (an ask audited as `question.ask`, a watch as `question.watch`): an error of the node, never a refusal the model reads |
+| the node itself | serves none of those tools, nor a watcher's in-process tools, whatever an assignment offers |
+
+Not gated: a `question_answer` task, the answer to a question already asked, runs wherever its bot may run; and the control plane hands each side's [memory record](#memory) whatever the node.
+
+The two switches of a node are independent:
+
+| `--team-channel` | `--team-channel-memory` | The node |
+|---|---|---|
+| off | off | takes no part (the default) |
+| on | off | asks and answers; each bot records the exchange in its own about (phase 1) |
+| on | on | asks and answers, and writes each exchange into `project:<team>.canal` |
+| off | on | writes only the records that reach it anyway (a `question_answer` task run there); turn both on together |
+
+How to turn on one live link, and off again: [runbook](../runbooks/team-channel.md).
 
 ### A team on several nodes
 
@@ -269,7 +293,7 @@ What cut 5.5b ships, for A6. One watcher per asking team; the asker itself never
 | `WatchAfter` | 5 minutes, a constant of the control plane: a younger question is not offered and cannot be decided |
 | A round | one task of the watcher, on a timer every 5 minutes that the team's installer writes (cut 7). Each question once, in a stable order (asked first, then id); the node keeps only the question being decided and the cursor |
 | The tools | served by the node in process, with the execution's identity, through the node's channel to the control plane, never over HTTP to an MCP server; the Jev runtime checks the reserved name before reading `mcp.json` |
-| Authorization | in the control plane: the routes refuse a bot that is not such a Jev watcher (`403`, audit `question.watch`) and never show or touch another team's question (`404`) |
+| Authorization | in the control plane: the routes refuse a node with the team channel [off](#the-switch) and a bot that is not such a Jev watcher (`403`, audit `question.watch`) and never show or touch another team's question (`404`) |
 | The record | no event of its own: the cancel (`bot.task.cancelled`, with the watcher and Jev's verdict), the audit `question.abandon`, and cut 5's `bot.question.answered` with `answered: false` and the reason naming the watcher |
 
 ## Where it goes in the code
@@ -284,6 +308,7 @@ What cut 5.5b ships, for A6. One watcher per asking team; the asker itself never
 | axlr-bots | `panel/` | the timeline lines, a team's links, `partial` on an answer |
 | axlr-bots | `docs/reference/` | `bot-definition.md` (`ask`, `question`), `node-protocol.md`, `operator-api`, `cli.md` |
 | axlr-bots | `adapters/kmpchannel/`, `adapters/nodeagent/` | phase 2: the node's writer over `kmp-mcp`, `--team-channel-memory` |
+| axlr-bots | the switch (cut 7b) | `NodeCapabilities.TeamChannel`; `answersOn`, `askOffer`, `channelNodeOf` in `application/`; `adapters/nodeagent/team_channel.go`; `axlr-node --team-channel`; `docs/runbooks/team-channel.md` |
 | AXLR | — | nothing |
 | KMP | — | nothing |
 | bots-work-teams | bots, playbooks, installers | `ask.teams`, the `question` trigger, how to ask, answer and record |
@@ -303,7 +328,8 @@ Each from `origin/main`, base `main`; control plane, then nodes, then panel; che
 | 5.5a | the state of a question (A6) | the asker reads queued and why, running since, the last step, a wait for a person and the deadline, only of its own task's questions; the responder is never interrupted |
 | 5.5b | the Jev watcher (A6), [above](#the-jev-watcher) | a Jev bot of the asking team, with a fake judge, abandons a stuck question and the asker hears `answered: false` naming it; `wait` changes nothing; it never touches another team's questions; a bot that is not Jev cannot watch; a question younger than 5 minutes is not offered |
 | 6 | the panel | the timeline lines, the links, `partial` |
-| 7 | playbooks and bots, one live link qa→dev | with the product owner's go-ahead, behind a node switch, off by default |
+| 7a | playbooks and bots (`bots-work-teams`, `axlr-sre`) | all off until a link is named (`TEAM_CHANNEL_ASK`, `TEAM_CHANNEL_ANSWER`) |
+| 7b | [the node's switch](#the-switch), `axlr-node --team-channel`, off by default, and the [runbook](../runbooks/team-channel.md) for one live link qa→dev | off: a bot with `ask.teams` gets no ask tool and is never picked to answer, a watcher is refused; on: everything as before. The live link only with the product owner's go-ahead |
 | 8 | the node writes memory (D6, phase 2) | the MCP write verified in a sandbox first; the control plane hands each side's record and audits it whatever the node; a node switched off writes nothing; on, each side writes once into its team's store, a repeat is KMP's replay, a failed write is a log line |
 
 ## Alternatives
@@ -324,7 +350,7 @@ Each from `origin/main`, base `main`; control plane, then nodes, then panel; che
 - A bot with `ask.teams` gets one more tool; a bot with neither field sees no change.
 - The responder runs its usual tools on another team's text. That is the product owner's choice (D4); the matrix and the bot's own rules are the boundary, and each link is turned on only after its playbook is tried with injected questions.
 - Nobody waits for an answer: an asker goes on, and its answer arrives as a message or a new task. A node still runs one execution at a time.
-- **Upgrade order**: control plane, then nodes (an old node is never picked to answer and never offers the tool), then the panel (an old one shows the new events as `Unknown`).
+- **Upgrade order**: control plane, then nodes (an old node, or one with the [switch](#the-switch) off, is never picked to answer and is never offered the tool), then the panel (an old one shows the new events as `Unknown`). A control plane older than the switch ignores it: it still picks such a node to answer, though a new node that is off serves no ask tool. So the control plane goes first, and a node is switched on last, one at a time.
 
 ## Left out
 

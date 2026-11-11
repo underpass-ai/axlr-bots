@@ -3421,6 +3421,10 @@
               "type": "string"
             },
             "description": "the teams whose bots share one KMP store on the node (its --memory-teams), * for every team; absent: none, and the node is never picked to answer a team's question (an older node)"
+          },
+          "teamChannel": {
+            "type": "boolean",
+            "description": "the node runs the team channel (axlr-node --team-channel): only then are its runs offered axlr_bots_ask_team and axlr_bots_question_status, its bots picked to answer a team's question, and a team's Jev watcher served; absent: off (the default, and an older node)"
           }
         },
         "required": [

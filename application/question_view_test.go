@@ -80,7 +80,7 @@ func TestAQueuedQuestionSaysWhatItWaitsFor(t *testing.T) {
 	if _, err := NewRevokeNode(h.deps).Execute(context.Background(), "dev-node"); err != nil {
 		t.Fatal(err)
 	}
-	if view := readQuestion(t, h, "qa-node", parent.ExecutionID, q.TaskID); view.Waiting != "no Online node that shares team dev's memory" {
+	if view := readQuestion(t, h, "qa-node", parent.ExecutionID, q.TaskID); view.Waiting != "no Online node with the team channel on that shares team dev's memory" {
 		t.Errorf("no node = %+v", view)
 	}
 	if _, err := NewPauseBot(h.deps).Execute(context.Background(), "dev-a"); err != nil {
