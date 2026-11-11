@@ -1,6 +1,6 @@
 # ADR: topics between teams, and the team's FIFO queue
 
-Status: proposed, 12 November 2026. The product owner settled decisions 1, 3, 5 and 7 on 11 November 2026 (`artifacts/team-events-2026-11-11/mapa.md` in the workspace); decisions 2, 4, 6 and 8 and the open question are proposals that wait for his answer. It amends decision 1 of [publish/subscribe events](pubsub-events.md) (a topic lives in one team) and the pick of [the team takes the work](team-subscriptions.md) (a task goes to a member when the event arrives). It is written so that a session can build it in the ordered PRs at the end.
+Status: proposed, 12 November 2026. The product owner settled decisions 1, 3, 5 and 7 on 11 November 2026 (`artifacts/team-events-2026-11-11/mapa.md` in the workspace); the source of GitHub's facts (A, a webhook) the same night; decisions 2, 4, 6 and 8 are proposals that wait for his answer. It amends decision 1 of [publish/subscribe events](pubsub-events.md) (a topic lives in one team) and the pick of [the team takes the work](team-subscriptions.md) (a task goes to a member when the event arrives). It is written so that a session can build it in the ordered PRs at the end.
 
 ## Context
 
@@ -107,9 +107,9 @@ event ─► [ team queue: t1 t2 t3 ] ─► member free first takes t1
 
 Task streams and idempotency keys are per bot today, so this cut is the largest; it waits until a team has a second node.
 
-## Open: where GitHub's facts come from
+## Where GitHub's facts come from
 
-There are no timers, so no round reads GitHub any more. `incidencia.completada` needs to know that a fix was merged, and dev's pipeline needs to know when a PR's CI ends. Today only `pr-open status`, run inside a round, sees either. Options for the product owner:
+There are no timers, so no round reads GitHub any more. `incidencia.completada` needs to know that a fix was merged, and dev's pipeline needs to know when a PR's CI ends. Today only `pr-open status`, run inside a round, sees either. The product owner chose **A** (11 November 2026):
 
 | | Source | Note |
 |---|---|---|
@@ -135,7 +135,7 @@ There are no timers, so no round reads GitHub any more. `incidencia.completada` 
 | 1 | this ADR | links resolve; `pubsub-events.md` and `team-subscriptions.md` point here |
 | 2 | domain: `teams` on an emit rule, `team` on a subscription, `origin` on the lineage, the refusals `crossing_limit`; validation | a bot without the new fields is unchanged; the 37 live bots read and write back identical; coverage ≥ 80 % |
 | 3 | delivery across teams | QA emits `incidencia.nueva`: one task in dev, depth 0, `origin` set, never coalesced; three events → three tasks run oldest first; one side alone: nothing; `stop.*` with `teams` refused; the fifth crossing skipped |
-| 4 | GitHub's facts, as the product owner decides above | a merged PR and a finished CI reach dev as events |
+| 4 | GitHub's webhook into an input adapter | a merged PR and a finished CI reach dev as `pr.mergeada` and `pr.ci`, published as the operator at depth 0; a bad signature is refused |
 | 5 | API, reference and panel | `bot-definition.md`, `operator-api.json`, topics and links, the panel keeps the fields on a `PATCH` |
 | 6 | `bots-work-teams` | QA publishes `incidencia.nueva` when it triages; dev listens and publishes `incidencia.completada` when a fix is merged; QA listens; drill in a sandbox with an injection bait before anything live |
 | later | the team task and its claim | only when a team has a second node: two free members on two nodes and three events, each takes one, oldest first; two nodes racing claim once |
