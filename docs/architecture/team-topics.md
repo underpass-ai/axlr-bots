@@ -1,6 +1,6 @@
 # ADR: topics between teams, and the team's FIFO queue
 
-Status: proposed, 12 November 2026. The product owner settled decisions 1, 3, 5 and 7 on 11 November 2026 (`artifacts/team-events-2026-11-11/mapa.md` in the workspace); the source of GitHub's facts (A, a webhook) the same night; decision 4 (domain events and idempotency) on 12 November 2026; decisions 2, 6 and 8 are proposals. It amends decision 1 of [publish/subscribe events](pubsub-events.md) (a topic lives in one team) and the pick of [the team takes the work](team-subscriptions.md) (a task goes to a member when the event arrives). It is written so that a session can build it in the ordered PRs at the end.
+Status: accepted, 12 November 2026. The product owner settled every decision one by one (`artifacts/team-events-2026-11-11/mapa.md` in the workspace): 1, 3, 5 and 7 on 11 November 2026, the source of GitHub's facts (A, a webhook) the same night, decision 4 (domain events and idempotency) and 2, 6 and 8 on 12 November 2026. It amends decision 1 of [publish/subscribe events](pubsub-events.md) (a topic lives in one team) and the pick of [the team takes the work](team-subscriptions.md) (a task goes to a member when the event arrives). It is written so that a session can build it in the ordered PRs at the end.
 
 ## Context
 
@@ -24,13 +24,13 @@ So a QA finding reaches dev only when a person asks dev to look, and a fix merge
 | # | Question | Answer | By |
 |---|---|---|---|
 | 1 | How does one team tell another? | **A topic between teams.** The emitter's team publishes, the other team subscribes. No question, no shared group, no timer | Tirso |
-| 2 | Who must agree? | **Both sides declare**, as for the [team channel](team-channel.md) (D3): an `events.emit` rule of the emitter names the teams it publishes the name to; a subscription of the listener names the team it hears it from. One side alone delivers nothing | proposal |
+| 2 | Who must agree? | **Both sides declare**, as for the [team channel](team-channel.md) (D3): an `events.emit` rule of the emitter names the teams it publishes the name to; a subscription of the listener names the team it hears it from. One side alone delivers nothing | Tirso |
 | 3 | What crosses? | **A wake and an id.** The listener's objective is fixed text; `data` carries the id; the listener reads the rest from its own programs. The message and data reach the listener framed as another team's data, never as an order | Tirso |
 | 4 | Which names may cross? | **Domain events only, idempotent.** A domain event is a fact of the business, named `<thing>.<what happened>` (`incidencia.nueva`, `incidencia.completada`), with the thing's id in `data.id`. Control signals (`stop`, `danger`, `warn`, `error`, `done`) are not domain events and never cross. The same fact published twice is one event (below) | Tirso |
 | 5 | The chain | **A new chain** in the listener's team, at depth 0, as a timer's task was. The task records where it came from (the event, the emitter, its team, its trace) | Tirso |
-| 6 | Loops between teams | At most **4 crossings per trace**; the fifth is a skip `crossing_limit`. Rates as today (the emitter's `perMinute`, the listener's intake) | proposal |
+| 6 | Loops between teams | At most **4 crossings per trace**; the fifth is a skip `crossing_limit`. Rates as today (the emitter's `perMinute`, the listener's intake) | Tirso |
 | 7 | Who takes the work | **The team's FIFO queue**: one queue per team, the first member that is free takes the oldest task. On one node it holds today; across nodes it needs the claim below | Tirso |
-| 8 | Coalescing | **None for an event that crossed**: each incident is one task. Inside a team, coalescing stays as today | proposal |
+| 8 | Coalescing | **None for an event that crossed**: each incident is one task. Inside a team, coalescing stays as today | Tirso |
 | 9 | Timers | Untouched by this ADR; the teams that want none simply declare none | — |
 
 ## Topics between teams
