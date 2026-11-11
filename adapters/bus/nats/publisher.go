@@ -171,7 +171,7 @@ func (p *Publisher) run() {
 				return
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			_, err := js.Publish(ctx, subject(e.node), e.payload, jetstream.WithMsgID(e.id))
+			_, err := js.Publish(ctx, e.target(), e.payload, jetstream.WithMsgID(e.publishID()))
 			cancel()
 			if err == nil {
 				p.box.remove(e)
@@ -254,11 +254,25 @@ func options(cfg Config) ([]natsio.Option, error) {
 	return options, nil
 }
 
-// connect opens the connection. With define it makes sure the stream
-// exists (the control plane's); without, it finds the one the control
-// plane defined: a node has no right to define it, and asking would
-// cost it a timeout on every start.
+// connect opens the connection. With define it makes sure the push
+// stream exists (the control plane's); without, it finds the one the
+// control plane defined: a node has no right to define it, and asking
+// would cost it a timeout on every start.
 func connect(cfg Config, define bool) (*natsio.Conn, jetstream.JetStream, error) {
+	return connectStream(cfg, pushStream(cfg), define)
+}
+
+// pushStream is the stream that keeps the pushes to the nodes.
+func pushStream(cfg Config) jetstream.StreamConfig {
+	return jetstream.StreamConfig{
+		Name: cfg.stream(), Subjects: []string{SubjectPrefix + ".>"}, Retention: jetstream.LimitsPolicy, Storage: jetstream.FileStorage,
+		MaxAge: Retention, Duplicates: Duplicates, Discard: jetstream.DiscardOld,
+	}
+}
+
+// connectStream opens the connection and defines the stream (define) or
+// finds it.
+func connectStream(cfg Config, stream jetstream.StreamConfig, define bool) (*natsio.Conn, jetstream.JetStream, error) {
 	opts, err := options(cfg)
 	if err != nil {
 		return nil, nil, err
@@ -278,13 +292,13 @@ func connect(cfg Config, define bool) (*natsio.Conn, jetstream.JetStream, error)
 		// The control plane defines the stream when it connects; a node
 		// that comes first waits for it a little.
 		for {
-			_, err := js.Stream(ctx, cfg.stream())
+			_, err := js.Stream(ctx, stream.Name)
 			if err == nil {
 				return conn, js, nil
 			}
 			if !errors.Is(err, jetstream.ErrStreamNotFound) || ctx.Err() != nil {
 				conn.Close()
-				return nil, nil, fmt.Errorf("stream %s: %w", cfg.stream(), err)
+				return nil, nil, fmt.Errorf("stream %s: %w", stream.Name, err)
 			}
 			select {
 			case <-ctx.Done():
@@ -292,10 +306,7 @@ func connect(cfg Config, define bool) (*natsio.Conn, jetstream.JetStream, error)
 			}
 		}
 	}
-	if _, err := js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
-		Name: cfg.stream(), Subjects: []string{SubjectPrefix + ".>"}, Retention: jetstream.LimitsPolicy, Storage: jetstream.FileStorage,
-		MaxAge: Retention, Duplicates: Duplicates, Discard: jetstream.DiscardOld,
-	}); err != nil {
+	if _, err := js.CreateOrUpdateStream(ctx, stream); err != nil {
 		conn.Close()
 		return nil, nil, err
 	}

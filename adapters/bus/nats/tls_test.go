@@ -15,6 +15,7 @@ import (
 	"github.com/nats-io/nats-server/v2/server"
 
 	"github.com/underpass-ai/axlr-bots/adapters/bus/bustest"
+	"github.com/underpass-ai/axlr-bots/adapters/bus/domainevent"
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -92,11 +93,30 @@ func nodeUser(node domain.NodeID) string {
     subscribe: ["_INBOX.>"] } }`, node, pki.NodeOrganization, DefaultStream, consumer, subject(node))
 }
 
+// controlPlanePublishes is what the control plane's user may publish:
+// the pushes, the domain events between teams, the JetStream API (its
+// streams and the consumer of the domain events) and the acks of that
+// consumer. docs/architecture/bus-port.md lists the same.
+var controlPlanePublishes = []string{SubjectPrefix + ".>", domainevent.SubjectPrefix + ".>", "$JS.API.>", "$JS.ACK." + domainevent.Stream + ".>"}
+
+// controlPlaneUser is the control plane's entry, publishing what it is
+// given.
+func controlPlaneUser(publish []string) string {
+	return fmt.Sprintf(`{ user: "CN=control-plane,O=%s", permissions: { publish: ["%s"], subscribe: ["_INBOX.>"] } }`, pki.ClientOrganization, strings.Join(publish, `", "`))
+}
+
 // tlsBroker starts a broker that verifies every client's certificate
 // against the fleet CA and takes the user from its subject.
 func tlsBroker(t *testing.T, f fleet, nodes ...domain.NodeID) *server.Server {
 	t.Helper()
-	users := []string{fmt.Sprintf(`{ user: "CN=control-plane,O=%s", permissions: { publish: ["%s.>", "$JS.API.>"], subscribe: ["_INBOX.>"] } }`, pki.ClientOrganization, SubjectPrefix)}
+	return tlsBrokerFor(t, f, controlPlanePublishes, nodes...)
+}
+
+// tlsBrokerFor is tlsBroker with the control plane publishing only what
+// is given.
+func tlsBrokerFor(t *testing.T, f fleet, publish []string, nodes ...domain.NodeID) *server.Server {
+	t.Helper()
+	users := []string{controlPlaneUser(publish)}
 	for _, node := range nodes {
 		users = append(users, nodeUser(node))
 	}
@@ -159,6 +179,75 @@ func TestNATSOverMutualTLSMeetsTheBusContract(t *testing.T) {
 			return NewSubscriber(f.nodeConfig(url, node)).Stream(ctx, node)
 		}
 	})
+}
+
+// The domain events hold over mutual TLS with the control plane's
+// permissions alone; without the domain subjects and the consumer's acks
+// in them, nothing crosses: a missing permission fails here.
+func TestNATSOverMutualTLSMeetsTheDomainContract(t *testing.T) {
+	f := newFleet(t)
+	url := tlsURL(tlsBroker(t, f))
+	bustest.RunDomain(t, func(t *testing.T) (application.DomainEventBus, application.DomainEventFeed) {
+		cfg := f.controlPlane(t, url)
+		bus, err := NewDomainBus(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(bus.Close)
+		// One broker for the subtests: each starts on the events the last
+		// left acked.
+		return bus, bus
+	})
+	for _, missing := range []string{domainevent.SubjectPrefix + ".>", "$JS.ACK." + domainevent.Stream + ".>"} {
+		t.Run("without "+missing, func(t *testing.T) {
+			var publish []string
+			for _, p := range controlPlanePublishes {
+				if p != missing {
+					publish = append(publish, p)
+				}
+			}
+			g := newFleet(t)
+			var logs syncLog
+			cfg := g.controlPlane(t, tlsURL(tlsBrokerFor(t, g, publish)))
+			cfg.Log = log.New(&logs, "", 0)
+			bus, err := NewDomainBus(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer bus.Close()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			handed := make(chan struct{}, 8)
+			if err := bus.Listen(ctx, func(context.Context, application.CrossingEvent) error { handed <- struct{}{}; return nil }); err != nil {
+				t.Fatal(err)
+			}
+			for _, id := range []domain.DomainID{"h-1", "h-2"} {
+				if err := bus.Publish(ctx, bustest.Fact(t, id)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got := 0
+			deadline := time.After(7 * time.Second)
+		wait:
+			for {
+				select {
+				case <-handed:
+					got++
+				case <-deadline:
+					break wait
+				}
+			}
+			// Without the subjects nothing is published; without the acks
+			// the first event is handed again and again, never the second
+			// alone after it.
+			if missing == domainevent.SubjectPrefix+".>" && got != 0 {
+				t.Errorf("handed %d events", got)
+			}
+			if missing != domainevent.SubjectPrefix+".>" && (got == 0 || !strings.Contains(logs.String(), "not acked")) {
+				t.Errorf("handed %d, logs %q", got, logs.String())
+			}
+		})
+	}
 }
 
 // A node cannot read another node's pushes, a certificate the broker
