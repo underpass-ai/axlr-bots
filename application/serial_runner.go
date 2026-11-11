@@ -254,3 +254,15 @@ func (r *SerialRunner) DecideWatch(ctx context.Context, node domain.NodeID, exec
 	defer r.mu.Unlock()
 	return NewDecideWatch(r.deps).Execute(ctx, node, execution, decision)
 }
+
+// ReceiveDomainEvent delivers another team's domain event, as
+// ReceiveDomainEvent does, under the same lock as the emits and the
+// assignments: two deliveries of one fact never both pass the lookup of
+// its key. A bus that hands the event over from its own goroutine (a
+// broker's consumer) calls this; the direct bus calls the use case
+// within the emit, which holds the lock already.
+func (r *SerialRunner) ReceiveDomainEvent(ctx context.Context, event CrossingEvent) (ReceiveAnswer, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return NewReceiveDomainEvent(r.deps).Execute(ctx, event)
+}

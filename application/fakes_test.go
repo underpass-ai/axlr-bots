@@ -739,6 +739,32 @@ type harness struct {
 	sender  *fakeOutputSender
 	sns     *snstest.Transport
 	clock   *fixedClock
+	bus     *loopbackBus
+}
+
+// loopbackBus is the domain-event bus of the tests: what is published is
+// kept, and handed at once to ReceiveDomainEvent over the harness, as the
+// direct bus does within the emit; hold keeps it instead, for a test that
+// hands it over itself; fail refuses the publish.
+type loopbackBus struct {
+	h         *harness
+	published []CrossingEvent
+	answers   []ReceiveAnswer
+	hold      bool
+	fail      error
+}
+
+func (b *loopbackBus) Publish(ctx context.Context, event CrossingEvent) error {
+	if b.fail != nil {
+		return b.fail
+	}
+	b.published = append(b.published, event)
+	if b.hold {
+		return nil
+	}
+	answer, err := NewReceiveDomainEvent(b.h.deps).Execute(ctx, event)
+	b.answers = append(b.answers, answer)
+	return err
 }
 
 func newHarness() *harness {
@@ -767,11 +793,12 @@ func newHarness() *harness {
 		sns:     &snstest.Transport{},
 		clock:   &fixedClock{now: t0},
 	}
+	h.bus = &loopbackBus{h: h}
 	h.deps = Dependencies{
 		Bots: h.bots, Tasks: h.tasks, Incidents: h.incs, Autonomy: h.autos, Executions: h.execs, Timers: h.timers, Nodes: h.nodes, Enrollments: h.enrol, Certifier: h.ca, Denylist: h.deny, Events: h.log, EventReader: h.log, Audit: h.log,
 		Runtime: h.runtime, Decisions: h.decider, Traces: h.traces, Artifacts: h.store, Workspace: h.work, Deliveries: h.outbox, Notifier: h.notify,
 		Outputs: h.outs, OutputDeliveries: h.outbox2, OutputSender: h.sender, SNS: h.sns,
-		Clock: h.clock, IDs: &sequentialIDs{}, Actor: "test:operator",
+		Clock: h.clock, IDs: &sequentialIDs{}, Actor: "test:operator", DomainEvents: h.bus,
 	}
 	return h
 }

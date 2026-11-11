@@ -57,6 +57,10 @@ func pendingTaskOf(ctx context.Context, deps Dependencies, mate domain.Bot, name
 		if task.BotID() != mate.ID() || task.Trigger().Type != domain.TriggerEvent || task.CurrentExecutionID() != "" {
 			continue
 		}
+		if _, crossed := task.Origin(); crossed {
+			// Another team's fact is a task of its own: nothing joins it.
+			continue
+		}
 		var input struct {
 			Name string `json:"name"`
 		}

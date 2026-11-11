@@ -68,6 +68,13 @@ type submission struct {
 	input       []byte
 	// lineage links a delegated task to the task that asked for it.
 	lineage *domain.TaskLineage
+	// origin is the other team's domain event the task was made by: it
+	// starts a new chain (docs/architecture/team-topics.md).
+	origin *domain.EventOrigin
+	// waits makes the task even when the bot takes none now (Paused,
+	// Registered): it waits Pending until the bot is enabled. Only another
+	// team's fact uses it, so that a fact is never lost.
+	waits bool
 	// incident links a triage task to the incident it works on.
 	incident domain.IncidentID
 	// accepts refuses the submission for a reason of its own, after the
@@ -97,7 +104,7 @@ func submitTask(ctx context.Context, deps Dependencies, s submission) (SubmitTas
 		}
 		return SubmitTaskResult{Task: existing, Created: false}, nil
 	}
-	if !s.bot.AcceptsTasks() {
+	if !s.bot.AcceptsTasks() && !s.waits {
 		_ = rec.audit(ctx, s.action, botID.String(), domain.AuditDenied, map[string]string{"reason": "bot is " + s.bot.Status().String()})
 		return SubmitTaskResult{}, domain.StateError{Subject: "bot " + botID.String(), Current: s.bot.Status().String(), Attempted: "accept a task"}
 	}
@@ -126,6 +133,11 @@ func submitTask(ctx context.Context, deps Dependencies, s submission) (SubmitTas
 	}
 	if s.lineage != nil {
 		if err := task.Link(*s.lineage); err != nil {
+			return SubmitTaskResult{}, err
+		}
+	}
+	if s.origin != nil {
+		if err := task.Cross(*s.origin); err != nil {
 			return SubmitTaskResult{}, err
 		}
 	}

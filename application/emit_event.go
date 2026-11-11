@@ -103,6 +103,12 @@ func (uc EmitEvent) Execute(ctx context.Context, node domain.NodeID, executionID
 	if answer.Deliveries, answer.Skipped, err = uc.deliverAll(ctx, e, mates); err != nil {
 		return EmitAnswer{}, err
 	}
+	// The other teams the name crosses to, after the bot's own.
+	crossed, notCrossed, err := uc.cross(ctx, e)
+	if err != nil {
+		return EmitAnswer{}, err
+	}
+	answer.Deliveries, answer.Skipped = append(answer.Deliveries, crossed...), append(answer.Skipped, notCrossed...)
 	if err := uc.recordEmitted(ctx, e, answer); err != nil {
 		return EmitAnswer{}, err
 	}
@@ -275,6 +281,9 @@ func (uc EmitEvent) recordEmitted(ctx context.Context, e emission, answer EmitAn
 		return err
 	}
 	details := map[string]string{"node": e.node.String(), "by": string(e.by), "execution": e.execution.String(), "event": e.id, "name": e.name.String(), "severity": e.severity.String(), "deliveries": strconv.Itoa(len(answer.Deliveries))}
+	if n := crossedCount(answer.Deliveries); n > 0 {
+		details["crossed"] = strconv.Itoa(n)
+	}
 	return uc.rec.audit(ctx, "event.emit", e.task.ID().String(), domain.AuditOK, details)
 }
 
@@ -402,6 +411,9 @@ func deliveriesPayload(deliveries []EventDelivery) []map[string]any {
 		if d.CoalescedInto != "" {
 			item["coalescedInto"] = d.CoalescedInto
 		}
+		if d.Crossed {
+			item["team"], item["crossed"] = d.Team, true
+		}
 		out = append(out, item)
 	}
 	return out
@@ -410,7 +422,11 @@ func deliveriesPayload(deliveries []EventDelivery) []map[string]any {
 func skipsPayload(skips []EventSkip) []map[string]any {
 	out := make([]map[string]any, 0, len(skips))
 	for _, s := range skips {
-		out = append(out, map[string]any{"botId": s.BotID, "reason": s.Reason, "message": s.Message})
+		item := map[string]any{"botId": s.BotID, "reason": s.Reason, "message": s.Message}
+		if s.Crossed {
+			item["team"], item["crossed"] = s.Team, true
+		}
+		out = append(out, item)
 	}
 	return out
 }

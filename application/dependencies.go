@@ -51,6 +51,10 @@ type Dependencies struct {
 	// key; nil refuses them.
 	ModelGateway ModelGateway
 	JudgeGateway JudgeGateway
+	// DomainEvents carries a domain event to other teams
+	// (docs/architecture/team-topics.md); nil: no event crosses, and an
+	// emit that would cross says so as a skip.
+	DomainEvents DomainEventBus
 }
 
 // Validate reports the first missing dependency.
