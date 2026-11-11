@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
 	"github.com/underpass-ai/axlr-bots/internal/asyncapigen"
 )
@@ -24,6 +25,43 @@ func event(t *testing.T, context domain.ContextKey) domain.DomainEvent {
 		t.Fatal(err)
 	}
 	return e
+}
+
+func dev(t *testing.T) domain.Audience {
+	t.Helper()
+	a, err := domain.NewAudience("qa", []domain.TeamName{"dev"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
+
+// A crossing event goes to the wire and back whole; what is no domain
+// event of the spec is refused.
+func TestEncodeAndDecode(t *testing.T) {
+	in := application.CrossingEvent{Tenant: "default", Event: event(t, "project:qa.hallazgo.h-1"), Audience: dev(t), TraceID: "trace-9", Crossings: 2}
+	msg, err := Encode(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Subject != "axlr.domain.default.qa.incidencia.nueva" || msg.ID != in.Event.Identity() {
+		t.Errorf("message = %+v", msg)
+	}
+	out, err := Decode(msg.Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Tenant != in.Tenant || out.Event != in.Event || out.TraceID != "trace-9" || out.Crossings != 2 || !out.Audience.Has("dev") {
+		t.Errorf("out = %+v", out)
+	}
+	if out.Origin() != in.Origin() || in.Origin().Crossings != 2 || in.Origin().Context != "project:qa.hallazgo.h-1" {
+		t.Errorf("origin = %+v", out.Origin())
+	}
+	for _, bad := range []string{"nope", `{"specVersion":"1"}`} {
+		if _, err := Decode([]byte(bad)); err == nil {
+			t.Errorf("%s decoded", bad)
+		}
+	}
 }
 
 // The DTOs are the spec's: what go generate writes now is what is in the
@@ -50,7 +88,10 @@ func TestTheDTOsAreGeneratedFromTheSpec(t *testing.T) {
 
 func TestEventToDTOAndBack(t *testing.T) {
 	e := event(t, "project:qa.hallazgo.h-20261112-kmp-3")
-	dto := ToDTO(e, "default", "trace-1", 1)
+	dto := ToDTO(e, "default", "trace-1", 1, dev(t))
+	if len(dto.Audience) != 1 || dto.Audience[0] != "dev" {
+		t.Errorf("audience = %v", dto.Audience)
+	}
 	if dto.SpecVersion != SpecVersion || dto.ID != e.Identity() || dto.Name != "incidencia.nueva" || dto.Tenant != "default" || dto.Team != "qa" ||
 		dto.From != "qa-triaje" || dto.OccurredAt != "2026-11-12T00:02:03.000000004Z" || dto.TraceID != "trace-1" || dto.Crossings != 1 ||
 		dto.Data != (DataDTO{ID: "h-20261112-kmp-3", Context: "project:qa.hallazgo.h-20261112-kmp-3"}) {
@@ -61,9 +102,12 @@ func TestEventToDTOAndBack(t *testing.T) {
 	if err := json.Unmarshal(raw, &read); err != nil {
 		t.Fatal(err)
 	}
-	back, origin, err := FromDTO(read)
+	back, tenant, origin, audience, err := FromDTO(read)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if tenant != "default" || !audience.Has("dev") || len(audience.Teams()) != 1 {
+		t.Errorf("tenant %s, audience %v", tenant, audience.Strings())
 	}
 	if back != e {
 		t.Errorf("back = %+v, want %+v", back, e)
@@ -71,14 +115,14 @@ func TestEventToDTOAndBack(t *testing.T) {
 	if origin != (domain.EventOrigin{EventID: e.Identity(), From: "qa-triaje", Team: "qa", TraceID: "trace-1", Crossings: 1, Context: "project:qa.hallazgo.h-20261112-kmp-3"}) {
 		t.Errorf("origin = %+v", origin)
 	}
-	plain, _ := json.Marshal(ToDTO(event(t, ""), "default", "", 2))
+	plain, _ := json.Marshal(ToDTO(event(t, ""), "default", "", 2, dev(t)))
 	if strings.Contains(string(plain), "context") || strings.Contains(string(plain), "traceId") {
 		t.Errorf("empty optionals written: %s", plain)
 	}
 }
 
 func TestFromDTORefusesWhatIsNotTheSpecsEvent(t *testing.T) {
-	good := ToDTO(event(t, ""), "default", "trace-1", 1)
+	good := ToDTO(event(t, ""), "default", "trace-1", 1, dev(t))
 	cases := map[string]func(*DTO){
 		"version":       func(d *DTO) { d.SpecVersion = "2" },
 		"name":          func(d *DTO) { d.Name = "Bad Name" },
@@ -91,11 +135,15 @@ func TestFromDTORefusesWhatIsNotTheSpecsEvent(t *testing.T) {
 		"changed thing": func(d *DTO) { d.Data.ID = "h-other" },
 		"fifth":         func(d *DTO) { d.Crossings = 5 },
 		"no crossing":   func(d *DTO) { d.Crossings = 0 },
+		"no tenant":     func(d *DTO) { d.Tenant = "" },
+		"no audience":   func(d *DTO) { d.Audience = nil },
+		"repeated team": func(d *DTO) { d.Audience = []string{"dev", "dev"} },
+		"own team":      func(d *DTO) { d.Audience = []string{"dev", "qa"} },
 	}
 	for name, change := range cases {
 		d := good
 		change(&d)
-		if _, _, err := FromDTO(d); err == nil {
+		if _, _, _, _, err := FromDTO(d); err == nil {
 			t.Errorf("%s: accepted %+v", name, d)
 		}
 	}

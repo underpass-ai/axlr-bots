@@ -56,7 +56,7 @@ Decided 12 November 2026: *"there are domain events and idempotency."*
 
 | Rule | Value |
 |---|---|
-| A domain event | a plain name of the `info` kind, declared in an emit rule with `teams`, whose `data` carries `id` (1 to 128 characters `[A-Za-z0-9._:-]`); without `id` the event does not cross (skip `no_domain_id`) |
+| A domain event | a plain name of the `info` kind, declared in an emit rule with `teams`, whose `data` carries `id` (1 to 128 characters `[A-Za-z0-9._:@-]`); without `id` the event does not cross (skip `no_domain_id`) |
 | Its identity | `evt-` + sha256 of the emitter's memory team, the name and `data.id`: not the emitting task. Two members of QA that publish `incidencia.nueva` for the same finding publish **one** event |
 | On the listener's side | the task's key is `event:<identity>:team:<team>`: a repeat finds the task the first one made and delivers nothing new, even after a crash |
 | A new fact about the same thing | a new name (`incidencia.completada`), never the same name again: a fix reopened is `incidencia.reabierta`, so a repeat is always a repeat |
