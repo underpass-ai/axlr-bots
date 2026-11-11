@@ -42,6 +42,7 @@ pub enum Effect {
     /// A change of a bot's topics: one PATCH of the whole list.
     SaveSubscriptions(BotId, SubscriptionChange),
     LoadTopics(String),
+    LoadLinks(String),
     Publish {
         team: String,
         name: String,

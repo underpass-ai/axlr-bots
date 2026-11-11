@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{AutonomyLevel, ProgressItem};
+use super::{AutonomyLevel, ProgressItem, TeamQuestion};
 
 /// Something that happened to a bot, a task or a node, as the control
 /// plane's event log keeps it.
@@ -96,6 +96,7 @@ impl Event {
             "bot.task.delegated" => "Asked a bot".into(),
             "bot.delegation.refused" => "Ask refused".into(),
             "bot.question.asked" => "Asked a team".into(),
+            "bot.question.answered" if TeamQuestion::of(self).is_some_and(|q| q.unanswered()) => "No answer".into(),
             "bot.question.answered" => "Question answered".into(),
             "bot.question.refused" => "Question refused".into(),
             "incident.opened" => "Incident opened".into(),
@@ -150,6 +151,8 @@ impl Event {
             | "bot.delegation.refused"
             | "bot.question.refused"
             | "incident.postmortem_failed" => EventTone::Bad,
+            "bot.question.answered" if TeamQuestion::of(self).is_some_and(|q| q.unanswered()) => EventTone::Waiting,
+            "bot.question.answered" => EventTone::Good,
             "bot.task.preempted"
             | "incident.opened"
             | "incident.reopened"
@@ -290,6 +293,11 @@ impl Event {
                 return format!("you → {}: {name} · {message}", self.addressed_to());
             }
             "bot.event.heard" => return self.heard(),
+            "bot.question.asked" | "bot.question.answered" | "bot.question.refused" => {
+                if let Some(question) = TeamQuestion::of(self) {
+                    return question.detail();
+                }
+            }
             "bot.task.progress" => {
                 let steps = self.progress().len();
                 return if steps == 1 {
@@ -382,6 +390,30 @@ mod tests {
         assert_eq!(event("bot.question.refused", "{}").tone(), EventTone::Bad);
         assert_eq!(event("bot.question.asked", "{}").label(), "Asked a team");
         assert_eq!(event("bot.question.answered", "{}").label(), "Question answered");
+        let answered = event(
+            "bot.question.answered",
+            r#"{"team":"dev","responder":"dev-a","answered":true,"partial":true,"answer":"0.4.2"}"#,
+        );
+        assert_eq!(answered.tone(), EventTone::Good);
+        assert_eq!(answered.detail(), "dev-a (dev): 0.4.2 · partial: one store of several");
+        let none = event(
+            "bot.question.answered",
+            r#"{"team":"dev","responder":"dev-a","answered":false,"reason":"expired"}"#,
+        );
+        assert_eq!((none.label().as_str(), none.tone()), ("No answer", EventTone::Waiting));
+        assert_eq!(none.detail(), "no answer from dev-a (dev): expired");
+        assert_eq!(
+            event(
+                "bot.question.asked",
+                r#"{"team":"dev","question":"Who?","responder":"dev-a"}"#
+            )
+            .detail(),
+            "dev: Who? · to dev-a"
+        );
+        assert_eq!(
+            event("bot.question.refused", r#"{"team":"sre","reason":"not_allowed"}"#).detail(),
+            "sre: not_allowed"
+        );
         assert_eq!(
             event("bot.task.message", r#"{"from":"question:task-9"}"#).label(),
             "Another team answered"

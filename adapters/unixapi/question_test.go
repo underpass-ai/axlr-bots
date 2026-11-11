@@ -30,6 +30,17 @@ func TestAQuestionOverTheSocket(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// The operator reads the link the two bots make, from either team.
+	links, err := client.ListGroupLinks(ctx, "dev", "ops")
+	if err != nil || len(links) != 1 || links[0].From != "qa" || links[0].To != "dev" || links[0].Askers[0] != "qa-jefe" || links[0].Responders[0] != "dev-a" {
+		t.Fatalf("links = %+v %v", links, err)
+	}
+	if links, err := client.ListGroupLinks(ctx, "qa", ""); err != nil || len(links) != 1 {
+		t.Errorf("qa's links = %+v %v", links, err)
+	}
+	if _, err := client.ListGroupLinks(ctx, "sre", ""); !domain.IsNotFound(err) {
+		t.Errorf("a missing team's links: %v", err)
+	}
 	for _, node := range []application.NodeRegistration{
 		{ID: "qa-node", HostName: "qa-node", Capabilities: domain.NodeCapabilities{PolicySupported: true}},
 		{ID: "dev-node", HostName: "dev-node", Capabilities: domain.NodeCapabilities{PolicySupported: true, MemoryTeams: []string{"dev"}}},

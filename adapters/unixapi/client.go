@@ -173,6 +173,15 @@ func (c *Client) ListGroupTopics(ctx context.Context, name, tenant string) ([]ap
 	return topics, c.call(ctx, http.MethodGet, path, nil, &topics)
 }
 
+func (c *Client) ListGroupLinks(ctx context.Context, name, tenant string) ([]application.GroupLink, error) {
+	links := []application.GroupLink{}
+	path := "/v1/groups/" + url.PathEscape(name) + "/links"
+	if tenant != "" {
+		path += "?tenant=" + url.QueryEscape(tenant)
+	}
+	return links, c.call(ctx, http.MethodGet, path, nil, &links)
+}
+
 func (c *Client) PublishGroupEvent(ctx context.Context, command application.PublishGroupEventCommand) (application.PublishAnswer, error) {
 	var answer application.PublishAnswer
 	path := "/v1/groups/" + url.PathEscape(command.Group) + "/events"

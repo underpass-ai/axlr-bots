@@ -187,6 +187,7 @@ pub fn detail<'a>(app: &'a App, name: &'a str, tokens: Tokens) -> El<'a> {
             column![
                 section(Icon::Bots, "Who is in it", members, tokens),
                 section(Icon::Bolt, "Topics", topics(app, name, tokens), tokens),
+                section(Icon::Next, "Links", links(app, name, tokens), tokens),
             ]
             .spacing(14)
             .width(Length::FillPortion(2)),
@@ -233,6 +234,37 @@ fn topics<'a>(app: &'a App, name: &str, tokens: Tokens) -> El<'a> {
                         head,
                         muted(format!("publishes {}", topic.publishers_text()), tokens),
                         muted(format!("listens {}", topic.listeners_text()), tokens),
+                    ]
+                    .spacing(2),
+                );
+            }
+            rows.into()
+        }
+    }
+}
+
+/// The team's links in the team channel, read-only: the teams it asks
+/// and that ask it, and on each who asks and who answers.
+fn links<'a>(app: &'a App, name: &str, tokens: Tokens) -> El<'a> {
+    match app.watch.links.get(name) {
+        None => muted("Reading the links…", tokens).into(),
+        Some(None) => muted(
+            "This control plane is older: it has no team links yet. Update it to see them.",
+            tokens,
+        )
+        .into(),
+        Some(Some(list)) if list.is_empty() => muted(
+            "No link yet: a bot asks another team when its ask names that team and a bot there answers this one",
+            tokens,
+        )
+        .into(),
+        Some(Some(list)) => {
+            let mut rows = column![muted("who asks → who answers", tokens)].spacing(10);
+            for link in list {
+                rows = rows.push(
+                    column![
+                        bold(link.heading(name)),
+                        muted(link.who(), tokens).wrapping(Wrapping::WordOrGlyph)
                     ]
                     .spacing(2),
                 );

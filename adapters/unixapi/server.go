@@ -158,6 +158,7 @@ func (s *Server) operatorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/groups/{name}/events", s.listGroupEvents)
 	mux.HandleFunc("POST /v1/groups/{name}/events", s.publishGroupEvent)
 	mux.HandleFunc("GET /v1/groups/{name}/topics", s.listGroupTopics)
+	mux.HandleFunc("GET /v1/groups/{name}/links", s.listGroupLinks)
 	mux.HandleFunc("POST /v1/tasks", s.submitTask)
 	mux.HandleFunc("GET /v1/tasks", s.listTasks)
 	mux.HandleFunc("GET /v1/tasks/{id}", s.getTask)
@@ -398,6 +399,12 @@ func (s *Server) publishGroupEvent(w http.ResponseWriter, r *http.Request) {
 // listGroupTopics is GET /v1/groups/{name}/topics?tenant=.
 func (s *Server) listGroupTopics(w http.ResponseWriter, r *http.Request) {
 	value, err := s.service.ListGroupTopics(r.Context(), r.PathValue("name"), r.URL.Query().Get("tenant"))
+	respond(w, http.StatusOK, value, err)
+}
+
+// listGroupLinks is GET /v1/groups/{name}/links?tenant=.
+func (s *Server) listGroupLinks(w http.ResponseWriter, r *http.Request) {
+	value, err := s.service.ListGroupLinks(r.Context(), r.PathValue("name"), r.URL.Query().Get("tenant"))
 	respond(w, http.StatusOK, value, err)
 }
 

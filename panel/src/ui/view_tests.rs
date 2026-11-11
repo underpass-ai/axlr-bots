@@ -1347,6 +1347,92 @@ fn a_team_shows_its_topics_and_the_operator_publishes() {
 }
 
 #[test]
+fn a_team_shows_its_links_and_its_questions_on_the_timeline() {
+    let (fake, mut app) = subscribed_fleet();
+    send(&mut app, Message::Go(Screen::Team("ops".into())));
+    shows(
+        &app,
+        &[
+            "Links",
+            "No link yet: a bot asks another team when its ask names that team and a bot there answers this one",
+        ],
+    );
+    fake.set_links(
+        "ops",
+        vec![
+            crate::domain::TeamLink {
+                from: "ops".into(),
+                to: "dev".into(),
+                askers: vec!["bot".into()],
+                responders: vec!["dev-a".into(), "dev-b".into()],
+            },
+            crate::domain::TeamLink {
+                from: "qa".into(),
+                to: "ops".into(),
+                askers: vec!["qa-jefe".into()],
+                responders: vec!["bot-wrx80".into()],
+            },
+        ],
+    );
+    fake.publish(
+        "bot.question.asked",
+        "bot",
+        serde_json::json!({"team": "dev", "question": "Which release fixed the importer?", "responder": "dev-a"}),
+    );
+    fake.publish(
+        "bot.question.answered",
+        "bot",
+        serde_json::json!({"team": "dev", "responder": "dev-a", "answered": true, "partial": true, "answer": "0.4.2"}),
+    );
+    fake.publish(
+        "bot.question.answered",
+        "bot",
+        serde_json::json!({"team": "dev", "responder": "dev-b", "answered": false, "reason": "it expired"}),
+    );
+    fake.publish(
+        "bot.question.refused",
+        "bot",
+        serde_json::json!({"team": "marketing", "reason": "not_allowed"}),
+    );
+    let tick = app.now + chrono::Duration::seconds(3);
+    send(&mut app, Message::Tick(tick));
+    shows(
+        &app,
+        &[
+            "who asks → who answers",
+            "asks dev",
+            "bot → dev-a, dev-b",
+            "asked by qa",
+            "qa-jefe → bot-wrx80",
+            "Asked a team",
+            "dev: Which release fixed the importer? · to dev-a",
+            "Question answered",
+            "dev-a (dev): 0.4.2 · partial: one store of several",
+            "No answer",
+            "no answer from dev-b (dev): it expired",
+            "Question refused",
+            "marketing: not_allowed",
+        ],
+    );
+    send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
+    shows(&app, &["dev-a (dev): 0.4.2 · partial: one store of several"]);
+}
+
+#[test]
+fn an_older_control_plane_has_no_links_and_nothing_else_breaks() {
+    let (fake, mut app) = subscribed_fleet();
+    fake.without_newer_routes();
+    send(&mut app, Message::Go(Screen::Team("ops".into())));
+    shows(
+        &app,
+        &[
+            "This control plane is older: it has no team links yet. Update it to see them.",
+            "Who is in it",
+        ],
+    );
+}
+
+#[test]
 fn a_shortcut_publishes_its_event_in_one_press() {
     let (fake, mut app) = subscribed_fleet();
     send(&mut app, Message::Go(Screen::Team("ops".into())));

@@ -165,6 +165,8 @@ A team's timeline is derived from its members' streams (`ListGroupEvents`), so e
 | `ask.maxOpen` | questions not yet answered, 1 to 8, default 3 |
 | trigger `question` | the responder's consent; `from` lists the asking teams, required |
 
+The matrix is derived, never stored: `GET /v1/groups/{name}/links` (and `axlr-bots group links`) answers a team's links from it and to it, a link from A to B being some bot whose memory team is A that names B in `ask.teams` (the askers) and some bot whose memory team is B that answers A (the responders); one side alone is no link, and a link shows what the bots declare, not who is free. The panel shows them on the team's page, under Links.
+
 Limits of the control plane, not per bot: 3 questions per trace (`rate_limited`), 8 Pending questions per asked team (`team_busy`).
 
 The first matrix, written by the teams' installers (`bots-work-teams`, `axlr-sre`):

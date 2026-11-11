@@ -11,7 +11,7 @@ use crate::application::{
 };
 use crate::domain::{
     Autonomy, AutonomyLevel, Bot, BotId, CancelledTask, DecidedTask, DeletedBot, EnrollmentToken, ExecutionId,
-    Incident, NodeId, Published, RevokedNode, SubmittedTask, TaskId, TaskStatus, ToolAccess, Topic,
+    Incident, NodeId, Published, RevokedNode, SubmittedTask, TaskId, TaskStatus, TeamLink, ToolAccess, Topic,
 };
 
 /// Everything that happens in the panel: what the operator does, the
@@ -109,6 +109,9 @@ pub enum Message {
     TeamLoaded(String, Result<EventFeed, PanelError>),
     /// A team's topics; `None` from a control plane older than the route.
     TopicsLoaded(String, Result<Option<Vec<Topic>>, PanelError>),
+    /// A team's links in the team channel; `None` from a control plane
+    /// older than the route.
+    LinksLoaded(String, Result<Option<Vec<TeamLink>>, PanelError>),
 
     /// Edit a bot's mission and tools: open, change, save or cancel.
     EditOpen(BotId),

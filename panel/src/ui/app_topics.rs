@@ -1,9 +1,9 @@
-//! A bot's topics and its asks, a team's topics, and the operator's
+//! A bot's topics and its asks, a team's topics and links, and the operator's
 //! events on a team.
 
 use super::{App, Banner, Effect, ListenForm, PublishForm};
 use crate::application::{PanelError, SubscriptionChange};
-use crate::domain::{Bot, BotId, Published, Subscription, Topic};
+use crate::domain::{Bot, BotId, Published, Subscription, TeamLink, Topic};
 
 impl App {
     /// Pending asks of every bot, from the last refresh: they need a
@@ -74,6 +74,21 @@ impl App {
         match result {
             Ok(topics) => {
                 self.watch.topics.insert(team, topics);
+            }
+            Err(error) => self.banner = Some(Banner::error(&error, self.now)),
+        }
+        Vec::new()
+    }
+
+    pub(super) fn links_loaded(
+        &mut self,
+        team: String,
+        result: Result<Option<Vec<TeamLink>>, PanelError>,
+    ) -> Vec<Effect> {
+        self.watch.loading_links.remove(&team);
+        match result {
+            Ok(links) => {
+                self.watch.links.insert(team, links);
             }
             Err(error) => self.banner = Some(Banner::error(&error, self.now)),
         }
