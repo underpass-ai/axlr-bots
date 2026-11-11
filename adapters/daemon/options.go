@@ -62,6 +62,10 @@ type Options struct {
 	// Pushers are the bus adapters the pushes to nodes also go through
 	// (a broker), beside the stream each node holds open to the daemon.
 	Pushers []application.NodePusher
+	// DomainBus carries the domain events one team publishes to another
+	// (docs/architecture/team-topics.md): a broker's (--bus nats); nil
+	// is the one in process.
+	DomainBus DomainBus
 	// Log receives one line per task run, reconciliation and error;
 	// nil discards them.
 	Log *log.Logger
@@ -93,4 +97,11 @@ func (o Options) log() *log.Logger {
 		return o.Log
 	}
 	return log.New(io.Discard, "", 0)
+}
+
+// DomainBus is a domain-event bus adapter: where the emits publish and
+// what the control plane listens on.
+type DomainBus interface {
+	application.DomainEventBus
+	application.DomainEventFeed
 }

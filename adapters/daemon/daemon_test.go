@@ -64,10 +64,20 @@ func newFixture(t *testing.T, scenario string) *fixture {
 // that waits for it.
 func (f *fixture) start(t *testing.T) (*unixapi.Client, func()) {
 	t.Helper()
+	return f.startWith(t, nil)
+}
+
+// startWith is start with a change to the options.
+func (f *fixture) startWith(t *testing.T, change func(*Options)) (*unixapi.Client, func()) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
+	options := Options{StateDir: f.state, SocketPath: f.socket, Tick: 20 * time.Millisecond, ReconcileEvery: 50 * time.Millisecond, DeliverEvery: 20 * time.Millisecond, Grace: time.Millisecond, NodeOfflineAfter: 150 * time.Millisecond, Log: log.New(f.logs, "", 0)}
+	if change != nil {
+		change(&options)
+	}
 	go func() {
-		done <- Run(ctx, f.deps, Options{StateDir: f.state, SocketPath: f.socket, Tick: 20 * time.Millisecond, ReconcileEvery: 50 * time.Millisecond, DeliverEvery: 20 * time.Millisecond, Grace: time.Millisecond, NodeOfflineAfter: 150 * time.Millisecond, Log: log.New(f.logs, "", 0)})
+		done <- Run(ctx, f.deps, options)
 	}()
 	deadline := time.Now().Add(5 * time.Second)
 	for !unixapi.Reachable(context.Background(), f.socket) {

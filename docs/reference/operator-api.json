@@ -3739,6 +3739,10 @@
                 "team": {
                   "type": "string",
                   "description": "the team whose member took the event, picked among the hearers of a team subscription"
+                },
+                "crossed": {
+                  "type": "boolean",
+                  "description": "published to another team, team: its task is made there, so botId and taskId are empty"
                 }
               },
               "required": [
@@ -3766,6 +3770,10 @@
                 "team": {
                   "type": "string",
                   "description": "team_unavailable: the team of a team subscription nobody could take; botId is empty"
+                },
+                "crossed": {
+                  "type": "boolean",
+                  "description": "not published to another team, team: crossing_limit, no_domain_id, or team_unavailable"
                 }
               },
               "required": [
