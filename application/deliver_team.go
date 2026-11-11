@@ -112,41 +112,17 @@ func (uc EmitEvent) deliverTeam(ctx context.Context, e emission, team domain.Tea
 			return uc.deliverNote(ctx, e, c.bot, c.sub, "", pending.ID().String(), team)
 		}
 	}
-	pool, err := uc.reachable(ctx, candidates)
-	if err != nil {
-		return nil, nil, err
-	}
-	load, err := readMemberLoad(ctx, uc.deps, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-	bots := make([]domain.Bot, len(pool))
-	for i, c := range pool {
+	bots := make([]domain.Bot, len(candidates))
+	for i, c := range candidates {
 		bots[i] = c.bot
 	}
-	picked, _ := load.pick(bots)
-	hearer := pool[slices.IndexFunc(pool, func(c teamHearer) bool { return c.bot.ID() == picked.ID() })]
+	picked, err := pickMember(ctx, uc.deps, bots)
+	if err != nil {
+		return nil, nil, err
+	}
+	hearer := candidates[slices.IndexFunc(candidates, func(c teamHearer) bool { return c.bot.ID() == picked.ID() })]
 	urgent := hearer.bot.InterruptedBy(hearer.sub, domain.KindOf(e.name))
 	return uc.deliverTask(ctx, e, hearer.bot, hearer.sub, urgent, team)
-}
-
-// reachable keeps the candidates some Online node may run; all of them
-// when none is, so the task waits Pending for a node as a task does.
-func (uc EmitEvent) reachable(ctx context.Context, candidates []teamHearer) ([]teamHearer, error) {
-	nodes, err := uc.deps.Nodes.List(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var out []teamHearer
-	for _, c := range candidates {
-		if slices.ContainsFunc(nodes, func(node domain.Node) bool { return nodeCanRun(c.bot, domain.SkillPins{}, node) }) {
-			out = append(out, c)
-		}
-	}
-	if len(out) == 0 {
-		return candidates, nil
-	}
-	return out, nil
 }
 
 // eventTaskKey is the key of the task an event makes: one per receiver,

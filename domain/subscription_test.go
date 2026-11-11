@@ -163,3 +163,44 @@ func TestATeamSubscriptionTakesTasksOnly(t *testing.T) {
 		t.Errorf("scope = %q %v", scope, err)
 	}
 }
+
+func TestOnlyATimerTriggerTakesDeliver(t *testing.T) {
+	timer, err := NewTrigger(TriggerSnapshot{Type: "timer", Name: "cola", Objective: "x", Every: "10m", Deliver: "team"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !timer.Deliver().Team() || timer.Snapshot().Deliver != "team" {
+		t.Errorf("timer = %+v", timer.Snapshot())
+	}
+	for _, bad := range []TriggerSnapshot{
+		{Type: "manual", Deliver: "team"}, {Type: "timer", Name: "a", Objective: "x", Every: "10m", Deliver: "all"},
+		{Type: "question", From: []string{"qa"}, Deliver: "team"},
+	} {
+		if _, err := NewTrigger(bad); err == nil {
+			t.Errorf("%+v accepted", bad)
+		}
+	}
+}
+
+func TestATeamTimerKeepsItsTeam(t *testing.T) {
+	at := time.Date(2026, 11, 11, 7, 30, 0, 0, time.UTC)
+	timer, err := NewTeamTimer("dev", "cola", "every:10m", at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if timer.Key() != "@dev~cola" || timer.Team() != "dev" || timer.BotID() != "" {
+		t.Errorf("timer = %+v", timer.Snapshot())
+	}
+	back, err := RestoreTimer(timer.Snapshot())
+	if err != nil || back.Key() != timer.Key() || !back.NextFireAt().Equal(at) {
+		t.Errorf("back = %+v %v", back.Snapshot(), err)
+	}
+	for _, bad := range []TimerSnapshot{{Team: "Bad Team", Trigger: "cola", Schedule: "x", NextFireAt: at}, {Team: "dev", Trigger: "cola", Schedule: "", NextFireAt: at}} {
+		if _, err := RestoreTimer(bad); err == nil {
+			t.Errorf("%+v restored", bad)
+		}
+	}
+	if _, err := NewTeamTimer("dev", "cola", "every:10m", time.Time{}); err == nil {
+		t.Error("a zero first fire")
+	}
+}

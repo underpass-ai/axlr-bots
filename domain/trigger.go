@@ -42,6 +42,7 @@ type Trigger struct {
 	topics     []string
 	severities []IncidentSeverity
 	from       []TeamName
+	deliver    DeliveryScope
 }
 
 // NewTrigger validates a trigger from its definition.
@@ -76,6 +77,12 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 	}
 	if len(s.From) > 0 && kind != TriggerQuestion {
 		return Trigger{}, invalid("trigger "+name, "only a question trigger takes from")
+	}
+	if t.deliver, err = ParseDeliveryScope(s.Deliver); err != nil {
+		return Trigger{}, invalid("trigger "+name, err.Error())
+	}
+	if t.deliver.Team() && kind != TriggerTimer {
+		return Trigger{}, invalid("trigger "+name, "only a timer trigger takes deliver: a team's other work comes through its subscriptions")
 	}
 	t.interrupt = s.Interrupt
 	switch kind {
@@ -354,6 +361,10 @@ func TeamEventTrigger() Trigger { return Trigger{kind: TriggerEvent, name: "team
 
 // Snapshot returns the trigger as plain data, credentials included: what
 // the repository stores. Redact it before printing.
+// Deliver says whether the bot or one member of its team takes the
+// trigger's fires (a timer only).
+func (t Trigger) Deliver() DeliveryScope { return t.deliver }
+
 func (t Trigger) Snapshot() TriggerSnapshot {
 	s := TriggerSnapshot{Type: t.kind.String(), Name: t.name, Objective: t.objective, Secret: t.secret, SigningKey: t.signingKey}
 	if t.kind == TriggerTimer {
@@ -381,6 +392,7 @@ func (t Trigger) Snapshot() TriggerSnapshot {
 		s.Severities = append(s.Severities, severity.String())
 	}
 	s.From = teamStrings(t.from)
+	s.Deliver = t.deliver.String()
 	if t.phase != IncidentPhaseTriage {
 		// Triage is the default: a definition that did not name it
 		// stores as it did before incident triggers had phases.

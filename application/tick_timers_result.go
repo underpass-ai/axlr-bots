@@ -16,7 +16,9 @@ type TickTimersResult struct {
 // TimerFire is one timer that fired: the slot, the task and whether the
 // fire created it.
 type TimerFire struct {
-	BotID       domain.BotID
+	BotID domain.BotID
+	// Team names the team of a team's timer: BotID is the member picked.
+	Team        domain.TeamName
 	Trigger     string
 	ScheduledAt time.Time
 	TaskID      domain.TaskID
@@ -25,7 +27,9 @@ type TimerFire struct {
 
 // TimerError is one timer that could not fire or be saved.
 type TimerError struct {
-	BotID   domain.BotID
+	BotID domain.BotID
+	// Team names the team of a team's timer that could not fire.
+	Team    domain.TeamName
 	Trigger string
 	Err     error
 }

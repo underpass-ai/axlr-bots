@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"slices"
 
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -48,4 +49,30 @@ func (l memberLoad) pick(candidates []domain.Bot) (domain.Bot, bool) {
 		}
 	}
 	return best, true
+}
+
+// pickMember chooses one of the candidates, given by id, for a task of
+// its team: among those some Online node may run (all of them when none
+// is, so the task waits Pending for a node as a task does), the first
+// free one, else the least busy. The candidates are not empty.
+func pickMember(ctx context.Context, deps Dependencies, candidates []domain.Bot) (domain.Bot, error) {
+	nodes, err := deps.Nodes.List(ctx)
+	if err != nil {
+		return domain.Bot{}, err
+	}
+	var pool []domain.Bot
+	for _, bot := range candidates {
+		if slices.ContainsFunc(nodes, func(node domain.Node) bool { return nodeCanRun(bot, domain.SkillPins{}, node) }) {
+			pool = append(pool, bot)
+		}
+	}
+	if len(pool) == 0 {
+		pool = candidates
+	}
+	load, err := readMemberLoad(ctx, deps, nil)
+	if err != nil {
+		return domain.Bot{}, err
+	}
+	picked, _ := load.pick(pool)
+	return picked, nil
 }
