@@ -135,3 +135,31 @@ func TestEventTriggerRefs(t *testing.T) {
 		t.Error("a bad event trigger name was accepted")
 	}
 }
+
+func TestATeamSubscriptionTakesTasksOnly(t *testing.T) {
+	sub, err := NewSubscription(SubscriptionSnapshot{Topic: "dev.arreglo.aprobado", Mode: "task", Deliver: "team"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sub.Deliver().Team() || sub.Snapshot().Deliver != "team" {
+		t.Errorf("sub = %+v", sub.Snapshot())
+	}
+	own, _ := NewSubscription(SubscriptionSnapshot{Topic: "a"})
+	if own.Deliver().Team() || own.Snapshot().Deliver != "" || own.Deliver() != DeliverBot {
+		t.Errorf("own = %+v", own.Snapshot())
+	}
+	at := time.Date(2026, 11, 11, 10, 0, 0, 0, time.UTC)
+	bad := []SubscriptionSnapshot{
+		{Topic: "a", Deliver: "everyone"}, {Topic: "a", Deliver: "team"}, {Topic: "a", Mode: "note", Deliver: "team"},
+		{Topic: "a", Mode: "message", Deliver: "team"},
+		{Topic: "a", Mode: "task", Deliver: "team", Status: "pending", AskedBy: "dev-go", Why: "x", AskedAt: &at},
+	}
+	for _, b := range bad {
+		if _, err := NewSubscription(b); err == nil {
+			t.Errorf("%+v accepted", b)
+		}
+	}
+	if scope, err := ParseDeliveryScope("team"); err != nil || scope.String() != "team" {
+		t.Errorf("scope = %q %v", scope, err)
+	}
+}

@@ -23,8 +23,8 @@ const (
 
 // Subscription is one topic a bot listens to in its teams: a name or
 // pattern, what a heard event does (mode), whom from, whether a warning
-// is urgent, the objective of the task it makes and whether a person
-// approved it. The implicit subscription is the one a bot hears an
+// is urgent, the objective of the task it makes, whether its team takes
+// what it hears and whether a person approved it. The implicit subscription is the one a bot hears an
 // event by when the event is addressed to it or is the team's default
 // (danger, stop) and nothing it subscribed to fits.
 type Subscription struct {
@@ -33,6 +33,7 @@ type Subscription struct {
 	from      []string
 	urgent    bool
 	objective string
+	deliver   DeliveryScope
 	status    SubscriptionStatus
 	askedBy   string
 	why       string
@@ -58,7 +59,17 @@ func NewSubscription(s SubscriptionSnapshot) (Subscription, error) {
 	if len(s.From) > maxSubscriptionFrom {
 		return Subscription{}, invalid(field+" from", "names at most 16 senders")
 	}
-	sub := Subscription{topic: topic, mode: mode, urgent: s.Urgent, status: status}
+	deliver, err := ParseDeliveryScope(s.Deliver)
+	if err != nil {
+		return Subscription{}, invalid(field, err.Error())
+	}
+	if deliver.Team() && mode != ModeTask {
+		return Subscription{}, invalid(field+" deliver", "team needs mode task: one member takes the event as a task")
+	}
+	if deliver.Team() && status == SubscriptionPending {
+		return Subscription{}, invalid(field+" deliver", "a subscription a bot asks for is its own, never the team's")
+	}
+	sub := Subscription{topic: topic, mode: mode, urgent: s.Urgent, deliver: deliver, status: status}
 	for _, raw := range s.From {
 		from := strings.TrimSpace(raw)
 		if from != FromOperator && from != FromControlPlane {
@@ -146,6 +157,10 @@ func (s Subscription) Urgent() bool { return s.urgent }
 // empty: DefaultEventObjective.
 func (s Subscription) ObjectiveTemplate() string { return s.objective }
 
+// Deliver says whether the bot or one member of its team takes what the
+// subscription hears.
+func (s Subscription) Deliver() DeliveryScope { return s.deliver }
+
 // Status says whether the subscription hears.
 func (s Subscription) Status() SubscriptionStatus { return s.status }
 
@@ -177,7 +192,7 @@ func (s Subscription) Matches(name EventName, from string, by Publisher) bool {
 
 // Snapshot returns the subscription as plain data.
 func (s Subscription) Snapshot() SubscriptionSnapshot {
-	out := SubscriptionSnapshot{Topic: s.topic.String(), Mode: s.mode.String(), From: s.From(), Urgent: s.urgent, Objective: s.objective, AskedBy: s.askedBy, Why: s.why}
+	out := SubscriptionSnapshot{Topic: s.topic.String(), Mode: s.mode.String(), From: s.From(), Urgent: s.urgent, Objective: s.objective, Deliver: s.deliver.String(), AskedBy: s.askedBy, Why: s.why}
 	if s.status == SubscriptionPending {
 		out.Status = s.status.String()
 	}

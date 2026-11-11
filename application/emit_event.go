@@ -100,17 +100,8 @@ func (uc EmitEvent) Execute(ctx context.Context, node domain.NodeID, executionID
 		return uc.refuse(ctx, e, domain.RefusedRateLimited, fmt.Sprintf("bot %s emitted %d events in the last minute, its most; wait before the next", e.bot.ID(), count))
 	}
 	answer := EmitAnswer{EventID: e.id, Name: e.name.String(), Severity: e.severity}
-	for _, mate := range mates {
-		delivery, skip, err := uc.deliver(ctx, e, mate)
-		if err != nil {
-			return EmitAnswer{}, err
-		}
-		if delivery != nil {
-			answer.Deliveries = append(answer.Deliveries, *delivery)
-		}
-		if skip != nil {
-			answer.Skipped = append(answer.Skipped, *skip)
-		}
+	if answer.Deliveries, answer.Skipped, err = uc.deliverAll(ctx, e, mates); err != nil {
+		return EmitAnswer{}, err
 	}
 	if err := uc.recordEmitted(ctx, e, answer); err != nil {
 		return EmitAnswer{}, err
@@ -193,13 +184,13 @@ func (uc EmitEvent) deliver(ctx context.Context, e emission, mate domain.Bot) (*
 	}
 	switch mode {
 	case domain.ModeNote:
-		return uc.deliverNote(ctx, e, mate, sub, "", "")
+		return uc.deliverNote(ctx, e, mate, sub, "", "", "")
 	case domain.ModeMessage:
 		if delivery, skip, handled, err := uc.deliverMessage(ctx, e, mate, sub); handled || err != nil {
 			return delivery, skip, err
 		}
 	}
-	return uc.deliverTask(ctx, e, mate, sub, urgent)
+	return uc.deliverTask(ctx, e, mate, sub, urgent, "")
 }
 
 // skipped says why the teammate gets nothing.
@@ -225,6 +216,9 @@ func (uc EmitEvent) recordHeard(ctx context.Context, e emission, mate domain.Bot
 	}
 	if d.CoalescedInto != "" {
 		payload["coalescedInto"] = d.CoalescedInto
+	}
+	if d.Team != "" {
+		payload["team"] = d.Team
 	}
 	return uc.rec.event(ctx, domain.EventEventHeard, mate, domain.TaskID(d.TaskID), e.task.CorrelationID(), payload)
 }

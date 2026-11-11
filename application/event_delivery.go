@@ -19,4 +19,7 @@ type EventDelivery struct {
 	// CoalescedInto names the receiver's Pending task the event joined
 	// as a note.
 	CoalescedInto string `json:"coalescedInto,omitempty"`
+	// Team names the team whose member took the event: one of the
+	// hearers of a team subscription, picked by the control plane.
+	Team string `json:"team,omitempty"`
 }

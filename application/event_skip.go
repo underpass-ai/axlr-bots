@@ -7,4 +7,6 @@ type EventSkip struct {
 	BotID   string `json:"botId"`
 	Reason  string `json:"reason"`
 	Message string `json:"message"`
+	// Team names the team of a team subscription nobody could take.
+	Team string `json:"team,omitempty"`
 }

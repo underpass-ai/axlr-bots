@@ -124,18 +124,11 @@ func (uc PublishGroupEvent) Execute(ctx context.Context, command PublishGroupEve
 	}
 	answer := PublishAnswer{EventID: e.id, Name: name.String(), Severity: e.severity, Deliveries: []EventDelivery{}, Skipped: []EventSkip{}, Created: true}
 	emit := NewEmitEvent(uc.deps)
-	for _, member := range members {
-		delivery, skip, err := emit.deliver(ctx, e, member)
-		if err != nil {
-			return PublishAnswer{}, err
-		}
-		if delivery != nil {
-			answer.Deliveries = append(answer.Deliveries, *delivery)
-		}
-		if skip != nil {
-			answer.Skipped = append(answer.Skipped, *skip)
-		}
+	deliveries, skips, err := emit.deliverAll(ctx, e, members)
+	if err != nil {
+		return PublishAnswer{}, err
 	}
+	answer.Deliveries, answer.Skipped = append(answer.Deliveries, deliveries...), append(answer.Skipped, skips...)
 	payload := e.fields()
 	delete(payload, "dataJSON")
 	delete(payload, "taskId")
