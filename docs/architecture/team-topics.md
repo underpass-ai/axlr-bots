@@ -151,7 +151,7 @@ There are no timers, so no round reads GitHub any more. `incidencia.completada` 
 | 1 | this ADR | links resolve; `pubsub-events.md` and `team-subscriptions.md` point here |
 | 2 | domain: `teams` on an emit rule, `team` on a subscription, `origin` on the lineage, the refusals `crossing_limit`; validation | a bot without the new fields is unchanged; the 37 live bots read and write back identical; coverage ≥ 80 % |
 | 3 | delivery across teams | QA emits `incidencia.nueva`: one task in dev, depth 0, `origin` set, never coalesced; three events → three tasks run oldest first; one side alone: nothing; `stop.*` with `teams` refused; the fifth crossing skipped |
-| 4 | GitHub's webhook into an input adapter | a merged PR and a finished CI reach dev as `pr.mergeada` and `pr.ci`, published as the operator at depth 0; a bad signature is refused |
+| 4 | GitHub's webhook into an input adapter: `axlr-bots github-hooks serve` and `redeliver` ([runbook](../runbooks/github-hooks.md), [spec](../reference/github-hooks.asyncapi.json)) | a merged PR and a finished CI reach dev as `pr.mergeada` and `pr.ci`, published as the operator at depth 0; a bad signature is refused |
 | 5 | API, reference and panel | `bot-definition.md`, `operator-api.json`, topics and links, the panel keeps the fields on a `PATCH` |
 | 6 | `bots-work-teams` | QA publishes `incidencia.nueva` when it triages; dev listens and publishes `incidencia.completada` when a fix is merged; QA listens; drill in a sandbox with an injection bait before anything live |
 | later | the team task and its claim | only when a team has a second node: two free members on two nodes and three events, each takes one, oldest first; two nodes racing claim once |
