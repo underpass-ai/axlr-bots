@@ -1,0 +1,577 @@
+{
+  "asyncapi": "3.0.0",
+  "info": {
+    "title": "AXLR Bots GitHub hooks",
+    "version": "1.0.0",
+    "description": "The input adapter that turns GitHub's webhooks into the dev team's events (docs/architecture/team-topics.md, «Where GitHub's facts come from», option A; the pattern is docs/architecture/input-adapters.md). It receives `check_suite` and `pull_request` deliveries on `POST /github`, verifies `X-Hub-Signature-256` with the hook's secret, and publishes `pr.ci` and `pr.mergeada` to team `dev` as the operator, through the control plane's socket (`POST /v1/groups/{team}/events`). Only the fields the adapter reads are described: GitHub sends many more, and they are ignored. `axlr-bots github-hooks redeliver` reads GitHub's REST answers `Hook` and `HookDelivery` through `gh api`; they are described here too, so that no DTO of the package is written by hand. The wire forms are `adapters/githubhooks`; the runbook is docs/runbooks/github-hooks.md."
+  },
+  "defaultContentType": "application/json",
+  "servers": {
+    "gateway": {
+      "host": "54.75.246.167:8443",
+      "protocol": "https",
+      "description": "The EC2 gateway GitHub posts to, with a self-signed certificate (the hook has insecure_ssl=1: the HMAC is the authentication). It forwards /github through a reverse SSH tunnel to the adapter on gx10."
+    },
+    "adapter": {
+      "host": "127.0.0.1:7890",
+      "protocol": "http",
+      "description": "`axlr-bots github-hooks serve`, on loopback; the tunnel's far end."
+    },
+    "controlPlane": {
+      "host": "localhost",
+      "pathname": "/v1",
+      "protocol": "http",
+      "description": "The control plane's operator API over its Unix socket (<state>/axlr-bots.sock): the adapter publishes as the operator, at depth 0."
+    }
+  },
+  "channels": {
+    "githubWebhook": {
+      "address": "/github",
+      "title": "GitHub's webhook",
+      "description": "POST only (405 otherwise), body at most 1 MiB (413). A missing or wrong X-Hub-Signature-256 is 401, logged without the body. `ping` and every event the adapter does not use are 204. A missing or malformed X-GitHub-Delivery, or a body that is not JSON, is 400. A repository outside the allow-list, and an action the adapter does not map, are 204. Something published is 202; a publish that failed is 502, so GitHub records the delivery as failed and it can be redelivered.",
+      "servers": [
+        {
+          "$ref": "#/servers/gateway"
+        },
+        {
+          "$ref": "#/servers/adapter"
+        }
+      ],
+      "messages": {
+        "checkSuite": {
+          "$ref": "#/components/messages/checkSuite"
+        },
+        "pullRequest": {
+          "$ref": "#/components/messages/pullRequest"
+        },
+        "ping": {
+          "$ref": "#/components/messages/ping"
+        }
+      }
+    },
+    "teamEvents": {
+      "address": "/v1/groups/{team}/events",
+      "title": "The team's events",
+      "description": "The operator API's publish route (docs/reference/operator-api.md). The same delivery published again names the same idempotency key, so the control plane answers the event it published before and delivers nothing twice.",
+      "servers": [
+        {
+          "$ref": "#/servers/controlPlane"
+        }
+      ],
+      "parameters": {
+        "team": {
+          "description": "The team the adapter publishes to: --team, dev by default.",
+          "examples": [
+            "dev"
+          ]
+        }
+      },
+      "messages": {
+        "prCi": {
+          "$ref": "#/components/messages/prCi"
+        },
+        "prMergeada": {
+          "$ref": "#/components/messages/prMergeada"
+        }
+      }
+    }
+  },
+  "operations": {
+    "receiveGitHubWebhook": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/githubWebhook"
+      },
+      "summary": "GitHub posts a delivery of the repository's hook (events check_suite and pull_request, content type json).",
+      "bindings": {
+        "http": {
+          "method": "POST"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/githubWebhook/messages/checkSuite"
+        },
+        {
+          "$ref": "#/channels/githubWebhook/messages/pullRequest"
+        },
+        {
+          "$ref": "#/channels/githubWebhook/messages/ping"
+        }
+      ]
+    },
+    "sendPrCi": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/teamEvents"
+      },
+      "summary": "A check suite completed: one pr.ci per pull request it names (none, one or several).",
+      "bindings": {
+        "http": {
+          "method": "POST"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/teamEvents/messages/prCi"
+        }
+      ]
+    },
+    "sendPrMergeada": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/teamEvents"
+      },
+      "summary": "A pull request was closed merged: one pr.mergeada. Closed unmerged publishes nothing.",
+      "bindings": {
+        "http": {
+          "method": "POST"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/teamEvents/messages/prMergeada"
+        }
+      ]
+    }
+  },
+  "components": {
+    "messages": {
+      "checkSuite": {
+        "name": "check_suite",
+        "title": "A check suite's activity",
+        "summary": "Mapped only with action completed: a repository hook receives no other.",
+        "contentType": "application/json",
+        "headers": {
+          "$ref": "#/components/schemas/WebhookHeaders"
+        },
+        "payload": {
+          "$ref": "#/components/schemas/CheckSuiteEvent"
+        }
+      },
+      "pullRequest": {
+        "name": "pull_request",
+        "title": "A pull request's activity",
+        "summary": "Mapped only with action closed and pull_request.merged true.",
+        "contentType": "application/json",
+        "headers": {
+          "$ref": "#/components/schemas/WebhookHeaders"
+        },
+        "payload": {
+          "$ref": "#/components/schemas/PullRequestEvent"
+        }
+      },
+      "ping": {
+        "name": "ping",
+        "title": "GitHub's ping when a hook is created",
+        "summary": "Answered 204 once its signature verifies; the body is not read.",
+        "contentType": "application/json",
+        "headers": {
+          "$ref": "#/components/schemas/WebhookHeaders"
+        },
+        "payload": {
+          "$ref": "#/components/schemas/Ping"
+        }
+      },
+      "prCi": {
+        "name": "pr.ci",
+        "title": "A pull request's CI ended",
+        "contentType": "application/json",
+        "payload": {
+          "$ref": "#/components/schemas/PRCIEvent"
+        }
+      },
+      "prMergeada": {
+        "name": "pr.mergeada",
+        "title": "A pull request was merged",
+        "contentType": "application/json",
+        "payload": {
+          "$ref": "#/components/schemas/PRMergeadaEvent"
+        }
+      }
+    },
+    "schemas": {
+      "WebhookHeaders": {
+        "type": "object",
+        "required": [
+          "X-GitHub-Event",
+          "X-GitHub-Delivery",
+          "X-Hub-Signature-256"
+        ],
+        "properties": {
+          "X-GitHub-Event": {
+            "type": "string",
+            "description": "The event's name: check_suite, pull_request, ping; any other is answered 204.",
+            "examples": [
+              "check_suite"
+            ]
+          },
+          "X-GitHub-Delivery": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{1,64}$",
+            "description": "The delivery's GUID, the same on a redelivery: the idempotency keys are built from it."
+          },
+          "X-Hub-Signature-256": {
+            "type": "string",
+            "pattern": "^sha256=[0-9a-f]{64}$",
+            "description": "HMAC-SHA256 of the raw body with the hook's secret, in hex; compared in constant time."
+          }
+        }
+      },
+      "Ping": {
+        "type": "object",
+        "properties": {
+          "zen": {
+            "type": "string"
+          }
+        }
+      },
+      "CheckSuiteEvent": {
+        "type": "object",
+        "x-go-type": "githubhooks.CheckSuiteEvent",
+        "description": "The fields of GitHub's check_suite payload the adapter reads.",
+        "required": [
+          "action",
+          "check_suite",
+          "repository"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "completed is mapped; anything else is ignored.",
+            "examples": [
+              "completed"
+            ]
+          },
+          "check_suite": {
+            "$ref": "#/components/schemas/CheckSuite"
+          },
+          "repository": {
+            "$ref": "#/components/schemas/Repository"
+          }
+        }
+      },
+      "CheckSuite": {
+        "type": "object",
+        "x-go-type": "githubhooks.CheckSuite",
+        "required": [
+          "head_sha",
+          "pull_requests"
+        ],
+        "properties": {
+          "head_sha": {
+            "type": "string",
+            "description": "The commit the suite ran on."
+          },
+          "conclusion": {
+            "type": "string",
+            "description": "success, failure, neutral, cancelled, timed_out, action_required, stale, skipped, startup_failure; null at GitHub before the suite completes, read as empty.",
+            "examples": [
+              "success"
+            ]
+          },
+          "pull_requests": {
+            "type": "array",
+            "description": "The open pull requests whose head is head_sha; empty for a push to a branch with none (or from a fork).",
+            "items": {
+              "$ref": "#/components/schemas/PullRequestRef"
+            }
+          }
+        }
+      },
+      "PullRequestRef": {
+        "type": "object",
+        "x-go-type": "githubhooks.PullRequestRef",
+        "required": [
+          "number"
+        ],
+        "properties": {
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "PullRequestEvent": {
+        "type": "object",
+        "x-go-type": "githubhooks.PullRequestEvent",
+        "description": "The fields of GitHub's pull_request payload the adapter reads.",
+        "required": [
+          "action",
+          "number",
+          "pull_request",
+          "repository"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "closed with pull_request.merged true is mapped; anything else is ignored.",
+            "examples": [
+              "closed"
+            ]
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pull_request": {
+            "$ref": "#/components/schemas/PullRequest"
+          },
+          "repository": {
+            "$ref": "#/components/schemas/Repository"
+          }
+        }
+      },
+      "PullRequest": {
+        "type": "object",
+        "x-go-type": "githubhooks.PullRequest",
+        "required": [
+          "merged",
+          "head"
+        ],
+        "properties": {
+          "merged": {
+            "type": "boolean"
+          },
+          "merge_commit_sha": {
+            "type": "string",
+            "description": "The merge commit on the base branch once merged; null at GitHub otherwise, read as empty."
+          },
+          "head": {
+            "$ref": "#/components/schemas/PullRequestHead"
+          }
+        }
+      },
+      "PullRequestHead": {
+        "type": "object",
+        "x-go-type": "githubhooks.PullRequestHead",
+        "required": [
+          "sha"
+        ],
+        "properties": {
+          "sha": {
+            "type": "string"
+          }
+        }
+      },
+      "Repository": {
+        "type": "object",
+        "x-go-type": "githubhooks.Repository",
+        "required": [
+          "full_name"
+        ],
+        "properties": {
+          "full_name": {
+            "type": "string",
+            "description": "owner/name; only the allow-list's are mapped (--repos, by default underpass-ai/kmp, underpass-ai/made, underpass-ai/axlr, underpass-ai/axlr-bots).",
+            "examples": [
+              "underpass-ai/kmp"
+            ]
+          }
+        }
+      },
+      "PRCIEvent": {
+        "type": "object",
+        "description": "The operator API's publish body (application.PublishGroupEventCommand) for pr.ci.",
+        "required": [
+          "name",
+          "message",
+          "data",
+          "idempotencyKey"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "const": "pr.ci"
+          },
+          "message": {
+            "type": "string",
+            "description": "One plain line.",
+            "examples": [
+              "CI of underpass-ai/kmp#42 ended: success (head 1a2b3c4)."
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/PRCIData"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "description": "github:<X-GitHub-Delivery>:<pull request number>.",
+            "examples": [
+              "github:72d3162e-cc78-11e3-81ab-4c9367dc0958:42"
+            ]
+          }
+        }
+      },
+      "PRCIData": {
+        "type": "object",
+        "x-go-type": "githubhooks.PRCIData",
+        "additionalProperties": false,
+        "required": [
+          "repo",
+          "number",
+          "head_sha",
+          "conclusion"
+        ],
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "owner/name."
+          },
+          "number": {
+            "type": "integer",
+            "description": "The pull request."
+          },
+          "head_sha": {
+            "type": "string",
+            "description": "The commit the suite ran on."
+          },
+          "conclusion": {
+            "type": "string",
+            "description": "The suite's conclusion, as GitHub names it."
+          }
+        }
+      },
+      "PRMergeadaEvent": {
+        "type": "object",
+        "description": "The operator API's publish body (application.PublishGroupEventCommand) for pr.mergeada.",
+        "required": [
+          "name",
+          "message",
+          "data",
+          "idempotencyKey"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "const": "pr.mergeada"
+          },
+          "message": {
+            "type": "string",
+            "description": "One plain line.",
+            "examples": [
+              "underpass-ai/kmp#42 was merged as 9f8e7d6 (head 1a2b3c4)."
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/PRMergeadaData"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "description": "github:<X-GitHub-Delivery>:<pull request number>."
+          }
+        }
+      },
+      "PRMergeadaData": {
+        "type": "object",
+        "x-go-type": "githubhooks.PRMergeadaData",
+        "additionalProperties": false,
+        "required": [
+          "repo",
+          "number",
+          "merge_sha",
+          "head_sha"
+        ],
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "owner/name."
+          },
+          "number": {
+            "type": "integer",
+            "description": "The pull request."
+          },
+          "merge_sha": {
+            "type": "string",
+            "description": "The merge commit on the base branch (GitHub's merge_commit_sha)."
+          },
+          "head_sha": {
+            "type": "string",
+            "description": "The pull request's last head commit."
+          }
+        }
+      },
+      "Hook": {
+        "type": "object",
+        "x-go-type": "githubhooks.Hook",
+        "description": "An item of GitHub's REST GET /repos/{owner}/{repo}/hooks, read by redeliver: only the fields it uses.",
+        "required": [
+          "id",
+          "config"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "config": {
+            "$ref": "#/components/schemas/HookConfig"
+          }
+        }
+      },
+      "HookConfig": {
+        "type": "object",
+        "x-go-type": "githubhooks.HookConfig",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Where GitHub posts; redeliver takes the hooks whose URL is --hook-url, or whose path is /github when it is not given."
+          }
+        }
+      },
+      "HookDelivery": {
+        "type": "object",
+        "x-go-type": "githubhooks.HookDelivery",
+        "description": "An item of GitHub's REST GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries: one attempt. Every attempt of one event shares its guid.",
+        "required": [
+          "id",
+          "guid",
+          "delivered_at",
+          "status_code"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The attempt; POST …/deliveries/{id}/attempts redelivers it."
+          },
+          "guid": {
+            "type": "string",
+            "description": "The event's X-GitHub-Delivery, shared by its redeliveries."
+          },
+          "delivered_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "redelivery": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "description": "OK, or why it failed.",
+            "examples": [
+              "OK"
+            ]
+          },
+          "status_code": {
+            "type": "integer",
+            "description": "The adapter's HTTP answer; 0 when GitHub reached nothing (the tunnel down). Anything but 2xx is a failure."
+          },
+          "event": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
