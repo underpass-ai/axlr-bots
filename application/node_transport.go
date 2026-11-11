@@ -49,6 +49,12 @@ type NodeTransport interface {
 	// QuestionState reads where a question the execution's task asked
 	// stands, from the control plane's records.
 	QuestionState(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, question domain.TaskID) (QuestionView, error)
+	// WatchNext answers a team's Jev watcher the next question of its
+	// round after the cursor, or Done.
+	WatchNext(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, after domain.TaskID) (WatchedQuestion, error)
+	// DecideWatch carries out the watcher's decision for one question:
+	// wait changes nothing, abandon cancels it.
+	DecideWatch(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, decision WatchDecision) (WatchDecided, error)
 	// Emit tells the execution's teams an event; a refusal is an
 	// answer, not an error.
 	Emit(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, command EmitEventCommand) (EmitAnswer, error)

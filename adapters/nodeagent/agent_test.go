@@ -58,10 +58,20 @@ func (b *syncBuffer) String() string {
 // node, and returns the fixture.
 func control(t *testing.T, scenario string) *fixture {
 	t.Helper()
+	return controlWith(t, nil)
+}
+
+// controlWith is control with a change to the control plane's
+// dependencies (a clock of the test's).
+func controlWith(t *testing.T, change func(*application.Dependencies)) *fixture {
+	t.Helper()
 	dir := t.TempDir()
 	deps, err := compose.Dependencies(filepath.Join(dir, "cp"), "/nonexistent/axlr-tui", "test:cp")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if change != nil {
+		change(&deps)
 	}
 	socket := filepath.Join(dir, "cp.sock")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -297,6 +307,12 @@ func (f *fakeTransport) Ask(context.Context, domain.NodeID, domain.ExecutionID, 
 }
 func (f *fakeTransport) QuestionState(context.Context, domain.NodeID, domain.ExecutionID, domain.TaskID) (application.QuestionView, error) {
 	return application.QuestionView{}, errors.New("not served")
+}
+func (f *fakeTransport) WatchNext(context.Context, domain.NodeID, domain.ExecutionID, domain.TaskID) (application.WatchedQuestion, error) {
+	return application.WatchedQuestion{}, errors.New("not served")
+}
+func (f *fakeTransport) DecideWatch(context.Context, domain.NodeID, domain.ExecutionID, application.WatchDecision) (application.WatchDecided, error) {
+	return application.WatchDecided{}, errors.New("not served")
 }
 func (f *fakeTransport) Emit(context.Context, domain.NodeID, domain.ExecutionID, application.EmitEventCommand) (application.EmitAnswer, error) {
 	return application.EmitAnswer{}, errors.New("not served")

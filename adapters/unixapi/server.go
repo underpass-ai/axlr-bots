@@ -215,6 +215,8 @@ func (s *Server) nodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/delegations/{task}", s.authenticated(s.awaitDelegation))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/questions", s.authenticated(s.ask))
 	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/questions/{task}", s.authenticated(s.questionState))
+	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/watch", s.authenticated(s.watchNext))
+	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/watch/decisions", s.authenticated(s.decideWatch))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/events", s.authenticated(s.emit))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/subscriptions", s.authenticated(s.subscribe))
 	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/messages", s.authenticated(s.executionMessages))
@@ -1103,6 +1105,60 @@ func (s *Server) questionState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusOK, nodeproto.FromQuestionView(view), nil)
+}
+
+// watchNext is POST .../watch: a team's Jev watcher asks for the next
+// question of its round after the cursor. Only a Jev watcher is answered,
+// and only with its own team's questions.
+func (s *Server) watchNext(w http.ResponseWriter, r *http.Request) {
+	id, executionID, ok := nodeExecution(w, r)
+	if !ok {
+		return
+	}
+	var message nodeproto.WatchMessage
+	if !readJSON(w, r, &message) {
+		return
+	}
+	after := domain.TaskID("")
+	if message.After != "" {
+		cursor, err := domain.NewTaskID(message.After)
+		if err != nil {
+			respond(w, 0, nil, err)
+			return
+		}
+		after = cursor
+	}
+	watched, err := s.service.Runner().WatchNext(r.Context(), id, executionID, after)
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	respond(w, http.StatusOK, nodeproto.FromWatched(watched), nil)
+}
+
+// decideWatch is POST .../watch/decisions: the watcher's decision for one
+// question of its team; abandon cancels it.
+func (s *Server) decideWatch(w http.ResponseWriter, r *http.Request) {
+	id, executionID, ok := nodeExecution(w, r)
+	if !ok {
+		return
+	}
+	var message nodeproto.WatchDecisionMessage
+	if !readJSON(w, r, &message) {
+		return
+	}
+	question, err := domain.NewTaskID(message.Question)
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	decision := application.WatchDecision{Question: question, Choice: message.Choice, Probability: message.Probability, Confidence: message.Confidence}
+	decided, err := s.service.Runner().DecideWatch(r.Context(), id, executionID, decision)
+	if err != nil {
+		respond(w, 0, nil, err)
+		return
+	}
+	respond(w, http.StatusOK, nodeproto.FromWatchDecided(decided), nil)
 }
 
 // emit is POST .../events: the execution tells its teams an event.

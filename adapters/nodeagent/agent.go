@@ -299,6 +299,11 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 				return a.Transport.Emit(runCtx, id, assignment.ExecutionID, command)
 			}
 		}
+		if program, ok := request.Runtime.Jev(); ok && program.WatchesQuestions() {
+			w := &watcher{transport: a.Transport, node: id, execution: assignment.ExecutionID, log: logger}
+			request.OnNodeTool = w.call
+			logger.Printf("node: execution %s watches its team's questions", assignment.ExecutionID)
+		}
 		report, err = a.Executor.Execute(runCtx, request)
 		closeSocket()
 	case assignment.Decide != nil:

@@ -227,6 +227,15 @@ func (b *Bot) Redefine(mission Mission, tools AllowedTools, model ModelPolicy, b
 // Runtime is what runs the bot's tasks on its node.
 func (b Bot) Runtime() Runtime { return b.runtime }
 
+// WatchesQuestions reports whether the bot is a team's Jev watcher: its
+// runtime is Jev and its program names the reserved server axlr-bots
+// (docs/architecture/team-channel.md, A6). Its level and allowed tools
+// already fit the program, so it holds both watch tools.
+func (b Bot) WatchesQuestions() bool {
+	program, ok := b.runtime.Jev()
+	return ok && program.WatchesQuestions()
+}
+
 // SetRuntime sets what runs the bot's tasks; a Jev program must fit the
 // bot's allowed tools and level (CheckRuntime).
 func (b *Bot) SetRuntime(runtime Runtime) error {

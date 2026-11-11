@@ -102,6 +102,9 @@ func NewJevProgram(s JevProgramSnapshot) (JevProgram, error) {
 	if !jevModel.MatchString(p.model) || len(p.model) > 7 && p.model[len(p.model)-7:] == "-latest" {
 		return JevProgram{}, invalid("jev model", "must be a pinned version such as jev-1.13.0")
 	}
+	if err := watchProgram(p); err != nil {
+		return JevProgram{}, err
+	}
 	return p, nil
 }
 

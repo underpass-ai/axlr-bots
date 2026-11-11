@@ -48,6 +48,10 @@ func newMCPClient(url string, timeout time.Duration) *mcpClient {
 	return &mcpClient{url: url, http: &http.Client{Timeout: timeout}}
 }
 
+var _ toolClient = (*mcpClient)(nil)
+
+func (c *mcpClient) address() string { return c.url }
+
 // initialize opens the session, as the protocol asks before any call.
 func (c *mcpClient) initialize(ctx context.Context, clientName, version string) error {
 	var result struct {

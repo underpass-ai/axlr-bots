@@ -94,7 +94,7 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 	if e.Judge == nil {
 		return application.ExecutionReport{}, errors.New("jev: this node has no TYPESAFE_API_KEY: it cannot run Jev bots")
 	}
-	address, err := e.Servers.Resolve(program.Server())
+	client, err := e.client(program, request)
 	if err != nil {
 		return application.ExecutionReport{}, fmt.Errorf("jev: %w", err)
 	}
@@ -102,7 +102,7 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 	if len(request.Input) > 0 {
 		_ = json.Unmarshal(request.Input, &input)
 	}
-	r := &run{executor: e, request: request, program: program, client: newMCPClient(address, toolTimeout), data: input.Data, event: input.Name}
+	r := &run{executor: e, request: request, program: program, client: client, data: input.Data, event: input.Name}
 	r.trace, err = e.openTrace(request.ExecutionID)
 	if err != nil {
 		return application.ExecutionReport{}, fmt.Errorf("jev: trace: %w", err)
@@ -129,6 +129,22 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 		return report, ctx.Err()
 	}
 	return report, nil
+}
+
+// client reaches the program's server: the reserved axlr-bots is the
+// node's, in process; any other is found by name in the node's mcp.json.
+func (e *Executor) client(program domain.JevProgram, request application.ExecutionRequest) (toolClient, error) {
+	if program.Server() == domain.WatchServer {
+		if request.OnNodeTool == nil {
+			return nil, errors.New("this node serves no " + domain.WatchServer + " tools to the run")
+		}
+		return nodeToolClient{call: request.OnNodeTool}, nil
+	}
+	address, err := e.Servers.Resolve(program.Server())
+	if err != nil {
+		return nil, err
+	}
+	return newMCPClient(address, toolTimeout), nil
 }
 
 // Hear takes the events that reached the execution while it runs: an
@@ -185,7 +201,7 @@ type run struct {
 	executor *Executor
 	request  application.ExecutionRequest
 	program  domain.JevProgram
-	client   *mcpClient
+	client   toolClient
 	trace    *os.File
 
 	mu    sync.Mutex
@@ -245,7 +261,7 @@ func (r *run) pass() map[string]any {
 // perform runs the program and builds the report.
 func (r *run) perform(ctx context.Context) application.ExecutionReport {
 	started := r.executor.now()
-	r.log("start", map[string]any{"event": r.event, "data": r.data, "program": r.program.Snapshot(), "server": r.client.url})
+	r.log("start", map[string]any{"event": r.event, "data": r.data, "program": r.program.Snapshot(), "server": r.client.address()})
 	outcome, reason := r.steps(ctx)
 	ended := r.executor.now()
 	r.log("end", map[string]any{"outcome": outcome, "reason": reason, "usage": r.usage})

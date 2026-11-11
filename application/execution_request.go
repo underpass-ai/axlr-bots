@@ -1,6 +1,7 @@
 package application
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -67,6 +68,11 @@ type ExecutionRequest struct {
 	// for a model; the node sets it when the bot is in a team, it never
 	// travels. A runtime without a model (a Jev program) tells through it.
 	OnEmit func(EmitEventCommand) (EmitAnswer, error) `json:"-"`
+	// OnNodeTool calls a tool the node serves in process, with the
+	// execution's identity: the tools of the reserved server axlr-bots
+	// that a team's Jev watcher calls (domain.WatchServer). The node sets
+	// it for such a run; it never travels.
+	OnNodeTool func(ctx context.Context, tool string, arguments map[string]any) (NodeToolAnswer, error) `json:"-"`
 }
 
 // NodeTools names the tools the node serves the execution on its
