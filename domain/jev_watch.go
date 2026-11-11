@@ -21,6 +21,11 @@ const (
 	// puts to Jev.
 	WatchWait    = "wait"
 	WatchAbandon = "abandon"
+	// WatchStuck is the option a watcher's question about one of its
+	// team's own running tasks puts to Jev besides wait: the task is
+	// stuck, and the control plane cancels it
+	// (docs/architecture/team-subscriptions.md, stuck work).
+	WatchStuck = "stuck"
 )
 
 // watchProgram refuses a program on the reserved server that is not the

@@ -652,10 +652,10 @@ func (c *Client) QuestionState(ctx context.Context, node domain.NodeID, executio
 
 // WatchNext asks, for a team's Jev watcher, the next question of its
 // round after the cursor (application.NodeTransport).
-func (c *Client) WatchNext(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, after domain.TaskID) (application.WatchedQuestion, error) {
+func (c *Client) WatchNext(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, after domain.TaskID, tasks bool) (application.WatchedQuestion, error) {
 	var message nodeproto.WatchedMessage
 	path := "/v1/nodes/" + url.PathEscape(node.String()) + "/executions/" + url.PathEscape(execution.String()) + "/watch"
-	if err := c.call(ctx, http.MethodPost, path, nodeproto.WatchMessage{After: after.String()}, &message); err != nil {
+	if err := c.call(ctx, http.MethodPost, path, nodeproto.WatchMessage{After: after.String(), Tasks: tasks}, &message); err != nil {
 		return application.WatchedQuestion{}, err
 	}
 	return nodeproto.ToWatched(message)

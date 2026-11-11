@@ -72,6 +72,19 @@ A timer trigger may say `"deliver": "team"`:
 | The task | the picked bot's own timer trigger: its objective, its policy and budgets |
 | Nobody takes tasks | the slot is advanced, not fired, as for a bot that takes none |
 
+## Stuck work
+
+Decided 11 November 2026 (R7): no fixed rule of hours. *Jev checks every 5 minutes the tasks that pass 5 minutes; Jev sees what the bot recorded and gives its verdict: stuck or not.* The team's Jev watcher of [the team channel](team-channel.md#the-jev-watcher) does it, in the same round as the questions.
+
+| Rule | Value |
+|---|---|
+| Which tasks | Running tasks of the watcher's team (memory team), of bots that run a model: never a Jev bot's, never a question (the asking team's watcher sees those) |
+| When | its run began 5 minutes ago or more (`WatchAfter`); a younger one is neither put nor judged |
+| What Jev reads | the task, its bot, what it was asked (first 200 characters), its trigger, how long it runs, how many steps its run reported and the last one, the bot's other open tasks |
+| Choices | `wait` (nothing changes) or `stuck`; `abandon` stays the questions' and `stuck` is refused for a question |
+| Stuck | the task is cancelled with Jev's verdict as the reason (audit `task.stuck`), and the control plane publishes `warn.stuck` (`taskId`, `bot`, `reason`) as that bot: it never hears it; the teammate a `deliver: team` subscription picks takes the work over |
+| An older node | its watch call does not ask for tasks (`tasks` in the watch message): it is put questions only, as before |
+
 ## What does not change
 
 - An event or timer without `deliver` behaves exactly as before.

@@ -55,7 +55,7 @@ func watcherBot(t *testing.T, h *harness, id, team string, runtime *domain.Runti
 
 func watchNext(t *testing.T, h *harness, execution domain.ExecutionID, after domain.TaskID) WatchedQuestion {
 	t.Helper()
-	watched, err := NewWatchNext(h.deps).Execute(context.Background(), "jev-node", execution, after)
+	watched, err := NewWatchNext(h.deps).Execute(context.Background(), "jev-node", execution, after, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestOnlyAJevWatcherWatchesQuestions(t *testing.T) {
 	ctx := context.Background()
 	q := askTeam(t, h, "qa-node", parent.ExecutionID, "dev", "Who owns the importer?")
 	h.clock.now = t0.Add(6 * time.Minute)
-	if _, err := NewWatchNext(h.deps).Execute(ctx, "qa-node", parent.ExecutionID, ""); !domain.IsForbidden(err) || !strings.Contains(err.Error(), "is not a Jev watcher") {
+	if _, err := NewWatchNext(h.deps).Execute(ctx, "qa-node", parent.ExecutionID, "", false); !domain.IsForbidden(err) || !strings.Contains(err.Error(), "is not a Jev watcher") {
 		t.Errorf("an AXLR bot watched: %v", err)
 	}
 	if _, err := NewDecideWatch(h.deps).Execute(ctx, "qa-node", parent.ExecutionID, WatchDecision{Question: q.TaskID, Choice: "abandon"}); !domain.IsForbidden(err) {
@@ -88,7 +88,7 @@ func TestOnlyAJevWatcherWatchesQuestions(t *testing.T) {
 	if !hasAudit(h, "question.watch", domain.AuditDenied) {
 		t.Error("the refusal is not audited")
 	}
-	if _, err := NewWatchNext(h.deps).Execute(ctx, "qa-node", watcher.ExecutionID, ""); err == nil {
+	if _, err := NewWatchNext(h.deps).Execute(ctx, "qa-node", watcher.ExecutionID, "", false); err == nil {
 		t.Error("another node read the watcher's round")
 	}
 	other := &domain.RuntimeSnapshot{Kind: "jev", Jev: &domain.JevProgramSnapshot{Server: "queue", Start: domain.WatchNextTool.String(), Wait: domain.WatchNextTool.String(), Act: domain.JevActSnapshot{Tool: domain.WatchDecideTool.String(), Choice: "choice"}}}
@@ -99,7 +99,7 @@ func TestOnlyAJevWatcherWatchesQuestions(t *testing.T) {
 	// The watcher's own run holds jev-node's bot, not the node: the worker
 	// gets its execution too.
 	run := nextFor(t, h, "jev-node")
-	if _, err := NewWatchNext(h.deps).Execute(ctx, "jev-node", run.ExecutionID, ""); !domain.IsForbidden(err) {
+	if _, err := NewWatchNext(h.deps).Execute(ctx, "jev-node", run.ExecutionID, "", false); !domain.IsForbidden(err) {
 		t.Errorf("a Jev bot of another server watched: %v", err)
 	}
 	if status := mustTask(t, h, q.TaskID).Status(); status != domain.TaskPending {
@@ -112,7 +112,7 @@ func TestAWatcherInNoTeamIsRefused(t *testing.T) {
 	h, _, _ := watching(t, "qa")
 	lone := watcherBot(t, h, "lone-vigia", "", watcherRuntime())
 	run := runOnNode(t, h, lone, "jev-node", "lone-1")
-	if _, err := NewWatchNext(h.deps).Execute(context.Background(), "jev-node", run.ExecutionID, ""); !domain.IsForbidden(err) || !strings.Contains(err.Error(), "in no team") {
+	if _, err := NewWatchNext(h.deps).Execute(context.Background(), "jev-node", run.ExecutionID, "", false); !domain.IsForbidden(err) || !strings.Contains(err.Error(), "in no team") {
 		t.Errorf("a watcher in no team: %v", err)
 	}
 }

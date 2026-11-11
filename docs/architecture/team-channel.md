@@ -272,6 +272,8 @@ Settled by the product owner on 10 November 2026, while cut 4 was being built, o
 
 ### The Jev watcher
 
+Amended 11 November 2026: a watcher whose node asks for it is also put its team's own running tasks, to judge them stuck or let them run ([stuck work](team-subscriptions.md#stuck-work)).
+
 What cut 5.5b ships, for A6. One watcher per asking team; the asker itself never gives a question up.
 
 ```text

@@ -31,7 +31,7 @@ func TestTheRoundIsOldestFirstAndEachQuestionOnce(t *testing.T) {
 	if again := watchNext(t, h, watcher.ExecutionID, ""); again.Cursor != first.TaskID {
 		t.Errorf("a new round = %+v", again)
 	}
-	if _, err := NewWatchNext(h.deps).Execute(context.Background(), "jev-node", watcher.ExecutionID, "task-none"); !domain.IsNotFound(err) {
+	if _, err := NewWatchNext(h.deps).Execute(context.Background(), "jev-node", watcher.ExecutionID, "task-none", false); !domain.IsNotFound(err) {
 		t.Errorf("an unknown cursor: %v", err)
 	}
 	// Ties in age go by id.

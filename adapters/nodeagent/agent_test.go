@@ -308,7 +308,7 @@ func (f *fakeTransport) Ask(context.Context, domain.NodeID, domain.ExecutionID, 
 func (f *fakeTransport) QuestionState(context.Context, domain.NodeID, domain.ExecutionID, domain.TaskID) (application.QuestionView, error) {
 	return application.QuestionView{}, errors.New("not served")
 }
-func (f *fakeTransport) WatchNext(context.Context, domain.NodeID, domain.ExecutionID, domain.TaskID) (application.WatchedQuestion, error) {
+func (f *fakeTransport) WatchNext(context.Context, domain.NodeID, domain.ExecutionID, domain.TaskID, bool) (application.WatchedQuestion, error) {
 	return application.WatchedQuestion{}, errors.New("not served")
 }
 func (f *fakeTransport) DecideWatch(context.Context, domain.NodeID, domain.ExecutionID, application.WatchDecision) (application.WatchDecided, error) {
