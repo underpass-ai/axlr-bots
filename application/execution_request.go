@@ -54,6 +54,10 @@ type ExecutionRequest struct {
 	// bot in no team: the node then opens the team's store for the run,
 	// not the bot's own (docs/architecture/memory-store-per-team.md).
 	MemoryTeam domain.TeamName
+	// ChannelMemory is set on the run of a question_answer task: what the
+	// asking team's store keeps of the question, which the node writes
+	// there (docs/architecture/team-channel.md, "Memory").
+	ChannelMemory *domain.ChannelRecord
 	// DelegationSocket is where the node serves those tools for this
 	// execution; the node sets it, it never travels.
 	DelegationSocket string

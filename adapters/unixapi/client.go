@@ -587,7 +587,7 @@ func (c *Client) Report(ctx context.Context, node domain.NodeID, execution domai
 	if err != nil {
 		return application.ReportAck{}, err
 	}
-	return application.ReportAck{Accepted: ack.Accepted, Outcome: outcome}, nil
+	return application.ReportAck{Accepted: ack.Accepted, Outcome: outcome, ChannelMemory: nodeproto.ToChannelRecord(ack.ChannelMemory)}, nil
 }
 
 // Delegate asks the control plane that another bot do a task for the

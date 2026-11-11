@@ -44,6 +44,9 @@ type Agent struct {
 	// Certificate is the node's client certificate, which the agent
 	// renews before it expires; nil (over the socket) renews nothing.
 	Certificate Certificate
+	// Memory writes the team channel's records into a team's store on
+	// this node (--team-channel-memory); nil writes none, the default.
+	Memory application.ChannelMemoryWriter
 
 	slots  *slots
 	wg     *sync.WaitGroup
@@ -290,6 +293,9 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	case assignment.Run != nil:
 		bot = assignment.Run.BotID
 		request := *assignment.Run
+		// An answer's task carries what the asking team's store keeps
+		// of the question; the run does not wait for it.
+		a.goRemember(request.ChannelMemory, "the answer's task")
 		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events, request.Ask, progress.push)
 		request.DelegationSocket = socket
 		request.OnSaid = a.say(runCtx, id, assignment.ExecutionID)
@@ -516,6 +522,16 @@ func (a Agent) relay(ctx context.Context, id domain.NodeID, execution domain.Exe
 	texts := make([]string, 0, len(messages))
 	for _, message := range messages {
 		texts = append(texts, message.Text)
+		// A question's answer carries what the asking team's store
+		// keeps of it; the renewal does not wait for the write.
+		if message.Memory != nil {
+			record, err := domain.ChannelRecordFromSnapshot(*message.Memory)
+			if err != nil {
+				a.Options.log().Printf("node: execution %s: team channel record of message %s dropped: %v", execution, message.ID, err)
+				continue
+			}
+			a.goRemember(&record, "the answer's message")
+		}
 	}
 	last := messages[len(messages)-1].ID
 	if hears {
@@ -543,6 +559,9 @@ func (a Agent) report(id domain.NodeID, execution domain.ExecutionID, report app
 		cancel()
 		if err == nil {
 			logger.Printf("node: execution %s reported %s (accepted %v)", execution, report.Outcome, ack.Accepted)
+			// A question this node answered: what the answering team's
+			// store keeps of it.
+			a.remember(ack.ChannelMemory, "the report")
 			return
 		}
 		// A revoked node's executions were failed when it was revoked:

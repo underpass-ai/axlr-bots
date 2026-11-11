@@ -77,7 +77,7 @@ func fixtures() []fixture {
 		}},
 		{name: "jev_request", message: JevRequest{State: "soil at 12%", Question: "water?", Options: []string{"water", "wait"}}},
 		{name: "jev_reply", message: JevReply{Choice: "water", Probability: 0.8, Confidence: 0.6}},
-		{name: "assignment_run", skip: []string{"AssignmentMessage.Decide", "RunMessage.Delegation", "RunMessage.Events", "RunMessage.Ask", "RunMessage.Unattended", "RunMessage.Skills", "RunMessage.MemoryTeam"}, message: AssignmentMessage{
+		{name: "assignment_run", skip: []string{"AssignmentMessage.Decide", "RunMessage.Delegation", "RunMessage.Events", "RunMessage.Ask", "RunMessage.Unattended", "RunMessage.Skills", "RunMessage.MemoryTeam", "RunMessage.ChannelMemory"}, message: AssignmentMessage{
 			ExecutionID: "exec-1", Kind: "run", LeaseUntil: fixtureAt.Add(time.Minute),
 			Run: &RunMessage{
 				TaskID: "task-1", BotID: "garden", TenantID: "home", CorrelationID: "corr-1", Objective: "water the bed if the soil is dry", Model: "jev-default",
@@ -113,7 +113,7 @@ func fixtures() []fixture {
 			Correlation: &domain.CorrelationRecord{BotID: "garden", TaskID: "task-1", ExecutionID: "exec-1", TraceID: "trace-1", Carried: true, Path: "correlation/exec-1.json"},
 			Receipt:     json.RawMessage(`{"runtime":"jev","steps":2}`),
 		}},
-		{name: "report_ack", message: ReportAck{Accepted: true, Outcome: "Completed"}},
+		{name: "report_ack", skip: []string{"ReportAck.ChannelMemory"}, message: ReportAck{Accepted: true, Outcome: "Completed"}},
 		// A renewal is answered like an enrollment (enroll_response).
 		{name: "renew_request", message: RenewRequest{CSR: "-----BEGIN CERTIFICATE REQUEST-----\nMIIC\n-----END CERTIFICATE REQUEST-----\n"}},
 	}

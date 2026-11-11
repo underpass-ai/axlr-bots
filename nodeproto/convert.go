@@ -18,7 +18,7 @@ func FromAssignment(a application.Assignment) AssignmentMessage {
 			Objective: r.PromptText(), Model: r.Model, Level: r.Level.String(), AllowedTools: r.AllowedTools,
 			ToolRules: r.ToolRules.Snapshot(), Unattended: r.Unattended, TimeoutSeconds: wholeSeconds(r.Timeout), Delegation: fromOffer(r.Delegation),
 			Events: fromEventsOffer(r.Events), Ask: fromAskOffer(r.Ask), Runtime: r.Runtime.Snapshot(), Input: r.Input, Skills: r.Skills.Snapshot(),
-			MemoryTeam: r.MemoryTeam.String(),
+			MemoryTeam: r.MemoryTeam.String(), ChannelMemory: FromChannelRecord(r.ChannelMemory),
 		}
 		if model, tools := r.Budgets.MaxModelCallsPerTask(), r.Budgets.MaxToolCallsPerTask(); model > 0 || tools > 0 {
 			m.Run.Budgets = &BudgetsMessage{MaxModelCalls: model, MaxToolCalls: tools}
@@ -85,6 +85,7 @@ func ToAssignment(m AssignmentMessage) (application.Assignment, error) {
 			ExecutionID: executionID, TaskID: domain.TaskID(r.TaskID), BotID: botID, TenantID: domain.TenantID(r.TenantID), CorrelationID: domain.CorrelationID(r.CorrelationID),
 			Objective: objective, Model: r.Model, Level: level, AllowedTools: tools.Names(), ToolRules: rules, Unattended: r.Unattended, Timeout: time.Duration(r.TimeoutSeconds) * time.Second,
 			Delegation: toOffer(r.Delegation), Events: toEventsOffer(r.Events), Ask: toAskOffer(r.Ask), Runtime: runtime, Input: r.Input, Skills: skills, MemoryTeam: team,
+			ChannelMemory: ToChannelRecord(r.ChannelMemory),
 		}
 		if r.Budgets != nil {
 			budgets, err := domain.NewBudgets(r.Budgets.MaxModelCalls, r.Budgets.MaxToolCalls, 0, a.Run.Timeout)

@@ -30,6 +30,10 @@ type RunMessage struct {
 	// MemoryTeam is the team whose memory store the run opens; an older
 	// node ignores it and the bot keeps a store of its own.
 	MemoryTeam string `json:"memoryTeam,omitempty"`
+	// ChannelMemory is set on the run of a question_answer task: what the
+	// asking team's store keeps of the question, which the node writes
+	// there; an older node ignores it.
+	ChannelMemory *domain.ChannelRecordSnapshot `json:"channelMemory,omitempty"`
 	// Runtime is what runs the task: absent for AXLR, a Jev program
 	// otherwise; an older node ignores it and runs AXLR.
 	Runtime *domain.RuntimeSnapshot `json:"runtime,omitempty"`
