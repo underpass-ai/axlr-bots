@@ -60,7 +60,12 @@ func (p platformPublisher) taskEnded(ctx context.Context, bot domain.Bot, task d
 // stuck: its teammates hear who it was and why, and the one a team
 // subscription picks takes its work over.
 func (p platformPublisher) taskStuck(ctx context.Context, bot domain.Bot, task domain.Task, execution domain.ExecutionID, reason string) error {
-	return p.publish(ctx, bot, task, execution, PlatformTaskStuck, "task "+task.ID().String()+" of "+bot.ID().String()+" was stuck and is cancelled", map[string]any{"taskId": task.ID().String(), "bot": bot.ID().String(), "reason": reason})
+	ref := task.Trigger()
+	trigger := ref.Type.String()
+	if ref.Name != "" && ref.Name != trigger {
+		trigger += " " + ref.Name
+	}
+	return p.publish(ctx, bot, task, execution, PlatformTaskStuck, "task "+task.ID().String()+" of "+bot.ID().String()+" ("+trigger+") was stuck and is cancelled", map[string]any{"taskId": task.ID().String(), "bot": bot.ID().String(), "trigger": trigger, "reason": reason})
 }
 
 // taskWaiting publishes warn.approval for a task that waits for a person.
