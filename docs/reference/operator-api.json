@@ -1429,6 +1429,52 @@
         }
       }
     },
+    "/v1/groups/{name}/links": {
+      "parameters": [
+        {
+          "name": "name",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "team name"
+        }
+      ],
+      "get": {
+        "operationId": "listGroupLinks",
+        "description": "the team's links in the team channel, derived from the bots: a link from A to B holds while some bot whose memory team is A names B in ask.teams and some bot whose memory team is B answers A through its question trigger; the links from the team and to it, by asking then answering team. What the bots declare, not who is free now",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "the tenant, needed when several have a team of that name"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GroupLink"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/incidents": {
       "get": {
         "operationId": "listIncidents",
@@ -3194,6 +3240,41 @@
           "takesDelegation",
           "tools",
           "where"
+        ]
+      },
+      "GroupLink": {
+        "type": "object",
+        "x-go-type": "application.GroupLink",
+        "description": "one link of the team channel: team from may ask team to",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "the asking team"
+          },
+          "to": {
+            "type": "string",
+            "description": "the answering team"
+          },
+          "askers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the bots whose memory team is from and whose ask.teams names to, by id"
+          },
+          "responders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the bots whose memory team is to and whose question trigger's from names from, by id"
+          }
+        },
+        "required": [
+          "askers",
+          "from",
+          "responders",
+          "to"
         ]
       },
       "GroupTopic": {

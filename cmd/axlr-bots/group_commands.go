@@ -76,7 +76,23 @@ func groupEvents(ctx context.Context, service unixapi.Service, args []string, st
 // groupTopics prints a team's topics: who publishes, who listens and
 // how, the last event, and the ones nobody listens to.
 func groupTopics(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
-	flags := flag.NewFlagSet("group topics", flag.ContinueOnError)
+	return groupDerived(ctx, "topics", args, stdout, stderr, func(ctx context.Context, name, tenant string) (any, error) {
+		return service.ListGroupTopics(ctx, name, tenant)
+	})
+}
+
+// groupLinks prints a team's links in the team channel: the teams it may
+// ask and that may ask it, who asks and who answers.
+func groupLinks(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+	return groupDerived(ctx, "links", args, stdout, stderr, func(ctx context.Context, name, tenant string) (any, error) {
+		return service.ListGroupLinks(ctx, name, tenant)
+	})
+}
+
+// groupDerived prints what read derives for one team, in the tenant given
+// when several have it: the shape of group topics and group links.
+func groupDerived(ctx context.Context, verb string, args []string, stdout, stderr io.Writer, read func(ctx context.Context, name, tenant string) (any, error)) int {
+	flags := flag.NewFlagSet("group "+verb, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	tenant := flags.String("tenant", "", "the tenant, when several have a team of that name")
 	positional, ok := parseAnywhere(flags, args)
@@ -84,14 +100,14 @@ func groupTopics(ctx context.Context, service unixapi.Service, args []string, st
 		return exitUsage
 	}
 	if len(positional) != 1 {
-		fmt.Fprintln(stderr, "axlr-bots: group topics needs exactly one <group>")
+		fmt.Fprintf(stderr, "axlr-bots: group %s needs exactly one <group>\n", verb)
 		return exitUsage
 	}
-	topics, err := service.ListGroupTopics(ctx, positional[0], *tenant)
+	value, err := read(ctx, positional[0], *tenant)
 	if err != nil {
 		return fail(stderr, err)
 	}
-	printJSON(stdout, topics)
+	printJSON(stdout, value)
 	return exitOK
 }
 

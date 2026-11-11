@@ -116,6 +116,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return groupEvents(ctx, service, rest, stdout, stderr)
 	case "group topics":
 		return groupTopics(ctx, service, rest, stdout, stderr)
+	case "group links":
+		return groupLinks(ctx, service, rest, stdout, stderr)
 	case "group publish":
 		return groupPublish(ctx, service, rest, stdout, stderr)
 	case "incident open":
@@ -279,6 +281,8 @@ func printUsage(w io.Writer) {
                                       the team's timeline: its members' events, oldest first
   group topics <group> [--tenant <id>]
                                       the team's topics: who publishes, who listens, nobody listens
+  group links <group> [--tenant <id>]
+                                      the team channel's links from and to the team: who asks, who answers
   group publish <group> <name> --message "<text>" [--data '{…}'] [--to a,b] [--key <k>] [--tenant <id>]
                                       publish the operator's event on the team; stop.all stops everyone
                                       and drops their queued tasks

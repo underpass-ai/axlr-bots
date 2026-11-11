@@ -551,6 +551,7 @@ impl App {
             Message::TeamSaved(result) => self.team_saved(result),
             Message::TeamLoaded(name, result) => self.team_loaded(name, result),
             Message::TopicsLoaded(name, result) => self.topics_loaded(name, result),
+            Message::LinksLoaded(name, result) => self.links_loaded(name, result),
             message @ (Message::EditOpen(_)
             | Message::EditClose
             | Message::EditMission(_)
@@ -1058,9 +1059,15 @@ impl App {
                     .unwrap_or_default();
                 vec![Effect::FollowBot(id.clone(), feed)]
             }
-            Screen::Team(name) if !self.watch.loading_topics.contains(name) => {
-                self.watch.loading_topics.insert(name.clone());
-                vec![Effect::LoadTopics(name.clone())]
+            Screen::Team(name) => {
+                let mut effects = Vec::new();
+                if self.watch.loading_topics.insert(name.clone()) {
+                    effects.push(Effect::LoadTopics(name.clone()));
+                }
+                if self.watch.loading_links.insert(name.clone()) {
+                    effects.push(Effect::LoadLinks(name.clone()));
+                }
+                effects
             }
             Screen::Incidents if !self.incidents.list_loading => {
                 self.incidents.list_loading = true;

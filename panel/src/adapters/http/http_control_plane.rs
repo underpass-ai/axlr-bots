@@ -11,7 +11,7 @@ use crate::domain::{
     Autonomy, Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, DeletedBot, EnrollmentRequest,
     EnrollmentToken, Event, Execution, ExecutionId, Incident, IncidentStatus, Node, NodeId, Overview, Publication,
     Published, RevokedNode, Secret, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId,
-    TaskSubmission, Topic,
+    TaskSubmission, TeamLink, Topic,
 };
 
 /// How long a read may take.
@@ -279,6 +279,10 @@ impl ControlPlane for HttpControlPlane {
 
     fn group_topics(&self, name: String) -> PortFuture<'_, Vec<Topic>> {
         self.get(format!("/v1/groups/{name}/topics"))
+    }
+
+    fn group_links(&self, name: String) -> PortFuture<'_, Vec<TeamLink>> {
+        self.get(format!("/v1/groups/{name}/links"))
     }
 
     fn publish_event(&self, team: String, publication: Publication) -> PortFuture<'_, Published> {

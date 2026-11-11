@@ -4,10 +4,10 @@ use super::{BotView, Connection, Effect, Message};
 use crate::application::{
     ApplyInBulk, ApprovePostmortem, BulkOutcome, CancelTask, Clock, Connect, ControlPlane, DecideTask,
     DefinitionReader, DeleteBot, DownloadArtifact, ExportSettings, FilePicker, FollowBotEvents, FollowTaskEvents,
-    FollowTeamEvents, ImportSettings, KeySource, ListIncidents, ListTopics, LoadChat, LoadTaskDetail, MarkDiagnosis,
-    MintEnrollmentToken, Notifier, PanelError, PatchBot, PublishEvent, RefreshFleet, RegisterBot, ResolveIncident,
-    RevokeNode, SaveBotEdit, SaveSubscriptions, SendBackPostmortem, SendChat, ShortcutSource, ShowIncident, StopBot,
-    SubmitTask, SwitchBot,
+    FollowTeamEvents, ImportSettings, KeySource, ListIncidents, ListLinks, ListTopics, LoadChat, LoadTaskDetail,
+    MarkDiagnosis, MintEnrollmentToken, Notifier, PanelError, PatchBot, PublishEvent, RefreshFleet, RegisterBot,
+    ResolveIncident, RevokeNode, SaveBotEdit, SaveSubscriptions, SendBackPostmortem, SendChat, ShortcutSource,
+    ShowIncident, StopBot, SubmitTask, SwitchBot,
 };
 use crate::domain::BotPatch;
 
@@ -231,6 +231,13 @@ impl Services {
                     Err(e) => Err(e),
                 };
                 Message::TopicsLoaded(team, result)
+            }
+            Effect::LoadLinks(team) => {
+                let result = match self.control_plane() {
+                    Ok(cp) => ListLinks::new(cp).execute(team.clone()).await,
+                    Err(e) => Err(e),
+                };
+                Message::LinksLoaded(team, result)
             }
             Effect::Publish {
                 team,
