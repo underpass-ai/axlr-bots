@@ -180,14 +180,21 @@ func runAgent(t *testing.T, f *fixture, executor Executor) context.CancelFunc {
 	return runNode(t, f, executor, "web-1")
 }
 
-// runNode runs an agent as the node, sharing the memory of the teams
-// named.
+// runNode runs an agent as the node, with the team channel on, sharing
+// the memory of the teams named.
 func runNode(t *testing.T, f *fixture, executor Executor, node string, memoryTeams ...string) context.CancelFunc {
+	t.Helper()
+	return runSwitchedNode(t, f, executor, node, true, memoryTeams...)
+}
+
+// runSwitchedNode runs an agent as the node, with the team channel on or
+// off, sharing the memory of the teams named.
+func runSwitchedNode(t *testing.T, f *fixture, executor Executor, node string, channel bool, memoryTeams ...string) context.CancelFunc {
 	t.Helper()
 	agent := Agent{
 		Transport: f.client,
 		Executor:  executor,
-		Options:   Options{NodeID: node, HostName: node, MemoryTeams: memoryTeams, Heartbeat: 50 * time.Millisecond, PollWait: 200 * time.Millisecond, Renew: 50 * time.Millisecond, SocketDir: shortDir(t) + "/run", Log: log.New(f.logs, "", 0)},
+		Options:   Options{NodeID: node, HostName: node, MemoryTeams: memoryTeams, TeamChannel: channel, Heartbeat: 50 * time.Millisecond, PollWait: 200 * time.Millisecond, Renew: 50 * time.Millisecond, SocketDir: shortDir(t) + "/run", Log: log.New(f.logs, "", 0)},
 	}
 	ctx, stop := context.WithCancel(context.Background())
 	done := make(chan error, 1)

@@ -91,7 +91,7 @@ func (uc NextAssignment) queued(ctx context.Context, node domain.Node) (Assignme
 				continue
 			}
 		}
-		assignment, err := uc.describe(ctx, bot, task, execution)
+		assignment, err := uc.describe(ctx, node, bot, task, execution)
 		switch {
 		case isRefusal(err):
 			if err := uc.refuse(ctx, bot, &task, &execution, err); err != nil {
@@ -266,7 +266,7 @@ func (uc NextAssignment) start(ctx context.Context, node domain.Node, bot domain
 	if err := uc.rec.executionEvent(ctx, domain.EventTaskStarted, bot, task.ID(), executionID, task.CorrelationID(), map[string]any{"executionId": executionID.String(), "nodeId": node.ID().String()}); err != nil {
 		return Assignment{}, false, err
 	}
-	assignment, err := uc.describe(ctx, bot, task, execution)
+	assignment, err := uc.describe(ctx, node, bot, task, execution)
 	if isRefusal(err) {
 		return Assignment{}, false, uc.refuse(ctx, bot, &task, &execution, err)
 	}
@@ -292,9 +292,10 @@ func goesBefore(a, b domain.Task) bool {
 // describe builds what the node needs for the execution: a delegated
 // task runs with its grant and until its deadline, a bot that may
 // delegate gets the delegation tool in its allow-list (never on a
-// question's task), and a bot in a team reads its teammates between its
-// mission and the task.
-func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task domain.Task, execution domain.Execution) (Assignment, error) {
+// question's task), a bot that may ask other teams gets the ask tool
+// only on a node with the team channel on, and a bot in a team reads its
+// teammates between its mission and the task.
+func (uc NextAssignment) describe(ctx context.Context, node domain.Node, bot domain.Bot, task domain.Task, execution domain.Execution) (Assignment, error) {
 	assignment := Assignment{ExecutionID: execution.ID(), Kind: execution.Kind()}
 	timeout, ok := runTimeout(bot, task, uc.deps.Clock.Now())
 	if !ok {
@@ -304,7 +305,7 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 	if err != nil {
 		return Assignment{}, err
 	}
-	offer, events, ask := delegationOffer(bot, task, mates), eventsOffer(bot, mates), askOffer(bot, task)
+	offer, events, ask := delegationOffer(bot, task, mates), eventsOffer(bot, mates), askOffer(bot, task, node)
 	// The task's incident phase may narrow the bot's level and tools; the
 	// decision runs under the same policy as the run it continues. A
 	// narrowed phase gets exactly its tools, as in process: the node's
@@ -332,6 +333,11 @@ func (uc NextAssignment) describe(ctx context.Context, bot domain.Bot, task doma
 	tools := allowedTools(policy.Tools(), offer, events, ask)
 	if policy.Narrowed() {
 		tools = policy.Tools().Names()
+	}
+	if ask == nil {
+		// The bot may list the channel's tools itself (its installer adds
+		// them); a run that is not offered them is not allowed them.
+		tools = slices.DeleteFunc(tools, func(tool string) bool { return tool == AskToolName || tool == QuestionStatusToolName })
 	}
 	if execution.Kind() == domain.ExecutionDecide {
 		previous, decision, err := decisionOf(ctx, uc.deps, task, execution)

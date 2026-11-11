@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -60,5 +61,31 @@ func TestNodeCapabilitiesNameTheMemoryTeams(t *testing.T) {
 	}
 	if out, _ := json.Marshal(every); string(out) != `{"policySupported":false,"correlationSupported":false,"memoryTeams":["*"]}` {
 		t.Errorf("written: %s", out)
+	}
+}
+
+// The team channel is a node's switch, off by default: an older node
+// reports none, and a node answers a team only with the switch on and the
+// team's memory shared.
+func TestNodeCapabilitiesSayWhetherTheTeamChannelIsOn(t *testing.T) {
+	var old NodeCapabilities
+	if err := json.Unmarshal([]byte(`{"policySupported":true,"correlationSupported":true,"memoryTeams":["*"]}`), &old); err != nil {
+		t.Fatal(err)
+	}
+	if old.TeamChannel || old.AnswersFor("qa") {
+		t.Fatal("a node that reports no switch runs no team channel")
+	}
+	if out, _ := json.Marshal(old); strings.Contains(string(out), "teamChannel") {
+		t.Errorf("no teamChannel field for a node with the switch off: %s", out)
+	}
+	on := NodeCapabilities{TeamChannel: true, MemoryTeams: []string{"dev"}}
+	if !on.AnswersFor("dev") || on.AnswersFor("qa") || on.AnswersFor("") {
+		t.Errorf("on = %+v", on)
+	}
+	if out, _ := json.Marshal(on); string(out) != `{"policySupported":false,"correlationSupported":false,"memoryTeams":["dev"],"teamChannel":true}` {
+		t.Errorf("written: %s", out)
+	}
+	if (NodeCapabilities{TeamChannel: true}).AnswersFor("dev") {
+		t.Error("the switch alone answers no team: the node must open the team's store")
 	}
 }

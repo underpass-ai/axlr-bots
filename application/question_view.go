@@ -141,8 +141,8 @@ func openTasksBesides(ctx context.Context, deps Dependencies, question domain.Ta
 }
 
 // pendingReason says why a Pending question has not started: no node that
-// opens the team's store is Online, its placement admits none, or its
-// responder is busy.
+// runs the team channel and opens the team's store is Online, its
+// placement admits none, or its responder is busy.
 func pendingReason(ctx context.Context, deps Dependencies, responder domain.Bot, question domain.Task, busy int) (string, error) {
 	if !responder.AcceptsTasks() {
 		return "its responder is " + responder.Status().String(), nil
@@ -159,7 +159,7 @@ func pendingReason(ctx context.Context, deps Dependencies, responder domain.Bot,
 		sharing = sharing || answersOn(responder, node)
 	}
 	if !sharing {
-		return "no Online node that shares team " + memoryTeamOf(responder).String() + "'s memory", nil
+		return "no Online node with the team channel on that shares team " + memoryTeamOf(responder).String() + "'s memory", nil
 	}
 	if busy > 0 {
 		return fmt.Sprintf("its responder is busy with %d other tasks", busy), nil

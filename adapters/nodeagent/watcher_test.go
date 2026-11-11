@@ -76,7 +76,7 @@ func stuckQuestion(t *testing.T, choice string) (*fixture, string) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := f.client.Register(ctx, application.NodeRegistration{ID: "dev-node", HostName: "dev-node", Capabilities: domain.NodeCapabilities{PolicySupported: true, MemoryTeams: []string{"dev"}}}); err != nil {
+	if _, err := f.client.Register(ctx, application.NodeRegistration{ID: "dev-node", HostName: "dev-node", Capabilities: domain.NodeCapabilities{PolicySupported: true, MemoryTeams: []string{"dev"}, TeamChannel: true}}); err != nil {
 		t.Fatal(err)
 	}
 	scripted := &scriptedExecutor{tool: application.AskToolName, script: map[domain.BotID]map[string]any{"qa-jefe": {"team": "dev", "question": "Who owns the importer?"}}}
@@ -86,7 +86,7 @@ func stuckQuestion(t *testing.T, choice string) (*fixture, string) {
 	runtimes.Add(domain.RuntimeJev, jevs)
 	agent := Agent{
 		Transport: f.client, Executor: runtimes,
-		Options: Options{NodeID: "qa-node", HostName: "qa-node", Runtimes: runtimes.Kinds(), Heartbeat: 50 * time.Millisecond, PollWait: 200 * time.Millisecond, Renew: 50 * time.Millisecond, SocketDir: shortDir(t) + "/run", Log: log.New(f.logs, "", 0)},
+		Options: Options{NodeID: "qa-node", HostName: "qa-node", Runtimes: runtimes.Kinds(), TeamChannel: true, Heartbeat: 50 * time.Millisecond, PollWait: 200 * time.Millisecond, Renew: 50 * time.Millisecond, SocketDir: shortDir(t) + "/run", Log: log.New(f.logs, "", 0)},
 	}
 	runCtx, stop := context.WithCancel(context.Background())
 	done := make(chan error, 1)

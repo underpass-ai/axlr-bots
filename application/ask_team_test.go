@@ -11,12 +11,21 @@ import (
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
-// channelNode registers an Online node that shares the memory of the
-// teams it names; none names an older node.
+// channelNode registers an Online node with the team channel on that
+// shares the memory of the teams it names.
 func channelNode(t *testing.T, h *harness, id string, memoryTeams ...string) {
+	t.Helper()
+	switchedNode(t, h, id, true, memoryTeams...)
+}
+
+// switchedNode registers an Online node with the team channel on or off,
+// sharing the memory of the teams it names; off and none is an older
+// node. Registering it again switches it.
+func switchedNode(t *testing.T, h *harness, id string, on bool, memoryTeams ...string) {
 	t.Helper()
 	r := registration(id)
 	r.Capabilities.MemoryTeams = memoryTeams
+	r.Capabilities.TeamChannel = on
 	if _, err := NewRegisterNode(h.deps).Execute(context.Background(), r); err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +219,7 @@ func TestTheSameAskReturnsTheSameTaskUntilItFails(t *testing.T) {
 func TestAnOldNodeNeverAnswers(t *testing.T) {
 	h := newHarness()
 	channelNode(t, h, "qa-node")
-	channelNode(t, h, "old-node")
+	switchedNode(t, h, "old-node", false)
 	asker := channelBot(t, h, "qa-jefe", []string{"qa"}, &domain.AskSnapshot{Teams: []string{"dev"}}, nil, "qa-node")
 	channelBot(t, h, "dev-a", []string{"dev"}, nil, []string{"qa"})
 	parent := runOnNode(t, h, asker, "qa-node", "lead-1")

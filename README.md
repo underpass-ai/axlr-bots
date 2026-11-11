@@ -73,6 +73,7 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | Put bots in a team so they know each other and ask each other without naming targets | [Teams](docs/reference/bot-definition.md#teams), [ADR](docs/architecture/groups-and-events.md) |
 | Let a bot warn or stop its teammates with an event, and follow the team's timeline | [Events](docs/reference/bot-definition.md#events), [ADR](docs/architecture/groups-and-events.md) |
 | From the panel: give a bot an urgent order, talk to it while it works, publish to its team in one press | [Teams and events from the panel](docs/runbooks/teams-and-events.md) |
+| Let one team ask another for context, and turn on one live link of the team channel, node by node | [Team channel](docs/runbooks/team-channel.md), [ADR](docs/architecture/team-channel.md) |
 | Turn alert groups into incidents a bot triages and a teammate proposes the fix for, from Alertmanager, from CloudWatch through SNS, or by hand | [Incidents](docs/runbooks/triggers.md#incidents) |
 | Run a bot with no language model: a fixed program whose every choice Jev makes | [Runtime](docs/reference/bot-definition.md#runtime) |
 | Carry the control plane's pushes to the nodes through a NATS broker | [Bus port](docs/architecture/bus-port.md#deploy-a-broker) |

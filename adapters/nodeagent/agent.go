@@ -261,7 +261,7 @@ func (a Agent) register(ctx context.Context, id domain.NodeID) error {
 	}
 	registration := application.NodeRegistration{
 		ID: id.String(), HostName: host, Labels: a.Options.Labels,
-		Capabilities: domain.NodeCapabilities{AXLRVersion: a.Executor.Version(ctx), PolicySupported: a.Executor.SupportsPolicy(ctx), CorrelationSupported: a.Executor.SupportsCorrelation(ctx), Dedicated: a.Options.Dedicated, Runtimes: a.Options.Runtimes, Providers: a.Options.Providers, SkillsSupported: a.Executor.SupportsSkills(ctx), MemoryTeams: a.Options.MemoryTeams},
+		Capabilities: domain.NodeCapabilities{AXLRVersion: a.Executor.Version(ctx), PolicySupported: a.Executor.SupportsPolicy(ctx), CorrelationSupported: a.Executor.SupportsCorrelation(ctx), Dedicated: a.Options.Dedicated, Runtimes: a.Options.Runtimes, Providers: a.Options.Providers, SkillsSupported: a.Executor.SupportsSkills(ctx), MemoryTeams: a.Options.MemoryTeams, TeamChannel: a.Options.TeamChannel},
 	}
 	node, err := a.Transport.Register(ctx, registration)
 	if err != nil {
@@ -270,6 +270,9 @@ func (a Agent) register(ctx context.Context, id domain.NodeID) error {
 	a.Options.log().Printf("node: registered as %s (%s), axlr %q policy %v correlation %v skills %v dedicated %v runtimes %v providers %v", node.ID, node.HostName, registration.Capabilities.AXLRVersion, registration.Capabilities.PolicySupported, registration.Capabilities.CorrelationSupported, registration.Capabilities.SkillsSupported, registration.Capabilities.Dedicated, append([]string{"axlr"}, registration.Capabilities.Runtimes...), registration.Capabilities.Providers)
 	if len(registration.Capabilities.MemoryTeams) > 0 {
 		a.Options.log().Printf("node: shares the memory of the teams %s", strings.Join(registration.Capabilities.MemoryTeams, ", "))
+	}
+	if registration.Capabilities.TeamChannel {
+		a.Options.log().Printf("node: team channel on: its runs may ask other teams, its bots answer the teams whose memory it shares, and a team's watcher runs here")
 	}
 	return nil
 }
@@ -296,6 +299,7 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 		// An answer's task carries what the asking team's store keeps
 		// of the question; the run does not wait for it.
 		a.goRemember(request.ChannelMemory, "the answer's task")
+		request.Ask, request.AllowedTools = a.askOffered(assignment.ExecutionID, request.Ask), a.allowedWithout(request.AllowedTools)
 		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events, request.Ask, progress.push)
 		request.DelegationSocket = socket
 		request.OnSaid = a.say(runCtx, id, assignment.ExecutionID)
@@ -305,7 +309,7 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 				return a.Transport.Emit(runCtx, id, assignment.ExecutionID, command)
 			}
 		}
-		if program, ok := request.Runtime.Jev(); ok && program.WatchesQuestions() {
+		if program, ok := request.Runtime.Jev(); ok && program.WatchesQuestions() && a.servesWatcher(assignment.ExecutionID) {
 			w := &watcher{transport: a.Transport, node: id, execution: assignment.ExecutionID, log: logger}
 			request.OnNodeTool = w.call
 			logger.Printf("node: execution %s watches its team's questions", assignment.ExecutionID)
@@ -315,6 +319,7 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	case assignment.Decide != nil:
 		bot = assignment.Decide.BotID
 		request := *assignment.Decide
+		request.Ask, request.AllowedTools = a.askOffered(assignment.ExecutionID, request.Ask), a.allowedWithout(request.AllowedTools)
 		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events, request.Ask, progress.push)
 		request.DelegationSocket = socket
 		request.OnSaid = a.say(runCtx, id, assignment.ExecutionID)

@@ -13,7 +13,7 @@ import (
 // AskTeam is a running execution asking, through its node, another team
 // for context (docs/architecture/team-channel.md). The control plane
 // derives the asker from the execution the node holds, never from the
-// request. It checks, in the ADR's order, that the bot has a memory team,
+// request; a node with the team channel off may not ask. It checks, in the ADR's order, that the bot has a memory team,
 // that the team asked is not its own, that its ask names that team, that
 // the task is not itself a question, the rates and the team's queue, and
 // that some member may answer; the first that fails is the refusal.
@@ -122,6 +122,12 @@ func (uc AskTeam) load(ctx context.Context, node domain.NodeID, executionID doma
 	}
 	if task.Status() != domain.TaskRunning {
 		return asking{}, domain.StateError{Subject: "task " + task.ID().String(), Current: task.Status().String(), Attempted: "ask a team"}
+	}
+	if _, err := channelNodeOf(ctx, uc.deps, node, "ask a team"); err != nil {
+		// Never offered the tool: an error, audited, not a refusal.
+		details := map[string]string{"node": node.String(), "execution": execution.ID().String(), "team": command.Team, "reason": err.Error()}
+		_ = uc.rec.audit(ctx, "question.ask", task.ID().String(), domain.AuditDenied, details)
+		return asking{}, err
 	}
 	bot, err := uc.deps.Bots.Get(ctx, task.BotID())
 	if err != nil {
