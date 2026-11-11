@@ -13,8 +13,9 @@ import (
 // watcher serves one execution of a team's Jev watcher the tools of the
 // reserved server axlr-bots, in process (docs/architecture/team-channel.md,
 // A6): axlr_bots_watch_next puts the next open question of its team to
-// Jev, axlr_bots_watch_decide hands Jev's choice for it to the control
-// plane. It keeps only the question being decided and the round's cursor;
+// Jev, or the next of its team's own tasks that has run 5 minutes
+// (team-subscriptions.md, stuck work), axlr_bots_watch_decide hands Jev's
+// choice for it to the control plane. It keeps only the question being decided and the round's cursor;
 // the control plane decides what the watcher may see and touch.
 type watcher struct {
 	transport application.NodeTransport
@@ -43,7 +44,7 @@ func (w *watcher) call(ctx context.Context, tool string, arguments map[string]an
 // puts it as Jev's ask; the cursor moves past it, whatever is decided, so
 // a question comes once per round.
 func (w *watcher) next(ctx context.Context) (application.NodeToolAnswer, error) {
-	watched, err := w.transport.WatchNext(ctx, w.node, w.execution, w.cursor)
+	watched, err := w.transport.WatchNext(ctx, w.node, w.execution, w.cursor, true)
 	if err != nil {
 		return w.refused("watch", err)
 	}
@@ -52,6 +53,16 @@ func (w *watcher) next(ctx context.Context) (application.NodeToolAnswer, error) 
 		return application.NodeToolAnswer{Object: map[string]any{"done": true}}, nil
 	}
 	w.current, w.cursor = watched.Cursor, watched.Cursor
+	if watched.Task != nil {
+		// One of the team's own running tasks: stuck, or let it run
+		// (docs/architecture/team-subscriptions.md, stuck work).
+		ask := map[string]any{
+			"state":    watched.Task.Text(),
+			"question": fmt.Sprintf("Is this task of team %s stuck, or should it keep running?", watched.Team),
+			"options":  []any{domain.WatchWait, domain.WatchStuck},
+		}
+		return application.NodeToolAnswer{Object: map[string]any{"ask": ask, "task": watched.Cursor.String()}}, nil
+	}
 	ask := map[string]any{
 		"state":    watched.View.Text(),
 		"question": fmt.Sprintf("Should team %s keep waiting for this answer or abandon the question?", watched.Team),
@@ -75,10 +86,13 @@ func (w *watcher) decide(ctx context.Context, arguments map[string]any) (applica
 		return w.refused("decide on question "+w.current.String(), err)
 	}
 	w.current = ""
-	if decided.Abandoned {
+	if decided.Abandoned || decided.Stuck {
 		w.log.Printf("node: execution %s: question %s %s", w.execution, decided.Question, decided.Reason)
 	}
 	object := map[string]any{"question": decided.Question.String(), "choice": decided.Choice, "status": decided.Status.String(), "abandoned": decided.Abandoned}
+	if decided.Stuck {
+		object["stuck"] = true
+	}
 	if decided.Reason != "" {
 		object["reason"] = decided.Reason
 	}

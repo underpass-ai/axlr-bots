@@ -38,3 +38,33 @@ func TestAWatchedQuestionRoundTrips(t *testing.T) {
 		t.Error("a bad view read back")
 	}
 }
+
+// A team task of a round travels with its view; a round that names both a
+// question and a task, or a task with a bad id, does not read back.
+func TestAWatchedTaskRoundTrips(t *testing.T) {
+	at := time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC)
+	view := application.TaskWatchView{Task: "task-7", Team: "dev", Bot: "dev-go", Trigger: "timer cola", Objective: "Queue round", Now: at.Add(9 * time.Minute), RunningSince: at, Steps: 4, LastStep: "tool local_exec", LastStepAt: at.Add(2 * time.Minute), OpenTasks: 1}
+	message := FromWatched(application.WatchedQuestion{Team: "dev", Task: &view, Cursor: "task-7"})
+	if message.Question != nil || message.Task == nil {
+		t.Fatalf("message = %+v", message)
+	}
+	back, err := ToWatched(message)
+	if err != nil || back.Task == nil || *back.Task != view || back.Cursor != "task-7" {
+		t.Fatalf("back = %+v %v", back, err)
+	}
+	quiet := FromWatched(application.WatchedQuestion{Team: "dev", Task: &application.TaskWatchView{Task: "task-8", Now: at}, Cursor: "task-8"})
+	if back, err := ToWatched(quiet); err != nil || !back.Task.LastStepAt.IsZero() {
+		t.Errorf("quiet = %+v %v", back, err)
+	}
+	both := message
+	question := FromQuestionView(application.QuestionView{Question: "task-9", Status: domain.TaskPending})
+	both.Question = &question
+	if _, err := ToWatched(both); err == nil {
+		t.Error("a round naming a question and a task read back")
+	}
+	bad := FromWatched(application.WatchedQuestion{Team: "dev", Task: &view, Cursor: "task-7"})
+	bad.Task.Task = "Bad Id"
+	if _, err := ToWatched(bad); err == nil {
+		t.Error("a bad task id read back")
+	}
+}

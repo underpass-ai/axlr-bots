@@ -104,7 +104,7 @@ func TestAWatcherOnANodeWithTheTeamChannelOffIsRefused(t *testing.T) {
 	if _, err := NewRegisterNode(h.deps).Execute(ctx, r); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewWatchNext(h.deps).Execute(ctx, "jev-node", watcher.ExecutionID, ""); !isChannelOff(err) {
+	if _, err := NewWatchNext(h.deps).Execute(ctx, "jev-node", watcher.ExecutionID, "", false); !isChannelOff(err) {
 		t.Errorf("watched on a node with the channel off: %v", err)
 	}
 	if _, err := NewDecideWatch(h.deps).Execute(ctx, "jev-node", watcher.ExecutionID, WatchDecision{Question: q.TaskID, Choice: "abandon"}); !isChannelOff(err) {

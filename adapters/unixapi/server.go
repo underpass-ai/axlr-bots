@@ -1128,7 +1128,7 @@ func (s *Server) watchNext(w http.ResponseWriter, r *http.Request) {
 		}
 		after = cursor
 	}
-	watched, err := s.service.Runner().WatchNext(r.Context(), id, executionID, after)
+	watched, err := s.service.Runner().WatchNext(r.Context(), id, executionID, after, message.Tasks)
 	if err != nil {
 		respond(w, 0, nil, err)
 		return

@@ -127,7 +127,7 @@ func TestTheRunnerWatchesUnderItsLock(t *testing.T) {
 	q := askTeam(t, h, "qa-node", parent.ExecutionID, "dev", "Who?")
 	h.clock.now = t0.Add(6 * time.Minute)
 	runner := NewSerialRunner(h.deps)
-	next, err := runner.WatchNext(context.Background(), "jev-node", watcher.ExecutionID, "")
+	next, err := runner.WatchNext(context.Background(), "jev-node", watcher.ExecutionID, "", false)
 	if err != nil || next.Cursor != q.TaskID {
 		t.Fatalf("next = %+v %v", next, err)
 	}

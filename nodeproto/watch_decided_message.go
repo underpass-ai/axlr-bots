@@ -13,12 +13,13 @@ type WatchDecidedMessage struct {
 	Choice    string `json:"choice"`
 	Status    string `json:"status"`
 	Abandoned bool   `json:"abandoned"`
+	Stuck     bool   `json:"stuck,omitempty"`
 	Reason    string `json:"reason,omitempty"`
 }
 
 // FromWatchDecided renders what came of the decision.
 func FromWatchDecided(d application.WatchDecided) WatchDecidedMessage {
-	return WatchDecidedMessage{Question: d.Question.String(), Choice: d.Choice, Status: d.Status.String(), Abandoned: d.Abandoned, Reason: d.Reason}
+	return WatchDecidedMessage{Question: d.Question.String(), Choice: d.Choice, Status: d.Status.String(), Abandoned: d.Abandoned, Stuck: d.Stuck, Reason: d.Reason}
 }
 
 // ToWatchDecided reads it back.
@@ -31,5 +32,5 @@ func ToWatchDecided(m WatchDecidedMessage) (application.WatchDecided, error) {
 	if err != nil {
 		return application.WatchDecided{}, err
 	}
-	return application.WatchDecided{Question: question, Choice: m.Choice, Status: status, Abandoned: m.Abandoned, Reason: m.Reason}, nil
+	return application.WatchDecided{Question: question, Choice: m.Choice, Status: status, Abandoned: m.Abandoned, Stuck: m.Stuck, Reason: m.Reason}, nil
 }

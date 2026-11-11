@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -113,4 +114,74 @@ func watchOrder(a, b domain.Task) int {
 		return c
 	}
 	return cmp.Compare(a.ID(), b.ID())
+}
+
+// belongsAsTask reports whether the task is one of the watcher's team's
+// own work its round judges (docs/architecture/team-subscriptions.md,
+// stuck work): a task of a bot whose memory team is the watcher's, that
+// runs a model (a Jev bot's tasks, the watcher's own among them, are
+// never judged) and is no question (the asking team's watcher sees
+// those).
+func (w questionWatcher) belongsAsTask(ctx context.Context, task domain.Task) (bool, error) {
+	if task.Trigger().Type == domain.TriggerQuestion {
+		return false, nil
+	}
+	bot, err := w.deps.Bots.Get(ctx, task.BotID())
+	if domain.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return memoryTeamOf(bot) == w.team && bot.Runtime().Kind() != domain.RuntimeJev, nil
+}
+
+// runningSince is when the task's current run began; false when it is
+// not running.
+func (w questionWatcher) runningSince(ctx context.Context, task domain.Task) (time.Time, bool, error) {
+	current := task.CurrentExecutionID()
+	if task.Status() != domain.TaskRunning || current == "" {
+		return time.Time{}, false, nil
+	}
+	execution, err := w.deps.Executions.Get(ctx, current)
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	return execution.StartedAt(), !execution.StartedAt().IsZero(), nil
+}
+
+// taskDue reports whether a team task is put to Jev now: running, its run
+// begun WatchAfter ago or more.
+func (w questionWatcher) taskDue(ctx context.Context, task domain.Task) (time.Time, bool, error) {
+	since, running, err := w.runningSince(ctx, task)
+	if err != nil || !running {
+		return time.Time{}, false, err
+	}
+	return since, w.deps.Clock.Now().Sub(since) >= WatchAfter, nil
+}
+
+// running lists the team's own tasks that are due, oldest first, then by
+// id.
+func (w questionWatcher) running(ctx context.Context) ([]domain.Task, error) {
+	tasks, err := w.deps.Tasks.ListByStatus(ctx, domain.TaskRunning)
+	if err != nil {
+		return nil, err
+	}
+	var out []domain.Task
+	for _, task := range tasks {
+		ours, err := w.belongsAsTask(ctx, task)
+		if err != nil {
+			return nil, err
+		}
+		if !ours {
+			continue
+		}
+		if _, due, err := w.taskDue(ctx, task); err != nil {
+			return nil, err
+		} else if due {
+			out = append(out, task)
+		}
+	}
+	slices.SortFunc(out, watchOrder)
+	return out, nil
 }

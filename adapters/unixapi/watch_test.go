@@ -62,7 +62,7 @@ func TestTheWatchRoutesOverTheSocket(t *testing.T) {
 		t.Fatalf("ask: %v %+v", err, question)
 	}
 	// An AXLR bot is refused, as forbidden.
-	if _, err := client.WatchNext(ctx, "qa-node", lead.ExecutionID, ""); !domain.IsForbidden(err) {
+	if _, err := client.WatchNext(ctx, "qa-node", lead.ExecutionID, "", false); !domain.IsForbidden(err) {
 		t.Errorf("an AXLR bot watched: %v", err)
 	}
 	if _, err := client.DecideWatch(ctx, "qa-node", lead.ExecutionID, application.WatchDecision{Question: question.TaskID, Choice: "abandon"}); !domain.IsForbidden(err) {
@@ -76,15 +76,15 @@ func TestTheWatchRoutesOverTheSocket(t *testing.T) {
 		t.Fatalf("jev-node: %v %v %+v", found, err, watch.Run)
 	}
 	// Younger than WatchAfter: not offered.
-	if next, err := client.WatchNext(ctx, "jev-node", watch.ExecutionID, ""); err != nil || !next.Done || next.Team != "qa" {
+	if next, err := client.WatchNext(ctx, "jev-node", watch.ExecutionID, "", false); err != nil || !next.Done || next.Team != "qa" {
 		t.Errorf("a young question: %v %+v", err, next)
 	}
 	clock.advance(application.WatchAfter + time.Minute)
-	next, err := client.WatchNext(ctx, "jev-node", watch.ExecutionID, "")
+	next, err := client.WatchNext(ctx, "jev-node", watch.ExecutionID, "", false)
 	if err != nil || next.Done || next.Cursor != question.TaskID || next.View.AskedBy != "qa-jefe" || !strings.Contains(next.View.Text(), "to team dev") {
 		t.Fatalf("next: %v %+v", err, next)
 	}
-	if after, err := client.WatchNext(ctx, "jev-node", watch.ExecutionID, next.Cursor); err != nil || !after.Done {
+	if after, err := client.WatchNext(ctx, "jev-node", watch.ExecutionID, next.Cursor, false); err != nil || !after.Done {
 		t.Errorf("after the cursor: %v %+v", err, after)
 	}
 	if waited, err := client.DecideWatch(ctx, "jev-node", watch.ExecutionID, application.WatchDecision{Question: question.TaskID, Choice: "wait", Probability: 0.7, Confidence: 0.6}); err != nil || waited.Abandoned || waited.Status != domain.TaskPending {
@@ -120,7 +120,7 @@ func TestTheWatchRoutesOverTheSocket(t *testing.T) {
 	if _, err := client.Register(ctx, application.NodeRegistration{ID: "jev-node", HostName: "jev-node", Capabilities: domain.NodeCapabilities{PolicySupported: true, Runtimes: []string{"jev"}}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.WatchNext(ctx, "jev-node", watch.ExecutionID, ""); !domain.IsForbidden(err) || !strings.Contains(err.Error(), "team channel off") {
+	if _, err := client.WatchNext(ctx, "jev-node", watch.ExecutionID, "", false); !domain.IsForbidden(err) || !strings.Contains(err.Error(), "team channel off") {
 		t.Errorf("a watcher on a node with the channel off: %v", err)
 	}
 	if _, err := client.Ask(ctx, "jev-node", watch.ExecutionID, application.AskTeamCommand{Team: "dev", Question: "Who?"}); err == nil {

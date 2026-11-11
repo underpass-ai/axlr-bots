@@ -203,6 +203,7 @@ The control plane publishes its own facts about a bot's task on the bot's teams,
 | `error.bot` (critical) | the task failed or expired | `taskId`, `reason` |
 | `warn.approval` (warning) | the task waits for a person to approve a call | `taskId`, `tool` |
 | `done.task` (info) | the task completed | `taskId`, `answer` (the task's result, cut at 280 characters) |
+| `warn.stuck` (warning) | the team's Jev watcher judged the task stuck and the control plane cancelled it ([stuck work](../architecture/team-subscriptions.md#stuck-work)) | `taskId`, `bot`, `reason` |
 
 A supervisor that subscribes to `error.*` gets an urgent task for each teammate's failure; a task an `error.bot` made is on the failed task's chain, so a chain of failures is cut at `events.maxDepth`. With nobody subscribed, the history keeps only `bot.task.failed`. A trigger `{"type": "event", "events": ["a.*"], "interrupt": true}` in a definition is read as `{"topic": "a.*", "mode": "task", "urgent": true}`, and `bot get` shows it so; the next release refuses it.
 

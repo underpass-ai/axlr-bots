@@ -191,7 +191,7 @@ type watchTransport struct {
 	err       error
 }
 
-func (w *watchTransport) WatchNext(_ context.Context, _ domain.NodeID, _ domain.ExecutionID, after domain.TaskID) (application.WatchedQuestion, error) {
+func (w *watchTransport) WatchNext(_ context.Context, _ domain.NodeID, _ domain.ExecutionID, after domain.TaskID, _ bool) (application.WatchedQuestion, error) {
 	w.afters = append(w.afters, after)
 	if w.err != nil {
 		return application.WatchedQuestion{}, w.err
@@ -280,4 +280,32 @@ type abandonTransport struct{ fakeTransport }
 
 func (abandonTransport) DecideWatch(_ context.Context, _ domain.NodeID, _ domain.ExecutionID, decision application.WatchDecision) (application.WatchDecided, error) {
 	return application.WatchDecided{Question: decision.Question, Choice: decision.Choice, Status: domain.TaskCancelled, Abandoned: true, Reason: "abandoned by qa-vigia"}, nil
+}
+
+// A team task is put to Jev as stuck or wait; a stuck verdict is logged.
+func TestTheNodesWatcherPutsATeamTaskAsStuckOrWait(t *testing.T) {
+	at := time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC)
+	view := application.TaskWatchView{Task: "task-7", Team: "dev", Bot: "dev-go", Trigger: "timer cola", Objective: "Queue round", Now: at.Add(9 * time.Minute), RunningSince: at}
+	transport := &watchTransport{next: []application.WatchedQuestion{{Team: "dev", Task: &view, Cursor: "task-7"}}}
+	logs := &syncBuffer{}
+	w := &watcher{transport: transport, node: "dev-node", execution: "exec-1", log: log.New(logs, "", 0)}
+	ctx := context.Background()
+	put, err := w.call(ctx, domain.WatchNextTool.String(), nil)
+	ask, _ := put.Object["ask"].(map[string]any)
+	options, _ := ask["options"].([]any)
+	if err != nil || put.Object["task"] != "task-7" || ask["question"] != "Is this task of team dev stuck, or should it keep running?" || len(options) != 2 || options[1] != "stuck" || !strings.Contains(ask["state"].(string), "Task task-7 of bot dev-go") {
+		t.Fatalf("next = %+v %v", put, err)
+	}
+	stuck := &stuckTransport{}
+	w.transport = stuck
+	decided, err := w.call(ctx, domain.WatchDecideTool.String(), map[string]any{"choice": "stuck"})
+	if err != nil || decided.Object["stuck"] != true || !strings.Contains(logs.String(), "task-7 stuck, judged by dev-vigia") {
+		t.Errorf("decided = %+v %v (%s)", decided, err, logs.String())
+	}
+}
+
+type stuckTransport struct{ fakeTransport }
+
+func (stuckTransport) DecideWatch(_ context.Context, _ domain.NodeID, _ domain.ExecutionID, decision application.WatchDecision) (application.WatchDecided, error) {
+	return application.WatchDecided{Question: decision.Question, Choice: decision.Choice, Status: domain.TaskCancelled, Stuck: true, Reason: "stuck, judged by dev-vigia"}, nil
 }
