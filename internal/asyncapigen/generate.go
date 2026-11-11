@@ -138,7 +138,7 @@ func comment(b *strings.Builder, indent, fallback, description string) {
 	b.WriteString(line + "\n")
 }
 
-var initialisms = []string{"id", "url", "api", "json", "kmp", "ci", "pr", "sha"}
+var initialisms = []string{"id", "url", "api", "json", "kmp", "ci", "pr", "sha", "guid"}
 
 // fieldName turns a JSON name (camelCase or snake_case, as GitHub's
 // payloads are) into an exported Go name: traceId → TraceID, head_sha →
