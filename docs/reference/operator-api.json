@@ -2804,6 +2804,13 @@
           },
           "name": {
             "type": "string"
+          },
+          "teams": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Other teams a domain event of this plain info name crosses to (docs/architecture/team-topics.md)."
           }
         },
         "required": [
@@ -4131,6 +4138,10 @@
           "askedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "team": {
+            "type": "string",
+            "description": "Another team the topic is heard from (docs/architecture/team-topics.md); absent: the bot's own teams."
           }
         },
         "required": [
@@ -4301,6 +4312,9 @@
             "items": {
               "$ref": "#/components/schemas/SkillPinSnapshot"
             }
+          },
+          "origin": {
+            "$ref": "#/components/schemas/EventOrigin"
           }
         },
         "required": [
@@ -5714,6 +5728,40 @@
           },
           "catalog": {
             "type": "string"
+          }
+        }
+      },
+      "EventOrigin": {
+        "type": "object",
+        "x-go-type": "domain.EventOrigin",
+        "description": "Where a task made by another team's domain event came from; such a task starts a new chain (docs/architecture/team-topics.md).",
+        "required": [
+          "eventId",
+          "from",
+          "team",
+          "crossings"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "team": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "crossings": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4
+          },
+          "context": {
+            "type": "string",
+            "description": "The KMP key of the event's context, when it named one."
           }
         }
       }
