@@ -4,6 +4,8 @@ Status: accepted, 28 October 2026 (the product owner settled each question below
 
 Amended 11 November 2026: a subscription that says `"deliver": "team"` makes one task for its team, not one per hearer: see [the team takes the work](team-subscriptions.md).
 
+Amended 12 November 2026: a topic may cross to another team when both sides declare it, and decision 1 no longer holds for those names: see [topics between teams](team-topics.md).
+
 Changes since it was accepted, dated: on 1 November 2026 the `recall` alias of decision 7 was removed ([#88](https://github.com/underpass-ai/axlr-bots/pull/88)): a kindless `recall` is `info`, like any other name whose first segment is no kind. The same day the panel's **Recall** became the **Urgent order**, an order the operator types for any bot, run as an urgent task ([#89](https://github.com/underpass-ai/axlr-bots/pull/89)); `stop.all` still stops the whole team. The [bus port](bus-port.md) (30 October 2026) adds an optional NATS adapter that carries the control plane's pushes to the nodes; the control plane stays the bus and the record, as below.
 
 ## Context
@@ -313,7 +315,7 @@ The pilots emit `stop.recall` instead of `recall` with a severity; the fleet's d
 ## Left out
 
 - Topics with their own settings (description, retention, a required `data` schema): a topic is still only a name until a team aggregate exists.
-- Subscriptions across teams and global topics (decision 1). The answer to a [team question](team-channel.md) is the one addressed exception: it goes only to the bot that asked.
+- Global topics (decision 1). Subscriptions across teams: [topics between teams](team-topics.md). The answer to a [team question](team-channel.md) is the one addressed exception: it goes only to the bot that asked.
 - Replay of missed events to a bot that was Paused: it gets its notes, not the tasks.
 - A message delivery into a Pending task (only Running tasks take messages; a Pending task gets the event as a note).
 - `warn.budget` and other control plane facts beyond the three named; add a kind entry and a publisher call each.
