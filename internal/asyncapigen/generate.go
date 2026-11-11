@@ -138,15 +138,20 @@ func comment(b *strings.Builder, indent, fallback, description string) {
 	b.WriteString(line + "\n")
 }
 
-var initialisms = []string{"id", "url", "api", "json", "kmp", "ci", "pr"}
+var initialisms = []string{"id", "url", "api", "json", "kmp", "ci", "pr", "sha"}
 
-// fieldName turns a JSON name (camelCase) into an exported Go name:
-// traceId → TraceID.
+// fieldName turns a JSON name (camelCase or snake_case, as GitHub's
+// payloads are) into an exported Go name: traceId → TraceID, head_sha →
+// HeadSHA.
 func fieldName(key string) string {
 	var words []string
 	start := 0
 	for i, r := range key {
-		if i > 0 && unicode.IsUpper(r) {
+		switch {
+		case r == '_':
+			words = append(words, key[start:i])
+			start = i + 1
+		case i > start && unicode.IsUpper(r):
 			words = append(words, key[start:i])
 			start = i
 		}
@@ -154,6 +159,9 @@ func fieldName(key string) string {
 	words = append(words, key[start:])
 	var b strings.Builder
 	for _, word := range words {
+		if word == "" {
+			continue
+		}
 		if slices.Contains(initialisms, strings.ToLower(word)) {
 			b.WriteString(strings.ToUpper(word))
 			continue
