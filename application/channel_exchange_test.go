@@ -156,12 +156,3 @@ func auditOf(h *harness, action, side string) domain.AuditEntry {
 	}
 	return domain.AuditEntry{}
 }
-
-func mustTask(t *testing.T, h *harness, id domain.TaskID) domain.Task {
-	t.Helper()
-	task, err := h.tasks.Get(context.Background(), id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return task
-}
