@@ -19,6 +19,9 @@ pub struct Subscription {
     pub urgent: bool,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub objective: String,
+    /// `team` when one member of the bot's team takes what it hears.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub deliver: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub status: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -133,5 +136,13 @@ mod tests {
         assert!(Subscription::new(&"a".repeat(65), None, "").is_err());
         assert!(Subscription::new("a", None, "Not Ok").is_err());
         assert_eq!(Subscription::new("a", None, "x x").unwrap().from, vec!["x"]);
+    }
+
+    #[test]
+    fn keeps_a_team_subscription_on_the_way_back() {
+        let raw = r#"{"topic":"dev.arreglo.aprobado","mode":"task","from":["dev-revisor"],"deliver":"team"}"#;
+        let team: Subscription = serde_json::from_str(raw).unwrap();
+        assert_eq!(team.deliver, "team");
+        assert_eq!(serde_json::to_string(&team).unwrap(), raw);
     }
 }

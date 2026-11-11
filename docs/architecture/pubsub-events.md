@@ -2,6 +2,8 @@
 
 Status: accepted, 28 October 2026 (the product owner settled each question below in turn: topics per team, «C» for who subscribes, the modes and the kinds, the panel «Aprobado», the limits and the migration «déjalo todo preparado»). Vision principle 13; builds on [teams, events and urgent tasks](groups-and-events.md) and [delegation](delegation.md). This document is written so that a session can implement it in the ordered PRs at the end, each with its acceptance checks, without asking again.
 
+Amended 11 November 2026: a subscription that says `"deliver": "team"` makes one task for its team, not one per hearer: see [the team takes the work](team-subscriptions.md).
+
 Changes since it was accepted, dated: on 1 November 2026 the `recall` alias of decision 7 was removed ([#88](https://github.com/underpass-ai/axlr-bots/pull/88)): a kindless `recall` is `info`, like any other name whose first segment is no kind. The same day the panel's **Recall** became the **Urgent order**, an order the operator types for any bot, run as an urgent task ([#89](https://github.com/underpass-ai/axlr-bots/pull/89)); `stop.all` still stops the whole team. The [bus port](bus-port.md) (30 October 2026) adds an optional NATS adapter that carries the control plane's pushes to the nodes; the control plane stays the bus and the record, as below.
 
 ## Context
