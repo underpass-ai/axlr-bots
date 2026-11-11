@@ -82,7 +82,7 @@ Decided 11 November 2026 (R7): no fixed rule of hours. *Jev checks every 5 minut
 | When | its run began 5 minutes ago or more (`WatchAfter`); a younger one is neither put nor judged |
 | What Jev reads | the task, its bot, what it was asked (first 200 characters), its trigger, how long it runs, how many steps its run reported and the last one, the bot's other open tasks |
 | Choices | `wait` (nothing changes) or `stuck`; `abandon` stays the questions' and `stuck` is refused for a question |
-| Stuck | the task is cancelled with Jev's verdict as the reason (audit `task.stuck`), and the control plane publishes `warn.stuck` (`taskId`, `bot`, `reason`) as that bot: it never hears it; the teammate a `deliver: team` subscription picks takes the work over |
+| Stuck | the task is cancelled with Jev's verdict as the reason (audit `task.stuck`), and the control plane publishes `warn.stuck` (`taskId`, `bot`, `trigger`, `reason`; the message names the trigger too) as that bot: it never hears it; the teammate a `deliver: team` subscription picks takes the work over |
 | An older node | its watch call does not ask for tasks (`tasks` in the watch message): it is put questions only, as before |
 
 ## What does not change

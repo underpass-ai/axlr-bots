@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -86,6 +87,14 @@ func TestAWatcherJudgesATeamTaskStuckAndTheTeamTakesItOver(t *testing.T) {
 	}
 	if takeover.ID() == "" || !strings.Contains(takeover.Objective().String(), "qa-jefe") {
 		t.Fatalf("no teammate took the work over: %+v", h.tasks.tasks)
+	}
+	// The teammate reads what was cut: the stuck task's trigger rides in the event.
+	var input struct {
+		Message string         `json:"message"`
+		Data    map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(takeover.Input(), &input); err != nil || input.Data["trigger"] != "manual" || !strings.Contains(input.Message, "(manual)") {
+		t.Errorf("takeover input = %s %v", takeover.Input(), err)
 	}
 	if late := decideWatch(t, h, watcher.ExecutionID, WatchDecision{Question: task, Choice: "stuck"}); late.Stuck || late.Status != domain.TaskCancelled {
 		t.Errorf("late = %+v", late)
