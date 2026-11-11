@@ -34,6 +34,7 @@ type TaskSnapshot struct {
 	FailureReason  string                `json:"failureReason,omitempty"`
 	Approval       *ApprovalWait         `json:"approval,omitempty"`
 	Delegation     *TaskLineage          `json:"delegation,omitempty"`
+	Origin         *EventOrigin          `json:"origin,omitempty"`
 	Children       []string              `json:"children,omitempty"`
 	Questions      []string              `json:"questions,omitempty"`
 	GrantedModel   int                   `json:"grantedModelCalls,omitempty"`

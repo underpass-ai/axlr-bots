@@ -23,6 +23,7 @@ type Task struct {
 	failureReason  string
 	approval       *ApprovalWait
 	lineage        *TaskLineage
+	origin         *EventOrigin
 	children       []TaskID
 	questions      []TaskID
 	grantedModel   int
@@ -131,9 +132,35 @@ func (t *Task) Link(lineage TaskLineage) error {
 	if err := lineage.Validate(); err != nil {
 		return err
 	}
+	if t.origin != nil {
+		return invalid("delegation", "a task made by another team's event starts a new chain: it has no delegation")
+	}
 	lineage.Chain = append([]string(nil), lineage.Chain...)
 	t.lineage = &lineage
 	return nil
+}
+
+// Cross records the other team's domain event a task was made by, before
+// the task is first saved. Such a task has no lineage: it starts a new
+// chain in its own team.
+func (t *Task) Cross(origin EventOrigin) error {
+	if err := origin.Validate(); err != nil {
+		return err
+	}
+	if t.lineage != nil {
+		return invalid("origin", "a task made by another team's event starts a new chain: it has no delegation")
+	}
+	t.origin = &origin
+	return nil
+}
+
+// Origin is the other team's domain event the task was made by; false
+// for any other task.
+func (t Task) Origin() (EventOrigin, bool) {
+	if t.origin == nil {
+		return EventOrigin{}, false
+	}
+	return *t.origin, true
 }
 
 // Lineage is where a delegated task came from; false for a task nobody
@@ -576,6 +603,9 @@ func (t Task) Snapshot() TaskSnapshot {
 	if lineage, ok := t.Lineage(); ok {
 		snapshot.Delegation = &lineage
 	}
+	if origin, ok := t.Origin(); ok {
+		snapshot.Origin = &origin
+	}
 	return snapshot
 }
 
@@ -660,6 +690,11 @@ func RestoreTask(s TaskSnapshot) (Task, error) {
 	}
 	if s.Delegation != nil {
 		if err := task.Link(*s.Delegation); err != nil {
+			return Task{}, err
+		}
+	}
+	if s.Origin != nil {
+		if err := task.Cross(*s.Origin); err != nil {
 			return Task{}, err
 		}
 	}

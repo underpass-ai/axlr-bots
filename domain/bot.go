@@ -122,12 +122,25 @@ func (b Bot) Ask() AskPolicy { return b.ask }
 // to the bot's teams once the whole change is applied.
 func (b *Bot) SetAsk(ask AskPolicy) { b.ask = ask }
 
-// CheckAsk refuses an ask that names one of the bot's own teams: inside
-// a team, a bot delegates.
+// CheckAsk refuses an ask, or a domain event that crosses to or from a
+// team, that names one of the bot's own teams: inside a team, a bot
+// delegates and its events reach its teammates already.
 func (b Bot) CheckAsk() error {
 	for _, team := range b.ask.Teams() {
 		if b.teams.Has(team) {
 			return invalid("ask teams", "names "+team.String()+", a team of the bot: inside a team, delegate")
+		}
+	}
+	for _, rule := range b.events.rules {
+		for _, team := range rule.Teams() {
+			if b.teams.Has(team) {
+				return invalid("events emit "+rule.Pattern().String()+" teams", "names "+team.String()+", a team of the bot: its teammates hear it already")
+			}
+		}
+	}
+	for _, sub := range b.subs.List() {
+		if sub.Crosses() && b.teams.Has(sub.Team()) {
+			return invalid("subscription "+sub.Topic().String()+" team", "names "+sub.Team().String()+", a team of the bot: drop team to hear it")
 		}
 	}
 	return nil

@@ -7,9 +7,11 @@ import "time"
 // (absent: anyone in the team), whether a warning it hears is urgent,
 // the objective template of the task it makes, whether the team takes
 // what it hears (deliver), and, for a bot's ask, its status and who
-// asked, why and when.
+// asked, why and when. Team names another team the topic is heard from
+// (docs/architecture/team-topics.md); absent: the bot's own teams.
 type SubscriptionSnapshot struct {
 	Topic     string     `json:"topic"`
+	Team      string     `json:"team,omitempty"`
 	Mode      string     `json:"mode,omitempty"`
 	From      []string   `json:"from,omitempty"`
 	Urgent    bool       `json:"urgent,omitempty"`
