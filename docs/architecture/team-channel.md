@@ -200,7 +200,7 @@ Framing is a help, never a proof. Before a link is turned on live, the responder
 
 Phase 1 adds nothing to AXLR or KMP. Each side's playbook records the exchange in its own about, `project:<team>.<bot>`, citing the other team and the question id; never in the team's common about.
 
-Phase 2, cut 8: the node of each side writes the exchange into its team's store, about `project:<team>.canal`, with an agent of its own, without a model. Nobody else can write there: the control plane refuses a bot named `canal` (`ChannelBotID`), and AXLR holds a member to its own about and the team's. The node is switched on by hand, `axlr-node --team-channel-memory` (`AXLR_NODE_TEAM_CHANNEL_MEMORY=true`), off by default, and writes only for the teams its `--memory-teams` names.
+Phase 2, cut 8: the node of each side writes the exchange into its team's store, about `project:<team>.canal`, with an agent of its own, without a model. Nobody else can write there: the control plane refuses a bot named `canal` (`ChannelBotID`), and AXLR holds a member to its own about and the team's. The node is switched on by hand, `axlr-node --team-channel-memory` (`AXLR_NODE_TEAM_CHANNEL_MEMORY=true`), off by default, and writes only for the teams its `--memory-teams` names. Only the write is behind the switch: the control plane hands every node its side's record and audits it, and a node switched off, or an older one, leaves it unwritten.
 
 ```text
  question qa→dev ends
@@ -304,7 +304,7 @@ Each from `origin/main`, base `main`; control plane, then nodes, then panel; che
 | 5.5b | the Jev watcher (A6), [above](#the-jev-watcher) | a Jev bot of the asking team, with a fake judge, abandons a stuck question and the asker hears `answered: false` naming it; `wait` changes nothing; it never touches another team's questions; a bot that is not Jev cannot watch; a question younger than 5 minutes is not offered |
 | 6 | the panel | the timeline lines, the links, `partial` |
 | 7 | playbooks and bots, one live link qa→dev | with the product owner's go-ahead, behind a node switch, off by default |
-| 8 | the node writes memory (D6, phase 2) | the MCP write verified in a sandbox first; switched off, nothing changes; on, each side writes once into its team's store, a repeat is KMP's replay, a failed write is a log line |
+| 8 | the node writes memory (D6, phase 2) | the MCP write verified in a sandbox first; the control plane hands each side's record and audits it whatever the node; a node switched off writes nothing; on, each side writes once into its team's store, a repeat is KMP's replay, a failed write is a log line |
 
 ## Alternatives
 
