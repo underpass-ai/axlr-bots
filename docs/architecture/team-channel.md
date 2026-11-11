@@ -2,6 +2,8 @@
 
 Status: accepted, 10 November 2026; amended the same day: **every question is asynchronous**. The product owner settled decisions D1 to D9 of the team channel design (`artifacts/team-channel-2026-11-10/diseno.md` in the workspace) one by one; D4 went against the design's recommendation, and this document records the choice and what it moves. While cut 4 was being built, the product owner dropped the synchronous wait: a waiting asker held its node, and a question behind a long task expired within 300 s. The tool now answers at once with the question's id, the answer always comes back later, a question has two hours, the responder runs on its own budgets, and there is no second slot (see [the amendment](#amendment-every-question-is-asynchronous)). It builds on [delegation](delegation.md), [teams and events](groups-and-events.md), [publish/subscribe events](pubsub-events.md) and [one KMP store per team](memory-store-per-team.md), and is written so that a session can build it in the ordered PRs at the end.
 
+Amended 11 November 2026: a subscription or timer trigger that says `"deliver": "team"` gives its work to one member of the team, with this document's pick: see [the team takes the work](team-subscriptions.md).
+
 ## Context
 
 Each team now has its own memory, `<state>/kmp/<team>`, and nobody else's is in it. The product owner's vision for the solo-founder application (product, development, QA, marketing, and `sre` in support) adds two rules between teams: a team asks the **responsible role** of another team for context instead of reading its memory, and it does so synchronously or asynchronously. The responsible role is not a fixed bot: it is the first free bot of the team.

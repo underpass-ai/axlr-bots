@@ -101,17 +101,8 @@ func (p platformPublisher) publish(ctx context.Context, bot domain.Bot, task dom
 		return nil
 	}
 	answer := EmitAnswer{EventID: e.id, Name: e.name.String(), Severity: e.severity}
-	for _, mate := range mates {
-		delivery, skip, err := p.emit.deliver(ctx, e, mate)
-		if err != nil {
-			return err
-		}
-		if delivery != nil {
-			answer.Deliveries = append(answer.Deliveries, *delivery)
-		}
-		if skip != nil {
-			answer.Skipped = append(answer.Skipped, *skip)
-		}
+	if answer.Deliveries, answer.Skipped, err = p.emit.deliverAll(ctx, e, mates); err != nil {
+		return err
 	}
 	return p.emit.recordEmitted(ctx, e, answer)
 }

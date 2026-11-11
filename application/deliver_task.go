@@ -11,8 +11,12 @@ import (
 
 // deliverTask makes the teammate's task under the emitter's trace id and
 // lineage, so depth and the chain cut a loop as they cut a delegation's;
-// urgent when the event interrupts the teammate.
-func (uc EmitEvent) deliverTask(ctx context.Context, e emission, mate domain.Bot, sub domain.Subscription, urgent bool) (*EventDelivery, *EventSkip, error) {
+// urgent when the event interrupts the teammate. For a team (the
+// teammate was picked among the hearers of a team subscription) the key
+// is the team's and being on the chain does not exclude the teammate:
+// the chain's depth still cuts a loop
+// (docs/architecture/team-subscriptions.md, decision 6).
+func (uc EmitEvent) deliverTask(ctx context.Context, e emission, mate domain.Bot, sub domain.Subscription, urgent bool, team domain.TeamName) (*EventDelivery, *EventSkip, error) {
 	if !mate.AcceptsTasks() {
 		return skipped(mate, domain.RefusedTargetUnavailable, "bot "+mate.ID().String()+" is "+mate.Status().String()+" and takes no task")
 	}
@@ -23,14 +27,14 @@ func (uc EmitEvent) deliverTask(ctx context.Context, e emission, mate domain.Bot
 			return nil, nil, err
 		}
 		if found {
-			return uc.deliverNote(ctx, e, mate, sub, "", pending.ID().String())
+			return uc.deliverNote(ctx, e, mate, sub, "", pending.ID().String(), team)
 		}
 		full, err := intakeFull(ctx, uc.deps, mate)
 		if err != nil {
 			return nil, nil, err
 		}
 		if full {
-			return uc.deliverNote(ctx, e, mate, sub, DegradedIntakeRate, "")
+			return uc.deliverNote(ctx, e, mate, sub, DegradedIntakeRate, "", team)
 		}
 	}
 	// The operator's event starts no chain: its tasks are the operator's,
@@ -43,7 +47,7 @@ func (uc EmitEvent) deliverTask(ctx context.Context, e emission, mate domain.Bot
 			return skipped(mate, domain.RefusedDepthExceeded, fmt.Sprintf("a task of %s would be at depth %d; this chain allows %d", mate.ID(), depth, limit))
 		}
 		lineage, _ := e.task.Lineage()
-		if lineage.Visited(mate.ID()) {
+		if team == "" && lineage.Visited(mate.ID()) {
 			return skipped(mate, domain.RefusedCycle, fmt.Sprintf("bot %s is already on this chain (%s): telling it would loop", mate.ID(), strings.Join(append(lineage.Chain, e.bot.ID().String()), " → ")))
 		}
 		child = &domain.TaskLineage{
@@ -68,7 +72,7 @@ func (uc EmitEvent) deliverTask(ctx context.Context, e emission, mate domain.Bot
 	if err != nil {
 		return nil, nil, err
 	}
-	key, err := domain.NewIdempotencyKey("event:" + e.id + ":" + mate.ID().String())
+	key, err := eventTaskKey(e, mate, team)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -87,7 +91,7 @@ func (uc EmitEvent) deliverTask(ctx context.Context, e emission, mate domain.Bot
 	if err != nil {
 		return nil, nil, err
 	}
-	delivery := &EventDelivery{BotID: mate.ID().String(), Mode: domain.ModeTask.String(), TaskID: created.Task.ID().String(), Trigger: sub.TriggerName(), Created: created.Created, Urgent: created.Task.IsUrgent()}
+	delivery := &EventDelivery{BotID: mate.ID().String(), Mode: domain.ModeTask.String(), TaskID: created.Task.ID().String(), Trigger: sub.TriggerName(), Created: created.Created, Urgent: created.Task.IsUrgent(), Team: team.String()}
 	if created.Created {
 		if err := uc.recordHeard(ctx, e, mate, *delivery); err != nil {
 			return nil, nil, err

@@ -53,6 +53,10 @@ pub struct Trigger {
     /// A question trigger: the teams whose questions the bot answers.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub from: Vec<String>,
+    /// A timer trigger: `team` when one member of the bot's team takes
+    /// each fire, picked by the control plane.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub deliver: String,
 }
 
 impl Trigger {
@@ -102,6 +106,14 @@ mod tests {
         assert_eq!(trigger.trigger_type, TriggerType::Question);
         assert_eq!(serde_json::to_string(&trigger).unwrap(), raw);
         assert!(!serde_json::to_string(&Trigger::manual()).unwrap().contains("from"));
+    }
+
+    #[test]
+    fn keeps_a_team_timer_through_a_save() {
+        let raw = r#"{"type":"timer","name":"cola","objective":"Queue round","cron":"30 7 * * *","deliver":"team"}"#;
+        let trigger: Trigger = serde_json::from_str(raw).unwrap();
+        assert_eq!(trigger.deliver, "team");
+        assert_eq!(serde_json::to_string(&trigger).unwrap(), raw);
     }
 
     #[test]

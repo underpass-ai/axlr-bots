@@ -39,6 +39,7 @@ type TriggerSnapshot struct {
 	Severities  []string        `json:"severities,omitempty"`
 	Ladder      *LadderSnapshot `json:"ladder,omitempty"`
 	From        []string        `json:"from,omitempty"`
+	Deliver     string          `json:"deliver,omitempty"`
 }
 
 // Redacted is the snapshot with its credentials hidden: what the API

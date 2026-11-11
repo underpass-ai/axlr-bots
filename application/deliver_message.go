@@ -23,7 +23,7 @@ func (uc EmitEvent) deliverMessage(ctx context.Context, e emission, mate domain.
 		if err != nil {
 			return nil, nil, true, err
 		}
-		delivery, skip, err := uc.deliverNote(ctx, e, mate, sub, DegradedIntakeRate, "")
+		delivery, skip, err := uc.deliverNote(ctx, e, mate, sub, DegradedIntakeRate, "", "")
 		return delivery, skip, true, err
 	}
 	text := e.says() + " (" + e.name.String() + "): " + e.message.String()

@@ -12,9 +12,9 @@ import (
 // lock: the tenant's bots, the nodes, the open tasks of every bot, and
 // the open questions of every team and asker.
 type questionRoster struct {
+	memberLoad
 	bots  []domain.Bot
 	nodes []domain.Node
-	open  map[domain.BotID]int
 	// queued counts the Pending questions of each answering team.
 	queued map[domain.TeamName]int
 	// asked counts the unanswered questions of each asking bot.
@@ -31,7 +31,7 @@ func readQuestionRoster(ctx context.Context, deps Dependencies, tenant domain.Te
 	if err != nil {
 		return questionRoster{}, err
 	}
-	r := questionRoster{nodes: nodes, open: map[domain.BotID]int{}, queued: map[domain.TeamName]int{}, asked: map[domain.BotID]int{}}
+	r := questionRoster{nodes: nodes, queued: map[domain.TeamName]int{}, asked: map[domain.BotID]int{}}
 	byID := map[domain.BotID]domain.Bot{}
 	for _, bot := range all {
 		if bot.TenantID() == tenant {
@@ -40,20 +40,12 @@ func readQuestionRoster(ctx context.Context, deps Dependencies, tenant domain.Te
 		}
 	}
 	slices.SortFunc(r.bots, func(a, b domain.Bot) int { return strings.Compare(a.ID().String(), b.ID().String()) })
-	for _, status := range []domain.TaskStatus{domain.TaskPending, domain.TaskRunning, domain.TaskWaitingApproval} {
-		tasks, err := deps.Tasks.ListByStatus(ctx, status)
-		if err != nil {
-			return questionRoster{}, err
+	r.memberLoad, err = readMemberLoad(ctx, deps, func(task domain.Task, status domain.TaskStatus) bool {
+		bot, ok := byID[task.BotID()]
+		if !ok {
+			return false
 		}
-		for _, task := range tasks {
-			bot, ok := byID[task.BotID()]
-			if !ok {
-				continue
-			}
-			r.open[bot.ID()]++
-			if task.Trigger().Type != domain.TriggerQuestion {
-				continue
-			}
+		if task.Trigger().Type == domain.TriggerQuestion {
 			if status == domain.TaskPending {
 				r.queued[memoryTeamOf(bot)]++
 			}
@@ -61,6 +53,10 @@ func readQuestionRoster(ctx context.Context, deps Dependencies, tenant domain.Te
 				r.asked[domain.BotID(lineage.ParentBotID)]++
 			}
 		}
+		return true
+	})
+	if err != nil {
+		return questionRoster{}, err
 	}
 	return r, nil
 }
@@ -81,22 +77,6 @@ func (r questionRoster) candidates(team, asking domain.TeamName) []domain.Bot {
 		}
 	}
 	return out
-}
-
-// pick chooses one candidate: the first free one by id, free being no
-// task Pending, Running or waiting for a person; with none free, the one
-// with the fewest open tasks, then by id. False when there is none.
-func (r questionRoster) pick(candidates []domain.Bot) (domain.Bot, bool) {
-	if len(candidates) == 0 {
-		return domain.Bot{}, false
-	}
-	best := candidates[0]
-	for _, bot := range candidates[1:] {
-		if r.open[bot.ID()] < r.open[best.ID()] {
-			best = bot
-		}
-	}
-	return best, true
 }
 
 // answersOn reports whether the node may run the bot's questions: it may

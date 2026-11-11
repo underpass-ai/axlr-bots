@@ -10,6 +10,7 @@ import "time"
 // not replayed.
 type Timer struct {
 	botID        BotID
+	team         TeamName
 	trigger      string
 	scheduleKey  string
 	nextFireAt   time.Time
@@ -29,14 +30,41 @@ func NewTimer(bot BotID, trigger, scheduleKey string, next time.Time) (Timer, er
 	return Timer{botID: bot, trigger: trigger, scheduleKey: scheduleKey, nextFireAt: next}, nil
 }
 
+// NewTeamTimer arms the timer a team's members declare with deliver:
+// team, for the first time: one per team and trigger name, whoever of
+// them takes each fire (docs/architecture/team-subscriptions.md).
+func NewTeamTimer(team TeamName, trigger, scheduleKey string, next time.Time) (Timer, error) {
+	if team == "" || trigger == "" || scheduleKey == "" {
+		return Timer{}, invalid("timer", "needs a team, a trigger and a schedule")
+	}
+	if next.IsZero() {
+		return Timer{}, invalid("next fire at", "must not be zero")
+	}
+	return Timer{team: team, trigger: trigger, scheduleKey: scheduleKey, nextFireAt: next}, nil
+}
+
 // TimerKey names a timer in a repository: the bot and the trigger.
 func TimerKey(bot BotID, trigger string) string { return bot.String() + "~" + trigger }
 
-// Key is the timer's repository key.
-func (t Timer) Key() string { return TimerKey(t.botID, t.trigger) }
+// TeamTimerKey names a team's timer in a repository: @, the team and the
+// trigger. No bot id starts with @, so no bot's timer takes the name.
+func TeamTimerKey(team TeamName, trigger string) string {
+	return "@" + team.String() + "~" + trigger
+}
 
-// BotID is the bot the timer belongs to.
+// Key is the timer's repository key.
+func (t Timer) Key() string {
+	if t.team != "" {
+		return TeamTimerKey(t.team, t.trigger)
+	}
+	return TimerKey(t.botID, t.trigger)
+}
+
+// BotID is the bot the timer belongs to; empty for a team's timer.
 func (t Timer) BotID() BotID { return t.botID }
+
+// Team is the team the timer belongs to; empty for a bot's timer.
+func (t Timer) Team() TeamName { return t.team }
 
 // Trigger is the timer trigger's name.
 func (t Timer) Trigger() string { return t.trigger }
@@ -81,7 +109,7 @@ func (t *Timer) Rearm(scheduleKey string, next time.Time) error {
 
 // Snapshot returns the timer as plain data.
 func (t Timer) Snapshot() TimerSnapshot {
-	s := TimerSnapshot{BotID: t.botID.String(), Trigger: t.trigger, Schedule: t.scheduleKey, NextFireAt: t.nextFireAt, LastTaskID: t.lastTaskID.String()}
+	s := TimerSnapshot{BotID: t.botID.String(), Team: t.team.String(), Trigger: t.trigger, Schedule: t.scheduleKey, NextFireAt: t.nextFireAt, LastTaskID: t.lastTaskID.String()}
 	if !t.lastFiredAt.IsZero() {
 		fired, scheduled := t.lastFiredAt, t.lastSchedule
 		s.LastFiredAt, s.LastScheduledAt = &fired, &scheduled
@@ -91,17 +119,27 @@ func (t Timer) Snapshot() TimerSnapshot {
 
 // RestoreTimer rebuilds a timer from a snapshot.
 func RestoreTimer(s TimerSnapshot) (Timer, error) {
-	bot, err := NewBotID(s.BotID)
-	if err != nil {
-		return Timer{}, err
-	}
 	trigger, err := validateIdentifier("trigger name", s.Trigger)
 	if err != nil {
 		return Timer{}, err
 	}
-	timer, err := NewTimer(bot, trigger, s.Schedule, s.NextFireAt)
-	if err != nil {
-		return Timer{}, err
+	var timer Timer
+	if s.Team != "" {
+		team, err := NewTeamName(s.Team)
+		if err != nil {
+			return Timer{}, err
+		}
+		if timer, err = NewTeamTimer(team, trigger, s.Schedule, s.NextFireAt); err != nil {
+			return Timer{}, err
+		}
+	} else {
+		bot, err := NewBotID(s.BotID)
+		if err != nil {
+			return Timer{}, err
+		}
+		if timer, err = NewTimer(bot, trigger, s.Schedule, s.NextFireAt); err != nil {
+			return Timer{}, err
+		}
 	}
 	if s.LastFiredAt != nil {
 		timer.lastFiredAt = *s.LastFiredAt

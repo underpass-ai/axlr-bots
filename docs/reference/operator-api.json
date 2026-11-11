@@ -3728,6 +3728,10 @@
                 "coalescedInto": {
                   "type": "string",
                   "description": "the Pending task the event joined as a note"
+                },
+                "team": {
+                  "type": "string",
+                  "description": "the team whose member took the event, picked among the hearers of a team subscription"
                 }
               },
               "required": [
@@ -3751,6 +3755,10 @@
                 },
                 "message": {
                   "type": "string"
+                },
+                "team": {
+                  "type": "string",
+                  "description": "team_unavailable: the team of a team subscription nobody could take; botId is empty"
                 }
               },
               "required": [
@@ -4105,6 +4113,10 @@
           "objective": {
             "type": "string",
             "description": "the template of the task it makes; absent: who said what"
+          },
+          "deliver": {
+            "type": "string",
+            "description": "team: one member of the bot's team takes what it hears (mode task only), picked first free by id among the members that say the same"
           },
           "status": {
             "type": "string",
@@ -4472,6 +4484,10 @@
           "interrupt": {
             "type": "boolean",
             "description": "an event trigger: its warnings and criticals make urgent tasks"
+          },
+          "deliver": {
+            "type": "string",
+            "description": "a timer trigger: team when one member of the bot's team takes each slot; the members that say it share one timer and must give it the same schedule"
           },
           "phase": {
             "$ref": "#/components/schemas/IncidentPhase",
