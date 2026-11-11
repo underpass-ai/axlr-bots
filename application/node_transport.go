@@ -76,8 +76,11 @@ type RenewedCertificate struct {
 	NotAfter       time.Time
 }
 
-// ReportAck is the control plane's answer to a report.
+// ReportAck is the control plane's answer to a report: whether it ended
+// the execution, the outcome, and for a question that ended the record
+// the node writes into the answering team's store.
 type ReportAck struct {
-	Accepted bool
-	Outcome  domain.ExecutionOutcome
+	Accepted      bool
+	Outcome       domain.ExecutionOutcome
+	ChannelMemory *domain.ChannelRecord
 }

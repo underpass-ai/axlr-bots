@@ -46,7 +46,7 @@ A bot asks a **team**. The control plane picks, under `mu`, the first free membe
 | D3 | Where the permissions live | **On each bot**, both sides denied by default, as delegation: `ask.teams` on the asker, the `question` trigger with `from` on the responder. The panel shows the matrix derived from them. No team aggregate |
 | D4 | What the responder may do | **Its own tools and policy, less asking, delegating, emitting and subscribing.** The design recommended reading its memory only (`kmp_wake`, `kmp_ask`); the product owner chose the bot's usual tools. So one cross-team hop, and the defence against another team's text is the framing, the matrix and the bot's own rules and approvals (below) |
 | D5 | The answer when the asker has ended | **A new task for the asking bot**, trigger `question_answer` |
-| D6 | What memory keeps | The control plane's history is the record, always. Phase 1: each side's bot records the question and the answer in its own about, `project:<team>.<bot>`, by its playbook. Later, in a PR of its own: the node writes it, without a model, into `project:<team>.canal` of each team's store |
+| D6 | What memory keeps | The control plane's history is the record, always. Phase 1: each side's bot records the question and the answer in its own about, `project:<team>.<bot>`, by its playbook. Phase 2 (cut 8, [below](#memory)): the node writes it, without a model, into `project:<team>.canal` of each team's store, behind a node switch that is off by default |
 | D7 | A node's single slot | ~~One more slot per node, for questions only, each under 300 s~~ **Withdrawn (amended)**: a question waits for its responder like any task, within two hours |
 | D8 | A team on several nodes (`sre`) | **One seat**: only the bots of one node declare `question`. For `sre`, the `sre-ro` bots; `fix` (on `sre-rw`, with `apply`, `patch`, `scale`) never answers |
 | D9 | Limits | The numbers below, measured for two weeks before anyone changes them |
@@ -200,7 +200,32 @@ Framing is a help, never a proof. Before a link is turned on live, the responder
 
 Phase 1 adds nothing to AXLR or KMP. Each side's playbook records the exchange in its own about, `project:<team>.<bot>`, citing the other team and the question id; never in the team's common about.
 
-Later, in its own PR, the node of each side writes the exchange into its team's store, about `project:<team>.canal`, with an agent of its own (`<store>#canal`), without a model. AXLR already refuses a member's write to a teammate's about, so `canal` is safe once the control plane refuses a bot named `canal`. `kmp-mcp` has no one-shot write command: the node would speak MCP to it, which is unverified.
+Phase 2, cut 8: the node of each side writes the exchange into its team's store, about `project:<team>.canal`, with an agent of its own, without a model. Nobody else can write there: the control plane refuses a bot named `canal` (`ChannelBotID`), and AXLR holds a member to its own about and the team's. The node is switched on by hand, `axlr-node --team-channel-memory` (`AXLR_NODE_TEAM_CHANNEL_MEMORY=true`), off by default, and writes only for the teams its `--memory-teams` names. Only the write is behind the switch: the control plane hands every node its side's record and audits it, and a node switched off, or an older one, leaves it unwritten.
+
+```text
+ question qa→dev ends
+ dev's side                                   qa's side
+ dev-node reports the question's run          the answer goes back (answerDeliverer)
+   └ the report's answer: channelMemory         ├ a message into the asking run: memory
+       {side: answered, team: dev, …}           └ or the question_answer task's run: channelMemory
+                                                    {side: asked, team: qa, …}
+ dev-node: kmp-mcp on <state>/kmp/dev          qa-node: kmp-mcp on <state>/kmp/qa
+   kmp_write_memory project:dev.canal            kmp_write_memory project:qa.canal
+   actor kmp/dev#canal                           actor kmp/qa#canal
+```
+
+| What | How |
+|---|---|
+| Who knows what to write | The control plane, which alone sees both sides: it builds each side's record from the question's task and how it ended (the question, the answer or why there is none, the status, the other team, the bot that asked, the bot that answered, the question's id), once, so the record and the answer the asker reads agree. The bytes depend on nothing else, so a repeat is the same record |
+| How it reaches the node | With what already reaches the node that runs the bot, whose store is the team's: the answering side in the answer to the report of the question's task (a repeated report carries it again); the asking side with the answer, on the message or on the run of the `question_answer` task. Audit `question.memory`: handed over, with its side, team and mode, or why no record could be made |
+| How the node writes | `kmp-mcp` on stdio with `KMP_MCP_DATA_DIR=<state>/kmp/<team>` and `KMP_VIEWER_ADDR=off`: `initialize`, then `kmp_write_memory`, one observation with the exchange as its evidence, idempotency key `canal:<side>:<question>`, labels `side`, `team`, `question`, `asker`, `responder`, `status` |
+| The agent | `actor: kmp/<team>#canal`, the `<store>#canal` of the design, the store named as the answer names it. Not a `kmp_guide` registration: that needs the guide in the store, which a team's store has only when a KMP plugin of the same version sits in the node's home, and gives the agent a random name; the actor is kept in `writer_actor` and in the evidence's source |
+| The about and the actor | Made by the node from the record's team, never taken from the wire |
+| A write that fails | A line in the node's log; it never fails the task. The same record again is KMP's replay |
+
+Checked before it was built, on 10 November 2026 with KMP 0.26.0, in a sandbox with a home and a store of its own: `initialize`, `tools/list`, `kmp_write_memory` into `project:qa.canal` as `kmp/qa#canal` (`Ingested 1 entry`), read back with `kmp_inspect` (`writer_actor`) and `kmp-mcp memories --json`; the same write again `Replayed`, the same key with other bytes refused; a 6 KB UTF-8 evidence taken. A write takes under 0.1 s.
+
+What phase 2 leaves out: a question that ends without a report from the answering node (it expired in the queue, was cancelled, reconciled or its node revoked) gets no record on the answering side; an answer that reaches the asking run in its last seconds may not be read, and its record with it; the node does not tell the control plane whether it wrote.
 
 ### A team on several nodes
 
@@ -251,14 +276,15 @@ What cut 5.5b ships, for A6. One watcher per asking team; the asker itself never
 
 | Repo | Layer | New or changed |
 |---|---|---|
-| axlr-bots | `domain/` | `ask_policy.go` (`ask.teams`, rates), the `question` and `question_answer` trigger types with `from`, `question_refusal.go`, the question objective template, event types `bot.question.*`, `NodeCapabilities.MemoryTeams`, the reserved bot id `canal` |
-| axlr-bots | `application/` | `ask_team.go` (checks, pick under `mu`, the child), `question_candidates.go`, `deliver_answer.go` (called when a child settles: message or new task), `describe` without node tools on a question task, `ask_offer.go` |
+| axlr-bots | `domain/` | `ask_policy.go` (`ask.teams`, rates), the `question` and `question_answer` trigger types with `from`, `question_refusal.go`, the question objective template, event types `bot.question.*`, `NodeCapabilities.MemoryTeams`, the reserved bot id `canal`; phase 2: `channel_record.go`, `channel_side.go` |
+| axlr-bots | `application/` | `ask_team.go` (checks, pick under `mu`, the child), `question_candidates.go`, `deliver_answer.go` (called when a child settles: message or new task), `describe` without node tools on a question task, `ask_offer.go`; phase 2: `channel_exchange.go`, each side's record on the report's answer, the message and the answer's run |
 | axlr-bots | `adapters/nodeagent/` | `ask_tool.go`, the relay's dispatch, the memory teams in the registration |
 | axlr-bots | the watcher (A6) | `domain/jev_watch.go`; `application/watch_next.go`, `decide_watch.go`, `question_watcher.go`; the two node routes; `adapters/jev/node_tool_client.go`; `adapters/nodeagent/watcher.go` |
 | axlr-bots | `adapters/unixapi/` | the node route to ask, the derived matrix for the panel, `contract_test.go` |
 | axlr-bots | `panel/` | the timeline lines, a team's links, `partial` on an answer |
 | axlr-bots | `docs/reference/` | `bot-definition.md` (`ask`, `question`), `node-protocol.md`, `operator-api`, `cli.md` |
-| AXLR | — | nothing in phase 1 |
+| axlr-bots | `adapters/kmpchannel/`, `adapters/nodeagent/` | phase 2: the node's writer over `kmp-mcp`, `--team-channel-memory` |
+| AXLR | — | nothing |
 | KMP | — | nothing |
 | bots-work-teams | bots, playbooks, installers | `ask.teams`, the `question` trigger, how to ask, answer and record |
 | axlr-sre | bots | the `question` trigger on the `sre-ro` bots that should answer |
@@ -278,7 +304,7 @@ Each from `origin/main`, base `main`; control plane, then nodes, then panel; che
 | 5.5b | the Jev watcher (A6), [above](#the-jev-watcher) | a Jev bot of the asking team, with a fake judge, abandons a stuck question and the asker hears `answered: false` naming it; `wait` changes nothing; it never touches another team's questions; a bot that is not Jev cannot watch; a question younger than 5 minutes is not offered |
 | 6 | the panel | the timeline lines, the links, `partial` |
 | 7 | playbooks and bots, one live link qa→dev | with the product owner's go-ahead, behind a node switch, off by default |
-| 8 | the node writes memory (D6, later) | after the MCP write from the node is verified |
+| 8 | the node writes memory (D6, phase 2) | the MCP write verified in a sandbox first; the control plane hands each side's record and audits it whatever the node; a node switched off writes nothing; on, each side writes once into its team's store, a repeat is KMP's replay, a failed write is a log line |
 
 ## Alternatives
 

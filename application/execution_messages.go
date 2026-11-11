@@ -49,6 +49,10 @@ func (uc ExecutionMessages) Execute(ctx context.Context, node domain.NodeID, id 
 			data, _ := event.Payload["data"].(map[string]any)
 			message.Event = &RelayedEvent{Name: name, Data: data}
 		}
+		if record := channelRecordFrom(event.Payload["memory"]); record != nil {
+			snapshot := record.Snapshot()
+			message.Memory = &snapshot
+		}
 		messages = append(messages, message)
 	}
 	return messages, nil

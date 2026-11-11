@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/underpass-ai/axlr-bots/adapters/axlr"
 	natsbus "github.com/underpass-ai/axlr-bots/adapters/bus/nats"
 	"github.com/underpass-ai/axlr-bots/adapters/jev"
+	"github.com/underpass-ai/axlr-bots/adapters/kmpchannel"
 	"github.com/underpass-ai/axlr-bots/adapters/nodeagent"
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
@@ -71,6 +73,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	dedicated := flags.Bool("dedicated", envOr("AXLR_NODE_DEDICATED", "") == "true", "run only the bots whose placement names this node or selects its labels, never those placed on any node (also AXLR_NODE_DEDICATED=true): a sidecar")
 	axlrMCPConfig := flags.String("axlr-mcp-config", envOr("AXLR_NODE_AXLR_MCP_CONFIG", ""), "the mcp.json every AXLR execution loads instead of the operator's ~/.config/axlr/mcp.json, so a server the operator added does not join the bots' runs (also AXLR_NODE_AXLR_MCP_CONFIG; an absolute path that exists)")
 	memoryTeams := flags.String("memory-teams", envOr("AXLR_NODE_MEMORY_TEAMS", ""), "the teams whose bots share one KMP store on this node, a,b, or * for every team; a bot of any other team keeps a store of its own; only a node that names a team answers its questions (also AXLR_NODE_MEMORY_TEAMS; default: none)")
+	channelMemory := flags.Bool("team-channel-memory", envOr("AXLR_NODE_TEAM_CHANNEL_MEMORY", "") == "true", "write each team channel question this node's bots ask or answer into the team's KMP store, about project:<team>.canal, without a model; only for the teams --memory-teams names (also AXLR_NODE_TEAM_CHANNEL_MEMORY=true; default: off)")
+	kmpMCP := flags.String("kmp-mcp", envOr("AXLR_NODE_KMP_MCP", "kmp-mcp"), "with --team-channel-memory, the kmp-mcp that writes into the team's store (also AXLR_NODE_KMP_MCP)")
 	mcpConfig := flags.String("mcp-config", envOr("AXLR_NODE_MCP_CONFIG", ""), "the mcp.json a Jev bot's program finds its MCP server in (also AXLR_NODE_MCP_CONFIG; default: ~/.config/axlr/mcp.json, the node's AXLR's)")
 	jevModel := flags.String("jev-model", envOr("AXLR_NODE_JEV_MODEL", jev.DefaultModel), "the pinned Jev version the jev runtime asks (also AXLR_NODE_JEV_MODEL)")
 	bus := flags.String("bus", envOr("AXLR_NODE_BUS", "direct"), "how the control plane's pushes reach this node: direct (a stream over the node's own connection) or nats (also AXLR_NODE_BUS)")
@@ -124,6 +128,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "axlr-node: --axlr-mcp-config needs an absolute path to an mcp.json that exists:", *axlrMCPConfig)
 			return exitUsage
 		}
+	}
+	var memoryWriter application.ChannelMemoryWriter
+	if *channelMemory {
+		binary, err := exec.LookPath(*kmpMCP)
+		if err != nil {
+			fmt.Fprintln(stderr, "axlr-node: --team-channel-memory needs kmp-mcp:", err)
+			return exitUsage
+		}
+		memoryWriter = kmpchannel.Writer{Binary: binary, StateDir: *stateDir}
 	}
 	if err := os.MkdirAll(*stateDir, 0o755); err != nil {
 		fmt.Fprintln(stderr, "axlr-node: state directory:", err)
@@ -184,6 +197,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if conn.certificate != nil {
 		agent.Certificate = conn.certificate
+	}
+	if memoryWriter != nil {
+		agent.Memory = memoryWriter
+		logger.Printf("node: team channel memory on, with %s, for the teams whose memory this node shares", *kmpMCP)
 	}
 	if *bus == "nats" {
 		cert, key, how := natsClientCertificate(*natsURL, *control, *stateDir, *natsCert, *natsKey)

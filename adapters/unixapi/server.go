@@ -1035,7 +1035,7 @@ func (s *Server) report(w http.ResponseWriter, r *http.Request) {
 		respond(w, 0, nil, err)
 		return
 	}
-	respond(w, http.StatusOK, nodeproto.ReportAck{Accepted: result.Accepted, Outcome: result.Execution.Outcome().String()}, nil)
+	respond(w, http.StatusOK, nodeproto.ReportAck{Accepted: result.Accepted, Outcome: result.Execution.Outcome().String(), ChannelMemory: nodeproto.FromChannelRecord(result.ChannelMemory)}, nil)
 }
 
 // delegate is POST /v1/nodes/{id}/executions/{exec}/delegations: the

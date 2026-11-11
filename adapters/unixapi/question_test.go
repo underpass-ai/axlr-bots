@@ -102,4 +102,14 @@ func TestAQuestionOverTheSocket(t *testing.T) {
 	if err := client.call(ctx, http.MethodPost, "/v1/nodes/Bad/executions/"+assignment.ExecutionID.String()+"/questions", map[string]any{"team": "dev"}, &map[string]any{}); err == nil {
 		t.Error("a bad node id was taken")
 	}
+	// dev-node answers: the report's answer carries what dev's store keeps
+	// of the question, and the asker's message what qa's keeps.
+	ack, err := client.Report(ctx, "dev-node", next.ExecutionID, application.ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "Alice."}})
+	if err != nil || !ack.Accepted || ack.ChannelMemory == nil || ack.ChannelMemory.Side != domain.ChannelAnswered || ack.ChannelMemory.Team != "dev" || ack.ChannelMemory.Answer != "Alice." {
+		t.Fatalf("report: %v %+v", err, ack)
+	}
+	messages, err := client.ExecutionMessages(ctx, "qa-node", assignment.ExecutionID, "")
+	if err != nil || len(messages) != 1 || messages[0].Memory == nil || messages[0].Memory.Side != "asked" || messages[0].Memory.Team != "qa" || messages[0].Memory.Text != "Who owns the importer?" {
+		t.Fatalf("messages: %v %+v", err, messages)
+	}
 }

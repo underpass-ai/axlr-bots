@@ -54,13 +54,8 @@ func (d answerDeliverer) taskEnded(ctx context.Context, responder domain.Bot, ta
 		return err
 	}
 	team := memoryTeamOf(responder)
-	answered := task.Status() == domain.TaskCompleted
-	text := task.FailureReason()
-	if answered {
-		text = execution.Result().Answer
-	} else if text == "" {
-		text = execution.FailureReason()
-	}
+	exchange := channelExchange{responder: responder, question: task, execution: execution}
+	answered, text := exchange.outcome()
 	nonce, err := channelNonce()
 	if err != nil {
 		return err
@@ -83,7 +78,15 @@ func (d answerDeliverer) taskEnded(ctx context.Context, responder domain.Bot, ta
 	if !answered {
 		facts["reason"] = text
 	}
-	delivery, delivered, err := d.toRunningAsker(ctx, asker, parent, framed, facts)
+	// What the asking team's store keeps of it rides with the answer to
+	// the asker's node, which writes it when the node shares that team's
+	// memory; a record that cannot be made leaves the answer as it is.
+	memory, memoryErr := exchange.record(domain.ChannelAsked)
+	var record map[string]any
+	if memoryErr == nil {
+		record = channelRecordData(memory)
+	}
+	delivery, delivered, err := d.toRunningAsker(ctx, asker, parent, framed, facts, record)
 	if err != nil {
 		return err
 	}
@@ -91,11 +94,23 @@ func (d answerDeliverer) taskEnded(ctx context.Context, responder domain.Bot, ta
 		if !asker.AcceptsTasks() {
 			return d.refuse(ctx, task, "its asker "+asker.ID().String()+" is "+asker.Status().String()+" and takes no task")
 		}
-		if delivery, err = d.toNewTask(ctx, asker, task, framed, facts); err != nil {
+		if delivery, err = d.toNewTask(ctx, asker, task, framed, facts, record); err != nil {
 			return err
 		}
 	}
-	return d.recordAnswered(ctx, asker, responder, parent, task, execution, text, facts, delivery)
+	if err := d.recordAnswered(ctx, asker, responder, parent, task, execution, text, facts, delivery); err != nil {
+		return err
+	}
+	return d.auditMemory(ctx, task, memory, memoryErr, delivery)
+}
+
+// auditMemory audits the asking side's record of the team channel: handed
+// to the asker's node with the answer, or why there is none.
+func (d answerDeliverer) auditMemory(ctx context.Context, question domain.Task, record domain.ChannelRecord, err error, delivery map[string]any) error {
+	if err != nil {
+		return d.rec.audit(ctx, "question.memory", question.ID().String(), domain.AuditDenied, map[string]string{"side": domain.ChannelAsked.String(), "reason": err.Error()})
+	}
+	return d.rec.audit(ctx, "question.memory", question.ID().String(), domain.AuditOK, map[string]string{"side": record.Side.String(), "team": record.Team.String(), "about": record.About(), "mode": delivery["mode"].(string)})
 }
 
 // delivered reports whether the question's answer went back already.
@@ -115,7 +130,7 @@ func (d answerDeliverer) delivered(ctx context.Context, question domain.TaskID) 
 // toRunningAsker puts the answer into the asking task as a line of its
 // chat, when that very task still runs on a node: never into another task
 // of the asker.
-func (d answerDeliverer) toRunningAsker(ctx context.Context, asker domain.Bot, parent domain.Task, framed string, facts map[string]any) (map[string]any, bool, error) {
+func (d answerDeliverer) toRunningAsker(ctx context.Context, asker domain.Bot, parent domain.Task, framed string, facts, record map[string]any) (map[string]any, bool, error) {
 	if parent.ID() == "" || parent.Status() != domain.TaskRunning || parent.CurrentExecutionID() == "" {
 		return nil, false, nil
 	}
@@ -127,6 +142,9 @@ func (d answerDeliverer) toRunningAsker(ctx context.Context, asker domain.Bot, p
 		return nil, false, nil
 	}
 	payload := map[string]any{"text": framed, "from": "question:" + facts["questionTaskId"].(string), "data": facts}
+	if record != nil {
+		payload["memory"] = record
+	}
 	id, err := d.rec.executionEventID(ctx, domain.EventTaskMessage, asker, parent.ID(), execution.ID(), parent.CorrelationID(), payload)
 	if err != nil {
 		return nil, false, err
@@ -137,7 +155,7 @@ func (d answerDeliverer) toRunningAsker(ctx context.Context, asker domain.Bot, p
 // toNewTask gives the asker a task of its own with the answer: the asking
 // task has ended. It carries the question's trace and runs on the asker's
 // own budgets.
-func (d answerDeliverer) toNewTask(ctx context.Context, asker domain.Bot, question domain.Task, framed string, facts map[string]any) (map[string]any, error) {
+func (d answerDeliverer) toNewTask(ctx context.Context, asker domain.Bot, question domain.Task, framed string, facts, record map[string]any) (map[string]any, error) {
 	objective, err := domain.NewObjective(framed + "\nGo on with what your mission asks for this answer.")
 	if err != nil {
 		return nil, err
@@ -146,7 +164,14 @@ func (d answerDeliverer) toNewTask(ctx context.Context, asker domain.Bot, questi
 	if err != nil {
 		return nil, err
 	}
-	input, _ := json.Marshal(facts)
+	fields := map[string]any{}
+	for key, value := range facts {
+		fields[key] = value
+	}
+	if record != nil {
+		fields["memory"] = record
+	}
+	input, _ := json.Marshal(fields)
 	created, err := submitTask(ctx, d.deps, submission{
 		action: "task.question_answer", bot: asker, trigger: domain.TriggerRef{Type: domain.TriggerQuestionAnswer, Name: facts["team"].(string)},
 		objective: objective, key: key, correlation: question.CorrelationID(), input: input,
