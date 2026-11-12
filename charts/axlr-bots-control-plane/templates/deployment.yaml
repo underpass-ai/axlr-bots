@@ -1,0 +1,186 @@
+{{- $name := include "axlr-bots-control-plane.fullname" . }}
+{{- $nats := eq .Values.bus.kind "nats" }}
+# One pod, never two: the state lock refuses a second serve, so Recreate
+# stops the old pod before the new one starts.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "axlr-bots-control-plane.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "axlr-bots-control-plane.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "axlr-bots-control-plane.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: control-plane
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "axlr-bots-control-plane.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.ca.init }}
+      initContainers:
+        # The fleet CA, once, on an empty state: fails if one is there.
+        - name: ca-init
+          image: {{ include "axlr-bots-control-plane.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["ca", "init"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - {name: state, mountPath: /var/lib/axlr-bots}
+            - {name: tmp, mountPath: /tmp}
+      {{- end }}
+      containers:
+        - name: control-plane
+          image: {{ include "axlr-bots-control-plane.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --actor
+            - control-plane
+            - serve
+            {{- if .Values.apiToken.existingSecret }}
+            - --api-token-file=/etc/axlr-bots/api/token
+            {{- end }}
+          env:
+            - {name: AXLR_BOTS_LISTEN, value: "0.0.0.0:7878"}
+            - {name: AXLR_BOTS_API_LISTEN, value: "0.0.0.0:7879"}
+            - {name: AXLR_BOTS_SERVER_NAMES, value: {{ include "axlr-bots-control-plane.serverNames" . | quote }}}
+            {{- with .Values.apiURL }}
+            - {name: AXLR_BOTS_API_URL, value: {{ . | quote }}}
+            {{- end }}
+            {{- with .Values.panelURL }}
+            - {name: AXLR_BOTS_PANEL_URL, value: {{ . | quote }}}
+            {{- end }}
+            {{- with .Values.minAXLRVersion }}
+            - {name: AXLR_BOTS_MIN_AXLR_VERSION, value: {{ . | quote }}}
+            {{- end }}
+            - {name: AXLR_BOTS_BUS, value: {{ .Values.bus.kind | quote }}}
+            {{- if $nats }}
+            - {name: AXLR_BOTS_NATS_URL, value: {{ .Values.bus.nats.url | quote }}}
+            - {name: AXLR_BOTS_NATS_CERT, value: /etc/axlr-bots/nats/tls.crt}
+            - {name: AXLR_BOTS_NATS_KEY, value: /etc/axlr-bots/nats/tls.key}
+            - {name: AXLR_BOTS_NATS_CA, value: /etc/axlr-bots/nats/ca.crt}
+            {{- end }}
+            {{- with .Values.env.extra }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.env.existingSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ . }}
+          {{- end }}
+          ports:
+            - {name: node, containerPort: 7878, protocol: TCP}
+            - {name: api, containerPort: 7879, protocol: TCP}
+          # `axlr-bots health`: the daemon answers /healthz on its socket.
+          startupProbe:
+            exec:
+              command: ["/usr/local/bin/axlr-bots", "health"]
+            periodSeconds: 2
+            failureThreshold: 30
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["/usr/local/bin/axlr-bots", "health"]
+            periodSeconds: 30
+            failureThreshold: 3
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["/usr/local/bin/axlr-bots", "health"]
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - {name: state, mountPath: /var/lib/axlr-bots}
+            - {name: tmp, mountPath: /tmp}
+            {{- if .Values.apiToken.existingSecret }}
+            - {name: api-token, mountPath: /etc/axlr-bots/api, readOnly: true}
+            {{- end }}
+            {{- if $nats }}
+            - {name: nats, mountPath: /etc/axlr-bots/nats, readOnly: true}
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        {{- with .Values.extraContainers }}
+        {{- tpl (toYaml .) $ | nindent 8 }}
+        {{- end }}
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: {{ include "axlr-bots-control-plane.claimName" . }}
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ .Values.tmpSize }}
+        {{- with .Values.apiToken.existingSecret }}
+        - name: api-token
+          secret:
+            secretName: {{ . }}
+            defaultMode: 0440
+            items:
+              - {key: {{ $.Values.apiToken.key | default "token" | quote }}, path: token}
+        {{- end }}
+        {{- if $nats }}
+        - name: nats
+          secret:
+            secretName: {{ .Values.bus.nats.existingSecret }}
+            defaultMode: 0440
+            items:
+              - {key: tls.crt, path: tls.crt}
+              - {key: tls.key, path: tls.key}
+              - {key: ca.crt, path: ca.crt}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}

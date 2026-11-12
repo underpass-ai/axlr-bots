@@ -1,0 +1,10 @@
+apiVersion: v2
+name: axlr-bots-control-plane
+description: The AXLR Bots control plane (axlr-bots serve) as one pod with its state on a volume
+type: application
+version: 0.1.0
+appVersion: "0.4.0"
+home: https://github.com/underpass-ai/axlr-bots
+sources:
+  - https://github.com/underpass-ai/axlr-bots
+keywords: [axlr, bots, agents, control-plane]

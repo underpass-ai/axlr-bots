@@ -67,6 +67,7 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 |:--|:--|
 | Install for one host or a fleet, keep it running after logout, uninstall | [Install](docs/runbooks/install.md) |
 | Run the control plane from its release image with Docker Compose | [Control plane in a container](docs/runbooks/control-plane-compose.md) |
+| Run the control plane on Kubernetes, or move a running one there with its state | [Control plane on Kubernetes](docs/runbooks/control-plane-kubernetes.md) (`charts/axlr-bots-control-plane`) |
 | Write a bot: mission, model, tools, autonomy level, triggers, budgets, placement | [Bot definition](docs/reference/bot-definition.md) |
 | Start tasks from a webhook or on a timer, without duplicates | [Triggers](docs/runbooks/triggers.md) |
 | Approve or deny the write a bot wants to make, be notified of it, let it expire | [Approvals](docs/runbooks/approvals.md) |
@@ -98,7 +99,7 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 
 | Component | Runs | Does |
 |---|---|---|
-| `axlr-bots` (control plane) | one host, `systemctl --user` | keeps the bots, tasks, executions, nodes and timers; serves the CLI on a Unix socket, the nodes on a TLS address, operators and webhooks on another; fires the timers; reconciles what a crash left running |
+| `axlr-bots` (control plane) | one host, `systemctl --user`; or a container (compose), or one pod on Kubernetes (`charts/axlr-bots-control-plane`) | keeps the bots, tasks, executions, nodes and timers; serves the CLI on a Unix socket, the nodes on a TLS address, operators and webhooks on another; fires the timers; reconciles what a crash left running |
 | `axlr-node` (node agent) | every host that runs bots, under systemd; or in a pod beside a service, as a sidecar (`charts/axlr-bots-node`) | enrolls with a token, registers, heartbeats, polls for the executions of the bots placed on its host, runs them (with AXLR, or a [Jev bot](docs/reference/bot-definition.md#runtime)'s program), reports |
 | AXLR (`axlr-tui --exec`) | on the node, one process per execution | the model loop, the tools, the policy and the approvals; writes the result object the node reports |
 | `axlr-bots-panel` (control panel) | an operator's desktop | reads and drives the control plane over the operator API, with the fleet CA and the bearer token |
