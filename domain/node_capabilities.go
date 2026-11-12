@@ -17,9 +17,15 @@ package domain
 // that names none never is. TeamChannel says the node runs the team
 // channel (axlr-node --team-channel, off by default): only then are its
 // runs offered the ask tool, its bots picked to answer, and a watcher
-// served; an older node reports none, which is off.
+// served; an older node reports none, which is off. NodeVersion and
+// NodeRevision are the node agent's own build, as Go recorded it (the
+// module version, the commit): set beside the control plane's own
+// (GET /v1/build) they say a node runs an older agent; an older node
+// names none, which says nothing.
 type NodeCapabilities struct {
 	AXLRVersion          string   `json:"axlrVersion,omitempty"`
+	NodeVersion          string   `json:"nodeVersion,omitempty"`
+	NodeRevision         string   `json:"nodeRevision,omitempty"`
 	PolicySupported      bool     `json:"policySupported"`
 	CorrelationSupported bool     `json:"correlationSupported"`
 	Dedicated            bool     `json:"dedicated,omitempty"`

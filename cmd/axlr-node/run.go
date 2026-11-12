@@ -20,6 +20,7 @@ import (
 	"github.com/underpass-ai/axlr-bots/adapters/kmpchannel"
 	"github.com/underpass-ai/axlr-bots/adapters/nodeagent"
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
+	"github.com/underpass-ai/axlr-bots/adapters/system"
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -194,6 +195,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	agent := nodeagent.Agent{
 		Transport: conn.transport,
 		Executor:  runtimes,
+		Build:     system.BuildReader{},
 		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Dedicated: *dedicated, Runtimes: runtimes.Kinds(), Providers: providers, MemoryTeams: sharedMemory, TeamChannel: *teamChannel, Heartbeat: *heartbeat, PollWait: *poll, RenewBefore: *renewBefore, Log: logger, SocketDir: filepath.Join(*stateDir, "run")},
 	}
 	if conn.certificate != nil {

@@ -9,8 +9,10 @@ import "github.com/underpass-ai/axlr-bots/domain"
 // approved without a person, so a client that reads the bot (its
 // notification secrets redacted) can change them without sending the
 // secrets back; with Approvals too, it applies after them. Its items
-// are rules or, for short, tool names.
+// are rules or, for short, tool names. Version replaces the version of
+// the definition (empty clears it); a staged change must name one.
 type BotPatch struct {
+	Version       *string                        `json:"version,omitempty"`
 	Mission       *string                        `json:"mission,omitempty"`
 	Level         *string                        `json:"level,omitempty"`
 	AllowedTools  *[]string                      `json:"allowedTools,omitempty"`

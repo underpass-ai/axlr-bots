@@ -30,39 +30,51 @@ func (uc UpdateBot) Execute(ctx context.Context, id domain.BotID, patch BotPatch
 	if err != nil {
 		return domain.Bot{}, err
 	}
-	previous := bot.Level()
+	return uc.update(ctx, bot, patch, nil, nil)
+}
+
+// update applies the patch to the bot as read, runs settle on it (when
+// given) in the same save, and publishes and audits the change as every
+// update does, with note added to the event's payload: applying a
+// staged change is this update, with the staged change dropped by
+// settle and named in note.
+func (uc UpdateBot) update(ctx context.Context, bot domain.Bot, patch BotPatch, settle func(*domain.Bot), note map[string]any) (domain.Bot, error) {
+	id := bot.ID()
+	previous, previousVersion := bot.Level(), bot.Version()
 	changed, err := applyPatch(&bot, patch)
 	if err != nil {
 		_ = uc.rec.audit(ctx, "bot.update", id.String(), domain.AuditDenied, map[string]string{"reason": err.Error()})
 		return domain.Bot{}, err
 	}
 	if len(changed) == 0 {
-		return domain.Bot{}, domain.ValidationError{Field: "patch", Reason: "names no field to change"}
+		return domain.Bot{}, errEmptyPatch
 	}
-	subscribed := slices.Contains(changed, "subscriptions")
-	if subscribed {
-		if err := checkSubscriptionSenders(ctx, uc.deps, bot); err != nil {
-			_ = uc.rec.audit(ctx, "bot.update", id.String(), domain.AuditDenied, map[string]string{"reason": err.Error()})
-			return domain.Bot{}, err
-		}
-	}
-	bot.Touch(uc.deps.Clock.Now())
-	if err := checkLadderApprovers(ctx, uc.deps, bot); err != nil {
+	if err := checkChanged(ctx, uc.deps, bot, changed); err != nil {
 		_ = uc.rec.audit(ctx, "bot.update", id.String(), domain.AuditDenied, map[string]string{"reason": err.Error()})
 		return domain.Bot{}, err
+	}
+	bot.Touch(uc.deps.Clock.Now())
+	if settle != nil {
+		settle(&bot)
 	}
 	if err := uc.deps.Bots.Save(ctx, bot); err != nil {
 		return domain.Bot{}, err
 	}
 	payload := map[string]any{"fields": changed}
+	for key, value := range note {
+		payload[key] = value
+	}
 	if bot.Level() != previous {
 		// A turned dial says where from and where to, for the timeline.
 		payload["previousLevel"], payload["level"] = previous.String(), bot.Level().String()
 	}
+	if bot.Version() != previousVersion {
+		payload["previousVersion"], payload["version"] = previousVersion.String(), bot.Version().String()
+	}
 	if err := uc.rec.event(ctx, domain.EventBotUpdated, bot, "", "", payload); err != nil {
 		return domain.Bot{}, err
 	}
-	if subscribed {
+	if slices.Contains(changed, "subscriptions") {
 		list := bot.Subscriptions().Snapshot()
 		if list == nil {
 			list = []domain.SubscriptionSnapshot{}
@@ -75,6 +87,38 @@ func (uc UpdateBot) Execute(ctx context.Context, id domain.BotID, patch BotPatch
 		return domain.Bot{}, err
 	}
 	return bot, nil
+}
+
+// errEmptyPatch refuses a patch that names no field.
+var errEmptyPatch = domain.ValidationError{Field: "patch", Reason: "names no field to change"}
+
+// checkPatch applies the patch to the bot in memory and checks it as
+// an update does before it saves, and names the fields changed. Staging
+// runs it on a copy, so a staged change is one the update takes now.
+func checkPatch(ctx context.Context, deps Dependencies, bot *domain.Bot, patch BotPatch) ([]string, error) {
+	changed, err := applyPatch(bot, patch)
+	if err != nil {
+		return nil, err
+	}
+	if len(changed) == 0 {
+		return nil, errEmptyPatch
+	}
+	if err := checkChanged(ctx, deps, *bot, changed); err != nil {
+		return nil, err
+	}
+	return changed, nil
+}
+
+// checkChanged is what an update checks beyond the bot itself: a
+// subscription to senders the bot may not hear, a ladder whose
+// approvers do not fit.
+func checkChanged(ctx context.Context, deps Dependencies, bot domain.Bot, changed []string) error {
+	if slices.Contains(changed, "subscriptions") {
+		if err := checkSubscriptionSenders(ctx, deps, bot); err != nil {
+			return err
+		}
+	}
+	return checkLadderApprovers(ctx, deps, bot)
 }
 
 // applyPatch changes the bot in memory and names the fields it changed.
@@ -225,6 +269,17 @@ func applyPatch(bot *domain.Bot, patch BotPatch) ([]string, error) {
 		}
 		bot.SetSkills(skills)
 		changed = append(changed, "skills")
+	}
+	if patch.Version != nil {
+		// An empty version clears it: the bot names none.
+		var version domain.SemanticVersion
+		if *patch.Version != "" {
+			if version, err = domain.ParseSemanticVersion("version", *patch.Version); err != nil {
+				return nil, err
+			}
+		}
+		bot.SetVersion(version)
+		changed = append(changed, "version")
 	}
 	// Narrower tools or a lower level may no longer carry a Jev program,
 	// and a Jev program reads no skill.

@@ -9,12 +9,14 @@ axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>]
         [--bus direct|nats] [--nats-url <url>] [--nats-creds <file>]              pushes to the nodes also over a broker (bus port)
         [--nats-cert <file> --nats-key <file>] [--nats-ca <file>]                  mutual TLS to the broker
         [--tick 2s] [--reconcile-every 1m] [--grace <duration>]
+        [--min-axlr-version <semver>]                                               the least AXLR the nodes should run, answered by GET /v1/build (also AXLR_BOTS_MIN_AXLR_VERSION)
   ca init | ca show
   ca issue-client --name <cn> --out <dir> [--lifetime <duration>]   client.key, client.crt, ca.crt for a service of the fleet (365 days)
   node list | node get <node-id>
   node enroll-token [--node-id <id>] [--labels k=v,k=v] [--ttl 1h] | node revoke <node-id>
   bot register --file <bot.json> | bot enable <bot-id> | bot pause <bot-id> | bot stop <bot-id> | bot delete <bot-id> | bot list | bot get <bot-id>
   bot update <bot-id> --file <patch.json> | bot events <bot-id> [--limit 100]
+  bot stage <bot-id> --file <patch.json> | bot staged <bot-id> | bot apply-staged <bot-id> | bot unstage <bot-id>   a change held for later, naming its version ([staged changes](bot-definition.md#staged-changes))
   bot subscribe <bot-id> <topic> [--mode task|message|note] [--from a,b] | bot unsubscribe <bot-id> <topic> | bot subscriptions <bot-id>
   group list | group get <group> [--tenant <id>]   the teams the bots name, with their members
   group events <group> [--after <event-id>] [--limit 100] [--tenant <id>]   the team's timeline

@@ -26,6 +26,8 @@ type Bot struct {
 	subs         Subscriptions
 	runtime      Runtime
 	skills       SkillPins
+	version      SemanticVersion
+	staged       *StagedDefinition
 	status       BotStatus
 	createdAt    time.Time
 	updatedAt    time.Time
@@ -280,6 +282,31 @@ func (b Bot) Skills() SkillPins { return b.skills }
 // runtime.
 func (b *Bot) SetSkills(skills SkillPins) { b.skills = skills }
 
+// Version is the version of the bot's definition; zero when its
+// definition names none.
+func (b Bot) Version() SemanticVersion { return b.version }
+
+// SetVersion replaces the version of the bot's definition; zero clears it.
+func (b *Bot) SetVersion(version SemanticVersion) { b.version = version }
+
+// Staged is the change waiting to be applied to the bot, if any.
+func (b Bot) Staged() (StagedDefinition, bool) {
+	if b.staged == nil {
+		return StagedDefinition{}, false
+	}
+	return *b.staged, true
+}
+
+// Stage holds a change to apply later, replacing the one held before.
+func (b *Bot) Stage(staged StagedDefinition) { b.staged = &staged }
+
+// Unstage drops the change held, and reports whether there was one.
+func (b *Bot) Unstage() bool {
+	had := b.staged != nil
+	b.staged = nil
+	return had
+}
+
 // Touch records that the bot's definition changed.
 func (b *Bot) Touch(now time.Time) { b.updatedAt = now }
 
@@ -376,10 +403,20 @@ func (b Bot) Snapshot() BotSnapshot {
 		Subscriptions: b.subs.Snapshot(),
 		Runtime:       b.runtime.Snapshot(),
 		Skills:        b.skills.Snapshot(),
+		Version:       b.version.String(),
+		Staged:        b.stagedSnapshot(),
 		Status:        b.status.String(),
 		CreatedAt:     b.createdAt,
 		UpdatedAt:     b.updatedAt,
 	}
+}
+
+func (b Bot) stagedSnapshot() *StagedDefinitionSnapshot {
+	if b.staged == nil {
+		return nil
+	}
+	snapshot := b.staged.Snapshot()
+	return &snapshot
 }
 
 // RestoreBot rebuilds a bot from a snapshot, validating every value.
@@ -501,6 +538,19 @@ func RestoreBot(s BotSnapshot) (Bot, error) {
 	bot.SetSkills(skills)
 	if err := bot.CheckRuntime(); err != nil {
 		return Bot{}, err
+	}
+	// A bot stored before versions names none and holds nothing staged.
+	if s.Version != "" {
+		if bot.version, err = ParseSemanticVersion("version", s.Version); err != nil {
+			return Bot{}, err
+		}
+	}
+	if s.Staged != nil {
+		staged, err := RestoreStagedDefinition(*s.Staged)
+		if err != nil {
+			return Bot{}, err
+		}
+		bot.Stage(staged)
 	}
 	if s.UpdatedAt.IsZero() {
 		return Bot{}, invalid("updated at", "must not be zero")

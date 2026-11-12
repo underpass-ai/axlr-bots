@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -148,7 +149,7 @@ func TestServeWithTheOperatorAddressFiresWebhooksAndTimers(t *testing.T) {
 	var serveOut, serveErr syncBuffer
 	done := make(chan int, 1)
 	go func() {
-		done <- run([]string{"--state", state, "--axlr-bin", c.axlr, "--socket", socket, "serve", "--api-listen", "127.0.0.1:" + port, "--tick", "20ms"}, &serveOut, &serveErr)
+		done <- run([]string{"--state", state, "--axlr-bin", c.axlr, "--socket", socket, "serve", "--api-listen", "127.0.0.1:" + port, "--tick", "20ms", "--min-axlr-version", "0.20.0"}, &serveOut, &serveErr)
 	}()
 	deadline := time.Now().Add(5 * time.Second)
 	for !unixapi.Reachable(t.Context(), socket) {
@@ -189,6 +190,18 @@ func TestServeWithTheOperatorAddressFiresWebhooksAndTimers(t *testing.T) {
 	}
 	// A webhook from outside, with the trigger's secret, as curl would send it.
 	httpClient := &http.Client{Transport: &http.Transport{TLSClientConfig: config.Clone()}}
+	// The build route says the least AXLR the nodes should run.
+	buildRequest, _ := http.NewRequest(http.MethodGet, url+"/v1/build", nil)
+	buildRequest.Header.Set("Authorization", "Bearer "+token)
+	if response, err := httpClient.Do(buildRequest); err != nil {
+		t.Fatal(err)
+	} else {
+		raw, _ := io.ReadAll(response.Body)
+		response.Body.Close()
+		if !strings.Contains(string(raw), `"minimumAxlr":"0.20.0"`) || !strings.Contains(serveErr.String(), "AXLR 0.20.0 or newer") {
+			t.Errorf("GET /v1/build = %s", raw)
+		}
+	}
 	post := func(delivery string) map[string]any {
 		t.Helper()
 		request, _ := http.NewRequest(http.MethodPost, url+"/v1/triggers/bot/deploy", strings.NewReader(`{"type": "deploy", "service": "web"}`))

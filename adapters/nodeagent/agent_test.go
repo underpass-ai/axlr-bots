@@ -123,10 +123,13 @@ func TestAgentRunsAssignedTasksAndDecisions(t *testing.T) {
 	agent := f.agent(t, "approval-flow")
 	agentCtx, stop := context.WithCancel(context.Background())
 	done := make(chan error, 1)
+	agent.Build = agentBuild{running: domain.BuildIdentity{Version: "v0.9.0", Revision: "abc123"}}
 	go func() { done <- agent.Run(agentCtx) }()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if node, err := f.client.GetNode(ctx, "web-1"); err == nil && node.Status == "Online" {
+		// The registration line is logged after the control plane already
+		// shows the node Online: wait for both.
+		if node, err := f.client.GetNode(ctx, "web-1"); err == nil && node.Status == "Online" && strings.Contains(f.logs.String(), "registered as") {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -137,6 +140,12 @@ func TestAgentRunsAssignedTasksAndDecisions(t *testing.T) {
 	node, _ := f.client.GetNode(ctx, "web-1")
 	if !node.Capabilities.PolicySupported || node.HostName != "web-1.example" || node.Labels["host"] != "web-1" {
 		t.Errorf("node = %+v", node)
+	}
+	if node.Capabilities.NodeVersion != "v0.9.0" || node.Capabilities.NodeRevision != "abc123" {
+		t.Errorf("the node reports its own build: %+v", node.Capabilities)
+	}
+	if !strings.Contains(f.logs.String(), `node "v0.9.0" revision "abc123"`) {
+		t.Errorf("logs = %s", f.logs.String())
 	}
 	if !node.Capabilities.HasProvider("openrouter") || !node.Capabilities.HasProvider("local:codex/gpt-6.1-sol") || len(node.Capabilities.Providers) != 2 {
 		t.Errorf("providers = %v", node.Capabilities.Providers)
@@ -624,3 +633,9 @@ func TestAStalledHeartbeatDoesNotStopTheNext(t *testing.T) {
 		t.Fatal("a stalled heartbeat kept the next from going out")
 	}
 }
+
+// agentBuild is the build a test agent says it runs.
+type agentBuild struct{ running domain.BuildIdentity }
+
+func (b agentBuild) Running() domain.BuildIdentity            { return b.running }
+func (b agentBuild) Installed() (domain.BuildIdentity, error) { return b.running, nil }

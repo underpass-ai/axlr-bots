@@ -152,6 +152,10 @@ func (s *Server) operatorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/bots/{id}/enable", s.enableBot)
 	mux.HandleFunc("POST /v1/bots/{id}/pause", s.pauseBot)
 	mux.HandleFunc("POST /v1/bots/{id}/stop", s.stopBot)
+	mux.HandleFunc("PUT /v1/bots/{id}/staged", s.stageBot)
+	mux.HandleFunc("GET /v1/bots/{id}/staged", s.getStagedBot)
+	mux.HandleFunc("DELETE /v1/bots/{id}/staged", s.unstageBot)
+	mux.HandleFunc("POST /v1/bots/{id}/staged/apply", s.applyStagedBot)
 	mux.HandleFunc("POST /v1/bots/{id}/tasks", s.submitBotTask)
 	mux.HandleFunc("GET /v1/bots/{id}/events", s.listEvents)
 	mux.HandleFunc("GET /v1/groups", s.listGroups)
@@ -437,6 +441,32 @@ func (s *Server) patchBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	value, err := s.service.UpdateBot(r.Context(), r.PathValue("id"), patch)
+	respond(w, http.StatusOK, value, err)
+}
+
+// stageBot is PUT /v1/bots/{id}/staged: the patch the update takes,
+// naming its version, held for later.
+func (s *Server) stageBot(w http.ResponseWriter, r *http.Request) {
+	var patch application.BotPatch
+	if !readJSON(w, r, &patch) {
+		return
+	}
+	value, err := s.service.StageBot(r.Context(), r.PathValue("id"), patch)
+	respond(w, http.StatusOK, value, err)
+}
+
+func (s *Server) getStagedBot(w http.ResponseWriter, r *http.Request) {
+	value, err := s.service.GetStagedBot(r.Context(), r.PathValue("id"))
+	respond(w, http.StatusOK, value, err)
+}
+
+func (s *Server) applyStagedBot(w http.ResponseWriter, r *http.Request) {
+	value, err := s.service.ApplyStagedBot(r.Context(), r.PathValue("id"))
+	respond(w, http.StatusOK, value, err)
+}
+
+func (s *Server) unstageBot(w http.ResponseWriter, r *http.Request) {
+	value, err := s.service.UnstageBot(r.Context(), r.PathValue("id"))
 	respond(w, http.StatusOK, value, err)
 }
 
@@ -900,7 +930,8 @@ func (s *Server) getReport(w http.ResponseWriter, r *http.Request) {
 // getBuild answers which build the control plane runs and whether a
 // newer one is installed.
 func (s *Server) getBuild(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, newBuildAnswer(application.CheckBuild(s.service.Dependencies().Build)))
+	deps := s.service.Dependencies()
+	writeJSON(w, http.StatusOK, newBuildAnswer(application.CheckBuild(deps.Build), deps.MinimumAXLR))
 }
 
 func (s *Server) getExecution(w http.ResponseWriter, r *http.Request) {

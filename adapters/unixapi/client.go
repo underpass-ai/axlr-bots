@@ -121,6 +121,26 @@ func (c *Client) UpdateBot(ctx context.Context, id string, patch application.Bot
 	return bot, c.call(ctx, http.MethodPatch, "/v1/bots/"+url.PathEscape(id), patch, &bot)
 }
 
+func (c *Client) StageBot(ctx context.Context, id string, patch application.BotPatch) (domain.BotSnapshot, error) {
+	var bot domain.BotSnapshot
+	return bot, c.call(ctx, http.MethodPut, "/v1/bots/"+url.PathEscape(id)+"/staged", patch, &bot)
+}
+
+func (c *Client) GetStagedBot(ctx context.Context, id string) (application.StagedBotView, error) {
+	var view application.StagedBotView
+	return view, c.call(ctx, http.MethodGet, "/v1/bots/"+url.PathEscape(id)+"/staged", nil, &view)
+}
+
+func (c *Client) ApplyStagedBot(ctx context.Context, id string) (domain.BotSnapshot, error) {
+	var bot domain.BotSnapshot
+	return bot, c.call(ctx, http.MethodPost, "/v1/bots/"+url.PathEscape(id)+"/staged/apply", nil, &bot)
+}
+
+func (c *Client) UnstageBot(ctx context.Context, id string) (domain.BotSnapshot, error) {
+	var bot domain.BotSnapshot
+	return bot, c.call(ctx, http.MethodDelete, "/v1/bots/"+url.PathEscape(id)+"/staged", nil, &bot)
+}
+
 func (c *Client) ListEvents(ctx context.Context, id string, limit int) ([]domain.Event, error) {
 	events := []domain.Event{}
 	path := "/v1/bots/" + url.PathEscape(id) + "/events"

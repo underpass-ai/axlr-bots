@@ -80,6 +80,9 @@ func TestANodeWithTheTeamChannelOffNeverAsks(t *testing.T) {
 	if err != nil || off.Capabilities.TeamChannel {
 		t.Errorf("qa-node: %v %+v", err, off.Capabilities)
 	}
+	if off.Capabilities.NodeVersion != "" || off.Capabilities.NodeRevision != "" {
+		t.Errorf("an agent without a build reader reports none: %+v", off.Capabilities)
+	}
 	on, err := f.client.GetNode(ctx, "dev-node")
 	if err != nil || !on.Capabilities.TeamChannel {
 		t.Errorf("dev-node: %v %+v", err, on.Capabilities)

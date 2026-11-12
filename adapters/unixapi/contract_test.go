@@ -39,7 +39,7 @@ func init() {
 		domain.ToolRulesSnapshot{}, domain.TriggerRef{}, domain.TriggerRefSnapshot{}, domain.PinnedPolicySnapshot{}, domain.PinnedLadderSnapshot{}, domain.LadderSnapshot{}, domain.LadderRunbookSnapshot{}, domain.AutonomyCounters{}, domain.AutonomyThresholdsSnapshot{}, domain.AutonomyEntry{}, domain.AutonomyOutstanding{}, AutonomyResponse{}, DiagnosisRequest{}, LowerRequest{}, ClearRequest{}, domain.TriggerSnapshot{}, domain.Usage{},
 		application.Overview{}, application.BotDefinition{}, application.OpenIncidentCommand{}, domain.IncidentSnapshot{}, domain.IncidentPostmortemSnapshot{}, PostmortemReviewRequest{}, domain.IncidentTaskSnapshot{}, OpenIncidentResponse{}, IncidentResponse{}, IncidentCurrentTask{}, IncidentApprovalsResponse{}, ResolveRequest{}, application.PublishGroupEventCommand{}, application.PublishAnswer{}, application.GroupTopic{}, application.TopicListener{}, application.GroupLink{}, application.BotPatch{}, application.Group{}, application.GroupMember{}, application.OutputDefinition{}, application.OutputView{},
 		domain.SkillPinSnapshot{}, domain.RuntimeSnapshot{}, domain.JevProgramSnapshot{}, domain.JevActSnapshot{}, domain.JevTellSnapshot{},
-		application.BudgetsDefinition{}, application.ModelPolicyDefinition{},
+		application.BudgetsDefinition{}, application.ModelPolicyDefinition{}, application.StagedBotView{},
 		SubmitRequest{}, TaskRequest{}, SubmitResponse{}, RunResponse{}, CancelResponse{}, ReportResponse{},
 		DecideRequest{}, MessageRequest{}, application.SentTaskMessage{}, StopResponse{}, application.StopRefusal{}, DeleteResponse{}, application.BotReference{}, EnrollTokenRequest{}, EnrollTokenResponse{}, RevokeResponse{}, FireResponse{}, ErrorResponse{},
 	} {

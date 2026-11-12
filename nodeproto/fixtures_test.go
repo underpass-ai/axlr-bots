@@ -48,7 +48,7 @@ func fixtureNode() domain.NodeSnapshot {
 }
 
 func fixtureCapabilities() domain.NodeCapabilities {
-	return domain.NodeCapabilities{AXLRVersion: "nanobot-0.1.0", PolicySupported: true, CorrelationSupported: true, Dedicated: true, Runtimes: []string{"jev"}}
+	return domain.NodeCapabilities{AXLRVersion: "nanobot-0.1.0", NodeVersion: "v0.1.0", NodeRevision: "0d1e2f3a4b5c", PolicySupported: true, CorrelationSupported: true, Dedicated: true, Runtimes: []string{"jev"}}
 }
 
 func fixtures() []fixture {

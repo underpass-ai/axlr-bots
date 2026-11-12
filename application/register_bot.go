@@ -49,9 +49,11 @@ func (uc RegisterBot) Execute(ctx context.Context, definition BotDefinition) (do
 	if err := uc.deps.Bots.Save(ctx, bot); err != nil {
 		return domain.Bot{}, err
 	}
-	if err := uc.rec.event(ctx, domain.EventBotRegistered, bot, "", "", map[string]any{
-		"name": bot.Name().String(), "owner": bot.Owner().String(), "allowedTools": bot.AllowedTools().Names(),
-	}); err != nil {
+	payload := map[string]any{"name": bot.Name().String(), "owner": bot.Owner().String(), "allowedTools": bot.AllowedTools().Names()}
+	if !bot.Version().IsZero() {
+		payload["version"] = bot.Version().String()
+	}
+	if err := uc.rec.event(ctx, domain.EventBotRegistered, bot, "", "", payload); err != nil {
 		return domain.Bot{}, err
 	}
 	if err := uc.rec.audit(ctx, "bot.register", bot.ID().String(), domain.AuditOK, nil); err != nil {
@@ -181,6 +183,13 @@ func buildBot(d BotDefinition, now time.Time) (domain.Bot, error) {
 	// After the runtime: a Jev program takes no phase policy.
 	if err := bot.CheckTriggers(); err != nil {
 		return domain.Bot{}, err
+	}
+	if d.Version != "" {
+		version, err := domain.ParseSemanticVersion("version", d.Version)
+		if err != nil {
+			return domain.Bot{}, err
+		}
+		bot.SetVersion(version)
 	}
 	return bot, nil
 }

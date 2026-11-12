@@ -284,6 +284,118 @@
         }
       }
     },
+    "/v1/bots/{id}/staged": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "bot id"
+        }
+      ],
+      "put": {
+        "operationId": "stageBot",
+        "description": "stage a change to the bot for later: the patch PATCH /v1/bots/{id} takes, with its version required. It is checked as the update would check it now and nothing of the bot changes but what it holds staged; one change at a time, a new one replaces it. Audited bot.stage (no event yet)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BotPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotSnapshot"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "get": {
+        "operationId": "getStagedBot",
+        "description": "the staged change whole, its trigger credentials and notification secrets redacted; nothing staged is 409 state",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StagedBotView"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "unstageBot",
+        "description": "drop the staged change unapplied; audited bot.unstage. Nothing staged is 409 state",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotSnapshot"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/bots/{id}/staged/apply": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "bot id"
+        }
+      ],
+      "post": {
+        "operationId": "applyStagedBot",
+        "description": "apply the staged change through the update (checked, published as bot.updated with staged naming its version, and audited as PATCH) and drop it in the same save; audited bot.staged.apply. Nothing staged is 409 state; a change the bot no longer takes is refused as the update refuses it and stays staged",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotSnapshot"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/bots/{id}/tasks": {
       "parameters": [
         {
@@ -2244,6 +2356,10 @@
           "id": {
             "type": "string"
           },
+          "version": {
+            "type": "string",
+            "description": "the definition's own version, a semantic version (MAJOR.MINOR.PATCH, optional -prerelease and +build, no leading v); absent: none"
+          },
           "level": {
             "type": "string"
           },
@@ -2399,6 +2515,10 @@
             "items": {
               "$ref": "#/components/schemas/SkillPinSnapshot"
             }
+          },
+          "version": {
+            "type": "string",
+            "description": "replaces the version of the definition (a semantic version; empty clears it). Required when the patch is staged (PUT /v1/bots/{id}/staged)"
           }
         }
       },
@@ -2498,6 +2618,13 @@
             "items": {
               "$ref": "#/components/schemas/SkillPinSnapshot"
             }
+          },
+          "version": {
+            "type": "string",
+            "description": "the version of the bot's definition, a semantic version such as 1.4.0; absent: its definition names none"
+          },
+          "staged": {
+            "$ref": "#/components/schemas/StagedDefinition"
           }
         },
         "required": [
@@ -2517,6 +2644,45 @@
           "status",
           "createdAt",
           "updatedAt"
+        ]
+      },
+      "StagedDefinition": {
+        "type": "object",
+        "description": "the change a bot holds staged, as the bot answers it: which version waits and since when (GET /v1/bots/{id}/staged shows the change). A client flags the bot when this version is newer than the bot's",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "stagedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "version",
+          "stagedAt"
+        ]
+      },
+      "StagedBotView": {
+        "type": "object",
+        "x-go-type": "application.StagedBotView",
+        "description": "the staged change whole: its version, when it was staged and the patch, its trigger credentials and notification secrets redacted",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "stagedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "patch": {
+            "$ref": "#/components/schemas/BotPatch"
+          }
+        },
+        "required": [
+          "version",
+          "stagedAt",
+          "patch"
         ]
       },
       "BotStatus": {
@@ -3413,6 +3579,14 @@
         "properties": {
           "axlrVersion": {
             "type": "string"
+          },
+          "nodeVersion": {
+            "type": "string",
+            "description": "the node agent's own build, its Go module version as running.version of GET /v1/build writes the control plane's; absent: an older node"
+          },
+          "nodeRevision": {
+            "type": "string",
+            "description": "the commit the node agent was built from; absent: an older node, or a build without version control"
           },
           "correlationSupported": {
             "type": "boolean"
@@ -5929,6 +6103,10 @@
           "reason": {
             "type": "string",
             "description": "why nothing could be compared, when that is the case"
+          },
+          "minimumAxlr": {
+            "type": "string",
+            "description": "the least AXLR the operator wants on the nodes (serve --min-axlr-version), a semantic version: a node whose axlrVersion is older is behind; absent: no minimum"
           }
         },
         "required": [

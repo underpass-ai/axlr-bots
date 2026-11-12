@@ -99,6 +99,50 @@ func (l *Local) UpdateBot(ctx context.Context, id string, patch application.BotP
 	return bot.Snapshot().Redacted(), nil
 }
 
+func (l *Local) StageBot(ctx context.Context, id string, patch application.BotPatch) (domain.BotSnapshot, error) {
+	botID, err := domain.NewBotID(id)
+	if err != nil {
+		return domain.BotSnapshot{}, err
+	}
+	bot, err := l.runner.StageBot(ctx, botID, patch)
+	if err != nil {
+		return domain.BotSnapshot{}, err
+	}
+	return bot.Snapshot().Redacted(), nil
+}
+
+func (l *Local) GetStagedBot(ctx context.Context, id string) (application.StagedBotView, error) {
+	botID, err := domain.NewBotID(id)
+	if err != nil {
+		return application.StagedBotView{}, err
+	}
+	return application.NewGetStagedBot(l.deps).Execute(ctx, botID)
+}
+
+func (l *Local) ApplyStagedBot(ctx context.Context, id string) (domain.BotSnapshot, error) {
+	botID, err := domain.NewBotID(id)
+	if err != nil {
+		return domain.BotSnapshot{}, err
+	}
+	bot, err := l.runner.ApplyStagedBot(ctx, botID)
+	if err != nil {
+		return domain.BotSnapshot{}, err
+	}
+	return bot.Snapshot().Redacted(), nil
+}
+
+func (l *Local) UnstageBot(ctx context.Context, id string) (domain.BotSnapshot, error) {
+	botID, err := domain.NewBotID(id)
+	if err != nil {
+		return domain.BotSnapshot{}, err
+	}
+	bot, err := l.runner.UnstageBot(ctx, botID)
+	if err != nil {
+		return domain.BotSnapshot{}, err
+	}
+	return bot.Snapshot().Redacted(), nil
+}
+
 func (l *Local) StopBot(ctx context.Context, id string) (StopResponse, error) {
 	botID, err := domain.NewBotID(id)
 	if err != nil {

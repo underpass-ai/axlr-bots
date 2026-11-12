@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/underpass-ai/axlr-bots/adapters/system"
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/compose"
@@ -59,6 +60,10 @@ func TestNodeRegistersRunsAndStops(t *testing.T) {
 			}
 			if !node.Capabilities.TeamChannel {
 				t.Fatalf("the team channel is not reported: %+v", node.Capabilities)
+			}
+			// The node reports the build it runs (this test binary's).
+			if build := (system.BuildReader{}).Running(); node.Capabilities.NodeVersion != build.Version || node.Capabilities.NodeRevision != build.Revision {
+				t.Fatalf("node build %q %q, want %+v", node.Capabilities.NodeVersion, node.Capabilities.NodeRevision, build)
 			}
 			break
 		}
