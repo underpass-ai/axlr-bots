@@ -48,6 +48,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return uninstall(rest[1:], stdout, stderr)
 	case "github-hooks":
 		return githubHooks(socketPath, rest[1:], stdout, stderr)
+	case "activity-audit":
+		return activityAudit(*stateDir, socketPath, rest[1:], stdout, stderr)
 	}
 	app, err := newApp(*stateDir, *axlrBin, *actor)
 	if err != nil {
@@ -361,6 +363,14 @@ func printUsage(w io.Writer) {
   github-hooks redeliver [--since 24h] [--repos a/b,c/d] [--hook-url <url>] [--gh <path>]
                                       ask GitHub, through gh api, to redeliver each failed delivery of
                                       the /github hooks that never succeeded since; prints them
+  activity-audit serve --team <team> --event <name> [--ignore-programs a,b] [--ignore-team-partial=true] [--since <RFC3339>]
+                       [--store <dir>] [--rearm id,b|all] [--per-minute 6] [--dry-run] [--once] [--wait 30s]
+                                      the activity audit adapter: when each task ends, reads its
+                                      executions and timeline through the daemon's socket and
+                                      publishes each new failure signature once, as the event --event,
+                                      to the team --team (see docs/runbooks/activity-audit.md)
+  activity-audit report [--store <dir>] [--json]
+                                      the signatures seen: published, count, bots, what failed
   install [--system] [--prefix <dir>] [--state <dir>] [--axlr-bin <path>]
           [--listen <addr>] [--server-names a,b] [--control <url>] [--node-only]
                                       install both binaries, the two systemd units and the

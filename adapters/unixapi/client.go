@@ -210,6 +210,31 @@ func (c *Client) ListGroupEvents(ctx context.Context, query application.GroupEve
 	return events, c.call(ctx, http.MethodGet, path, nil, &events)
 }
 
+// WaitGroupEvents is ListGroupEvents as a long poll: the control plane
+// answers as soon as an event after query.After is there, or [] when
+// wait passes (at most 30 seconds).
+func (c *Client) WaitGroupEvents(ctx context.Context, query application.GroupEventsQuery, wait time.Duration) ([]domain.Event, error) {
+	events := []domain.Event{}
+	values := url.Values{}
+	if query.Tenant != "" {
+		values.Set("tenant", query.Tenant)
+	}
+	if query.After != "" {
+		values.Set("after", query.After)
+	}
+	if query.Limit != 0 {
+		values.Set("limit", strconv.Itoa(query.Limit))
+	}
+	if wait > 0 {
+		values.Set("wait", wait.String())
+	}
+	path := "/v1/groups/" + url.PathEscape(query.Name) + "/events"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	return events, c.call(ctx, http.MethodGet, path, nil, &events)
+}
+
 // SubmitTask posts to the bot's tasks with the key in the
 // Idempotency-Key header, as any client of the operator API would.
 func (c *Client) SubmitTask(ctx context.Context, request SubmitRequest) (SubmitResponse, error) {

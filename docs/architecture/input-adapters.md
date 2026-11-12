@@ -59,6 +59,7 @@ Which door "the world tells" goes through follows the topic's kind, as the bus f
 | Vision | PDOK's aerial photo of the frame under the vehicle (Esri out at sea), with the simulation's containers drawn in | `findings`: a one-line summary, short observations, an alert flag; during a search the containers' places in the frame as fractions, mapped to sightings | `vision.py`; unmerged work adds the simulator's own camera as a source |
 | Operator's hand | a webcam and a hand tracker | `info.tempo`, `info.cue.<section>`, `stop.all` on the orchestra's bus | planned for the orchestra; not in the repository |
 | GitHub | the four products' webhooks (`check_suite`, `pull_request`), signed with the hook's secret | `pr.ci` and `pr.mergeada` on team dev, as the operator ([topics between teams](team-topics.md#where-githubs-facts-come-from)) | `adapters/githubhooks`, `axlr-bots github-hooks serve` ([runbook](../runbooks/github-hooks.md)) |
+| Activity audit | the fleet's own activity: each task's end on the teams' timelines, its executions' calls and its progress items, through the socket | one event per failure signature, its name (`--event`) and its team (`--team`) the operator's, as the operator; deterministic, no model | `adapters/activityaudit`, `axlr-bots activity-audit serve` ([runbook](../runbooks/activity-audit.md)) |
 | Template | a fake world in memory | `observe(bot_id)` as text, `watch()` as events | `world-adapter/` (private repo `axlr-bots-examples`) |
 
 ## The template
