@@ -118,8 +118,8 @@ The target takes delegated tasks when its `triggers` include `{"type": "delegati
 A bot asks another **team** for context it holds, and one member of that team that consents answers ([ADR](../architecture/team-channel.md)). A bot with `ask.teams` is offered the tools `axlr_bots_ask_team {team, question}` and `axlr_bots_question_status {question}` (where its question stands, read only) on a node that runs the team channel (`axlr-node --team-channel`, off by default); the call answers at once with the question's id and the bot picked to answer, and never waits. The member's task runs with its own budgets and timeout and must be answered within two hours of the ask. The answer comes back once the member's task ends: a message into the asking task while it still runs, else a new task of the asking bot, trigger `question_answer`, with the answer framed as another team's data (or why there is none). No link is live until the teams' installers turn one on, and only bots on nodes with the switch on ask or answer ([runbook](../runbooks/team-channel.md)). Under `act-with-approval` the call waits for a person, as `axlr_bots_delegate` does, unless `approvals.autoApprove` names `axlr_bots_ask_team`.
 
 ```json
-"ask": {"teams": ["dev"], "perMinute": 2, "maxOpen": 3},
-"triggers": [{"type": "manual"}, {"type": "question", "from": ["qa", "producto"]}]
+"ask": {"teams": ["team-b"], "perMinute": 2, "maxOpen": 3},
+"triggers": [{"type": "manual"}, {"type": "question", "from": ["team-a", "team-c"]}]
 ```
 
 | Field | Meaning |
