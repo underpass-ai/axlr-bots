@@ -39,9 +39,9 @@ func (uc EmitEvent) cross(ctx context.Context, e emission) ([]EventDelivery, []E
 			return skipAll(domain.RefusedNoDomainID, fmt.Sprintf("data.context of %s is no KMP key <kind>:<name> without spaces: it did not cross", e.name))
 		}
 	}
-	var before *domain.EventOrigin
-	if origin, ok := e.task.Origin(); ok {
-		before = &origin
+	before, err := traceOrigin(ctx, uc.deps, e.task)
+	if err != nil {
+		return nil, nil, err
 	}
 	crossings, ok := domain.NextCrossings(before)
 	if !ok {

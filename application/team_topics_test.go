@@ -410,3 +410,43 @@ func TestDefinitionsKeepTheCrossingFields(t *testing.T) {
 		}
 	}
 }
+
+// The crossing count follows the whole chain: a teammate's task that a
+// crossed task's event made (a lineage, no origin of its own) counts the
+// trace's crossings, so the limit cannot be reset inside a team.
+func TestATeammatesTaskCountsTheTracesCrossings(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	parent := qaAndDev(t, h)
+	devAnswers(t, h)
+	teamBot(t, h, "dev-revisor", []string{"dev"}, emitsTo("incidencia.completada", "qa"))
+	subscribe(t, h, "dev-revisor", domain.SubscriptionSnapshot{Topic: "info.listo", Mode: "task"})
+	emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "incidencia.nueva", Message: "x", Data: finding("h-1")})
+	if _, err := NewReportExecution(h.deps).Execute(ctx, "web-1", parent.ExecutionID, ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "triaged"}}); err != nil {
+		t.Fatal(err)
+	}
+	fix := nextFor(t, h, "web-1")
+	if fix.Run == nil || fix.Run.BotID != "dev-arreglo" {
+		t.Fatalf("fix = %+v", fix.Run)
+	}
+	if answer := emit(t, h, "web-1", fix.ExecutionID, EmitEventCommand{Name: "info.listo", Message: "ready for review"}); len(answer.Deliveries) != 1 || answer.Deliveries[0].BotID != "dev-revisor" {
+		t.Fatalf("listo = %+v", answer)
+	}
+	if _, err := NewReportExecution(h.deps).Execute(ctx, "web-1", fix.ExecutionID, ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "patched"}}); err != nil {
+		t.Fatal(err)
+	}
+	review := nextFor(t, h, "web-1")
+	if review.Run == nil || review.Run.BotID != "dev-revisor" {
+		t.Fatalf("review = %+v", review.Run)
+	}
+	if answer := emit(t, h, "web-1", review.ExecutionID, EmitEventCommand{Name: "incidencia.completada", Message: "merged", Data: json.RawMessage(`{"id": "h-1@4f9c2ab"}`)}); len(answer.Deliveries) != 1 {
+		t.Fatalf("completada = %+v", answer)
+	}
+	back := tasksOf(t, h, "qa-triaje")
+	if len(back) != 1 {
+		t.Fatalf("qa tasks = %d", len(back))
+	}
+	if origin, _ := back[0].Origin(); origin.Crossings != 2 {
+		t.Errorf("crossings = %d, want 2 (the teammate's task counted from 1)", origin.Crossings)
+	}
+}
