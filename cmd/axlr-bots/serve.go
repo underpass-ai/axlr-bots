@@ -18,6 +18,7 @@ import (
 	"github.com/underpass-ai/axlr-bots/adapters/daemon"
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
 	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/domain"
 	"github.com/underpass-ai/axlr-bots/internal/statelock"
 )
 
@@ -62,6 +63,7 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 	apiTokenFile := flags.String("api-token-file", "", "the file with the operator bearer token (default <state>/api.token; generated when missing)")
 	apiURL := flags.String("api-url", os.Getenv("AXLR_BOTS_API_URL"), "the operator API's base URL that approval notifications link to (also AXLR_BOTS_API_URL; default https://<api-listen>)")
 	panelURL := flags.String("panel-url", os.Getenv("AXLR_BOTS_PANEL_URL"), "the base of the panel link incident outputs carry, <base>/incidents/<id> (also AXLR_BOTS_PANEL_URL; none: no link unless the output names one)")
+	minAXLR := flags.String("min-axlr-version", os.Getenv("AXLR_BOTS_MIN_AXLR_VERSION"), "the least AXLR the nodes should run, a semantic version such as 0.20.0, answered by GET /v1/build so a client flags an older node (also AXLR_BOTS_MIN_AXLR_VERSION; empty: no minimum)")
 	tick := flags.Duration("tick", daemon.DefaultTick, "how often to look for Pending tasks")
 	reconcileEvery := flags.Duration("reconcile-every", daemon.DefaultReconcileEvery, "how often to fail the tasks a dead run left Running")
 	grace := flags.Duration("grace", 0, "reconciliation grace (default: the bot's task timeout plus 1m)")
@@ -93,6 +95,14 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 	if (*natsCert == "") != (*natsKey == "") {
 		fmt.Fprintln(stderr, "axlr-bots: --nats-cert and --nats-key go together")
 		return exitUsage
+	}
+	if *minAXLR != "" {
+		minimum, err := domain.ParseSemanticVersion("--min-axlr-version", *minAXLR)
+		if err != nil {
+			fmt.Fprintln(stderr, "axlr-bots: serve:", err)
+			return exitUsage
+		}
+		app.MinimumAXLR = minimum
 	}
 	app = withModelProxy(app, stderr)
 	options := daemon.Options{StateDir: stateDir, SocketPath: socketPath, Tick: *tick, ReconcileEvery: *reconcileEvery, Grace: *grace}
@@ -179,6 +189,9 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 		}
 		app.PanelURL = strings.TrimRight(*panelURL, "/")
 		options.Log.Printf("daemon: incident outputs link to the panel at %s", app.PanelURL)
+	}
+	if !app.MinimumAXLR.IsZero() {
+		options.Log.Printf("daemon: nodes should run AXLR %s or newer", app.MinimumAXLR)
 	}
 	if err := daemon.Run(ctx, app, options); err != nil {
 		fmt.Fprintln(stderr, "axlr-bots:", err)

@@ -104,6 +104,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return botGet(ctx, service, rest, stdout, stderr)
 	case "bot update":
 		return botUpdate(ctx, service, rest, stdout, stderr)
+	case "bot stage":
+		return botStage(ctx, service, rest, stdout, stderr)
+	case "bot staged":
+		return botStaged(ctx, service, rest, stdout, stderr)
+	case "bot apply-staged":
+		return botApplyStaged(ctx, service, rest, stdout, stderr)
+	case "bot unstage":
+		return botUnstage(ctx, service, rest, stdout, stderr)
 	case "bot events":
 		return botEvents(ctx, service, rest, stdout, stderr)
 	case "bot subscribe":
@@ -243,7 +251,7 @@ func printUsage(w io.Writer) {
   serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--api-token-file <path>]
         [--bus direct|nats] [--nats-url <url>] [--nats-creds <file>]
         [--nats-cert <file> --nats-key <file>] [--nats-ca <file>]
-        [--tick 2s] [--reconcile-every 1m]
+        [--tick 2s] [--reconcile-every 1m] [--min-axlr-version 0.20.0]
                                       run the control plane: the API on the socket, the node
                                       protocol over TLS on --listen (nodes on other hosts), the
                                       operator API over TLS on --api-listen behind a bearer
@@ -273,7 +281,13 @@ func printUsage(w io.Writer) {
                                       replace the fields the patch names (mission, level,
                                       allowedTools, toolRules, triggers, placement, approvals,
                                       autoApprove, delegation, ask, groups, events, subscriptions,
-                                      model, budgets, runtime)
+                                      model, budgets, runtime, skills, version)
+  bot stage <bot-id> --file <patch.json>
+                                      hold a patch naming its version for later, checked as an
+                                      update would be now; replaces the one staged before
+  bot staged <bot-id>                 the change it holds staged, secrets redacted
+  bot apply-staged <bot-id>           apply the staged change as an update and drop it
+  bot unstage <bot-id>                drop the staged change unapplied
   bot events <bot-id> [--limit 100]   the bot's newest events, oldest first
   bot subscribe <bot-id> <topic> [--mode task|message|note] [--from a,b]
                                       make the bot listen to a topic of its teams

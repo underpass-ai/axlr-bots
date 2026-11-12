@@ -50,6 +50,7 @@ A bot has no role baked in: its definition is what an operator writes, and the s
 | `budgets` | `taskTimeoutSeconds` bounds every execution (15 minutes when absent); `maxModelCallsPerTask` and `maxToolCallsPerTask` go to AXLR as the execution's budget when the build takes `--budget` ([runtime contract](../architecture/runtime-contract.md)); `maxDelegationDepth` is the depth limit of a [delegation](#delegation) that names none. For a Jev bot the model calls are Jev's and the tool calls the program's |
 | `runtime` | what runs the bot's tasks on its node: absent (or `kind: axlr`) is an AXLR session, a language model planning the run; `kind: jev` with its `jev` program is a fixed sequence of tool calls whose every decision is one question to Jev, with no language model ([below](#runtime)) |
 | `skills` | the signed catalog skills the bot is given: up to 32 `{name, version, catalog}`, each at one exact `major.minor.patch` ([below](#skills)). Absent: none |
+| `version` | the definition's own version, a semantic version: `MAJOR.MINOR.PATCH` with an optional `-prerelease` and `+build` (`1.4.0`, `2.0.0-rc.1`), no leading `v`. Whoever writes the definition sets it; the control plane only keeps it, shows it (`version` on the bot, absent when unset) and compares nothing. A staged change brings the next one ([below](#staged-changes)). Absent: none |
 
 ## Autonomy levels
 
@@ -393,7 +394,20 @@ axlr-bots bot events bot --limit 100                 # the bot's newest events, 
 
 A task's `priority` is `urgent` when it went first ([urgent tasks](#urgent-tasks)), absent otherwise.
 
-A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `delegation`, `ask`, `groups`, `events`, `subscriptions`, `runtime`, `skills`, `model`, `budgets`) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`cmd/axlr-bots/testdata/bot-triggers-patch.json`](../../cmd/axlr-bots/testdata/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`cmd/axlr-bots/testdata/bot-act-with-approval.json`](../../cmd/axlr-bots/testdata/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
+A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `delegation`, `ask`, `groups`, `events`, `subscriptions`, `runtime`, `skills`, `model`, `budgets`, `version`; an empty `version` clears it) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`cmd/axlr-bots/testdata/bot-triggers-patch.json`](../../cmd/axlr-bots/testdata/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`cmd/axlr-bots/testdata/bot-act-with-approval.json`](../../cmd/axlr-bots/testdata/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
+
+### Staged changes
+
+An installer can leave the next version of a bot on the control plane without applying it, and the operator applies it when they choose:
+
+```bash
+axlr-bots bot stage bot --file patch.json            # PUT /v1/bots/{id}/staged: the patch, with "version" required
+axlr-bots bot staged bot                             # GET: the staged patch, credentials redacted
+axlr-bots bot apply-staged bot                       # POST /v1/bots/{id}/staged/apply
+axlr-bots bot unstage bot                            # DELETE /v1/bots/{id}/staged
+```
+
+The staged change is the patch `bot update` takes, and must name its `version`. Staging checks it as the update would check it now, on a copy, and changes nothing of the bot but what it holds staged; a bot holds one staged change, and a new one replaces it. The bot shows `staged: {version, stagedAt}` (never the patch, which may carry secrets), so a client sees the bot is behind when the staged version is newer than its `version`. Applying runs the update itself: the same checks, the same `bot.updated` event (its payload names the staged version in `staged`) and audit, with the staged change dropped in the same save. A change the bot no longer takes, because it changed since, is refused as the update refuses it and stays staged; applying, showing or unstaging with nothing staged is `409 state`. Staging and unstaging are audited (`bot.stage`, `bot.unstage`, with the version and the fields only) and publish no event yet: a new event type waits for the panel's words for it.
 
 ## Tasks
 

@@ -17,9 +17,12 @@ import "github.com/underpass-ai/axlr-bots/domain"
 // event trigger is read as one, for one release), Runtime what runs its
 // tasks on the node (AXLR when absent; a Jev program otherwise) and Skills
 // the signed catalog skills it is given, each at one exact version (none
-// when absent).
+// when absent). Version is the definition's own version, a semantic
+// version such as 1.4.0 (none when absent): a staged change carries the
+// next one.
 type BotDefinition struct {
 	ID            string                        `json:"id,omitempty"`
+	Version       string                        `json:"version,omitempty"`
 	Tenant        string                        `json:"tenant"`
 	Name          string                        `json:"name"`
 	Owner         string                        `json:"owner"`

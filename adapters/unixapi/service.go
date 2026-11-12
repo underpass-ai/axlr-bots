@@ -29,6 +29,17 @@ type Service interface {
 	DeleteBot(ctx context.Context, id string) (DeleteResponse, error)
 	// UpdateBot applies a partial change to the bot's definition.
 	UpdateBot(ctx context.Context, id string, patch application.BotPatch) (domain.BotSnapshot, error)
+	// StageBot holds a change for later: the patch the update takes,
+	// naming its version, checked as the update would check it now.
+	StageBot(ctx context.Context, id string, patch application.BotPatch) (domain.BotSnapshot, error)
+	// GetStagedBot answers the change the bot holds staged, its secrets
+	// redacted.
+	GetStagedBot(ctx context.Context, id string) (application.StagedBotView, error)
+	// ApplyStagedBot applies the staged change through the update and
+	// drops it.
+	ApplyStagedBot(ctx context.Context, id string) (domain.BotSnapshot, error)
+	// UnstageBot drops the staged change unapplied.
+	UnstageBot(ctx context.Context, id string) (domain.BotSnapshot, error)
 	ListBots(ctx context.Context) ([]domain.BotSnapshot, error)
 	GetBot(ctx context.Context, id string) (domain.BotSnapshot, error)
 	// ListGroups returns the teams the bots name, with their members.

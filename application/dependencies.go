@@ -1,6 +1,10 @@
 package application
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/underpass-ai/axlr-bots/domain"
+)
 
 // Dependencies are the ports every use case may need, wired once by the
 // composition root. Actor names who is acting, for the audit log;
@@ -59,6 +63,10 @@ type Dependencies struct {
 	// control plane left running over a newer binary stops
 	// (CheckBuild); nil: nothing is compared.
 	Build BuildReader
+	// MinimumAXLR is the least AXLR the operator wants on the nodes
+	// (serve --min-axlr-version), answered by GET /v1/build so a client
+	// can flag a node whose axlrVersion is older; zero: no minimum.
+	MinimumAXLR domain.SemanticVersion
 }
 
 // Validate reports the first missing dependency.

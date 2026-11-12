@@ -65,3 +65,24 @@ func (r *SerialRunner) TickTimers(ctx context.Context) (TickTimersResult, error)
 	defer r.mu.Unlock()
 	return NewTickTimers(r.deps).Execute(ctx)
 }
+
+// StageBot stages a change to a bot, as StageBot does.
+func (r *SerialRunner) StageBot(ctx context.Context, id domain.BotID, patch BotPatch) (domain.Bot, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return NewStageBot(r.deps).Execute(ctx, id, patch)
+}
+
+// ApplyStagedBot applies a bot's staged change, as ApplyStagedBot does.
+func (r *SerialRunner) ApplyStagedBot(ctx context.Context, id domain.BotID) (domain.Bot, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return NewApplyStagedBot(r.deps).Execute(ctx, id)
+}
+
+// UnstageBot drops a bot's staged change, as UnstageBot does.
+func (r *SerialRunner) UnstageBot(ctx context.Context, id domain.BotID) (domain.Bot, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return NewUnstageBot(r.deps).Execute(ctx, id)
+}

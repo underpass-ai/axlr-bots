@@ -51,6 +51,9 @@ type Agent struct {
 	// holds under a run's context keys before the run; nil reads none and
 	// the run is told so in one line.
 	Context application.ContextReader
+	// Build reads the agent's own build, which it reports as nodeVersion
+	// and nodeRevision when it registers; nil reports none.
+	Build application.BuildReader
 
 	slots  *slots
 	wg     *sync.WaitGroup
@@ -263,15 +266,19 @@ func (a Agent) register(ctx context.Context, id domain.NodeID) error {
 	if host == "" {
 		host, _ = os.Hostname()
 	}
+	var build domain.BuildIdentity
+	if a.Build != nil {
+		build = a.Build.Running()
+	}
 	registration := application.NodeRegistration{
 		ID: id.String(), HostName: host, Labels: a.Options.Labels,
-		Capabilities: domain.NodeCapabilities{AXLRVersion: a.Executor.Version(ctx), PolicySupported: a.Executor.SupportsPolicy(ctx), CorrelationSupported: a.Executor.SupportsCorrelation(ctx), Dedicated: a.Options.Dedicated, Runtimes: a.Options.Runtimes, Providers: a.Options.Providers, SkillsSupported: a.Executor.SupportsSkills(ctx), MemoryTeams: a.Options.MemoryTeams, TeamChannel: a.Options.TeamChannel},
+		Capabilities: domain.NodeCapabilities{AXLRVersion: a.Executor.Version(ctx), NodeVersion: build.Version, NodeRevision: build.Revision, PolicySupported: a.Executor.SupportsPolicy(ctx), CorrelationSupported: a.Executor.SupportsCorrelation(ctx), Dedicated: a.Options.Dedicated, Runtimes: a.Options.Runtimes, Providers: a.Options.Providers, SkillsSupported: a.Executor.SupportsSkills(ctx), MemoryTeams: a.Options.MemoryTeams, TeamChannel: a.Options.TeamChannel},
 	}
 	node, err := a.Transport.Register(ctx, registration)
 	if err != nil {
 		return err
 	}
-	a.Options.log().Printf("node: registered as %s (%s), axlr %q policy %v correlation %v skills %v dedicated %v runtimes %v providers %v", node.ID, node.HostName, registration.Capabilities.AXLRVersion, registration.Capabilities.PolicySupported, registration.Capabilities.CorrelationSupported, registration.Capabilities.SkillsSupported, registration.Capabilities.Dedicated, append([]string{"axlr"}, registration.Capabilities.Runtimes...), registration.Capabilities.Providers)
+	a.Options.log().Printf("node: registered as %s (%s), node %q revision %q, axlr %q policy %v correlation %v skills %v dedicated %v runtimes %v providers %v", node.ID, node.HostName, build.Version, build.Revision, registration.Capabilities.AXLRVersion, registration.Capabilities.PolicySupported, registration.Capabilities.CorrelationSupported, registration.Capabilities.SkillsSupported, registration.Capabilities.Dedicated, append([]string{"axlr"}, registration.Capabilities.Runtimes...), registration.Capabilities.Providers)
 	if len(registration.Capabilities.MemoryTeams) > 0 {
 		a.Options.log().Printf("node: shares the memory of the teams %s", strings.Join(registration.Capabilities.MemoryTeams, ", "))
 	}

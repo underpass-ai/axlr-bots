@@ -8,6 +8,8 @@
   },
   "capabilities": {
     "axlrVersion": "nanobot-0.1.0",
+    "nodeVersion": "v0.1.0",
+    "nodeRevision": "0d1e2f3a4b5c",
     "policySupported": true,
     "correlationSupported": true,
     "dedicated": true,
