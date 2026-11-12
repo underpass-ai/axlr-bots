@@ -307,7 +307,7 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 		// What the team's store holds under the task's context keys,
 		// read without a model before the run starts.
 		reads = a.readContexts(runCtx, request)
-		request = withContexts(request, reads)
+		request, reads = withContexts(request, reads)
 		request.Ask, request.AllowedTools = a.askOffered(assignment.ExecutionID, request.Ask), a.allowedWithout(request.AllowedTools)
 		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events, request.Ask, progress.push)
 		request.DelegationSocket = socket

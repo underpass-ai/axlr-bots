@@ -59,15 +59,21 @@ type taskExpects struct {
 }
 
 // DataID reads an event's data.id as the contract compares it: a string
-// as it is, a JSON number in its shortest form; anything else is none.
+// as it is, a JSON number in its shortest form, when it is a domain id
+// (1 to 128 characters [A-Za-z0-9._:@-]); anything else is none, so a
+// carried event never holds an id of unbounded size.
 func DataID(data map[string]any) string {
+	var raw string
 	switch id := data["id"].(type) {
 	case string:
-		return id
+		raw = id
 	case float64:
-		return strconv.FormatFloat(id, 'f', -1, 64)
+		raw = strconv.FormatFloat(id, 'f', -1, 64)
 	}
-	return ""
+	if _, err := NewDomainID(raw); err != nil {
+		return ""
+	}
+	return raw
 }
 
 // Expect records the final events the task must emit, from its
@@ -228,6 +234,11 @@ func (c CarriedEvent) validate() error {
 	}
 	if _, err := NewEventName(c.Name); err != nil {
 		return invalid("carried event", err.Error())
+	}
+	if c.ID != "" {
+		if _, err := NewDomainID(c.ID); err != nil {
+			return invalid("carried event id", err.Error())
+		}
 	}
 	if c.Redeliveries < 0 || c.Redeliveries > MaxRedeliveries || len(c.Tasks) > MaxRedeliveries {
 		return invalid("carried event", "is given again at most 2 times")

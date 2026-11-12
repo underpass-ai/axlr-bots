@@ -132,7 +132,17 @@ func (k completionKeeper) redeliver(ctx context.Context, bot domain.Bot, task do
 	if err != nil {
 		return err
 	}
-	objective, err := redeliveryObjective(picked, task, carried, round, memory)
+	// The objective leaves the prompt room for what the node will read
+	// under the keys the redelivery carries.
+	var refs []domain.ContextRef
+	if memory != "" {
+		refs = append(refs, domain.ContextRef{Key: memory, Team: team})
+	}
+	if origin, crossed := task.Origin(); crossed && origin.Context != "" {
+		refs = append(refs, domain.ContextRef{Key: origin.Context, Team: origin.Team})
+	}
+	reserve := domain.ContextRoom(refs, memoryTeamOf(picked))
+	objective, err := redeliveryObjective(picked, task, carried, round, memory, reserve)
 	if err != nil {
 		return err
 	}
@@ -299,8 +309,9 @@ func redeliveryInput(task domain.Task, carried []domain.CarriedEvent, round int,
 
 // redeliveryObjective says what the task owes, which events, where the
 // earlier run's memory is, and the earlier objective, cut to what the
-// picked bot's prompt has room for.
-func redeliveryObjective(picked domain.Bot, task domain.Task, carried []domain.CarriedEvent, round int, memory string) (domain.Objective, error) {
+// picked bot's prompt has room for once reserve is left for what the node
+// reads.
+func redeliveryObjective(picked domain.Bot, task domain.Task, carried []domain.CarriedEvent, round int, memory string, reserve int) (domain.Objective, error) {
 	names := make([]string, 0, len(task.Expects()))
 	for _, pattern := range task.Expects() {
 		names = append(names, pattern.String())
@@ -323,7 +334,7 @@ func redeliveryObjective(picked domain.Bot, task domain.Task, carried []domain.C
 		b.WriteString("\nWhat the earlier task did is in your team's memory under " + memory + ".")
 	}
 	text := b.String() + "\n\nThe earlier task's objective:\n" + task.Objective().String()
-	if room := max(domain.ObjectiveRoomBeside(picked.Mission()), 0); len(text) > room {
+	if room := max(domain.ObjectiveRoomBeside(picked.Mission())-reserve, 0); len(text) > room {
 		text = strings.ToValidUTF8(text[:room], "")
 	}
 	return domain.NewObjective(text)

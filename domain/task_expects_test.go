@@ -135,7 +135,7 @@ func TestATaskCarriesAtMost32(t *testing.T) {
 }
 
 func TestDataIDReadsStringsAndNumbers(t *testing.T) {
-	for data, want := range map[string]string{`{"id":"h-1"}`: "h-1", `{"id":42}`: "42", `{"id":4.5}`: "4.5", `{"id":true}`: "", `{}`: ""} {
+	for data, want := range map[string]string{`{"id":"h-1"}`: "h-1", `{"id":42}`: "42", `{"id":4.5}`: "4.5", `{"id":true}`: "", `{}`: "", `{"id":"` + strings.Repeat("x", 129) + `"}`: "", `{"id":"has space"}`: ""} {
 		var decoded map[string]any
 		_ = json.Unmarshal([]byte(data), &decoded)
 		if got := DataID(decoded); got != want {

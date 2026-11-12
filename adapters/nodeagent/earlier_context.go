@@ -71,20 +71,30 @@ func (a Agent) readContext(ctx context.Context, request application.ExecutionReq
 // prompt's limit leaves; a Jev program gets it as data.earlier in the
 // task's input, the same fields, which its act receives when the program
 // passes earlier on.
-func withContexts(request application.ExecutionRequest, reads []domain.ContextRead) application.ExecutionRequest {
+//
+// It answers the reads as the run was given them: when the prompt has no
+// room for the block at all, each read becomes the line that says so, so
+// the task never records as known what its run was not given.
+func withContexts(request application.ExecutionRequest, reads []domain.ContextRead) (application.ExecutionRequest, []domain.ContextRead) {
 	if len(reads) == 0 {
-		return request
+		return request, reads
 	}
 	if _, jev := request.Runtime.Jev(); jev {
 		request.Input = inputWithEarlier(request.Input, reads)
-		return request
+		return request, reads
 	}
 	text := request.PromptText()
 	room := domain.MaxPromptLength - len(text) - len("\n\n")
-	if block := domain.RenderContextReads(reads, room); block != "" {
-		request.Prompt = domain.Prompt(text + "\n\n" + block)
+	block := domain.RenderContextReads(reads, room)
+	if block == "" {
+		given := make([]domain.ContextRead, len(reads))
+		for i, read := range reads {
+			given[i] = domain.ContextRead{Key: read.Key, Team: read.Team, Line: "not given: the run's prompt had no room left for it."}
+		}
+		return request, given
 	}
-	return request
+	request.Prompt = domain.Prompt(text + "\n\n" + block)
+	return request, reads
 }
 
 // inputWithEarlier puts the reads into the input's data as earlier,

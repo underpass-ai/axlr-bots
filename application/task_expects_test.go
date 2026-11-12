@@ -391,9 +391,17 @@ func TestTheRedeliveryObjectiveFitsThePrompt(t *testing.T) {
 	for i := range many {
 		many[i] = domain.CarriedEvent{EventID: "evt-1", Name: "pedido.nuevo", From: "recepcion", Message: strings.Repeat("x", 280)}
 	}
-	objective, err := redeliveryObjective(bot, ended, many, 1, "")
+	objective, err := redeliveryObjective(bot, ended, many, 1, "", 0)
 	if err != nil {
 		t.Fatal(err)
+	}
+	reserve := domain.ContextRoom([]domain.ContextRef{{Key: "ws:s1", Team: "tienda"}}, "tienda")
+	leaving, err := redeliveryObjective(bot, ended, many, 1, "ws:s1", reserve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(leaving) > domain.ObjectiveRoomBeside(bot.Mission())-reserve || domain.MaxPromptLength-len(domain.Prompt("")) < len(leaving)+reserve {
+		t.Errorf("the objective (%d) leaves no room for the read (%d)", len(leaving), reserve)
 	}
 	if len(objective) > domain.ObjectiveRoomBeside(bot.Mission()) || !strings.Contains(objective.String(), "and 3 more") || !strings.Contains(objective.String(), "(none: any final event settles it)") {
 		t.Errorf("objective (%d) = %s", len(objective), objective)
@@ -433,5 +441,79 @@ func TestAReportsBadContextReadIsDropped(t *testing.T) {
 	}
 	if refs := contextRefsOf(task(t, h, run.Run.TaskID)); refs != nil {
 		t.Errorf("a plain event task has contexts: %+v", refs)
+	}
+}
+
+func TestARedeliveryLeavesItsPromptRoomForWhatTheNodeReads(t *testing.T) {
+	h := newHarness()
+	parent := shopTeam(t, h)
+	long := expectingTopic()
+	long.Objective = strings.Repeat("Pack the order with care. ", 200) + "{{.message}}"
+	for _, id := range []string{"almacen", "caja", "supervisor"} {
+		subscribe(t, h, id, long)
+	}
+	emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "pedido.nuevo", Message: "one", Data: order("p1")})
+	finish(t, h, parent, "")
+	run := nextFor(t, h, "web-1")
+	finish(t, h, run, "sess-long")
+	again := nextFor(t, h, "web-1")
+	refs := again.Run.Contexts
+	if len(refs) != 1 {
+		t.Fatalf("contexts = %+v", refs)
+	}
+	reserve := domain.ContextRoom(refs, "tienda")
+	if prompt := again.Run.Prompt.String(); len(prompt)+reserve > domain.MaxPromptLength || !strings.Contains(prompt, "Redelivery 1 of 2") {
+		t.Errorf("prompt %d + reserve %d > %d", len(prompt), reserve, domain.MaxPromptLength)
+	}
+}
+
+func TestAFailedRunHasWhatIsMissingGivenAgain(t *testing.T) {
+	h := newHarness()
+	_, run := twoOrders(t, h)
+	if _, err := NewReportExecution(h.deps).Execute(context.Background(), "web-1", run.ExecutionID, ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "runtime: boom"}); err != nil {
+		t.Fatal(err)
+	}
+	if again, ok := redeliveryOfTask(t, h, run.Run.TaskID); !ok || len(again.Carried()) != 2 || !strings.Contains(again.Objective().String(), "ended failed") {
+		t.Errorf("redelivery %v: %+v", ok, again.Snapshot())
+	}
+}
+
+func TestATaskJudgedStuckHasWhatIsMissingGivenAgain(t *testing.T) {
+	h, parent, watcher := watchingWork(t)
+	ctx := context.Background()
+	// The running task carries an event it owes a final for.
+	running := task(t, h, parent.Run.TaskID)
+	stored := running.Snapshot()
+	stored.Expects = &domain.TaskExpectsSnapshot{Names: []string{"qa.hallazgo.triado"}, Carried: []domain.CarriedEvent{{EventID: "evt-1", Name: "qa.hallazgo.candidato", ID: "h-1"}}}
+	carrying, err := domain.RestoreTask(stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.tasks.Save(ctx, carrying); err != nil {
+		t.Fatal(err)
+	}
+	h.clock.now = t0.Add(6 * time.Minute)
+	if decided := decideWatch(t, h, watcher.ExecutionID, WatchDecision{Question: running.ID(), Choice: "stuck", Probability: 0.9, Confidence: 0.8}); !decided.Stuck {
+		t.Fatalf("decided = %+v", decided)
+	}
+	again, ok := redeliveryOfTask(t, h, running.ID())
+	if !ok || again.BotID() != running.BotID() || again.Carried()[0].ID != "h-1" || !strings.Contains(again.Objective().String(), "ended cancelled") {
+		t.Errorf("redelivery %v: %+v", ok, again.Snapshot())
+	}
+}
+
+func TestAPlainCrossedTasksRunIsToldTheOtherTeamsKey(t *testing.T) {
+	// The one change without expects: E8d hands the node the key another
+	// team's domain event named, so the run is told to ask that team.
+	h := newHarness()
+	parent := qaAndDev(t, h)
+	emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "incidencia.nueva", Message: "a finding", Data: finding("h-1")})
+	finish(t, h, parent, "")
+	run := nextFor(t, h, "web-1")
+	if refs := run.Run.Contexts; len(refs) != 1 || refs[0] != (domain.ContextRef{Key: "project:qa.hallazgo.h-1", Team: "qa"}) {
+		t.Errorf("contexts = %+v", refs)
+	}
+	if made := task(t, h, run.Run.TaskID); made.Snapshot().Expects != nil {
+		t.Errorf("a crossed task without expects records %+v", made.Snapshot().Expects)
 	}
 }

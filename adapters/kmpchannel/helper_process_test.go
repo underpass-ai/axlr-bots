@@ -57,8 +57,21 @@ func TestHelperProcess(t *testing.T) {
 				_ = os.WriteFile(out, record, 0o600)
 			}
 			switch scenario {
-			case "wake":
-				fmt.Printf(`{"jsonrpc":"2.0","id":%d,"result":{"isError":false,"content":[{"type":"text","text":"Objective: ws:s1"}],"structuredContent":{"wake":{"current_state":["ws:s1:entry:observation:f-13-042d (observation): Finding F-13 not looked at yet.","a line without a ref"],"open_loops":["ws:s1:entry:open_loop:x (open_loop): triage F-13"],"next_actions":["emit qa.hallazgo.triado for F-13"]}}}}`+"\n", id)
+			case "wake", "wake-cut":
+				var call struct {
+					Name string `json:"name"`
+				}
+				_ = json.Unmarshal(message.Params, &call)
+				switch {
+				case call.Name == "kmp_time" && scenario == "wake":
+					fmt.Printf(`{"jsonrpc":"2.0","id":%d,"result":{"isError":false,"content":[{"type":"text","text":"Returned 2 temporal entries."}],"structuredContent":{"entries":[{"kind":"observation","ref":"ws:s1:entry:observation:f-13","text":"Finding F-13 not looked at yet."},{"kind":"decision","ref":"ws:s1:entry:decision:f-12","text":"F-12 is flaky."},{"kind":"observation","text":"…"}]}}}`+"\n", id)
+				case call.Name == "kmp_time":
+					fmt.Printf(`{"jsonrpc":"2.0","id":%d,"result":{"isError":false,"content":[],"structuredContent":{"entries":[]}}}`+"\n", id)
+				case scenario == "wake":
+					fmt.Printf(`{"jsonrpc":"2.0","id":%d,"result":{"isError":false,"content":[{"type":"text","text":"Objective: ws:s1"}],"structuredContent":{"wake":{"current_state":["ws:s1:entry:observation:f-13-042d (observation): Finding F-13 not looked at yet."],"open_loops":["ws:s1:entry:open_loop:x (open_loop): triage F-13","a loop without a ref"],"next_actions":["emit qa.hallazgo.triado for F-13"]}}}}`+"\n", id)
+				default:
+					fmt.Printf(`{"jsonrpc":"2.0","id":%d,"result":{"isError":false,"content":[],"structuredContent":{"wake":{"current_state":["…"]}}}}`+"\n", id)
+				}
 				continue
 			case "wake-missing":
 				fmt.Printf(`{"jsonrpc":"2.0","id":%d,"result":{"isError":true,"content":[{"type":"text","text":"embedded kernel wake failed: node not found"}],"structuredContent":{"error":{"code":"not_found","message":"node 'ws:s1' not found"}}}}`+"\n", id)

@@ -30,11 +30,12 @@ func fakeReader(t *testing.T, scenario string) (Reader, string) {
 
 func TestReaderWakesTheKeyInTheTeamsStore(t *testing.T) {
 	r, out := fakeReader(t, "wake")
+	r.Now = func() time.Time { return time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC) }
 	lines, err := r.ReadContext(context.Background(), "qa", "ws:s1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"(observation): Finding F-13 not looked at yet.", "a line without a ref", "open: (open_loop): triage F-13", "next: emit qa.hallazgo.triado for F-13"}
+	want := []string{"(observation) Finding F-13 not looked at yet.", "(decision) F-12 is flaky.", "open: (open_loop): triage F-13", "open: a loop without a ref", "next: emit qa.hallazgo.triado for F-13"}
 	if strings.Join(lines, "|") != strings.Join(want, "|") {
 		t.Errorf("lines = %q", lines)
 	}
@@ -71,7 +72,7 @@ func TestReaderSaysWhatItCouldNotRead(t *testing.T) {
 	if _, err := os.Stat(missing.Store("dev")); !os.IsNotExist(err) {
 		t.Error("the read made a store")
 	}
-	for scenario, want := range map[string]string{"wake-refuse": "unavailable: the store is locked", "wake-bare": "kmp_wake refused: no structure", "wake-garbled": "unreadable answer", "exit": "the store is locked"} {
+	for scenario, want := range map[string]string{"wake-cut": "KMP cut the read to nothing", "wake-refuse": "unavailable: the store is locked", "wake-bare": "kmp_time refused: no structure", "wake-garbled": "unreadable answer", "exit": "the store is locked"} {
 		r, _ := fakeReader(t, scenario)
 		if _, err := r.ReadContext(ctx, "qa", "ws:s1"); err == nil || !strings.Contains(err.Error(), want) || errors.Is(err, application.ErrContextNotFound) {
 			t.Errorf("%s: %v", scenario, err)

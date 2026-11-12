@@ -185,3 +185,18 @@ func TestARunWithoutKeysIsUntouched(t *testing.T) {
 		t.Errorf("no input = %s", got)
 	}
 }
+
+func TestAReadThePromptHasNoRoomForIsSaidSo(t *testing.T) {
+	store := &fakeContext{lines: map[string][]string{"ws:s1": {"F-12 flaky"}}}
+	executor, transport := &capturingExecutor{}, &fakeTransport{}
+	agent, _ := contextAgent(store, executor, transport, "qa")
+	full := redeliveryRun(domain.Runtime{}, `{}`, domain.ContextRef{Key: "ws:s1", Team: "qa"})
+	full.Run.Objective = domain.Objective(strings.Repeat("o", domain.MaxPromptLength-10))
+	agent.carry(context.Background(), "qa-node", full)
+	if executor.request.Prompt != "" {
+		t.Errorf("a full prompt grew: %d", len(executor.request.Prompt))
+	}
+	if reads := transport.report.ContextRead; len(reads) != 1 || reads[0].Read != nil || !strings.Contains(reads[0].Line, "no room") {
+		t.Errorf("reads = %+v", reads)
+	}
+}

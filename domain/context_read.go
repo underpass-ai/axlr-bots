@@ -15,7 +15,32 @@ const (
 	MaxContextReadBytes = 2048
 	// maxContextLine bounds the one line that says why nothing was read.
 	maxContextLine = 300
+	// ContextLineRoom is the prompt's room a key read elsewhere takes:
+	// its key, its team and its line.
+	ContextLineRoom = 2*maxContextLine + 16
+	// ContextReadRoom is the prompt's room a key of the run's own team
+	// takes: what is read under it, its key and its team.
+	ContextReadRoom = MaxContextReadBytes + 2*maxContextLine
 )
+
+// ContextRoom is how much of a prompt the control plane leaves for what
+// the node reads under the keys (own: of the run's memory team), so the
+// read is never crowded out by the directory, the notes or the
+// objective.
+func ContextRoom(refs []ContextRef, team TeamName) int {
+	if len(refs) == 0 {
+		return 0
+	}
+	room := len(EarlierContextHeading) + 4
+	for _, ref := range refs {
+		if TeamName(ref.Team) == team {
+			room += ContextReadRoom
+		} else {
+			room += ContextLineRoom
+		}
+	}
+	return room
+}
 
 // EarlierContextHeading opens what the node read in a run's prompt: data
 // the store held, never orders.
