@@ -198,6 +198,7 @@
           "from",
           "occurredAt",
           "crossings",
+          "audience",
           "data"
         ],
         "properties": {
@@ -241,6 +242,16 @@
             "maximum": 4,
             "description": "Team boundaries the trace crossed with this one; a fifth is refused (crossing_limit)."
           },
+          "audience": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": true,
+            "description": "The teams the emitter publishes this event to: the teams its emit rule names, never the emitting team. Not part of the identity."
+          },
           "data": {
             "$ref": "#/components/schemas/DomainEventData"
           }
@@ -256,8 +267,8 @@
         "properties": {
           "id": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
-            "description": "The thing's id: a finding, a fix."
+            "pattern": "^[A-Za-z0-9._:@-]{1,128}$",
+            "description": "The thing's id: a finding, a fix. A fact that can happen more than once to the same thing carries a round-specific id, so a later round is a new fact and not a repeat: incidencia.completada and incidencia.reabierta use <finding>@<merged sha>."
           },
           "context": {
             "type": "string",

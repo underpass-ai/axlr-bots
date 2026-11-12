@@ -320,3 +320,34 @@ func TestADomainEventIsAFactWithItsIdentity(t *testing.T) {
 		}
 	}
 }
+
+func TestAnAudienceNamesOtherTeamsOnce(t *testing.T) {
+	a, err := NewAudience("qa", []TeamName{"dev", "ops"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := a.Strings(); len(got) != 2 || got[0] != "dev" || got[1] != "ops" || !a.Has("ops") || a.Has("qa") || len(a.Teams()) != 2 {
+		t.Errorf("audience = %v", got)
+	}
+	for name, raw := range map[string][]string{
+		"empty":    nil,
+		"repeated": {"dev", "dev"},
+		"own":      {"dev", "qa"},
+		"bad name": {"Dev Team"},
+		"nine":     {"a", "b", "c", "d", "e", "f", "g", "h", "i"},
+	} {
+		if _, err := ParseAudience("qa", raw); err == nil {
+			t.Errorf("%s: accepted %v", name, raw)
+		}
+	}
+}
+
+// A fact that happens again to the same thing carries the round in its id.
+func TestADomainIDMayNameItsRound(t *testing.T) {
+	if _, err := NewDomainID("h-20261112-kmp-3@4f9c2ab"); err != nil {
+		t.Error(err)
+	}
+	if _, err := NewDomainID("h 1"); err == nil {
+		t.Error("a space accepted")
+	}
+}

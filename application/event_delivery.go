@@ -22,4 +22,7 @@ type EventDelivery struct {
 	// Team names the team whose member took the event: one of the
 	// hearers of a team subscription, picked by the control plane.
 	Team string `json:"team,omitempty"`
+	// Crossed says the event was published to another team, Team: its
+	// task is made there, after the answer, so it names no bot or task.
+	Crossed bool `json:"crossed,omitempty"`
 }

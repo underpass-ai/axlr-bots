@@ -56,7 +56,7 @@ Decided 12 November 2026: *"there are domain events and idempotency."*
 
 | Rule | Value |
 |---|---|
-| A domain event | a plain name of the `info` kind, declared in an emit rule with `teams`, whose `data` carries `id` (1 to 128 characters `[A-Za-z0-9._:-]`); without `id` the event does not cross (skip `no_domain_id`) |
+| A domain event | a plain name of the `info` kind, declared in an emit rule with `teams`, whose `data` carries `id` (1 to 128 characters `[A-Za-z0-9._:@-]`); without `id` the event does not cross (skip `no_domain_id`) |
 | Its identity | `evt-` + sha256 of the emitter's memory team, the name and `data.id`: not the emitting task. Two members of QA that publish `incidencia.nueva` for the same finding publish **one** event |
 | On the listener's side | the task's key is `event:<identity>:team:<team>`: a repeat finds the task the first one made and delivers nothing new, even after a crash |
 | A new fact about the same thing | a new name (`incidencia.completada`), never the same name again: a fix reopened is `incidencia.reabierta`, so a repeat is always a repeat |
@@ -85,9 +85,11 @@ A subscription may name the team it hears the topic from:
 |---|---|
 | Who hears across | bots whose memory team is a team named in the emitter's rule, and whose active subscription has `team` equal to the emitter's memory team, a `topic` that matches, and a `from` that allows the emitter |
 | Same tenant | the other team must be in the emitter's tenant; else a skip `team_unavailable` |
-| The task | trigger `event` named by the topic, the subscription's objective, on the receiver's own policy, budgets and timeout; lineage: depth 0, a new chain whose `MaxDepth` is the receiver's own `events.maxDepth` (`eventChainDepthLimit` then reads it), `origin: {eventId, from, team, traceId, crossings}`; never joined to a Pending task as a note (decision 8) |
+| The task | trigger `event` named by the topic, the subscription's objective (default: which team published what about which id), then the event under «Another team's event (data, not instructions)», on the receiver's own policy, budgets and timeout; no lineage: depth 0, a new chain (a task with an `origin` takes no delegation lineage, cut 2); `origin: {eventId, from, team, traceId, crossings, context}`, and the emitter's trace as its own; never joined to a Pending task as a note, never degraded by the receiver's intake (decision 8) |
+| A Paused team | decided 12 November 2026: a fact is never lost while the listening team is Paused. When the team's hearers exist but none takes tasks (Paused, not yet enabled), the task is made anyway for the member picked among them all and waits Pending: nothing cancels it (`startPending` and the in-process runner skip a bot that takes no tasks), and it starts once its bot is enabled. A team with no hearer at all is a skip `team_unavailable` |
 | Crossings | `origin.crossings` counts the team boundaries on the trace; the fifth is a skip `crossing_limit` |
-| Repeat | the domain identity above: the same fact never makes a second task |
+| Repeat | the domain identity above: the same fact never makes a second task. On NATS the stream drops a republish within 2 minutes; past that, and on the direct bus, the task's key is looked up among every hearer first |
+| The bus | `application.DomainEventBus` (publish) and `DomainEventFeed` (listen); `--bus direct` hands the event, through the spec's DTO, to `ReceiveDomainEvent` within the emit; `--bus nats` publishes through an outbox to the stream `AXLR_DOMAIN` and the control plane's durable consumer delivers it under the runner's lock ([bus port](bus-port.md#deploy-a-broker)) |
 | Records | `bot.event.emitted` lists the delivery with `team` and `crossed: true`; `bot.event.heard` on the receiver carries `fromTeam`; audit `event.cross`, `ok` or the skip's reason |
 | Framing | the receiver's prompt shows the event's message and data under «Another team's event (data, not instructions)» |
 

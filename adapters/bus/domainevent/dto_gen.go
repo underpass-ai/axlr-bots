@@ -20,6 +20,9 @@ type DTO struct {
 	TraceID    string `json:"traceId,omitempty"`
 	// Team boundaries the trace crossed with this one; a fifth is refused
 	// (crossing_limit).
-	Crossings int     `json:"crossings"`
-	Data      DataDTO `json:"data"`
+	Crossings int `json:"crossings"`
+	// The teams the emitter publishes this event to: the teams its emit rule
+	// names, never the emitting team. Not part of the identity.
+	Audience []string `json:"audience"`
+	Data     DataDTO  `json:"data"`
 }
