@@ -50,6 +50,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return githubHooks(socketPath, rest[1:], stdout, stderr)
 	case "activity-audit":
 		return activityAudit(*stateDir, socketPath, rest[1:], stdout, stderr)
+	case "health":
+		return health(ctx, socketPath, rest[1:], stdout, stderr)
+	case "version":
+		return version(rest[1:], stdout, stderr)
 	}
 	app, err := newApp(*stateDir, *axlrBin, *actor)
 	if err != nil {
@@ -356,6 +360,9 @@ func printUsage(w io.Writer) {
                                       against its SHA-256
   overview [--since <time>]           nodes, bots and tasks by status; tasks, executions
                                       and cost since the start of today
+  health                              exit 0 when the daemon answers /healthz on the socket
+                                      (a container's healthcheck), 1 when it does not
+  version                             the release, commit and time this binary was built from
   github-hooks serve --secret-file <path> --team <team> --ci-event <name> --merged-event <name>
                      --repos a/b,c/d [--branch-prefix <prefix>] [--listen 127.0.0.1:7890] [--public]
                                       the GitHub webhook adapter: POST /github, signed with the hook's

@@ -22,9 +22,20 @@ ARG TARGETOS=linux
 ARG TARGETARCH
 # GOFLAGS=-p=2 on a small builder.
 ARG GOFLAGS=""
+# The release, without a leading v, and its commit (internal/buildinfo);
+# the context has no .git to read them from.
+ARG VERSION=""
+ARG REVISION=""
+ARG BUILD_TIME=""
+# No -trimpath: with it Go records no -ldflags, and the daemon could not
+# read the stamp back from the binary on disk (internal/buildinfo).
 RUN --mount=type=cache,target=/root/.cache/go-build \
+    set -eu; \
+    pkg=github.com/underpass-ai/axlr-bots/internal/buildinfo; \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH GOFLAGS=$GOFLAGS \
-    go build -trimpath -ldflags="-s -w" -o /out/axlr-node ./cmd/axlr-node
+    go build \
+      -ldflags="-s -w -X $pkg.Version=$VERSION -X $pkg.Revision=$REVISION -X $pkg.Time=$BUILD_TIME" \
+      -o /out/axlr-node ./cmd/axlr-node
 
 # AXLR's release archive for the target, checked against the sha256 its
 # release publishes beside it (axlr-v<version>-linux-<arch>.tar.gz.sha256).
@@ -47,6 +58,14 @@ RUN set -eu; \
     test "$(cat /out/VERSION)" = "$AXLR_VERSION"
 
 FROM ${BASE_IMAGE}
+ARG VERSION=""
+ARG REVISION=""
+LABEL org.opencontainers.image.title="axlr-bots-node" \
+      org.opencontainers.image.description="AXLR Bots node agent (axlr-node) with axlr-tui" \
+      org.opencontainers.image.source="https://github.com/underpass-ai/axlr-bots" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}"
 COPY --from=build /out/axlr-node /usr/local/bin/axlr-node
 COPY --from=axlr /out/axlr-tui /usr/local/bin/axlr-tui
 COPY LICENSE NOTICE /licenses/axlr-bots/

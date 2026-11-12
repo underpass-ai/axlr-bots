@@ -151,19 +151,81 @@ jobs:
       - name: Build the node image for amd64 and arm64
         run: |
           docker buildx create --use --name multi
-          docker buildx build -f distribution/node.Dockerfile --platform linux/amd64,linux/arm64 .
+          docker buildx build -f distribution/node.Dockerfile --platform linux/amd64,linux/arm64 --build-arg VERSION=0.0.0-ci --build-arg REVISION="$GITHUB_SHA" .
       - name: Run it
         run: |
           docker buildx build -f distribution/node.Dockerfile --platform linux/amd64 -t axlr-bots-node:ci --load .
           docker run --rm --read-only axlr-bots-node:ci --help 2>&1 | grep -q 'axlr-node check'
           test "$(docker run --rm --read-only --entrypoint /usr/local/bin/axlr-tui axlr-bots-node:ci --version 2>&1)" = "$(sed -n 's/^ARG AXLR_VERSION=//p' distribution/node.Dockerfile)"
 
+  control-plane-image:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Both images pin the same AXLR
+        run: |
+          pins() { grep -E '^ARG AXLR_(VERSION|SHA256_[A-Z0-9]+)=' "$1"; }
+          diff <(pins distribution/node.Dockerfile) <(pins distribution/control-plane.Dockerfile)
+      - name: Build the control plane image for amd64 and arm64
+        run: |
+          docker buildx create --use --name multi
+          docker buildx build -f distribution/control-plane.Dockerfile --platform linux/amd64,linux/arm64 \
+            --build-arg VERSION=0.0.0-ci --build-arg REVISION="$GITHUB_SHA" .
+      - name: Run it
+        run: |
+          docker buildx build -f distribution/control-plane.Dockerfile --platform linux/amd64 \
+            --build-arg VERSION=0.0.0-ci --build-arg REVISION="$GITHUB_SHA" --build-arg BUILD_TIME=2026-01-01T00:00:00Z \
+            -t ghcr.io/underpass-ai/axlr-bots:0.0.0-ci --load .
+          image=ghcr.io/underpass-ai/axlr-bots:0.0.0-ci
+          docker run --rm --read-only "$image" version | tee version.txt
+          grep -qx "axlr-bots 0.0.0-ci ($GITHUB_SHA 2026-01-01T00:00:00Z)" version.txt
+          test "$(docker run --rm --read-only --entrypoint /usr/local/bin/axlr-tui "$image" --version 2>&1)" = "$(sed -n 's/^ARG AXLR_VERSION=//p' distribution/control-plane.Dockerfile)"
+          test "$(docker inspect -f '{{.Config.User}}' "$image")" = 65532:65532
+      - name: Serve it with compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A short path: a Unix socket's path has at most 107 bytes.
+          root=$(mktemp -d /tmp/acp.XXXX)
+          mkdir -p "$root/state" "$root/config"
+          export AXLR_BOTS_VERSION=0.0.0-ci AXLR_BOTS_UID=$(id -u) AXLR_BOTS_GID=$(id -g) \
+            AXLR_BOTS_STATE_DIR="$root/state" AXLR_BOTS_CONFIG="$root/config" \
+            AXLR_BOTS_LISTEN=127.0.0.1:17878 AXLR_BOTS_API_LISTEN=127.0.0.1:17879
+          compose="docker compose -p axlr-bots-ci -f distribution/compose.yaml"
+          $compose config --quiet
+          # Without a version the file refuses to start.
+          if env -u AXLR_BOTS_VERSION docker compose -f distribution/compose.yaml config --quiet 2>/dev/null; then
+            echo "compose accepted no AXLR_BOTS_VERSION" >&2
+            exit 1
+          fi
+          $compose run --rm control-plane ca init >/dev/null
+          $compose up -d
+          for _ in $(seq 1 30); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' axlr-bots-ci-control-plane-1)
+            [ "$status" = healthy ] && break
+            sleep 2
+          done
+          $compose logs
+          test "$status" = healthy
+          test -S "$root/state/axlr-bots.sock"
+          test "$(stat -c %u "$root/state/api.token")" = "$(id -u)"
+          curl -fsk https://127.0.0.1:17879/healthz
+          curl -fsk -H "Authorization: Bearer $(cat "$root/state/api.token")" https://127.0.0.1:17879/v1/build | tee build.json
+          grep -q '"running":{"version":"0.0.0-ci"' build.json
+          # The installed binary's stamp is read from the file: a build with
+          # -trimpath records no -ldflags and this would be empty.
+          grep -q '"installed":{"version":"0.0.0-ci"' build.json
+          grep -q '"stale":false' build.json
+          $compose down
+
   # The check branch protection requires from this workflow. It reports on
   # every pull request and passes only when no job above failed; a job the
   # change does not reach is skipped, and that is a pass.
   gate:
     if: always()
-    needs: [changes, go, chart, node-image]
+    needs: [changes, go, chart, node-image, control-plane-image]
     runs-on: ubuntu-latest
     steps:
       - name: No job failed

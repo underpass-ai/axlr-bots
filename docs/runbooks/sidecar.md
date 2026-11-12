@@ -22,6 +22,8 @@ pod demo-log-service-0 (StatefulSet)                                    control 
 
 ## 1. Build and push the node image
 
+A release tag publishes it as `ghcr.io/underpass-ai/axlr-bots-node:<version>` for both architectures (`.github/workflows/release.yml`, which prints the digest); build it yourself for another registry or an unreleased commit.
+
 [`distribution/node.Dockerfile`](../../distribution/node.Dockerfile) builds `axlr-node` and takes `axlr-tui` from AXLR v0.16.0's release archive for the target, checked against the sha256 the release publishes; the image is distroless, runs as 65532 and holds nothing else. The build stages run on the build platform, so both architectures build without emulation. With Docker's default builder, build each one, push, and join them:
 
 ```bash
@@ -181,7 +183,7 @@ bus:
 
 | Value | Default | What it does |
 |---|---|---|
-| `image.repository`, `image.digest` | `ghcr.io/underpass-ai/axlr-bots-node`, none | the node image, by digest only (`sha256:<64 hex>`); the image is not published, so push it and set both |
+| `image.repository`, `image.digest` | `ghcr.io/underpass-ai/axlr-bots-node`, none | the node image, by digest only (`sha256:<64 hex>`); a release tag publishes it to `ghcr.io/underpass-ai/axlr-bots-node` (the workflow prints the digest), or push your own and set both |
 | `controlPlane.url` | none | the control plane's node address as the pod reaches it, `https://host:port` |
 | `controlPlane.ca.existingConfigMap` | none | a ConfigMap with `ca.crt` to pin the fleet CA instead of the token's |
 | `enrollment.existingSecret` | none | the Secret with one token per node id, read at a first start only |

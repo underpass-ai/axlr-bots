@@ -6,8 +6,9 @@
 #                         templates in its own pod (docs/runbooks/sidecar.md)
 # With demo.enabled false the chart renders nothing.
 
-# The node image (distribution/node.Dockerfile), by digest. It is not
-# published yet: push it to a registry the cluster pulls from and set
+# The node image (distribution/node.Dockerfile), by digest. A release tag
+# publishes it to ghcr.io/underpass-ai/axlr-bots-node (the workflow prints
+# the digest); or push it to a registry the cluster pulls from and set
 # image.repository (docs/runbooks/sidecar.md).
 image:
   repository: ghcr.io/underpass-ai/axlr-bots-node
