@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -297,4 +298,40 @@ func asState(err error, target *domain.StateError) bool {
 	state, ok := err.(domain.StateError)
 	*target = state
 	return ok
+}
+
+// A patch staged from a JSON body applies the very fields it staged:
+// nothing is lost going to the store and back, empty lists and the
+// short form of autoApprove included.
+func TestAStagedPatchAppliesTheFieldsItStaged(t *testing.T) {
+	for _, body := range []string{
+		`{"version": "1.0.0", "autoApprove": [], "groups": [], "skills": [], "subscriptions": []}`,
+		`{"version": "1.0.1", "autoApprove": ["kubernetes.get_pods"], "allowedTools": ["kubernetes.get_pods"]}`,
+	} {
+		h := newHarness()
+		ctx := context.Background()
+		bot := enabledBot(t, h)
+		var patch BotPatch
+		decoder := json.NewDecoder(strings.NewReader(body))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&patch); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewStageBot(h.deps).Execute(ctx, bot.ID(), patch); err != nil {
+			t.Fatalf("%s: %v", body, err)
+		}
+		staged := newestAudit(h).Details["fields"]
+		if _, err := NewApplyStagedBot(h.deps).Execute(ctx, bot.ID()); err != nil {
+			t.Fatalf("%s: %v", body, err)
+		}
+		var applied string
+		for _, event := range h.log.events {
+			if event.Type == domain.EventBotUpdated {
+				applied = strings.Join(event.Payload["fields"].([]string), ",")
+			}
+		}
+		if staged != applied || !strings.Contains(applied, "version") {
+			t.Errorf("%s: staged %q, applied %q", body, staged, applied)
+		}
+	}
 }
