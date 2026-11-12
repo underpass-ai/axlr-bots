@@ -94,7 +94,7 @@ To try it on a copy of the live state, never the live socket: copy `~/.local/sta
 
 ## 2. The user unit
 
-Write the file; nothing installs it for you. Like the GitHub hooks adapter it does not read `~/.config/axlr-bots/env`: it needs the socket, not the fleet's keys.
+Write the file; nothing installs it for you. Like the GitHub hooks adapter it does not read `~/.config/axlr-bots/env`: it needs the socket, not the fleet's keys. On another host than the control plane it reads and publishes through the operator address instead (`axlr-bots --control https://<host>:7879 --token-file <token> --ca-file <fleet CA> activity-audit serve … --store <dir>`); keep one seen-store and move it with the adapter, or every failure it already published goes out again.
 
 `~/.config/systemd/user/axlr-activity-audit.service`:
 
