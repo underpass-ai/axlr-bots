@@ -293,11 +293,11 @@ func TestNewHandlerRefuses(t *testing.T) {
 }
 
 func TestMappers(t *testing.T) {
-	commands, _ := FromCheckSuite("d", "dev", CheckSuiteEvent{Action: "completed", CheckSuite: CheckSuite{PullRequests: []PullRequestRef{{Number: 0}, {Number: 3}}}, Repository: Repository{FullName: "a/b"}})
+	commands, _ := FromCheckSuite("d", "dev", "", CheckSuiteEvent{Action: "completed", CheckSuite: CheckSuite{PullRequests: []PullRequestRef{{Number: 0}, {Number: 3}}}, Repository: Repository{FullName: "a/b"}})
 	if len(commands) != 1 || commands[0].Message != "CI of a/b#3 ended: none (head unknown)." || commands[0].Data["conclusion"] != "" {
 		t.Errorf("commands = %+v", commands)
 	}
-	if commands, _ := FromPullRequest("d", "dev", PullRequestEvent{Action: "closed", Number: 0, PullRequest: PullRequest{Merged: true}}); len(commands) != 0 {
+	if commands, _ := FromPullRequest("d", "dev", "", PullRequestEvent{Action: "closed", Number: 0, PullRequest: PullRequest{Merged: true}}); len(commands) != 0 {
 		t.Errorf("PR 0 = %+v", commands)
 	}
 	if short("abc") != "abc" || IdempotencyKey("g", 5) != "github:g:5" {
@@ -318,5 +318,30 @@ func TestParseRepos(t *testing.T) {
 		if _, err := ParseRepos(bad); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+// Only the dev team's own branches wake a bot: a person's PR maps to none.
+func TestOnlyTheDevTeamsBranchesMap(t *testing.T) {
+	suite := func(branch string) CheckSuiteEvent {
+		return CheckSuiteEvent{Action: "completed", Repository: Repository{FullName: "underpass-ai/axlr"},
+			CheckSuite: CheckSuite{HeadSHA: "abc", HeadBranch: branch, Conclusion: "success", PullRequests: []PullRequestRef{{Number: 7}}}}
+	}
+	merged := func(branch string) PullRequestEvent {
+		return PullRequestEvent{Action: "closed", Number: 7, Repository: Repository{FullName: "underpass-ai/axlr"},
+			PullRequest: PullRequest{Merged: true, MergeCommitSHA: "def", Head: PullRequestHead{SHA: "abc", Ref: branch}}}
+	}
+	for branch, want := range map[string]int{"dev/axlr/a-20261112-axlr-200": 1, "tirso/fix": 0, "main": 0, "": 0, "devx/axlr": 0} {
+		got, err := FromCheckSuite("d-1", "dev", DefaultBranchPrefix, suite(branch))
+		if err != nil || len(got) != want {
+			t.Errorf("check suite on %q: %d %v, want %d", branch, len(got), err, want)
+		}
+		got, err = FromPullRequest("d-1", "dev", DefaultBranchPrefix, merged(branch))
+		if err != nil || len(got) != want {
+			t.Errorf("merge of %q: %d %v, want %d", branch, len(got), err, want)
+		}
+	}
+	if got, _ := FromCheckSuite("d-1", "dev", "", suite("tirso/fix")); len(got) != 1 {
+		t.Error("an empty prefix maps every branch")
 	}
 }
