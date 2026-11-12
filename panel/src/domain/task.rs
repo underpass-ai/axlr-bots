@@ -67,6 +67,38 @@ impl Task {
         }
     }
 
+    /// What its node read of the team's memory before the run
+    /// (`input.earlier`), one line per key: `ws:s1 (team qa): a · b`, or
+    /// the line that says why nothing was read.
+    pub fn earlier(&self) -> Vec<String> {
+        let Some(reads) = self
+            .input
+            .as_ref()
+            .and_then(|i| i.get("earlier"))
+            .and_then(|e| e.as_array())
+        else {
+            return Vec::new();
+        };
+        reads
+            .iter()
+            .filter_map(|read| {
+                let key = read.get("key")?.as_str()?;
+                let team = read.get("team")?.as_str()?;
+                let lines: Vec<&str> = read
+                    .get("read")
+                    .and_then(|r| r.as_array())
+                    .map(|r| r.iter().filter_map(|l| l.as_str()).collect())
+                    .unwrap_or_default();
+                let what = if lines.is_empty() {
+                    read.get("line").and_then(|l| l.as_str()).unwrap_or("").to_string()
+                } else {
+                    lines.join(" · ")
+                };
+                Some(format!("{key} (team {team}): {what}"))
+            })
+            .collect()
+    }
+
     /// What the task knew when it started: the notes of the events its
     /// bot heard, oldest first, as `recepcion · info.turno: shift at six`.
     pub fn knew(&self) -> Vec<String> {
@@ -147,6 +179,24 @@ mod tests {
         );
         assert_eq!(task.knew(), vec!["recepcion · info.turno: shift"]);
         assert!(sample().knew().is_empty());
+    }
+
+    #[test]
+    fn says_what_its_node_read_of_the_teams_memory() {
+        let mut task = sample();
+        assert!(task.earlier().is_empty());
+        task.input = Some(serde_json::json!({"earlier": [
+            {"key": "ws:s1", "team": "qa", "read": ["F-12 flaky", "open: F-13"]},
+            {"key": "project:dev.x", "team": "dev", "line": "held by team dev"},
+            {"bad": 1}
+        ]}));
+        assert_eq!(
+            task.earlier(),
+            vec![
+                "ws:s1 (team qa): F-12 flaky · open: F-13",
+                "project:dev.x (team dev): held by team dev"
+            ]
+        );
     }
 
     #[test]
