@@ -38,6 +38,9 @@
         "cidr": {"type": "string"},
         "port": {"type": "integer", "minimum": 1, "maximum": 65535}}}}},
     "networkPolicy": {"type": "object", "properties": {
+      "controlPlanePods": {"type": "object", "properties": {
+        "namespace": {"type": "string", "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$"},
+        "podLabels": {"type": "object", "additionalProperties": {"type": "string"}}}},
       "enabled": {"type": "boolean"},
       "controlPlaneCIDR": {"type": "string"},
       "dns": {"type": "object", "properties": {"namespace": {"type": "string", "minLength": 1}, "podLabels": {"type": "object", "minProperties": 1}}},

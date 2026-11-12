@@ -129,6 +129,12 @@ jobs:
           refused --set sidecar.mcp.existingConfigMap=bots-mcp --set-string sidecar.mcp.key=
           refused --set-string controlPlane.url=https://cp.example.internal:7878
           helm template test $chart -f $example --set-string controlPlane.url=https://cp.example.internal:7878 --set-string networkPolicy.controlPlaneCIDR=10.0.0.5/32 >/dev/null
+          # A control plane in the same cluster: its pods are a peer too, and a Service name needs no CIDR.
+          helm template test $chart -f $example --set-string networkPolicy.controlPlanePods.namespace=axlr-bots > cp-pods.yaml
+          grep -q 'kubernetes.io/metadata.name: axlr-bots' cp-pods.yaml
+          grep -q 'app.kubernetes.io/name: axlr-bots-control-plane' cp-pods.yaml
+          helm template test $chart -f $example --set-string controlPlane.url=https://cp.axlr-bots.svc:7878 --set-string networkPolicy.controlPlanePods.namespace=axlr-bots >/dev/null
+          refused --set-string networkPolicy.controlPlanePods.namespace=Bad_NS
           ! helm template test $chart -f $example --set networkPolicy.enabled=false | grep -q '^kind: NetworkPolicy$'
           # The HTTPS service with mutual TLS: cert-manager's certificates, or Secrets given.
           https="--set demo.https.enabled=true --set-string demo.https.host=demo.example.com"

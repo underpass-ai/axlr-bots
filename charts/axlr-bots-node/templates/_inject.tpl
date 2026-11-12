@@ -205,11 +205,12 @@ including chart's own policy, beside its service's rules.
 {{- $host := first $parts -}}
 {{- $port := ternary (last $parts) "443" (gt (len $parts) 1) -}}
 {{- $cidr := $v.networkPolicy.controlPlaneCIDR -}}
+{{- $cpPods := default (dict) $v.networkPolicy.controlPlanePods -}}
 {{- if not $cidr -}}
 {{- if regexMatch "^[0-9]{1,3}(\\.[0-9]{1,3}){3}$" $host -}}
 {{- $cidr = printf "%s/32" $host -}}
-{{- else -}}
-{{- fail "networkPolicy.controlPlaneCIDR is required when controlPlane.url names a host, not an IP" -}}
+{{- else if not $cpPods.namespace -}}
+{{- fail "networkPolicy.controlPlaneCIDR (or controlPlanePods) is required when controlPlane.url names a host, not an IP" -}}
 {{- end -}}
 {{- end -}}
 - to:
@@ -223,8 +224,20 @@ including chart's own policy, beside its service's rules.
     - {protocol: UDP, port: 53}
     - {protocol: TCP, port: 53}
 - to:
+    {{- if $cidr }}
     - ipBlock:
         cidr: {{ $cidr }}
+    {{- end }}
+    {{- if $cpPods.namespace }}
+    {{- /* A control plane in this cluster: the load balancer's address is
+           translated to its pod before the policy applies. */}}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: {{ $cpPods.namespace }}
+      podSelector:
+        matchLabels:
+          {{- toYaml (default (dict "app.kubernetes.io/name" "axlr-bots-control-plane") $cpPods.podLabels) | nindent 10 }}
+    {{- end }}
   ports:
     - {protocol: TCP, port: {{ $port }}}
 {{- if eq (toString $v.bus.kind) "nats" }}

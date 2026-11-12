@@ -109,6 +109,14 @@ networkPolicy:
   # The control plane's address as a CIDR; empty takes <ip>/32 from
   # controlPlane.url when it names an IP.
   controlPlaneCIDR: ""
+  # A control plane in this cluster (charts/axlr-bots-control-plane): its
+  # namespace, and its pods' labels (default app.kubernetes.io/name:
+  # axlr-bots-control-plane). Inside the cluster a load balancer's address
+  # is translated to the pod before the policy applies, so the CIDR alone
+  # lets nothing through.
+  controlPlanePods:
+    namespace: ""
+    podLabels: {}
   dns:
     namespace: kube-system
     podLabels: {k8s-app: kube-dns}

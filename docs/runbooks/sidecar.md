@@ -126,7 +126,7 @@ Depend on this chart with its demo off and include its templates in your pod; `h
 ```yaml
 # Chart.yaml
 dependencies:
-  - {name: axlr-bots-node, version: 0.2.0, repository: file://../charts/axlr-bots-node}
+  - {name: axlr-bots-node, version: 0.3.0, repository: file://../charts/axlr-bots-node}
 # values.yaml
 axlr-bots-node:
   image: {digest: sha256:…}
@@ -196,7 +196,7 @@ bus:
 | `sidecar.workspacesSize`, `sidecar.tmpSize` | `1Gi`, `64Mi` | the scratch workspaces and AXLR's tmpfs |
 | `sidecar.env` | none | more container env entries, such as `TYPESAFE_API_KEY` from a Secret for Jev bots |
 | `sidecar.mcp.existingConfigMap`, `sidecar.mcp.key` | none, `mcp.json` | a ConfigMap key holding the `mcp.json` a Jev bot's program finds its MCP server in; mounted read-only at `/etc/axlr-node/mcp/mcp.json`, named by `AXLR_NODE_MCP_CONFIG` |
-| `networkPolicy.enabled`, `.controlPlaneCIDR`, `.dns`, `.modelProvider` | `true`, `<ip>/32` of `controlPlane.url`, kube-dns, HTTPS to the public ranges | the demo's policy; a chart that includes the templates puts `axlr-bots-node.inject.egress` in its own |
+| `networkPolicy.enabled`, `.controlPlaneCIDR`, `.controlPlanePods`, `.dns`, `.modelProvider` | `true`, `<ip>/32` of `controlPlane.url`, none, kube-dns, HTTPS to the public ranges; with the control plane in the same cluster ([its chart](control-plane-kubernetes.md)) set `controlPlanePods.namespace`: a load balancer's address is translated to the pod before the policy applies, so the CIDR alone lets nothing through | the demo's policy; a chart that includes the templates puts `axlr-bots-node.inject.egress` in its own |
 | `nodeSelector`, `tolerations`, `affinity` | none | where the demo pod and the chart test run |
 | `demo.*` | off | the demo StatefulSet ([above](#4-install-the-demo)) and its HTTPS variant ([below](#the-service-over-https-with-mutual-tls)) |
 | `tests.enabled` | `true` | the chart test (`axlr-node check`), with the demo |
