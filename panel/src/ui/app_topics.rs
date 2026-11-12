@@ -25,7 +25,10 @@ impl App {
         match Subscription::new(&self.listen.topic, self.listen.mode(), &self.listen.from) {
             Ok(sub) => {
                 self.listen.busy = true;
-                vec![Effect::SaveSubscriptions(bot, SubscriptionChange::Listen(sub))]
+                vec![Effect::SaveSubscriptions(
+                    bot,
+                    SubscriptionChange::Listen(Box::new(sub)),
+                )]
             }
             Err(error) => {
                 self.banner = Some(Banner::error(&PanelError::from(error), self.now));
