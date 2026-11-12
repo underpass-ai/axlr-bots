@@ -32,6 +32,7 @@ type Task struct {
 	incident       IncidentID
 	pinned         *ExecutionPolicy
 	skills         SkillPins
+	expects        *taskExpects
 	createdAt      time.Time
 	updatedAt      time.Time
 }
@@ -606,6 +607,7 @@ func (t Task) Snapshot() TaskSnapshot {
 	if origin, ok := t.Origin(); ok {
 		snapshot.Origin = &origin
 	}
+	snapshot.Expects = t.expectsSnapshot()
 	return snapshot
 }
 
@@ -731,6 +733,9 @@ func RestoreTask(s TaskSnapshot) (Task, error) {
 		return Task{}, err
 	}
 	task.skills = skills
+	if task.expects, err = restoreTaskExpects(s.Expects); err != nil {
+		return Task{}, err
+	}
 	if s.Policy != nil {
 		level, err := ParseAutonomyLevel(s.Policy.Level)
 		if err != nil {

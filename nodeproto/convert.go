@@ -18,7 +18,7 @@ func FromAssignment(a application.Assignment) AssignmentMessage {
 			Objective: r.PromptText(), Model: r.Model, Level: r.Level.String(), AllowedTools: r.AllowedTools,
 			ToolRules: r.ToolRules.Snapshot(), Unattended: r.Unattended, TimeoutSeconds: wholeSeconds(r.Timeout), Delegation: fromOffer(r.Delegation),
 			Events: fromEventsOffer(r.Events), Ask: fromAskOffer(r.Ask), Runtime: r.Runtime.Snapshot(), Input: r.Input, Skills: r.Skills.Snapshot(),
-			MemoryTeam: r.MemoryTeam.String(), ChannelMemory: FromChannelRecord(r.ChannelMemory),
+			MemoryTeam: r.MemoryTeam.String(), ChannelMemory: FromChannelRecord(r.ChannelMemory), Contexts: r.Contexts,
 		}
 		if model, tools := r.Budgets.MaxModelCallsPerTask(), r.Budgets.MaxToolCallsPerTask(); model > 0 || tools > 0 {
 			m.Run.Budgets = &BudgetsMessage{MaxModelCalls: model, MaxToolCalls: tools}
@@ -81,11 +81,15 @@ func ToAssignment(m AssignmentMessage) (application.Assignment, error) {
 		if err != nil {
 			return application.Assignment{}, err
 		}
+		contexts, err := toContexts(r.Contexts)
+		if err != nil {
+			return application.Assignment{}, err
+		}
 		a.Run = &application.ExecutionRequest{
 			ExecutionID: executionID, TaskID: domain.TaskID(r.TaskID), BotID: botID, TenantID: domain.TenantID(r.TenantID), CorrelationID: domain.CorrelationID(r.CorrelationID),
 			Objective: objective, Model: r.Model, Level: level, AllowedTools: tools.Names(), ToolRules: rules, Unattended: r.Unattended, Timeout: time.Duration(r.TimeoutSeconds) * time.Second,
 			Delegation: toOffer(r.Delegation), Events: toEventsOffer(r.Events), Ask: toAskOffer(r.Ask), Runtime: runtime, Input: r.Input, Skills: skills, MemoryTeam: team,
-			ChannelMemory: ToChannelRecord(r.ChannelMemory),
+			ChannelMemory: ToChannelRecord(r.ChannelMemory), Contexts: contexts,
 		}
 		if r.Budgets != nil {
 			budgets, err := domain.NewBudgets(r.Budgets.MaxModelCalls, r.Budgets.MaxToolCalls, 0, a.Run.Timeout)
@@ -124,6 +128,20 @@ func ToAssignment(m AssignmentMessage) (application.Assignment, error) {
 		return application.Assignment{}, fmt.Errorf("nodeproto: assignment %s of kind %s carries no %s", m.ExecutionID, kind, kind)
 	}
 	return a, nil
+}
+
+// toContexts reads the run's context keys: at most MaxContextRefs, each
+// a valid key of a team.
+func toContexts(refs []domain.ContextRef) ([]domain.ContextRef, error) {
+	if len(refs) > domain.MaxContextRefs {
+		return nil, domain.ValidationError{Field: "contexts", Reason: "names at most 2 keys"}
+	}
+	for _, ref := range refs {
+		if err := ref.Validate(); err != nil {
+			return nil, err
+		}
+	}
+	return refs, nil
 }
 
 // toMemoryTeam reads the team a run shares its memory with: none when
@@ -243,7 +261,7 @@ func policyOf(level string, allowed []string, rules domain.ToolRulesSnapshot) (d
 
 // FromReport renders a report as a message.
 func FromReport(r application.ExecutionReport) ReportMessage {
-	return ReportMessage{Outcome: r.Outcome.String(), Result: r.Result, Usage: r.Usage, FailureReason: r.FailureReason, TraceReference: r.TracePath, Policy: r.Policy, Correlation: r.Correlation, Receipt: r.Receipt}
+	return ReportMessage{Outcome: r.Outcome.String(), Result: r.Result, Usage: r.Usage, FailureReason: r.FailureReason, TraceReference: r.TracePath, Policy: r.Policy, Correlation: r.Correlation, Receipt: r.Receipt, ContextRead: r.ContextRead}
 }
 
 // ToReport reads a report message back.
@@ -258,5 +276,5 @@ func ToReport(m ReportMessage) (application.ExecutionReport, error) {
 	if err := m.Usage.Validate(); err != nil {
 		return application.ExecutionReport{}, err
 	}
-	return application.ExecutionReport{Outcome: outcome, Result: m.Result, Usage: m.Usage, FailureReason: m.FailureReason, TracePath: m.TraceReference, Policy: m.Policy, Correlation: m.Correlation, Receipt: m.Receipt}, nil
+	return application.ExecutionReport{Outcome: outcome, Result: m.Result, Usage: m.Usage, FailureReason: m.FailureReason, TracePath: m.TraceReference, Policy: m.Policy, Correlation: m.Correlation, Receipt: m.Receipt, ContextRead: m.ContextRead}, nil
 }

@@ -4150,6 +4150,14 @@
           "team": {
             "type": "string",
             "description": "Another team the topic is heard from (docs/architecture/team-topics.md); absent: the bot's own teams."
+          },
+          "expects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "description": "the final events a task it makes must emit, names or patterns (mode task only, never on a bot's ask): for each event the task carried (the one that made it and every one coalesced into it), one event whose name fits and whose data.id is that event's; a carried event without data.id is settled by any of them. What is missing when the task ends is given again in one new task, at most twice per event; then warn.incomplete (docs/architecture/team-subscriptions.md#done-is-a-contract)"
           }
         },
         "required": [
@@ -4323,6 +4331,10 @@
           },
           "origin": {
             "$ref": "#/components/schemas/EventOrigin"
+          },
+          "expects": {
+            "$ref": "#/components/schemas/TaskExpectsSnapshot",
+            "description": "a task of a subscription that expects final events: those names, the events it carried and the finals it emitted; absent otherwise"
           }
         },
         "required": [
@@ -5770,6 +5782,95 @@
           "context": {
             "type": "string",
             "description": "The KMP key of the event's context, when it named one."
+          }
+        }
+      },
+      "TaskExpectsSnapshot": {
+        "type": "object",
+        "x-go-type": "domain.TaskExpectsSnapshot",
+        "description": "What a task records for its subscription's expects (docs/architecture/team-subscriptions.md#done-is-a-contract).",
+        "required": [
+          "names"
+        ],
+        "properties": {
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the names or patterns a final event fits"
+          },
+          "carried": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "$ref": "#/components/schemas/CarriedEvent"
+            },
+            "description": "the events the task carries, oldest first: the one that made it and those coalesced into it"
+          },
+          "finals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinalEvent"
+            },
+            "description": "the events the task emitted that settled a carried one"
+          }
+        }
+      },
+      "CarriedEvent": {
+        "type": "object",
+        "x-go-type": "domain.CarriedEvent",
+        "description": "One event a task carries for its subscription's expects.",
+        "required": [
+          "eventId",
+          "name"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "description": "its data.id (a number in its shortest form); absent when it had none"
+          },
+          "from": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string",
+            "description": "its message, cut at 280 characters"
+          },
+          "redeliveries": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2,
+            "description": "how many times the control plane gave it again"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the earlier tasks that carried it, oldest first"
+          }
+        }
+      },
+      "FinalEvent": {
+        "type": "object",
+        "x-go-type": "domain.FinalEvent",
+        "description": "An event a task emitted that settled an event it carried.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
           }
         }
       }

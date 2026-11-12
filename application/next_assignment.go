@@ -365,7 +365,7 @@ func (uc NextAssignment) describe(ctx context.Context, node domain.Node, bot dom
 		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: policy.Level(), AllowedTools: tools,
 		ToolRules: policy.Rules(), Unattended: policy.Unattended(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer, Events: events, Ask: ask,
 		Runtime: bot.Runtime(), Input: task.Input(), Skills: task.Skills(), MemoryTeam: memoryTeamOf(bot),
-		ChannelMemory: answerMemory(task),
+		ChannelMemory: answerMemory(task), Contexts: contextRefsOf(task),
 	}
 	return assignment, nil
 }

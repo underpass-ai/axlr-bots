@@ -21,4 +21,8 @@ type ReportMessage struct {
 	Policy         *domain.PolicyRecord      `json:"policy,omitempty"`
 	Correlation    *domain.CorrelationRecord `json:"correlation,omitempty"`
 	Receipt        json.RawMessage           `json:"receipt,omitempty"`
+	// ContextRead is what the node read under the run's context keys, or
+	// why it read nothing; sent only for a run that carried keys, so a
+	// control plane that sends none is never handed the field.
+	ContextRead []domain.ContextRead `json:"contextRead,omitempty"`
 }

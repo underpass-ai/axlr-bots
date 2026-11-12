@@ -64,13 +64,23 @@ func (w Writer) WriteChannelRecord(ctx context.Context, record domain.ChannelRec
 	if err := os.MkdirAll(store, 0o700); err != nil {
 		return err
 	}
-	timeout := w.Timeout
+	return serve(ctx, w.Binary, w.Args, store, w.Timeout, "team-channel", func(session *mcpSession) error {
+		_, err := session.callTool("kmp_write_memory", arguments(record))
+		return err
+	})
+}
+
+// serve starts kmp-mcp on the store, without a viewer, opens an MCP
+// session on its stdio, hands it to call and stops the server, within
+// the timeout (zero: DefaultTimeout). An error names the server's last
+// line on stderr.
+func serve(ctx context.Context, binary string, args []string, store string, timeout time.Duration, purpose string, call func(*mcpSession) error) error {
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, w.Binary, w.Args...)
+	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Env = append(withoutKMP(os.Environ()), "KMP_MCP_DATA_DIR="+store, "KMP_VIEWER_ADDR=off")
 	cmd.WaitDelay = 2 * time.Second
 	var stderr tail
@@ -87,19 +97,21 @@ func (w Writer) WriteChannelRecord(ctx context.Context, record domain.ChannelRec
 		return err
 	}
 	session := newMCPSession(in, out)
-	err = session.open("axlr-node", "team-channel")
+	err = session.open("axlr-node", purpose)
 	if err == nil {
-		_, err = session.callTool("kmp_write_memory", arguments(record))
+		err = call(session)
 	}
 	_ = in.Close()
 	waitErr := cmd.Wait()
-	if err != nil {
+	if err != nil && !errors.Is(err, application.ErrContextNotFound) {
 		if ctx.Err() != nil {
 			err = fmt.Errorf("%w (%v)", err, ctx.Err())
 		}
 		if last := stderr.last(); last != "" {
 			err = fmt.Errorf("%w; stderr: %s", err, last)
 		}
+	}
+	if err != nil {
 		return err
 	}
 	var exit *exec.ExitError

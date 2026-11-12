@@ -88,6 +88,11 @@ type submission struct {
 	// set, the ladder lets it act without a card. Nil keeps the phase's
 	// own policy.
 	unit *domain.LadderGrant
+	// expects are the final events the task must emit, from its
+	// subscription, and carried the events it carries for them
+	// (docs/architecture/team-subscriptions.md, "Done is a contract").
+	expects []domain.EventPattern
+	carried []domain.CarriedEvent
 }
 
 // submitTask creates the task unless the key already names one. The
@@ -164,6 +169,12 @@ func submitTask(ctx context.Context, deps Dependencies, s submission) (SubmitTas
 	// The skills as they are now, kept on the task: a bot updated later
 	// never changes what this task reads.
 	task.PinSkills(s.bot.Skills())
+	task.Expect(s.expects)
+	for _, carried := range s.carried {
+		if _, err := task.Carry(carried); err != nil {
+			return SubmitTaskResult{}, err
+		}
+	}
 	if err := deps.Tasks.Save(ctx, task); err != nil {
 		return SubmitTaskResult{}, err
 	}

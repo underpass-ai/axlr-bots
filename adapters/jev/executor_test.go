@@ -455,3 +455,26 @@ func TestChoiceValueAndQuestions(t *testing.T) {
 		t.Errorf("question = %+v %v", q, ok)
 	}
 }
+
+// What the node read of the team's memory before the run reaches the
+// program as data.earlier: a program that passes earlier on gets it on
+// each act, the same fields an LLM's prompt is given.
+func TestAProgramPassesOnWhatTheNodeReadAsEarlier(t *testing.T) {
+	w := &world{left: 1}
+	executor, request := fixture(t, w, first)
+	runtime, err := domain.NewRuntime(&domain.RuntimeSnapshot{Kind: "jev", Jev: &domain.JevProgramSnapshot{
+		Server: "queue", Start: "batches", Wait: "listen", Act: domain.JevActSnapshot{Tool: "process", Choice: "batch", Pass: []string{"priority", "earlier"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Runtime = runtime
+	request.Input = json.RawMessage(`{"name":"info.notice.load","data":{"priority":"high","earlier":[{"key":"ws:s1","team":"qa","read":["F-12 flaky"]}]}}`)
+	if report, err := executor.Execute(context.Background(), request); err != nil || report.Outcome != domain.ExecutionCompleted {
+		t.Fatalf("report = %+v %v", report, err)
+	}
+	earlier, _ := w.acts[0]["earlier"].([]any)
+	if len(earlier) != 1 || earlier[0].(map[string]any)["key"] != "ws:s1" {
+		t.Errorf("acts = %v", w.acts)
+	}
+}

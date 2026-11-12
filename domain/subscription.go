@@ -17,6 +17,9 @@ const (
 // Limits of a subscription.
 const (
 	maxSubscriptionFrom = 16
+	// MaxSubscriptionExpects bounds the final events a subscription
+	// expects of its tasks.
+	MaxSubscriptionExpects = 8
 	// MaxSubscriptionWhy bounds why a bot asks for a subscription.
 	MaxSubscriptionWhy = 280
 )
@@ -35,6 +38,7 @@ type Subscription struct {
 	urgent    bool
 	objective string
 	deliver   DeliveryScope
+	expects   []EventPattern
 	status    SubscriptionStatus
 	askedBy   string
 	why       string
@@ -72,6 +76,9 @@ func NewSubscription(s SubscriptionSnapshot) (Subscription, error) {
 		return Subscription{}, invalid(field+" deliver", "a subscription a bot asks for is its own, never the team's")
 	}
 	sub := Subscription{topic: topic, mode: mode, urgent: s.Urgent, deliver: deliver, status: status}
+	if sub.expects, err = subscriptionExpects(field, s, mode, status); err != nil {
+		return Subscription{}, err
+	}
 	if s.Team != "" {
 		if sub.team, err = crossingTeam(field, s, mode, status); err != nil {
 			return Subscription{}, err
@@ -113,6 +120,37 @@ func NewSubscription(s SubscriptionSnapshot) (Subscription, error) {
 		sub.askedAt = s.AskedAt.UTC()
 	}
 	return sub, nil
+}
+
+// subscriptionExpects validates the final events a subscription expects
+// of its tasks: at most 8 names or patterns, each once, only on a
+// subscription that makes tasks (mode task, or another team's domain
+// event), never on a bot's ask.
+func subscriptionExpects(field string, s SubscriptionSnapshot, mode DeliveryMode, status SubscriptionStatus) ([]EventPattern, error) {
+	if len(s.Expects) == 0 {
+		return nil, nil
+	}
+	if len(s.Expects) > MaxSubscriptionExpects {
+		return nil, invalid(field+" expects", "names at most 8 final events")
+	}
+	if mode != ModeTask && (s.Team == "" || mode != "") {
+		return nil, invalid(field+" expects", "needs mode task: only a task emits its final events")
+	}
+	if status == SubscriptionPending {
+		return nil, invalid(field+" expects", "a subscription a bot asks for expects nothing")
+	}
+	var out []EventPattern
+	for _, raw := range s.Expects {
+		pattern, err := NewEventPattern(raw)
+		if err != nil {
+			return nil, invalid(field+" expects", err.Error())
+		}
+		if slices.Contains(out, pattern) {
+			return nil, invalid(field+" expects", "repeats "+pattern.String())
+		}
+		out = append(out, pattern)
+	}
+	return out, nil
 }
 
 // crossingTeam validates the other team a subscription hears from: its
@@ -198,6 +236,10 @@ func (s Subscription) ObjectiveTemplate() string { return s.objective }
 // subscription hears.
 func (s Subscription) Deliver() DeliveryScope { return s.deliver }
 
+// Expects lists the final events a task the subscription makes must
+// emit, one per event it carried; empty: none.
+func (s Subscription) Expects() []EventPattern { return append([]EventPattern(nil), s.expects...) }
+
 // Status says whether the subscription hears.
 func (s Subscription) Status() SubscriptionStatus { return s.status }
 
@@ -237,6 +279,9 @@ func (s Subscription) MatchesFrom(team TeamName, name EventName, from string) bo
 // Snapshot returns the subscription as plain data.
 func (s Subscription) Snapshot() SubscriptionSnapshot {
 	out := SubscriptionSnapshot{Topic: s.topic.String(), Team: s.team.String(), Mode: s.mode.String(), From: s.From(), Urgent: s.urgent, Objective: s.objective, Deliver: s.deliver.String(), AskedBy: s.askedBy, Why: s.why}
+	for _, pattern := range s.expects {
+		out.Expects = append(out.Expects, pattern.String())
+	}
 	if s.status == SubscriptionPending {
 		out.Status = s.status.String()
 	}

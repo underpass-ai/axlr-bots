@@ -28,6 +28,11 @@ pub struct Subscription {
     /// `team` when one member of the bot's team takes what it hears.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub deliver: String,
+    /// The final events a task it makes must emit, one per event it
+    /// carried (docs/architecture/team-subscriptions.md, "Done is a
+    /// contract"). The panel keeps them on a save, as it keeps `team`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub expects: Vec<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub status: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -86,6 +91,16 @@ impl Subscription {
             format!("team {}", self.team)
         } else {
             format!("team {}: {}", self.team, bots)
+        }
+    }
+
+    /// What its tasks must end with: `ends with qa.hallazgo.triado or
+    /// qa.hallazgo.flaky`; empty when it expects nothing.
+    pub fn ends_with(&self) -> String {
+        if self.expects.is_empty() {
+            String::new()
+        } else {
+            format!("ends with {}", self.expects.join(" or "))
         }
     }
 
@@ -171,5 +186,16 @@ mod tests {
         let team: Subscription = serde_json::from_str(raw).unwrap();
         assert_eq!(team.deliver, "team");
         assert_eq!(serde_json::to_string(&team).unwrap(), raw);
+    }
+
+    #[test]
+    fn keeps_what_a_subscription_expects_on_the_way_back() {
+        let raw = r#"{"topic":"qa.hallazgo.candidato","mode":"task","deliver":"team","expects":["qa.hallazgo.triado","qa.hallazgo.flaky"]}"#;
+        let sub: Subscription = serde_json::from_str(raw).unwrap();
+        assert_eq!(sub.expects, vec!["qa.hallazgo.triado", "qa.hallazgo.flaky"]);
+        assert_eq!(sub.ends_with(), "ends with qa.hallazgo.triado or qa.hallazgo.flaky");
+        assert_eq!(serde_json::to_string(&sub).unwrap(), raw);
+        assert_eq!(serde_json::to_string(&sub.approved()).unwrap(), raw);
+        assert_eq!(Subscription::new("a", None, "").unwrap().ends_with(), "");
     }
 }

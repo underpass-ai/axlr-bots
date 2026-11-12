@@ -48,13 +48,21 @@ func NewPrompt(mission Mission, objective Objective) (Prompt, error) {
 // end); neither ever cuts the mission or the objective, and what does
 // not fit at all is left out.
 func NewTeamPrompt(mission Mission, objective Objective, directory TeamDirectory, notes EventNotes) (Prompt, error) {
+	return NewTeamPromptLeaving(mission, objective, directory, notes, 0)
+}
+
+// NewTeamPromptLeaving composes as NewTeamPrompt does and leaves reserve
+// of the prompt's limit to what the node adds before the run (what it
+// read of the team's memory, ContextRoom): the directory and the notes
+// take only what is left after it.
+func NewTeamPromptLeaving(mission Mission, objective Objective, directory TeamDirectory, notes EventNotes, reserve int) (Prompt, error) {
 	plain, err := NewPrompt(mission, objective)
 	if err != nil || directory.Empty() && notes.Empty() {
 		return plain, err
 	}
 	head := promptHead + mission.String() + "\n\n"
 	tail := promptTask + objective.String()
-	room := MaxPromptLength - len(head) - len(tail)
+	room := MaxPromptLength - len(head) - len(tail) - max(reserve, 0)
 	var blocks []string
 	if rendered := directory.Render(room); rendered != "" {
 		blocks = append(blocks, rendered)
