@@ -1,6 +1,7 @@
 // Package activityaudit is the input adapter that audits the fleet's
 // finished tasks and turns each new kind of failure into one event for
-// the QA team (docs/runbooks/activity-audit.md): the DTOs generated from
+// the team the operator names, under the event name the operator names
+// (docs/runbooks/activity-audit.md): the DTOs generated from
 // docs/reference/activity-audit.asyncapi.json, the extraction of a
 // task's failures from what the operator API answers (its executions'
 // tool calls and its timeline's progress items), the normalisation that

@@ -2,9 +2,9 @@
 
 package activityaudit
 
-// FalloData is the schema FalloData of the spec.
-type FalloData struct {
-	// The signature: fallo- and 16 hex characters of the SHA-256 of its key;
+// FailureData is the schema FailureData of the spec.
+type FailureData struct {
+	// The signature: failure- and 16 hex characters of the SHA-256 of its key;
 	// within [A-Za-z0-9._:-]{1,128}.
 	ID string `json:"id"`
 	// tool_call: a call that ended failed; task_failed: a task that ended

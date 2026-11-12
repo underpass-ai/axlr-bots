@@ -25,10 +25,10 @@ func runLines() string {
 	secret := "ghp_" + strings.Repeat("Z", 36)
 	lines := []map[string]any{
 		{"type": "session", "session": "sess-1"},
-		{"type": "tool.requested", "tool": "local_exec", "call_id": "c1", "arguments": map[string]any{"program": "/home/gx10a/bots/arreglo", "args": []string{"plan", "task-0dc89689b19a575f87602c94"}}},
-		{"type": "tool.completed", "tool": "local_exec", "call_id": "c1", "decision": "auto_approve", "status": "failed", "error": execFailed("c1", 2, "arreglo: no plan for task-0dc89689b19a575f87602c94 in /home/gx10a/x (head 1a2b3c4d)")},
-		{"type": "tool.requested", "tool": "local_exec", "call_id": "c2", "arguments": map[string]any{"program": "/home/tirso/bin/arreglo", "args": []string{"plan", "task-5dbfaeddfdb4f706d3a45963"}}},
-		{"type": "tool.completed", "tool": "local_exec", "call_id": "c2", "decision": "auto_approve", "status": "failed", "error": execFailed("c2", 2, "arreglo: no plan for task-5dbfaeddfdb4f706d3a45963 in /home/tirso/y (head 9f8e7d6c)")},
+		{"type": "tool.requested", "tool": "local_exec", "call_id": "c1", "arguments": map[string]any{"program": "/home/user-a/bots/fixer", "args": []string{"plan", "task-0dc89689b19a575f87602c94"}}},
+		{"type": "tool.completed", "tool": "local_exec", "call_id": "c1", "decision": "auto_approve", "status": "failed", "error": execFailed("c1", 2, "fixer: no plan for task-0dc89689b19a575f87602c94 in /home/user-a/x (head 1a2b3c4d)")},
+		{"type": "tool.requested", "tool": "local_exec", "call_id": "c2", "arguments": map[string]any{"program": "/home/user-b/bin/fixer", "args": []string{"plan", "task-5dbfaeddfdb4f706d3a45963"}}},
+		{"type": "tool.completed", "tool": "local_exec", "call_id": "c2", "decision": "auto_approve", "status": "failed", "error": execFailed("c2", 2, "fixer: no plan for task-5dbfaeddfdb4f706d3a45963 in /home/user-b/y (head 9f8e7d6c)")},
 		{"type": "tool.requested", "tool": "local_read", "call_id": "c3", "arguments": map[string]any{"path": "notes.md"}},
 		{"type": "tool.completed", "tool": "local_read", "call_id": "c3", "decision": "auto_approve", "status": "failed", "error": `{"call_id":"c3","error":"path \"notes.md\" is outside the workspace (token ` + secret + `)"}`},
 		{"type": "completed", "session": "sess-1"},
@@ -61,9 +61,9 @@ func standIn(t *testing.T, dir string) string {
 }
 
 // The adapter against a real control plane on its socket and a real node
-// that runs the stand-in: a dev bot's task ends with two failed runs of
+// that runs the stand-in: a workers bot's task ends with two failed runs of
 // one program and a host tool's refusal; the adapter publishes two
-// actividad.fallo to team qa as the operator, the secret redacted; a
+// activity failures to team watchers as the operator, the secret redacted; a
 // second task like it publishes nothing and grows the counts; the same
 // publish again answers the event published before.
 func TestEndToEndThroughTheDaemon(t *testing.T) {
@@ -89,14 +89,14 @@ func TestEndToEndThroughTheDaemon(t *testing.T) {
 	t.Cleanup(func() { stopAgent(); <-agentDone })
 
 	for _, bot := range []application.BotDefinition{
-		{Tenant: "default", Name: "dev-a", Owner: "o", Mission: "fix what QA finds", AllowedTools: []string{"local_read", "local_exec"}, Groups: []string{"dev"}, Budgets: application.BudgetsDefinition{TaskTimeoutSeconds: 30}},
-		{Tenant: "default", Name: "qa-a", Owner: "o", Mission: "find what is broken", AllowedTools: []string{"local_read"}, Groups: []string{"qa"}, Budgets: application.BudgetsDefinition{TaskTimeoutSeconds: 30}},
+		{Tenant: "default", Name: "worker-a", Owner: "o", Mission: "fix what is reported", AllowedTools: []string{"local_read", "local_exec"}, Groups: []string{"workers"}, Budgets: application.BudgetsDefinition{TaskTimeoutSeconds: 30}},
+		{Tenant: "default", Name: "watcher-a", Owner: "o", Mission: "find what is broken", AllowedTools: []string{"local_read"}, Groups: []string{"watchers"}, Budgets: application.BudgetsDefinition{TaskTimeoutSeconds: 30}},
 	} {
 		if _, err := client.RegisterBot(ctx, bot); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := client.EnableBot(ctx, "dev-a"); err != nil {
+	if _, err := client.EnableBot(ctx, "worker-a"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -105,7 +105,7 @@ func TestEndToEndThroughTheDaemon(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	auditor, err := NewAuditor(AuditorConfig{Source: client, Publisher: client, Store: store, Team: DefaultTeam, IgnorePrograms: DefaultIgnorePrograms, IgnoreTeamPartial: true, Log: log.New(logs, "", 0)})
+	auditor, err := NewAuditor(AuditorConfig{Source: client, Publisher: client, Store: store, Team: "watchers", Event: testEvent, IgnorePrograms: testIgnorePrograms, IgnoreTeamPartial: true, Log: log.New(logs, "", 0)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,21 +119,21 @@ func TestEndToEndThroughTheDaemon(t *testing.T) {
 	eventually(t, "the watcher follows", func() bool { return strings.Contains(logs.String(), "following 2 teams") })
 
 	published := func() []domain.Event {
-		events, err := client.ListGroupEvents(ctx, application.GroupEventsQuery{Name: "qa", Limit: 100})
+		events, err := client.ListGroupEvents(ctx, application.GroupEventsQuery{Name: "watchers", Limit: 100})
 		if err != nil {
 			t.Fatal(err)
 		}
-		var fallos []domain.Event
+		var failures []domain.Event
 		for _, event := range events {
-			if event.Type == domain.EventGroupEventPublished && event.Payload["name"] == EventName {
-				fallos = append(fallos, event)
+			if event.Type == domain.EventGroupEventPublished && event.Payload["name"] == testEvent {
+				failures = append(failures, event)
 			}
 		}
-		return fallos
+		return failures
 	}
 	submit := func(key string) {
 		t.Helper()
-		submitted, err := client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "dev-a", Objective: "plan the fix", IdempotencyKey: key})
+		submitted, err := client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "worker-a", Objective: "plan the fix", IdempotencyKey: key})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -144,7 +144,7 @@ func TestEndToEndThroughTheDaemon(t *testing.T) {
 	}
 
 	submit("first")
-	eventually(t, "two events on qa", func() bool { return len(published()) == 2 })
+	eventually(t, "two events on watchers", func() bool { return len(published()) == 2 })
 	events := published()
 	byProgram := map[string]map[string]any{}
 	for _, event := range events {
@@ -158,9 +158,9 @@ func TestEndToEndThroughTheDaemon(t *testing.T) {
 			t.Errorf("the event carries what it must not: %s", raw)
 		}
 	}
-	arreglo := byProgram["local_exec arreglo"]
-	if arreglo == nil || arreglo["count"] != float64(2) || arreglo["bot"] != "dev-a" || arreglo["team"] != "dev" || !strings.HasPrefix(stringOf(arreglo["error"]), "arreglo: no plan for <id> in <path> (head <hex>)") {
-		t.Fatalf("arreglo = %+v (events %+v)", arreglo, events)
+	fixer := byProgram["local_exec fixer"]
+	if fixer == nil || fixer["count"] != float64(2) || fixer["bot"] != "worker-a" || fixer["team"] != "workers" || !strings.HasPrefix(stringOf(fixer["error"]), "fixer: no plan for <id> in <path> (head <hex>)") {
+		t.Fatalf("fixer = %+v (events %+v)", fixer, events)
 	}
 	if read := byProgram["local_read"]; read == nil || read["error"] != `path "…" is outside the workspace (token <secret>)` {
 		t.Errorf("local_read = %+v", read)
@@ -169,7 +169,7 @@ func TestEndToEndThroughTheDaemon(t *testing.T) {
 	submit("second")
 	eventually(t, "the second task audited", func() bool {
 		for _, s := range auditorSignatures(t, storeDir) {
-			if s.Program == "arreglo" && s.Count == 4 {
+			if s.Program == "fixer" && s.Count == 4 {
 				return true
 			}
 		}
@@ -182,7 +182,7 @@ func TestEndToEndThroughTheDaemon(t *testing.T) {
 	// The publish's key: the same command again is the event before.
 	var signature SeenSignature
 	for _, s := range auditorSignatures(t, storeDir) {
-		if s.Program == "arreglo" {
+		if s.Program == "fixer" {
 			signature = s
 		}
 	}

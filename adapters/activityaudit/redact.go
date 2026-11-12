@@ -5,9 +5,8 @@ import "regexp"
 // Redacted stands in for a secret in what the adapter keeps or publishes.
 const Redacted = "<secret>"
 
-// secretPatterns are the shapes of a credential the fleet's text that
-// leaves the machine is refused for (bots-work-teams' devlib SECRET_RES):
-// GitHub's tokens, OpenAI-style keys, AWS access keys, Slack tokens, a
+// secretPatterns are the shapes of a credential that must never leave the
+// machine in what the adapter publishes: GitHub's tokens, OpenAI-style keys, AWS access keys, Slack tokens, a
 // private key's header, and a bearer token.
 var secretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`gh[pousr]_[A-Za-z0-9]{20,}`),

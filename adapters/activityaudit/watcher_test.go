@@ -49,8 +49,8 @@ func endEvent(task string, kind domain.EventType) domain.Event {
 // good a gap with a reconciliation, follows a team that formed, lets go
 // of one that is gone, and stops with its context.
 func TestTheWatcherAuditsEachTaskWhenItEnds(t *testing.T) {
-	source := newFakeSource(team("dev", "dev-go"), team("qa", "qa-jefe"))
-	source.pollFails["qa"] = 1
+	source := newFakeSource(team("workers", "worker-go"), team("watchers", "watch-lead"))
+	source.pollFails["watchers"] = 1
 	publisher := &fakePublisher{}
 	auditor, store := auditorFor(t, source, publisher, "")
 	logs := &syncBuffer{}
@@ -63,8 +63,8 @@ func TestTheWatcherAuditsEachTaskWhenItEnds(t *testing.T) {
 	go func() { done <- watcher.Run(ctx, time.Time{}) }()
 	eventually(t, "following", func() bool { return strings.Contains(logs.String(), "following 2 teams") })
 
-	source.add("task-504", "dev-go", "Failed", provider504, at(61))
-	source.polls["dev"] <- []domain.Event{{ID: "evt-progress", Type: domain.EventTaskProgress, TaskID: "task-504"}, endEvent("task-504", domain.EventTaskFailed), endEvent("task-504", domain.EventTaskFailed)}
+	source.add("task-504", "worker-go", "Failed", provider504, at(61))
+	source.polls["workers"] <- []domain.Event{{ID: "evt-progress", Type: domain.EventTaskProgress, TaskID: "task-504"}, endEvent("task-504", domain.EventTaskFailed), endEvent("task-504", domain.EventTaskFailed)}
 	eventually(t, "the 504 published", func() bool { return len(publisher.all()) == 1 })
 
 	// A bot in no team ends a task the timelines never tell: a full
@@ -76,26 +76,26 @@ func TestTheWatcherAuditsEachTaskWhenItEnds(t *testing.T) {
 	for i := range window {
 		window[i] = domain.Event{ID: domain.EventID("evt-w"), Type: domain.EventTaskProgress}
 	}
-	source.polls["dev"] <- window
+	source.polls["workers"] <- window
 	eventually(t, "the reconciliation", func() bool { return listed() > before && len(publisher.all()) == 2 })
 
 	// A team that formed is followed after the next end; one that is
 	// gone is let go.
 	source.mu.Lock()
-	source.groups = append(source.groups, team("marketing", "mkt-vigia"), team("gone"))
-	source.polls["marketing"] = make(chan []domain.Event, 1)
+	source.groups = append(source.groups, team("others", "other-watch"), team("gone"))
+	source.polls["others"] = make(chan []domain.Event, 1)
 	source.mu.Unlock()
-	source.add("task-ok", "dev-go", "Completed", "", at(63))
-	source.polls["dev"] <- []domain.Event{endEvent("task-ok", domain.EventTaskCompleted)}
-	source.add("task-mkt", "mkt-vigia", "Failed", "watcher not available", at(64))
-	eventually(t, "marketing followed", func() bool {
+	source.add("task-ok", "worker-go", "Completed", "", at(63))
+	source.polls["workers"] <- []domain.Event{endEvent("task-ok", domain.EventTaskCompleted)}
+	source.add("task-other", "other-watch", "Failed", "watcher not available", at(64))
+	eventually(t, "others followed", func() bool {
 		select {
-		case source.polls["marketing"] <- []domain.Event{endEvent("task-mkt", domain.EventTaskFailed)}:
+		case source.polls["others"] <- []domain.Event{endEvent("task-other", domain.EventTaskFailed)}:
 		default:
 		}
 		return len(publisher.all()) == 3
 	})
-	if data := publisher.all()[2].Data; data["team"] != "marketing" {
+	if data := publisher.all()[2].Data; data["team"] != "others" {
 		t.Errorf("the new team's bot = %+v", data)
 	}
 
@@ -103,9 +103,9 @@ func TestTheWatcherAuditsEachTaskWhenItEnds(t *testing.T) {
 	source.mu.Lock()
 	source.failGet = context.DeadlineExceeded
 	source.mu.Unlock()
-	source.polls["qa"] <- []domain.Event{endEvent("task-x", domain.EventTaskCompleted)}
+	source.polls["watchers"] <- []domain.Event{endEvent("task-x", domain.EventTaskCompleted)}
 	eventually(t, "the failure logged", func() bool { return strings.Contains(logs.String(), "task task-x:") })
-	if !strings.Contains(logs.String(), "team qa: the control plane went away") {
+	if !strings.Contains(logs.String(), "team watchers: the control plane went away") {
 		t.Errorf("logs = %s", logs.String())
 	}
 	cancel()
@@ -120,8 +120,8 @@ func TestTheWatcherAuditsEachTaskWhenItEnds(t *testing.T) {
 // Once stops after the start; a watcher without a source or an auditor
 // is refused; a control plane that does not list its teams fails Run.
 func TestTheWatcherOnceAndRefusals(t *testing.T) {
-	source := newFakeSource(team("dev", "dev-go"))
-	source.add("task-1", "dev-go", "Failed", provider504, at(1))
+	source := newFakeSource(team("workers", "worker-go"))
+	source.add("task-1", "worker-go", "Failed", provider504, at(1))
 	publisher := &fakePublisher{}
 	auditor, _ := auditorFor(t, source, publisher, "")
 	watcher, err := NewWatcher(WatcherConfig{Source: source, Auditor: auditor, Once: true})
@@ -154,15 +154,15 @@ func (failingGroups) ListGroups(context.Context) ([]application.Group, error) {
 func TestReport(t *testing.T) {
 	var out bytes.Buffer
 	signatures := []SeenSignature{
-		{ID: "fallo-1", Kind: KindToolCall, Tool: "local_exec", Program: "arreglo", Error: "no plan", Count: 3, Bots: []string{"a", "b", "c", "d"}, FirstAt: stamp(at(1)), PublishedAt: stamp(at(2))},
-		{ID: "fallo-2", Kind: KindToolCall, Tool: "local_exec", Partial: true, Error: cutMarker, Count: 1, Bots: []string{"a"}, FirstAt: stamp(at(3))},
-		{ID: "fallo-3", Kind: KindToolCall, Tool: toolCallTool, McpTool: "kmp/kmp_ask", Error: "x", Count: 1, FirstAt: stamp(at(3))},
-		{ID: "fallo-4", Kind: KindTaskFailed, Error: "stuck", Count: 1, FirstAt: stamp(at(4))},
+		{ID: "failure-1", Kind: KindToolCall, Tool: "local_exec", Program: "fixer", Error: "no plan", Count: 3, Bots: []string{"a", "b", "c", "d"}, FirstAt: stamp(at(1)), PublishedAt: stamp(at(2))},
+		{ID: "failure-2", Kind: KindToolCall, Tool: "local_exec", Partial: true, Error: cutMarker, Count: 1, Bots: []string{"a"}, FirstAt: stamp(at(3))},
+		{ID: "failure-3", Kind: KindToolCall, Tool: toolCallTool, McpTool: "notes/notes_ask", Error: "x", Count: 1, FirstAt: stamp(at(3))},
+		{ID: "failure-4", Kind: KindTaskFailed, Error: "stuck", Count: 1, FirstAt: stamp(at(4))},
 	}
 	if err := Report(&out, signatures); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"ID", "local_exec arreglo", "a,b,c,+1", "2026-11-12T07:02", "local_exec (partial)", "axlr_call_tool kmp/kmp_ask", "task failed", " no "} {
+	for _, want := range []string{"ID", "local_exec fixer", "a,b,c,+1", "2026-11-12T07:02", "local_exec (partial)", "axlr_call_tool notes/notes_ask", "task failed", " no "} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("no %q in\n%s", want, out.String())
 		}

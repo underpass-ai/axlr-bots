@@ -15,14 +15,14 @@ import (
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
-// arreglo is a dev program that failed the same way twice in a task, the
+// fixer is a workers program that failed the same way twice in a task, the
 // ids, shas and paths of the two runs different.
-func arregloTask(source *fakeSource, id, bot string, minute int) {
+func fixerTask(source *fakeSource, id, bot string, minute int) {
 	source.add(id, bot, "Completed", "", at(minute),
-		started(id+"-c1", toolLocalExec, localExec("/home/gx10a/Documents/ai/bots-work-teams/teams/dev/programs/bin/arreglo", "plan", "--task", "task-0dc89689b19a575f87602c94")),
-		ended(id+"-c1", toolLocalExec, "failed", execFailed("call_1", 2, "arreglo: no plan for task-0dc89689b19a575f87602c94 at /home/gx10a/x (head 1a2b3c4d)"), minute),
-		started(id+"-c2", toolLocalExec, localExec("/home/tirso/bin/arreglo", "plan", "--task", "task-5dbfaeddfdb4f706d3a45963")),
-		ended(id+"-c2", toolLocalExec, "failed", execFailed("call_2", 2, "arreglo: no plan for task-5dbfaeddfdb4f706d3a45963 at /home/tirso/y (head 9f8e7d6c)"), minute+1),
+		started(id+"-c1", toolLocalExec, localExec("/home/user-a/app/teams/workers/programs/bin/fixer", "plan", "--task", "task-0dc89689b19a575f87602c94")),
+		ended(id+"-c1", toolLocalExec, "failed", execFailed("call_1", 2, "fixer: no plan for task-0dc89689b19a575f87602c94 at /home/user-a/x (head 1a2b3c4d)"), minute),
+		started(id+"-c2", toolLocalExec, localExec("/home/user-b/bin/fixer", "plan", "--task", "task-5dbfaeddfdb4f706d3a45963")),
+		ended(id+"-c2", toolLocalExec, "failed", execFailed("call_2", 2, "fixer: no plan for task-5dbfaeddfdb4f706d3a45963 at /home/user-b/y (head 9f8e7d6c)"), minute+1),
 	)
 }
 
@@ -40,9 +40,9 @@ func audit(t *testing.T, auditor *Auditor, ids ...string) {
 // publishes nothing and grows the count; a restart keeps it all.
 func TestOneSignatureOneEventEver(t *testing.T) {
 	dir := t.TempDir()
-	source := newFakeSource(team("dev", "dev-jefe", "dev-go"), team("qa", "qa-jefe"))
+	source := newFakeSource(team("workers", "worker-lead", "worker-go"), team("watchers", "watch-lead"))
 	publisher := &fakePublisher{}
-	arregloTask(source, "task-a", "dev-jefe", 1)
+	fixerTask(source, "task-a", "worker-lead", 1)
 	auditor, store := auditorFor(t, source, publisher, dir)
 	audit(t, auditor, "task-a")
 	published := publisher.all()
@@ -50,19 +50,19 @@ func TestOneSignatureOneEventEver(t *testing.T) {
 		t.Fatalf("published %d: %+v", len(published), published)
 	}
 	signatures := store.Signatures()
-	if len(signatures) != 1 || signatures[0].Count != 2 || signatures[0].Program != "arreglo" {
+	if len(signatures) != 1 || signatures[0].Count != 2 || signatures[0].Program != "fixer" {
 		t.Fatalf("signatures = %+v", signatures)
 	}
 	command := published[0]
 	id := signatures[0].ID
-	if command.Group != "qa" || command.Name != EventName || command.IdempotencyKey != "activity:"+id {
+	if command.Group != "watchers" || command.Name != testEvent || command.IdempotencyKey != "activity:"+id {
 		t.Errorf("command = %+v", command)
 	}
-	want := map[string]any{"id": id, "kind": KindToolCall, "bot": "dev-jefe", "team": "dev", "task": "task-a", "tool": "local_exec", "program": "arreglo", "error": "arreglo: no plan for <id> at <path> (head <hex>)", "count": json.Number("2"), "first_at": stamp(at(1))}
+	want := map[string]any{"id": id, "kind": KindToolCall, "bot": "worker-lead", "team": "workers", "task": "task-a", "tool": "local_exec", "program": "fixer", "error": "fixer: no plan for <id> at <path> (head <hex>)", "count": json.Number("2"), "first_at": stamp(at(1))}
 	if raw, _ := json.Marshal(command.Data); string(raw) != mustJSON(want) {
 		t.Errorf("data = %s\nwant %s", raw, mustJSON(want))
 	}
-	if want := id + " · local_exec · dev-jefe (dev) · arreglo · arreglo: no plan for <id> at <path> (head <hex>)"; command.Message != want {
+	if want := id + " · local_exec · worker-lead (workers) · fixer · fixer: no plan for <id> at <path> (head <hex>)"; command.Message != want {
 		t.Errorf("message = %q, want %q", command.Message, want)
 	}
 	if !regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`).MatchString(id) {
@@ -72,17 +72,17 @@ func TestOneSignatureOneEventEver(t *testing.T) {
 		t.Errorf("message = %q", command.Message)
 	}
 
-	arregloTask(source, "task-b", "dev-go", 10)
+	fixerTask(source, "task-b", "worker-go", 10)
 	audit(t, auditor, "task-b", "task-a", "task-b")
 	if len(publisher.all()) != 1 {
 		t.Fatalf("a seen signature published again: %+v", publisher.all())
 	}
-	if got := store.Signatures()[0]; got.Count != 4 || strings.Join(got.Bots, ",") != "dev-go,dev-jefe" || got.LastTask != "task-b" || got.FirstTask != "task-a" {
+	if got := store.Signatures()[0]; got.Count != 4 || strings.Join(got.Bots, ",") != "worker-go,worker-lead" || got.LastTask != "task-b" || got.FirstTask != "task-a" {
 		t.Errorf("after the second task: %+v", got)
 	}
 
 	// A restart reads what the first run kept.
-	arregloTask(source, "task-c", "dev-go", 20)
+	fixerTask(source, "task-c", "worker-go", 20)
 	restarted, reopened := auditorFor(t, source, publisher, dir)
 	audit(t, restarted, "task-b", "task-c")
 	if len(publisher.all()) != 1 {
@@ -105,35 +105,35 @@ func mustJSON(v any) string {
 // The failures of today's fleet, in the shapes it writes them, make the
 // signatures they should, and the noise rules drop what they should.
 func TestTheFleetsFailures(t *testing.T) {
-	source := newFakeSource(team("dev", "dev-go"), team("qa", "qa-explorador", "qa-jefe"), team("marketing", "mkt-vigia"))
+	source := newFakeSource(team("workers", "worker-go"), team("watchers", "watch-explorer", "watch-lead"), team("others", "other-watch"))
 	publisher := &fakePublisher{}
-	// A QA probe's refusal, its program shown: QA testing a product.
-	source.add("task-probe", "qa-explorador", "Completed", "", at(1),
-		started("p1", toolLocalExec, localExec("/x/qa-probe", "cli", "--sandbox", "s1")),
+	// A sandbox probe's refusal, its program shown: the watchers testing a product.
+	source.add("task-probe", "watch-explorer", "Completed", "", at(1),
+		started("p1", toolLocalExec, localExec("/x/sandbox-probe", "cli", "--sandbox", "s1")),
 		ended("p1", toolLocalExec, "failed", execFailed("p1", 1, "refused"), 1))
-	// A QA bot's local_exec whose program the cut summary hid: its probes.
-	source.add("task-qa-cut", "qa-explorador", "Completed", "", at(2),
+	// A watcher's local_exec whose program the cut summary hid: its probes.
+	source.add("task-watch-cut", "watch-explorer", "Completed", "", at(2),
 		started("q1", toolLocalExec, cutSummary),
 		ended("q1", toolLocalExec, "failed", cutEnvelope, 2))
-	// A marketing watcher's, hidden the same way: the bot stands in.
-	source.add("task-mkt", "mkt-vigia", "Completed", "", at(3),
+	// Another team's watcher's, hidden the same way: the bot stands in.
+	source.add("task-other", "other-watch", "Completed", "", at(3),
 		started("m1", toolLocalExec, cutSummary),
 		ended("m1", toolLocalExec, "failed", cutEnvelope, 3),
 		started("m2", toolLocalExec, cutSummary),
 		ended("m2", toolLocalExec, "failed", cutEnvelope, 3),
-		bridged("m3", "kmp/kmp_write_memory"),
+		bridged("m3", "notes/notes_write"),
 		ended("m3", toolCallTool, "failed", bridgedCut, 4))
 	// The model endpoint's 504 ended a task.
-	source.add("task-504", "dev-go", "Failed", provider504, at(5))
+	source.add("task-504", "worker-go", "Failed", provider504, at(5))
 	auditor, store := auditorFor(t, source, publisher, "")
-	audit(t, auditor, "task-probe", "task-qa-cut", "task-mkt", "task-504")
+	audit(t, auditor, "task-probe", "task-watch-cut", "task-other", "task-504")
 	got := map[string]SeenSignature{}
 	for _, s := range store.Signatures() {
 		got[What(s)+" | "+s.Error] = s
 	}
 	want := map[string]int{
 		"local_exec (partial) | " + cutMarker:                                          2,
-		"axlr_call_tool kmp/kmp_write_memory | " + cutMarker:                           1,
+		"axlr_call_tool notes/notes_write | " + cutMarker:                              1,
 		"task failed | interrupted: model endpoint <addr> provider_failure (HTTP 504)": 1,
 	}
 	if len(got) != len(want) {
@@ -144,7 +144,7 @@ func TestTheFleetsFailures(t *testing.T) {
 			t.Errorf("%s: %+v", what, got[what])
 		}
 	}
-	if s := got["local_exec (partial) | "+cutMarker]; !strings.Contains(s.Key, "bot=mkt-vigia") || !strings.Contains(s.Key, "exit=nonzero") || !s.Partial {
+	if s := got["local_exec (partial) | "+cutMarker]; !strings.Contains(s.Key, "bot=other-watch") || !strings.Contains(s.Key, "exit=nonzero") || !s.Partial {
 		t.Errorf("partial = %+v", s)
 	}
 	if len(publisher.all()) != 3 {
@@ -154,7 +154,7 @@ func TestTheFleetsFailures(t *testing.T) {
 		if command.Data["kind"] == KindTaskFailed && (command.Data["tool"] != nil || command.Data["error"] != "interrupted: model endpoint <addr> provider_failure (HTTP 504)") {
 			t.Errorf("task failed = %+v", command.Data)
 		}
-		if command.Data["mcp_tool"] == "kmp/kmp_write_memory" && command.Data["partial"] != nil {
+		if command.Data["mcp_tool"] == "notes/notes_write" && command.Data["partial"] != nil {
 			t.Errorf("a bridged call that names its tool is not partial: %+v", command.Data)
 		}
 	}
@@ -163,7 +163,7 @@ func TestTheFleetsFailures(t *testing.T) {
 // One model's slip that it fixed at once is noise; the same slip from a
 // second bot is not.
 func TestARecoveredSlipWaitsForASecondBot(t *testing.T) {
-	source := newFakeSource(team("qa", "qa-jefe", "qa-triaje"))
+	source := newFakeSource(team("watchers", "watch-lead", "watch-triage"))
 	publisher := &fakePublisher{}
 	slip := func(id, bot string, minute int) {
 		source.add(id, bot, "Completed", "", at(minute),
@@ -172,8 +172,8 @@ func TestARecoveredSlipWaitsForASecondBot(t *testing.T) {
 			started(id+"-2", "axlr_remember", `{"continuation":"read_d3f95e75"}`),
 			ended(id+"-2", "axlr_remember", "ok", "", minute))
 	}
-	slip("task-1", "qa-jefe", 1)
-	slip("task-2", "qa-jefe", 2)
+	slip("task-1", "watch-lead", 1)
+	slip("task-2", "watch-lead", 2)
 	auditor, store := auditorFor(t, source, publisher, "")
 	audit(t, auditor, "task-1", "task-2")
 	if len(publisher.all()) != 0 {
@@ -182,28 +182,28 @@ func TestARecoveredSlipWaitsForASecondBot(t *testing.T) {
 	if s := store.Signatures()[0]; s.Count != 2 || s.Recovered != 2 {
 		t.Fatalf("%+v", s)
 	}
-	slip("task-3", "qa-triaje", 3)
+	slip("task-3", "watch-triage", 3)
 	audit(t, auditor, "task-3")
 	if len(publisher.all()) != 1 || publisher.all()[0].Data["count"] != json.Number("3") {
 		t.Fatalf("the second bot's: %+v", publisher.all())
 	}
 	// A local program recovers by the same program only; a bridged call
 	// by the same plugin's tool.
-	source.add("task-4", "qa-jefe", "Completed", "", at(4),
-		started("a", toolLocalExec, localExec("/x/arreglo", "plan")),
+	source.add("task-4", "watch-lead", "Completed", "", at(4),
+		started("a", toolLocalExec, localExec("/x/fixer", "plan")),
 		ended("a", toolLocalExec, "failed", execFailed("a", 1, "no"), 4),
 		started("b", toolLocalExec, localExec("/x/other")),
 		ended("b", toolLocalExec, "ok", "", 4),
-		bridged("c", "kmp/kmp_ask"),
+		bridged("c", "notes/notes_ask"),
 		ended("c", toolCallTool, "failed", `{"error":"bad about"}`, 4),
-		bridged("d", "kmp/kmp_ask"),
+		bridged("d", "notes/notes_ask"),
 		ended("d", toolCallTool, "ok", "", 4))
 	audit(t, auditor, "task-4")
 	for _, s := range store.Signatures() {
 		switch {
-		case s.Program == "arreglo" && s.Recovered != 0:
+		case s.Program == "fixer" && s.Recovered != 0:
 			t.Errorf("recovered by another program: %+v", s)
-		case s.McpTool == "kmp/kmp_ask" && s.Recovered != 1:
+		case s.McpTool == "notes/notes_ask" && s.Recovered != 1:
 			t.Errorf("not recovered by the same tool: %+v", s)
 		}
 	}
@@ -213,25 +213,25 @@ func TestARecoveredSlipWaitsForASecondBot(t *testing.T) {
 // of a member of the team published to; without the team rule it is
 // audited.
 func TestIgnoredProgramsPublishNothing(t *testing.T) {
-	source := newFakeSource(team("qa", "qa-explorador"))
-	for i, program := range DefaultIgnorePrograms {
-		source.add("task-"+program, "qa-explorador", "Completed", "", at(i),
+	source := newFakeSource(team("watchers", "watch-explorer"))
+	for i, program := range testIgnorePrograms {
+		source.add("task-"+program, "watch-explorer", "Completed", "", at(i),
 			started("c", toolLocalExec, localExec("/x/"+program, "cli")),
 			ended("c", toolLocalExec, "failed", execFailed("c", 1, "refused"), i))
 	}
-	source.add("task-cut", "qa-explorador", "Completed", "", at(9),
+	source.add("task-cut", "watch-explorer", "Completed", "", at(9),
 		started("c", toolLocalExec, cutSummary),
 		ended("c", toolLocalExec, "failed", cutEnvelope, 9))
 	publisher := &fakePublisher{}
 	auditor, store := auditorFor(t, source, publisher, "")
-	audit(t, auditor, "task-qa-probe", "task-qa-term", "task-qa-gui", "task-qa-script", "task-cut")
+	audit(t, auditor, "task-sandbox-probe", "task-sandbox-term", "task-sandbox-gui", "task-sandbox-script", "task-cut")
 	if len(publisher.all()) != 0 || len(store.Signatures()) != 0 {
 		t.Fatalf("published %+v, kept %+v", publisher.all(), store.Signatures())
 	}
 	auditor.config.IgnoreTeamPartial = false
 	auditor.config.IgnorePrograms = nil
 	auditor.config.Store = mustStore(t)
-	audit(t, auditor, "task-qa-probe", "task-cut")
+	audit(t, auditor, "task-sandbox-probe", "task-cut")
 	if len(publisher.all()) != 2 {
 		t.Fatalf("without the rules: %+v", publisher.all())
 	}
@@ -249,9 +249,9 @@ func mustStore(t *testing.T) *SeenStore {
 // A publish that failed is retried by the next flush, under the same
 // key; a dry run publishes nothing and records what it would have.
 func TestAFailedPublishIsRetried(t *testing.T) {
-	source := newFakeSource(team("dev", "dev-go"))
-	source.add("task-504", "dev-go", "Failed", provider504, at(1))
-	source.add("task-other", "dev-go", "Failed", "", at(2))
+	source := newFakeSource(team("workers", "worker-go"))
+	source.add("task-504", "worker-go", "Failed", provider504, at(1))
+	source.add("task-other", "worker-go", "Failed", "", at(2))
 	publisher := &fakePublisher{fail: errors.New("the control plane is down")}
 	auditor, store := auditorFor(t, source, publisher, "")
 	if err := auditor.Audit(context.Background(), "task-504"); err == nil || !strings.Contains(err.Error(), "the control plane is down") {
@@ -276,14 +276,14 @@ func TestAFailedPublishIsRetried(t *testing.T) {
 // A rearmed signature publishes again on its next occurrence, under a
 // new key; one the store does not know is refused.
 func TestRearm(t *testing.T) {
-	source := newFakeSource(team("dev", "dev-go"))
-	source.add("task-1", "dev-go", "Failed", provider504, at(1))
-	source.add("task-2", "dev-go", "Failed", provider504, at(2))
+	source := newFakeSource(team("workers", "worker-go"))
+	source.add("task-1", "worker-go", "Failed", provider504, at(1))
+	source.add("task-2", "worker-go", "Failed", provider504, at(2))
 	publisher := &fakePublisher{}
 	auditor, store := auditorFor(t, source, publisher, t.TempDir())
 	audit(t, auditor, "task-1")
 	id := store.Signatures()[0].ID
-	if _, err := store.Rearm([]string{"fallo-nope"}); err == nil {
+	if _, err := store.Rearm([]string{"failure-nope"}); err == nil {
 		t.Error("an unknown id was rearmed")
 	}
 	if rearmed, err := store.Rearm([]string{"all"}); err != nil || len(rearmed) != 1 || rearmed[0] != id {
@@ -302,9 +302,9 @@ func TestRearm(t *testing.T) {
 // cursor is history; an auditor without a source, a store or a valid
 // team is refused.
 func TestAuditSkips(t *testing.T) {
-	source := newFakeSource(team("dev", "dev-go"))
-	source.add("task-running", "dev-go", "Running", "", at(30))
-	source.add("task-old", "dev-go", "Failed", provider504, at(1))
+	source := newFakeSource(team("workers", "worker-go"))
+	source.add("task-running", "worker-go", "Running", "", at(30))
+	source.add("task-old", "worker-go", "Failed", provider504, at(1))
 	publisher := &fakePublisher{}
 	auditor, store := auditorFor(t, source, publisher, "")
 	store.SetCursor(at(10))
@@ -315,12 +315,12 @@ func TestAuditSkips(t *testing.T) {
 	if err := auditor.Audit(context.Background(), "task-none"); !errors.As(err, new(domain.NotFoundError)) {
 		t.Errorf("missing task: %v", err)
 	}
-	for _, config := range []AuditorConfig{{Store: store, Team: "qa"}, {Source: source, Team: "qa"}, {Source: source, Store: store, Team: "Not A Team"}} {
+	for _, config := range []AuditorConfig{{Store: store, Team: "watchers"}, {Source: source, Team: "watchers"}, {Source: source, Store: store, Team: "Not A Team", Event: testEvent}, {Source: source, Store: store, Team: "watchers"}, {Source: source, Store: store, Team: "watchers", Event: "Not An Event"}} {
 		if _, err := NewAuditor(config); err == nil {
 			t.Errorf("accepted %+v", config)
 		}
 	}
-	if a, err := NewAuditor(AuditorConfig{Source: source, Store: store, Team: "qa"}); err != nil || a.config.Now == nil || a.config.Log == nil {
+	if a, err := NewAuditor(AuditorConfig{Source: source, Store: store, Team: "watchers", Event: testEvent}); err != nil || a.config.Now == nil || a.config.Log == nil {
 		t.Errorf("defaults: %v", err)
 	}
 }
@@ -329,9 +329,9 @@ func TestAuditSkips(t *testing.T) {
 // ended audited unread; with since it replays from it; a store with a
 // cursor goes on from it and ignores since.
 func TestStartAndReconcile(t *testing.T) {
-	source := newFakeSource(team("dev", "dev-go"))
-	source.add("task-1", "dev-go", "Failed", provider504, at(1))
-	source.add("task-2", "dev-go", "Running", "", at(2))
+	source := newFakeSource(team("workers", "worker-go"))
+	source.add("task-1", "worker-go", "Failed", provider504, at(1))
+	source.add("task-2", "worker-go", "Running", "", at(2))
 	ctx := context.Background()
 
 	publisher := &fakePublisher{}
@@ -380,7 +380,7 @@ func TestCommandOfABotInNoTeam(t *testing.T) {
 	if data := publisher.all()[0].Data; data["team"] != nil || data["bot"] != "loner" {
 		t.Errorf("data = %+v", data)
 	}
-	if got := auditor.command(&SeenSignature{ID: "fallo-x", Kind: KindTaskFailed, Bots: []string{"b"}, FirstTask: "task-f"}); got.Data["bot"] != "b" || got.Data["task"] != "task-f" {
+	if got := auditor.command(&SeenSignature{ID: "failure-x", Kind: KindTaskFailed, Bots: []string{"b"}, FirstTask: "task-f"}); got.Data["bot"] != "b" || got.Data["task"] != "task-f" {
 		t.Errorf("fallback = %+v", got.Data)
 	}
 }
@@ -390,23 +390,23 @@ func TestCommandOfABotInNoTeam(t *testing.T) {
 // long one is cut to 280 characters.
 func TestMessage(t *testing.T) {
 	for want, s := range map[string]SeenSignature{
-		"fallo-1 · task · dev-go (dev) · - · stuck":                       {ID: "fallo-1", Kind: KindTaskFailed, Error: "stuck"},
-		"fallo-2 · axlr_call_tool · dev-go (dev) · kmp/kmp_ask · x":       {ID: "fallo-2", Kind: KindToolCall, Tool: toolCallTool, McpTool: "kmp/kmp_ask", Error: "x"},
-		"fallo-3 · axlr_remember · loner (-) · - · send the continuation": {ID: "fallo-3", Kind: KindToolCall, Tool: "axlr_remember", Error: "send the continuation"},
+		"failure-1 · task · worker-go (workers) · - · stuck":                     {ID: "failure-1", Kind: KindTaskFailed, Error: "stuck"},
+		"failure-2 · axlr_call_tool · worker-go (workers) · notes/notes_ask · x": {ID: "failure-2", Kind: KindToolCall, Tool: toolCallTool, McpTool: "notes/notes_ask", Error: "x"},
+		"failure-3 · axlr_remember · loner (-) · - · send the continuation":      {ID: "failure-3", Kind: KindToolCall, Tool: "axlr_remember", Error: "send the continuation"},
 	} {
-		team := "dev"
-		if s.ID == "fallo-3" {
+		team := "workers"
+		if s.ID == "failure-3" {
 			team = ""
 		}
-		bot := "dev-go"
-		if s.ID == "fallo-3" {
+		bot := "worker-go"
+		if s.ID == "failure-3" {
 			bot = "loner"
 		}
 		if got := Message(&s, bot, team); got != want {
 			t.Errorf("got %q, want %q", got, want)
 		}
 	}
-	long := SeenSignature{ID: "fallo-4", Kind: KindToolCall, Tool: "t", Error: strings.Repeat("e", 400)}
+	long := SeenSignature{ID: "failure-4", Kind: KindToolCall, Tool: "t", Error: strings.Repeat("e", 400)}
 	if got := []rune(Message(&long, "b", "t")); len(got) != domain.MaxEventMessageLength || got[len(got)-1] != '…' {
 		t.Errorf("not cut: %d", len(got))
 	}
@@ -415,15 +415,15 @@ func TestMessage(t *testing.T) {
 // A backfill publishes at most PerMinute events a minute, oldest first:
 // the next waits for the oldest of the minute to leave it.
 func TestPacing(t *testing.T) {
-	source := newFakeSource(team("dev", "dev-go"))
+	source := newFakeSource(team("workers", "worker-go"))
 	for i := range 4 {
-		source.add(fmt.Sprintf("task-%d", i), "dev-go", "Failed", fmt.Sprintf("reason %c", 'a'+i), at(i))
+		source.add(fmt.Sprintf("task-%d", i), "worker-go", "Failed", fmt.Sprintf("reason %c", 'a'+i), at(i))
 	}
 	publisher := &fakePublisher{}
 	clock := at(0)
 	var waited []time.Duration
 	store := mustStore(t)
-	auditor, err := NewAuditor(AuditorConfig{Source: source, Publisher: publisher, Store: store, Team: "qa", PerMinute: 2,
+	auditor, err := NewAuditor(AuditorConfig{Source: source, Publisher: publisher, Store: store, Team: "watchers", Event: testEvent, PerMinute: 2,
 		Now: func() time.Time { return clock },
 		Sleep: func(_ context.Context, d time.Duration) error {
 			waited = append(waited, d)
@@ -445,7 +445,7 @@ func TestPacing(t *testing.T) {
 			t.Errorf("not oldest first: %d %v", i, command.Data["error"])
 		}
 	}
-	if _, err := NewAuditor(AuditorConfig{Source: source, Store: store, Team: "qa", PerMinute: -1}); err == nil {
+	if _, err := NewAuditor(AuditorConfig{Source: source, Store: store, Team: "watchers", Event: testEvent, PerMinute: -1}); err == nil {
 		t.Error("a negative pace was taken")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -456,7 +456,7 @@ func TestPacing(t *testing.T) {
 	if err := sleep(context.Background(), time.Millisecond); err != nil {
 		t.Error(err)
 	}
-	stuck, _ := NewAuditor(AuditorConfig{Source: source, Publisher: publisher, Store: mustStore(t), Team: "qa", PerMinute: 1, Now: func() time.Time { return at(0) },
+	stuck, _ := NewAuditor(AuditorConfig{Source: source, Publisher: publisher, Store: mustStore(t), Team: "watchers", Event: testEvent, PerMinute: 1, Now: func() time.Time { return at(0) },
 		Sleep: func(context.Context, time.Duration) error { return context.Canceled }})
 	if err := stuck.Start(context.Background(), at(0)); err == nil {
 		t.Error("a pace whose wait ended published anyway")

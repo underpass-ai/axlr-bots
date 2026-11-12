@@ -76,9 +76,9 @@ func (f Failure) Key() string {
 	return strings.Join(append(parts, "error="+f.Error), "|")
 }
 
-// ID is the signature's id: fallo- and the first 16 hex characters of
+// ID is the signature's id: failure- and the first 16 hex characters of
 // the key's SHA-256.
 func (f Failure) ID() string {
 	sum := sha256.Sum256([]byte(f.Key()))
-	return "fallo-" + hex.EncodeToString(sum[:8])
+	return "failure-" + hex.EncodeToString(sum[:8])
 }

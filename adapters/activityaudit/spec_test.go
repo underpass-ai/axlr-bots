@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"testing"
 
+	"github.com/underpass-ai/axlr-bots/domain"
 	"github.com/underpass-ai/axlr-bots/internal/asyncapigen"
 )
 
@@ -60,8 +62,10 @@ func TestTheNamesAreTheSpecs(t *testing.T) {
 			Schemas map[string]struct {
 				Required   []string `json:"required"`
 				Properties map[string]struct {
-					Const string   `json:"const"`
-					Enum  []string `json:"enum"`
+					Const    string   `json:"const"`
+					Enum     []string `json:"enum"`
+					Pattern  string   `json:"pattern"`
+					Examples []string `json:"examples"`
 				} `json:"properties"`
 			} `json:"schemas"`
 		} `json:"components"`
@@ -69,17 +73,22 @@ func TestTheNamesAreTheSpecs(t *testing.T) {
 	if err := json.Unmarshal(raw, &spec); err != nil {
 		t.Fatal(err)
 	}
-	if spec.Components.Messages["actividadFallo"].Name != EventName || spec.Components.Schemas["ActividadFalloEvent"].Properties["name"].Const != EventName {
-		t.Errorf("the spec names another event: %+v", spec.Components.Messages)
+	// The event's name is the operator's (--event): the spec fixes none.
+	name := spec.Components.Schemas["ActivityFailureEvent"].Properties["name"]
+	if _, ok := spec.Components.Messages["activityFailure"]; !ok || name.Const != "" || name.Pattern == "" {
+		t.Errorf("the spec fixes the event's name: %+v %+v", spec.Components.Messages, name)
 	}
-	if kinds := spec.Components.Schemas["FalloData"].Properties["kind"].Enum; !slices.Equal(kinds, []string{KindToolCall, KindTaskFailed}) {
+	if _, err := domain.NewEventName(name.Examples[0]); err != nil || !regexp.MustCompile(name.Pattern).MatchString(name.Examples[0]) {
+		t.Errorf("the example %q is no event name: %v", name.Examples[0], err)
+	}
+	if kinds := spec.Components.Schemas["FailureData"].Properties["kind"].Enum; !slices.Equal(kinds, []string{KindToolCall, KindTaskFailed}) {
 		t.Errorf("kinds = %v", kinds)
 	}
 	if got := spec.Channels["teamEvents"].Address; got != "/v1/groups/{team}/events" || len(spec.Channels) != 1 || len(spec.Channels["teamEvents"].Messages) != 1 {
 		t.Errorf("channels = %+v", spec.Channels)
 	}
-	data := dataOf(FalloData{})
-	for _, key := range spec.Components.Schemas["FalloData"].Required {
+	data := dataOf(FailureData{})
+	for _, key := range spec.Components.Schemas["FailureData"].Required {
 		if _, ok := data[key]; !ok {
 			t.Errorf("the data always carries %s", key)
 		}

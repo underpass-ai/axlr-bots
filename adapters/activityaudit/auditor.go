@@ -15,19 +15,10 @@ import (
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
-// EventName is the event the adapter publishes: the spec's actividadFallo.
-const EventName = "actividad.fallo"
-
-// DefaultTeam is the team the adapter publishes to.
-const DefaultTeam = "qa"
-
-// DefaultIgnorePrograms are the QA team's sandbox probes: their refusals
-// are QA testing a product, and QA reports what it finds itself.
-var DefaultIgnorePrograms = []string{"qa-probe", "qa-term", "qa-gui", "qa-script"}
-
 // DefaultPerMinute is how many events the adapter publishes a minute at
-// most: QA settles at most 8 events per task and the platform redelivers
-// at most twice, so a first --since backfill must not flood it.
+// most: a listening team settles a bounded number of events per task and
+// the platform redelivers at most twice, so a first --since backfill must
+// not flood it.
 const DefaultPerMinute = 6
 
 // DryRunEventID is the event id a dry run records for what it would have
@@ -39,14 +30,18 @@ const DryRunEventID = "dry-run"
 // PerMinute bounds the publishes in any minute (0: no bound); a flush
 // that reaches it waits, through Sleep, for the oldest of them to leave
 // the minute.
+// Team is the team the events are published to and Event their name,
+// both the operator's choice (the spec's activityFailure).
 // IgnorePrograms are local programs whose failures are not audited;
 // IgnoreTeamPartial extends them to a local_exec whose line hid its
-// program, by a member of Team (QA's own runs are its probes).
+// program, by a member of Team (a team that runs probes of its own reports
+// what they find itself).
 type AuditorConfig struct {
 	Source            Source
 	Publisher         Publisher
 	Store             *SeenStore
 	Team              string
+	Event             string
 	IgnorePrograms    []string
 	IgnoreTeamPartial bool
 	PerMinute         int
@@ -71,6 +66,9 @@ func NewAuditor(config AuditorConfig) (*Auditor, error) {
 		return nil, fmt.Errorf("activityaudit: an auditor needs a source and a store")
 	}
 	if _, err := domain.NewTeamName(config.Team); err != nil {
+		return nil, err
+	}
+	if _, err := domain.NewEventName(config.Event); err != nil {
 		return nil, err
 	}
 	if config.Now == nil {
@@ -277,7 +275,7 @@ func (a *Auditor) Flush(ctx context.Context) error {
 		if a.config.Publisher == nil {
 			verb = "would be published (dry run)"
 		}
-		a.config.Log.Printf("activity-audit: %s %s %s to team %s as %s (%d seen)", EventName, signature.ID, verb, a.config.Team, eventID, signature.Due.Count)
+		a.config.Log.Printf("activity-audit: %s %s %s to team %s as %s (%d seen)", a.config.Event, signature.ID, verb, a.config.Team, eventID, signature.Due.Count)
 		if err := a.config.Store.Save(); err != nil {
 			return err
 		}
@@ -324,7 +322,7 @@ func sleep(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// command is the publish of a signature, its data the spec's FalloData,
+// command is the publish of a signature, its data the spec's FailureData,
 // from what was fixed when it fell due.
 func (a *Auditor) command(signature *SeenSignature) application.PublishGroupEventCommand {
 	due := signature.Due
@@ -338,10 +336,10 @@ func (a *Auditor) command(signature *SeenSignature) application.PublishGroupEven
 		due.Team = a.teams[due.Bot]
 	}
 	bot, task := due.Bot, due.Task
-	data := FalloData{ID: signature.ID, Kind: signature.Kind, Bot: bot, Team: due.Team, Task: task, Tool: signature.Tool, Program: signature.Program, McpTool: signature.McpTool, Error: signature.Error, Partial: signature.Partial, Count: due.Count, FirstAt: signature.FirstAt}
+	data := FailureData{ID: signature.ID, Kind: signature.Kind, Bot: bot, Team: due.Team, Task: task, Tool: signature.Tool, Program: signature.Program, McpTool: signature.McpTool, Error: signature.Error, Partial: signature.Partial, Count: due.Count, FirstAt: signature.FirstAt}
 	return application.PublishGroupEventCommand{
 		Group:          a.config.Team,
-		Name:           EventName,
+		Name:           a.config.Event,
 		Message:        Message(signature, bot, due.Team),
 		Data:           dataOf(data),
 		IdempotencyKey: IdempotencyKey(signature),
@@ -376,7 +374,7 @@ func orDash(text string) string {
 
 // dataOf is the generated DTO as the command's data: its keys are the
 // spec's, never written here.
-func dataOf(data FalloData) map[string]any {
+func dataOf(data FailureData) map[string]any {
 	raw, _ := json.Marshal(data)
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()

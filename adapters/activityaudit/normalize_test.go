@@ -8,8 +8,8 @@ import (
 // What varies between two occurrences of one failure normalises away:
 // ids, shas, times, paths under /home, numbers, quoted text.
 func TestNormaliseTakesOutWhatVaries(t *testing.T) {
-	a := Normalise(`task task-5dbfaeddfdb4f706d3a45963: head 1a2b3c4d failed at 2026-11-12T10:55:07.723Z reading /home/gx10a/Documents/ai/x.json after 12 tries "fix the panel"`)
-	b := Normalise(`task task-0dc89689b19a575f87602c94: head 9f8e7d6c failed at 2026-11-11T01:02:03Z reading /home/tirso/other/y.json after 3 tries "something else"`)
+	a := Normalise(`task task-5dbfaeddfdb4f706d3a45963: head 1a2b3c4d failed at 2026-11-12T10:55:07.723Z reading /home/user-a/Documents/ai/x.json after 12 tries "fix the panel"`)
+	b := Normalise(`task task-0dc89689b19a575f87602c94: head 9f8e7d6c failed at 2026-11-11T01:02:03Z reading /home/user-b/other/y.json after 3 tries "something else"`)
 	if a != b {
 		t.Fatalf("\n%s\n%s", a, b)
 	}

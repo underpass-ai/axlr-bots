@@ -7,13 +7,13 @@ func TestReadCallSummary(t *testing.T) {
 		summary string
 		want    callSummary
 	}{
-		"whole":          {localExec("/home/gx10a/bin/arreglo", "plan", "x"), callSummary{Program: "arreglo", Arg: "plan", ArgKnown: true}},
+		"whole":          {localExec("/home/user-a/bin/fixer", "plan", "x"), callSummary{Program: "fixer", Arg: "plan", ArgKnown: true}},
 		"whole, no args": {localExec("/usr/bin/true"), callSummary{Program: "true", ArgKnown: true}},
 		"why first, cut": {cutSummary, callSummary{}},
-		"program, cut args": {`{"why":"w","program":"/x/qa-probe","args":["cli","--sandbox…`,
-			callSummary{Program: "qa-probe", Arg: "cli", ArgKnown: true}},
-		"program, empty args, cut": {`{"why":"w","program":"/x/qa-probe","args":[],"cwd":"…`, callSummary{Program: "qa-probe", ArgKnown: true}},
-		"program, args cut inside": {`{"why":"w","program":"/x/qa-probe","args":["cl…`, callSummary{Program: "qa-probe"}},
+		"program, cut args": {`{"why":"w","program":"/x/sandbox-probe","args":["cli","--sandbox…`,
+			callSummary{Program: "sandbox-probe", Arg: "cli", ArgKnown: true}},
+		"program, empty args, cut": {`{"why":"w","program":"/x/sandbox-probe","args":[],"cwd":"…`, callSummary{Program: "sandbox-probe", ArgKnown: true}},
+		"program, args cut inside": {`{"why":"w","program":"/x/sandbox-probe","args":["cl…`, callSummary{Program: "sandbox-probe"}},
 		"empty":                    {"", callSummary{}},
 	} {
 		if got := readCallSummary(c.summary); got != c.want {

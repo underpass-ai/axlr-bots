@@ -8,7 +8,7 @@ func TestReadCallError(t *testing.T) {
 		want callError
 	}{
 		"host refusal":       {rememberLine, callError{Text: "send the continuation alone to commit a reviewed write"}},
-		"host refusal cut":   {`{"call_id":"call_x","error":"project:dev fix-details-ignore…`, callError{Text: "project:dev fix-details-ignore"}},
+		"host refusal cut":   {`{"call_id":"call_x","error":"project:workers fix-details-ignore…`, callError{Text: "project:workers fix-details-ignore"}},
 		"cut envelope":       {cutEnvelope, callError{Cut: true}},
 		"cut bridged":        {bridgedCut, callError{Cut: true}},
 		"whole envelope":     {execFailed("c1", 2, "error: no_credentials\nmore"), callError{Text: "error: no_credentials\nmore", Exit: "2"}},

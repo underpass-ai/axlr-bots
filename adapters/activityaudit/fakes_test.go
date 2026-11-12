@@ -13,12 +13,18 @@ import (
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
+// testEvent is the event the tests publish, and testIgnorePrograms the
+// programs they ignore: the operator's choices, no default of the adapter.
+const testEvent = "activity.failure"
+
+var testIgnorePrograms = []string{"sandbox-probe", "sandbox-term", "sandbox-gui", "sandbox-script"}
+
 // The shapes the fleet writes today (12 Nov 2026): the node cuts a
 // call's summary at 120 characters and the model writes its why first;
 // AXLR cuts a failed call's error at 240 and writes a local or bridged
 // call's answer as its response envelope.
 const (
-	cutSummary   = `{"why":"Remove abandoned QA sandboxes before exploration.","program":"/home/gx10a/Documents/ai/bots-work-teams/teams/qa…`
+	cutSummary   = `{"why":"Remove abandoned sandboxes before exploration.","program":"/home/user-a/Documents/ai/example-app/teams/watchers…`
 	cutEnvelope  = `{"protocol_version":1,"request_id":"call_fdb2fc6510c94379bfc2da2b7003bda2","tool":"exec","status":"completed","started_at":"2026-11-12T10:55:07.723408249Z","finished_at":"2026-11-12T10:55:07.735076746Z","duration_ms":11,"output":{"exit_cod…`
 	bridgedCut   = `{"protocol_version":1,"request_id":"call_a738b9d7d0364b268438cb13e8e3a0c1","tool":"plugins.call","status":"completed","started_at":"2026-11-12T10:55:42.503944238Z","finished_at":"2026-11-12T10:55:42.51099906Z","duration_ms":7,"output":{"co…`
 	rememberLine = `{"call_id":"call_3affcd07f7ad4c71870e2bc184eaa440","error":"send the continuation alone to commit a reviewed write"}`
@@ -38,7 +44,7 @@ func started(call, tool, summary string) item {
 }
 
 func bridged(call, mcpTool string) item {
-	return item{"kind": "tool.started", "tool": toolCallTool, "callId": call, "mcpTool": mcpTool, "summary": `{"about":"project:qa"}`}
+	return item{"kind": "tool.started", "tool": toolCallTool, "callId": call, "mcpTool": mcpTool, "summary": `{"about":"project:watchers"}`}
 }
 
 func ended(call, tool, status, errorText string, minute int) item {
@@ -251,7 +257,7 @@ func auditorFor(t *testing.T, source *fakeSource, publisher *fakePublisher, dir 
 	if err != nil {
 		t.Fatal(err)
 	}
-	config := AuditorConfig{Source: source, Store: store, Team: DefaultTeam, IgnorePrograms: DefaultIgnorePrograms, IgnoreTeamPartial: true, Now: func() time.Time { return at(59) }}
+	config := AuditorConfig{Source: source, Store: store, Team: "watchers", Event: testEvent, IgnorePrograms: testIgnorePrograms, IgnoreTeamPartial: true, Now: func() time.Time { return at(59) }}
 	if publisher != nil {
 		config.Publisher = publisher
 	}

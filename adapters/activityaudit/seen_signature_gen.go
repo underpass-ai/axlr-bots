@@ -28,7 +28,7 @@ type SeenSignature struct {
 	// The task of the newest occurrence.
 	LastTask string     `json:"last_task,omitempty"`
 	Due      DuePublish `json:"due,omitempty"`
-	// When actividad.fallo was published for it; absent while it has not been.
+	// When its event was published; absent while it has not been.
 	PublishedAt string `json:"published_at,omitempty"`
 	// The event the control plane answered.
 	EventID string `json:"event_id,omitempty"`

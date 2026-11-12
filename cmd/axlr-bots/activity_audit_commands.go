@@ -49,8 +49,9 @@ func activityAudit(stateDir, socketPath string, args []string, stdout, stderr io
 func activityAuditServe(ctx context.Context, stateDir, socketPath string, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("activity-audit serve", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	team := flags.String("team", activityaudit.DefaultTeam, "the team the events are published to")
-	ignore := flags.String("ignore-programs", strings.Join(activityaudit.DefaultIgnorePrograms, ","), "local programs whose failures are not audited, basenames comma-separated (empty: none)")
+	team := flags.String("team", "", "the team the events are published to (required)")
+	event := flags.String("event", "", "the name of the event published for each new failure signature, such as activity.failure (required)")
+	ignore := flags.String("ignore-programs", "", "local programs whose failures are not audited, basenames comma-separated (default none)")
 	teamPartial := flags.Bool("ignore-team-partial", true, "also ignore a local_exec whose line hid its program when its bot is in --team")
 	sinceText := flags.String("since", "", "on a first run (a seen-store without a cursor), replay the tasks created from this RFC 3339 time")
 	storeDir := flags.String("store", "", "the adapter's directory (default <state>/activity-audit)")
@@ -63,8 +64,8 @@ func activityAuditServe(ctx context.Context, stateDir, socketPath string, args [
 	if !ok {
 		return exitUsage
 	}
-	if len(positional) != 0 {
-		fmt.Fprintln(stderr, "axlr-bots: activity-audit serve takes no arguments")
+	if len(positional) != 0 || *team == "" || *event == "" {
+		fmt.Fprintln(stderr, "axlr-bots: activity-audit serve needs --team <team> and --event <name>, and takes no arguments")
 		return exitUsage
 	}
 	var since time.Time
@@ -105,7 +106,7 @@ func activityAuditServe(ctx context.Context, stateDir, socketPath string, args [
 	}
 	logger := log.New(stderr, "", log.LstdFlags)
 	client := unixapi.NewClient(socketPath)
-	config := activityaudit.AuditorConfig{Source: client, Publisher: client, Store: store, Team: *team, IgnorePrograms: splitList(*ignore), IgnoreTeamPartial: *teamPartial, PerMinute: *perMinute, Log: logger}
+	config := activityaudit.AuditorConfig{Source: client, Publisher: client, Store: store, Team: *team, Event: *event, IgnorePrograms: splitList(*ignore), IgnoreTeamPartial: *teamPartial, PerMinute: *perMinute, Log: logger}
 	if *dryRun {
 		config.Publisher = nil
 	}
@@ -121,7 +122,7 @@ func activityAuditServe(ctx context.Context, stateDir, socketPath string, args [
 	if *dryRun {
 		where = "memory (dry run)"
 	}
-	logger.Printf("activity-audit: auditing the fleet through %s, publishing %s to team %s; seen-store %s", socketPath, activityaudit.EventName, *team, where)
+	logger.Printf("activity-audit: auditing the fleet through %s, publishing %s to team %s; seen-store %s", socketPath, *event, *team, where)
 	err = watcher.Run(ctx, since)
 	if *dryRun {
 		var due []activityaudit.SeenSignature
