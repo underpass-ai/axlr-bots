@@ -1,0 +1,166 @@
+name: Release
+
+# A tag vX.Y.Z publishes the release's containers and binaries:
+#
+#   ghcr.io/underpass-ai/axlr-bots:X.Y.Z        the control plane (distribution/control-plane.Dockerfile)
+#   ghcr.io/underpass-ai/axlr-bots-node:X.Y.Z   the node (distribution/node.Dockerfile)
+#   axlr-bots-vX.Y.Z-linux-<arch>.tar.gz       axlr-bots and axlr-node, on the GitHub release
+#
+# Both images are linux/amd64 and linux/arm64. The version is stamped
+# without its v (internal/buildinfo): it is what GET /v1/build answers
+# and the reference the panel compares nodes and bots with. The release
+# notes and the panel's archive stay the maintainer's: a release that
+# does not exist yet is created as a draft, one that exists gets these
+# assets added and SHA256SUMS merged.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      time: ${{ steps.tag.outputs.time }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: The tag is a semantic version
+        id: tag
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$'
+          [[ "$TAG" =~ $semver ]] || { echo "tag $TAG is not vMAJOR.MINOR.PATCH[-prerelease]" >&2; exit 1; }
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "time=$(git log -1 --format=%cI)" >> "$GITHUB_OUTPUT"
+
+  images:
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dockerfile: distribution/control-plane.Dockerfile
+            image: ghcr.io/underpass-ai/axlr-bots
+          - dockerfile: distribution/node.Dockerfile
+            image: ghcr.io/underpass-ai/axlr-bots-node
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Log in to GHCR
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Build and push for amd64 and arm64
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          BUILD_TIME: ${{ needs.version.outputs.time }}
+          DOCKERFILE: ${{ matrix.dockerfile }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          docker buildx create --use --name multi
+          docker buildx build -f "$DOCKERFILE" --platform linux/amd64,linux/arm64 \
+            --build-arg VERSION="$VERSION" --build-arg REVISION="$GITHUB_SHA" --build-arg BUILD_TIME="$BUILD_TIME" \
+            --tag "$IMAGE:$VERSION" --metadata-file metadata.json --push .
+          digest=$(python3 -c 'import json; print(json.load(open("metadata.json"))["containerimage.digest"])')
+          echo "$IMAGE:$VERSION@$digest" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: The published image answers its version
+        if: matrix.image == 'ghcr.io/underpass-ai/axlr-bots'
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          docker run --rm --read-only "$IMAGE:$VERSION" version | tee version.txt
+          grep -q "^axlr-bots $VERSION ($GITHUB_SHA " version.txt
+
+  binaries:
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+      - name: Build axlr-bots and axlr-node
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          BUILD_TIME: ${{ needs.version.outputs.time }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          # The images' flags: no -trimpath, so the daemon reads its stamp
+          # back from the installed binary (internal/buildinfo).
+          pkg=github.com/underpass-ai/axlr-bots/internal/buildinfo
+          ldflags="-s -w -X $pkg.Version=$VERSION -X $pkg.Revision=$GITHUB_SHA -X $pkg.Time=$BUILD_TIME"
+          dir="axlr-bots-v$VERSION-linux-$GOARCH"
+          mkdir -p "dist/$dir"
+          for cmd in axlr-bots axlr-node; do
+            CGO_ENABLED=0 GOOS=linux go build -ldflags="$ldflags" -o "dist/$dir/$cmd" "./cmd/$cmd"
+          done
+          cp LICENSE NOTICE "dist/$dir/"
+          if [ "$GOARCH" = amd64 ]; then
+            "dist/$dir/axlr-bots" version | grep -q "^axlr-bots $VERSION ($GITHUB_SHA "
+          fi
+          tar -C dist -czf "dist/$dir.tar.gz" "$dir"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: binaries-${{ matrix.arch }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: [version, images, binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: binaries-*
+          path: dist
+          merge-multiple: true
+      - name: Attach to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          cd dist
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --draft --verify-tag --title "AXLR Bots $TAG" \
+              --notes "Draft created by the release workflow: the containers and binaries are attached; the notes and the panel's archive are still to be added."
+          fi
+          # SHA256SUMS keeps the lines of the assets this job does not make
+          # (the panel's archive) and replaces those it does.
+          touch SHA256SUMS
+          gh release download "$TAG" --pattern SHA256SUMS --output SHA256SUMS --clobber 2>/dev/null || true
+          ours=$(ls axlr-bots-v*-linux-*.tar.gz)
+          grep -v -F -f <(printf '  %s\n' $ours) SHA256SUMS > sums.keep || true
+          sha256sum $ours >> sums.keep
+          sort -k2 sums.keep > SHA256SUMS
+          cat SHA256SUMS
+          gh release upload "$TAG" $ours SHA256SUMS --clobber

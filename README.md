@@ -66,6 +66,7 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | You want to… | Read |
 |:--|:--|
 | Install for one host or a fleet, keep it running after logout, uninstall | [Install](docs/runbooks/install.md) |
+| Run the control plane from its release image with Docker Compose | [Control plane in a container](docs/runbooks/control-plane-compose.md) |
 | Write a bot: mission, model, tools, autonomy level, triggers, budgets, placement | [Bot definition](docs/reference/bot-definition.md) |
 | Start tasks from a webhook or on a timer, without duplicates | [Triggers](docs/runbooks/triggers.md) |
 | Approve or deny the write a bot wants to make, be notified of it, let it expire | [Approvals](docs/runbooks/approvals.md) |

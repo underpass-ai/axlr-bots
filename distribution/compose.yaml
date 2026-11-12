@@ -1,0 +1,71 @@
+# The control plane (axlr-bots serve) as one container, in place of the
+# systemd user service `axlr-bots install` writes. Runbook:
+# docs/runbooks/control-plane-compose.md.
+#
+#   export AXLR_BOTS_VERSION=0.4.0 AXLR_BOTS_UID=$(id -u) AXLR_BOTS_GID=$(id -g)
+#   docker compose -f distribution/compose.yaml up -d
+#
+# The image's version is the reference the panel compares nodes and bots
+# with. Updating is changing AXLR_BOTS_VERSION and `up -d` again: the
+# image is immutable, so the daemon's stale-binary stop (it exits when a
+# newer binary is installed over the running one) never fires here.
+#
+# Paths are the host's, mounted at the same place: the env file names
+# host paths (the broker's certificates), and the nodes on this host dial
+# the socket at <state>/axlr-bots.sock.
+
+name: axlr-bots
+
+services:
+  control-plane:
+    image: ghcr.io/underpass-ai/axlr-bots:${AXLR_BOTS_VERSION:?set AXLR_BOTS_VERSION to a release without the v, such as 0.4.0}
+    # The host's network: the broker on 127.0.0.1:4222 and the listeners
+    # on the host's own addresses, as the service had them. With host
+    # networking `ports:` does not apply; the ports are the --listen and
+    # --api-listen addresses below.
+    network_mode: host
+    # The state belongs to the host account: the socket, api.token and the
+    # CA stay usable by the nodes and the CLI on the host, and a rollback
+    # to systemd finds its own files.
+    user: "${AXLR_BOTS_UID:?set AXLR_BOTS_UID to the owner of the state, id -u}:${AXLR_BOTS_GID:?set AXLR_BOTS_GID, id -g}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    # What the service read from EnvironmentFile=: the model keys, the bus.
+    env_file:
+      - path: ${AXLR_BOTS_CONFIG:-${HOME}/.config/axlr-bots}/env
+        required: false
+    # These win over the env file: its AXLR_TUI names a binary on the
+    # host, the image carries its own.
+    environment:
+      AXLR_BOTS_STATE: ${AXLR_BOTS_STATE_DIR:-${HOME}/.local/state/axlr-bots}
+      AXLR_TUI: /usr/local/bin/axlr-tui
+      HOME: ${AXLR_BOTS_STATE_DIR:-${HOME}/.local/state/axlr-bots}/home
+      XDG_STATE_HOME: /tmp/axlr-state
+    command:
+      - --actor
+      - control-plane
+      - serve
+      - --listen
+      - ${AXLR_BOTS_LISTEN:-0.0.0.0:7878}
+      - --api-listen
+      - ${AXLR_BOTS_API_LISTEN:-0.0.0.0:7879}
+    volumes:
+      - type: bind
+        source: ${AXLR_BOTS_STATE_DIR:-${HOME}/.local/state/axlr-bots}
+        target: ${AXLR_BOTS_STATE_DIR:-${HOME}/.local/state/axlr-bots}
+      - type: bind
+        source: ${AXLR_BOTS_CONFIG:-${HOME}/.config/axlr-bots}
+        target: ${AXLR_BOTS_CONFIG:-${HOME}/.config/axlr-bots}
+        read_only: true
+    # Restart=on-failure, and back after a reboot as WantedBy=default.target.
+    restart: unless-stopped
+    # TimeoutStopSec=30s: SIGTERM, then 30 s to finish what runs.
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/axlr-bots", "health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
