@@ -79,7 +79,8 @@ func TestGenerateRefusesWhatItCannotWrite(t *testing.T) {
 }
 
 func TestNames(t *testing.T) {
-	for key, want := range map[string]string{"id": "ID", "traceId": "TraceID", "occurredAt": "OccurredAt", "specVersion": "SpecVersion", "prUrl": "PRURL", "x": "X"} {
+	for key, want := range map[string]string{"id": "ID", "traceId": "TraceID", "occurredAt": "OccurredAt", "specVersion": "SpecVersion", "prUrl": "PRURL", "x": "X",
+		"head_sha": "HeadSHA", "full_name": "FullName", "pull_requests": "PullRequests", "merge_commit_sha": "MergeCommitSHA", "status_code": "StatusCode", "guid": "GUID", "a__b_": "AB"} {
 		if got := fieldName(key); got != want {
 			t.Errorf("fieldName(%s) = %s, want %s", key, got, want)
 		}
