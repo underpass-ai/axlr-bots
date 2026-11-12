@@ -619,6 +619,8 @@ impl App {
                 self.confirm = Some(Confirm::StopBot(id));
                 Vec::new()
             }
+            Message::AskUpdateBot(id) => self.ask_update(id),
+            Message::BotUpdated(result) => self.bot_updated(result),
             Message::BotStopped(result) => {
                 self.switching = false;
                 match result {
@@ -808,6 +810,10 @@ impl App {
                 Some(Confirm::StopBot(id)) => {
                     self.switching = true;
                     vec![Effect::StopBot(id)]
+                }
+                Some(Confirm::UpdateBot(id, _)) => {
+                    self.switching = true;
+                    vec![Effect::ApplyStaged(id)]
                 }
                 Some(Confirm::Bulk(plan)) => self.run_bulk(plan),
                 None => Vec::new(),

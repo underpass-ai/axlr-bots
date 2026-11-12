@@ -38,12 +38,13 @@ struct Recorder {
     requests: Arc<Mutex<Vec<Recorded>>>,
 }
 
-const NODE: &str = r#"{"id":"wrx80","hostName":"wrx80-node1","labels":{"gpu":"rtx3090"},"capabilities":{"policySupported":true,"correlationSupported":true},"status":"Online","registeredAt":"2026-10-24T22:32:07Z","lastSeenAt":"2026-10-24T22:41:08Z","certificateSerial":"cef8","certificateNotAfter":"2027-10-24T22:32:07Z"}"#;
+const NODE: &str = r#"{"id":"wrx80","hostName":"wrx80-node1","labels":{"gpu":"rtx3090"},"capabilities":{"axlrVersion":"axlr-tui 0.14.0","nodeVersion":"0.4.0","nodeRevision":"4924ad73","policySupported":true,"correlationSupported":true},"status":"Online","registeredAt":"2026-10-24T22:32:07Z","lastSeenAt":"2026-10-24T22:41:08Z","certificateSerial":"cef8","certificateNotAfter":"2027-10-24T22:32:07Z"}"#;
 const BOT: &str = r#"{"id":"bot-wrx80","tenantId":"default","name":"bot-wrx80","owner":"operator","mission":"Do it.","allowedTools":["local_read"],"model":{"model":"anthropic/claude-haiku-5.5","routingPolicy":"cost-optimized","allowRemoteProviders":true,"maxContextTokens":32000},"budgets":{"maxModelCallsPerTask":10,"maxToolCallsPerTask":20,"maxDelegationDepth":0,"taskTimeoutSeconds":300},"level":"observe","toolRules":{},"triggers":[{"type":"manual"}],"placement":{"nodes":["wrx80"]},"status":"Enabled","createdAt":"2026-10-24T22:30:00Z","updatedAt":"2026-10-24T22:31:00Z"}"#;
 const TASK: &str = r#"{"id":"task-1","botId":"bot-wrx80","objective":"Count","status":"WaitingApproval","idempotencyKey":"k","correlationId":"trace-1","trigger":{"type":"manual","name":"manual"},"executionIds":["exec-1"],"createdAt":"2026-10-24T22:32:26Z","updatedAt":"2026-10-24T22:32:33Z"}"#;
 const EXECUTION: &str = r#"{"id":"exec-1","taskId":"task-1","botId":"bot-wrx80","startedAt":"2026-10-24T22:32:26Z","endedAt":"2026-10-24T22:32:33Z","outcome":"DecisionRequired","result":{"answer":"","pendingDecision":{"tool":"local_write","callId":"c1","sessionId":"s1","arguments":{"path":"a.txt"}}},"usage":{"requests":2,"costUsd":0.001},"kind":"run","nodeId":"wrx80"}"#;
 const EVENT: &str = r#"{"eventId":"evt-1","schemaVersion":"underpass.ai/events/v1","type":"bot.task.submitted","tenantId":"default","botId":"bot-wrx80","taskId":"task-1","createdAt":"2026-10-24T22:32:26Z"}"#;
 const INCIDENT: &str = r#"{"id":"inc-one","tenantId":"acme","botId":"bot-wrx80","groupKey":"g","source":"alertmanager","title":"HighLatency","severity":"sev2","status":"Escalated","fingerprints":["fp-a","fp-b"],"resolvedFingerprints":["fp-a"],"cycle":1,"taskIds":["task-1"],"reason":"no fix","repeats":2,"costUsd":0.01,"openedAt":"2026-10-24T22:00:00Z","updatedAt":"2026-10-24T22:10:00Z","lastSeenAt":"2026-10-24T22:05:00Z"}"#;
+const BUILD: &str = r#"{"running":{"version":"0.4.0","revision":"4924ad73","time":"2026-11-12T21:42:53Z","modified":false},"installed":{"version":"0.4.0","revision":"4924ad73","time":"2026-11-12T21:42:53Z","modified":false},"stale":false,"minimumAxlr":"0.14.0"}"#;
 const OVERVIEW: &str = r#"{"since":"2026-10-24T00:00:00Z","nodes":{"Online":2},"bots":{"Enabled":3},"tasks":{"Completed":5},"tasksSince":{"Completed":1},"executionsSince":1,"costUsdSince":0.5}"#;
 
 async fn route(
@@ -104,6 +105,15 @@ async fn route(
             StatusCode::NOT_FOUND,
             r#"{"kind":"not_found","error":"bot ghost not found","resource":"bot","id":"ghost"}"#,
         ),
+        ("GET", "/v1/build") => ok(BUILD.into()),
+        ("POST", "/v1/bots/bot-wrx80/staged/apply") => {
+            ok(BOT.replace(r#""status":"Enabled""#, r#""version":"1.3.0","status":"Enabled""#))
+        }
+        ("POST", "/v1/bots/bare/staged/apply") | ("DELETE", "/v1/bots/bare/staged") => json(
+            StatusCode::CONFLICT,
+            r#"{"kind":"state","error":"bot bare is without a staged change: cannot apply a staged change"}"#,
+        ),
+        ("DELETE", "/v1/bots/bot-wrx80/staged") => ok(BOT.into()),
         ("POST", "/v1/bots/bot-wrx80/enable") => ok(BOT.into()),
         ("POST", "/v1/bots/bot-wrx80/pause") => ok(BOT.replace("Enabled", "Paused")),
         ("POST", "/v1/bots/paused/pause") => json(
@@ -256,6 +266,13 @@ async fn reads_every_route_with_the_token_over_tls() {
 
     let nodes = api.list_nodes().await.unwrap();
     assert_eq!(nodes[0].certificate_serial.as_deref(), Some("cef8"));
+    assert_eq!(
+        (
+            nodes[0].capabilities.node_version.as_str(),
+            nodes[0].capabilities.node_revision.as_str()
+        ),
+        ("0.4.0", "4924ad73")
+    );
     assert_eq!(
         api.get_node(NodeId::new("wrx80").unwrap()).await.unwrap().host_name,
         "wrx80-node1"
@@ -510,6 +527,41 @@ async fn reads_incidents_resolves_one_and_fetches_an_artifact() {
             .await,
         Err(PanelError::NotFound(_))
     ));
+}
+
+#[tokio::test]
+async fn reads_versions_and_applies_or_drops_a_staged_change() {
+    let server = serve().await;
+    let api = HttpControlPlane::new(&server.config()).unwrap();
+    let build = api.build().await.unwrap();
+    assert_eq!(server.last().path, "/v1/build");
+    assert_eq!(build.server_version().unwrap().label(), "v0.4.0");
+    assert_eq!(build.minimum_axlr().unwrap().label(), "v0.14.0");
+
+    let bot_id = BotId::new("bot-wrx80").unwrap();
+    let applied = api.apply_staged(bot_id.clone()).await.unwrap();
+    assert_eq!(
+        (server.last().method, server.last().path, server.last().body),
+        (
+            Method::POST,
+            "/v1/bots/bot-wrx80/staged/apply".to_string(),
+            String::new()
+        )
+    );
+    assert_eq!((applied.version.as_str(), applied.staged.is_none()), ("1.3.0", true));
+    let dropped = api.unstage(bot_id).await.unwrap();
+    assert_eq!(
+        (server.last().method, server.last().path),
+        (Method::DELETE, "/v1/bots/bot-wrx80/staged".to_string())
+    );
+    assert!(dropped.staged.is_none());
+    let bare = BotId::new("bare").unwrap();
+    let nothing = api.apply_staged(bare.clone()).await.unwrap_err();
+    assert!(
+        matches!(nothing, PanelError::State(ref m) if m.contains("without a staged change")),
+        "{nothing:?}"
+    );
+    assert!(matches!(api.unstage(bare).await.unwrap_err(), PanelError::State(_)));
 }
 
 #[tokio::test]

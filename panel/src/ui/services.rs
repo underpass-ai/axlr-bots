@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use super::{BotView, Connection, Effect, Message};
 use crate::application::{
-    ApplyInBulk, ApprovePostmortem, BulkOutcome, CancelTask, Clock, Connect, ControlPlane, DecideTask,
+    ApplyInBulk, ApplyStaged, ApprovePostmortem, BulkOutcome, CancelTask, Clock, Connect, ControlPlane, DecideTask,
     DefinitionReader, DeleteBot, DownloadArtifact, ExportSettings, FilePicker, FollowBotEvents, FollowTaskEvents,
     FollowTeamEvents, ImportSettings, KeySource, ListIncidents, ListLinks, ListTopics, LoadChat, LoadTaskDetail,
     MarkDiagnosis, MintEnrollmentToken, Notifier, PanelError, PatchBot, PublishEvent, RefreshFleet, RegisterBot,
@@ -157,6 +157,10 @@ impl Services {
             }),
             Effect::StopBot(id) => Message::BotStopped(match self.control_plane() {
                 Ok(cp) => StopBot::new(cp).execute(id).await,
+                Err(e) => Err(e),
+            }),
+            Effect::ApplyStaged(id) => Message::BotUpdated(match self.control_plane() {
+                Ok(cp) => ApplyStaged::new(cp).execute(id).await,
                 Err(e) => Err(e),
             }),
             Effect::SaveBotEdit(id, edit) => Message::EditSaved(match self.control_plane() {

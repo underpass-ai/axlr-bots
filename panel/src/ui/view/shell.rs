@@ -2,7 +2,7 @@
 //! header with the connection, the banner, and the dialog of an act to
 //! confirm.
 
-use iced::widget::{Space, button, center, column, container, opaque, row, stack, svg, text};
+use iced::widget::{Space, button, center, column, container, opaque, row, stack, svg, text, tooltip};
 use iced::{Alignment, Color, Element, Length, Padding};
 
 use super::widgets::{BODY, El, SEMIBOLD, SMALL, action, bold, icon, icon_button, muted};
@@ -81,12 +81,20 @@ fn header<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         ThemeMode::Light => "Dark theme",
         ThemeMode::Dark => "Light theme",
     };
+    let mut place = row![icon(Icon::Nodes, 14.0, tokens.muted), muted(where_to(app), tokens)]
+        .spacing(6)
+        .align_y(Alignment::Center);
+    if let Some((version, tip)) = server_version(app) {
+        place = place.push(tooltip(
+            muted(version, tokens),
+            container(text(tip).size(SMALL)).padding(6).style(styles::chip(tokens)),
+            tooltip::Position::Bottom,
+        ));
+    }
     container(
         row![
             Space::new().width(Length::Fill),
-            row![icon(Icon::Nodes, 14.0, tokens.muted), muted(where_to(app), tokens)]
-                .spacing(6)
-                .align_y(Alignment::Center),
+            place,
             row![
                 icon(Icon::Dot, 16.0, tone.color(&tokens)),
                 text(status).font(SEMIBOLD).size(SMALL)
@@ -111,6 +119,26 @@ fn where_to(app: &App) -> String {
     app.endpoint
         .clone()
         .unwrap_or_else(|| crate::ui::format::endpoint(&app.settings.api_url))
+}
+
+/// The version the control plane runs, `v0.4.0` (its short commit for a
+/// build without one), and on hover what the nodes are measured
+/// against; none before the first read of its build.
+pub(crate) fn server_version(app: &App) -> Option<(String, String)> {
+    let build = app.fleet.as_ref()?.build.as_ref()?;
+    let shown = match build.server_version() {
+        Some(version) => version.label(),
+        None if !build.running.revision.is_empty() => build.running.revision.chars().take(7).collect(),
+        None => return None,
+    };
+    let mut tip = format!(
+        "The control plane runs {shown} ({}): a node whose agent is older is marked.",
+        build.running.describe()
+    );
+    if let Some(least) = build.minimum_axlr() {
+        tip.push_str(&format!("\nNodes need AXLR {} or newer.", least.label()));
+    }
+    Some((format!("· {shown}"), tip))
 }
 
 /// The dot and the word of the header: online, connecting, or why not.
@@ -278,4 +306,49 @@ fn main<'a>(app: &'a App, content: El<'a>, tokens: Tokens) -> El<'a> {
             .align_y(Alignment::End),
     ]
     .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::adapters::fake::FakeControlPlane;
+    use crate::domain::{BuildIdentity, BuildStatus};
+    use crate::ui::test_runtime::send;
+
+    #[test]
+    fn the_header_names_the_version_the_control_plane_runs() {
+        let fake = Arc::new(FakeControlPlane::sample("2026-10-25T10:00:00Z".parse().unwrap()));
+        let mut app = super::super::tests::app_over(fake.clone());
+        assert_eq!(server_version(&app), None, "nothing before the first read");
+        send(&mut app, Message::SettingsSave);
+        assert_eq!(
+            server_version(&app),
+            None,
+            "a build without a version or a commit says nothing"
+        );
+        let build = |version: &str, minimum: &str| BuildStatus {
+            running: BuildIdentity {
+                version: version.into(),
+                revision: "4924ad73145295ce".into(),
+                ..Default::default()
+            },
+            minimum_axlr: minimum.into(),
+            ..Default::default()
+        };
+        if let Some(fleet) = app.fleet.as_mut() {
+            fleet.build = Some(build("0.4.0", "0.14.0"));
+        }
+        let (shown, tip) = server_version(&app).unwrap();
+        assert_eq!(shown, "· v0.4.0");
+        assert!(tip.contains("runs v0.4.0 (4924ad731452)"), "{tip}");
+        assert!(tip.ends_with("Nodes need AXLR v0.14.0 or newer."), "{tip}");
+        if let Some(fleet) = app.fleet.as_mut() {
+            fleet.build = Some(build("", ""));
+        }
+        let (shown, tip) = server_version(&app).unwrap();
+        assert_eq!(shown, "· 4924ad7");
+        assert!(!tip.contains("AXLR"), "{tip}");
+    }
 }

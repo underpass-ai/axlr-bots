@@ -13,6 +13,7 @@ mod app_teams;
 #[cfg(test)]
 mod app_tests;
 mod app_topics;
+mod app_updates;
 mod banner;
 mod bot_choice;
 mod bot_edit_form;

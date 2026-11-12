@@ -5,9 +5,10 @@ use iced::{Alignment, Length};
 
 use super::grid;
 use super::widgets::{
-    BODY, El, Voice, action, bold, card, chip, empty, field, icon, muted, pill, reader, section_title, title,
+    BODY, El, SMALL, Voice, action, bold, card, chip, empty, field, icon, mark, muted, pill, reader, section_title,
+    title,
 };
-use crate::domain::{CertificateHealth, Node};
+use crate::domain::{CertificateHealth, Node, Version};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
 use crate::ui::table::{ColumnRef, List, NodeColumn, RowRef, SortColumn};
@@ -62,6 +63,7 @@ const NARROW: f32 = 900.0;
 /// and Revoke.
 fn list<'a>(app: &'a App, nodes: &'a [Node], narrow: bool, tokens: Tokens) -> El<'a> {
     let now = app.now;
+    let fleet = app.fleet.as_ref();
     let state = &app.tables.nodes;
     let shown = state.sort.order(nodes);
     let head = |c: NodeColumn| {
@@ -85,8 +87,16 @@ fn list<'a>(app: &'a App, nodes: &'a [Node], narrow: bool, tokens: Tokens) -> El
                 )
             },
         ),
-        table::column(head(NodeColumn::Status), move |n: &'a Node| {
-            pill(Tone::of_node(n.status), n.status.name(), tokens)
+        // The pill, and the mark of a node behind the fleet beside it: its
+        // tip says on what and the version to reach.
+        table::column(head(NodeColumn::Status), move |n: &'a Node| -> El<'a> {
+            let mut cell = row![pill(Tone::of_node(n.status), n.status.name(), tokens)]
+                .spacing(6)
+                .align_y(Alignment::Center);
+            if let Some(behind) = fleet.and_then(|f| f.behind(n)) {
+                cell = cell.push(mark(Icon::Update, tokens.wait, behind.tip(), tokens));
+            }
+            cell.into()
         }),
         table::column(head(NodeColumn::Node), move |n: &'a Node| -> El<'a> {
             let mut cell = column![
@@ -96,6 +106,9 @@ fn list<'a>(app: &'a App, nodes: &'a [Node], narrow: bool, tokens: Tokens) -> El
             .spacing(2);
             if narrow && !n.capabilities.axlr_version.is_empty() {
                 cell = cell.push(muted(grid::shorten(&n.capabilities.axlr_version, 24), tokens));
+            }
+            if let Some(agent) = agent_version(n) {
+                cell = cell.push(muted(agent, tokens).size(SMALL));
             }
             if n.capabilities.dedicated {
                 cell = cell.push(chip("dedicated", tokens));
@@ -159,6 +172,22 @@ fn list<'a>(app: &'a App, nodes: &'a [Node], narrow: bool, tokens: Tokens) -> El
         }
     }));
     grid::sheet(columns, shown)
+}
+
+/// The node agent's own build, `agent v0.4.0`, with its commit when it
+/// names one; none for a node older than the field.
+fn agent_version(node: &Node) -> Option<String> {
+    let raw = node.capabilities.node_version.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let version = Version::parse(raw).map_or_else(|| raw.to_string(), |v| v.label());
+    let revision: String = node.capabilities.node_revision.chars().take(7).collect();
+    Some(if revision.is_empty() {
+        format!("agent {version}")
+    } else {
+        format!("agent {version} · {revision}")
+    })
 }
 
 /// The model providers the node named, one chip each: a local model by

@@ -92,6 +92,9 @@ pub enum Message {
     ChatSend,
     ChatSent(Result<ChatSent, PanelError>),
     BotStopped(Result<StoppedBot, PanelError>),
+    /// Update a bot to the version staged for it: ask first.
+    AskUpdateBot(BotId),
+    BotUpdated(Result<Bot, PanelError>),
     /// Give a bot an urgent order: open the form, type the order, send.
     /// It runs as an urgent task, which stops what the bot is doing and
     /// drops its queue.

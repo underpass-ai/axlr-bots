@@ -66,6 +66,8 @@ pub enum Effect {
     Pause(BotId),
     SetLevel(BotId, AutonomyLevel),
     StopBot(BotId),
+    /// Apply the change the bot holds staged.
+    ApplyStaged(BotId),
     /// Save the edit of a bot's mission and tools, unless it changed since.
     SaveBotEdit(BotId, BotEdit),
     /// Read what deleting a bot will do, then delete it.

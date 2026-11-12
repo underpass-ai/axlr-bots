@@ -153,6 +153,22 @@ fn reads_every_answer_it_asks_for() {
     reads::<Incident>(&spec, "IncidentSnapshot");
     reads::<Incident>(&spec, "IncidentResponse");
     reads::<IncidentPostmortem>(&spec, "IncidentPostmortemSnapshot");
+    reads::<axlr_bots_panel::domain::BuildStatus>(&spec, "BuildStatus");
+}
+
+/// The versions the panel compares are where the contract puts them: a
+/// bot's and its staged one, a node agent's, the control plane's and the
+/// least AXLR.
+#[test]
+fn reads_the_versions_it_compares() {
+    let spec = contract();
+    let bot: Bot = serde_json::from_value(sample(&spec, schema(&spec, "BotSnapshot"), Shape::Full)).unwrap();
+    assert!(!bot.version.is_empty() && bot.staged.is_some(), "{bot:?}");
+    let node: Node = serde_json::from_value(sample(&spec, schema(&spec, "NodeSnapshot"), Shape::Full)).unwrap();
+    assert!(!node.capabilities.node_version.is_empty() && !node.capabilities.node_revision.is_empty());
+    let build: axlr_bots_panel::domain::BuildStatus =
+        serde_json::from_value(sample(&spec, schema(&spec, "BuildStatus"), Shape::Full)).unwrap();
+    assert!(!build.running.version.is_empty() && !build.minimum_axlr.is_empty());
 }
 
 fn values(spec: &Value, name: &str) -> Vec<String> {

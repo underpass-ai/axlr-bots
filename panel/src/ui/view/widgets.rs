@@ -369,6 +369,17 @@ pub fn icon_button<'a>(glyph: Icon, tip: &'a str, on_press: Option<Message>, tok
     .into()
 }
 
+/// A glyph alone that says something on hover: a bot with a newer
+/// version ready, a node behind the fleet.
+pub fn mark<'a>(glyph: Icon, color: Color, tip: String, tokens: Tokens) -> El<'a> {
+    tooltip(
+        container(icon(glyph, 16.0, color)).padding(2),
+        container(text(tip).size(SMALL)).padding(6).style(styles::chip(tokens)),
+        tooltip::Position::Bottom,
+    )
+    .into()
+}
+
 /// A labelled text field.
 pub fn field<'a>(
     label: &'a str,
