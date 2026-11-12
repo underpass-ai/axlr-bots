@@ -98,10 +98,3 @@ func (o Options) log() *log.Logger {
 	}
 	return log.New(io.Discard, "", 0)
 }
-
-// DomainBus is a domain-event bus adapter: where the emits publish and
-// what the control plane listens on.
-type DomainBus interface {
-	application.DomainEventBus
-	application.DomainEventFeed
-}

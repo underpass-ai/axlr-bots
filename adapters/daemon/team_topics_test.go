@@ -70,7 +70,7 @@ func crossesThroughTheNodeRoute(t *testing.T, f *fixture, client *unixapi.Client
 	qa := application.BotDefinition{Tenant: "default", Name: "qa-triaje", Owner: "o", Mission: "m", Groups: []string{"qa"},
 		Events: &domain.EventsSnapshot{Emit: []domain.EmitRuleSnapshot{{Name: "incidencia.nueva", Teams: []string{"dev"}}}}}
 	dev := application.BotDefinition{Tenant: "default", Name: "dev-arreglo", Owner: "o", Mission: "m", Groups: []string{"dev"},
-		Subscriptions: []domain.SubscriptionSnapshot{{Topic: "incidencia.nueva", Team: "qa", Mode: "task", Deliver: "team"}}}
+		Subscriptions: []domain.SubscriptionSnapshot{{Topic: "incidencia.nueva", Team: "qa", From: []string{"qa-triaje"}, Mode: "task", Deliver: "team"}}}
 	for _, d := range []application.BotDefinition{qa, dev} {
 		registered, err := client.RegisterBot(ctx, d)
 		if err != nil {
@@ -80,7 +80,7 @@ func crossesThroughTheNodeRoute(t *testing.T, f *fixture, client *unixapi.Client
 		if d.Name == "qa-triaje" && (registered.Events == nil || len(registered.Events.Emit[0].Teams) != 1) {
 			t.Errorf("events = %+v", registered.Events)
 		}
-		if d.Name == "dev-arreglo" && registered.Subscriptions[0].Team != "qa" {
+		if d.Name == "dev-arreglo" && (registered.Subscriptions[0].Team != "qa" || registered.Subscriptions[0].From[0] != "qa-triaje") {
 			t.Errorf("subscriptions = %+v", registered.Subscriptions)
 		}
 		if _, err := client.EnableBot(ctx, d.Name); err != nil {

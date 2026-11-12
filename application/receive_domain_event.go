@@ -32,14 +32,6 @@ func NewReceiveDomainEvent(deps Dependencies) ReceiveDomainEvent {
 	return ReceiveDomainEvent{deps: deps, rec: recorder{deps: deps}}
 }
 
-// ReceiveAnswer is what a domain event did on the listening side: the
-// tasks it made (or found made by the same fact before) and the teams or
-// bots it did not reach, and why.
-type ReceiveAnswer struct {
-	Deliveries []EventDelivery
-	Skipped    []EventSkip
-}
-
 // crossHearer is a bot of an audience team that hears the event, and the
 // subscription it hears it by.
 type crossHearer struct {
