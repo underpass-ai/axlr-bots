@@ -38,15 +38,15 @@ A failure's signature is `failure-` and 16 hex characters of the SHA-256 of its 
 
 The normalisation, in order: secrets redacted (`ghp_…`, `github_pat_…`, `sk-…`, `AKIA…`, `xox?-…`, a private key's header, `Bearer <token>`); the first line only; quoted text (`"…"`, `«…»`, `` `…` ``, `'…'`), URLs, paths under `/home`, `/Users`, `/tmp`, times, dates, UUIDs, the fleet's ids (`task-…`, `exec-…`, `call_…`, `read_…`, `ws:…`), shas, addresses (`127.0.0.1:8790`, `localhost:8790`) and numbers replaced; an HTTP status kept (`HTTP 504` and `HTTP 429` are different failures); at most 400 characters. The event carries that normalised line, never a call's output.
 
-**What it cannot see yet.** On 12 November 2026 the runtime's lines cut what the full rule needs: the node cuts a call's summary at 120 characters and models write their `why` first, so a `local_exec`'s program is gone (35 of 35 failed `local_exec` that day); AXLR cuts a failed call's error at 240 characters and writes a local or bridged call's answer as its response envelope (`{"protocol_version":1,…,"output":{"exit_cod…`), so the exit code and stderr are gone too. The adapter reads what is there and degrades the same way every time: a `local_exec` whose program it cannot see is keyed by its **bot** instead (`partial: true` in the event, `(partial)` in the report), its exit `nonzero` when the envelope says the program ran, its error `the run's line was cut before the error`. When the node writes the program first and AXLR writes the exit code and stderr's first line in the error, the full rule applies with no change here.
+**What it cannot see yet.** Today the runtime's lines cut what the full rule needs: the node cuts a call's summary at 120 characters and models write their `why` first, so a `local_exec`'s program is usually gone; AXLR cuts a failed call's error at 240 characters and writes a local or bridged call's answer as its response envelope (`{"protocol_version":1,…,"output":{"exit_cod…`), so the exit code and stderr are gone too. The adapter reads what is there and degrades the same way every time: a `local_exec` whose program it cannot see is keyed by its **bot** instead (`partial: true` in the event, `(partial)` in the report), its exit `nonzero` when the envelope says the program ran, its error `the run's line was cut before the error`. When the node writes the program first and AXLR writes the exit code and stderr's first line in the error, the full rule applies with no change here.
 
 ## Noise rules
 
 | Rule | Default | Why |
 |---|---|---|
 | `--ignore-programs` | none | programs whose refusals are expected, such as a team's sandbox probes (`--ignore-programs sandbox-probe,sandbox-term`): a team that tests a product with them reports what it finds itself |
-| `--ignore-team-partial` | `true` | a `local_exec` whose program the line hid, by a member of `--team`: the team the events go to runs its own probes, and on 12 Nov every such failure of the listening team's bots was one of them. Set it to `false` to audit them as partial signatures |
-| a slip the model fixed at once | always | a failed call is *recovered* when a later call of the same tool (the same program for `local_exec`, the same plugin's tool for `axlr_call_tool`) ended `ok` in the same task. A signature whose every occurrence was recovered, all from one bot, waits: one model's typo is noise. The same slip from a **second bot** publishes it: then the contract misleads models (as `axlr_remember`'s «send the continuation alone» did 27 times that day). A partial signature is never recovered |
+| `--ignore-team-partial` | `true` | a `local_exec` whose program the line hid, by a member of `--team`: the team the events go to may run probes of its own, whose program the cut line hides, and it reports what they find itself. Set it to `false` to audit them as partial signatures |
+| a slip the model fixed at once | always | a failed call is *recovered* when a later call of the same tool (the same program for `local_exec`, the same plugin's tool for `axlr_call_tool`) ended `ok` in the same task. A signature whose every occurrence was recovered, all from one bot, waits: one model's typo is noise. The same slip from a **second bot** publishes it: then the contract misleads models (as a tool's error that several models misread does). A partial signature is never recovered |
 | its own events | always | it audits tasks only; the event it publishes on the team's timeline is not a task's end |
 
 ## Once per signature
@@ -69,7 +69,7 @@ The event named `--event` (a domain-style name: kind info; `activity.failure` be
 
 The `message` stands on its own, because a coalesced note or a redelivery carries only it and `data.id`: `<id> · <tool> · <bot> (<team>) · <program or -> · <error>`, cut to 280 characters (`task` is the tool of a failed task, the plugin's tool the program of an `axlr_call_tool`, `(-)` a bot in no team). `data.id` is within `[A-Za-z0-9._:-]{1,128}`. `count` is the occurrences seen up to the publish (a backfill can give more than 1 at the first event); the seen-store keeps counting after it, for `report`.
 
-**Pacing.** A listening team settles a bounded number of events per task and the platform redelivers at most twice, so the adapter publishes at most `--per-minute` events a minute (6 by default), oldest first; a flush that reaches the bound waits for the oldest of the minute to leave it. A first `--since` backfill of 12 Nov 2026 from 06:50 UTC emits 9 signatures: about two minutes.
+**Pacing.** A listening team settles a bounded number of events per task and the platform redelivers at most twice, so the adapter publishes at most `--per-minute` events a minute (6 by default), oldest first; a flush that reaches the bound waits for the oldest of the minute to leave it. A first `--since` backfill of N new signatures takes about N/6 minutes at the default.
 
 `program` (a `local_exec`'s basename), `mcp_tool` (an `axlr_call_tool`'s) and `partial` appear when they apply; `tool` is absent for `kind: task_failed`. Until a member of the team subscribes to the event's name, the events land on the team's timeline and wake nobody.
 
@@ -80,13 +80,13 @@ The first run has no cursor. Without `--since` it starts **now**: what ended bef
 See first what it would publish, without publishing or keeping anything (an empty seen-store in memory):
 
 ```bash
-axlr-bots activity-audit serve --team team-a --event activity.failure --dry-run --once --since 2026-11-12T06:50:00Z
+axlr-bots activity-audit serve --team team-a --event activity.failure --dry-run --once --since 2026-11-12T00:00:00Z
 ```
 
 It prints `would publish N of M signatures` and the table. Then the replay, which publishes and keeps the store:
 
 ```bash
-axlr-bots activity-audit serve --team team-a --event activity.failure --once --since 2026-11-12T06:50:00Z
+axlr-bots activity-audit serve --team team-a --event activity.failure --once --since 2026-11-12T00:00:00Z
 axlr-bots activity-audit report
 ```
 

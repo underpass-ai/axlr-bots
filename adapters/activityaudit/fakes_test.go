@@ -19,7 +19,7 @@ const testEvent = "activity.failure"
 
 var testIgnorePrograms = []string{"sandbox-probe", "sandbox-term", "sandbox-gui", "sandbox-script"}
 
-// The shapes the fleet writes today (12 Nov 2026): the node cuts a
+// The shapes the runtime writes today: the node cuts a
 // call's summary at 120 characters and the model writes its why first;
 // AXLR cuts a failed call's error at 240 and writes a local or bridged
 // call's answer as its response envelope.
