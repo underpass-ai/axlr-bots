@@ -30,12 +30,12 @@ func hearsFrom(topic, team string) domain.SubscriptionSnapshot {
 func bothTeams(t *testing.T, h *harness) Assignment {
 	t.Helper()
 	onlineNode(t, h, "web-1")
-	triaje := teamBot(t, h, "b-triage", []string{"team-b"}, emitsTo("order.new", "team-a"))
+	triage := teamBot(t, h, "b-triage", []string{"team-b"}, emitsTo("order.new", "team-a"))
 	teamBot(t, h, "b-reviewer", []string{"team-b"}, emitsTo("order.new", "team-a"))
 	teamBot(t, h, "a-fixer", []string{"team-a"}, emitsTo("order.completed", "team-b"))
 	teamBot(t, h, "a-other", []string{"team-a"}, nil)
 	subscribe(t, h, "a-fixer", hearsFrom("order.new", "team-b"))
-	return runOnNode(t, h, triaje, "web-1", "ask-b-1")
+	return runOnNode(t, h, triage, "web-1", "ask-b-1")
 }
 
 func finding(id string) json.RawMessage {
@@ -166,8 +166,8 @@ func TestTheSameItemFromTwoTeamBMembersIsOneTask(t *testing.T) {
 	h := newHarness()
 	first := bothTeams(t, h)
 	onlineNode(t, h, "web-2")
-	revisor, _ := h.bots.Get(context.Background(), "b-reviewer")
-	second := runOnNode(t, h, revisor, "web-2", "ask-b-2")
+	reviewer, _ := h.bots.Get(context.Background(), "b-reviewer")
+	second := runOnNode(t, h, reviewer, "web-2", "ask-b-2")
 	if second.Run == nil || second.Run.BotID != "b-reviewer" {
 		t.Fatalf("second = %+v", second.Run)
 	}
@@ -190,10 +190,10 @@ func TestOneSideAloneDeliversNothing(t *testing.T) {
 	t.Run("no emit rule names team-a", func(t *testing.T) {
 		h := newHarness()
 		onlineNode(t, h, "web-1")
-		triaje := teamBot(t, h, "b-triage", []string{"team-b"}, nil)
+		triage := teamBot(t, h, "b-triage", []string{"team-b"}, nil)
 		teamBot(t, h, "a-fixer", []string{"team-a"}, nil)
 		subscribe(t, h, "a-fixer", hearsFrom("order.new", "team-b"))
-		parent := runOnNode(t, h, triaje, "web-1", "ask-1")
+		parent := runOnNode(t, h, triage, "web-1", "ask-1")
 		answer := emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "order.new", Message: "x", Data: finding("h-1")})
 		if len(answer.Deliveries) != 0 || len(answer.Skipped) != 0 || len(h.bus.published) != 0 || len(tasksOf(t, h, "a-fixer")) != 0 {
 			t.Errorf("answer = %+v", answer)
@@ -202,9 +202,9 @@ func TestOneSideAloneDeliversNothing(t *testing.T) {
 	t.Run("nobody in team-a subscribes", func(t *testing.T) {
 		h := newHarness()
 		onlineNode(t, h, "web-1")
-		triaje := teamBot(t, h, "b-triage", []string{"team-b"}, emitsTo("order.new", "team-a"))
+		triage := teamBot(t, h, "b-triage", []string{"team-b"}, emitsTo("order.new", "team-a"))
 		teamBot(t, h, "a-fixer", []string{"team-a"}, nil)
-		parent := runOnNode(t, h, triaje, "web-1", "ask-1")
+		parent := runOnNode(t, h, triage, "web-1", "ask-1")
 		emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "order.new", Message: "x", Data: finding("h-1")})
 		if len(tasksOf(t, h, "a-fixer")) != 0 || len(h.bus.answers) != 1 {
 			t.Fatal("a task without a listener")
@@ -440,7 +440,7 @@ func TestATeammatesTaskCountsTheTracesCrossings(t *testing.T) {
 		t.Fatalf("review = %+v", review.Run)
 	}
 	if answer := emit(t, h, "web-1", review.ExecutionID, EmitEventCommand{Name: "order.completed", Message: "merged", Data: json.RawMessage(`{"id": "h-1@4f9c2ab"}`)}); len(answer.Deliveries) != 1 {
-		t.Fatalf("completada = %+v", answer)
+		t.Fatalf("completed = %+v", answer)
 	}
 	back := tasksOf(t, h, "b-triage")
 	if len(back) != 1 {
