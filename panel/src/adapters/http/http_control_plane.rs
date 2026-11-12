@@ -254,6 +254,14 @@ impl ControlPlane for HttpControlPlane {
         self.act(Method::DELETE, format!("/v1/bots/{id}"), NO_BODY)
     }
 
+    fn apply_staged(&self, id: BotId) -> PortFuture<'_, Bot> {
+        self.post(format!("/v1/bots/{id}/staged/apply"), NO_BODY)
+    }
+
+    fn unstage(&self, id: BotId) -> PortFuture<'_, Bot> {
+        self.act(Method::DELETE, format!("/v1/bots/{id}/staged"), NO_BODY)
+    }
+
     fn enable_bot(&self, id: BotId) -> PortFuture<'_, Bot> {
         self.post(format!("/v1/bots/{id}/enable"), NO_BODY)
     }

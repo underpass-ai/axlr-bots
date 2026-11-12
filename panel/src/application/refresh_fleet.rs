@@ -4,7 +4,9 @@ use super::{Clock, ControlPlane, Fleet, PanelError, WaitingCall};
 use crate::domain::TaskFilter;
 
 /// Reads the fleet in one go: the overview since the start of the
-/// operator's day, the nodes, the bots and the newest tasks.
+/// operator's day, the nodes, the bots and the newest tasks, and the
+/// control plane's build, so the reference for the nodes follows a
+/// restart onto a new version.
 pub struct RefreshFleet {
     control_plane: Arc<dyn ControlPlane>,
     clock: Arc<dyn Clock>,
@@ -23,12 +25,18 @@ impl RefreshFleet {
 
     pub async fn execute(&self) -> Result<Fleet, PanelError> {
         let since = self.clock.start_of_today();
-        let (overview, nodes, bots, tasks) = futures::try_join!(
-            self.control_plane.overview(since),
-            self.control_plane.list_nodes(),
-            self.control_plane.list_bots(),
-            self.control_plane.list_tasks(TaskFilter::with_limit(RECENT_TASKS)),
-        )?;
+        let (fleet, build) = futures::join!(
+            async {
+                futures::try_join!(
+                    self.control_plane.overview(since),
+                    self.control_plane.list_nodes(),
+                    self.control_plane.list_bots(),
+                    self.control_plane.list_tasks(TaskFilter::with_limit(RECENT_TASKS)),
+                )
+            },
+            self.control_plane.build(),
+        );
+        let (overview, nodes, bots, tasks) = fleet?;
         let mut nodes = nodes;
         nodes.sort_by(|a, b| a.id.cmp(&b.id));
         let mut bots = bots;
@@ -39,6 +47,9 @@ impl RefreshFleet {
             bots,
             tasks,
             calls: Vec::new(),
+            // A build the refresh could not read only hides the marks
+            // of nodes behind; the fleet still shows.
+            build: build.ok(),
         };
         let calls = self.waiting_calls(&fleet).await;
         Ok(Fleet { calls, ..fleet })
@@ -103,6 +114,36 @@ mod tests {
                 .is_none()
         );
         assert!(control_plane.calls().contains(&"overview".to_string()));
+        assert_eq!(fleet.build, Some(Default::default()));
+        assert!(fleet.nodes.iter().all(|n| fleet.behind(n).is_none()));
+    }
+
+    #[test]
+    fn reads_the_build_so_nodes_behind_it_show_and_goes_on_without_it() {
+        use crate::domain::{BuildIdentity, BuildStatus};
+        let (control_plane, clock) = fleet();
+        control_plane.set_build(Some(BuildStatus {
+            running: BuildIdentity {
+                version: "0.4.0".into(),
+                ..Default::default()
+            },
+            minimum_axlr: "0.14.0".into(),
+            ..Default::default()
+        }));
+        control_plane.set_node_build("wrx80", "0.3.0", "axlr-tui 0.14.0");
+        control_plane.set_node_build("gx10-ff95", "0.4.0", "axlr-tui 0.14.0");
+        let fleet = run(RefreshFleet::new(control_plane.clone(), clock.clone()).execute()).unwrap();
+        let behind: Vec<_> = fleet.nodes.iter().filter_map(|n| fleet.behind(n)).collect();
+        assert_eq!(behind.len(), 1);
+        assert_eq!(
+            behind[0].agent.as_ref().map(|(n, _)| n.label()).as_deref(),
+            Some("v0.3.0")
+        );
+
+        control_plane.set_build(None);
+        let without = run(RefreshFleet::new(control_plane, clock).execute()).unwrap();
+        assert!(without.build.is_none() && without.nodes.len() == 2);
+        assert!(without.nodes.iter().all(|n| without.behind(n).is_none()));
     }
 
     #[test]

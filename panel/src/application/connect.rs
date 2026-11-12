@@ -225,6 +225,7 @@ mod tests {
             },
             stale: true,
             reason: String::new(),
+            minimum_axlr: String::new(),
         }));
         let stale = run(connect.try_config(&config("https://127.0.0.1:7879"))).err();
         assert!(

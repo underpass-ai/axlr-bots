@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{AutonomyLevel, ProgressItem, TeamQuestion};
+use super::{AutonomyLevel, ProgressItem, TeamQuestion, Version};
 
 /// Something that happened to a bot, a task or a node, as the control
 /// plane's event log keeps it.
@@ -52,6 +52,9 @@ impl Event {
             "bot.registered" => "Bot added".into(),
             "bot.enabled" => "Bot on".into(),
             "bot.paused" => "Bot paused".into(),
+            "bot.staged" => "Update ready".into(),
+            "bot.unstaged" => "Update dropped".into(),
+            "bot.staged.applied" => "Updated".into(),
             "bot.deleted" => "Bot deleted".into(),
             "bot.updated" if self.level_change().is_some() => "Level changed".into(),
             "bot.updated" => "Bot changed".into(),
@@ -137,6 +140,7 @@ impl Event {
         match self.event_type.as_str() {
             "bot.task.completed"
             | "bot.enabled"
+            | "bot.staged.applied"
             | "node.registered"
             | "node.enrolled"
             | "node.renewed"
@@ -165,7 +169,7 @@ impl Event {
                 _ => EventTone::Neutral,
             },
             "bot.event.heard" if self.payload_text("degraded").is_some() => EventTone::Waiting,
-            "bot.subscription.asked" => EventTone::Waiting,
+            "bot.subscription.asked" | "bot.staged" => EventTone::Waiting,
             "bot.task.waiting_approval"
             | "bot.paused"
             | "bot.task.expired"
@@ -273,6 +277,13 @@ impl Event {
     }
 
     /// One useful detail of the payload: the node, the reason, the tool.
+    /// A version in the payload as the panel writes it (`v1.3.0`), or
+    /// as written when it is not one.
+    fn version_in(&self, key: &str) -> String {
+        let raw = self.payload_text(key).unwrap_or_default();
+        Version::parse(&raw).map_or(raw, |v| v.label())
+    }
+
     pub fn detail(&self) -> String {
         if let Some((before, after)) = self.level_change() {
             return format!("{} → {}", before.label(), after.label());
@@ -304,6 +315,21 @@ impl Event {
                     "1 step".into()
                 } else {
                     format!("{steps} steps")
+                };
+            }
+            "bot.staged" => {
+                let version = self.version_in("version");
+                return match self.payload_text("replaced") {
+                    Some(_) => format!("{version} staged, in place of {}", self.version_in("replaced")),
+                    None => format!("{version} staged"),
+                };
+            }
+            "bot.unstaged" => return format!("{} dropped, not applied", self.version_in("version")),
+            "bot.staged.applied" => {
+                let version = self.version_in("version");
+                return match self.payload_text("previousVersion").filter(|p| !p.is_empty()) {
+                    Some(_) => format!("{} → {version}", self.version_in("previousVersion")),
+                    None => format!("now at {version}"),
                 };
             }
             "bot.approval.first" => {
@@ -443,6 +469,38 @@ mod tests {
             event("bot.task.said", r#"{"items":[{"kind":"text"}]}"#)
                 .progress()
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_staged_change_says_its_versions() {
+        let staged = event("bot.staged", r#"{"version":"1.3.0","fields":["mission","version"]}"#);
+        assert_eq!(
+            (staged.label(), staged.detail()),
+            ("Update ready".into(), "v1.3.0 staged".into())
+        );
+        assert_eq!(staged.tone(), EventTone::Waiting);
+        let again = event("bot.staged", r#"{"version":"1.3.1","replaced":"1.3.0"}"#);
+        assert_eq!(again.detail(), "v1.3.1 staged, in place of v1.3.0");
+        let dropped = event("bot.unstaged", r#"{"version":"1.3.1"}"#);
+        assert_eq!(
+            (dropped.label(), dropped.detail(), dropped.tone()),
+            (
+                "Update dropped".into(),
+                "v1.3.1 dropped, not applied".into(),
+                EventTone::Neutral
+            )
+        );
+        let applied = event("bot.staged.applied", r#"{"version":"1.3.1","previousVersion":"1.2.0"}"#);
+        assert_eq!(
+            (applied.label(), applied.detail(), applied.tone()),
+            ("Updated".into(), "v1.2.0 → v1.3.1".into(), EventTone::Good)
+        );
+        let first = event("bot.staged.applied", r#"{"version":"1.0.0","previousVersion":""}"#);
+        assert_eq!(first.detail(), "now at v1.0.0");
+        assert_eq!(
+            event("bot.unstaged", r#"{"version":"next"}"#).detail(),
+            "next dropped, not applied"
         );
     }
 

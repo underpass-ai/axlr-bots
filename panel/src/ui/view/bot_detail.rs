@@ -8,8 +8,8 @@ use iced::{Alignment, Length, mouse};
 
 use super::levels;
 use super::widgets::{
-    El, SMALL, Voice, action, bold, chip, copy_button, empty, fact, icon, muted, pill, reader, section, section_title,
-    section_with, title,
+    El, SMALL, Voice, action, bold, chip, copy_button, empty, fact, icon, mark, muted, pill, reader, section,
+    section_title, section_with, title,
 };
 use crate::application::{BotNow, ChatLine};
 use crate::domain::{Bot, BotId, BotStatus, TaskId};
@@ -45,11 +45,38 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
     } else {
         Space::new().into()
     };
+    // Its definition's version, and the newer one ready to apply: its
+    // mark says from and to, the button asks before it updates.
+    let update = bot.update();
+    let version: El<'a> = match (bot.version_label(), &update) {
+        (Some(version), Some(update)) => row![
+            chip(version, tokens),
+            mark(Icon::Update, tokens.accent, update.tip(), tokens)
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center)
+        .into(),
+        (Some(version), None) => chip(version, tokens),
+        (None, Some(update)) => mark(Icon::Update, tokens.accent, update.tip(), tokens),
+        (None, None) => Space::new().into(),
+    };
+    let update_act: El<'a> = match &update {
+        Some(update) => action(
+            Kind::Primary,
+            Icon::Update,
+            update.act(),
+            (!app.switching).then(|| Message::AskUpdateBot(bot.id.clone())),
+            tokens,
+        ),
+        None => Space::new().into(),
+    };
     let header = row![
         back,
         title(Icon::Bots, bot.id.to_string(), tokens),
         pill(Tone::of_bot(bot.status), bot.status.name(), tokens),
+        version,
         Space::new().width(Length::Fill),
+        update_act,
         switch,
         action(
             Kind::Danger,

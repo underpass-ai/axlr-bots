@@ -43,10 +43,12 @@ pub enum Icon {
     Next,
     /// A cause found: an incident diagnosed.
     Lens,
+    /// A newer version waits: a bot's staged definition, a node behind.
+    Update,
 }
 
 impl Icon {
-    pub const ALL: [Icon; 34] = [
+    pub const ALL: [Icon; 35] = [
         Icon::Overview,
         Icon::Nodes,
         Icon::Bots,
@@ -81,6 +83,7 @@ impl Icon {
         Icon::Trash,
         Icon::Next,
         Icon::Lens,
+        Icon::Update,
     ];
 
     fn bytes(self) -> &'static [u8] {
@@ -119,6 +122,7 @@ impl Icon {
             Icon::Trash => include_bytes!("../../assets/icons/trash.svg"),
             Icon::Next => include_bytes!("../../assets/icons/next.svg"),
             Icon::Lens => include_bytes!("../../assets/icons/lens.svg"),
+            Icon::Update => include_bytes!("../../assets/icons/update.svg"),
         }
     }
 

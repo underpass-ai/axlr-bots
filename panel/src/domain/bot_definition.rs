@@ -50,6 +50,10 @@ pub struct BotDefinition {
     /// The signed catalog skills it is given; passed through as written.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skills: Option<serde_json::Value>,
+    /// The definition's own version (`1.4.0`); the control plane checks
+    /// it. Empty: none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub version: String,
 }
 
 /// The few fields of the register form.
@@ -157,6 +161,7 @@ impl BotDefinition {
             events: None,
             runtime: None,
             skills: None,
+            version: String::new(),
         };
         definition.validate()?;
         Ok(definition)
@@ -215,6 +220,22 @@ mod tests {
         )
         .unwrap();
         assert!(serde_json::to_value(&without).unwrap().get("skills").is_none());
+    }
+
+    #[test]
+    fn keeps_the_version_of_a_definition() {
+        let text = r#"{"tenant": "default", "name": "triage", "owner": "ops", "mission": "Triage.",
+          "triggers": [{"type": "manual"}], "version": "1.4.0"}"#;
+        let definition = BotDefinition::from_json(text).unwrap();
+        assert_eq!(definition.version, "1.4.0");
+        assert_eq!(serde_json::to_value(&definition).unwrap()["version"], "1.4.0");
+        let form = BotForm {
+            name: "triage".into(),
+            mission: "Triage.".into(),
+            ..Default::default()
+        };
+        let made = serde_json::to_value(BotDefinition::from_form(&form).unwrap()).unwrap();
+        assert!(made.get("version").is_none(), "{made}");
     }
 
     #[test]

@@ -8,6 +8,12 @@ use serde::{Deserialize, Serialize};
 pub struct NodeCapabilities {
     #[serde(default, rename = "axlrVersion")]
     pub axlr_version: String,
+    /// The node agent's own build, as Go recorded it: its version and
+    /// commit. A node older than the fields names none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub node_version: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub node_revision: String,
     #[serde(default)]
     pub policy_supported: bool,
     #[serde(default)]
@@ -89,6 +95,18 @@ mod tests {
         assert!(old.providers.is_empty() && old.runtimes.is_empty());
         let json = serde_json::to_string(&old).unwrap();
         assert!(!json.contains("providers") && !json.contains("runtimes"), "{json}");
+        assert!(
+            !json.contains("nodeVersion") && !json.contains("nodeRevision"),
+            "{json}"
+        );
+        let built: NodeCapabilities = serde_json::from_str(
+            r#"{"axlrVersion":"axlr-tui 0.14.0","nodeVersion":"0.4.0","nodeRevision":"0d1e2f3a4b5c","policySupported":true,"correlationSupported":true}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            (built.node_version.as_str(), built.node_revision.as_str()),
+            ("0.4.0", "0d1e2f3a4b5c")
+        );
     }
 
     #[test]

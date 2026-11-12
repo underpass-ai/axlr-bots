@@ -73,10 +73,13 @@ func TestStagedRoutesOverTheOperatorAddress(t *testing.T) {
 	for _, event := range events {
 		types = append(types, event.Type.String())
 	}
-	if last := events[len(events)-1]; last.Type != domain.EventBotUpdated || last.Payload["staged"] != "1.1.0" {
-		t.Errorf("the apply is the update: %+v", last)
+	if update := events[len(events)-2]; update.Type != domain.EventBotUpdated || update.Payload["staged"] != "1.1.0" {
+		t.Errorf("the apply is the update: %+v", update)
 	}
-	if joined := strings.Join(types, ","); strings.Count(joined, "bot.updated") != 1 {
+	if last := events[len(events)-1]; last.Type != domain.EventBotStagedApplied || last.Payload["version"] != "1.1.0" || last.Payload["previousVersion"] != "1.0.0" {
+		t.Errorf("then bot.staged.applied: %+v", last)
+	}
+	if joined := strings.Join(types, ","); strings.Count(joined, "bot.updated") != 1 || !strings.Contains(joined, "bot.staged,") {
 		t.Errorf("events %s", joined)
 	}
 

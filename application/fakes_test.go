@@ -361,11 +361,16 @@ type collector struct {
 	audits     []domain.AuditEntry
 	fail       error
 	recordFail error
+	// failOn fails the publication of these event types only.
+	failOn map[domain.EventType]error
 }
 
 func (c *collector) Publish(_ context.Context, e domain.Event) error {
 	if c.fail != nil {
 		return c.fail
+	}
+	if err := c.failOn[e.Type]; err != nil {
+		return err
 	}
 	c.events = append(c.events, e)
 	return nil

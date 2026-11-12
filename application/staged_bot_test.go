@@ -65,8 +65,19 @@ func TestStageApplyAndUnstage(t *testing.T) {
 	if _, ok := stored.Staged(); !ok || stored.Mission() == domain.Mission(mission) {
 		t.Fatal("the staged change is stored and nothing else changed")
 	}
-	if len(h.log.events) != 0 {
-		t.Errorf("staging publishes no event yet: %+v", h.log.events)
+	if len(h.log.events) != 1 || h.log.events[0].Type != domain.EventBotStaged || h.log.events[0].Payload["version"] != "1.2.0" {
+		t.Fatalf("staging publishes bot.staged: %+v", h.log.events)
+	}
+	if fields := strings.Join(h.log.events[0].Payload["fields"].([]string), ","); fields != "mission,triggers,version" {
+		t.Errorf("bot.staged fields = %q", fields)
+	}
+	if _, replaced := h.log.events[0].Payload["replaced"]; replaced {
+		t.Error("bot.staged names a replaced change when there was none")
+	}
+	for key := range h.log.events[0].Payload {
+		if key != "version" && key != "fields" {
+			t.Errorf("bot.staged carries %q: never the patch", key)
+		}
 	}
 	audit := newestAudit(h)
 	if audit.Action != "bot.stage" || audit.Outcome != domain.AuditOK || audit.Details["version"] != "1.2.0" || audit.Details["fields"] != "mission,triggers,version" {
@@ -92,6 +103,9 @@ func TestStageApplyAndUnstage(t *testing.T) {
 	if audit := newestAudit(h); audit.Details["replaced"] != "1.2.0" {
 		t.Errorf("replacing says what it replaced: %+v", audit)
 	}
+	if event := h.log.events[len(h.log.events)-1]; event.Type != domain.EventBotStaged || event.Payload["replaced"] != "1.2.0" {
+		t.Errorf("bot.staged says what it replaced: %+v", event)
+	}
 
 	applied, err := NewApplyStagedBot(h.deps).Execute(ctx, bot.ID())
 	if err != nil {
@@ -107,7 +121,10 @@ func TestStageApplyAndUnstage(t *testing.T) {
 	if _, ok := stored.Staged(); ok || stored.Version() != "1.2.0" {
 		t.Fatal("applying saves the change and drops the staged one in the same save")
 	}
-	updated := h.log.events[len(h.log.events)-1]
+	updated, done := h.log.events[len(h.log.events)-2], h.log.events[len(h.log.events)-1]
+	if done.Type != domain.EventBotStagedApplied || done.Payload["version"] != "1.2.0" || done.Payload["previousVersion"] != "" {
+		t.Errorf("bot.staged.applied comes after bot.updated: %v %+v", done.Type, done.Payload)
+	}
 	if updated.Type != domain.EventBotUpdated || updated.Payload["version"] != "1.2.0" || updated.Payload["previousVersion"] != "" || updated.Payload["staged"] != "1.2.0" {
 		t.Fatalf("event %v %+v", updated.Type, updated.Payload)
 	}
@@ -142,6 +159,20 @@ func TestStageApplyAndUnstage(t *testing.T) {
 	}
 	if audit := newestAudit(h); audit.Action != "bot.unstage" || audit.Outcome != domain.AuditOK || audit.Details["version"] != "1.3.0" {
 		t.Errorf("audit = %+v", audit)
+	}
+	if event := h.log.events[len(h.log.events)-1]; event.Type != domain.EventBotUnstaged || event.Payload["version"] != "1.3.0" {
+		t.Errorf("unstaging publishes bot.unstaged: %+v", event)
+	}
+
+	// The next apply names the version the bot had.
+	if _, err := NewStageBot(h.deps).Execute(ctx, bot.ID(), BotPatch{Version: ptr("1.3.0"), Mission: &mission}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewApplyStagedBot(h.deps).Execute(ctx, bot.ID()); err != nil {
+		t.Fatal(err)
+	}
+	if event := h.log.events[len(h.log.events)-1]; event.Type != domain.EventBotStagedApplied || event.Payload["version"] != "1.3.0" || event.Payload["previousVersion"] != "1.2.0" {
+		t.Errorf("bot.staged.applied = %+v", event)
 	}
 }
 
@@ -272,6 +303,25 @@ func TestStagedWritersFailWithTheirStore(t *testing.T) {
 	h.log.fail = errBoom
 	if _, err := NewApplyStagedBot(h.deps).Execute(ctx, bot.ID()); err != errBoom {
 		t.Errorf("apply without its event: %v", err)
+	}
+	h.log.fail = nil
+
+	// Each writer stops at its own event, before its audit.
+	h.log.failOn = map[domain.EventType]error{domain.EventBotStaged: errBoom}
+	if _, err := NewStageBot(h.deps).Execute(ctx, bot.ID(), BotPatch{Version: ptr("1.0.4")}); err != errBoom {
+		t.Errorf("stage without bot.staged: %v", err)
+	}
+	h.log.failOn = map[domain.EventType]error{domain.EventBotUnstaged: errBoom}
+	if _, err := NewUnstageBot(h.deps).Execute(ctx, bot.ID()); err != errBoom {
+		t.Errorf("unstage without bot.unstaged: %v", err)
+	}
+	h.log.failOn = nil
+	if _, err := NewStageBot(h.deps).Execute(ctx, bot.ID(), BotPatch{Version: ptr("1.0.5")}); err != nil {
+		t.Fatal(err)
+	}
+	h.log.failOn = map[domain.EventType]error{domain.EventBotStagedApplied: errBoom}
+	if _, err := NewApplyStagedBot(h.deps).Execute(ctx, bot.ID()); err != errBoom {
+		t.Errorf("apply without bot.staged.applied: %v", err)
 	}
 }
 

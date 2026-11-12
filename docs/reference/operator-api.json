@@ -298,7 +298,7 @@
       ],
       "put": {
         "operationId": "stageBot",
-        "description": "stage a change to the bot for later: the patch PATCH /v1/bots/{id} takes, with its version required. It is checked as the update would check it now and nothing of the bot changes but what it holds staged; one change at a time, a new one replaces it. Audited bot.stage (no event yet)",
+        "description": "stage a change to the bot for later: the patch PATCH /v1/bots/{id} takes, with its version required. It is checked as the update would check it now and nothing of the bot changes but what it holds staged; one change at a time, a new one replaces it. Audited bot.stage; publishes bot.staged (its version, the fields it changes and the version it replaced, never the patch)",
         "requestBody": {
           "required": true,
           "content": {
@@ -346,7 +346,7 @@
       },
       "delete": {
         "operationId": "unstageBot",
-        "description": "drop the staged change unapplied; audited bot.unstage. Nothing staged is 409 state",
+        "description": "drop the staged change unapplied; publishes bot.unstaged (its version); audited bot.unstage. Nothing staged is 409 state",
         "responses": {
           "200": {
             "description": "OK",
@@ -378,7 +378,7 @@
       ],
       "post": {
         "operationId": "applyStagedBot",
-        "description": "apply the staged change through the update (checked, published as bot.updated with staged naming its version, and audited as PATCH) and drop it in the same save; audited bot.staged.apply. Nothing staged is 409 state; a change the bot no longer takes is refused as the update refuses it and stays staged",
+        "description": "apply the staged change through the update (checked, published as bot.updated with staged naming its version, and audited as PATCH) and drop it in the same save, then bot.staged.applied (version, previousVersion); audited bot.staged.apply. Nothing staged is 409 state; a change the bot no longer takes is refused as the update refuses it and stays staged",
         "responses": {
           "200": {
             "description": "OK",
@@ -3147,6 +3147,9 @@
           "bot.enabled",
           "bot.updated",
           "bot.paused",
+          "bot.staged",
+          "bot.unstaged",
+          "bot.staged.applied",
           "bot.deleted",
           "bot.trigger.fired",
           "bot.task.submitted",

@@ -1535,3 +1535,104 @@ fn an_approved_postmortem_says_who_in_the_banner() {
     let approved = app.incidents.detail.as_ref().unwrap().postmortem.clone().unwrap();
     assert_eq!(approved.state, PostmortemState::Approved);
 }
+
+/// The sample fleet with `bot` at 1.2.0 and 1.3.0 staged for it, read.
+fn with_an_update() -> (App, std::sync::Arc<crate::adapters::fake::FakeControlPlane>) {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    fake.change_bot("bot", |b| b.version = "1.2.0".into());
+    fake.stage_bot("bot", "1.3.0");
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    (app, fake)
+}
+
+#[test]
+fn a_bot_is_updated_to_its_staged_version_after_the_confirmation() {
+    let (mut app, fake) = with_an_update();
+    let id = BotId::new("bot").unwrap();
+    let listed = app.fleet.as_ref().unwrap().bots.iter().find(|b| b.id == id).unwrap();
+    assert_eq!(listed.update().unwrap().tip(), "v1.2.0 → v1.3.0 ready");
+    send(&mut app, Message::Go(Screen::Bot(id.clone())));
+    assert!(app.apply(Message::AskUpdateBot(id.clone())).is_empty());
+    let Some(Confirm::UpdateBot(asked, update)) = app.confirm.clone() else {
+        panic!("no confirmation: {:?}", app.confirm);
+    };
+    assert_eq!((asked, update.act()), (id.clone(), "Update to v1.3.0".to_string()));
+    let effects = app.apply(Message::ConfirmYes);
+    assert!(matches!(effects.as_slice(), [Effect::ApplyStaged(_)]));
+    assert!(app.switching);
+    drive(&mut app, effects);
+    assert!(!app.switching);
+    let banner = app.banner.as_ref().unwrap();
+    assert_eq!(
+        (banner.title.as_str(), banner.detail.as_str()),
+        ("bot updated", "now at v1.3.0")
+    );
+    let bot = &app.bot.as_ref().unwrap().bot;
+    assert_eq!((bot.version.as_str(), bot.update()), ("1.3.0", None));
+    let listed = app.fleet.as_ref().unwrap().bots.iter().find(|b| b.id == id).unwrap();
+    assert!(listed.staged.is_none(), "the fleet is read again");
+    assert!(fake.calls().iter().any(|c| c == "apply_staged bot"));
+
+    // Nothing newer: nothing to ask.
+    assert!(app.apply(Message::AskUpdateBot(id)).is_empty());
+    assert!(app.confirm.is_none());
+}
+
+#[test]
+fn an_update_dropped_meanwhile_says_so_in_the_banner() {
+    let (mut app, fake) = with_an_update();
+    let id = BotId::new("bot").unwrap();
+    send(&mut app, Message::Go(Screen::Bots));
+    send(&mut app, Message::AskUpdateBot(id.clone()));
+    assert!(
+        matches!(app.confirm, Some(Confirm::UpdateBot(..))),
+        "asked from the list's fleet"
+    );
+    // Another operator drops it before the click.
+    futures::executor::block_on(crate::application::ControlPlane::unstage(fake.as_ref(), id.clone())).unwrap();
+    send(&mut app, Message::ConfirmYes);
+    let banner = app.banner.as_ref().unwrap();
+    assert_eq!(banner.title, "Not now");
+    assert!(
+        banner.detail.contains("applied or dropped meanwhile"),
+        "{}",
+        banner.detail
+    );
+    assert!(!app.switching);
+    let listed = app.fleet.as_ref().unwrap().bots.iter().find(|b| b.id == id).unwrap();
+    assert!(listed.update().is_none(), "the list no longer offers it");
+}
+
+#[test]
+fn nodes_behind_the_control_plane_are_known_after_a_refresh() {
+    let (mut app, fake) = with_an_update();
+    fake.set_build(Some(crate::domain::BuildStatus {
+        running: crate::domain::BuildIdentity {
+            version: "0.4.0".into(),
+            ..Default::default()
+        },
+        minimum_axlr: "0.15.0".into(),
+        ..Default::default()
+    }));
+    fake.set_node_build("wrx80", "0.3.0", "axlr-tui 0.14.0");
+    fake.set_node_build("gx10-ff95", "0.4.0", "axlr-tui 0.15.0");
+    let tick = app.now + Duration::seconds(3);
+    send(&mut app, Message::Tick(tick));
+    let fleet = app.fleet.as_ref().unwrap();
+    let marks: Vec<String> = fleet
+        .nodes
+        .iter()
+        .filter_map(|n| fleet.behind(n).map(|b| format!("{}: {}", n.id, b.tip())))
+        .collect();
+    assert_eq!(
+        marks,
+        vec![
+            "wrx80: Node agent v0.3.0: update it to v0.4.0, the control plane's\n\
+             AXLR v0.14.0: update it to v0.15.0 or newer"
+                .to_string()
+        ]
+    );
+}

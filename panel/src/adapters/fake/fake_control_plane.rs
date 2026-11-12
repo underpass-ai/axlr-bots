@@ -9,8 +9,9 @@ use crate::domain::{
     CancelledTask, DecidedTask, Decision, DeletedBot, EnrollmentRequest, EnrollmentToken, Event, Execution,
     ExecutionId, ExecutionKind, ExecutionOutcome, ExecutionResult, Incident, IncidentPostmortem, IncidentSeverity,
     IncidentStatus, Node, NodeCapabilities, NodeId, NodeStatus, Overview, PendingDecision, PostmortemState,
-    Publication, Published, RevokedNode, Secret, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Subscription, Task,
-    TaskFilter, TaskId, TaskStatus, TaskSubmission, TeamLink, ToolCall, Topic, TopicListener, TriggerRef, Usage,
+    Publication, Published, RevokedNode, Secret, SentTaskMessage, StagedDefinition, StoppedBotAnswer, SubmittedTask,
+    Subscription, Task, TaskFilter, TaskId, TaskStatus, TaskSubmission, TeamLink, ToolCall, Topic, TopicListener,
+    TriggerRef, Usage,
 };
 
 /// The control plane in memory: what the use cases and the interface are
@@ -206,6 +207,37 @@ impl FakeControlPlane {
         }
     }
 
+    /// Stages the next version of a bot's definition, as an installer
+    /// would with `PUT /v1/bots/{id}/staged`: it replaces one staged
+    /// before and publishes `bot.staged`.
+    pub fn stage_bot(&self, id: &str, version: &str) {
+        let mut state = self.state.lock().unwrap();
+        let now = state.clock();
+        let id = BotId::new(id).unwrap();
+        let Some(bot) = state.bots.get_mut(&id) else {
+            return;
+        };
+        let replaced = bot.staged.replace(StagedDefinition {
+            version: version.into(),
+            staged_at: now,
+        });
+        let mut payload = serde_json::json!({"version": version, "fields": ["version"]});
+        if let Some(replaced) = replaced {
+            payload["replaced"] = replaced.version.into();
+        }
+        state.bot_event_with("bot.staged", &id, payload.as_object().cloned());
+    }
+
+    /// Sets the build a node reports: its agent's version and its AXLR's
+    /// version line.
+    pub fn set_node_build(&self, id: &str, agent: &str, axlr: &str) {
+        let mut state = self.state.lock().unwrap();
+        if let Some(node) = state.nodes.get_mut(&NodeId::new(id).unwrap()) {
+            node.capabilities.node_version = agent.into();
+            node.capabilities.axlr_version = axlr.into();
+        }
+    }
+
     /// The calls made so far, as `route arg`.
     pub fn calls(&self) -> Vec<String> {
         self.state.lock().unwrap().calls.clone()
@@ -381,6 +413,8 @@ impl FakeState {
             labels: labels.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
             capabilities: NodeCapabilities {
                 axlr_version: "0.14.0".into(),
+                node_version: String::new(),
+                node_revision: String::new(),
                 policy_supported: true,
                 correlation_supported: true,
                 dedicated: false,
@@ -432,6 +466,8 @@ impl FakeState {
             },
             groups: Vec::new(),
             subscriptions: Vec::new(),
+            version: String::new(),
+            staged: None,
             status: BotStatus::Enabled,
             created_at: now - Duration::days(1),
             updated_at: now - Duration::days(1),
@@ -944,6 +980,8 @@ impl ControlPlane for FakeControlPlane {
                 placement: definition.placement,
                 groups: definition.groups,
                 subscriptions: Vec::new(),
+                version: definition.version,
+                staged: None,
                 status: BotStatus::Registered,
                 created_at: now,
                 updated_at: now,
@@ -1008,6 +1046,50 @@ impl ControlPlane for FakeControlPlane {
                 let changed = serde_json::json!({"subscriptions": list, "by": "operator"});
                 s.bot_event_with("bot.subscription.changed", &id, changed.as_object().cloned());
             }
+            Ok(bot)
+        })
+    }
+
+    fn apply_staged(&self, id: BotId) -> PortFuture<'_, Bot> {
+        self.call(format!("apply_staged {id}"), move |s| {
+            if s.older {
+                return Err(PanelError::NotFound("404 page not found".into()));
+            }
+            let now = s.clock();
+            let bot = s
+                .bots
+                .get_mut(&id)
+                .ok_or_else(|| PanelError::NotFound(format!("bot {id} not found")))?;
+            let staged = bot.staged.take().ok_or_else(|| {
+                PanelError::State(format!("bot {id} is without a staged change: cannot apply a staged change"))
+            })?;
+            let previous = std::mem::replace(&mut bot.version, staged.version.clone());
+            bot.updated_at = now;
+            let bot = bot.clone();
+            let updated = serde_json::json!({"fields": ["version"], "version": staged.version, "previousVersion": previous, "staged": staged.version});
+            s.bot_event_with("bot.updated", &id, updated.as_object().cloned());
+            let applied = serde_json::json!({"version": staged.version, "previousVersion": previous});
+            s.bot_event_with("bot.staged.applied", &id, applied.as_object().cloned());
+            Ok(bot)
+        })
+    }
+
+    fn unstage(&self, id: BotId) -> PortFuture<'_, Bot> {
+        self.call(format!("unstage {id}"), move |s| {
+            if s.older {
+                return Err(PanelError::NotFound("404 page not found".into()));
+            }
+            let bot = s
+                .bots
+                .get_mut(&id)
+                .ok_or_else(|| PanelError::NotFound(format!("bot {id} not found")))?;
+            let staged = bot
+                .staged
+                .take()
+                .ok_or_else(|| PanelError::State(format!("bot {id} is without a staged change: cannot unstage")))?;
+            let bot = bot.clone();
+            let dropped = serde_json::json!({"version": staged.version});
+            s.bot_event_with("bot.unstaged", &id, dropped.as_object().cloned());
             Ok(bot)
         })
     }
@@ -1630,4 +1712,76 @@ fn pattern_fits(pattern: &str, name: &str) -> bool {
     let p: Vec<&str> = pattern.split('.').collect();
     let n: Vec<&str> = name.split('.').collect();
     fits(&p, &n)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run<F: std::future::Future>(future: F) -> F::Output {
+        futures::executor::block_on(future)
+    }
+
+    fn kinds(fake: &FakeControlPlane, bot: &BotId) -> Vec<String> {
+        run(fake.bot_events(bot.clone(), 50))
+            .unwrap()
+            .into_iter()
+            .map(|e| e.event_type)
+            .collect()
+    }
+
+    #[test]
+    fn holds_one_staged_change_applies_and_drops_it() {
+        let now: DateTime<Utc> = "2026-11-12T21:00:00Z".parse().unwrap();
+        let fake = FakeControlPlane::sample(now);
+        let id = BotId::new("bot").unwrap();
+        fake.stage_bot("bot", "1.1.0");
+        fake.stage_bot("bot", "1.2.0");
+        fake.stage_bot("ghost", "1.0.0");
+        let events = run(fake.bot_events(id.clone(), 50)).unwrap();
+        let replaced = events.last().unwrap().payload_text("replaced");
+        assert_eq!(replaced.as_deref(), Some("1.1.0"));
+        let bot = run(fake.get_bot(id.clone())).unwrap();
+        assert_eq!(
+            bot.staged.as_ref().map(|s| (s.version.as_str(), s.staged_at)),
+            Some(("1.2.0", now))
+        );
+
+        let dropped = run(fake.unstage(id.clone())).unwrap();
+        assert!(dropped.staged.is_none() && dropped.version.is_empty());
+        assert_eq!(kinds(&fake, &id).last().map(String::as_str), Some("bot.unstaged"));
+        assert!(matches!(run(fake.unstage(id.clone())), Err(PanelError::State(_))));
+        assert!(matches!(run(fake.apply_staged(id.clone())), Err(PanelError::State(_))));
+        let ghost = BotId::new("ghost").unwrap();
+        assert!(matches!(run(fake.unstage(ghost.clone())), Err(PanelError::NotFound(_))));
+        assert!(matches!(run(fake.apply_staged(ghost)), Err(PanelError::NotFound(_))));
+
+        fake.stage_bot("bot", "1.2.0");
+        let applied = run(fake.apply_staged(id.clone())).unwrap();
+        assert_eq!((applied.version.as_str(), applied.staged.is_none()), ("1.2.0", true));
+        assert!(kinds(&fake, &id).ends_with(&["bot.updated".into(), "bot.staged.applied".into()]));
+
+        fake.stage_bot("bot", "1.3.0");
+        fake.without_newer_routes();
+        assert!(matches!(
+            run(fake.apply_staged(id.clone())),
+            Err(PanelError::NotFound(_))
+        ));
+        assert!(matches!(run(fake.unstage(id)), Err(PanelError::NotFound(_))));
+    }
+
+    #[test]
+    fn sets_the_build_a_node_reports() {
+        let fake = FakeControlPlane::sample("2026-11-12T21:00:00Z".parse().unwrap());
+        fake.set_node_build("wrx80", "0.3.0", "axlr-tui 0.13.0");
+        fake.set_node_build("ghost", "0.3.0", "axlr-tui 0.13.0");
+        let node = run(fake.get_node(NodeId::new("wrx80").unwrap())).unwrap();
+        assert_eq!(
+            (
+                node.capabilities.node_version.as_str(),
+                node.capabilities.axlr_version.as_str()
+            ),
+            ("0.3.0", "axlr-tui 0.13.0")
+        );
+    }
 }

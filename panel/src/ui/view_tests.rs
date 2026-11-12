@@ -2227,3 +2227,54 @@ fn an_incident_on_a_ladder_shows_its_step_history_and_the_mark() {
         .diagnosis_mark = "diagnosis-correct".into();
     shows(&app, &["Marked: diagnosis-correct"]);
 }
+
+#[test]
+fn versions_show_and_a_bot_with_a_newer_one_offers_the_update() {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    fake.change_bot("bot", |b| b.version = "1.2.0".into());
+    fake.stage_bot("bot", "1.3.0");
+    fake.change_bot("bot-wrx80", |b| b.version = "2.0.0".into());
+    fake.set_build(Some(crate::domain::BuildStatus {
+        running: crate::domain::BuildIdentity {
+            version: "0.4.0".into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    }));
+    fake.set_node_build("wrx80", "0.3.0", "axlr-tui 0.14.0");
+    let mut app = super::view::tests::app_over(fake);
+    send(&mut app, Message::SettingsSave);
+    send(&mut app, Message::Go(Screen::Bots));
+    shows(&app, &["· v0.4.0"]);
+    {
+        let _turn = turn();
+        let mut wide = Simulator::with_size(panel_settings(), Size::new(1600.0, 1000.0), view::view(&app));
+        for words in ["v1.2.0 · claude-haiku-5.5", "v2.0.0 · claude-haiku-5.5"] {
+            assert!(wide.find(words).is_ok(), "{words} is not on the wide Bots");
+        }
+    }
+
+    let id = BotId::new("bot").unwrap();
+    send(&mut app, Message::Go(Screen::Bot(id.clone())));
+    shows(&app, &["v1.2.0", "Update to v1.3.0"]);
+    let sent = messages_of_click(&app, "Update to v1.3.0");
+    assert!(
+        matches!(sent.as_slice(), [Message::AskUpdateBot(b)] if *b == id),
+        "{sent:?}"
+    );
+    send(&mut app, Message::AskUpdateBot(id.clone()));
+    shows(&app, &["Update bot to v1.3.0?", "Update"]);
+    send(&mut app, Message::ConfirmYes);
+    shows(&app, &["v1.3.0", "bot updated"]);
+    assert!(simulator_misses(&app, "Update to v1.3.0"));
+
+    // A bot at its newest version shows it and offers nothing.
+    send(&mut app, Message::Go(Screen::Bot(BotId::new("bot-wrx80").unwrap())));
+    shows(&app, &["v2.0.0"]);
+    assert!(simulator_misses(&app, "Update to"));
+
+    send(&mut app, Message::Go(Screen::Nodes));
+    shows(&app, &["agent v0.3.0"]);
+}

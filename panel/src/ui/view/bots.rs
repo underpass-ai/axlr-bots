@@ -4,7 +4,7 @@ use iced::widget::{Space, column, container, pick_list, responsive, row, scrolla
 use iced::{Alignment, Length};
 
 use super::widgets::{
-    El, SMALL, action, bold, card, chip, empty, field, icon, icon_button, muted, pill, section_title, title,
+    El, SMALL, action, bold, card, chip, empty, field, icon, icon_button, mark, muted, pill, section_title, title,
 };
 use super::{grid, levels};
 use crate::application::BotNow;
@@ -93,14 +93,27 @@ fn list<'a>(app: &'a App, fleet: &'a crate::application::Fleet, narrow: bool, to
                 )
             },
         ),
-        table::column(head(BotColumn::Status), move |b: &'a Bot| {
-            pill(Tone::of_bot(b.status), b.status.name(), tokens)
+        // The pill, and the mark of a newer version ready beside it.
+        table::column(head(BotColumn::Status), move |b: &'a Bot| -> El<'a> {
+            let mut cell = row![pill(Tone::of_bot(b.status), b.status.name(), tokens)]
+                .spacing(6)
+                .align_y(Alignment::Center);
+            if let Some(update) = b.update() {
+                cell = cell.push(mark(Icon::Update, tokens.accent, update.tip(), tokens));
+            }
+            cell.into()
         }),
-        // A long name is cut to one line, whole on hover.
+        // A long name is cut to one line, whole on hover; its
+        // definition's version and its model under it.
         table::column(head(BotColumn::Bot), move |b: &'a Bot| -> El<'a> {
+            let under = match b.version_label() {
+                // The version first: a narrow column cuts the model.
+                Some(version) => format!("{version} · {}", b.model.short_model()),
+                None => b.model.short_model().to_string(),
+            };
             column![
                 grid::fitted(b.id.to_string(), true, tokens),
-                grid::fitted_muted(b.model.short_model().to_string(), tokens)
+                grid::fitted_muted(under, tokens)
             ]
             .spacing(2)
             .into()
