@@ -36,6 +36,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | Let bots publish on topics and choose who listens, in what mode, from the panel | [ADR](architecture/pubsub-events.md) |
 | Set up teams and events from the panel, step by step: the urgent order, a message to a running task, the shortcuts | [Teams and events from the panel](runbooks/teams-and-events.md) |
 | Tell the dev team, as events, when a pull request's CI ends and when it is merged: GitHub's webhooks through a tunnel into an input adapter | [GitHub hooks](runbooks/github-hooks.md), [spec](reference/github-hooks.asyncapi.json) |
+| Audit every finished task for new kinds of failure and tell the QA team once per kind, as events, with no model | [Activity audit](runbooks/activity-audit.md), [spec](reference/activity-audit.asyncapi.json) |
 | Recover after a crash, a silent node or a lost control plane | [Recovery](runbooks/recovery.md) |
 
 ## Architecture

@@ -85,6 +85,7 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | See how a node runs AXLR and reads the result | [Runtime contract](docs/architecture/runtime-contract.md) |
 | Look up a command, read a report | [Command reference](docs/reference/cli.md) |
 | Tell the dev team when a pull request's CI ends and when it is merged, from GitHub's webhooks | [GitHub hooks](docs/runbooks/github-hooks.md) |
+| Tell the QA team once about each new kind of failure in the fleet's finished tasks | [Activity audit](docs/runbooks/activity-audit.md) |
 | Recover after a crash, a silent node or a lost control plane | [Recovery](docs/runbooks/recovery.md) |
 | Understand who keeps, decides and trusts what; what is next and left out | [Control plane, node and AXLR](docs/architecture/control-plane-node-axlr.md) |
 | Bring a world of your own to the bots (a simulation, a camera, a sensor, a hand) as text, with an adapter beside it and nothing new in the control plane | [Input adapters](docs/architecture/input-adapters.md) (its template: `world-adapter/` in the private repo `axlr-bots-examples`) |

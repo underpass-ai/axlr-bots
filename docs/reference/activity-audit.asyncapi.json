@@ -1,0 +1,341 @@
+{
+  "asyncapi": "3.0.0",
+  "info": {
+    "title": "AXLR Bots activity audit",
+    "version": "1.0.0",
+    "description": "The input adapter that watches the fleet's activity and turns each new kind of failure in a finished task into one event for the QA team (the pattern is docs/architecture/input-adapters.md). Deterministic: no model. It long-polls each team's timeline through the control plane's socket (`GET /v1/groups/{name}/events?after=&wait=30s`) as a wake-up; on a task's end (`bot.task.completed`, `bot.task.failed`, `bot.task.expired`, `bot.task.cancelled`) it reads the task (`GET /v1/tasks/{id}`), its executions (`GET /v1/tasks/{id}/executions`, the result's `toolCalls`) and its timeline (`GET /v1/tasks/{id}/events`, the `bot.task.progress` items `tool.started` and `tool.ended` that carry a call's cut summary and its error's first line). Each failed call, and a failed task's reason, is normalised into a signature; a signature it has not seen is published once, as `actividad.fallo`, to team `qa` as the operator (`POST /v1/groups/{team}/events`). The signatures it has seen are its own file, `<state>/activity-audit/seen.json`, described here as `SeenFile` so that no DTO of the package is written by hand. The wire forms are `adapters/activityaudit`; the runbook is docs/runbooks/activity-audit.md."
+  },
+  "defaultContentType": "application/json",
+  "servers": {
+    "controlPlane": {
+      "host": "localhost",
+      "protocol": "http",
+      "description": "The control plane's operator API over its Unix socket (<state>/axlr-bots.sock): the adapter reads the timelines and publishes as the operator, at depth 0."
+    }
+  },
+  "channels": {
+    "teamEvents": {
+      "address": "/v1/groups/{team}/events",
+      "title": "The QA team's events",
+      "description": "The operator API's publish route (docs/reference/operator-api.md). A signature names its idempotency key, so a publish repeated after a crash answers the event published before and delivers nothing twice.",
+      "servers": [
+        {
+          "$ref": "#/servers/controlPlane"
+        }
+      ],
+      "parameters": {
+        "team": {
+          "description": "The team the adapter publishes to: --team, qa by default.",
+          "examples": [
+            "qa"
+          ]
+        }
+      },
+      "messages": {
+        "actividadFallo": {
+          "$ref": "#/components/messages/actividadFallo"
+        }
+      }
+    }
+  },
+  "operations": {
+    "sendActividadFallo": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/teamEvents"
+      },
+      "summary": "A task ended with a failure whose signature the adapter has not published: one actividad.fallo. A signature it published before grows its count in the seen-store and publishes nothing. At most --per-minute (6) a minute, oldest first, so a first --since backfill does not flood QA.",
+      "bindings": {
+        "http": {
+          "method": "POST"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/teamEvents/messages/actividadFallo"
+        }
+      ]
+    }
+  },
+  "components": {
+    "messages": {
+      "actividadFallo": {
+        "name": "actividad.fallo",
+        "title": "A new kind of failure in the fleet's activity",
+        "contentType": "application/json",
+        "payload": {
+          "$ref": "#/components/schemas/ActividadFalloEvent"
+        }
+      }
+    },
+    "schemas": {
+      "ActividadFalloEvent": {
+        "type": "object",
+        "description": "The operator API's publish body (application.PublishGroupEventCommand) for actividad.fallo. Its kind is info (a domain-style name): the QA members that subscribe to it hear it.",
+        "required": [
+          "name",
+          "message",
+          "data",
+          "idempotencyKey"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "const": "actividad.fallo"
+          },
+          "message": {
+            "type": "string",
+            "description": "One line that stands on its own (a coalesced note or a redelivery carries only it and data.id): `<id> · <tool> · <bot> (<team>) · <program or -> · <error>`, cut to 280 characters. A failed task's tool is `task`; a bridged call's program is the plugin's tool it reached; a bot in no team is `(-)`.",
+            "examples": [
+              "fallo-ebbdaebc51f616fa · axlr_remember · dev-go (dev) · - · send the continuation alone to commit a reviewed write"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/FalloData"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "description": "activity:<signature id>; activity:<signature id>:r<n> after the n-th --rearm of it. The control plane names an operator's event by its key and its body: the body is fixed when the signature falls due (SeenSignature.due), so a retry is the same event.",
+            "examples": [
+              "activity:fallo-3f9a1c0e5b7d2a46"
+            ]
+          }
+        }
+      },
+      "FalloData": {
+        "type": "object",
+        "x-go-type": "activityaudit.FalloData",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "bot",
+          "task",
+          "error",
+          "count",
+          "first_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The signature: fallo- and 16 hex characters of the SHA-256 of its key; within [A-Za-z0-9._:-]{1,128}.",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          },
+          "kind": {
+            "type": "string",
+            "description": "tool_call: a call that ended failed; task_failed: a task that ended Failed.",
+            "enum": [
+              "tool_call",
+              "task_failed"
+            ]
+          },
+          "bot": {
+            "type": "string",
+            "description": "The bot of the occurrence that published it."
+          },
+          "team": {
+            "type": "string",
+            "description": "The bot's team, when it is in one."
+          },
+          "task": {
+            "type": "string",
+            "description": "The task of that occurrence."
+          },
+          "tool": {
+            "type": "string",
+            "description": "The runtime's tool, for a tool_call."
+          },
+          "program": {
+            "type": "string",
+            "description": "For local_exec, the program's basename, when the call's summary shows it whole."
+          },
+          "mcp_tool": {
+            "type": "string",
+            "description": "For axlr_call_tool, the plugin's tool it reached (plugin/tool)."
+          },
+          "error": {
+            "type": "string",
+            "description": "The error's first line, normalised (ids, shas, times, paths under /home, numbers and quoted text replaced, secrets redacted), at most 400 characters. Never the call's output."
+          },
+          "partial": {
+            "type": "boolean",
+            "description": "True when the run's line was cut before what the signature needs (the program, the exit code, the error): the bot stands in for the program in the signature."
+          },
+          "count": {
+            "type": "integer",
+            "description": "The occurrences seen up to the publish (a backfill can give more than 1 at the first event); the seen-store keeps counting after it, for the report."
+          },
+          "first_at": {
+            "type": "string",
+            "description": "When it was first seen (the call's end, or the task's), RFC 3339."
+          }
+        }
+      },
+      "SeenFile": {
+        "type": "object",
+        "x-go-type": "activityaudit.SeenFile",
+        "description": "The adapter's own file, <state>/activity-audit/seen.json, written atomically: the signatures seen and the tasks audited.",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "signatures",
+          "tasks"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "description": "1."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The creation time from which the next reconciliation lists tasks: the oldest task still unfinished at the last one, else the newest seen. RFC 3339."
+          },
+          "signatures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SeenSignature"
+            }
+          },
+          "tasks": {
+            "type": "array",
+            "description": "The tasks audited whose creation is not older than the cursor: a task is audited once.",
+            "items": {
+              "$ref": "#/components/schemas/AuditedTask"
+            }
+          }
+        }
+      },
+      "SeenSignature": {
+        "type": "object",
+        "x-go-type": "activityaudit.SeenSignature",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "key",
+          "kind",
+          "error",
+          "count",
+          "first_at",
+          "last_at",
+          "bots"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string",
+            "description": "What was hashed: the parts of the failure that make its kind."
+          },
+          "kind": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "program": {
+            "type": "string"
+          },
+          "mcp_tool": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer",
+            "description": "Every occurrence, recovered ones included."
+          },
+          "recovered": {
+            "type": "integer",
+            "description": "The occurrences after which the same call succeeded later in the same task."
+          },
+          "bots": {
+            "type": "array",
+            "description": "The bots it was seen from, sorted.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "first_at": {
+            "type": "string"
+          },
+          "last_at": {
+            "type": "string"
+          },
+          "first_task": {
+            "type": "string"
+          },
+          "last_bot": {
+            "type": "string",
+            "description": "The bot of the newest occurrence: the one an event names."
+          },
+          "last_task": {
+            "type": "string",
+            "description": "The task of the newest occurrence."
+          },
+          "due": {
+            "$ref": "#/components/schemas/DuePublish"
+          },
+          "published_at": {
+            "type": "string",
+            "description": "When actividad.fallo was published for it; absent while it has not been."
+          },
+          "event_id": {
+            "type": "string",
+            "description": "The event the control plane answered."
+          },
+          "rearms": {
+            "type": "integer",
+            "description": "How many times --rearm cleared it."
+          }
+        }
+      },
+      "DuePublish": {
+        "type": "object",
+        "x-go-type": "activityaudit.DuePublish",
+        "description": "What the event of a signature says, fixed when it fell due and kept before it is published: a publish retried after a crash, or after the control plane refused it, is the same body under the same key, so the control plane answers the event it published before.",
+        "additionalProperties": false,
+        "required": [
+          "bot",
+          "task",
+          "count"
+        ],
+        "properties": {
+          "bot": {
+            "type": "string"
+          },
+          "team": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer"
+          }
+        }
+      },
+      "AuditedTask": {
+        "type": "object",
+        "x-go-type": "activityaudit.AuditedTask",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

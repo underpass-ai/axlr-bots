@@ -82,6 +82,16 @@ func TestEventsOverTheSocket(t *testing.T) {
 	if err != nil || len(after) == 0 || after[0].Type == "" {
 		t.Errorf("after = %+v %v", after, err)
 	}
+	newest := after[len(after)-1].ID.String()
+	if waited, err := client.WaitGroupEvents(ctx, application.GroupEventsQuery{Name: "ops", Tenant: "ops", After: newest, Limit: 10}, 50*time.Millisecond); err != nil || len(waited) != 0 {
+		t.Errorf("a long poll with nothing new = %+v %v", waited, err)
+	}
+	if waited, err := client.WaitGroupEvents(ctx, application.GroupEventsQuery{Name: "ops", After: last}, time.Second); err != nil || len(waited) == 0 {
+		t.Errorf("a long poll with something new = %+v %v", waited, err)
+	}
+	if _, err := client.WaitGroupEvents(ctx, application.GroupEventsQuery{Name: "sre"}, 0); !domain.IsNotFound(err) {
+		t.Errorf("missing team, waited: %v", err)
+	}
 	if _, err := client.ListGroupEvents(ctx, application.GroupEventsQuery{Name: "sre"}); !domain.IsNotFound(err) {
 		t.Errorf("missing team: %v", err)
 	}
