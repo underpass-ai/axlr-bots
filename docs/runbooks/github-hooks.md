@@ -1,13 +1,13 @@
 # Runbook: GitHub's webhooks into the dev team
 
-How the operator runs, on the gx10 host, the input adapter that turns GitHub's webhooks into the dev team's events: a finished CI becomes `pr.ci` and a merged pull request becomes `pr.mergeada`, published to team `dev` as the operator, at depth 0. The decision is option A of [topics between teams](../architecture/team-topics.md#where-githubs-facts-come-from); the pattern is an [input adapter](../architecture/input-adapters.md); the wire is [`github-hooks.asyncapi.json`](../reference/github-hooks.asyncapi.json). Nothing here runs by itself: the units below are files to write, the webhooks a call to make.
+How the operator runs, on the control plane's host, the input adapter that turns GitHub's webhooks into the dev team's events: a finished CI becomes `pr.ci` and a merged pull request becomes `pr.mergeada`, published to team `dev` as the operator, at depth 0. The decision is option A of [topics between teams](../architecture/team-topics.md#where-githubs-facts-come-from); the pattern is an [input adapter](../architecture/input-adapters.md); the wire is [`github-hooks.asyncapi.json`](../reference/github-hooks.asyncapi.json). Nothing here runs by itself: the units below are files to write, the webhooks a call to make.
 
 ```text
-GitHub ──HTTPS POST /github──► EC2 gateway 54.75.246.167:8443   self-signed certificate; the HMAC authenticates
-                                   │ 127.0.0.1:9900 (sshd's end of the reverse tunnel, user hooktunnel)
-                    ssh -R 127.0.0.1:9900:127.0.0.1:7890   (from gx10: axlr-github-hooks-tunnel.service)
+GitHub ──HTTPS POST /github──► gateway <gateway-host>:<port>   self-signed certificate; the HMAC authenticates
+                                   │ 127.0.0.1:9900 (sshd's end of the reverse tunnel, user <tunnel-user>)
+                    ssh -R 127.0.0.1:9900:127.0.0.1:7890   (from the control plane's host: axlr-github-hooks-tunnel.service)
                                    ▼
-gx10  axlr-bots github-hooks serve on 127.0.0.1:7890   (axlr-github-hooks.service)
+host  axlr-bots github-hooks serve on 127.0.0.1:7890   (axlr-github-hooks.service)
         verifies X-Hub-Signature-256 · maps · publishes through the socket
                                    ▼
       axlr-bots serve (the control plane) ── group publish dev pr.ci / pr.mergeada
@@ -40,8 +40,8 @@ A redelivery keeps its `X-GitHub-Delivery` (GitHub's webhook best practices say 
 |---|---|
 | The control plane runs | `systemctl --user status axlr-bots` active; its socket is `~/.local/state/axlr-bots/axlr-bots.sock`. The adapter publishes through that socket only and never opens the state directory: with the daemon down every delivery is `502` |
 | Team `dev` exists | `axlr-bots group get dev` names its members. Until dev's bots subscribe to `pr.ci` and `pr.mergeada` (cut 6 of the ADR) the events land on the timeline and wake nobody |
-| The tunnel's key and host key | `~/.ssh/axlr_hooks_tunnel` (mode 600) and `~/.ssh/known_hosts_axlr_hooks`, the gateway's pinned host key. `ssh -i ~/.ssh/axlr_hooks_tunnel -o UserKnownHostsFile=~/.ssh/known_hosts_axlr_hooks -o StrictHostKeyChecking=yes hooktunnel@54.75.246.167 true` must not ask anything |
-| The gateway | on the EC2 host, set up outside this repository; confirm it there: TLS on `:8443` with its self-signed certificate, `/github` proxied to `http://127.0.0.1:9900/github`, and `hooktunnel` allowed that forward and nothing else (for example `restrict,port-forwarding,permitlisten="127.0.0.1:9900"` before its key in `authorized_keys`). A security group that lets in only GitHub's hook ranges (`gh api meta --jq .hooks`) is optional hardening |
+| The tunnel's key and host key | `<tunnel-key>` (mode 600) and `<known-hosts-file>`, the gateway's pinned host key. `ssh -i <tunnel-key> -o UserKnownHostsFile=<known-hosts-file> -o StrictHostKeyChecking=yes <tunnel-user>@<gateway-host> true` must not ask anything |
+| The gateway | on the gateway host, set up outside this repository; confirm it there: TLS on `:8443` with its self-signed certificate, `/github` proxied to `http://127.0.0.1:9900/github`, and `<tunnel-user>` allowed that forward and nothing else (for example `restrict,port-forwarding,permitlisten="127.0.0.1:9900"` before its key in `authorized_keys`). A security group that lets in only GitHub's hook ranges (`gh api meta --jq .hooks`) is optional hardening |
 | `gh` for redeliver | signed in as an admin of the four repositories with the hooks scope: `gh auth status` lists `admin:repo_hook` (or `repo`); `gh auth refresh -s admin:repo_hook` if it lacks it |
 
 ## 1. The secret
@@ -81,13 +81,13 @@ WantedBy=default.target
 
 ```ini
 [Unit]
-Description=AXLR Bots GitHub hooks: reverse SSH tunnel to the EC2 gateway
+Description=AXLR Bots GitHub hooks: reverse SSH tunnel to the gateway
 After=network-online.target axlr-github-hooks.service
 Wants=network-online.target axlr-github-hooks.service
 
 [Service]
 Type=forking
-ExecStart=/usr/bin/ssh -f -N -T -i %h/.ssh/axlr_hooks_tunnel -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=%h/.ssh/known_hosts_axlr_hooks -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -R 127.0.0.1:9900:127.0.0.1:7890 hooktunnel@54.75.246.167
+ExecStart=/usr/bin/ssh -f -N -T -i <tunnel-key> -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=<known-hosts-file> -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -R 127.0.0.1:9900:127.0.0.1:7890 <tunnel-user>@<gateway-host>
 ExecStartPost=-%h/.local/bin/axlr-bots github-hooks redeliver --since 24h --gh %h/.local/bin/gh
 Restart=always
 RestartSec=10
@@ -121,7 +121,7 @@ One hook per repository, events `check_suite` and `pull_request`, content type j
 for repo in underpass-ai/kmp underpass-ai/made underpass-ai/axlr underpass-ai/axlr-bots; do
   jq -n --rawfile secret ~/.config/axlr-bots/github-hooks.secret '{
     name: "web", active: true, events: ["check_suite", "pull_request"],
-    config: {url: "https://54.75.246.167:8443/github", content_type: "json", insecure_ssl: "1", secret: ($secret | rtrimstr("\n"))}
+    config: {url: "https://<gateway-host>:<port>/github", content_type: "json", insecure_ssl: "1", secret: ($secret | rtrimstr("\n"))}
   }' | gh api --method POST "repos/$repo/hooks" --input - --jq '"\(.id) \(.config.url)"'
 done
 ```
@@ -145,11 +145,11 @@ GitHub pings each new hook: `journalctl --user -u axlr-github-hooks` shows no re
 ```bash
 # GitHub stops sending: deactivate (or delete) each hook
 for repo in underpass-ai/kmp underpass-ai/made underpass-ai/axlr underpass-ai/axlr-bots; do
-  for id in $(gh api "repos/$repo/hooks" --jq '.[] | select(.config.url == "https://54.75.246.167:8443/github") | .id'); do
+  for id in $(gh api "repos/$repo/hooks" --jq '.[] | select(.config.url == "https://<gateway-host>:<port>/github") | .id'); do
     gh api --method PATCH "repos/$repo/hooks/$id" -F active=false --jq '"\(.id) active=\(.active)"'
   done
 done
-# gx10 stops listening
+# the control plane's host stops listening
 systemctl --user disable --now axlr-github-hooks-tunnel.service axlr-github-hooks.service
 ```
 
