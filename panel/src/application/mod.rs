@@ -3,6 +3,7 @@
 mod activity;
 mod activity_entry;
 mod apply_in_bulk;
+mod apply_staged;
 mod bot_edit;
 mod bot_now;
 mod bulk_action;
@@ -79,6 +80,7 @@ mod waiting_call;
 pub use activity::Activity;
 pub use activity_entry::ActivityEntry;
 pub use apply_in_bulk::{AT_ONCE, ApplyInBulk};
+pub use apply_staged::ApplyStaged;
 pub use bot_edit::BotEdit;
 pub use bot_now::BotNow;
 pub use bulk_action::BulkAction;

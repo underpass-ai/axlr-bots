@@ -26,6 +26,13 @@ pub trait ControlPlane: Send + Sync {
     fn get_bot(&self, id: BotId) -> PortFuture<'_, Bot>;
     fn register_bot(&self, definition: BotDefinition) -> PortFuture<'_, Bot>;
     fn patch_bot(&self, id: BotId, patch: BotPatch) -> PortFuture<'_, Bot>;
+    /// Applies the change the bot holds staged, through the update; a
+    /// bot that holds none is a state error, a control plane older than
+    /// the route answers not found.
+    fn apply_staged(&self, id: BotId) -> PortFuture<'_, Bot>;
+    /// Drops the change the bot holds staged, unapplied; a bot that holds
+    /// none is a state error.
+    fn unstage(&self, id: BotId) -> PortFuture<'_, Bot>;
     fn enable_bot(&self, id: BotId) -> PortFuture<'_, Bot>;
     fn pause_bot(&self, id: BotId) -> PortFuture<'_, Bot>;
     /// Pauses the bot and cancels its pending, running and waiting tasks.
