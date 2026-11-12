@@ -10,9 +10,10 @@ import (
 // update takes, naming the version it brings. It is checked as the
 // update would check it now, on a copy, and nothing of the bot changes
 // but what it holds staged: one change at a time, a new one replaces
-// it. ApplyStagedBot applies it; UnstageBot drops it. The audit log
-// records it (bot.stage); no event yet, since a new event type needs the
-// panel's words for it first.
+// it. ApplyStagedBot applies it; UnstageBot drops it. It publishes
+// bot.staged with the version, the fields and what it replaced (never
+// the patch, which may carry secrets) and the audit log records it
+// (bot.stage).
 type StageBot struct {
 	deps Dependencies
 	rec  recorder
@@ -41,8 +42,13 @@ func (uc StageBot) Execute(ctx context.Context, id domain.BotID, patch BotPatch)
 	}
 	// The version and the fields only: the patch may carry secrets.
 	details := map[string]string{"version": staged.Version().String(), "fields": joinStrings(changed)}
+	payload := map[string]any{"version": staged.Version().String(), "fields": changed}
 	if hadOne {
 		details["replaced"] = replaced.Version().String()
+		payload["replaced"] = replaced.Version().String()
+	}
+	if err := uc.rec.event(ctx, domain.EventBotStaged, bot, "", "", payload); err != nil {
+		return domain.Bot{}, err
 	}
 	if err := uc.rec.audit(ctx, "bot.stage", id.String(), domain.AuditOK, details); err != nil {
 		return domain.Bot{}, err

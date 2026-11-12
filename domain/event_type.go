@@ -14,6 +14,17 @@ const (
 	// EventBotPaused says an enabled bot was put on hold; it accepts no
 	// task until it is enabled again.
 	EventBotPaused EventType = "bot.paused"
+	// EventBotStaged says a change to a bot's definition was staged for
+	// later: the payload names its version, the fields it changes and the
+	// version it replaced, never the change itself.
+	EventBotStaged EventType = "bot.staged"
+	// EventBotUnstaged says the change a bot held staged was dropped
+	// unapplied: the payload names its version.
+	EventBotUnstaged EventType = "bot.unstaged"
+	// EventBotStagedApplied says the change a bot held staged was applied,
+	// after the bot.updated the update published: the payload names the
+	// version it brought and the one the bot had.
+	EventBotStagedApplied EventType = "bot.staged.applied"
 	// EventBotDeleted says a bot was deleted: its unfinished tasks were
 	// cancelled, its timers removed and its open incidents resolved; its
 	// history stays.
@@ -173,7 +184,7 @@ const (
 // ParseEventType validates an event type.
 func ParseEventType(raw string) (EventType, error) {
 	switch EventType(raw) {
-	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventBotDeleted, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
+	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventBotStaged, EventBotUnstaged, EventBotStagedApplied, EventBotDeleted, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
 		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventApprovalFirst, EventTaskDelegated, EventTaskMessage, EventTaskSaid, EventTaskProgress, EventDelegationRefused,
 		EventQuestionAsked, EventQuestionAnswered, EventQuestionRefused,
 		EventEventEmitted, EventEventRefused, EventEventHeard, EventSubscriptionChanged, EventSubscriptionAsked, EventGroupEventPublished,

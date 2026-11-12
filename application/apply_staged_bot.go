@@ -9,7 +9,8 @@ import (
 // ApplyStagedBot applies the change a bot holds staged through the
 // update, so it is checked, published (bot.updated, its payload naming
 // the staged version) and audited as any update, and drops it in the
-// same save; then bot.staged.apply in the audit log. A bot
+// same save; then bot.staged.applied with the version it brought and
+// the one the bot had, and bot.staged.apply in the audit log. A bot
 // that holds none is a StateError; a change the bot no longer takes
 // (it changed since) is refused as the update refuses it, and stays
 // staged.
@@ -40,10 +41,15 @@ func (uc ApplyStagedBot) Execute(ctx context.Context, id domain.BotID) (domain.B
 		_ = uc.rec.audit(ctx, "bot.staged.apply", id.String(), domain.AuditDenied, map[string]string{"reason": err.Error()})
 		return domain.Bot{}, err
 	}
+	previous := bot.Version().String()
 	note := map[string]any{"staged": staged.Version().String()}
 	updated, err := NewUpdateBot(uc.deps).update(ctx, bot, patch, func(b *domain.Bot) { b.Unstage() }, note)
 	if err != nil {
 		_ = uc.rec.audit(ctx, "bot.staged.apply", id.String(), domain.AuditDenied, map[string]string{"version": staged.Version().String(), "reason": err.Error()})
+		return domain.Bot{}, err
+	}
+	applied := map[string]any{"version": staged.Version().String(), "previousVersion": previous}
+	if err := uc.rec.event(ctx, domain.EventBotStagedApplied, updated, "", "", applied); err != nil {
 		return domain.Bot{}, err
 	}
 	if err := uc.rec.audit(ctx, "bot.staged.apply", id.String(), domain.AuditOK, map[string]string{"version": staged.Version().String()}); err != nil {
