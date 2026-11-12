@@ -1,0 +1,19 @@
+The control plane {{ include "axlr-bots-control-plane.image" . }} runs as
+{{ include "axlr-bots-control-plane.fullname" . }} in {{ .Release.Namespace }}.
+
+Check it:
+
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "axlr-bots-control-plane.fullname" . }} -c control-plane -- axlr-bots version
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "axlr-bots-control-plane.fullname" . }} -c control-plane -- axlr-bots node list
+
+{{- if .Values.apiToken.existingSecret }}
+The operator token is the Secret {{ .Values.apiToken.existingSecret }}; the fleet CA:
+{{- else }}
+The operator token is <state>/api.token in the volume (set apiToken.existingSecret
+to hand it to clients); the fleet CA:
+{{- end }}
+
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "axlr-bots-control-plane.fullname" . }} -c control-plane -- axlr-bots ca show
+
+Nodes dial https://<address>:{{ .Values.service.nodePort }}; operators and the panel https://<address>:{{ .Values.service.apiPort }}.
+Names the certificate carries: {{ include "axlr-bots-control-plane.serverNames" . }}

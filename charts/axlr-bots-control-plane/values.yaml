@@ -1,0 +1,119 @@
+# The control plane of AXLR Bots (axlr-bots serve) as one pod: the node
+# protocol (mutual TLS) on 7878, the operator API (bearer token) on 7879,
+# and its state (bots, tasks, the fleet CA, the operator token, the
+# socket) on a volume. One replica, always: the state lock refuses a
+# second serve on the same state, so an update stops the old pod before
+# the new one starts (strategy Recreate).
+# Runbook: docs/runbooks/control-plane-kubernetes.md.
+
+# The release image (distribution/control-plane.Dockerfile). The tag is the
+# version the panel compares nodes and bots with; empty takes the chart's
+# appVersion. A digest, when given, pins the image under that tag.
+image:
+  repository: ghcr.io/underpass-ai/axlr-bots
+  tag: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# The names and addresses nodes and operators dial the control plane by:
+# the Service's address (a load balancer's IP) and any DNS name that
+# points at it. The certificate the fleet CA issues at each handshake
+# carries them, with the Service's cluster names, which the chart adds.
+serverNames: []
+
+# The operator API's base URL that approval notifications link to, such
+# as https://<address>:7879. Empty: the pod's own name, which nothing
+# outside the cluster resolves.
+apiURL: ""
+# The base of the panel link incident outputs carry, <base>/incidents/<id>.
+panelURL: ""
+# The least AXLR the nodes should run (GET /v1/build); empty: no minimum.
+minAXLRVersion: ""
+
+# Environment from a Secret you create, every key as a variable: the
+# model provider's key the control plane's model proxy uses
+# (OPENROUTER_API_KEY) and Jev's (TYPESAFE_API_KEY). Never put keys in
+# values.
+env:
+  existingSecret: ""
+  # More container env entries, as given.
+  extra: []
+
+# The operator API's bearer token, from a Secret you create (key token),
+# so the panel, the CLI and adapters outside the pod can be given it; the
+# image has no shell to read it from the volume. Empty: the daemon writes
+# one to <state>/api.token on its first start and keeps it there.
+apiToken:
+  existingSecret: ""
+  key: token
+
+# How the control plane's pushes reach the nodes (docs/architecture/bus-port.md).
+bus:
+  kind: direct
+  nats:
+    # tls://host:4222
+    url: ""
+    # A Secret with the control plane's client certificate for the
+    # broker (axlr-bots ca issue-client --name control-plane): tls.crt and
+    # tls.key, and ca.crt, the CA of the broker's certificate.
+    existingSecret: ""
+
+# The fleet CA. A state that has none needs `ca init` once: with init
+# true an init container runs it before serve. It fails when a CA is
+# already there, so set it for the first start of an empty state only.
+ca:
+  init: false
+
+persistence:
+  # A claim you made (the one a migration filled, say). Empty: the chart
+  # makes <release>-state with the size and class below.
+  existingClaim: ""
+  size: 2Gi
+  storageClassName: ""
+  accessModes: [ReadWriteOnce]
+  # The claim survives `helm uninstall`: it holds the CA's key and every
+  # record. Delete it by hand when the fleet is gone for good.
+  keep: true
+
+service:
+  # LoadBalancer for nodes and operators outside the cluster.
+  type: ClusterIP
+  # A fixed address is the load balancer's business: MetalLB, for
+  # instance, reads the annotation metallb.io/loadBalancerIPs.
+  annotations: {}
+  # Cluster keeps the source address out of the way of nodes on the
+  # cluster's own hosts; the node protocol authenticates by certificate.
+  externalTrafficPolicy: Cluster
+  nodePort: 7878
+  apiPort: 7879
+  # More ports for extra containers: [{name, port, targetPort}]
+  extraPorts: []
+
+resources:
+  requests: {cpu: 100m, memory: 256Mi}
+  limits: {cpu: "2", memory: 2Gi}
+
+# The control plane's own runs (when no node can take a bot's task) keep
+# AXLR's state on a tmpfs, as the image expects.
+tmpSize: 256Mi
+
+# Seconds the daemon has to finish what runs after SIGTERM.
+terminationGracePeriodSeconds: 40
+
+# Containers beside serve in the same pod, as given: input adapters that
+# reach the daemon through its socket, <state>/axlr-bots.sock. They may
+# mount the volumes "state" (at /var/lib/axlr-bots) and "tmp".
+extraContainers: []
+extraVolumes: []
+extraVolumeMounts: []
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+serviceAccount:
+  create: true
+  name: ""

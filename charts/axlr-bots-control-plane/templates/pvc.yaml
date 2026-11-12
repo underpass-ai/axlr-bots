@@ -1,0 +1,23 @@
+{{- if not .Values.persistence.existingClaim }}
+# The state: bots, tasks, events, the fleet CA and its key, the operator
+# token. Kept on `helm uninstall` unless persistence.keep is false.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "axlr-bots-control-plane.claimName" . }}
+  labels:
+    {{- include "axlr-bots-control-plane.labels" . | nindent 4 }}
+  {{- if .Values.persistence.keep }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml .Values.persistence.accessModes | nindent 4 }}
+  {{- with .Values.persistence.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+{{- end }}

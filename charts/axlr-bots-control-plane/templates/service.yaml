@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "axlr-bots-control-plane.fullname" . }}
+  labels:
+    {{- include "axlr-bots-control-plane.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  {{- if or (eq .Values.service.type "LoadBalancer") (eq .Values.service.type "NodePort") }}
+  externalTrafficPolicy: {{ .Values.service.externalTrafficPolicy }}
+  {{- end }}
+  selector:
+    {{- include "axlr-bots-control-plane.selectorLabels" . | nindent 4 }}
+  ports:
+    # The node protocol, mutual TLS: passed through, never terminated.
+    - {name: node, port: {{ .Values.service.nodePort }}, targetPort: node, protocol: TCP}
+    # The operator API, TLS from the fleet CA, bearer token.
+    - {name: api, port: {{ .Values.service.apiPort }}, targetPort: api, protocol: TCP}
+    {{- range .Values.service.extraPorts }}
+    - {name: {{ .name }}, port: {{ .port }}, targetPort: {{ .targetPort | default .port }}, protocol: TCP}
+    {{- end }}

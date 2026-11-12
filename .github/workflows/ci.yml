@@ -141,6 +141,45 @@ jobs:
           refused --set demo.https.enabled=true --set demo.https.certManager.enabled=true --set-string demo.https.certManager.serverIssuer.name=acme
           refused $https --set demo.https.certManager.enabled=true
           refused $https --set-string demo.https.host=Bad_Host
+      - name: Control plane chart
+        shell: bash
+        run: |
+          set -euo pipefail
+          chart=charts/axlr-bots-control-plane
+          example=$chart/values.example.yaml
+          cmp LICENSE $chart/LICENSE
+          cmp NOTICE $chart/NOTICE
+          helm lint $chart
+          helm lint $chart -f $example
+          helm template test $chart > default.yaml
+          for kind in Deployment Service ServiceAccount PersistentVolumeClaim; do grep -q "^kind: $kind$" default.yaml; done
+          # One pod, stopped before the next starts: the state lock refuses two.
+          grep -q 'replicas: 1$' default.yaml
+          grep -q 'type: Recreate' default.yaml
+          grep -q 'helm.sh/resource-policy: keep' default.yaml
+          ! grep -q 'name: ca-init' default.yaml
+          helm template test $chart -f $example > example.yaml
+          grep -q -- '--api-token-file=/etc/axlr-bots/api/token' example.yaml
+          grep -q 'value: "192.0.2.10,axlr.example.internal,test-axlr-bots-control-plane,' example.yaml
+          grep -q 'name: AXLR_BOTS_NATS_CERT, value: /etc/axlr-bots/nats/tls.crt' example.yaml
+          grep -q 'type: LoadBalancer' example.yaml
+          helm template test $chart --set persistence.existingClaim=state | grep -q 'claimName: state'
+          ! helm template test $chart --set persistence.existingClaim=state | grep -q '^kind: PersistentVolumeClaim$'
+          helm template test $chart --set ca.init=true | grep -q 'name: ca-init'
+          refused() {
+            if helm template test $chart "$@" >/dev/null 2>&1; then
+              echo "accepted: $*" >&2
+              exit 1
+            fi
+          }
+          refused --set service.type=LoadBalancer
+          refused --set bus.kind=nats
+          refused --set bus.kind=nats --set-string bus.nats.url=tls://nats:4222
+          refused --set bus.kind=kafka
+          refused --set-string apiURL=http://192.0.2.10:7879
+          refused --set-string apiURL=https://192.0.2.10:7879/path
+          refused --set-string 'serverNames={bad name}'
+          refused --set-string image.digest=sha256:abc
 
   node-image:
     needs: changes
