@@ -8,7 +8,7 @@
   "defaultContentType": "application/json",
   "servers": {
     "gateway": {
-      "host": "gateway.example:8443",
+      "host": "gateway.example",
       "protocol": "https",
       "description": "The gateway GitHub posts to (a public host of the operator's: docs/runbooks/github-hooks.md), with a self-signed certificate (the hook has insecure_ssl=1: the HMAC is the authentication). It forwards /github through a reverse SSH tunnel to the adapter's host."
     },

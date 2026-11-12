@@ -105,7 +105,7 @@ func TestARepeatIsDroppedAndPoisonIsTakenOff(t *testing.T) {
 	if got := domainMessages(t, js); got != 1 {
 		t.Errorf("the stream holds %d events, want 1", got)
 	}
-	if _, err := js.Publish(ctx, "axlr.domain.default.qa.incidencia.nueva", []byte(`{"specVersion": "1", "name": "stop.all"}`)); err != nil {
+	if _, err := js.Publish(ctx, "axlr.domain.default.team-b.order.new", []byte(`{"specVersion": "1", "name": "stop.all"}`)); err != nil {
 		t.Fatal(err)
 	}
 	if err := bus.Publish(ctx, bustest.Fact(t, "h-2")); err != nil {
@@ -149,7 +149,7 @@ func TestADomainEventWaitsForTheBroker(t *testing.T) {
 	}
 	time.Sleep(300 * time.Millisecond)
 	left := bus.box.sweepFolder(domainOutboxFolder)
-	if len(left) != 1 || left[0].msgID != bustest.Fact(t, "h-away").Event.Identity() || !strings.HasPrefix(left[0].subject, "axlr.domain.default.qa.") {
+	if len(left) != 1 || left[0].msgID != bustest.Fact(t, "h-away").Event.Identity() || !strings.HasPrefix(left[0].subject, "axlr.domain.default.team-b.") {
 		t.Fatalf("outbox = %+v", left)
 	}
 	bus.Close()

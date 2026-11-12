@@ -8,17 +8,17 @@ import (
 )
 
 func TestASubscriptionExpectsFinalEvents(t *testing.T) {
-	sub, err := NewSubscription(SubscriptionSnapshot{Topic: "qa.hallazgo.candidato", Mode: "task", Deliver: "team", Expects: []string{"qa.hallazgo.triado", " qa.hallazgo.flaky ", "qa.hallazgo.*"}})
+	sub, err := NewSubscription(SubscriptionSnapshot{Topic: "team-b.item.arrived", Mode: "task", Deliver: "team", Expects: []string{"team-b.item.sorted", " team-b.item.held ", "team-b.item.*"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := sub.Expects(); len(got) != 3 || got[1] != "qa.hallazgo.flaky" {
+	if got := sub.Expects(); len(got) != 3 || got[1] != "team-b.item.held" {
 		t.Errorf("expects = %v", got)
 	}
-	if s := sub.Snapshot(); !reflect.DeepEqual(s.Expects, []string{"qa.hallazgo.triado", "qa.hallazgo.flaky", "qa.hallazgo.*"}) {
+	if s := sub.Snapshot(); !reflect.DeepEqual(s.Expects, []string{"team-b.item.sorted", "team-b.item.held", "team-b.item.*"}) {
 		t.Errorf("snapshot = %v", s.Expects)
 	}
-	crossed, err := NewSubscription(SubscriptionSnapshot{Topic: "incidencia.nueva", Team: "qa", Expects: []string{"incidencia.completada"}})
+	crossed, err := NewSubscription(SubscriptionSnapshot{Topic: "order.new", Team: "team-b", Expects: []string{"order.completed"}})
 	if err != nil || len(crossed.Expects()) != 1 {
 		t.Errorf("a crossing subscription without mode: %v %v", crossed.Expects(), err)
 	}
@@ -29,7 +29,7 @@ func TestASubscriptionExpectsFinalEvents(t *testing.T) {
 	bad := []SubscriptionSnapshot{
 		{Topic: "a", Expects: []string{"b"}},
 		{Topic: "a", Mode: "note", Expects: []string{"b"}},
-		{Topic: "a", Team: "qa", Mode: "task", Expects: []string{"b"}, Status: "pending"},
+		{Topic: "a", Team: "team-b", Mode: "task", Expects: []string{"b"}, Status: "pending"},
 		{Topic: "a", Mode: "task", Status: "pending", Expects: []string{"b"}},
 		{Topic: "a", Mode: "task", Expects: []string{"Bad"}},
 		{Topic: "a", Mode: "task", Expects: []string{"b", "b"}},
@@ -45,28 +45,28 @@ func TestASubscriptionExpectsFinalEvents(t *testing.T) {
 func expectingTask(t *testing.T) Task {
 	t.Helper()
 	task := sampleTask(t)
-	task.Expect([]EventPattern{"qa.hallazgo.triado", "qa.hallazgo.flaky"})
+	task.Expect([]EventPattern{"team-b.item.sorted", "team-b.item.held"})
 	return task
 }
 
 func TestATaskCarriesAndSettlesByDataID(t *testing.T) {
 	task := expectingTask(t)
-	if ok, err := task.Carry(CarriedEvent{EventID: "evt-1", Name: "qa.hallazgo.candidato", ID: "h-1", Message: strings.Repeat("é", 300)}); !ok || err != nil {
+	if ok, err := task.Carry(CarriedEvent{EventID: "evt-1", Name: "team-b.item.arrived", ID: "h-1", Message: strings.Repeat("é", 300)}); !ok || err != nil {
 		t.Fatalf("carry: %v %v", ok, err)
 	}
-	if ok, _ := task.Carry(CarriedEvent{EventID: "evt-1", Name: "qa.hallazgo.candidato", ID: "h-1"}); ok {
+	if ok, _ := task.Carry(CarriedEvent{EventID: "evt-1", Name: "team-b.item.arrived", ID: "h-1"}); ok {
 		t.Error("the same event carried twice")
 	}
 	if _, err := task.Carry(CarriedEvent{EventID: "evt 2", Name: "x"}); err == nil {
 		t.Error("a bad event carried")
 	}
-	if ok, _ := task.Carry(CarriedEvent{EventID: "evt-2", Name: "qa.hallazgo.candidato", ID: "h-2"}); !ok {
+	if ok, _ := task.Carry(CarriedEvent{EventID: "evt-2", Name: "team-b.item.arrived", ID: "h-2"}); !ok {
 		t.Fatal("the second event was not carried")
 	}
 	if got := task.Carried(); len(got) != 2 || len([]rune(got[0].Message)) != 280 {
 		t.Errorf("carried = %+v", got)
 	}
-	if task.RecordFinal("qa.hallazgo.triado", "h-1") {
+	if task.RecordFinal("team-b.item.sorted", "h-1") {
 		t.Error("a Pending task recorded a final")
 	}
 	if err := task.Start("exec-1", t0); err != nil {
@@ -75,38 +75,38 @@ func TestATaskCarriesAndSettlesByDataID(t *testing.T) {
 	if task.CanCarry() {
 		t.Error("a started task carries")
 	}
-	if ok, _ := task.Carry(CarriedEvent{EventID: "evt-3", Name: "qa.hallazgo.candidato", ID: "h-3"}); ok {
+	if ok, _ := task.Carry(CarriedEvent{EventID: "evt-3", Name: "team-b.item.arrived", ID: "h-3"}); ok {
 		t.Error("a started task carried")
 	}
 	switch {
-	case task.RecordFinal("qa.hallazgo.otro", "h-1"):
+	case task.RecordFinal("team-b.item.other", "h-1"):
 		t.Error("a name outside expects counted")
-	case task.RecordFinal("qa.hallazgo.triado", "h-9"):
+	case task.RecordFinal("team-b.item.sorted", "h-9"):
 		t.Error("a wrong data.id counted")
-	case !task.RecordFinal("qa.hallazgo.flaky", "h-1"):
+	case !task.RecordFinal("team-b.item.held", "h-1"):
 		t.Error("a flaky outcome did not count")
-	case task.RecordFinal("qa.hallazgo.triado", "h-1"):
+	case task.RecordFinal("team-b.item.sorted", "h-1"):
 		t.Error("a settled event was settled twice")
 	}
 	if missing := task.Missing(); len(missing) != 1 || missing[0].ID != "h-2" {
 		t.Errorf("missing = %+v", missing)
 	}
-	if !task.RecordFinal("qa.hallazgo.triado", "h-2") || len(task.Missing()) != 0 || len(task.Finals()) != 2 {
+	if !task.RecordFinal("team-b.item.sorted", "h-2") || len(task.Missing()) != 0 || len(task.Finals()) != 2 {
 		t.Errorf("finals = %+v missing = %+v", task.Finals(), task.Missing())
 	}
 }
 
 func TestACarriedEventWithoutAnIDIsSettledByAnyFinal(t *testing.T) {
 	task := expectingTask(t)
-	_, _ = task.Carry(CarriedEvent{EventID: "evt-1", Name: "qa.hallazgo.candidato"})
+	_, _ = task.Carry(CarriedEvent{EventID: "evt-1", Name: "team-b.item.arrived"})
 	_ = task.Start("exec-1", t0)
 	if len(task.Missing()) != 1 {
 		t.Fatal("an event without an id is settled before any final")
 	}
-	if !task.RecordFinal("qa.hallazgo.triado", "anything") || len(task.Missing()) != 0 {
+	if !task.RecordFinal("team-b.item.sorted", "anything") || len(task.Missing()) != 0 {
 		t.Errorf("missing = %+v", task.Missing())
 	}
-	if task.RecordFinal("qa.hallazgo.flaky", "other") {
+	if task.RecordFinal("team-b.item.held", "other") {
 		t.Error("a second final with nothing left to settle was recorded")
 	}
 }
@@ -114,7 +114,7 @@ func TestACarriedEventWithoutAnIDIsSettledByAnyFinal(t *testing.T) {
 func TestATaskCarriesAtMost32(t *testing.T) {
 	task := expectingTask(t)
 	for i := 0; i < MaxCarriedEvents; i++ {
-		if ok, err := task.Carry(CarriedEvent{EventID: "evt-" + string(rune('a'+i%26)) + string(rune('a'+i/26)), Name: "qa.x"}); !ok || err != nil {
+		if ok, err := task.Carry(CarriedEvent{EventID: "evt-" + string(rune('a'+i%26)) + string(rune('a'+i/26)), Name: "team-b.x"}); !ok || err != nil {
 			t.Fatalf("carry %d: %v %v", i, ok, err)
 		}
 	}
@@ -122,10 +122,10 @@ func TestATaskCarriesAtMost32(t *testing.T) {
 		t.Error("a full task carries")
 	}
 	plain := sampleTask(t)
-	if ok, _ := plain.Carry(CarriedEvent{EventID: "evt-1", Name: "qa.x"}); ok || plain.CanCarry() {
+	if ok, _ := plain.Carry(CarriedEvent{EventID: "evt-1", Name: "team-b.x"}); ok || plain.CanCarry() {
 		t.Error("a task without expects carried")
 	}
-	if plain.Carried() != nil || plain.Finals() != nil || plain.Missing() != nil || plain.Expects() != nil || plain.RecordFinal("qa.x", "") {
+	if plain.Carried() != nil || plain.Finals() != nil || plain.Missing() != nil || plain.Expects() != nil || plain.RecordFinal("team-b.x", "") {
 		t.Error("a task without expects has a record")
 	}
 	plain.Expect(nil)
@@ -146,9 +146,9 @@ func TestDataIDReadsStringsAndNumbers(t *testing.T) {
 
 func TestATasksExpectsRoundTrip(t *testing.T) {
 	task := expectingTask(t)
-	_, _ = task.Carry(CarriedEvent{EventID: "evt-1", Name: "qa.hallazgo.candidato", ID: "h-1", From: "qa-explorador", Redeliveries: 1, Tasks: []string{"task-0"}})
+	_, _ = task.Carry(CarriedEvent{EventID: "evt-1", Name: "team-b.item.arrived", ID: "h-1", From: "b-explorer", Redeliveries: 1, Tasks: []string{"task-0"}})
 	_ = task.Start("exec-1", t0)
-	task.RecordFinal("qa.hallazgo.triado", "h-1")
+	task.RecordFinal("team-b.item.sorted", "h-1")
 	s := task.Snapshot()
 	raw, _ := json.Marshal(s)
 	var back TaskSnapshot

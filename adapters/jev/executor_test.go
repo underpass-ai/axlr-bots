@@ -469,7 +469,7 @@ func TestAProgramPassesOnWhatTheNodeReadAsEarlier(t *testing.T) {
 		t.Fatal(err)
 	}
 	request.Runtime = runtime
-	request.Input = json.RawMessage(`{"name":"info.notice.load","data":{"priority":"high","earlier":[{"key":"ws:s1","team":"qa","read":["F-12 flaky"]}]}}`)
+	request.Input = json.RawMessage(`{"name":"info.notice.load","data":{"priority":"high","earlier":[{"key":"ws:s1","team":"team-b","read":["F-12 flaky"]}]}}`)
 	if report, err := executor.Execute(context.Background(), request); err != nil || report.Outcome != domain.ExecutionCompleted {
 		t.Fatalf("report = %+v %v", report, err)
 	}

@@ -223,7 +223,7 @@ func (f *fakeHookAPI) Hooks(context.Context, string) ([]githubhooks.Hook, error)
 	if f.fail {
 		return nil, errors.New("gh: not signed in")
 	}
-	return []githubhooks.Hook{{ID: 1, Active: true, Config: githubhooks.HookConfig{URL: "https://gateway.example:8443/github"}}}, nil
+	return []githubhooks.Hook{{ID: 1, Active: true, Config: githubhooks.HookConfig{URL: "https://gateway.example/github"}}}, nil
 }
 
 func (f *fakeHookAPI) Deliveries(context.Context, string, int) ([]githubhooks.HookDelivery, error) {

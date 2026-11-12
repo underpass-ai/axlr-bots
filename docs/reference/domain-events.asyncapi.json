@@ -3,7 +3,7 @@
   "info": {
     "title": "AXLR Bots domain events",
     "version": "1.0.0",
-    "description": "The domain events one team publishes to another (docs/architecture/team-topics.md). A domain event is a fact `<thing>.<what happened>` with the thing's id: it wakes the listening team and carries no instruction. Only the control plane publishes and reads these subjects. Idempotent: `Nats-Msg-Id` is the event's identity (sha256 of team, name and data.id), so the same fact published twice is one message within the stream's window, and the listener's task key repeats it. The wire form is `adapters/bus/domainevent.DTO`; the domain never sees it."
+    "description": "The envelope of the domain events one team publishes to another (docs/architecture/team-topics.md). A domain event is a fact `<thing>.<what happened>` with the thing's id: it wakes the listening team and carries no instruction. Only the control plane publishes and reads these subjects: `axlr.domain.{tenant}.{team}.{name}`, where `name` is the event's own name. The platform names no event: an application (a separate repository, say) declares the events its teams publish and listen to in its own AsyncAPI, on this subject pattern and with this message. Idempotent: `Nats-Msg-Id` is the event's identity (sha256 of team, name and data.id), so the same fact published twice is one message within the stream's window, and the listener's task key repeats it. The wire form is `adapters/bus/domainevent.DTO`; the domain never sees it."
   },
   "defaultContentType": "application/json",
   "servers": {
@@ -14,134 +14,50 @@
     }
   },
   "channels": {
-    "incidenciaNueva": {
-      "address": "axlr.domain.{tenant}.{team}.incidencia.nueva",
-      "title": "incidencia.nueva",
-      "description": "QA triaged a finding: dev takes it from its FIFO queue.",
+    "domainEvent": {
+      "address": "axlr.domain.{tenant}.{team}.{name}",
+      "title": "A team's domain event",
+      "description": "Every domain event a team publishes, under its own name. A listener of the team's events filters on `axlr.domain.{tenant}.{team}.>`.",
       "parameters": {
         "tenant": {
           "$ref": "#/components/parameters/tenant"
         },
         "team": {
           "$ref": "#/components/parameters/team"
-        }
-      },
-      "messages": {
-        "domainEvent": {
-          "$ref": "#/components/messages/domainEvent"
-        }
-      },
-      "x-publisher-team": "qa"
-    },
-    "incidenciaCompletada": {
-      "address": "axlr.domain.{tenant}.{team}.incidencia.completada",
-      "title": "incidencia.completada",
-      "description": "A fix of the finding was merged: QA checks its repro on the merged commit.",
-      "parameters": {
-        "tenant": {
-          "$ref": "#/components/parameters/tenant"
         },
-        "team": {
-          "$ref": "#/components/parameters/team"
+        "name": {
+          "$ref": "#/components/parameters/name"
         }
       },
       "messages": {
         "domainEvent": {
           "$ref": "#/components/messages/domainEvent"
         }
-      },
-      "x-publisher-team": "dev"
-    },
-    "incidenciaReabierta": {
-      "address": "axlr.domain.{tenant}.{team}.incidencia.reabierta",
-      "title": "incidencia.reabierta",
-      "description": "QA's repro still fails on the merged commit: dev takes the finding again.",
-      "parameters": {
-        "tenant": {
-          "$ref": "#/components/parameters/tenant"
-        },
-        "team": {
-          "$ref": "#/components/parameters/team"
-        }
-      },
-      "messages": {
-        "domainEvent": {
-          "$ref": "#/components/messages/domainEvent"
-        }
-      },
-      "x-publisher-team": "qa"
+      }
     }
   },
   "operations": {
-    "publishIncidenciaNueva": {
+    "publishDomainEvent": {
       "action": "send",
       "channel": {
-        "$ref": "#/channels/incidenciaNueva"
+        "$ref": "#/channels/domainEvent"
       },
-      "summary": "QA publishes, to dev.",
+      "summary": "The control plane publishes a bot's domain event to the teams its emit rule names.",
       "messages": [
         {
-          "$ref": "#/channels/incidenciaNueva/messages/domainEvent"
+          "$ref": "#/channels/domainEvent/messages/domainEvent"
         }
       ]
     },
-    "receiveIncidenciaNueva": {
+    "receiveDomainEvent": {
       "action": "receive",
       "channel": {
-        "$ref": "#/channels/incidenciaNueva"
+        "$ref": "#/channels/domainEvent"
       },
-      "summary": "dev listens (subscription team: qa, deliver: team).",
+      "summary": "The control plane delivers it to the listening team's subscriptions (subscription team, deliver: team).",
       "messages": [
         {
-          "$ref": "#/channels/incidenciaNueva/messages/domainEvent"
-        }
-      ]
-    },
-    "publishIncidenciaCompletada": {
-      "action": "send",
-      "channel": {
-        "$ref": "#/channels/incidenciaCompletada"
-      },
-      "summary": "dev publishes, to QA.",
-      "messages": [
-        {
-          "$ref": "#/channels/incidenciaCompletada/messages/domainEvent"
-        }
-      ]
-    },
-    "receiveIncidenciaCompletada": {
-      "action": "receive",
-      "channel": {
-        "$ref": "#/channels/incidenciaCompletada"
-      },
-      "summary": "QA listens (subscription team: dev, deliver: team).",
-      "messages": [
-        {
-          "$ref": "#/channels/incidenciaCompletada/messages/domainEvent"
-        }
-      ]
-    },
-    "publishIncidenciaReabierta": {
-      "action": "send",
-      "channel": {
-        "$ref": "#/channels/incidenciaReabierta"
-      },
-      "summary": "QA publishes, to dev.",
-      "messages": [
-        {
-          "$ref": "#/channels/incidenciaReabierta/messages/domainEvent"
-        }
-      ]
-    },
-    "receiveIncidenciaReabierta": {
-      "action": "receive",
-      "channel": {
-        "$ref": "#/channels/incidenciaReabierta"
-      },
-      "summary": "dev listens.",
-      "messages": [
-        {
-          "$ref": "#/channels/incidenciaReabierta/messages/domainEvent"
+          "$ref": "#/channels/domainEvent/messages/domainEvent"
         }
       ]
     }
@@ -157,8 +73,15 @@
       "team": {
         "description": "The emitting team's memory name, written as the tenant is.",
         "examples": [
-          "qa",
-          "dev"
+          "team-a",
+          "team-b"
+        ]
+      },
+      "name": {
+        "description": "The event's name, `<thing>.<what happened>`, its own dots kept as tokens: segments of lowercase letters, digits and '-', of the info kind (never stop, danger, warn, error or done).",
+        "examples": [
+          "order.placed",
+          "order.shipped"
         ]
       }
     },
@@ -215,7 +138,7 @@
             "type": "string",
             "description": "<thing>.<what happened>, of the info kind; never stop, danger, warn, error or done.",
             "examples": [
-              "incidencia.nueva"
+              "order.placed"
             ]
           },
           "tenant": {
@@ -268,7 +191,7 @@
           "id": {
             "type": "string",
             "pattern": "^[A-Za-z0-9._:@-]{1,128}$",
-            "description": "The thing's id: a finding, a fix. A fact that can happen more than once to the same thing carries a round-specific id, so a later round is a new fact and not a repeat: incidencia.completada and incidencia.reabierta use <finding>@<merged sha>."
+            "description": "The thing's id: an order, an item. A fact that can happen more than once to the same thing carries a round-specific id, so a later round is a new fact and not a repeat: <thing>@<round>, such as o-17@4f9c2ab."
           },
           "context": {
             "type": "string",

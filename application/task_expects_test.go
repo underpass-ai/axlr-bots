@@ -293,20 +293,20 @@ func TestAFullTaskTakesNoMoreNotes(t *testing.T) {
 func TestACrossedEventIsCarriedAndRedeliveredWithItsOrigin(t *testing.T) {
 	h := newHarness()
 	ctx := context.Background()
-	parent := qaAndDev(t, h)
-	sub := hearsFrom("incidencia.nueva", "qa")
-	sub.Expects = []string{"incidencia.completada"}
-	subscribe(t, h, "dev-arreglo", sub)
-	emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "incidencia.nueva", Message: "a finding", Data: finding("h-1")})
-	tasks := tasksOf(t, h, "dev-arreglo")
+	parent := bothTeams(t, h)
+	sub := hearsFrom("order.new", "team-b")
+	sub.Expects = []string{"order.completed"}
+	subscribe(t, h, "a-fixer", sub)
+	emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "order.new", Message: "a finding", Data: finding("h-1")})
+	tasks := tasksOf(t, h, "a-fixer")
 	if len(tasks) != 1 {
 		t.Fatalf("tasks = %d", len(tasks))
 	}
 	made := tasks[0]
-	if carried := made.Carried(); len(carried) != 1 || carried[0].ID != "h-1" || carried[0].From != "qa-triaje" {
+	if carried := made.Carried(); len(carried) != 1 || carried[0].ID != "h-1" || carried[0].From != "b-triage" {
 		t.Fatalf("carried = %+v", carried)
 	}
-	bot, _ := h.bots.Get(ctx, "dev-arreglo")
+	bot, _ := h.bots.Get(ctx, "a-fixer")
 	// It ends Failed without its final: given again with its origin.
 	stored := made.Snapshot()
 	stored.Status, stored.FailureReason, stored.ExecutionIDs = "Failed", "runtime: boom", nil
@@ -322,7 +322,7 @@ func TestACrossedEventIsCarriedAndRedeliveredWithItsOrigin(t *testing.T) {
 		t.Fatal("no redelivery")
 	}
 	origin, crossed := again.Origin()
-	if !crossed || origin.Context != "project:qa.hallazgo.h-1" || again.Carried()[0].ID != "h-1" {
+	if !crossed || origin.Context != "project:team-b.item.h-1" || again.Carried()[0].ID != "h-1" {
 		t.Errorf("redelivery = %+v", again.Snapshot())
 	}
 	if _, has := redeliveryOf(again); !has {
@@ -330,7 +330,7 @@ func TestACrossedEventIsCarriedAndRedeliveredWithItsOrigin(t *testing.T) {
 	}
 	// Its run is told the other team's key (the node says to ask them);
 	// the run of the Failed task left no session, so no key of its own.
-	if refs := contextRefsOf(again); len(refs) != 1 || refs[0] != (domain.ContextRef{Key: "project:qa.hallazgo.h-1", Team: "qa"}) {
+	if refs := contextRefsOf(again); len(refs) != 1 || refs[0] != (domain.ContextRef{Key: "project:team-b.item.h-1", Team: "team-b"}) {
 		t.Errorf("contexts = %+v", refs)
 	}
 }
@@ -484,7 +484,7 @@ func TestATaskJudgedStuckHasWhatIsMissingGivenAgain(t *testing.T) {
 	// The running task carries an event it owes a final for.
 	running := task(t, h, parent.Run.TaskID)
 	stored := running.Snapshot()
-	stored.Expects = &domain.TaskExpectsSnapshot{Names: []string{"qa.hallazgo.triado"}, Carried: []domain.CarriedEvent{{EventID: "evt-1", Name: "qa.hallazgo.candidato", ID: "h-1"}}}
+	stored.Expects = &domain.TaskExpectsSnapshot{Names: []string{"team-b.item.sorted"}, Carried: []domain.CarriedEvent{{EventID: "evt-1", Name: "team-b.item.arrived", ID: "h-1"}}}
 	carrying, err := domain.RestoreTask(stored)
 	if err != nil {
 		t.Fatal(err)
@@ -506,11 +506,11 @@ func TestAPlainCrossedTasksRunIsToldTheOtherTeamsKey(t *testing.T) {
 	// The one change without expects: E8d hands the node the key another
 	// team's domain event named, so the run is told to ask that team.
 	h := newHarness()
-	parent := qaAndDev(t, h)
-	emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "incidencia.nueva", Message: "a finding", Data: finding("h-1")})
+	parent := bothTeams(t, h)
+	emit(t, h, "web-1", parent.ExecutionID, EmitEventCommand{Name: "order.new", Message: "a finding", Data: finding("h-1")})
 	finish(t, h, parent, "")
 	run := nextFor(t, h, "web-1")
-	if refs := run.Run.Contexts; len(refs) != 1 || refs[0] != (domain.ContextRef{Key: "project:qa.hallazgo.h-1", Team: "qa"}) {
+	if refs := run.Run.Contexts; len(refs) != 1 || refs[0] != (domain.ContextRef{Key: "project:team-b.item.h-1", Team: "team-b"}) {
 		t.Errorf("contexts = %+v", refs)
 	}
 	if made := task(t, h, run.Run.TaskID); made.Snapshot().Expects != nil {
