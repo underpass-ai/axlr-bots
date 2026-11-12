@@ -2,10 +2,10 @@ use chrono::{DateTime, Utc};
 
 use super::PortFuture;
 use crate::domain::{
-    Autonomy, Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, DeletedBot, EnrollmentRequest,
-    EnrollmentToken, Event, Execution, ExecutionId, Incident, IncidentStatus, Node, NodeId, Overview, Publication,
-    Published, RevokedNode, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId, TaskSubmission,
-    TeamLink, Topic,
+    Autonomy, Bot, BotDefinition, BotId, BotPatch, BuildStatus, CancelledTask, DecidedTask, Decision, DeletedBot,
+    EnrollmentRequest, EnrollmentToken, Event, Execution, ExecutionId, Incident, IncidentStatus, Node, NodeId,
+    Overview, Publication, Published, RevokedNode, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task, TaskFilter,
+    TaskId, TaskSubmission, TeamLink, Topic,
 };
 
 /// The control plane as the panel needs it: the operator API's routes.
@@ -13,6 +13,9 @@ use crate::domain::{
 /// everything in memory for tests.
 pub trait ControlPlane: Send + Sync {
     fn overview(&self, since: DateTime<Utc>) -> PortFuture<'_, Overview>;
+    /// The build the control plane runs and whether a newer one is
+    /// installed; NotFound from a control plane older than the route.
+    fn build(&self) -> PortFuture<'_, BuildStatus>;
 
     fn list_nodes(&self) -> PortFuture<'_, Vec<Node>>;
     fn get_node(&self, id: NodeId) -> PortFuture<'_, Node>;

@@ -5,12 +5,12 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::application::{ControlPlane, PanelError, PortFuture, WaitingCall};
 use crate::domain::{
-    Artifact, Autonomy, Bot, BotDefinition, BotId, BotPatch, BotReference, BotStatus, Budgets, CancelledTask,
-    DecidedTask, Decision, DeletedBot, EnrollmentRequest, EnrollmentToken, Event, Execution, ExecutionId,
-    ExecutionKind, ExecutionOutcome, ExecutionResult, Incident, IncidentPostmortem, IncidentSeverity, IncidentStatus,
-    Node, NodeCapabilities, NodeId, NodeStatus, Overview, PendingDecision, PostmortemState, Publication, Published,
-    RevokedNode, Secret, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Subscription, Task, TaskFilter, TaskId,
-    TaskStatus, TaskSubmission, TeamLink, ToolCall, Topic, TopicListener, TriggerRef, Usage,
+    Artifact, Autonomy, Bot, BotDefinition, BotId, BotPatch, BotReference, BotStatus, Budgets, BuildStatus,
+    CancelledTask, DecidedTask, Decision, DeletedBot, EnrollmentRequest, EnrollmentToken, Event, Execution,
+    ExecutionId, ExecutionKind, ExecutionOutcome, ExecutionResult, Incident, IncidentPostmortem, IncidentSeverity,
+    IncidentStatus, Node, NodeCapabilities, NodeId, NodeStatus, Overview, PendingDecision, PostmortemState,
+    Publication, Published, RevokedNode, Secret, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Subscription, Task,
+    TaskFilter, TaskId, TaskStatus, TaskSubmission, TeamLink, ToolCall, Topic, TopicListener, TriggerRef, Usage,
 };
 
 /// The control plane in memory: what the use cases and the interface are
@@ -35,6 +35,9 @@ struct FakeState {
     failure: Option<PanelError>,
     /// Answers as a control plane from before the stop and message routes.
     older: bool,
+    /// The build GET /v1/build answers; None: a control plane from before
+    /// the route.
+    build: Option<BuildStatus>,
     /// Each team's links in the team channel, as set: the panel's bots
     /// carry no ask to derive them from.
     links: BTreeMap<String, Vec<TeamLink>>,
@@ -44,7 +47,15 @@ struct FakeState {
 
 impl FakeControlPlane {
     pub fn new() -> Self {
-        Self::default()
+        let fake = Self::default();
+        fake.state.lock().unwrap().build = Some(BuildStatus::default());
+        fake
+    }
+
+    /// Sets what GET /v1/build answers; None answers as a control plane
+    /// from before the route.
+    pub fn set_build(&self, build: Option<BuildStatus>) {
+        self.state.lock().unwrap().build = build;
     }
 
     /// Two nodes, three bots and a few tasks, one of them waiting for a
@@ -837,6 +848,14 @@ impl FakeState {
 impl ControlPlane for FakeControlPlane {
     fn overview(&self, since: DateTime<Utc>) -> PortFuture<'_, Overview> {
         self.call("overview".into(), move |s| Ok(s.overview(since)))
+    }
+
+    fn build(&self) -> PortFuture<'_, BuildStatus> {
+        self.call("build".into(), |s| {
+            s.build
+                .clone()
+                .ok_or_else(|| PanelError::NotFound("404 page not found".into()))
+        })
     }
 
     fn list_nodes(&self) -> PortFuture<'_, Vec<Node>> {

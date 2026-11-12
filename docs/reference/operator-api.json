@@ -43,6 +43,24 @@
         }
       }
     },
+    "/v1/build": {
+      "get": {
+        "operationId": "getBuild",
+        "summary": "The running and the installed build",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/bots": {
       "get": {
         "operationId": "listBots",
@@ -5873,6 +5891,51 @@
             "type": "string"
           }
         }
+      },
+      "BuildIdentity": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string",
+            "description": "the commit the binary was built from (vcs.revision); absent for a build without version control"
+          },
+          "time": {
+            "type": "string"
+          },
+          "modified": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "modified"
+        ]
+      },
+      "BuildStatus": {
+        "type": "object",
+        "description": "The build the control plane runs, the one installed on its disk, and whether the running one is stale: a newer binary was installed and the service was not restarted (the daemon then stops itself within its check period).",
+        "properties": {
+          "running": {
+            "$ref": "#/components/schemas/BuildIdentity"
+          },
+          "installed": {
+            "$ref": "#/components/schemas/BuildIdentity"
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "description": "why nothing could be compared, when that is the case"
+          }
+        },
+        "required": [
+          "running",
+          "installed",
+          "stale"
+        ]
       }
     }
   }

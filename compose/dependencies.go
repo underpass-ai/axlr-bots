@@ -58,6 +58,7 @@ func Dependencies(stateDir, axlrBin, actor string) (application.Dependencies, er
 		SNS:              sns.NewTransport(),
 		Clock:            system.Clock{},
 		IDs:              system.IDGenerator{},
+		Build:            system.BuildReader{},
 		Actor:            actor,
 	}
 	if err := deps.Validate(); err != nil {
