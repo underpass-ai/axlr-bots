@@ -356,11 +356,12 @@ func printUsage(w io.Writer) {
                                       against its SHA-256
   overview [--since <time>]           nodes, bots and tasks by status; tasks, executions
                                       and cost since the start of today
-  github-hooks serve --secret-file <path> [--listen 127.0.0.1:7890] [--team dev] [--repos a/b,c/d] [--public]
+  github-hooks serve --secret-file <path> --team <team> --ci-event <name> --merged-event <name>
+                     --repos a/b,c/d [--branch-prefix <prefix>] [--listen 127.0.0.1:7890] [--public]
                                       the GitHub webhook adapter: POST /github, signed with the hook's
-                                      secret, publishes pr.ci and pr.mergeada to the team through the
+                                      secret, publishes --ci-event and --merged-event to --team through the
                                       daemon's socket (see docs/runbooks/github-hooks.md)
-  github-hooks redeliver [--since 24h] [--repos a/b,c/d] [--hook-url <url>] [--gh <path>]
+  github-hooks redeliver --repos a/b,c/d [--since 24h] [--hook-url <url>] [--gh <path>]
                                       ask GitHub, through gh api, to redeliver each failed delivery of
                                       the /github hooks that never succeeded since; prints them
   activity-audit serve --team <team> --event <name> [--ignore-programs a,b] [--ignore-team-partial=true] [--since <RFC3339>]

@@ -68,7 +68,7 @@ impl Task {
     }
 
     /// What its node read of the team's memory before the run
-    /// (`input.earlier`), one line per key: `ws:s1 (team qa): a · b`, or
+    /// (`input.earlier`), one line per key: `ws:s1 (team team-b): a · b`, or
     /// the line that says why nothing was read.
     pub fn earlier(&self) -> Vec<String> {
         let Some(reads) = self
@@ -186,15 +186,15 @@ mod tests {
         let mut task = sample();
         assert!(task.earlier().is_empty());
         task.input = Some(serde_json::json!({"earlier": [
-            {"key": "ws:s1", "team": "qa", "read": ["F-12 flaky", "open: F-13"]},
-            {"key": "project:dev.x", "team": "dev", "line": "held by team dev"},
+            {"key": "ws:s1", "team": "team-b", "read": ["F-12 flaky", "open: F-13"]},
+            {"key": "project:team-a.x", "team": "team-a", "line": "held by team team-a"},
             {"bad": 1}
         ]}));
         assert_eq!(
             task.earlier(),
             vec![
-                "ws:s1 (team qa): F-12 flaky · open: F-13",
-                "project:dev.x (team dev): held by team dev"
+                "ws:s1 (team team-b): F-12 flaky · open: F-13",
+                "project:team-a.x (team team-a): held by team team-a"
             ]
         );
     }

@@ -10,12 +10,18 @@ import (
 	"github.com/underpass-ai/axlr-bots/application"
 )
 
-// The team events the adapter publishes: the spec's PRCIEvent and
-// PRMergeadaEvent names.
-const (
-	EventPRCI       = "pr.ci"
-	EventPRMergeada = "pr.mergeada"
-)
+// Route is where the mapped events go and what they are called: the
+// team, the name of a pull request's CI ending (the spec's PRCIEvent),
+// the name of its merge (PRMergedEvent), and the branches mapped. All are
+// the operator's: the platform names no team, no event and no branch.
+type Route struct {
+	Team        string
+	CIEvent     string
+	MergedEvent string
+	// BranchPrefix maps only the branches that start with it; empty maps
+	// every branch.
+	BranchPrefix string
+}
 
 // The actions that map; any other is ignored.
 const (
@@ -32,21 +38,17 @@ func IdempotencyKey(delivery string, number int) string {
 	return fmt.Sprintf("github:%s:%d", delivery, number)
 }
 
-// DefaultBranchPrefix is the dev team's own branches (dev/<product>/<fix>):
-// a webhook of any other branch (a person's PR) wakes no bot.
-const DefaultBranchPrefix = "dev/"
-
 // ownBranch reports whether the branch is one the prefix maps; an empty
 // prefix maps every branch.
 func ownBranch(prefix, branch string) bool {
 	return prefix == "" || strings.HasPrefix(branch, prefix)
 }
 
-// FromCheckSuite maps a completed check suite of a branch with the prefix
-// to one pr.ci per pull request it names, each once; another action or
-// branch maps to none.
-func FromCheckSuite(delivery, team, prefix string, event CheckSuiteEvent) ([]application.PublishGroupEventCommand, error) {
-	if event.Action != actionCompleted || !ownBranch(prefix, event.CheckSuite.HeadBranch) {
+// FromCheckSuite maps a completed check suite of a branch with the
+// route's prefix to one CI event per pull request it names, each once;
+// another action or branch maps to none.
+func FromCheckSuite(delivery string, route Route, event CheckSuiteEvent) ([]application.PublishGroupEventCommand, error) {
+	if event.Action != actionCompleted || !ownBranch(route.BranchPrefix, event.CheckSuite.HeadBranch) {
 		return nil, nil
 	}
 	repo, suite := event.Repository.FullName, event.CheckSuite
@@ -66,8 +68,8 @@ func FromCheckSuite(delivery, team, prefix string, event CheckSuiteEvent) ([]app
 			return nil, err
 		}
 		commands = append(commands, application.PublishGroupEventCommand{
-			Group:          team,
-			Name:           EventPRCI,
+			Group:          route.Team,
+			Name:           route.CIEvent,
 			Message:        fmt.Sprintf("CI of %s#%d ended: %s (head %s).", repo, pr.Number, conclusion, short(suite.HeadSHA)),
 			Data:           data,
 			IdempotencyKey: IdempotencyKey(delivery, pr.Number),
@@ -76,20 +78,20 @@ func FromCheckSuite(delivery, team, prefix string, event CheckSuiteEvent) ([]app
 	return commands, nil
 }
 
-// FromPullRequest maps a pull request of a branch with the prefix closed
-// merged to pr.mergeada; anything else maps to none.
-func FromPullRequest(delivery, team, prefix string, event PullRequestEvent) ([]application.PublishGroupEventCommand, error) {
-	if event.Action != actionClosed || !event.PullRequest.Merged || event.Number < 1 || !ownBranch(prefix, event.PullRequest.Head.Ref) {
+// FromPullRequest maps a pull request of a branch with the route's prefix
+// closed merged to the merged event; anything else maps to none.
+func FromPullRequest(delivery string, route Route, event PullRequestEvent) ([]application.PublishGroupEventCommand, error) {
+	if event.Action != actionClosed || !event.PullRequest.Merged || event.Number < 1 || !ownBranch(route.BranchPrefix, event.PullRequest.Head.Ref) {
 		return nil, nil
 	}
 	repo, pr := event.Repository.FullName, event.PullRequest
-	data, err := dataOf(PRMergeadaData{Repo: repo, Number: event.Number, MergeSHA: pr.MergeCommitSHA, HeadSHA: pr.Head.SHA})
+	data, err := dataOf(PRMergedData{Repo: repo, Number: event.Number, MergeSHA: pr.MergeCommitSHA, HeadSHA: pr.Head.SHA})
 	if err != nil {
 		return nil, err
 	}
 	return []application.PublishGroupEventCommand{{
-		Group:          team,
-		Name:           EventPRMergeada,
+		Group:          route.Team,
+		Name:           route.MergedEvent,
 		Message:        fmt.Sprintf("%s#%d was merged as %s (head %s).", repo, event.Number, short(pr.MergeCommitSHA), short(pr.Head.SHA)),
 		Data:           data,
 		IdempotencyKey: IdempotencyKey(delivery, event.Number),

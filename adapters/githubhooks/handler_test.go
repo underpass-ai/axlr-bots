@@ -45,9 +45,16 @@ func (f *fakePublisher) PublishGroupEvent(_ context.Context, command application
 	return application.PublishAnswer{EventID: "ev-" + command.IdempotencyKey, Name: command.Name, Created: !before}, nil
 }
 
+// testRoute and testRepos are the operator's choices in these tests: the
+// adapter has no default team, event, repository or branch.
+var (
+	testRoute = Route{Team: "builders", CIEvent: "pull-request.checked", MergedEvent: "pull-request.merged"}
+	testRepos = []string{"example-org/repo", "example-org/other"}
+)
+
 func newTestHandler(t *testing.T, publisher Publisher, logs *bytes.Buffer) *Handler {
 	t.Helper()
-	h, err := NewHandler(Config{Secret: secret, Team: "dev", Publisher: publisher, Log: log.New(logs, "", 0)})
+	h, err := NewHandler(Config{Secret: secret, Route: testRoute, Repos: testRepos, Publisher: publisher, Log: log.New(logs, "", 0)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +97,7 @@ func TestTheSignature(t *testing.T) {
 	var logs bytes.Buffer
 	pub := &fakePublisher{}
 	h := newTestHandler(t, pub, &logs)
-	body := []byte(checkSuite("underpass-ai/kmp", "completed", 7))
+	body := []byte(checkSuite("example-org/repo", "completed", 7))
 	for name, signature := range map[string]string{
 		"missing":     "",
 		"other key":   Sign([]byte("another secret"), body),
@@ -128,10 +135,10 @@ func TestPingAndTheEventsItDoesNotUse(t *testing.T) {
 		t.Errorf("an unsigned ping: %d", w.Code)
 	}
 	for name, body := range map[string]string{
-		"suite requested":   checkSuite("underpass-ai/kmp", "requested", 7),
-		"suite no PR":       checkSuite("underpass-ai/kmp", "completed"),
-		"PR closed":         pullRequest("underpass-ai/kmp", "closed", false),
-		"PR opened":         pullRequest("underpass-ai/kmp", "opened", false),
+		"suite requested":   checkSuite("example-org/repo", "requested", 7),
+		"suite no PR":       checkSuite("example-org/repo", "completed"),
+		"PR closed":         pullRequest("example-org/repo", "closed", false),
+		"PR opened":         pullRequest("example-org/repo", "opened", false),
 		"outside the list":  checkSuite("someone/else", "completed", 7),
 		"PR outside a list": pullRequest("someone/else", "closed", true),
 	} {
@@ -154,21 +161,21 @@ func TestPingAndTheEventsItDoesNotUse(t *testing.T) {
 func TestACompletedSuitePublishesOnePRCIPerPullRequest(t *testing.T) {
 	pub := &fakePublisher{}
 	h := newTestHandler(t, pub, &bytes.Buffer{})
-	if w := signed(h, GitHubCheckSuite, checkSuite("underpass-ai/kmp", "completed", 7)); w.Code != http.StatusAccepted {
+	if w := signed(h, GitHubCheckSuite, checkSuite("example-org/repo", "completed", 7)); w.Code != http.StatusAccepted {
 		t.Fatalf("one PR: %d %s", w.Code, w.Body)
 	}
 	got := pub.published["github:"+delivery+":7"]
-	want := application.PublishGroupEventCommand{Group: "dev", Name: EventPRCI, Message: "CI of underpass-ai/kmp#7 ended: success (head 1a2b3c4).", IdempotencyKey: "github:" + delivery + ":7"}
+	want := application.PublishGroupEventCommand{Group: "builders", Name: "pull-request.checked", Message: "CI of example-org/repo#7 ended: success (head 1a2b3c4).", IdempotencyKey: "github:" + delivery + ":7"}
 	if got.Group != want.Group || got.Name != want.Name || got.Message != want.Message || got.IdempotencyKey != want.IdempotencyKey {
 		t.Errorf("command = %+v", got)
 	}
 	data, _ := json.Marshal(got.Data)
-	if string(data) != `{"conclusion":"success","head_sha":"1a2b3c4d5e6f","number":7,"repo":"underpass-ai/kmp"}` {
+	if string(data) != `{"conclusion":"success","head_sha":"1a2b3c4d5e6f","number":7,"repo":"example-org/repo"}` {
 		t.Errorf("data = %s", data)
 	}
 	pub = &fakePublisher{}
 	h = newTestHandler(t, pub, &bytes.Buffer{})
-	if w := signed(h, GitHubCheckSuite, checkSuite("Underpass-AI/AXLR-Bots", "completed", 8, 9, 8)); w.Code != http.StatusAccepted || !strings.Contains(w.Body.String(), "published 2") {
+	if w := signed(h, GitHubCheckSuite, checkSuite("Example-Org/Repo", "completed", 8, 9, 8)); w.Code != http.StatusAccepted || !strings.Contains(w.Body.String(), "published 2") {
 		t.Fatalf("two PRs: %d %s", w.Code, w.Body)
 	}
 	if len(pub.order) != 2 || pub.order[0] != "github:"+delivery+":8" || pub.order[1] != "github:"+delivery+":9" {
@@ -176,16 +183,16 @@ func TestACompletedSuitePublishesOnePRCIPerPullRequest(t *testing.T) {
 	}
 }
 
-func TestAMergedPullRequestPublishesPRMergeada(t *testing.T) {
+func TestAMergedPullRequestPublishesTheMergedEvent(t *testing.T) {
 	pub := &fakePublisher{}
 	h := newTestHandler(t, pub, &bytes.Buffer{})
-	if w := signed(h, GitHubPullRequest, pullRequest("underpass-ai/made", "closed", true)); w.Code != http.StatusAccepted {
+	if w := signed(h, GitHubPullRequest, pullRequest("example-org/other", "closed", true)); w.Code != http.StatusAccepted {
 		t.Fatalf("merged: %d %s", w.Code, w.Body)
 	}
 	got := pub.published["github:"+delivery+":42"]
 	data, _ := json.Marshal(got.Data)
-	if got.Name != EventPRMergeada || got.Group != "dev" || got.Message != "underpass-ai/made#42 was merged as 9f8e7d6 (head 1a2b3c4)." ||
-		string(data) != `{"head_sha":"1a2b3c4d5e6f","merge_sha":"9f8e7d6c5b4a","number":42,"repo":"underpass-ai/made"}` {
+	if got.Name != "pull-request.merged" || got.Group != "builders" || got.Message != "example-org/other#42 was merged as 9f8e7d6 (head 1a2b3c4)." ||
+		string(data) != `{"head_sha":"1a2b3c4d5e6f","merge_sha":"9f8e7d6c5b4a","number":42,"repo":"example-org/other"}` {
 		t.Errorf("command = %+v %s", got, data)
 	}
 }
@@ -195,7 +202,7 @@ func TestAMergedPullRequestPublishesPRMergeada(t *testing.T) {
 func TestARedeliveryPublishesNothingTwice(t *testing.T) {
 	pub := &fakePublisher{}
 	h := newTestHandler(t, pub, &bytes.Buffer{})
-	body := checkSuite("underpass-ai/kmp", "completed", 7, 8)
+	body := checkSuite("example-org/repo", "completed", 7, 8)
 	for range 2 {
 		if w := signed(h, GitHubCheckSuite, body); w.Code != http.StatusAccepted {
 			t.Fatalf("%d %s", w.Code, w.Body)
@@ -212,11 +219,11 @@ func TestAPublishFailureIsBadGateway(t *testing.T) {
 	var logs bytes.Buffer
 	pub := &fakePublisher{failOn: "github:" + delivery + ":8"}
 	h := newTestHandler(t, pub, &logs)
-	body := checkSuite("underpass-ai/kmp", "completed", 7, 8)
+	body := checkSuite("example-org/repo", "completed", 7, 8)
 	if w := signed(h, GitHubCheckSuite, body); w.Code != http.StatusBadGateway {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
-	if len(pub.published) != 1 || !strings.Contains(logs.String(), "pr.ci github:"+delivery+":8 not published: the control plane is down") {
+	if len(pub.published) != 1 || !strings.Contains(logs.String(), "pull-request.checked github:"+delivery+":8 not published: the control plane is down") {
 		t.Errorf("published %v, log:\n%s", pub.order, logs.String())
 	}
 	pub.failOn = ""
@@ -254,7 +261,7 @@ func TestWhatIsNotADelivery(t *testing.T) {
 			}
 		}
 	}
-	body := checkSuite("underpass-ai/kmp", "completed", 7)
+	body := checkSuite("example-org/repo", "completed", 7)
 	for _, id := range []string{"", "has space", strings.Repeat("a", 65), "../x"} {
 		r := httptest.NewRequest(http.MethodPost, Path, strings.NewReader(body))
 		r.Header.Set(HeaderEvent, GitHubCheckSuite)
@@ -273,31 +280,37 @@ func TestWhatIsNotADelivery(t *testing.T) {
 
 func TestNewHandlerRefuses(t *testing.T) {
 	pub := &fakePublisher{}
+	noCI, noMerged, badTeam := testRoute, testRoute, testRoute
+	noCI.CIEvent, noMerged.MergedEvent, badTeam.Team = "", "Not An Event", "Not A Team"
 	for name, config := range map[string]Config{
-		"no secret":    {Team: "dev", Publisher: pub},
-		"no team":      {Secret: secret, Publisher: pub},
-		"no publisher": {Secret: secret, Team: "dev"},
+		"no secret":    {Route: testRoute, Repos: testRepos, Publisher: pub},
+		"no team":      {Secret: secret, Route: Route{CIEvent: "a.b", MergedEvent: "c.d"}, Repos: testRepos, Publisher: pub},
+		"bad team":     {Secret: secret, Route: badTeam, Repos: testRepos, Publisher: pub},
+		"no ci event":  {Secret: secret, Route: noCI, Repos: testRepos, Publisher: pub},
+		"bad merged":   {Secret: secret, Route: noMerged, Repos: testRepos, Publisher: pub},
+		"no repos":     {Secret: secret, Route: testRoute, Publisher: pub},
+		"no publisher": {Secret: secret, Route: testRoute, Repos: testRepos},
 	} {
 		if _, err := NewHandler(config); err == nil {
 			t.Errorf("%s: wired", name)
 		}
 	}
-	h, err := NewHandler(Config{Secret: secret, Team: "dev", Publisher: pub, Repos: []string{"a/b"}, PublishTimeout: 1})
+	h, err := NewHandler(Config{Secret: secret, Route: testRoute, Publisher: pub, Repos: []string{"a/b"}, PublishTimeout: 1})
 	if err != nil || h.log == nil || h.timeout != 1 || len(h.repos) != 1 {
 		t.Errorf("%v %+v", err, h)
 	}
-	h, _ = NewHandler(Config{Secret: secret, Team: "dev", Publisher: pub})
-	if h.timeout != DefaultPublishTimeout || len(h.repos) != len(DefaultRepos) {
+	h, _ = NewHandler(Config{Secret: secret, Route: testRoute, Repos: testRepos, Publisher: pub})
+	if h.timeout != DefaultPublishTimeout || len(h.repos) != len(testRepos) {
 		t.Errorf("defaults %+v", h)
 	}
 }
 
 func TestMappers(t *testing.T) {
-	commands, _ := FromCheckSuite("d", "dev", "", CheckSuiteEvent{Action: "completed", CheckSuite: CheckSuite{PullRequests: []PullRequestRef{{Number: 0}, {Number: 3}}}, Repository: Repository{FullName: "a/b"}})
+	commands, _ := FromCheckSuite("d", testRoute, CheckSuiteEvent{Action: "completed", CheckSuite: CheckSuite{PullRequests: []PullRequestRef{{Number: 0}, {Number: 3}}}, Repository: Repository{FullName: "a/b"}})
 	if len(commands) != 1 || commands[0].Message != "CI of a/b#3 ended: none (head unknown)." || commands[0].Data["conclusion"] != "" {
 		t.Errorf("commands = %+v", commands)
 	}
-	if commands, _ := FromPullRequest("d", "dev", "", PullRequestEvent{Action: "closed", Number: 0, PullRequest: PullRequest{Merged: true}}); len(commands) != 0 {
+	if commands, _ := FromPullRequest("d", testRoute, PullRequestEvent{Action: "closed", Number: 0, PullRequest: PullRequest{Merged: true}}); len(commands) != 0 {
 		t.Errorf("PR 0 = %+v", commands)
 	}
 	if short("abc") != "abc" || IdempotencyKey("g", 5) != "github:g:5" {
@@ -306,11 +319,12 @@ func TestMappers(t *testing.T) {
 }
 
 func TestParseRepos(t *testing.T) {
-	repos, err := ParseRepos("")
-	if err != nil || len(repos) != 4 || repos[0] != "underpass-ai/kmp" {
-		t.Errorf("default = %v %v", repos, err)
+	for _, empty := range []string{"", " , ,"} {
+		if repos, err := ParseRepos(empty); !errors.Is(err, ErrNoRepos) || repos != nil {
+			t.Errorf("%q = %v %v: the operator names the repositories", empty, repos, err)
+		}
 	}
-	repos, err = ParseRepos(" a/b , A/B,c/d,")
+	repos, err := ParseRepos(" a/b , A/B,c/d,")
 	if err != nil || len(repos) != 2 {
 		t.Errorf("list = %v %v", repos, err)
 	}
@@ -321,27 +335,30 @@ func TestParseRepos(t *testing.T) {
 	}
 }
 
-// Only the dev team's own branches wake a bot: a person's PR maps to none.
-func TestOnlyTheDevTeamsBranchesMap(t *testing.T) {
+// Only the branches with the route's prefix wake a bot: a person's PR
+// maps to none; an empty prefix maps every branch.
+func TestOnlyTheBranchesWithThePrefixMap(t *testing.T) {
 	suite := func(branch string) CheckSuiteEvent {
-		return CheckSuiteEvent{Action: "completed", Repository: Repository{FullName: "underpass-ai/axlr"},
+		return CheckSuiteEvent{Action: "completed", Repository: Repository{FullName: "example-org/repo"},
 			CheckSuite: CheckSuite{HeadSHA: "abc", HeadBranch: branch, Conclusion: "success", PullRequests: []PullRequestRef{{Number: 7}}}}
 	}
 	merged := func(branch string) PullRequestEvent {
-		return PullRequestEvent{Action: "closed", Number: 7, Repository: Repository{FullName: "underpass-ai/axlr"},
+		return PullRequestEvent{Action: "closed", Number: 7, Repository: Repository{FullName: "example-org/repo"},
 			PullRequest: PullRequest{Merged: true, MergeCommitSHA: "def", Head: PullRequestHead{SHA: "abc", Ref: branch}}}
 	}
-	for branch, want := range map[string]int{"dev/axlr/a-20261112-axlr-200": 1, "tirso/fix": 0, "main": 0, "": 0, "devx/axlr": 0} {
-		got, err := FromCheckSuite("d-1", "dev", DefaultBranchPrefix, suite(branch))
+	prefixed := testRoute
+	prefixed.BranchPrefix = "bot/"
+	for branch, want := range map[string]int{"bot/repo/fix-200": 1, "someone/fix": 0, "main": 0, "": 0, "botx/repo": 0} {
+		got, err := FromCheckSuite("d-1", prefixed, suite(branch))
 		if err != nil || len(got) != want {
 			t.Errorf("check suite on %q: %d %v, want %d", branch, len(got), err, want)
 		}
-		got, err = FromPullRequest("d-1", "dev", DefaultBranchPrefix, merged(branch))
+		got, err = FromPullRequest("d-1", prefixed, merged(branch))
 		if err != nil || len(got) != want {
 			t.Errorf("merge of %q: %d %v, want %d", branch, len(got), err, want)
 		}
 	}
-	if got, _ := FromCheckSuite("d-1", "dev", "", suite("tirso/fix")); len(got) != 1 {
+	if got, _ := FromCheckSuite("d-1", testRoute, suite("someone/fix")); len(got) != 1 {
 		t.Error("an empty prefix maps every branch")
 	}
 }

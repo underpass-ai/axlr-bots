@@ -3,14 +3,14 @@
   "info": {
     "title": "AXLR Bots GitHub hooks",
     "version": "1.0.0",
-    "description": "The input adapter that turns GitHub's webhooks into the dev team's events (docs/architecture/team-topics.md, «Where GitHub's facts come from», option A; the pattern is docs/architecture/input-adapters.md). It receives `check_suite` and `pull_request` deliveries on `POST /github`, verifies `X-Hub-Signature-256` with the hook's secret, and publishes `pr.ci` and `pr.mergeada` to team `dev` as the operator, through the control plane's socket (`POST /v1/groups/{team}/events`). Only the fields the adapter reads are described: GitHub sends many more, and they are ignored. `axlr-bots github-hooks redeliver` reads GitHub's REST answers `Hook` and `HookDelivery` through `gh api`; they are described here too, so that no DTO of the package is written by hand. The wire forms are `adapters/githubhooks`; the runbook is docs/runbooks/github-hooks.md."
+    "description": "The input adapter that turns GitHub's webhooks into a team's events (docs/architecture/team-topics.md, «Where GitHub's facts come from», option A; the pattern is docs/architecture/input-adapters.md). It receives `check_suite` and `pull_request` deliveries on `POST /github`, verifies `X-Hub-Signature-256` with the hook's secret, and publishes two events to a team as the operator: a pull request's CI ended (named by `--ci-event`) and a pull request was merged (named by `--merged-event`), to the team `--team`, for the repositories `--repos` and the branches `--branch-prefix`. The team, both names and the repositories are required and have no default; the branch prefix is empty by default (every branch). The platform names no application's team or event: an application that runs the adapter (a separate repository, say) chooses them and declares the events it listens to in its own AsyncAPI. The events go through the control plane's socket (`POST /v1/groups/{team}/events`). Only the fields the adapter reads are described: GitHub sends many more, and they are ignored. `axlr-bots github-hooks redeliver` reads GitHub's REST answers `Hook` and `HookDelivery` through `gh api`; they are described here too, so that no DTO of the package is written by hand. The wire forms are `adapters/githubhooks`; the runbook is docs/runbooks/github-hooks.md."
   },
   "defaultContentType": "application/json",
   "servers": {
     "gateway": {
-      "host": "gateway.example:8443",
+      "host": "gateway.example",
       "protocol": "https",
-      "description": "The gateway GitHub posts to (on gx10, an EC2 host: docs/runbooks/github-hooks.md), with a self-signed certificate (the hook has insecure_ssl=1: the HMAC is the authentication). It forwards /github through a reverse SSH tunnel to the adapter on gx10."
+      "description": "The gateway GitHub posts to (a public host of the operator's: docs/runbooks/github-hooks.md), with a self-signed certificate (the hook has insecure_ssl=1: the HMAC is the authentication). It forwards /github through a reverse SSH tunnel to the adapter's host."
     },
     "adapter": {
       "host": "127.0.0.1:7890",
@@ -59,9 +59,9 @@
       ],
       "parameters": {
         "team": {
-          "description": "The team the adapter publishes to: --team, dev by default.",
+          "description": "The team the adapter publishes to: --team, required, no default.",
           "examples": [
-            "dev"
+            "team-a"
           ]
         }
       },
@@ -69,8 +69,8 @@
         "prCi": {
           "$ref": "#/components/messages/prCi"
         },
-        "prMergeada": {
-          "$ref": "#/components/messages/prMergeada"
+        "prMerged": {
+          "$ref": "#/components/messages/prMerged"
         }
       }
     }
@@ -104,7 +104,7 @@
       "channel": {
         "$ref": "#/channels/teamEvents"
       },
-      "summary": "A check suite completed: one pr.ci per pull request it names (none, one or several).",
+      "summary": "A check suite completed: one event named --ci-event per pull request it names (none, one or several).",
       "bindings": {
         "http": {
           "method": "POST"
@@ -116,12 +116,12 @@
         }
       ]
     },
-    "sendPrMergeada": {
+    "sendPrMerged": {
       "action": "send",
       "channel": {
         "$ref": "#/channels/teamEvents"
       },
-      "summary": "A pull request was closed merged: one pr.mergeada. Closed unmerged publishes nothing.",
+      "summary": "A pull request was closed merged: one event named --merged-event. Closed unmerged publishes nothing.",
       "bindings": {
         "http": {
           "method": "POST"
@@ -129,7 +129,7 @@
       },
       "messages": [
         {
-          "$ref": "#/channels/teamEvents/messages/prMergeada"
+          "$ref": "#/channels/teamEvents/messages/prMerged"
         }
       ]
     }
@@ -173,19 +173,21 @@
         }
       },
       "prCi": {
-        "name": "pr.ci",
+        "name": "prCi",
         "title": "A pull request's CI ended",
+        "summary": "Published under the name the operator chooses (--ci-event).",
         "contentType": "application/json",
         "payload": {
           "$ref": "#/components/schemas/PRCIEvent"
         }
       },
-      "prMergeada": {
-        "name": "pr.mergeada",
+      "prMerged": {
+        "name": "prMerged",
         "title": "A pull request was merged",
+        "summary": "Published under the name the operator chooses (--merged-event).",
         "contentType": "application/json",
         "payload": {
-          "$ref": "#/components/schemas/PRMergeadaEvent"
+          "$ref": "#/components/schemas/PRMergedEvent"
         }
       }
     },
@@ -264,7 +266,7 @@
           },
           "head_branch": {
             "type": "string",
-            "description": "The branch the suite ran on; the adapter maps only the dev team's own branches (--branch-prefix, dev/ by default)."
+            "description": "The branch the suite ran on; the adapter maps only the branches that start with --branch-prefix (empty by default: every branch)."
           },
           "conclusion": {
             "type": "string",
@@ -357,7 +359,7 @@
           },
           "ref": {
             "type": "string",
-            "description": "The pull request's head branch; the adapter maps only the dev team's own branches (--branch-prefix, dev/ by default)."
+            "description": "The pull request's head branch; the adapter maps only the branches that start with --branch-prefix (empty by default: every branch)."
           }
         }
       },
@@ -370,16 +372,16 @@
         "properties": {
           "full_name": {
             "type": "string",
-            "description": "owner/name; only the allow-list's are mapped (--repos, by default underpass-ai/kmp, underpass-ai/made, underpass-ai/axlr, underpass-ai/axlr-bots).",
+            "description": "owner/name; only the allow-list's are mapped (--repos, required, no default).",
             "examples": [
-              "underpass-ai/kmp"
+              "example-org/repo"
             ]
           }
         }
       },
       "PRCIEvent": {
         "type": "object",
-        "description": "The operator API's publish body (application.PublishGroupEventCommand) for pr.ci.",
+        "description": "The operator API's publish body (application.PublishGroupEventCommand) for a pull request's CI ending.",
         "required": [
           "name",
           "message",
@@ -389,13 +391,18 @@
         "properties": {
           "name": {
             "type": "string",
-            "const": "pr.ci"
+            "description": "The event's name: --ci-event, required, no default. Segments of lowercase letters, digits and '-' separated by '.', at most 64 characters.",
+            "pattern": "^[a-z0-9-]+(\\.[a-z0-9-]+)*$",
+            "maxLength": 64,
+            "examples": [
+              "pull-request.checked"
+            ]
           },
           "message": {
             "type": "string",
             "description": "One plain line.",
             "examples": [
-              "CI of underpass-ai/kmp#42 ended: success (head 1a2b3c4)."
+              "CI of example-org/repo#42 ended: success (head 1a2b3c4)."
             ]
           },
           "data": {
@@ -439,9 +446,9 @@
           }
         }
       },
-      "PRMergeadaEvent": {
+      "PRMergedEvent": {
         "type": "object",
-        "description": "The operator API's publish body (application.PublishGroupEventCommand) for pr.mergeada.",
+        "description": "The operator API's publish body (application.PublishGroupEventCommand) for a pull request's merge.",
         "required": [
           "name",
           "message",
@@ -451,17 +458,22 @@
         "properties": {
           "name": {
             "type": "string",
-            "const": "pr.mergeada"
+            "description": "The event's name: --merged-event, required, no default. Segments of lowercase letters, digits and '-' separated by '.', at most 64 characters.",
+            "pattern": "^[a-z0-9-]+(\\.[a-z0-9-]+)*$",
+            "maxLength": 64,
+            "examples": [
+              "pull-request.merged"
+            ]
           },
           "message": {
             "type": "string",
             "description": "One plain line.",
             "examples": [
-              "underpass-ai/kmp#42 was merged as 9f8e7d6 (head 1a2b3c4)."
+              "example-org/repo#42 was merged as 9f8e7d6 (head 1a2b3c4)."
             ]
           },
           "data": {
-            "$ref": "#/components/schemas/PRMergeadaData"
+            "$ref": "#/components/schemas/PRMergedData"
           },
           "idempotencyKey": {
             "type": "string",
@@ -469,9 +481,9 @@
           }
         }
       },
-      "PRMergeadaData": {
+      "PRMergedData": {
         "type": "object",
-        "x-go-type": "githubhooks.PRMergeadaData",
+        "x-go-type": "githubhooks.PRMergedData",
         "additionalProperties": false,
         "required": [
           "repo",

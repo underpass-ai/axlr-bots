@@ -1,6 +1,7 @@
 // Package githubhooks is the input adapter that turns GitHub's webhooks
-// into the dev team's events (docs/architecture/team-topics.md, «Where
-// GitHub's facts come from»): the DTOs generated from
+// into a team's events, the team, the events' names, the repositories and
+// the branches all the operator's (docs/architecture/team-topics.md,
+// «Where GitHub's facts come from»): the DTOs generated from
 // docs/reference/github-hooks.asyncapi.json, the mappers from them to
 // application.PublishGroupEventCommand, the HTTP handler that verifies a
 // delivery's signature and publishes through a port, and the redelivery

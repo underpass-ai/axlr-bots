@@ -4,8 +4,7 @@ package githubhooks
 
 // Repository is the schema Repository of the spec.
 type Repository struct {
-	// owner/name; only the allow-list's are mapped (--repos, by default
-	// underpass-ai/kmp, underpass-ai/made, underpass-ai/axlr,
-	// underpass-ai/axlr-bots).
+	// owner/name; only the allow-list's are mapped (--repos, required, no
+	// default).
 	FullName string `json:"full_name"`
 }

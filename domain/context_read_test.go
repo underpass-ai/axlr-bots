@@ -6,10 +6,10 @@ import (
 )
 
 func TestAContextRefIsValidated(t *testing.T) {
-	if err := (ContextRef{Key: "ws:s1", Team: "qa"}).Validate(); err != nil {
+	if err := (ContextRef{Key: "ws:s1", Team: "team-b"}).Validate(); err != nil {
 		t.Error(err)
 	}
-	for _, bad := range []ContextRef{{Key: "no key", Team: "qa"}, {Key: "ws:s1", Team: "Bad Team"}, {Key: "", Team: "qa"}} {
+	for _, bad := range []ContextRef{{Key: "no key", Team: "team-b"}, {Key: "ws:s1", Team: "Bad Team"}, {Key: "", Team: "team-b"}} {
 		if bad.Validate() == nil {
 			t.Errorf("%+v accepted", bad)
 		}
@@ -22,7 +22,7 @@ func TestAReadIsBoundedAndRendered(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		lines = append(lines, long)
 	}
-	read := ContextRead{Key: "ws:s1", Team: "qa", Read: append([]string{"  newest   line  ", ""}, lines...), Line: strings.Repeat("é", 400)}.Bounded()
+	read := ContextRead{Key: "ws:s1", Team: "team-b", Read: append([]string{"  newest   line  ", ""}, lines...), Line: strings.Repeat("é", 400)}.Bounded()
 	total := 0
 	for _, line := range read.Read {
 		total += len(line) + 1
@@ -30,13 +30,13 @@ func TestAReadIsBoundedAndRendered(t *testing.T) {
 	if read.Read[0] != "newest line" || total > MaxContextReadBytes || len([]rune(read.Line)) != 300 {
 		t.Errorf("bounded = %d lines, %d bytes, first %q", len(read.Read), total, read.Read[0])
 	}
-	huge := ContextRead{Key: "ws:s1", Team: "qa", Read: []string{strings.Repeat("y", 5000)}}.Bounded()
+	huge := ContextRead{Key: "ws:s1", Team: "team-b", Read: []string{strings.Repeat("y", 5000)}}.Bounded()
 	if len(huge.Read) != 1 || len(huge.Read[0]) >= MaxContextReadBytes {
 		t.Errorf("one huge line = %d bytes", len(huge.Read[0]))
 	}
-	reads := []ContextRead{{Key: "ws:s1", Team: "qa", Read: []string{"a", "b"}}, {Key: "project:dev.x", Team: "dev", Line: "ask dev"}}
+	reads := []ContextRead{{Key: "ws:s1", Team: "team-b", Read: []string{"a", "b"}}, {Key: "project:team-a.x", Team: "team-a", Line: "ask team-a"}}
 	text := RenderContextReads(reads, 1000)
-	if text != EarlierContextHeading+"\nws:s1 (team qa):\n- a\n- b\nproject:dev.x (team dev): ask dev" {
+	if text != EarlierContextHeading+"\nws:s1 (team team-b):\n- a\n- b\nproject:team-a.x (team team-a): ask team-a" {
 		t.Errorf("text = %q", text)
 	}
 	if cut := RenderContextReads(reads, 70); len(cut) > 70 || !strings.HasSuffix(cut, "…") {
@@ -52,10 +52,10 @@ func TestATaskKeepsWhatItsNodeRead(t *testing.T) {
 	if err := task.KeepContext(nil); err != nil || task.Earlier() != nil {
 		t.Fatal("nothing kept something")
 	}
-	if err := task.KeepContext([]ContextRead{{Key: "bad key", Team: "qa"}}); err == nil {
+	if err := task.KeepContext([]ContextRead{{Key: "bad key", Team: "team-b"}}); err == nil {
 		t.Error("a bad read was kept")
 	}
-	reads := []ContextRead{{Key: "ws:s1", Team: "qa", Read: []string{"a"}}, {Key: "ws:s2", Team: "qa", Line: "x"}, {Key: "ws:s3", Team: "qa", Line: "y"}}
+	reads := []ContextRead{{Key: "ws:s1", Team: "team-b", Read: []string{"a"}}, {Key: "ws:s2", Team: "team-b", Line: "x"}, {Key: "ws:s3", Team: "team-b", Line: "y"}}
 	if err := task.KeepContext(reads); err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestATaskKeepsWhatItsNodeRead(t *testing.T) {
 		t.Errorf("earlier = %+v", got)
 	}
 	// Kept once: a later report changes nothing.
-	_ = task.KeepContext([]ContextRead{{Key: "ws:s9", Team: "qa", Line: "z"}})
+	_ = task.KeepContext([]ContextRead{{Key: "ws:s9", Team: "team-b", Line: "z"}})
 	if task.Earlier()[0].Key != "ws:s1" {
 		t.Error("kept twice")
 	}

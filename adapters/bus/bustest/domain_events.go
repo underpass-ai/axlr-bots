@@ -16,14 +16,14 @@ import (
 // the emit publishes through and the feed the control plane listens on.
 type DomainFactory func(t *testing.T) (application.DomainEventBus, application.DomainEventFeed)
 
-// Fact is the domain event the contract publishes: qa's finding id, to dev.
+// Fact is the domain event the contract publishes: team-b's finding id, to team-a.
 func Fact(t *testing.T, id domain.DomainID) application.CrossingEvent {
 	t.Helper()
-	event, err := domain.NewDomainEvent("incidencia.nueva", id, domain.ContextKey("project:qa.hallazgo."+id.String()), "qa", "qa-triaje", time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC))
+	event, err := domain.NewDomainEvent("order.new", id, domain.ContextKey("project:team-b.item."+id.String()), "team-b", "b-triage", time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)
 	}
-	audience, err := domain.NewAudience("qa", []domain.TeamName{"dev", "ops"})
+	audience, err := domain.NewAudience("team-b", []domain.TeamName{"team-a", "ops"})
 	if err != nil {
 		t.Fatal(err)
 	}

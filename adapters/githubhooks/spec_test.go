@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"testing"
 
+	"github.com/underpass-ai/axlr-bots/domain"
 	"github.com/underpass-ai/axlr-bots/internal/asyncapigen"
 )
 
@@ -62,7 +64,9 @@ func TestTheNamesAreTheSpecs(t *testing.T) {
 			Schemas map[string]struct {
 				Required   []string `json:"required"`
 				Properties map[string]struct {
-					Const string `json:"const"`
+					Const    string   `json:"const"`
+					Pattern  string   `json:"pattern"`
+					Examples []string `json:"examples"`
 				} `json:"properties"`
 			} `json:"schemas"`
 		} `json:"components"`
@@ -82,11 +86,23 @@ func TestTheNamesAreTheSpecs(t *testing.T) {
 	if messages["checkSuite"].Name != GitHubCheckSuite || messages["pullRequest"].Name != GitHubPullRequest || messages["ping"].Name != GitHubPing {
 		t.Errorf("GitHub's events = %+v", messages)
 	}
-	if messages["prCi"].Name != EventPRCI || messages["prMergeada"].Name != EventPRMergeada {
+	if _, ok := messages["prCi"]; !ok {
 		t.Errorf("team events = %+v", messages)
 	}
-	if spec.Components.Schemas["PRCIEvent"].Properties["name"].Const != EventPRCI || spec.Components.Schemas["PRMergeadaEvent"].Properties["name"].Const != EventPRMergeada {
-		t.Error("the publish bodies name other events")
+	if _, ok := messages["prMerged"]; !ok {
+		t.Errorf("team events = %+v", messages)
+	}
+	// The events' names are the operator's (--ci-event, --merged-event):
+	// the spec fixes none, and its examples are names the platform takes.
+	for _, schema := range []string{"PRCIEvent", "PRMergedEvent"} {
+		name := spec.Components.Schemas[schema].Properties["name"]
+		if name.Const != "" || name.Pattern == "" || len(name.Examples) != 1 {
+			t.Errorf("%s fixes its name: %+v", schema, name)
+			continue
+		}
+		if _, err := domain.NewEventName(name.Examples[0]); err != nil || !regexp.MustCompile(name.Pattern).MatchString(name.Examples[0]) {
+			t.Errorf("%s: %q is no event name: %v", schema, name.Examples[0], err)
+		}
 	}
 	if len(spec.Channels["githubWebhook"].Messages) != 3 || len(spec.Channels["teamEvents"].Messages) != 2 {
 		t.Errorf("channels = %+v", spec.Channels)

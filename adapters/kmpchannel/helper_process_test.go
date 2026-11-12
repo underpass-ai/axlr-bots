@@ -68,7 +68,7 @@ func TestHelperProcess(t *testing.T) {
 				case call.Name == "kmp_time":
 					fmt.Printf(`{"jsonrpc":"2.0","id":%d,"result":{"isError":false,"content":[],"structuredContent":{"entries":[]}}}`+"\n", id)
 				case scenario == "wake":
-					fmt.Printf(`{"jsonrpc":"2.0","id":%d,"result":{"isError":false,"content":[{"type":"text","text":"Objective: ws:s1"}],"structuredContent":{"wake":{"current_state":["ws:s1:entry:observation:f-13-042d (observation): Finding F-13 not looked at yet."],"open_loops":["ws:s1:entry:open_loop:x (open_loop): triage F-13","a loop without a ref"],"next_actions":["emit qa.hallazgo.triado for F-13"]}}}}`+"\n", id)
+					fmt.Printf(`{"jsonrpc":"2.0","id":%d,"result":{"isError":false,"content":[{"type":"text","text":"Objective: ws:s1"}],"structuredContent":{"wake":{"current_state":["ws:s1:entry:observation:f-13-042d (observation): Finding F-13 not looked at yet."],"open_loops":["ws:s1:entry:open_loop:x (open_loop): triage F-13","a loop without a ref"],"next_actions":["emit team-b.item.sorted for F-13"]}}}}`+"\n", id)
 				default:
 					fmt.Printf(`{"jsonrpc":"2.0","id":%d,"result":{"isError":false,"content":[],"structuredContent":{"wake":{"current_state":["…"]}}}}`+"\n", id)
 				}

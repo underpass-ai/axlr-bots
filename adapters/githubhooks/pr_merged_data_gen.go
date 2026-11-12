@@ -2,8 +2,8 @@
 
 package githubhooks
 
-// PRMergeadaData is the schema PRMergeadaData of the spec.
-type PRMergeadaData struct {
+// PRMergedData is the schema PRMergedData of the spec.
+type PRMergedData struct {
 	// owner/name.
 	Repo string `json:"repo"`
 	// The pull request.

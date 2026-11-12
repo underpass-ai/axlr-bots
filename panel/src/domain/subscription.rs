@@ -78,7 +78,7 @@ impl Subscription {
     }
 
     /// Whom from: `recepcion, operator`, or `anyone`; for another team's
-    /// domain event, `team qa` or `team qa: qa-triaje`.
+    /// domain event, `team team-b` or `team team-b: b-triage`.
     pub fn senders(&self) -> String {
         let bots = if self.from.is_empty() {
             "anyone".to_string()
@@ -94,8 +94,8 @@ impl Subscription {
         }
     }
 
-    /// What its tasks must end with: `ends with qa.hallazgo.triado or
-    /// qa.hallazgo.flaky`; empty when it expects nothing.
+    /// What its tasks must end with: `ends with team-b.item.sorted or
+    /// team-b.item.held`; empty when it expects nothing.
     pub fn ends_with(&self) -> String {
         if self.expects.is_empty() {
             String::new()
@@ -169,15 +169,15 @@ mod tests {
 
     #[test]
     fn keeps_another_teams_subscription_on_the_way_back() {
-        let raw = r#"{"topic":"incidencia.nueva","team":"qa","mode":"task","objective":"Step Q.","deliver":"team"}"#;
+        let raw = r#"{"topic":"order.new","team":"team-b","mode":"task","objective":"Step Q.","deliver":"team"}"#;
         let crossing: Subscription = serde_json::from_str(raw).unwrap();
-        assert_eq!(crossing.team, "qa");
-        assert_eq!(crossing.senders(), "team qa");
+        assert_eq!(crossing.team, "team-b");
+        assert_eq!(crossing.senders(), "team team-b");
         assert_eq!(serde_json::to_string(&crossing).unwrap(), raw);
         let named: Subscription =
-            serde_json::from_str(r#"{"topic":"incidencia.nueva","team":"qa","from":["qa-triaje"]}"#).unwrap();
-        assert_eq!(named.senders(), "team qa: qa-triaje");
-        assert_eq!(named.approved().team, "qa");
+            serde_json::from_str(r#"{"topic":"order.new","team":"team-b","from":["b-triage"]}"#).unwrap();
+        assert_eq!(named.senders(), "team team-b: b-triage");
+        assert_eq!(named.approved().team, "team-b");
     }
 
     #[test]
@@ -190,10 +190,10 @@ mod tests {
 
     #[test]
     fn keeps_what_a_subscription_expects_on_the_way_back() {
-        let raw = r#"{"topic":"qa.hallazgo.candidato","mode":"task","deliver":"team","expects":["qa.hallazgo.triado","qa.hallazgo.flaky"]}"#;
+        let raw = r#"{"topic":"team-b.item.arrived","mode":"task","deliver":"team","expects":["team-b.item.sorted","team-b.item.held"]}"#;
         let sub: Subscription = serde_json::from_str(raw).unwrap();
-        assert_eq!(sub.expects, vec!["qa.hallazgo.triado", "qa.hallazgo.flaky"]);
-        assert_eq!(sub.ends_with(), "ends with qa.hallazgo.triado or qa.hallazgo.flaky");
+        assert_eq!(sub.expects, vec!["team-b.item.sorted", "team-b.item.held"]);
+        assert_eq!(sub.ends_with(), "ends with team-b.item.sorted or team-b.item.held");
         assert_eq!(serde_json::to_string(&sub).unwrap(), raw);
         assert_eq!(serde_json::to_string(&sub.approved()).unwrap(), raw);
         assert_eq!(Subscription::new("a", None, "").unwrap().ends_with(), "");

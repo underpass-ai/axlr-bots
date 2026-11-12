@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // Path is the channel the handler serves: the spec's githubWebhook.
@@ -28,13 +29,11 @@ const DefaultPublishTimeout = 8 * time.Second
 type Config struct {
 	// Secret is the hook's secret; empty is refused.
 	Secret []byte
-	// Team is the team the events are published to (dev).
-	Team string
-	// Repos is the allow-list of owner/name; empty is DefaultRepos.
+	// Route is the team the events are published to, their names and
+	// the branches mapped: the operator's, none has a default.
+	Route Route
+	// Repos is the allow-list of owner/name; empty is refused.
 	Repos []string
-	// BranchPrefix maps only the branches that start with it (dev/: the
-	// dev team's own); empty maps every branch.
-	BranchPrefix string
 	// Publisher publishes as the operator.
 	Publisher Publisher
 	// Log gets one line per delivery, never its body; nil discards.
@@ -48,9 +47,8 @@ type Config struct {
 // publishes it to the team.
 type Handler struct {
 	secret  []byte
-	team    string
+	route   Route
 	repos   []string
-	prefix  string
 	publish Publisher
 	log     *log.Logger
 	timeout time.Duration
@@ -61,16 +59,21 @@ func NewHandler(config Config) (*Handler, error) {
 	if len(config.Secret) == 0 {
 		return nil, errors.New("githubhooks: the hook's secret is empty")
 	}
-	if config.Team == "" {
-		return nil, errors.New("githubhooks: no team to publish to")
+	if _, err := domain.NewTeamName(config.Route.Team); err != nil {
+		return nil, fmt.Errorf("githubhooks: the team to publish to: %w", err)
+	}
+	for _, name := range []string{config.Route.CIEvent, config.Route.MergedEvent} {
+		if _, err := domain.NewEventName(name); err != nil {
+			return nil, fmt.Errorf("githubhooks: an event to publish: %w", err)
+		}
 	}
 	if config.Publisher == nil {
 		return nil, errors.New("githubhooks: no publisher")
 	}
-	repos := slices.Clone(config.Repos)
-	if len(repos) == 0 {
-		repos = slices.Clone(DefaultRepos)
+	if len(config.Repos) == 0 {
+		return nil, ErrNoRepos
 	}
+	repos := slices.Clone(config.Repos)
 	logger := config.Log
 	if logger == nil {
 		logger = log.New(io.Discard, "", 0)
@@ -79,7 +82,7 @@ func NewHandler(config Config) (*Handler, error) {
 	if timeout <= 0 {
 		timeout = DefaultPublishTimeout
 	}
-	return &Handler{secret: slices.Clone(config.Secret), team: config.Team, repos: repos, prefix: config.BranchPrefix, publish: config.Publisher, log: logger, timeout: timeout}, nil
+	return &Handler{secret: slices.Clone(config.Secret), route: config.Route, repos: repos, publish: config.Publisher, log: logger, timeout: timeout}, nil
 }
 
 // ServeHTTP answers one delivery: 405, 413, 401, 400, 204 for what it
@@ -163,14 +166,14 @@ func (h *Handler) commands(event, delivery string, body []byte) ([]application.P
 		if err := json.Unmarshal(body, &payload); err != nil {
 			return nil, "", err
 		}
-		commands, err := FromCheckSuite(delivery, h.team, h.prefix, payload)
+		commands, err := FromCheckSuite(delivery, h.route, payload)
 		return commands, payload.Repository.FullName, err
 	}
 	var payload PullRequestEvent
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, "", err
 	}
-	commands, err := FromPullRequest(delivery, h.team, h.prefix, payload)
+	commands, err := FromPullRequest(delivery, h.route, payload)
 	return commands, payload.Repository.FullName, err
 }
 

@@ -49,12 +49,12 @@ func (c *capturingExecutor) Execute(_ context.Context, request application.Execu
 
 func contextAgent(store application.ContextReader, executor Executor, transport application.NodeTransport, teams ...string) (Agent, *bytes.Buffer) {
 	logs := &bytes.Buffer{}
-	return Agent{Transport: transport, Executor: executor, Context: store, Options: Options{NodeID: "qa-node", MemoryTeams: teams, Log: log.New(logs, "", 0)}}, logs
+	return Agent{Transport: transport, Executor: executor, Context: store, Options: Options{NodeID: "b-node", MemoryTeams: teams, Log: log.New(logs, "", 0)}}, logs
 }
 
 func redeliveryRun(runtime domain.Runtime, input string, refs ...domain.ContextRef) application.Assignment {
 	return application.Assignment{ExecutionID: "exec-1", Kind: domain.ExecutionRun, Run: &application.ExecutionRequest{
-		ExecutionID: "exec-1", TaskID: "task-r", BotID: "qa-triaje", Objective: "Redelivery 1 of 2: triage F-13.", MemoryTeam: "qa",
+		ExecutionID: "exec-1", TaskID: "task-r", BotID: "b-triage", Objective: "Redelivery 1 of 2: triage F-13.", MemoryTeam: "team-b",
 		Runtime: runtime, Input: json.RawMessage(input), Contexts: refs,
 	}}
 }
@@ -62,20 +62,20 @@ func redeliveryRun(runtime domain.Runtime, input string, refs ...domain.ContextR
 func TestAnLLMRunIsGivenWhatItsTeamsStoreHoldsUnderTheKey(t *testing.T) {
 	store := &fakeContext{lines: map[string][]string{"ws:s1": {"(observation): Finding F-12 triaged as flaky.", "open: triage F-13"}}}
 	executor, transport := &capturingExecutor{}, &fakeTransport{}
-	agent, _ := contextAgent(store, executor, transport, "qa")
-	agent.carry(context.Background(), "qa-node", redeliveryRun(domain.Runtime{}, `{"name":"qa.hallazgo.candidato"}`,
-		domain.ContextRef{Key: "ws:s1", Team: "qa"}, domain.ContextRef{Key: "project:dev.arreglo.7", Team: "dev"}))
+	agent, _ := contextAgent(store, executor, transport, "team-b")
+	agent.carry(context.Background(), "b-node", redeliveryRun(domain.Runtime{}, `{"name":"team-b.item.arrived"}`,
+		domain.ContextRef{Key: "ws:s1", Team: "team-b"}, domain.ContextRef{Key: "project:team-a.fix.7", Team: "team-a"}))
 	prompt := executor.request.PromptText()
 	for _, want := range []string{
 		"Redelivery 1 of 2: triage F-13.\n\n" + domain.EarlierContextHeading,
-		"ws:s1 (team qa):\n- (observation): Finding F-12 triaged as flaky.\n- open: triage F-13",
-		"project:dev.arreglo.7 (team dev): held by team dev, not yours: ask that team through the team channel, naming the key.",
+		"ws:s1 (team team-b):\n- (observation): Finding F-12 triaged as flaky.\n- open: triage F-13",
+		"project:team-a.fix.7 (team team-a): held by team team-a, not yours: ask that team through the team channel, naming the key.",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt lacks %q:\n%s", want, prompt)
 		}
 	}
-	if len(store.asked) != 1 || store.asked[0] != "qa/ws:s1" {
+	if len(store.asked) != 1 || store.asked[0] != "team-b/ws:s1" {
 		t.Errorf("asked %v: another team's key was read", store.asked)
 	}
 	reads := transport.report.ContextRead
@@ -92,7 +92,7 @@ func TestAJevProgramIsGivenTheSameAsDataEarlier(t *testing.T) {
 	store := &fakeContext{lines: map[string][]string{"ws:s1": {"F-12 flaky"}}}
 	executor, transport := &capturingExecutor{}, &fakeTransport{}
 	agent, _ := contextAgent(store, executor, transport, "*")
-	agent.carry(context.Background(), "qa-node", redeliveryRun(program, `{"name":"qa.hallazgo.candidato","data":{"id":"F-13","context":"ws:s1"}}`, domain.ContextRef{Key: "ws:s1", Team: "qa"}))
+	agent.carry(context.Background(), "b-node", redeliveryRun(program, `{"name":"team-b.item.arrived","data":{"id":"F-13","context":"ws:s1"}}`, domain.ContextRef{Key: "ws:s1", Team: "team-b"}))
 	if executor.request.Prompt != "" {
 		t.Errorf("a Jev run got a prompt: %q", executor.request.Prompt)
 	}
@@ -107,7 +107,7 @@ func TestAJevProgramIsGivenTheSameAsDataEarlier(t *testing.T) {
 	if err := json.Unmarshal(executor.request.Input, &input); err != nil {
 		t.Fatal(err)
 	}
-	if input.Name != "qa.hallazgo.candidato" || input.Data.ID != "F-13" || input.Data.Context != "ws:s1" || len(input.Data.Earlier) != 1 || input.Data.Earlier[0].Read[0] != "F-12 flaky" || input.Data.Earlier[0].Key != "ws:s1" {
+	if input.Name != "team-b.item.arrived" || input.Data.ID != "F-13" || input.Data.Context != "ws:s1" || len(input.Data.Earlier) != 1 || input.Data.Earlier[0].Read[0] != "F-12 flaky" || input.Data.Earlier[0].Key != "ws:s1" {
 		t.Errorf("input = %s", executor.request.Input)
 	}
 	if len(transport.report.ContextRead) != 1 {
@@ -116,29 +116,29 @@ func TestAJevProgramIsGivenTheSameAsDataEarlier(t *testing.T) {
 }
 
 func TestWhatCannotBeReadIsOneLineNeverAFailedRun(t *testing.T) {
-	ref := domain.ContextRef{Key: "ws:s1", Team: "qa"}
+	ref := domain.ContextRef{Key: "ws:s1", Team: "team-b"}
 	cases := map[string]struct {
 		store application.ContextReader
 		teams []string
 		want  string
 	}{
-		"missing":    {&fakeContext{lines: map[string][]string{}}, []string{"qa"}, "the store of team qa holds nothing under this key."},
-		"failing":    {&fakeContext{err: errors.New("kmp-mcp: the store is locked\nmore")}, []string{"qa"}, "could not be read: kmp-mcp: the store is locked"},
-		"empty":      {&fakeContext{lines: map[string][]string{"ws:s1": {}}}, []string{"qa"}, "nothing recorded under this key yet."},
-		"not shared": {&fakeContext{}, []string{"dev"}, "not read: this node does not open the memory of team qa."},
-		"no reader":  {nil, []string{"qa"}, "not read: this node reads no team memory"},
+		"missing":    {&fakeContext{lines: map[string][]string{}}, []string{"team-b"}, "the store of team team-b holds nothing under this key."},
+		"failing":    {&fakeContext{err: errors.New("kmp-mcp: the store is locked\nmore")}, []string{"team-b"}, "could not be read: kmp-mcp: the store is locked"},
+		"empty":      {&fakeContext{lines: map[string][]string{"ws:s1": {}}}, []string{"team-b"}, "nothing recorded under this key yet."},
+		"not shared": {&fakeContext{}, []string{"team-a"}, "not read: this node does not open the memory of team team-b."},
+		"no reader":  {nil, []string{"team-b"}, "not read: this node reads no team memory"},
 	}
 	for name, c := range cases {
 		executor, transport := &capturingExecutor{}, &fakeTransport{}
 		agent, _ := contextAgent(c.store, executor, transport, c.teams...)
-		agent.carry(context.Background(), "qa-node", redeliveryRun(domain.Runtime{}, `{}`, ref))
+		agent.carry(context.Background(), "b-node", redeliveryRun(domain.Runtime{}, `{}`, ref))
 		if transport.report.Outcome != domain.ExecutionCompleted {
 			t.Errorf("%s: report %+v", name, transport.report)
 		}
 		if reads := transport.report.ContextRead; len(reads) != 1 || !strings.HasPrefix(reads[0].Line, c.want) || reads[0].Read != nil {
 			t.Errorf("%s: reads = %+v", name, reads)
 		}
-		if !strings.Contains(executor.request.PromptText(), "ws:s1 (team qa): "+c.want) {
+		if !strings.Contains(executor.request.PromptText(), "ws:s1 (team team-b): "+c.want) {
 			t.Errorf("%s: prompt = %s", name, executor.request.PromptText())
 		}
 	}
@@ -152,11 +152,11 @@ func TestAnOversizedReadIsBoundedNewestFirst(t *testing.T) {
 	lines[0] = "newest"
 	store := &fakeContext{lines: map[string][]string{"ws:s1": lines}}
 	executor, transport := &capturingExecutor{}, &fakeTransport{}
-	agent, _ := contextAgent(store, executor, transport, "qa")
-	assignment := redeliveryRun(domain.Runtime{}, `{}`, domain.ContextRef{Key: "ws:s1", Team: "qa"})
+	agent, _ := contextAgent(store, executor, transport, "team-b")
+	assignment := redeliveryRun(domain.Runtime{}, `{}`, domain.ContextRef{Key: "ws:s1", Team: "team-b"})
 	// A prompt near its limit leaves the block little room.
 	assignment.Run.Objective = domain.Objective(strings.Repeat("o", domain.MaxPromptLength-600))
-	agent.carry(context.Background(), "qa-node", assignment)
+	agent.carry(context.Background(), "b-node", assignment)
 	read := transport.report.ContextRead[0]
 	total := 0
 	for _, line := range read.Read {
@@ -173,15 +173,15 @@ func TestAnOversizedReadIsBoundedNewestFirst(t *testing.T) {
 func TestARunWithoutKeysIsUntouched(t *testing.T) {
 	executor, transport := &capturingExecutor{}, &fakeTransport{}
 	store := &fakeContext{}
-	agent, _ := contextAgent(store, executor, transport, "qa")
-	agent.carry(context.Background(), "qa-node", redeliveryRun(domain.Runtime{}, `{"a":1}`))
+	agent, _ := contextAgent(store, executor, transport, "team-b")
+	agent.carry(context.Background(), "b-node", redeliveryRun(domain.Runtime{}, `{"a":1}`))
 	if executor.request.Prompt != "" || string(executor.request.Input) != `{"a":1}` || transport.report.ContextRead != nil || len(store.asked) != 0 {
 		t.Errorf("request %+v report %+v", executor.request, transport.report)
 	}
-	if got := inputWithEarlier(json.RawMessage(`[1]`), []domain.ContextRead{{Key: "ws:s1", Team: "qa", Line: "x"}}); string(got) != `[1]` {
+	if got := inputWithEarlier(json.RawMessage(`[1]`), []domain.ContextRead{{Key: "ws:s1", Team: "team-b", Line: "x"}}); string(got) != `[1]` {
 		t.Errorf("an input that is no object = %s", got)
 	}
-	if got := inputWithEarlier(nil, []domain.ContextRead{{Key: "ws:s1", Team: "qa", Line: "x"}}); !strings.Contains(string(got), `"earlier"`) {
+	if got := inputWithEarlier(nil, []domain.ContextRead{{Key: "ws:s1", Team: "team-b", Line: "x"}}); !strings.Contains(string(got), `"earlier"`) {
 		t.Errorf("no input = %s", got)
 	}
 }
@@ -189,10 +189,10 @@ func TestARunWithoutKeysIsUntouched(t *testing.T) {
 func TestAReadThePromptHasNoRoomForIsSaidSo(t *testing.T) {
 	store := &fakeContext{lines: map[string][]string{"ws:s1": {"F-12 flaky"}}}
 	executor, transport := &capturingExecutor{}, &fakeTransport{}
-	agent, _ := contextAgent(store, executor, transport, "qa")
-	full := redeliveryRun(domain.Runtime{}, `{}`, domain.ContextRef{Key: "ws:s1", Team: "qa"})
+	agent, _ := contextAgent(store, executor, transport, "team-b")
+	full := redeliveryRun(domain.Runtime{}, `{}`, domain.ContextRef{Key: "ws:s1", Team: "team-b"})
 	full.Run.Objective = domain.Objective(strings.Repeat("o", domain.MaxPromptLength-10))
-	agent.carry(context.Background(), "qa-node", full)
+	agent.carry(context.Background(), "b-node", full)
 	if executor.request.Prompt != "" {
 		t.Errorf("a full prompt grew: %d", len(executor.request.Prompt))
 	}

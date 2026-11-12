@@ -4,10 +4,9 @@ package domainevent
 
 // DataDTO is the schema DomainEventData of the spec.
 type DataDTO struct {
-	// The thing's id: a finding, a fix. A fact that can happen more than once
+	// The thing's id: an order, an item. A fact that can happen more than once
 	// to the same thing carries a round-specific id, so a later round is a new
-	// fact and not a repeat: incidencia.completada and incidencia.reabierta
-	// use <finding>@<merged sha>.
+	// fact and not a repeat: <thing>@<round>, such as o-17@4f9c2ab.
 	ID string `json:"id"`
 	// The KMP key of the context (an about of the emitting team). The listener
 	// asks that team for it through the team channel; it never opens the other
