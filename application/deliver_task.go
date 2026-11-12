@@ -84,6 +84,9 @@ func (uc EmitEvent) deliverTask(ctx context.Context, e emission, mate domain.Bot
 		action: "task.event", bot: mate, trigger: trigger, objective: objective,
 		key: key, correlation: e.task.CorrelationID(), input: input, lineage: child,
 	}
+	if s.expects = sub.Expects(); len(s.expects) > 0 {
+		s.carried = []domain.CarriedEvent{e.carried()}
+	}
 	if urgent {
 		s.priority, s.why = domain.PriorityUrgent, "a "+e.severity.String()+" from "+e.sender()+", event "+e.name.String()
 	}
