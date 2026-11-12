@@ -137,8 +137,8 @@ func TestGitHubHooksServePublishesToTheTeam(t *testing.T) {
 		return response.StatusCode
 	}
 	sign := func(body string) string { return githubhooks.Sign([]byte("the-hook-secret"), []byte(body)) }
-	suite := `{"action": "completed", "check_suite": {"head_sha": "1a2b3c4d5e6f", "conclusion": "failure", "pull_requests": [{"number": 7}, {"number": 8}]}, "repository": {"full_name": "underpass-ai/kmp"}}`
-	merged := `{"action": "closed", "number": 7, "pull_request": {"merged": true, "merge_commit_sha": "9f8e7d6c5b4a", "head": {"sha": "1a2b3c4d5e6f"}}, "repository": {"full_name": "underpass-ai/axlr-bots"}}`
+	suite := `{"action": "completed", "check_suite": {"head_sha": "1a2b3c4d5e6f", "head_branch": "dev/kmp/a-20261112-kmp-7", "conclusion": "failure", "pull_requests": [{"number": 7}, {"number": 8}]}, "repository": {"full_name": "underpass-ai/kmp"}}`
+	merged := `{"action": "closed", "number": 7, "pull_request": {"merged": true, "merge_commit_sha": "9f8e7d6c5b4a", "head": {"sha": "1a2b3c4d5e6f", "ref": "dev/axlr-bots/a-20261112-axlr-bots-7"}}, "repository": {"full_name": "underpass-ai/axlr-bots"}}`
 	if code := send("check_suite", "d-1", suite, sign(suite)); code != http.StatusAccepted {
 		t.Fatalf("check_suite: %d\n%s", code, hooksErr.String())
 	}

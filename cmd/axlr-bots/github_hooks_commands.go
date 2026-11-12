@@ -48,6 +48,7 @@ func githubHooksServe(ctx context.Context, socketPath string, args []string, std
 	secretFile := flags.String("secret-file", "", "the hook's secret, a file readable by its owner only")
 	team := flags.String("team", "dev", "the team the events are published to")
 	repos := flags.String("repos", "", "the repositories mapped, owner/name comma-separated (default "+strings.Join(githubhooks.DefaultRepos, ",")+")")
+	branchPrefix := flags.String("branch-prefix", githubhooks.DefaultBranchPrefix, "map only the branches that start with it (the dev team's own); empty maps every branch")
 	public := flags.Bool("public", false, "allow a listen address that is not loopback")
 	positional, ok := parseAnywhere(flags, args)
 	if !ok {
@@ -75,7 +76,7 @@ func githubHooksServe(ctx context.Context, socketPath string, args []string, std
 		return fail(stderr, errors.New("github-hooks serve publishes through the daemon's socket; --socket is empty"))
 	}
 	logger := log.New(stderr, "", log.LstdFlags)
-	handler, err := githubhooks.NewHandler(githubhooks.Config{Secret: secret, Team: *team, Repos: allow, Publisher: unixapi.NewClient(socketPath), Log: logger})
+	handler, err := githubhooks.NewHandler(githubhooks.Config{Secret: secret, Team: *team, Repos: allow, BranchPrefix: *branchPrefix, Publisher: unixapi.NewClient(socketPath), Log: logger})
 	if err != nil {
 		return fail(stderr, err)
 	}

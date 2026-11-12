@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/underpass-ai/axlr-bots/application"
 )
@@ -31,10 +32,21 @@ func IdempotencyKey(delivery string, number int) string {
 	return fmt.Sprintf("github:%s:%d", delivery, number)
 }
 
-// FromCheckSuite maps a completed check suite to one pr.ci per pull
-// request it names, each once; another action maps to none.
-func FromCheckSuite(delivery, team string, event CheckSuiteEvent) ([]application.PublishGroupEventCommand, error) {
-	if event.Action != actionCompleted {
+// DefaultBranchPrefix is the dev team's own branches (dev/<product>/<fix>):
+// a webhook of any other branch (a person's PR) wakes no bot.
+const DefaultBranchPrefix = "dev/"
+
+// ownBranch reports whether the branch is one the prefix maps; an empty
+// prefix maps every branch.
+func ownBranch(prefix, branch string) bool {
+	return prefix == "" || strings.HasPrefix(branch, prefix)
+}
+
+// FromCheckSuite maps a completed check suite of a branch with the prefix
+// to one pr.ci per pull request it names, each once; another action or
+// branch maps to none.
+func FromCheckSuite(delivery, team, prefix string, event CheckSuiteEvent) ([]application.PublishGroupEventCommand, error) {
+	if event.Action != actionCompleted || !ownBranch(prefix, event.CheckSuite.HeadBranch) {
 		return nil, nil
 	}
 	repo, suite := event.Repository.FullName, event.CheckSuite
@@ -64,10 +76,10 @@ func FromCheckSuite(delivery, team string, event CheckSuiteEvent) ([]application
 	return commands, nil
 }
 
-// FromPullRequest maps a pull request closed merged to pr.mergeada;
-// anything else maps to none.
-func FromPullRequest(delivery, team string, event PullRequestEvent) ([]application.PublishGroupEventCommand, error) {
-	if event.Action != actionClosed || !event.PullRequest.Merged || event.Number < 1 {
+// FromPullRequest maps a pull request of a branch with the prefix closed
+// merged to pr.mergeada; anything else maps to none.
+func FromPullRequest(delivery, team, prefix string, event PullRequestEvent) ([]application.PublishGroupEventCommand, error) {
+	if event.Action != actionClosed || !event.PullRequest.Merged || event.Number < 1 || !ownBranch(prefix, event.PullRequest.Head.Ref) {
 		return nil, nil
 	}
 	repo, pr := event.Repository.FullName, event.PullRequest

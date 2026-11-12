@@ -32,6 +32,9 @@ type Config struct {
 	Team string
 	// Repos is the allow-list of owner/name; empty is DefaultRepos.
 	Repos []string
+	// BranchPrefix maps only the branches that start with it (dev/: the
+	// dev team's own); empty maps every branch.
+	BranchPrefix string
 	// Publisher publishes as the operator.
 	Publisher Publisher
 	// Log gets one line per delivery, never its body; nil discards.
@@ -47,6 +50,7 @@ type Handler struct {
 	secret  []byte
 	team    string
 	repos   []string
+	prefix  string
 	publish Publisher
 	log     *log.Logger
 	timeout time.Duration
@@ -75,7 +79,7 @@ func NewHandler(config Config) (*Handler, error) {
 	if timeout <= 0 {
 		timeout = DefaultPublishTimeout
 	}
-	return &Handler{secret: slices.Clone(config.Secret), team: config.Team, repos: repos, publish: config.Publisher, log: logger, timeout: timeout}, nil
+	return &Handler{secret: slices.Clone(config.Secret), team: config.Team, repos: repos, prefix: config.BranchPrefix, publish: config.Publisher, log: logger, timeout: timeout}, nil
 }
 
 // ServeHTTP answers one delivery: 405, 413, 401, 400, 204 for what it
@@ -159,14 +163,14 @@ func (h *Handler) commands(event, delivery string, body []byte) ([]application.P
 		if err := json.Unmarshal(body, &payload); err != nil {
 			return nil, "", err
 		}
-		commands, err := FromCheckSuite(delivery, h.team, payload)
+		commands, err := FromCheckSuite(delivery, h.team, h.prefix, payload)
 		return commands, payload.Repository.FullName, err
 	}
 	var payload PullRequestEvent
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, "", err
 	}
-	commands, err := FromPullRequest(delivery, h.team, payload)
+	commands, err := FromPullRequest(delivery, h.team, h.prefix, payload)
 	return commands, payload.Repository.FullName, err
 }
 
