@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/adapters/activityaudit"
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/internal/statelock"
 )
 
@@ -24,9 +23,9 @@ const activityAuditDir = "activity-audit"
 
 // activityAudit runs the activity audit adapter
 // (docs/runbooks/activity-audit.md). It reads and publishes through the
-// daemon's socket only; of the state directory it touches its own
-// subdirectory.
-func activityAudit(stateDir, socketPath string, args []string, stdout, stderr io.Writer) int {
+// daemon's socket, or its operator address with --control; of the state
+// directory it touches its own subdirectory (or --store).
+func activityAudit(stateDir, socketPath string, remote remoteControl, args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	verb := ""
@@ -35,7 +34,7 @@ func activityAudit(stateDir, socketPath string, args []string, stdout, stderr io
 	}
 	switch verb {
 	case "serve":
-		return activityAuditServe(ctx, stateDir, socketPath, args, stdout, stderr)
+		return activityAuditServe(ctx, stateDir, socketPath, remote, args, stdout, stderr)
 	case "report":
 		return activityAuditReport(stateDir, args, stdout, stderr)
 	}
@@ -46,7 +45,7 @@ func activityAudit(stateDir, socketPath string, args []string, stdout, stderr io
 // activityAuditServe audits each task when it ends until ctx ends; with
 // --once, the replay of --since only; with --dry-run, publishing nothing
 // and keeping nothing, and printing what it would have published.
-func activityAuditServe(ctx context.Context, stateDir, socketPath string, args []string, stdout, stderr io.Writer) int {
+func activityAuditServe(ctx context.Context, stateDir, socketPath string, remote remoteControl, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("activity-audit serve", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	team := flags.String("team", "", "the team the events are published to (required)")
@@ -76,7 +75,7 @@ func activityAuditServe(ctx context.Context, stateDir, socketPath string, args [
 		}
 		since = parsed
 	}
-	if socketPath == "" {
+	if socketPath == "" && !remote.enabled() {
 		return fail(stderr, errors.New("activity-audit serve reads and publishes through the daemon's socket; --socket is empty"))
 	}
 	dir := activityAuditStore(stateDir, *storeDir)
@@ -105,7 +104,10 @@ func activityAuditServe(ctx context.Context, stateDir, socketPath string, args [
 		fmt.Fprintf(stderr, "activity-audit: rearmed %s\n", strings.Join(rearmed, ","))
 	}
 	logger := log.New(stderr, "", log.LstdFlags)
-	client := unixapi.NewClient(socketPath)
+	client, err := remote.clientOr(socketPath)
+	if err != nil {
+		return fail(stderr, err)
+	}
 	config := activityaudit.AuditorConfig{Source: client, Publisher: client, Store: store, Team: *team, Event: *event, IgnorePrograms: splitList(*ignore), IgnoreTeamPartial: *teamPartial, PerMinute: *perMinute, Log: logger}
 	if *dryRun {
 		config.Publisher = nil
@@ -122,7 +124,7 @@ func activityAuditServe(ctx context.Context, stateDir, socketPath string, args [
 	if *dryRun {
 		where = "memory (dry run)"
 	}
-	logger.Printf("activity-audit: auditing the fleet through %s, publishing %s to team %s; seen-store %s", socketPath, *event, *team, where)
+	logger.Printf("activity-audit: auditing the fleet through %s, publishing %s to team %s; seen-store %s", remote.where(socketPath), *event, *team, where)
 	err = watcher.Run(ctx, since)
 	if *dryRun {
 		var due []activityaudit.SeenSignature

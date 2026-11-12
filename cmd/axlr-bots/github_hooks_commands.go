@@ -16,14 +16,14 @@ import (
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/adapters/githubhooks"
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // githubHooks runs the GitHub webhook adapter (docs/runbooks/github-hooks.md).
 // It never opens the state directory: it publishes through the daemon's
-// socket only, so a daemon that is down is a 502 GitHub can redeliver.
-func githubHooks(socketPath string, args []string, stdout, stderr io.Writer) int {
+// socket, or its operator address with --control, so a daemon that is
+// down is a 502 GitHub can redeliver.
+func githubHooks(socketPath string, remote remoteControl, args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	verb := ""
@@ -32,7 +32,7 @@ func githubHooks(socketPath string, args []string, stdout, stderr io.Writer) int
 	}
 	switch verb {
 	case "serve":
-		return githubHooksServe(ctx, socketPath, args, stderr)
+		return githubHooksServe(ctx, socketPath, remote, args, stderr)
 	case "redeliver":
 		return githubHooksRedeliver(ctx, nil, time.Now(), args, stdout, stderr)
 	}
@@ -41,7 +41,7 @@ func githubHooks(socketPath string, args []string, stdout, stderr io.Writer) int
 }
 
 // githubHooksServe serves POST /github until ctx ends.
-func githubHooksServe(ctx context.Context, socketPath string, args []string, stderr io.Writer) int {
+func githubHooksServe(ctx context.Context, socketPath string, remote remoteControl, args []string, stderr io.Writer) int {
 	flags := flag.NewFlagSet("github-hooks serve", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	listen := flags.String("listen", "127.0.0.1:7890", "where to listen: a loopback address, the tunnel's far end")
@@ -79,11 +79,15 @@ func githubHooksServe(ctx context.Context, socketPath string, args []string, std
 	if err != nil {
 		return fail(stderr, err)
 	}
-	if socketPath == "" {
+	if socketPath == "" && !remote.enabled() {
 		return fail(stderr, errors.New("github-hooks serve publishes through the daemon's socket; --socket is empty"))
 	}
+	publisher, err := remote.clientOr(socketPath)
+	if err != nil {
+		return fail(stderr, err)
+	}
 	logger := log.New(stderr, "", log.LstdFlags)
-	handler, err := githubhooks.NewHandler(githubhooks.Config{Secret: secret, Route: githubhooks.Route{Team: *team, CIEvent: *ciEvent, MergedEvent: *mergedEvent, BranchPrefix: *branchPrefix}, Repos: allow, Publisher: unixapi.NewClient(socketPath), Log: logger})
+	handler, err := githubhooks.NewHandler(githubhooks.Config{Secret: secret, Route: githubhooks.Route{Team: *team, CIEvent: *ciEvent, MergedEvent: *mergedEvent, BranchPrefix: *branchPrefix}, Repos: allow, Publisher: publisher, Log: logger})
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -94,7 +98,7 @@ func githubHooksServe(ctx context.Context, socketPath string, args []string, std
 		return fail(stderr, err)
 	}
 	server := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: time.Minute, ErrorLog: logger}
-	logger.Printf("github-hooks: listening on http://%s%s, publishing %s and %s to team %s through %s; repos %s; branches %s", listener.Addr(), githubhooks.Path, *ciEvent, *mergedEvent, *team, socketPath, strings.Join(allow, ","), branchesOf(*branchPrefix))
+	logger.Printf("github-hooks: listening on http://%s%s, publishing %s and %s to team %s through %s; repos %s; branches %s", listener.Addr(), githubhooks.Path, *ciEvent, *mergedEvent, *team, remote.where(socketPath), strings.Join(allow, ","), branchesOf(*branchPrefix))
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(listener) }()
 	select {

@@ -24,6 +24,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	axlrBin := flags.String("axlr-bin", defaultAXLRBinary(), "the axlr-tui to run tasks with (also AXLR_TUI)")
 	actor := flags.String("actor", defaultActor(), "who is acting, for the audit log; task approve, deny and decide send it as who decides (a bot's approvers name it exactly)")
 	socket := flags.String("socket", defaultSocket(), "the daemon's socket (also AXLR_BOTS_SOCKET; default <state>/axlr-bots.sock; empty: never use a daemon)")
+	var remote remoteControl
+	flags.StringVar(&remote.URL, "control", os.Getenv("AXLR_BOTS_CONTROL"), "a control plane on another host: its operator address, https://host:7879, used in place of the socket (also AXLR_BOTS_CONTROL)")
+	flags.StringVar(&remote.TokenFile, "token-file", os.Getenv("AXLR_BOTS_TOKEN_FILE"), "with --control, the file holding the operator token (also AXLR_BOTS_TOKEN_FILE)")
+	flags.StringVar(&remote.CAFile, "ca-file", os.Getenv("AXLR_BOTS_CA_FILE"), "with --control, the CA the control plane's certificate is checked against, the fleet CA from ca show (also AXLR_BOTS_CA_FILE; default the system's)")
 	flags.Usage = func() { printUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -40,6 +44,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if socketPath == "" && !flagSet(flags, "socket") && os.Getenv("AXLR_BOTS_SOCKET") == "" {
 		socketPath = filepath.Join(*stateDir, socketFileName)
 	}
+	if err := remote.validate(); err != nil {
+		fmt.Fprintln(stderr, "axlr-bots:", err)
+		return exitUsage
+	}
 	ctx := context.Background()
 	switch rest[0] {
 	case "install":
@@ -47,24 +55,31 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "uninstall":
 		return uninstall(rest[1:], stdout, stderr)
 	case "github-hooks":
-		return githubHooks(socketPath, rest[1:], stdout, stderr)
+		return githubHooks(socketPath, remote, rest[1:], stdout, stderr)
 	case "activity-audit":
-		return activityAudit(*stateDir, socketPath, rest[1:], stdout, stderr)
+		return activityAudit(*stateDir, socketPath, remote, rest[1:], stdout, stderr)
 	case "health":
-		return health(ctx, socketPath, rest[1:], stdout, stderr)
+		return health(ctx, socketPath, remote, rest[1:], stdout, stderr)
 	case "version":
 		return version(rest[1:], stdout, stderr)
 	}
-	app, err := newApp(*stateDir, *axlrBin, *actor)
-	if err != nil {
-		fmt.Fprintln(stderr, "axlr-bots:", err)
-		return exitError
+	// With --control a command goes to the operator address and never
+	// opens the state directory; serve, ca and task reconcile work on the
+	// local state whatever --control says.
+	var app application.Dependencies
+	if !remote.enabled() || localOnly(rest) {
+		var err error
+		app, err = newApp(*stateDir, *axlrBin, *actor)
+		if err != nil {
+			fmt.Fprintln(stderr, "axlr-bots:", err)
+			return exitError
+		}
 	}
 	if rest[0] == "serve" {
 		return serve(ctx, app, *stateDir, socketPath, rest[1:], stdout, stderr)
 	}
 	if rest[0] == "overview" {
-		service, release, err := newService(ctx, app, *stateDir, socketPath, nil)
+		service, release, err := newService(ctx, app, *stateDir, socketPath, remote, nil)
 		if err != nil {
 			return fail(stderr, err)
 		}
@@ -86,7 +101,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "ca issue-client":
 		return caIssueClient(*stateDir, rest, stdout, stderr)
 	}
-	service, release, err := newService(ctx, app, *stateDir, socketPath, nil)
+	service, release, err := newService(ctx, app, *stateDir, socketPath, remote, nil)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -251,6 +266,9 @@ func defaultActor() string {
 
 func printUsage(w io.Writer) {
 	fmt.Fprint(w, `usage: axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>] <command>
+       axlr-bots --control https://host:7879 --token-file <path> [--ca-file <pem>] <command>
+                                      the same commands against a control plane on another
+                                      host, through its operator address
 
   serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--api-token-file <path>]
         [--bus direct|nats] [--nats-url <url>] [--nats-creds <file>]

@@ -49,7 +49,7 @@ A redelivery keeps its `X-GitHub-Delivery` (GitHub's webhook best practices say 
 
 | Check | How |
 |---|---|
-| The control plane runs | `systemctl --user status axlr-bots` active; its socket is `~/.local/state/axlr-bots/axlr-bots.sock`. The adapter publishes through that socket only and never opens the state directory: with the daemon down every delivery is `502` |
+| The control plane runs | `systemctl --user status axlr-bots` active; its socket is `~/.local/state/axlr-bots/axlr-bots.sock`. The adapter publishes through that socket and never opens the state directory: with the daemon down every delivery is `502`. On another host than the control plane, give it the operator address instead: `axlr-bots --control https://<host>:7879 --token-file <token> --ca-file <fleet CA> github-hooks serve …` |
 | The team exists | `axlr-bots group get team-a` names its members. Until its bots subscribe to the two events' names, the events land on the timeline and wake nobody |
 | The tunnel's key and host key | `<tunnel-key>` (mode 600) and `<known-hosts-file>`, the gateway's pinned host key. `ssh -i <tunnel-key> -o UserKnownHostsFile=<known-hosts-file> -o StrictHostKeyChecking=yes <tunnel-user>@<gateway-host> true` must not ask anything |
 | The gateway | set up outside this repository; confirm it there: TLS on `<port>`, `/github` proxied to `http://127.0.0.1:<tunnel-port>/github`, and `<tunnel-user>` allowed that forward and nothing else (for example `restrict,port-forwarding,permitlisten="127.0.0.1:<tunnel-port>"` before its key in `authorized_keys`). A firewall that lets in only GitHub's hook ranges (`gh api meta --jq .hooks`) is optional hardening |

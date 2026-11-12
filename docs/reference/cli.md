@@ -4,6 +4,7 @@ Two commands come out of this module: `axlr-bots`, the control plane and the ope
 
 ```text
 axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>] <command>
+axlr-bots --control https://host:7879 --token-file <path> [--ca-file <pem>] <command>   the same commands against a control plane on another host
 
   serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--api-token-file <path>] [--api-url <url>] [--panel-url <url>]
         [--bus direct|nats] [--nats-url <url>] [--nats-creds <file>]              pushes to the nodes also over a broker (bus port)
@@ -75,6 +76,7 @@ axlr-node codex-proxy [--listen 127.0.0.1:8790] [--codex-home ~/.codex] [--refre
 | state directory | `--state` | `AXLR_BOTS_STATE`, then `XDG_STATE_HOME/axlr-bots` | `~/.local/state/axlr-bots` |
 | the AXLR binary | `--axlr-bin` | `AXLR_TUI` | `axlr-tui` on `PATH` |
 | the daemon's socket | `--socket` (`""` never uses a daemon) | `AXLR_BOTS_SOCKET` | `<state>/axlr-bots.sock` |
+| a control plane on another host | `--control https://host:7879` (its operator address), `--token-file` (the operator token), `--ca-file` (the fleet CA, `ca show`) | `AXLR_BOTS_CONTROL`, `AXLR_BOTS_TOKEN_FILE`, `AXLR_BOTS_CA_FILE` | none: the socket. With `--control` every command but `serve`, `ca`, `install`, `uninstall` and `task reconcile` goes to that address (`github-hooks serve`, `activity-audit serve` and `health` too), never opens the state directory and never falls back to it; `--token-file` is required, `--ca-file` defaults to the system's CAs |
 | node address, server names, operator address | `serve --listen`, `--server-names`, `--api-listen` | `AXLR_BOTS_LISTEN`, `AXLR_BOTS_SERVER_NAMES`, `AXLR_BOTS_API_LISTEN` | none: the socket only |
 | operator token file | `serve --api-token-file` | | `<state>/api.token` |
 | the operator API's base URL in approval notifications | `serve --api-url` | `AXLR_BOTS_API_URL` | `https://` and the `--api-listen` address (the host's name for a wildcard address) |

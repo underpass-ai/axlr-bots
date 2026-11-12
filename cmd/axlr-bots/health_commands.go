@@ -10,13 +10,26 @@ import (
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
-// health asks the daemon's socket for /healthz: exit 0 when it answers,
+// health asks the daemon's socket (or the operator address with
+// --control) for /healthz: exit 0 when it answers,
 // 1 when it does not. A container's healthcheck runs it, since a minimal
 // image has no shell or curl.
-func health(ctx context.Context, socketPath string, args []string, stdout, stderr io.Writer) int {
+func health(ctx context.Context, socketPath string, remote remoteControl, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 0 {
 		fmt.Fprintln(stderr, "axlr-bots: health takes no arguments")
 		return exitUsage
+	}
+	if remote.enabled() {
+		client, err := remote.client()
+		if err != nil {
+			return fail(stderr, err)
+		}
+		if err := client.Health(ctx); err != nil {
+			fmt.Fprintf(stderr, "axlr-bots: no service answers on %s: %v\n", remote.URL, err)
+			return exitError
+		}
+		fmt.Fprintln(stdout, "ok")
+		return exitOK
 	}
 	if socketPath == "" {
 		fmt.Fprintln(stderr, "axlr-bots: health needs a socket (--socket or AXLR_BOTS_SOCKET)")

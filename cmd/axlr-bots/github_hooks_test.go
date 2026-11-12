@@ -70,7 +70,7 @@ func TestGitHubHooksServeRefuses(t *testing.T) {
 		"port taken":      {socket, with("--secret-file", good, "--listen", "127.0.0.1:-1"), exitError, "invalid port"},
 	} {
 		var stderr bytes.Buffer
-		code := githubHooksServe(context.Background(), c.socket, c.args, &stderr)
+		code := githubHooksServe(context.Background(), c.socket, remoteControl{}, c.args, &stderr)
 		if code != c.code || !strings.Contains(stderr.String(), c.want) {
 			t.Errorf("%s: exit %d, %s", name, code, stderr.String())
 		}
@@ -125,7 +125,7 @@ func TestGitHubHooksServePublishesToTheTeam(t *testing.T) {
 	hooksDone := make(chan int, 1)
 	var hooksErr syncBuffer
 	go func() {
-		hooksDone <- githubHooksServe(hooksCtx, socket, []string{"--secret-file", secret, "--listen", "127.0.0.1:0",
+		hooksDone <- githubHooksServe(hooksCtx, socket, remoteControl{}, []string{"--secret-file", secret, "--listen", "127.0.0.1:0",
 			"--team", "builders", "--ci-event", "pull-request.checked", "--merged-event", "pull-request.merged",
 			"--repos", "example-org/repo,example-org/other", "--branch-prefix", "bot/"}, &hooksErr)
 	}()

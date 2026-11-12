@@ -49,7 +49,7 @@ func TestActivityAuditRefuses(t *testing.T) {
 		"daemon down":   {socket, append([]string{"--store", t.TempDir()}, need...), exitError, "list the teams"},
 	} {
 		var stdout, stderr bytes.Buffer
-		code := activityAuditServe(context.Background(), state, c.socket, c.args, &stdout, &stderr)
+		code := activityAuditServe(context.Background(), state, c.socket, remoteControl{}, c.args, &stdout, &stderr)
 		if code != c.code || !strings.Contains(stderr.String(), c.want) {
 			t.Errorf("%s: exit %d, %s", name, code, stderr.String())
 		}
@@ -128,7 +128,7 @@ func TestActivityAuditServeAgainstTheDaemon(t *testing.T) {
 	serveOnce := func(extra ...string) (int, string, string) {
 		var stdout, stderr bytes.Buffer
 		args := append([]string{"--team", "watchers", "--event", "activity.failure", "--store", store, "--once", "--since", since.Format(time.RFC3339Nano)}, extra...)
-		code := activityAuditServe(ctx, state, socket, args, &stdout, &stderr)
+		code := activityAuditServe(ctx, state, socket, remoteControl{}, args, &stdout, &stderr)
 		return code, stdout.String(), stderr.String()
 	}
 	published := func() []domain.Event {
