@@ -2,7 +2,7 @@ apiVersion: v2
 name: axlr-bots-node
 description: The AXLR Bots node agent as a sidecar beside a service, with a demo workload
 type: application
-version: 0.2.0
+version: 0.3.0
 appVersion: "0.2.0"
 home: https://github.com/underpass-ai/axlr-bots
 sources:
