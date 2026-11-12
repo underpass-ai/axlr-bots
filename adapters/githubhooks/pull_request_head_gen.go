@@ -5,7 +5,7 @@ package githubhooks
 // PullRequestHead is the schema PullRequestHead of the spec.
 type PullRequestHead struct {
 	SHA string `json:"sha"`
-	// The pull request's head branch; the adapter maps only the dev team's own
-	// branches (--branch-prefix, dev/ by default).
+	// The pull request's head branch; the adapter maps only the branches that
+	// start with --branch-prefix (empty by default: every branch).
 	Ref string `json:"ref,omitempty"`
 }

@@ -1,20 +1,21 @@
 package githubhooks
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
 	"strings"
 )
 
-// DefaultRepos are the products whose hooks the adapter maps when --repos
-// is not given.
-var DefaultRepos = []string{"underpass-ai/kmp", "underpass-ai/made", "underpass-ai/axlr", "underpass-ai/axlr-bots"}
+// ErrNoRepos is an allow-list that names no repository: the operator
+// names the repositories, the platform names none.
+var ErrNoRepos = errors.New("githubhooks: no repositories: name them, owner/name comma-separated")
 
 var repoPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$`)
 
 // ParseRepos reads a comma-separated allow-list of owner/name; empty is
-// DefaultRepos.
+// ErrNoRepos.
 func ParseRepos(raw string) ([]string, error) {
 	var repos []string
 	for _, repo := range strings.Split(raw, ",") {
@@ -30,7 +31,7 @@ func ParseRepos(raw string) ([]string, error) {
 		}
 	}
 	if len(repos) == 0 {
-		return slices.Clone(DefaultRepos), nil
+		return nil, ErrNoRepos
 	}
 	return repos, nil
 }

@@ -50,7 +50,7 @@ func at(ago time.Duration) string { return now.Add(-ago).Format(time.RFC3339) }
 func TestRedeliverPicksOnlyTheFailedWithoutASuccess(t *testing.T) {
 	api := &fakeAPI{
 		hooks: map[string][]Hook{
-			"underpass-ai/kmp": {
+			"example-org/repo": {
 				{ID: 1, Active: true, Config: HookConfig{URL: "https://gateway.example:8443/github"}},
 				{ID: 2, Active: true, Config: HookConfig{URL: "https://ci.example/hook"}},
 				{ID: 3, Active: false, Config: HookConfig{URL: "https://old.example/github"}},
@@ -72,18 +72,18 @@ func TestRedeliverPicksOnlyTheFailedWithoutASuccess(t *testing.T) {
 			3: {{ID: 90, GUID: "h", DeliveredAt: at(time.Hour), StatusCode: 500}},
 		},
 	}
-	got, err := Redeliver(context.Background(), api, RedeliverOptions{Repos: []string{"underpass-ai/kmp", "underpass-ai/made"}, Since: 24 * time.Hour, Now: now})
+	got, err := Redeliver(context.Background(), api, RedeliverOptions{Repos: []string{"example-org/repo", "example-org/other"}, Since: 24 * time.Hour, Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(api.attempts, " ") != "underpass-ai/kmp/1/50 underpass-ai/kmp/1/11" {
+	if strings.Join(api.attempts, " ") != "example-org/repo/1/50 example-org/repo/1/11" {
 		t.Errorf("attempts = %v", api.attempts)
 	}
-	if len(got) != 2 || got[1] != (Redelivery{Repo: "underpass-ai/kmp", Hook: 1, Delivery: 11, GUID: "a", Event: "check_suite", StatusCode: 502, DeliveredAt: at(time.Hour)}) {
+	if len(got) != 2 || got[1] != (Redelivery{Repo: "example-org/repo", Hook: 1, Delivery: 11, GUID: "a", Event: "check_suite", StatusCode: 502, DeliveredAt: at(time.Hour)}) {
 		t.Errorf("redelivered = %+v", got)
 	}
 	api.attempts = nil
-	if _, err := Redeliver(context.Background(), api, RedeliverOptions{Repos: []string{"underpass-ai/kmp"}, HookURL: "https://ci.example/hook", Since: 24 * time.Hour, Now: now}); err != nil || strings.Join(api.attempts, " ") != "underpass-ai/kmp/2/80" {
+	if _, err := Redeliver(context.Background(), api, RedeliverOptions{Repos: []string{"example-org/repo"}, HookURL: "https://ci.example/hook", Since: 24 * time.Hour, Now: now}); err != nil || strings.Join(api.attempts, " ") != "example-org/repo/2/80" {
 		t.Errorf("--hook-url: %v %v", api.attempts, err)
 	}
 }

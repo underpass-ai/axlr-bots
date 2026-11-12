@@ -6,8 +6,8 @@ package githubhooks
 type CheckSuite struct {
 	// The commit the suite ran on.
 	HeadSHA string `json:"head_sha"`
-	// The branch the suite ran on; the adapter maps only the dev team's own
-	// branches (--branch-prefix, dev/ by default).
+	// The branch the suite ran on; the adapter maps only the branches that
+	// start with --branch-prefix (empty by default: every branch).
 	HeadBranch string `json:"head_branch,omitempty"`
 	// success, failure, neutral, cancelled, timed_out, action_required, stale,
 	// skipped, startup_failure; null at GitHub before the suite completes,

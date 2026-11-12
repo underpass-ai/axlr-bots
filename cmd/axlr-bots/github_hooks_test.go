@@ -34,28 +34,40 @@ func hookSecretFile(t *testing.T, mode os.FileMode, text string) string {
 func TestGitHubHooksServeRefuses(t *testing.T) {
 	good := hookSecretFile(t, 0o600, "s3cret\n")
 	socket := filepath.Join(t.TempDir(), "cp.sock")
+	// need is what serve requires besides the secret: the team, both
+	// events' names and the repositories, none with a default. A flag
+	// given after them wins (the flag package keeps the last).
+	need := []string{"--team", "builders", "--ci-event", "pull-request.checked", "--merged-event", "pull-request.merged", "--repos", "example-org/repo"}
+	with := func(args ...string) []string { return append(append([]string{}, need...), args...) }
 	for name, c := range map[string]struct {
 		socket string
 		args   []string
 		code   int
 		want   string
 	}{
-		"no secret":       {socket, nil, exitUsage, "needs --secret-file"},
-		"extra":           {socket, []string{"--secret-file", good, "extra"}, exitUsage, "needs --secret-file"},
+		"no secret":       {socket, need, exitUsage, "needs --secret-file"},
+		"extra":           {socket, with("--secret-file", good, "extra"), exitUsage, "needs --secret-file"},
+		"no team":         {socket, []string{"--secret-file", good, "--ci-event", "pull-request.checked", "--merged-event", "pull-request.merged", "--repos", "example-org/repo"}, exitUsage, "--team <team>"},
+		"no ci event":     {socket, []string{"--secret-file", good, "--team", "builders", "--merged-event", "pull-request.merged", "--repos", "example-org/repo"}, exitUsage, "--ci-event <name>"},
+		"no merged event": {socket, []string{"--secret-file", good, "--team", "builders", "--ci-event", "pull-request.checked", "--repos", "example-org/repo"}, exitUsage, "--merged-event <name>"},
+		"no repos":        {socket, []string{"--secret-file", good, "--team", "builders", "--ci-event", "pull-request.checked", "--merged-event", "pull-request.merged"}, exitUsage, "--repos"},
 		"bad flag":        {socket, []string{"--bogus"}, exitUsage, ""},
-		"group readable":  {socket, []string{"--secret-file", hookSecretFile(t, 0o640, "s")}, exitError, "readable by its group or others"},
-		"world readable":  {socket, []string{"--secret-file", hookSecretFile(t, 0o604, "s")}, exitError, "chmod 600"},
-		"empty secret":    {socket, []string{"--secret-file", hookSecretFile(t, 0o600, "\n")}, exitError, "is empty"},
-		"missing secret":  {socket, []string{"--secret-file", filepath.Join(t.TempDir(), "none")}, exitError, "no such file"},
-		"a directory":     {socket, []string{"--secret-file", t.TempDir()}, exitError, "not a regular file"},
-		"every interface": {socket, []string{"--secret-file", good, "--listen", ":7890"}, exitError, "not a loopback address; give --public"},
-		"0.0.0.0":         {socket, []string{"--secret-file", good, "--listen", "0.0.0.0:7890"}, exitError, "not a loopback address"},
-		"a LAN address":   {socket, []string{"--secret-file", good, "--listen", "192.168.1.10:7890"}, exitError, "not a loopback address"},
-		"no port":         {socket, []string{"--secret-file", good, "--listen", "127.0.0.1"}, exitError, "missing port"},
-		"bad team":        {socket, []string{"--secret-file", good, "--listen", "127.0.0.1:0", "--team", "Not A Team"}, exitError, "team"},
-		"bad repos":       {socket, []string{"--secret-file", good, "--listen", "127.0.0.1:0", "--repos", "nope"}, exitError, "not a repository"},
-		"no socket":       {"", []string{"--secret-file", good, "--listen", "127.0.0.1:0"}, exitError, "--socket is empty"},
-		"port taken":      {socket, []string{"--secret-file", good, "--listen", "127.0.0.1:-1"}, exitError, "invalid port"},
+		"group readable":  {socket, with("--secret-file", hookSecretFile(t, 0o640, "s")), exitError, "readable by its group or others"},
+		"world readable":  {socket, with("--secret-file", hookSecretFile(t, 0o604, "s")), exitError, "chmod 600"},
+		"empty secret":    {socket, with("--secret-file", hookSecretFile(t, 0o600, "\n")), exitError, "is empty"},
+		"missing secret":  {socket, with("--secret-file", filepath.Join(t.TempDir(), "none")), exitError, "no such file"},
+		"a directory":     {socket, with("--secret-file", t.TempDir()), exitError, "not a regular file"},
+		"every interface": {socket, with("--secret-file", good, "--listen", ":7890"), exitError, "not a loopback address; give --public"},
+		"0.0.0.0":         {socket, with("--secret-file", good, "--listen", "0.0.0.0:7890"), exitError, "not a loopback address"},
+		"a LAN address":   {socket, with("--secret-file", good, "--listen", "192.168.1.10:7890"), exitError, "not a loopback address"},
+		"no port":         {socket, with("--secret-file", good, "--listen", "127.0.0.1"), exitError, "missing port"},
+		"bad team":        {socket, with("--secret-file", good, "--listen", "127.0.0.1:0", "--team", "Not A Team"), exitError, "team"},
+		"bad ci event":    {socket, with("--secret-file", good, "--listen", "127.0.0.1:0", "--ci-event", "Not An Event"), exitError, "event name"},
+		"bad merged":      {socket, with("--secret-file", good, "--listen", "127.0.0.1:0", "--merged-event", "pr..merged"), exitError, "event name"},
+		"bad repos":       {socket, with("--secret-file", good, "--listen", "127.0.0.1:0", "--repos", "nope"), exitError, "not a repository"},
+		"only commas":     {socket, with("--secret-file", good, "--listen", "127.0.0.1:0", "--repos", ",,"), exitError, "no repositories"},
+		"no socket":       {"", with("--secret-file", good, "--listen", "127.0.0.1:0"), exitError, "--socket is empty"},
+		"port taken":      {socket, with("--secret-file", good, "--listen", "127.0.0.1:-1"), exitError, "invalid port"},
 	} {
 		var stderr bytes.Buffer
 		code := githubHooksServe(context.Background(), c.socket, c.args, &stderr)
@@ -75,13 +87,15 @@ func TestGitHubHooksServeRefuses(t *testing.T) {
 	if code := run([]string{"--socket", socket, "github-hooks", "serve"}, &stdout, &stderr); code != exitUsage {
 		t.Errorf("serve through run: %d", code)
 	}
-	if code := run([]string{"github-hooks", "redeliver", "--since", "0s"}, &stdout, &stderr); code != exitUsage {
+	if code := run([]string{"github-hooks", "redeliver", "--repos", "a/b", "--since", "0s"}, &stdout, &stderr); code != exitUsage {
 		t.Errorf("redeliver through run: %d", code)
 	}
 }
 
 // The adapter against a real control plane: a merged PR and a finished CI
-// reach team dev as pr.mergeada and pr.ci, published as the operator; a
+// of a branch with the prefix reach the team under the names the flags
+// give, published as the operator; a branch without the prefix
+// publishes nothing; a
 // redelivery publishes nothing new; a bad signature is refused; with the
 // daemon gone a delivery is 502.
 func TestGitHubHooksServePublishesToTheTeam(t *testing.T) {
@@ -92,8 +106,8 @@ func TestGitHubHooksServePublishesToTheTeam(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	definition := filepath.Join(t.TempDir(), "dev-bot.json")
-	_ = os.WriteFile(definition, bytes.ReplaceAll(bytes.ReplaceAll(raw, []byte(`"releases"`), []byte(`"dev"`)), []byte(`"team-a"`), []byte(`"dev-a"`)), 0o644)
+	definition := filepath.Join(t.TempDir(), "builder-bot.json")
+	_ = os.WriteFile(definition, bytes.ReplaceAll(bytes.ReplaceAll(raw, []byte(`"releases"`), []byte(`"builders"`)), []byte(`"team-a"`), []byte(`"builder-a"`)), 0o644)
 	if code, _, errText := c.run("bot", "register", "--file", definition); code != exitOK {
 		t.Fatalf("register: %s", errText)
 	}
@@ -111,7 +125,9 @@ func TestGitHubHooksServePublishesToTheTeam(t *testing.T) {
 	hooksDone := make(chan int, 1)
 	var hooksErr syncBuffer
 	go func() {
-		hooksDone <- githubHooksServe(hooksCtx, socket, []string{"--secret-file", secret, "--listen", "127.0.0.1:0"}, &hooksErr)
+		hooksDone <- githubHooksServe(hooksCtx, socket, []string{"--secret-file", secret, "--listen", "127.0.0.1:0",
+			"--team", "builders", "--ci-event", "pull-request.checked", "--merged-event", "pull-request.merged",
+			"--repos", "example-org/repo,example-org/other", "--branch-prefix", "bot/"}, &hooksErr)
 	}()
 	listening := regexp.MustCompile(`listening on (http://\S+/github)`)
 	var url string
@@ -137,8 +153,9 @@ func TestGitHubHooksServePublishesToTheTeam(t *testing.T) {
 		return response.StatusCode
 	}
 	sign := func(body string) string { return githubhooks.Sign([]byte("the-hook-secret"), []byte(body)) }
-	suite := `{"action": "completed", "check_suite": {"head_sha": "1a2b3c4d5e6f", "head_branch": "dev/kmp/a-20261112-kmp-7", "conclusion": "failure", "pull_requests": [{"number": 7}, {"number": 8}]}, "repository": {"full_name": "underpass-ai/kmp"}}`
-	merged := `{"action": "closed", "number": 7, "pull_request": {"merged": true, "merge_commit_sha": "9f8e7d6c5b4a", "head": {"sha": "1a2b3c4d5e6f", "ref": "dev/axlr-bots/a-20261112-axlr-bots-7"}}, "repository": {"full_name": "underpass-ai/axlr-bots"}}`
+	suite := `{"action": "completed", "check_suite": {"head_sha": "1a2b3c4d5e6f", "head_branch": "bot/repo/fix-7", "conclusion": "failure", "pull_requests": [{"number": 7}, {"number": 8}]}, "repository": {"full_name": "example-org/repo"}}`
+	merged := `{"action": "closed", "number": 7, "pull_request": {"merged": true, "merge_commit_sha": "9f8e7d6c5b4a", "head": {"sha": "1a2b3c4d5e6f", "ref": "bot/other/fix-7"}}, "repository": {"full_name": "example-org/other"}}`
+	persons := strings.Replace(merged, `"bot/other/fix-7"`, `"someone/fix-7"`, 1)
 	if code := send("check_suite", "d-1", suite, sign(suite)); code != http.StatusAccepted {
 		t.Fatalf("check_suite: %d\n%s", code, hooksErr.String())
 	}
@@ -151,8 +168,11 @@ func TestGitHubHooksServePublishesToTheTeam(t *testing.T) {
 	if code := send("check_suite", "d-3", suite, sign(suite+" ")); code != http.StatusUnauthorized {
 		t.Errorf("bad signature: %d", code)
 	}
+	if code := send("pull_request", "d-5", persons, sign(persons)); code != http.StatusNoContent {
+		t.Errorf("a branch without the prefix: %d", code)
+	}
 	client := unixapi.NewClient(socket)
-	events, err := client.ListGroupEvents(context.Background(), application.GroupEventsQuery{Name: "dev", Limit: 100})
+	events, err := client.ListGroupEvents(context.Background(), application.GroupEventsQuery{Name: "builders", Limit: 100})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +183,7 @@ func TestGitHubHooksServePublishesToTheTeam(t *testing.T) {
 		}
 	}
 	if len(published) != 3 {
-		t.Fatalf("published %d events on dev: %+v", len(published), published)
+		t.Fatalf("published %d events on builders: %+v", len(published), published)
 	}
 	names := []string{}
 	for _, event := range published {
@@ -172,12 +192,12 @@ func TestGitHubHooksServePublishesToTheTeam(t *testing.T) {
 			t.Errorf("published by %v", event.Payload["by"])
 		}
 	}
-	if strings.Join(names, " ") != "pr.ci pr.ci pr.mergeada" {
+	if strings.Join(names, " ") != "pull-request.checked pull-request.checked pull-request.merged" {
 		t.Errorf("names = %v", names)
 	}
 	data, _ := json.Marshal(published[2].Payload["data"])
 	if !strings.Contains(string(data), `"merge_sha":"9f8e7d6c5b4a"`) || !strings.Contains(string(data), `"number":7`) {
-		t.Errorf("pr.mergeada data = %s", data)
+		t.Errorf("merged data = %s", data)
 	}
 	stopDaemon()
 	<-daemonDone
@@ -188,7 +208,7 @@ func TestGitHubHooksServePublishesToTheTeam(t *testing.T) {
 	if code := <-hooksDone; code != exitOK {
 		t.Errorf("serve exit %d: %s", code, hooksErr.String())
 	}
-	if !strings.Contains(hooksErr.String(), "refused, bad signature") || !strings.Contains(hooksErr.String(), "pr.mergeada github:d-4:7 not published") {
+	if !strings.Contains(hooksErr.String(), "refused, bad signature") || !strings.Contains(hooksErr.String(), "pull-request.merged github:d-4:7 not published") {
 		t.Errorf("log:\n%s", hooksErr.String())
 	}
 }
@@ -223,7 +243,7 @@ func TestGitHubHooksRedeliver(t *testing.T) {
 	now := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
 	api := &fakeHookAPI{}
 	var stdout, stderr bytes.Buffer
-	if code := githubHooksRedeliver(context.Background(), api, now, []string{"--repos", "underpass-ai/kmp", "--since", "2h"}, &stdout, &stderr); code != exitOK {
+	if code := githubHooksRedeliver(context.Background(), api, now, []string{"--repos", "example-org/repo", "--since", "2h"}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("exit %d: %s", code, stderr.String())
 	}
 	var out []githubhooks.Redelivery
@@ -231,13 +251,13 @@ func TestGitHubHooksRedeliver(t *testing.T) {
 		t.Errorf("out %s, asked %v", stdout.String(), api.asked)
 	}
 	stdout.Reset()
-	if code := githubHooksRedeliver(context.Background(), &fakeHookAPI{}, now, []string{"--repos", "underpass-ai/kmp", "--since", "30m"}, &stdout, &stderr); code != exitOK || strings.TrimSpace(stdout.String()) != "[]" {
+	if code := githubHooksRedeliver(context.Background(), &fakeHookAPI{}, now, []string{"--repos", "example-org/repo", "--since", "30m"}, &stdout, &stderr); code != exitOK || strings.TrimSpace(stdout.String()) != "[]" {
 		t.Errorf("nothing newer: %d %s", code, stdout.String())
 	}
-	if code := githubHooksRedeliver(context.Background(), &fakeHookAPI{fail: true}, now, nil, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "not signed in") {
+	if code := githubHooksRedeliver(context.Background(), &fakeHookAPI{fail: true}, now, []string{"--repos", "example-org/repo"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "not signed in") {
 		t.Errorf("a failing gh: %d %s", code, stderr.String())
 	}
-	for _, args := range [][]string{{"extra"}, {"--bogus"}, {"--since", "-1h"}} {
+	for _, args := range [][]string{{"--repos", "a/b", "extra"}, {"--bogus"}, {"--repos", "a/b", "--since", "-1h"}, {"--since", "2h"}} {
 		if code := githubHooksRedeliver(context.Background(), api, now, args, &stdout, &stderr); code != exitUsage {
 			t.Errorf("%v: %d", args, code)
 		}

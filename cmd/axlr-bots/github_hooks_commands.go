@@ -46,16 +46,18 @@ func githubHooksServe(ctx context.Context, socketPath string, args []string, std
 	flags.SetOutput(stderr)
 	listen := flags.String("listen", "127.0.0.1:7890", "where to listen: a loopback address, the tunnel's far end")
 	secretFile := flags.String("secret-file", "", "the hook's secret, a file readable by its owner only")
-	team := flags.String("team", "dev", "the team the events are published to")
-	repos := flags.String("repos", "", "the repositories mapped, owner/name comma-separated (default "+strings.Join(githubhooks.DefaultRepos, ",")+")")
-	branchPrefix := flags.String("branch-prefix", githubhooks.DefaultBranchPrefix, "map only the branches that start with it (the dev team's own); empty maps every branch")
+	team := flags.String("team", "", "the team the events are published to (required)")
+	ciEvent := flags.String("ci-event", "", "the name of the event published when a pull request's CI ends (required)")
+	mergedEvent := flags.String("merged-event", "", "the name of the event published when a pull request is merged (required)")
+	repos := flags.String("repos", "", "the repositories mapped, owner/name comma-separated (required)")
+	branchPrefix := flags.String("branch-prefix", "", "map only the branches that start with it (default empty: every branch)")
 	public := flags.Bool("public", false, "allow a listen address that is not loopback")
 	positional, ok := parseAnywhere(flags, args)
 	if !ok {
 		return exitUsage
 	}
-	if len(positional) != 0 || *secretFile == "" {
-		fmt.Fprintln(stderr, "axlr-bots: github-hooks serve needs --secret-file <path>")
+	if len(positional) != 0 || *secretFile == "" || *team == "" || *ciEvent == "" || *mergedEvent == "" || *repos == "" {
+		fmt.Fprintln(stderr, "axlr-bots: github-hooks serve needs --secret-file <path> --team <team> --ci-event <name> --merged-event <name> --repos a/b,c/d")
 		return exitUsage
 	}
 	if err := loopbackOnly(*listen, *public); err != nil {
@@ -68,6 +70,11 @@ func githubHooksServe(ctx context.Context, socketPath string, args []string, std
 	if _, err := domain.NewTeamName(*team); err != nil {
 		return fail(stderr, err)
 	}
+	for _, name := range []string{*ciEvent, *mergedEvent} {
+		if _, err := domain.NewEventName(name); err != nil {
+			return fail(stderr, err)
+		}
+	}
 	allow, err := githubhooks.ParseRepos(*repos)
 	if err != nil {
 		return fail(stderr, err)
@@ -76,7 +83,7 @@ func githubHooksServe(ctx context.Context, socketPath string, args []string, std
 		return fail(stderr, errors.New("github-hooks serve publishes through the daemon's socket; --socket is empty"))
 	}
 	logger := log.New(stderr, "", log.LstdFlags)
-	handler, err := githubhooks.NewHandler(githubhooks.Config{Secret: secret, Team: *team, Repos: allow, BranchPrefix: *branchPrefix, Publisher: unixapi.NewClient(socketPath), Log: logger})
+	handler, err := githubhooks.NewHandler(githubhooks.Config{Secret: secret, Route: githubhooks.Route{Team: *team, CIEvent: *ciEvent, MergedEvent: *mergedEvent, BranchPrefix: *branchPrefix}, Repos: allow, Publisher: unixapi.NewClient(socketPath), Log: logger})
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -87,7 +94,7 @@ func githubHooksServe(ctx context.Context, socketPath string, args []string, std
 		return fail(stderr, err)
 	}
 	server := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: time.Minute, ErrorLog: logger}
-	logger.Printf("github-hooks: listening on http://%s%s, publishing to team %s through %s; repos %s", listener.Addr(), githubhooks.Path, *team, socketPath, strings.Join(allow, ","))
+	logger.Printf("github-hooks: listening on http://%s%s, publishing %s and %s to team %s through %s; repos %s; branches %s", listener.Addr(), githubhooks.Path, *ciEvent, *mergedEvent, *team, socketPath, strings.Join(allow, ","), branchesOf(*branchPrefix))
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(listener) }()
 	select {
@@ -108,15 +115,15 @@ func githubHooksRedeliver(ctx context.Context, api githubhooks.HookAPI, now time
 	flags := flag.NewFlagSet("github-hooks redeliver", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	since := flags.Duration("since", 24*time.Hour, "how far back a failed delivery is redelivered (GitHub keeps three days)")
-	repos := flags.String("repos", "", "the repositories, owner/name comma-separated (default "+strings.Join(githubhooks.DefaultRepos, ",")+")")
+	repos := flags.String("repos", "", "the repositories, owner/name comma-separated (required)")
 	hookURL := flags.String("hook-url", "", "the hook's URL; absent: the hooks whose URL's path is /github")
 	gh := flags.String("gh", "gh", "the gh CLI, signed in as an admin of the repositories")
 	positional, ok := parseAnywhere(flags, args)
 	if !ok {
 		return exitUsage
 	}
-	if len(positional) != 0 || *since <= 0 {
-		fmt.Fprintln(stderr, "axlr-bots: github-hooks redeliver takes [--since 24h] [--repos a/b,c/d] [--hook-url <url>] [--gh <path>]")
+	if len(positional) != 0 || *since <= 0 || *repos == "" {
+		fmt.Fprintln(stderr, "axlr-bots: github-hooks redeliver takes --repos a/b,c/d [--since 24h] [--hook-url <url>] [--gh <path>]")
 		return exitUsage
 	}
 	allow, err := githubhooks.ParseRepos(*repos)
@@ -132,6 +139,14 @@ func githubHooksRedeliver(ctx context.Context, api githubhooks.HookAPI, now time
 		return fail(stderr, err)
 	}
 	return exitOK
+}
+
+// branchesOf is the branches a prefix maps, for the log.
+func branchesOf(prefix string) string {
+	if prefix == "" {
+		return "every branch"
+	}
+	return prefix + "*"
 }
 
 // loopbackOnly refuses a listen address that is not loopback, unless
