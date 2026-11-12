@@ -127,7 +127,9 @@ func TestAgentRunsAssignedTasksAndDecisions(t *testing.T) {
 	go func() { done <- agent.Run(agentCtx) }()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if node, err := f.client.GetNode(ctx, "web-1"); err == nil && node.Status == "Online" {
+		// The registration line is logged after the control plane already
+		// shows the node Online: wait for both.
+		if node, err := f.client.GetNode(ctx, "web-1"); err == nil && node.Status == "Online" && strings.Contains(f.logs.String(), "registered as") {
 			break
 		}
 		if time.Now().After(deadline) {
