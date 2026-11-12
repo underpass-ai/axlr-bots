@@ -93,7 +93,7 @@ Decided 11 November 2026 (R7): no fixed rule of hours. *Jev checks every 5 minut
 
 Decided 12 November 2026 by the product owner, one by one (E8 to E8d).
 
-**Why.** QA's collect emitted two `qa.hallazgo.candidato` back to back. The second joined the first's Pending team task as a note (coalescing, above). The task triaged only the first finding and ended `Completed`; the second was never triaged. The [stuck work](#stuck-work) watcher judges only running tasks, so nothing caught it. The product owner: *"that QA task should not have finished, since it did not emit its final event"*.
+**Why.** A team's intake emitted two `order.received` back to back. The second joined the first's Pending team task as a note (coalescing, above). The task handled only the first order and ended `Completed`; the second was never handled. The [stuck work](#stuck-work) watcher judges only running tasks, so nothing caught it. The product owner: a task that has not emitted its final event should not have finished.
 
 | # | Decision |
 |---|---|
@@ -104,17 +104,17 @@ Decided 12 November 2026 by the product owner, one by one (E8 to E8d).
 | E8d | **A deterministic harness reads it.** The model never fetches the earlier task's context: the **node** reads the key from the team's store before the run, without a model, and gives it to the run (an LLM's prompt, a Jev program's input: *"both LLM bots and Jev bots can use it"*) |
 
 ```text
- qa.hallazgo.candidato h-1 ──► task T1 (Pending) ◄── h-2 joins as a note
-                                │ carries h-1, h-2
-                                ▼ runs, emits qa.hallazgo.triado {id: h-1}
-                              T1 ends: h-2 has no final
+ order.received o-1 ──► task T1 (Pending) ◄── o-2 joins as a note
+                                │ carries o-1, o-2
+                                ▼ runs, emits order.sorted {id: o-1}
+                              T1 ends: o-2 has no final
                                 ▼
-                              task R1 = redeliver:T1, carries h-2 (1 of 2),
+                              task R1 = redeliver:T1, carries o-2 (1 of 2),
                               data.context = ws:<T1's session>
-                                ▼ the node reads ws:<session> from kmp/qa
-                              R1 runs knowing what T1 did; emits qa.hallazgo.flaky {id: h-2}
+                                ▼ the node reads ws:<session> from kmp/team-a
+                              R1 runs knowing what T1 did; emits order.held {id: o-2}
                                 ▼
-                              done. A third miss of h-2 → warn.incomplete, no task
+                              done. A third miss of o-2 → warn.incomplete, no task
 ```
 
 ### The contract

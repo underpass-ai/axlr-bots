@@ -84,7 +84,7 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | See what a node and the control plane say to each other | [Node protocol](docs/reference/node-protocol.md) |
 | See how a node runs AXLR and reads the result | [Runtime contract](docs/architecture/runtime-contract.md) |
 | Look up a command, read a report | [Command reference](docs/reference/cli.md) |
-| Tell the dev team when a pull request's CI ends and when it is merged, from GitHub's webhooks | [GitHub hooks](docs/runbooks/github-hooks.md) |
+| Tell a team when a pull request's CI ends and when it is merged, from GitHub's webhooks, as events the operator names | [GitHub hooks](docs/runbooks/github-hooks.md) |
 | Tell a team once about each new kind of failure in the fleet's finished tasks, as an event the operator names | [Activity audit](docs/runbooks/activity-audit.md) |
 | Recover after a crash, a silent node or a lost control plane | [Recovery](docs/runbooks/recovery.md) |
 | Understand who keeps, decides and trusts what; what is next and left out | [Control plane, node and AXLR](docs/architecture/control-plane-node-axlr.md) |
