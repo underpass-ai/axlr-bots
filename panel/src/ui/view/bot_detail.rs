@@ -422,6 +422,9 @@ fn listens<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
         if sub.urgent {
             line = line.push(pill(Tone::Wait, "urgent", tokens));
         }
+        if !sub.expects.is_empty() {
+            line = line.push(muted(sub.ends_with(), tokens));
+        }
         line = line.push(Space::new().width(Length::Fill)).push(action(
             Kind::Ghost,
             Icon::Cross,
