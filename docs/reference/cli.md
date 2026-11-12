@@ -37,6 +37,8 @@ axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>]
   task report <task-id> [--path] | task reconcile [--grace <duration>]
   execution get <execution-id> | execution artifact <execution-id> <name> [--out <file>]
   overview [--since <rfc3339>]                 nodes, bots and tasks by status; tasks, executions and cost since local midnight
+  github-hooks serve --secret-file <path> [--listen 127.0.0.1:7890] [--team dev] [--repos a/b,c/d] [--public]   GitHub's webhooks on POST /github, verified with the hook's secret, published to the team as pr.ci and pr.mergeada through the daemon's socket; refuses a secret file its group or others may read and a listen address that is not loopback without --public ([runbook](../runbooks/github-hooks.md))
+  github-hooks redeliver [--since 24h] [--repos a/b,c/d] [--hook-url <url>] [--gh <path>]   through gh api, ask GitHub to redeliver each failed delivery of the /github hooks with no successful attempt; prints what it asked
   install [--system] [--prefix <dir>] [--state <dir>] [--node-state <dir>] [--unit-dir <dir>] [--env-file <path>]
           [--axlr-bin <path>] [--node-binary <path>] [--listen <addr>] [--server-names a,b] [--api-listen <addr>]
           [--control <url>] [--node-only] [--destdir <dir>] [--no-systemctl]

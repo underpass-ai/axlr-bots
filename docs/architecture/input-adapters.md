@@ -58,6 +58,7 @@ Which door "the world tells" goes through follows the topic's kind, as the bus f
 | State | each vehicle's `/state`: position, battery, phase; the stations' stock; the ships AIS hears | `fleet.json` (flat: vehicles, stations, zones, findings, ships, the incident); `telemetry.json` (metres from home, limits, targets) | `fleet_base.py`, `vehicle_pilot.py` |
 | Vision | PDOK's aerial photo of the frame under the vehicle (Esri out at sea), with the simulation's containers drawn in | `findings`: a one-line summary, short observations, an alert flag; during a search the containers' places in the frame as fractions, mapped to sightings | `vision.py`; unmerged work adds the simulator's own camera as a source |
 | Operator's hand | a webcam and a hand tracker | `info.tempo`, `info.cue.<section>`, `stop.all` on the orchestra's bus | planned for the orchestra; not in the repository |
+| GitHub | the four products' webhooks (`check_suite`, `pull_request`), signed with the hook's secret | `pr.ci` and `pr.mergeada` on team dev, as the operator ([topics between teams](team-topics.md#where-githubs-facts-come-from)) | `adapters/githubhooks`, `axlr-bots github-hooks serve` ([runbook](../runbooks/github-hooks.md)) |
 | Template | a fake world in memory | `observe(bot_id)` as text, `watch()` as events | `world-adapter/` (private repo `axlr-bots-examples`) |
 
 ## The template
@@ -86,7 +87,7 @@ Acceptance for a new adapter, before a world is announced:
 
 ## Where it goes in the code
 
-Nowhere in `domain/`, `application/` or `adapters/`: the control plane has every primitive. The exception is a source that already speaks a standard protocol and that opens incidents: it is a trigger type, a door of the control plane, as `alertmanager` is and `cloudwatch` is (below), not a process beside a world. A new world adds `<world>/` to the private repo `axlr-bots-examples` with its service, its adapter, a bot definition per creature and a Helm release of its own; the port fleet's files stay as they are.
+Nowhere in `domain/` or `application/`, and not in the control plane's `adapters/`: the control plane has every primitive. A world's adapter that the operator runs on a host of the fleet may live in this repository as its own package and subcommand, beside the control plane and not in it, as `adapters/githubhooks` does (`axlr-bots github-hooks serve`, a separate process that publishes through the socket). The other exception is a source that already speaks a standard protocol and that opens incidents: it is a trigger type, a door of the control plane, as `alertmanager` is and `cloudwatch` is (below), not a process beside a world. A new world adds `<world>/` to the private repo `axlr-bots-examples` with its service, its adapter, a bot definition per creature and a Helm release of its own; the port fleet's files stay as they are.
 
 ## Decision, 8 November 2026: CloudWatch through SNS
 

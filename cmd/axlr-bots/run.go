@@ -46,6 +46,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return install(rest[1:], stdout, stderr)
 	case "uninstall":
 		return uninstall(rest[1:], stdout, stderr)
+	case "github-hooks":
+		return githubHooks(socketPath, rest[1:], stdout, stderr)
 	}
 	app, err := newApp(*stateDir, *axlrBin, *actor)
 	if err != nil {
@@ -352,6 +354,13 @@ func printUsage(w io.Writer) {
                                       against its SHA-256
   overview [--since <time>]           nodes, bots and tasks by status; tasks, executions
                                       and cost since the start of today
+  github-hooks serve --secret-file <path> [--listen 127.0.0.1:7890] [--team dev] [--repos a/b,c/d] [--public]
+                                      the GitHub webhook adapter: POST /github, signed with the hook's
+                                      secret, publishes pr.ci and pr.mergeada to the team through the
+                                      daemon's socket (see docs/runbooks/github-hooks.md)
+  github-hooks redeliver [--since 24h] [--repos a/b,c/d] [--hook-url <url>] [--gh <path>]
+                                      ask GitHub, through gh api, to redeliver each failed delivery of
+                                      the /github hooks that never succeeded since; prints them
   install [--system] [--prefix <dir>] [--state <dir>] [--axlr-bin <path>]
           [--listen <addr>] [--server-names a,b] [--control <url>] [--node-only]
                                       install both binaries, the two systemd units and the
