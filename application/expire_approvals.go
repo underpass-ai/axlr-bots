@@ -147,6 +147,9 @@ func (uc ExpireApprovals) Expire(ctx context.Context, id domain.TaskID) (Expired
 		if err := newAnswerDeliverer(uc.deps).taskEnded(ctx, bot, task, domain.Execution{}); err != nil {
 			return ExpiredApproval{}, err
 		}
+		if err := newCompletionKeeper(uc.deps).taskEnded(ctx, bot, task); err != nil {
+			return ExpiredApproval{}, err
+		}
 		if err := newPlatformPublisher(uc.deps).taskEnded(ctx, bot, task, domain.Execution{}); err != nil {
 			return ExpiredApproval{}, err
 		}

@@ -109,10 +109,31 @@ func (uc EmitEvent) Execute(ctx context.Context, node domain.NodeID, executionID
 		return EmitAnswer{}, err
 	}
 	answer.Deliveries, answer.Skipped = append(answer.Deliveries, crossed...), append(answer.Skipped, notCrossed...)
+	if err := uc.recordFinal(ctx, e); err != nil {
+		return EmitAnswer{}, err
+	}
 	if err := uc.recordEmitted(ctx, e, answer); err != nil {
 		return EmitAnswer{}, err
 	}
 	return answer, nil
+}
+
+// recordFinal records on the emitting task an event whose name fits its
+// expects and that settles an event it carries
+// (docs/architecture/team-subscriptions.md, "Done is a contract"); a task
+// that expects nothing is not read again.
+func (uc EmitEvent) recordFinal(ctx context.Context, e emission) error {
+	if len(e.task.Expects()) == 0 {
+		return nil
+	}
+	task, err := uc.deps.Tasks.Get(ctx, e.task.ID())
+	if err != nil {
+		return err
+	}
+	if !task.RecordFinal(e.name, domain.DataID(e.data)) {
+		return nil
+	}
+	return uc.deps.Tasks.Save(ctx, task)
 }
 
 // load finds the execution the node holds, the task and bot behind it,

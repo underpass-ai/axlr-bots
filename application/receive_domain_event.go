@@ -180,10 +180,14 @@ func (uc ReceiveDomainEvent) deliverTask(ctx context.Context, event CrossingEven
 		correlation = "" // a new trace, then
 	}
 	origin := event.Origin()
-	created, err := submitTask(ctx, uc.deps, submission{
+	s := submission{
 		action: "task.event", bot: h.bot, trigger: trigger, objective: objective, key: key,
 		correlation: correlation, input: input, origin: &origin, waits: true,
-	})
+	}
+	if s.expects = h.sub.Expects(); len(s.expects) > 0 {
+		s.carried = []domain.CarriedEvent{{EventID: event.Event.Identity(), Name: event.Event.Name().String(), ID: event.Event.ID().String(), From: event.Event.From().String()}}
+	}
+	created, err := submitTask(ctx, uc.deps, s)
 	if err != nil {
 		return nil, nil, err
 	}

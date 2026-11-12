@@ -34,6 +34,10 @@ type RunMessage struct {
 	// asking team's store keeps of the question, which the node writes
 	// there; an older node ignores it.
 	ChannelMemory *domain.ChannelRecordSnapshot `json:"channelMemory,omitempty"`
+	// Contexts are the KMP keys whose content the node reads from the
+	// team's store before the run, without a model, and gives it; an older
+	// node ignores them and the run reads nothing.
+	Contexts []domain.ContextRef `json:"contexts,omitempty"`
 	// Runtime is what runs the task: absent for AXLR, a Jev program
 	// otherwise; an older node ignores it and runs AXLR.
 	Runtime *domain.RuntimeSnapshot `json:"runtime,omitempty"`

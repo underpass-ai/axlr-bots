@@ -17,6 +17,9 @@ import (
 // IncidentID names the incident a phase task works on; Policy the
 // level and tools its phase narrowed the bot's to, pinned at submission;
 // Skills the catalog skills the task runs with, pinned at submission too.
+// Expects is what the task records for its subscription's expects: the
+// final events it must emit, the events it carried and the finals it
+// emitted; absent for a task whose subscription expects none.
 // Waiting says
 // why a Pending task of a placed bot has not started: no node its
 // placement admits is Online with its runtime. The control plane fills
@@ -43,6 +46,7 @@ type TaskSnapshot struct {
 	IncidentID     string                `json:"incidentId,omitempty"`
 	Policy         *PinnedPolicySnapshot `json:"policy,omitempty"`
 	Skills         []SkillPinSnapshot    `json:"skills,omitempty"`
+	Expects        *TaskExpectsSnapshot  `json:"expects,omitempty"`
 	Waiting        string                `json:"waiting,omitempty"`
 	CreatedAt      time.Time             `json:"createdAt"`
 	UpdatedAt      time.Time             `json:"updatedAt"`

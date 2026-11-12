@@ -116,10 +116,20 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     }
     page = page.push(facts);
     let knew = task.knew();
-    if !knew.is_empty() {
-        let mut notes = column![muted("What its bot had heard, given to it when it started", tokens)].spacing(6);
-        for note in knew {
-            notes = notes.push(text(note).size(SMALL));
+    let earlier = task.earlier();
+    if !knew.is_empty() || !earlier.is_empty() {
+        let mut notes = column![].spacing(6);
+        if !knew.is_empty() {
+            notes = notes.push(muted("What its bot had heard, given to it when it started", tokens));
+            for note in knew {
+                notes = notes.push(text(note).size(SMALL));
+            }
+        }
+        if !earlier.is_empty() {
+            notes = notes.push(muted("What its node read of the team's memory before the run", tokens));
+            for read in earlier {
+                notes = notes.push(text(read).size(SMALL));
+            }
         }
         page = page.push(section(Icon::Clock, "Knew", notes, tokens));
     }

@@ -111,6 +111,9 @@ func (uc DecideWatch) decideTask(ctx context.Context, w questionWatcher, task do
 	if err != nil {
 		return WatchDecided{}, err
 	}
+	if err := newCompletionKeeper(uc.deps).taskStuck(ctx, bot, result.Task); err != nil {
+		return WatchDecided{}, err
+	}
 	if err := newPlatformPublisher(uc.deps).taskStuck(ctx, bot, result.Task, execution, reason); err != nil {
 		return WatchDecided{}, err
 	}

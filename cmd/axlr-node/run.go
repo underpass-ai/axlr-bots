@@ -75,7 +75,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	memoryTeams := flags.String("memory-teams", envOr("AXLR_NODE_MEMORY_TEAMS", ""), "the teams whose bots share one KMP store on this node, a,b, or * for every team; a bot of any other team keeps a store of its own; only a node that names a team answers its questions (also AXLR_NODE_MEMORY_TEAMS; default: none)")
 	teamChannel := flags.Bool("team-channel", envOr("AXLR_NODE_TEAM_CHANNEL", "") == "true", "run the team channel on this node: its runs may ask other teams (axlr_bots_ask_team, axlr_bots_question_status), its bots answer the teams --memory-teams names, and a team's Jev watcher runs here; off, the control plane offers none of it here and the node serves none (also AXLR_NODE_TEAM_CHANNEL=true; default: off)")
 	channelMemory := flags.Bool("team-channel-memory", envOr("AXLR_NODE_TEAM_CHANNEL_MEMORY", "") == "true", "write each team channel question this node's bots ask or answer into the team's KMP store, about project:<team>.canal, without a model; only for the teams --memory-teams names (also AXLR_NODE_TEAM_CHANNEL_MEMORY=true; default: off)")
-	kmpMCP := flags.String("kmp-mcp", envOr("AXLR_NODE_KMP_MCP", "kmp-mcp"), "with --team-channel-memory, the kmp-mcp that writes into the team's store (also AXLR_NODE_KMP_MCP)")
+	kmpMCP := flags.String("kmp-mcp", envOr("AXLR_NODE_KMP_MCP", "kmp-mcp"), "the kmp-mcp that writes the team channel's records (--team-channel-memory) and reads a task's context keys (--memory-teams) in the team's store (also AXLR_NODE_KMP_MCP)")
 	mcpConfig := flags.String("mcp-config", envOr("AXLR_NODE_MCP_CONFIG", ""), "the mcp.json a Jev bot's program finds its MCP server in (also AXLR_NODE_MCP_CONFIG; default: ~/.config/axlr/mcp.json, the node's AXLR's)")
 	jevModel := flags.String("jev-model", envOr("AXLR_NODE_JEV_MODEL", jev.DefaultModel), "the pinned Jev version the jev runtime asks (also AXLR_NODE_JEV_MODEL)")
 	bus := flags.String("bus", envOr("AXLR_NODE_BUS", "direct"), "how the control plane's pushes reach this node: direct (a stream over the node's own connection) or nats (also AXLR_NODE_BUS)")
@@ -208,6 +208,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if memoryWriter != nil {
 		agent.Memory = memoryWriter
 		logger.Printf("node: team channel memory on, with %s, for the teams whose memory this node shares", *kmpMCP)
+	}
+	if len(sharedMemory) > 0 {
+		// A task that carries a KMP key of its team is given what the
+		// team's store holds under it, read without a model before the run.
+		if binary, err := exec.LookPath(*kmpMCP); err == nil {
+			agent.Context = kmpchannel.Reader{Binary: binary, StateDir: *stateDir}
+			logger.Printf("node: task context on, with %s, from the stores of the teams whose memory this node shares", *kmpMCP)
+		} else {
+			logger.Printf("node: %s not found: a task's context keys are not read (%v)", *kmpMCP, err)
+		}
 	}
 	if *bus == "nats" {
 		cert, key, how := natsClientCertificate(*natsURL, *control, *stateDir, *natsCert, *natsKey)
