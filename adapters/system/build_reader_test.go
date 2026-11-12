@@ -37,7 +37,7 @@ func TestIdentityTakesTheVersionControlSettings(t *testing.T) {
 	info := &debug.BuildInfo{Main: debug.Module{Version: "v1.2.3"}, Settings: []debug.BuildSetting{
 		{Key: "vcs.revision", Value: "abc"}, {Key: "vcs.time", Value: "2026-11-12T12:56:26Z"}, {Key: "vcs.modified", Value: "true"}, {Key: "GOOS", Value: "linux"},
 	}}
-	want := domain.BuildIdentity{Version: "v1.2.3", Revision: "abc", Time: "2026-11-12T12:56:26Z", Modified: true}
+	want := domain.BuildIdentity{Version: "1.2.3", Revision: "abc", Time: "2026-11-12T12:56:26Z", Modified: true}
 	if got := identity(info); got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}

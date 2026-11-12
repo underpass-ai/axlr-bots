@@ -41,7 +41,8 @@ jobs:
           semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$'
           [[ "$TAG" =~ $semver ]] || { echo "tag $TAG is not vMAJOR.MINOR.PATCH[-prerelease]" >&2; exit 1; }
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-          echo "time=$(git log -1 --format=%cI)" >> "$GITHUB_OUTPUT"
+          # The commit's time in UTC, as Go writes vcs.time in a binary built in a checkout.
+          echo "time=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
   images:
     needs: version
@@ -83,11 +84,12 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ needs.version.outputs.version }}
+          BUILD_TIME: ${{ needs.version.outputs.time }}
           IMAGE: ${{ matrix.image }}
         run: |
           set -euo pipefail
           docker run --rm --read-only "$IMAGE:$VERSION" version | tee version.txt
-          grep -q "^axlr-bots $VERSION ($GITHUB_SHA " version.txt
+          grep -qx "axlr-bots $VERSION ($GITHUB_SHA $BUILD_TIME)" version.txt
 
   binaries:
     needs: version
@@ -114,20 +116,24 @@ jobs:
           # back from the installed binary (internal/buildinfo).
           pkg=github.com/underpass-ai/axlr-bots/internal/buildinfo
           ldflags="-s -w -X $pkg.Version=$VERSION -X $pkg.Revision=$GITHUB_SHA -X $pkg.Time=$BUILD_TIME"
+          # Outside the checkout: a file in it would make the second build
+          # record vcs.modified, "with changes".
+          dist="$RUNNER_TEMP/dist"
           dir="axlr-bots-v$VERSION-linux-$GOARCH"
-          mkdir -p "dist/$dir"
+          mkdir -p "$dist/$dir"
           for cmd in axlr-bots axlr-node; do
-            CGO_ENABLED=0 GOOS=linux go build -ldflags="$ldflags" -o "dist/$dir/$cmd" "./cmd/$cmd"
+            CGO_ENABLED=0 GOOS=linux go build -ldflags="$ldflags" -o "$dist/$dir/$cmd" "./cmd/$cmd"
           done
-          cp LICENSE NOTICE "dist/$dir/"
+          cp LICENSE NOTICE "$dist/$dir/"
           if [ "$GOARCH" = amd64 ]; then
-            "dist/$dir/axlr-bots" version | grep -q "^axlr-bots $VERSION ($GITHUB_SHA "
+            "$dist/$dir/axlr-bots" version | tee "$dist/version.txt"
+            grep -qx "axlr-bots $VERSION ($GITHUB_SHA $BUILD_TIME)" "$dist/version.txt"
           fi
-          tar -C dist -czf "dist/$dir.tar.gz" "$dir"
+          tar -C "$dist" -czf "$dist/$dir.tar.gz" "$dir"
       - uses: actions/upload-artifact@v7
         with:
           name: binaries-${{ matrix.arch }}
-          path: dist/*.tar.gz
+          path: ${{ runner.temp }}/dist/*.tar.gz
           if-no-files-found: error
 
   publish:

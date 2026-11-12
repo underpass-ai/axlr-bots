@@ -55,8 +55,8 @@ func TestCurrentPrefersTheStamp(t *testing.T) {
 
 func TestModuleVersion(t *testing.T) {
 	for raw, want := range map[string]string{"": "", "(devel)": "", "v0.4.0": "0.4.0", "v0.4.1-0.20261112-abc+dirty": "0.4.1-0.20261112-abc+dirty"} {
-		if got := moduleVersion(raw); got != want {
-			t.Fatalf("moduleVersion(%q) = %q, want %q", raw, got, want)
+		if got := ModuleVersion(raw); got != want {
+			t.Fatalf("ModuleVersion(%q) = %q, want %q", raw, got, want)
 		}
 	}
 }

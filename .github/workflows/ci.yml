@@ -214,6 +214,9 @@ jobs:
           curl -fsk https://127.0.0.1:17879/healthz
           curl -fsk -H "Authorization: Bearer $(cat "$root/state/api.token")" https://127.0.0.1:17879/v1/build | tee build.json
           grep -q '"running":{"version":"0.0.0-ci"' build.json
+          # The installed binary's stamp is read from the file: a build with
+          # -trimpath records no -ldflags and this would be empty.
+          grep -q '"installed":{"version":"0.0.0-ci"' build.json
           grep -q '"stale":false' build.json
           $compose down
 

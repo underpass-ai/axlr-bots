@@ -43,12 +43,13 @@ func (r BuildReader) Installed() (domain.BuildIdentity, error) {
 	return identity(info), nil
 }
 
-// identity is the version control part of a build's information. A
+// identity is the version control part of a build's information, the
+// module version spelt as a release (no v, nothing for (devel)). A
 // release stamp (internal/buildinfo, written by the linker) names the
 // version, and the commit when Go recorded none: a container build has
 // no .git to read it from.
 func identity(info *debug.BuildInfo) domain.BuildIdentity {
-	build := domain.BuildIdentity{Version: info.Main.Version}
+	build := domain.BuildIdentity{Version: release.ModuleVersion(info.Main.Version)}
 	for _, setting := range info.Settings {
 		switch setting.Key {
 		case "vcs.revision":

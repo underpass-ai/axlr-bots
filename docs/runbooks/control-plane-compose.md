@@ -71,13 +71,16 @@ A host that never ran the control plane runs `docker compose run --rm control-pl
 
 ## From the service to compose
 
-The state lock refuses a second `serve` on the same state, so the service stops before the container starts.
+The state lock refuses a second `serve` on the same state, so the service stops before the container starts. Mask it, not only disable it: the node unit `install` writes (and any unit written after it, such as an input adapter's) has `Wants=axlr-bots.service`, and would start the service again at its next start, a reboot included. A masked unit is never started; the units that want it still start, and stopping it stops none of them.
 
 ```bash
 docker compose pull                                   # before the stop: the gap is the start alone
 systemctl --user disable --now axlr-bots.service
+systemctl --user mask axlr-bots.service
 docker compose up -d
 ```
+
+Check that nothing pulls it back: `systemctl --user is-enabled axlr-bots.service` answers `masked`.
 
 Check:
 
@@ -93,6 +96,7 @@ Leave the unit file and `~/.local/bin/axlr-bots` in place: they are the rollback
 
 ```bash
 docker compose down
+systemctl --user unmask axlr-bots.service
 systemctl --user enable --now axlr-bots.service
 ```
 
@@ -119,7 +123,7 @@ To go back one release, set the previous tag and `up -d` again; the same caution
 | Symptom | Cause |
 |---|---|
 | `required variable AXLR_BOTS_VERSION is missing a value` | no `.env` beside the file, or the command ran in another directory |
-| `the state … is in use by another process` and the container restarts | the service still runs: `systemctl --user disable --now axlr-bots.service` |
+| `the state … is in use by another process` and the container restarts | the service runs, or a unit with `Wants=axlr-bots.service` started it again: `systemctl --user disable --now axlr-bots.service` and `mask` it |
 | `bind: invalid argument` on the socket | the state path is too long for a Unix socket |
 | `permission denied` on the state | `AXLR_BOTS_UID`/`AXLR_BOTS_GID` are not the state's owner |
 | `serve --listen/--api-listen: …ca…` | no fleet CA in the state: `docker compose run --rm control-plane ca init` |

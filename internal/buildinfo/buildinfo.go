@@ -104,12 +104,12 @@ func Current() string {
 	if !ok {
 		return ""
 	}
-	return moduleVersion(info.Main.Version)
+	return ModuleVersion(info.Main.Version)
 }
 
-// moduleVersion is a Go module version as a release names it: no
-// leading v, nothing for a development build.
-func moduleVersion(raw string) string {
+// ModuleVersion is a Go module version as a release names it: no
+// leading v, nothing for a development build ((devel)).
+func ModuleVersion(raw string) string {
 	if raw == "" || raw == "(devel)" {
 		return ""
 	}
