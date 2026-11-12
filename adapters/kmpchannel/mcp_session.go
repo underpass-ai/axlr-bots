@@ -42,13 +42,9 @@ func (s *mcpSession) open(client, version string) error {
 // callTool calls one tool and returns its text; a tool's error comes back
 // as an error with the tool's text.
 func (s *mcpSession) callTool(name string, arguments map[string]any) (string, error) {
-	raw, err := s.request("tools/call", map[string]any{"name": name, "arguments": arguments})
+	result, err := s.callToolResult(name, arguments)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", name, err)
-	}
-	var result toolResult
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return "", fmt.Errorf("%s: unreadable result: %w", name, err)
+		return "", err
 	}
 	var texts []string
 	for _, item := range result.Content {
@@ -59,6 +55,20 @@ func (s *mcpSession) callTool(name string, arguments map[string]any) (string, er
 		return "", fmt.Errorf("%s refused: %s", name, firstLine(text))
 	}
 	return text, nil
+}
+
+// callToolResult calls one tool and returns its whole result, a tool's
+// error included.
+func (s *mcpSession) callToolResult(name string, arguments map[string]any) (toolResult, error) {
+	raw, err := s.request("tools/call", map[string]any{"name": name, "arguments": arguments})
+	if err != nil {
+		return toolResult{}, fmt.Errorf("%s: %w", name, err)
+	}
+	var result toolResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return toolResult{}, fmt.Errorf("%s: unreadable result: %w", name, err)
+	}
+	return result, nil
 }
 
 // request sends one request and reads until its answer, skipping the

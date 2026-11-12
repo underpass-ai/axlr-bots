@@ -58,6 +58,11 @@ type ExecutionRequest struct {
 	// asking team's store keeps of the question, which the node writes
 	// there (docs/architecture/team-channel.md, "Memory").
 	ChannelMemory *domain.ChannelRecord
+	// Contexts are the KMP keys whose content the node reads from the
+	// team's store before the run and gives it: a redelivery's key, and
+	// the key another team's domain event named
+	// (docs/architecture/team-subscriptions.md, "Done is a contract").
+	Contexts []domain.ContextRef
 	// DelegationSocket is where the node serves those tools for this
 	// execution; the node sets it, it never travels.
 	DelegationSocket string

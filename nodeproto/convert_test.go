@@ -262,3 +262,41 @@ func TestAQuestionsStateRoundTrips(t *testing.T) {
 		}
 	}
 }
+
+func TestARunsContextKeysAndTheirReadsRoundTrip(t *testing.T) {
+	refs := []domain.ContextRef{{Key: "ws:s1", Team: "qa"}, {Key: "project:dev.x", Team: "dev"}}
+	run := application.Assignment{ExecutionID: "exec-1", Kind: domain.ExecutionRun, Run: &application.ExecutionRequest{
+		ExecutionID: "exec-1", TaskID: "task-1", BotID: "bot", Objective: "x", Level: domain.AutonomyObserve, Contexts: refs,
+	}}
+	raw, _ := json.Marshal(FromAssignment(run))
+	if !strings.Contains(string(raw), `"contexts":[{"key":"ws:s1","team":"qa"}`) {
+		t.Errorf("message = %s", raw)
+	}
+	var m AssignmentMessage
+	_ = json.Unmarshal(raw, &m)
+	back, err := ToAssignment(m)
+	if err != nil || len(back.Run.Contexts) != 2 || back.Run.Contexts[1] != refs[1] {
+		t.Fatalf("back = %+v %v", back.Run, err)
+	}
+	for _, bad := range [][]domain.ContextRef{{{Key: "no key", Team: "qa"}}, {refs[0], refs[1], refs[0]}} {
+		m.Run.Contexts = bad
+		if _, err := ToAssignment(m); err == nil {
+			t.Errorf("%+v accepted", bad)
+		}
+	}
+	none, _ := json.Marshal(FromAssignment(application.Assignment{ExecutionID: "exec-1", Kind: domain.ExecutionRun, Run: &application.ExecutionRequest{ExecutionID: "exec-1", Objective: "x", Level: domain.AutonomyObserve}}))
+	if strings.Contains(string(none), "contexts") {
+		t.Errorf("a run without keys = %s", none)
+	}
+	reads := []domain.ContextRead{{Key: "ws:s1", Team: "qa", Read: []string{"a"}}, {Key: "project:dev.x", Team: "dev", Line: "ask dev"}}
+	rawReport, _ := json.Marshal(FromReport(application.ExecutionReport{Outcome: domain.ExecutionCompleted, ContextRead: reads}))
+	var report ReportMessage
+	_ = json.Unmarshal(rawReport, &report)
+	if got, err := ToReport(report); err != nil || len(got.ContextRead) != 2 || got.ContextRead[1].Line != "ask dev" {
+		t.Errorf("report = %+v %v", got.ContextRead, err)
+	}
+	plain, _ := json.Marshal(FromReport(application.ExecutionReport{Outcome: domain.ExecutionCompleted}))
+	if strings.Contains(string(plain), "contextRead") {
+		t.Errorf("a report without reads = %s", plain)
+	}
+}

@@ -77,7 +77,7 @@ func fixtures() []fixture {
 		}},
 		{name: "jev_request", message: JevRequest{State: "soil at 12%", Question: "water?", Options: []string{"water", "wait"}}},
 		{name: "jev_reply", message: JevReply{Choice: "water", Probability: 0.8, Confidence: 0.6}},
-		{name: "assignment_run", skip: []string{"AssignmentMessage.Decide", "RunMessage.Delegation", "RunMessage.Events", "RunMessage.Ask", "RunMessage.Unattended", "RunMessage.Skills", "RunMessage.MemoryTeam", "RunMessage.ChannelMemory"}, message: AssignmentMessage{
+		{name: "assignment_run", skip: []string{"AssignmentMessage.Decide", "RunMessage.Delegation", "RunMessage.Events", "RunMessage.Ask", "RunMessage.Unattended", "RunMessage.Skills", "RunMessage.MemoryTeam", "RunMessage.ChannelMemory", "RunMessage.Contexts"}, message: AssignmentMessage{
 			ExecutionID: "exec-1", Kind: "run", LeaseUntil: fixtureAt.Add(time.Minute),
 			Run: &RunMessage{
 				TaskID: "task-1", BotID: "garden", TenantID: "home", CorrelationID: "corr-1", Objective: "water the bed if the soil is dry", Model: "jev-default",
@@ -99,7 +99,7 @@ func fixtures() []fixture {
 		}},
 		// A lease is renewed with an empty POST; this is the answer.
 		{name: "lease_response", message: LeaseMessage{LeaseUntil: fixtureAt.Add(2 * time.Minute)}},
-		{name: "report_request", skip: []string{"Usage.CostUnknown", "PolicyRecord.AllowedTools", "ToolCall.Preview", "Result.NotStarted"}, message: ReportMessage{
+		{name: "report_request", skip: []string{"Usage.CostUnknown", "PolicyRecord.AllowedTools", "ToolCall.Preview", "Result.NotStarted", "ReportMessage.ContextRead"}, message: ReportMessage{
 			Outcome: "Completed",
 			Result: domain.Result{
 				Answer: "watered for 30 s", SessionID: "sess-1", Sessions: []string{"sess-1"},

@@ -136,8 +136,18 @@ func TestATaskThatSettlesOneOfTwoCarriedEventsRedeliversTheOther(t *testing.T) {
 	if second.Run.TaskID != again.ID() {
 		t.Fatalf("second run = %s", second.Run.TaskID)
 	}
+	// The node is told the key and the team whose store holds it.
+	if refs := second.Run.Contexts; len(refs) != 1 || refs[0] != (domain.ContextRef{Key: "ws:sess-1", Team: "tienda"}) {
+		t.Errorf("contexts = %+v", refs)
+	}
 	emit(t, h, "web-1", second.ExecutionID, EmitEventCommand{Name: "pedido.flaky", Message: "p2 flaky", Data: order("p2")})
-	finish(t, h, second, "sess-2")
+	read := []domain.ContextRead{{Key: "ws:sess-1", Team: "tienda", Read: []string{"p1 done"}}}
+	if _, err := NewReportExecution(h.deps).Execute(context.Background(), "web-1", second.ExecutionID, ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "ok", SessionID: "sess-2"}, ContextRead: read}); err != nil {
+		t.Fatal(err)
+	}
+	if earlier := task(t, h, again.ID()).Earlier(); len(earlier) != 1 || earlier[0].Read[0] != "p1 done" {
+		t.Errorf("earlier = %+v", earlier)
+	}
 	if _, ok := redeliveryOfTask(t, h, again.ID()); ok {
 		t.Error("a settled redelivery was redelivered")
 	}
@@ -318,6 +328,11 @@ func TestACrossedEventIsCarriedAndRedeliveredWithItsOrigin(t *testing.T) {
 	if _, has := redeliveryOf(again); !has {
 		t.Error("no input.redelivery")
 	}
+	// Its run is told the other team's key (the node says to ask them);
+	// the run of the Failed task left no session, so no key of its own.
+	if refs := contextRefsOf(again); len(refs) != 1 || refs[0] != (domain.ContextRef{Key: "project:qa.hallazgo.h-1", Team: "qa"}) {
+		t.Errorf("contexts = %+v", refs)
+	}
 }
 
 func TestOnlyAStuckCancelIsChecked(t *testing.T) {
@@ -404,4 +419,19 @@ func TestTheContextIsHandedOnWhenTheRunLeftNoSession(t *testing.T) {
 		t.Errorf("objective = %s", again.Objective())
 	}
 	_ = ctx
+}
+
+func TestAReportsBadContextReadIsDropped(t *testing.T) {
+	h := newHarness()
+	_, run := twoOrders(t, h)
+	bad := []domain.ContextRead{{Key: "no key", Team: "tienda"}}
+	if _, err := NewReportExecution(h.deps).Execute(context.Background(), "web-1", run.ExecutionID, ExecutionReport{Outcome: domain.ExecutionCompleted, Result: domain.Result{Answer: "ok"}, ContextRead: bad}); err != nil {
+		t.Fatal(err)
+	}
+	if earlier := task(t, h, run.Run.TaskID).Earlier(); len(earlier) != 0 {
+		t.Errorf("earlier = %+v", earlier)
+	}
+	if refs := contextRefsOf(task(t, h, run.Run.TaskID)); refs != nil {
+		t.Errorf("a plain event task has contexts: %+v", refs)
+	}
 }

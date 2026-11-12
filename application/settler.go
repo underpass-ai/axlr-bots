@@ -55,6 +55,9 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 	if err := execution.RecordReceipt(report.Receipt); err != nil {
 		details["receipt"] = "dropped: " + err.Error()
 	}
+	if err := task.KeepContext(report.ContextRead); err != nil {
+		details["context"] = "dropped: " + err.Error()
+	}
 	if !execution.IsAssigned() {
 		s.keeper.collect(ctx, bot, *execution, report.Result.Artifacts)
 	}

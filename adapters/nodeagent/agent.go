@@ -47,6 +47,10 @@ type Agent struct {
 	// Memory writes the team channel's records into a team's store on
 	// this node (--team-channel-memory); nil writes none, the default.
 	Memory application.ChannelMemoryWriter
+	// Context reads, without a model, what a team's store on this node
+	// holds under a run's context keys before the run; nil reads none and
+	// the run is told so in one line.
+	Context application.ContextReader
 
 	slots  *slots
 	wg     *sync.WaitGroup
@@ -291,6 +295,7 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	var report application.ExecutionReport
 	var err error
 	var bot domain.BotID
+	var reads []domain.ContextRead
 	progress := a.startProgress(runCtx, id, assignment.ExecutionID)
 	switch {
 	case assignment.Run != nil:
@@ -299,6 +304,10 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 		// An answer's task carries what the asking team's store keeps
 		// of the question; the run does not wait for it.
 		a.goRemember(request.ChannelMemory, "the answer's task")
+		// What the team's store holds under the task's context keys,
+		// read without a model before the run starts.
+		reads = a.readContexts(runCtx, request)
+		request = withContexts(request, reads)
 		request.Ask, request.AllowedTools = a.askOffered(assignment.ExecutionID, request.Ask), a.allowedWithout(request.AllowedTools)
 		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events, request.Ask, progress.push)
 		request.DelegationSocket = socket
@@ -334,7 +343,7 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	progress.finish()
 	if err != nil {
 		stopRun()
-		report = application.ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "node " + id.String() + ": " + err.Error(), Policy: report.Policy, Correlation: report.Correlation}
+		report = application.ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "node " + id.String() + ": " + err.Error(), Policy: report.Policy, Correlation: report.Correlation, ContextRead: reads}
 		a.report(id, assignment.ExecutionID, report)
 		return
 	}
@@ -342,6 +351,7 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	// control plane takes them only for an execution that runs.
 	a.upload(id, assignment.ExecutionID, bot, report.Result.Artifacts)
 	stopRun()
+	report.ContextRead = reads
 	a.report(id, assignment.ExecutionID, report)
 }
 

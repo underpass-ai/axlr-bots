@@ -56,6 +56,23 @@ func TestHelperProcess(t *testing.T) {
 				record, _ := json.Marshal(map[string]any{"store": os.Getenv("KMP_MCP_DATA_DIR"), "viewer": os.Getenv("KMP_VIEWER_ADDR"), "params": message.Params})
 				_ = os.WriteFile(out, record, 0o600)
 			}
+			switch scenario {
+			case "wake":
+				fmt.Printf(`{"jsonrpc":"2.0","id":%d,"result":{"isError":false,"content":[{"type":"text","text":"Objective: ws:s1"}],"structuredContent":{"wake":{"current_state":["ws:s1:entry:observation:f-13-042d (observation): Finding F-13 not looked at yet.","a line without a ref"],"open_loops":["ws:s1:entry:open_loop:x (open_loop): triage F-13"],"next_actions":["emit qa.hallazgo.triado for F-13"]}}}}`+"\n", id)
+				continue
+			case "wake-missing":
+				fmt.Printf(`{"jsonrpc":"2.0","id":%d,"result":{"isError":true,"content":[{"type":"text","text":"embedded kernel wake failed: node not found"}],"structuredContent":{"error":{"code":"not_found","message":"node 'ws:s1' not found"}}}}`+"\n", id)
+				continue
+			case "wake-refuse":
+				fmt.Printf(`{"jsonrpc":"2.0","id":%d,"result":{"isError":true,"content":[{"type":"text","text":"the store is locked\nUsage help"}],"structuredContent":{"error":{"code":"unavailable","message":"the store is locked"}}}}`+"\n", id)
+				continue
+			case "wake-bare":
+				fmt.Printf(`{"jsonrpc":"2.0","id":%d,"result":{"isError":true,"content":[{"type":"text","text":"no structure\nmore"}]}}`+"\n", id)
+				continue
+			case "wake-garbled":
+				fmt.Printf(`{"jsonrpc":"2.0","id":%d,"result":{"isError":false,"content":[],"structuredContent":"not an object"}}`+"\n", id)
+				continue
+			}
 			if scenario == "refuse" {
 				fmt.Printf(`{"jsonrpc":"2.0","id":%d,"result":{"isError":true,"content":[{"type":"text","text":"idempotency key 'canal:answered:task-q1' was already accepted with different content\nUsage help: …"}]}}`+"\n", id)
 				continue
