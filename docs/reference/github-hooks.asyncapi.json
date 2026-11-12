@@ -8,9 +8,9 @@
   "defaultContentType": "application/json",
   "servers": {
     "gateway": {
-      "host": "54.75.246.167:8443",
+      "host": "gateway.example:8443",
       "protocol": "https",
-      "description": "The EC2 gateway GitHub posts to, with a self-signed certificate (the hook has insecure_ssl=1: the HMAC is the authentication). It forwards /github through a reverse SSH tunnel to the adapter on gx10."
+      "description": "The gateway GitHub posts to (on gx10, an EC2 host: docs/runbooks/github-hooks.md), with a self-signed certificate (the hook has insecure_ssl=1: the HMAC is the authentication). It forwards /github through a reverse SSH tunnel to the adapter on gx10."
     },
     "adapter": {
       "host": "127.0.0.1:7890",
@@ -19,7 +19,6 @@
     },
     "controlPlane": {
       "host": "localhost",
-      "pathname": "/v1",
       "protocol": "http",
       "description": "The control plane's operator API over its Unix socket (<state>/axlr-bots.sock): the adapter publishes as the operator, at depth 0."
     }

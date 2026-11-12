@@ -30,7 +30,7 @@ gx10  axlr-bots github-hooks serve on 127.0.0.1:7890   (axlr-github-hooks.servic
 | `400`, `405`, `413` | not a delivery: malformed, not POST, body over 1 MiB | failure |
 | `502` | a publish failed (the control plane is down, or refused it) | failure, so it can be redelivered |
 
-A redelivery keeps its `X-GitHub-Delivery`, so it names the same keys: what was published is answered from before, only what is missing is published. GitHub Actions makes one check suite per workflow run, so a push with three workflows completes three suites and dev hears three `pr.ci` for the same `head_sha`, one per suite. A pull request from a fork has no `pull_requests` in its suite and makes no `pr.ci`.
+A redelivery keeps its `X-GitHub-Delivery` (GitHub's webhook best practices say so), so it names the same keys: what was published is answered from before, only what is missing is published. A check suite is one app's checks on one commit, and GitHub Actions can complete more than one for the same commit (expect one per workflow run): each is its own delivery, so dev may hear several `pr.ci` for the same `head_sha`, one per suite. A suite whose `pull_requests` is empty (a pull request from a fork can give one) makes no `pr.ci`.
 
 ## Before you start
 
@@ -39,8 +39,8 @@ A redelivery keeps its `X-GitHub-Delivery`, so it names the same keys: what was 
 | The control plane runs | `systemctl --user status axlr-bots` active; its socket is `~/.local/state/axlr-bots/axlr-bots.sock`. The adapter publishes through that socket only and never opens the state directory: with the daemon down every delivery is `502` |
 | Team `dev` exists | `axlr-bots group get dev` names its members. Until dev's bots subscribe to `pr.ci` and `pr.mergeada` (cut 6 of the ADR) the events land on the timeline and wake nobody |
 | The tunnel's key and host key | `~/.ssh/axlr_hooks_tunnel` (mode 600) and `~/.ssh/known_hosts_axlr_hooks`, the gateway's pinned host key. `ssh -i ~/.ssh/axlr_hooks_tunnel -o UserKnownHostsFile=~/.ssh/known_hosts_axlr_hooks -o StrictHostKeyChecking=yes hooktunnel@54.75.246.167 true` must not ask anything |
-| The gateway | on the EC2 host (set up outside this repository): TLS on `:8443` with its self-signed certificate, `/github` proxied to `http://127.0.0.1:9900/github`, and `hooktunnel` allowed only that forward (in its `authorized_keys`: `restrict,port-forwarding,permitlisten="127.0.0.1:9900"`). Optionally the security group lets in only GitHub's hook ranges (`gh api meta --jq .hooks`) |
-| `gh` for redeliver | signed in as an admin of the four repositories with the hooks scope: `gh auth status`; `gh auth refresh -s admin:repo_hook` if it lacks it |
+| The gateway | on the EC2 host, set up outside this repository; confirm it there: TLS on `:8443` with its self-signed certificate, `/github` proxied to `http://127.0.0.1:9900/github`, and `hooktunnel` allowed that forward and nothing else (for example `restrict,port-forwarding,permitlisten="127.0.0.1:9900"` before its key in `authorized_keys`). A security group that lets in only GitHub's hook ranges (`gh api meta --jq .hooks`) is optional hardening |
+| `gh` for redeliver | signed in as an admin of the four repositories with the hooks scope: `gh auth status` lists `admin:repo_hook` (or `repo`); `gh auth refresh -s admin:repo_hook` if it lacks it |
 
 ## 1. The secret
 
@@ -54,7 +54,7 @@ chmod 600 ~/.config/axlr-bots/github-hooks.secret
 
 ## 2. The two user units
 
-Write both files; nothing installs them for you.
+Write both files; nothing installs them for you. The adapter's unit does not read `~/.config/axlr-bots/env`: the process that faces the internet gets the hook's secret and the socket, not the fleet's keys.
 
 `~/.config/systemd/user/axlr-github-hooks.service`, the adapter:
 
@@ -66,7 +66,6 @@ Wants=axlr-bots.service
 
 [Service]
 Type=simple
-EnvironmentFile=-%h/.config/axlr-bots/env
 ExecStart=%h/.local/bin/axlr-bots --state %h/.local/state/axlr-bots --socket %h/.local/state/axlr-bots/axlr-bots.sock github-hooks serve --listen 127.0.0.1:7890 --secret-file %h/.config/axlr-bots/github-hooks.secret --team dev
 Restart=on-failure
 RestartSec=5
@@ -76,7 +75,7 @@ NoNewPrivileges=yes
 WantedBy=default.target
 ```
 
-`~/.config/systemd/user/axlr-github-hooks-tunnel.service`, the reverse tunnel. `ssh -f` with `ExitOnForwardFailure=yes` goes to the background only once the remote forward is up, so `Type=forking` makes `ExecStartPost` run when the gateway can reach the adapter again: the redelivery of what failed while the tunnel was down happens then, on the tunnel's start, not on a timer. The `-` before it keeps a failed redelivery from failing the tunnel.
+`~/.config/systemd/user/axlr-github-hooks-tunnel.service`, the reverse tunnel. `ssh -f` with `ExitOnForwardFailure=yes` goes to the background only once the remote forward is up (`man ssh`, `-f`), so `Type=forking` makes `ExecStartPost` run when the gateway can reach the adapter again: the redelivery of what failed while the tunnel was down happens then, on the tunnel's start, not on a timer. The `-` before it keeps a failed redelivery from failing the tunnel.
 
 ```ini
 [Unit]

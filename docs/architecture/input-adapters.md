@@ -87,7 +87,7 @@ Acceptance for a new adapter, before a world is announced:
 
 ## Where it goes in the code
 
-Nowhere in `domain/`, `application/` or `adapters/`: the control plane has every primitive. The exception is a source that already speaks a standard protocol and that opens incidents: it is a trigger type, a door of the control plane, as `alertmanager` is and `cloudwatch` is (below), not a process beside a world. A new world adds `<world>/` to the private repo `axlr-bots-examples` with its service, its adapter, a bot definition per creature and a Helm release of its own; the port fleet's files stay as they are.
+Nowhere in `domain/` or `application/`, and not in the control plane's `adapters/`: the control plane has every primitive. A world's adapter that the operator runs on a host of the fleet may live in this repository as its own package and subcommand, beside the control plane and not in it, as `adapters/githubhooks` does (`axlr-bots github-hooks serve`, a separate process that publishes through the socket). The other exception is a source that already speaks a standard protocol and that opens incidents: it is a trigger type, a door of the control plane, as `alertmanager` is and `cloudwatch` is (below), not a process beside a world. A new world adds `<world>/` to the private repo `axlr-bots-examples` with its service, its adapter, a bot definition per creature and a Helm release of its own; the port fleet's files stay as they are.
 
 ## Decision, 8 November 2026: CloudWatch through SNS
 

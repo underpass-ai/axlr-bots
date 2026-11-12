@@ -51,7 +51,7 @@ func TestRedeliverPicksOnlyTheFailedWithoutASuccess(t *testing.T) {
 	api := &fakeAPI{
 		hooks: map[string][]Hook{
 			"underpass-ai/kmp": {
-				{ID: 1, Active: true, Config: HookConfig{URL: "https://54.75.246.167:8443/github"}},
+				{ID: 1, Active: true, Config: HookConfig{URL: "https://gateway.example:8443/github"}},
 				{ID: 2, Active: true, Config: HookConfig{URL: "https://ci.example/hook"}},
 				{ID: 3, Active: false, Config: HookConfig{URL: "https://old.example/github"}},
 			},
