@@ -13,6 +13,8 @@ host  axlr-bots github-hooks serve on 127.0.0.1:7890   (axlr-github-hooks.servic
       axlr-bots serve (the control plane) ── group publish dev pr.ci / pr.mergeada
 ```
 
+Only the dev team's own branches (`dev/…`, `--branch-prefix`) wake dev: a check suite or a merge of any other branch, such as a person's PR, is answered 204 and publishes nothing.
+
 ## What it maps
 
 | GitHub sends | When | The adapter publishes to `dev` | Idempotency key |

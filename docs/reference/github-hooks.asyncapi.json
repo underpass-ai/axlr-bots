@@ -262,6 +262,10 @@
             "type": "string",
             "description": "The commit the suite ran on."
           },
+          "head_branch": {
+            "type": "string",
+            "description": "The branch the suite ran on; the adapter maps only the dev team's own branches (--branch-prefix, dev/ by default)."
+          },
           "conclusion": {
             "type": "string",
             "description": "success, failure, neutral, cancelled, timed_out, action_required, stale, skipped, startup_failure; null at GitHub before the suite completes, read as empty.",
@@ -350,6 +354,10 @@
         "properties": {
           "sha": {
             "type": "string"
+          },
+          "ref": {
+            "type": "string",
+            "description": "The pull request's head branch; the adapter maps only the dev team's own branches (--branch-prefix, dev/ by default)."
           }
         }
       },
