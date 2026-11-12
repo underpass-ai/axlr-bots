@@ -11,6 +11,12 @@ use super::identifier::validate_identifier;
 #[serde(rename_all = "camelCase")]
 pub struct Subscription {
     pub topic: String,
+    /// Another team whose domain event this subscription hears
+    /// (docs/architecture/team-topics.md); empty: the bot's own teams. The
+    /// panel keeps it as it is on a save, so a crossing subscription never
+    /// turns into one of the bot's own team.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub team: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub mode: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -66,12 +72,20 @@ impl Subscription {
         DeliveryMode::parse(&self.mode).unwrap_or_else(|| DeliveryMode::by_kind(&self.topic))
     }
 
-    /// Whom from: `recepcion, operator`, or `anyone`.
+    /// Whom from: `recepcion, operator`, or `anyone`; for another team's
+    /// domain event, `team qa` or `team qa: qa-triaje`.
     pub fn senders(&self) -> String {
-        if self.from.is_empty() {
-            "anyone".into()
+        let bots = if self.from.is_empty() {
+            "anyone".to_string()
         } else {
             self.from.join(", ")
+        };
+        if self.team.is_empty() {
+            bots
+        } else if self.from.is_empty() {
+            format!("team {}", self.team)
+        } else {
+            format!("team {}: {}", self.team, bots)
         }
     }
 
@@ -136,6 +150,19 @@ mod tests {
         assert!(Subscription::new(&"a".repeat(65), None, "").is_err());
         assert!(Subscription::new("a", None, "Not Ok").is_err());
         assert_eq!(Subscription::new("a", None, "x x").unwrap().from, vec!["x"]);
+    }
+
+    #[test]
+    fn keeps_another_teams_subscription_on_the_way_back() {
+        let raw = r#"{"topic":"incidencia.nueva","team":"qa","mode":"task","objective":"Step Q.","deliver":"team"}"#;
+        let crossing: Subscription = serde_json::from_str(raw).unwrap();
+        assert_eq!(crossing.team, "qa");
+        assert_eq!(crossing.senders(), "team qa");
+        assert_eq!(serde_json::to_string(&crossing).unwrap(), raw);
+        let named: Subscription =
+            serde_json::from_str(r#"{"topic":"incidencia.nueva","team":"qa","from":["qa-triaje"]}"#).unwrap();
+        assert_eq!(named.senders(), "team qa: qa-triaje");
+        assert_eq!(named.approved().team, "qa");
     }
 
     #[test]
