@@ -154,7 +154,10 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	defer ticker.Stop()
 	reconciler := time.NewTicker(options.reconcileEvery())
 	defer reconciler.Stop()
+	builds := time.NewTicker(options.buildCheckEvery())
+	defer builds.Stop()
 	logger.Printf("daemon: serving on %s, tick %s", listening, options.tick())
+	logBuild(application.CheckBuild(deps.Build), logger)
 	for {
 		fireTimers(ctx, local, logger)
 		if working.TryLock() {
@@ -185,6 +188,14 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 		case <-ticker.C:
 		case <-reconciler.C:
 			reconcile(ctx, deps, runner, options, logger)
+		case <-builds.C:
+			if status := application.CheckBuild(deps.Build); status.Stale {
+				logger.Printf("daemon: the installed binary is %s, this process runs %s: stopping so the service manager starts the installed one", describeBuild(status.Installed), describeBuild(status.Running))
+				cancel()
+				err := stopped(<-served)
+				logger.Printf("daemon: stopped")
+				return errors.Join(ErrStaleBuild, err)
+			}
 		}
 	}
 }

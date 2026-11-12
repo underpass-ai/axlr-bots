@@ -8,10 +8,10 @@ use serde::de::DeserializeOwned;
 use super::api_error::ApiError;
 use crate::application::{ControlPlane, LIVE_FEED_SIZE, PanelConfig, PanelError, PortFuture};
 use crate::domain::{
-    Autonomy, Bot, BotDefinition, BotId, BotPatch, CancelledTask, DecidedTask, Decision, DeletedBot, EnrollmentRequest,
-    EnrollmentToken, Event, Execution, ExecutionId, Incident, IncidentStatus, Node, NodeId, Overview, Publication,
-    Published, RevokedNode, Secret, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId,
-    TaskSubmission, TeamLink, Topic,
+    Autonomy, Bot, BotDefinition, BotId, BotPatch, BuildStatus, CancelledTask, DecidedTask, Decision, DeletedBot,
+    EnrollmentRequest, EnrollmentToken, Event, Execution, ExecutionId, Incident, IncidentStatus, Node, NodeId,
+    Overview, Publication, Published, RevokedNode, Secret, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task,
+    TaskFilter, TaskId, TaskSubmission, TeamLink, Topic,
 };
 
 /// How long a read may take.
@@ -212,6 +212,10 @@ fn rfc3339(moment: DateTime<Utc>) -> String {
 impl ControlPlane for HttpControlPlane {
     fn overview(&self, since: DateTime<Utc>) -> PortFuture<'_, Overview> {
         self.get_query("/v1/overview".into(), vec![("since", rfc3339(since))])
+    }
+
+    fn build(&self) -> PortFuture<'_, BuildStatus> {
+        self.get("/v1/build".into())
     }
 
     fn list_nodes(&self) -> PortFuture<'_, Vec<Node>> {

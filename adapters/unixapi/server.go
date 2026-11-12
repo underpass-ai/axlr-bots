@@ -143,6 +143,7 @@ func (s *Server) OperatorHandler(token string) http.Handler {
 // operatorRoutes are the vision's minimal API (§11.1), the routes the
 // command uses beside them, and the webhook triggers.
 func (s *Server) operatorRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /v1/build", s.getBuild)
 	mux.HandleFunc("POST /v1/bots", s.registerBot)
 	mux.HandleFunc("GET /v1/bots", s.listBots)
 	mux.HandleFunc("GET /v1/bots/{id}", s.getBot)
@@ -894,6 +895,12 @@ func (s *Server) getArtifact(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getReport(w http.ResponseWriter, r *http.Request) {
 	value, err := s.service.GetReport(r.Context(), r.PathValue("id"))
 	respond(w, http.StatusOK, value, err)
+}
+
+// getBuild answers which build the control plane runs and whether a
+// newer one is installed.
+func (s *Server) getBuild(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, newBuildAnswer(application.CheckBuild(s.service.Dependencies().Build)))
 }
 
 func (s *Server) getExecution(w http.ResponseWriter, r *http.Request) {

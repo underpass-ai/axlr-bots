@@ -35,7 +35,32 @@ impl Connect {
                 ),
                 other => other,
             })?;
+        Self::check_build(control_plane.as_ref()).await?;
         Ok(control_plane)
+    }
+
+    /// Fails fast on a control plane that is not at its installed build:
+    /// one that predates GET /v1/build, or one that keeps running after a
+    /// newer binary was installed. Either serves old code under a newer
+    /// panel and install, so nothing it says can be trusted.
+    async fn check_build(control_plane: &dyn ControlPlane) -> Result<(), PanelError> {
+        let status = control_plane.build().await.map_err(|error| match error {
+            PanelError::NotFound(_) => PanelError::Config(
+                "the control plane is not at the installed version: it has no /v1/build, so it runs a binary \
+                 from before that route. Restart it (systemctl --user restart axlr-bots)"
+                    .into(),
+            ),
+            other => other,
+        })?;
+        if status.stale {
+            return Err(PanelError::Config(format!(
+                "the control plane is not at the installed version: it runs {}, the installed binary is {}. \
+                 Restart it (systemctl --user restart axlr-bots)",
+                status.running.describe(),
+                status.installed.describe()
+            )));
+        }
+        Ok(())
     }
 
     /// Tries the control plane settings and keeps them when they work,
@@ -171,5 +196,45 @@ mod tests {
         run(connect.save(config("https://127.0.0.1:7879"))).unwrap();
         let saved = store.saved().unwrap();
         assert!(saved.control_plane.is_some() && saved.theme == Theme::Dark);
+    }
+
+    #[test]
+    fn refuses_a_control_plane_that_is_not_at_its_installed_build() {
+        use crate::domain::{BuildIdentity, BuildStatus};
+        let (control_plane, clock) = fleet();
+        let store = Arc::new(MemoryConfigStore::new(None, config("https://127.0.0.1:7879")));
+        let connector = Arc::new(FakeConnector::new("https://127.0.0.1:7879", control_plane.clone()));
+        let connect = Connect::new(connector, store.clone(), clock);
+
+        control_plane.set_build(None);
+        let older = run(connect.save(config("https://127.0.0.1:7879"))).err();
+        assert!(
+            matches!(&older, Some(PanelError::Config(text)) if text.contains("no /v1/build") && text.contains("systemctl --user restart axlr-bots")),
+            "{older:?}"
+        );
+
+        control_plane.set_build(Some(BuildStatus {
+            running: BuildIdentity {
+                revision: "bed3d48aaaaaaaaaaaa".into(),
+                ..Default::default()
+            },
+            installed: BuildIdentity {
+                revision: "a136d7b1ab8799d0".into(),
+                time: "2026-11-12T12:56:26Z".into(),
+                ..Default::default()
+            },
+            stale: true,
+            reason: String::new(),
+        }));
+        let stale = run(connect.try_config(&config("https://127.0.0.1:7879"))).err();
+        assert!(
+            matches!(&stale, Some(PanelError::Config(text)) if text.contains("runs bed3d48aaaaa") && text.contains("installed binary is a136d7b1ab87 (2026-11-12T12:56:26Z)")),
+            "{stale:?}"
+        );
+        assert!(store.saved().is_none());
+
+        control_plane.set_build(Some(BuildStatus::default()));
+        run(connect.save(config("https://127.0.0.1:7879"))).unwrap();
+        assert!(store.saved().is_some());
     }
 }

@@ -12,9 +12,10 @@ import (
 
 // Defaults of the daemon's loop.
 const (
-	DefaultTick           = 2 * time.Second
-	DefaultReconcileEvery = time.Minute
-	DefaultDeliverEvery   = 2 * time.Second
+	DefaultTick            = 2 * time.Second
+	DefaultReconcileEvery  = time.Minute
+	DefaultDeliverEvery    = 2 * time.Second
+	DefaultBuildCheckEvery = 30 * time.Second
 )
 
 // Options tune the daemon.
@@ -53,6 +54,9 @@ type Options struct {
 	ReconcileEvery time.Duration
 	// DeliverEvery is how often the notifications that are due go out.
 	DeliverEvery time.Duration
+	// BuildCheckEvery is how often the installed binary is compared with
+	// the running build; a newer one stops the daemon with ErrStaleBuild.
+	BuildCheckEvery time.Duration
 	// Grace is the reconciliation grace; zero means the bot's task
 	// timeout plus a minute, as `task reconcile` does.
 	Grace time.Duration
@@ -83,6 +87,13 @@ func (o Options) reconcileEvery() time.Duration {
 		return o.ReconcileEvery
 	}
 	return DefaultReconcileEvery
+}
+
+func (o Options) buildCheckEvery() time.Duration {
+	if o.BuildCheckEvery > 0 {
+		return o.BuildCheckEvery
+	}
+	return DefaultBuildCheckEvery
 }
 
 func (o Options) deliverEvery() time.Duration {
