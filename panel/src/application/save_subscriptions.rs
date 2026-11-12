@@ -9,7 +9,7 @@ use crate::domain::{Bot, BotPatch, Subscription};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubscriptionChange {
     /// Listen to a topic; one of the same pattern is replaced.
-    Listen(Subscription),
+    Listen(Box<Subscription>),
     /// Stop listening to a topic, or drop an ask.
     Remove(String),
     /// Approve a bot's ask: it hears the topic from now on.
@@ -25,8 +25,8 @@ impl SubscriptionChange {
             Self::Listen(sub) => {
                 let mut list: Vec<Subscription> = current.to_vec();
                 match list.iter_mut().find(|s| s.topic == sub.topic) {
-                    Some(old) => *old = sub.clone(),
-                    None => list.push(sub.clone()),
+                    Some(old) => *old = (**sub).clone(),
+                    None => list.push((**sub).clone()),
                 }
                 list
             }
@@ -108,14 +108,14 @@ mod tests {
         .unwrap();
         assert_eq!(bot.subscriptions.len(), 1);
         let listen = Subscription::new("error.*", Some(DeliveryMode::Note), "").unwrap();
-        let bot =
-            run(SaveSubscriptions::new(control_plane.clone()).execute(id.clone(), SubscriptionChange::Listen(listen)))
-                .unwrap();
+        let bot = run(SaveSubscriptions::new(control_plane.clone())
+            .execute(id.clone(), SubscriptionChange::Listen(Box::new(listen))))
+        .unwrap();
         assert_eq!(bot.subscriptions[0].mode(), DeliveryMode::Note);
         let warn = Subscription::new("warn.*", None, "").unwrap();
-        let bot =
-            run(SaveSubscriptions::new(control_plane.clone()).execute(id.clone(), SubscriptionChange::Listen(warn)))
-                .unwrap();
+        let bot = run(SaveSubscriptions::new(control_plane.clone())
+            .execute(id.clone(), SubscriptionChange::Listen(Box::new(warn))))
+        .unwrap();
         assert_eq!(bot.subscriptions.len(), 2);
         let bot = run(
             SaveSubscriptions::new(control_plane.clone()).execute(id, SubscriptionChange::Remove("error.*".into()))
@@ -140,8 +140,10 @@ mod tests {
                 .collect(),
         );
         let one_more = Subscription::new("t16", None, "").unwrap();
-        let result = run(SaveSubscriptions::new(control_plane.clone())
-            .execute(BotId::new("bot").unwrap(), SubscriptionChange::Listen(one_more)));
+        let result = run(SaveSubscriptions::new(control_plane.clone()).execute(
+            BotId::new("bot").unwrap(),
+            SubscriptionChange::Listen(Box::new(one_more)),
+        ));
         assert!(result.is_err());
         assert!(!control_plane.calls().iter().any(|c| c.starts_with("patch_bot")));
     }
