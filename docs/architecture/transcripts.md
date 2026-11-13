@@ -50,7 +50,7 @@ Only the control plane links SQLite; `axlr-node` stays pure Go. The image links 
 
 ## Consequences
 
-- The audit of finished tasks (the next step) reads the whole run, not a summary.
+- The [transcript audit](../runbooks/transcript-audit.md) reads the whole run, not a summary.
 - Secrets a tool printed are kept in the control plane's state. Whoever can read the operator API can read them.
 - A run the control plane makes in process (no node could take it) has no transcript yet.
 - Old rows are never deleted yet; at the sizes seen (median under 100 KiB) a year of the fleet stays in a few GiB. A retention rule is future work.
