@@ -12,7 +12,7 @@ The operator API of the control plane as gRPC services. The contract is [`api/pr
 | `ExecutionsService` | read an execution; download an artifact or a transcript in chunks of at most 64 KiB |
 | `NodesService` | read nodes, mint an enrollment token, revoke a node |
 | `OverviewService` | the dashboard counts; which build runs |
-| `ActivityService` | served by the same server; see its own page when it lands |
+| `ActivityService` | a task's whole activity tree, once (`GetTaskActivity`) or followed live (`WatchTaskActivity`); see [task activity](../architecture/task-activity.md). The snapshot is one message, so the server's send limit is 64 MiB instead of gRPC's 4 MiB default: a client sets its receive limit to match, or follows the watch, which sends small updates |
 
 Every RPC calls the same use case as its HTTP route, so the rules are the HTTP ones: the same validation, idempotency keys, redaction of trigger secrets, the approvers check and the list limits (zero is 100, at most 1000).
 

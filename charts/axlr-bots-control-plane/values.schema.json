@@ -39,6 +39,9 @@
         "name": {"type": "string", "pattern": "^[a-z0-9-]{1,15}$"},
         "port": {"type": "integer", "minimum": 1, "maximum": 65535},
         "targetPort": {"type": ["integer", "string"]}}}}}},
+    "grpc": {"type": "object", "properties": {
+      "enabled": {"type": "boolean"},
+      "port": {"type": "integer", "minimum": 1, "maximum": 65535}}},
     "logFormat": {"enum": ["text", "json"]},
     "metrics": {
       "type": "object",

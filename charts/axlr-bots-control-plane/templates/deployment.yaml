@@ -95,6 +95,9 @@ spec:
             {{- end }}
             - {name: AXLR_BOTS_BUS, value: {{ .Values.bus.kind | quote }}}
             - {name: AXLR_BOTS_LOG_FORMAT, value: {{ .Values.logFormat | quote }}}
+            {{- if .Values.grpc.enabled }}
+            - {name: AXLR_BOTS_GRPC_LISTEN, value: {{ printf "0.0.0.0:%d" (int .Values.grpc.port) | quote }}}
+            {{- end }}
             {{- if .Values.metrics.enabled }}
             - {name: AXLR_BOTS_METRICS_LISTEN, value: {{ printf "0.0.0.0:%d" (int .Values.metrics.port) | quote }}}
             {{- end }}
@@ -115,6 +118,9 @@ spec:
           ports:
             - {name: node, containerPort: 7878, protocol: TCP}
             - {name: api, containerPort: 7879, protocol: TCP}
+            {{- if .Values.grpc.enabled }}
+            - {name: grpc, containerPort: {{ .Values.grpc.port }}, protocol: TCP}
+            {{- end }}
             {{- if .Values.metrics.enabled }}
             - {name: metrics, containerPort: {{ .Values.metrics.port }}, protocol: TCP}
             {{- end }}

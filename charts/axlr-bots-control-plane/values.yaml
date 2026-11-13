@@ -88,6 +88,15 @@ service:
   # More ports for extra containers: [{name, port, targetPort}]
   extraPorts: []
 
+# The operator API over gRPC (axlrbots.operator.v1, docs/reference/operator-grpc.md):
+# TLS 1.3 with the fleet CA's certificate, the operator's bearer token,
+# on this port of the pod and of the Service. Needs the fleet CA (ca.init
+# or a state that has one). The unix socket beside the HTTP one is always
+# there for extra containers.
+grpc:
+  enabled: false
+  port: 7880
+
 # Logs: text (plain lines) or json (one object per line with level,
 # component and, when a line is about one, bot, node, task,
 # execution and correlationId, for Loki). The extra containers take it too when their env says

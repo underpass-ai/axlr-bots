@@ -20,6 +20,9 @@ spec:
     - {name: node, port: {{ .Values.service.nodePort }}, targetPort: node, protocol: TCP}
     # The operator API, TLS from the fleet CA, bearer token.
     - {name: api, port: {{ .Values.service.apiPort }}, targetPort: api, protocol: TCP}
+    {{- if .Values.grpc.enabled }}
+    - {name: grpc, port: {{ .Values.grpc.port }}, targetPort: grpc, protocol: TCP}
+    {{- end }}
     {{- range .Values.service.extraPorts }}
     - {name: {{ .name }}, port: {{ .port }}, targetPort: {{ .targetPort | default .port }}, protocol: TCP}
     {{- end }}
