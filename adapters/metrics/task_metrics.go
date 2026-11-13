@@ -32,8 +32,8 @@ var (
 	toolBuckets     = []float64{0.05, 0.25, 1, 5, 15, 60, 300}
 )
 
-// NewTaskMetrics builds the series; MustRegister adds them to a
-// registry.
+// NewTaskMetrics builds the series. They are a collector, registered
+// through the TaskObserver that feeds them.
 func NewTaskMetrics() *TaskMetrics {
 	histogram := func(name, help string, buckets []float64, labels ...string) *prometheus.HistogramVec {
 		return prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: name, Help: help, Buckets: buckets}, labels)
@@ -55,8 +55,22 @@ func NewTaskMetrics() *TaskMetrics {
 	}
 }
 
-// MustRegister adds every series to the registry.
-func (m *TaskMetrics) MustRegister(registry prometheus.Registerer) {
-	registry.MustRegister(m.taskDuration, m.taskQueue, m.executionDuration, m.approvalWait, m.toolCallDuration,
-		m.tasksFinished, m.costUSD, m.tokens, m.costUnknown, m.toolCalls)
+// collectors are every series, as the collectors they are.
+func (m *TaskMetrics) collectors() []prometheus.Collector {
+	return []prometheus.Collector{m.taskDuration, m.taskQueue, m.executionDuration, m.approvalWait, m.toolCallDuration,
+		m.tasksFinished, m.costUSD, m.tokens, m.costUnknown, m.toolCalls}
+}
+
+// Describe sends the description of every series.
+func (m *TaskMetrics) Describe(ch chan<- *prometheus.Desc) {
+	for _, collector := range m.collectors() {
+		collector.Describe(ch)
+	}
+}
+
+// Collect sends every series, one after the other.
+func (m *TaskMetrics) Collect(ch chan<- prometheus.Metric) {
+	for _, collector := range m.collectors() {
+		collector.Collect(ch)
+	}
 }

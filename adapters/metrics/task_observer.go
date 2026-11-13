@@ -20,8 +20,9 @@ import (
 // the event that ends it arrives, not from the event. A late report
 // (the run reports after a cancel ended its execution) fills in the
 // cost the cancel could not know and publishes nothing, so the observer
-// is also a collector with no series of its own: at each scrape it
-// looks again at the executions that ended with an unknown cost.
+// is also the collector of the task series: at each scrape it looks
+// again at the executions that ended with an unknown cost before it
+// sends them. Register the observer, not the series.
 type TaskObserver struct {
 	inner      application.EventPublisher
 	tasks      TaskReader
@@ -30,8 +31,7 @@ type TaskObserver struct {
 	ledger     *executionLedger
 }
 
-// NewTaskObserver decorates inner. Register it as a collector too, for
-// the late reports.
+// NewTaskObserver decorates inner and feeds the series.
 func NewTaskObserver(inner application.EventPublisher, tasks TaskReader, executions ExecutionReader, series *TaskMetrics) *TaskObserver {
 	return &TaskObserver{inner: inner, tasks: tasks, executions: executions, series: series, ledger: newExecutionLedger()}
 }
@@ -166,19 +166,21 @@ func (o *TaskObserver) addUsage(bot string, usage domain.Usage) {
 	}
 }
 
-// Describe sends nothing: the observer has no series of its own, and a
-// collector that describes none is unchecked.
-func (o *TaskObserver) Describe(chan<- *prometheus.Desc) {}
+// Describe sends the description of the task series.
+func (o *TaskObserver) Describe(ch chan<- *prometheus.Desc) { o.series.Describe(ch) }
 
-// Collect looks again, at each scrape, at the executions counted with
-// an unknown cost and counts the cost a late report has given them
-// since. It sends no metric.
-func (o *TaskObserver) Collect(chan<- prometheus.Metric) {
+// Collect first looks again at the executions counted with an unknown
+// cost and counts the cost a late report has given them since, then
+// sends the series: the registry collects its collectors in parallel,
+// so the sweep and the series are one collector for the sweep to count
+// in the scrape that finds it.
+func (o *TaskObserver) Collect(ch chan<- prometheus.Metric) {
 	ctx, cancel := context.WithTimeout(context.Background(), scrapeTimeout)
 	defer cancel()
 	for _, id := range o.ledger.unknown() {
 		o.account(ctx, id)
 	}
+	o.series.Collect(ch)
 }
 
 // seconds is a duration in seconds, never negative: a clock that ran

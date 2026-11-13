@@ -53,9 +53,7 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	// publishes feeds the task metrics.
 	registry := metrics.NewRegistry()
 	if options.MetricsListenAddr != "" || options.MetricsListener != nil {
-		series := metrics.NewTaskMetrics()
-		series.MustRegister(registry)
-		observer := metrics.NewTaskObserver(deps.Events, deps.Tasks, deps.Executions, series)
+		observer := metrics.NewTaskObserver(deps.Events, deps.Tasks, deps.Executions, metrics.NewTaskMetrics())
 		registry.MustRegister(observer)
 		deps.Events = observer
 	}

@@ -70,7 +70,6 @@ func newObserved(t *testing.T) *observed {
 	deps.Clock, deps.Runtime, deps.Decisions = clock, runtime, runtime
 	series := NewTaskMetrics()
 	registry := prometheus.NewRegistry()
-	series.MustRegister(registry)
 	observer := NewTaskObserver(deps.Events, deps.Tasks, deps.Executions, series)
 	registry.MustRegister(observer)
 	deps.Events = observer
@@ -401,12 +400,12 @@ func TestAFailedPublishObservesNothingAndAnUnreadableStoreNeverFailsOne(t *testi
 	boom := errors.New("boom")
 	series := NewTaskMetrics()
 	registry := prometheus.NewRegistry()
-	series.MustRegister(registry)
 	failing := NewTaskObserver(failingPublisher{boom}, o.deps.Tasks, o.deps.Executions, series)
 	ended := domain.Event{ID: "evt-1", SchemaVersion: domain.EventSchemaV1, Type: domain.EventTaskCompleted, TenantID: "ops", BotID: "alpha", TaskID: "task-1", ExecutionID: "exec-1", CreatedAt: t0}
 	if err := failing.Publish(o.ctx, ended); !errors.Is(err, boom) {
 		t.Fatalf("err = %v", err)
 	}
+	registry.MustRegister(failing)
 	if families, _ := registry.Gather(); len(families) != 0 {
 		t.Errorf("a failed publish was observed: %d families", len(families))
 	}
