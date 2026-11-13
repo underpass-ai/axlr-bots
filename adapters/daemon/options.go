@@ -48,6 +48,16 @@ type Options struct {
 	APIListener net.Listener
 	// APIToken is the bearer token the operator address requires.
 	APIToken string
+	// GRPCListenAddr is an optional TLS address for the operator API over
+	// gRPC (127.0.0.1:7880), behind APIToken; the gRPC API is also served
+	// on GRPCSocketPath whenever the daemon runs. TLS must be set with it.
+	GRPCListenAddr string
+	// GRPCListener is an already bound listener for the gRPC address, in
+	// place of GRPCListenAddr.
+	GRPCListener net.Listener
+	// GRPCSocketPath is where the gRPC API listens on the host; empty is
+	// SocketPath with a .grpc suffix.
+	GRPCSocketPath string
 	// MetricsListenAddr is an optional plain-HTTP address for Prometheus
 	// (0.0.0.0:9464 in a pod): GET /metrics and GET /healthz, nothing
 	// else. Counts, no secret; keep it inside the cluster.
@@ -120,4 +130,13 @@ func (o Options) errorLog() application.LogPrinter {
 		return o.ErrorLog
 	}
 	return o.log()
+}
+
+// grpcSocketPath is the Unix socket of the gRPC API: the one given, or
+// the HTTP socket's path with a .grpc suffix, beside it.
+func (o Options) grpcSocketPath() string {
+	if o.GRPCSocketPath != "" {
+		return o.GRPCSocketPath
+	}
+	return o.SocketPath + ".grpc"
 }

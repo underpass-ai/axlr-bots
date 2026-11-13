@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/underpass-ai/axlr-bots/adapters/grpcapi"
 	"github.com/underpass-ai/axlr-bots/adapters/metrics"
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
@@ -70,7 +71,7 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 
 	// The TLS listeners are bound before anything serves, so a bad option
 	// returns before the socket exists and no server is left behind.
-	var tlsListener, apiListener net.Listener
+	var tlsListener, apiListener, grpcListener net.Listener
 	listening := options.SocketPath
 	if options.ListenAddr != "" || options.Listener != nil {
 		if options.TLS == nil {
@@ -104,26 +105,58 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 		}
 		listening += " and https://" + apiListener.Addr().String() + " (operators, bearer token)"
 	}
+	if options.GRPCListenAddr != "" || options.GRPCListener != nil {
+		if options.TLS == nil {
+			closeListener(tlsListener)
+			closeListener(apiListener)
+			return errors.New("daemon: the gRPC address needs a TLS configuration (the fleet CA)")
+		}
+		if options.APIToken == "" {
+			closeListener(tlsListener)
+			closeListener(apiListener)
+			return errors.New("daemon: the gRPC address needs a bearer token")
+		}
+		grpcListener = options.GRPCListener
+		if grpcListener == nil {
+			var err error
+			if grpcListener, err = unixapi.Listen(options.GRPCListenAddr); err != nil {
+				closeListener(tlsListener)
+				closeListener(apiListener)
+				return err
+			}
+		}
+		listening += " and grpc://" + grpcListener.Addr().String() + " (operators, bearer token)"
+	}
 	metricsListener := options.MetricsListener
 	if metricsListener == nil && options.MetricsListenAddr != "" {
 		var err error
 		if metricsListener, err = net.Listen("tcp", options.MetricsListenAddr); err != nil {
 			closeListener(tlsListener)
 			closeListener(apiListener)
+			closeListener(grpcListener)
 			return fmt.Errorf("daemon: metrics address: %w", err)
 		}
 	}
-	servers := 1
-	served := make(chan error, 4)
+	servers := 2
+	served := make(chan error, 6)
 	server := unixapi.NewServer(local)
+	var grpcOptions []grpcapi.Option
 	if metricsListener != nil {
 		registry.MustRegister(metrics.NewOverviewCollector(local))
 		server.WithMiddleware(metrics.NewHTTPInstrument(registry).Wrap)
+		grpcInstrument := metrics.NewGRPCInstrument(registry)
+		grpcOptions = append(grpcOptions, grpcapi.WithInterceptors(grpcInstrument.Unary, grpcInstrument.Stream))
 		listening += " and http://" + metricsListener.Addr().String() + "/metrics"
 		servers++
 		go func() { served <- metrics.Serve(ctx, metricsListener, registry) }()
 	}
 	go func() { served <- server.Serve(ctx, options.SocketPath) }()
+	grpcServer := grpcapi.New(local, grpcOptions...)
+	go func() { served <- grpcServer.ServeSocket(ctx, options.grpcSocketPath()) }()
+	if grpcListener != nil {
+		servers++
+		go func() { served <- grpcServer.ServeTLS(ctx, grpcListener, options.TLS, options.APIToken) }()
+	}
 	if tlsListener != nil {
 		servers++
 		go func() { served <- server.ServeTLS(ctx, tlsListener, options.TLS) }()
