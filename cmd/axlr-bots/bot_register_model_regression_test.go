@@ -19,7 +19,7 @@ func TestBotRegisterRejectsStringModelWithGuidance(t *testing.T) {
 		t.Fatal("invalid model was accepted")
 	}
 	message := stderr.String()
-	if !strings.Contains(message, "model must be an object") || !strings.Contains(message, `{"model": "provider/model"}`) {
+	if !strings.Contains(message, "model must be an object") || !strings.Contains(message, `"model": {"model": "provider/model"}`) {
 		t.Fatalf("missing model guidance: %s", message)
 	}
 	if strings.Contains(message, "BotDefinition") || strings.Contains(message, "ModelPolicyDefinition") {

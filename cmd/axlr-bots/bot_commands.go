@@ -34,7 +34,7 @@ func botRegister(ctx context.Context, service unixapi.Service, args []string, st
 	if err := decoder.Decode(&definition); err != nil {
 		var typeErr *json.UnmarshalTypeError
 		if errors.As(err, &typeErr) && typeErr.Field == "model" {
-			return fail(stderr, fmt.Errorf("%s: model must be an object, for example {\"model\": \"provider/model\"}", *file))
+			return fail(stderr, fmt.Errorf("%s: model must be an object, for example \"model\": {\"model\": \"provider/model\"}", *file))
 		}
 		return fail(stderr, fmt.Errorf("%s: %w", *file, err))
 	}
