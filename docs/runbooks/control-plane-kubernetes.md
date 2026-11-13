@@ -122,6 +122,8 @@ curl --cacert ca.crt -H "Authorization: Bearer $(kubectl -n $ns get secret axlr-
 
 `running.version` is the image's; every node is `Online` within a heartbeat; a task fired by hand runs on its node and ends.
 
+> Several bots in the cluster? Turn on extended observability: per-bot metrics, JSON logs and a trace per task. See the [observability runbook](observability.md).
+
 ## Observability
 
 With `metrics.enabled`, `metrics.podMonitor.enabled` (its `labels` matching the Prometheus' `podMonitorSelector`; kube-prometheus-stack's is `release: <its release>`), `logFormat: json` and `grafanaDashboard.enabled`:

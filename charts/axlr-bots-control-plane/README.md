@@ -15,6 +15,8 @@ The AXLR Bots control plane (`axlr-bots serve`) as one pod on Kubernetes: the no
 
 No Ingress: the node protocol authenticates nodes by their client certificate, so a proxy that ends TLS would break it. Expose it as a `LoadBalancer` (MetalLB, a cloud load balancer) or a `NodePort`.
 
+Several bots in the cluster? Turn on metrics, JSON logs and traces: [`docs/runbooks/observability.md`](../../docs/runbooks/observability.md).
+
 ## Values that matter
 
 | Value | |

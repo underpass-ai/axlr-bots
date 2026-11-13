@@ -14,6 +14,8 @@ pod demo-log-service-0 (StatefulSet)                                    control 
   NetworkPolicy: no ingress; egress to DNS, the control plane and the model provider only (and the broker, with bus.kind nats)
 ```
 
+> Several bots in the cluster? Turn on extended observability: per-bot metrics, JSON logs and a trace per task. See the [observability runbook](observability.md).
+
 ## Before you start
 
 - The control plane listens on an address the pods reach (`--listen 0.0.0.0:7878`) and its certificate names it: the IP is in it when it listens on all interfaces, a DNS name goes in `--server-names`. A pod's traffic leaving its node is usually SNATed to the node's IP (Calico's `natOutgoing`), so a firewall that already admits the nodes admits the pods; a pod on the control plane's own host arrives from the pod CIDR instead.
