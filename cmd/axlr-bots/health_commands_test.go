@@ -14,7 +14,7 @@ import (
 func TestHealthAnswersWhatTheSocketSays(t *testing.T) {
 	socket := filepath.Join(t.TempDir(), "cp.sock")
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"--socket", socket, "health"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "no service answers") {
+	if code := run([]string{"--transport", "rest", "--socket", socket, "health"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "no service answers") {
 		t.Fatalf("nothing listening: exit %d, stderr %q", code, stderr.String())
 	}
 	listener, err := net.Listen("unix", socket)
@@ -33,7 +33,7 @@ func TestHealthAnswersWhatTheSocketSays(t *testing.T) {
 	t.Cleanup(func() { _ = server.Close() })
 	stdout.Reset()
 	stderr.Reset()
-	if code := run([]string{"--socket", socket, "health"}, &stdout, &stderr); code != exitOK || strings.TrimSpace(stdout.String()) != "ok" {
+	if code := run([]string{"--transport", "rest", "--socket", socket, "health"}, &stdout, &stderr); code != exitOK || strings.TrimSpace(stdout.String()) != "ok" {
 		t.Fatalf("a daemon answering: exit %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
 	}
 }
@@ -68,6 +68,31 @@ func TestDescribeVersion(t *testing.T) {
 	for want, build := range cases {
 		if got := describeVersion(build); got != want {
 			t.Errorf("describeVersion(%+v) = %q, want %q", build, got, want)
+		}
+	}
+}
+
+// TestADaemonWithoutGRPCIsNeverRacedOnItsStore: an older control plane
+// answers over HTTP only. The commands, which speak gRPC by default, stop
+// and say to update it, instead of working on the state files under it.
+func TestADaemonWithoutGRPCIsNeverRacedOnItsStore(t *testing.T) {
+	socket := filepath.Join(t.TempDir(), "cp.sock")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { _ = server.Close() })
+	state := filepath.Join(t.TempDir(), "state")
+	for _, args := range [][]string{{"bot", "list"}, {"task", "get", "t-1"}, {"overview"}, {"health"}} {
+		var stdout, stderr bytes.Buffer
+		code := run(append([]string{"--state", state, "--socket", socket}, args...), &stdout, &stderr)
+		if code != exitError || !strings.Contains(stderr.String(), "over HTTP but not over gRPC") || !strings.Contains(stderr.String(), "update the control plane") {
+			t.Errorf("%v: exit %d, stderr %q", args, code, stderr.String())
 		}
 	}
 }

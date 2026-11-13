@@ -44,6 +44,11 @@ func health(ctx context.Context, link operatorLink, args []string, stdout, stder
 		answers = grpcclient.Reachable
 	}
 	if !answers(ctx, socket) {
+		if link.grpc() {
+			if err := refuseOldDaemon(ctx, link); err != nil {
+				return fail(stderr, err)
+			}
+		}
 		fmt.Fprintf(stderr, "axlr-bots: no service answers on %s\n", socket)
 		return exitError
 	}

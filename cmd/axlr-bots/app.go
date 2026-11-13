@@ -36,6 +36,9 @@ func newService(ctx context.Context, deps application.Dependencies, stateDir str
 			}
 			return client, func() { _ = client.Close() }, nil
 		}
+		if err := refuseOldDaemon(ctx, link); err != nil {
+			return nil, nil, err
+		}
 	} else if client, ok, err := restService(ctx, link); err != nil || ok {
 		return client, func() {}, err
 	}
@@ -47,6 +50,17 @@ func newService(ctx context.Context, deps application.Dependencies, stateDir str
 		fmt.Fprintf(notice, "axlr-bots: no service answers on %s; working on the state directory directly\n", socket)
 	}
 	return unixapi.NewLocal(deps), release, nil
+}
+
+// refuseOldDaemon is the error for a daemon that answers over HTTP but
+// not over gRPC: an older control plane. The command must not work on
+// the state files then, two writers on one store, so it stops and says
+// what to do. nil when no daemon answers over HTTP either.
+func refuseOldDaemon(ctx context.Context, link operatorLink) error {
+	if link.Remote.enabled() || link.Socket == "" || !unixapi.Reachable(ctx, link.Socket) {
+		return nil
+	}
+	return fmt.Errorf("a service answers on %s over HTTP but not over gRPC at %s: update the control plane to a version that serves the operator gRPC API (or use --transport rest meanwhile)", link.Socket, link.GRPCSocket)
 }
 
 // dialGRPC is the gRPC client of the control plane --control names, or of
