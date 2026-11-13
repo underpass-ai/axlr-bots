@@ -24,6 +24,7 @@ import (
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
+	"github.com/underpass-ai/axlr-bots/internal/buildinfo"
 )
 
 // Exit codes of the command.
@@ -36,6 +37,14 @@ const (
 // run parses the flags and serves until SIGTERM or SIGINT; `enroll`,
 // `check`, `mcp-relay` and `codex-proxy` are the subcommands.
 func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 1 && (args[0] == "version" || args[0] == "--version") {
+		version := buildinfo.Current()
+		if version == "" {
+			version = "devel"
+		}
+		fmt.Fprintln(stdout, "axlr-node", version)
+		return exitOK
+	}
 	if len(args) > 0 && args[0] == "enroll" {
 		return enroll(args[1:], stdout, stderr)
 	}
