@@ -90,7 +90,7 @@ func TestHTTPInstrumentLabelsByPatternAndLeavesLongRequestsUntimed(t *testing.T)
 	})
 	server := httptest.NewServer(instrument.Wrap("nodes", mux))
 	defer server.Close()
-	for _, path := range []string{"/v1/tasks/task-abc123", "/v1/nodes/node-1/stream", "/nowhere"} {
+	for _, path := range []string{"/v1/tasks/task-abc123", "/v1/nodes/node-1/stream", "/nowhere", "/v1/tasks/task-abc123?wait=30s"} {
 		response, err := http.Get(server.URL + path)
 		if err != nil {
 			t.Fatal(err)
@@ -99,9 +99,9 @@ func TestHTTPInstrumentLabelsByPatternAndLeavesLongRequestsUntimed(t *testing.T)
 	}
 	body := scrape(t, registry)
 	for _, want := range []string{
-		`axlr_bots_http_requests_total{code="404",listener="nodes",route="GET /v1/tasks/{id}"} 1`,
 		`axlr_bots_http_requests_total{code="200",listener="nodes",route="GET /v1/nodes/{id}/stream"} 1`,
 		`axlr_bots_http_requests_total{code="404",listener="nodes",route="unmatched"} 1`,
+		`axlr_bots_http_requests_total{code="404",listener="nodes",route="GET /v1/tasks/{id}"} 2`,
 		`axlr_bots_http_request_duration_seconds_count{code="404",listener="nodes",route="GET /v1/tasks/{id}"} 1`,
 	} {
 		if !strings.Contains(body, want) {

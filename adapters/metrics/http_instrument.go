@@ -42,7 +42,7 @@ func (i *HTTPInstrument) Wrap(listener string, next http.Handler) http.Handler {
 		}
 		code := strconv.Itoa(recorder.status)
 		i.requests.WithLabelValues(listener, route, code).Inc()
-		if !longLived(route) {
+		if !longLived(route) && !r.URL.Query().Has("wait") {
 			i.duration.WithLabelValues(listener, route, code).Observe(time.Since(start).Seconds())
 		}
 	})
@@ -50,7 +50,8 @@ func (i *HTTPInstrument) Wrap(listener string, next http.Handler) http.Handler {
 
 // longLived is a route whose request lasts as long as the node is
 // connected (the stream) or as long as nothing is due (the long poll):
-// timing it says nothing about how fast the control plane answers.
+// timing it says nothing about how fast the control plane answers. A
+// request with ?wait= (the event long polls) is left out the same way.
 func longLived(route string) bool {
 	return strings.HasSuffix(route, "/stream") || strings.HasSuffix(route, "/assignments/next")
 }
