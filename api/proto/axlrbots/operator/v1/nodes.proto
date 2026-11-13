@@ -14,10 +14,6 @@ option go_package = "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator
 service NodesService {
   rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
   rpc GetNode(GetNodeRequest) returns (GetNodeResponse);
-  // RegisterNode registers (or re-registers, idempotent per id) a node by
-  // its description. A node on a TLS address registers itself with its
-  // certificate over the node protocol; this is the operator's form.
-  rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse);
   // CreateEnrollment mints a one-time token for a node to come
   // (POST /v1/enrollments). The token is in the answer and nowhere else.
   rpc CreateEnrollment(CreateEnrollmentRequest) returns (CreateEnrollmentResponse);
@@ -65,17 +61,6 @@ message GetNodeRequest {
 }
 
 message GetNodeResponse {
-  Node node = 1;
-}
-
-message RegisterNodeRequest {
-  string node_id = 1;
-  string host_name = 2;
-  map<string, string> labels = 3;
-  NodeCapabilities capabilities = 4;
-}
-
-message RegisterNodeResponse {
   Node node = 1;
 }
 

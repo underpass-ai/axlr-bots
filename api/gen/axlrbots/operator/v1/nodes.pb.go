@@ -438,118 +438,6 @@ func (x *GetNodeResponse) GetNode() *Node {
 	return nil
 }
 
-type RegisterNodeRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	HostName      string                 `protobuf:"bytes,2,opt,name=host_name,json=hostName,proto3" json:"host_name,omitempty"`
-	Labels        map[string]string      `protobuf:"bytes,3,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Capabilities  *NodeCapabilities      `protobuf:"bytes,4,opt,name=capabilities,proto3" json:"capabilities,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RegisterNodeRequest) Reset() {
-	*x = RegisterNodeRequest{}
-	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RegisterNodeRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RegisterNodeRequest) ProtoMessage() {}
-
-func (x *RegisterNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RegisterNodeRequest.ProtoReflect.Descriptor instead.
-func (*RegisterNodeRequest) Descriptor() ([]byte, []int) {
-	return file_axlrbots_operator_v1_nodes_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *RegisterNodeRequest) GetNodeId() string {
-	if x != nil {
-		return x.NodeId
-	}
-	return ""
-}
-
-func (x *RegisterNodeRequest) GetHostName() string {
-	if x != nil {
-		return x.HostName
-	}
-	return ""
-}
-
-func (x *RegisterNodeRequest) GetLabels() map[string]string {
-	if x != nil {
-		return x.Labels
-	}
-	return nil
-}
-
-func (x *RegisterNodeRequest) GetCapabilities() *NodeCapabilities {
-	if x != nil {
-		return x.Capabilities
-	}
-	return nil
-}
-
-type RegisterNodeResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Node          *Node                  `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RegisterNodeResponse) Reset() {
-	*x = RegisterNodeResponse{}
-	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RegisterNodeResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RegisterNodeResponse) ProtoMessage() {}
-
-func (x *RegisterNodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RegisterNodeResponse.ProtoReflect.Descriptor instead.
-func (*RegisterNodeResponse) Descriptor() ([]byte, []int) {
-	return file_axlrbots_operator_v1_nodes_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *RegisterNodeResponse) GetNode() *Node {
-	if x != nil {
-		return x.Node
-	}
-	return nil
-}
-
 type CreateEnrollmentRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// node_id is the id the certificate will name; generated when empty.
@@ -563,7 +451,7 @@ type CreateEnrollmentRequest struct {
 
 func (x *CreateEnrollmentRequest) Reset() {
 	*x = CreateEnrollmentRequest{}
-	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[8]
+	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -575,7 +463,7 @@ func (x *CreateEnrollmentRequest) String() string {
 func (*CreateEnrollmentRequest) ProtoMessage() {}
 
 func (x *CreateEnrollmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[8]
+	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -588,7 +476,7 @@ func (x *CreateEnrollmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEnrollmentRequest.ProtoReflect.Descriptor instead.
 func (*CreateEnrollmentRequest) Descriptor() ([]byte, []int) {
-	return file_axlrbots_operator_v1_nodes_proto_rawDescGZIP(), []int{8}
+	return file_axlrbots_operator_v1_nodes_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CreateEnrollmentRequest) GetNodeId() string {
@@ -626,7 +514,7 @@ type CreateEnrollmentResponse struct {
 
 func (x *CreateEnrollmentResponse) Reset() {
 	*x = CreateEnrollmentResponse{}
-	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[9]
+	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -638,7 +526,7 @@ func (x *CreateEnrollmentResponse) String() string {
 func (*CreateEnrollmentResponse) ProtoMessage() {}
 
 func (x *CreateEnrollmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[9]
+	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -651,7 +539,7 @@ func (x *CreateEnrollmentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEnrollmentResponse.ProtoReflect.Descriptor instead.
 func (*CreateEnrollmentResponse) Descriptor() ([]byte, []int) {
-	return file_axlrbots_operator_v1_nodes_proto_rawDescGZIP(), []int{9}
+	return file_axlrbots_operator_v1_nodes_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CreateEnrollmentResponse) GetToken() string {
@@ -698,7 +586,7 @@ type RevokeNodeRequest struct {
 
 func (x *RevokeNodeRequest) Reset() {
 	*x = RevokeNodeRequest{}
-	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[10]
+	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -710,7 +598,7 @@ func (x *RevokeNodeRequest) String() string {
 func (*RevokeNodeRequest) ProtoMessage() {}
 
 func (x *RevokeNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[10]
+	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -723,7 +611,7 @@ func (x *RevokeNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeNodeRequest.ProtoReflect.Descriptor instead.
 func (*RevokeNodeRequest) Descriptor() ([]byte, []int) {
-	return file_axlrbots_operator_v1_nodes_proto_rawDescGZIP(), []int{10}
+	return file_axlrbots_operator_v1_nodes_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *RevokeNodeRequest) GetNodeId() string {
@@ -744,7 +632,7 @@ type RevokeNodeResponse struct {
 
 func (x *RevokeNodeResponse) Reset() {
 	*x = RevokeNodeResponse{}
-	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[11]
+	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -756,7 +644,7 @@ func (x *RevokeNodeResponse) String() string {
 func (*RevokeNodeResponse) ProtoMessage() {}
 
 func (x *RevokeNodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[11]
+	mi := &file_axlrbots_operator_v1_nodes_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -769,7 +657,7 @@ func (x *RevokeNodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeNodeResponse.ProtoReflect.Descriptor instead.
 func (*RevokeNodeResponse) Descriptor() ([]byte, []int) {
-	return file_axlrbots_operator_v1_nodes_proto_rawDescGZIP(), []int{11}
+	return file_axlrbots_operator_v1_nodes_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *RevokeNodeResponse) GetNode() *Node {
@@ -832,16 +720,6 @@ const file_axlrbots_operator_v1_nodes_proto_rawDesc = "" +
 	"\x0eGetNodeRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"A\n" +
 	"\x0fGetNodeResponse\x12.\n" +
-	"\x04node\x18\x01 \x01(\v2\x1a.axlrbots.operator.v1.NodeR\x04node\"\xa1\x02\n" +
-	"\x13RegisterNodeRequest\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1b\n" +
-	"\thost_name\x18\x02 \x01(\tR\bhostName\x12M\n" +
-	"\x06labels\x18\x03 \x03(\v25.axlrbots.operator.v1.RegisterNodeRequest.LabelsEntryR\x06labels\x12J\n" +
-	"\fcapabilities\x18\x04 \x01(\v2&.axlrbots.operator.v1.NodeCapabilitiesR\fcapabilities\x1a9\n" +
-	"\vLabelsEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"F\n" +
-	"\x14RegisterNodeResponse\x12.\n" +
 	"\x04node\x18\x01 \x01(\v2\x1a.axlrbots.operator.v1.NodeR\x04node\"\xed\x01\n" +
 	"\x17CreateEnrollmentRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12Q\n" +
@@ -864,11 +742,10 @@ const file_axlrbots_operator_v1_nodes_proto_rawDesc = "" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"g\n" +
 	"\x12RevokeNodeResponse\x12.\n" +
 	"\x04node\x18\x01 \x01(\v2\x1a.axlrbots.operator.v1.NodeR\x04node\x12!\n" +
-	"\ffailed_tasks\x18\x02 \x03(\tR\vfailedTasks2\xff\x03\n" +
+	"\ffailed_tasks\x18\x02 \x03(\tR\vfailedTasks2\x98\x03\n" +
 	"\fNodesService\x12\\\n" +
 	"\tListNodes\x12&.axlrbots.operator.v1.ListNodesRequest\x1a'.axlrbots.operator.v1.ListNodesResponse\x12V\n" +
-	"\aGetNode\x12$.axlrbots.operator.v1.GetNodeRequest\x1a%.axlrbots.operator.v1.GetNodeResponse\x12e\n" +
-	"\fRegisterNode\x12).axlrbots.operator.v1.RegisterNodeRequest\x1a*.axlrbots.operator.v1.RegisterNodeResponse\x12q\n" +
+	"\aGetNode\x12$.axlrbots.operator.v1.GetNodeRequest\x1a%.axlrbots.operator.v1.GetNodeResponse\x12q\n" +
 	"\x10CreateEnrollment\x12-.axlrbots.operator.v1.CreateEnrollmentRequest\x1a..axlrbots.operator.v1.CreateEnrollmentResponse\x12_\n" +
 	"\n" +
 	"RevokeNode\x12'.axlrbots.operator.v1.RevokeNodeRequest\x1a(.axlrbots.operator.v1.RevokeNodeResponseBKZIgithub.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1;operatorv1b\x06proto3"
@@ -885,7 +762,7 @@ func file_axlrbots_operator_v1_nodes_proto_rawDescGZIP() []byte {
 	return file_axlrbots_operator_v1_nodes_proto_rawDescData
 }
 
-var file_axlrbots_operator_v1_nodes_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_axlrbots_operator_v1_nodes_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_axlrbots_operator_v1_nodes_proto_goTypes = []any{
 	(*NodeCapabilities)(nil),         // 0: axlrbots.operator.v1.NodeCapabilities
 	(*Node)(nil),                     // 1: axlrbots.operator.v1.Node
@@ -893,55 +770,47 @@ var file_axlrbots_operator_v1_nodes_proto_goTypes = []any{
 	(*ListNodesResponse)(nil),        // 3: axlrbots.operator.v1.ListNodesResponse
 	(*GetNodeRequest)(nil),           // 4: axlrbots.operator.v1.GetNodeRequest
 	(*GetNodeResponse)(nil),          // 5: axlrbots.operator.v1.GetNodeResponse
-	(*RegisterNodeRequest)(nil),      // 6: axlrbots.operator.v1.RegisterNodeRequest
-	(*RegisterNodeResponse)(nil),     // 7: axlrbots.operator.v1.RegisterNodeResponse
-	(*CreateEnrollmentRequest)(nil),  // 8: axlrbots.operator.v1.CreateEnrollmentRequest
-	(*CreateEnrollmentResponse)(nil), // 9: axlrbots.operator.v1.CreateEnrollmentResponse
-	(*RevokeNodeRequest)(nil),        // 10: axlrbots.operator.v1.RevokeNodeRequest
-	(*RevokeNodeResponse)(nil),       // 11: axlrbots.operator.v1.RevokeNodeResponse
-	nil,                              // 12: axlrbots.operator.v1.Node.LabelsEntry
-	nil,                              // 13: axlrbots.operator.v1.Node.OperatorLabelsEntry
-	nil,                              // 14: axlrbots.operator.v1.Node.ReportedLabelsEntry
-	nil,                              // 15: axlrbots.operator.v1.RegisterNodeRequest.LabelsEntry
-	nil,                              // 16: axlrbots.operator.v1.CreateEnrollmentRequest.LabelsEntry
-	nil,                              // 17: axlrbots.operator.v1.CreateEnrollmentResponse.LabelsEntry
-	(*timestamppb.Timestamp)(nil),    // 18: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),      // 19: google.protobuf.Duration
+	(*CreateEnrollmentRequest)(nil),  // 6: axlrbots.operator.v1.CreateEnrollmentRequest
+	(*CreateEnrollmentResponse)(nil), // 7: axlrbots.operator.v1.CreateEnrollmentResponse
+	(*RevokeNodeRequest)(nil),        // 8: axlrbots.operator.v1.RevokeNodeRequest
+	(*RevokeNodeResponse)(nil),       // 9: axlrbots.operator.v1.RevokeNodeResponse
+	nil,                              // 10: axlrbots.operator.v1.Node.LabelsEntry
+	nil,                              // 11: axlrbots.operator.v1.Node.OperatorLabelsEntry
+	nil,                              // 12: axlrbots.operator.v1.Node.ReportedLabelsEntry
+	nil,                              // 13: axlrbots.operator.v1.CreateEnrollmentRequest.LabelsEntry
+	nil,                              // 14: axlrbots.operator.v1.CreateEnrollmentResponse.LabelsEntry
+	(*timestamppb.Timestamp)(nil),    // 15: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),      // 16: google.protobuf.Duration
 }
 var file_axlrbots_operator_v1_nodes_proto_depIdxs = []int32{
-	12, // 0: axlrbots.operator.v1.Node.labels:type_name -> axlrbots.operator.v1.Node.LabelsEntry
-	13, // 1: axlrbots.operator.v1.Node.operator_labels:type_name -> axlrbots.operator.v1.Node.OperatorLabelsEntry
-	14, // 2: axlrbots.operator.v1.Node.reported_labels:type_name -> axlrbots.operator.v1.Node.ReportedLabelsEntry
+	10, // 0: axlrbots.operator.v1.Node.labels:type_name -> axlrbots.operator.v1.Node.LabelsEntry
+	11, // 1: axlrbots.operator.v1.Node.operator_labels:type_name -> axlrbots.operator.v1.Node.OperatorLabelsEntry
+	12, // 2: axlrbots.operator.v1.Node.reported_labels:type_name -> axlrbots.operator.v1.Node.ReportedLabelsEntry
 	0,  // 3: axlrbots.operator.v1.Node.capabilities:type_name -> axlrbots.operator.v1.NodeCapabilities
-	18, // 4: axlrbots.operator.v1.Node.registered_at:type_name -> google.protobuf.Timestamp
-	18, // 5: axlrbots.operator.v1.Node.last_seen_at:type_name -> google.protobuf.Timestamp
-	18, // 6: axlrbots.operator.v1.Node.certificate_not_after:type_name -> google.protobuf.Timestamp
-	18, // 7: axlrbots.operator.v1.Node.revoked_at:type_name -> google.protobuf.Timestamp
+	15, // 4: axlrbots.operator.v1.Node.registered_at:type_name -> google.protobuf.Timestamp
+	15, // 5: axlrbots.operator.v1.Node.last_seen_at:type_name -> google.protobuf.Timestamp
+	15, // 6: axlrbots.operator.v1.Node.certificate_not_after:type_name -> google.protobuf.Timestamp
+	15, // 7: axlrbots.operator.v1.Node.revoked_at:type_name -> google.protobuf.Timestamp
 	1,  // 8: axlrbots.operator.v1.ListNodesResponse.nodes:type_name -> axlrbots.operator.v1.Node
 	1,  // 9: axlrbots.operator.v1.GetNodeResponse.node:type_name -> axlrbots.operator.v1.Node
-	15, // 10: axlrbots.operator.v1.RegisterNodeRequest.labels:type_name -> axlrbots.operator.v1.RegisterNodeRequest.LabelsEntry
-	0,  // 11: axlrbots.operator.v1.RegisterNodeRequest.capabilities:type_name -> axlrbots.operator.v1.NodeCapabilities
-	1,  // 12: axlrbots.operator.v1.RegisterNodeResponse.node:type_name -> axlrbots.operator.v1.Node
-	16, // 13: axlrbots.operator.v1.CreateEnrollmentRequest.labels:type_name -> axlrbots.operator.v1.CreateEnrollmentRequest.LabelsEntry
-	19, // 14: axlrbots.operator.v1.CreateEnrollmentRequest.ttl:type_name -> google.protobuf.Duration
-	17, // 15: axlrbots.operator.v1.CreateEnrollmentResponse.labels:type_name -> axlrbots.operator.v1.CreateEnrollmentResponse.LabelsEntry
-	18, // 16: axlrbots.operator.v1.CreateEnrollmentResponse.expires_at:type_name -> google.protobuf.Timestamp
-	1,  // 17: axlrbots.operator.v1.RevokeNodeResponse.node:type_name -> axlrbots.operator.v1.Node
-	2,  // 18: axlrbots.operator.v1.NodesService.ListNodes:input_type -> axlrbots.operator.v1.ListNodesRequest
-	4,  // 19: axlrbots.operator.v1.NodesService.GetNode:input_type -> axlrbots.operator.v1.GetNodeRequest
-	6,  // 20: axlrbots.operator.v1.NodesService.RegisterNode:input_type -> axlrbots.operator.v1.RegisterNodeRequest
-	8,  // 21: axlrbots.operator.v1.NodesService.CreateEnrollment:input_type -> axlrbots.operator.v1.CreateEnrollmentRequest
-	10, // 22: axlrbots.operator.v1.NodesService.RevokeNode:input_type -> axlrbots.operator.v1.RevokeNodeRequest
-	3,  // 23: axlrbots.operator.v1.NodesService.ListNodes:output_type -> axlrbots.operator.v1.ListNodesResponse
-	5,  // 24: axlrbots.operator.v1.NodesService.GetNode:output_type -> axlrbots.operator.v1.GetNodeResponse
-	7,  // 25: axlrbots.operator.v1.NodesService.RegisterNode:output_type -> axlrbots.operator.v1.RegisterNodeResponse
-	9,  // 26: axlrbots.operator.v1.NodesService.CreateEnrollment:output_type -> axlrbots.operator.v1.CreateEnrollmentResponse
-	11, // 27: axlrbots.operator.v1.NodesService.RevokeNode:output_type -> axlrbots.operator.v1.RevokeNodeResponse
-	23, // [23:28] is the sub-list for method output_type
-	18, // [18:23] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	13, // 10: axlrbots.operator.v1.CreateEnrollmentRequest.labels:type_name -> axlrbots.operator.v1.CreateEnrollmentRequest.LabelsEntry
+	16, // 11: axlrbots.operator.v1.CreateEnrollmentRequest.ttl:type_name -> google.protobuf.Duration
+	14, // 12: axlrbots.operator.v1.CreateEnrollmentResponse.labels:type_name -> axlrbots.operator.v1.CreateEnrollmentResponse.LabelsEntry
+	15, // 13: axlrbots.operator.v1.CreateEnrollmentResponse.expires_at:type_name -> google.protobuf.Timestamp
+	1,  // 14: axlrbots.operator.v1.RevokeNodeResponse.node:type_name -> axlrbots.operator.v1.Node
+	2,  // 15: axlrbots.operator.v1.NodesService.ListNodes:input_type -> axlrbots.operator.v1.ListNodesRequest
+	4,  // 16: axlrbots.operator.v1.NodesService.GetNode:input_type -> axlrbots.operator.v1.GetNodeRequest
+	6,  // 17: axlrbots.operator.v1.NodesService.CreateEnrollment:input_type -> axlrbots.operator.v1.CreateEnrollmentRequest
+	8,  // 18: axlrbots.operator.v1.NodesService.RevokeNode:input_type -> axlrbots.operator.v1.RevokeNodeRequest
+	3,  // 19: axlrbots.operator.v1.NodesService.ListNodes:output_type -> axlrbots.operator.v1.ListNodesResponse
+	5,  // 20: axlrbots.operator.v1.NodesService.GetNode:output_type -> axlrbots.operator.v1.GetNodeResponse
+	7,  // 21: axlrbots.operator.v1.NodesService.CreateEnrollment:output_type -> axlrbots.operator.v1.CreateEnrollmentResponse
+	9,  // 22: axlrbots.operator.v1.NodesService.RevokeNode:output_type -> axlrbots.operator.v1.RevokeNodeResponse
+	19, // [19:23] is the sub-list for method output_type
+	15, // [15:19] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_axlrbots_operator_v1_nodes_proto_init() }
@@ -955,7 +824,7 @@ func file_axlrbots_operator_v1_nodes_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_axlrbots_operator_v1_nodes_proto_rawDesc), len(file_axlrbots_operator_v1_nodes_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   18,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

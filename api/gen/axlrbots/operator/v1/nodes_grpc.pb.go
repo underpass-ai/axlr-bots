@@ -26,7 +26,6 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	NodesService_ListNodes_FullMethodName        = "/axlrbots.operator.v1.NodesService/ListNodes"
 	NodesService_GetNode_FullMethodName          = "/axlrbots.operator.v1.NodesService/GetNode"
-	NodesService_RegisterNode_FullMethodName     = "/axlrbots.operator.v1.NodesService/RegisterNode"
 	NodesService_CreateEnrollment_FullMethodName = "/axlrbots.operator.v1.NodesService/CreateEnrollment"
 	NodesService_RevokeNode_FullMethodName       = "/axlrbots.operator.v1.NodesService/RevokeNode"
 )
@@ -37,10 +36,6 @@ const (
 type NodesServiceClient interface {
 	ListNodes(ctx context.Context, in *ListNodesRequest, opts ...grpc.CallOption) (*ListNodesResponse, error)
 	GetNode(ctx context.Context, in *GetNodeRequest, opts ...grpc.CallOption) (*GetNodeResponse, error)
-	// RegisterNode registers (or re-registers, idempotent per id) a node by
-	// its description. A node on a TLS address registers itself with its
-	// certificate over the node protocol; this is the operator's form.
-	RegisterNode(ctx context.Context, in *RegisterNodeRequest, opts ...grpc.CallOption) (*RegisterNodeResponse, error)
 	// CreateEnrollment mints a one-time token for a node to come
 	// (POST /v1/enrollments). The token is in the answer and nowhere else.
 	CreateEnrollment(ctx context.Context, in *CreateEnrollmentRequest, opts ...grpc.CallOption) (*CreateEnrollmentResponse, error)
@@ -76,16 +71,6 @@ func (c *nodesServiceClient) GetNode(ctx context.Context, in *GetNodeRequest, op
 	return out, nil
 }
 
-func (c *nodesServiceClient) RegisterNode(ctx context.Context, in *RegisterNodeRequest, opts ...grpc.CallOption) (*RegisterNodeResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RegisterNodeResponse)
-	err := c.cc.Invoke(ctx, NodesService_RegisterNode_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *nodesServiceClient) CreateEnrollment(ctx context.Context, in *CreateEnrollmentRequest, opts ...grpc.CallOption) (*CreateEnrollmentResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateEnrollmentResponse)
@@ -112,10 +97,6 @@ func (c *nodesServiceClient) RevokeNode(ctx context.Context, in *RevokeNodeReque
 type NodesServiceServer interface {
 	ListNodes(context.Context, *ListNodesRequest) (*ListNodesResponse, error)
 	GetNode(context.Context, *GetNodeRequest) (*GetNodeResponse, error)
-	// RegisterNode registers (or re-registers, idempotent per id) a node by
-	// its description. A node on a TLS address registers itself with its
-	// certificate over the node protocol; this is the operator's form.
-	RegisterNode(context.Context, *RegisterNodeRequest) (*RegisterNodeResponse, error)
 	// CreateEnrollment mints a one-time token for a node to come
 	// (POST /v1/enrollments). The token is in the answer and nowhere else.
 	CreateEnrollment(context.Context, *CreateEnrollmentRequest) (*CreateEnrollmentResponse, error)
@@ -136,9 +117,6 @@ func (UnimplementedNodesServiceServer) ListNodes(context.Context, *ListNodesRequ
 }
 func (UnimplementedNodesServiceServer) GetNode(context.Context, *GetNodeRequest) (*GetNodeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetNode not implemented")
-}
-func (UnimplementedNodesServiceServer) RegisterNode(context.Context, *RegisterNodeRequest) (*RegisterNodeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method RegisterNode not implemented")
 }
 func (UnimplementedNodesServiceServer) CreateEnrollment(context.Context, *CreateEnrollmentRequest) (*CreateEnrollmentResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateEnrollment not implemented")
@@ -203,24 +181,6 @@ func _NodesService_GetNode_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
-func _NodesService_RegisterNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RegisterNodeRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodesServiceServer).RegisterNode(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodesService_RegisterNode_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodesServiceServer).RegisterNode(ctx, req.(*RegisterNodeRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _NodesService_CreateEnrollment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateEnrollmentRequest)
 	if err := dec(in); err != nil {
@@ -271,10 +231,6 @@ var NodesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetNode",
 			Handler:    _NodesService_GetNode_Handler,
-		},
-		{
-			MethodName: "RegisterNode",
-			Handler:    _NodesService_RegisterNode_Handler,
 		},
 		{
 			MethodName: "CreateEnrollment",
