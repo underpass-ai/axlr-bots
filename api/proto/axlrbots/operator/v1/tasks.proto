@@ -1,0 +1,190 @@
+// TasksService lists, submits and steers tasks. Auth, errors and
+// conventions: see common.proto.
+syntax = "proto3";
+
+package axlrbots.operator.v1;
+
+import "axlrbots/operator/v1/common.proto";
+import "axlrbots/operator/v1/task_model.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1;operatorv1";
+
+service TasksService {
+  // ListTasks answers the tasks across bots, newest first
+  // (GET /v1/tasks?bot=&status=&since=&limit=).
+  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
+  rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
+  // SubmitTask asks for a task on a bot (POST /v1/tasks).
+  rpc SubmitTask(SubmitTaskRequest) returns (SubmitTaskResponse);
+  // RunTask runs a queued task now.
+  rpc RunTask(RunTaskRequest) returns (RunTaskResponse);
+  // ApproveTask approves the pending call. The actor is read from the
+  // `x-axlr-actor` metadata key.
+  rpc ApproveTask(ApproveTaskRequest) returns (ApproveTaskResponse);
+  // DenyTask denies the pending call; the actor as for ApproveTask.
+  rpc DenyTask(DenyTaskRequest) returns (DenyTaskResponse);
+  // DecideTask decides the pending call. A decision after its deadline is
+  // refused with kind approval_expired (FAILED_PRECONDITION).
+  rpc DecideTask(DecideTaskRequest) returns (DecideTaskResponse);
+  // CancelTask stops a task that has not finished.
+  rpc CancelTask(CancelTaskRequest) returns (CancelTaskResponse);
+  // SendTaskMessage writes to a running task; its node hands the text to
+  // the run between model steps.
+  rpc SendTaskMessage(SendTaskMessageRequest) returns (SendTaskMessageResponse);
+  // ListTaskEvents answers a task's timeline after the caller's last event,
+  // oldest first. The HTTP API's ?wait long poll is WatchTaskEvents.
+  rpc ListTaskEvents(ListTaskEventsRequest) returns (ListTaskEventsResponse);
+  // WatchTaskEvents streams a task's timeline after the cursor and then
+  // each new event, until the client cancels.
+  rpc WatchTaskEvents(WatchTaskEventsRequest) returns (stream WatchTaskEventsResponse);
+  // ListTaskExecutions answers the task's executions, oldest first.
+  rpc ListTaskExecutions(ListTaskExecutionsRequest) returns (ListTaskExecutionsResponse);
+  // GetTaskReport answers the task's report text.
+  rpc GetTaskReport(GetTaskReportRequest) returns (GetTaskReportResponse);
+}
+
+message ListTasksRequest {
+  string bot_id = 1;
+  string status = 2;
+  // since keeps the tasks changed at or after it; unset is no bound.
+  google.protobuf.Timestamp since = 3;
+  // limit is zero for the server's default.
+  int32 limit = 4;
+}
+
+message ListTasksResponse {
+  repeated Task tasks = 1;
+}
+
+message GetTaskRequest {
+  string task_id = 1;
+}
+
+message GetTaskResponse {
+  Task task = 1;
+}
+
+message SubmitTaskRequest {
+  string bot_id = 1;
+  string objective = 2;
+  string idempotency_key = 3;
+  string correlation_id = 4;
+  string priority = 5;
+}
+
+message SubmitTaskResponse {
+  bool created = 1;
+  Task task = 2;
+}
+
+message RunTaskRequest {
+  string task_id = 1;
+}
+
+// RunTaskResponse is the task after the run and the execution that carried
+// it.
+message RunTaskResponse {
+  Task task = 1;
+  Execution execution = 2;
+}
+
+message ApproveTaskRequest {
+  string task_id = 1;
+  // call_id, when given, must name the pending call, so an approval for one
+  // call never decides another.
+  string call_id = 2;
+}
+
+message ApproveTaskResponse {
+  Task task = 1;
+  Execution execution = 2;
+}
+
+message DenyTaskRequest {
+  string task_id = 1;
+  string call_id = 2;
+}
+
+message DenyTaskResponse {
+  Task task = 1;
+  Execution execution = 2;
+}
+
+message DecideTaskRequest {
+  string task_id = 1;
+  // decision is approve or deny.
+  string decision = 2;
+  string call_id = 3;
+  // decided_by is who decides; see the actor rule in common.proto.
+  string decided_by = 4;
+}
+
+message DecideTaskResponse {
+  Task task = 1;
+  Execution execution = 2;
+}
+
+message CancelTaskRequest {
+  string task_id = 1;
+}
+
+message CancelTaskResponse {
+  Task task = 1;
+  // execution is the one that was stopped, when one was running.
+  Execution execution = 2;
+  // changed is false when the task had already finished.
+  bool changed = 3;
+}
+
+message SendTaskMessageRequest {
+  string task_id = 1;
+  string text = 2;
+}
+
+message SendTaskMessageResponse {
+  string task_id = 1;
+  string execution_id = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+message ListTaskEventsRequest {
+  string task_id = 1;
+  // after is the id of the last event the caller has; empty starts at the
+  // beginning.
+  string after = 2;
+  // limit is at most 1000; zero is the default, 100.
+  int32 limit = 3;
+}
+
+message ListTaskEventsResponse {
+  repeated Event events = 1;
+}
+
+message WatchTaskEventsRequest {
+  string task_id = 1;
+  string after = 2;
+}
+
+message WatchTaskEventsResponse {
+  Event event = 1;
+}
+
+message ListTaskExecutionsRequest {
+  string task_id = 1;
+}
+
+message ListTaskExecutionsResponse {
+  repeated Execution executions = 1;
+}
+
+message GetTaskReportRequest {
+  string task_id = 1;
+}
+
+message GetTaskReportResponse {
+  string task_id = 1;
+  // reference is where the report is kept.
+  string reference = 2;
+  string content = 3;
+}

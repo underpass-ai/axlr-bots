@@ -1,0 +1,249 @@
+// The bot messages the bot, group and node-facing services share: what a
+// bot is (BotSnapshot), how one is registered (BotDefinition) and how one
+// is changed (BotPatch).
+syntax = "proto3";
+
+package axlrbots.operator.v1;
+
+import "axlrbots/operator/v1/common.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1;operatorv1";
+
+message ModelPolicy {
+  string model = 1;
+  string routing_policy = 2;
+  bool allow_remote_providers = 3;
+  int32 max_context_tokens = 4;
+}
+
+message Budgets {
+  int32 max_model_calls_per_task = 1;
+  int32 max_tool_calls_per_task = 2;
+  int32 max_delegation_depth = 3;
+  // task_timeout is zero for the default.
+  google.protobuf.Duration task_timeout = 4;
+}
+
+// ToolRule names a tool and, optionally, argument values it applies to.
+message ToolRule {
+  string tool = 1;
+  map<string, string> arguments = 2;
+}
+
+message ToolRules {
+  repeated ToolRule allow = 1;
+  repeated ToolRule deny = 2;
+}
+
+message ToolRuleList {
+  repeated ToolRule values = 1;
+}
+
+// Trigger is how a bot is started: manual, timer, webhook, event or
+// delegation. Secrets come back as "<redacted>" in a BotSnapshot.
+message Trigger {
+  string type = 1;
+  string name = 2;
+  string objective = 3;
+  string secret = 4;
+  string signing_key = 5;
+  // every is a timer's interval (a Duration here, text such as 15m in the
+  // bot files); cron is its schedule instead.
+  google.protobuf.Duration every = 6;
+  string cron = 7;
+  repeated string events = 8;
+  bool interrupt = 9;
+}
+
+message TriggerList {
+  repeated Trigger values = 1;
+}
+
+message Placement {
+  repeated string nodes = 1;
+  map<string, string> selector = 2;
+}
+
+message NotifyTarget {
+  string type = 1;
+  string name = 2;
+  string url = 3;
+  // secret comes back as "<redacted>" in a BotSnapshot.
+  string secret = 4;
+  repeated string command = 5;
+}
+
+message Approvals {
+  google.protobuf.Duration ttl = 1;
+  // on_expire is deny or approve.
+  string on_expire = 2;
+  repeated NotifyTarget notify = 3;
+  repeated ToolRule auto_approve = 4;
+  repeated string approvers = 5;
+}
+
+message Delegation {
+  repeated string to = 1;
+  int32 max_depth = 2;
+  double budget_share = 3;
+  string split = 4;
+  int32 max_children = 5;
+  // from_team: unset keeps the default.
+  optional bool from_team = 6;
+}
+
+message EmitRule {
+  string name = 1;
+  string max_severity = 2;
+}
+
+message Events {
+  repeated EmitRule emit = 1;
+  int32 per_minute = 2;
+  int32 intake_per_minute = 3;
+  int32 max_depth = 4;
+  // interruptible: unset keeps the default.
+  optional bool interruptible = 5;
+}
+
+message Subscription {
+  string topic = 1;
+  string mode = 2;
+  repeated string from = 3;
+  bool urgent = 4;
+  string objective = 5;
+  string status = 6;
+  string asked_by = 7;
+  string why = 8;
+  google.protobuf.Timestamp asked_at = 9;
+}
+
+message SubscriptionList {
+  repeated Subscription values = 1;
+}
+
+message JevTell {
+  string name = 1;
+  repeated string fields = 2;
+}
+
+message JevAct {
+  string tool = 1;
+  string choice = 2;
+  string verdict = 3;
+  repeated string pass = 4;
+}
+
+message JevProgram {
+  string server = 1;
+  string start = 2;
+  JevAct act = 3;
+  string wait = 4;
+  string stop = 5;
+  JevTell tell = 6;
+  string model = 7;
+}
+
+message Runtime {
+  // kind is axlr or jev.
+  string kind = 1;
+  JevProgram jev = 2;
+}
+
+message SkillPinList {
+  repeated SkillPin values = 1;
+}
+
+// StagedDefinition is a change a bot holds for later. In a BotSnapshot the
+// change itself is withheld (only version and staged_at); GetStagedBot
+// answers it.
+message StagedDefinition {
+  string version = 1;
+  google.protobuf.Timestamp staged_at = 2;
+  // change is the staged patch as JSON, verbatim.
+  bytes change = 3;
+}
+
+// Bot is a bot as the control plane keeps it, trigger credentials
+// redacted.
+message Bot {
+  string id = 1;
+  string tenant_id = 2;
+  string name = 3;
+  string owner = 4;
+  string mission = 5;
+  repeated string allowed_tools = 6;
+  ModelPolicy model = 7;
+  Budgets budgets = 8;
+  // level is the autonomy level: observe, propose, act-with-approval or
+  // act-within-policy.
+  string level = 9;
+  ToolRules tool_rules = 10;
+  repeated Trigger triggers = 11;
+  Placement placement = 12;
+  Approvals approvals = 13;
+  Delegation delegation = 14;
+  repeated string groups = 15;
+  Events events = 16;
+  repeated Subscription subscriptions = 17;
+  Runtime runtime = 18;
+  repeated SkillPin skills = 19;
+  string version = 20;
+  StagedDefinition staged = 21;
+  // status is Draft, Registered, Enabled or Paused.
+  string status = 22;
+  google.protobuf.Timestamp created_at = 23;
+  google.protobuf.Timestamp updated_at = 24;
+}
+
+// BotDefinition is what RegisterBot takes: a bot as the example bot files
+// write it.
+message BotDefinition {
+  string id = 1;
+  string version = 2;
+  string tenant = 3;
+  string name = 4;
+  string owner = 5;
+  string mission = 6;
+  repeated string allowed_tools = 7;
+  string level = 8;
+  ToolRules tool_rules = 9;
+  repeated Trigger triggers = 10;
+  Placement placement = 11;
+  Approvals approvals = 12;
+  Delegation delegation = 13;
+  repeated string groups = 14;
+  Events events = 15;
+  repeated Subscription subscriptions = 16;
+  Runtime runtime = 17;
+  repeated SkillPin skills = 18;
+  ModelPolicy model = 19;
+  Budgets budgets = 20;
+}
+
+// BotPatch is a partial change to a bot's definition. A field that is not
+// set is left alone; the list fields are wrapper messages so that setting
+// one to an empty list clears it. `auto_approve` is the shorthand for
+// approvals.auto_approve and is kept apart from `approvals`, as in the
+// HTTP API.
+message BotPatch {
+  optional string version = 1;
+  optional string mission = 2;
+  optional string level = 3;
+  StringList allowed_tools = 4;
+  ToolRules tool_rules = 5;
+  TriggerList triggers = 6;
+  Placement placement = 7;
+  Approvals approvals = 8;
+  ToolRuleList auto_approve = 9;
+  Delegation delegation = 10;
+  StringList groups = 11;
+  Events events = 12;
+  SubscriptionList subscriptions = 13;
+  Runtime runtime = 14;
+  SkillPinList skills = 15;
+  ModelPolicy model = 16;
+  Budgets budgets = 17;
+}

@@ -1,0 +1,55 @@
+// OverviewService answers the dashboard's counts and which build the
+// control plane runs. Auth, errors and conventions: see common.proto.
+syntax = "proto3";
+
+package axlrbots.operator.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1;operatorv1";
+
+service OverviewService {
+  // GetOverview answers the counts since an instant (GET /v1/overview).
+  rpc GetOverview(GetOverviewRequest) returns (GetOverviewResponse);
+  // GetBuild answers the build the control plane runs, the one installed on
+  // disk and whether the running one is stale (GET /v1/build).
+  rpc GetBuild(GetBuildRequest) returns (GetBuildResponse);
+}
+
+message GetOverviewRequest {
+  // since bounds the "since" counts; unset is the server's default.
+  google.protobuf.Timestamp since = 1;
+}
+
+message GetOverviewResponse {
+  google.protobuf.Timestamp since = 1;
+  // nodes, bots and tasks count by status.
+  map<string, int32> nodes = 2;
+  map<string, int32> bots = 3;
+  map<string, int32> tasks = 4;
+  map<string, int32> tasks_since = 5;
+  int32 executions_since = 6;
+  double cost_usd_since = 7;
+  // cost_unknown_since counts the executions since whose cost is unknown
+  // and not in cost_usd_since.
+  int32 cost_unknown_since = 8;
+}
+
+message GetBuildRequest {}
+
+message BuildIdentity {
+  string version = 1;
+  string revision = 2;
+  string time = 3;
+  bool modified = 4;
+}
+
+message GetBuildResponse {
+  BuildIdentity running = 1;
+  BuildIdentity installed = 2;
+  bool stale = 3;
+  string reason = 4;
+  // minimum_axlr is the least AXLR the operator wants on the nodes; empty
+  // when none.
+  string minimum_axlr = 5;
+}

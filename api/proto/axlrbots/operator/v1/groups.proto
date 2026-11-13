@@ -1,0 +1,152 @@
+// GroupsService reads the teams (groups) the bots name and their
+// timelines, and publishes operator events on them. Auth, errors and
+// conventions: see common.proto.
+syntax = "proto3";
+
+package axlrbots.operator.v1;
+
+import "axlrbots/operator/v1/bot_model.proto";
+import "axlrbots/operator/v1/common.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1;operatorv1";
+
+service GroupsService {
+  // ListGroups answers the teams the bots name, with their members.
+  rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse);
+  rpc GetGroup(GetGroupRequest) returns (GetGroupResponse);
+  // ListGroupTopics answers a team's topics: who publishes, who listens,
+  // the last event.
+  rpc ListGroupTopics(ListGroupTopicsRequest) returns (ListGroupTopicsResponse);
+  // ListGroupEvents answers a team's timeline after the caller's last
+  // event, oldest first.
+  rpc ListGroupEvents(ListGroupEventsRequest) returns (ListGroupEventsResponse);
+  // WatchGroupEvents streams a team's timeline after the cursor and then
+  // each new event (the HTTP API's ?wait long poll).
+  rpc WatchGroupEvents(WatchGroupEventsRequest) returns (stream WatchGroupEventsResponse);
+  // PublishGroupEvent publishes the operator's event on a team. The same
+  // idempotency_key answers the same event with created false.
+  rpc PublishGroupEvent(PublishGroupEventRequest) returns (PublishGroupEventResponse);
+}
+
+message GroupMember {
+  string bot_id = 1;
+  string name = 2;
+  string status = 3;
+  string purpose = 4;
+  repeated string tools = 5;
+  string where = 6;
+  Placement placement = 7;
+  repeated string groups = 8;
+  bool takes_delegation = 9;
+}
+
+message Group {
+  string tenant_id = 1;
+  string name = 2;
+  repeated GroupMember members = 3;
+}
+
+message TopicListener {
+  string bot_id = 1;
+  string topic = 2;
+  string mode = 3;
+  string status = 4;
+}
+
+message GroupTopic {
+  string name = 1;
+  repeated string publishers = 2;
+  repeated string declared_publishers = 3;
+  repeated TopicListener listeners = 4;
+  google.protobuf.Timestamp last_at = 5;
+  int32 count = 6;
+  bool nobody_listens = 7;
+}
+
+message ListGroupsRequest {}
+
+message ListGroupsResponse {
+  repeated Group groups = 1;
+}
+
+message GetGroupRequest {
+  string name = 1;
+  // tenant may be empty when only one tenant has a team of that name.
+  string tenant = 2;
+}
+
+message GetGroupResponse {
+  Group group = 1;
+}
+
+message ListGroupTopicsRequest {
+  string name = 1;
+  string tenant = 2;
+}
+
+message ListGroupTopicsResponse {
+  repeated GroupTopic topics = 1;
+}
+
+message ListGroupEventsRequest {
+  string name = 1;
+  string tenant = 2;
+  string after = 3;
+  // limit is at most 1000; zero is the default, 100.
+  int32 limit = 4;
+}
+
+message ListGroupEventsResponse {
+  repeated Event events = 1;
+}
+
+message WatchGroupEventsRequest {
+  string name = 1;
+  string tenant = 2;
+  string after = 3;
+}
+
+message WatchGroupEventsResponse {
+  Event event = 1;
+}
+
+message PublishGroupEventRequest {
+  string name = 1;
+  string tenant = 2;
+  // event_name names the event (the HTTP body's `name`).
+  string event_name = 3;
+  string message = 4;
+  google.protobuf.Struct data = 5;
+  // to narrows the delivery to these members; empty is every listener.
+  repeated string to = 6;
+  string idempotency_key = 7;
+}
+
+message EventDelivery {
+  string bot_id = 1;
+  string mode = 2;
+  string task_id = 3;
+  string message_id = 4;
+  string trigger = 5;
+  bool created = 6;
+  bool urgent = 7;
+  string degraded = 8;
+  string coalesced_into = 9;
+}
+
+message EventSkip {
+  string bot_id = 1;
+  string reason = 2;
+  string message = 3;
+}
+
+message PublishGroupEventResponse {
+  string event_id = 1;
+  string name = 2;
+  string severity = 3;
+  repeated EventDelivery deliveries = 4;
+  repeated EventSkip skipped = 5;
+  bool created = 6;
+}

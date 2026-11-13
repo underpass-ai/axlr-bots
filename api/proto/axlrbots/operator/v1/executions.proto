@@ -1,0 +1,89 @@
+// ExecutionsService reads executions, their artifacts and the transcripts
+// the nodes upload. Auth, errors and conventions: see common.proto.
+syntax = "proto3";
+
+package axlrbots.operator.v1;
+
+import "axlrbots/operator/v1/common.proto";
+import "axlrbots/operator/v1/task_model.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1;operatorv1";
+
+service ExecutionsService {
+  rpc GetExecution(GetExecutionRequest) returns (GetExecutionResponse);
+  // GetArtifact downloads an artifact the control plane keeps for the
+  // execution. The first message is `artifact` (name, media type, size,
+  // sha256); the rest are `chunk`s whose concatenation is the content. The
+  // receiver checks size and sha256.
+  rpc GetArtifact(GetArtifactRequest) returns (stream GetArtifactResponse);
+  // ListTranscripts lists the transcripts kept after the cursor, oldest
+  // first.
+  rpc ListTranscripts(ListTranscriptsRequest) returns (ListTranscriptsResponse);
+  // GetTranscript downloads one transcript whole, as the node sent it (up
+  // to 32 MiB, so in chunks): the first message is `transcript`, the rest
+  // `chunk`s.
+  rpc GetTranscript(GetTranscriptRequest) returns (stream GetTranscriptResponse);
+}
+
+message GetExecutionRequest {
+  string execution_id = 1;
+}
+
+message GetExecutionResponse {
+  Execution execution = 1;
+}
+
+message GetArtifactRequest {
+  string execution_id = 1;
+  string name = 2;
+}
+
+message GetArtifactResponse {
+  oneof content {
+    Artifact artifact = 1;
+    // chunk is a slice of the content, at most 64 KiB.
+    bytes chunk = 2;
+  }
+}
+
+message ListTranscriptsRequest {
+  // after is the `seq` of the last record the caller has; zero starts at
+  // the beginning.
+  int64 after = 1;
+  // limit is at most 500; zero is the default.
+  int32 limit = 2;
+}
+
+// TranscriptRecord says a transcript was kept, not what it holds.
+message TranscriptRecord {
+  int64 seq = 1;
+  string execution_id = 2;
+  string task_id = 3;
+  string bot_id = 4;
+  string session = 5;
+  int64 size = 6;
+  string sha256 = 7;
+  // filtered is true when the control plane removed something from what
+  // the node sent; sent_sha256 is then the digest of what was sent.
+  bool filtered = 8;
+  string sent_sha256 = 9;
+  google.protobuf.Timestamp received_at = 10;
+}
+
+message ListTranscriptsResponse {
+  repeated TranscriptRecord records = 1;
+}
+
+message GetTranscriptRequest {
+  string execution_id = 1;
+  string session = 2;
+}
+
+message GetTranscriptResponse {
+  oneof content {
+    TranscriptRecord transcript = 1;
+    // chunk is a slice of the transcript, at most 64 KiB.
+    bytes chunk = 2;
+  }
+}
