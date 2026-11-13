@@ -23,7 +23,7 @@ func auditsOf(h *harness, action string) []domain.AuditEntry {
 // the actor and changes nothing.
 func TestApproversRefuseAnActorTheyDoNotList(t *testing.T) {
 	h := newHarness()
-	_, task := waitingWith(t, h, domain.ApprovalsSnapshot{Approvers: []string{"tirso", "oncall"}})
+	_, task := waitingWith(t, h, domain.ApprovalsSnapshot{Approvers: []string{"alice", "oncall"}})
 	ctx := context.Background()
 	uc := NewApproveTask(h.deps)
 	for _, c := range []struct{ decision, actor string }{
@@ -77,7 +77,7 @@ func TestWithoutApproversAnyoneDecides(t *testing.T) {
 // daemon and where names count, as the control plane itself.
 func TestNoPersonClaimsAPolicyOrTheDaemon(t *testing.T) {
 	h := newHarness()
-	_, task := waitingWith(t, h, domain.ApprovalsSnapshot{Approvers: []string{"tirso", "oncall", "test:operator"}})
+	_, task := waitingWith(t, h, domain.ApprovalsSnapshot{Approvers: []string{"alice", "oncall", "test:operator"}})
 	ctx := context.Background()
 	for _, name := range []string{"policy:autoApprove", "policy:team-event"} {
 		if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, "", name); !domain.IsForbidden(err) {

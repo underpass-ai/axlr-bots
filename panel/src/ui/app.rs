@@ -547,7 +547,6 @@ impl App {
             Message::TeamSaved(result) => self.team_saved(result),
             Message::TeamLoaded(name, result) => self.team_loaded(name, result),
             Message::TopicsLoaded(name, result) => self.topics_loaded(name, result),
-            Message::LinksLoaded(name, result) => self.links_loaded(name, result),
             message @ (Message::EditOpen(_)
             | Message::EditClose
             | Message::EditMission(_)
@@ -1035,9 +1034,6 @@ impl App {
                 let mut effects = Vec::new();
                 if self.watch.loading_topics.insert(name.clone()) {
                     effects.push(Effect::LoadTopics(name.clone()));
-                }
-                if self.watch.loading_links.insert(name.clone()) {
-                    effects.push(Effect::LoadLinks(name.clone()));
                 }
                 effects
             }

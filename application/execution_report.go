@@ -20,8 +20,4 @@ type ExecutionReport struct {
 	Policy        *domain.PolicyRecord
 	Correlation   *domain.CorrelationRecord
 	Receipt       json.RawMessage
-	// ContextRead is what the node read under the run's context keys
-	// before it, or why it read nothing; the task keeps it as
-	// input.earlier.
-	ContextRead []domain.ContextRead
 }

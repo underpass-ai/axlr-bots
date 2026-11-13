@@ -1,7 +1,5 @@
 package domain
 
-import "slices"
-
 // Limits of what a bot may emit.
 const (
 	// DefaultEventsPerMinute is how many events a bot may emit in a
@@ -104,24 +102,6 @@ func (p EventPolicy) MayEmit(name EventName) bool {
 		}
 	}
 	return false
-}
-
-// CrossesTo lists the other teams an event of the name crosses to: the
-// teams of the rules that name it exactly, in the order declared, each
-// once. Empty: the event stays in the bot's teams.
-func (p EventPolicy) CrossesTo(name EventName) []TeamName {
-	var teams []TeamName
-	for _, rule := range p.rules {
-		if rule.Pattern().String() != name.String() {
-			continue
-		}
-		for _, team := range rule.Teams() {
-			if !slices.Contains(teams, team) {
-				teams = append(teams, team)
-			}
-		}
-	}
-	return teams
 }
 
 // Interruptible reports whether a teammate's event may interrupt the

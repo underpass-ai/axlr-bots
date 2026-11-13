@@ -237,10 +237,6 @@ func (l *Local) ListGroupTopics(ctx context.Context, name, tenant string) ([]app
 	return application.NewListGroupTopics(l.deps).Execute(ctx, name, tenant)
 }
 
-func (l *Local) ListGroupLinks(ctx context.Context, name, tenant string) ([]application.GroupLink, error) {
-	return application.NewListGroupLinks(l.deps).Execute(ctx, name, tenant)
-}
-
 func (l *Local) PublishGroupEvent(ctx context.Context, command application.PublishGroupEventCommand) (application.PublishAnswer, error) {
 	return l.runner.Publish(ctx, command)
 }

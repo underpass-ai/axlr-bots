@@ -12,9 +12,9 @@ func TestAssignmentNamesTheTeamTheBotSharesItsMemoryWith(t *testing.T) {
 		groups []string
 		want   string
 	}{
-		"qa-jefe":      {[]string{"qa"}, "qa"},
-		"mkt-analista": {[]string{"mkt-escucha", "mkt-direccion"}, "mkt-direccion"},
-		"alone":        {nil, ""},
+		"lead":   {[]string{"ops"}, "ops"},
+		"writer": {[]string{"web-news", "web-docs"}, "web-docs"},
+		"alone":  {nil, ""},
 	} {
 		bot := teamBot(t, h, id, tc.groups, nil)
 		if run := runOnNode(t, h, bot, "web-1", "ask-"+id).Run; run == nil || run.MemoryTeam.String() != tc.want {

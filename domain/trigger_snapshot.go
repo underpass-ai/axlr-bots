@@ -8,8 +8,6 @@ package domain
 // (five fields, the host's time zone). An event trigger hears the
 // event names or patterns Events lists and, with Interrupt, makes their
 // warnings and criticals urgent.
-// A question trigger's From lists the teams whose questions the bot
-// answers (docs/architecture/team-channel.md).
 type TriggerSnapshot struct {
 	Type       string   `json:"type"`
 	Name       string   `json:"name,omitempty"`
@@ -20,8 +18,6 @@ type TriggerSnapshot struct {
 	Cron       string   `json:"cron,omitempty"`
 	Events     []string `json:"events,omitempty"`
 	Interrupt  bool     `json:"interrupt,omitempty"`
-	From       []string `json:"from,omitempty"`
-	Deliver    string   `json:"deliver,omitempty"`
 }
 
 // Redacted is the snapshot with its credentials hidden: what the API

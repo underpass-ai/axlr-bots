@@ -41,7 +41,7 @@ impl PanelConfig {
             && (actor.is_empty() || actor.len() > 128 || actor.chars().any(|c| c.is_whitespace() || c.is_control()))
         {
             return Err(PanelError::Config(
-                "the actor is one name of at most 128 characters, without spaces, like tirso".into(),
+                "the actor is one name of at most 128 characters, without spaces, like alice".into(),
             ));
         }
         Ok(())
@@ -71,7 +71,7 @@ mod tests {
         assert!(config("https://127.0.0.1:7879/").validate().is_ok());
         assert_eq!(config(" https://127.0.0.1:7879/ ").base_url(), "https://127.0.0.1:7879");
         assert!(config("http://127.0.0.1:7879").validate().is_err());
-        for (actor, ok) in [("tirso", true), ("cli:tirso", true), ("", false), ("two words", false)] {
+        for (actor, ok) in [("alice", true), ("cli:alice", true), ("", false), ("two words", false)] {
             let mut with = config("https://h");
             with.actor = Some(actor.into());
             assert_eq!(with.validate().is_ok(), ok, "{actor:?}");

@@ -7,9 +7,4 @@ type EventSkip struct {
 	BotID   string `json:"botId"`
 	Reason  string `json:"reason"`
 	Message string `json:"message"`
-	// Team names the team of a team subscription nobody could take.
-	Team string `json:"team,omitempty"`
-	// Crossed says the event was not published to another team, Team:
-	// crossing_limit, no_domain_id, or no bus to carry it.
-	Crossed bool `json:"crossed,omitempty"`
 }

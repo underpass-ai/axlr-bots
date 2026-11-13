@@ -68,11 +68,6 @@ func (uc RunNextPending) Pick(ctx context.Context) (domain.TaskID, bool, error) 
 		if !bot.AcceptsTasks() || !bot.Placement().IsEmpty() || hasOnlineNode(bot, pending[i].Skills(), nodes) {
 			continue
 		}
-		if pending[i].Trigger().Type == domain.TriggerQuestion {
-			// The control plane has no team's store: a question waits for
-			// a node that opens it.
-			continue
-		}
 		if oldest == nil || pending[i].CreatedAt().Before(oldest.CreatedAt()) {
 			oldest = &pending[i]
 		}

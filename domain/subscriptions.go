@@ -75,19 +75,6 @@ func (s Subscriptions) Hearing(name EventName, from string, by Publisher, addres
 	return Subscription{}, false
 }
 
-// HearingFrom finds the subscription by which the bot hears a domain
-// event that a bot of another team published: the first that names the
-// team and whose topic and from fit. There is no implicit way: across
-// teams only a subscription hears.
-func (s Subscriptions) HearingFrom(team TeamName, name EventName, from string) (Subscription, bool) {
-	for _, sub := range s.list {
-		if sub.MatchesFrom(team, name, from) {
-			return sub, true
-		}
-	}
-	return Subscription{}, false
-}
-
 // teamDefault reports whether every bot of the team hears the event
 // without subscribing: danger and stop.
 func teamDefault(name EventName) bool {

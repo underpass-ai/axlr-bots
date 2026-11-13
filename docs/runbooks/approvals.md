@@ -119,12 +119,12 @@ A `WaitingApproval` task ends `Cancelled` with `approval.outcome: cancelled`; th
 
 ## Who may decide
 
-`approvals.approvers` lists who may approve **and** deny the bot's calls ([reference](../reference/bot-definition.md#approvals), [ADR](../architecture/approvers.md)). The name is the actor a decision carries: the CLI's global `--actor` (default `cli:$USER`), the panel's **Decide as** (`controlPlane.actor` in its settings), or `X-Axlr-Actor` / `decidedBy` on the API. It is compared without the CLI's `cli:` prefix and without case (`tirso`, `cli:tirso` and `Tirso` are one person), so the CLI's default `cli:tirso` matches `"approvers": ["tirso", "oncall"]`.
+`approvals.approvers` lists who may approve **and** deny the bot's calls ([reference](../reference/bot-definition.md#approvals), [ADR](../architecture/approvers.md)). The name is the actor a decision carries: the CLI's global `--actor` (default `cli:$USER`), the panel's **Decide as** (`controlPlane.actor` in its settings), or `X-Axlr-Actor` / `decidedBy` on the API. It is compared without the CLI's `cli:` prefix and without case (`alice`, `cli:alice` and `Alice` are one person), so the CLI's default `cli:alice` matches `"approvers": ["alice", "oncall"]`.
 
 A daemon takes its own name from the same flag, so a daemon a person starts by hand is named after them (`cli:$USER`) and that person's decisions are refused as the control plane's own. Start it with `axlr-bots --actor <a name of its own> serve`.
 
 ```bash
-axlr-bots task approve task-…                  # as cli:tirso: decided by tirso
+axlr-bots task approve task-…                  # as cli:alice: decided by alice
 axlr-bots --actor mallory task approve task-…  # refused
 axlr-bots: forbidden: mallory is not among the approvers of bot writer
 ```

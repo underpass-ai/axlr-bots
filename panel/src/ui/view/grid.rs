@@ -268,7 +268,7 @@ mod tests {
     #[test]
     fn shortens_long_words_with_an_ellipsis() {
         assert_eq!(shorten("worker-1", 10), "worker-1");
-        assert_eq!(shorten("qa-reporter-with-a-long-name", 10), "qa-report…");
+        assert_eq!(shorten("web-reporter-with-a-long-name", 10), "web-repor…");
         assert_eq!(shorten("ab cd", 4), "ab…");
     }
 

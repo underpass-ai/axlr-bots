@@ -62,11 +62,11 @@ func fixtures() []fixture {
 	}
 	return []fixture{
 		{name: "enroll_request", message: EnrollRequest{TokenID: "tok-1", Secret: "s3cr3t", HostName: "pi-garden.local", CSR: "-----BEGIN CERTIFICATE REQUEST-----\nMIIB\n-----END CERTIFICATE REQUEST-----\n"}},
-		{name: "enroll_response", skip: []string{"NodeCapabilities.Providers", "NodeCapabilities.SkillsSupported", "NodeCapabilities.MemoryTeams", "NodeCapabilities.TeamChannel"}, message: enrolled},
-		{name: "register_request", skip: []string{"NodeCapabilities.Providers", "NodeCapabilities.SkillsSupported", "NodeCapabilities.MemoryTeams", "NodeCapabilities.TeamChannel"}, message: RegisterRequest{ID: "pi-garden", HostName: "pi-garden.local", Labels: map[string]string{"arch": "aarch64", "class": "sbc", "ram": "512mi"}, Capabilities: fixtureCapabilities()}},
+		{name: "enroll_response", skip: []string{"NodeCapabilities.Providers", "NodeCapabilities.SkillsSupported"}, message: enrolled},
+		{name: "register_request", skip: []string{"NodeCapabilities.Providers", "NodeCapabilities.SkillsSupported"}, message: RegisterRequest{ID: "pi-garden", HostName: "pi-garden.local", Labels: map[string]string{"arch": "aarch64", "class": "sbc", "ram": "512mi"}, Capabilities: fixtureCapabilities()}},
 		// The control plane answers a registration and a heartbeat with
 		// the node as it knows it; a heartbeat has no body.
-		{name: "node_snapshot", skip: []string{"NodeCapabilities.Providers", "NodeCapabilities.SkillsSupported", "NodeCapabilities.MemoryTeams", "NodeCapabilities.TeamChannel"}, message: fixtureNode()},
+		{name: "node_snapshot", skip: []string{"NodeCapabilities.Providers", "NodeCapabilities.SkillsSupported"}, message: fixtureNode()},
 		{name: "model_request", message: ModelRequest{
 			Messages: []ModelChatMessage{{Role: "user", Content: "turn on the lamp"}},
 			Tools:    []ModelToolMessage{{Name: "gpio_write", Description: "Set a pin", Parameters: json.RawMessage(`{"type":"object"}`)}},
@@ -77,7 +77,7 @@ func fixtures() []fixture {
 		}},
 		{name: "jev_request", message: JevRequest{State: "soil at 12%", Question: "water?", Options: []string{"water", "wait"}}},
 		{name: "jev_reply", message: JevReply{Choice: "water", Probability: 0.8, Confidence: 0.6}},
-		{name: "assignment_run", skip: []string{"AssignmentMessage.Decide", "RunMessage.Delegation", "RunMessage.Events", "RunMessage.Ask", "RunMessage.Unattended", "RunMessage.Skills", "RunMessage.MemoryTeam", "RunMessage.ChannelMemory", "RunMessage.Contexts"}, message: AssignmentMessage{
+		{name: "assignment_run", skip: []string{"RunMessage.MemoryTeam", "AssignmentMessage.Decide", "RunMessage.Delegation", "RunMessage.Events", "RunMessage.Skills"}, message: AssignmentMessage{
 			ExecutionID: "exec-1", Kind: "run", LeaseUntil: fixtureAt.Add(time.Minute),
 			Run: &RunMessage{
 				TaskID: "task-1", BotID: "garden", TenantID: "home", CorrelationID: "corr-1", Objective: "water the bed if the soil is dry", Model: "jev-default",
@@ -90,7 +90,7 @@ func fixtures() []fixture {
 				Input: json.RawMessage(`{"moisture":0.12}`),
 			},
 		}},
-		{name: "assignment_decide", skip: []string{"AssignmentMessage.Run", "DecideMessage.Delegation", "DecideMessage.Events", "DecideMessage.Ask", "DecideMessage.Skills", "DecideMessage.MemoryTeam"}, message: AssignmentMessage{
+		{name: "assignment_decide", skip: []string{"DecideMessage.MemoryTeam", "AssignmentMessage.Run", "DecideMessage.Delegation", "DecideMessage.Events", "DecideMessage.Skills"}, message: AssignmentMessage{
 			ExecutionID: "exec-2", Kind: "decide", LeaseUntil: fixtureAt.Add(time.Minute),
 			Decide: &DecideMessage{
 				TaskID: "task-1", BotID: "garden", CorrelationID: "corr-1", SessionID: "sess-1", CallID: "call-1", Decision: "approve",

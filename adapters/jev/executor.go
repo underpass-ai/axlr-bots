@@ -131,15 +131,9 @@ func (e *Executor) Execute(ctx context.Context, request application.ExecutionReq
 	return report, nil
 }
 
-// client reaches the program's server: the reserved axlr-bots is the
-// node's, in process; any other is found by name in the node's mcp.json.
+// client reaches the program's server, found by name in the node's
+// mcp.json.
 func (e *Executor) client(program domain.JevProgram, request application.ExecutionRequest) (toolClient, error) {
-	if program.Server() == domain.WatchServer {
-		if request.OnNodeTool == nil {
-			return nil, errors.New("this node serves no " + domain.WatchServer + " tools to the run: a team's watcher runs only on a node with the team channel on (axlr-node --team-channel)")
-		}
-		return nodeToolClient{call: request.OnNodeTool}, nil
-	}
 	address, err := e.Servers.Resolve(program.Server())
 	if err != nil {
 		return nil, err

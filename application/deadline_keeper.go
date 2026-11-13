@@ -55,12 +55,6 @@ func (k deadlineKeeper) miss(ctx context.Context, bot domain.Bot, task *domain.T
 	if err := k.rec.executionEvent(ctx, endEvent(*task), bot, task.ID(), executionID, task.CorrelationID(), payload); err != nil {
 		return err
 	}
-	if err := newAnswerDeliverer(k.deps).taskEnded(ctx, bot, *task, domain.Execution{}); err != nil {
-		return err
-	}
-	if err := newCompletionKeeper(k.deps).taskEnded(ctx, bot, *task); err != nil {
-		return err
-	}
 	if err := newPlatformPublisher(k.deps).taskEnded(ctx, bot, *task, domain.Execution{}); err != nil {
 		return err
 	}

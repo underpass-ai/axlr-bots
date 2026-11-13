@@ -5,7 +5,6 @@ import "time"
 // TimerSnapshot is a timer as plain data.
 type TimerSnapshot struct {
 	BotID           string     `json:"botId,omitempty"`
-	Team            string     `json:"team,omitempty"`
 	Trigger         string     `json:"trigger"`
 	Schedule        string     `json:"schedule"`
 	NextFireAt      time.Time  `json:"nextFireAt"`

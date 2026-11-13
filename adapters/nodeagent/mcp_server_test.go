@@ -118,7 +118,7 @@ func TestMCPServerReplacesAStaleSocketAndRemovesItsOwn(t *testing.T) {
 		}
 	}
 	agent := Agent{Options: Options{SocketDir: dir}, slots: newSlots(1)}
-	if socket, closeSocket := agent.serveDelegation(context.Background(), "web-1", "exec-..", &application.DelegationOffer{Targets: []string{"b"}}, nil, nil, nil); socket != "" {
+	if socket, closeSocket := agent.serveDelegation(context.Background(), "web-1", "exec-..", &application.DelegationOffer{Targets: []string{"b"}}, nil, nil); socket != "" {
 		closeSocket()
 		t.Errorf("served %s", socket)
 	}

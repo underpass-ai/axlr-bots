@@ -41,25 +41,6 @@ func TestAssignmentRoundTrip(t *testing.T) {
 	if err != nil || back.Decide == nil || back.Decide.SessionID != "sess-1" || back.Decide.Decision != "approve" || back.Decide.Timeout != time.Minute || back.Run != nil {
 		t.Errorf("decide = %v %+v", err, back.Decide)
 	}
-	// The team a bot shares its memory with travels with the run and with
-	// the decision that continues it; a message without one names none.
-	if back.Decide.MemoryTeam != "" {
-		t.Errorf("a decision with no team names %q", back.Decide.MemoryTeam)
-	}
-	run.Run.MemoryTeam, decide.Decide.MemoryTeam = "qa", "qa"
-	for _, a := range []application.Assignment{run, decide} {
-		raw, _ := json.Marshal(FromAssignment(a))
-		var m AssignmentMessage
-		_ = json.Unmarshal(raw, &m)
-		back, err := ToAssignment(m)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if (back.Run != nil && back.Run.MemoryTeam != "qa") || (back.Decide != nil && back.Decide.MemoryTeam != "qa") {
-			t.Errorf("memory team lost: %+v %+v", back.Run, back.Decide)
-		}
-	}
-	run.Run.MemoryTeam, decide.Decide.MemoryTeam = "", ""
 	pins, _ := domain.NewSkillPins([]domain.SkillPinSnapshot{{Name: "oom", Version: "1.0.0", Catalog: "axlr"}})
 	run.Run.Skills, decide.Decide.Skills = pins, pins
 	for _, a := range []application.Assignment{run, decide} {
@@ -83,8 +64,6 @@ func TestAssignmentRoundTrip(t *testing.T) {
 	bad := []AssignmentMessage{
 		{ExecutionID: "exec-1", Kind: "run", Run: &RunMessage{BotID: "bot", Objective: "o", Level: "observe", AllowedTools: []string{"local_read"}, Skills: []domain.SkillPinSnapshot{{Name: "oom", Version: "latest", Catalog: "axlr"}}}},
 		{ExecutionID: "exec-2", Kind: "decide", Decide: &DecideMessage{BotID: "bot", SessionID: "s", Decision: "approve", Level: "observe", AllowedTools: []string{"local_read"}, Skills: []domain.SkillPinSnapshot{{Name: "oom", Version: "latest", Catalog: "axlr"}}}},
-		{ExecutionID: "exec-1", Kind: "run", Run: &RunMessage{BotID: "bot", Objective: "o", Level: "observe", AllowedTools: []string{"local_read"}, MemoryTeam: "Not A Team"}},
-		{ExecutionID: "exec-2", Kind: "decide", Decide: &DecideMessage{BotID: "bot", SessionID: "s", Decision: "approve", Level: "observe", AllowedTools: []string{"local_read"}, MemoryTeam: "Not A Team"}},
 		{ExecutionID: "", Kind: "run"},
 		{ExecutionID: "exec-1", Kind: "odd"},
 		{ExecutionID: "exec-1", Kind: "run"},
@@ -204,99 +183,5 @@ func TestARunCarriesItsRuntimeAndInput(t *testing.T) {
 	_ = json.Unmarshal(raw, &plainMessage)
 	if back, err := ToAssignment(plainMessage); err != nil || back.Run.Runtime.Kind() != domain.RuntimeAXLR {
 		t.Errorf("plain = %v %+v", err, back.Run)
-	}
-}
-
-// An ask offer and a question's answer cross the wire and back.
-func TestAQuestionAndItsOfferRoundTrip(t *testing.T) {
-	assignment := application.Assignment{ExecutionID: "exec-1", Kind: domain.ExecutionRun, Run: &application.ExecutionRequest{
-		TaskID: "task-1", BotID: "qa-jefe", TenantID: "t", Objective: "Lead QA", Level: domain.AutonomyObserve, Ask: &application.AskOffer{Teams: []string{"dev", "producto"}},
-	}}
-	back, err := ToAssignment(FromAssignment(assignment))
-	if err != nil || back.Run.Ask == nil || len(back.Run.Ask.Teams) != 2 || back.Run.Ask.Teams[1] != "producto" {
-		t.Fatalf("run: %v %+v", err, back.Run)
-	}
-	decide := application.Assignment{ExecutionID: "exec-2", Kind: domain.ExecutionDecide, Decide: &application.DecisionRequest{
-		TaskID: "task-1", BotID: "qa-jefe", SessionID: "sess-1", CallID: "call-1", Decision: "approve", Level: domain.AutonomyActWithApproval, Ask: &application.AskOffer{Teams: []string{"dev"}},
-	}}
-	if back, err := ToAssignment(FromAssignment(decide)); err != nil || back.Decide.Ask == nil || back.Decide.Ask.Teams[0] != "dev" {
-		t.Fatalf("decide: %v %+v", err, back.Decide)
-	}
-	if none, _ := ToAssignment(FromAssignment(application.Assignment{ExecutionID: "exec-3", Kind: domain.ExecutionRun, Run: &application.ExecutionRequest{TaskID: "task-1", BotID: "b", TenantID: "t", Objective: "o", Level: domain.AutonomyObserve}})); none.Run.Ask != nil {
-		t.Errorf("an ask offer from nowhere: %+v", none.Run.Ask)
-	}
-	answer := application.QuestionAnswer{TaskID: "task-9", BotID: "dev-a", Status: domain.TaskPending, Created: true}
-	if got, err := ToQuestion(FromQuestion(answer)); err != nil || got != answer {
-		t.Errorf("answer: %v %+v", err, got)
-	}
-	refusal := application.QuestionAnswer{Refused: &domain.QuestionRefusal{Reason: domain.RefusedTeamBusy, Message: "later"}}
-	if got, err := ToQuestion(FromQuestion(refusal)); err != nil || got.Refused == nil || got.Refused.Reason != domain.RefusedTeamBusy || got.TaskID != "" {
-		t.Errorf("refusal: %v %+v", err, got)
-	}
-	for _, bad := range []QuestionMessage{{TaskID: "Bad Id", BotID: "b", Status: "Pending"}, {TaskID: "task-1", BotID: "Bad Id", Status: "Pending"}, {TaskID: "task-1", BotID: "b", Status: "Sleeping"}} {
-		if _, err := ToQuestion(bad); err == nil {
-			t.Errorf("read %+v", bad)
-		}
-	}
-}
-
-// A question's state crosses the wire and back, the times that do not
-// apply left out.
-func TestAQuestionsStateRoundTrips(t *testing.T) {
-	at := time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC)
-	view := application.QuestionView{
-		Question: "task-9", Team: "dev", AskedBy: "qa-jefe", Responder: "dev-a", Status: domain.TaskRunning, AskedAt: at, Deadline: at.Add(2 * time.Hour), Now: at.Add(time.Minute),
-		OpenTasks: 1, RunningSince: at.Add(30 * time.Second), LastStep: "tool_call kmp_wake ok", LastStepAt: at.Add(40 * time.Second),
-	}
-	message := FromQuestionView(view)
-	if message.ApprovalSince != nil || message.RunningSince == nil {
-		t.Errorf("message = %+v", message)
-	}
-	back, err := ToQuestionView(message)
-	if err != nil || back != view {
-		t.Errorf("back: %v %+v", err, back)
-	}
-	for _, bad := range []QuestionStateMessage{{Question: "task-9", Status: "Sleeping"}, {Question: "Bad Id", Status: "Pending"}} {
-		if _, err := ToQuestionView(bad); err == nil {
-			t.Errorf("read %+v", bad)
-		}
-	}
-}
-
-func TestARunsContextKeysAndTheirReadsRoundTrip(t *testing.T) {
-	refs := []domain.ContextRef{{Key: "ws:s1", Team: "team-b"}, {Key: "project:team-a.x", Team: "team-a"}}
-	run := application.Assignment{ExecutionID: "exec-1", Kind: domain.ExecutionRun, Run: &application.ExecutionRequest{
-		ExecutionID: "exec-1", TaskID: "task-1", BotID: "bot", Objective: "x", Level: domain.AutonomyObserve, Contexts: refs,
-	}}
-	raw, _ := json.Marshal(FromAssignment(run))
-	if !strings.Contains(string(raw), `"contexts":[{"key":"ws:s1","team":"team-b"}`) {
-		t.Errorf("message = %s", raw)
-	}
-	var m AssignmentMessage
-	_ = json.Unmarshal(raw, &m)
-	back, err := ToAssignment(m)
-	if err != nil || len(back.Run.Contexts) != 2 || back.Run.Contexts[1] != refs[1] {
-		t.Fatalf("back = %+v %v", back.Run, err)
-	}
-	for _, bad := range [][]domain.ContextRef{{{Key: "no key", Team: "team-b"}}, {refs[0], refs[1], refs[0]}} {
-		m.Run.Contexts = bad
-		if _, err := ToAssignment(m); err == nil {
-			t.Errorf("%+v accepted", bad)
-		}
-	}
-	none, _ := json.Marshal(FromAssignment(application.Assignment{ExecutionID: "exec-1", Kind: domain.ExecutionRun, Run: &application.ExecutionRequest{ExecutionID: "exec-1", Objective: "x", Level: domain.AutonomyObserve}}))
-	if strings.Contains(string(none), "contexts") {
-		t.Errorf("a run without keys = %s", none)
-	}
-	reads := []domain.ContextRead{{Key: "ws:s1", Team: "team-b", Read: []string{"a"}}, {Key: "project:team-a.x", Team: "team-a", Line: "ask team-a"}}
-	rawReport, _ := json.Marshal(FromReport(application.ExecutionReport{Outcome: domain.ExecutionCompleted, ContextRead: reads}))
-	var report ReportMessage
-	_ = json.Unmarshal(rawReport, &report)
-	if got, err := ToReport(report); err != nil || len(got.ContextRead) != 2 || got.ContextRead[1].Line != "ask team-a" {
-		t.Errorf("report = %+v %v", got.ContextRead, err)
-	}
-	plain, _ := json.Marshal(FromReport(application.ExecutionReport{Outcome: domain.ExecutionCompleted}))
-	if strings.Contains(string(plain), "contextRead") {
-		t.Errorf("a report without reads = %s", plain)
 	}
 }

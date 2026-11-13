@@ -6,11 +6,6 @@ const (
 	RefusedNoTeam      = "no_team"
 	RefusedNotMember   = "not_member"
 	RefusedRateLimited = "rate_limited"
-	// RefusedCrossingLimit: the trace already crossed MaxTeamCrossings
-	// team boundaries (docs/architecture/team-topics.md).
-	RefusedCrossingLimit = "crossing_limit"
-	// RefusedNoDomainID: an event that would cross carries no data.id.
-	RefusedNoDomainID = "no_domain_id"
 )
 
 // EventRefusal is an event the control plane did not take: which check

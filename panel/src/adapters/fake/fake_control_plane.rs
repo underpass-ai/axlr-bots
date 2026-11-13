@@ -9,8 +9,8 @@ use crate::domain::{
     DecidedTask, Decision, DeletedBot, EnrollmentRequest, EnrollmentToken, Event, Execution, ExecutionId,
     ExecutionKind, ExecutionOutcome, ExecutionResult, Node, NodeCapabilities, NodeId, NodeStatus, Overview,
     PendingDecision, Publication, Published, RevokedNode, Secret, SentTaskMessage, StagedDefinition, StoppedBotAnswer,
-    SubmittedTask, Subscription, Task, TaskFilter, TaskId, TaskStatus, TaskSubmission, TeamLink, ToolCall, Topic,
-    TopicListener, TriggerRef, Usage,
+    SubmittedTask, Subscription, Task, TaskFilter, TaskId, TaskStatus, TaskSubmission, ToolCall, Topic, TopicListener,
+    TriggerRef, Usage,
 };
 
 /// The control plane in memory: what the use cases and the interface are
@@ -37,9 +37,6 @@ struct FakeState {
     /// The build GET /v1/build answers; None: a control plane from before
     /// the route.
     build: Option<BuildStatus>,
-    /// Each team's links in the team channel, as set: the panel's bots
-    /// carry no ask to derive them from.
-    links: BTreeMap<String, Vec<TeamLink>>,
     calls: Vec<String>,
     serial: u64,
 }
@@ -254,12 +251,6 @@ impl FakeControlPlane {
         if let Some(bot) = state.bots.get_mut(&BotId::new(id).unwrap()) {
             bot.groups = groups.iter().map(|g| g.to_string()).collect();
         }
-    }
-
-    /// Sets a team's links in the team channel, as the control plane
-    /// would derive them from its bots.
-    pub fn set_links(&self, team: &str, links: Vec<TeamLink>) {
-        self.state.lock().unwrap().links.insert(team.to_string(), links);
     }
 
     /// Sets the topics a bot listens to, as a patch or a bot's ask
@@ -1096,18 +1087,6 @@ impl ControlPlane for FakeControlPlane {
                     && kind != "danger";
             }
             Ok(topics.into_values().collect())
-        })
-    }
-
-    fn group_links(&self, name: String) -> PortFuture<'_, Vec<TeamLink>> {
-        self.call(format!("group_links {name}"), move |s| {
-            if s.older {
-                return Err(PanelError::NotFound("404 page not found".into()));
-            }
-            if !s.bots.values().any(|b| b.groups.contains(&name)) {
-                return Err(PanelError::NotFound(format!("group {name} not found")));
-            }
-            Ok(s.links.get(&name).cloned().unwrap_or_default())
         })
     }
 

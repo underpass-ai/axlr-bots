@@ -17,7 +17,6 @@ type DecideMessage struct {
 	TimeoutSeconds int                      `json:"timeoutSeconds"`
 	Delegation     *DelegationOfferMessage  `json:"delegation,omitempty"`
 	Events         *EventsOfferMessage      `json:"events,omitempty"`
-	Ask            *AskOfferMessage         `json:"ask,omitempty"`
 	// MemoryTeam is as on a RunMessage.
 	MemoryTeam string `json:"memoryTeam,omitempty"`
 	// Skills are the catalog skills the session goes on reading.

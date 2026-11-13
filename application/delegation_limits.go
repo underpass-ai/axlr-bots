@@ -156,10 +156,10 @@ func runTimeout(bot domain.Bot, task domain.Task, now time.Time) (time.Duration,
 	return timeout, true
 }
 
-// allowedTools is the execution's tool allow-list: the bot's, the delegation tool when the bot may ask
-// other bots, the emit tool when it is in a team, and the ask tool when
-// it may ask other teams.
-func allowedTools(allowed domain.AllowedTools, offer *DelegationOffer, events *EventsOffer, ask *AskOffer) []string {
+// allowedTools is the execution's tool allow-list: the bot's, the
+// delegation tool when the bot may ask other bots, and the emit tools
+// when it is in a team.
+func allowedTools(allowed domain.AllowedTools, offer *DelegationOffer, events *EventsOffer) []string {
 	tools := allowed.Names()
 	if offer != nil && !allowed.Allows(DelegateToolName) {
 		tools = append(tools, DelegateToolName)
@@ -169,12 +169,6 @@ func allowedTools(allowed domain.AllowedTools, offer *DelegationOffer, events *E
 	}
 	if events != nil && !allowed.Allows(SubscribeToolName) {
 		tools = append(tools, SubscribeToolName)
-	}
-	if ask != nil && !allowed.Allows(AskToolName) {
-		tools = append(tools, AskToolName)
-	}
-	if ask != nil && !allowed.Allows(QuestionStatusToolName) {
-		tools = append(tools, QuestionStatusToolName)
 	}
 	return tools
 }

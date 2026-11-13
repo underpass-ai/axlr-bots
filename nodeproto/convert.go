@@ -17,8 +17,8 @@ func FromAssignment(a application.Assignment) AssignmentMessage {
 			TaskID: r.TaskID.String(), BotID: r.BotID.String(), TenantID: r.TenantID.String(), CorrelationID: r.CorrelationID.String(),
 			Objective: r.PromptText(), Model: r.Model, Level: r.Level.String(), AllowedTools: r.AllowedTools,
 			ToolRules: r.ToolRules.Snapshot(), TimeoutSeconds: wholeSeconds(r.Timeout), Delegation: fromOffer(r.Delegation),
-			Events: fromEventsOffer(r.Events), Ask: fromAskOffer(r.Ask), Runtime: r.Runtime.Snapshot(), Input: r.Input, Skills: r.Skills.Snapshot(),
-			MemoryTeam: r.MemoryTeam.String(), ChannelMemory: FromChannelRecord(r.ChannelMemory), Contexts: r.Contexts,
+			Events: fromEventsOffer(r.Events), Runtime: r.Runtime.Snapshot(), Input: r.Input, Skills: r.Skills.Snapshot(),
+			MemoryTeam: r.MemoryTeam.String(),
 		}
 		if model, tools := r.Budgets.MaxModelCallsPerTask(), r.Budgets.MaxToolCallsPerTask(); model > 0 || tools > 0 {
 			m.Run.Budgets = &BudgetsMessage{MaxModelCalls: model, MaxToolCalls: tools}
@@ -29,7 +29,7 @@ func FromAssignment(a application.Assignment) AssignmentMessage {
 		m.Decide = &DecideMessage{
 			TaskID: d.TaskID.String(), BotID: d.BotID.String(), CorrelationID: d.CorrelationID.String(), SessionID: d.SessionID, CallID: d.CallID, Decision: d.Decision, Level: d.Level.String(),
 			AllowedTools: d.AllowedTools, ToolRules: d.ToolRules.Snapshot(), TimeoutSeconds: wholeSeconds(d.Timeout), Delegation: fromOffer(d.Delegation),
-			Events: fromEventsOffer(d.Events), Ask: fromAskOffer(d.Ask), Skills: d.Skills.Snapshot(), MemoryTeam: d.MemoryTeam.String(),
+			Events: fromEventsOffer(d.Events), Skills: d.Skills.Snapshot(), MemoryTeam: d.MemoryTeam.String(),
 		}
 	}
 	return m
@@ -81,15 +81,10 @@ func ToAssignment(m AssignmentMessage) (application.Assignment, error) {
 		if err != nil {
 			return application.Assignment{}, err
 		}
-		contexts, err := toContexts(r.Contexts)
-		if err != nil {
-			return application.Assignment{}, err
-		}
 		a.Run = &application.ExecutionRequest{
 			ExecutionID: executionID, TaskID: domain.TaskID(r.TaskID), BotID: botID, TenantID: domain.TenantID(r.TenantID), CorrelationID: domain.CorrelationID(r.CorrelationID),
 			Objective: objective, Model: r.Model, Level: level, AllowedTools: tools.Names(), ToolRules: rules, Timeout: time.Duration(r.TimeoutSeconds) * time.Second,
-			Delegation: toOffer(r.Delegation), Events: toEventsOffer(r.Events), Ask: toAskOffer(r.Ask), Runtime: runtime, Input: r.Input, Skills: skills, MemoryTeam: team,
-			ChannelMemory: ToChannelRecord(r.ChannelMemory), Contexts: contexts,
+			Delegation: toOffer(r.Delegation), Events: toEventsOffer(r.Events), Runtime: runtime, Input: r.Input, Skills: skills, MemoryTeam: team,
 		}
 		if r.Budgets != nil {
 			budgets, err := domain.NewBudgets(r.Budgets.MaxModelCalls, r.Budgets.MaxToolCalls, 0, a.Run.Timeout)
@@ -119,7 +114,7 @@ func ToAssignment(m AssignmentMessage) (application.Assignment, error) {
 		a.Decide = &application.DecisionRequest{
 			ExecutionID: executionID, TaskID: domain.TaskID(d.TaskID), BotID: botID, CorrelationID: domain.CorrelationID(d.CorrelationID), SessionID: d.SessionID, CallID: d.CallID, Decision: d.Decision,
 			Level: level, AllowedTools: tools.Names(), ToolRules: rules, Timeout: time.Duration(d.TimeoutSeconds) * time.Second,
-			Delegation: toOffer(d.Delegation), Events: toEventsOffer(d.Events), Ask: toAskOffer(d.Ask), Skills: skills, MemoryTeam: team,
+			Delegation: toOffer(d.Delegation), Events: toEventsOffer(d.Events), Skills: skills, MemoryTeam: team,
 		}
 		if err := a.Decide.Validate(); err != nil {
 			return application.Assignment{}, err
@@ -128,29 +123,6 @@ func ToAssignment(m AssignmentMessage) (application.Assignment, error) {
 		return application.Assignment{}, fmt.Errorf("nodeproto: assignment %s of kind %s carries no %s", m.ExecutionID, kind, kind)
 	}
 	return a, nil
-}
-
-// toContexts reads the run's context keys: at most MaxContextRefs, each
-// a valid key of a team.
-func toContexts(refs []domain.ContextRef) ([]domain.ContextRef, error) {
-	if len(refs) > domain.MaxContextRefs {
-		return nil, domain.ValidationError{Field: "contexts", Reason: "names at most 2 keys"}
-	}
-	for _, ref := range refs {
-		if err := ref.Validate(); err != nil {
-			return nil, err
-		}
-	}
-	return refs, nil
-}
-
-// toMemoryTeam reads the team a run shares its memory with: none when
-// the message names none, as an older control plane's does.
-func toMemoryTeam(name string) (domain.TeamName, error) {
-	if name == "" {
-		return "", nil
-	}
-	return domain.NewTeamName(name)
 }
 
 func fromOffer(o *application.DelegationOffer) *DelegationOfferMessage {
@@ -165,20 +137,6 @@ func toOffer(m *DelegationOfferMessage) *application.DelegationOffer {
 		return nil
 	}
 	return &application.DelegationOffer{Targets: append([]string(nil), m.Targets...), Depth: m.Depth, MaxDepth: m.MaxDepth}
-}
-
-func fromAskOffer(o *application.AskOffer) *AskOfferMessage {
-	if o == nil {
-		return nil
-	}
-	return &AskOfferMessage{Teams: append([]string{}, o.Teams...)}
-}
-
-func toAskOffer(m *AskOfferMessage) *application.AskOffer {
-	if m == nil || len(m.Teams) == 0 {
-		return nil
-	}
-	return &application.AskOffer{Teams: append([]string(nil), m.Teams...)}
 }
 
 func fromEventsOffer(o *application.EventsOffer) *EventsOfferMessage {
@@ -261,7 +219,7 @@ func policyOf(level string, allowed []string, rules domain.ToolRulesSnapshot) (d
 
 // FromReport renders a report as a message.
 func FromReport(r application.ExecutionReport) ReportMessage {
-	return ReportMessage{Outcome: r.Outcome.String(), Result: r.Result, Usage: r.Usage, FailureReason: r.FailureReason, TraceReference: r.TracePath, Policy: r.Policy, Correlation: r.Correlation, Receipt: r.Receipt, ContextRead: r.ContextRead}
+	return ReportMessage{Outcome: r.Outcome.String(), Result: r.Result, Usage: r.Usage, FailureReason: r.FailureReason, TraceReference: r.TracePath, Policy: r.Policy, Correlation: r.Correlation, Receipt: r.Receipt}
 }
 
 // ToReport reads a report message back.
@@ -276,5 +234,14 @@ func ToReport(m ReportMessage) (application.ExecutionReport, error) {
 	if err := m.Usage.Validate(); err != nil {
 		return application.ExecutionReport{}, err
 	}
-	return application.ExecutionReport{Outcome: outcome, Result: m.Result, Usage: m.Usage, FailureReason: m.FailureReason, TracePath: m.TraceReference, Policy: m.Policy, Correlation: m.Correlation, Receipt: m.Receipt, ContextRead: m.ContextRead}, nil
+	return application.ExecutionReport{Outcome: outcome, Result: m.Result, Usage: m.Usage, FailureReason: m.FailureReason, TracePath: m.TraceReference, Policy: m.Policy, Correlation: m.Correlation, Receipt: m.Receipt}, nil
+}
+
+// toMemoryTeam reads the team a run shares its memory with: none when
+// the message names none, as an older control plane's does.
+func toMemoryTeam(name string) (domain.TeamName, error) {
+	if name == "" {
+		return "", nil
+	}
+	return domain.NewTeamName(name)
 }

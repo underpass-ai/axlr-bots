@@ -24,8 +24,7 @@ func (e errPromptRefused) Unwrap() error { return e.cause }
 // composedPrompt composes the prompt of the task's run, or the refusal
 // that ends the task.
 func composedPrompt(bot domain.Bot, task domain.Task, mates []domain.Bot) (domain.Prompt, error) {
-	reserve := domain.ContextRoom(contextRefsOf(task), memoryTeamOf(bot))
-	prompt, err := domain.NewTeamPromptLeaving(bot.Mission(), task.Objective(), directoryOf(bot, mates), task.Notes(), reserve)
+	prompt, err := domain.NewTeamPromptLeaving(bot.Mission(), task.Objective(), directoryOf(bot, mates), task.Notes(), 0)
 	if err != nil {
 		return "", errPromptRefused{cause: err, mission: len(bot.Mission().String()), objective: len(task.Objective().String())}
 	}

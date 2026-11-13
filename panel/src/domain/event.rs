@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{AutonomyLevel, ProgressItem, TeamQuestion, Version};
+use super::{AutonomyLevel, ProgressItem, Version};
 
 /// Something that happened to a bot, a task or a node, as the control
 /// plane's event log keeps it.
@@ -66,9 +66,6 @@ impl Event {
             "bot.task.message" if self.payload_text("from").is_some_and(|f| f.starts_with("event:")) => {
                 "A teammate told it".into()
             }
-            "bot.task.message" if self.payload_text("from").is_some_and(|f| f.starts_with("question:")) => {
-                "Another team answered".into()
-            }
             "bot.task.message" => "You wrote".into(),
             "bot.task.said" => "It answered".into(),
             "bot.task.progress" => "Working".into(),
@@ -94,10 +91,6 @@ impl Event {
             "bot.task.preempted" => "Stopped for urgent".into(),
             "bot.task.delegated" => "Asked a bot".into(),
             "bot.delegation.refused" => "Ask refused".into(),
-            "bot.question.asked" => "Asked a team".into(),
-            "bot.question.answered" if TeamQuestion::of(self).is_some_and(|q| q.unanswered()) => "No answer".into(),
-            "bot.question.answered" => "Question answered".into(),
-            "bot.question.refused" => "Question refused".into(),
             "execution.assigned" => "Sent to node".into(),
             "execution.reported" => "Node reported".into(),
             "node.registered" => "Node joined".into(),
@@ -127,10 +120,7 @@ impl Event {
             | "node.revoked"
             | "bot.task.cancelled"
             | "bot.event.refused"
-            | "bot.delegation.refused"
-            | "bot.question.refused" => EventTone::Bad,
-            "bot.question.answered" if TeamQuestion::of(self).is_some_and(|q| q.unanswered()) => EventTone::Waiting,
-            "bot.question.answered" => EventTone::Good,
+            | "bot.delegation.refused" => EventTone::Bad,
             "bot.task.preempted" => EventTone::Waiting,
             "bot.event.emitted" | "group.event.published" => match self.payload_text("severity").as_deref() {
                 Some("warning") | Some("critical") => EventTone::Waiting,
@@ -271,11 +261,6 @@ impl Event {
                 return format!("you → {}: {name} · {message}", self.addressed_to());
             }
             "bot.event.heard" => return self.heard(),
-            "bot.question.asked" | "bot.question.answered" | "bot.question.refused" => {
-                if let Some(question) = TeamQuestion::of(self) {
-                    return question.detail();
-                }
-            }
             "bot.task.progress" => {
                 let steps = self.progress().len();
                 return if steps == 1 {
@@ -376,37 +361,6 @@ mod tests {
         assert_eq!(by_policy.detail(), "by its policy, no person needed");
         assert_eq!(event("bot.task.delegated", "{}").label(), "Asked a bot");
         assert_eq!(event("bot.delegation.refused", "{}").tone(), EventTone::Bad);
-        assert_eq!(event("bot.question.refused", "{}").tone(), EventTone::Bad);
-        assert_eq!(event("bot.question.asked", "{}").label(), "Asked a team");
-        assert_eq!(event("bot.question.answered", "{}").label(), "Question answered");
-        let answered = event(
-            "bot.question.answered",
-            r#"{"team":"dev","responder":"dev-a","answered":true,"partial":true,"answer":"0.4.2"}"#,
-        );
-        assert_eq!(answered.tone(), EventTone::Good);
-        assert_eq!(answered.detail(), "dev-a (dev): 0.4.2 · partial: one store of several");
-        let none = event(
-            "bot.question.answered",
-            r#"{"team":"dev","responder":"dev-a","answered":false,"reason":"expired"}"#,
-        );
-        assert_eq!((none.label().as_str(), none.tone()), ("No answer", EventTone::Waiting));
-        assert_eq!(none.detail(), "no answer from dev-a (dev): expired");
-        assert_eq!(
-            event(
-                "bot.question.asked",
-                r#"{"team":"dev","question":"Who?","responder":"dev-a"}"#
-            )
-            .detail(),
-            "dev: Who? · to dev-a"
-        );
-        assert_eq!(
-            event("bot.question.refused", r#"{"team":"ops","reason":"not_allowed"}"#).detail(),
-            "ops: not_allowed"
-        );
-        assert_eq!(
-            event("bot.task.message", r#"{"from":"question:task-9"}"#).label(),
-            "Another team answered"
-        );
     }
 
     #[test]

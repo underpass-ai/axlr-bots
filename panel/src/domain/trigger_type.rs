@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// What starts a bot's task: a person, a webhook, a timer, another bot
-/// that delegates to it, a teammate's event, another team's question, or
-/// the answer to a question it asked.
+/// that delegates to it, or a teammate's event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TriggerType {
@@ -12,9 +11,6 @@ pub enum TriggerType {
     Timer,
     Delegation,
     Event,
-    Question,
-    #[serde(rename = "question_answer")]
-    QuestionAnswer,
     /// A value this panel does not know: the control plane is newer. Read,
     /// shown as unknown, never refused.
     #[serde(other)]
@@ -29,8 +25,6 @@ impl TriggerType {
             Self::Timer => "timer",
             Self::Delegation => "delegation",
             Self::Event => "event",
-            Self::Question => "question",
-            Self::QuestionAnswer => "question_answer",
             Self::Unknown => "unknown",
         }
     }
@@ -42,8 +36,6 @@ impl TriggerType {
             Self::Timer => "Timer",
             Self::Delegation => "Another bot",
             Self::Event => "A teammate's event",
-            Self::Question => "Another team's question",
-            Self::QuestionAnswer => "The answer it asked for",
             Self::Unknown => "Unknown",
         }
     }
@@ -75,20 +67,6 @@ mod tests {
         );
         assert_eq!(TriggerType::Delegation.name(), "delegation");
         assert_eq!(TriggerType::Delegation.label(), "Another bot");
-    }
-
-    #[test]
-    fn reads_the_team_channel_s_triggers() {
-        assert_eq!(
-            serde_json::from_str::<TriggerType>("\"question\"").unwrap(),
-            TriggerType::Question
-        );
-        assert_eq!(
-            serde_json::from_str::<TriggerType>("\"question_answer\"").unwrap(),
-            TriggerType::QuestionAnswer
-        );
-        assert_eq!(TriggerType::QuestionAnswer.name(), "question_answer");
-        assert_eq!(TriggerType::Question.label(), "Another team's question");
     }
 
     #[test]

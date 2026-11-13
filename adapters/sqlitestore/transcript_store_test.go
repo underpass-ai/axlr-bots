@@ -15,7 +15,7 @@ import (
 )
 
 func record(execution, session string) application.TranscriptRecord {
-	return application.TranscriptRecord{Execution: domain.ExecutionID(execution), Task: "task-1", Bot: "dev-go", Session: session, Size: 3, SHA256: "abc", ReceivedAt: time.Date(2026, 11, 13, 10, 0, 0, 123, time.UTC)}
+	return application.TranscriptRecord{Execution: domain.ExecutionID(execution), Task: "task-1", Bot: "worker-1", Session: session, Size: 3, SHA256: "abc", ReceivedAt: time.Date(2026, 11, 13, 10, 0, 0, 123, time.UTC)}
 }
 
 func TestSaveLoadListReplace(t *testing.T) {
@@ -32,7 +32,7 @@ func TestSaveLoadListReplace(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, content, err := store.LoadTranscript(ctx, "exec-1", "s1")
-	if err != nil || string(content) != `{"a":1}` || got.Bot != "dev-go" || got.Task != "task-1" || !got.ReceivedAt.Equal(record("", "").ReceivedAt) {
+	if err != nil || string(content) != `{"a":1}` || got.Bot != "worker-1" || got.Task != "task-1" || !got.ReceivedAt.Equal(record("", "").ReceivedAt) {
 		t.Fatalf("load: %+v %q %v", got, content, err)
 	}
 	filtered := record("exec-3", "s3")

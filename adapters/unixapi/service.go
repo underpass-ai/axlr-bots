@@ -52,9 +52,6 @@ type Service interface {
 	// ListGroupTopics answers a team's topics: who publishes, who
 	// listens, the last event.
 	ListGroupTopics(ctx context.Context, name, tenant string) ([]application.GroupTopic, error)
-	// ListGroupLinks answers a team's links in the team channel: the
-	// teams it may ask and that may ask it, who asks and who answers.
-	ListGroupLinks(ctx context.Context, name, tenant string) ([]application.GroupLink, error)
 	// PublishGroupEvent publishes the operator's event on a team; the
 	// same key again answers the same event, Created false.
 	PublishGroupEvent(ctx context.Context, command application.PublishGroupEventCommand) (application.PublishAnswer, error)

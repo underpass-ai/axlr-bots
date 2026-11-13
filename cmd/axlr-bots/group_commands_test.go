@@ -140,11 +140,7 @@ func TestGroupPublishAndTopicsCommands(t *testing.T) {
 	if code != exitOK || json.Unmarshal([]byte(out), &topics) != nil || len(topics) != 2 || topics[0]["name"] != "info.turno" || topics[1]["publishers"].([]any)[0] != "operator" {
 		t.Fatalf("topics = %d %s %s", code, out, errText)
 	}
-	// Neither bot asks another team: the team has no link.
-	if code, out, errText := c.run("group", "links", "releases", "--tenant", "default"); code != exitOK || strings.TrimSpace(out) != "[]" {
-		t.Errorf("links = %d %s %s", code, out, errText)
-	}
-	for _, args := range [][]string{{"group", "topics"}, {"group", "topics", "--bogus"}, {"group", "links"}, {"group", "links", "a", "b"}, {"group", "publish", "releases", "x"}, {"group", "publish", "releases", "x", "--message", "y", "--data", "[1]"}, {"group", "publish", "--bogus"}} {
+	for _, args := range [][]string{{"group", "topics"}, {"group", "topics", "--bogus"}, {"group", "publish", "releases", "x"}, {"group", "publish", "releases", "x", "--message", "y", "--data", "[1]"}, {"group", "publish", "--bogus"}} {
 		if code, _, _ := c.run(args...); code != exitUsage {
 			t.Errorf("%v: exit %d", args, code)
 		}

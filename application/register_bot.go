@@ -136,21 +136,11 @@ func buildBot(d BotDefinition, now time.Time) (domain.Bot, error) {
 			return domain.Bot{}, err
 		}
 	}
-	if d.Ask != nil {
-		ask, err := domain.NewAskPolicy(*d.Ask)
-		if err != nil {
-			return domain.Bot{}, err
-		}
-		bot.SetAsk(ask)
-	}
 	teams, err := domain.NewTeams(d.Groups)
 	if err != nil {
 		return domain.Bot{}, err
 	}
 	bot.JoinTeams(teams)
-	if err := bot.CheckAsk(); err != nil {
-		return domain.Bot{}, err
-	}
 	if d.Events != nil {
 		events, err := domain.NewEventPolicy(*d.Events)
 		if err != nil {

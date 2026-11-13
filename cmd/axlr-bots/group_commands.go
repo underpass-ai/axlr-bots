@@ -81,16 +81,8 @@ func groupTopics(ctx context.Context, service unixapi.Service, args []string, st
 	})
 }
 
-// groupLinks prints a team's links in the team channel: the teams it may
-// ask and that may ask it, who asks and who answers.
-func groupLinks(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
-	return groupDerived(ctx, "links", args, stdout, stderr, func(ctx context.Context, name, tenant string) (any, error) {
-		return service.ListGroupLinks(ctx, name, tenant)
-	})
-}
-
 // groupDerived prints what read derives for one team, in the tenant given
-// when several have it: the shape of group topics and group links.
+// when several have it: the shape of group topics.
 func groupDerived(ctx context.Context, verb string, args []string, stdout, stderr io.Writer, read func(ctx context.Context, name, tenant string) (any, error)) int {
 	flags := flag.NewFlagSet("group "+verb, flag.ContinueOnError)
 	flags.SetOutput(stderr)

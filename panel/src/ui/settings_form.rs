@@ -131,13 +131,13 @@ mod tests {
         other.take(&PanelSettings::default());
         assert_eq!(other.api_url, "https://h:1", "no control plane section: the three stay");
         assert_eq!(other.models, "anthropic/claude-haiku-5.5");
-        form.actor = " tirso ".into();
-        assert_eq!(form.config().actor.as_deref(), Some("tirso"));
+        form.actor = " alice ".into();
+        assert_eq!(form.config().actor.as_deref(), Some("alice"));
         let mut named = settings();
-        named.control_plane.as_mut().unwrap().actor = Some("tirso".into());
-        assert_eq!(SettingsForm::from_settings(&named, true).actor, "tirso");
+        named.control_plane.as_mut().unwrap().actor = Some("alice".into());
+        assert_eq!(SettingsForm::from_settings(&named, true).actor, "alice");
         other.take(&named);
-        assert_eq!(other.actor, "tirso");
+        assert_eq!(other.actor, "alice");
     }
 
     #[test]

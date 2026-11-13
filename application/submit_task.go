@@ -68,13 +68,6 @@ type submission struct {
 	input       []byte
 	// lineage links a delegated task to the task that asked for it.
 	lineage *domain.TaskLineage
-	// origin is the other team's domain event the task was made by: it
-	// starts a new chain (docs/architecture/team-topics.md).
-	origin *domain.EventOrigin
-	// waits makes the task even when the bot takes none now (Paused,
-	// Registered): it waits Pending until the bot is enabled. Only another
-	// team's fact uses it, so that a fact is never lost.
-	waits bool
 	// accepts refuses the submission for a reason of its own, after the
 	// idempotency lookup and the bot's status; nil accepts.
 	accepts func() error
@@ -82,11 +75,6 @@ type submission struct {
 	// work in progress and drops its queue; why says who made it urgent.
 	priority domain.TaskPriority
 	why      string
-	// expects are the final events the task must emit, from its
-	// subscription, and carried the events it carries for them
-	// (docs/architecture/team-subscriptions.md, "Done is a contract").
-	expects []domain.EventPattern
-	carried []domain.CarriedEvent
 }
 
 // submitTask creates the task unless the key already names one. The
@@ -103,7 +91,7 @@ func submitTask(ctx context.Context, deps Dependencies, s submission) (SubmitTas
 		}
 		return SubmitTaskResult{Task: existing, Created: false}, nil
 	}
-	if !s.bot.AcceptsTasks() && !s.waits {
+	if !s.bot.AcceptsTasks() {
 		_ = rec.audit(ctx, s.action, botID.String(), domain.AuditDenied, map[string]string{"reason": "bot is " + s.bot.Status().String()})
 		return SubmitTaskResult{}, domain.StateError{Subject: "bot " + botID.String(), Current: s.bot.Status().String(), Attempted: "accept a task"}
 	}
@@ -135,23 +123,12 @@ func submitTask(ctx context.Context, deps Dependencies, s submission) (SubmitTas
 			return SubmitTaskResult{}, err
 		}
 	}
-	if s.origin != nil {
-		if err := task.Cross(*s.origin); err != nil {
-			return SubmitTaskResult{}, err
-		}
-	}
 	if s.priority == domain.PriorityUrgent {
 		task.Prioritize(domain.PriorityUrgent)
 	}
 	// The skills as they are now, kept on the task: a bot updated later
 	// never changes what this task reads.
 	task.PinSkills(s.bot.Skills())
-	task.Expect(s.expects)
-	for _, carried := range s.carried {
-		if _, err := task.Carry(carried); err != nil {
-			return SubmitTaskResult{}, err
-		}
-	}
 	if err := deps.Tasks.Save(ctx, task); err != nil {
 		return SubmitTaskResult{}, err
 	}

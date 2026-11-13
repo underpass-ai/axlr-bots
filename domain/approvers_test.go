@@ -9,15 +9,15 @@ import (
 )
 
 func TestApproversAreValidated(t *testing.T) {
-	a, err := NewApprovals(ApprovalsSnapshot{Approvers: []string{"tirso", " oncall "}})
+	a, err := NewApprovals(ApprovalsSnapshot{Approvers: []string{"alice", " oncall "}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(a.Approvers(), []string{"tirso", "oncall"}) || !a.MayDecide("oncall") || !a.MayDecide("cli:tirso") || !a.MayDecide("Tirso") || a.MayDecide("cli:mallory") || a.MayDecide("") {
+	if !reflect.DeepEqual(a.Approvers(), []string{"alice", "oncall"}) || !a.MayDecide("oncall") || !a.MayDecide("cli:alice") || !a.MayDecide("Alice") || a.MayDecide("cli:mallory") || a.MayDecide("") {
 		t.Errorf("approvers = %v", a.Approvers())
 	}
 	s := a.Snapshot()
-	if !reflect.DeepEqual(s.Approvers, []string{"tirso", "oncall"}) {
+	if !reflect.DeepEqual(s.Approvers, []string{"alice", "oncall"}) {
 		t.Errorf("snapshot = %+v", s)
 	}
 	again, err := NewApprovals(s)
@@ -38,9 +38,9 @@ func TestApproversAreValidated(t *testing.T) {
 	}
 	for name, s := range map[string]ApprovalsSnapshot{
 		"empty approver":    {Approvers: []string{" "}},
-		"approver space":    {Approvers: []string{"tirso garcia"}},
-		"approver repeated": {Approvers: []string{"tirso", "tirso"}},
-		"same person twice": {Approvers: []string{"tirso", "cli:Tirso"}},
+		"approver space":    {Approvers: []string{"alice smith"}},
+		"approver repeated": {Approvers: []string{"alice", "alice"}},
+		"same person twice": {Approvers: []string{"alice", "cli:Alice"}},
 		"policy approver":   {Approvers: []string{"policy:autoApprove"}},
 		"approver too long": {Approvers: []string{strings.Repeat("a", 129)}},
 		"too many":          {Approvers: many},
@@ -52,7 +52,7 @@ func TestApproversAreValidated(t *testing.T) {
 }
 
 func TestValidateActor(t *testing.T) {
-	if got, err := ValidateActor("decidedBy", " cli:tirso "); err != nil || got != "cli:tirso" {
+	if got, err := ValidateActor("decidedBy", " cli:alice "); err != nil || got != "cli:alice" {
 		t.Errorf("actor = %q %v", got, err)
 	}
 	for _, bad := range []string{"", "a b", "a\tb", "a\x7fb", strings.Repeat("a", 129)} {
@@ -106,12 +106,12 @@ func TestStoredJSONBeforeApproversRoundTrips(t *testing.T) {
 }
 
 func TestActorKey(t *testing.T) {
-	for _, same := range []string{"tirso", "cli:tirso", " Tirso ", "CLI:tirso"} {
-		if ActorKey(same) != ActorKey("tirso") {
-			t.Errorf("%q is not tirso", same)
+	for _, same := range []string{"alice", "cli:alice", " Alice ", "CLI:alice"} {
+		if ActorKey(same) != ActorKey("alice") {
+			t.Errorf("%q is not alice", same)
 		}
 	}
-	if ActorKey("cli:tirso") == ActorKey("oncall") {
+	if ActorKey("cli:alice") == ActorKey("oncall") {
 		t.Error("two people are one")
 	}
 }

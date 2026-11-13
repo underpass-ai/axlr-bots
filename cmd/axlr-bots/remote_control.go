@@ -72,14 +72,6 @@ func (r remoteControl) client() (*unixapi.Client, error) {
 	return unixapi.NewOperatorClient(r.URL, config, token), nil
 }
 
-// where names the control plane a command reaches, for the adapters' logs.
-func (r remoteControl) where(socketPath string) string {
-	if r.enabled() {
-		return r.URL
-	}
-	return socketPath
-}
-
 // localOnly reports whether the command works on the local state
 // directory whatever --control says: the daemon itself, the fleet CA,
 // and the reconciliation of a stopped daemon's tasks.
@@ -92,12 +84,4 @@ func localOnly(rest []string) bool {
 		return true
 	}
 	return len(rest) > 1 && rest[0] == "task" && rest[1] == "reconcile"
-}
-
-// clientOr is the operator client with --control, else the socket's.
-func (r remoteControl) clientOr(socketPath string) (*unixapi.Client, error) {
-	if r.enabled() {
-		return r.client()
-	}
-	return unixapi.NewClient(socketPath), nil
 }

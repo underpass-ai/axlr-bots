@@ -36,7 +36,7 @@ mod tests {
             run(ListTopics::new(control_plane.clone()).execute("ops".into())).unwrap(),
             Some(Vec::new())
         );
-        assert!(run(ListTopics::new(control_plane.clone()).execute("qa".into())).is_err());
+        assert!(run(ListTopics::new(control_plane.clone()).execute("web".into())).is_err());
         control_plane.without_newer_routes();
         assert_eq!(run(ListTopics::new(control_plane).execute("ops".into())).unwrap(), None);
     }

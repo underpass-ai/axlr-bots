@@ -130,7 +130,7 @@ func TestTheActorDecides(t *testing.T) {
 	raw, _ := os.ReadFile(filepath.Join("testdata", "bot-act-with-approval.json"))
 	var definition map[string]any
 	_ = json.Unmarshal(raw, &definition)
-	definition["approvals"] = map[string]any{"ttl": "15m", "approvers": []string{"tirso"}}
+	definition["approvals"] = map[string]any{"ttl": "15m", "approvers": []string{"alice"}}
 	file := filepath.Join(dir, "bot.json")
 	encoded, _ := json.Marshal(definition)
 	if err := os.WriteFile(file, encoded, 0o600); err != nil {
@@ -148,8 +148,8 @@ func TestTheActorDecides(t *testing.T) {
 	if code, _, errText := c.run("task", "approve", taskID); code != exitError || !strings.Contains(errText, "test:cli is not among the approvers") {
 		t.Errorf("approve as test:cli: %d %s", code, errText)
 	}
-	code, decided := c.json("--actor", "tirso", "task", "approve", taskID)
+	code, decided := c.json("--actor", "alice", "task", "approve", taskID)
 	if code != exitOK || decided["execution"].(map[string]any)["decision"] != "approve" {
-		t.Errorf("approve as tirso: %d %v", code, decided)
+		t.Errorf("approve as alice: %d %v", code, decided)
 	}
 }

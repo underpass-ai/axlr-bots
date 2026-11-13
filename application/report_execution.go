@@ -42,7 +42,7 @@ func (uc ReportExecution) Execute(ctx context.Context, node domain.NodeID, id do
 		if err := newLateAccount(uc.deps).keep(ctx, task, &execution, report); err != nil {
 			return ReportResult{}, err
 		}
-		return uc.withMemory(ctx, ReportResult{Task: task, Execution: execution, Accepted: false}, nil)
+		return ReportResult{Task: task, Execution: execution, Accepted: false}, nil
 	}
 	bot, err := uc.deps.Bots.Get(ctx, task.BotID())
 	if err != nil {
@@ -65,42 +65,7 @@ func (uc ReportExecution) Execute(ctx context.Context, node domain.NodeID, id do
 	if err := uc.rec.executionEvent(ctx, domain.EventExecutionReported, bot, task.ID(), execution.ID(), task.CorrelationID(), payload); err != nil {
 		return ReportResult{}, err
 	}
-	return uc.withMemory(ctx, ReportResult{Task: task, Execution: execution, Accepted: true}, &bot)
-}
-
-// withMemory adds the answering team's record to the answer of a report
-// on a question's task that ended. A record that cannot be made leaves the
-// answer without it; the first report that carries it is audited.
-func (uc ReportExecution) withMemory(ctx context.Context, result ReportResult, bot *domain.Bot) (ReportResult, error) {
-	if result.Task.Trigger().Type != domain.TriggerQuestion || !result.Task.Status().IsTerminal() {
-		return result, nil
-	}
-	var responder domain.Bot
-	if bot != nil {
-		responder = *bot
-	} else {
-		found, err := uc.deps.Bots.Get(ctx, result.Task.BotID())
-		if domain.IsNotFound(err) {
-			return result, nil
-		}
-		if err != nil {
-			return ReportResult{}, err
-		}
-		responder = found
-	}
-	record, err := channelExchange{responder: responder, question: result.Task, execution: result.Execution}.record(domain.ChannelAnswered)
-	if !result.Accepted {
-		if err == nil {
-			result.ChannelMemory = &record
-		}
-		return result, nil
-	}
-	if err != nil {
-		return result, uc.rec.audit(ctx, "question.memory", result.Task.ID().String(), domain.AuditDenied, map[string]string{"side": domain.ChannelAnswered.String(), "reason": err.Error()})
-	}
-	result.ChannelMemory = &record
-	details := map[string]string{"side": record.Side.String(), "team": record.Team.String(), "about": record.About(), "mode": "report", "node": result.Execution.NodeID().String()}
-	return result, uc.rec.audit(ctx, "question.memory", result.Task.ID().String(), domain.AuditOK, details)
+	return ReportResult{Task: task, Execution: execution, Accepted: true}, nil
 }
 
 // late answers a report whose execution ended meanwhile: not accepted,
@@ -114,5 +79,5 @@ func (uc ReportExecution) late(ctx context.Context, id domain.ExecutionID) (Repo
 	if err != nil {
 		return ReportResult{}, err
 	}
-	return uc.withMemory(ctx, ReportResult{Task: task, Execution: execution, Accepted: false}, nil)
+	return ReportResult{Task: task, Execution: execution, Accepted: false}, nil
 }

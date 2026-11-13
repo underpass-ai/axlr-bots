@@ -103,37 +103,10 @@ func (uc EmitEvent) Execute(ctx context.Context, node domain.NodeID, executionID
 	if answer.Deliveries, answer.Skipped, err = uc.deliverAll(ctx, e, mates); err != nil {
 		return EmitAnswer{}, err
 	}
-	// The other teams the name crosses to, after the bot's own.
-	crossed, notCrossed, err := uc.cross(ctx, e)
-	if err != nil {
-		return EmitAnswer{}, err
-	}
-	answer.Deliveries, answer.Skipped = append(answer.Deliveries, crossed...), append(answer.Skipped, notCrossed...)
-	if err := uc.recordFinal(ctx, e); err != nil {
-		return EmitAnswer{}, err
-	}
 	if err := uc.recordEmitted(ctx, e, answer); err != nil {
 		return EmitAnswer{}, err
 	}
 	return answer, nil
-}
-
-// recordFinal records on the emitting task an event whose name fits its
-// expects and that settles an event it carries
-// (docs/architecture/team-subscriptions.md, "Done is a contract"); a task
-// that expects nothing is not read again.
-func (uc EmitEvent) recordFinal(ctx context.Context, e emission) error {
-	if len(e.task.Expects()) == 0 {
-		return nil
-	}
-	task, err := uc.deps.Tasks.Get(ctx, e.task.ID())
-	if err != nil {
-		return err
-	}
-	if !task.RecordFinal(e.name, domain.DataID(e.data)) {
-		return nil
-	}
-	return uc.deps.Tasks.Save(ctx, task)
 }
 
 // load finds the execution the node holds, the task and bot behind it,
@@ -211,13 +184,13 @@ func (uc EmitEvent) deliver(ctx context.Context, e emission, mate domain.Bot) (*
 	}
 	switch mode {
 	case domain.ModeNote:
-		return uc.deliverNote(ctx, e, mate, sub, "", "", "")
+		return uc.deliverNote(ctx, e, mate, sub, "", "")
 	case domain.ModeMessage:
 		if delivery, skip, handled, err := uc.deliverMessage(ctx, e, mate, sub); handled || err != nil {
 			return delivery, skip, err
 		}
 	}
-	return uc.deliverTask(ctx, e, mate, sub, urgent, "")
+	return uc.deliverTask(ctx, e, mate, sub, urgent)
 }
 
 // skipped says why the teammate gets nothing.
@@ -243,9 +216,6 @@ func (uc EmitEvent) recordHeard(ctx context.Context, e emission, mate domain.Bot
 	}
 	if d.CoalescedInto != "" {
 		payload["coalescedInto"] = d.CoalescedInto
-	}
-	if d.Team != "" {
-		payload["team"] = d.Team
 	}
 	return uc.rec.event(ctx, domain.EventEventHeard, mate, domain.TaskID(d.TaskID), e.task.CorrelationID(), payload)
 }
@@ -302,9 +272,6 @@ func (uc EmitEvent) recordEmitted(ctx context.Context, e emission, answer EmitAn
 		return err
 	}
 	details := map[string]string{"node": e.node.String(), "by": string(e.by), "execution": e.execution.String(), "event": e.id, "name": e.name.String(), "severity": e.severity.String(), "deliveries": strconv.Itoa(len(answer.Deliveries))}
-	if n := crossedCount(answer.Deliveries); n > 0 {
-		details["crossed"] = strconv.Itoa(n)
-	}
 	return uc.rec.audit(ctx, "event.emit", e.task.ID().String(), domain.AuditOK, details)
 }
 
@@ -432,9 +399,6 @@ func deliveriesPayload(deliveries []EventDelivery) []map[string]any {
 		if d.CoalescedInto != "" {
 			item["coalescedInto"] = d.CoalescedInto
 		}
-		if d.Crossed {
-			item["team"], item["crossed"] = d.Team, true
-		}
 		out = append(out, item)
 	}
 	return out
@@ -444,9 +408,6 @@ func skipsPayload(skips []EventSkip) []map[string]any {
 	out := make([]map[string]any, 0, len(skips))
 	for _, s := range skips {
 		item := map[string]any{"botId": s.BotID, "reason": s.Reason, "message": s.Message}
-		if s.Crossed {
-			item["team"], item["crossed"] = s.Team, true
-		}
 		out = append(out, item)
 	}
 	return out

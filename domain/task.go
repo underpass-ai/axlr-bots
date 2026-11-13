@@ -23,14 +23,11 @@ type Task struct {
 	failureReason  string
 	approval       *ApprovalWait
 	lineage        *TaskLineage
-	origin         *EventOrigin
 	children       []TaskID
-	questions      []TaskID
 	grantedModel   int
 	grantedTools   int
 	priority       TaskPriority
 	skills         SkillPins
-	expects        *taskExpects
 	createdAt      time.Time
 	updatedAt      time.Time
 }
@@ -87,35 +84,9 @@ func (t *Task) Link(lineage TaskLineage) error {
 	if err := lineage.Validate(); err != nil {
 		return err
 	}
-	if t.origin != nil {
-		return invalid("delegation", "a task made by another team's event starts a new chain: it has no delegation")
-	}
 	lineage.Chain = append([]string(nil), lineage.Chain...)
 	t.lineage = &lineage
 	return nil
-}
-
-// Cross records the other team's domain event a task was made by, before
-// the task is first saved. Such a task has no lineage: it starts a new
-// chain in its own team.
-func (t *Task) Cross(origin EventOrigin) error {
-	if err := origin.Validate(); err != nil {
-		return err
-	}
-	if t.lineage != nil {
-		return invalid("origin", "a task made by another team's event starts a new chain: it has no delegation")
-	}
-	t.origin = &origin
-	return nil
-}
-
-// Origin is the other team's domain event the task was made by; false
-// for any other task.
-func (t Task) Origin() (EventOrigin, bool) {
-	if t.origin == nil {
-		return EventOrigin{}, false
-	}
-	return *t.origin, true
 }
 
 // Lineage is where a delegated task came from; false for a task nobody
@@ -160,25 +131,6 @@ func (t *Task) AdoptChild(child TaskID, grant DelegationGrant, now time.Time) er
 	t.children = append(t.children, child)
 	t.grantedModel += grant.MaxModelCalls
 	t.grantedTools += grant.MaxToolCalls
-	t.updatedAt = now
-	return nil
-}
-
-// Questions lists the questions this task asked other teams, oldest
-// first: tasks of the bots that answer them.
-func (t Task) Questions() []TaskID { return append([]TaskID(nil), t.questions...) }
-
-// AdoptQuestion records a question this Running task asked another team:
-// apart from its children, since a question takes nothing of the task's
-// budgets and outlives it (the answer then comes back as a new task).
-func (t *Task) AdoptQuestion(child TaskID, now time.Time) error {
-	if t.status != TaskRunning {
-		return t.refuse("ask a team")
-	}
-	if child == "" || child == t.id {
-		return invalid("question task", "must be another task")
-	}
-	t.questions = append(t.questions, child)
 	t.updatedAt = now
 	return nil
 }
@@ -458,12 +410,9 @@ func (t Task) Snapshot() TaskSnapshot {
 		copied := *t.approval
 		approval = &copied
 	}
-	var children, questions []string
+	var children []string
 	for _, child := range t.children {
 		children = append(children, child.String())
-	}
-	for _, question := range t.questions {
-		questions = append(questions, question.String())
 	}
 	snapshot := TaskSnapshot{
 		ID:             t.id.String(),
@@ -478,7 +427,6 @@ func (t Task) Snapshot() TaskSnapshot {
 		FailureReason:  t.failureReason,
 		Approval:       approval,
 		Children:       children,
-		Questions:      questions,
 		GrantedModel:   t.grantedModel,
 		GrantedTools:   t.grantedTools,
 		Priority:       t.prioritySnapshot(),
@@ -489,10 +437,6 @@ func (t Task) Snapshot() TaskSnapshot {
 	if lineage, ok := t.Lineage(); ok {
 		snapshot.Delegation = &lineage
 	}
-	if origin, ok := t.Origin(); ok {
-		snapshot.Origin = &origin
-	}
-	snapshot.Expects = t.expectsSnapshot()
 	return snapshot
 }
 
@@ -573,24 +517,12 @@ func RestoreTask(s TaskSnapshot) (Task, error) {
 			return Task{}, err
 		}
 	}
-	if s.Origin != nil {
-		if err := task.Cross(*s.Origin); err != nil {
-			return Task{}, err
-		}
-	}
 	for _, raw := range s.Children {
 		child, err := NewTaskID(raw)
 		if err != nil {
 			return Task{}, err
 		}
 		task.children = append(task.children, child)
-	}
-	for _, raw := range s.Questions {
-		question, err := NewTaskID(raw)
-		if err != nil {
-			return Task{}, err
-		}
-		task.questions = append(task.questions, question)
 	}
 	if s.GrantedModel < 0 || s.GrantedTools < 0 {
 		return Task{}, invalid("granted", "must not be negative")
@@ -604,9 +536,6 @@ func RestoreTask(s TaskSnapshot) (Task, error) {
 		return Task{}, err
 	}
 	task.skills = skills
-	if task.expects, err = restoreTaskExpects(s.Expects); err != nil {
-		return Task{}, err
-	}
 	task.status = status
 	task.failureReason = s.FailureReason
 	task.updatedAt = s.UpdatedAt

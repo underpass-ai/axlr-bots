@@ -96,7 +96,7 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(&http, PanelError::Config(m) if m.contains("https://")));
-        let lone_actor = PanelSettings::from_json("{\"controlPlane.actor\": \"tirso\"}").unwrap_err();
+        let lone_actor = PanelSettings::from_json("{\"controlPlane.actor\": \"alice\"}").unwrap_err();
         assert!(matches!(&lone_actor, PanelError::Config(m) if m.contains("controlPlane.actor")));
         let spaced = PanelSettings::from_json(
             "{\"controlPlane.apiUrl\": \"https://h\", \"controlPlane.caFile\": \"/c\", \"controlPlane.tokenFile\": \"/t\", \"controlPlane.actor\": \"two words\"}",
@@ -110,11 +110,11 @@ mod tests {
     #[test]
     fn keeps_who_the_panel_decides_as() {
         let mut with = settings();
-        with.control_plane.as_mut().unwrap().actor = Some("tirso".into());
+        with.control_plane.as_mut().unwrap().actor = Some("alice".into());
         let text = with.to_json();
-        assert!(text.contains("\"controlPlane.actor\": \"tirso\""));
+        assert!(text.contains("\"controlPlane.actor\": \"alice\""));
         assert_eq!(PanelSettings::from_json(&text).unwrap(), with);
-        let blank = text.replace("\"tirso\"", "\" \"");
+        let blank = text.replace("\"alice\"", "\" \"");
         assert_eq!(
             PanelSettings::from_json(&blank).unwrap(),
             settings(),

@@ -124,9 +124,6 @@ async fn route(
         ("GET", "/v1/groups/ops/topics") => ok(
             r#"[{"name":"info.turno","publishers":["watcher"],"listeners":[],"count":1,"nobodyListens":true}]"#.into(),
         ),
-        ("GET", "/v1/groups/ops/links") => {
-            ok(r#"[{"from":"ops","to":"dev","askers":["watcher"],"responders":["dev-a"]}]"#.into())
-        }
         ("POST", "/v1/groups/ops/events") => json(
             StatusCode::CREATED,
             r#"{"eventId":"evt-7","name":"stop.all","severity":"critical","deliveries":[{"botId":"worker-1","mode":"task","trigger":"team","created":true}],"skipped":[],"created":true}"#,
@@ -320,9 +317,6 @@ async fn reads_every_route_with_the_token_over_tls() {
     let topics = api.group_topics("ops".into()).await.unwrap();
     assert!(topics[0].nobody_listens && topics[0].publishers == vec!["watcher"]);
     assert_eq!(server.last().path, "/v1/groups/ops/topics");
-    let links = api.group_links("ops".into()).await.unwrap();
-    assert!(links[0].to == "dev" && links[0].responders == vec!["dev-a"]);
-    assert_eq!(server.last().path, "/v1/groups/ops/links");
     let publication = axlr_bots_panel::domain::Publication {
         name: "stop.all".into(),
         message: "Everyone stop".into(),
@@ -464,10 +458,10 @@ async fn sends_the_acts_with_their_bodies() {
 
     // The actor of the settings goes with every request: who decides.
     let mut config = server.config();
-    config.actor = Some("tirso".into());
+    config.actor = Some("alice".into());
     let named = HttpControlPlane::new(&config).unwrap();
     named.decide_task(task_id, Decision::Approve, None).await.unwrap();
-    assert_eq!(server.last().actor, "tirso");
+    assert_eq!(server.last().actor, "alice");
 }
 
 #[tokio::test]

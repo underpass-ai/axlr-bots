@@ -1,6 +1,6 @@
 # ADR: the whole transcript of each execution
 
-Status: accepted, 13 November 2026. The product owner asked for every activity of a task, uncut, as the input of an audit: the night of 13 November showed that tasks reported *Completed* hid failures (a refused plan, a skipped check, a missing binary) that only the full text showed, and that nothing kept that text off the node.
+Status: accepted, 13 November 2026. Every activity of a task, uncut, kept by the control plane: tasks reported *Completed* can hide failures (a refused plan, a skipped check, a missing binary) that only the full text shows, and nothing kept that text off the node.
 
 ## Context
 
@@ -11,7 +11,7 @@ What a run did reaches the control plane today in two cut forms:
 | the node's progress tracker ([live-progress](live-progress.md)) | a call's arguments to 120 characters, its result never, the model's words to 32 KiB per run |
 | `RecordProgress` in the control plane | each item again (summary 160, error 240, text 4000 characters), 64 items a batch, 400 events and 256 KiB per execution |
 
-The whole run exists in one place only: the file AXLR keeps for each session on the node, `<AXLR state>/sessions/<id>.json`, with every message, every call's arguments and every tool's result as the model saw it. On 13 November all 344 qa/dev executions of the day had theirs; the largest session on gx10 was 1.5 MiB.
+The whole run exists in one place only: the file AXLR keeps for each session on the node, `<AXLR state>/sessions/<id>.json`, with every message, every call's arguments and every tool's result as the model saw it. A session can pass 1 MiB.
 
 The owner's choices:
 
@@ -59,7 +59,7 @@ Only the control plane can link SQLite; `axlr-node` stays pure Go. The image lin
 
 ## Consequences
 
-- The [transcript audit](../runbooks/transcript-audit.md) reads the whole run, not a summary.
+- An audit outside the control plane can read the whole run, not a summary.
 - Secrets a tool printed are kept in the control plane's state. Whoever can read the operator API can read them.
 - A run the control plane makes in process (no node could take it) has no transcript yet.
 - Old rows are never deleted yet; at the sizes seen (median under 100 KiB) a year of the fleet stays in a few GiB. A retention rule is future work.

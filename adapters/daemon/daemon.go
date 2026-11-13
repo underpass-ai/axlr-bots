@@ -23,7 +23,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/underpass-ai/axlr-bots/adapters/bus/inprocess"
 	"github.com/underpass-ai/axlr-bots/adapters/metrics"
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
@@ -49,11 +48,6 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	}
 	defer release()
 	logger := levelLogger{info: options.log(), errors: options.errorLog()}
-	domainBus := options.DomainBus
-	if domainBus == nil {
-		domainBus = inprocess.New()
-	}
-	deps.DomainEvents = domainBus
 	local := unixapi.NewLocal(deps)
 	for _, pusher := range options.Pushers {
 		local.AddPusher(pusher, logger.Printf)
@@ -64,9 +58,6 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	runner := local.Runner()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	if err := domainBus.Listen(ctx, receiver(domainBus, deps, runner)); err != nil {
-		return err
-	}
 
 	// The TLS listeners are bound before anything serves, so a bad option
 	// returns before the socket exists and no server is left behind.
@@ -208,25 +199,6 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 				return errors.Join(ErrStaleBuild, err)
 			}
 		}
-	}
-}
-
-// receiver is what the domain bus hands another team's event to. The
-// bus in process hands it over within the emit, which holds the runner's
-// lock already: the bare use case, over the service's dependencies. A
-// broker's consumer hands it over from a goroutine of its own: through the
-// runner, under its lock.
-func receiver(bus DomainBus, deps application.Dependencies, runner *application.SerialRunner) application.DomainEventHandler {
-	if _, within := bus.(*inprocess.DomainBus); within {
-		receive := application.NewReceiveDomainEvent(deps)
-		return func(ctx context.Context, event application.CrossingEvent) error {
-			_, err := receive.Execute(ctx, event)
-			return err
-		}
-	}
-	return func(ctx context.Context, event application.CrossingEvent) error {
-		_, err := runner.ReceiveDomainEvent(ctx, event)
-		return err
 	}
 }
 

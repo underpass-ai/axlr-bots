@@ -103,7 +103,7 @@ func (a Approvals) Approvers() []string { return append([]string(nil), a.approve
 
 // MayDecide reports whether the actor may approve or deny the bot's
 // calls: any actor when no approvers are listed, else one of them,
-// compared by ActorKey (cli:tirso is tirso).
+// compared by ActorKey (cli:alice is alice).
 func (a Approvals) MayDecide(actor string) bool {
 	if len(a.approvers) == 0 {
 		return true

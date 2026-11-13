@@ -31,8 +31,8 @@ fn the_first_run_saves_the_settings_once_the_control_plane_answers() {
     app.apply(Message::SettingsUrl("https://127.0.0.1:7879".into()));
     app.apply(Message::SettingsCa("/ca.crt".into()));
     app.apply(Message::SettingsToken("/api.token".into()));
-    app.apply(Message::SettingsActor("tirso".into()));
-    assert_eq!(app.settings.config().actor.as_deref(), Some("tirso"));
+    app.apply(Message::SettingsActor("alice".into()));
+    assert_eq!(app.settings.config().actor.as_deref(), Some("alice"));
     send(&mut app, Message::SettingsSave);
     assert!(app.connected() && app.settings.saved);
     assert_eq!(app.screen, Screen::Overview);

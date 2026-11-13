@@ -17,28 +17,22 @@ const (
 // Limits of a subscription.
 const (
 	maxSubscriptionFrom = 16
-	// MaxSubscriptionExpects bounds the final events a subscription
-	// expects of its tasks.
-	MaxSubscriptionExpects = 8
 	// MaxSubscriptionWhy bounds why a bot asks for a subscription.
 	MaxSubscriptionWhy = 280
 )
 
 // Subscription is one topic a bot listens to in its teams: a name or
 // pattern, what a heard event does (mode), whom from, whether a warning
-// is urgent, the objective of the task it makes, whether its team takes
-// what it hears and whether a person approved it. The implicit subscription is the one a bot hears an
+// is urgent, the objective of the task it makes and whether a person
+// approved it. The implicit subscription is the one a bot hears an
 // event by when the event is addressed to it or is the team's default
 // (danger, stop) and nothing it subscribed to fits.
 type Subscription struct {
 	topic     EventPattern
-	team      TeamName
 	mode      DeliveryMode
 	from      []string
 	urgent    bool
 	objective string
-	deliver   DeliveryScope
-	expects   []EventPattern
 	status    SubscriptionStatus
 	askedBy   string
 	why       string
@@ -64,26 +58,7 @@ func NewSubscription(s SubscriptionSnapshot) (Subscription, error) {
 	if len(s.From) > maxSubscriptionFrom {
 		return Subscription{}, invalid(field+" from", "names at most 16 senders")
 	}
-	deliver, err := ParseDeliveryScope(s.Deliver)
-	if err != nil {
-		return Subscription{}, invalid(field, err.Error())
-	}
-	if deliver.Team() && mode != ModeTask && s.Team == "" {
-		// Another team's domain event is a task even when mode is absent.
-		return Subscription{}, invalid(field+" deliver", "team needs mode task: one member takes the event as a task")
-	}
-	if deliver.Team() && status == SubscriptionPending {
-		return Subscription{}, invalid(field+" deliver", "a subscription a bot asks for is its own, never the team's")
-	}
-	sub := Subscription{topic: topic, mode: mode, urgent: s.Urgent, deliver: deliver, status: status}
-	if sub.expects, err = subscriptionExpects(field, s, mode, status); err != nil {
-		return Subscription{}, err
-	}
-	if s.Team != "" {
-		if sub.team, err = crossingTeam(field, s, mode, status); err != nil {
-			return Subscription{}, err
-		}
-	}
+	sub := Subscription{topic: topic, mode: mode, urgent: s.Urgent, status: status}
 	for _, raw := range s.From {
 		from := strings.TrimSpace(raw)
 		if from != FromOperator && from != FromControlPlane {
@@ -122,57 +97,6 @@ func NewSubscription(s SubscriptionSnapshot) (Subscription, error) {
 	return sub, nil
 }
 
-// subscriptionExpects validates the final events a subscription expects
-// of its tasks: at most 8 names or patterns, each once, only on a
-// subscription that makes tasks (mode task, or another team's domain
-// event), never on a bot's ask.
-func subscriptionExpects(field string, s SubscriptionSnapshot, mode DeliveryMode, status SubscriptionStatus) ([]EventPattern, error) {
-	if len(s.Expects) == 0 {
-		return nil, nil
-	}
-	if len(s.Expects) > MaxSubscriptionExpects {
-		return nil, invalid(field+" expects", "names at most 8 final events")
-	}
-	if mode != ModeTask && (s.Team == "" || mode != "") {
-		return nil, invalid(field+" expects", "needs mode task: only a task emits its final events")
-	}
-	if status == SubscriptionPending {
-		return nil, invalid(field+" expects", "a subscription a bot asks for expects nothing")
-	}
-	var out []EventPattern
-	for _, raw := range s.Expects {
-		pattern, err := NewEventPattern(raw)
-		if err != nil {
-			return nil, invalid(field+" expects", err.Error())
-		}
-		if slices.Contains(out, pattern) {
-			return nil, invalid(field+" expects", "repeats "+pattern.String())
-		}
-		out = append(out, pattern)
-	}
-	return out, nil
-}
-
-// crossingTeam validates the other team a subscription hears from: its
-// events reach the bot as tasks of its own, never as a message or a note,
-// never urgent, and never by a bot's own ask.
-func crossingTeam(field string, s SubscriptionSnapshot, mode DeliveryMode, status SubscriptionStatus) (TeamName, error) {
-	team, err := NewTeamName(s.Team)
-	if err != nil {
-		return "", invalid(field+" team", err.Error())
-	}
-	if mode != "" && mode != ModeTask {
-		return "", invalid(field+" team", "another team's domain event is a task: mode task or absent")
-	}
-	if s.Urgent {
-		return "", invalid(field+" team", "another team's domain event is never urgent")
-	}
-	if status == SubscriptionPending {
-		return "", invalid(field+" team", "a subscription a bot asks for hears its own teams only")
-	}
-	return team, nil
-}
-
 // implicitSubscription is how a bot hears what is addressed to it, or the
 // team's default, when nothing it subscribed to fits.
 func implicitSubscription(name EventName) Subscription {
@@ -182,22 +106,12 @@ func implicitSubscription(name EventName) Subscription {
 // Topic is the name or pattern the subscription listens to.
 func (s Subscription) Topic() EventPattern { return s.topic }
 
-// Team is the other team the subscription hears its topic from; empty:
-// the bot's own teams.
-func (s Subscription) Team() TeamName { return s.team }
-
-// Crosses reports whether the subscription hears another team.
-func (s Subscription) Crosses() bool { return s.team != "" }
-
 // Mode is the mode the subscription names; empty: by the severity.
 func (s Subscription) Mode() DeliveryMode { return s.mode }
 
 // ModeFor is what an event of the severity heard by the subscription
 // does: its own mode, or the severity's default.
 func (s Subscription) ModeFor(severity Severity) DeliveryMode {
-	if s.Crosses() {
-		return ModeTask
-	}
 	if s.mode != "" {
 		return s.mode
 	}
@@ -232,14 +146,6 @@ func (s Subscription) Urgent() bool { return s.urgent }
 // empty: DefaultEventObjective.
 func (s Subscription) ObjectiveTemplate() string { return s.objective }
 
-// Deliver says whether the bot or one member of its team takes what the
-// subscription hears.
-func (s Subscription) Deliver() DeliveryScope { return s.deliver }
-
-// Expects lists the final events a task the subscription makes must
-// emit, one per event it carried; empty: none.
-func (s Subscription) Expects() []EventPattern { return append([]EventPattern(nil), s.expects...) }
-
 // Status says whether the subscription hears.
 func (s Subscription) Status() SubscriptionStatus { return s.status }
 
@@ -264,24 +170,14 @@ func (s Subscription) TriggerName() string {
 }
 
 // Matches reports whether an active subscription takes the name from
-// the sender in the bot's own teams; one that hears another team never
-// does.
+// the sender in the bot's own teams.
 func (s Subscription) Matches(name EventName, from string, by Publisher) bool {
-	return !s.Crosses() && s.Active() && s.topic.Matches(name) && s.Allows(from, by)
-}
-
-// MatchesFrom reports whether an active subscription takes the domain
-// event a bot of the other team published.
-func (s Subscription) MatchesFrom(team TeamName, name EventName, from string) bool {
-	return s.Crosses() && s.team == team && s.Active() && s.topic.Matches(name) && s.Allows(from, PublisherBot)
+	return s.Active() && s.topic.Matches(name) && s.Allows(from, by)
 }
 
 // Snapshot returns the subscription as plain data.
 func (s Subscription) Snapshot() SubscriptionSnapshot {
-	out := SubscriptionSnapshot{Topic: s.topic.String(), Team: s.team.String(), Mode: s.mode.String(), From: s.From(), Urgent: s.urgent, Objective: s.objective, Deliver: s.deliver.String(), AskedBy: s.askedBy, Why: s.why}
-	for _, pattern := range s.expects {
-		out.Expects = append(out.Expects, pattern.String())
-	}
+	out := SubscriptionSnapshot{Topic: s.topic.String(), Mode: s.mode.String(), From: s.From(), Urgent: s.urgent, Objective: s.objective, AskedBy: s.askedBy, Why: s.why}
 	if s.status == SubscriptionPending {
 		out.Status = s.status.String()
 	}

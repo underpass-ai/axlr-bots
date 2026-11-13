@@ -10,8 +10,7 @@ import "github.com/underpass-ai/axlr-bots/domain"
 // which nodes run them (any when absent), Approvals how a pending
 // call waits for a person (an hour, then deny, when absent),
 // Delegation which bots outside its teams it may ask to do a task (none
-// when absent), Ask which other teams it may ask for context through the
-// team channel (none when absent), Groups the teams it belongs to (none
+// when absent), Groups the teams it belongs to (none
 // when absent) and
 // Subscriptions the topics it listens to in them (none when absent; an
 // event trigger is read as one, for one release), Runtime what runs its
@@ -34,7 +33,6 @@ type BotDefinition struct {
 	Placement     domain.PlacementSnapshot      `json:"placement"`
 	Approvals     domain.ApprovalsSnapshot      `json:"approvals"`
 	Delegation    *domain.DelegationSnapshot    `json:"delegation,omitempty"`
-	Ask           *domain.AskSnapshot           `json:"ask,omitempty"`
 	Groups        []string                      `json:"groups,omitempty"`
 	Events        *domain.EventsSnapshot        `json:"events,omitempty"`
 	Subscriptions []domain.SubscriptionSnapshot `json:"subscriptions,omitempty"`

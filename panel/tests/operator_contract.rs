@@ -257,9 +257,8 @@ fn says_every_event_type_in_its_own_words() {
 }
 
 #[test]
-fn reads_a_teams_topics_its_links_and_the_answer_to_a_publication() {
+fn reads_a_teams_topics_and_the_answer_to_a_publication() {
     let spec = contract();
     reads::<axlr_bots_panel::domain::Topic>(&spec, "GroupTopic");
-    reads::<axlr_bots_panel::domain::TeamLink>(&spec, "GroupLink");
     reads::<axlr_bots_panel::domain::Published>(&spec, "PublishAnswer");
 }

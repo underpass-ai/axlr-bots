@@ -16,9 +16,6 @@ const (
 	PlatformTaskWaiting domain.EventName = "warn.approval"
 	// PlatformTaskDone: a task completed.
 	PlatformTaskDone domain.EventName = "done.task"
-	// PlatformTaskStuck: the team's Jev watcher judged a running task
-	// stuck and the control plane cancelled it.
-	PlatformTaskStuck domain.EventName = "warn.stuck"
 )
 
 // maxPlatformAnswer bounds the answer done.task carries.
@@ -54,18 +51,6 @@ func (p platformPublisher) taskEnded(ctx context.Context, bot domain.Bot, task d
 		return p.publish(ctx, bot, task, execution.ID(), PlatformTaskFailed, "task "+task.ID().String()+" "+strings.ToLower(task.Status().String())+": "+reason, map[string]any{"taskId": task.ID().String(), "reason": reason})
 	}
 	return nil
-}
-
-// taskStuck publishes warn.stuck for a task the team's Jev watcher judged
-// stuck: its teammates hear who it was and why, and the one a team
-// subscription picks takes its work over.
-func (p platformPublisher) taskStuck(ctx context.Context, bot domain.Bot, task domain.Task, execution domain.ExecutionID, reason string) error {
-	ref := task.Trigger()
-	trigger := ref.Type.String()
-	if ref.Name != "" && ref.Name != trigger {
-		trigger += " " + ref.Name
-	}
-	return p.publish(ctx, bot, task, execution, PlatformTaskStuck, "task "+task.ID().String()+" of "+bot.ID().String()+" ("+trigger+") was stuck and is cancelled", map[string]any{"taskId": task.ID().String(), "bot": bot.ID().String(), "trigger": trigger, "reason": reason})
 }
 
 // taskWaiting publishes warn.approval for a task that waits for a person.

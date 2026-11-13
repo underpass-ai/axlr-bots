@@ -223,16 +223,16 @@ mod tests {
     #[test]
     fn a_teams_act_goes_to_each_of_its_bots_once() {
         let mut bots = bots();
-        bots[0].groups = vec!["ops".into(), "qa".into()];
+        bots[0].groups = vec!["ops".into(), "web".into()];
         bots[1].groups = vec!["ops".into()];
         bots[2].groups = vec!["lab".into()];
         let teams = Team::from_bots(&bots);
         let mut picked = Selection::default();
-        picked.set_all(["ops".to_string(), "qa".to_string()], true);
+        picked.set_all(["ops".to_string(), "web".to_string()], true);
         let stop = BulkPlan::for_teams(BulkAction::Stop, &picked, &teams);
         assert_eq!(stop.targets.len(), 2);
         assert_eq!(stop.button(), "Stop 2 bots");
-        assert_eq!(stop.lines()[1], "The bots of ops, qa.");
+        assert_eq!(stop.lines()[1], "The bots of ops, web.");
         let pause = BulkPlan::for_teams(BulkAction::Pause, &picked, &teams);
         assert_eq!(pause.button(), "Pause 1 of 2 bots");
     }

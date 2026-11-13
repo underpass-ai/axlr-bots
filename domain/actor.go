@@ -51,7 +51,7 @@ func IsMachineActor(actor string) bool {
 }
 
 // ActorKey is the name two actors are compared by: without the CLI's
-// cli: prefix and in lower case, so tirso, cli:tirso and Tirso are one
+// cli: prefix and in lower case, so alice, cli:alice and Alice are one
 // person and never two approvals (review of #139, 8 November 2026).
 func ActorKey(actor string) string {
 	return strings.TrimPrefix(strings.ToLower(strings.TrimSpace(actor)), CLIActorPrefix)
