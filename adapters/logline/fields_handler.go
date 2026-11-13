@@ -18,8 +18,10 @@ var (
 )
 
 // FieldsHandler adds to each record the fields its message names: the
-// component ("daemon: …" → component=daemon) and the first task and
-// execution id in it, so Loki can filter on them.
+// component ("daemon: …" → component=daemon) and, as a fallback for a
+// line that came without a subject, the first task and execution id in
+// it, so Loki can filter on them. A field the line already carries (its
+// subject's) is never added again from the text.
 type FieldsHandler struct {
 	next slog.Handler
 }
@@ -34,10 +36,18 @@ func (h FieldsHandler) Enabled(ctx context.Context, level slog.Level) bool {
 
 // Handle adds the fields and hands the record on.
 func (h FieldsHandler) Handle(ctx context.Context, record slog.Record) error {
-	if match := componentPattern.FindStringSubmatch(record.Message); match != nil {
+	has := map[string]bool{}
+	record.Attrs(func(attr slog.Attr) bool {
+		has[attr.Key] = true
+		return true
+	})
+	if match := componentPattern.FindStringSubmatch(record.Message); match != nil && !has["component"] {
 		record.AddAttrs(slog.String("component", match[1]))
 	}
 	for _, id := range idPatterns {
+		if has[id.key] {
+			continue
+		}
 		if found := id.pattern.FindString(record.Message); found != "" {
 			record.AddAttrs(slog.String(id.key, found))
 		}

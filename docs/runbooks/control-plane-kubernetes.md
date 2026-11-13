@@ -134,6 +134,20 @@ With `metrics.enabled`, `metrics.podMonitor.enabled` (its `labels` matching the 
 
 `axlr_bots_overview_up 0` means the state could not be read at that scrape. The `…_today` gauges go back to zero at midnight on the control plane's clock. The node stream and the long poll are counted but not timed.
 
+### Log fields
+
+With `logFormat: json` (`--log-format json` or `AXLR_BOTS_LOG_FORMAT=json` on `axlr-bots serve`; `--log-format json` or `AXLR_NODE_LOG_FORMAT=json` on `axlr-node`) each line is one JSON object: `time`, `level`, `msg`, `component` (the `daemon:`, `node:` or `bus:` prefix of the message) and, when the line is about one of these, the fields below. They are filled from the data the line is about, not parsed from the text; a field that does not apply is not in the line.
+
+| Field | Is | On lines about |
+|---|---|---|
+| `bot` | the bot id | a timer firing, a run, an approval that expired, a notification, a node's execution |
+| `node` | the node id | a node's own lines (register, heartbeat, stream, certificate), an execution a node carries, a push on the bus |
+| `task` | the task id | a run, an approval, a notification, a node's execution |
+| `execution` | the execution id | a run, a node's execution |
+| `correlationId` | the task's correlation id, when it has one | a run, a node's execution |
+
+Lines that name a task or execution only in their text (a message from code that has no subject yet) still get `task` and `execution` pulled out of the text as a fallback, so filter on the fields, not on the text: `{container="control-plane"} | json | bot="<bot>" | level="ERROR"`. The text format is unchanged.
+
 ## Back to the host
 
 While nothing has run in the pod yet, or when what ran there may be lost:

@@ -4,6 +4,8 @@ import (
 	"io"
 	"log"
 	"time"
+
+	"github.com/underpass-ai/axlr-bots/application"
 )
 
 // maxSocketPath is the longest Unix socket path the agent opens: the
@@ -75,7 +77,7 @@ type Options struct {
 	Now func() time.Time
 	// Log receives one line per registration, assignment and report;
 	// nil discards them.
-	Log *log.Logger
+	Log application.LogPrinter
 }
 
 func (o Options) certificateCheck() time.Duration {
@@ -145,7 +147,7 @@ func (o Options) progressTimeout() time.Duration {
 	return min(o.uploadTimeout(), DefaultProgressTimeout)
 }
 
-func (o Options) log() *log.Logger {
+func (o Options) log() application.LogPrinter {
 	if o.Log != nil {
 		return o.Log
 	}

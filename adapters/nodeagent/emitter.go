@@ -3,7 +3,6 @@ package nodeagent
 import (
 	"context"
 	"encoding/json"
-	"log"
 
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -16,7 +15,7 @@ type emitter struct {
 	transport application.NodeTransport
 	node      domain.NodeID
 	execution domain.ExecutionID
-	log       *log.Logger
+	log       application.LogPrinter
 }
 
 // emittedView is what the model reads about its event.

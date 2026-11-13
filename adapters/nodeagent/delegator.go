@@ -3,7 +3,6 @@ package nodeagent
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/application"
@@ -20,7 +19,7 @@ type delegator struct {
 	execution domain.ExecutionID
 	slots     *slots
 	pollWait  time.Duration
-	log       *log.Logger
+	log       application.LogPrinter
 	// progress tells the operator's live view whom the run asked and the
 	// child it got; nil tells nobody.
 	progress func(application.ProgressItem)

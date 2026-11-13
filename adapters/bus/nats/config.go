@@ -53,7 +53,7 @@ type Config struct {
 	// Name is how the connection is known to the broker.
 	Name string
 	// Log hears connections, retries and refusals; nil discards.
-	Log *log.Logger
+	Log application.LogPrinter
 }
 
 func (c Config) stream() string {
@@ -63,7 +63,7 @@ func (c Config) stream() string {
 	return DefaultStream
 }
 
-func (c Config) log() *log.Logger {
+func (c Config) log() application.LogPrinter {
 	if c.Log != nil {
 		return c.Log
 	}

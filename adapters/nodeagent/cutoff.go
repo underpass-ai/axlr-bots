@@ -2,9 +2,9 @@ package nodeagent
 
 import (
 	"context"
-	"log"
 	"sync"
 
+	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
@@ -17,14 +17,14 @@ import (
 // crash-looping sidecar takes the pod's service out of rotation.
 type cutoff struct {
 	node domain.NodeID
-	log  *log.Logger
+	log  application.LogPrinter
 	stop context.CancelFunc
 
 	once sync.Once
 	done chan struct{}
 }
 
-func newCutoff(node domain.NodeID, logger *log.Logger, stop context.CancelFunc) *cutoff {
+func newCutoff(node domain.NodeID, logger application.LogPrinter, stop context.CancelFunc) *cutoff {
 	return &cutoff{node: node, log: logger, stop: stop, done: make(chan struct{})}
 }
 

@@ -75,9 +75,9 @@ type Options struct {
 	Pushers []application.NodePusher
 	// Log receives one line per task run, reconciliation and error;
 	// nil discards them.
-	Log *log.Logger
+	Log application.LogPrinter
 	// ErrorLog receives the errors; nil sends them to Log.
-	ErrorLog *log.Logger
+	ErrorLog application.LogPrinter
 }
 
 func (o Options) tick() time.Duration {
@@ -108,14 +108,14 @@ func (o Options) deliverEvery() time.Duration {
 	return DefaultDeliverEvery
 }
 
-func (o Options) log() *log.Logger {
+func (o Options) log() application.LogPrinter {
 	if o.Log != nil {
 		return o.Log
 	}
 	return log.New(io.Discard, "", 0)
 }
 
-func (o Options) errorLog() *log.Logger {
+func (o Options) errorLog() application.LogPrinter {
 	if o.ErrorLog != nil {
 		return o.ErrorLog
 	}

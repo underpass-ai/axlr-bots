@@ -2,7 +2,6 @@ package nodeagent
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/application"
@@ -22,7 +21,7 @@ type progressSender struct {
 	every     time.Duration
 	chars     int
 	timeout   time.Duration
-	log       *log.Logger
+	log       application.LogPrinter
 
 	stop chan struct{}
 	done chan struct{}
@@ -36,7 +35,7 @@ type progressSender struct {
 func (a Agent) startProgress(ctx context.Context, id domain.NodeID, execution domain.ExecutionID) *progressSender {
 	s := &progressSender{
 		transport: a.Transport, node: id, execution: execution, queue: newProgressQueue(a.Options.progressQueue()),
-		every: a.Options.progressEvery(), chars: a.Options.progressChars(), timeout: a.Options.progressTimeout(), log: a.Options.log(),
+		every: a.Options.progressEvery(), chars: a.Options.progressChars(), timeout: a.Options.progressTimeout(), log: a.execLog(id, execution),
 		stop: make(chan struct{}), done: make(chan struct{}),
 	}
 	go s.run(ctx)
