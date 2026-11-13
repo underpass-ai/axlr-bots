@@ -8,7 +8,13 @@ type FlaggedBlock struct {
 	Block int `json:"block"`
 	// The probability Jev gave hidden_error.
 	Probability float64 `json:"probability"`
-	// The block's first 400 characters, for a reader to find it; the whole is
-	// in the transcript.
+	// The block's first 400 characters; the whole is in the transcript.
 	Excerpt string `json:"excerpt"`
+	// The lines of the block that show a failure, found by fixed rules
+	// (forbidden, refused, denied, error, failed, a non-zero exit code, ok
+	// false, not found, no such, traceback, panic, timed out, cannot, could
+	// not), each cut to 600 characters around the first sign, at most 8: what
+	// a reader needs to decide without reading the block. Empty when no line
+	// shows one.
+	Evidence []string `json:"evidence"`
 }
