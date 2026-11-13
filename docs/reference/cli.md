@@ -6,7 +6,7 @@ Two commands come out of this module: `axlr-bots`, the control plane and the ope
 axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>] <command>
 axlr-bots --control https://host:7879 --token-file <path> [--ca-file <pem>] <command>   the same commands against a control plane on another host
 
-  serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--api-token-file <path>] [--api-url <url>]
+  serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--grpc-listen <addr>] [--api-token-file <path>] [--api-url <url>]
         [--bus direct|nats] [--nats-url <url>] [--nats-creds <file>]              pushes to the nodes also over a broker (bus port)
         [--nats-cert <file> --nats-key <file>] [--nats-ca <file>]                  mutual TLS to the broker
         [--tick 2s] [--reconcile-every 1m] [--grace <duration>]
@@ -66,6 +66,7 @@ axlr-node codex-proxy [--listen 127.0.0.1:8790] [--codex-home ~/.codex] [--refre
 | the daemon's socket | `--socket` (`""` never uses a daemon) | `AXLR_BOTS_SOCKET` | `<state>/axlr-bots.sock` |
 | a control plane on another host | `--control https://host:7879` (its operator address), `--token-file` (the operator token), `--ca-file` (the fleet CA, `ca show`) | `AXLR_BOTS_CONTROL`, `AXLR_BOTS_TOKEN_FILE`, `AXLR_BOTS_CA_FILE` | none: the socket. With `--control` every command but `serve`, `ca`, `install`, `uninstall` and `task reconcile` goes to that address (`health` too), never opens the state directory and never falls back to it; `--token-file` is required, `--ca-file` defaults to the system's CAs |
 | node address, server names, operator address | `serve --listen`, `--server-names`, `--api-listen` | `AXLR_BOTS_LISTEN`, `AXLR_BOTS_SERVER_NAMES`, `AXLR_BOTS_API_LISTEN` | none: the socket only |
+| operator gRPC address ([Operator API over gRPC](operator-grpc.md)) | `serve --grpc-listen` | `AXLR_BOTS_GRPC_LISTEN` | none: the socket `<socket>.grpc` only |
 | operator token file | `serve --api-token-file` | | `<state>/api.token` |
 | the operator API's base URL in approval notifications | `serve --api-url` | `AXLR_BOTS_API_URL` | `https://` and the `--api-listen` address (the host's name for a wildcard address) |
 | control plane: bus | `serve --bus direct\|nats`, `--nats-url`, `--nats-creds`, `--nats-cert`, `--nats-key`, `--nats-ca` | `AXLR_BOTS_BUS`, `AXLR_BOTS_NATS_URL`, `AXLR_BOTS_NATS_CREDS`, `AXLR_BOTS_NATS_CERT`, `AXLR_BOTS_NATS_KEY`, `AXLR_BOTS_NATS_CA` | `direct`: the nodes' own streams only; `nats` also publishes every push to the broker ([bus port](../architecture/bus-port.md#configuration)) |

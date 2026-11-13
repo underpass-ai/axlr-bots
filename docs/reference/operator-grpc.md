@@ -1,0 +1,87 @@
+# Operator API over gRPC
+
+The operator API of the control plane as gRPC services. The contract is [`api/proto/axlrbots/operator/v1`](../../api/proto/axlrbots/operator/v1); the Go code generated from it is in `api/gen/axlrbots/operator/v1` (package `operatorv1`). The HTTP routes of the [operator API](operator-api.md) keep working beside it.
+
+## Services
+
+| Service | Does |
+|---|---|
+| `BotsService` | register, read, update, stage, enable, pause, stop and delete bots; their timeline (`WatchBotEvents` streams it); submit a task on a bot |
+| `TasksService` | list, read, submit, run, approve, deny, decide, cancel and message tasks; their timeline (`WatchTaskEvents` streams it), executions and report |
+| `GroupsService` | teams, their topics and timeline (`WatchGroupEvents` streams it); publish an operator event |
+| `ExecutionsService` | read an execution; download an artifact or a transcript in chunks of at most 64 KiB |
+| `NodesService` | read nodes, mint an enrollment token, revoke a node |
+| `OverviewService` | the dashboard counts; which build runs |
+| `ActivityService` | served by the same server; see its own page when it lands |
+
+Every RPC calls the same use case as its HTTP route, so the rules are the HTTP ones: the same validation, idempotency keys, redaction of trigger secrets, the approvers check and the list limits (zero is 100, at most 1000).
+
+## Listeners
+
+| Listener | Flag | Credential |
+|---|---|---|
+| Unix socket `<socket>.grpc` (mode 0660), beside the HTTP socket | always | the socket's permissions; no token |
+| TLS 1.3 address | `serve --grpc-listen <addr>` (`AXLR_BOTS_GRPC_LISTEN`) | `authorization: Bearer <token>` |
+
+The certificate of the TLS address is issued by the fleet CA (`ca init`; clients check it with `<state>/ca/ca.crt`). The token is the operator token of `--api-listen`: `<state>/api.token` (`--api-token-file`), generated at the first start when either flag is used. A node certificate opens nothing here. `--grpc-listen` needs no `--api-listen` and the other way round.
+
+## Calling it
+
+With [grpcurl](https://github.com/fullstorydev/grpcurl), from the repository (the server has no reflection, so name the proto):
+
+```sh
+TOKEN=$(cat ~/.local/state/axlr-bots/api.token)
+CA=~/.local/state/axlr-bots/ca/ca.crt
+PROTO="-import-path api/proto -proto axlrbots/operator/v1/bots.proto"
+
+# list the bots
+grpcurl -cacert "$CA" -H "authorization: Bearer $TOKEN" $PROTO \
+  control.example:7880 axlrbots.operator.v1.BotsService/ListBots
+
+# submit a task
+grpcurl -cacert "$CA" -H "authorization: Bearer $TOKEN" $PROTO \
+  -d '{"bot_id":"bot-a","objective":"look at the disks","idempotency_key":"k-1"}' \
+  control.example:7880 axlrbots.operator.v1.BotsService/SubmitBotTask
+
+# follow a bot's timeline until Ctrl-C
+grpcurl -cacert "$CA" -H "authorization: Bearer $TOKEN" $PROTO \
+  -d '{"bot_id":"bot-a","replay_limit":20}' \
+  control.example:7880 axlrbots.operator.v1.BotsService/WatchBotEvents
+
+# on the same host, through the socket: no TLS, no token
+grpcurl -plaintext -unix $PROTO \
+  ~/.local/state/axlr-bots/axlr-bots.sock.grpc axlrbots.operator.v1.BotsService/ListBots
+```
+
+For the other services pass their file too (`tasks.proto`, `groups.proto`, `executions.proto`, `nodes.proto`, `overview.proto`).
+
+A Go client dials with `credentials.NewTLS` over a pool holding the fleet CA and adds the token to every call's metadata (`metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)`).
+
+## Who decides
+
+`ApproveTask`, `DenyTask` and `DecideTask` read the actor from the metadata key `x-axlr-actor` (`-H "x-axlr-actor: alice"`), which a bot's approvers are compared with. `DecideTask`'s `decided_by` says the same: when both are given and differ the call fails with `INVALID_ARGUMENT`. With neither, the actor is the control plane's own, which a bot that lists approvers refuses (`PERMISSION_DENIED`).
+
+## Errors
+
+Every failure is a gRPC status with an `axlrbots.operator.v1.ErrorDetail` in its details (`kind`, `message`, and `resource` and `id` for a not-found):
+
+| Kind | Code |
+|---|---|
+| `not_found` | `NOT_FOUND` |
+| `validation` | `INVALID_ARGUMENT` |
+| `state`, `approval_expired` | `FAILED_PRECONDITION` |
+| `conflict` | `ABORTED` |
+| `forbidden` | `PERMISSION_DENIED` |
+| `unauthorized` | `UNAUTHENTICATED` |
+| `too_large` | `RESOURCE_EXHAUSTED` |
+| `internal` | `INTERNAL` |
+
+A missing or wrong token is `UNAUTHENTICATED` on every RPC, streams included.
+
+## Streams
+
+`WatchTaskEvents` and `WatchGroupEvents` send the events after `after`, then each new one. `WatchBotEvents` sends the newest `replay_limit` events, then each new one. They wait on the same change signal as the `?wait` long polls of the HTTP API and look again every 5 seconds; they end when the client cancels or the server stops (five seconds' grace). `GetArtifact` and `GetTranscript` send the listing first, then the content in chunks of at most 64 KiB; check `size` and `sha256`.
+
+## Metrics
+
+With `--metrics-listen` the server also counts its calls: `axlr_bots_grpc_requests_total{service,method,code}` and `axlr_bots_grpc_request_duration_seconds{service,method,code}` (`code` is the gRPC code's name, such as `OK` or `NotFound`). Streams are counted when they end and left out of the histogram.
