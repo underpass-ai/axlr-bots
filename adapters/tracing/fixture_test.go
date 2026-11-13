@@ -91,13 +91,4 @@ func progress(task domain.TaskID, execution domain.ExecutionID, items ...applica
 	return domain.Event{ID: domain.EventID(fmt.Sprintf("ev-%d", len(items))), Type: domain.EventTaskProgress, TaskID: task, ExecutionID: execution, Payload: map[string]any{"items": items}}
 }
 
-func (h *harness) spans() map[string]tracetest.SpanStub {
-	h.t.Helper()
-	out := map[string]tracetest.SpanStub{}
-	for _, span := range h.exporter.GetSpans() {
-		out[span.Name] = span
-	}
-	return out
-}
-
 type spanStub = tracetest.SpanStub
