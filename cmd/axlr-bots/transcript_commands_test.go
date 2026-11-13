@@ -2,25 +2,24 @@ package main
 
 import (
 	"context"
+	"github.com/underpass-ai/axlr-bots/compose"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/underpass-ai/axlr-bots/adapters/sqlitestore"
 	"github.com/underpass-ai/axlr-bots/application"
 )
 
 func TestExecutionTranscriptPrintsTheWholeSession(t *testing.T) {
 	state := t.TempDir()
 	session := `{"version":3,"messages":[{"role":"user","content":"go"},{"role":"tool", "content":"` + strings.Repeat("q", 40000) + `"}]}`
-	store := sqlitestore.NewTranscriptStore(state)
+	store := compose.TranscriptStore(state)
 	record := application.TranscriptRecord{Execution: "exec-1", Task: "task-1", Bot: "dev-go", Session: "sess-1", Size: int64(len(session)), SHA256: "x", ReceivedAt: time.Now()}
 	if _, err := store.SaveTranscript(context.Background(), record, []byte(session)); err != nil {
 		t.Fatal(err)
 	}
-	_ = store.Close()
 	c := cli{t: t, state: state, axlr: "/nonexistent"}
 	if code, out, _ := c.run("execution", "transcript", "exec-1", "sess-1"); code != exitOK || out != session {
 		t.Fatalf("raw: %d %d bytes", code, len(out))

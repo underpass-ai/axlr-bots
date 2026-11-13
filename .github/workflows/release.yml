@@ -124,12 +124,12 @@ jobs:
           dist="$RUNNER_TEMP/dist"
           dir="axlr-bots-v$VERSION-linux-$GOARCH"
           mkdir -p "$dist/$dir"
-          # axlr-bots links SQLite through cgo (the transcripts' database,
+          # axlr-bots is built with the sqlite tag, SQLite through cgo (the transcripts' store,
           # docs/architecture/transcripts.md), statically, as the image
           # does; axlr-node stays pure Go.
           cc=gcc
           if [ "$GOARCH" = arm64 ]; then cc=aarch64-linux-gnu-gcc; fi
-          CGO_ENABLED=1 CC=$cc GOOS=linux go build -tags "sqlite_omit_load_extension netgo osusergo" \
+          CGO_ENABLED=1 CC=$cc GOOS=linux go build -tags "sqlite sqlite_omit_load_extension netgo osusergo" \
             -ldflags="$ldflags -linkmode external -extldflags -static" -o "$dist/$dir/axlr-bots" ./cmd/axlr-bots
           CGO_ENABLED=0 GOOS=linux go build -ldflags="$ldflags" -o "$dist/$dir/axlr-node" ./cmd/axlr-node
           cp LICENSE NOTICE "$dist/$dir/"

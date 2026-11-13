@@ -1,3 +1,5 @@
+//go:build sqlite
+
 // Package sqlitestore keeps the control plane's records that need a
 // database: today the whole transcript of each execution's runtime
 // session (application.TranscriptStore), in <state>/transcripts.db

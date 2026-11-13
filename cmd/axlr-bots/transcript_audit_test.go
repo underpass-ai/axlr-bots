@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"github.com/underpass-ai/axlr-bots/compose"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,7 +14,6 @@ import (
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/adapters/jev"
-	"github.com/underpass-ai/axlr-bots/adapters/sqlitestore"
 	"github.com/underpass-ai/axlr-bots/adapters/transcriptaudit"
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
@@ -34,7 +34,7 @@ func (s *stubJudge) Choose(_ context.Context, c transcriptaudit.Choice) (transcr
 func TestTranscriptAuditAgainstADaemon(t *testing.T) {
 	state := t.TempDir()
 	socket := filepath.Join(t.TempDir(), "cp.sock")
-	store := sqlitestore.NewTranscriptStore(state)
+	store := compose.TranscriptStore(state)
 	for i, content := range []string{`{"messages":[{"role":"user","content":"m"},{"role":"tool","content":"refused"}]}`, `{"messages":[{"role":"user","content":"m"},{"role":"tool","content":"fine"}]}`} {
 		sum := sha256.Sum256([]byte(content))
 		record := application.TranscriptRecord{Execution: "exec-1", Task: "task-1", Bot: "dev-go", Session: []string{"s1", "s2"}[i], SHA256: hex.EncodeToString(sum[:]), ReceivedAt: time.Now()}
@@ -42,7 +42,6 @@ func TestTranscriptAuditAgainstADaemon(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_ = store.Close()
 	c := cli{t: t, state: state, axlr: "/nonexistent"}
 	daemonCtx, stopDaemon := context.WithCancel(context.Background())
 	daemonDone := make(chan int, 1)

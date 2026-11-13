@@ -18,8 +18,8 @@ ARG BASE_IMAGE=gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f2
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS build
 ARG TARGETARCH
 ARG BUILDARCH
-# The transcripts' database is SQLite through cgo
-# (adapters/sqlitestore, docs/architecture/transcripts.md): this stage
+# The image keeps transcripts in SQLite: the sqlite build tag, through
+# cgo (adapters/sqlitestore, docs/architecture/transcripts.md); this stage
 # runs on the build platform, so for another target it installs that
 # target's C cross compiler. The binary is linked statically, so the
 # distroless static base still runs it; netgo and osusergo keep glibc's
@@ -61,7 +61,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     fi; \
     pkg=github.com/underpass-ai/axlr-bots/internal/buildinfo; \
     CGO_ENABLED=1 CC=$cc GOOS=$TARGETOS GOARCH=$TARGETARCH GOFLAGS=$GOFLAGS \
-    go build -tags "sqlite_omit_load_extension netgo osusergo" \
+    go build -tags "sqlite sqlite_omit_load_extension netgo osusergo" \
       -ldflags="-s -w -linkmode external -extldflags -static -X $pkg.Version=$VERSION -X $pkg.Revision=$REVISION -X $pkg.Time=$BUILD_TIME" \
       -o /out/axlr-bots ./cmd/axlr-bots
 
