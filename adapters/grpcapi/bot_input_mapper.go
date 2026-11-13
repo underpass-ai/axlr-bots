@@ -36,6 +36,9 @@ func patchFromProto(p *operatorv1.BotPatch) application.BotPatch {
 	}
 	if p.GetTriggers() != nil {
 		values := triggersFromProto(p.GetTriggers().GetValues())
+		if values == nil {
+			values = []domain.TriggerSnapshot{}
+		}
 		patch.Triggers = &values
 	}
 	if p.GetPlacement() != nil {
@@ -48,6 +51,9 @@ func patchFromProto(p *operatorv1.BotPatch) application.BotPatch {
 	}
 	if p.GetAutoApprove() != nil {
 		rules := application.AutoApproveRules(toolRuleListFromProto(p.GetAutoApprove().GetValues()))
+		if rules == nil {
+			rules = application.AutoApproveRules{}
+		}
 		patch.AutoApprove = &rules
 	}
 	patch.Delegation = delegationFromProto(p.GetDelegation())
@@ -58,11 +64,17 @@ func patchFromProto(p *operatorv1.BotPatch) application.BotPatch {
 	patch.Events = eventsFromProto(p.GetEvents())
 	if p.GetSubscriptions() != nil {
 		values := subscriptionsFromProto(p.GetSubscriptions().GetValues())
+		if values == nil {
+			values = []domain.SubscriptionSnapshot{}
+		}
 		patch.Subscriptions = &values
 	}
 	patch.Runtime = runtimeFromProto(p.GetRuntime())
 	if p.GetSkills() != nil {
 		values := skillsFromProto(p.GetSkills().GetValues())
+		if values == nil {
+			values = []domain.SkillPinSnapshot{}
+		}
 		patch.Skills = &values
 	}
 	if p.GetModel() != nil {

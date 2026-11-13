@@ -160,3 +160,23 @@ func TestBotsServiceStagesAChange(t *testing.T) {
 		t.Error("applied what was dropped")
 	}
 }
+
+func TestStagingAnEmptyListClearsItOnApply(t *testing.T) {
+	f := newFixture(t, "completed")
+	ctx := context.Background()
+	bots := operatorv1.NewBotsServiceClient(f.authed)
+	def := definition("bot-c", "observe")
+	def.Skills = []*operatorv1.SkillPin{{Name: "skill_a", Version: "1.0.0", Catalog: "c"}}
+	def.Triggers = []*operatorv1.Trigger{{Type: "manual"}}
+	if _, err := bots.RegisterBot(ctx, &operatorv1.RegisterBotRequest{Definition: def}); err != nil {
+		t.Fatal(err)
+	}
+	version := "2.0.0"
+	if _, err := bots.StageBot(ctx, &operatorv1.StageBotRequest{BotId: "bot-c", Patch: &operatorv1.BotPatch{Version: &version, Skills: &operatorv1.SkillPinList{}, Subscriptions: &operatorv1.SubscriptionList{}}}); err != nil {
+		t.Fatal(err)
+	}
+	applied, err := bots.ApplyStagedBot(ctx, &operatorv1.ApplyStagedBotRequest{BotId: "bot-c"})
+	if err != nil || len(applied.GetBot().GetSkills()) != 0 {
+		t.Errorf("skills should be cleared: %v %v", applied, err)
+	}
+}

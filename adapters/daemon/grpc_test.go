@@ -40,7 +40,7 @@ func TestDaemonServesTheOperatorAPIOverGRPC(t *testing.T) {
 	defer cancel()
 
 	// On the local socket, beside the HTTP one: no token.
-	local, err := grpc.NewClient("unix://"+f.socket+".grpc", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	local, err := grpc.NewClient("unix://"+filepath.Join(filepath.Dir(f.socket), "axlr-bots-grpc.sock"), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestDaemonGRPCAddressOptions(t *testing.T) {
 	if err := Run(context.Background(), f.deps, Options{StateDir: f.state, SocketPath: f.socket, GRPCListenAddr: "300.0.0.1:0", APIToken: "t", TLS: tlsConfig}); err == nil {
 		t.Error("a bad gRPC address listened")
 	}
-	if (Options{SocketPath: "/run/cp.sock"}).grpcSocketPath() != "/run/cp.sock.grpc" || (Options{GRPCSocketPath: "/x"}).grpcSocketPath() != "/x" {
+	if (Options{SocketPath: "/run/cp.sock"}).grpcSocketPath() != "/run/axlr-bots-grpc.sock" || (Options{GRPCSocketPath: "/x"}).grpcSocketPath() != "/x" {
 		t.Error("gRPC socket path")
 	}
 }

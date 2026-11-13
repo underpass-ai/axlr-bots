@@ -20,7 +20,7 @@ Every RPC calls the same use case as its HTTP route, so the rules are the HTTP o
 
 | Listener | Flag | Credential |
 |---|---|---|
-| Unix socket `<socket>.grpc` (mode 0660), beside the HTTP socket | always | the socket's permissions; no token |
+| Unix socket `<state>/axlr-bots-grpc.sock` (mode 0660; `serve --grpc-socket`, `AXLR_BOTS_GRPC_SOCKET`) | always | the socket's permissions; no token |
 | TLS 1.3 address | `serve --grpc-listen <addr>` (`AXLR_BOTS_GRPC_LISTEN`) | `authorization: Bearer <token>` |
 
 The certificate of the TLS address is issued by the fleet CA (`ca init`; clients check it with `<state>/ca/ca.crt`). The token is the operator token of `--api-listen`: `<state>/api.token` (`--api-token-file`), generated at the first start when either flag is used. A node certificate opens nothing here. `--grpc-listen` needs no `--api-listen` and the other way round.
@@ -50,7 +50,7 @@ grpcurl -cacert "$CA" -H "authorization: Bearer $TOKEN" $PROTO \
 
 # on the same host, through the socket: no TLS, no token
 grpcurl -plaintext -unix $PROTO \
-  ~/.local/state/axlr-bots/axlr-bots.sock.grpc axlrbots.operator.v1.BotsService/ListBots
+  ~/.local/state/axlr-bots/axlr-bots-grpc.sock axlrbots.operator.v1.BotsService/ListBots
 ```
 
 For the other services pass their file too (`tasks.proto`, `groups.proto`, `executions.proto`, `nodes.proto`, `overview.proto`).

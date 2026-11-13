@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"path/filepath"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/application"
@@ -56,7 +57,7 @@ type Options struct {
 	// place of GRPCListenAddr.
 	GRPCListener net.Listener
 	// GRPCSocketPath is where the gRPC API listens on the host; empty is
-	// SocketPath with a .grpc suffix.
+	// axlr-bots-grpc.sock beside SocketPath.
 	GRPCSocketPath string
 	// MetricsListenAddr is an optional plain-HTTP address for Prometheus
 	// (0.0.0.0:9464 in a pod): GET /metrics and GET /healthz, nothing
@@ -133,10 +134,10 @@ func (o Options) errorLog() application.LogPrinter {
 }
 
 // grpcSocketPath is the Unix socket of the gRPC API: the one given, or
-// the HTTP socket's path with a .grpc suffix, beside it.
+// axlr-bots-grpc.sock in the HTTP socket's directory.
 func (o Options) grpcSocketPath() string {
 	if o.GRPCSocketPath != "" {
 		return o.GRPCSocketPath
 	}
-	return o.SocketPath + ".grpc"
+	return filepath.Join(filepath.Dir(o.SocketPath), "axlr-bots-grpc.sock")
 }

@@ -260,7 +260,7 @@ func printUsage(w io.Writer) {
                                       the same commands against a control plane on another
                                       host, through its operator address
 
-  serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--api-token-file <path>]
+  serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--grpc-listen <addr>] [--grpc-socket <path>] [--api-token-file <path>]
         [--bus direct|nats] [--nats-url <url>] [--nats-creds <file>]
         [--nats-cert <file> --nats-key <file>] [--nats-ca <file>]
         [--tick 2s] [--reconcile-every 1m] [--min-axlr-version 0.20.0]
