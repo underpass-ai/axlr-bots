@@ -17,7 +17,7 @@ func TestTheDecideRoutesNameWhoDecides(t *testing.T) {
 	client, _, _ := serveWith(t, "approval-flow", nil)
 	ctx := context.Background()
 	bot := definition("bot-b", "act-with-approval")
-	bot.Approvals = domain.ApprovalsSnapshot{Approvers: []string{"tirso", "oncall"}}
+	bot.Approvals = domain.ApprovalsSnapshot{Approvers: []string{"alice", "oncall"}}
 	if _, err := client.RegisterBot(ctx, bot); err != nil {
 		t.Fatal(err)
 	}
@@ -50,8 +50,8 @@ func TestTheDecideRoutesNameWhoDecides(t *testing.T) {
 		{"/approve", "", nil, http.StatusForbidden},
 		{"/deny", "mallory", nil, http.StatusForbidden},
 		{"/decide", "", DecideRequest{Decision: "approve", DecidedBy: "mallory"}, http.StatusForbidden},
-		{"/decide", "mallory", DecideRequest{Decision: "approve", DecidedBy: "tirso"}, http.StatusBadRequest},
-		{"/decide", "", map[string]string{"decision": "approve", "actor": "tirso"}, http.StatusBadRequest},
+		{"/decide", "mallory", DecideRequest{Decision: "approve", DecidedBy: "alice"}, http.StatusBadRequest},
+		{"/decide", "", map[string]string{"decision": "approve", "actor": "alice"}, http.StatusBadRequest},
 	} {
 		status, body, err := client.doWith(ctx, http.MethodPost, "/v1/tasks/"+id+c.path, as(c.actor), c.body)
 		if err != nil || status != c.want {
@@ -67,9 +67,9 @@ func TestTheDecideRoutesNameWhoDecides(t *testing.T) {
 	if task, _ := client.GetTask(ctx, id); task.Status != "WaitingApproval" {
 		t.Fatalf("a refusal changed the task: %+v", task)
 	}
-	status, body, err := client.doWith(ctx, http.MethodPost, "/v1/tasks/"+id+"/approve", as("tirso"), nil)
+	status, body, err := client.doWith(ctx, http.MethodPost, "/v1/tasks/"+id+"/approve", as("alice"), nil)
 	if err != nil || status != http.StatusOK {
-		t.Fatalf("approve as tirso: %d %s %v", status, body, err)
+		t.Fatalf("approve as alice: %d %s %v", status, body, err)
 	}
 	other := waiting("k-2")
 	if decided, err := client.DecideTask(ctx, other, DecideRequest{Decision: "deny", DecidedBy: "oncall"}); err != nil || decided.Task.Approval == nil || decided.Task.Approval.Outcome != domain.ApprovalDenied {
@@ -87,7 +87,7 @@ func TestTheDecideRoutesRefuseAPolicyAndTheDaemonsName(t *testing.T) {
 	client, _, _ := serveWith(t, "approval-flow", func(deps *application.Dependencies) { deps.Daemon = true })
 	ctx := context.Background()
 	bot := definition("bot-b", "act-with-approval")
-	bot.Approvals = domain.ApprovalsSnapshot{Approvers: []string{"tirso", "test:api"}}
+	bot.Approvals = domain.ApprovalsSnapshot{Approvers: []string{"alice", "test:api"}}
 	if _, err := client.RegisterBot(ctx, bot); err != nil {
 		t.Fatal(err)
 	}

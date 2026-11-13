@@ -151,17 +151,6 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 		defer publisher.Close()
 		options.Pushers = append(options.Pushers, publisher)
 		options.Log.Printf("daemon: bus nats at %s (outbox %s)", *natsURL, filepath.Join(stateDir, "outbox", "nats"))
-		// The domain events between teams go through the same broker, on
-		// a stream and an outbox of their own.
-		domainOutbox := filepath.Join(stateDir, "outbox", "nats-domain")
-		domainBus, err := natsbus.NewDomainBus(natsbus.Config{URL: *natsURL, Credentials: *natsCreds, CertFile: *natsCert, KeyFile: *natsKey, CAFile: *natsCA, Outbox: domainOutbox, Name: "axlr-bots domain events", Log: options.Log})
-		if err != nil {
-			fmt.Fprintln(stderr, "axlr-bots: serve --bus nats:", err)
-			return exitError
-		}
-		defer domainBus.Close()
-		options.DomainBus = domainBus
-		options.Log.Printf("daemon: domain events between teams on nats (outbox %s)", domainOutbox)
 	}
 	if *apiListen != "" {
 		path := *apiTokenFile

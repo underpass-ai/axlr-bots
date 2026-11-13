@@ -46,13 +46,6 @@ type Agent struct {
 	// Certificate is the node's client certificate, which the agent
 	// renews before it expires; nil (over the socket) renews nothing.
 	Certificate Certificate
-	// Memory writes the team channel's records into a team's store on
-	// this node (--team-channel-memory); nil writes none, the default.
-	Memory application.ChannelMemoryWriter
-	// Context reads, without a model, what a team's store on this node
-	// holds under a run's context keys before the run; nil reads none and
-	// the run is told so in one line.
-	Context application.ContextReader
 	// Build reads the agent's own build, which it reports as nodeVersion
 	// and nodeRevision when it registers; nil reports none.
 	Build application.BuildReader
@@ -174,10 +167,10 @@ func (a Agent) sweepSockets() {
 }
 
 // serveDelegation opens the execution's socket when its bot may
-// delegate, emit events or ask other teams, and says where it is; ""
-// when no tool is served.
-func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, offer *application.DelegationOffer, events *application.EventsOffer, ask *application.AskOffer, progress func(application.ProgressItem)) (string, func()) {
-	if (offer == nil && events == nil && ask == nil) || a.Options.SocketDir == "" || a.slots == nil {
+// delegate or emit events, and says where it is; "" when no tool is
+// served.
+func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution domain.ExecutionID, offer *application.DelegationOffer, events *application.EventsOffer, progress func(application.ProgressItem)) (string, func()) {
+	if (offer == nil && events == nil) || a.Options.SocketDir == "" || a.slots == nil {
 		return "", func() {}
 	}
 	if strings.ContainsAny(execution.String(), `/\`) || strings.Contains(execution.String(), "..") {
@@ -199,12 +192,6 @@ func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution 
 		ask := subscriber{transport: a.Transport, node: id, execution: execution, log: a.Options.log()}
 		handlers = append(handlers, mcpHandler{tool: subscribeTool(), call: ask.call})
 	}
-	if ask != nil {
-		q := asker{transport: a.Transport, node: id, execution: execution, log: a.Options.log()}
-		handlers = append(handlers, mcpHandler{tool: askTool(*ask), call: q.call})
-		status := questionReader{transport: a.Transport, node: id, execution: execution, log: a.Options.log()}
-		handlers = append(handlers, mcpHandler{tool: questionStatusTool(), call: status.call})
-	}
 	server, err := serveMCP(ctx, path, a.Executor.Version(ctx), handlers...)
 	if err != nil {
 		a.Options.log().Printf("node: execution %s: delegation socket: %v; the delegation and emit tools are off", execution, err)
@@ -215,9 +202,6 @@ func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution 
 	}
 	if events != nil {
 		a.Options.log().Printf("node: execution %s may emit events to %s", execution, strings.Join(events.Teammates, ", "))
-	}
-	if ask != nil {
-		a.Options.log().Printf("node: execution %s may ask the teams %s", execution, strings.Join(ask.Teams, ", "))
 	}
 	return path, server.Close
 }
@@ -274,19 +258,13 @@ func (a Agent) register(ctx context.Context, id domain.NodeID) error {
 	}
 	registration := application.NodeRegistration{
 		ID: id.String(), HostName: host, Labels: a.Options.Labels,
-		Capabilities: domain.NodeCapabilities{AXLRVersion: a.Executor.Version(ctx), NodeVersion: build.Version, NodeRevision: build.Revision, PolicySupported: a.Executor.SupportsPolicy(ctx), CorrelationSupported: a.Executor.SupportsCorrelation(ctx), Dedicated: a.Options.Dedicated, Runtimes: a.Options.Runtimes, Providers: a.Options.Providers, SkillsSupported: a.Executor.SupportsSkills(ctx), MemoryTeams: a.Options.MemoryTeams, TeamChannel: a.Options.TeamChannel},
+		Capabilities: domain.NodeCapabilities{AXLRVersion: a.Executor.Version(ctx), NodeVersion: build.Version, NodeRevision: build.Revision, PolicySupported: a.Executor.SupportsPolicy(ctx), CorrelationSupported: a.Executor.SupportsCorrelation(ctx), Dedicated: a.Options.Dedicated, Runtimes: a.Options.Runtimes, Providers: a.Options.Providers, SkillsSupported: a.Executor.SupportsSkills(ctx)},
 	}
 	node, err := a.Transport.Register(ctx, registration)
 	if err != nil {
 		return err
 	}
 	a.Options.log().Printf("node: registered as %s (%s), node %q revision %q, axlr %q policy %v correlation %v skills %v dedicated %v runtimes %v providers %v", node.ID, node.HostName, build.Version, build.Revision, registration.Capabilities.AXLRVersion, registration.Capabilities.PolicySupported, registration.Capabilities.CorrelationSupported, registration.Capabilities.SkillsSupported, registration.Capabilities.Dedicated, append([]string{"axlr"}, registration.Capabilities.Runtimes...), registration.Capabilities.Providers)
-	if len(registration.Capabilities.MemoryTeams) > 0 {
-		a.Options.log().Printf("node: shares the memory of the teams %s", strings.Join(registration.Capabilities.MemoryTeams, ", "))
-	}
-	if registration.Capabilities.TeamChannel {
-		a.Options.log().Printf("node: team channel on: its runs may ask other teams, its bots answer the teams whose memory it shares, and a team's watcher runs here")
-	}
 	return nil
 }
 
@@ -304,21 +282,12 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	var report application.ExecutionReport
 	var err error
 	var bot domain.BotID
-	var reads []domain.ContextRead
 	progress := a.startProgress(runCtx, id, assignment.ExecutionID)
 	switch {
 	case assignment.Run != nil:
 		bot = assignment.Run.BotID
 		request := *assignment.Run
-		// An answer's task carries what the asking team's store keeps
-		// of the question; the run does not wait for it.
-		a.goRemember(request.ChannelMemory, "the answer's task")
-		// What the team's store holds under the task's context keys,
-		// read without a model before the run starts.
-		reads = a.readContexts(runCtx, request)
-		request, reads = withContexts(request, reads)
-		request.Ask, request.AllowedTools = a.askOffered(assignment.ExecutionID, request.Ask), a.allowedWithout(request.AllowedTools)
-		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events, request.Ask, progress.push)
+		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events, progress.push)
 		request.DelegationSocket = socket
 		request.OnSaid = a.say(runCtx, id, assignment.ExecutionID)
 		request.OnProgress = progress.push
@@ -327,18 +296,12 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 				return a.Transport.Emit(runCtx, id, assignment.ExecutionID, command)
 			}
 		}
-		if program, ok := request.Runtime.Jev(); ok && program.WatchesQuestions() && a.servesWatcher(assignment.ExecutionID) {
-			w := &watcher{transport: a.Transport, node: id, execution: assignment.ExecutionID, log: logger}
-			request.OnNodeTool = w.call
-			logger.Printf("node: execution %s watches its team's questions", assignment.ExecutionID)
-		}
 		report, err = a.Executor.Execute(runCtx, request)
 		closeSocket()
 	case assignment.Decide != nil:
 		bot = assignment.Decide.BotID
 		request := *assignment.Decide
-		request.Ask, request.AllowedTools = a.askOffered(assignment.ExecutionID, request.Ask), a.allowedWithout(request.AllowedTools)
-		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events, request.Ask, progress.push)
+		socket, closeSocket := a.serveDelegation(runCtx, id, assignment.ExecutionID, request.Delegation, request.Events, progress.push)
 		request.DelegationSocket = socket
 		request.OnSaid = a.say(runCtx, id, assignment.ExecutionID)
 		request.OnProgress = progress.push
@@ -355,7 +318,7 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	a.uploadTranscripts(id, assignment.ExecutionID, report.Result.Sessions)
 	if err != nil {
 		stopRun()
-		report = application.ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "node " + id.String() + ": " + err.Error(), Policy: report.Policy, Correlation: report.Correlation, ContextRead: reads}
+		report = application.ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "node " + id.String() + ": " + err.Error(), Policy: report.Policy, Correlation: report.Correlation}
 		a.report(id, assignment.ExecutionID, report)
 		return
 	}
@@ -363,7 +326,6 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	// control plane takes them only for an execution that runs.
 	a.upload(id, assignment.ExecutionID, bot, report.Result.Artifacts)
 	stopRun()
-	report.ContextRead = reads
 	a.report(id, assignment.ExecutionID, report)
 }
 
@@ -577,16 +539,6 @@ func (a Agent) relay(ctx context.Context, id domain.NodeID, execution domain.Exe
 	texts := make([]string, 0, len(messages))
 	for _, message := range messages {
 		texts = append(texts, message.Text)
-		// A question's answer carries what the asking team's store
-		// keeps of it; the renewal does not wait for the write.
-		if message.Memory != nil {
-			record, err := domain.ChannelRecordFromSnapshot(*message.Memory)
-			if err != nil {
-				a.Options.log().Printf("node: execution %s: team channel record of message %s dropped: %v", execution, message.ID, err)
-				continue
-			}
-			a.goRemember(&record, "the answer's message")
-		}
 	}
 	last := messages[len(messages)-1].ID
 	if hears {
@@ -614,9 +566,6 @@ func (a Agent) report(id domain.NodeID, execution domain.ExecutionID, report app
 		cancel()
 		if err == nil {
 			logger.Printf("node: execution %s reported %s (accepted %v)", execution, report.Outcome, ack.Accepted)
-			// A question this node answered: what the answering team's
-			// store keeps of it.
-			a.remember(ack.ChannelMemory, "the report")
 			return
 		}
 		// A revoked node's executions were failed when it was revoked:

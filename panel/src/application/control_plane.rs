@@ -4,8 +4,7 @@ use super::PortFuture;
 use crate::domain::{
     Bot, BotDefinition, BotId, BotPatch, BuildStatus, CancelledTask, DecidedTask, Decision, DeletedBot,
     EnrollmentRequest, EnrollmentToken, Event, Execution, ExecutionId, Node, NodeId, Overview, Publication, Published,
-    RevokedNode, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId, TaskSubmission, TeamLink,
-    Topic,
+    RevokedNode, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId, TaskSubmission, Topic,
 };
 
 /// The control plane as the panel needs it: the operator API's routes.
@@ -51,10 +50,6 @@ pub trait ControlPlane: Send + Sync {
     /// A team's topics: who publishes, who listens, nobody listens. A
     /// control plane older than the route answers not found.
     fn group_topics(&self, name: String) -> PortFuture<'_, Vec<Topic>>;
-    /// A team's links in the team channel: the teams it may ask and that
-    /// may ask it, who asks and who answers. A control plane older than
-    /// the route answers not found.
-    fn group_links(&self, name: String) -> PortFuture<'_, Vec<TeamLink>>;
     /// Publishes the operator's event on a team.
     fn publish_event(&self, team: String, publication: Publication) -> PortFuture<'_, Published>;
 

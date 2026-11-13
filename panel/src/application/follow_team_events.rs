@@ -57,7 +57,7 @@ mod tests {
         assert_eq!(feed.new, 1);
         assert!(feed.events.last().unwrap().needs_attention());
         assert!(matches!(
-            run(uc.execute("qa".into(), feed, 0)),
+            run(uc.execute("web".into(), feed, 0)),
             Err(PanelError::NotFound(_))
         ));
     }

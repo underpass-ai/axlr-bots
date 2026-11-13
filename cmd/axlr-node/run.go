@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -17,7 +16,6 @@ import (
 	"github.com/underpass-ai/axlr-bots/adapters/axlr"
 	natsbus "github.com/underpass-ai/axlr-bots/adapters/bus/nats"
 	"github.com/underpass-ai/axlr-bots/adapters/jev"
-	"github.com/underpass-ai/axlr-bots/adapters/kmpchannel"
 	"github.com/underpass-ai/axlr-bots/adapters/nodeagent"
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
 	"github.com/underpass-ai/axlr-bots/adapters/system"
@@ -82,10 +80,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	retry := flags.Duration("enroll-retry", 10*time.Second, "with --token-file, how long to wait between enrollment attempts")
 	dedicated := flags.Bool("dedicated", envOr("AXLR_NODE_DEDICATED", "") == "true", "run only the bots whose placement names this node or selects its labels, never those placed on any node (also AXLR_NODE_DEDICATED=true): a sidecar")
 	axlrMCPConfig := flags.String("axlr-mcp-config", envOr("AXLR_NODE_AXLR_MCP_CONFIG", ""), "the mcp.json every AXLR execution loads instead of the operator's ~/.config/axlr/mcp.json, so a server the operator added does not join the bots' runs (also AXLR_NODE_AXLR_MCP_CONFIG; an absolute path that exists)")
-	memoryTeams := flags.String("memory-teams", envOr("AXLR_NODE_MEMORY_TEAMS", ""), "the teams whose bots share one KMP store on this node, a,b, or * for every team; a bot of any other team keeps a store of its own; only a node that names a team answers its questions (also AXLR_NODE_MEMORY_TEAMS; default: none)")
-	teamChannel := flags.Bool("team-channel", envOr("AXLR_NODE_TEAM_CHANNEL", "") == "true", "run the team channel on this node: its runs may ask other teams (axlr_bots_ask_team, axlr_bots_question_status), its bots answer the teams --memory-teams names, and a team's Jev watcher runs here; off, the control plane offers none of it here and the node serves none (also AXLR_NODE_TEAM_CHANNEL=true; default: off)")
-	channelMemory := flags.Bool("team-channel-memory", envOr("AXLR_NODE_TEAM_CHANNEL_MEMORY", "") == "true", "write each team channel question this node's bots ask or answer into the team's KMP store, about project:<team>.canal, without a model; only for the teams --memory-teams names (also AXLR_NODE_TEAM_CHANNEL_MEMORY=true; default: off)")
-	kmpMCP := flags.String("kmp-mcp", envOr("AXLR_NODE_KMP_MCP", "kmp-mcp"), "the kmp-mcp that writes the team channel's records (--team-channel-memory) and reads a task's context keys (--memory-teams) in the team's store (also AXLR_NODE_KMP_MCP)")
+	memoryTeams := flags.String("memory-teams", envOr("AXLR_NODE_MEMORY_TEAMS", ""), "the teams whose bots share one KMP store on this node, a,b, or * for every team; a bot of any other team keeps a store of its own (also AXLR_NODE_MEMORY_TEAMS; default: none)")
 	mcpConfig := flags.String("mcp-config", envOr("AXLR_NODE_MCP_CONFIG", ""), "the mcp.json a Jev bot's program finds its MCP server in (also AXLR_NODE_MCP_CONFIG; default: ~/.config/axlr/mcp.json, the node's AXLR's)")
 	jevModel := flags.String("jev-model", envOr("AXLR_NODE_JEV_MODEL", jev.DefaultModel), "the pinned Jev version the jev runtime asks (also AXLR_NODE_JEV_MODEL)")
 	bus := flags.String("bus", envOr("AXLR_NODE_BUS", "direct"), "how the control plane's pushes reach this node: direct (a stream over the node's own connection) or nats (also AXLR_NODE_BUS)")
@@ -139,15 +134,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "axlr-node: --axlr-mcp-config needs an absolute path to an mcp.json that exists:", *axlrMCPConfig)
 			return exitUsage
 		}
-	}
-	var memoryWriter application.ChannelMemoryWriter
-	if *channelMemory {
-		binary, err := exec.LookPath(*kmpMCP)
-		if err != nil {
-			fmt.Fprintln(stderr, "axlr-node: --team-channel-memory needs kmp-mcp:", err)
-			return exitUsage
-		}
-		memoryWriter = kmpchannel.Writer{Binary: binary, StateDir: *stateDir}
 	}
 	if err := os.MkdirAll(*stateDir, 0o755); err != nil {
 		fmt.Fprintln(stderr, "axlr-node: state directory:", err)
@@ -205,30 +191,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		Transport: conn.transport,
 		Executor:  runtimes,
 		Build:     system.BuildReader{},
-		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Dedicated: *dedicated, Runtimes: runtimes.Kinds(), Providers: providers, MemoryTeams: sharedMemory, TeamChannel: *teamChannel, Heartbeat: *heartbeat, PollWait: *poll, RenewBefore: *renewBefore, Log: logger, SocketDir: filepath.Join(*stateDir, "run")},
+		Options:   nodeagent.Options{NodeID: id, Labels: labelsFromEnrollment, Dedicated: *dedicated, Runtimes: runtimes.Kinds(), Providers: providers, Heartbeat: *heartbeat, PollWait: *poll, RenewBefore: *renewBefore, Log: logger, SocketDir: filepath.Join(*stateDir, "run")},
 	}
 	if conn.certificate != nil {
 		agent.Certificate = conn.certificate
-	}
-	if *teamChannel {
-		logger.Printf("node: team channel on (--team-channel)")
-		if len(sharedMemory) == 0 {
-			logger.Printf("node: team channel on but --memory-teams names no team: its bots may ask, never answer")
-		}
-	}
-	if memoryWriter != nil {
-		agent.Memory = memoryWriter
-		logger.Printf("node: team channel memory on, with %s, for the teams whose memory this node shares", *kmpMCP)
-	}
-	if len(sharedMemory) > 0 {
-		// A task that carries a KMP key of its team is given what the
-		// team's store holds under it, read without a model before the run.
-		if binary, err := exec.LookPath(*kmpMCP); err == nil {
-			agent.Context = kmpchannel.Reader{Binary: binary, StateDir: *stateDir}
-			logger.Printf("node: task context on, with %s, from the stores of the teams whose memory this node shares", *kmpMCP)
-		} else {
-			logger.Printf("node: %s not found: a task's context keys are not read (%v)", *kmpMCP, err)
-		}
 	}
 	if *bus == "nats" {
 		cert, key, how := natsClientCertificate(*natsURL, *control, *stateDir, *natsCert, *natsKey)
@@ -318,25 +284,6 @@ func parseLabels(raw string) (map[string]string, error) {
 	return labels, nil
 }
 
-// parseMemoryTeams reads --memory-teams: team names, or "*" for every
-// team, separated by commas; none when empty.
-func parseMemoryTeams(raw string) ([]string, error) {
-	var teams []string
-	for _, name := range strings.Split(raw, ",") {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		if name != "*" {
-			if _, err := domain.NewTeamName(name); err != nil {
-				return nil, fmt.Errorf("--memory-teams: %w", err)
-			}
-		}
-		teams = append(teams, name)
-	}
-	return teams, nil
-}
-
 func defaultNodeID() string {
 	host, err := os.Hostname()
 	if err != nil || host == "" {
@@ -386,4 +333,23 @@ func natsClientCertificate(natsURL, control, stateDir, cert, key string) (string
 		return filepath.Join(dir, "node.crt"), filepath.Join(dir, "node.key"), "the node's own certificate from enrollment"
 	}
 	return "", "", "no client certificate"
+}
+
+// parseMemoryTeams reads --memory-teams: team names, or "*" for every
+// team, separated by commas; none when empty.
+func parseMemoryTeams(raw string) ([]string, error) {
+	var teams []string
+	for _, name := range strings.Split(raw, ",") {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if name != "*" {
+			if _, err := domain.NewTeamName(name); err != nil {
+				return nil, fmt.Errorf("--memory-teams: %w", err)
+			}
+		}
+		teams = append(teams, name)
+	}
+	return teams, nil
 }

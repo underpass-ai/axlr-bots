@@ -11,12 +11,6 @@ use super::identifier::validate_identifier;
 #[serde(rename_all = "camelCase")]
 pub struct Subscription {
     pub topic: String,
-    /// Another team whose domain event this subscription hears
-    /// (docs/architecture/team-topics.md); empty: the bot's own teams. The
-    /// panel keeps it as it is on a save, so a crossing subscription never
-    /// turns into one of the bot's own team.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub team: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub mode: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -25,14 +19,6 @@ pub struct Subscription {
     pub urgent: bool,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub objective: String,
-    /// `team` when one member of the bot's team takes what it hears.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub deliver: String,
-    /// The final events a task it makes must emit, one per event it
-    /// carried (docs/architecture/team-subscriptions.md, "Done is a
-    /// contract"). The panel keeps them on a save, as it keeps `team`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub expects: Vec<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub status: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -77,30 +63,12 @@ impl Subscription {
         DeliveryMode::parse(&self.mode).unwrap_or_else(|| DeliveryMode::by_kind(&self.topic))
     }
 
-    /// Whom from: `recepcion, operator`, or `anyone`; for another team's
-    /// domain event, `team team-b` or `team team-b: b-triage`.
+    /// Whom from: `recepcion, operator`, or `anyone`.
     pub fn senders(&self) -> String {
-        let bots = if self.from.is_empty() {
+        if self.from.is_empty() {
             "anyone".to_string()
         } else {
             self.from.join(", ")
-        };
-        if self.team.is_empty() {
-            bots
-        } else if self.from.is_empty() {
-            format!("team {}", self.team)
-        } else {
-            format!("team {}: {}", self.team, bots)
-        }
-    }
-
-    /// What its tasks must end with: `ends with team-b.item.sorted or
-    /// team-b.item.held`; empty when it expects nothing.
-    pub fn ends_with(&self) -> String {
-        if self.expects.is_empty() {
-            String::new()
-        } else {
-            format!("ends with {}", self.expects.join(" or "))
         }
     }
 
@@ -165,37 +133,5 @@ mod tests {
         assert!(Subscription::new(&"a".repeat(65), None, "").is_err());
         assert!(Subscription::new("a", None, "Not Ok").is_err());
         assert_eq!(Subscription::new("a", None, "x x").unwrap().from, vec!["x"]);
-    }
-
-    #[test]
-    fn keeps_another_teams_subscription_on_the_way_back() {
-        let raw = r#"{"topic":"order.new","team":"team-b","mode":"task","objective":"Step Q.","deliver":"team"}"#;
-        let crossing: Subscription = serde_json::from_str(raw).unwrap();
-        assert_eq!(crossing.team, "team-b");
-        assert_eq!(crossing.senders(), "team team-b");
-        assert_eq!(serde_json::to_string(&crossing).unwrap(), raw);
-        let named: Subscription =
-            serde_json::from_str(r#"{"topic":"order.new","team":"team-b","from":["b-triage"]}"#).unwrap();
-        assert_eq!(named.senders(), "team team-b: b-triage");
-        assert_eq!(named.approved().team, "team-b");
-    }
-
-    #[test]
-    fn keeps_a_team_subscription_on_the_way_back() {
-        let raw = r#"{"topic":"dev.arreglo.aprobado","mode":"task","from":["dev-revisor"],"deliver":"team"}"#;
-        let team: Subscription = serde_json::from_str(raw).unwrap();
-        assert_eq!(team.deliver, "team");
-        assert_eq!(serde_json::to_string(&team).unwrap(), raw);
-    }
-
-    #[test]
-    fn keeps_what_a_subscription_expects_on_the_way_back() {
-        let raw = r#"{"topic":"team-b.item.arrived","mode":"task","deliver":"team","expects":["team-b.item.sorted","team-b.item.held"]}"#;
-        let sub: Subscription = serde_json::from_str(raw).unwrap();
-        assert_eq!(sub.expects, vec!["team-b.item.sorted", "team-b.item.held"]);
-        assert_eq!(sub.ends_with(), "ends with team-b.item.sorted or team-b.item.held");
-        assert_eq!(serde_json::to_string(&sub).unwrap(), raw);
-        assert_eq!(serde_json::to_string(&sub.approved()).unwrap(), raw);
-        assert_eq!(Subscription::new("a", None, "").unwrap().ends_with(), "");
     }
 }

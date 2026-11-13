@@ -72,12 +72,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return install(rest[1:], stdout, stderr)
 	case "uninstall":
 		return uninstall(rest[1:], stdout, stderr)
-	case "github-hooks":
-		return githubHooks(socketPath, remote, rest[1:], stdout, stderr)
-	case "activity-audit":
-		return activityAudit(*stateDir, socketPath, remote, rest[1:], stdout, stderr)
-	case "transcript-audit":
-		return transcriptAudit(*stateDir, socketPath, remote, rest[1:], stdout, stderr)
 	case "health":
 		return health(ctx, socketPath, remote, rest[1:], stdout, stderr)
 	case "version":
@@ -167,8 +161,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return groupEvents(ctx, service, rest, stdout, stderr)
 	case "group topics":
 		return groupTopics(ctx, service, rest, stdout, stderr)
-	case "group links":
-		return groupLinks(ctx, service, rest, stdout, stderr)
 	case "group publish":
 		return groupPublish(ctx, service, rest, stdout, stderr)
 	case "task submit":
@@ -319,8 +311,6 @@ func printUsage(w io.Writer) {
                                       the team's timeline: its members' events, oldest first
   group topics <group> [--tenant <id>]
                                       the team's topics: who publishes, who listens, nobody listens
-  group links <group> [--tenant <id>]
-                                      the team channel's links from and to the team: who asks, who answers
   group publish <group> <name> --message "<text>" [--data '{…}'] [--to a,b] [--key <k>] [--tenant <id>]
                                       publish the operator's event on the team; stop.all stops everyone
                                       and drops their queued tasks
@@ -363,26 +353,6 @@ func printUsage(w io.Writer) {
   health                              exit 0 when the daemon answers /healthz on the socket
                                       (a container's healthcheck), 1 when it does not
   version                             the release, commit and time this binary was built from
-  github-hooks serve --secret-file <path> --team <team> --ci-event <name> --merged-event <name>
-                     --repos a/b,c/d [--branch-prefix <prefix>] [--listen 127.0.0.1:7890] [--public]
-                                      the GitHub webhook adapter: POST /github, signed with the hook's
-                                      secret, publishes --ci-event and --merged-event to --team through the
-                                      daemon's socket (see docs/runbooks/github-hooks.md)
-  github-hooks redeliver --repos a/b,c/d [--since 24h] [--hook-url <url>] [--gh <path>]
-                                      ask GitHub, through gh api, to redeliver each failed delivery of
-                                      the /github hooks that never succeeded since; prints them
-  activity-audit serve --team <team> --event <name> [--ignore-programs a,b] [--ignore-team-partial=true] [--since <RFC3339>]
-                       [--store <dir>] [--rearm id,b|all] [--per-minute 6] [--dry-run] [--once] [--wait 30s]
-                                      the activity audit adapter: when each task ends, reads its
-                                      executions and timeline through the daemon's socket and
-                                      publishes each new failure signature once, as the event --event,
-                                      to the team --team (see docs/runbooks/activity-audit.md)
-  activity-audit report [--store <dir>] [--json]
-                                      the signatures seen: published, count, bots, what failed
-  transcript-audit serve --team <team> --event <name> [--store <dir>] [--model jev-1.13.0] [--interval 30s] [--once] [--dry-run]
-                                      ask Jev of every block of every execution's whole transcript
-                                      and tell --team of those that hide a failure; TYPESAFE_API_KEY
-                                      (see docs/runbooks/transcript-audit.md)
   install [--system] [--prefix <dir>] [--state <dir>] [--axlr-bin <path>]
           [--listen <addr>] [--server-names a,b] [--control <url>] [--node-only]
                                       install both binaries, the two systemd units and the

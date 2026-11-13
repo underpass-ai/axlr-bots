@@ -3,9 +3,6 @@ package application
 import (
 	"context"
 	"errors"
-	"slices"
-	"sort"
-	"strings"
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -23,10 +20,6 @@ import (
 // the two (before, such a pass armed the timer and advanced its first
 // slot, so the bot waited a whole interval; QA 5 Nov 2026). Timers of
 // triggers that no longer exist are removed.
-//
-// A timer trigger that says deliver: team is its team's: the members
-// that declare it share one timer, and each slot goes to one of them
-// (docs/architecture/team-subscriptions.md).
 type TickTimers struct {
 	deps Dependencies
 }
@@ -34,14 +27,6 @@ type TickTimers struct {
 // NewTickTimers wires the use case.
 func NewTickTimers(deps Dependencies) TickTimers {
 	return TickTimers{deps: deps}
-}
-
-// teamTimer is a timer the members of a team declare with deliver: team.
-type teamTimer struct {
-	team      domain.TeamName
-	name      string
-	declarers []domain.Bot
-	triggers  []domain.Trigger
 }
 
 // Execute runs one pass at the clock's now.
@@ -59,20 +44,9 @@ func (uc TickTimers) Execute(ctx context.Context) (TickTimersResult, error) {
 		timers[timer.Key()] = timer
 	}
 	live := map[string]bool{}
-	teams := map[string]*teamTimer{}
 	result := TickTimersResult{}
 	for _, bot := range bots {
 		for _, trigger := range bot.Triggers().Timers() {
-			if trigger.Deliver().Team() {
-				team := memoryTeamOf(bot)
-				key := domain.TeamTimerKey(team, trigger.Name())
-				if teams[key] == nil {
-					teams[key] = &teamTimer{team: team, name: trigger.Name()}
-				}
-				teams[key].declarers = append(teams[key].declarers, bot)
-				teams[key].triggers = append(teams[key].triggers, trigger)
-				continue
-			}
 			key := domain.TimerKey(bot.ID(), trigger.Name())
 			live[key] = true
 			timer, found := timers[key]
@@ -84,24 +58,6 @@ func (uc TickTimers) Execute(ctx context.Context) (TickTimersResult, error) {
 			if fire != nil {
 				result.Fired = append(result.Fired, *fire)
 			}
-		}
-	}
-	keys := make([]string, 0, len(teams))
-	for key := range teams {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		live[key] = true
-		t := teams[key]
-		timer, found := timers[key]
-		fire, err := uc.tickTeam(ctx, t, timer, found)
-		if err != nil {
-			result.Errors = append(result.Errors, TimerError{Team: t.team, Trigger: t.name, Err: err})
-			continue
-		}
-		if fire != nil {
-			result.Fired = append(result.Fired, *fire)
 		}
 	}
 	for key := range timers {
@@ -184,88 +140,4 @@ func (uc TickTimers) tick(ctx context.Context, bot domain.Bot, trigger domain.Tr
 		}
 	}
 	return fire, nil
-}
-
-// tickTeam arms, re-arms, advances or fires a team's timer and saves it:
-// a due slot goes to the task it made already (a crash before the timer
-// was saved), or to one member picked among the declarers that take
-// tasks. Declarers whose schedules differ fire nothing.
-func (uc TickTimers) tickTeam(ctx context.Context, t *teamTimer, timer domain.Timer, found bool) (*TimerFire, error) {
-	now := uc.deps.Clock.Now()
-	order := make([]int, len(t.declarers))
-	for i := range order {
-		order[i] = i
-	}
-	slices.SortFunc(order, func(a, b int) int {
-		return strings.Compare(t.declarers[a].ID().String(), t.declarers[b].ID().String())
-	})
-	schedule := t.triggers[order[0]].Schedule()
-	var takers []domain.Bot
-	for _, i := range order {
-		if key := t.triggers[i].Schedule().Key(); key != schedule.Key() {
-			return nil, errors.New("the members of team " + t.team.String() + " give timer " + t.name + " different schedules: " + schedule.Key() + " and " + key)
-		}
-		if t.declarers[i].AcceptsTasks() {
-			takers = append(takers, t.declarers[i])
-		}
-	}
-	if !found && len(takers) == 0 {
-		return nil, nil
-	}
-	timer, dirty, err := arm(timer, found, schedule, now, func(first time.Time) (domain.Timer, error) {
-		return domain.NewTeamTimer(t.team, t.name, schedule.Key(), first)
-	})
-	if err != nil {
-		return nil, err
-	}
-	var fire *TimerFire
-	if timer.Due(now) {
-		next, err := nextAfter(schedule, now)
-		if err != nil {
-			return nil, err
-		}
-		if len(takers) == 0 {
-			if err := timer.Rearm(schedule.Key(), next); err != nil {
-				return nil, err
-			}
-		} else {
-			if fire, err = uc.fireTeam(ctx, t, takers, timer.NextFireAt()); err != nil {
-				return nil, err
-			}
-			if err := timer.Fired(fire.TaskID, now, next); err != nil {
-				return nil, err
-			}
-		}
-		dirty = true
-	}
-	if dirty {
-		if err := uc.deps.Timers.Save(ctx, timer); err != nil {
-			return nil, err
-		}
-	}
-	return fire, nil
-}
-
-// fireTeam gives the slot to the declarer that holds its task already,
-// or fires the timer of the member picked.
-func (uc TickTimers) fireTeam(ctx context.Context, t *teamTimer, takers []domain.Bot, slot time.Time) (*TimerFire, error) {
-	key := domain.FireKeyTimer(t.name, slot)
-	for _, bot := range t.declarers {
-		task, found, err := uc.deps.Tasks.FindByIdempotencyKey(ctx, bot.ID(), key, time.Time{})
-		if err != nil {
-			return nil, err
-		}
-		if found {
-			return &TimerFire{BotID: bot.ID(), Team: t.team, Trigger: t.name, ScheduledAt: slot, TaskID: task.ID()}, nil
-		}
-	}
-	picked, err := pickMember(ctx, uc.deps, takers)
-	if err != nil {
-		return nil, err
-	}
-	fired, err := NewFireTrigger(uc.deps).Execute(ctx, FireTriggerCommand{BotID: picked.ID().String(), TriggerName: t.name, ScheduledAt: slot})
-	if err != nil {
-		return nil, err
-	}
-	return &TimerFire{BotID: picked.ID(), Team: t.team, Trigger: t.name, ScheduledAt: slot, TaskID: fired.Task.ID(), Created: fired.Created}, nil
 }

@@ -33,8 +33,6 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | Let a bot warn or stop its teammates with an event, and follow the team's timeline | [Events](reference/bot-definition.md#events), [ADR](architecture/groups-and-events.md) |
 | Let bots publish on topics and choose who listens, in what mode, from the panel | [ADR](architecture/pubsub-events.md) |
 | Set up teams and events from the panel, step by step: the urgent order, a message to a running task, the shortcuts | [Teams and events from the panel](runbooks/teams-and-events.md) |
-| Tell a team, as events the operator names, when a pull request's CI ends and when it is merged: GitHub's webhooks through a tunnel into an input adapter | [GitHub hooks](runbooks/github-hooks.md), [spec](reference/github-hooks.asyncapi.json) |
-| Audit every finished task for new kinds of failure and tell a team once per kind, as an event the operator names, with no model | [Activity audit](runbooks/activity-audit.md), [spec](reference/activity-audit.asyncapi.json) |
 | Recover after a crash, a silent node or a lost control plane | [Recovery](runbooks/recovery.md) |
 
 ## Architecture
@@ -46,12 +44,9 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | How a node runs AXLR, the policy it passes, how it reads the result; the Jev runtime | [Runtime contract](architecture/runtime-contract.md) |
 | Why each bot has its own KMP store under the node's state, and how the node names it to AXLR | [Memory store per bot (ADR)](architecture/memory-store-per-bot.md) |
 | Why the bots of a team share one KMP store, what each may write in it, and which team is a bot's | [Memory store per team (ADR)](architecture/memory-store-per-team.md) |
-| How a team asks another team for its context, who answers, and what the answer may do | [Team channel (ADR)](architecture/team-channel.md) |
-| How a topic crosses from one team to another, and how a team's queue gives work first in, first out | [Topics between teams (ADR)](architecture/team-topics.md) |
 | How a push reaches a node: its own stream, or a NATS broker, and what a broker needs | [Bus port](architecture/bus-port.md) |
 | How a running task's progress gets from the run to the panel without slowing the run | [Live progress](architecture/live-progress.md) |
 | Where the whole, uncut transcript of each execution is kept, and how to read it | [Transcripts](architecture/transcripts.md) |
-| Have Jev read every execution's whole transcript and tell a team of the ones that hide a failure | [Transcript audit](runbooks/transcript-audit.md) |
 | How a world (a simulation, a camera, a sensor, an operator's hand) reaches the bots as text, through the tools, the bus and the notes that exist | [Input adapters](architecture/input-adapters.md) |
 | The product and architecture vision this implements | [Vision](architecture/vision.md) |
 

@@ -8,7 +8,7 @@ import (
 
 // MaxTranscriptBytes bounds one transcript a node uploads: a runtime
 // session, every message of it, as the runtime keeps it. The largest
-// AXLR session seen on gx10 on 13 November 2026 was 1.5 MiB.
+// AXLR session seen on 13 November 2026 was 1.5 MiB.
 const MaxTranscriptBytes = 32 << 20
 
 // MaxTranscriptList bounds one page of ListTranscripts.

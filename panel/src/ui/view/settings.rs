@@ -130,7 +130,7 @@ fn control_plane<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             ),
             field(
                 "Decide as",
-                "tirso",
+                "alice",
                 &form.actor,
                 Message::SettingsActor,
                 submit.clone(),

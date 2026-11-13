@@ -22,7 +22,6 @@ type BotPatch struct {
 	Approvals     *domain.ApprovalsSnapshot      `json:"approvals,omitempty"`
 	AutoApprove   *AutoApproveRules              `json:"autoApprove,omitempty"`
 	Delegation    *domain.DelegationSnapshot     `json:"delegation,omitempty"`
-	Ask           *domain.AskSnapshot            `json:"ask,omitempty"`
 	Groups        *[]string                      `json:"groups,omitempty"`
 	Events        *domain.EventsSnapshot         `json:"events,omitempty"`
 	Subscriptions *[]domain.SubscriptionSnapshot `json:"subscriptions,omitempty"`

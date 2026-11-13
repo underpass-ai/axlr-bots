@@ -247,7 +247,7 @@ func TestADecisionCarriesTheTasksSkills(t *testing.T) {
 	if _, err := NewRunTask(h.deps).Execute(ctx, task.ID()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, "c", "tirso"); err != nil {
+	if _, err := NewApproveTask(h.deps).Execute(ctx, task.ID(), DecisionApprove, "c", "alice"); err != nil {
 		t.Fatal(err)
 	}
 	if got := h.decider.requests[0].Skills.All(); len(got) != 1 || got[0].Version() != "1.0.0" {

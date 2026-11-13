@@ -662,7 +662,7 @@ fn the_tasks_screen_filters_and_sends() {
 }
 
 /// A placed bot's Pending task whose node is away says why, in the
-/// Tasks table under its objective and on its page (QA L10).
+/// Tasks table under its objective and on its page.
 #[test]
 fn a_pending_task_whose_node_is_away_says_what_it_waits_for() {
     let now = "2026-10-25T10:00:00Z".parse().unwrap();
@@ -1005,7 +1005,7 @@ fn the_teams_screen_shows_who_is_in_each_and_what_happens() {
         messages_of_click(&app, "Urgent order").as_slice(),
         [Message::OrderOpen(_)]
     ));
-    send(&mut app, Message::Go(Screen::Team("qa".into())));
+    send(&mut app, Message::Go(Screen::Team("web".into())));
     shows(&app, &["No bot is in this team now"]);
 }
 
@@ -1344,92 +1344,6 @@ fn a_team_shows_its_topics_and_the_operator_publishes() {
     let tick = app.now + chrono::Duration::seconds(3);
     send(&mut app, Message::Tick(tick));
     shows(&app, &["You published", "you → the team: stop.all · Everyone stop"]);
-}
-
-#[test]
-fn a_team_shows_its_links_and_its_questions_on_the_timeline() {
-    let (fake, mut app) = subscribed_fleet();
-    send(&mut app, Message::Go(Screen::Team("ops".into())));
-    shows(
-        &app,
-        &[
-            "Links",
-            "No link yet: a bot asks another team when its ask names that team and a bot there answers this one",
-        ],
-    );
-    fake.set_links(
-        "ops",
-        vec![
-            crate::domain::TeamLink {
-                from: "ops".into(),
-                to: "dev".into(),
-                askers: vec!["bot".into()],
-                responders: vec!["dev-a".into(), "dev-b".into()],
-            },
-            crate::domain::TeamLink {
-                from: "qa".into(),
-                to: "ops".into(),
-                askers: vec!["qa-jefe".into()],
-                responders: vec!["bot-wrx80".into()],
-            },
-        ],
-    );
-    fake.publish(
-        "bot.question.asked",
-        "bot",
-        serde_json::json!({"team": "dev", "question": "Which release fixed the importer?", "responder": "dev-a"}),
-    );
-    fake.publish(
-        "bot.question.answered",
-        "bot",
-        serde_json::json!({"team": "dev", "responder": "dev-a", "answered": true, "partial": true, "answer": "0.4.2"}),
-    );
-    fake.publish(
-        "bot.question.answered",
-        "bot",
-        serde_json::json!({"team": "dev", "responder": "dev-b", "answered": false, "reason": "it expired"}),
-    );
-    fake.publish(
-        "bot.question.refused",
-        "bot",
-        serde_json::json!({"team": "marketing", "reason": "not_allowed"}),
-    );
-    let tick = app.now + chrono::Duration::seconds(3);
-    send(&mut app, Message::Tick(tick));
-    shows(
-        &app,
-        &[
-            "who asks → who answers",
-            "asks dev",
-            "bot → dev-a, dev-b",
-            "asked by qa",
-            "qa-jefe → bot-wrx80",
-            "Asked a team",
-            "dev: Which release fixed the importer? · to dev-a",
-            "Question answered",
-            "dev-a (dev): 0.4.2 · partial: one store of several",
-            "No answer",
-            "no answer from dev-b (dev): it expired",
-            "Question refused",
-            "marketing: not_allowed",
-        ],
-    );
-    send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
-    shows(&app, &["dev-a (dev): 0.4.2 · partial: one store of several"]);
-}
-
-#[test]
-fn an_older_control_plane_has_no_links_and_nothing_else_breaks() {
-    let (fake, mut app) = subscribed_fleet();
-    fake.without_newer_routes();
-    send(&mut app, Message::Go(Screen::Team("ops".into())));
-    shows(
-        &app,
-        &[
-            "This control plane is older: it has no team links yet. Update it to see them.",
-            "Who is in it",
-        ],
-    );
 }
 
 #[test]

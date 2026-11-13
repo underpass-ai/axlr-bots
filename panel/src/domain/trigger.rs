@@ -4,8 +4,7 @@ use super::TriggerType;
 
 /// What starts a bot's task: by hand, a webhook (credentials redacted by
 /// the control plane), a timer, another bot, or the events of a
-/// teammate it hears (`events`, names or patterns), or another team's
-/// question (`from`, the teams it answers).
+/// teammate it hears (`events`, names or patterns).
 /// Kept as the control plane says them, so a definition read from a file
 /// is sent back whole.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,13 +29,6 @@ pub struct Trigger {
     /// An event trigger whose warnings and criticals make urgent tasks.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub interrupt: bool,
-    /// A question trigger: the teams whose questions the bot answers.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub from: Vec<String>,
-    /// A timer trigger: `team` when one member of the bot's team takes
-    /// each fire, picked by the control plane.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub deliver: String,
 }
 
 impl Trigger {
@@ -69,23 +61,6 @@ impl Trigger {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn keeps_the_teams_a_question_trigger_answers_through_a_save() {
-        let raw = r#"{"type":"question","name":"question","from":["qa","producto"]}"#;
-        let trigger: Trigger = serde_json::from_str(raw).unwrap();
-        assert_eq!(trigger.trigger_type, TriggerType::Question);
-        assert_eq!(serde_json::to_string(&trigger).unwrap(), raw);
-        assert!(!serde_json::to_string(&Trigger::manual()).unwrap().contains("from"));
-    }
-
-    #[test]
-    fn keeps_a_team_timer_through_a_save() {
-        let raw = r#"{"type":"timer","name":"cola","objective":"Queue round","cron":"30 7 * * *","deliver":"team"}"#;
-        let trigger: Trigger = serde_json::from_str(raw).unwrap();
-        assert_eq!(trigger.deliver, "team");
-        assert_eq!(serde_json::to_string(&trigger).unwrap(), raw);
-    }
 
     #[test]
     fn keeps_the_events_an_event_trigger_hears() {

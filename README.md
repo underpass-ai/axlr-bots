@@ -75,7 +75,6 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | Put bots in a team so they know each other and ask each other without naming targets | [Teams](docs/reference/bot-definition.md#teams), [ADR](docs/architecture/groups-and-events.md) |
 | Let a bot warn or stop its teammates with an event, and follow the team's timeline | [Events](docs/reference/bot-definition.md#events), [ADR](docs/architecture/groups-and-events.md) |
 | From the panel: give a bot an urgent order, talk to it while it works, publish to its team in one press | [Teams and events from the panel](docs/runbooks/teams-and-events.md) |
-| Let one team ask another for context, and turn on one live link of the team channel, node by node | [Team channel](docs/runbooks/team-channel.md), [ADR](docs/architecture/team-channel.md) |
 | Run a bot with no language model: a fixed program whose every choice Jev makes | [Runtime](docs/reference/bot-definition.md#runtime) |
 | Carry the control plane's pushes to the nodes through a NATS broker | [Bus port](docs/architecture/bus-port.md#deploy-a-broker) |
 | Add a host: enrollment token, mutual TLS, revocation | [Add a host](docs/runbooks/add-a-host.md) |
@@ -85,8 +84,6 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | See what a node and the control plane say to each other | [Node protocol](docs/reference/node-protocol.md) |
 | See how a node runs AXLR and reads the result | [Runtime contract](docs/architecture/runtime-contract.md) |
 | Look up a command, read a report | [Command reference](docs/reference/cli.md) |
-| Tell a team when a pull request's CI ends and when it is merged, from GitHub's webhooks, as events the operator names | [GitHub hooks](docs/runbooks/github-hooks.md) |
-| Tell a team once about each new kind of failure in the fleet's finished tasks, as an event the operator names | [Activity audit](docs/runbooks/activity-audit.md) |
 | Recover after a crash, a silent node or a lost control plane | [Recovery](docs/runbooks/recovery.md) |
 | Understand who keeps, decides and trusts what; what is next and left out | [Control plane, node and AXLR](docs/architecture/control-plane-node-axlr.md) |
 | Bring a world of your own to the bots (a simulation, a camera, a sensor, a hand) as text, with an adapter beside it and nothing new in the control plane | [Input adapters](docs/architecture/input-adapters.md) (its template: `world-adapter/` in the private repo `axlr-bots-examples`) |

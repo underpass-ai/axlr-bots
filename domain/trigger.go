@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
-	"slices"
 	"strings"
 )
 
@@ -19,8 +18,7 @@ const (
 // Trigger is one way tasks reach the bot, as its definition declares it:
 // its type, a name unique within the bot (the type when not given), and
 // for a webhook or a timer the objective template each fire renders and
-// the credentials or the schedule. A question trigger names the teams
-// whose questions the bot answers.
+// the credentials or the schedule.
 type Trigger struct {
 	kind       TriggerType
 	name       string
@@ -30,8 +28,6 @@ type Trigger struct {
 	schedule   Schedule
 	events     []EventPattern
 	interrupt  bool
-	from       []TeamName
-	deliver    DeliveryScope
 }
 
 // NewTrigger validates a trigger from its definition.
@@ -52,30 +48,8 @@ func NewTrigger(s TriggerSnapshot) (Trigger, error) {
 	if (len(s.Events) > 0 || s.Interrupt) && kind != TriggerEvent {
 		return Trigger{}, invalid("trigger "+name, "only an event trigger takes events or interrupt")
 	}
-	if len(s.From) > 0 && kind != TriggerQuestion {
-		return Trigger{}, invalid("trigger "+name, "only a question trigger takes from")
-	}
-	if t.deliver, err = ParseDeliveryScope(s.Deliver); err != nil {
-		return Trigger{}, invalid("trigger "+name, err.Error())
-	}
-	if t.deliver.Team() && kind != TriggerTimer {
-		return Trigger{}, invalid("trigger "+name, "only a timer trigger takes deliver: a team's other work comes through its subscriptions")
-	}
 	t.interrupt = s.Interrupt
 	switch kind {
-	case TriggerQuestionAnswer:
-		return Trigger{}, invalid("trigger "+name, "a bot does not declare question_answer: asking is its consent to the answer")
-	case TriggerQuestion:
-		if s.Objective != "" || s.Secret != "" || s.SigningKey != "" || s.Every != "" || s.Cron != "" {
-			return Trigger{}, invalid("trigger "+name, "a question trigger takes no objective, credentials or schedule")
-		}
-		if len(s.From) == 0 {
-			return Trigger{}, invalid("trigger "+name, "a question trigger names in from the teams it answers")
-		}
-		if t.from, err = parseTeamList("trigger "+name+" from", s.From); err != nil {
-			return Trigger{}, err
-		}
-		return t, nil
 	case TriggerManual, TriggerDelegation:
 		if s.Objective != "" || s.Secret != "" || s.SigningKey != "" || s.Every != "" || s.Cron != "" {
 			return Trigger{}, invalid("trigger "+name, "a "+kind.String()+" trigger takes no objective, credentials or schedule")
@@ -157,16 +131,6 @@ func (t Trigger) Ref() TriggerRef { return TriggerRef{Type: t.kind, Name: t.name
 // trigger that keeps the default (DefaultEventObjective).
 func (t Trigger) ObjectiveTemplate() string { return t.objective }
 
-// From lists the teams whose questions a question trigger answers; none
-// for the other types.
-func (t Trigger) From() []TeamName { return slices.Clone(t.from) }
-
-// AnswersFrom reports whether a question trigger answers the team's
-// questions.
-func (t Trigger) AnswersFrom(team TeamName) bool {
-	return t.kind == TriggerQuestion && slices.Contains(t.from, team)
-}
-
 // Schedule is when a timer fires; zero for the other types.
 func (t Trigger) Schedule() Schedule { return t.schedule }
 
@@ -197,12 +161,6 @@ func (t Trigger) Authenticates(presentedSecret, signature string, body []byte) b
 // declares no event trigger of its own.
 func TeamEventTrigger() Trigger { return Trigger{kind: TriggerEvent, name: "team"} }
 
-// Snapshot returns the trigger as plain data, credentials included: what
-// the repository stores. Redact it before printing.
-// Deliver says whether the bot or one member of its team takes the
-// trigger's fires (a timer only).
-func (t Trigger) Deliver() DeliveryScope { return t.deliver }
-
 func (t Trigger) Snapshot() TriggerSnapshot {
 	s := TriggerSnapshot{Type: t.kind.String(), Name: t.name, Objective: t.objective, Secret: t.secret, SigningKey: t.signingKey}
 	if t.kind == TriggerTimer {
@@ -212,7 +170,5 @@ func (t Trigger) Snapshot() TriggerSnapshot {
 		s.Events = append(s.Events, pattern.String())
 	}
 	s.Interrupt = t.interrupt
-	s.From = teamStrings(t.from)
-	s.Deliver = t.deliver.String()
 	return s
 }

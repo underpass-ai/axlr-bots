@@ -46,15 +46,6 @@ type Options struct {
 	// shows them, and the panel warns when a bot's model names one the
 	// node lacks.
 	Providers []string
-	// MemoryTeams are the teams whose bots share one KMP store on the
-	// node (--memory-teams, "*" for every team): the control plane picks
-	// only such a node to answer a team's question.
-	MemoryTeams []string
-	// TeamChannel runs the team channel on the node (--team-channel, off
-	// by default): it reports it, so the control plane offers its runs
-	// the ask tool, picks its bots to answer and serves a watcher here;
-	// off, the node serves none of the channel's tools.
-	TeamChannel bool
 	// Heartbeat is how often the agent reports it is alive.
 	Heartbeat time.Duration
 	// PollWait is how long one long poll for an assignment waits.

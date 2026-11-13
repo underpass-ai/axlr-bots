@@ -13,7 +13,7 @@ import (
 )
 
 func transcriptRecord(execution, session string) application.TranscriptRecord {
-	return application.TranscriptRecord{Execution: domain.ExecutionID(execution), Task: "task-1", Bot: "dev-go", Session: session, Size: 3, SHA256: "abc", ReceivedAt: time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)}
+	return application.TranscriptRecord{Execution: domain.ExecutionID(execution), Task: "task-1", Bot: "worker-1", Session: session, Size: 3, SHA256: "abc", ReceivedAt: time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)}
 }
 
 func TestTranscriptStoreOnFiles(t *testing.T) {
@@ -37,7 +37,7 @@ func TestTranscriptStoreOnFiles(t *testing.T) {
 	// A new store over the same files sees what the first wrote.
 	other := NewTranscriptStore(dir)
 	got, content, err := other.LoadTranscript(ctx, "exec-1", "s1")
-	if err != nil || got.Seq != 3 || string(content) != `{"a":2}` || got.Bot != "dev-go" {
+	if err != nil || got.Seq != 3 || string(content) != `{"a":2}` || got.Bot != "worker-1" {
 		t.Fatalf("load: %+v %q %v", got, content, err)
 	}
 	list, err := other.ListTranscripts(ctx, 0, 10)

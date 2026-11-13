@@ -20,7 +20,6 @@ type Bot struct {
 	placement    Placement
 	approvals    Approvals
 	delegation   Delegation
-	ask          AskPolicy
 	teams        Teams
 	events       EventPolicy
 	subs         Subscriptions
@@ -34,12 +33,8 @@ type Bot struct {
 }
 
 // NewBot creates a bot in Draft status at the observe level, with no
-// tool rules; Govern raises the level or narrows the tools. A reserved
-// id is refused.
+// tool rules; Govern raises the level or narrows the tools.
 func NewBot(id BotID, tenant TenantID, name BotName, owner Owner, mission Mission, tools AllowedTools, model ModelPolicy, budgets Budgets, now time.Time) (Bot, error) {
-	if id.Reserved() {
-		return Bot{}, invalid("bot id", id.String()+" is reserved for the team channel")
-	}
 	if now.IsZero() {
 		return Bot{}, invalid("created at", "must not be zero")
 	}
@@ -115,44 +110,6 @@ func (b Bot) DelegationDepth() int {
 		return min(b.budgets.MaxDelegationDepth(), MaxDelegationDepthLimit)
 	}
 	return DefaultDelegationDepth
-}
-
-// Ask says which other teams the bot may ask for context.
-func (b Bot) Ask() AskPolicy { return b.ask }
-
-// SetAsk replaces which other teams the bot may ask; CheckAsk holds it
-// to the bot's teams once the whole change is applied.
-func (b *Bot) SetAsk(ask AskPolicy) { b.ask = ask }
-
-// CheckAsk refuses an ask, or a domain event that crosses to or from a
-// team, that names one of the bot's own teams: inside a team, a bot
-// delegates and its events reach its teammates already.
-func (b Bot) CheckAsk() error {
-	for _, team := range b.ask.Teams() {
-		if b.teams.Has(team) {
-			return invalid("ask teams", "names "+team.String()+", a team of the bot: inside a team, delegate")
-		}
-	}
-	for _, rule := range b.events.rules {
-		for _, team := range rule.Teams() {
-			if b.teams.Has(team) {
-				return invalid("events emit "+rule.Pattern().String()+" teams", "names "+team.String()+", a team of the bot: its teammates hear it already")
-			}
-		}
-	}
-	for _, sub := range b.subs.List() {
-		if sub.Crosses() && b.teams.Has(sub.Team()) {
-			return invalid("subscription "+sub.Topic().String()+" team", "names "+sub.Team().String()+", a team of the bot: drop team to hear it")
-		}
-	}
-	return nil
-}
-
-// AnswersQuestionsFrom reports whether the bot consents to answer the
-// team's questions: it declares a question trigger whose from names it.
-func (b Bot) AnswersQuestionsFrom(team TeamName) bool {
-	_, ok := b.triggers.Question(team)
-	return ok
 }
 
 // Teams are the teams the bot belongs to.
@@ -241,15 +198,6 @@ func (b *Bot) Redefine(mission Mission, tools AllowedTools, model ModelPolicy, b
 
 // Runtime is what runs the bot's tasks on its node.
 func (b Bot) Runtime() Runtime { return b.runtime }
-
-// WatchesQuestions reports whether the bot is a team's Jev watcher: its
-// runtime is Jev and its program names the reserved server axlr-bots
-// (docs/architecture/team-channel.md, A6). Its level and allowed tools
-// already fit the program, so it holds both watch tools.
-func (b Bot) WatchesQuestions() bool {
-	program, ok := b.runtime.Jev()
-	return ok && program.WatchesQuestions()
-}
 
 // SetRuntime sets what runs the bot's tasks; a Jev program must fit the
 // bot's allowed tools and level (CheckRuntime).
@@ -397,7 +345,6 @@ func (b Bot) Snapshot() BotSnapshot {
 		Placement:     b.placement.Snapshot(),
 		Approvals:     b.approvals.Snapshot(),
 		Delegation:    b.delegation.Snapshot(),
-		Ask:           b.ask.Snapshot(),
 		Groups:        b.teams.Snapshot(),
 		Events:        b.events.Snapshot(),
 		Subscriptions: b.subs.Snapshot(),
@@ -502,21 +449,11 @@ func RestoreBot(s BotSnapshot) (Bot, error) {
 			return Bot{}, err
 		}
 	}
-	if s.Ask != nil {
-		ask, err := NewAskPolicy(*s.Ask)
-		if err != nil {
-			return Bot{}, err
-		}
-		bot.SetAsk(ask)
-	}
 	teams, err := NewTeams(s.Groups)
 	if err != nil {
 		return Bot{}, err
 	}
 	bot.JoinTeams(teams)
-	if err := bot.CheckAsk(); err != nil {
-		return Bot{}, err
-	}
 	if s.Events != nil {
 		events, err := NewEventPolicy(*s.Events)
 		if err != nil {

@@ -38,11 +38,10 @@ A bot has no role baked in: its definition is what an operator writes, and the s
 | `level` | the autonomy level ([below](#autonomy-levels)); default `observe` |
 | `allowedTools` | AXLR's tool names (`local_read`, `local_search`, `local_list`, `local_write`, `local_exec`, …); nothing else may be called |
 | `toolRules` | narrows the allowed tools by their arguments ([below](#tool-rules)) |
-| `triggers` | how tasks reach the bot: `manual` (the default), `webhook`, `timer`, `delegation`, `question`; a bot that declares triggers takes only those ([below](#triggers)). A trigger of type `event` is read as a [subscription](#subscriptions), for one release |
+| `triggers` | how tasks reach the bot: `manual` (the default), `webhook`, `timer`, `delegation`; a bot that declares triggers takes only those ([below](#triggers)). A trigger of type `event` is read as a [subscription](#subscriptions), for one release |
 | `placement` | where the bot's tasks run: `{"nodes": ["web-1"]}`, `{"selector": {"zone": "eu"}}`, or nothing for any node but a dedicated one, such as a sidecar ([nodes](node-protocol.md)). A placed bot's task waits `Pending` for a node its placement admits, with `waiting` saying which; only a bot with no placement runs on the control plane when no node may take it ([the daemon](../architecture/control-plane-node-axlr.md#the-daemon)) |
 | `approvals` | how a pending call waits for a person: `ttl` (default `1h`), `onExpire` (`deny`, the default, or `cancel`), the `notify` targets told when a task starts to wait, and who may decide (`approvers`) ([below](#approvals)) |
 | `delegation` | the bots outside its teams this bot may ask to do a task, how deep a chain through it may go and the share of its task a child may take; absent: it asks only its teammates ([below](#delegation)) |
-| `ask` | the other teams this bot may ask for context through the team channel, how many questions a minute and how many unanswered at once; absent: it asks no team ([below](#the-team-channel)) |
 | `groups` | the teams the bot belongs to, up to 8; the panel calls each a Team. Teammates know each other and may ask each other to do a task ([below](#teams)) |
 | `events` | what the bot may tell its teams: the names it may emit and how many a minute; absent: any name but `error.*` and `done.*`, 6 a minute ([below](#events)) |
 | `subscriptions` | the topics the bot listens to in its teams, at most 16; with or without them it hears what is addressed to it and the team's `danger.*` and `stop.*` ([below](#subscriptions)) |
@@ -87,7 +86,7 @@ A call the policy leaves to a person stops the task in `WaitingApproval` ([runbo
 | `onExpire` | `deny`: at the deadline the call is denied as a person's deny would (a new execution hands the denial to the session, which goes on without the call); `cancel`: the task ends `Expired` and the session stays where it is. A denial whose run fails ends the task `Expired` too, and a paused bot's expired task ends `Expired` either way ([expiry](../runbooks/approvals.md#expiry)) |
 | `notify` | up to 8 targets, names unique (the type when not given). A `webhook` takes an absolute `http`/`https` `url` without credentials and the `secret` its deliveries are signed with; a `command` takes the program by its absolute path and its arguments, and runs with the JSON on its stdin in a minimal environment: `PATH`, `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_*`, `TZ`, `TMPDIR`, `XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS`, `DISPLAY` and `WAYLAND_DISPLAY` from the daemon's, and `AXLR_BOTS_DELIVERY_ID`, `AXLR_BOTS_TASK_ID`, `AXLR_BOTS_BOT_ID` and `AXLR_BOTS_EVENT`; nothing else of the daemon's (its API keys, the broker's credentials) reaches it |
 | `autoApprove` | up to 16 rules, as in `toolRules` (`{"tool": "rollback"}`, argument patterns allowed): a call that fits one is approved by the control plane at once, as actor `policy:autoApprove`, without a notification. An MCP call AXLR asks for as `axlr_call_tool` is judged by the tool it names. It costs one more execution (a few seconds): AXLR's `act-with-approval` asks for every call, so the decision is the control plane's. A bot paused meanwhile, or any other refusal, leaves the call to a person as usual. |
-| `approvers` | up to 32 names: who may approve **and** deny the bot's calls, compared with the actor a decision names (the CLI's `--actor`, the panel's `controlPlane.actor`, `X-Axlr-Actor` or `decidedBy`) without the `cli:` prefix and without case: `cli:tirso` is `tirso`. Each without spaces or control characters, at most 128 characters, no repeats under that comparison, no `policy:` name. Absent or empty: anyone with the token, as before. Another actor, or none named, is refused with `403 forbidden` and audited `approval.refused`. The name is the token holder's word, not a login ([ADR](../architecture/approvers.md)) |
+| `approvers` | up to 32 names: who may approve **and** deny the bot's calls, compared with the actor a decision names (the CLI's `--actor`, the panel's `controlPlane.actor`, `X-Axlr-Actor` or `decidedBy`) without the `cli:` prefix and without case: `cli:alice` is `alice`. Each without spaces or control characters, at most 128 characters, no repeats under that comparison, no `policy:` name. Absent or empty: anyone with the token, as before. Another actor, or none named, is refused with `403 forbidden` and audited `approval.refused`. The name is the token holder's word, not a login ([ADR](../architecture/approvers.md)) |
 
 A decision that arrives after the deadline authorises nothing (vision §14): it is refused with `409 approval_expired`, whether the daemon has carried out the expiry yet or not, and the call never runs. The secret is stored with the bot and redacted in every answer, as a trigger's is; a `PATCH` of `approvals` replaces the whole value, secrets included. A bot defined before approvals waits an hour and then denies; one without `approvers` decides as before.
 
@@ -111,24 +110,6 @@ A bot may ask another bot to do a task while it runs: the model calls the tool `
 The target takes delegated tasks when its `triggers` include `{"type": "delegation"}` (no options, like `manual`) or when the asking bot is its teammate ([teams](#teams)); the asking bot's tenant must be its tenant, and it must be Enabled. An ask is refused, with an event `bot.delegation.refused` and its reason, when the target is neither in `to` nor a teammate (`not_allowed`), cannot take it (`target_unavailable`), the chain would be deeper than allowed (`depth_exceeded`), the target already asked along the chain (`cycle`: A→B→A), or there is too little left to share (`budget_exhausted`: the task already asked `maxChildren` bots, "maxChildren reached", or the grant is under one model or tool call, or under 30 seconds). The child is granted, of each limit the asking task has, the share of what it has not granted yet (`geometric`) or the share of the whole limit over `maxChildren` (`even`), never more than the target's own budgets; its deadline is the share of the asking task's time left, under either split. To give each of *N* children its whole budget *c*, size the pool at `N × c / budgetShare` with `even` ([ADR](../architecture/delegation.md#3-how-depth-and-budget-propagate)). It runs with that grant, under its own mission, level and tools, with the asking task's trace id; a child that cannot end by its deadline (it waited for a node or a person past it) fails with the reason `deadline`.
 
 [`cmd/axlr-bots/testdata/bot-delegating.json`](../../cmd/axlr-bots/testdata/bot-delegating.json) asks [`cmd/axlr-bots/testdata/bot-delegate-target.json`](../../cmd/axlr-bots/testdata/bot-delegate-target.json); the tool's schema and the wiring are in the [ADR](../architecture/delegation.md#1-how-the-model-asks).
-
-## The team channel
-
-A bot asks another **team** for context it holds, and one member of that team that consents answers ([ADR](../architecture/team-channel.md)). A bot with `ask.teams` is offered the tools `axlr_bots_ask_team {team, question}` and `axlr_bots_question_status {question}` (where its question stands, read only) on a node that runs the team channel (`axlr-node --team-channel`, off by default); the call answers at once with the question's id and the bot picked to answer, and never waits. The member's task runs with its own budgets and timeout and must be answered within two hours of the ask. The answer comes back once the member's task ends: a message into the asking task while it still runs, else a new task of the asking bot, trigger `question_answer`, with the answer framed as another team's data (or why there is none). No link is live until the teams' installers turn one on, and only bots on nodes with the switch on ask or answer ([runbook](../runbooks/team-channel.md)). Under `act-with-approval` the call waits for a person, as `axlr_bots_delegate` does, unless `approvals.autoApprove` names `axlr_bots_ask_team`.
-
-```json
-"ask": {"teams": ["team-b"], "perMinute": 2, "maxOpen": 3},
-"triggers": [{"type": "manual"}, {"type": "question", "from": ["team-a", "team-c"]}]
-```
-
-| Field | Meaning |
-|---|---|
-| `ask.teams` | the teams this bot may ask, up to 8 distinct names, none of its own `groups` (inside a team it delegates); a patch that makes the bot join a team it asks is refused |
-| `ask.perMinute` | questions a minute, 1 to 10; absent: 2 |
-| `ask.maxOpen` | questions waiting for an answer at once, 1 to 8; absent: 3 |
-| trigger `question` | the bot's consent to answer the questions of the teams `from` lists (required, up to 8 distinct names); it takes no objective, credentials or schedule |
-
-The asker never gives a question up: its team's [Jev watcher](#a-teams-question-watcher) does. `question_answer` names the task that carries the answer back when the asking task has ended; no definition declares it, since asking is the consent. The id `canal` is reserved for the channel's record in each team's memory: no bot may take it.
 
 ## Urgent tasks
 
@@ -162,7 +143,6 @@ The first segment of the name is its **kind**, and the kind fixes the severity (
 | a bot may emit any name but `error.*` and `done.*`, 6 a minute | `"events": {"emit": [{"name": "stop.halt"}, {"name": "warn.*"}], "perMinute": 12}`: only those names (`*` one dot-separated segment, `**` any), never `error.*` or `done.*`; at most 60 a minute. A rule's `maxSeverity` is accepted and ignored: the kind decides |
 | a teammate hears the events addressed to it (`to`) and the team's `danger.*` and `stop.*`; anything else reaches only who [subscribed](#subscriptions) | `subscriptions` on the receiving bot |
 | a bot takes at most 10 events a minute as tasks or messages; from the 11th a delivery is a note (`degraded: intake_rate`), and a critical always lands. Notes do not count | `"events": {"intakePerMinute": 20}`, 1 to 60 |
-| an event stays in the bot's teams | `"events": {"emit": [{"name": "order.placed", "teams": ["team-b"]}]}`: a **domain event** that also crosses to those teams (up to 8, never the bot's own), one plain name of the info kind (`<thing>.<what happened>`, never `stop`, `danger`, `warn`, `error` or `done`), carrying the thing's id in `data.id` and, optionally, a KMP key in `data.context`. The same fact (team, name, id) published twice is one event; a task it makes in the other team starts a new chain with an `origin`; a trace crosses at most 4 team boundaries. Only when the other team subscribes to it (`team` below): one side alone delivers nothing ([ADR](../architecture/team-topics.md), [wire](domain-events.asyncapi.json)) |
 | an event's chain goes 2 deep: a task an event made may tell the team once more | `"events": {"maxDepth": 3}` on the emitter, 1 to 8 |
 | a critical (`danger.*`, `stop.*`) a bot hears makes an [urgent](#urgent-tasks) task: it stops what the bot was doing. A warning does not, unless the subscription that heard it says `"urgent": true` | `"events": {"interruptible": false}`: nothing a teammate emits interrupts the bot |
 
@@ -187,9 +167,6 @@ A bot listens to the topics of its teams it subscribes to ([ADR](../architecture
 | `from` | only the events of these teammates, `operator` or `control-plane`; absent: anyone in the team. A `PATCH` that names a bot outside the teams is `400` |
 | `urgent` | `true`: a `warn.*` it hears makes an urgent task. A critical is urgent anyway |
 | `objective` | the template of the task it makes, over the event's fields; absent: `Your teammate <from> says (<name>): <message>` |
-| `deliver` | `team`: the bot's team takes what it hears, not the bot ([ADR](../architecture/team-subscriptions.md)). Mode `task` only, never on a bot's ask. The hearers of one team get **one** task between them: the first free one by id (no task Pending, Running or waiting for a person), else the one with the fewest open tasks, among those an Online node may run. Addressed and critical events reach every hearer as before; a member already on the event's chain is not skipped (the chain's depth still cuts a loop); a Pending event task of the same name takes the next event as a note; the delivery carries `team`, and a team nobody can take is the skip `team_unavailable` |
-| `expects` | up to 8 names or patterns of the **final events** a task this subscription makes must emit ([done is a contract](../architecture/team-subscriptions.md#done-is-a-contract)). Mode `task` only (or another team's domain event), never on a bot's ask. For each event the task carried, the one that made it and every one coalesced into it as a note, the task must emit one event whose name fits and whose `data.id` equals that event's `data.id` (a number compares in its shortest form; an id that is not a domain id, 1 to 128 characters `[A-Za-z0-9._:@-]`, counts as none). A carried event **without** `data.id` cannot be checked and is settled by any final the task emits, so give every event such a subscription hears a `data.id`. When the task ends Completed, Failed or Expired, or is cancelled as stuck, what is missing is given again in **one** new task of the same subscription (the team's pick, key `redeliver:<task id>`, the earlier objective, `input.redelivery`, and `data.context` = the KMP key `ws:<session>` where the ended run left what it did), at most twice per event; after the second the control plane publishes `warn.incomplete` and audits `task.incomplete`. A task cancelled by a person, a preemption or Stop is not given again. A Pending task carries at most 32 events; the next makes a task of its own |
-| `team` | another team whose domain events this subscription hears ([ADR](../architecture/team-topics.md)); absent: the bot's own teams. Mode `task` (or absent), never `urgent`, never on a bot's ask, never one of the bot's own teams; `from` then names bots of that team (a `PATCH` checks it). A fact for a team whose hearers are all Paused waits as a Pending task for one of them; a team with no hearer is the skip `team_unavailable`. The panel keeps it on a save |
 | `status` | `active` (absent) or `pending`: a bot's ask a person has not approved; it hears nothing. A bot asks with the tool `axlr_bots_subscribe {topic, why}`, served next to the emit tool; a second ask for a pattern it has is `already_subscribed`, a 17th `too_many`; the ask records `bot.subscription.asked` and carries `askedBy`, `why` and `askedAt`. A `PATCH` may keep a pending entry as it is, make it `active` or drop it, never add or edit one |
 
 Who hears an event: every Enabled teammate of the emitter but the emitter. An event addressed to it (`to`) is always heard, by its matching subscription or else by the implicit one (`team`); an event not addressed to it is heard only by an active subscription whose topic and `from` fit; every bot also hears the team's `danger.*` and `stop.*`, whatever it subscribes to, so a Stop always lands. The receiver records `bot.event.heard` (`eventId`, `name`, `from`, `by`, `mode`, `taskId` or `messageId`); a `PATCH` of the list records `bot.subscription.changed`.
@@ -205,8 +182,6 @@ The control plane publishes its own facts about a bot's task on the bot's teams,
 | `error.bot` (critical) | the task failed or expired | `taskId`, `reason` |
 | `warn.approval` (warning) | the task waits for a person to approve a call | `taskId`, `tool` |
 | `done.task` (info) | the task completed | `taskId`, `answer` (the task's result, cut at 280 characters) |
-| `warn.stuck` (warning) | the team's Jev watcher judged the task stuck and the control plane cancelled it ([stuck work](../architecture/team-subscriptions.md#stuck-work)) | `taskId`, `bot`, `trigger` (its type and name, as `timer informe`), `reason` |
-| `warn.incomplete` (warning) | an event a task of a subscription with `expects` carried was given again twice and its final event never came ([done is a contract](../architecture/team-subscriptions.md#done-is-a-contract)) | `taskId`, `bot`, `subscription` (its topic), `events` (`eventId`, `name`, `id`, up to 16), `left` (how many), `tasks` (the tasks that carried them, up to 16) |
 
 A supervisor that subscribes to `error.*` gets an urgent task for each teammate's failure; a task an `error.bot` made is on the failed task's chain, so a chain of failures is cut at `events.maxDepth`. With nobody subscribed, the history keeps only `bot.task.failed`. A trigger `{"type": "event", "events": ["a.*"], "interrupt": true}` in a definition is read as `{"topic": "a.*", "mode": "task", "urgent": true}`, and `bot get` shows it so; the next release refuses it.
 
@@ -256,7 +231,7 @@ Every fire creates a task through the same path as a manual submission, under an
 
 **Webhook.** A webhook is fired from outside with the trigger's own credential: the shared `secret` compared in constant time, or a signature over the body under the `signingKey` (what GitHub and most senders produce). An unknown bot or trigger, a missing or wrong credential and a tampered body are all `403`, so the route tells a stranger nothing; a body past 256 KiB is `413`. The secret and the signing key are stored with the bot (file mode 0600) and redacted in every answer of the API and the CLI. The body is stored on the task as its `input`; only the rendered objective reaches AXLR.
 
-**Timer.** A timer runs `every` so often (at least a second; the first fire is when it is armed) or on a five-field `cron` expression evaluated in the host's time zone (numbers only; Sunday is 0 or 7; a day of month and a day of week both restricted match either, as in cron). Its state is one file, `<state>/timers/<bot>~<trigger>.json`, with the next fire. A timer that says `"deliver": "team"` is its team's ([ADR](../architecture/team-subscriptions.md)): the members of a team that declare it share one timer, `<state>/timers/@<team>~<trigger>.json`, and each slot goes to one of them, the first free one by id among those that take tasks; they must give it the same schedule, or it fires nothing and the pass reports the error.
+**Timer.** A timer runs `every` so often (at least a second; the first fire is when it is armed) or on a five-field `cron` expression evaluated in the host's time zone (numbers only; Sunday is 0 or 7; a day of month and a day of week both restricted match either, as in cron). Its state is one file, `<state>/timers/<bot>~<trigger>.json`, with the next fire.
 
 Catch-up: a daemon that comes back after a long stop finds the slot in the past, **fires once for it** with that slot's key (so a crash between the fire and the save fires the same slot again and finds the same task) and arms the next slot after now; the slots in between are not replayed. A paused bot's timers are advanced, not fired; a changed schedule re-arms the timer; a removed trigger drops it. The timer's event carries `trigger`, `scheduledAt` and `firedAt`, which the template may use.
 
@@ -321,46 +296,6 @@ The program's tools must be in `allowedTools`, and the level must be `act-within
 
 A node runs Jev bots only when it has `TYPESAFE_API_KEY` in its environment: it then registers the runtime `jev` in its capabilities, and the control plane assigns a Jev bot to no other node. `axlr-node --mcp-config` names another `mcp.json`; `--jev-model` another pinned version. Where the key goes: the env file on a host ([install](../runbooks/install.md#jev-bots-and-a-broker-on-a-host)), `sidecar.env` in a pod ([sidecar](../runbooks/sidecar.md#jev-bots-and-a-broker-in-a-pod)).
 
-### A team's question watcher
-
-A team that asks other teams gives its open questions up through one **Jev watcher** ([ADR, A6](../architecture/team-channel.md#the-jev-watcher)): a Jev bot of that team whose program names the reserved server `axlr-bots`. No `mcp.json` entry is read for it: the node serves its two tools in process, with the execution's identity, and the control plane answers them; only a node with the team channel on (`--team-channel`) does, and it needs `TYPESAFE_API_KEY` for the `jev` runtime. [`cmd/axlr-bots/testdata/bot-watcher.json`](../../cmd/axlr-bots/testdata/bot-watcher.json):
-
-```json
-{
-  "id": "qa-vigia",
-  "tenant": "default",
-  "name": "qa-vigia",
-  "owner": "operator",
-  "mission": "Decide, for each open question team qa asked, whether qa keeps waiting for the answer or abandons it.",
-  "groups": ["qa"],
-  "level": "act-within-policy",
-  "allowedTools": ["axlr_bots_watch_next", "axlr_bots_watch_decide"],
-  "runtime": {
-    "kind": "jev",
-    "jev": {
-      "server": "axlr-bots",
-      "start": "axlr_bots_watch_next",
-      "act": {"tool": "axlr_bots_watch_decide", "choice": "choice", "verdict": "verdict"},
-      "wait": "axlr_bots_watch_next"
-    }
-  },
-  "triggers": [
-    {"type": "manual"},
-    {"type": "timer", "name": "round", "every": "5m", "objective": "Watch team qa's open questions (the round fired at {{.firedAt}})."}
-  ],
-  "budgets": {"maxModelCallsPerTask": 20, "maxToolCallsPerTask": 60, "taskTimeoutSeconds": 300}
-}
-```
-
-| Rule | Why |
-|---|---|
-| `server: axlr-bots` takes exactly this program: `start` and `wait` are `axlr_bots_watch_next`, `act` is `axlr_bots_watch_decide` with `choice` and `verdict`, no `stop` (`pass` and `tell` as for any program) | the node's tools read those arguments; any other program on the reserved server is refused |
-| both tools in `allowedTools`, level `act-within-policy` | as for any Jev program |
-| its team is its first `groups` name, as for memory | it watches only the questions whose asker's team is that one; a watcher in no team is refused |
-| a `timer` every 5 minutes | each round puts to Jev every open question of the team asked 5 minutes ago or more (`WatchAfter`), oldest first, each once; the next round starts again |
-
-Each question is put as `{state, question: "Should team qa keep waiting for this answer or abandon the question?", options: [wait, abandon]}`; the state is what [`axlr_bots_question_status`](#the-team-channel) reads (queued and why, running since and its last step, a wait for a person, the deadline). `wait` changes nothing. `abandon` cancels the question's task with the reason `abandoned by qa-vigia: Jev chose abandon (p=0.83, c=0.71)`, audited as `question.abandon`, and the asker hears `answered: false` with that reason, as for any question that ended without an answer. A bot that is not such a Jev bot is refused by the control plane (`403`, audit `question.watch`).
-
 ## Register, enable, update
 
 ```bash
@@ -373,7 +308,7 @@ axlr-bots bot events bot --limit 100                 # the bot's newest events, 
 
 A task's `priority` is `urgent` when it went first ([urgent tasks](#urgent-tasks)), absent otherwise.
 
-A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `delegation`, `ask`, `groups`, `events`, `subscriptions`, `runtime`, `skills`, `model`, `budgets`, `version`; an empty `version` clears it) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`cmd/axlr-bots/testdata/bot-triggers-patch.json`](../../cmd/axlr-bots/testdata/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`cmd/axlr-bots/testdata/bot-act-with-approval.json`](../../cmd/axlr-bots/testdata/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
+A patch replaces the fields it names (`mission`, `level`, `allowedTools`, `toolRules`, `triggers`, `placement`, `approvals`, `delegation`, `groups`, `events`, `subscriptions`, `runtime`, `skills`, `model`, `budgets`, `version`; an empty `version` clears it) with their whole new value; the identity and the status do not change that way, and a patch that strands a tool rule or names a bad trigger changes nothing. [`cmd/axlr-bots/testdata/bot-triggers-patch.json`](../../cmd/axlr-bots/testdata/bot-triggers-patch.json) adds a timer and a webhook to the example bot; [`cmd/axlr-bots/testdata/bot-act-with-approval.json`](../../cmd/axlr-bots/testdata/bot-act-with-approval.json) is the example bot one level up, with `local_write` allowed.
 
 ### Staged changes
 

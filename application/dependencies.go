@@ -48,10 +48,6 @@ type Dependencies struct {
 	// key; nil refuses them.
 	ModelGateway ModelGateway
 	JudgeGateway JudgeGateway
-	// DomainEvents carries a domain event to other teams
-	// (docs/architecture/team-topics.md); nil: no event crosses, and an
-	// emit that would cross says so as a skip.
-	DomainEvents DomainEventBus
 	// Build tells the running build from the installed one, so a
 	// control plane left running over a newer binary stops
 	// (CheckBuild); nil: nothing is compared.

@@ -124,15 +124,6 @@ func TestCommandsReachARemoteControlPlane(t *testing.T) {
 		t.Errorf("a command with --control opened the local state: %v", err)
 	}
 
-	// The activity audit reads and publishes through the address too.
-	store := filepath.Join(elsewhere, "audit")
-	stdout.Reset()
-	stderr.Reset()
-	remote := remoteControl{URL: c.control, TokenFile: tokenFile, CAFile: caFile}
-	if code := activityAuditServe(context.Background(), localState, "", remote, []string{"--team", "watchers", "--event", "activity.failure", "--store", store, "--once", "--dry-run"}, &stdout, &stderr); code != exitOK || !strings.Contains(stderr.String(), "through "+c.control) {
-		t.Fatalf("activity-audit over the address: %d %s %s", code, stdout.String(), stderr.String())
-	}
-
 	// A wrong token is refused, a wrong CA fails the handshake.
 	_ = os.WriteFile(tokenFile, []byte("not-the-token\n"), 0o600)
 	if code, _, errText := c.run("bot", "list"); code == exitOK || !strings.Contains(strings.ToLower(errText), "unauthorized") {

@@ -55,9 +55,6 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 	if err := execution.RecordReceipt(report.Receipt); err != nil {
 		details["receipt"] = "dropped: " + err.Error()
 	}
-	if err := task.KeepContext(report.ContextRead); err != nil {
-		details["context"] = "dropped: " + err.Error()
-	}
 	if !execution.IsAssigned() {
 		s.keeper.collect(ctx, bot, *execution, report.Result.Artifacts)
 	}
@@ -117,12 +114,6 @@ func (s settler) settle(ctx context.Context, action string, bot domain.Bot, task
 			return err
 		}
 		return s.notes.queue(ctx, bot, *task, *execution, wait)
-	}
-	if err := newAnswerDeliverer(s.deps).taskEnded(ctx, bot, *task, *execution); err != nil {
-		return err
-	}
-	if err := newCompletionKeeper(s.deps).taskEnded(ctx, bot, *task); err != nil {
-		return err
 	}
 	return newPlatformPublisher(s.deps).taskEnded(ctx, bot, *task, *execution)
 }

@@ -166,7 +166,6 @@ func (s *Server) operatorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/groups/{name}/events", s.listGroupEvents)
 	mux.HandleFunc("POST /v1/groups/{name}/events", s.publishGroupEvent)
 	mux.HandleFunc("GET /v1/groups/{name}/topics", s.listGroupTopics)
-	mux.HandleFunc("GET /v1/groups/{name}/links", s.listGroupLinks)
 	mux.HandleFunc("POST /v1/tasks", s.submitTask)
 	mux.HandleFunc("GET /v1/tasks", s.listTasks)
 	mux.HandleFunc("GET /v1/tasks/{id}", s.getTask)
@@ -210,10 +209,6 @@ func (s *Server) nodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/report", s.authenticated(s.report))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/delegations", s.authenticated(s.delegate))
 	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/delegations/{task}", s.authenticated(s.awaitDelegation))
-	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/questions", s.authenticated(s.ask))
-	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/questions/{task}", s.authenticated(s.questionState))
-	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/watch", s.authenticated(s.watchNext))
-	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/watch/decisions", s.authenticated(s.decideWatch))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/events", s.authenticated(s.emit))
 	mux.HandleFunc("POST /v1/nodes/{id}/executions/{exec}/subscriptions", s.authenticated(s.subscribe))
 	mux.HandleFunc("GET /v1/nodes/{id}/executions/{exec}/messages", s.authenticated(s.executionMessages))
@@ -398,12 +393,6 @@ func (s *Server) publishGroupEvent(w http.ResponseWriter, r *http.Request) {
 // listGroupTopics is GET /v1/groups/{name}/topics?tenant=.
 func (s *Server) listGroupTopics(w http.ResponseWriter, r *http.Request) {
 	value, err := s.service.ListGroupTopics(r.Context(), r.PathValue("name"), r.URL.Query().Get("tenant"))
-	respond(w, http.StatusOK, value, err)
-}
-
-// listGroupLinks is GET /v1/groups/{name}/links?tenant=.
-func (s *Server) listGroupLinks(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.ListGroupLinks(r.Context(), r.PathValue("name"), r.URL.Query().Get("tenant"))
 	respond(w, http.StatusOK, value, err)
 }
 
@@ -904,7 +893,7 @@ func (s *Server) report(w http.ResponseWriter, r *http.Request) {
 		respond(w, 0, nil, err)
 		return
 	}
-	respond(w, http.StatusOK, nodeproto.ReportAck{Accepted: result.Accepted, Outcome: result.Execution.Outcome().String(), ChannelMemory: nodeproto.FromChannelRecord(result.ChannelMemory)}, nil)
+	respond(w, http.StatusOK, nodeproto.ReportAck{Accepted: result.Accepted, Outcome: result.Execution.Outcome().String()}, nil)
 }
 
 // delegate is POST /v1/nodes/{id}/executions/{exec}/delegations: the
@@ -929,105 +918,6 @@ func (s *Server) delegate(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusCreated
 	}
 	respond(w, status, nodeproto.FromDelegation(answer), nil)
-}
-
-// ask is POST /v1/nodes/{id}/executions/{exec}/questions: the execution
-// asks another team a question. It answers at once, 201 with the
-// question's task or 200 with the same ask's or a refusal; the answer
-// comes back to the bot later.
-func (s *Server) ask(w http.ResponseWriter, r *http.Request) {
-	id, executionID, ok := nodeExecution(w, r)
-	if !ok {
-		return
-	}
-	var message nodeproto.AskMessage
-	if !readJSON(w, r, &message) {
-		return
-	}
-	answer, err := s.service.Runner().Ask(r.Context(), id, executionID, application.AskTeamCommand{Team: message.Team, Question: message.Question})
-	if err != nil {
-		respond(w, 0, nil, err)
-		return
-	}
-	status := http.StatusOK
-	if answer.Created {
-		status = http.StatusCreated
-	}
-	respond(w, status, nodeproto.FromQuestion(answer), nil)
-}
-
-// questionState is GET .../questions/{task}: where a question the
-// execution's task asked stands, from the control plane's records.
-func (s *Server) questionState(w http.ResponseWriter, r *http.Request) {
-	id, executionID, ok := nodeExecution(w, r)
-	if !ok {
-		return
-	}
-	question, err := domain.NewTaskID(r.PathValue("task"))
-	if err != nil {
-		respond(w, 0, nil, err)
-		return
-	}
-	view, err := application.NewGetQuestion(s.service.Dependencies()).Execute(r.Context(), id, executionID, question)
-	if err != nil {
-		respond(w, 0, nil, err)
-		return
-	}
-	respond(w, http.StatusOK, nodeproto.FromQuestionView(view), nil)
-}
-
-// watchNext is POST .../watch: a team's Jev watcher asks for the next
-// question of its round after the cursor. Only a Jev watcher is answered,
-// and only with its own team's questions.
-func (s *Server) watchNext(w http.ResponseWriter, r *http.Request) {
-	id, executionID, ok := nodeExecution(w, r)
-	if !ok {
-		return
-	}
-	var message nodeproto.WatchMessage
-	if !readJSON(w, r, &message) {
-		return
-	}
-	after := domain.TaskID("")
-	if message.After != "" {
-		cursor, err := domain.NewTaskID(message.After)
-		if err != nil {
-			respond(w, 0, nil, err)
-			return
-		}
-		after = cursor
-	}
-	watched, err := s.service.Runner().WatchNext(r.Context(), id, executionID, after, message.Tasks)
-	if err != nil {
-		respond(w, 0, nil, err)
-		return
-	}
-	respond(w, http.StatusOK, nodeproto.FromWatched(watched), nil)
-}
-
-// decideWatch is POST .../watch/decisions: the watcher's decision for one
-// question of its team; abandon cancels it.
-func (s *Server) decideWatch(w http.ResponseWriter, r *http.Request) {
-	id, executionID, ok := nodeExecution(w, r)
-	if !ok {
-		return
-	}
-	var message nodeproto.WatchDecisionMessage
-	if !readJSON(w, r, &message) {
-		return
-	}
-	question, err := domain.NewTaskID(message.Question)
-	if err != nil {
-		respond(w, 0, nil, err)
-		return
-	}
-	decision := application.WatchDecision{Question: question, Choice: message.Choice, Probability: message.Probability, Confidence: message.Confidence}
-	decided, err := s.service.Runner().DecideWatch(r.Context(), id, executionID, decision)
-	if err != nil {
-		respond(w, 0, nil, err)
-		return
-	}
-	respond(w, http.StatusOK, nodeproto.FromWatchDecided(decided), nil)
 }
 
 // emit is POST .../events: the execution tells its teams an event.

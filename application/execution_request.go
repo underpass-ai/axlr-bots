@@ -1,7 +1,6 @@
 package application
 
 import (
-	"context"
 	"encoding/json"
 	"time"
 
@@ -43,22 +42,10 @@ type ExecutionRequest struct {
 	// Events is set when the bot is in a team: the node then serves the
 	// emit tool to the execution.
 	Events *EventsOffer
-	// Ask is set when the bot may ask other teams: the node then serves
-	// the ask tool on the same socket.
-	Ask *AskOffer
 	// MemoryTeam is the team the bot shares its memory with, empty for a
 	// bot in no team: the node then opens the team's store for the run,
 	// not the bot's own (docs/architecture/memory-store-per-team.md).
 	MemoryTeam domain.TeamName
-	// ChannelMemory is set on the run of a question_answer task: what the
-	// asking team's store keeps of the question, which the node writes
-	// there (docs/architecture/team-channel.md, "Memory").
-	ChannelMemory *domain.ChannelRecord
-	// Contexts are the KMP keys whose content the node reads from the
-	// team's store before the run and gives it: a redelivery's key, and
-	// the key another team's domain event named
-	// (docs/architecture/team-subscriptions.md, "Done is a contract").
-	Contexts []domain.ContextRef
 	// DelegationSocket is where the node serves those tools for this
 	// execution; the node sets it, it never travels.
 	DelegationSocket string
@@ -73,28 +60,19 @@ type ExecutionRequest struct {
 	// for a model; the node sets it when the bot is in a team, it never
 	// travels. A runtime without a model (a Jev program) tells through it.
 	OnEmit func(EmitEventCommand) (EmitAnswer, error) `json:"-"`
-	// OnNodeTool calls a tool the node serves in process, with the
-	// execution's identity: the tools of the reserved server axlr-bots
-	// that a team's Jev watcher calls (domain.WatchServer). The node sets
-	// it for such a run; it never travels.
-	OnNodeTool func(ctx context.Context, tool string, arguments map[string]any) (NodeToolAnswer, error) `json:"-"`
 }
 
 // NodeTools names the tools the node serves the execution on its
-// socket: the delegation tool, the emit tools and the ask tools, as
-// offered.
-func (r ExecutionRequest) NodeTools() []string { return nodeTools(r.Delegation, r.Events, r.Ask) }
+// socket: the delegation tool and the emit tools, as offered.
+func (r ExecutionRequest) NodeTools() []string { return nodeTools(r.Delegation, r.Events) }
 
-func nodeTools(delegation *DelegationOffer, events *EventsOffer, ask *AskOffer) []string {
+func nodeTools(delegation *DelegationOffer, events *EventsOffer) []string {
 	var tools []string
 	if delegation != nil {
 		tools = append(tools, DelegateToolName)
 	}
 	if events != nil {
 		tools = append(tools, EmitEventToolName, SubscribeToolName)
-	}
-	if ask != nil {
-		tools = append(tools, AskToolName, QuestionStatusToolName)
 	}
 	return tools
 }

@@ -39,9 +39,6 @@ func TestNodeRegistersRunsAndStops(t *testing.T) {
 	t.Setenv(openRouterKeyEnv, "sk-or-test")
 	t.Setenv(codexProxyKeyEnv, "")
 	t.Setenv("TYPESAFE_API_KEY", "")
-	// The team channel switched on from the environment, as a unit's
-	// drop-in does: the node reports it.
-	t.Setenv("AXLR_NODE_TEAM_CHANNEL", "true")
 	proxy := listenLoopback(t)
 	t.Setenv(codexProxyListenEnv, proxy.Addr().String())
 	_ = os.MkdirAll(filepath.Join(dir, ".config", "axlr"), 0o755)
@@ -57,9 +54,6 @@ func TestNodeRegistersRunsAndStops(t *testing.T) {
 		if node, err := client.GetNode(context.Background(), "test-node"); err == nil && node.Status == "Online" && node.Labels["zone"] == "eu" {
 			if want := []string{"openrouter", "codex", "local:codex/gpt-6.1-sol", "local:codex/gpt-6-luna"}; !slices.Equal(node.Capabilities.Providers, want) {
 				t.Fatalf("providers = %v, want %v", node.Capabilities.Providers, want)
-			}
-			if !node.Capabilities.TeamChannel {
-				t.Fatalf("the team channel is not reported: %+v", node.Capabilities)
 			}
 			// The node reports the build it runs (this test binary's).
 			if build := (system.BuildReader{}).Running(); node.Capabilities.NodeVersion != build.Version || node.Capabilities.NodeRevision != build.Revision {
@@ -102,7 +96,7 @@ func TestNodeRegistersRunsAndStops(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("node did not stop")
 	}
-	if !strings.Contains(stderr.String(), "registered as test-node") || !strings.Contains(stderr.String(), "team channel on but --memory-teams names no team") {
+	if !strings.Contains(stderr.String(), "registered as test-node") {
 		t.Errorf("log = %s", stderr.String())
 	}
 }
@@ -128,7 +122,7 @@ func TestNodeUsage(t *testing.T) {
 		}
 	}
 	stderr.Reset()
-	if code := run([]string{"--help"}, &stdout, &stderr); code != exitOK || !strings.Contains(stderr.String(), "-team-channel") || !strings.Contains(stderr.String(), "AXLR_NODE_TEAM_CHANNEL=true; default: off") {
+	if code := run([]string{"--help"}, &stdout, &stderr); code != exitOK {
 		t.Errorf("--help = %d %s", code, stderr.String())
 	}
 	if code := run([]string{"--control", "unix:///tmp/x.sock", "--state", t.TempDir(), "--node-id", "Bad Id"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "node id") {
@@ -146,19 +140,17 @@ func TestNodeUsage(t *testing.T) {
 		t.Error("XDG_STATE_HOME ignored")
 	}
 }
-
-// --memory-teams takes team names or "*", and refuses what is no team.
 func TestParseMemoryTeams(t *testing.T) {
 	if teams, err := parseMemoryTeams(""); err != nil || teams != nil {
 		t.Fatalf("empty: %v %v", teams, err)
 	}
-	if teams, err := parseMemoryTeams(" qa , dev ,"); err != nil || strings.Join(teams, "|") != "qa|dev" {
+	if teams, err := parseMemoryTeams(" ops , web ,"); err != nil || strings.Join(teams, "|") != "ops|web" {
 		t.Fatalf("names: %v %v", teams, err)
 	}
 	if teams, err := parseMemoryTeams("*"); err != nil || strings.Join(teams, "|") != "*" {
 		t.Fatalf("star: %v %v", teams, err)
 	}
-	if _, err := parseMemoryTeams("qa,Not A Team"); err == nil || !strings.Contains(err.Error(), "--memory-teams") {
+	if _, err := parseMemoryTeams("ops,Not A Team"); err == nil || !strings.Contains(err.Error(), "--memory-teams") {
 		t.Fatalf("bad name: %v", err)
 	}
 }

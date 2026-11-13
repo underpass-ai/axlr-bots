@@ -1633,52 +1633,6 @@
           }
         }
       }
-    },
-    "/v1/groups/{name}/links": {
-      "parameters": [
-        {
-          "name": "name",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          },
-          "description": "team name"
-        }
-      ],
-      "get": {
-        "operationId": "listGroupLinks",
-        "description": "the team's links in the team channel, derived from the bots: a link from A to B holds while some bot whose memory team is A names B in ask.teams and some bot whose memory team is B answers A through its question trigger; the links from the team and to it, by asking then answering team. What the bots declare, not who is free now",
-        "parameters": [
-          {
-            "name": "tenant",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "the tenant, needed when several have a team of that name"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/GroupLink"
-                  }
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
     }
   },
   "components": {
@@ -1778,7 +1732,7 @@
             },
             "description": "who may approve or deny the bot's calls, compared exactly with the actor a decision names; absent: anyone with the token",
             "example": [
-              "tirso",
+              "alice",
               "oncall"
             ]
           }
@@ -1853,9 +1807,6 @@
           },
           "delegation": {
             "$ref": "#/components/schemas/DelegationSnapshot"
-          },
-          "ask": {
-            "$ref": "#/components/schemas/AskSnapshot"
           },
           "id": {
             "type": "string"
@@ -1970,9 +1921,6 @@
           "delegation": {
             "$ref": "#/components/schemas/DelegationSnapshot"
           },
-          "ask": {
-            "$ref": "#/components/schemas/AskSnapshot"
-          },
           "level": {
             "type": "string"
           },
@@ -2048,9 +1996,6 @@
           },
           "delegation": {
             "$ref": "#/components/schemas/DelegationSnapshot"
-          },
-          "ask": {
-            "$ref": "#/components/schemas/AskSnapshot"
           },
           "id": {
             "type": "string",
@@ -2459,28 +2404,6 @@
           }
         }
       },
-      "AskSnapshot": {
-        "type": "object",
-        "x-go-type": "domain.AskSnapshot",
-        "description": "the other teams the bot may ask for context through the team channel (docs/architecture/team-channel.md); absent: it is not offered the tool",
-        "properties": {
-          "teams": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "the memory teams the bot may ask, at most 8, none of its own"
-          },
-          "perMinute": {
-            "type": "integer",
-            "description": "questions a minute, 1 to 10; absent: 2"
-          },
-          "maxOpen": {
-            "type": "integer",
-            "description": "questions waiting for an answer at once, 1 to 8; absent: 3"
-          }
-        }
-      },
       "EmitRuleSnapshot": {
         "type": "object",
         "x-go-type": "domain.EmitRuleSnapshot",
@@ -2492,13 +2415,6 @@
           },
           "name": {
             "type": "string"
-          },
-          "teams": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Other teams a domain event of this plain info name crosses to (docs/architecture/team-topics.md)."
           }
         },
         "required": [
@@ -2666,9 +2582,6 @@
           "bot.task.said",
           "bot.task.progress",
           "bot.delegation.refused",
-          "bot.question.asked",
-          "bot.question.answered",
-          "bot.question.refused",
           "bot.event.emitted",
           "bot.event.refused",
           "bot.event.heard",
@@ -2915,41 +2828,6 @@
           "where"
         ]
       },
-      "GroupLink": {
-        "type": "object",
-        "x-go-type": "application.GroupLink",
-        "description": "one link of the team channel: team from may ask team to",
-        "properties": {
-          "from": {
-            "type": "string",
-            "description": "the asking team"
-          },
-          "to": {
-            "type": "string",
-            "description": "the answering team"
-          },
-          "askers": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "the bots whose memory team is from and whose ask.teams names to, by id"
-          },
-          "responders": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "the bots whose memory team is to and whose question trigger's from names from, by id"
-          }
-        },
-        "required": [
-          "askers",
-          "from",
-          "responders",
-          "to"
-        ]
-      },
       "GroupTopic": {
         "type": "object",
         "x-go-type": "application.GroupTopic",
@@ -3095,17 +2973,6 @@
           },
           "skillsSupported": {
             "type": "boolean"
-          },
-          "memoryTeams": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "the teams whose bots share one KMP store on the node (its --memory-teams), * for every team; absent: none, and the node is never picked to answer a team's question (an older node)"
-          },
-          "teamChannel": {
-            "type": "boolean",
-            "description": "the node runs the team channel (axlr-node --team-channel): only then are its runs offered axlr_bots_ask_team and axlr_bots_question_status, its bots picked to answer a team's question, and a team's Jev watcher served; absent: off (the default, and an older node)"
           }
         },
         "required": [
@@ -3409,14 +3276,6 @@
                 "coalescedInto": {
                   "type": "string",
                   "description": "the Pending task the event joined as a note"
-                },
-                "team": {
-                  "type": "string",
-                  "description": "the team whose member took the event, picked among the hearers of a team subscription"
-                },
-                "crossed": {
-                  "type": "boolean",
-                  "description": "published to another team, team: its task is made there, so botId and taskId are empty"
                 }
               },
               "required": [
@@ -3440,14 +3299,6 @@
                 },
                 "message": {
                   "type": "string"
-                },
-                "team": {
-                  "type": "string",
-                  "description": "team_unavailable: the team of a team subscription nobody could take; botId is empty"
-                },
-                "crossed": {
-                  "type": "boolean",
-                  "description": "not published to another team, team: crossing_limit, no_domain_id, or team_unavailable"
                 }
               },
               "required": [
@@ -3796,10 +3647,6 @@
             "type": "string",
             "description": "the template of the task it makes; absent: who said what"
           },
-          "deliver": {
-            "type": "string",
-            "description": "team: one member of the bot's team takes what it hears (mode task only), picked first free by id among the members that say the same"
-          },
           "status": {
             "type": "string",
             "description": "active (absent) or pending: a bot's ask a person has not approved; a pending subscription hears nothing"
@@ -3813,18 +3660,6 @@
           "askedAt": {
             "type": "string",
             "format": "date-time"
-          },
-          "team": {
-            "type": "string",
-            "description": "Another team the topic is heard from (docs/architecture/team-topics.md); absent: the bot's own teams."
-          },
-          "expects": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 8,
-            "description": "the final events a task it makes must emit, names or patterns (mode task only, never on a bot's ask): for each event the task carried (the one that made it and every one coalesced into it), one event whose name fits and whose data.id is that event's; a carried event without data.id is settled by any of them. What is missing when the task ends is given again in one new task, at most twice per event; then warn.incomplete (docs/architecture/team-subscriptions.md#done-is-a-contract)"
           }
         },
         "required": [
@@ -3913,13 +3748,6 @@
             },
             "type": "array"
           },
-          "questions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "the questions the task asked other teams through the team channel: tasks of the bots that answer them, apart from its children (they take nothing of its budgets)"
-          },
           "correlationId": {
             "type": "string"
           },
@@ -3987,13 +3815,6 @@
             "items": {
               "$ref": "#/components/schemas/SkillPinSnapshot"
             }
-          },
-          "origin": {
-            "$ref": "#/components/schemas/EventOrigin"
-          },
-          "expects": {
-            "$ref": "#/components/schemas/TaskExpectsSnapshot",
-            "description": "a task of a subscription that expects final events: those names, the events it carried and the finals it emitted; absent otherwise"
           }
         },
         "required": [
@@ -4177,17 +3998,6 @@
           "interrupt": {
             "type": "boolean",
             "description": "an event trigger: its warnings and criticals make urgent tasks"
-          },
-          "deliver": {
-            "type": "string",
-            "description": "a timer trigger: team when one member of the bot's team takes each slot; the members that say it share one timer and must give it the same schedule"
-          },
-          "from": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "a question trigger: the teams whose questions the bot answers, required, at most 8"
           }
         },
         "required": [
@@ -4203,9 +4013,7 @@
           "webhook",
           "timer",
           "delegation",
-          "event",
-          "question",
-          "question_answer"
+          "event"
         ],
         "description": "A client must read a value not listed here as unknown, not refuse the answer: the control plane adds values."
       },
@@ -4265,129 +4073,6 @@
             "type": "string"
           },
           "catalog": {
-            "type": "string"
-          }
-        }
-      },
-      "EventOrigin": {
-        "type": "object",
-        "x-go-type": "domain.EventOrigin",
-        "description": "Where a task made by another team's domain event came from; such a task starts a new chain (docs/architecture/team-topics.md).",
-        "required": [
-          "eventId",
-          "from",
-          "team",
-          "crossings"
-        ],
-        "properties": {
-          "eventId": {
-            "type": "string"
-          },
-          "from": {
-            "type": "string"
-          },
-          "team": {
-            "type": "string"
-          },
-          "traceId": {
-            "type": "string"
-          },
-          "crossings": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 4
-          },
-          "context": {
-            "type": "string",
-            "description": "The KMP key of the event's context, when it named one."
-          }
-        }
-      },
-      "TaskExpectsSnapshot": {
-        "type": "object",
-        "x-go-type": "domain.TaskExpectsSnapshot",
-        "description": "What a task records for its subscription's expects (docs/architecture/team-subscriptions.md#done-is-a-contract).",
-        "required": [
-          "names"
-        ],
-        "properties": {
-          "names": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "the names or patterns a final event fits"
-          },
-          "carried": {
-            "type": "array",
-            "maxItems": 32,
-            "items": {
-              "$ref": "#/components/schemas/CarriedEvent"
-            },
-            "description": "the events the task carries, oldest first: the one that made it and those coalesced into it"
-          },
-          "finals": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FinalEvent"
-            },
-            "description": "the events the task emitted that settled a carried one"
-          }
-        }
-      },
-      "CarriedEvent": {
-        "type": "object",
-        "x-go-type": "domain.CarriedEvent",
-        "description": "One event a task carries for its subscription's expects.",
-        "required": [
-          "eventId",
-          "name"
-        ],
-        "properties": {
-          "eventId": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string",
-            "description": "its data.id (a number in its shortest form); absent when it had none"
-          },
-          "from": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string",
-            "description": "its message, cut at 280 characters"
-          },
-          "redeliveries": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 2,
-            "description": "how many times the control plane gave it again"
-          },
-          "tasks": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "the earlier tasks that carried it, oldest first"
-          }
-        }
-      },
-      "FinalEvent": {
-        "type": "object",
-        "x-go-type": "domain.FinalEvent",
-        "description": "An event a task emitted that settled an event it carried.",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "id": {
             "type": "string"
           }
         }

@@ -165,11 +165,6 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 		if !candidate.AcceptsTasks() || !nodeCanRun(candidate, pending[i].Skills(), node) {
 			continue
 		}
-		if pending[i].Trigger().Type == domain.TriggerQuestion && !answersOn(candidate, node) {
-			// A question is answered from the team's store: only a node
-			// that opens it takes the task.
-			continue
-		}
 		if pending[i].DeadlinePassed(uc.deps.Clock.Now()) {
 			// A delegated task that waited past its deadline never runs.
 			if err := newDeadlineKeeper(uc.deps).miss(ctx, candidate, &pending[i], nil); err != nil {
@@ -273,10 +268,8 @@ func goesBefore(a, b domain.Task) bool {
 
 // describe builds what the node needs for the execution: a delegated
 // task runs with its grant and until its deadline, a bot that may
-// delegate gets the delegation tool in its allow-list (never on a
-// question's task), a bot that may ask other teams gets the ask tool
-// only on a node with the team channel on, and a bot in a team reads its
-// teammates between its mission and the task.
+// delegate gets the delegation tool in its allow-list, and a bot in a
+// team reads its teammates between its mission and the task.
 func (uc NextAssignment) describe(ctx context.Context, node domain.Node, bot domain.Bot, task domain.Task, execution domain.Execution) (Assignment, error) {
 	assignment := Assignment{ExecutionID: execution.ID(), Kind: execution.Kind()}
 	timeout, ok := runTimeout(bot, task, uc.deps.Clock.Now())
@@ -287,19 +280,9 @@ func (uc NextAssignment) describe(ctx context.Context, node domain.Node, bot dom
 	if err != nil {
 		return Assignment{}, err
 	}
-	offer, events, ask := delegationOffer(bot, task, mates), eventsOffer(bot, mates), askOffer(bot, task, node)
+	offer, events := delegationOffer(bot, task, mates), eventsOffer(bot, mates)
 	policy := bot.Policy()
-	if task.Trigger().Type == domain.TriggerQuestion {
-		// A bot answering another team's question asks, delegates, emits
-		// and subscribes nothing: one hop between teams, no further.
-		offer, events = nil, nil
-	}
-	tools := allowedTools(policy.Tools(), offer, events, ask)
-	if ask == nil {
-		// The bot may list the channel's tools itself (its installer adds
-		// them); a run that is not offered them is not allowed them.
-		tools = slices.DeleteFunc(tools, func(tool string) bool { return tool == AskToolName || tool == QuestionStatusToolName })
-	}
+	tools := allowedTools(policy.Tools(), offer, events)
 	if execution.Kind() == domain.ExecutionDecide {
 		previous, decision, err := decisionOf(ctx, uc.deps, task, execution)
 		if err != nil {
@@ -312,7 +295,7 @@ func (uc NextAssignment) describe(ctx context.Context, node domain.Node, bot dom
 		}
 		assignment.Decide = &DecisionRequest{
 			ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), CorrelationID: task.CorrelationID(), SessionID: sessionID, CallID: pending.CallID, Decision: decision,
-			Level: policy.Level(), AllowedTools: tools, ToolRules: policy.Rules(), Timeout: timeout, Delegation: offer, Events: events, Ask: ask,
+			Level: policy.Level(), AllowedTools: tools, ToolRules: policy.Rules(), Timeout: timeout, Delegation: offer, Events: events,
 			Skills: task.Skills(), MemoryTeam: memoryTeamOf(bot),
 		}
 		return assignment, nil
@@ -324,9 +307,8 @@ func (uc NextAssignment) describe(ctx context.Context, node domain.Node, bot dom
 	assignment.Run = &ExecutionRequest{
 		ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), TenantID: bot.TenantID(), CorrelationID: task.CorrelationID(),
 		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: policy.Level(), AllowedTools: tools,
-		ToolRules: policy.Rules(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer, Events: events, Ask: ask,
+		ToolRules: policy.Rules(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer, Events: events,
 		Runtime: bot.Runtime(), Input: task.Input(), Skills: task.Skills(), MemoryTeam: memoryTeamOf(bot),
-		ChannelMemory: answerMemory(task), Contexts: contextRefsOf(task),
 	}
 	return assignment, nil
 }

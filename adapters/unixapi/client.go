@@ -193,15 +193,6 @@ func (c *Client) ListGroupTopics(ctx context.Context, name, tenant string) ([]ap
 	return topics, c.call(ctx, http.MethodGet, path, nil, &topics)
 }
 
-func (c *Client) ListGroupLinks(ctx context.Context, name, tenant string) ([]application.GroupLink, error) {
-	links := []application.GroupLink{}
-	path := "/v1/groups/" + url.PathEscape(name) + "/links"
-	if tenant != "" {
-		path += "?tenant=" + url.QueryEscape(tenant)
-	}
-	return links, c.call(ctx, http.MethodGet, path, nil, &links)
-}
-
 func (c *Client) PublishGroupEvent(ctx context.Context, command application.PublishGroupEventCommand) (application.PublishAnswer, error) {
 	var answer application.PublishAnswer
 	path := "/v1/groups/" + url.PathEscape(command.Group) + "/events"
@@ -532,7 +523,7 @@ func (c *Client) Report(ctx context.Context, node domain.NodeID, execution domai
 	if err != nil {
 		return application.ReportAck{}, err
 	}
-	return application.ReportAck{Accepted: ack.Accepted, Outcome: outcome, ChannelMemory: nodeproto.ToChannelRecord(ack.ChannelMemory)}, nil
+	return application.ReportAck{Accepted: ack.Accepted, Outcome: outcome}, nil
 }
 
 // Delegate asks the control plane that another bot do a task for the
@@ -571,50 +562,6 @@ func (c *Client) Subscribe(ctx context.Context, node domain.NodeID, execution do
 		return application.SubscribeAnswer{}, err
 	}
 	return nodeproto.ToSubscribed(message), nil
-}
-
-// Ask asks another team a question for the execution; it answers at once
-// with the question's task or the refusal.
-func (c *Client) Ask(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, command application.AskTeamCommand) (application.QuestionAnswer, error) {
-	var message nodeproto.QuestionMessage
-	path := "/v1/nodes/" + url.PathEscape(node.String()) + "/executions/" + url.PathEscape(execution.String()) + "/questions"
-	if err := c.call(ctx, http.MethodPost, path, nodeproto.AskMessage{Team: command.Team, Question: command.Question}, &message); err != nil {
-		return application.QuestionAnswer{}, err
-	}
-	return nodeproto.ToQuestion(message)
-}
-
-// QuestionState reads where a question the execution's task asked
-// stands.
-func (c *Client) QuestionState(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, question domain.TaskID) (application.QuestionView, error) {
-	var message nodeproto.QuestionStateMessage
-	path := "/v1/nodes/" + url.PathEscape(node.String()) + "/executions/" + url.PathEscape(execution.String()) + "/questions/" + url.PathEscape(question.String())
-	if err := c.call(ctx, http.MethodGet, path, nil, &message); err != nil {
-		return application.QuestionView{}, err
-	}
-	return nodeproto.ToQuestionView(message)
-}
-
-// WatchNext asks, for a team's Jev watcher, the next question of its
-// round after the cursor (application.NodeTransport).
-func (c *Client) WatchNext(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, after domain.TaskID, tasks bool) (application.WatchedQuestion, error) {
-	var message nodeproto.WatchedMessage
-	path := "/v1/nodes/" + url.PathEscape(node.String()) + "/executions/" + url.PathEscape(execution.String()) + "/watch"
-	if err := c.call(ctx, http.MethodPost, path, nodeproto.WatchMessage{After: after.String(), Tasks: tasks}, &message); err != nil {
-		return application.WatchedQuestion{}, err
-	}
-	return nodeproto.ToWatched(message)
-}
-
-// DecideWatch hands over the watcher's decision for one question.
-func (c *Client) DecideWatch(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, decision application.WatchDecision) (application.WatchDecided, error) {
-	var message nodeproto.WatchDecidedMessage
-	path := "/v1/nodes/" + url.PathEscape(node.String()) + "/executions/" + url.PathEscape(execution.String()) + "/watch/decisions"
-	request := nodeproto.WatchDecisionMessage{Question: decision.Question.String(), Choice: decision.Choice, Probability: decision.Probability, Confidence: decision.Confidence}
-	if err := c.call(ctx, http.MethodPost, path, request, &message); err != nil {
-		return application.WatchDecided{}, err
-	}
-	return nodeproto.ToWatchDecided(message)
 }
 
 // AwaitDelegation waits up to wait for the child to end and answers its
