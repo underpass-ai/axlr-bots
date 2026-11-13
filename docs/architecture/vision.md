@@ -1,4 +1,4 @@
-> **Underpass Bots: product and architecture vision** (Spanish), the note of 21 October 2026 that AXLR Bots implements; copied as written, section numbers are those the other pages cite.
+> **Underpass Bots: product and architecture vision** (Spanish), the note of 21 October 2026 that AXLR Bots implements; copied as written, section numbers are those the other pages cite; amended 13 November 2026: the reference use case is a log watcher.
 
 # Underpass Bots
 
@@ -27,7 +27,7 @@ La propuesta se inspira en la tendencia de los agentes persistentes —entre ell
 
 ### Resultado buscado
 
-Que un operador pueda definir «necesito un bot SRE en este servidor» y obtener un componente que:
+Que un operador pueda definir «necesito un bot que vigile los logs de este servidor» y obtener un componente que:
 
 1. Conozca su función, alcance y límites.
 2. Se active ante eventos relevantes o según una programación.
@@ -121,7 +121,7 @@ Un bot es una **entidad persistente** definida por su responsabilidad y sus cont
 flowchart TB
     U[Operator / Developer]
     CP[Underpass Bot Control Plane]
-    B1[SRE Bot]
+    B1[Ops Bot]
     B2[Security Bot]
     B3[Developer Bot]
     B4[Research Bot]
@@ -454,11 +454,11 @@ La subida de nivel exige evidencias operativas, límites explícitos y posibilid
 apiVersion: underpass.ai/v1alpha1
 kind: Bot
 metadata:
-  name: server-incident-investigator
+  name: server-log-watcher
   namespace: engineering
 spec:
   identity:
-    role: "Diagnose server and application incidents"
+    role: "Report what the server and its applications log"
     owner: "platform-team"
 
   runtime:
@@ -473,16 +473,14 @@ spec:
     maxContextTokens: 32000
 
   triggers:
-    - type: event
-      source: observability.alert.firing
+    - type: timer
+      every: 15m
     - type: manual
 
   tools:
     allow:
       - observability.query_logs
       - observability.query_metrics
-      - kubernetes.get_pods
-      - kubernetes.get_events
 
   memory:
     scope: bot
@@ -523,12 +521,12 @@ No se incluyen rutas de aprobación ni federación hasta definir formalmente su 
   "eventId": "evt-123",
   "type": "bot.task.assigned",
   "tenantId": "underpass",
-  "botId": "server-incident-investigator",
+  "botId": "server-log-watcher",
   "taskId": "task-789",
   "correlationId": "trace-abc",
   "createdAt": "2026-10-21T15:00:00Z",
   "payload": {
-    "objective": "Investigate an HTTP 500 spike",
+    "objective": "Report the errors logged in the last 15 minutes",
     "environment": "staging",
     "readOnly": true
   }
@@ -539,49 +537,49 @@ El evento debe incluir versión de esquema en una implementación real y dispone
 
 ---
 
-## 12. Caso de uso de referencia: Server Incident Bot
+## 12. Caso de uso de referencia: Server Log Bot
 
 ### 12.1. Objetivo
 
-Un bot residente **lógicamente** en un servidor o plataforma que investiga incidentes de forma autónoma sin modificar producción.
+Un bot residente **lógicamente** en un servidor que lee sus logs cada cierto tiempo y cuenta lo que ha cambiado, sin modificar nada.
 
 ### 12.2. Flujo de demostración
 
 ```mermaid
 sequenceDiagram
-    participant M as Alert Source
+    participant S as Scheduler
     participant C as Bot Control Plane
     participant A as AXLR Execution
-    participant T as Observability MCP
+    participant T as Logs MCP
     participant K as Memory Adapter
     participant O as Operator
 
-    M->>C: Alert firing (incidentId)
+    S->>C: Timer fired (slot)
     C->>C: Deduplicate and authorize
     C->>A: Start read-only task
-    A->>K: Retrieve prior incident context
-    K-->>A: Relevant evidence
-    A->>T: Query logs and metrics
-    T-->>A: Structured observations
-    A->>A: Correlate hypotheses
-    A-->>C: Diagnosis + evidence + confidence
-    C-->>O: Report and proposed next steps
+    A->>K: Retrieve what the last run saw
+    K-->>A: Previous summary
+    A->>T: Read the logs since then
+    T-->>A: Structured lines
+    A->>A: Group and rank what changed
+    A-->>C: Report + evidence
+    C-->>O: Report and what looks wrong
     C->>C: Store result and audit trail
 ```
 
 ### 12.3. Evidencias que debe producir
 
-- Alerta inicial y timestamps.
-- Servicios implicados y dependencias identificadas.
+- La franja leída y sus timestamps.
+- Servicios implicados.
 - Consultas ejecutadas y fuentes de cada dato.
-- Logs y métricas relevantes con referencias y ventanas temporales.
-- Hipótesis ordenadas por evidencia, no solo por seguridad aparente del LLM.
-- Acciones propuestas, sin ejecución de cambios en producción.
+- Líneas relevantes con referencias y ventanas temporales.
+- Lo que parece anómalo, ordenado por evidencia, no solo por seguridad aparente del LLM.
+- Siguientes pasos propuestos, sin ejecutar cambios.
 - Traza completa y costes de inferencia/ejecución.
 
 ### 12.4. Por qué es un buen primer bot
 
-Reutiliza herramientas MCP de observabilidad; aporta un caso de uso tangible; permite iniciar en modo **read-only**; ofrece indicadores objetivos de calidad; y demuestra la persistencia del bot sin requerir un ordenador gráfico.
+Reutiliza herramientas MCP de lectura; aporta un caso de uso tangible; permite iniciar en modo **read-only**; ofrece indicadores objetivos de calidad; y demuestra la persistencia del bot sin requerir un ordenador gráfico.
 
 ---
 
@@ -604,7 +602,7 @@ Reutiliza herramientas MCP de observabilidad; aporta un caso de uso tangible; pe
 - Logs, métricas y artefactos.
 - Recuperación tras reinicio del servicio.
 
-**Salida:** `Server Incident Bot` operativo de extremo a extremo en un único host.
+**Salida:** `Server Log Bot` operativo de extremo a extremo en un único host.
 
 ### Fase 2 — Durabilidad y autonomía gobernada
 
@@ -746,16 +744,16 @@ Una infraestructura en la que los bots no son únicamente consumidores de recurs
 
 ## 18. Próximo experimento recomendado
 
-**Construir un solo Bot SRE read-only, instalado en Linux, activado por una alerta simulada y ejecutado mediante AXLR.**
+**Construir un solo bot read-only, instalado en Linux, activado por un temporizador y ejecutado mediante AXLR.**
 
 **Demostración mínima:**
 
 1. Registrar el bot y visualizar su estado.
 2. Reiniciar el servicio y comprobar que permanece registrado.
-3. Publicar una alerta con `incidentId`.
-4. Activar una ejecución AXLR con acceso solamente a dos MCPs de observabilidad.
+3. Disparar su temporizador.
+4. Activar una ejecución AXLR con acceso solamente a dos MCPs de lectura.
 5. Obtener un informe de diagnóstico con enlaces a evidencias.
-6. Repetir la alerta y verificar la deduplicación.
+6. Repetir el mismo disparo y verificar la deduplicación.
 7. Inyectar un fallo de executor y observar recuperación o fallo explícito.
 8. Intentar ejecutar una tool prohibida y confirmar el rechazo del Policy Engine.
 9. Inspeccionar tiempos, trazas, consumo de tokens y coste.
@@ -794,4 +792,4 @@ Una infraestructura en la que los bots no son únicamente consumidores de recurs
 
 ## 20. Idea condensada
 
-> **Underpass Bots** es una capa de infraestructura para desplegar agentes autónomos persistentes con identidad, responsabilidad, memoria, herramientas y permisos. El bot existe como recurso lógico mientras sus ejecuciones son aisladas, recuperables y activadas bajo demanda. AXLR aporta el runtime ligero; KMP, MADE y Jev se integran mediante contratos cuando aportan valor. La plataforma está pensada para servidores propios y Kubernetes, con autonomía gobernada y observabilidad nativa. Su primer objetivo es demostrar que un bot SRE puede vivir en la infraestructura, reaccionar a incidentes y producir diagnósticos fiables sin depender de una conversación.
+> **Underpass Bots** es una capa de infraestructura para desplegar agentes autónomos persistentes con identidad, responsabilidad, memoria, herramientas y permisos. El bot existe como recurso lógico mientras sus ejecuciones son aisladas, recuperables y activadas bajo demanda. AXLR aporta el runtime ligero; KMP, MADE y Jev se integran mediante contratos cuando aportan valor. La plataforma está pensada para servidores propios y Kubernetes, con autonomía gobernada y observabilidad nativa. Su primer objetivo es demostrar que un bot puede vivir en la infraestructura, reaccionar a eventos y producir informes fiables sin depender de una conversación.
