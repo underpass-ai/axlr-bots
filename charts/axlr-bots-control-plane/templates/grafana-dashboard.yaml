@@ -1,0 +1,22 @@
+{{- if .Values.grafanaDashboard.enabled }}
+# The control plane's dashboard, for a Grafana whose sidecar loads the
+# ConfigMaps with its label (kube-prometheus-stack's: grafana_dashboard: "1").
+# It picks its Prometheus and Loki from data source variables.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "axlr-bots-control-plane.fullname" . }}-dashboard
+  {{- with .Values.grafanaDashboard.namespace }}
+  namespace: {{ . }}
+  {{- end }}
+  labels:
+    {{- include "axlr-bots-control-plane.labels" . | nindent 4 }}
+    {{- toYaml .Values.grafanaDashboard.labels | nindent 4 }}
+  {{- with .Values.grafanaDashboard.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  axlr-bots-control-plane.json: |-
+    {{- .Files.Get "files/grafana-dashboard.json" | nindent 4 }}
+{{- end }}

@@ -97,6 +97,10 @@ spec:
             - {name: AXLR_BOTS_MIN_AXLR_VERSION, value: {{ . | quote }}}
             {{- end }}
             - {name: AXLR_BOTS_BUS, value: {{ .Values.bus.kind | quote }}}
+            - {name: AXLR_BOTS_LOG_FORMAT, value: {{ .Values.logFormat | quote }}}
+            {{- if .Values.metrics.enabled }}
+            - {name: AXLR_BOTS_METRICS_LISTEN, value: {{ printf "0.0.0.0:%d" (int .Values.metrics.port) | quote }}}
+            {{- end }}
             {{- if $nats }}
             - {name: AXLR_BOTS_NATS_URL, value: {{ .Values.bus.nats.url | quote }}}
             - {name: AXLR_BOTS_NATS_CERT, value: /etc/axlr-bots/nats/tls.crt}
@@ -114,6 +118,9 @@ spec:
           ports:
             - {name: node, containerPort: 7878, protocol: TCP}
             - {name: api, containerPort: 7879, protocol: TCP}
+            {{- if .Values.metrics.enabled }}
+            - {name: metrics, containerPort: {{ .Values.metrics.port }}, protocol: TCP}
+            {{- end }}
           # `axlr-bots health`: the daemon answers /healthz on its socket.
           startupProbe:
             exec:

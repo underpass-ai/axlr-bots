@@ -122,6 +122,18 @@ curl --cacert ca.crt -H "Authorization: Bearer $(kubectl -n $ns get secret axlr-
 
 `running.version` is the image's; every node is `Online` within a heartbeat; a task fired by hand runs on its node and ends.
 
+## Observability
+
+With `metrics.enabled`, `metrics.podMonitor.enabled` (its `labels` matching the Prometheus' `podMonitorSelector`; kube-prometheus-stack's is `release: <its release>`), `logFormat: json` and `grafanaDashboard.enabled`:
+
+| Piece | Check |
+|---|---|
+| Prometheus | target `podMonitor/<ns>/<release>-axlr-bots-control-plane` is up; `axlr_bots_overview_up == 1` |
+| Loki | `{namespace="<ns>", container="control-plane"} \| json \| level="ERROR"` (any log collector that ships pod logs; nothing in the pod pushes) |
+| Grafana | dashboard *AXLR Bots · control plane* (uid `axlr-bots-control-plane`); pick the Prometheus and Loki at the top |
+
+`axlr_bots_overview_up 0` means the state could not be read at that scrape. The `…_today` gauges go back to zero at midnight on the control plane's clock. The node stream and the long poll are counted but not timed.
+
 ## Back to the host
 
 While nothing has run in the pod yet, or when what ran there may be lost:

@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -44,6 +43,7 @@ func githubHooks(socketPath string, remote remoteControl, args []string, stdout,
 func githubHooksServe(ctx context.Context, socketPath string, remote remoteControl, args []string, stderr io.Writer) int {
 	flags := flag.NewFlagSet("github-hooks serve", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	logFormat := logFormatFlag(flags)
 	listen := flags.String("listen", "127.0.0.1:7890", "where to listen: a loopback address, the tunnel's far end")
 	secretFile := flags.String("secret-file", "", "the hook's secret, a file readable by its owner only")
 	team := flags.String("team", "", "the team the events are published to (required)")
@@ -86,7 +86,11 @@ func githubHooksServe(ctx context.Context, socketPath string, remote remoteContr
 	if err != nil {
 		return fail(stderr, err)
 	}
-	logger := log.New(stderr, "", log.LstdFlags)
+	loggers, err := newLoggers(stderr, *logFormat)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	logger := loggers.Info
 	handler, err := githubhooks.NewHandler(githubhooks.Config{Secret: secret, Route: githubhooks.Route{Team: *team, CIEvent: *ciEvent, MergedEvent: *mergedEvent, BranchPrefix: *branchPrefix}, Repos: allow, Publisher: publisher, Log: logger})
 	if err != nil {
 		return fail(stderr, err)

@@ -45,6 +45,9 @@ type Server struct {
 	closeOnce sync.Once
 	// models answers the model and Jev calls of a node with no key.
 	models *application.ModelProxy
+	// wrap goes around each listener's handler (metrics); nil leaves
+	// them as they are.
+	wrap Middleware
 }
 
 // NewServer serves the local service.
@@ -235,7 +238,7 @@ func (s *Server) nodeRoutes(mux *http.ServeMux) {
 // configuration (pki.ServerTLSConfig) until ctx ends. The caller binds
 // the listener, so it knows the address when it asked for port 0.
 func (s *Server) ServeTLS(ctx context.Context, listener net.Listener, config *tls.Config) error {
-	server := s.httpServer(s.NodeHandler(), config)
+	server := s.httpServer(s.wrapped("nodes", s.NodeHandler()), config)
 	return s.run(ctx, server, func() error { return server.ServeTLS(listener, "", "") }, func() {})
 }
 
@@ -245,7 +248,7 @@ func (s *Server) ServeAPI(ctx context.Context, listener net.Listener, config *tl
 	if token == "" {
 		return errors.New("unixapi: the operator address needs a bearer token")
 	}
-	server := s.httpServer(s.OperatorHandler(token), config)
+	server := s.httpServer(s.wrapped("operator", s.OperatorHandler(token)), config)
 	return s.run(ctx, server, func() error { return server.ServeTLS(listener, "", "") }, func() {})
 }
 
@@ -282,7 +285,7 @@ func (s *Server) Serve(ctx context.Context, socketPath string) error {
 // serve runs the HTTP server on the listener until ctx ends, then
 // cleans up.
 func (s *Server) serve(ctx context.Context, listener net.Listener, cleanup func()) error {
-	server := s.httpServer(s.Handler(), nil)
+	server := s.httpServer(s.wrapped("socket", s.Handler()), nil)
 	return s.run(ctx, server, func() error { return server.Serve(listener) }, cleanup)
 }
 

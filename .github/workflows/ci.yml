@@ -115,6 +115,8 @@ jobs:
             refused --set-string "$field="
           done
           refused --set-string image.digest=sha256:abc
+          refused --set metrics.port=7879
+          refused --set-string logFormat=yaml
           refused --set-string controlPlane.url=http://192.168.1.75:7878
           refused --set-string node.labels.Zone=eu
           refused --set-string node.idPrefix=Bad
@@ -172,6 +174,15 @@ jobs:
           helm template test $chart --set persistence.existingClaim=state | grep -q 'claimName: state'
           ! helm template test $chart --set persistence.existingClaim=state | grep -q '^kind: PersistentVolumeClaim$'
           helm template test $chart --set ca.init=true | grep -q 'name: ca-init'
+          # Metrics, the PodMonitor and the dashboard are off by default.
+          ! grep -q 'AXLR_BOTS_METRICS_LISTEN' default.yaml
+          ! grep -q '^kind: PodMonitor$' default.yaml
+          helm template test $chart --set metrics.enabled=true --set metrics.podMonitor.enabled=true --set grafanaDashboard.enabled=true --set logFormat=json > observability.yaml
+          grep -q 'name: AXLR_BOTS_METRICS_LISTEN, value: "0.0.0.0:9464"' observability.yaml
+          grep -q 'name: metrics, containerPort: 9464' observability.yaml
+          grep -q '^kind: PodMonitor$' observability.yaml
+          grep -q 'grafana_dashboard: "1"' observability.yaml
+          grep -q 'name: AXLR_BOTS_LOG_FORMAT, value: "json"' observability.yaml
           refused() {
             if helm template test $chart "$@" >/dev/null 2>&1; then
               echo "accepted: $*" >&2
