@@ -14,6 +14,7 @@ func TestReadCallError(t *testing.T) {
 		"whole envelope":     {execFailed("c1", 2, "error: no_credentials\nmore"), callError{Text: "error: no_credentials\nmore", Exit: "2"}},
 		"error object":       {`{"error":{"code":"not_allowed","message":"path outside the workspace"}}`, callError{Text: "not_allowed: path outside the workspace"}},
 		"error object bare":  {`{"error":{"message":"refused"}}`, callError{Text: "refused"}},
+		"top-level code":     {`{"code":"not_found","message":"file or directory not found"}`, callError{Text: "not_found: file or directory not found"}},
 		"plain text":         {"permission denied", callError{Text: "permission denied"}},
 		"empty":              {"", callError{Cut: true}},
 		"cut with exit":      {`{"protocol_version":1,"status":"completed","output":{"exit_code":3,"stdout":"x…`, callError{Exit: "3", Text: "x"}},
