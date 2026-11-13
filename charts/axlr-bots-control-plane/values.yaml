@@ -89,8 +89,8 @@ service:
   extraPorts: []
 
 # Logs: text (plain lines) or json (one object per line with level,
-# component and the task and execution ids it names, for
-# Loki). The extra containers take it too when their env says
+# component and, when a line is about one, bot, node, task,
+# execution and correlationId, for Loki). The extra containers take it too when their env says
 # AXLR_BOTS_LOG_FORMAT.
 logFormat: text
 

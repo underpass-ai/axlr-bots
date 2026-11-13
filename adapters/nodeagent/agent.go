@@ -54,6 +54,8 @@ type Agent struct {
 	wg     *sync.WaitGroup
 	pokes  *pokes
 	cutoff *cutoff
+	// subjects is who each running execution is about, for its log lines.
+	subjects *executionSubjects
 }
 
 // Streamer is a transport that hears the control plane push: which
@@ -77,7 +79,7 @@ func (a Agent) Run(ctx context.Context) error {
 	}
 	work, stopWork := context.WithCancel(ctx)
 	defer stopWork()
-	a.cutoff = newCutoff(id, a.Options.log(), stopWork)
+	a.cutoff = newCutoff(id, a.nodeLog(id), stopWork)
 	err = a.serve(work, id)
 	if a.cutoff.happened() {
 		<-ctx.Done()
@@ -88,7 +90,7 @@ func (a Agent) Run(ctx context.Context) error {
 
 // serve registers and works until ctx ends.
 func (a Agent) serve(ctx context.Context, id domain.NodeID) error {
-	logger := a.Options.log()
+	logger := a.nodeLog(id)
 	if err := a.registerUntilUp(ctx, id); err != nil {
 		return err
 	}
@@ -96,7 +98,7 @@ func (a Agent) serve(ctx context.Context, id domain.NodeID) error {
 		return nil
 	}
 	a.sweepSockets()
-	a.slots, a.wg, a.pokes = newSlots(1), &sync.WaitGroup{}, newPokes()
+	a.slots, a.wg, a.pokes, a.subjects = newSlots(1), &sync.WaitGroup{}, newPokes(), newExecutionSubjects()
 	// Every execution in flight is reported before Run returns, as when
 	// the agent ran one at a time.
 	defer a.wg.Wait()
@@ -178,30 +180,30 @@ func (a Agent) serveDelegation(ctx context.Context, id domain.NodeID, execution 
 	}
 	path := filepath.Join(a.Options.SocketDir, execution.String()+".sock")
 	if len(path) >= maxSocketPath {
-		a.Options.log().Printf("node: execution %s: socket path %s is too long; the delegation tool is off", execution, path)
+		a.execLog(id, execution).Printf("node: execution %s: socket path %s is too long; the delegation tool is off", execution, path)
 		return "", func() {}
 	}
 	var handlers []mcpHandler
 	if offer != nil {
-		d := delegator{transport: a.Transport, node: id, execution: execution, slots: a.slots, pollWait: a.Options.pollWait(), log: a.Options.log(), progress: progress}
+		d := delegator{transport: a.Transport, node: id, execution: execution, slots: a.slots, pollWait: a.Options.pollWait(), log: a.execLog(id, execution), progress: progress}
 		handlers = append(handlers, mcpHandler{tool: delegateTool(*offer), call: d.call})
 	}
 	if events != nil {
-		e := emitter{transport: a.Transport, node: id, execution: execution, log: a.Options.log()}
+		e := emitter{transport: a.Transport, node: id, execution: execution, log: a.execLog(id, execution)}
 		handlers = append(handlers, mcpHandler{tool: emitTool(*events), call: e.call})
-		ask := subscriber{transport: a.Transport, node: id, execution: execution, log: a.Options.log()}
+		ask := subscriber{transport: a.Transport, node: id, execution: execution, log: a.execLog(id, execution)}
 		handlers = append(handlers, mcpHandler{tool: subscribeTool(), call: ask.call})
 	}
 	server, err := serveMCP(ctx, path, a.Executor.Version(ctx), handlers...)
 	if err != nil {
-		a.Options.log().Printf("node: execution %s: delegation socket: %v; the delegation and emit tools are off", execution, err)
+		a.execLog(id, execution).Printf("node: execution %s: delegation socket: %v; the delegation and emit tools are off", execution, err)
 		return "", func() {}
 	}
 	if offer != nil {
-		a.Options.log().Printf("node: execution %s may delegate to %s (depth %d of %d)", execution, strings.Join(offer.Targets, ", "), offer.Depth, offer.MaxDepth)
+		a.execLog(id, execution).Printf("node: execution %s may delegate to %s (depth %d of %d)", execution, strings.Join(offer.Targets, ", "), offer.Depth, offer.MaxDepth)
 	}
 	if events != nil {
-		a.Options.log().Printf("node: execution %s may emit events to %s", execution, strings.Join(events.Teammates, ", "))
+		a.execLog(id, execution).Printf("node: execution %s may emit events to %s", execution, strings.Join(events.Teammates, ", "))
 	}
 	return path, server.Close
 }
@@ -224,7 +226,7 @@ func (a Agent) heartbeat(ctx context.Context, id domain.NodeID) {
 			_, err := a.Transport.Heartbeat(beatCtx, id)
 			cancel()
 			if err != nil && ctx.Err() == nil && !a.cutoff.revoked(err) {
-				a.Options.log().Printf("node: heartbeat: %v", err)
+				a.nodeLog(id).Printf("node: heartbeat: %v", err)
 				if domain.IsNotFound(err) {
 					_ = a.register(ctx, id)
 				}
@@ -240,7 +242,7 @@ func (a Agent) registerUntilUp(ctx context.Context, id domain.NodeID) error {
 		if err == nil || a.cutoff.revoked(err) {
 			return nil
 		}
-		a.Options.log().Printf("node: register: %v (retrying)", err)
+		a.nodeLog(id).Printf("node: register: %v (retrying)", err)
 		if !a.pause(ctx, 2*time.Second) {
 			return nil
 		}
@@ -264,7 +266,7 @@ func (a Agent) register(ctx context.Context, id domain.NodeID) error {
 	if err != nil {
 		return err
 	}
-	a.Options.log().Printf("node: registered as %s (%s), node %q revision %q, axlr %q policy %v correlation %v skills %v dedicated %v runtimes %v providers %v", node.ID, node.HostName, build.Version, build.Revision, registration.Capabilities.AXLRVersion, registration.Capabilities.PolicySupported, registration.Capabilities.CorrelationSupported, registration.Capabilities.SkillsSupported, registration.Capabilities.Dedicated, append([]string{"axlr"}, registration.Capabilities.Runtimes...), registration.Capabilities.Providers)
+	a.nodeLog(id).Printf("node: registered as %s (%s), node %q revision %q, axlr %q policy %v correlation %v skills %v dedicated %v runtimes %v providers %v", node.ID, node.HostName, build.Version, build.Revision, registration.Capabilities.AXLRVersion, registration.Capabilities.PolicySupported, registration.Capabilities.CorrelationSupported, registration.Capabilities.SkillsSupported, registration.Capabilities.Dedicated, append([]string{"axlr"}, registration.Capabilities.Runtimes...), registration.Capabilities.Providers)
 	return nil
 }
 
@@ -272,7 +274,16 @@ func (a Agent) register(ctx context.Context, id domain.NodeID) error {
 // A lease the control plane refuses (the execution was cancelled, or
 // reconciled away) stops the run: its report would be dropped anyway.
 func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment application.Assignment) {
-	logger := a.Options.log()
+	subject := application.LogSubject{Node: id, Execution: assignment.ExecutionID}
+	switch {
+	case assignment.Run != nil:
+		subject.Bot, subject.Task, subject.CorrelationID = assignment.Run.BotID, assignment.Run.TaskID, assignment.Run.CorrelationID
+	case assignment.Decide != nil:
+		subject.Bot, subject.Task, subject.CorrelationID = assignment.Decide.BotID, assignment.Decide.TaskID, assignment.Decide.CorrelationID
+	}
+	a.subjects.add(assignment.ExecutionID, subject)
+	defer a.subjects.remove(assignment.ExecutionID)
+	logger := a.execLog(id, assignment.ExecutionID)
 	logger.Printf("node: execution %s (%s) assigned, lease until %s", assignment.ExecutionID, assignment.Kind, assignment.LeaseUntil.Format(time.RFC3339))
 	runCtx, stopRun := context.WithCancel(ctx)
 	defer stopRun()
@@ -337,7 +348,7 @@ func (a Agent) uploadTranscripts(id domain.NodeID, execution domain.ExecutionID,
 	if !ok || len(sessions) == 0 {
 		return
 	}
-	logger := a.Options.log()
+	logger := a.execLog(id, execution)
 	for _, session := range sessions {
 		content, err := reader.ReadSession(session)
 		if err != nil {
@@ -362,7 +373,7 @@ func (a Agent) uploadTranscripts(id domain.NodeID, execution domain.ExecutionID,
 // that cannot be read or is refused is logged and left out: the report
 // still lists it, and the control plane marks it not kept.
 func (a Agent) upload(id domain.NodeID, execution domain.ExecutionID, bot domain.BotID, artifacts []domain.Artifact) {
-	logger := a.Options.log()
+	logger := a.execLog(id, execution)
 	for _, artifact := range artifacts {
 		if !artifact.Verifiable() {
 			continue
@@ -430,7 +441,7 @@ func (a Agent) renewOnce(ctx context.Context, id domain.NodeID, execution domain
 	if a.cutoff.revoked(err) {
 		return after, true
 	}
-	logger := a.Options.log()
+	logger := a.execLog(id, execution)
 	logger.Printf("node: renew lease of %s: %v", execution, err)
 	if errors.Is(err, application.ErrLeaseLost) {
 		logger.Printf("node: execution %s: the lease is lost, stopping the run", execution)
@@ -470,7 +481,7 @@ func (a Agent) listen(ctx context.Context, id domain.NodeID) {
 			return
 		}
 	}
-	logger := a.Options.log()
+	logger := a.nodeLog(id)
 	for ctx.Err() == nil {
 		pushes, err := streamer.Stream(ctx, id)
 		if errors.Is(err, application.ErrNoStream) {
@@ -507,7 +518,7 @@ func (a Agent) say(ctx context.Context, id domain.NodeID, execution domain.Execu
 		sayCtx, cancel := context.WithTimeout(ctx, a.Options.uploadTimeout())
 		defer cancel()
 		if err := a.Transport.Said(sayCtx, id, execution, reply); err != nil {
-			a.Options.log().Printf("node: execution %s: a reply to the operator not handed over: %v", execution, err)
+			a.execLog(id, execution).Printf("node: execution %s: a reply to the operator not handed over: %v", execution, err)
 		}
 	}
 }
@@ -532,7 +543,7 @@ func (a Agent) relay(ctx context.Context, id domain.NodeID, execution domain.Exe
 	messages, err := a.Transport.ExecutionMessages(ctx, id, execution, after)
 	if err != nil || len(messages) == 0 {
 		if err != nil && ctx.Err() == nil {
-			a.Options.log().Printf("node: messages of %s: %v", execution, err)
+			a.execLog(id, execution).Printf("node: messages of %s: %v", execution, err)
 		}
 		return after
 	}
@@ -547,10 +558,10 @@ func (a Agent) relay(ctx context.Context, id domain.NodeID, execution domain.Exe
 		err = steerer.Steer(ctx, execution, texts)
 	}
 	if err != nil {
-		a.Options.log().Printf("node: execution %s: %d message(s) not handed to the run: %v", execution, len(texts), err)
+		a.execLog(id, execution).Printf("node: execution %s: %d message(s) not handed to the run: %v", execution, len(texts), err)
 		return last
 	}
-	a.Options.log().Printf("node: execution %s: %d message(s) from the operator handed to the run", execution, len(texts))
+	a.execLog(id, execution).Printf("node: execution %s: %d message(s) from the operator handed to the run", execution, len(texts))
 	return last
 }
 
@@ -559,7 +570,7 @@ func (a Agent) relay(ctx context.Context, id domain.NodeID, execution domain.Exe
 // a revoked node does not retry.
 // It uses its own context so a stopping node still reports.
 func (a Agent) report(id domain.NodeID, execution domain.ExecutionID, report application.ExecutionReport) {
-	logger := a.Options.log()
+	logger := a.execLog(id, execution)
 	for attempt := 1; attempt <= 5; attempt++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		ack, err := a.Transport.Report(ctx, id, execution, report)

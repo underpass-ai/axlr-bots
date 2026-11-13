@@ -12,7 +12,7 @@ import (
 // logFormatFlag adds --log-format to a long-running command: text (the
 // default) or json, one object per line for Loki.
 func logFormatFlag(flags *flag.FlagSet) *string {
-	return flags.String("log-format", os.Getenv("AXLR_BOTS_LOG_FORMAT"), "the log lines: text, or json for one object per line with level, component and the ids it names (also AXLR_BOTS_LOG_FORMAT; default text)")
+	return flags.String("log-format", os.Getenv("AXLR_BOTS_LOG_FORMAT"), "the log lines: text, or json for one object per line with level, component and, for a line about a task or execution, bot, node, task, execution and correlationId (also AXLR_BOTS_LOG_FORMAT; default text)")
 }
 
 // newLoggers is the command's loggers in the format; with json the

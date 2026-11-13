@@ -67,7 +67,7 @@ func (a Agent) keepCertificate(ctx context.Context, id domain.NodeID) {
 // renewCertificateIfDue renews the certificate when it is due; a
 // failure is logged and tried again at the next check.
 func (a Agent) renewCertificateIfDue(ctx context.Context, id domain.NodeID) {
-	logger := a.Options.log()
+	logger := a.nodeLog(id)
 	before := a.Certificate.NotAfter()
 	if !RenewalDue(before, a.Options.now(), a.Options.RenewBefore) {
 		return

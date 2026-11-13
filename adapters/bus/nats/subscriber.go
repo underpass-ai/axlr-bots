@@ -45,7 +45,7 @@ func (s *Subscriber) Stream(ctx context.Context, node domain.NodeID) (<-chan app
 		conn.Close()
 		return nil, err
 	}
-	logger := s.cfg.log()
+	logger := application.LogWith(s.cfg.log(), application.LogSubject{Node: node})
 	logger.Printf("bus: nats: node %s reads %s on %s", node, subject(node), conn.ConnectedUrl())
 	pushes := make(chan application.NodePush, 64)
 	go func() {

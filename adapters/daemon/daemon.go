@@ -226,10 +226,10 @@ func fireTimers(ctx context.Context, local *unixapi.Local, logger interface{ Pri
 		if !fire.Created {
 			verb = "found"
 		}
-		logger.Printf("daemon: timer %s/%s fired for %s, %s task %s", fire.BotID, fire.Trigger, fire.ScheduledAt.UTC().Format(time.RFC3339), verb, fire.TaskID)
+		application.LogWith(logger, application.LogSubject{Bot: fire.BotID, Task: fire.TaskID}).Printf("daemon: timer %s/%s fired for %s, %s task %s", fire.BotID, fire.Trigger, fire.ScheduledAt.UTC().Format(time.RFC3339), verb, fire.TaskID)
 	}
 	for _, failure := range result.Errors {
-		errorf(logger, "daemon: timer %s/%s: %v", failure.BotID, failure.Trigger, failure.Err)
+		errorf(application.LogWith(logger, application.LogSubject{Bot: failure.BotID}), "daemon: timer %s/%s: %v", failure.BotID, failure.Trigger, failure.Err)
 	}
 }
 
@@ -242,10 +242,12 @@ func expireApprovals(ctx context.Context, runner *application.SerialRunner, logg
 	done, err := runner.ExpireApprovals(ctx)
 	for _, expired := range done {
 		line := fmt.Sprintf("daemon: approval of task %s expired: %s", expired.TaskID, expired.Action)
+		subject := application.LogSubject{Bot: expired.Task.BotID(), Task: expired.TaskID, CorrelationID: expired.Task.CorrelationID()}
 		if expired.Execution != nil {
 			line += fmt.Sprintf(" (execution %s, task %s)", expired.Execution.ID(), expired.Task.Status())
+			subject.Execution, subject.Node = expired.Execution.ID(), expired.Execution.NodeID()
 		}
-		logger.Printf("%s", line)
+		application.LogWith(logger, subject).Printf("%s", line)
 	}
 	if err != nil {
 		errorf(logger, "daemon: approvals: %v", err)
@@ -266,7 +268,7 @@ func deliverLoop(ctx context.Context, deps application.Dependencies, options Opt
 			if outcome.Reason != "" {
 				line += ": " + outcome.Reason
 			}
-			logger.Printf("%s", line)
+			application.LogWith(logger, application.LogSubject{Bot: d.BotID(), Task: d.TaskID()}).Printf("%s", line)
 		}
 		if err != nil && ctx.Err() == nil {
 			errorf(logger, "daemon: notifications: %v", err)
@@ -305,7 +307,7 @@ func drain(ctx context.Context, runner *application.SerialRunner, logger interfa
 		if report := application.ReportReference(result.Execution); report != "" {
 			line += ", report " + report
 		}
-		logger.Printf("%s)", line)
+		application.LogWith(logger, application.LogSubject{Bot: result.Task.BotID(), Node: result.Execution.NodeID(), Task: result.Task.ID(), Execution: result.Execution.ID(), CorrelationID: result.Task.CorrelationID()}).Printf("%s)", line)
 	}
 }
 

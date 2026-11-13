@@ -113,6 +113,7 @@ func TestNodeUsage(t *testing.T) {
 		{nil, exitUsage, "--control"},
 		{[]string{"--control", "unix:///tmp/x.sock", "--labels", "novalue"}, exitUsage, "key=value"},
 		{[]string{"--control", "unix:///tmp/x.sock", "--state", filepath.Join(t.TempDir(), "file", "state"), "--node-id", "Bad Id"}, exitError, ""},
+		{[]string{"--control", "unix:///tmp/x.sock", "--state", t.TempDir(), "--log-format", "yaml"}, exitUsage, "log format"},
 	}
 	_ = os.WriteFile(filepath.Join(filepath.Dir(cases[4].args[5]), "file"), []byte("x"), 0o644)
 	for _, tc := range cases {

@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,6 +88,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	natsCert := flags.String("nats-cert", envOr("AXLR_NODE_NATS_CERT", ""), "with --bus nats, a client certificate in PEM for mutual TLS (also AXLR_NODE_NATS_CERT; default with a tls:// broker and an https control plane: the node's own, from enrollment)")
 	natsKey := flags.String("nats-key", envOr("AXLR_NODE_NATS_KEY", ""), "with --nats-cert, its key (also AXLR_NODE_NATS_KEY)")
 	natsCA := flags.String("nats-ca", envOr("AXLR_NODE_NATS_CA", ""), "with --bus nats, the CA the broker's certificate is checked against (also AXLR_NODE_NATS_CA; default the system's)")
+	logFormat := logFormatFlag(flags)
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exitOK
@@ -139,7 +139,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "axlr-node: state directory:", err)
 		return exitError
 	}
-	logger := log.New(stderr, "", log.LstdFlags)
+	logger, err := newLogger(stderr, *logFormat)
+	if err != nil {
+		fmt.Fprintln(stderr, "axlr-node:", err)
+		return exitUsage
+	}
 	ctx, stop := stopOnSignal(context.Background())
 	defer stop()
 	if *tokenFile != "" {

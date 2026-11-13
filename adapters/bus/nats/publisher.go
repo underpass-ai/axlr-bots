@@ -162,7 +162,7 @@ func (p *Publisher) run() {
 		for {
 			if e.olderThan(Retention, time.Now()) {
 				// The broker would not keep it now anyway.
-				logger.Printf("bus: nats: push %s to %s dropped: older than %s", e.id, e.node, Retention)
+				application.LogWith(logger, application.LogSubject{Node: e.node}).Printf("bus: nats: push %s to %s dropped: older than %s", e.id, e.node, Retention)
 				p.box.remove(e)
 				p.dequeued(e)
 				break
@@ -181,13 +181,13 @@ func (p *Publisher) run() {
 			if refused(err) {
 				refusals++
 				if refusals >= maxRefusals {
-					logger.Printf("bus: nats: push %s to %s dropped: refused %d times: %v", e.id, e.node, refusals, err)
+					application.LogWith(logger, application.LogSubject{Node: e.node}).Printf("bus: nats: push %s to %s dropped: refused %d times: %v", e.id, e.node, refusals, err)
 					p.box.remove(e)
 					p.dequeued(e)
 					break
 				}
 			}
-			logger.Printf("bus: nats: push to %s not taken: %v (retrying)", e.node, err)
+			application.LogWith(logger, application.LogSubject{Node: e.node}).Printf("bus: nats: push to %s not taken: %v (retrying)", e.node, err)
 			if conn.IsClosed() || streamSuspect(err) {
 				// A stream an operator deleted, or one that refuses the
 				// push, is defined again on the next connection.

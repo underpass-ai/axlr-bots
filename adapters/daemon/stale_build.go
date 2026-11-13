@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"errors"
-	"log"
 
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -14,7 +13,7 @@ import (
 var ErrStaleBuild = errors.New("daemon: the installed binary is a newer build than the running one")
 
 // logBuild says at start which build serves and what it cannot compare.
-func logBuild(status application.BuildStatus, logger *log.Logger) {
+func logBuild(status application.BuildStatus, logger application.LogPrinter) {
 	if status.Reason != "" {
 		logger.Printf("daemon: build %s (installed build not compared: %s)", describeBuild(status.Running), status.Reason)
 		return
