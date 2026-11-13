@@ -104,6 +104,9 @@ jobs:
           go-version-file: go.mod
           cache: true
           cache-dependency-path: go.sum
+      - name: C cross compiler for arm64
+        if: matrix.arch == 'arm64'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross
       - name: Build axlr-bots and axlr-node
         shell: bash
         env:
@@ -121,9 +124,14 @@ jobs:
           dist="$RUNNER_TEMP/dist"
           dir="axlr-bots-v$VERSION-linux-$GOARCH"
           mkdir -p "$dist/$dir"
-          for cmd in axlr-bots axlr-node; do
-            CGO_ENABLED=0 GOOS=linux go build -ldflags="$ldflags" -o "$dist/$dir/$cmd" "./cmd/$cmd"
-          done
+          # axlr-bots links SQLite through cgo (the transcripts' database,
+          # docs/architecture/transcripts.md), statically, as the image
+          # does; axlr-node stays pure Go.
+          cc=gcc
+          if [ "$GOARCH" = arm64 ]; then cc=aarch64-linux-gnu-gcc; fi
+          CGO_ENABLED=1 CC=$cc GOOS=linux go build -tags "sqlite_omit_load_extension netgo osusergo" \
+            -ldflags="$ldflags -linkmode external -extldflags -static" -o "$dist/$dir/axlr-bots" ./cmd/axlr-bots
+          CGO_ENABLED=0 GOOS=linux go build -ldflags="$ldflags" -o "$dist/$dir/axlr-node" ./cmd/axlr-node
           cp LICENSE NOTICE "$dist/$dir/"
           if [ "$GOARCH" = amd64 ]; then
             "$dist/$dir/axlr-bots" version | tee "$dist/version.txt"

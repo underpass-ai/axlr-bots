@@ -1287,6 +1287,90 @@
         }
       }
     },
+    "/v1/executions/{id}/transcripts/{session}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "execution id"
+        },
+        {
+          "name": "session",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "the runtime's session id"
+        }
+      ],
+      "get": {
+        "operationId": "getTranscript",
+        "description": "The whole transcript of one runtime session the execution ran, byte for byte as the node sent it; X-Axlr-Transcript-Sha256 is its SHA-256 (docs/architecture/transcripts.md).",
+        "responses": {
+          "200": {
+            "description": "The session, as the runtime keeps it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/transcripts": {
+      "get": {
+        "operationId": "listTranscripts",
+        "description": "The records of the transcripts kept, oldest first, after a cursor.",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "the seq of the last record read; 0 or absent: from the first"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "at most this many (default and bound 500)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TranscriptRecord"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/triggers/{bot}/{trigger}": {
       "parameters": [
         {
@@ -6117,6 +6201,49 @@
           "installed",
           "stale"
         ]
+      },
+      "TranscriptRecord": {
+        "type": "object",
+        "x-go-type": "application.TranscriptRecord",
+        "required": [
+          "seq",
+          "executionId",
+          "taskId",
+          "botId",
+          "session",
+          "size",
+          "sha256",
+          "receivedAt"
+        ],
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "description": "its place in the order transcripts came, from 1: the cursor"
+          },
+          "executionId": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "botId": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string",
+            "description": "the runtime's session id"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       }
     }
   }

@@ -16,6 +16,26 @@ ARG GO_IMAGE=golang:1.26.10-trixie@sha256:a050dcceee6eb9bf110151662dfac7662f3bec
 ARG BASE_IMAGE=gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99
 
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS build
+ARG TARGETARCH
+ARG BUILDARCH
+# The transcripts' database is SQLite through cgo
+# (adapters/sqlitestore, docs/architecture/transcripts.md): this stage
+# runs on the build platform, so for another target it installs that
+# target's C cross compiler. The binary is linked statically, so the
+# distroless static base still runs it; netgo and osusergo keep glibc's
+# resolver and user lookups out, and sqlite_omit_load_extension its
+# dlopen.
+RUN set -eu; \
+    if [ "$TARGETARCH" != "$BUILDARCH" ]; then \
+      case "$TARGETARCH" in \
+        arm64) pkgs="gcc-aarch64-linux-gnu libc6-dev-arm64-cross" ;; \
+        amd64) pkgs="gcc-x86-64-linux-gnu libc6-dev-amd64-cross" ;; \
+        *) echo "no C cross compiler for $TARGETARCH" >&2; exit 1 ;; \
+      esac; \
+      apt-get update; \
+      apt-get install -y --no-install-recommends $pkgs; \
+      rm -rf /var/lib/apt/lists/*; \
+    fi
 WORKDIR /src
 COPY go.mod go.sum ./
 COPY adapters ./adapters
@@ -26,7 +46,6 @@ COPY domain ./domain
 COPY internal ./internal
 COPY nodeproto ./nodeproto
 ARG TARGETOS=linux
-ARG TARGETARCH
 # GOFLAGS=-p=2 on a small builder.
 ARG GOFLAGS=""
 ARG VERSION=""
@@ -36,10 +55,14 @@ ARG BUILD_TIME=""
 # read the stamp back from the binary on disk (internal/buildinfo).
 RUN --mount=type=cache,target=/root/.cache/go-build \
     set -eu; \
+    cc=gcc; \
+    if [ "$TARGETARCH" != "$BUILDARCH" ]; then \
+      case "$TARGETARCH" in arm64) cc=aarch64-linux-gnu-gcc ;; amd64) cc=x86_64-linux-gnu-gcc ;; esac; \
+    fi; \
     pkg=github.com/underpass-ai/axlr-bots/internal/buildinfo; \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH GOFLAGS=$GOFLAGS \
-    go build \
-      -ldflags="-s -w -X $pkg.Version=$VERSION -X $pkg.Revision=$REVISION -X $pkg.Time=$BUILD_TIME" \
+    CGO_ENABLED=1 CC=$cc GOOS=$TARGETOS GOARCH=$TARGETARCH GOFLAGS=$GOFLAGS \
+    go build -tags "sqlite_omit_load_extension netgo osusergo" \
+      -ldflags="-s -w -linkmode external -extldflags -static -X $pkg.Version=$VERSION -X $pkg.Revision=$REVISION -X $pkg.Time=$BUILD_TIME" \
       -o /out/axlr-bots ./cmd/axlr-bots
 
 # AXLR's release archive for the target, checked against the sha256 its

@@ -9,6 +9,8 @@ package nodeagent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -348,6 +350,9 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	// What the run did last goes before the report, which ends the
 	// execution: the control plane takes no progress after it.
 	progress.finish()
+	// The whole transcript goes up before the report, on every end: the
+	// control plane takes it only while the execution runs.
+	a.uploadTranscripts(id, assignment.ExecutionID, report.Result.Sessions)
 	if err != nil {
 		stopRun()
 		report = application.ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "node " + id.String() + ": " + err.Error(), Policy: report.Policy, Correlation: report.Correlation, ContextRead: reads}
@@ -360,6 +365,34 @@ func (a Agent) carry(ctx context.Context, id domain.NodeID, assignment applicati
 	stopRun()
 	report.ContextRead = reads
 	a.report(id, assignment.ExecutionID, report)
+}
+
+// uploadTranscripts hands over the whole transcript of each session the
+// execution ran, read from the runtime, with its SHA-256. One that cannot
+// be read or is refused is logged and left out: the run's report stands.
+func (a Agent) uploadTranscripts(id domain.NodeID, execution domain.ExecutionID, sessions []string) {
+	reader, ok := a.Executor.(SessionReader)
+	if !ok || len(sessions) == 0 {
+		return
+	}
+	logger := a.Options.log()
+	for _, session := range sessions {
+		content, err := reader.ReadSession(session)
+		if err != nil {
+			logger.Printf("node: execution %s: transcript %s not read: %v", execution, session, err)
+			continue
+		}
+		sum := sha256.Sum256(content)
+		upload := application.TranscriptUpload{Session: session, Content: content, SHA256: hex.EncodeToString(sum[:])}
+		ctx, cancel := context.WithTimeout(context.Background(), a.Options.uploadTimeout())
+		err = a.Transport.UploadTranscript(ctx, id, execution, upload)
+		cancel()
+		if err != nil {
+			logger.Printf("node: execution %s: transcript %s not uploaded: %v", execution, session, err)
+			continue
+		}
+		logger.Printf("node: execution %s: transcript %s uploaded (%d bytes)", execution, session, len(content))
+	}
 }
 
 // upload hands over the bytes of each artifact the execution delivered
