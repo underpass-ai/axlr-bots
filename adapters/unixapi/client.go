@@ -275,9 +275,6 @@ func (c *Client) FireTrigger(ctx context.Context, request FireRequest) (FireResp
 	if request.DeliveryID != "" {
 		headers.Set(IdempotencyKeyHeader, request.DeliveryID)
 	}
-	if request.MessageType != "" {
-		headers.Set(SNSMessageTypeHeader, request.MessageType)
-	}
 	return response, c.callWith(ctx, http.MethodPost, "/v1/triggers/"+url.PathEscape(request.BotID)+"/"+url.PathEscape(request.Trigger), headers, request.Body, &response)
 }
 
@@ -304,103 +301,6 @@ func (c *Client) RunTask(ctx context.Context, id string) (RunResponse, error) {
 func (c *Client) DecideTask(ctx context.Context, id string, request DecideRequest) (RunResponse, error) {
 	var response RunResponse
 	return response, c.call(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/decide", request, &response)
-}
-
-func (c *Client) OpenIncident(ctx context.Context, command application.OpenIncidentCommand) (OpenIncidentResponse, error) {
-	var response OpenIncidentResponse
-	return response, c.call(ctx, http.MethodPost, "/v1/incidents", command, &response)
-}
-
-// ListIncidents asks for the incidents the query selects, last seen first.
-func (c *Client) ListIncidents(ctx context.Context, query application.IncidentQuery) ([]IncidentResponse, error) {
-	incidents := []IncidentResponse{}
-	values := url.Values{}
-	if query.Tenant != "" {
-		values.Set("tenant", query.Tenant)
-	}
-	if query.Status != "" {
-		values.Set("status", query.Status)
-	}
-	if query.Limit != 0 {
-		values.Set("limit", strconv.Itoa(query.Limit))
-	}
-	path := "/v1/incidents"
-	if len(values) > 0 {
-		path += "?" + values.Encode()
-	}
-	return incidents, c.call(ctx, http.MethodGet, path, nil, &incidents)
-}
-
-func (c *Client) GetIncident(ctx context.Context, id string) (IncidentResponse, error) {
-	var incident IncidentResponse
-	return incident, c.call(ctx, http.MethodGet, "/v1/incidents/"+url.PathEscape(id), nil, &incident)
-}
-
-func (c *Client) ResolveIncident(ctx context.Context, id string, request ResolveRequest) (domain.IncidentSnapshot, error) {
-	var incident domain.IncidentSnapshot
-	return incident, c.call(ctx, http.MethodPost, "/v1/incidents/"+url.PathEscape(id)+"/resolve", request, &incident)
-}
-
-func (c *Client) MarkDiagnosis(ctx context.Context, id string, request DiagnosisRequest) (AutonomyResponse, error) {
-	var response AutonomyResponse
-	return response, c.call(ctx, http.MethodPost, "/v1/incidents/"+url.PathEscape(id)+"/diagnosis", request, &response)
-}
-
-func (c *Client) ListAutonomy(ctx context.Context, query application.AutonomyQuery) ([]AutonomyResponse, error) {
-	list := []AutonomyResponse{}
-	values := url.Values{}
-	for key, value := range map[string]string{"tenant": query.Tenant, "bot": query.Bot, "runbook": query.Runbook, "namespace": query.Namespace} {
-		if value != "" {
-			values.Set(key, value)
-		}
-	}
-	path := "/v1/autonomy"
-	if encoded := values.Encode(); encoded != "" {
-		path += "?" + encoded
-	}
-	return list, c.call(ctx, http.MethodGet, path, nil, &list)
-}
-
-func (c *Client) GetAutonomy(ctx context.Context, id string) (AutonomyResponse, error) {
-	var response AutonomyResponse
-	return response, c.call(ctx, http.MethodGet, "/v1/autonomy/"+url.PathEscape(id), nil, &response)
-}
-
-func (c *Client) ClearAutonomy(ctx context.Context, id string, request ClearRequest) (AutonomyResponse, error) {
-	var response AutonomyResponse
-	return response, c.call(ctx, http.MethodPost, "/v1/autonomy/"+url.PathEscape(id)+"/clear", request, &response)
-}
-
-func (c *Client) LowerAutonomy(ctx context.Context, id string, request LowerRequest) (AutonomyResponse, error) {
-	var response AutonomyResponse
-	return response, c.call(ctx, http.MethodPost, "/v1/autonomy/"+url.PathEscape(id)+"/lower", request, &response)
-}
-
-// ApprovePostmortem approves an incident's postmortem.
-func (c *Client) ApprovePostmortem(ctx context.Context, id string, request PostmortemReviewRequest) (domain.IncidentSnapshot, error) {
-	var incident domain.IncidentSnapshot
-	return incident, c.call(ctx, http.MethodPost, "/v1/incidents/"+url.PathEscape(id)+"/postmortem/approve", request, &incident)
-}
-
-// SendBackPostmortem sends an incident's postmortem back with a note.
-func (c *Client) SendBackPostmortem(ctx context.Context, id string, request PostmortemReviewRequest) (domain.IncidentSnapshot, error) {
-	var incident domain.IncidentSnapshot
-	return incident, c.call(ctx, http.MethodPost, "/v1/incidents/"+url.PathEscape(id)+"/postmortem/send-back", request, &incident)
-}
-
-func (c *Client) AddOutput(ctx context.Context, definition application.OutputDefinition) (application.OutputView, error) {
-	var view application.OutputView
-	return view, c.call(ctx, http.MethodPost, "/v1/outputs", definition, &view)
-}
-
-func (c *Client) ListOutputs(ctx context.Context) ([]application.OutputView, error) {
-	outputs := []application.OutputView{}
-	return outputs, c.call(ctx, http.MethodGet, "/v1/outputs", nil, &outputs)
-}
-
-func (c *Client) RemoveOutput(ctx context.Context, name string) (application.OutputView, error) {
-	var view application.OutputView
-	return view, c.call(ctx, http.MethodDelete, "/v1/outputs/"+url.PathEscape(name), nil, &view)
 }
 
 func (c *Client) GetTask(ctx context.Context, id string) (domain.TaskSnapshot, error) {

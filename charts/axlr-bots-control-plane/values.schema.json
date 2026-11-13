@@ -10,7 +10,6 @@
     "imagePullSecrets": {"type": "array"},
     "serverNames": {"type": "array", "items": {"type": "string", "minLength": 1}},
     "apiURL": {"type": "string"},
-    "panelURL": {"type": "string"},
     "minAXLRVersion": {"type": "string", "pattern": "^([0-9]+\\.[0-9]+\\.[0-9]+)?$"},
     "env": {"type": "object", "properties": {
       "existingSecret": {"type": "string"},

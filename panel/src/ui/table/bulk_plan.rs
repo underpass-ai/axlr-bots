@@ -1,6 +1,6 @@
 use super::{List, Selection};
 use crate::application::{BulkAction, BulkTarget};
-use crate::domain::{Bot, BotId, Incident, Node, NodeId, Task, TaskId, TaskStatus, Team};
+use crate::domain::{Bot, BotId, Node, NodeId, Task, TaskId, TaskStatus, Team};
 
 /// A bulk act weighed on the picked rows: the rows it fits, which get
 /// one call each, and how many were weighed. Its button and its dialog
@@ -95,22 +95,6 @@ impl BulkPlan {
         }
     }
 
-    pub fn for_incidents(action: BulkAction, picked: &Selection<String>, incidents: &[Incident]) -> Self {
-        let rows: Vec<&Incident> = incidents.iter().filter(|i| picked.contains(&i.id)).collect();
-        let targets = rows
-            .iter()
-            .filter(|i| action == BulkAction::Resolve && i.status.can_resolve())
-            .map(|i| BulkTarget::Incident(i.id.clone()))
-            .collect();
-        Self {
-            action,
-            unit: List::Incidents,
-            targets,
-            weighed: rows.len(),
-            teams: Vec::new(),
-        }
-    }
-
     /// There is a row to act on.
     pub fn ready(&self) -> bool {
         !self.targets.is_empty()
@@ -185,7 +169,7 @@ mod tests {
     use super::*;
     use crate::application::ControlPlane;
     use crate::application::test_support::{fleet, run};
-    use crate::domain::{BotStatus, IncidentStatus, NodeStatus, TaskFilter};
+    use crate::domain::{BotStatus, NodeStatus, TaskFilter};
 
     fn bots() -> Vec<Bot> {
         let (cp, _) = fleet();
@@ -268,7 +252,7 @@ mod tests {
     }
 
     #[test]
-    fn revokes_nodes_not_revoked_and_resolves_open_incidents() {
+    fn revokes_nodes_not_revoked() {
         let (cp, _) = fleet();
         let mut nodes = run(cp.list_nodes()).unwrap();
         nodes[0].status = NodeStatus::Revoked;
@@ -279,14 +263,6 @@ mod tests {
             (revoke.button().as_str(), revoke.title().as_str()),
             ("Revoke 1 of 2", "Revoke 1 node?")
         );
-        let mut incidents = run(cp.list_incidents(None, None, 50)).unwrap();
-        incidents[0].status = IncidentStatus::Resolved;
-        let mut picked = Selection::default();
-        picked.set_all(incidents.iter().map(|i| i.id.clone()), true);
-        let resolve = BulkPlan::for_incidents(BulkAction::Resolve, &picked, &incidents);
-        assert!(resolve.ready());
-        assert!(resolve.targets.len() < incidents.len());
-        assert!(!BulkPlan::for_incidents(BulkAction::Pause, &picked, &incidents).ready());
         assert!(!BulkPlan::for_nodes(BulkAction::Pause, &picked_nodes(&nodes), &nodes).ready());
     }
 

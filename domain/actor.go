@@ -33,8 +33,8 @@ const CLIActorPrefix = "cli:"
 // one.
 const PolicyActorPrefix = "policy:"
 
-// TriggerActorPrefix starts the names a trigger acts under in an
-// incident's events (trigger:alerts): no person may claim one.
+// TriggerActorPrefix starts the names a trigger acts under: no person
+// may claim one.
 const TriggerActorPrefix = "trigger:"
 
 // IsPolicyActor reports a name a policy decides under, however it is

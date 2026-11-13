@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 use futures::StreamExt;
 
-use super::{
-    BulkAction, BulkOutcome, BulkTarget, CancelTask, ControlPlane, DecideTask, DeleteBot, PanelError, ResolveIncident,
-};
+use super::{BulkAction, BulkOutcome, BulkTarget, CancelTask, ControlPlane, DecideTask, DeleteBot, PanelError};
 use super::{RevokeNode, StopBot, SwitchBot};
 use crate::domain::Decision;
 
@@ -51,7 +49,6 @@ impl ApplyInBulk {
             }
             (BulkAction::Cancel, BulkTarget::Task { id, .. }) => CancelTask::new(cp).execute(id).await.map(drop),
             (BulkAction::Revoke, BulkTarget::Node(id)) => RevokeNode::new(cp).execute(id).await.map(drop),
-            (BulkAction::Resolve, BulkTarget::Incident(id)) => ResolveIncident::new(cp).execute(id, "").await.map(drop),
             (action, target) => Err(PanelError::Invalid(format!(
                 "{} does not apply to {}",
                 action.label(),
@@ -98,7 +95,7 @@ mod tests {
     }
 
     #[test]
-    fn decides_stops_revokes_and_resolves() {
+    fn decides_stops_and_revokes() {
         let (cp, _) = fleet();
         let tasks = run(cp.list_tasks(crate::domain::TaskFilter::with_limit(50))).unwrap();
         let waiting = tasks
@@ -142,8 +139,6 @@ mod tests {
             vec![BulkTarget::Node(NodeId::new("wrx80").unwrap())],
         ));
         assert_eq!(revoked.title(), "1 revoked");
-        let resolved = run(uc.execute(BulkAction::Resolve, vec![BulkTarget::Incident("inc-latency".into())]));
-        assert_eq!(resolved.title(), "1 resolved");
     }
 
     #[test]

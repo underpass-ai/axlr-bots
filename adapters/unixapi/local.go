@@ -176,7 +176,7 @@ func (l *Local) DeleteBot(ctx context.Context, id string) (DeleteResponse, error
 	}
 	return DeleteResponse{
 		Bot: result.Bot.Snapshot().Redacted(), Cancelled: taskIDs(result.Cancelled), ChildrenCancelled: taskIDs(result.ChildrenCancelled),
-		IncidentsResolved: incidentIDs(result.IncidentsResolved), TimersRemoved: result.TimersRemoved,
+		TimersRemoved:        result.TimersRemoved,
 		NotificationsDropped: result.NotificationsDropped, NamedBy: result.NamedBy,
 	}, nil
 }
@@ -190,14 +190,6 @@ func (l *Local) TickTimers(ctx context.Context) (application.TickTimersResult, e
 }
 
 func taskIDs(ids []domain.TaskID) []string {
-	out := make([]string, 0, len(ids))
-	for _, id := range ids {
-		out = append(out, id.String())
-	}
-	return out
-}
-
-func incidentIDs(ids []domain.IncidentID) []string {
 	out := make([]string, 0, len(ids))
 	for _, id := range ids {
 		out = append(out, id.String())
@@ -281,19 +273,15 @@ func (l *Local) FireTrigger(ctx context.Context, request FireRequest) (FireRespo
 	l.submits.Lock()
 	defer l.submits.Unlock()
 	result, err := l.runner.FireTrigger(ctx, application.FireTriggerCommand{
-		BotID: request.BotID, TriggerName: request.Trigger, DeliveryID: request.DeliveryID, Body: request.Body, MessageType: request.MessageType,
+		BotID: request.BotID, TriggerName: request.Trigger, DeliveryID: request.DeliveryID, Body: request.Body,
 	})
 	if err != nil {
 		return FireResponse{}, err
 	}
-	response := FireResponse{Created: result.Created, Trigger: result.Trigger, IdempotencyKey: result.IdempotencyKey.String(), Action: result.Action}
+	response := FireResponse{Created: result.Created, Trigger: result.Trigger, IdempotencyKey: result.IdempotencyKey.String()}
 	if result.Task != nil {
 		task := result.Task.Snapshot()
 		response.Task = &task
-	}
-	if result.Incident != nil {
-		incident := result.Incident.Snapshot()
-		response.Incident = &incident
 	}
 	return response, nil
 }
@@ -426,177 +414,6 @@ func (l *Local) ListTaskEvents(ctx context.Context, query application.TaskEvents
 // GetOverview answers the counts of the operator's dashboard.
 func (l *Local) GetOverview(ctx context.Context, since time.Time) (application.Overview, error) {
 	return application.NewGetOverview(l.deps).Execute(ctx, since)
-}
-
-// OpenIncident holds the submissions lock, then the runner's: the
-// lookup by group key and the save are a read then a write, and two
-// deliveries of one alert must make one incident.
-func (l *Local) OpenIncident(ctx context.Context, command application.OpenIncidentCommand) (OpenIncidentResponse, error) {
-	l.submits.Lock()
-	defer l.submits.Unlock()
-	result, err := l.runner.OpenIncident(ctx, command)
-	if err != nil {
-		return OpenIncidentResponse{}, err
-	}
-	response := OpenIncidentResponse{Incident: result.Incident.Snapshot(), Created: result.Created, Reopened: result.Reopened}
-	if result.Task != nil {
-		task := result.Task.Snapshot()
-		response.Task = &task
-	}
-	return response, nil
-}
-
-func (l *Local) ListIncidents(ctx context.Context, query application.IncidentQuery) ([]IncidentResponse, error) {
-	reports, err := application.NewListIncidents(l.deps).Execute(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	incidents := make([]IncidentResponse, 0, len(reports))
-	for _, report := range reports {
-		incidents = append(incidents, newIncidentResponse(report))
-	}
-	return incidents, nil
-}
-
-func (l *Local) GetIncident(ctx context.Context, id string) (IncidentResponse, error) {
-	incidentID, err := domain.NewIncidentID(id)
-	if err != nil {
-		return IncidentResponse{}, err
-	}
-	report, err := application.NewGetIncident(l.deps).Execute(ctx, incidentID)
-	if err != nil {
-		return IncidentResponse{}, err
-	}
-	return newIncidentResponse(report), nil
-}
-
-func (l *Local) ResolveIncident(ctx context.Context, id string, request ResolveRequest) (domain.IncidentSnapshot, error) {
-	incidentID, err := domain.NewIncidentID(id)
-	if err != nil {
-		return domain.IncidentSnapshot{}, err
-	}
-	incident, err := l.runner.ResolveIncident(ctx, incidentID, request.Reason)
-	if err != nil {
-		return domain.IncidentSnapshot{}, err
-	}
-	return incident.Snapshot(), nil
-}
-
-func (l *Local) MarkDiagnosis(ctx context.Context, id string, request DiagnosisRequest) (AutonomyResponse, error) {
-	incidentID, err := domain.NewIncidentID(id)
-	if err != nil {
-		return AutonomyResponse{}, err
-	}
-	view, err := l.runner.MarkDiagnosis(ctx, incidentID, request.Verdict, request.MarkedBy)
-	if err != nil {
-		return AutonomyResponse{}, err
-	}
-	return newAutonomyResponse(view), nil
-}
-
-func (l *Local) ListAutonomy(ctx context.Context, query application.AutonomyQuery) ([]AutonomyResponse, error) {
-	views, err := application.NewListAutonomy(l.deps).Execute(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]AutonomyResponse, 0, len(views))
-	for _, view := range views {
-		out = append(out, newAutonomyResponse(view))
-	}
-	return out, nil
-}
-
-func (l *Local) GetAutonomy(ctx context.Context, id string) (AutonomyResponse, error) {
-	autonomyID, err := domain.NewAutonomyID(id)
-	if err != nil {
-		return AutonomyResponse{}, err
-	}
-	view, err := application.NewGetAutonomy(l.deps).Execute(ctx, autonomyID)
-	if err != nil {
-		return AutonomyResponse{}, err
-	}
-	return newAutonomyResponse(view), nil
-}
-
-func (l *Local) ClearAutonomy(ctx context.Context, id string, request ClearRequest) (AutonomyResponse, error) {
-	autonomyID, err := domain.NewAutonomyID(id)
-	if err != nil {
-		return AutonomyResponse{}, err
-	}
-	view, err := l.runner.ClearAutonomy(ctx, autonomyID, request.ClearedBy, request.Reason)
-	if err != nil {
-		return AutonomyResponse{}, err
-	}
-	return newAutonomyResponse(view), nil
-}
-
-func (l *Local) LowerAutonomy(ctx context.Context, id string, request LowerRequest) (AutonomyResponse, error) {
-	autonomyID, err := domain.NewAutonomyID(id)
-	if err != nil {
-		return AutonomyResponse{}, err
-	}
-	view, err := l.runner.LowerAutonomy(ctx, autonomyID, request.LoweredBy, request.Reason)
-	if err != nil {
-		return AutonomyResponse{}, err
-	}
-	return newAutonomyResponse(view), nil
-}
-
-// readTask validates the task a reviewer says they read; empty is none.
-func readTask(raw string) (domain.TaskID, error) {
-	if raw == "" {
-		return "", nil
-	}
-	return domain.NewTaskID(raw)
-}
-
-// ApprovePostmortem approves an incident's postmortem.
-func (l *Local) ApprovePostmortem(ctx context.Context, id string, request PostmortemReviewRequest) (domain.IncidentSnapshot, error) {
-	incidentID, err := domain.NewIncidentID(id)
-	if err != nil {
-		return domain.IncidentSnapshot{}, err
-	}
-	read, err := readTask(request.AuthorTaskID)
-	if err != nil {
-		return domain.IncidentSnapshot{}, err
-	}
-	incident, err := l.runner.ApprovePostmortem(ctx, incidentID, request.DecidedBy, read)
-	if err != nil {
-		return domain.IncidentSnapshot{}, err
-	}
-	return incident.Snapshot(), nil
-}
-
-// SendBackPostmortem holds the submissions lock, then the runner's: a
-// send-back may submit the rewrite's task.
-func (l *Local) SendBackPostmortem(ctx context.Context, id string, request PostmortemReviewRequest) (domain.IncidentSnapshot, error) {
-	incidentID, err := domain.NewIncidentID(id)
-	if err != nil {
-		return domain.IncidentSnapshot{}, err
-	}
-	read, err := readTask(request.AuthorTaskID)
-	if err != nil {
-		return domain.IncidentSnapshot{}, err
-	}
-	l.submits.Lock()
-	defer l.submits.Unlock()
-	incident, err := l.runner.SendBackPostmortem(ctx, incidentID, request.DecidedBy, request.Note, read)
-	if err != nil {
-		return domain.IncidentSnapshot{}, err
-	}
-	return incident.Snapshot(), nil
-}
-
-func (l *Local) AddOutput(ctx context.Context, definition application.OutputDefinition) (application.OutputView, error) {
-	return application.NewAddOutput(l.deps).Execute(ctx, definition)
-}
-
-func (l *Local) ListOutputs(ctx context.Context) ([]application.OutputView, error) {
-	return application.NewListOutputs(l.deps).Execute(ctx)
-}
-
-func (l *Local) RemoveOutput(ctx context.Context, name string) (application.OutputView, error) {
-	return application.NewRemoveOutput(l.deps).Execute(ctx, name)
 }
 
 func (l *Local) GetReport(ctx context.Context, id string) (ReportResponse, error) {

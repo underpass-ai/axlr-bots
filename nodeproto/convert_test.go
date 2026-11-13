@@ -18,7 +18,7 @@ func TestAssignmentRoundTrip(t *testing.T) {
 	budgets, _ := domain.NewBudgets(1, 2, 0, time.Minute)
 	run := application.Assignment{ExecutionID: "exec-1", Kind: domain.ExecutionRun, LeaseUntil: time.Date(2026, 10, 24, 1, 0, 0, 0, time.UTC), Run: &application.ExecutionRequest{
 		ExecutionID: "exec-1", TaskID: "task-1", BotID: "bot", TenantID: "t", CorrelationID: "c", Objective: "list the files", Model: "m",
-		Level: domain.AutonomyActWithApproval, AllowedTools: tools.Names(), ToolRules: rules, Unattended: true, Budgets: budgets, Timeout: 90 * time.Second,
+		Level: domain.AutonomyActWithApproval, AllowedTools: tools.Names(), ToolRules: rules, Budgets: budgets, Timeout: 90 * time.Second,
 	}}
 	raw, _ := json.Marshal(FromAssignment(run))
 	var m AssignmentMessage
@@ -29,7 +29,7 @@ func TestAssignmentRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if back.ExecutionID != "exec-1" || back.Kind != domain.ExecutionRun || back.Run == nil || back.Run.Objective != "list the files" || back.Run.Level != domain.AutonomyActWithApproval || back.Run.Timeout != 90*time.Second || !back.Run.ToolRules.Constrains("local_write") || back.Run.CorrelationID != "c" || !back.Run.Unattended || !back.LeaseUntil.Equal(run.LeaseUntil) {
+	if back.ExecutionID != "exec-1" || back.Kind != domain.ExecutionRun || back.Run == nil || back.Run.Objective != "list the files" || back.Run.Level != domain.AutonomyActWithApproval || back.Run.Timeout != 90*time.Second || !back.Run.ToolRules.Constrains("local_write") || back.Run.CorrelationID != "c" || !back.LeaseUntil.Equal(run.LeaseUntil) {
 		t.Errorf("run = %+v", back.Run)
 	}
 	decide := application.Assignment{ExecutionID: "exec-2", Kind: domain.ExecutionDecide, Decide: &application.DecisionRequest{

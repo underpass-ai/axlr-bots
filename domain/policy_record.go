@@ -1,8 +1,7 @@
 package domain
 
 // PolicyRecord says under which policy an execution ran: the autonomy
-// level (the bot's, or the one its incident phase narrowed it to), the
-// tool allow-list it was given, the level the runtime was asked for (the control plane
+// level (the bot's), the tool allow-list it was given, the level the runtime was asked for (the control plane
 // translates when the runtime's levels differ), whether the runtime
 // enforced the policy or the control plane only recorded it, the
 // policy file handed to the runtime, kept as evidence, and the MCP

@@ -22,9 +22,6 @@ pub struct Event {
     pub group_name: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub task_id: String,
-    /// The incident an event about an incident names (incident.*).
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub incident_id: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub execution_id: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -77,7 +74,6 @@ impl Event {
             "bot.task.progress" => "Working".into(),
             "bot.task.expired" => "Expired".into(),
             "bot.approval.expired" => "Approval expired".into(),
-            "bot.approval.first" => "First approval".into(),
             "bot.event.emitted" => match self.payload_text("severity").as_deref() {
                 Some("critical") => "Alarm to the team".into(),
                 Some("warning") => "Warning to the team".into(),
@@ -102,20 +98,6 @@ impl Event {
             "bot.question.answered" if TeamQuestion::of(self).is_some_and(|q| q.unanswered()) => "No answer".into(),
             "bot.question.answered" => "Question answered".into(),
             "bot.question.refused" => "Question refused".into(),
-            "incident.opened" => "Incident opened".into(),
-            "incident.repeated" => "Alert again".into(),
-            "incident.reopened" if self.payload_text("from").is_some() => "Sent back to Open".into(),
-            "incident.reopened" => "Incident reopened".into(),
-            "incident.diagnosed" => "Cause found".into(),
-            "incident.proposed" => "Fix proposed".into(),
-            "incident.applying" => "Applying the fix".into(),
-            "incident.verifying" => "Fix applied".into(),
-            "incident.escalated" => "Needs a person".into(),
-            "incident.resolved" => "Incident resolved".into(),
-            "incident.postmortem_drafted" => "Postmortem drafted".into(),
-            "incident.postmortem_failed" => "Postmortem not written".into(),
-            "incident.postmortem_sent_back" => "Postmortem sent back".into(),
-            "incident.postmortem_approved" => "Postmortem approved".into(),
             "execution.assigned" => "Sent to node".into(),
             "execution.reported" => "Node reported".into(),
             "node.registered" => "Node joined".into(),
@@ -138,45 +120,30 @@ impl Event {
 
     pub fn tone(&self) -> EventTone {
         match self.event_type.as_str() {
-            "bot.task.completed"
-            | "bot.enabled"
-            | "bot.staged.applied"
-            | "node.registered"
-            | "node.enrolled"
-            | "node.renewed"
-            | "incident.diagnosed"
-            | "incident.resolved"
-            | "incident.postmortem_approved" => EventTone::Good,
+            "bot.task.completed" | "bot.enabled" | "bot.staged.applied" | "node.registered" | "node.enrolled"
+            | "node.renewed" => EventTone::Good,
             "bot.task.failed"
             | "node.offline"
             | "node.revoked"
             | "bot.task.cancelled"
             | "bot.event.refused"
             | "bot.delegation.refused"
-            | "bot.question.refused"
-            | "incident.postmortem_failed" => EventTone::Bad,
+            | "bot.question.refused" => EventTone::Bad,
             "bot.question.answered" if TeamQuestion::of(self).is_some_and(|q| q.unanswered()) => EventTone::Waiting,
             "bot.question.answered" => EventTone::Good,
-            "bot.task.preempted"
-            | "incident.opened"
-            | "incident.reopened"
-            | "incident.proposed"
-            | "incident.escalated"
-            | "incident.postmortem_drafted"
-            | "incident.postmortem_sent_back" => EventTone::Waiting,
+            "bot.task.preempted" => EventTone::Waiting,
             "bot.event.emitted" | "group.event.published" => match self.payload_text("severity").as_deref() {
                 Some("warning") | Some("critical") => EventTone::Waiting,
                 _ => EventTone::Neutral,
             },
             "bot.event.heard" if self.payload_text("degraded").is_some() => EventTone::Waiting,
             "bot.subscription.asked" | "bot.staged" => EventTone::Waiting,
-            "bot.task.waiting_approval"
-            | "bot.paused"
-            | "bot.task.expired"
-            | "bot.approval.expired"
-            | "bot.approval.first" => EventTone::Waiting,
-            "bot.task.started" | "bot.task.progress" | "execution.assigned" | "execution.reported"
-            | "incident.applying" | "incident.verifying" => EventTone::Working,
+            "bot.task.waiting_approval" | "bot.paused" | "bot.task.expired" | "bot.approval.expired" => {
+                EventTone::Waiting
+            }
+            "bot.task.started" | "bot.task.progress" | "execution.assigned" | "execution.reported" => {
+                EventTone::Working
+            }
             "bot.task.decided" => match self.payload_text("decision").as_deref() {
                 Some("deny") => EventTone::Bad,
                 _ => EventTone::Good,
@@ -332,10 +299,6 @@ impl Event {
                     None => format!("now at {version}"),
                 };
             }
-            "bot.approval.first" => {
-                let by = self.payload_text("approvedBy").unwrap_or_default();
-                return format!("by {by}; a second, different person decides");
-            }
             "bot.subscription.asked" => {
                 let topic = self.payload_text("topic").unwrap_or_default();
                 let why = self.payload_text("why").unwrap_or_default();
@@ -437,8 +400,8 @@ mod tests {
             "dev: Who? · to dev-a"
         );
         assert_eq!(
-            event("bot.question.refused", r#"{"team":"sre","reason":"not_allowed"}"#).detail(),
-            "sre: not_allowed"
+            event("bot.question.refused", r#"{"team":"ops","reason":"not_allowed"}"#).detail(),
+            "ops: not_allowed"
         );
         assert_eq!(
             event("bot.task.message", r#"{"from":"question:task-9"}"#).label(),
@@ -526,10 +489,6 @@ mod tests {
         assert_eq!(event("bot.task.expired", "{}").label(), "Expired");
         assert_eq!(event("bot.task.expired", "{}").tone(), EventTone::Waiting);
         assert_eq!(event("bot.approval.expired", "{}").label(), "Approval expired");
-        let first = event("bot.approval.first", r#"{"approvedBy":"tirso","approvalsNeeded":2}"#);
-        assert_eq!(first.label(), "First approval");
-        assert_eq!(first.tone(), EventTone::Waiting);
-        assert_eq!(first.detail(), "by tirso; a second, different person decides");
         assert_eq!(
             event("bot.task.waiting_approval", r#"{"tool":"local_write"}"#).tone(),
             EventTone::Waiting
@@ -542,9 +501,6 @@ mod tests {
         assert_eq!(denied.label(), "Denied");
         assert_eq!(denied.tone(), EventTone::Bad);
         assert_eq!(event("bot.task.decided", "{}").label(), "Decided");
-        assert_eq!(event("incident.escalated", "{}").label(), "Needs a person");
-        assert_eq!(event("incident.escalated", "{}").tone(), EventTone::Waiting);
-        assert_eq!(event("incident.resolved", "{}").tone(), EventTone::Good);
         assert_eq!(event("something.new", "{}").label(), "something.new");
         assert_eq!(event("something.new", "{}").tone(), EventTone::Neutral);
         assert_eq!(
@@ -563,13 +519,6 @@ mod tests {
             ""
         );
         assert_eq!(event("bot.task.started", "{}").tone(), EventTone::Working);
-        assert_eq!(event("incident.applying", "{}").tone(), EventTone::Working);
-        assert_eq!(event("incident.verifying", "{}").label(), "Fix applied");
-        assert_eq!(
-            event("incident.reopened", r#"{"from":"Proposed"}"#).label(),
-            "Sent back to Open"
-        );
-        assert_eq!(event("incident.reopened", "{}").label(), "Incident reopened");
         assert_eq!(event("bot.task.started", "{}").detail(), "");
         for kind in [
             "bot.registered",

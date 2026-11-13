@@ -28,8 +28,7 @@
   },
   "triggers": [
     {"type": "manual"},
-    {"type": "delegation"},
-    {"type": "incident", "objective": "Incident {{.title}} (severity {{.severity}}, cycle {{.cycle}}) on PostgreSQL: find the cause with evidence and report the exact statement that fixes it."}
+    {"type": "delegation"}
   ],
   "groups": ["data"],
   "events": {"emit": [{"name": "warn.postgres.*"}, {"name": "info.postgres.*"}], "perMinute": 6},

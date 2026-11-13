@@ -8,19 +8,16 @@ import (
 )
 
 // A run a cancel stopped on its node reports after: the report is not
-// accepted, but what the run consumed is kept on the cancelled execution
-// and added to the task's incident. Before, the run counted as $0.
+// accepted, but what the run consumed is kept on the cancelled execution.
+// Before, the run counted as $0.
 func TestALateReportKeepsTheCostOfACancelledNodeRun(t *testing.T) {
 	h := newHarness()
 	ctx := context.Background()
-	bot := triageBot(t, h, "triage", "")
+	bot := enabledBot(t, h)
 	node := onlineNode(t, h, "web-1")
-	opened, err := NewOpenIncident(h.deps).Execute(ctx, alert(bot, "fp-a"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	task := submit(t, h, bot, "k-late").Task
 	assignment := nextFor(t, h, node.ID())
-	cancelled, err := NewCancelTask(h.deps).Execute(ctx, opened.Task.ID())
+	cancelled, err := NewCancelTask(h.deps).Execute(ctx, task.ID())
 	if err != nil || cancelled.Execution == nil || !cancelled.Execution.Usage().CostUnknown {
 		t.Fatalf("cancel = %+v %v", cancelled.Execution, err)
 	}
@@ -37,9 +34,6 @@ func TestALateReportKeepsTheCostOfACancelledNodeRun(t *testing.T) {
 	if stored.Outcome() != domain.ExecutionCancelled || stored.Usage().CostUSD != 0.01 || stored.Usage().Requests != 2 || stored.Usage().CostUnknown || len(stored.Receipt()) == 0 {
 		t.Errorf("execution = %s %+v", stored.Outcome(), stored.Usage())
 	}
-	if incident, _ := h.incs.Get(ctx, opened.Incident.ID()); incident.CostUSD() != 0.01 {
-		t.Errorf("incident cost = %v", incident.CostUSD())
-	}
 	// A second late report changes nothing: the cost is known now.
 	report.Usage.CostUSD = 0.5
 	if _, err := NewReportExecution(h.deps).Execute(ctx, node.ID(), assignment.ExecutionID, report); err != nil {
@@ -48,14 +42,10 @@ func TestALateReportKeepsTheCostOfACancelledNodeRun(t *testing.T) {
 	if again, _ := h.execs.Get(ctx, assignment.ExecutionID); again.Usage().CostUSD != 0.01 {
 		t.Errorf("the second report changed the cost: %+v", again.Usage())
 	}
-	if incident, _ := h.incs.Get(ctx, opened.Incident.ID()); incident.CostUSD() != 0.01 {
-		t.Errorf("incident cost counted twice = %v", incident.CostUSD())
-	}
 }
 
-// A cancelled run of a task with no incident keeps its late cost too; a
-// store that fails the save is the report's error.
-func TestALateReportOfATaskWithoutAnIncident(t *testing.T) {
+// A store that fails the save of a late report is the report's error.
+func TestALateReportWhoseSaveFails(t *testing.T) {
 	h := newHarness()
 	ctx := context.Background()
 	bot := enabledBot(t, h)

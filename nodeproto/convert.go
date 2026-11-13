@@ -16,7 +16,7 @@ func FromAssignment(a application.Assignment) AssignmentMessage {
 		m.Run = &RunMessage{
 			TaskID: r.TaskID.String(), BotID: r.BotID.String(), TenantID: r.TenantID.String(), CorrelationID: r.CorrelationID.String(),
 			Objective: r.PromptText(), Model: r.Model, Level: r.Level.String(), AllowedTools: r.AllowedTools,
-			ToolRules: r.ToolRules.Snapshot(), Unattended: r.Unattended, TimeoutSeconds: wholeSeconds(r.Timeout), Delegation: fromOffer(r.Delegation),
+			ToolRules: r.ToolRules.Snapshot(), TimeoutSeconds: wholeSeconds(r.Timeout), Delegation: fromOffer(r.Delegation),
 			Events: fromEventsOffer(r.Events), Ask: fromAskOffer(r.Ask), Runtime: r.Runtime.Snapshot(), Input: r.Input, Skills: r.Skills.Snapshot(),
 			MemoryTeam: r.MemoryTeam.String(), ChannelMemory: FromChannelRecord(r.ChannelMemory), Contexts: r.Contexts,
 		}
@@ -87,7 +87,7 @@ func ToAssignment(m AssignmentMessage) (application.Assignment, error) {
 		}
 		a.Run = &application.ExecutionRequest{
 			ExecutionID: executionID, TaskID: domain.TaskID(r.TaskID), BotID: botID, TenantID: domain.TenantID(r.TenantID), CorrelationID: domain.CorrelationID(r.CorrelationID),
-			Objective: objective, Model: r.Model, Level: level, AllowedTools: tools.Names(), ToolRules: rules, Unattended: r.Unattended, Timeout: time.Duration(r.TimeoutSeconds) * time.Second,
+			Objective: objective, Model: r.Model, Level: level, AllowedTools: tools.Names(), ToolRules: rules, Timeout: time.Duration(r.TimeoutSeconds) * time.Second,
 			Delegation: toOffer(r.Delegation), Events: toEventsOffer(r.Events), Ask: toAskOffer(r.Ask), Runtime: runtime, Input: r.Input, Skills: skills, MemoryTeam: team,
 			ChannelMemory: ToChannelRecord(r.ChannelMemory), Contexts: contexts,
 		}

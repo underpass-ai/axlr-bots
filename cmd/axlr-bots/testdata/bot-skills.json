@@ -7,7 +7,7 @@
   "level": "observe",
   "allowedTools": ["local_read", "local_search", "local_list"],
   "triggers": [{"type": "manual"}],
-  "skills": [{"name": "crashloop", "version": "1.0.0", "catalog": "axlr"}],
+  "skills": [{"name": "release_notes", "version": "1.0.0", "catalog": "axlr"}],
   "model": {
     "model": "anthropic/claude-haiku-5.5",
     "routingPolicy": "cost-optimized",

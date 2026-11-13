@@ -254,17 +254,3 @@ func TestADecisionCarriesTheTasksSkills(t *testing.T) {
 		t.Errorf("decision skills = %+v", got)
 	}
 }
-
-// A run that never started for want of its skill wrote nothing: the ladder
-// keeps what it earned and the runbook's entry ends.
-func TestASkillThatCannotBeInstalledCostsTheLadderNothing(t *testing.T) {
-	h := newHarness()
-	triage := topped(t, h, domain.ApprovalsSnapshot{})
-	incident := ladderProposed(t, h, shopAlert(triage, "sev2", ladderNamespace))
-	before := autonomyOf(t, h, incident)
-	runCurrent(t, h, incident.ID(), ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "catalog skill axlr/oom@1.0.0 could not be installed", Result: domain.Result{NotStarted: true}})
-	record := autonomyOf(t, h, incident)
-	if record.Step() != before.Step() || len(record.Outstanding()) != 0 {
-		t.Errorf("step %s -> %s, outstanding %d", before.Step(), record.Step(), len(record.Outstanding()))
-	}
-}

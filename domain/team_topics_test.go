@@ -70,7 +70,7 @@ func TestAPolicySaysWhereANameCrosses(t *testing.T) {
 // A subscription that names another team hears only that team's domain
 // events, as tasks; it never hears its own team's.
 func TestASubscriptionHearsAnotherTeam(t *testing.T) {
-	sub, err := NewSubscription(SubscriptionSnapshot{Topic: "order.new", Team: "team-b", From: []string{"b-triage"}, Deliver: "team", Objective: "team B has a new incident."})
+	sub, err := NewSubscription(SubscriptionSnapshot{Topic: "order.new", Team: "team-b", From: []string{"b-triage"}, Deliver: "team", Objective: "team B has a new order."})
 	if err != nil {
 		t.Fatal(err)
 	}

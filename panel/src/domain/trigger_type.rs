@@ -1,9 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 /// What starts a bot's task: a person, a webhook, a timer, another bot
-/// that delegates to it, a teammate's event, an incident the control
-/// plane opened for it, from Alertmanager or from CloudWatch through SNS,
-/// another team's question, or the answer to a question it asked.
+/// that delegates to it, a teammate's event, another team's question, or
+/// the answer to a question it asked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TriggerType {
@@ -13,9 +12,6 @@ pub enum TriggerType {
     Timer,
     Delegation,
     Event,
-    Incident,
-    Alertmanager,
-    Cloudwatch,
     Question,
     #[serde(rename = "question_answer")]
     QuestionAnswer,
@@ -33,9 +29,6 @@ impl TriggerType {
             Self::Timer => "timer",
             Self::Delegation => "delegation",
             Self::Event => "event",
-            Self::Incident => "incident",
-            Self::Alertmanager => "alertmanager",
-            Self::Cloudwatch => "cloudwatch",
             Self::Question => "question",
             Self::QuestionAnswer => "question_answer",
             Self::Unknown => "unknown",
@@ -49,9 +42,6 @@ impl TriggerType {
             Self::Timer => "Timer",
             Self::Delegation => "Another bot",
             Self::Event => "A teammate's event",
-            Self::Incident => "An incident",
-            Self::Alertmanager => "Alertmanager",
-            Self::Cloudwatch => "CloudWatch",
             Self::Question => "Another team's question",
             Self::QuestionAnswer => "The answer it asked for",
             Self::Unknown => "Unknown",
@@ -75,11 +65,6 @@ mod tests {
         );
         assert_eq!(TriggerType::Manual.label(), "By hand");
         assert_eq!(TriggerType::Webhook.name(), "webhook");
-        assert_eq!(
-            serde_json::from_str::<TriggerType>("\"cloudwatch\"").unwrap(),
-            TriggerType::Cloudwatch
-        );
-        assert_eq!(TriggerType::Cloudwatch.label(), "CloudWatch");
     }
 
     #[test]
@@ -90,21 +75,6 @@ mod tests {
         );
         assert_eq!(TriggerType::Delegation.name(), "delegation");
         assert_eq!(TriggerType::Delegation.label(), "Another bot");
-    }
-
-    #[test]
-    fn reads_an_incident_s_trigger() {
-        assert_eq!(
-            serde_json::from_str::<TriggerType>("\"incident\"").unwrap(),
-            TriggerType::Incident
-        );
-        assert_eq!(TriggerType::Incident.name(), "incident");
-        assert_eq!(TriggerType::Incident.label(), "An incident");
-        assert_eq!(
-            serde_json::from_str::<TriggerType>("\"alertmanager\"").unwrap(),
-            TriggerType::Alertmanager
-        );
-        assert_eq!(TriggerType::Alertmanager.label(), "Alertmanager");
     }
 
     #[test]

@@ -148,19 +148,12 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	reconcile(ctx, deps, runner, options, logger)
 	// Notifications go out on their own loop: a slow webhook must not
 	// hold up the runs, and the runs must not hold up the notifications.
-	// The incident outputs have a loop of their own too: a target that
-	// does not answer costs its timeout on every attempt, and that must
-	// never hold up an approval notification a person is waiting for.
-	delivered, announced := make(chan struct{}), make(chan struct{})
+	delivered := make(chan struct{})
 	go func() {
 		defer close(delivered)
 		deliverLoop(ctx, deps, options, logger)
 	}()
-	go func() {
-		defer close(announced)
-		outputLoop(ctx, deps, options, logger)
-	}()
-	defer func() { cancel(); <-delivered; <-announced }()
+	defer func() { cancel(); <-delivered }()
 	// The in-process runs go on the worker's own goroutine: a run lasts
 	// up to its task timeout, and the timers and the reconciler must not
 	// wait for it. One worker at a time (a tick that finds it busy
@@ -311,39 +304,6 @@ func deliverLoop(ctx context.Context, deps application.Dependencies, options Opt
 			return
 		case <-ticker.C:
 		}
-	}
-}
-
-// outputLoop makes the incident output attempts that are due, every
-// DeliverEvery, until ctx ends, apart from the notifications.
-func outputLoop(ctx context.Context, deps application.Dependencies, options Options, logger interface{ Printf(string, ...any) }) {
-	ticker := time.NewTicker(options.deliverEvery())
-	defer ticker.Stop()
-	uc := application.NewDeliverOutputs(deps)
-	for {
-		deliverOutputs(ctx, uc, logger)
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
-}
-
-// deliverOutputs makes one pass of the incident outputs and logs each
-// outcome: the target by name, never its URL.
-func deliverOutputs(ctx context.Context, uc application.DeliverOutputs, logger interface{ Printf(string, ...any) }) {
-	outcomes, err := uc.Execute(ctx)
-	for _, outcome := range outcomes {
-		d := outcome.Delivery
-		line := fmt.Sprintf("daemon: output %s of incident %s (%s) to %s: %s (attempt %d)", d.ID(), d.IncidentID(), d.Event(), d.Output(), d.Status(), d.Attempts())
-		if outcome.Reason != "" {
-			line += ": " + outcome.Reason
-		}
-		logger.Printf("%s", line)
-	}
-	if err != nil && ctx.Err() == nil {
-		errorf(logger, "daemon: outputs: %v", err)
 	}
 }
 

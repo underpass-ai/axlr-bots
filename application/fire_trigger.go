@@ -45,10 +45,6 @@ func (uc FireTrigger) Execute(ctx context.Context, command FireTriggerCommand) (
 		payload = map[string]any{"trigger": trigger.Name(), "type": trigger.Type().String()}
 	)
 	switch trigger.Type() {
-	case domain.TriggerAlertmanager:
-		return uc.fireAlertmanager(ctx, bot, trigger, command.Body)
-	case domain.TriggerCloudWatch:
-		return uc.fireCloudWatch(ctx, bot, trigger, command)
 	case domain.TriggerWebhook:
 		if err := json.Unmarshal(command.Body, &event); err != nil || event == nil {
 			return FireTriggerResult{}, domain.ValidationError{Field: "body", Reason: "must be a JSON object"}

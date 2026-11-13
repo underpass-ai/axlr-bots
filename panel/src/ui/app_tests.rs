@@ -4,9 +4,7 @@ use super::test_runtime::{connected, drive, send};
 use super::view::tests::{app, config, settings};
 use super::*;
 use crate::application::{PanelError, PanelSettings};
-use crate::domain::{
-    AutonomyLevel, BotId, BotStatus, Incident, NodeId, NodeStatus, PostmortemState, TaskId, TaskStatus,
-};
+use crate::domain::{AutonomyLevel, BotId, BotStatus, NodeId, NodeStatus, TaskId, TaskStatus};
 
 fn task_in(app: &App, status: TaskStatus) -> TaskId {
     app.fleet
@@ -451,16 +449,6 @@ fn without_a_connection_nothing_is_asked_of_the_control_plane() {
         Effect::SetTeams(BotId::new("b").unwrap(), vec!["ops".into()]),
         Effect::Cancel(TaskId::new("t").unwrap()),
         Effect::Decide(TaskId::new("t").unwrap(), crate::domain::Decision::Deny, None),
-        Effect::LoadIncidents,
-        Effect::LoadIncident("inc-disk".into()),
-        Effect::ResolveIncident {
-            id: "inc-disk".into(),
-            reason: String::new(),
-        },
-        Effect::MarkDiagnosis {
-            id: "inc-disk".into(),
-            verdict: "correct".into(),
-        },
         Effect::Download(crate::domain::ExecutionId::new("e").unwrap(), "a.md".into()),
     ] {
         let message = futures::executor::block_on(app.services.clone().execute(effect.clone())).unwrap();
@@ -869,86 +857,6 @@ fn a_teammates_warning_raises_a_notice_that_opens_the_teams() {
     assert_eq!(shown.len(), 1);
     assert_eq!(shown[0].title, "Warning to the team · team ops");
     assert!(shown[0].body.starts_with("bot → bot-wrx80: a deploy is starting"));
-}
-
-#[test]
-fn an_incident_is_listed_opened_and_resolved_with_a_reason() {
-    use crate::domain::IncidentStatus;
-    let mut app = connected();
-    assert_eq!(
-        app.apply(Message::Go(Screen::Incidents)),
-        vec![Effect::ScrollTop, Effect::LoadIncidents]
-    );
-    assert!(
-        app.apply(Message::Tick(app.now))
-            .iter()
-            .all(|e| *e != Effect::LoadIncidents),
-        "one read at a time"
-    );
-    let mut app = connected();
-    send(&mut app, Message::Go(Screen::Incidents));
-    let list = app.incidents.list.as_ref().unwrap();
-    assert_eq!(
-        list.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(),
-        vec!["inc-latency", "inc-disk", "inc-cert"]
-    );
-
-    let effects = app.apply(Message::Go(Screen::Incident("inc-disk".into())));
-    assert_eq!(
-        effects,
-        vec![Effect::ScrollTop, Effect::LoadIncident("inc-disk".into())]
-    );
-    drive(&mut app, effects);
-    assert_eq!(app.incidents.detail.as_ref().unwrap().status, IncidentStatus::Escalated);
-
-    app.apply(Message::ResolveOpen);
-    app.apply(Message::ResolveReason("Grew the volume".into()));
-    let effects = app.apply(Message::ResolveSend);
-    assert_eq!(
-        effects,
-        vec![Effect::ResolveIncident {
-            id: "inc-disk".into(),
-            reason: "Grew the volume".into()
-        }]
-    );
-    assert!(app.apply(Message::ResolveSend).is_empty(), "one Resolve at a time");
-    drive(&mut app, effects);
-    assert_eq!(app.banner.as_ref().unwrap().title, "inc-disk resolved");
-    assert!(!app.incidents.resolve.open);
-    let detail = app.incidents.detail.as_ref().unwrap();
-    assert_eq!(
-        (detail.status, detail.reason.as_str()),
-        (IncidentStatus::Resolved, "Grew the volume")
-    );
-    let listed = app
-        .incidents
-        .list
-        .as_ref()
-        .unwrap()
-        .iter()
-        .find(|i| i.id == "inc-disk")
-        .unwrap();
-    assert_eq!(listed.status, IncidentStatus::Resolved);
-
-    // A second Resolve is refused by the control plane, and the words stay.
-    app.apply(Message::ResolveOpen);
-    app.apply(Message::ResolveReason("again".into()));
-    send(&mut app, Message::ResolveSend);
-    assert_eq!(app.banner.as_ref().unwrap().title, "Not now");
-    assert_eq!(app.incidents.resolve.reason, "again");
-    // Leaving the page closes the form and an old answer is dropped.
-    send(&mut app, Message::Go(Screen::Incident("inc-cert".into())));
-    assert!(!app.incidents.resolve.open);
-    assert_eq!(app.incidents.detail.as_ref().unwrap().id, "inc-cert");
-    let stale = app.apply(Message::IncidentLoaded(
-        "inc-disk".into(),
-        Err(PanelError::Server("late".into())),
-    ));
-    assert!(stale.is_empty());
-    assert_eq!(app.incidents.detail.as_ref().unwrap().id, "inc-cert");
-    send(&mut app, Message::Go(Screen::Incident("inc-none".into())));
-    assert!(app.incidents.detail.is_none());
-    assert_eq!(app.banner.as_ref().unwrap().title, "Not found");
 }
 
 #[test]
@@ -1404,136 +1312,6 @@ fn the_first_of_two_approvals_says_nothing_ran() {
     let banner = app.banner.as_ref().unwrap();
     assert_eq!(banner.title, "First approval recorded");
     assert!(banner.detail.contains("second, different person"), "{}", banner.detail);
-}
-
-#[test]
-fn marking_a_diagnosis_goes_once_at_a_time_and_shows_the_answer() {
-    let mut app = connected();
-    send(&mut app, Message::Go(Screen::Incident("inc-disk".into())));
-    let incident = app.incidents.detail.clone().expect("the incident");
-    let effects = app.apply(Message::MarkDiagnosis("correct".into()));
-    assert_eq!(
-        effects,
-        vec![Effect::MarkDiagnosis {
-            id: "inc-disk".into(),
-            verdict: "correct".into(),
-        }]
-    );
-    assert!(
-        app.apply(Message::MarkDiagnosis("wrong".into())).is_empty(),
-        "one mark at a time"
-    );
-    let mut autonomy: crate::domain::Autonomy = serde_json::from_str(
-        r#"{"id":"ladder-1","runbook":"Drift","namespace":"shop","step":"act-with-approval","earned":{"diagnoses":1}}"#,
-    )
-    .unwrap();
-    autonomy.diagnosis_mark = "diagnosis-correct".into();
-    app.apply(Message::DiagnosisMarked(incident.id.clone(), Ok(autonomy.clone())));
-    assert!(!app.incidents.marking);
-    assert_eq!(app.incidents.detail.as_ref().unwrap().autonomy, Some(autonomy));
-    app.apply(Message::DiagnosisMarked(
-        incident.id,
-        Err(crate::application::PanelError::State("refused".into())),
-    ));
-    assert!(app.banner.is_some());
-}
-
-#[test]
-fn a_postmortem_is_approved_or_sent_back_from_its_incident() {
-    let mut app = connected();
-    let effects = app.apply(Message::Go(Screen::Incident("inc-cert".into())));
-    drive(&mut app, effects);
-    assert!(app.incidents.detail.as_ref().unwrap().postmortem_waits());
-
-    app.apply(Message::PostmortemBackOpen);
-    assert!(app.incidents.review.open);
-    app.apply(Message::PostmortemBackNote("add the owner".into()));
-    let effects = app.apply(Message::PostmortemBackSend);
-    assert_eq!(
-        effects,
-        vec![Effect::SendBackPostmortem {
-            id: "inc-cert".into(),
-            note: "add the owner".into(),
-            author: Some("task-scribe".into())
-        }]
-    );
-    assert!(
-        app.apply(Message::PostmortemBackSend).is_empty(),
-        "one answer at a time"
-    );
-    assert!(app.apply(Message::PostmortemApprove).is_empty(), "one answer at a time");
-    drive(&mut app, effects);
-    assert!(!app.incidents.review.open);
-    let back = app.incidents.detail.as_ref().unwrap().postmortem.clone().unwrap();
-    assert_eq!((back.state, back.send_backs), (PostmortemState::Writing, 1));
-    assert_eq!(app.banner.as_ref().unwrap().title, "Postmortem being written");
-
-    // A refusal keeps the page as it was and says why.
-    assert!(
-        app.apply(Message::PostmortemApprove).is_empty(),
-        "no text on screen, nothing to approve"
-    );
-    assert!(!app.incidents.review.busy);
-    let stale = Incident::clone(app.incidents.detail.as_ref().unwrap());
-    app.incidents
-        .detail
-        .as_mut()
-        .unwrap()
-        .postmortem
-        .as_mut()
-        .unwrap()
-        .state = PostmortemState::Draft;
-    let effects = app.apply(Message::PostmortemApprove);
-    assert_eq!(
-        effects,
-        vec![Effect::ApprovePostmortem {
-            id: "inc-cert".into(),
-            author: "task-scribe".into()
-        }]
-    );
-    drive(&mut app, effects);
-    assert_eq!(app.banner.as_ref().unwrap().title, "Not now");
-    assert!(!app.incidents.review.busy);
-    app.incidents.detail = Some(stale);
-
-    app.apply(Message::PostmortemBackOpen);
-    app.apply(Message::PostmortemBackClose);
-    assert!(!app.incidents.review.open);
-    app.apply(Message::PostmortemBackOpen);
-    send(&mut app, Message::Go(Screen::Incident("inc-disk".into())));
-    assert!(!app.incidents.review.open, "leaving the page closes the form");
-    send(&mut app, Message::Go(Screen::Incidents));
-    assert!(app.apply(Message::PostmortemApprove).is_empty());
-    assert!(app.apply(Message::PostmortemBackSend).is_empty());
-}
-
-#[test]
-fn a_resolved_incident_without_a_postmortem_can_ask_for_one() {
-    let mut app = connected();
-    let effects = app.apply(Message::Go(Screen::Incident("inc-cert".into())));
-    drive(&mut app, effects);
-    app.incidents.detail.as_mut().unwrap().postmortem = None;
-    app.apply(Message::PostmortemBackOpen);
-    app.apply(Message::PostmortemBackNote("please".into()));
-    assert_eq!(
-        app.apply(Message::PostmortemBackSend),
-        vec![Effect::SendBackPostmortem {
-            id: "inc-cert".into(),
-            note: "please".into(),
-            author: None
-        }]
-    );
-}
-
-#[test]
-fn an_approved_postmortem_says_who_in_the_banner() {
-    let mut app = connected();
-    let effects = app.apply(Message::Go(Screen::Incident("inc-cert".into())));
-    drive(&mut app, effects);
-    send(&mut app, Message::PostmortemApprove);
-    assert_eq!(app.banner.as_ref().unwrap().title, "Postmortem approved");
-    let approved = app.incidents.detail.as_ref().unwrap().postmortem.clone().unwrap();
-    assert_eq!(approved.state, PostmortemState::Approved);
 }
 
 /// The sample fleet with `bot` at 1.2.0 and 1.3.0 staged for it, read.

@@ -207,7 +207,7 @@ pub fn pill<'a>(tone: Tone, label: impl text::IntoFragment<'a>, tokens: Tokens) 
 }
 
 /// A pill in a tone's colour with an icon of its own, for a status
-/// whose meaning is not its tone's: a severity, a diagnosis.
+/// whose meaning is not its tone's.
 pub fn pill_with<'a>(glyph: Icon, tone: Tone, label: impl text::IntoFragment<'a>, tokens: Tokens) -> El<'a> {
     let ink = styles::pill_ink(tokens, tone);
     container(

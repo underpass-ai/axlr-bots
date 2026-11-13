@@ -14,13 +14,12 @@ var (
 	}{
 		{"task", regexp.MustCompile(`\btask-[0-9a-f]{8,}\b`)},
 		{"execution", regexp.MustCompile(`\bexec-[0-9a-f]{8,}\b`)},
-		{"incident", regexp.MustCompile(`\binc-[0-9a-f]{8,}\b`)},
 	}
 )
 
 // FieldsHandler adds to each record the fields its message names: the
-// component ("daemon: …" → component=daemon) and the first task,
-// execution and incident id in it, so Loki can filter on them.
+// component ("daemon: …" → component=daemon) and the first task and
+// execution id in it, so Loki can filter on them.
 type FieldsHandler struct {
 	next slog.Handler
 }

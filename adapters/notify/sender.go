@@ -1,8 +1,6 @@
-// Package notify delivers the notifications of approval requests and
-// the incident outputs: an HTTP POST of the JSON to a webhook, signed
-// with the target's secret, a Block Kit message to a Slack incoming
-// webhook (outputs only), or a run of a local program with the JSON on
-// its stdin (a desktop notification, a script that relays it
+// Package notify delivers the notifications of approval requests: an
+// HTTP POST of the JSON to a webhook, signed with the target's secret,
+// or a run of a local program with the JSON on its stdin (a desktop notification, a script that relays it
 // elsewhere). Each Send is one attempt; the application retries.
 package notify
 

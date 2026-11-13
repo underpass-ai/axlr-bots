@@ -23,8 +23,7 @@ type Service interface {
 	// StopBot pauses the bot and cancels every task it has not finished.
 	StopBot(ctx context.Context, id string) (StopResponse, error)
 	// DeleteBot removes the bot: it cancels its unfinished tasks and the
-	// delegated children it asked for, resolves its open incidents,
-	// removes its timers and answers the bots that still name it. Its
+	// delegated children it asked for, removes its timers and answers the bots that still name it. Its
 	// history stays.
 	DeleteBot(ctx context.Context, id string) (DeleteResponse, error)
 	// UpdateBot applies a partial change to the bot's definition.
@@ -80,37 +79,6 @@ type Service interface {
 	// event, oldest first.
 	ListTaskEvents(ctx context.Context, query application.TaskEventsQuery) ([]domain.Event, error)
 	GetOverview(ctx context.Context, since time.Time) (application.Overview, error)
-	// OpenIncident reports an alert group: it opens an incident and its
-	// triage task, repeats one already open, or reopens one resolved
-	// less than the window ago.
-	OpenIncident(ctx context.Context, command application.OpenIncidentCommand) (OpenIncidentResponse, error)
-	// ListIncidents and GetIncident answer each incident with whether it
-	// needs a person now; GetIncident adds its current task and the count
-	// of its tasks' approvals.
-	ListIncidents(ctx context.Context, query application.IncidentQuery) ([]IncidentResponse, error)
-	GetIncident(ctx context.Context, id string) (IncidentResponse, error)
-	// ResolveIncident closes an incident; a resolved one is refused.
-	ResolveIncident(ctx context.Context, id string, request ResolveRequest) (domain.IncidentSnapshot, error)
-	// MarkDiagnosis records a person's verdict on an incident's diagnosis
-	// and answers its runbook's standing; ListAutonomy and GetAutonomy read
-	// the runbooks on ladders (docs/architecture/autonomy-ladder.md).
-	MarkDiagnosis(ctx context.Context, id string, request DiagnosisRequest) (AutonomyResponse, error)
-	ListAutonomy(ctx context.Context, query application.AutonomyQuery) ([]AutonomyResponse, error)
-	GetAutonomy(ctx context.Context, id string) (AutonomyResponse, error)
-	// LowerAutonomy takes a runbook down by a person's hand.
-	LowerAutonomy(ctx context.Context, id string, request LowerRequest) (AutonomyResponse, error)
-	// ClearAutonomy ends a runbook's outstanding applies by a person's hand.
-	ClearAutonomy(ctx context.Context, id string, request ClearRequest) (AutonomyResponse, error)
-	// ApprovePostmortem and SendBackPostmortem are a person's answer to
-	// an incident's postmortem.
-	ApprovePostmortem(ctx context.Context, id string, request PostmortemReviewRequest) (domain.IncidentSnapshot, error)
-	SendBackPostmortem(ctx context.Context, id string, request PostmortemReviewRequest) (domain.IncidentSnapshot, error)
-	// AddOutput keeps a new incident output target; ListOutputs and
-	// RemoveOutput answer targets without their URL, secret or command,
-	// with a fingerprint instead.
-	AddOutput(ctx context.Context, definition application.OutputDefinition) (application.OutputView, error)
-	ListOutputs(ctx context.Context) ([]application.OutputView, error)
-	RemoveOutput(ctx context.Context, name string) (application.OutputView, error)
 	// ListExecutions returns the task's executions, oldest first.
 	ListExecutions(ctx context.Context, id string) ([]domain.ExecutionSnapshot, error)
 	GetReport(ctx context.Context, id string) (ReportResponse, error)

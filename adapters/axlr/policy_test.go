@@ -14,9 +14,9 @@ import (
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
-// sreRules are the SRE bot's rules: local_exec narrowed to journalctl
+// hostRules are the host bot's rules: local_exec narrowed to journalctl
 // and systemctl status, with the write forms denied.
-func sreRules(t *testing.T) ([]string, domain.ToolRules) {
+func hostRules(t *testing.T) ([]string, domain.ToolRules) {
 	t.Helper()
 	allowed := []string{"local_exec", "local_list", "local_read", "local_search"}
 	tools, _ := domain.NewAllowedTools(allowed)
@@ -57,7 +57,7 @@ func TestRuntimeLevelTranslatesObserveWithCommands(t *testing.T) {
 }
 
 func TestRenderPolicyMergesRulesIntoTheAllowList(t *testing.T) {
-	allowed, rules := sreRules(t)
+	allowed, rules := hostRules(t)
 	object := renderPolicy(domain.AutonomyObserve, allowed, rules)
 	if object.Level != "act-within-policy" {
 		t.Errorf("level = %s", object.Level)
@@ -89,7 +89,7 @@ func TestRenderPolicyMergesRulesIntoTheAllowList(t *testing.T) {
 
 func TestExecutePassesThePolicyAndRaisesTheApproval(t *testing.T) {
 	e, argsFile := fake(t, "result-completed")
-	allowed, rules := sreRules(t)
+	allowed, rules := hostRules(t)
 	req := request(time.Minute)
 	req.Level = domain.AutonomyObserve
 	req.AllowedTools = allowed
@@ -152,7 +152,7 @@ func TestExecutePassesThePolicyAndRaisesTheApproval(t *testing.T) {
 func TestExecuteWithoutPolicySupportRecordsAndFailsClosed(t *testing.T) {
 	t.Setenv("FAKE_AXLR_NO_POLICY", "1")
 	e, argsFile := fake(t, "result-completed")
-	allowed, rules := sreRules(t)
+	allowed, rules := hostRules(t)
 	req := request(time.Minute)
 	req.AllowedTools = allowed
 	req.ToolRules = rules
@@ -179,7 +179,7 @@ func TestExecuteWithoutPolicySupportRecordsAndFailsClosed(t *testing.T) {
 
 func TestDecidePassesThePolicy(t *testing.T) {
 	e, argsFile := fake(t, "result-completed")
-	allowed, rules := sreRules(t)
+	allowed, rules := hostRules(t)
 	report, err := e.Decide(context.Background(), application.DecisionRequest{ExecutionID: "exec-9", BotID: "sii", SessionID: "sess-1", Decision: "approve", Level: domain.AutonomyActWithApproval, AllowedTools: allowed, ToolRules: rules})
 	if err != nil {
 		t.Fatal(err)

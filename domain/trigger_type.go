@@ -24,22 +24,6 @@ const (
 	// events its event triggers name or, declaring none, the ones
 	// addressed to it and the team's warnings.
 	TriggerEvent TriggerType = "event"
-	// TriggerIncident is a phase's task of an incident the control plane
-	// opened: the triage task of the bot's own incidents, or, with phase
-	// fix, the fix task of a teammate's diagnosed incident. A bot takes
-	// them only when it declares this trigger, its consent, with an
-	// optional objective template over the incident.
-	TriggerIncident TriggerType = "incident"
-	// TriggerAlertmanager is a webhook that takes Alertmanager's own
-	// payload: a firing group opens, repeats or reopens an incident of
-	// the bot and a resolved group closes it, instead of one task per
-	// delivery. It authenticates as a webhook does.
-	TriggerAlertmanager TriggerType = "alertmanager"
-	// TriggerCloudWatch takes Amazon SNS's HTTP/S deliveries of a topic a
-	// CloudWatch alarm publishes to: an ALARM opens, repeats or reopens
-	// an incident of the bot, an OK closes it. It authenticates by SNS's
-	// own signature, never by a secret: SNS sets no header of ours.
-	TriggerCloudWatch TriggerType = "cloudwatch"
 	// TriggerQuestion is a question another team asked through the team
 	// channel: a bot answers them only when it declares this trigger, its
 	// consent, and its from names the asking team.
@@ -54,10 +38,10 @@ const (
 // ParseTriggerType validates a trigger type.
 func ParseTriggerType(raw string) (TriggerType, error) {
 	switch TriggerType(raw) {
-	case TriggerManual, TriggerWebhook, TriggerTimer, TriggerDelegation, TriggerEvent, TriggerIncident, TriggerAlertmanager, TriggerCloudWatch, TriggerQuestion, TriggerQuestionAnswer:
+	case TriggerManual, TriggerWebhook, TriggerTimer, TriggerDelegation, TriggerEvent, TriggerQuestion, TriggerQuestionAnswer:
 		return TriggerType(raw), nil
 	}
-	return "", invalid("trigger type", "is not a known trigger type (manual, webhook, timer, delegation, event, incident, alertmanager, cloudwatch, question, question_answer)")
+	return "", invalid("trigger type", "is not a known trigger type (manual, webhook, timer, delegation, event, question, question_answer)")
 }
 
 func (t TriggerType) String() string { return string(t) }

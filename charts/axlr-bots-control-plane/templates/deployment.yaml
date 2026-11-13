@@ -90,9 +90,6 @@ spec:
             {{- with .Values.apiURL }}
             - {name: AXLR_BOTS_API_URL, value: {{ . | quote }}}
             {{- end }}
-            {{- with .Values.panelURL }}
-            - {name: AXLR_BOTS_PANEL_URL, value: {{ . | quote }}}
-            {{- end }}
             {{- with .Values.minAXLRVersion }}
             - {name: AXLR_BOTS_MIN_AXLR_VERSION, value: {{ . | quote }}}
             {{- end }}

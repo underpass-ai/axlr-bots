@@ -35,8 +35,7 @@
   },
   "triggers": [
     {"type": "manual"},
-    {"type": "delegation"},
-    {"type": "incident", "objective": "Incident {{.title}} (severity {{.severity}}, cycle {{.cycle}}) on Redis: find the cause with evidence and report the exact command that fixes it."}
+    {"type": "delegation"}
   ],
   "groups": ["data"],
   "events": {"emit": [{"name": "warn.redis.*"}, {"name": "info.redis.*"}], "perMinute": 6},

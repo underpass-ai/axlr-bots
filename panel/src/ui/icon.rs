@@ -1,7 +1,5 @@
 use iced::widget::svg::Handle;
 
-use crate::domain::{IncidentSeverity, IncidentStatus};
-
 /// The panel's pixel glyphs (`assets/icons`) and the brand's marks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Icon {
@@ -41,7 +39,7 @@ pub enum Icon {
     Trash,
     /// Open: go to the row's own page.
     Next,
-    /// A cause found: an incident diagnosed.
+    /// A lens: a closer look.
     Lens,
     /// A newer version waits: a bot's staged definition, a node behind.
     Update,
@@ -129,27 +127,6 @@ impl Icon {
     pub fn handle(self) -> Handle {
         Handle::from_memory(self.bytes())
     }
-
-    /// A severity is a level of alarm, never a state of work: the alert
-    /// for the two that page someone, a dot for the milder ones.
-    pub fn of_severity(severity: IncidentSeverity) -> Self {
-        match severity {
-            IncidentSeverity::Sev1 | IncidentSeverity::Sev2 => Self::Alert,
-            IncidentSeverity::Sev3 | IncidentSeverity::Sev4 | IncidentSeverity::Unknown => Self::Dot,
-        }
-    }
-
-    /// An incident's status: a diagnosed one shows the lens of a cause
-    /// found, not a run, a proposed one the wrench of a fix; the others
-    /// keep their tone's icon.
-    pub fn of_incident(status: IncidentStatus) -> Self {
-        match status {
-            IncidentStatus::Diagnosed => Self::Lens,
-            IncidentStatus::Proposed | IncidentStatus::Applying => Self::Wrench,
-            IncidentStatus::Verifying => Self::Lens,
-            other => super::Tone::of_incident(other).icon(),
-        }
-    }
 }
 
 /// The brand's marks.
@@ -186,18 +163,5 @@ mod tests {
         let _ = brand::emblem(true);
         let _ = brand::emblem(false);
         assert_eq!(&brand::WINDOW_ICON_PNG[1..4], b"PNG");
-    }
-
-    #[test]
-    fn incidents_never_borrow_the_icons_of_work() {
-        assert_eq!(Icon::of_severity(IncidentSeverity::Sev1), Icon::Alert);
-        assert_eq!(Icon::of_severity(IncidentSeverity::Sev3), Icon::Dot);
-        assert_ne!(Icon::of_severity(IncidentSeverity::Sev4), Icon::Pause);
-        assert_eq!(Icon::of_incident(IncidentStatus::Diagnosed), Icon::Lens);
-        assert_eq!(Icon::of_incident(IncidentStatus::Proposed), Icon::Wrench);
-        assert_eq!(Icon::of_incident(IncidentStatus::Applying), Icon::Wrench);
-        assert_eq!(Icon::of_incident(IncidentStatus::Verifying), Icon::Lens);
-        assert_eq!(Icon::of_incident(IncidentStatus::Open), Icon::Cross);
-        assert_eq!(Icon::of_incident(IncidentStatus::Resolved), Icon::Check);
     }
 }

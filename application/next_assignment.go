@@ -80,17 +80,6 @@ func (uc NextAssignment) queued(ctx context.Context, node domain.Node) (Assignme
 			}
 			continue
 		}
-		if execution.Kind() == domain.ExecutionRun {
-			// A run re-delivered after a crash before its lease is asked
-			// again, as a first delivery is.
-			run, err := newLadderKeeper(uc.deps).recheck(ctx, bot, &task)
-			if err != nil {
-				return Assignment{}, false, err
-			}
-			if !run {
-				continue
-			}
-		}
 		assignment, err := uc.describe(ctx, node, bot, task, execution)
 		switch {
 		case isRefusal(err):
@@ -225,17 +214,10 @@ func (uc NextAssignment) startPending(ctx context.Context, node domain.Node) (As
 }
 
 // start starts one task and assigns it to the node. False with no error
-// says it did not go out, for a reason of its own: the ladder held it,
-// or it was refused or missed its deadline, and is over with the reason.
+// says it did not go out, for a reason of its own: it was refused or
+// missed its deadline, and is over with the reason.
 // The next task may go.
 func (uc NextAssignment) start(ctx context.Context, node domain.Node, bot domain.Bot, task domain.Task) (Assignment, bool, error) {
-	run, err := newLadderKeeper(uc.deps).recheck(ctx, bot, &task)
-	if err != nil {
-		return Assignment{}, false, err
-	}
-	if !run {
-		return Assignment{}, false, nil
-	}
 	executionID, err := domain.NewExecutionID(uc.deps.IDs.NewID("exec-"))
 	if err != nil {
 		return Assignment{}, false, err
@@ -306,34 +288,13 @@ func (uc NextAssignment) describe(ctx context.Context, node domain.Node, bot dom
 		return Assignment{}, err
 	}
 	offer, events, ask := delegationOffer(bot, task, mates), eventsOffer(bot, mates), askOffer(bot, task, node)
-	// The task's incident phase may narrow the bot's level and tools; the
-	// decision runs under the same policy as the run it continues. A
-	// narrowed phase gets exactly its tools, as in process: the node's
-	// delegate, emit and subscribe tools only when it lists them.
-	policy, _, policyErr := bot.PolicyOf(task)
-	if policyErr != nil {
-		return Assignment{}, errPolicyRefused{cause: policyErr}
-	}
+	policy := bot.Policy()
 	if task.Trigger().Type == domain.TriggerQuestion {
 		// A bot answering another team's question asks, delegates, emits
 		// and subscribes nothing: one hop between teams, no further.
 		offer, events = nil, nil
 	}
-	if policy.Narrowed() {
-		if !policy.Tools().Allows(DelegateToolName) {
-			offer = nil
-		}
-		if !policy.Tools().Allows(EmitEventToolName) && !policy.Tools().Allows(SubscribeToolName) {
-			events = nil
-		}
-		if !policy.Tools().Allows(AskToolName) {
-			ask = nil
-		}
-	}
 	tools := allowedTools(policy.Tools(), offer, events, ask)
-	if policy.Narrowed() {
-		tools = policy.Tools().Names()
-	}
 	if ask == nil {
 		// The bot may list the channel's tools itself (its installer adds
 		// them); a run that is not offered them is not allowed them.
@@ -363,7 +324,7 @@ func (uc NextAssignment) describe(ctx context.Context, node domain.Node, bot dom
 	assignment.Run = &ExecutionRequest{
 		ExecutionID: execution.ID(), TaskID: task.ID(), BotID: bot.ID(), TenantID: bot.TenantID(), CorrelationID: task.CorrelationID(),
 		Objective: task.Objective(), Prompt: prompt, Model: bot.ModelPolicy().Model(), Level: policy.Level(), AllowedTools: tools,
-		ToolRules: policy.Rules(), Unattended: policy.Unattended(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer, Events: events, Ask: ask,
+		ToolRules: policy.Rules(), Budgets: taskBudgets(bot, task), Timeout: timeout, Delegation: offer, Events: events, Ask: ask,
 		Runtime: bot.Runtime(), Input: task.Input(), Skills: task.Skills(), MemoryTeam: memoryTeamOf(bot),
 		ChannelMemory: answerMemory(task), Contexts: contextRefsOf(task),
 	}

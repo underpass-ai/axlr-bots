@@ -24,12 +24,9 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | Run the node agent as a sidecar in a Kubernetes pod with Helm: the image, the tokens, the demo, your own chart, every value | [Sidecar](runbooks/sidecar.md) |
 | Run the control plane from its release image with Docker Compose, move a host from the systemd service to it and back, update by changing the tag | [Control plane in a container](runbooks/control-plane-compose.md) |
 | Run Jev bots, or read the pushes from a NATS broker, on a host or in a pod | [Install](runbooks/install.md#jev-bots-and-a-broker-on-a-host), [Sidecar](runbooks/sidecar.md#jev-bots-and-a-broker-in-a-pod) |
-| Start tasks from a webhook or on a timer and verify nothing fires twice; turn alert groups into incidents a bot triages and a teammate proposes the fix for, from Alertmanager or from CloudWatch through SNS | [Triggers](runbooks/triggers.md), [Incidents](runbooks/triggers.md#incidents) |
-| Let a teammate apply an incident's fix once a person approves it, verify it took, and give each phase its own level and tools | [Incidents](runbooks/triggers.md#incidents), [ADR](architecture/incident-phases.md) |
+| Start tasks from a webhook or on a timer and verify nothing fires twice | [Triggers](runbooks/triggers.md) |
 | Approve or deny the write a bot wants to make, be notified of it, let it expire | [Approvals](runbooks/approvals.md) |
-| Say who may approve a bot's calls, and make a write in production wait for two different people | [Who may decide](runbooks/approvals.md#who-may-decide), [Two persons](runbooks/approvals.md#two-persons), [ADR](architecture/approvers.md) |
-| Tell a Slack channel, a signed webhook or a script what each incident did: opened, the cause, the change waiting for you, resolved | [Outputs](runbooks/outputs.md), [ADR](architecture/incident-outputs.md) |
-| Have a bot write a resolved incident's postmortem, and approve it or send it back | [Postmortem](runbooks/postmortem.md), [ADR](architecture/incident-postmortem.md) |
+| Say who may approve a bot's calls | [Who may decide](runbooks/approvals.md#who-may-decide), [ADR](architecture/approvers.md) |
 | Run bots on the ChatGPT subscription of `codex login` instead of an API key | [Codex subscription](runbooks/codex-subscription.md) |
 | Let a bot ask another bot to do a task, within depth and budget limits that stop loops | [Delegation](reference/bot-definition.md#delegation), [ADR](architecture/delegation.md) |
 | Put bots in a team so they know each other and ask each other without naming targets | [Teams](reference/bot-definition.md#teams), [ADR](architecture/groups-and-events.md) |
@@ -55,8 +52,6 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | How a running task's progress gets from the run to the panel without slowing the run | [Live progress](architecture/live-progress.md) |
 | Where the whole, uncut transcript of each execution is kept, and how to read it | [Transcripts](architecture/transcripts.md) |
 | Have Jev read every execution's whole transcript and tell a team of the ones that hide a failure | [Transcript audit](runbooks/transcript-audit.md) |
-| Why a postmortem is a field on a Resolved incident, who answers it, what its task is told | [Incident postmortem](architecture/incident-postmortem.md) |
-| How incidents are told to Slack, a webhook or a command: the targets, the filters, the outbox and its retries, what never leaves the control plane | [Incident outputs](architecture/incident-outputs.md) |
 | How a world (a simulation, a camera, a sensor, an operator's hand) reaches the bots as text, through the tools, the bus and the notes that exist | [Input adapters](architecture/input-adapters.md) |
 | The product and architecture vision this implements | [Vision](architecture/vision.md) |
 

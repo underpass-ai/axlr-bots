@@ -29,8 +29,6 @@ type Task struct {
 	grantedModel   int
 	grantedTools   int
 	priority       TaskPriority
-	incident       IncidentID
-	pinned         *ExecutionPolicy
 	skills         SkillPins
 	expects        *taskExpects
 	createdAt      time.Time
@@ -65,27 +63,6 @@ func (t *Task) Attribute(trigger TriggerRef, input []byte) error {
 	return nil
 }
 
-// ForIncident records the incident the task triages, before the task is
-// first saved.
-func (t *Task) ForIncident(incident IncidentID) error {
-	if incident == "" {
-		return invalid("incident id", "must not be empty")
-	}
-	t.incident = incident
-	return nil
-}
-
-// Pin keeps the policy the task's incident phase narrowed its bot's to,
-// before the task is first saved; a policy that narrows nothing is not
-// kept.
-func (t *Task) Pin(policy ExecutionPolicy) {
-	if !policy.Narrowed() {
-		return
-	}
-	pinned := ExecutionPolicy{level: policy.level, tools: policy.tools, narrowed: true, grant: policy.grant}
-	t.pinned = &pinned
-}
-
 // PinSkills keeps the catalog skills the task runs with, before the task
 // is first saved: a bot updated later never changes what a task already
 // submitted reads.
@@ -93,29 +70,6 @@ func (t *Task) PinSkills(skills SkillPins) { t.skills = skills }
 
 // Skills are the catalog skills the task runs with, pinned at submission.
 func (t Task) Skills() SkillPins { return t.skills }
-
-// Pinned is the policy kept by Pin, and false when none was.
-func (t Task) Pinned() (ExecutionPolicy, bool) {
-	if t.pinned == nil {
-		return ExecutionPolicy{}, false
-	}
-	return *t.pinned, true
-}
-
-// RevokeAlone takes a grant back before the task runs: it keeps its
-// unit and takes the card. False when it held none.
-func (t *Task) RevokeAlone() bool {
-	if t.pinned == nil || !t.pinned.Unattended() {
-		return false
-	}
-	revoked := *t.pinned.grant
-	revoked.Alone, revoked.MaxToolCalls = false, 0
-	t.pinned.level, t.pinned.grant = AutonomyActWithApproval, &revoked
-	return true
-}
-
-// IncidentID is the incident the task triages; empty for any other task.
-func (t Task) IncidentID() IncidentID { return t.incident }
 
 // Prioritize sets whether the task waits its turn or goes first, before
 // the task is first saved.
@@ -392,73 +346,6 @@ func (t *Task) RecordApproval(wait ApprovalWait) error {
 	return nil
 }
 
-// AddApproval records one person's approval of a call that waits for
-// more than one: the task keeps waiting, under the same deadline, and
-// nothing runs. The same actor twice is refused, and so is an approval
-// that would be the last one (that one resumes the task with Resume).
-func (t *Task) AddApproval(actor string, now time.Time) error {
-	if t.status != TaskWaitingApproval || t.approval == nil || !t.approval.Open() {
-		return t.refuse("record an approval")
-	}
-	if actor == "" {
-		return invalid("approval actor", "must not be empty")
-	}
-	if t.approval.ApprovedByActor(actor) {
-		return StateError{Subject: "task " + t.id.String(), Current: "already approved by " + actor, Attempted: "approve again as the same person"}
-	}
-	if len(t.approval.ApprovedBy)+1 >= t.approval.Needed() {
-		return t.refuse("record the last approval without resuming")
-	}
-	// A copy, not the shared wait, as closeApproval does.
-	wait := *t.approval
-	wait.ApprovedBy = append(append([]ApprovalMark(nil), wait.ApprovedBy...), ApprovalMark{Actor: actor, At: now})
-	t.approval = &wait
-	t.updatedAt = now
-	return nil
-}
-
-// RaiseApprovalsNeeded makes the open wait need n people when it needed
-// fewer: a bot that asks for two persons since the wait began gets them.
-// It never lowers what a wait needs.
-func (t *Task) RaiseApprovalsNeeded(n int) error {
-	if t.status != TaskWaitingApproval || t.approval == nil || !t.approval.Open() {
-		return t.refuse("raise the approvals it needs")
-	}
-	if n <= t.approval.Needed() {
-		return nil
-	}
-	wait := *t.approval
-	wait.ApprovalsNeeded = n
-	if err := wait.Validate(); err != nil {
-		return err
-	}
-	t.approval = &wait
-	return nil
-}
-
-// FinalApproval adds the last approver to a call that waits for more
-// than one, just before Resume closes the wait approved: the closed
-// wait then lists everyone who approved it. A call that waits for one
-// is left as it is.
-func (t *Task) FinalApproval(actor string, now time.Time) error {
-	if t.status != TaskWaitingApproval || t.approval == nil || !t.approval.Open() {
-		return t.refuse("record an approval")
-	}
-	if t.approval.Needed() < 2 {
-		return nil
-	}
-	if t.approval.ApprovedByActor(actor) {
-		return StateError{Subject: "task " + t.id.String(), Current: "already approved by " + actor, Attempted: "approve again as the same person"}
-	}
-	if len(t.approval.ApprovedBy)+1 < t.approval.Needed() {
-		return t.refuse("record the last approval before the others")
-	}
-	wait := *t.approval
-	wait.ApprovedBy = append(append([]ApprovalMark(nil), wait.ApprovedBy...), ApprovalMark{Actor: actor, At: now})
-	t.approval = &wait
-	return nil
-}
-
 // Approval is the last wait for a person's decision, open or closed,
 // and false when the task never waited under a deadline.
 func (t Task) Approval() (ApprovalWait, bool) {
@@ -595,8 +482,6 @@ func (t Task) Snapshot() TaskSnapshot {
 		GrantedModel:   t.grantedModel,
 		GrantedTools:   t.grantedTools,
 		Priority:       t.prioritySnapshot(),
-		IncidentID:     t.incident.String(),
-		Policy:         t.pinnedSnapshot(),
 		Skills:         t.skills.Snapshot(),
 		CreatedAt:      t.createdAt,
 		UpdatedAt:      t.updatedAt,
@@ -609,13 +494,6 @@ func (t Task) Snapshot() TaskSnapshot {
 	}
 	snapshot.Expects = t.expectsSnapshot()
 	return snapshot
-}
-
-func (t Task) pinnedSnapshot() *PinnedPolicySnapshot {
-	if t.pinned == nil {
-		return nil
-	}
-	return &PinnedPolicySnapshot{Level: t.pinned.level.String(), AllowedTools: t.pinned.tools.Names(), Ladder: t.pinned.ladderSnapshot()}
 }
 
 // prioritySnapshot is the priority as stored: empty for normal, so a
@@ -721,13 +599,6 @@ func RestoreTask(s TaskSnapshot) (Task, error) {
 	if task.priority, err = ParseTaskPriority(s.Priority); err != nil {
 		return Task{}, err
 	}
-	if s.IncidentID != "" {
-		incident, err := NewIncidentID(s.IncidentID)
-		if err != nil {
-			return Task{}, err
-		}
-		task.incident = incident
-	}
 	skills, err := NewSkillPins(s.Skills)
 	if err != nil {
 		return Task{}, err
@@ -735,21 +606,6 @@ func RestoreTask(s TaskSnapshot) (Task, error) {
 	task.skills = skills
 	if task.expects, err = restoreTaskExpects(s.Expects); err != nil {
 		return Task{}, err
-	}
-	if s.Policy != nil {
-		level, err := ParseAutonomyLevel(s.Policy.Level)
-		if err != nil {
-			return Task{}, err
-		}
-		tools, err := NewAllowedTools(s.Policy.AllowedTools)
-		if err != nil {
-			return Task{}, err
-		}
-		grant, err := restoreLadderGrant(s.Policy.Ladder)
-		if err != nil {
-			return Task{}, err
-		}
-		task.pinned = &ExecutionPolicy{level: level, tools: tools, narrowed: true, grant: grant}
 	}
 	task.status = status
 	task.failureReason = s.FailureReason

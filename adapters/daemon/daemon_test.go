@@ -127,7 +127,7 @@ func TestDaemonRunsWhatArrivesOverTheSocketAndSurvivesARestart(t *testing.T) {
 	f := newFixture(t, "completed")
 	client, stop := f.start(t)
 	ctx := context.Background()
-	if _, err := client.RegisterBot(ctx, application.BotDefinition{Tenant: "ops", Name: "bot", Owner: "sre", Mission: "diagnose", AllowedTools: []string{"local_read"}}); err != nil {
+	if _, err := client.RegisterBot(ctx, application.BotDefinition{Tenant: "ops", Name: "bot", Owner: "platform", Mission: "diagnose", AllowedTools: []string{"local_read"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := client.EnableBot(ctx, "bot"); err != nil {

@@ -28,7 +28,7 @@ No Ingress: the node protocol authenticates nodes by their client certificate, s
 | `ca.init` | true for the first start of an empty state only: an init container runs `ca init`, which fails when a CA is there |
 | `persistence.existingClaim` | a claim you filled with an existing state |
 | `metrics.enabled`, `metrics.podMonitor.*` | `/metrics` and `/healthz` in plain HTTP on 9464: the overview's counts (`axlr_bots_tasks`, `axlr_bots_nodes`, cost today…), the requests per listener and route, Go and process. The PodMonitor's `labels` must match the Prometheus' `podMonitorSelector` |
-| `logFormat` | `text`, or `json` for Loki: level, `component`, and the `task`, `execution` and `incident` it names |
+| `logFormat` | `text`, or `json` for Loki: level, `component`, and the `task` and `execution` it names |
 | `grafanaDashboard.*` | the dashboard (`files/grafana-dashboard.json`); `namespace` when the sidecar does not look in every namespace |
 | `extraContainers`, `extraVolumes`, `service.extraPorts` | input adapters in the same pod, reaching the daemon through `/var/lib/axlr-bots/axlr-bots.sock` (volume `state`) |
 
@@ -36,4 +36,4 @@ No Ingress: the node protocol authenticates nodes by their client certificate, s
 
 ## What the pod cannot do
 
-A notification target or output of type `command` runs its program inside the container, which has no shell and none of a host's scripts: move those to `webhook` targets first ([approvals](../../docs/runbooks/approvals.md), [outputs](../../docs/runbooks/outputs.md)). The control plane's own runs (a task no node can take) see only the image's `axlr-tui`; place bots on nodes.
+A notification target of type `command` runs its program inside the container, which has no shell and none of a host's scripts: move those to `webhook` targets first ([approvals](../../docs/runbooks/approvals.md)). The control plane's own runs (a task no node can take) see only the image's `axlr-tui`; place bots on nodes.

@@ -35,7 +35,7 @@ pub fn frame<'a>(app: &'a App, content: El<'a>, tokens: Tokens) -> Element<'a, M
     .height(Length::Fill);
     match &app.confirm {
         Some(confirm) => {
-            // A Pause, Turn on, Approve or Resolve on many rows asks too,
+            // A Pause, Turn on or Approve on many rows asks too,
             // but does not look like a Stop.
             let (kind, glyph, ink) = if confirm.destructive() {
                 (Kind::Danger, Icon::Ban, tokens.bad)
@@ -238,7 +238,6 @@ fn sidebar<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             entry(Icon::Bots, "Bots", Section::Bots, Screen::Bots, 0),
             entry(Icon::Team, "Teams", Section::Teams, Screen::Teams, 0),
             entry(Icon::Tasks, "Tasks", Section::Tasks, Screen::Tasks, waiting),
-            entry(Icon::Alert, "Incidents", Section::Incidents, Screen::Incidents, 0),
             Space::new().height(Length::Fill),
             entry(Icon::Settings, "Settings", Section::Settings, Screen::Settings, 0),
         ]

@@ -8,7 +8,7 @@ import (
 )
 
 func TestIdentifiersAcceptAndReject(t *testing.T) {
-	good := []string{"server-incident-investigator", "a", "x.y_z-1", strings.Repeat("a", 64), "  padded  "}
+	good := []string{"server-investigator", "a", "x.y_z-1", strings.Repeat("a", 64), "  padded  "}
 	bad := []string{"", "   ", "Upper", "with space", "ünï", strings.Repeat("a", 65)}
 	for _, raw := range good {
 		if _, err := NewBotID(raw); err != nil {

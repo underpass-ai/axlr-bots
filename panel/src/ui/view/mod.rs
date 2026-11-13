@@ -7,7 +7,6 @@ mod bot_edit;
 mod bots;
 mod decide;
 mod grid;
-mod incidents;
 mod levels;
 mod nodes;
 mod order;
@@ -37,8 +36,6 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::Task(id) => task_detail::view(app, id, tokens),
         Screen::Teams => teams::list(app, tokens),
         Screen::Team(name) => teams::detail(app, name, tokens),
-        Screen::Incidents => incidents::list(app, tokens),
-        Screen::Incident(id) => incidents::detail(app, id, tokens),
         Screen::Settings => settings::view(app, tokens),
     };
     shell::frame(app, content, tokens)

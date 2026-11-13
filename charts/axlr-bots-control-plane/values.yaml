@@ -26,8 +26,6 @@ serverNames: []
 # as https://<address>:7879. Empty: the pod's own name, which nothing
 # outside the cluster resolves.
 apiURL: ""
-# The base of the panel link incident outputs carry, <base>/incidents/<id>.
-panelURL: ""
 # The least AXLR the nodes should run (GET /v1/build); empty: no minimum.
 minAXLRVersion: ""
 
@@ -91,7 +89,7 @@ service:
   extraPorts: []
 
 # Logs: text (plain lines) or json (one object per line with level,
-# component and the task, execution and incident ids it names, for
+# component and the task and execution ids it names, for
 # Loki). The extra containers take it too when their env says
 # AXLR_BOTS_LOG_FORMAT.
 logFormat: text

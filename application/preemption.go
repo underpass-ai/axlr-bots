@@ -56,7 +56,6 @@ func preemptionReason(task, urgent domain.Task, why string) string {
 func stopTask(ctx context.Context, deps Dependencies, bot domain.Bot, task domain.Task, reason string, event domain.EventType, action string, extra map[string]any) (CancelTaskResult, error) {
 	rec := recorder{deps: deps}
 	now := deps.Clock.Now()
-	unrun := task.Status() == domain.TaskPending && actedAlone(task)
 	if err := task.CancelBecause(reason, now); err != nil {
 		_ = rec.audit(ctx, action, task.ID().String(), domain.AuditDenied, map[string]string{"reason": err.Error()})
 		return CancelTaskResult{}, err
@@ -81,9 +80,6 @@ func stopTask(ctx context.Context, deps Dependencies, bot domain.Bot, task domai
 	if err := deps.Tasks.Save(ctx, task); err != nil {
 		return CancelTaskResult{}, err
 	}
-	if unrun {
-		newLadderKeeper(deps).endUnrun(ctx, task)
-	}
 	if err := rec.executionEvent(ctx, event, bot, task.ID(), executionID, task.CorrelationID(), payload); err != nil {
 		return CancelTaskResult{}, err
 	}
@@ -93,9 +89,6 @@ func stopTask(ctx context.Context, deps Dependencies, bot domain.Bot, task domai
 	ended := domain.Execution{}
 	if cancelled != nil {
 		ended = *cancelled
-	}
-	if err := newIncidentAdvancer(deps).taskEnded(ctx, bot, task, ended); err != nil {
-		return CancelTaskResult{}, err
 	}
 	if err := newAnswerDeliverer(deps).taskEnded(ctx, bot, task, ended); err != nil {
 		return CancelTaskResult{}, err

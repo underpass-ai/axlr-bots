@@ -7,39 +7,21 @@ package domain
 // (an HMAC over the body); a timer runs Every (a duration) or on Cron
 // (five fields, the host's time zone). An event trigger hears the
 // event names or patterns Events lists and, with Interrupt, makes their
-// warnings and criticals urgent. An incident trigger's Phase is the
-// incident's phase the bot takes: triage (the default), fix, apply,
-// verify or postmortem; its Severities, for the postmortem phase only,
-// are the incidents it writes one for (sev1 and sev2 when absent); its Level and Tools, when given, are the level and the
-// allow-list that phase's tasks run under: at most the bot's level, and
-// a subset of its allowedTools (Bot.CheckTriggers refuses more). A
-// cloudwatch trigger's Severity is its incidents' (sev3 when absent) and
-// AutoConfirm says whether it confirms an SNS subscription by itself;
-// Topics, when given, are the SNS topic ARNs it takes messages from, and
-// AutoConfirm needs them. Ladder, on an apply phase's trigger only, is
-// the bot's opt-in to progressive autonomy (docs/architecture/autonomy-ladder.md).
+// warnings and criticals urgent.
 // A question trigger's From lists the teams whose questions the bot
 // answers (docs/architecture/team-channel.md).
 type TriggerSnapshot struct {
-	Type        string          `json:"type"`
-	Name        string          `json:"name,omitempty"`
-	Objective   string          `json:"objective,omitempty"`
-	Secret      string          `json:"secret,omitempty"`
-	SigningKey  string          `json:"signingKey,omitempty"`
-	Every       string          `json:"every,omitempty"`
-	Cron        string          `json:"cron,omitempty"`
-	Events      []string        `json:"events,omitempty"`
-	Interrupt   bool            `json:"interrupt,omitempty"`
-	Phase       string          `json:"phase,omitempty"`
-	Level       string          `json:"level,omitempty"`
-	Tools       []string        `json:"tools,omitempty"`
-	Severity    string          `json:"severity,omitempty"`
-	AutoConfirm bool            `json:"autoConfirm,omitempty"`
-	Topics      []string        `json:"topics,omitempty"`
-	Severities  []string        `json:"severities,omitempty"`
-	Ladder      *LadderSnapshot `json:"ladder,omitempty"`
-	From        []string        `json:"from,omitempty"`
-	Deliver     string          `json:"deliver,omitempty"`
+	Type       string   `json:"type"`
+	Name       string   `json:"name,omitempty"`
+	Objective  string   `json:"objective,omitempty"`
+	Secret     string   `json:"secret,omitempty"`
+	SigningKey string   `json:"signingKey,omitempty"`
+	Every      string   `json:"every,omitempty"`
+	Cron       string   `json:"cron,omitempty"`
+	Events     []string `json:"events,omitempty"`
+	Interrupt  bool     `json:"interrupt,omitempty"`
+	From       []string `json:"from,omitempty"`
+	Deliver    string   `json:"deliver,omitempty"`
 }
 
 // Redacted is the snapshot with its credentials hidden: what the API

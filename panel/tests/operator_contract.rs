@@ -11,9 +11,8 @@ use std::path::Path;
 
 use axlr_bots_panel::domain::{
     AutonomyLevel, Bot, BotStatus, CancelledTask, DecidedTask, DeletedBot, EnrollmentToken, Event, Execution,
-    ExecutionKind, ExecutionOutcome, Incident, IncidentPhase, IncidentPostmortem, IncidentSeverity, IncidentStatus,
-    Node, NodeStatus, Overview, PostmortemState, RevokedNode, StoppedBotAnswer, SubmittedTask, Task, TaskStatus,
-    TriggerType, Usage,
+    ExecutionKind, ExecutionOutcome, Node, NodeStatus, Overview, RevokedNode, StoppedBotAnswer, SubmittedTask, Task,
+    TaskStatus, TriggerType, Usage,
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
@@ -150,9 +149,6 @@ fn reads_every_answer_it_asks_for() {
     reads::<DeletedBot>(&spec, "DeleteResponse");
     reads::<DecidedTask>(&spec, "RunResponse");
     reads::<Execution>(&spec, "ExecutionSnapshot");
-    reads::<Incident>(&spec, "IncidentSnapshot");
-    reads::<Incident>(&spec, "IncidentResponse");
-    reads::<IncidentPostmortem>(&spec, "IncidentPostmortemSnapshot");
     reads::<axlr_bots_panel::domain::BuildStatus>(&spec, "BuildStatus");
 }
 
@@ -216,10 +212,6 @@ fn knows_every_value_the_contract_lists_and_reads_a_new_one_as_unknown() {
     knows(&spec, "ExecutionKind", ExecutionKind::Unknown);
     knows(&spec, "TriggerType", TriggerType::Unknown);
     knows(&spec, "AutonomyLevel", AutonomyLevel::Unknown);
-    knows(&spec, "IncidentStatus", IncidentStatus::Unknown);
-    knows(&spec, "IncidentSeverity", IncidentSeverity::Unknown);
-    knows(&spec, "IncidentPhase", IncidentPhase::Unknown);
-    knows(&spec, "IncidentPostmortemState", PostmortemState::Unknown);
 }
 
 #[test]

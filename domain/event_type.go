@@ -26,8 +26,7 @@ const (
 	// version it brought and the one the bot had.
 	EventBotStagedApplied EventType = "bot.staged.applied"
 	// EventBotDeleted says a bot was deleted: its unfinished tasks were
-	// cancelled, its timers removed and its open incidents resolved; its
-	// history stays.
+	// cancelled and its timers removed; its history stays.
 	EventBotDeleted EventType = "bot.deleted"
 	// EventTriggerFired says a trigger fired: a webhook arrived or a
 	// timer's slot came. The payload names the task and says whether the
@@ -113,54 +112,6 @@ const (
 	// deadline: the call was denied or the task ended Expired, as the
 	// bot's approvals say.
 	EventApprovalExpired EventType = "bot.approval.expired"
-	// EventApprovalFirst says the first of the two people a call waits
-	// for approved it: the call did not run, the task still waits for a
-	// second, different person under the same deadline.
-	EventApprovalFirst EventType = "bot.approval.first"
-	// EventIncidentOpened says the control plane opened an incident on an
-	// alert, and the triage task it made: the payload holds the group
-	// key, the source, the title, the severity and the alerts.
-	EventIncidentOpened EventType = "incident.opened"
-	// EventIncidentRepeated says an alert of an incident already open
-	// arrived: nothing was started; the payload holds the alerts added.
-	EventIncidentRepeated EventType = "incident.repeated"
-	// EventIncidentReopened says an alert came soon after the incident
-	// was resolved, or came again while it was Escalated (the payload's
-	// retry is true): a new cycle and a new triage task. It also says an
-	// incident went back to Open from Proposed, Applying or Verifying (the
-	// payload's from names the status, reason why; no task: the next
-	// alert of the group starts the triage).
-	EventIncidentReopened EventType = "incident.reopened"
-	// EventIncidentDiagnosed says the triage task completed: the payload
-	// holds the diagnosis.
-	EventIncidentDiagnosed EventType = "incident.diagnosed"
-	// EventIncidentProposed says the fix task completed: the payload
-	// holds the proposal, the change and its rollback, applied by nobody.
-	EventIncidentProposed EventType = "incident.proposed"
-	// EventIncidentApplying says a person approved the apply task's call:
-	// the proposal is being carried out. The payload names the task, the
-	// call and who decided.
-	EventIncidentApplying EventType = "incident.applying"
-	// EventIncidentVerifying says the apply task completed: the verify
-	// task, when a teammate takes the phase, checks the change.
-	EventIncidentVerifying EventType = "incident.verifying"
-	// EventIncidentEscalated says the bots gave the incident to a person:
-	// the payload says why.
-	EventIncidentEscalated EventType = "incident.escalated"
-	// EventIncidentResolved says the incident was closed, by whom and why.
-	EventIncidentResolved EventType = "incident.resolved"
-	// EventIncidentPostmortemDrafted says the postmortem's task answered:
-	// a person approves the draft or sends it back.
-	EventIncidentPostmortemDrafted EventType = "incident.postmortem_drafted"
-	// EventIncidentPostmortemFailed says the postmortem's task failed,
-	// expired or was cancelled; the incident stays Resolved.
-	EventIncidentPostmortemFailed EventType = "incident.postmortem_failed"
-	// EventIncidentPostmortemSentBack says a person sent the postmortem
-	// back, with who and how many times.
-	EventIncidentPostmortemSentBack EventType = "incident.postmortem_sent_back"
-	// EventIncidentPostmortemApproved says a person approved the
-	// postmortem; it is what the incident's outputs announce.
-	EventIncidentPostmortemApproved EventType = "incident.postmortem_approved"
 	// EventNodeRegistered says a node registered (or registered again).
 	EventNodeRegistered EventType = "node.registered"
 	// EventNodeHeartbeat says a node was heard from.
@@ -185,10 +136,9 @@ const (
 func ParseEventType(raw string) (EventType, error) {
 	switch EventType(raw) {
 	case EventBotRegistered, EventBotEnabled, EventBotUpdated, EventBotPaused, EventBotStaged, EventBotUnstaged, EventBotStagedApplied, EventBotDeleted, EventTriggerFired, EventTaskSubmitted, EventTaskStarted,
-		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventApprovalFirst, EventTaskDelegated, EventTaskMessage, EventTaskSaid, EventTaskProgress, EventDelegationRefused,
+		EventTaskCompleted, EventTaskFailed, EventTaskWaitingApproval, EventTaskDecided, EventTaskCancelled, EventTaskPreempted, EventTaskExpired, EventApprovalExpired, EventTaskDelegated, EventTaskMessage, EventTaskSaid, EventTaskProgress, EventDelegationRefused,
 		EventQuestionAsked, EventQuestionAnswered, EventQuestionRefused,
 		EventEventEmitted, EventEventRefused, EventEventHeard, EventSubscriptionChanged, EventSubscriptionAsked, EventGroupEventPublished,
-		EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentProposed, EventIncidentApplying, EventIncidentVerifying, EventIncidentEscalated, EventIncidentResolved, EventIncidentPostmortemDrafted, EventIncidentPostmortemFailed, EventIncidentPostmortemSentBack, EventIncidentPostmortemApproved,
 		EventNodeRegistered, EventNodeHeartbeat, EventNodeOffline, EventNodeEnrolled, EventNodeRevoked, EventNodeRenewed,
 		EventExecutionAssigned, EventExecutionReported:
 		return EventType(raw), nil
@@ -197,16 +147,6 @@ func ParseEventType(raw string) (EventType, error) {
 }
 
 func (t EventType) String() string { return string(t) }
-
-// AboutIncident reports an event about an incident: it names the
-// incident and the bot that triages it.
-func (t EventType) AboutIncident() bool {
-	switch t {
-	case EventIncidentOpened, EventIncidentRepeated, EventIncidentReopened, EventIncidentDiagnosed, EventIncidentProposed, EventIncidentApplying, EventIncidentVerifying, EventIncidentEscalated, EventIncidentResolved, EventIncidentPostmortemDrafted, EventIncidentPostmortemFailed, EventIncidentPostmortemSentBack, EventIncidentPostmortemApproved:
-		return true
-	}
-	return false
-}
 
 // AboutGroup reports an event about a team rather than a bot.
 func (t EventType) AboutGroup() bool { return t == EventGroupEventPublished }

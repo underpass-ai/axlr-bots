@@ -12,8 +12,7 @@ import (
 // first (its cost unknown), and the run, interrupted in process or
 // stopped by its refused lease on a node, reports after. The report
 // changes nothing else, but its usage and receipt are the best number
-// there is: before, the run's cost counted as $0 (5 November 2026). The
-// task's incident gets the cost too.
+// there is: before, the run's cost counted as $0 (5 November 2026).
 type lateAccount struct {
 	deps Dependencies
 	rec  recorder
@@ -37,5 +36,5 @@ func (l lateAccount) keep(ctx context.Context, task domain.Task, execution *doma
 	if err := l.rec.audit(ctx, "execution.account", execution.ID().String(), domain.AuditOK, details); err != nil {
 		return err
 	}
-	return newIncidentAdvancer(l.deps).lateCost(ctx, task, *execution)
+	return nil
 }

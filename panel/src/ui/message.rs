@@ -10,8 +10,8 @@ use crate::application::{
     StoppedBot, SubscriptionChange, TaskDetail,
 };
 use crate::domain::{
-    Autonomy, AutonomyLevel, Bot, BotId, CancelledTask, DecidedTask, DeletedBot, EnrollmentToken, ExecutionId,
-    Incident, NodeId, Published, RevokedNode, SubmittedTask, TaskId, TaskStatus, TeamLink, ToolAccess, Topic,
+    AutonomyLevel, Bot, BotId, CancelledTask, DecidedTask, DeletedBot, EnrollmentToken, ExecutionId, NodeId, Published,
+    RevokedNode, SubmittedTask, TaskId, TaskStatus, TeamLink, ToolAccess, Topic,
 };
 
 /// Everything that happens in the panel: what the operator does, the
@@ -179,26 +179,6 @@ pub enum Message {
     AskDeny(TaskId),
     Decided(Result<DecidedTask, PanelError>),
 
-    /// The incidents' list, and one incident's page.
-    IncidentsLoaded(Result<Vec<Incident>, PanelError>),
-    IncidentLoaded(String, Result<Incident, PanelError>),
-    /// Resolve the incident on screen: open the form, give a reason, send.
-    ResolveOpen,
-    ResolveReason(String),
-    ResolveSend,
-    ResolveClose,
-    IncidentResolved(Result<Incident, PanelError>),
-    /// A person marks the diagnosis of the incident on screen.
-    MarkDiagnosis(String),
-    DiagnosisMarked(String, Result<Autonomy, PanelError>),
-    /// Answer the postmortem of the incident on screen: approve it, or
-    /// open the form, give a note, send it back.
-    PostmortemApprove,
-    PostmortemBackOpen,
-    PostmortemBackNote(String),
-    PostmortemBackSend,
-    PostmortemBackClose,
-    PostmortemReviewed(Result<Incident, PanelError>),
     /// Save an execution's artifact, and where it went; `None` when the
     /// person cancelled.
     Download(ExecutionId, String),

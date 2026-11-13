@@ -78,30 +78,3 @@ func restoreRules(snapshots []ToolRuleSnapshot) ([]ToolRule, error) {
 	}
 	return rules, nil
 }
-
-// bound replaces the allow rules of the rule's tool with the rule: what
-// holds a ladder's write to its namespace, so no rule of the bot's widens
-// it back. Every deny rule stays.
-func (r ToolRules) bound(rule ToolRule) ToolRules {
-	out := ToolRules{deny: append([]ToolRule(nil), r.deny...)}
-	for _, allow := range r.allow {
-		if allow.Tool() != rule.Tool() {
-			out.allow = append(out.allow, allow)
-		}
-	}
-	out.allow = append(out.allow, rule)
-	return out
-}
-
-// Within keeps the allow rules of the tools the list allows and every
-// deny rule: the rules of a narrower allow-list, which an allow rule of a
-// tool it leaves out would widen again.
-func (r ToolRules) Within(allowed AllowedTools) ToolRules {
-	narrowed := ToolRules{deny: append([]ToolRule(nil), r.deny...)}
-	for _, rule := range r.allow {
-		if allowed.Allows(rule.Tool()) {
-			narrowed.allow = append(narrowed.allow, rule)
-		}
-	}
-	return narrowed
-}

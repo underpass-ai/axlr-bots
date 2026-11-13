@@ -32,7 +32,7 @@ The daemon's stale-binary stop (it exits when a newer `axlr-bots` is installed o
 grep -l '"command"' ~/.local/state/axlr-bots/bots/*.json ~/.local/state/axlr-bots/outputs.json
 ```
 
-Each one found keeps working only on the service: move it to a webhook target ([approvals](approvals.md), [outputs](outputs.md)) or stay on the service. Likewise an in-process run sees only the image's `axlr-tui` and keeps AXLR's own state on a tmpfs: skills installed for the host account are not there. Runs belong on the nodes; the in-process path is the fallback when none is online.
+Each one found keeps working only on the service: move it to a webhook target ([approvals](approvals.md)) or stay on the service. Likewise an in-process run sees only the image's `axlr-tui` and keeps AXLR's own state on a tmpfs: skills installed for the host account are not there. Runs belong on the nodes; the in-process path is the fallback when none is online.
 
 The variables in the env file reach the container's environment: anyone who may run `docker inspect` on the host reads them, as anyone who may read the env file does. `docker compose config` prints them too.
 

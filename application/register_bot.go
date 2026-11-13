@@ -32,15 +32,8 @@ func (uc RegisterBot) Execute(ctx context.Context, definition BotDefinition) (do
 	} else if !domain.IsNotFound(err) {
 		return domain.Bot{}, err
 	}
-	if err := checkLadderApprovers(ctx, uc.deps, bot); err != nil {
-		return domain.Bot{}, err
-	}
 	if err := checkNotAnApprover(ctx, uc.deps, bot.ID()); err != nil {
 		_ = uc.rec.audit(ctx, "bot.register", bot.ID().String(), domain.AuditDenied, map[string]string{"reason": err.Error()})
-		return domain.Bot{}, err
-	}
-	// Whatever a bot of this id left behind is not this bot's to inherit.
-	if err := newLadderKeeper(uc.deps).purge(ctx, bot.ID()); err != nil {
 		return domain.Bot{}, err
 	}
 	if err := bot.Register(uc.deps.Clock.Now()); err != nil {
@@ -178,10 +171,6 @@ func buildBot(d BotDefinition, now time.Time) (domain.Bot, error) {
 	}
 	bot.SetSkills(skills)
 	if err := bot.CheckRuntime(); err != nil {
-		return domain.Bot{}, err
-	}
-	// After the runtime: a Jev program takes no phase policy.
-	if err := bot.CheckTriggers(); err != nil {
 		return domain.Bot{}, err
 	}
 	if d.Version != "" {

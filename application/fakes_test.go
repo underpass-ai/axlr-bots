@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/domain"
-	"github.com/underpass-ai/axlr-bots/internal/snstest"
 )
 
 var t0 = time.Date(2026, 10, 23, 15, 0, 0, 0, time.UTC)
@@ -132,105 +131,6 @@ func (m *memoryTasks) FindByIdempotencyKey(_ context.Context, bot domain.BotID, 
 		}
 	}
 	return domain.Task{}, false, nil
-}
-
-type memoryAutonomy struct {
-	records  map[domain.AutonomyID]domain.RunbookAutonomy
-	fail     error
-	failSave error
-}
-
-func (m *memoryAutonomy) Save(_ context.Context, autonomy domain.RunbookAutonomy) error {
-	if m.failSave != nil {
-		return m.failSave
-	}
-	if m.fail != nil {
-		return m.fail
-	}
-	if m.records == nil {
-		m.records = map[domain.AutonomyID]domain.RunbookAutonomy{}
-	}
-	m.records[autonomy.ID()] = autonomy
-	return nil
-}
-
-func (m *memoryAutonomy) Get(_ context.Context, id domain.AutonomyID) (domain.RunbookAutonomy, error) {
-	if m.fail != nil {
-		return domain.RunbookAutonomy{}, m.fail
-	}
-	record, ok := m.records[id]
-	if !ok {
-		return domain.RunbookAutonomy{}, domain.NotFoundError{Kind: "autonomy", ID: id.String()}
-	}
-	return record, nil
-}
-
-func (m *memoryAutonomy) Delete(_ context.Context, id domain.AutonomyID) error {
-	delete(m.records, id)
-	return nil
-}
-
-func (m *memoryAutonomy) List(_ context.Context) ([]domain.RunbookAutonomy, error) {
-	if m.fail != nil {
-		return nil, m.fail
-	}
-	var out []domain.RunbookAutonomy
-	for _, record := range m.records {
-		out = append(out, record)
-	}
-	return out, nil
-}
-
-type memoryIncidents struct {
-	incidents map[domain.IncidentID]domain.Incident
-	fail      error
-	listFail  error
-	saves     int
-}
-
-func (m *memoryIncidents) Save(_ context.Context, incident domain.Incident) error {
-	if m.fail != nil {
-		return m.fail
-	}
-	if m.incidents == nil {
-		m.incidents = map[domain.IncidentID]domain.Incident{}
-	}
-	m.incidents[incident.ID()] = incident
-	m.saves++
-	return nil
-}
-
-func (m *memoryIncidents) Get(_ context.Context, id domain.IncidentID) (domain.Incident, error) {
-	incident, ok := m.incidents[id]
-	if !ok {
-		return domain.Incident{}, domain.NotFoundError{Kind: "incident", ID: id.String()}
-	}
-	return incident, nil
-}
-
-func (m *memoryIncidents) FindNewestByGroupKey(_ context.Context, tenant domain.TenantID, groupKey string) (domain.Incident, bool, error) {
-	if m.listFail != nil {
-		return domain.Incident{}, false, m.listFail
-	}
-	var newest domain.Incident
-	found := false
-	for _, incident := range m.incidents {
-		if incident.TenantID() == tenant && incident.GroupKey() == groupKey && (!found || incident.OpenedAt().After(newest.OpenedAt())) {
-			newest, found = incident, true
-		}
-	}
-	return newest, found, nil
-}
-
-func (m *memoryIncidents) List(context.Context) ([]domain.Incident, error) {
-	if m.listFail != nil {
-		return nil, m.listFail
-	}
-	out := make([]domain.Incident, 0, len(m.incidents))
-	for _, incident := range m.incidents {
-		out = append(out, incident)
-	}
-	return out, nil
 }
 
 type memoryExecutions struct {
@@ -723,8 +623,6 @@ type harness struct {
 	deps    Dependencies
 	bots    *memoryBots
 	tasks   *memoryTasks
-	incs    *memoryIncidents
-	autos   *memoryAutonomy
 	execs   *memoryExecutions
 	timers  *memoryTimers
 	nodes   *memoryNodes
@@ -739,10 +637,6 @@ type harness struct {
 	work    *fakeWorkspace
 	outbox  *memoryDeliveries
 	notify  *fakeNotifier
-	outs    *memoryOutputs
-	outbox2 *memoryOutputDeliveries
-	sender  *fakeOutputSender
-	sns     *snstest.Transport
 	clock   *fixedClock
 	bus     *loopbackBus
 }
@@ -776,8 +670,6 @@ func newHarness() *harness {
 	h := &harness{
 		bots:    &memoryBots{},
 		tasks:   &memoryTasks{},
-		autos:   &memoryAutonomy{},
-		incs:    &memoryIncidents{},
 		execs:   &memoryExecutions{},
 		timers:  &memoryTimers{},
 		nodes:   &memoryNodes{},
@@ -792,17 +684,12 @@ func newHarness() *harness {
 		work:    &fakeWorkspace{files: map[string]string{}},
 		outbox:  &memoryDeliveries{},
 		notify:  &fakeNotifier{},
-		outs:    &memoryOutputs{},
-		outbox2: &memoryOutputDeliveries{},
-		sender:  &fakeOutputSender{},
-		sns:     &snstest.Transport{},
 		clock:   &fixedClock{now: t0},
 	}
 	h.bus = &loopbackBus{h: h}
 	h.deps = Dependencies{
-		Bots: h.bots, Tasks: h.tasks, Incidents: h.incs, Autonomy: h.autos, Executions: h.execs, Timers: h.timers, Nodes: h.nodes, Enrollments: h.enrol, Certifier: h.ca, Denylist: h.deny, Events: h.log, EventReader: h.log, Audit: h.log,
+		Bots: h.bots, Tasks: h.tasks, Executions: h.execs, Timers: h.timers, Nodes: h.nodes, Enrollments: h.enrol, Certifier: h.ca, Denylist: h.deny, Events: h.log, EventReader: h.log, Audit: h.log,
 		Runtime: h.runtime, Decisions: h.decider, Traces: h.traces, Artifacts: h.store, Workspace: h.work, Deliveries: h.outbox, Notifier: h.notify,
-		Outputs: h.outs, OutputDeliveries: h.outbox2, OutputSender: h.sender, SNS: h.sns,
 		Clock: h.clock, IDs: &sequentialIDs{}, Actor: "test:operator", DomainEvents: h.bus,
 	}
 	return h
@@ -811,7 +698,7 @@ func newHarness() *harness {
 func sampleDefinition() BotDefinition {
 	return BotDefinition{
 		Tenant:       "engineering",
-		Name:         "server-incident-investigator",
+		Name:         "server-investigator",
 		Owner:        "platform-team",
 		Mission:      "Do what each task asks, within the policy",
 		AllowedTools: []string{"observability.query_logs", "kubernetes.get_pods"},

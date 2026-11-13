@@ -95,9 +95,6 @@ func (uc RevokeNode) failExecutions(ctx context.Context, node domain.Node, now t
 		if err := uc.rec.executionEvent(ctx, endEvent(task), bot, task.ID(), execution.ID(), task.CorrelationID(), payload); err != nil {
 			return nil, err
 		}
-		if err := newIncidentAdvancer(uc.deps).taskEnded(ctx, bot, task, execution); err != nil {
-			return nil, err
-		}
 		if err := newAnswerDeliverer(uc.deps).taskEnded(ctx, bot, task, execution); err != nil {
 			return nil, err
 		}

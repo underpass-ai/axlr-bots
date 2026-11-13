@@ -87,7 +87,7 @@ func botStop(ctx context.Context, service unixapi.Service, args []string, stdout
 }
 
 // botDelete deletes the bot: its unfinished tasks and the children it
-// asked for are cancelled, its incidents resolved, its timers removed;
+// asked for are cancelled and its timers removed;
 // the answer names the bots that still name it.
 func botDelete(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {

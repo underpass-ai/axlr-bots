@@ -209,14 +209,14 @@ mod tests {
 
     #[test]
     fn keeps_the_skills_of_a_definition() {
-        let text = r#"{"tenant": "default", "name": "triage", "owner": "ops", "mission": "Triage.",
+        let text = r#"{"tenant": "default", "name": "notes", "owner": "ops", "mission": "Write the release notes.",
           "triggers": [{"type": "manual"}],
-          "skills": [{"name": "crashloop", "version": "1.0.0", "catalog": "axlr"}]}"#;
+          "skills": [{"name": "release_notes", "version": "1.0.0", "catalog": "axlr"}]}"#;
         let definition = BotDefinition::from_json(text).unwrap();
         let out = serde_json::to_value(&definition).unwrap();
         assert_eq!(out["skills"][0]["version"], "1.0.0");
         let without = BotDefinition::from_json(
-            r#"{"tenant": "default", "name": "triage", "owner": "ops", "mission": "Triage.", "triggers": [{"type": "manual"}]}"#,
+            r#"{"tenant": "default", "name": "notes", "owner": "ops", "mission": "Write the release notes.", "triggers": [{"type": "manual"}]}"#,
         )
         .unwrap();
         assert!(serde_json::to_value(&without).unwrap().get("skills").is_none());
@@ -224,14 +224,14 @@ mod tests {
 
     #[test]
     fn keeps_the_version_of_a_definition() {
-        let text = r#"{"tenant": "default", "name": "triage", "owner": "ops", "mission": "Triage.",
+        let text = r#"{"tenant": "default", "name": "notes", "owner": "ops", "mission": "Write the release notes.",
           "triggers": [{"type": "manual"}], "version": "1.4.0"}"#;
         let definition = BotDefinition::from_json(text).unwrap();
         assert_eq!(definition.version, "1.4.0");
         assert_eq!(serde_json::to_value(&definition).unwrap()["version"], "1.4.0");
         let form = BotForm {
-            name: "triage".into(),
-            mission: "Triage.".into(),
+            name: "notes".into(),
+            mission: "Write the release notes.".into(),
             ..Default::default()
         };
         let made = serde_json::to_value(BotDefinition::from_form(&form).unwrap()).unwrap();

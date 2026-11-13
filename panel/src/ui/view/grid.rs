@@ -213,7 +213,6 @@ pub fn bar<'a>(app: &'a App, list: List, tokens: Tokens) -> Option<El<'a>> {
             crate::application::BulkAction::Stop | crate::application::BulkAction::Cancel => Icon::Stop,
             crate::application::BulkAction::Delete => Icon::Trash,
             crate::application::BulkAction::Deny | crate::application::BulkAction::Revoke => Icon::Ban,
-            crate::application::BulkAction::Resolve => Icon::Check,
         };
         line = line.push(action(
             kind,

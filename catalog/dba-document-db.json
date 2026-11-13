@@ -9,8 +9,7 @@
   "toolRules": {"allow": [], "deny": []},
   "triggers": [
     {"type": "manual"},
-    {"type": "delegation"},
-    {"type": "incident", "objective": "Incident {{.title}} (severity {{.severity}}, cycle {{.cycle}}) on the document database: find the cause with evidence and report the exact change that fixes it."}
+    {"type": "delegation"}
   ],
   "groups": ["data"],
   "events": {"emit": [{"name": "warn.docdb.*"}, {"name": "info.docdb.*"}], "perMinute": 6},

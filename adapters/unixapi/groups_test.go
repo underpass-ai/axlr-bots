@@ -31,7 +31,7 @@ func TestGroupsOverTheSocket(t *testing.T) {
 	if err != nil || group.TenantID != "ops" || group.Members[0].BotID != "watcher" {
 		t.Fatalf("group = %+v %v", group, err)
 	}
-	if _, err := client.GetGroup(ctx, "sre", ""); !domain.IsNotFound(err) {
+	if _, err := client.GetGroup(ctx, "platform", ""); !domain.IsNotFound(err) {
 		t.Errorf("missing group: %v", err)
 	}
 	bot, err := client.GetBot(ctx, "worker-1")
@@ -89,10 +89,10 @@ func TestEventsOverTheSocket(t *testing.T) {
 	if waited, err := client.WaitGroupEvents(ctx, application.GroupEventsQuery{Name: "ops", After: last}, time.Second); err != nil || len(waited) == 0 {
 		t.Errorf("a long poll with something new = %+v %v", waited, err)
 	}
-	if _, err := client.WaitGroupEvents(ctx, application.GroupEventsQuery{Name: "sre"}, 0); !domain.IsNotFound(err) {
+	if _, err := client.WaitGroupEvents(ctx, application.GroupEventsQuery{Name: "platform"}, 0); !domain.IsNotFound(err) {
 		t.Errorf("missing team, waited: %v", err)
 	}
-	if _, err := client.ListGroupEvents(ctx, application.GroupEventsQuery{Name: "sre"}); !domain.IsNotFound(err) {
+	if _, err := client.ListGroupEvents(ctx, application.GroupEventsQuery{Name: "platform"}); !domain.IsNotFound(err) {
 		t.Errorf("missing team: %v", err)
 	}
 	// The bot asks to hear errors; it is pending.
