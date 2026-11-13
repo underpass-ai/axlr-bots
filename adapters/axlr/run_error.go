@@ -28,8 +28,8 @@ type runOutput struct {
 // exit code, stderr and stdout, and drops the request id, the timings and
 // the byte counts. The progress item keeps 240 characters of an error, and
 // on 12 November 2026 the envelope's own fields filled them before the
-// program's words: every failed run of a team's program read "cut before
-// the error" in the Activity and in its audit. Anything that is not such
+// program's words: a failed run read "cut before the error" in the
+// Activity and in its audit. Anything that is not such
 // an envelope is returned as it came.
 func compactRunError(raw string) string {
 	trimmed := strings.TrimSpace(raw)

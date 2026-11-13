@@ -22,7 +22,7 @@ func TestReadCallError(t *testing.T) {
 		"cut broken escape":  {`{"error":"bad \`, callError{Text: "bad"}},
 		"cut message":        {`{"status":"failed","message":"no such program…`, callError{Text: "no such program"}},
 		"empty error string": {`{"error":"","output":{"stderr":"boom"}}`, callError{Text: "boom"}},
-		"stdout refusal":     {`{"protocol_version":1,"status":"completed","output":{"exit_code":1,"stdout":"{\"ok\": false, \"refusal\": \"bad_plan\", \"error\": \"files is a non-empty list of paths\"}"}}`, callError{Text: "bad_plan: files is a non-empty list of paths", Exit: "1"}},
+		"stdout refusal":     {`{"protocol_version":1,"status":"completed","output":{"exit_code":1,"stdout":"{\"ok\": false, \"error\": \"input file is empty\"}"}}`, callError{Text: "input file is empty", Exit: "1"}},
 		"stdout plain":       {`{"protocol_version":1,"status":"completed","output":{"exit_code":2,"stdout":"not available"}}`, callError{Text: "not available", Exit: "2"}},
 		"cut stdout":         {`{"protocol_version":1,"status":"completed","output":{"exit_code":1,"stdout":"{\"ok\": false, \"error\": \"no such fi…`, callError{Text: "no such fi", Exit: "1"}},
 	} {

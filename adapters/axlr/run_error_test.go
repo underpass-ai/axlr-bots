@@ -6,9 +6,9 @@ import (
 )
 
 func TestCompactRunErrorKeepsTheProgramsWords(t *testing.T) {
-	raw := `{"protocol_version":1,"request_id":"call_ec3e8d6dfdac4f01a0a9309af5315ca1","tool":"exec","status":"completed","started_at":"2026-11-12T19:44:40.175910879Z","finished_at":"2026-11-12T19:44:40.204272178Z","duration_ms":28,"output":{"exit_code":1,"stdout":"{\"ok\": false, \"refusal\": \"bad_plan\", \"error\": \"files is a non-empty list of paths\"}\n","stderr":"","captured_bytes":84,"discarded_bytes":0,"truncated":false},"error":null}`
+	raw := `{"protocol_version":1,"request_id":"call_ec3e8d6dfdac4f01a0a9309af5315ca1","tool":"exec","status":"completed","started_at":"2026-11-12T19:44:40.175910879Z","finished_at":"2026-11-12T19:44:40.204272178Z","duration_ms":28,"output":{"exit_code":1,"stdout":"{\"ok\": false, \"error\": \"input file is empty\"}\n","stderr":"","captured_bytes":84,"discarded_bytes":0,"truncated":false},"error":null}`
 	got := compactRunError(raw)
-	want := `{"protocol_version":1,"status":"completed","output":{"exit_code":1,"stdout":"{\"ok\": false, \"refusal\": \"bad_plan\", \"error\": \"files is a non-empty list of paths\"}"}}`
+	want := `{"protocol_version":1,"status":"completed","output":{"exit_code":1,"stdout":"{\"ok\": false, \"error\": \"input file is empty\"}"}}`
 	if got != want {
 		t.Fatalf("got  %s\nwant %s", got, want)
 	}
