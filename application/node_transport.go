@@ -34,6 +34,10 @@ type NodeTransport interface {
 	// delivered, before the report; the control plane keeps them only
 	// when they match the artifact's size and SHA-256.
 	UploadArtifact(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, artifact domain.Artifact, content io.Reader) error
+	// UploadTranscript hands over the whole transcript of a session the
+	// execution ran, before the report; the control plane keeps it only
+	// when it hashes to the SHA-256 named.
+	UploadTranscript(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, upload TranscriptUpload) error
 	// Report hands the result over; a repeated report is accepted and
 	// answered with Accepted false.
 	Report(ctx context.Context, node domain.NodeID, execution domain.ExecutionID, report ExecutionReport) (ReportAck, error)

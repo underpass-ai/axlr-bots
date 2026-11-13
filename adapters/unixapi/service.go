@@ -118,6 +118,11 @@ type Service interface {
 	// GetArtifact opens an artifact the control plane keeps for the
 	// execution; the caller closes the body.
 	GetArtifact(ctx context.Context, execution, name string) (ArtifactContent, error)
+	// ListTranscripts lists the transcripts kept after the cursor, oldest
+	// first (docs/architecture/transcripts.md).
+	ListTranscripts(ctx context.Context, after int64, limit int) ([]application.TranscriptRecord, error)
+	// GetTranscript reads one transcript whole, as the node sent it.
+	GetTranscript(ctx context.Context, execution, session string) ([]byte, error)
 	ListNodes(ctx context.Context) ([]domain.NodeSnapshot, error)
 	GetNode(ctx context.Context, id string) (domain.NodeSnapshot, error)
 	// CreateEnrollmentToken mints a one-time token for a node to come;

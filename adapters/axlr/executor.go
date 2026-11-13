@@ -49,6 +49,10 @@ type Executor struct {
 	// StateDir holds traces/<execution>.jsonl, workspaces/<bot>/ and
 	// kmp/<bot>/, the bot's memory store.
 	StateDir string
+	// SessionState is AXLR's own state directory, where it keeps
+	// sessions/<id>.json; empty: as axlr-tui resolves it
+	// (XDG_STATE_HOME, else ~/.local/state, then axlr).
+	SessionState string
 	// Approve is the run's approval level: none (default), local or all.
 	Approve string
 	// Mode is the work mode (normal, review, writer, research); empty

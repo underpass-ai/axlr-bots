@@ -29,6 +29,10 @@ type Dependencies struct {
 	Decisions   DecisionExecutor
 	Traces      TraceLocator
 	Artifacts   ArtifactStore
+	// Transcripts keeps each execution's whole runtime session
+	// (docs/architecture/transcripts.md); nil: none is kept and an
+	// upload is refused.
+	Transcripts TranscriptStore
 	Workspace   Workspace
 	Deliveries  DeliveryRepository
 	Notifier    NotificationSender

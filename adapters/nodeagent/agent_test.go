@@ -297,6 +297,18 @@ type fakeTransport struct {
 	notFound bool
 	uploads  []string
 	renewErr error
+	// transcripts are the sessions uploaded, session=content;
+	// transcriptErr refuses them.
+	transcripts   []string
+	transcriptErr error
+}
+
+func (f *fakeTransport) UploadTranscript(_ context.Context, _ domain.NodeID, _ domain.ExecutionID, upload application.TranscriptUpload) error {
+	if f.transcriptErr != nil {
+		return f.transcriptErr
+	}
+	f.transcripts = append(f.transcripts, upload.Session+"="+string(upload.Content)+"#"+upload.SHA256[:8])
+	return nil
 }
 
 func (f *fakeTransport) UploadArtifact(_ context.Context, _ domain.NodeID, _ domain.ExecutionID, artifact domain.Artifact, content io.Reader) error {

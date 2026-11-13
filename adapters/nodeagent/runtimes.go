@@ -108,3 +108,13 @@ func (r *Runtimes) SupportsCorrelation(ctx context.Context) bool {
 }
 func (r *Runtimes) SupportsSkills(ctx context.Context) bool { return r.Default.SupportsSkills(ctx) }
 func (r *Runtimes) Version(ctx context.Context) string      { return r.Default.Version(ctx) }
+
+// ReadSession reads a session's transcript from AXLR, the one runtime
+// that keeps sessions; an error when the default runtime keeps none.
+func (r *Runtimes) ReadSession(id string) ([]byte, error) {
+	reader, ok := r.Default.(SessionReader)
+	if !ok {
+		return nil, errors.New("the runtime keeps no session files")
+	}
+	return reader.ReadSession(id)
+}

@@ -223,6 +223,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return executionGet(ctx, service, rest, stdout, stderr)
 	case "execution artifact":
 		return executionArtifact(ctx, service, rest, stdout, stderr)
+	case "execution transcripts":
+		return executionTranscripts(ctx, service, rest, stdout, stderr)
+	case "execution transcript":
+		return executionTranscript(ctx, service, rest, stdout, stderr)
 	case "node list":
 		return nodeList(ctx, service, rest, stdout, stderr)
 	case "node get":
@@ -406,6 +410,8 @@ func printUsage(w io.Writer) {
   execution get <execution-id>        show one execution: outcome, answer, usage, policy,
                                       artifacts and receipt
   execution artifact <execution-id> <name> [--out <file>]
+  execution transcripts [--after <seq>] [--limit <n>]
+  execution transcript <execution-id> <session> [--jsonl] [--out <file>]
                                       an artifact the control plane keeps, checked
                                       against its SHA-256
   overview [--since <time>]           nodes, bots and tasks by status; tasks, executions
