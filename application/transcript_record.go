@@ -16,9 +16,10 @@ const MaxTranscriptList = 500
 
 // TranscriptRecord is what the control plane keeps beside one
 // transcript: the execution it belongs to, its task and bot, the
-// runtime's session id, its size and SHA-256, when it came, and its
-// place in the order transcripts came (Seq, from 1), the cursor of
-// ListTranscripts.
+// runtime's session id, the size and SHA-256 of what is kept, when it
+// came, its place in the order transcripts came (Seq, from 1), the
+// cursor of ListTranscripts, and, when a TranscriptFilter changed it,
+// Filtered and the SHA-256 of what the node sent (SentSHA256).
 type TranscriptRecord struct {
 	Seq        int64              `json:"seq"`
 	Execution  domain.ExecutionID `json:"executionId"`
@@ -27,5 +28,7 @@ type TranscriptRecord struct {
 	Session    string             `json:"session"`
 	Size       int64              `json:"size"`
 	SHA256     string             `json:"sha256"`
+	Filtered   bool               `json:"filtered,omitempty"`
+	SentSHA256 string             `json:"sentSha256,omitempty"`
 	ReceivedAt time.Time          `json:"receivedAt"`
 }

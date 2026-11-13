@@ -33,16 +33,24 @@ func TestSaveLoadListReplace(t *testing.T) {
 	if err != nil || string(content) != `{"a":1}` || got.Bot != "dev-go" || got.Task != "task-1" || !got.ReceivedAt.Equal(record("", "").ReceivedAt) {
 		t.Fatalf("load: %+v %q %v", got, content, err)
 	}
+	filtered := record("exec-3", "s3")
+	filtered.Filtered, filtered.SentSHA256 = true, "sent"
+	if _, err := store.SaveTranscript(ctx, filtered, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, err := store.LoadTranscript(ctx, "exec-3", "s3"); err != nil || !got.Filtered || got.SentSHA256 != "sent" {
+		t.Fatalf("filtered: %+v %v", got, err)
+	}
 	// A replaced transcript comes again after the cursor.
 	again, err := store.SaveTranscript(ctx, record("exec-1", "s1"), []byte(`{"a":2}`))
-	if err != nil || again.Seq != 3 {
+	if err != nil || again.Seq != 4 {
 		t.Fatalf("replace: %+v %v", again, err)
 	}
 	list, err := store.ListTranscripts(ctx, 0, 10)
-	if err != nil || len(list) != 2 || list[0].Execution != "exec-2" || list[1].Seq != 3 {
+	if err != nil || len(list) != 3 || list[0].Execution != "exec-2" || list[2].Seq != 4 {
 		t.Fatalf("list: %+v %v", list, err)
 	}
-	after, err := store.ListTranscripts(ctx, 2, 10)
+	after, err := store.ListTranscripts(ctx, 3, 10)
 	if err != nil || len(after) != 1 || after[0].Execution != "exec-1" {
 		t.Fatalf("after: %+v %v", after, err)
 	}

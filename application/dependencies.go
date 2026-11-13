@@ -33,9 +33,12 @@ type Dependencies struct {
 	// (docs/architecture/transcripts.md); nil: none is kept and an
 	// upload is refused.
 	Transcripts TranscriptStore
-	Workspace   Workspace
-	Deliveries  DeliveryRepository
-	Notifier    NotificationSender
+	// TranscriptFilter, optional, turns what a node sent into what
+	// Transcripts keeps; nil: kept as sent.
+	TranscriptFilter TranscriptFilter
+	Workspace        Workspace
+	Deliveries       DeliveryRepository
+	Notifier         NotificationSender
 	// Outputs, OutputDeliveries and OutputSender announce incidents to
 	// the control plane's output targets.
 	Outputs          OutputRepository

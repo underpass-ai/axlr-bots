@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS transcripts (
 	bot_id       TEXT    NOT NULL,
 	size         INTEGER NOT NULL,
 	sha256       TEXT    NOT NULL,
+	filtered     INTEGER NOT NULL DEFAULT 0,
+	sent_sha256  TEXT    NOT NULL DEFAULT '',
 	received_at  TEXT    NOT NULL,
 	content      BLOB    NOT NULL,
 	UNIQUE (execution_id, session)
@@ -105,8 +107,8 @@ func (s *TranscriptStore) SaveTranscript(ctx context.Context, record application
 	if content == nil {
 		content = []byte{}
 	}
-	result, err := tx.ExecContext(ctx, `INSERT INTO transcripts (execution_id, session, task_id, bot_id, size, sha256, received_at, content) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		record.Execution.String(), record.Session, record.Task.String(), record.Bot.String(), record.Size, record.SHA256, record.ReceivedAt.UTC().Format(time.RFC3339Nano), content)
+	result, err := tx.ExecContext(ctx, `INSERT INTO transcripts (execution_id, session, task_id, bot_id, size, sha256, filtered, sent_sha256, received_at, content) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		record.Execution.String(), record.Session, record.Task.String(), record.Bot.String(), record.Size, record.SHA256, record.Filtered, record.SentSHA256, record.ReceivedAt.UTC().Format(time.RFC3339Nano), content)
 	if err != nil {
 		return application.TranscriptRecord{}, fmt.Errorf("sqlitestore: %w", err)
 	}
@@ -125,7 +127,7 @@ func (s *TranscriptStore) LoadTranscript(ctx context.Context, execution domain.E
 	if err != nil {
 		return application.TranscriptRecord{}, nil, err
 	}
-	row := db.QueryRowContext(ctx, `SELECT seq, execution_id, session, task_id, bot_id, size, sha256, received_at, content FROM transcripts WHERE execution_id = ? AND session = ?`, execution.String(), session)
+	row := db.QueryRowContext(ctx, `SELECT seq, execution_id, session, task_id, bot_id, size, sha256, filtered, sent_sha256, received_at, content FROM transcripts WHERE execution_id = ? AND session = ?`, execution.String(), session)
 	var content []byte
 	record, err := scanRecord(row.Scan, &content)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -143,7 +145,7 @@ func (s *TranscriptStore) ListTranscripts(ctx context.Context, after int64, limi
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.QueryContext(ctx, `SELECT seq, execution_id, session, task_id, bot_id, size, sha256, received_at FROM transcripts WHERE seq > ? ORDER BY seq LIMIT ?`, after, limit)
+	rows, err := db.QueryContext(ctx, `SELECT seq, execution_id, session, task_id, bot_id, size, sha256, filtered, sent_sha256, received_at FROM transcripts WHERE seq > ? ORDER BY seq LIMIT ?`, after, limit)
 	if err != nil {
 		return nil, fmt.Errorf("sqlitestore: %w", err)
 	}
@@ -167,7 +169,7 @@ func (s *TranscriptStore) ListTranscripts(ctx context.Context, after int64, limi
 func scanRecord(scan func(...any) error, content *[]byte) (application.TranscriptRecord, error) {
 	var record application.TranscriptRecord
 	var execution, task, bot, received string
-	dest := []any{&record.Seq, &execution, &record.Session, &task, &bot, &record.Size, &record.SHA256, &received}
+	dest := []any{&record.Seq, &execution, &record.Session, &task, &bot, &record.Size, &record.SHA256, &record.Filtered, &record.SentSHA256, &received}
 	if content != nil {
 		dest = append(dest, content)
 	}

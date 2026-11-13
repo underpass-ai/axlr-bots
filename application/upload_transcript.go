@@ -54,11 +54,27 @@ func (uc UploadTranscript) Execute(ctx context.Context, node domain.NodeID, id d
 		return TranscriptRecord{}, err
 	}
 	record := TranscriptRecord{Execution: id, Task: task.ID(), Bot: task.BotID(), Session: upload.Session, Size: int64(len(upload.Content)), SHA256: hex.EncodeToString(sum[:]), ReceivedAt: uc.deps.Clock.Now().UTC()}
-	kept, err := uc.deps.Transcripts.SaveTranscript(ctx, record, upload.Content)
+	content := upload.Content
+	if uc.deps.TranscriptFilter != nil {
+		filtered, err := uc.deps.TranscriptFilter.FilterTranscript(ctx, record, content)
+		if err != nil {
+			return TranscriptRecord{}, uc.refuse(ctx, id, upload, err)
+		}
+		kept := sha256.Sum256(filtered)
+		if hex.EncodeToString(kept[:]) != record.SHA256 {
+			record.Filtered, record.SentSHA256 = true, record.SHA256
+			record.Size, record.SHA256 = int64(len(filtered)), hex.EncodeToString(kept[:])
+		}
+		content = filtered
+	}
+	kept, err := uc.deps.Transcripts.SaveTranscript(ctx, record, content)
 	if err != nil {
 		return TranscriptRecord{}, err
 	}
 	details := map[string]string{"session": upload.Session, "node": node.String(), "size": strconv.FormatInt(record.Size, 10), "sha256": record.SHA256}
+	if record.Filtered {
+		details["filtered"], details["sent_sha256"] = "true", record.SentSHA256
+	}
 	if err := uc.rec.audit(ctx, "transcript.upload", id.String(), domain.AuditOK, details); err != nil {
 		return TranscriptRecord{}, err
 	}
