@@ -98,6 +98,9 @@ spec:
             {{- if .Values.metrics.enabled }}
             - {name: AXLR_BOTS_METRICS_LISTEN, value: {{ printf "0.0.0.0:%d" (int .Values.metrics.port) | quote }}}
             {{- end }}
+            {{- with include "axlr-bots-control-plane.otlpEndpoint" . }}
+            - {name: AXLR_BOTS_OTLP_ENDPOINT, value: {{ . | quote }}}
+            {{- end }}
             {{- if $nats }}
             - {name: AXLR_BOTS_NATS_URL, value: {{ .Values.bus.nats.url | quote }}}
             - {name: AXLR_BOTS_NATS_CERT, value: /etc/axlr-bots/nats/tls.crt}

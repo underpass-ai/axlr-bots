@@ -1,0 +1,16 @@
+{{- if and .Values.tempo.enabled .Values.tempo.persistence.enabled (not .Values.tempo.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "axlr-bots-control-plane.tempoName" . }}
+  labels:
+    {{- include "axlr-bots-control-plane.tempoLabels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.tempo.persistence.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.tempo.persistence.size }}
+{{- end }}

@@ -56,6 +56,30 @@
         }
       }
     },
+    "tracing": {
+      "type": "object",
+      "properties": {
+        "otlpEndpoint": {"type": "string", "pattern": "^(https?://[^/ ]+(/[^ ]*)?)?$"}
+      }
+    },
+    "tempo": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "image": {"type": "object", "properties": {
+          "repository": {"type": "string", "minLength": 1},
+          "tag": {"type": "string", "pattern": "^[0-9A-Za-z._-]{1,128}$"},
+          "pullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]}}},
+        "retention": {"type": "string", "pattern": "^[0-9]+(h|m|s)$"},
+        "persistence": {"type": "object", "properties": {
+          "enabled": {"type": "boolean"},
+          "size": {"type": "string"},
+          "storageClassName": {"type": "string"},
+          "existingClaim": {"type": "string"}}},
+        "emptyDirSize": {"type": "string"},
+        "resources": {"type": "object"}
+      }
+    },
     "grafanaDashboard": {
       "type": "object",
       "properties": {
