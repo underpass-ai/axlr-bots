@@ -1,8 +1,7 @@
 // Package compose is the composition root shared by the command and the
 // daemon: file-backed repositories, JSONL logs, the artifact store, the
 // transcripts' store (SQLite with the sqlite build tag, plain files
-// without), the notification outbox and its sender, the incident outputs and theirs,
-// Amazon SNS's transport, the fleet CA and the AXLR executor, all under
+// without), the notification outbox and its sender, the fleet CA and the AXLR executor, all under
 // one state directory.
 package compose
 
@@ -15,7 +14,6 @@ import (
 	"github.com/underpass-ai/axlr-bots/adapters/jsonl"
 	"github.com/underpass-ai/axlr-bots/adapters/notify"
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
-	"github.com/underpass-ai/axlr-bots/adapters/sns"
 	"github.com/underpass-ai/axlr-bots/adapters/system"
 	"github.com/underpass-ai/axlr-bots/application"
 )
@@ -33,35 +31,29 @@ func Dependencies(stateDir, axlrBin, actor string) (application.Dependencies, er
 	executor := axlr.NewExecutor(axlrBin, stateDir)
 	events := jsonl.NewEventLog(stateDir)
 	deps := application.Dependencies{
-		Bots:             filestore.NewBotRepository(stateDir),
-		Tasks:            filestore.NewTaskRepository(stateDir),
-		Incidents:        filestore.NewIncidentRepository(stateDir),
-		Autonomy:         filestore.NewAutonomyRepository(stateDir),
-		Executions:       filestore.NewExecutionRepository(stateDir),
-		Timers:           filestore.NewTimerRepository(stateDir),
-		Nodes:            filestore.NewNodeRepository(stateDir),
-		Enrollments:      filestore.NewEnrollmentRepository(stateDir),
-		Certifier:        pki.NewCertifier(stateDir),
-		Denylist:         filestore.NewCertificateDenylist(stateDir),
-		Events:           events,
-		EventReader:      events,
-		Audit:            jsonl.NewAuditLog(stateDir),
-		Runtime:          executor,
-		Decisions:        executor,
-		Traces:           executor,
-		Artifacts:        filestore.NewArtifactStore(stateDir),
-		Transcripts:      TranscriptStore(stateDir),
-		Workspace:        executor,
-		Deliveries:       filestore.NewDeliveryRepository(stateDir),
-		Notifier:         notify.NewSender(),
-		Outputs:          filestore.NewOutputRepository(stateDir),
-		OutputDeliveries: filestore.NewOutputDeliveryRepository(stateDir),
-		OutputSender:     notify.NewOutputSender(),
-		SNS:              sns.NewTransport(),
-		Clock:            system.Clock{},
-		IDs:              system.IDGenerator{},
-		Build:            system.BuildReader{},
-		Actor:            actor,
+		Bots:        filestore.NewBotRepository(stateDir),
+		Tasks:       filestore.NewTaskRepository(stateDir),
+		Executions:  filestore.NewExecutionRepository(stateDir),
+		Timers:      filestore.NewTimerRepository(stateDir),
+		Nodes:       filestore.NewNodeRepository(stateDir),
+		Enrollments: filestore.NewEnrollmentRepository(stateDir),
+		Certifier:   pki.NewCertifier(stateDir),
+		Denylist:    filestore.NewCertificateDenylist(stateDir),
+		Events:      events,
+		EventReader: events,
+		Audit:       jsonl.NewAuditLog(stateDir),
+		Runtime:     executor,
+		Decisions:   executor,
+		Traces:      executor,
+		Artifacts:   filestore.NewArtifactStore(stateDir),
+		Transcripts: TranscriptStore(stateDir),
+		Workspace:   executor,
+		Deliveries:  filestore.NewDeliveryRepository(stateDir),
+		Notifier:    notify.NewSender(),
+		Clock:       system.Clock{},
+		IDs:         system.IDGenerator{},
+		Build:       system.BuildReader{},
+		Actor:       actor,
 	}
 	if err := deps.Validate(); err != nil {
 		return application.Dependencies{}, err

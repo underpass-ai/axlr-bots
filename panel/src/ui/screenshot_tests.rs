@@ -141,11 +141,6 @@ fn screenshots() {
     camera.shoot(&mut app, "new-bot-advanced-light");
     app.apply(Message::RegisterClose);
 
-    send(&mut app, Message::Go(Screen::Incidents));
-    camera.both(&mut app, "incidents");
-    send(&mut app, Message::Go(Screen::Incident("inc-disk".into())));
-    camera.shoot(&mut app, "incident-light");
-
     send(&mut app, Message::Go(Screen::Settings));
     app.apply(Message::SettingsCa(
         "/home/operator/.local/state/axlr-bots/ca/ca.crt".into(),

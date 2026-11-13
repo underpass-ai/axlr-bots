@@ -189,13 +189,13 @@ func TestListAndGetGroups(t *testing.T) {
 	if _, err := NewGetGroup(h.deps).Execute(ctx, "ops", ""); !errors.As(err, &validation) || !strings.Contains(validation.Reason, "default, staging") {
 		t.Errorf("ambiguous: %v", err)
 	}
-	if _, err := NewGetGroup(h.deps).Execute(ctx, "sre", ""); !domain.IsNotFound(err) {
+	if _, err := NewGetGroup(h.deps).Execute(ctx, "storage", ""); !domain.IsNotFound(err) {
 		t.Errorf("missing: %v", err)
 	}
-	if _, err := NewGetGroup(h.deps).Execute(ctx, "Sre", ""); err == nil {
+	if _, err := NewGetGroup(h.deps).Execute(ctx, "Storage", ""); err == nil {
 		t.Error("a bad name was accepted")
 	}
-	if _, err := NewGetGroup(h.deps).Execute(ctx, "sre", "Bad Tenant"); err == nil {
+	if _, err := NewGetGroup(h.deps).Execute(ctx, "storage", "Bad Tenant"); err == nil {
 		t.Error("a bad tenant was accepted")
 	}
 	h.bots.listFail = errBoom

@@ -33,8 +33,6 @@ func TestQuestionTriggerNamesTheTeamsItAnswers(t *testing.T) {
 		{Type: "question", From: []string{"qa"}, Secret: "0123456789abcdef0123"},
 		{Type: "question", From: []string{"qa"}, Every: "1h"},
 		{Type: "question", From: []string{"qa"}, Events: []string{"build.*"}},
-		{Type: "question", From: []string{"qa"}, Phase: "fix"},
-		{Type: "question", From: []string{"qa"}, Topics: []string{"arn:aws:sns:eu-west-1:123456789012:alarms"}},
 		{Type: "manual", From: []string{"qa"}},
 		{Type: "delegation", From: []string{"qa"}},
 	} {

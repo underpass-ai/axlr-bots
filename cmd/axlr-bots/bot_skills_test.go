@@ -24,11 +24,11 @@ func skilledCLI(t *testing.T, options fakeaxlr.Options) (cli, string) {
 func TestABotDefinedWithSkillsRunsThemPinned(t *testing.T) {
 	c, argsFile := skilledCLI(t, fakeaxlr.Options{Scenario: "completed"})
 	code, out, errText := c.run("bot", "register", "--file", filepath.Join("testdata", "bot-skills.json"))
-	if code != exitOK || !strings.Contains(out, `"skills"`) || !strings.Contains(out, `"crashloop"`) {
+	if code != exitOK || !strings.Contains(out, `"skills"`) || !strings.Contains(out, `"release_notes"`) {
 		t.Fatalf("register: %d %s %s", code, out, errText)
 	}
 	taskID := submitted(t, c)
-	if got := taskText(t, c, taskID); !strings.Contains(got, `"crashloop"`) {
+	if got := taskText(t, c, taskID); !strings.Contains(got, `"release_notes"`) {
 		t.Fatalf("the task does not carry the pin: %s", got)
 	}
 	if code, out, errText := c.run("task", "run", taskID); code != exitOK {
@@ -46,7 +46,7 @@ func TestABotDefinedWithSkillsRunsThemPinned(t *testing.T) {
 		}
 	}
 	raw, err := os.ReadFile(skillsFile)
-	if err != nil || !strings.Contains(string(raw), `"crashloop"`) {
+	if err != nil || !strings.Contains(string(raw), `"release_notes"`) {
 		t.Errorf("skills file = %s %v", raw, err)
 	}
 	if !strings.Contains(string(args), "axlr_skill") && !strings.Contains(readPolicy(t, c.state), "axlr_skill") {
@@ -55,13 +55,13 @@ func TestABotDefinedWithSkillsRunsThemPinned(t *testing.T) {
 }
 
 func TestATaskFailsWhenItsSkillCannotBeInstalled(t *testing.T) {
-	c, argsFile := skilledCLI(t, fakeaxlr.Options{Scenario: "completed", SkillInstallError: "axlr-tui skills install: catalog axlr has no skill crashloop 1.0.0"})
+	c, argsFile := skilledCLI(t, fakeaxlr.Options{Scenario: "completed", SkillInstallError: "axlr-tui skills install: catalog axlr has no skill release_notes 1.0.0"})
 	if code, _ := c.json("bot", "register", "--file", filepath.Join("testdata", "bot-skills.json")); code != exitOK {
 		t.Fatal(code)
 	}
 	taskID := submitted(t, c)
 	code, out, _ := c.run("task", "run", taskID)
-	if code == exitOK || !strings.Contains(out, "catalog skill axlr/crashloop@1.0.0 could not be installed") || !strings.Contains(out, "has no skill crashloop 1.0.0") {
+	if code == exitOK || !strings.Contains(out, "catalog skill axlr/release_notes@1.0.0 could not be installed") || !strings.Contains(out, "has no skill release_notes 1.0.0") {
 		t.Errorf("task run: %d %s", code, out)
 	}
 	if _, err := os.Stat(argsFile); !os.IsNotExist(err) {

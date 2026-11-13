@@ -27,9 +27,6 @@ pub struct Task {
     /// `urgent` for a task that went first; empty for normal.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub priority: String,
-    /// The incident a triage task works on; empty for any other task.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub incident_id: String,
     /// Why a Pending task of a placed bot has not started, as the
     /// control plane says it: `waiting for node web-1, which is
     /// Offline`; empty for any other task.
@@ -121,19 +118,9 @@ impl Task {
             .collect()
     }
 
-    /// What it was asked, in its first line: for a triage task, without
-    /// the incident's own name its objective starts with (`Incident
-    /// inc-… (sev1): `), which the incident's page already shows.
+    /// What it was asked, in its first line.
     pub fn ask(&self) -> &str {
-        let first = self.objective.lines().next().unwrap_or_default();
-        if self.incident_id.is_empty() {
-            return first;
-        }
-        first
-            .strip_prefix("Incident ")
-            .and_then(|rest| rest.strip_prefix(self.incident_id.as_str()))
-            .and_then(|rest| rest.split_once("): "))
-            .map_or(first, |(_, ask)| ask)
+        self.objective.lines().next().unwrap_or_default()
     }
 
     /// The objective's first line, cut to `max` characters with an ellipsis.
@@ -224,17 +211,11 @@ mod tests {
     }
 
     #[test]
-    fn a_triage_task_asks_without_its_incident_name() {
-        let mut task = sample();
+    fn asks_its_first_line() {
         assert_eq!(
-            task.ask(),
+            sample().ask(),
             "List the files in your workspace and say how many there are."
         );
-        task.incident_id = "inc-12ff".into();
-        task.objective = "Incident inc-12ff (sev3): Slow DNS answers. Find the cause.\nMore".into();
-        assert_eq!(task.ask(), "Slow DNS answers. Find the cause.");
-        task.objective = "Look at inc-12ff".into();
-        assert_eq!(task.ask(), "Look at inc-12ff");
     }
 
     #[test]

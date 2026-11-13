@@ -27,10 +27,6 @@ func TestDependenciesValidate(t *testing.T) {
 		func(d *Dependencies) { d.Decisions = nil },
 		func(d *Dependencies) { d.Traces = nil },
 		func(d *Dependencies) { d.Artifacts = nil },
-		func(d *Dependencies) { d.Outputs = nil },
-		func(d *Dependencies) { d.OutputDeliveries = nil },
-		func(d *Dependencies) { d.OutputSender = nil },
-		func(d *Dependencies) { d.SNS = nil },
 		func(d *Dependencies) { d.Clock = nil },
 		func(d *Dependencies) { d.IDs = nil },
 		func(d *Dependencies) { d.Actor = "" },
@@ -51,7 +47,7 @@ func TestRegisterBot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bot.ID() != "server-incident-investigator" || bot.Status() != domain.BotRegistered {
+	if bot.ID() != "server-investigator" || bot.Status() != domain.BotRegistered {
 		t.Errorf("bot = %s %s", bot.ID(), bot.Status())
 	}
 	stored, err := h.bots.Get(ctx, bot.ID())
@@ -84,7 +80,7 @@ func TestRegisterBot(t *testing.T) {
 	// Explicit id wins over the name.
 	withID := sampleDefinition()
 	withID.ID = "sii"
-	withID.Name = "Server Incident Investigator"
+	withID.Name = "Server Investigator"
 	if bot, err := NewRegisterBot(h.deps).Execute(ctx, withID); err != nil || bot.ID() != "sii" {
 		t.Errorf("explicit id: %v %s", err, bot.ID())
 	}

@@ -20,15 +20,13 @@ const (
 // Approvals is how a bot's pending calls wait for a person: for how long,
 // what happens when nobody decides in time, who is told (vision §14:
 // an expired approval does not authorise the operation), who may decide
-// (approvers; none listed is anyone with the token) and which incidents
-// wait for two different people (twoPersons).
+// (approvers; none listed is anyone with the token).
 type Approvals struct {
 	ttl         time.Duration
 	onExpire    ApprovalExpiry
 	notify      []NotifyTarget
 	autoApprove []ToolRule
 	approvers   []string
-	twoPersons  TwoPersons
 }
 
 // DefaultApprovals is what a definition without approvals means: an
@@ -96,18 +94,6 @@ func NewApprovals(s ApprovalsSnapshot) (Approvals, error) {
 		}
 		a.approvers = append(a.approvers, actor)
 	}
-	if s.TwoPersons != nil {
-		twoPersons, err := NewTwoPersons(*s.TwoPersons)
-		if err != nil {
-			return Approvals{}, err
-		}
-		if len(a.approvers) < 2 {
-			// Without a list, any name typed with the token is a person:
-			// one person could be two names (review of #139).
-			return Approvals{}, invalid("approvals twoPersons", "needs approvers listing at least two people")
-		}
-		a.twoPersons = twoPersons
-	}
 	return a, nil
 }
 
@@ -124,20 +110,6 @@ func (a Approvals) MayDecide(actor string) bool {
 	}
 	key := ActorKey(actor)
 	return slices.ContainsFunc(a.approvers, func(approver string) bool { return ActorKey(approver) == key })
-}
-
-// TwoPersons is which incidents wait for two different people.
-func (a Approvals) TwoPersons() TwoPersons { return a.twoPersons }
-
-// ApprovalsNeeded is how many different people must approve a call of
-// a task of an incident of the namespaces and severity: two when
-// twoPersons names any of the namespaces or the severity, else one. A
-// task of no incident passes none and needs one.
-func (a Approvals) ApprovalsNeeded(namespaces []string, severity IncidentSeverity) int {
-	if a.twoPersons.Applies(namespaces, severity) {
-		return 2
-	}
-	return 1
 }
 
 // maxAutoApproveRules bounds the calls approved without a person.
@@ -240,7 +212,6 @@ func (a Approvals) Snapshot() ApprovalsSnapshot {
 		s.AutoApprove = append(s.AutoApprove, rule.Snapshot())
 	}
 	s.Approvers = a.Approvers()
-	s.TwoPersons = a.twoPersons.Snapshot()
 	return s
 }
 

@@ -9,13 +9,12 @@ import (
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
-// DeletedReason is the reason a deleted bot's tasks and incidents keep.
+// DeletedReason is the reason a deleted bot's tasks keep.
 const DeletedReason = "bot deleted"
 
 // DeleteBot removes a bot and ends what it left going, in an order that
-// never leaves a record pointing at a bot that is gone: its open
-// incidents are resolved first (so their triage tasks, cancelled next,
-// do not escalate them), then every task it has not finished is
+// never leaves a record pointing at a bot that is gone: every task it
+// has not finished is
 // cancelled as a stop cancels it (a run in progress is interrupted, a
 // node's run stops at its next lease renewal), then the delegated
 // children it asked for, down the chain (deleting is stronger than
@@ -40,9 +39,6 @@ func (uc DeleteBot) Execute(ctx context.Context, id domain.BotID) (DeleteBotResu
 		return DeleteBotResult{}, err
 	}
 	result := DeleteBotResult{Bot: bot}
-	if result.IncidentsResolved, err = uc.resolveIncidents(ctx, bot); err != nil {
-		return DeleteBotResult{}, err
-	}
 	tasks, err := uc.deps.Tasks.List(ctx)
 	if err != nil {
 		return DeleteBotResult{}, err
@@ -62,57 +58,24 @@ func (uc DeleteBot) Execute(ctx context.Context, id domain.BotID) (DeleteBotResu
 	if result.NamedBy, err = namedBy(ctx, uc.deps, id); err != nil {
 		return DeleteBotResult{}, err
 	}
-	if err := newLadderKeeper(uc.deps).purge(ctx, id); err != nil {
-		return DeleteBotResult{}, err
-	}
 	if err := uc.deps.Bots.Delete(ctx, id); err != nil {
 		return DeleteBotResult{}, err
 	}
 	if err := uc.rec.event(ctx, domain.EventBotDeleted, bot, "", "", map[string]any{
 		"cancelled": len(result.Cancelled), "childrenCancelled": len(result.ChildrenCancelled),
-		"incidentsResolved": len(result.IncidentsResolved), "timersRemoved": result.TimersRemoved,
+		"timersRemoved":        result.TimersRemoved,
 		"notificationsDropped": result.NotificationsDropped, "namedBy": result.NamedBy,
 	}); err != nil {
 		return DeleteBotResult{}, err
 	}
 	details := map[string]string{
 		"cancelled": strconv.Itoa(len(result.Cancelled)), "childrenCancelled": strconv.Itoa(len(result.ChildrenCancelled)),
-		"incidentsResolved": strconv.Itoa(len(result.IncidentsResolved)), "timersRemoved": strconv.Itoa(result.TimersRemoved),
+		"timersRemoved": strconv.Itoa(result.TimersRemoved),
 	}
 	if err := uc.rec.audit(ctx, "bot.delete", id.String(), domain.AuditOK, details); err != nil {
 		return DeleteBotResult{}, err
 	}
 	return result, nil
-}
-
-// resolveIncidents resolves the bot's incidents that are not resolved,
-// with the reason DeletedReason, as an operator's resolve does.
-func (uc DeleteBot) resolveIncidents(ctx context.Context, bot domain.Bot) ([]domain.IncidentID, error) {
-	incidents, err := uc.deps.Incidents.List(ctx)
-	if err != nil {
-		return nil, err
-	}
-	resolved := []domain.IncidentID{}
-	for _, incident := range incidents {
-		if incident.BotID() != bot.ID() || incident.Status().IsResolved() {
-			continue
-		}
-		if err := incident.Resolve(DeletedReason, uc.deps.Clock.Now()); err != nil {
-			return nil, err
-		}
-		if err := uc.deps.Incidents.Save(ctx, incident); err != nil {
-			return nil, err
-		}
-		payload := map[string]any{"by": uc.deps.Actor, "reason": DeletedReason, "cycle": incident.Cycle(), "costUsd": incident.CostUSD()}
-		if err := uc.rec.incidentEvent(ctx, domain.EventIncidentResolved, incident, payload); err != nil {
-			return nil, err
-		}
-		if err := uc.rec.audit(ctx, "incident.resolve", incident.ID().String(), domain.AuditOK, map[string]string{"reason": DeletedReason}); err != nil {
-			return nil, err
-		}
-		resolved = append(resolved, incident.ID())
-	}
-	return resolved, nil
 }
 
 // cancelOwn cancels every task of the bot it has not finished.

@@ -185,20 +185,6 @@ func (s *Server) operatorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/transcripts", s.listTranscripts)
 	mux.HandleFunc("POST /v1/triggers/{bot}/{trigger}", s.fireTrigger)
 	mux.HandleFunc("GET /v1/overview", s.getOverview)
-	mux.HandleFunc("POST /v1/incidents", s.openIncident)
-	mux.HandleFunc("GET /v1/incidents", s.listIncidents)
-	mux.HandleFunc("GET /v1/incidents/{id}", s.getIncident)
-	mux.HandleFunc("POST /v1/incidents/{id}/resolve", s.resolveIncident)
-	mux.HandleFunc("POST /v1/incidents/{id}/diagnosis", s.markDiagnosis)
-	mux.HandleFunc("GET /v1/autonomy", s.listAutonomy)
-	mux.HandleFunc("GET /v1/autonomy/{id}", s.getAutonomy)
-	mux.HandleFunc("POST /v1/autonomy/{id}/lower", s.lowerAutonomy)
-	mux.HandleFunc("POST /v1/autonomy/{id}/clear", s.clearAutonomy)
-	mux.HandleFunc("POST /v1/incidents/{id}/postmortem/approve", s.reviewPostmortem(s.service.ApprovePostmortem))
-	mux.HandleFunc("POST /v1/incidents/{id}/postmortem/send-back", s.reviewPostmortem(s.service.SendBackPostmortem))
-	mux.HandleFunc("GET /v1/outputs", s.listOutputs)
-	mux.HandleFunc("POST /v1/outputs", s.addOutput)
-	mux.HandleFunc("DELETE /v1/outputs/{name}", s.removeOutput)
 	mux.HandleFunc("GET /v1/nodes", s.listNodes)
 	mux.HandleFunc("GET /v1/nodes/{id}", s.getNode)
 	mux.HandleFunc("POST /v1/enrollments", s.createEnrollmentToken)
@@ -650,159 +636,6 @@ func (s *Server) progress(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, answer, err)
 }
 
-// openIncident is POST /v1/incidents: an alert group. 201 for a new
-// incident, 200 for a repeat or a reopening.
-func (s *Server) openIncident(w http.ResponseWriter, r *http.Request) {
-	var command application.OpenIncidentCommand
-	if !readJSON(w, r, &command) {
-		return
-	}
-	response, err := s.service.OpenIncident(r.Context(), command)
-	respond(w, createdStatus(response.Created), response, err)
-}
-
-func (s *Server) listIncidents(w http.ResponseWriter, r *http.Request) {
-	limit, err := queryLimit(r)
-	if err != nil {
-		respond(w, 0, nil, err)
-		return
-	}
-	query := application.IncidentQuery{Tenant: r.URL.Query().Get("tenant"), Status: r.URL.Query().Get("status"), Limit: limit}
-	value, err := s.service.ListIncidents(r.Context(), query)
-	respond(w, http.StatusOK, value, err)
-}
-
-func (s *Server) getIncident(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.GetIncident(r.Context(), r.PathValue("id"))
-	respond(w, http.StatusOK, value, err)
-}
-
-// resolveIncident is POST /v1/incidents/{id}/resolve; the body, with
-// the reason, may be empty.
-func (s *Server) resolveIncident(w http.ResponseWriter, r *http.Request) {
-	var request ResolveRequest
-	if r.ContentLength != 0 && !readJSON(w, r, &request) {
-		return
-	}
-	value, err := s.service.ResolveIncident(r.Context(), r.PathValue("id"), request)
-	respond(w, http.StatusOK, value, err)
-}
-
-// markDiagnosis is POST /v1/incidents/{id}/diagnosis: a person's verdict
-// on the diagnosis of the incident's current cycle.
-func (s *Server) markDiagnosis(w http.ResponseWriter, r *http.Request) {
-	var request DiagnosisRequest
-	if !readJSON(w, r, &request) {
-		return
-	}
-	header := r.Header.Get(ActorHeader)
-	if request.MarkedBy != "" && header != "" && request.MarkedBy != header {
-		respond(w, 0, nil, domain.ValidationError{Field: "markedBy", Reason: "names another actor than " + ActorHeader})
-		return
-	}
-	if request.MarkedBy == "" {
-		request.MarkedBy = header
-	}
-	value, err := s.service.MarkDiagnosis(r.Context(), r.PathValue("id"), request)
-	respond(w, http.StatusOK, value, err)
-}
-
-// listAutonomy is GET /v1/autonomy, narrowed by ?tenant=, ?bot=,
-// ?runbook= and ?namespace=.
-func (s *Server) listAutonomy(w http.ResponseWriter, r *http.Request) {
-	values := r.URL.Query()
-	query := application.AutonomyQuery{Tenant: values.Get("tenant"), Bot: values.Get("bot"), Runbook: values.Get("runbook"), Namespace: values.Get("namespace")}
-	value, err := s.service.ListAutonomy(r.Context(), query)
-	respond(w, http.StatusOK, value, err)
-}
-
-func (s *Server) getAutonomy(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.GetAutonomy(r.Context(), r.PathValue("id"))
-	respond(w, http.StatusOK, value, err)
-}
-
-// clearAutonomy is POST /v1/autonomy/{id}/clear: a person ends a
-// runbook's outstanding applies.
-func (s *Server) clearAutonomy(w http.ResponseWriter, r *http.Request) {
-	var request ClearRequest
-	if r.ContentLength != 0 && !readJSON(w, r, &request) {
-		return
-	}
-	header := r.Header.Get(ActorHeader)
-	if request.ClearedBy != "" && header != "" && request.ClearedBy != header {
-		respond(w, 0, nil, domain.ValidationError{Field: "clearedBy", Reason: "names another actor than " + ActorHeader})
-		return
-	}
-	if request.ClearedBy == "" {
-		request.ClearedBy = header
-	}
-	value, err := s.service.ClearAutonomy(r.Context(), r.PathValue("id"), request)
-	respond(w, http.StatusOK, value, err)
-}
-
-// lowerAutonomy is POST /v1/autonomy/{id}/lower: a person takes a runbook
-// one step down.
-func (s *Server) lowerAutonomy(w http.ResponseWriter, r *http.Request) {
-	var request LowerRequest
-	if r.ContentLength != 0 && !readJSON(w, r, &request) {
-		return
-	}
-	header := r.Header.Get(ActorHeader)
-	if request.LoweredBy != "" && header != "" && request.LoweredBy != header {
-		respond(w, 0, nil, domain.ValidationError{Field: "loweredBy", Reason: "names another actor than " + ActorHeader})
-		return
-	}
-	if request.LoweredBy == "" {
-		request.LoweredBy = header
-	}
-	value, err := s.service.LowerAutonomy(r.Context(), r.PathValue("id"), request)
-	respond(w, http.StatusOK, value, err)
-}
-
-// reviewPostmortem is POST /v1/incidents/{id}/postmortem/approve and
-// /send-back; the body may be empty when the header names who answers.
-func (s *Server) reviewPostmortem(review func(context.Context, string, PostmortemReviewRequest) (domain.IncidentSnapshot, error)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var request PostmortemReviewRequest
-		if r.ContentLength != 0 && !readJSON(w, r, &request) {
-			return
-		}
-		header := r.Header.Get(ActorHeader)
-		if request.DecidedBy != "" && header != "" && request.DecidedBy != header {
-			respond(w, 0, nil, domain.ValidationError{Field: "decidedBy", Reason: "names another actor than " + ActorHeader})
-			return
-		}
-		if request.DecidedBy == "" {
-			request.DecidedBy = header
-		}
-		value, err := review(r.Context(), r.PathValue("id"), request)
-		respond(w, http.StatusOK, value, err)
-	}
-}
-
-// addOutput is POST /v1/outputs: a new incident output target, 201;
-// the answer has a fingerprint, never the URL or the secret.
-func (s *Server) addOutput(w http.ResponseWriter, r *http.Request) {
-	var definition application.OutputDefinition
-	if !readJSON(w, r, &definition) {
-		return
-	}
-	value, err := s.service.AddOutput(r.Context(), definition)
-	respond(w, http.StatusCreated, value, err)
-}
-
-func (s *Server) listOutputs(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.ListOutputs(r.Context())
-	respond(w, http.StatusOK, value, err)
-}
-
-// removeOutput is DELETE /v1/outputs/{name}; its pending deliveries are
-// skipped.
-func (s *Server) removeOutput(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.RemoveOutput(r.Context(), r.PathValue("name"))
-	respond(w, http.StatusOK, value, err)
-}
-
 func (s *Server) cancelTask(w http.ResponseWriter, r *http.Request) {
 	value, err := s.service.CancelTask(r.Context(), r.PathValue("id"))
 	respond(w, http.StatusOK, value, err)
@@ -811,10 +644,7 @@ func (s *Server) cancelTask(w http.ResponseWriter, r *http.Request) {
 // fireTrigger is POST /v1/triggers/{bot}/{trigger}: the body is the
 // event. Over TLS (the operator address) the request must carry the
 // trigger's secret or a signature of the body under its signing key;
-// over the socket the caller is trusted, as for every other route. A
-// cloudwatch trigger takes Amazon SNS's message (text/plain, its type in
-// x-amz-sns-message-type) and is authenticated by SNS's signature, which
-// the application verifies on every route.
+// over the socket the caller is trusted, as for every other route.
 func (s *Server) fireTrigger(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, domain.MaxTaskInputBytes))
 	if err != nil {
@@ -828,7 +658,7 @@ func (s *Server) fireTrigger(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	response, err := s.service.FireTrigger(r.Context(), FireRequest{BotID: botID, Trigger: trigger, DeliveryID: r.Header.Get(IdempotencyKeyHeader), Body: body, MessageType: r.Header.Get(SNSMessageTypeHeader)})
+	response, err := s.service.FireTrigger(r.Context(), FireRequest{BotID: botID, Trigger: trigger, DeliveryID: r.Header.Get(IdempotencyKeyHeader), Body: body})
 	respond(w, createdStatus(response.Created), response, err)
 }
 
@@ -848,11 +678,6 @@ func (s *Server) authenticateWebhook(r *http.Request, botID, trigger string, bod
 	webhook, ok := bot.Trigger(trigger)
 	if !ok {
 		return refused
-	}
-	if webhook.Type() == domain.TriggerCloudWatch {
-		// SNS sets no header of ours: its signature, verified by the
-		// application, is the credential.
-		return nil
 	}
 	signature := r.Header.Get(WebhookSignatureHeader)
 	if signature == "" {

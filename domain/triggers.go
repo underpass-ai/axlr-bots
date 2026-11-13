@@ -53,17 +53,6 @@ func (t Triggers) Named(name string) (Trigger, bool) {
 	return Trigger{}, false
 }
 
-// Incident finds the first incident trigger that takes the phase: the
-// bot's consent to that phase of an incident, and its template.
-func (t Triggers) Incident(phase IncidentPhase) (Trigger, bool) {
-	for _, trigger := range t.list {
-		if trigger.Type() == TriggerIncident && trigger.Phase() == phase {
-			return trigger, true
-		}
-	}
-	return Trigger{}, false
-}
-
 // Question finds the first question trigger that answers the team: the
 // bot's consent to that team's questions.
 func (t Triggers) Question(from TeamName) (Trigger, bool) {

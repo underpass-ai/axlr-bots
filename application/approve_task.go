@@ -2,7 +2,6 @@ package application
 
 import (
 	"context"
-	"strconv"
 	"strings"
 	"time"
 
@@ -38,21 +37,17 @@ func NewApproveTask(deps Dependencies) ApproveTask {
 // actor is who decides, as the token holder asserts it (the CLI's
 // --actor, the panel's operator.actor, X-Axlr-Actor or decidedBy on the
 // API); empty is the control plane's own actor, as before approvers
-// existed, except on a bot that lists approvers or for a call that waits
-// for two persons, which take a named actor. An actor the bot's
-// approvers do not list is refused (domain.ForbiddenError, audited
-// approval.refused), on approve and deny alike. A call that waits for
-// two persons records its first approval (bot.approval.first) and runs
-// nothing; the second, by another actor, runs it; the same actor again
-// is refused; a denial ends the wait (docs/architecture/approvers.md).
+// existed, except on a bot that lists approvers, which takes a named
+// actor. An actor the bot's approvers do not list is refused
+// (domain.ForbiddenError, audited approval.refused), on approve and deny
+// alike (docs/architecture/approvers.md).
 func (uc ApproveTask) Execute(ctx context.Context, id domain.TaskID, decision, callID, actor string) (ApproveTaskResult, error) {
 	return uc.decide(ctx, id, decision, callID, decider{name: actor, person: true})
 }
 
 // byPolicy approves the pending call as the control plane's actor, a
 // policy (autoApprove, the team's events) and not a person: approvers do
-// not apply to it, and the settler never hands it a call that waits for
-// two persons.
+// not apply to it.
 func (uc ApproveTask) byPolicy(ctx context.Context, id domain.TaskID, callID string) (ApproveTaskResult, error) {
 	return uc.decide(ctx, id, DecisionApprove, callID, decider{name: uc.deps.Actor})
 }
@@ -63,9 +58,6 @@ func (uc ApproveTask) byPolicy(ctx context.Context, id domain.TaskID, callID str
 type decider struct {
 	name   string
 	person bool
-	// attested is a person who named themselves: the only decision the
-	// autonomy ladder counts. A daemon's own name is not one.
-	attested bool
 }
 
 func (uc ApproveTask) decide(ctx context.Context, id domain.TaskID, decision, callID string, by decider) (ApproveTaskResult, error) {
@@ -83,16 +75,13 @@ func (uc ApproveTask) decide(ctx context.Context, id domain.TaskID, decision, ca
 			return ApproveTaskResult{}, uc.refuse(ctx, id, decision, name, domain.ForbiddenError{Reason: name + " is a policy's name: a person decides under their own"})
 		}
 		if name != uc.deps.Actor {
-			// The asserted actor is who the audit, the events and the
-			// incident record, as settler.autoApprove does for a policy.
+			// The asserted actor is who the audit and the events record,
+			// as settler.autoApprove does for a policy.
 			deps := uc.deps
 			deps.Actor = name
 			uc = NewApproveTask(deps)
 		}
 		by.name = name
-		named := uc.deps
-		named.Actor = own
-		by.attested = by.person && personName(ctx, named, name)
 	}
 	task, err := uc.deps.Tasks.Get(ctx, id)
 	if err != nil {
@@ -104,25 +93,12 @@ func (uc ApproveTask) decide(ctx context.Context, id domain.TaskID, decision, ca
 	if task.Status() != domain.TaskWaitingApproval {
 		return ApproveTaskResult{}, uc.deny(ctx, id, domain.StateError{Subject: "task " + id.String(), Current: task.Status().String(), Attempted: "decide"})
 	}
-	if decision == DecisionApprove {
-		// A task of an incident is approved only while the incident stands
-		// on it; a deny only lets its session go on, and stays allowed.
-		stands, incident, err := incidentStanding{deps: uc.deps}.standsOn(ctx, task)
-		if err != nil {
-			return ApproveTaskResult{}, err
-		}
-		if !stands {
-			current := "a task incident " + incident.ID().String() + " no longer stands on (" + incident.Status().String() + ", cycle " + strconv.Itoa(incident.Cycle()) + ")"
-			return ApproveTaskResult{}, uc.deny(ctx, id, domain.StateError{Subject: "task " + id.String(), Current: current, Attempted: "approve"})
-		}
-	}
 	bot, err := uc.deps.Bots.Get(ctx, task.BotID())
 	if err != nil {
 		return ApproveTaskResult{}, err
 	}
-	needed := uc.needed(ctx, bot, &task)
 	if by.person {
-		if err := uc.mayDecide(ctx, bot, task, decision, by.name, own, needed); err != nil {
+		if err := uc.mayDecide(ctx, bot, task, decision, by.name, own); err != nil {
 			return ApproveTaskResult{}, err
 		}
 	}
@@ -149,11 +125,6 @@ func (uc ApproveTask) decide(ctx context.Context, id domain.TaskID, decision, ca
 	if !bot.AcceptsTasks() {
 		return ApproveTaskResult{}, uc.deny(ctx, id, domain.StateError{Subject: "bot " + bot.ID().String(), Current: bot.Status().String(), Attempted: "decide a task"})
 	}
-	if _, gone, _ := bot.PolicyOf(task); gone && decision == DecisionApprove {
-		// The incident trigger the task's policy was pinned by is gone:
-		// nothing says what the call may run under now (fail closed).
-		return ApproveTaskResult{}, uc.deny(ctx, id, domain.StateError{Subject: "task " + id.String(), Current: "pinned to trigger " + task.Trigger().Name + ", which bot " + bot.ID().String() + " no longer has", Attempted: "approve"})
-	}
 	if pending == nil {
 		return ApproveTaskResult{}, uc.deny(ctx, id, domain.StateError{Subject: "execution " + previous.ID().String(), Current: previous.Outcome().String(), Attempted: "decide a pending call"})
 	}
@@ -164,53 +135,20 @@ func (uc ApproveTask) decide(ctx context.Context, id domain.TaskID, decision, ca
 	if decision == DecisionDeny {
 		outcome = domain.ApprovalDenied
 	}
-	// Only a person's approval counts as one of two: a policy decider
-	// (the team's events) resumes the call outright, and an autoApprove
-	// rule never gets here for a call that waits for two (settler).
-	if by.person && decision == DecisionApprove && needed > 1 {
-		wait, _ := task.Approval()
-		if wait.ApprovedByActor(uc.deps.Actor) {
-			return ApproveTaskResult{}, uc.refuse(ctx, task.ID(), decision, uc.deps.Actor, domain.StateError{Subject: "task " + id.String(), Current: "already approved by " + uc.deps.Actor + ", waiting for a second, different person", Attempted: "approve again as the same person"})
-		}
-		if len(wait.ApprovedBy)+1 < needed {
-			return uc.first(ctx, bot, task, previous)
-		}
-	}
 	return uc.resume(ctx, bot, task, previous, decision, outcome, by, nil)
-}
-
-// needed is how many people the task's open wait needs: what it was
-// opened with, raised to what the bot and the incident say now (a bot
-// that asks for two persons since the wait began gets them).
-func (uc ApproveTask) needed(ctx context.Context, bot domain.Bot, task *domain.Task) int {
-	wait, ok := task.Approval()
-	if !ok || !wait.Open() {
-		return 1
-	}
-	needed := wait.Needed()
-	if now := approvalsNeeded(ctx, uc.deps, bot, *task); now > needed {
-		if task.RaiseApprovalsNeeded(now) == nil {
-			needed = now
-		}
-	}
-	return needed
 }
 
 // mayDecide refuses a person's decision the bot's approvals do not let
 // them take: an actor its approvers do not list, no actor at all on a
-// bot that lists approvers, or an approval without a named actor of a
-// call that waits for two persons (two names are what tell two people
-// apart). Each refusal is audited approval.refused with the actor.
-func (uc ApproveTask) mayDecide(ctx context.Context, bot domain.Bot, task domain.Task, decision, asserted, own string, needed int) error {
+// bot that lists approvers. Each refusal is audited approval.refused with the actor.
+func (uc ApproveTask) mayDecide(ctx context.Context, bot domain.Bot, task domain.Task, decision, asserted, own string) error {
 	approvals := bot.Approvals()
-	names := len(approvals.Approvers()) > 0 || needed > 1
+	names := len(approvals.Approvers()) > 0
 	switch {
 	case names && uc.deps.Daemon && asserted != "" && domain.ActorKey(asserted) == domain.ActorKey(own):
 		return uc.refuse(ctx, task.ID(), decision, asserted, domain.ForbiddenError{Reason: asserted + " is the control plane's own name: a person decides under their own"})
 	case asserted == "" && len(approvals.Approvers()) > 0:
 		return uc.refuse(ctx, task.ID(), decision, "", domain.ForbiddenError{Reason: "bot " + bot.ID().String() + " lists who may decide its calls: name who decides (--actor, the panel's operator.actor, X-Axlr-Actor or decidedBy)"})
-	case asserted == "" && needed > 1 && decision == DecisionApprove:
-		return uc.refuse(ctx, task.ID(), decision, "", domain.ForbiddenError{Reason: "task " + task.ID().String() + " waits for two persons: name who approves (--actor, the panel's operator.actor, X-Axlr-Actor or decidedBy)"})
 	case asserted != "" && !approvals.MayDecide(asserted):
 		return uc.refuse(ctx, task.ID(), decision, asserted, domain.ForbiddenError{Reason: asserted + " is not among the approvers of bot " + bot.ID().String()})
 	}
@@ -222,30 +160,6 @@ func (uc ApproveTask) mayDecide(ctx context.Context, bot domain.Bot, task domain
 func (uc ApproveTask) refuse(ctx context.Context, id domain.TaskID, decision, actor string, cause error) error {
 	_ = uc.rec.audit(ctx, "approval.refused", id.String(), domain.AuditDenied, map[string]string{"actor": actor, "decision": decision, "reason": cause.Error()})
 	return cause
-}
-
-// first records the first of the two approvals a call waits for: the
-// task keeps waiting under the same deadline and nothing runs. It is
-// told as bot.approval.first on the stopped execution and audited
-// approvals.first with the actor and the time.
-func (uc ApproveTask) first(ctx context.Context, bot domain.Bot, task domain.Task, previous domain.Execution) (ApproveTaskResult, error) {
-	now := uc.deps.Clock.Now()
-	if err := task.AddApproval(uc.deps.Actor, now); err != nil {
-		return ApproveTaskResult{}, uc.refuse(ctx, task.ID(), DecisionApprove, uc.deps.Actor, err)
-	}
-	if err := uc.deps.Tasks.Save(ctx, task); err != nil {
-		return ApproveTaskResult{}, err
-	}
-	wait, _ := task.Approval()
-	payload := map[string]any{"callId": wait.CallID, "tool": wait.Tool, "approvedBy": uc.deps.Actor, "at": now, "approvalsNeeded": wait.Needed(), "approvals": len(wait.ApprovedBy), "deadline": wait.Deadline}
-	if err := uc.rec.executionEvent(ctx, domain.EventApprovalFirst, bot, task.ID(), previous.ID(), task.CorrelationID(), payload); err != nil {
-		return ApproveTaskResult{}, err
-	}
-	details := map[string]string{"actor": uc.deps.Actor, "at": now.UTC().Format(time.RFC3339), "call": wait.CallID, "approvals": strconv.Itoa(len(wait.ApprovedBy)) + " of " + strconv.Itoa(wait.Needed())}
-	if err := uc.rec.audit(ctx, "approvals.first", task.ID().String(), domain.AuditOK, details); err != nil {
-		return ApproveTaskResult{}, err
-	}
-	return ApproveTaskResult{Task: task, Execution: previous}, nil
 }
 
 // expiredWait is the deadline the task's pending call had to be decided
@@ -288,12 +202,6 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 		}
 		return ApproveTaskResult{}, uc.deny(ctx, task.ID(), domain.StateError{Subject: "task " + task.ID().String(), Current: "past its delegation's deadline", Attempted: "decide"})
 	}
-	if outcome == domain.ApprovalApproved && by.person {
-		// A call that waits for two keeps both names on its closed wait.
-		if err := task.FinalApproval(uc.deps.Actor, now); err != nil {
-			return ApproveTaskResult{}, uc.deny(ctx, task.ID(), err)
-		}
-	}
 	if err := task.Resume(executionID, outcome, now); err != nil {
 		return ApproveTaskResult{}, uc.deny(ctx, task.ID(), err)
 	}
@@ -328,13 +236,6 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 	if previous.IsAssigned() {
 		payload["nodeId"] = previous.NodeID().String()
 	}
-	if wait, ok := task.Approval(); ok && wait.Needed() > 1 && outcome == domain.ApprovalApproved {
-		approvers := []string{}
-		for _, mark := range wait.ApprovedBy {
-			approvers = append(approvers, mark.Actor)
-		}
-		payload["approvedBy"], payload["approvalsNeeded"] = approvers, wait.Needed()
-	}
 	for key, value := range waits {
 		payload[key] = value
 	}
@@ -349,21 +250,7 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 	if err := uc.rec.executionEvent(ctx, domain.EventTaskDecided, bot, task.ID(), executionID, task.CorrelationID(), payload); err != nil {
 		return ApproveTaskResult{}, err
 	}
-	policy, _, policyErr := bot.PolicyOf(task)
-	if policyErr != nil {
-		// Nothing of the task's policy is left to run the decision under:
-		// an empty allow-list would let the level alone decide. The task
-		// fails with the reason, in process and for a node alike.
-		failed := ExecutionReport{Outcome: domain.ExecutionFailed, FailureReason: "policy refused: " + policyErr.Error()}
-		if err := uc.set.settle(ctx, "task.decide", bot, &task, &execution, failed, nil, now); err != nil {
-			return ApproveTaskResult{}, err
-		}
-		return ApproveTaskResult{Task: task, Execution: execution}, nil
-	}
-	// The decision of an incident's apply call moves the incident now,
-	// before the call runs: approved is Applying, denied or expired is
-	// back to Open (design §4).
-	newIncidentAdvancer(uc.deps).taskDecided(ctx, task, decidedCall{outcome: outcome, callID: pending.CallID, tool: pending.Tool, effectiveTool: pending.EffectiveTool(), by: uc.deps.Actor, person: by.attested})
+	policy := bot.Policy()
 	if previous.IsAssigned() {
 		// The node takes it on its next poll (NextAssignment) and reports.
 		details := map[string]string{"execution": executionID.String(), "queuedFor": previous.NodeID().String(), "decision": decision}

@@ -110,15 +110,12 @@ func checkPatch(ctx context.Context, deps Dependencies, bot *domain.Bot, patch B
 }
 
 // checkChanged is what an update checks beyond the bot itself: a
-// subscription to senders the bot may not hear, a ladder whose
-// approvers do not fit.
+// subscription to senders the bot may not hear.
 func checkChanged(ctx context.Context, deps Dependencies, bot domain.Bot, changed []string) error {
 	if slices.Contains(changed, "subscriptions") {
-		if err := checkSubscriptionSenders(ctx, deps, bot); err != nil {
-			return err
-		}
+		return checkSubscriptionSenders(ctx, deps, bot)
 	}
-	return checkLadderApprovers(ctx, deps, bot)
+	return nil
 }
 
 // applyPatch changes the bot in memory and names the fields it changed.
@@ -284,10 +281,6 @@ func applyPatch(bot *domain.Bot, patch BotPatch) ([]string, error) {
 	// Narrower tools or a lower level may no longer carry a Jev program,
 	// and a Jev program reads no skill.
 	if err := bot.CheckRuntime(); err != nil {
-		return nil, err
-	}
-	// Nor an incident trigger's narrower policy for its phase.
-	if err := bot.CheckTriggers(); err != nil {
 		return nil, err
 	}
 	// New teams may hold a team the bot asks.

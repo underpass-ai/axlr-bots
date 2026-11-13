@@ -2,12 +2,11 @@ use std::sync::Arc;
 
 use super::{BotView, Connection, Effect, Message};
 use crate::application::{
-    ApplyInBulk, ApplyStaged, ApprovePostmortem, BulkOutcome, CancelTask, Clock, Connect, ControlPlane, DecideTask,
-    DefinitionReader, DeleteBot, DownloadArtifact, ExportSettings, FilePicker, FollowBotEvents, FollowTaskEvents,
-    FollowTeamEvents, ImportSettings, KeySource, ListIncidents, ListLinks, ListTopics, LoadChat, LoadTaskDetail,
-    MarkDiagnosis, MintEnrollmentToken, Notifier, PanelError, PatchBot, PublishEvent, RefreshFleet, RegisterBot,
-    ResolveIncident, RevokeNode, SaveBotEdit, SaveSubscriptions, SendBackPostmortem, SendChat, ShortcutSource,
-    ShowIncident, StopBot, SubmitTask, SwitchBot,
+    ApplyInBulk, ApplyStaged, BulkOutcome, CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader,
+    DeleteBot, DownloadArtifact, ExportSettings, FilePicker, FollowBotEvents, FollowTaskEvents, FollowTeamEvents,
+    ImportSettings, KeySource, ListLinks, ListTopics, LoadChat, LoadTaskDetail, MintEnrollmentToken, Notifier,
+    PanelError, PatchBot, PublishEvent, RefreshFleet, RegisterBot, RevokeNode, SaveBotEdit, SaveSubscriptions,
+    SendChat, ShortcutSource, StopBot, SubmitTask, SwitchBot,
 };
 use crate::domain::BotPatch;
 
@@ -270,38 +269,6 @@ impl Services {
                 Ok(cp) => CancelTask::new(cp).execute(id).await,
                 Err(e) => Err(e),
             }),
-            Effect::LoadIncidents => Message::IncidentsLoaded(match self.control_plane() {
-                Ok(cp) => ListIncidents::new(cp).execute().await,
-                Err(e) => Err(e),
-            }),
-            Effect::LoadIncident(id) => {
-                let result = match self.control_plane() {
-                    Ok(cp) => ShowIncident::new(cp).execute(id.clone()).await,
-                    Err(e) => Err(e),
-                };
-                Message::IncidentLoaded(id, result)
-            }
-            Effect::MarkDiagnosis { id, verdict } => {
-                let result = match self.control_plane() {
-                    Ok(cp) => MarkDiagnosis::new(cp).execute(id.clone(), verdict).await,
-                    Err(error) => Err(error),
-                };
-                Message::DiagnosisMarked(id, result)
-            }
-            Effect::ResolveIncident { id, reason } => Message::IncidentResolved(match self.control_plane() {
-                Ok(cp) => ResolveIncident::new(cp).execute(id, &reason).await,
-                Err(e) => Err(e),
-            }),
-            Effect::ApprovePostmortem { id, author } => Message::PostmortemReviewed(match self.control_plane() {
-                Ok(cp) => ApprovePostmortem::new(cp).execute(id, author).await,
-                Err(e) => Err(e),
-            }),
-            Effect::SendBackPostmortem { id, note, author } => {
-                Message::PostmortemReviewed(match self.control_plane() {
-                    Ok(cp) => SendBackPostmortem::new(cp).execute(id, &note, author).await,
-                    Err(e) => Err(e),
-                })
-            }
             Effect::Download(execution, name) => Message::Downloaded(match self.control_plane() {
                 Ok(cp) => {
                     DownloadArtifact::new(cp, self.picker.clone())

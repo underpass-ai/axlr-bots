@@ -6,7 +6,7 @@ import "testing"
 func TestQuestionEventsAreKnown(t *testing.T) {
 	for _, kind := range []EventType{EventQuestionAsked, EventQuestionAnswered, EventQuestionRefused} {
 		parsed, err := ParseEventType(kind.String())
-		if err != nil || parsed != kind || kind.AboutGroup() || kind.AboutNode() || kind.AboutIncident() {
+		if err != nil || parsed != kind || kind.AboutGroup() || kind.AboutNode() {
 			t.Errorf("%s: %q %v", kind, parsed, err)
 		}
 	}

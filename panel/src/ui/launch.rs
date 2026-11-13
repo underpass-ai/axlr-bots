@@ -17,7 +17,7 @@ pub enum Command {
 }
 
 pub const USAGE: &str =
-    "usage: axlr-bots-panel [--theme light|dark] [--screen overview|nodes|bots|bot:<id>|tasks|task:<id>|teams|team:<name>|incidents|incident:<id>|settings]
+    "usage: axlr-bots-panel [--theme light|dark] [--screen overview|nodes|bots|bot:<id>|tasks|task:<id>|teams|team:<name>|settings]
 
 The AXLR Bots control panel. Settings live in ~/.config/axlr-bots-panel/settings.json
 (flat dotted keys, editable from the Settings screen, exportable and importable); the

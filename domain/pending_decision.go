@@ -13,18 +13,3 @@ type PendingDecision struct {
 	SessionID string          `json:"sessionId"`
 	Arguments json.RawMessage `json:"arguments,omitempty"`
 }
-
-// EffectiveTool is the tool the call reaches: the MCP tool a bridged call
-// names in its arguments, or the call's own.
-func (p PendingDecision) EffectiveTool() string {
-	if p.Tool != bridgeToolName {
-		return p.Tool
-	}
-	var call struct {
-		Name string `json:"name"`
-	}
-	if json.Unmarshal(p.Arguments, &call) != nil || call.Name == "" {
-		return p.Tool
-	}
-	return call.Name
-}

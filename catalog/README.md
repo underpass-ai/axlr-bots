@@ -16,7 +16,7 @@ Before you register, change what is yours:
 
 | In the file | Replace | Why |
 |:--|:--|:--|
-| `"secret"` or `"signingKey"` of a `webhook` or `alertmanager` trigger | the placeholder `replace-me-with-16-to-256-chars` with your own 16 to 256 characters | the credential the sender presents; the test refuses a catalog file whose credential is not the placeholder, so a real one is never committed |
+| `"secret"` or `"signingKey"` of a `webhook` trigger | the placeholder `replace-me-with-16-to-256-chars` with your own 16 to 256 characters | the credential the sender presents; the test refuses a catalog file whose credential is not the placeholder, so a real one is never committed |
 | `"placement"` | the selector with the labels your nodes carry (`axlr-node --labels hardware=motor`, or the enrollment token's `--labels`), or `{"nodes": ["host-1"]}`, or `{}` for any node | a bot with a selector runs only on a node that matches; one with none runs anywhere |
 | `"groups"` | drop it, or rename the team | a team is just a name bots share; a bot alone in a team works as if it had none |
 | `"owner"` | who answers for the bot | shown in the panel and the events |
@@ -48,15 +48,12 @@ The cost ceiling is the most a task may cost the model: the budget's model calls
 | Bot | For | Trigger | Autonomy | Cost ceiling / task |
 |:--|:--|:--|:--|:--|
 | [log-watcher](log-watcher.json) | errors and warnings in the logs every quarter of an hour, told to the team | timer 15m, manual | observe | low (8 × 32k) |
-| [incident-triage](incident-triage.json) | find the cause of an alert with evidence; change nothing | alertmanager, incident, manual | observe | medium (16 × 64k) |
 | [service-restarter](service-restarter.json) | restart one systemd unit, approved by a person | manual, delegation | act-with-approval | low (8 × 32k) |
 | [disk-cleaner](disk-cleaner.json) | free disk space nightly, each removal approved | timer 04:00, manual | act-with-approval | low (12 × 32k) |
 
-**log-watcher.** Reads only `*.log` files and reports what was written since the last run as a table. A service down, a disk or memory exhausted becomes `warn.logs.<service>` on team `ops`, so incident-triage or a person hears it. Use it where a service logs to files and nobody reads them.
+**log-watcher.** Reads only `*.log` files and reports what was written since the last run as a table. A service down, a disk or memory exhausted becomes `warn.logs.<service>` on team `ops`, so a teammate or a person hears it. Use it where a service logs to files and nobody reads them.
 
-**incident-triage.** Point Alertmanager at it ([triggers runbook](../docs/runbooks/triggers.md#point-alertmanager-at-a-bot)) or open an incident by hand: one triage task per alert group, with the journal, the unit's status, the disk and the load as evidence, and the one command a person should run next. It runs nothing but `journalctl`, `systemctl status`, `df` and `uptime`. When the fix is a restart it asks service-restarter, its teammate, where a person still approves.
-
-**service-restarter.** Restarts the one unit a task names, after showing its status and journal, and the restart waits for a person; `axlr-*` units are denied. Use it as the hand incident-triage and a person share: the diagnosis is theirs, the approval is theirs, the typing is the bot's.
+**service-restarter.** Restarts the one unit a task names, after showing its status and journal, and the restart waits for a person; `axlr-*` units are denied. Use it as the hand a person and the bot share: the approval is the person's, the typing is the bot's.
 
 **disk-cleaner.** Every night at four: measure (`df`, `du`, `find`), propose, remove only under `/var/tmp` and `/tmp` with one approved `rm` per path, vacuum the journal to two weeks. Above 30 % free it removes nothing. Its approvals wait eight hours, so a morning person decides. `find -delete` and `find -exec` are denied.
 
@@ -116,20 +113,14 @@ The five share team `robot`, and each runs on the node whose label names its har
 
 **ros2-coordinator** looks at the graph freely (`ros2.nodes`, `topics`, `echo`, `params`, approved by policy) and changes it with approval (`set_param`, `call_service`, `launch`). A move is not its own: it asks motor-controller or gimbal-controller, with an even share of its budget each. `ros2.stop` is approved by policy and it emits `stop.all` when a node it launched dies. Use it as the one bot a person talks to about the robot.
 
-### SRE
+### Infrastructure
 
 | Bot | For | Trigger | Autonomy | Cost ceiling / task |
 |:--|:--|:--|:--|:--|
-| [sre-aws](sre-aws.json) | the cause of an alert in one AWS account, read-only | alertmanager, incident, manual | observe | medium (24 × 64k) |
-| [sre-gcp](sre-gcp.json) | the same for one Google Cloud project | alertmanager, incident, manual | observe | medium (24 × 64k) |
-| [sre-azure](sre-azure.json) | the same for one Azure subscription | alertmanager, incident, manual | observe | medium (24 × 64k) |
-| [sre-grafana](sre-grafana.json) | the alert's cause in Grafana's metrics and logs; asks the cloud bots | alertmanager, incident, manual | observe | medium (24 × 64k) |
 | [network-architect](network-architect.json) | check the network against its design; propose the exact change | manual, delegation | observe | medium (20 × 64k) |
-| [nats-operator](nats-operator.json) | a NATS cluster with JetStream: look freely, edit and purge with approval | manual, delegation, incident | act-with-approval | medium (20 × 64k) |
+| [nats-operator](nats-operator.json) | a NATS cluster with JetStream: look freely, edit and purge with approval | manual, delegation | act-with-approval | medium (20 × 64k) |
 
-The six share team `sre`. The three cloud bots run `aws`, `gcloud` and `az` on a node already signed in (`cloud=aws`, `gcp`, `azure`), and only their read verbs: `describe`, `list`, `get`, `show`, the logs and the metrics; `delete`, `create`, `update`, `terminate` and their kin are denied twice, by the allow rules and by a deny. Each reports what fails, since when, the evidence, the cause and the exact command a person should run. Their runbooks live in the workspace. Use one per account, under Alertmanager, with sre-grafana in front.
-
-**sre-grafana** reads Grafana through an MCP server (`grafana.query_prometheus`, `grafana.query_loki`, the dashboards, the alert rules) and, when the cause is in a cloud, asks the teammate that owns the account and merges its view. It tells the team whether the alert is real (`warn.observability.*`) or noise, with the rule to fix.
+The two share team `ops`.
 
 **network-architect** holds the network's design in its workspace (address plan, VLANs, firewall rules, zone files) and measures the host with `ip`, `ss`, `dig`, `nft list`, `traceroute` and `ping -c`; it answers with a text diagram, what differs from the design and the configuration lines to change, which a person applies. `ip add`, `del`, `set` and `flush` are denied.
 
@@ -139,9 +130,9 @@ The six share team `sre`. The three cloud bots run `aws`, `gcloud` and `az` on a
 
 | Bot | For | Trigger | Autonomy | Cost ceiling / task |
 |:--|:--|:--|:--|:--|
-| [dba-postgres](dba-postgres.json) | PostgreSQL: plans, locks, bloat; indexes and maintenance with approval | manual, delegation, incident | act-with-approval | medium (20 × 64k) |
-| [dba-redis](dba-redis.json) | Redis: memory, latency, slow log; config and expiries with approval | manual, delegation, incident | act-with-approval | medium (20 × 64k) |
-| [dba-document-db](dba-document-db.json) | MongoDB and its kin through one MCP server; indexes and bulk changes with approval | manual, delegation, incident | act-with-approval | medium (20 × 64k) |
+| [dba-postgres](dba-postgres.json) | PostgreSQL: plans, locks, bloat; indexes and maintenance with approval | manual, delegation | act-with-approval | medium (20 × 64k) |
+| [dba-redis](dba-redis.json) | Redis: memory, latency, slow log; config and expiries with approval | manual, delegation | act-with-approval | medium (20 × 64k) |
+| [dba-document-db](dba-document-db.json) | MongoDB and its kin through one MCP server; indexes and bulk changes with approval | manual, delegation | act-with-approval | medium (20 × 64k) |
 | [dba-sqlite](dba-sqlite.json) | the SQLite files in the workspace; indexes and maintenance with approval | manual, delegation | act-with-approval | medium (20 × 64k) |
 
 The four share team `data`. Each reads freely, approved by policy, and changes only what a task asks, with a person's approval: an index, a `VACUUM`, a `CONFIG SET`, an expiry. Deletes of data, drops and truncates are denied in every one; a person runs those.
@@ -154,12 +145,10 @@ The four share team `data`. Each reads freely, approved by policy, and changes o
 |:--|:--|:--|
 | reader, writer-with-approval, scheduled-reporter, doc-summariser, repo-reviewer, changelog-writer, team-* | AXLR's own tools only | any node |
 | log-watcher | AXLR's own tools; `*.log` files in the workspace | any node |
-| incident-triage, service-restarter, disk-cleaner | `journalctl`, `systemctl`, `df`, `du`, `find`, `rm`, `uptime` | any node |
+| service-restarter, disk-cleaner | `journalctl`, `systemctl`, `df`, `du`, `find`, `rm`, `uptime` | any node |
 | speech-bridge | MCP server `speech` | `role=media` |
 | image-cataloguer, emotion-reader | MCP servers `images`, `emotion`; `TYPESAFE_API_KEY` | `role=media` |
 | motor-controller, gimbal-controller, led-matrix-controller, imu-gps-navigator, ros2-coordinator | MCP servers `motor`, `gimbal`, `led`, `nav`, `ros2` | `hardware=motor`, `gimbal`, `led`, `nav`, `ros2` |
-| sre-aws, sre-gcp, sre-azure | `aws`, `gcloud`, `az`, signed in | `cloud=aws`, `gcp`, `azure` |
-| sre-grafana | MCP server `grafana` | `role=observability` |
 | network-architect | `ip`, `ss`, `resolvectl`, `dig`, `nft`, `traceroute`, `ping` | any node |
 | nats-operator | `nats` with its context | `role=messaging` |
 | dba-postgres, dba-redis | `psql` with `PG*` and a password file; `redis-cli` with `REDISCLI_AUTH` | `role=db` |

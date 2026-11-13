@@ -9,18 +9,15 @@ import (
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
-// Every task and incident writer waits for the state lock: while another
-// holds it, none of them reads its task or incident (QA L8).
+// Every task writer waits for the state lock: while another holds it,
+// none of them reads its task (QA L8).
 func TestSerialRunnerTaskWritersWaitForTheStateLock(t *testing.T) {
 	h := newHarness()
 	ctx := context.Background()
-	bot := triageBot(t, h, "triage", "")
 	hooked := triggeredBot(t, h)
+	bot := hooked
 	runner := NewSerialRunner(h.deps)
-	opened, err := NewOpenIncident(h.deps).Execute(ctx, alert(bot, "fp-a"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	pending := submit(t, h, bot, "k-0").Task
 	writers := map[string]func() error{
 		"submit": func() error {
 			_, err := runner.SubmitTask(ctx, SubmitTaskCommand{BotID: bot.ID().String(), Objective: "Look", IdempotencyKey: "k-1"})
@@ -30,25 +27,17 @@ func TestSerialRunnerTaskWritersWaitForTheStateLock(t *testing.T) {
 			_, err := runner.FireTrigger(ctx, FireTriggerCommand{BotID: hooked.ID().String(), TriggerName: "deploy", DeliveryID: "d-1", Body: []byte(`{"type":"deploy","service":"web"}`)})
 			return err
 		},
-		"open": func() error {
-			_, err := runner.OpenIncident(ctx, alert(bot, "fp-b"))
-			return err
-		},
 		"message": func() error {
-			_, err := runner.SendTaskMessage(ctx, opened.Task.ID(), "hello")
+			_, err := runner.SendTaskMessage(ctx, pending.ID(), "hello")
 			var refused domain.StateError
 			if errors.As(err, &refused) {
 				return nil // Pending: refused, but only once the lock was free.
 			}
 			return err
 		},
-		"cancel": func() error { _, err := runner.CancelTask(ctx, opened.Task.ID()); return err },
-		"resolve": func() error {
-			_, err := runner.ResolveIncident(ctx, opened.Incident.ID(), "fixed")
-			return err
-		},
+		"cancel": func() error { _, err := runner.CancelTask(ctx, pending.ID()); return err },
 	}
-	for _, name := range []string{"submit", "fire", "open", "message", "cancel", "resolve"} {
+	for _, name := range []string{"submit", "fire", "message", "cancel"} {
 		runner.mu.Lock()
 		done := make(chan error, 1)
 		go func() { done <- writers[name]() }()
@@ -83,8 +72,7 @@ func (s settlingTasks) Save(ctx context.Context, task domain.Task) error {
 
 // A cancel that comes while a node's report settles the task waits for
 // it, and then finds the task Completed: it no longer saved the task
-// Cancelled over the report, with both events and the incident moved
-// twice (QA L8, 5 November 2026).
+// Cancelled over the report, with both events (QA L8, 5 November 2026).
 func TestACancelDuringAReportNeverOverwritesTheCompletedTask(t *testing.T) {
 	h := newHarness()
 	ctx := context.Background()

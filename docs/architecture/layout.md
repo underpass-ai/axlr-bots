@@ -6,8 +6,8 @@ One Go module, hexagonal: the domain depends on nothing, the application holds t
 
 | Package | Role |
 |---|---|
-| `domain` | Bot, Task, Incident, Execution, Node, Enrollment and Timer aggregates; value objects validated in constructors (autonomy level, semantic version, a bot's staged change, tool rules, triggers with their schedules and credentials, placement, leases); a node's certificate serial and its `Revoked` status; events (vision §11.2) under a schema version with the correlation ids; audit entries |
-| `application` | Ports (`BotRepository`, `TaskRepository`, `IncidentRepository`, `ExecutionRepository`, `TimerRepository`, `NodeRepository`, `EnrollmentRepository`, `Certifier`, `CertificateDenylist`, `EventPublisher`, `EventReader`, `AuditSink`, `RuntimeExecutor`, `DecisionExecutor`, `TraceLocator`, `ArtifactStore`, `Workspace`, `DeliveryRepository`, `NotificationSender`, `NodeTransport`) and use cases (`RegisterBot`, `EnableBot`, `UpdateBot`, `StageBot`, `ApplyStagedBot`, `UnstageBot`, `GetStagedBot`, `SubmitTask`, `FireTrigger`, `OpenIncident`, `ResolveIncident`, `ListIncidents`, `TickTimers`, `RunTask`, `ApproveTask`, `ExpireApprovals`, `DeliverNotifications`, `UploadArtifact`, `GetArtifact`, `DelegateTask`, `GetDelegation`, `CancelTask`, `ListExecutions`, `ListEvents`, `RegisterNode`, `HeartbeatNode`, `NextAssignment`, `RenewLease`, `ReportExecution`, `CreateEnrollmentToken`, `EnrollNode`, `AuthenticateNode`, `RevokeNode`, `MarkOfflineNodes`, `ReconcileTasks`, `RunNextPending`, `GetReport`, …); `SerialRunner` serialises runs, decisions, expiries, assignments, reports and revocations and interrupts the run a cancel names |
+| `domain` | Bot, Task, Execution, Node, Enrollment and Timer aggregates; value objects validated in constructors (autonomy level, semantic version, a bot's staged change, tool rules, triggers with their schedules and credentials, placement, leases); a node's certificate serial and its `Revoked` status; events (vision §11.2) under a schema version with the correlation ids; audit entries |
+| `application` | Ports (`BotRepository`, `TaskRepository`, `ExecutionRepository`, `TimerRepository`, `NodeRepository`, `EnrollmentRepository`, `Certifier`, `CertificateDenylist`, `EventPublisher`, `EventReader`, `AuditSink`, `RuntimeExecutor`, `DecisionExecutor`, `TraceLocator`, `ArtifactStore`, `Workspace`, `DeliveryRepository`, `NotificationSender`, `NodeTransport`) and use cases (`RegisterBot`, `EnableBot`, `UpdateBot`, `StageBot`, `ApplyStagedBot`, `UnstageBot`, `GetStagedBot`, `SubmitTask`, `FireTrigger`, `TickTimers`, `RunTask`, `ApproveTask`, `ExpireApprovals`, `DeliverNotifications`, `UploadArtifact`, `GetArtifact`, `DelegateTask`, `GetDelegation`, `CancelTask`, `ListExecutions`, `ListEvents`, `RegisterNode`, `HeartbeatNode`, `NextAssignment`, `RenewLease`, `ReportExecution`, `CreateEnrollmentToken`, `EnrollNode`, `AuthenticateNode`, `RevokeNode`, `MarkOfflineNodes`, `ReconcileTasks`, `RunNextPending`, `GetReport`, …); `SerialRunner` serialises runs, decisions, expiries, assignments, reports and revocations and interrupts the run a cancel names |
 | `nodeproto` | The messages of the node protocol, shared by the server and the node's client; the enrollment token's encoding |
 | `adapters/pki` | The fleet CA (ECDSA P-256; the key under `<state>/ca`, mode 0600), the node certificates it signs from a node's request (common name = node id, a year), the control plane's own certificate (issued at start for the host's names), the node's key and request, its stored credentials, and the TLS 1.3 configurations of both ends |
 | `adapters/filestore` | One JSON file per aggregate under the state directory, written atomically (temp file, fsync, rename); the timers; the enrollments (the hash of each token, never the token); the denylist of revoked certificate serials; the report artifacts |
@@ -35,15 +35,12 @@ One Go module, hexagonal: the domain depends on nothing, the application holds t
 ```text
 <state>/
   bots/<bot-id>.json       tasks/<task-id>.json      executions/<exec-id>.json   nodes/<node-id>.json
-  incidents/<inc-id>.json  (an alert group and the triage tasks that worked on it)
   timers/<bot-id>~<trigger>.json (the next fire)      api.token (0600, with --api-listen)
   enrollments/<enr-id>.json (the hash of each token)  ca/ca.key (0600), ca/ca.crt   pki/revoked.json
   events.jsonl             audit.jsonl               axlr-bots.sock (while the daemon runs)
   policies/<exec-id>.json  correlation/<exec-id>.json  skills/<exec-id>.json  artifacts/<task-id>/report.md
   artifacts/executions/<exec-id>/<name> (+ .listing/<name>.json)   the artifacts an execution delivered
   deliveries/pending/<dlv-id>.json, deliveries/done/   the outbox of approval notifications
-  deliveries/outputs/pending/<dlv-id>.json, deliveries/outputs/done/   the outbox of incident outputs
-  outputs.json (0600)      the incident output targets, URLs and secrets included
   outbox/nats/<node>/<time>-<seq>.json   with serve --bus nats: the pushes the broker has not acknowledged yet
   traces/, workspaces/     (single-process runs; a node keeps its own under its state)
   .lock                    the daemon holds it while it runs (a command working on the files takes it too)

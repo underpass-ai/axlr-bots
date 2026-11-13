@@ -27,12 +27,8 @@ type ExecutionRequest struct {
 	Level        domain.AutonomyLevel
 	AllowedTools []string
 	ToolRules    domain.ToolRules
-	// Unattended is a run a ladder lets act alone: its allow-listed MCP
-	// write takes no card, the run's approval level is raised to all and
-	// the allow list holds it to the one write tool.
-	Unattended bool
-	Budgets    domain.Budgets
-	Timeout    time.Duration
+	Budgets      domain.Budgets
+	Timeout      time.Duration
 	// Runtime is what runs the task on the node: AXLR, or a Jev program.
 	Runtime domain.Runtime
 	// Skills are the catalog skills the run reads, pinned on its task.

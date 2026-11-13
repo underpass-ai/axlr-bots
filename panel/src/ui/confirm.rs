@@ -74,7 +74,7 @@ impl Confirm {
     }
 
     /// It ends work or cannot be undone: its button is red. A bulk
-    /// Pause, Turn on, Approve or Resolve is not, nor an update.
+    /// Pause, Turn on or Approve is not, nor an update.
     pub fn destructive(&self) -> bool {
         match self {
             Self::Bulk(plan) => plan.action.destructive(),

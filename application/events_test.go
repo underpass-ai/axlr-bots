@@ -290,7 +290,7 @@ func TestATeamsTimeline(t *testing.T) {
 	if _, err := NewListGroupEvents(h.deps).Execute(ctx, GroupEventsQuery{Name: "ops", Limit: -1}); err == nil {
 		t.Error("a negative limit was accepted")
 	}
-	if _, err := NewListGroupEvents(h.deps).Execute(ctx, GroupEventsQuery{Name: "sre"}); !domain.IsNotFound(err) {
+	if _, err := NewListGroupEvents(h.deps).Execute(ctx, GroupEventsQuery{Name: "platform"}); !domain.IsNotFound(err) {
 		t.Errorf("missing team: %v", err)
 	}
 	h.log.fail = errBoom

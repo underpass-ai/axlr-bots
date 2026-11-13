@@ -30,7 +30,7 @@ pub fn card<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> Option<El<'a>> {
             };
             body = body.push(line(Icon::Stop, tasks, tokens)).push(line(
                 Icon::Clock,
-                "The tasks it asked other bots for will stop too. Its timers stop. Its open incidents close.".into(),
+                "The tasks it asked other bots for will stop too. Its timers stop.".into(),
                 tokens,
             ));
             if !preview.named_by.is_empty() {

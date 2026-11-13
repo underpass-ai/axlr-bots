@@ -11,11 +11,11 @@ import (
 )
 
 // governedBot registers and enables a bot at the level with a rule on
-// local_exec, as the SRE bot is defined.
+// local_exec, as the host bot is defined.
 func governedBot(t *testing.T, h *harness, level string) domain.Bot {
 	t.Helper()
 	d := sampleDefinition()
-	d.Name = "sre-host-bot"
+	d.Name = "host-bot"
 	d.AllowedTools = []string{"local_read", "local_exec"}
 	d.Level = level
 	d.ToolRules = domain.ToolRulesSnapshot{Allow: []domain.ToolRuleSnapshot{{Tool: "local_exec", Arguments: map[string]string{"program": "journalctl"}}}}

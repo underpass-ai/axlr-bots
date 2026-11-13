@@ -171,32 +171,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return groupLinks(ctx, service, rest, stdout, stderr)
 	case "group publish":
 		return groupPublish(ctx, service, rest, stdout, stderr)
-	case "incident open":
-		return incidentOpen(ctx, service, rest, stdout, stderr)
-	case "incident list":
-		return incidentList(ctx, service, rest, stdout, stderr)
-	case "incident get":
-		return incidentGet(ctx, service, rest, stdout, stderr)
-	case "incident diagnosis":
-		return incidentDiagnosis(ctx, service, *actor, rest, stdout, stderr)
-	case "autonomy list":
-		return autonomyList(ctx, service, rest, stdout, stderr)
-	case "autonomy get":
-		return autonomyGet(ctx, service, rest, stdout, stderr)
-	case "autonomy lower":
-		return autonomyLower(ctx, service, *actor, rest, stdout, stderr)
-	case "autonomy clear":
-		return autonomyClear(ctx, service, *actor, rest, stdout, stderr)
-	case "incident resolve":
-		return incidentResolve(ctx, service, rest, stdout, stderr)
-	case "incident postmortem":
-		return incidentPostmortem(ctx, service, *actor, rest, stdout, stderr)
-	case "output add":
-		return outputAdd(ctx, service, rest, stdout, stderr)
-	case "output list":
-		return outputList(ctx, service, rest, stdout, stderr)
-	case "output remove":
-		return outputRemove(ctx, service, rest, stdout, stderr)
 	case "task submit":
 		return taskSubmit(ctx, service, rest, stdout, stderr)
 	case "task list":
@@ -319,7 +293,7 @@ func printUsage(w io.Writer) {
   bot pause <bot-id>                  put an enabled bot on hold; it accepts no task
   bot stop <bot-id>                   pause it and cancel every task it has not finished
   bot delete <bot-id>                 delete it: cancel its unfinished tasks and the children it
-                                      asked for, resolve its incidents, remove its timers; its
+                                      asked for, remove its timers; its
                                       history stays and the answer names the bots that name it
   bot list                            list bots
   bot get <bot-id>                    show one bot
@@ -350,38 +324,6 @@ func printUsage(w io.Writer) {
   group publish <group> <name> --message "<text>" [--data '{…}'] [--to a,b] [--key <k>] [--tenant <id>]
                                       publish the operator's event on the team; stop.all stops everyone
                                       and drops their queued tasks
-  incident open --tenant <id> --bot <bot-id> --group-key "<key>" --title "<text>" [--severity sev1..sev4]
-                [--namespace <ns>] [--fingerprints a,b] [--source <name>] [--objective "<text>"]
-                                      report an alert group: a new incident and its triage task,
-                                      a repeat of the one open for that key, or a reopening
-  incident postmortem show <incident-id>
-                                      print a resolved incident's postmortem as Markdown
-  incident postmortem approve <incident-id> --author-task <task-id>
-                                      approve the text you read as --actor; the outputs announce it
-  incident postmortem send-back <incident-id> --note "<text>" [--author-task <task-id>]
-                                      send the text you read back, as --actor; the second send-back of
-                                      a text leaves it to a person. With no postmortem, asks for one
-  incident list [--tenant <id>] [--status Open|Diagnosed|Proposed|Resolved|Escalated] [--limit 100]
-                                      the incidents, the last seen first
-  incident get <incident-id>          show one incident: its alerts, tasks, diagnosis, cost
-  incident diagnosis <incident-id> correct|wrong
-                                      mark the diagnosis of the current cycle, as --actor
-  autonomy list [--tenant <id>] [--bot <id>] [--runbook <name>] [--namespace <ns>]
-  autonomy get <autonomy-id>          a runbook's step, counters and history
-  autonomy lower <autonomy-id> [--reason "<text>"]
-                                      take a runbook one step down, as --actor
-  autonomy clear <autonomy-id> [--reason "<text>"]
-                                      end its outstanding applies, as --actor
-  incident resolve <incident-id> [--reason "<text>"]
-                                      close it; a new alert within 30 minutes reopens it
-  output add <name> --type webhook|slack|command [--url <url> | --url-file <file>|-] [--secret-file <file>|-]
-             [--events opened,diagnosed,…] [--tenants a,b] [--severities sev1,sev2] [--panel-url <url>]
-             [--file <output.json>] [-- <program> <args>…]
-                                      announce incidents to a signed webhook, a Slack incoming
-                                      webhook or a local command (see docs/runbooks/outputs.md)
-  output list                         the output targets: name, type, filters, a fingerprint;
-                                      never the URL, the secret or the command
-  output remove <name>                drop a target; its pending deliveries are skipped
   task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>] [--urgent]
                                       accept a task; the same key names the same task; --urgent
                                       goes first, cancels the bot's work in progress and drops

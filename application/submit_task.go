@@ -75,8 +75,6 @@ type submission struct {
 	// Registered): it waits Pending until the bot is enabled. Only another
 	// team's fact uses it, so that a fact is never lost.
 	waits bool
-	// incident links a triage task to the incident it works on.
-	incident domain.IncidentID
 	// accepts refuses the submission for a reason of its own, after the
 	// idempotency lookup and the bot's status; nil accepts.
 	accepts func() error
@@ -84,10 +82,6 @@ type submission struct {
 	// work in progress and drops its queue; why says who made it urgent.
 	priority domain.TaskPriority
 	why      string
-	// unit is the ladder's unit of an apply task, pinned on it; with Alone
-	// set, the ladder lets it act without a card. Nil keeps the phase's
-	// own policy.
-	unit *domain.LadderGrant
 	// expects are the final events the task must emit, from its
 	// subscription, and carried the events it carries for them
 	// (docs/architecture/team-subscriptions.md, "Done is a contract").
@@ -149,23 +143,6 @@ func submitTask(ctx context.Context, deps Dependencies, s submission) (SubmitTas
 	if s.priority == domain.PriorityUrgent {
 		task.Prioritize(domain.PriorityUrgent)
 	}
-	if s.incident != "" {
-		if err := task.ForIncident(s.incident); err != nil {
-			return SubmitTaskResult{}, err
-		}
-		// The phase's policy as it is now, kept on the task: a trigger
-		// changed or removed later never widens its runs (review of #133).
-		policy := s.bot.PolicyFor(s.trigger)
-		switch {
-		case s.unit != nil && s.unit.Alone:
-			if policy, err = policy.Granted(*s.unit); err != nil {
-				return SubmitTaskResult{}, err
-			}
-		case s.unit != nil:
-			policy = policy.Tracked(*s.unit)
-		}
-		task.Pin(policy)
-	}
 	// The skills as they are now, kept on the task: a bot updated later
 	// never changes what this task reads.
 	task.PinSkills(s.bot.Skills())
@@ -184,9 +161,6 @@ func submitTask(ctx context.Context, deps Dependencies, s submission) (SubmitTas
 	}
 	if task.IsUrgent() {
 		payload["priority"], payload["why"] = task.Priority().String(), s.why
-	}
-	if s.incident != "" {
-		payload["incidentId"] = s.incident.String()
 	}
 	if err := rec.event(ctx, domain.EventTaskSubmitted, s.bot, taskID, correlation, payload); err != nil {
 		return SubmitTaskResult{}, err

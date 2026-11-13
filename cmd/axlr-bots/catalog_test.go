@@ -19,8 +19,8 @@ import (
 // they are (catalog/README.md); its README says what each is for.
 var catalogDir = filepath.Join("..", "..", "catalog")
 
-// catalogPlaceholderSecret is the credential every webhook and
-// alertmanager trigger of the catalog ships with: the README tells the
+// catalogPlaceholderSecret is the credential every webhook trigger of
+// the catalog ships with: the README tells the
 // operator to replace it, so a real one is never committed.
 const catalogPlaceholderSecret = "replace-me-with-16-to-256-chars"
 

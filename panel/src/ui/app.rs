@@ -1,10 +1,9 @@
 use chrono::{DateTime, Duration, Utc};
 
 use super::{
-    Answer, Banner, BotChoice, BotEditForm, BotView, Confirm, DeleteForm, Effect, IncidentWatch, Keypress, Launch,
-    ListenForm, LiveStream, LiveTask, Message, MintForm, NodeChoice, OrderForm, PostmortemForm, PublishForm, Readers,
-    RegisterForm, ResolveForm, Screen, Services, SettingsForm, SettingsJson, SubmitForm, TaskViewFilter, TeamWatch,
-    ThemeMode, passages,
+    Answer, Banner, BotChoice, BotEditForm, BotView, Confirm, DeleteForm, Effect, Keypress, Launch, ListenForm,
+    LiveStream, LiveTask, Message, MintForm, NodeChoice, OrderForm, PublishForm, Readers, RegisterForm, Screen,
+    Services, SettingsForm, SettingsJson, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode, passages,
 };
 use crate::application::SubscriptionChange;
 use crate::application::{EventFeed, Fleet, NewBotDefaults, PanelError, PanelSettings, TaskDetail};
@@ -75,8 +74,6 @@ pub struct App {
     pub order: OrderForm,
     /// The operator's one-press buttons, read at start.
     pub shortcuts: Vec<Shortcut>,
-    /// The incidents and the Resolve form.
-    pub incidents: IncidentWatch,
     /// An artifact on its way to a file.
     pub downloading: bool,
     /// Where to go once connected.
@@ -132,7 +129,6 @@ impl App {
             publish: PublishForm::default(),
             order: OrderForm::default(),
             shortcuts: Vec::new(),
-            incidents: IncidentWatch::default(),
             downloading: false,
             target: if launch.screen == Screen::Settings {
                 Screen::Overview
@@ -770,36 +766,6 @@ impl App {
                 effects
             }
 
-            Message::IncidentsLoaded(result) => self.incidents_loaded(result),
-            Message::IncidentLoaded(id, result) => self.incident_loaded(id, result),
-            Message::ResolveOpen => self.resolve_open(),
-            Message::ResolveReason(value) => {
-                self.incidents.resolve.reason = value;
-                Vec::new()
-            }
-            Message::ResolveSend => self.resolve_send(),
-            Message::ResolveClose => {
-                self.incidents.resolve = ResolveForm::default();
-                Vec::new()
-            }
-            Message::IncidentResolved(result) => self.incident_resolved(result),
-            Message::MarkDiagnosis(verdict) => self.mark_diagnosis(verdict),
-            Message::DiagnosisMarked(id, result) => self.diagnosis_marked(id, result),
-            Message::PostmortemApprove => self.postmortem_approve(),
-            Message::PostmortemBackOpen => {
-                self.incidents.review = PostmortemForm::opened();
-                Vec::new()
-            }
-            Message::PostmortemBackNote(value) => {
-                self.incidents.review.note = value;
-                Vec::new()
-            }
-            Message::PostmortemBackSend => self.postmortem_back_send(),
-            Message::PostmortemBackClose => {
-                self.incidents.review = PostmortemForm::default();
-                Vec::new()
-            }
-            Message::PostmortemReviewed(result) => self.postmortem_reviewed(result),
             Message::Download(execution, name) => self.download(execution, name),
             Message::Downloaded(result) => self.downloaded(result),
 
@@ -1075,14 +1041,6 @@ impl App {
                 }
                 effects
             }
-            Screen::Incidents if !self.incidents.list_loading => {
-                self.incidents.list_loading = true;
-                vec![Effect::LoadIncidents]
-            }
-            Screen::Incident(id) if !self.incidents.detail_loading => {
-                self.incidents.detail_loading = true;
-                vec![Effect::LoadIncident(id.clone())]
-            }
             _ => Vec::new(),
         }
     }
@@ -1104,11 +1062,6 @@ impl App {
         {
             self.bot = None;
         }
-        if let Screen::Incident(id) = &screen
-            && self.incidents.detail.as_ref().is_some_and(|i| &i.id != id)
-        {
-            self.incidents.detail = None;
-        }
         // Another screen opens at its top, not where the last one was
         // scrolled to; a refresh of the same one keeps its place.
         let mut effects = Vec::new();
@@ -1124,10 +1077,6 @@ impl App {
             self.order = OrderForm::default();
             self.task_loading = false;
             self.bot_loading = false;
-            self.incidents.list_loading = false;
-            self.incidents.detail_loading = false;
-            self.incidents.review = PostmortemForm::default();
-            self.incidents.resolve = ResolveForm::default();
             // The picked rows belong to the list left; its order stays.
             self.tables.clear_all();
         }
@@ -1197,17 +1146,7 @@ impl App {
             .filter(|d| d.task.id == id)
             .and_then(|d| d.pending_call())
             .or_else(|| self.fleet.as_ref().and_then(|f| f.call_of(&id)))
-            .map(|c| c.call_id.clone())
-            .or_else(|| {
-                // Decided from the incident's page: the call it says its
-                // current task waits on.
-                self.incidents
-                    .detail
-                    .as_ref()
-                    .and_then(|i| i.decision())
-                    .filter(|(task, call)| *task == &id && !call.is_empty())
-                    .map(|(_, call)| call.to_string())
-            });
+            .map(|c| c.call_id.clone());
         vec![Effect::Decide(id, decision, call_id)]
     }
 

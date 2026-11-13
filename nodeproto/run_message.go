@@ -8,22 +8,19 @@ import (
 
 // RunMessage is what the node needs to run a task's objective.
 type RunMessage struct {
-	TaskID        string                   `json:"taskId"`
-	BotID         string                   `json:"botId"`
-	TenantID      string                   `json:"tenantId"`
-	CorrelationID string                   `json:"correlationId,omitempty"`
-	Objective     string                   `json:"objective"`
-	Model         string                   `json:"model,omitempty"`
-	Level         string                   `json:"level"`
-	AllowedTools  []string                 `json:"allowedTools"`
-	ToolRules     domain.ToolRulesSnapshot `json:"toolRules"`
-	// Unattended is a run a ladder lets act alone; an older node ignores
-	// it and the run stops at the card, which is the safe side.
-	Unattended     bool                    `json:"unattended,omitempty"`
-	TimeoutSeconds int                     `json:"timeoutSeconds"`
-	Budgets        *BudgetsMessage         `json:"budgets,omitempty"`
-	Delegation     *DelegationOfferMessage `json:"delegation,omitempty"`
-	Events         *EventsOfferMessage     `json:"events,omitempty"`
+	TaskID         string                   `json:"taskId"`
+	BotID          string                   `json:"botId"`
+	TenantID       string                   `json:"tenantId"`
+	CorrelationID  string                   `json:"correlationId,omitempty"`
+	Objective      string                   `json:"objective"`
+	Model          string                   `json:"model,omitempty"`
+	Level          string                   `json:"level"`
+	AllowedTools   []string                 `json:"allowedTools"`
+	ToolRules      domain.ToolRulesSnapshot `json:"toolRules"`
+	TimeoutSeconds int                      `json:"timeoutSeconds"`
+	Budgets        *BudgetsMessage          `json:"budgets,omitempty"`
+	Delegation     *DelegationOfferMessage  `json:"delegation,omitempty"`
+	Events         *EventsOfferMessage      `json:"events,omitempty"`
 	// Ask names the other teams the bot may ask; an older node ignores it
 	// and serves no ask tool.
 	Ask *AskOfferMessage `json:"ask,omitempty"`

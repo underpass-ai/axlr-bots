@@ -51,7 +51,7 @@ mod tests {
                 .unwrap();
         assert_eq!(link.heading("qa"), "asks dev");
         assert_eq!(link.heading("dev"), "asked by qa");
-        assert_eq!(link.heading("sre"), "qa asks dev");
+        assert_eq!(link.heading("ops"), "qa asks dev");
         assert_eq!(link.who(), "qa-jefe → dev-a, dev-b");
         let bare: TeamLink = serde_json::from_str(r#"{"from":"qa","to":"dev"}"#).unwrap();
         assert_eq!(bare.who(), "nobody → nobody");

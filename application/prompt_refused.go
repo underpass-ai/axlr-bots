@@ -8,8 +8,8 @@ import (
 
 // errPromptRefused says a task cannot be handed to a runtime: its bot's
 // mission and its objective do not make a prompt. Its text is the reason
-// the task fails with, sizes only: an operator reads it on the task and
-// on the incident, and a mission or an objective may be long or private.
+// the task fails with, sizes only: an operator reads it on the task,
+// and a mission or an objective may be long or private.
 type errPromptRefused struct {
 	cause              error
 	mission, objective int

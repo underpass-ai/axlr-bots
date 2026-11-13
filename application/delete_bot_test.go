@@ -11,16 +11,15 @@ import (
 )
 
 // deletable builds worker-1 with a task running on a node, a delegated
-// child on its teammate worker-2, a pending task, an open incident with
-// its triage task, an armed timer and a notification to send; worker-2
+// child on its teammate worker-2, a pending task, an armed timer and a notification to send; worker-2
 // listens to it and watcher may delegate to it.
-func deletable(t *testing.T) (*harness, Assignment, OpenIncidentResult) {
+func deletable(t *testing.T) (*harness, Assignment, domain.Task) {
 	t.Helper()
 	h := newHarness()
 	ctx := context.Background()
 	onlineNode(t, h, "web-1")
 	worker := teamBot(t, h, "worker-1", []string{"ops"}, func(d *BotDefinition) {
-		d.Triggers = []domain.TriggerSnapshot{{Type: "manual"}, {Type: "incident"}, {Type: "timer", Name: "clock", Every: "10m", Objective: "Look around"}}
+		d.Triggers = []domain.TriggerSnapshot{{Type: "manual"}, {Type: "timer", Name: "clock", Every: "10m", Objective: "Look around"}}
 	})
 	teamBot(t, h, "worker-2", []string{"ops"}, func(d *BotDefinition) {
 		d.Subscriptions = []domain.SubscriptionSnapshot{{Topic: "warn.*", From: []string{"worker-1"}}}
@@ -30,36 +29,29 @@ func deletable(t *testing.T) (*harness, Assignment, OpenIncidentResult) {
 	if answer := delegate(t, h, "web-1", running.ExecutionID, "worker-2", "Look at the disk"); answer.TaskID == "" {
 		t.Fatalf("no child: %+v", answer)
 	}
-	submit(t, h, worker, "k-pending")
-	opened, err := NewOpenIncident(h.deps).Execute(ctx, alert(worker, "fp-a"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	pending := submit(t, h, worker, "k-pending").Task
 	if _, err := NewTickTimers(h.deps).Execute(ctx); err != nil {
 		t.Fatal(err)
 	}
 	target, _ := domain.NewNotifyTarget(domain.NotifyTargetSnapshot{Type: "command", Name: "ops", Command: []string{"/bin/true"}})
-	delivery, _ := domain.NewDelivery("dlv-1", "worker-1", opened.Task.ID(), "exec-x", "c1", target, []byte(`{}`), t0)
+	delivery, _ := domain.NewDelivery("dlv-1", "worker-1", pending.ID(), "exec-x", "c1", target, []byte(`{}`), t0)
 	if err := h.outbox.Save(ctx, delivery); err != nil {
 		t.Fatal(err)
 	}
 	h.log.events, h.log.audits = nil, nil
-	return h, running, opened
+	return h, running, pending
 }
 
 func TestDeleteBotEndsWhatItLeftGoingAndKeepsItsHistory(t *testing.T) {
-	h, running, opened := deletable(t)
+	h, running, _ := deletable(t)
 	ctx := context.Background()
 	result, err := NewDeleteBot(h.deps).Execute(ctx, "worker-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The running task, the pending one, the triage task and the timer's.
-	if len(result.Cancelled) != 4 || len(result.ChildrenCancelled) != 1 || result.TimersRemoved != 1 || result.NotificationsDropped != 1 {
+	// The running task, the pending one and the timer's.
+	if len(result.Cancelled) != 3 || len(result.ChildrenCancelled) != 1 || result.TimersRemoved != 1 || result.NotificationsDropped != 1 {
 		t.Fatalf("result = %+v", result)
-	}
-	if len(result.IncidentsResolved) != 1 || result.IncidentsResolved[0] != opened.Incident.ID() {
-		t.Errorf("incidents = %v", result.IncidentsResolved)
 	}
 	want := []BotReference{{BotID: "watcher", How: ReferenceDelegation}, {BotID: "worker-2", How: ReferenceSubscription, Topic: "warn.*"}}
 	if !slices.Equal(result.NamedBy, want) {
@@ -81,28 +73,20 @@ func TestDeleteBotEndsWhatItLeftGoingAndKeepsItsHistory(t *testing.T) {
 	if execution.Outcome() != domain.ExecutionCancelled {
 		t.Errorf("execution = %s", execution.Outcome())
 	}
-	// Resolved before its triage task was cancelled: not escalated.
-	incident, _ := h.incs.Get(ctx, opened.Incident.ID())
-	if incident.Status() != domain.IncidentResolved || incident.Reason() != DeletedReason {
-		t.Errorf("incident = %s %q", incident.Status(), incident.Reason())
-	}
 	if timers, _ := h.timers.List(ctx); len(timers) != 0 {
 		t.Errorf("timers = %d", len(timers))
 	}
 	if pending, _ := h.outbox.ListPending(ctx); len(pending) != 0 {
 		t.Errorf("deliveries = %d", len(pending))
 	}
-	if deleted, ok := lastEvent(h, domain.EventBotDeleted); !ok || deleted.BotID != "worker-1" || deleted.Payload["cancelled"] != 4 {
+	if deleted, ok := lastEvent(h, domain.EventBotDeleted); !ok || deleted.BotID != "worker-1" || deleted.Payload["cancelled"] != 3 {
 		t.Errorf("bot.deleted = %+v", deleted)
-	}
-	if !slices.Contains(h.log.eventTypes(), "incident.resolved") || slices.Contains(h.log.eventTypes(), "incident.escalated") {
-		t.Errorf("events = %v", h.log.eventTypes())
 	}
 	if last := h.log.audits[len(h.log.audits)-1]; last.Action != "bot.delete" || last.Outcome != domain.AuditOK {
 		t.Errorf("audit = %+v", last)
 	}
 	// History stays: the tasks are there; a second delete finds no bot.
-	if all, _ := h.tasks.List(ctx); len(all) != 5 {
+	if all, _ := h.tasks.List(ctx); len(all) != 4 {
 		t.Errorf("tasks = %d", len(all))
 	}
 	if _, err := NewDeleteBot(h.deps).Execute(ctx, "worker-1"); !domain.IsNotFound(err) {
@@ -131,10 +115,9 @@ func TestABotRegisteredAgainDoesNotFindItsPredecessorsTask(t *testing.T) {
 func TestDeleteBotStopsBeforeTheRecordWhenAStoreFails(t *testing.T) {
 	ctx := context.Background()
 	for name, breakIt := range map[string]func(*harness){
-		"tasks":     func(h *harness) { h.tasks.listFail = errBoom },
-		"incidents": func(h *harness) { h.incs.listFail = errBoom },
-		"timers":    func(h *harness) { h.timers.fail = errBoom },
-		"save":      func(h *harness) { h.tasks.fail = errBoom },
+		"tasks":  func(h *harness) { h.tasks.listFail = errBoom },
+		"timers": func(h *harness) { h.timers.fail = errBoom },
+		"save":   func(h *harness) { h.tasks.fail = errBoom },
 	} {
 		h, _, _ := deletable(t)
 		breakIt(h)
@@ -148,24 +131,6 @@ func TestDeleteBotStopsBeforeTheRecordWhenAStoreFails(t *testing.T) {
 	h := newHarness()
 	if _, err := NewDeleteBot(h.deps).Execute(ctx, "ghost"); !domain.IsNotFound(err) {
 		t.Errorf("ghost: %v", err)
-	}
-}
-
-func TestResolveIncidentClosesTheIncidentOfAGoneBot(t *testing.T) {
-	h := newHarness()
-	ctx := context.Background()
-	bot := triageBot(t, h, "triage", "")
-	opened, err := NewOpenIncident(h.deps).Execute(ctx, alert(bot, "fp-a"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = h.bots.Delete(ctx, bot.ID())
-	incident, err := NewResolveIncident(h.deps).Execute(ctx, opened.Incident.ID(), "fixed by hand")
-	if err != nil || incident.Status() != domain.IncidentResolved {
-		t.Fatalf("resolve: %v %v", incident.Status(), err)
-	}
-	if event, ok := lastEvent(h, domain.EventIncidentResolved); !ok || event.BotID != bot.ID() || event.TenantID != bot.TenantID() {
-		t.Errorf("event = %+v", event)
 	}
 }
 

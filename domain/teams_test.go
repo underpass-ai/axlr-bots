@@ -14,10 +14,10 @@ func TestTeams(t *testing.T) {
 	if got := teams.Snapshot(); len(got) != 2 || got[0] != "infra" || got[1] != "ops" {
 		t.Errorf("snapshot = %v", got)
 	}
-	if !teams.Has("ops") || teams.Has("sre") || teams.Empty() {
+	if !teams.Has("ops") || teams.Has("storage") || teams.Empty() {
 		t.Errorf("teams = %+v", teams)
 	}
-	other, _ := NewTeams([]string{"ops", "sre"})
+	other, _ := NewTeams([]string{"ops", "storage"})
 	if shared := teams.Shared(other); len(shared) != 1 || shared[0] != "ops" {
 		t.Errorf("shared = %v", shared)
 	}
@@ -99,7 +99,7 @@ func teamTestBot(t *testing.T, id, tenant string, teams []string) Bot {
 
 func TestTeammatesAndTheirConsent(t *testing.T) {
 	watcher := teamTestBot(t, "watcher", "default", []string{"ops"})
-	worker := teamTestBot(t, "worker-1", "default", []string{"ops", "sre"})
+	worker := teamTestBot(t, "worker-1", "default", []string{"ops", "storage"})
 	stranger := teamTestBot(t, "stranger", "default", []string{"infra"})
 	elsewhere := teamTestBot(t, "elsewhere", "staging", []string{"ops"})
 	if !watcher.IsTeammateOf(worker) || watcher.IsTeammateOf(watcher) || watcher.IsTeammateOf(stranger) || watcher.IsTeammateOf(elsewhere) {
@@ -159,7 +159,7 @@ func TestBotSnapshotKeepsTheTeams(t *testing.T) {
 func TestTeamDirectoryRenders(t *testing.T) {
 	mates := []Teammate{
 		{ID: "worker-1", Teams: []TeamName{"ops"}, Purpose: "Deploys service-1.", Tools: []string{"run_job"}, Where: "node worker-1", TakesDelegation: true},
-		{ID: "worker-2", Teams: []TeamName{"ops", "sre"}, Purpose: "Deploys service-2.", Where: "any node"},
+		{ID: "worker-2", Teams: []TeamName{"ops", "storage"}, Purpose: "Deploys service-2.", Where: "any node"},
 	}
 	one := NewTeamDirectory([]TeamName{"ops"}, mates)
 	text := one.Render(4000)
@@ -167,8 +167,8 @@ func TestTeamDirectoryRenders(t *testing.T) {
 	if text != want {
 		t.Errorf("render =\n%s\nwant\n%s", text, want)
 	}
-	many := NewTeamDirectory([]TeamName{"ops", "sre"}, mates)
-	if text := many.Render(4000); !strings.Contains(text, "(teams ops, sre)") || !strings.Contains(text, "- worker-2 (ops, sre): ") {
+	many := NewTeamDirectory([]TeamName{"ops", "storage"}, mates)
+	if text := many.Render(4000); !strings.Contains(text, "(teams ops, storage)") || !strings.Contains(text, "- worker-2 (ops, storage): ") {
 		t.Errorf("many teams =\n%s", text)
 	}
 	heading := len("Your teammates (team ops), bots of your operator that work with you:\n")

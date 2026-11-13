@@ -17,8 +17,6 @@ pub enum BulkAction {
     Cancel,
     /// Revoke nodes' certificates.
     Revoke,
-    /// Close incidents by hand.
-    Resolve,
 }
 
 impl BulkAction {
@@ -32,7 +30,6 @@ impl BulkAction {
             Self::Approve => "Approve",
             Self::Deny => "Deny",
             Self::Revoke => "Revoke",
-            Self::Resolve => "Resolve",
         }
     }
 
@@ -46,7 +43,6 @@ impl BulkAction {
             Self::Approve => "approved",
             Self::Deny => "denied",
             Self::Revoke => "revoked",
-            Self::Resolve => "resolved",
         }
     }
 
@@ -71,7 +67,6 @@ impl BulkAction {
             Self::Deny => "No bot makes the call it waits on; each run goes on without it.",
             Self::Cancel => "Each task stops and does not run again.",
             Self::Revoke => "Each certificate stops working now; their running tasks fail.",
-            Self::Resolve => "Each incident closes; a new alert opens a new one.",
         }
     }
 }
@@ -91,7 +86,7 @@ mod tests {
             (BulkAction::Cancel.label(), BulkAction::Cancel.past()),
             ("Stop", "stopped")
         );
-        assert_eq!(BulkAction::Resolve.past(), "resolved");
+        assert_eq!(BulkAction::Revoke.past(), "revoked");
         assert_eq!(
             (BulkAction::Delete.label(), BulkAction::Delete.past()),
             ("Delete", "deleted")
@@ -109,12 +104,7 @@ mod tests {
         ] {
             assert!(action.destructive(), "{action:?}");
         }
-        for action in [
-            BulkAction::TurnOn,
-            BulkAction::Pause,
-            BulkAction::Approve,
-            BulkAction::Resolve,
-        ] {
+        for action in [BulkAction::TurnOn, BulkAction::Pause, BulkAction::Approve] {
             assert!(!action.destructive(), "{action:?}");
             assert!(action.what_happens().starts_with("Each"));
         }

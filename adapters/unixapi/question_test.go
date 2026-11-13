@@ -38,7 +38,7 @@ func TestAQuestionOverTheSocket(t *testing.T) {
 	if links, err := client.ListGroupLinks(ctx, "qa", ""); err != nil || len(links) != 1 {
 		t.Errorf("qa's links = %+v %v", links, err)
 	}
-	if _, err := client.ListGroupLinks(ctx, "sre", ""); !domain.IsNotFound(err) {
+	if _, err := client.ListGroupLinks(ctx, "platform", ""); !domain.IsNotFound(err) {
 		t.Errorf("a missing team's links: %v", err)
 	}
 	for _, node := range []application.NodeRegistration{

@@ -6,7 +6,7 @@ Amended 11 November 2026: a subscription or timer trigger that says `"deliver": 
 
 ## Context
 
-Each team now has its own memory, `<state>/kmp/<team>`, and nobody else's is in it. The product owner's vision for the solo-founder application (product, development, QA, marketing, and `sre` in support) adds two rules between teams: a team asks the **responsible role** of another team for context instead of reading its memory, and it does so synchronously or asynchronously. The responsible role is not a fixed bot: it is the first free bot of the team.
+Each team now has its own memory, `<state>/kmp/<team>`, and nobody else's is in it. The product owner's vision for the solo-founder application (product, development, QA, marketing) adds two rules between teams: a team asks the **responsible role** of another team for context instead of reading its memory, and it does so synchronously or asynchronously. The responsible role is not a fixed bot: it is the first free bot of the team.
 
 What exists today, read on `6cfb106`:
 
@@ -50,7 +50,7 @@ A bot asks a **team**. The control plane picks, under `mu`, the first free membe
 | D5 | The answer when the asker has ended | **A new task for the asking bot**, trigger `question_answer` |
 | D6 | What memory keeps | The control plane's history is the record, always. Phase 1: each side's bot records the question and the answer in its own about, `project:<team>.<bot>`, by its playbook. Phase 2 (cut 8, [below](#memory)): the node writes it, without a model, into `project:<team>.canal` of each team's store, behind a node switch that is off by default |
 | D7 | A node's single slot | ~~One more slot per node, for questions only, each under 300 s~~ **Withdrawn (amended)**: a question waits for its responder like any task, within two hours |
-| D8 | A team on several nodes (`sre`) | **One seat**: only the bots of one node declare `question`. For `sre`, the `sre-ro` bots; `fix` (on `sre-rw`, with `apply`, `patch`, `scale`) never answers |
+| D8 | A team on several nodes | **One seat**: only the bots of one node declare `question`; the bots of the team's other nodes never answer |
 | D9 | Limits | The numbers below, measured for two weeks before anyone changes them |
 
 ### Who is free
@@ -171,15 +171,14 @@ The matrix is derived, never stored: `GET /v1/groups/{name}/links` (and `axlr-bo
 
 Limits of the control plane, not per bot: 3 questions per trace (`rate_limited`), 8 Pending questions per asked team (`team_busy`).
 
-The first matrix, written by the teams' installers (`bots-work-teams`, `axlr-sre`):
+The first matrix, written by the teams' installers (`bots-work-teams`):
 
-| Asks ↓ · answers → | producto | dev | qa | marketing | sre |
-|---|---|---|---|---|---|
-| producto | — | yes | yes | yes | no |
-| dev | yes | — | yes | no | yes |
-| qa | yes | yes | — | no | no |
-| marketing | yes | yes | no | — | no |
-| sre | no | yes | no | no | — |
+| Asks ↓ · answers → | producto | dev | qa | marketing |
+|---|---|---|---|---|
+| producto | — | yes | yes | yes |
+| dev | yes | — | yes | no |
+| qa | yes | yes | — | no |
+| marketing | yes | yes | no | — |
 
 `x-news`, `arte` and `matematicas` have no links. `producto` has no bots yet: its links wait.
 
@@ -189,7 +188,7 @@ With D4 the responder keeps its tools, so nothing in the platform makes an injec
 
 | Brake | How |
 |---|---|
-| The matrix | only the teams the operator linked reach a bot; marketing, which reads the web, reaches neither QA nor `sre` |
+| The matrix | only the teams the operator linked reach a bot; marketing, which reads the web, reaches no QA |
 | No chain | the responder has no ask, delegate, emit or subscribe tool, so a question moves no third team |
 | The bot's own policy | its allowed tools, its `toolRules`, its approvals and its destructive list, as for any task; a question never raises them |
 | Framing | the question and the answer travel between nonce lines, marked as another team's data |
@@ -255,7 +254,7 @@ How to turn on one live link, and off again: [runbook](../runbooks/team-channel.
 
 ### A team on several nodes
 
-A question is answered from one store. The answer names the responder's node and store, and says `partial: true` when the team's consenting bots open more than one store. For `sre` (`sre-ro`: five bots that read the cluster; `sre-rw`: `fix`, which writes it; one host, one user) only the `sre-ro` bots declare `question`. On 10 November 2026 neither node had a `kmp/sre` yet. A team across hosts stays `partial` until KMP is served over the network ([memory store per team](memory-store-per-team.md), decision D4).
+A question is answered from one store. The answer names the responder's node and store, and says `partial: true` when the team's consenting bots open more than one store. A team on several nodes of one host declares `question` on one of them only (D8). A team across hosts stays `partial` until KMP is served over the network ([memory store per team](memory-store-per-team.md), decision D4).
 
 ### Amendment: every question is asynchronous
 
@@ -316,7 +315,6 @@ What cut 5.5b ships, for A6. One watcher per asking team; the asker itself never
 | AXLR | — | nothing |
 | KMP | — | nothing |
 | bots-work-teams | bots, playbooks, installers | `ask.teams`, the `question` trigger, how to ask, answer and record |
-| axlr-sre | bots | the `question` trigger on the `sre-ro` bots that should answer |
 
 ## Order of PRs
 
@@ -332,7 +330,7 @@ Each from `origin/main`, base `main`; control plane, then nodes, then panel; che
 | 5.5a | the state of a question (A6) | the asker reads queued and why, running since, the last step, a wait for a person and the deadline, only of its own task's questions; the responder is never interrupted |
 | 5.5b | the Jev watcher (A6), [above](#the-jev-watcher) | a Jev bot of the asking team, with a fake judge, abandons a stuck question and the asker hears `answered: false` naming it; `wait` changes nothing; it never touches another team's questions; a bot that is not Jev cannot watch; a question younger than 5 minutes is not offered |
 | 6 | the panel | the timeline lines, the links, `partial` |
-| 7a | playbooks and bots (`bots-work-teams`, `axlr-sre`) | all off until a link is named (`TEAM_CHANNEL_ASK`, `TEAM_CHANNEL_ANSWER`) |
+| 7a | playbooks and bots (`bots-work-teams`) | all off until a link is named (`TEAM_CHANNEL_ASK`, `TEAM_CHANNEL_ANSWER`) |
 | 7b | [the node's switch](#the-switch), `axlr-node --team-channel`, off by default, and the [runbook](../runbooks/team-channel.md) for one live link qa→dev | off: a bot with `ask.teams` gets no ask tool and is never picked to answer, a watcher is refused; on: everything as before. The live link only with the product owner's go-ahead |
 | 8 | the node writes memory (D6, phase 2) | the MCP write verified in a sandbox first; the control plane hands each side's record and audits it whatever the node; a node switched off writes nothing; on, each side writes once into its team's store, a repeat is KMP's replay, a failed write is a log line |
 
@@ -347,7 +345,7 @@ Each from `origin/main`, base `main`; control plane, then nodes, then panel; che
 | Tell every member, the first wins | pays for N runs |
 | A central table of team links | one place, but creates the team aggregate |
 | The responder reads memory only | recommended by the design, not chosen (D4) |
-| One store per team across the nodes of a host | one memory for `sre`, but `fix` would read what `triage` took from logs |
+| One store per team across the nodes of a host | one memory for the team, but a writer bot would read what a reader bot took from logs |
 
 ## Consequences
 
@@ -361,6 +359,6 @@ Each from `origin/main`, base `main`; control plane, then nodes, then panel; che
 - Reassigning or retrying a question whose responder failed or was preempted.
 - More than one cross-team hop.
 - Caching answers to the same question.
-- A filter for secrets in answers: none exists in the channel; the matrix keeps `sre` and the developers away from marketing.
+- A filter for secrets in answers: none exists in the channel; the matrix keeps the developers away from marketing.
 - Questions from the operator to a team (the panel's task box already reaches a bot).
 - Teams across hosts beyond `partial`.

@@ -90,25 +90,6 @@ pub enum Effect {
     Cancel(TaskId),
     /// The decision, and the call it was made on when the panel knew it.
     Decide(TaskId, Decision, Option<String>),
-    LoadIncidents,
-    LoadIncident(String),
-    MarkDiagnosis {
-        id: String,
-        verdict: String,
-    },
-    ResolveIncident {
-        id: String,
-        reason: String,
-    },
-    ApprovePostmortem {
-        id: String,
-        author: String,
-    },
-    SendBackPostmortem {
-        id: String,
-        note: String,
-        author: Option<String>,
-    },
     /// Fetch an artifact and ask where to save it.
     Download(ExecutionId, String),
     Copy(String),

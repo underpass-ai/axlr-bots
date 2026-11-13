@@ -152,22 +152,4 @@ func TestTheActorDecides(t *testing.T) {
 	if code != exitOK || decided["execution"].(map[string]any)["decision"] != "approve" {
 		t.Errorf("approve as tirso: %d %v", code, decided)
 	}
-	for _, bad := range []string{`{"approvals":{"twoPersons":true}}`, `{"approvals":{"twoPersons":{"namespace":["prod"]}}}`, `{"approvals":{"twoPersons":{}}}`} {
-		if code, _, errText := c.run("bot", "update", "bot-act-with-approval", "--file", writeJSON(t, dir, bad)); code == exitOK || !strings.Contains(errText, "twoPersons") && !strings.Contains(errText, "namespace") {
-			t.Errorf("%s: %d %s", bad, code, errText)
-		}
-	}
-	code, updated := c.json("bot", "update", "bot-act-with-approval", "--file", writeJSON(t, dir, `{"approvals":{"approvers":["tirso","oncall"],"twoPersons":{"namespaces":["prod"]}}}`))
-	if approvals, _ := updated["approvals"].(map[string]any); code != exitOK || approvals["twoPersons"] == nil || len(approvals["approvers"].([]any)) != 2 {
-		t.Errorf("update: %d %v", code, updated)
-	}
-}
-
-func writeJSON(t *testing.T, dir, content string) string {
-	t.Helper()
-	file := filepath.Join(dir, "patch.json")
-	if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return file
 }

@@ -59,7 +59,7 @@ mod tests {
         ]);
         assert_eq!(readers.len(), 2);
         readers.act(&ReaderKey::BotMission, Action::SelectAll);
-        readers.act(&ReaderKey::IncidentTitle, Action::SelectAll);
+        readers.act(&ReaderKey::BotModel, Action::SelectAll);
         readers.sync(vec![(ReaderKey::BotMission, "Watch the hosts.".into())]);
         assert_eq!(readers.len(), 1);
         let mission = readers.get(&ReaderKey::BotMission).unwrap();

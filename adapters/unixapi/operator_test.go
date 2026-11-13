@@ -326,7 +326,7 @@ func serveOperatorAddress(t *testing.T) *operatorAddress {
 }
 
 // serveOperatorAddressWith is serveOperatorAddress with a change to the
-// dependencies (a fake SNS transport).
+// dependencies.
 func serveOperatorAddressWith(t *testing.T, change func(*application.Dependencies)) *operatorAddress {
 	t.Helper()
 	dir := t.TempDir()

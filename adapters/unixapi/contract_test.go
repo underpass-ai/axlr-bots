@@ -32,12 +32,12 @@ var contractTypes = map[string]reflect.Type{}
 func init() {
 	for _, value := range []any{
 		domain.BotSnapshot{}, domain.TaskSnapshot{}, domain.ExecutionSnapshot{}, domain.NodeSnapshot{}, domain.Event{},
-		domain.ApprovalWait{}, domain.ApprovalMark{}, domain.ApprovalsSnapshot{}, domain.TwoPersonsSnapshot{}, domain.EventsSnapshot{}, domain.EmitRuleSnapshot{}, domain.SubscriptionSnapshot{}, domain.Artifact{}, domain.BudgetsSnapshot{},
+		domain.ApprovalWait{}, domain.ApprovalsSnapshot{}, domain.EventsSnapshot{}, domain.EmitRuleSnapshot{}, domain.SubscriptionSnapshot{}, domain.Artifact{}, domain.BudgetsSnapshot{},
 		domain.CorrelationRecord{}, domain.DelegationGrant{}, domain.DelegationSnapshot{}, domain.AskSnapshot{}, domain.ModelPolicySnapshot{},
 		domain.NodeCapabilities{}, domain.NotifyTargetSnapshot{}, domain.PendingDecision{}, domain.PlacementSnapshot{},
 		domain.PolicyRecord{}, domain.Result{}, domain.TaskLineage{}, domain.EventOrigin{}, domain.TaskExpectsSnapshot{}, domain.CarriedEvent{}, domain.FinalEvent{}, domain.ToolCall{}, domain.ToolRuleSnapshot{},
-		domain.ToolRulesSnapshot{}, domain.TriggerRef{}, domain.TriggerRefSnapshot{}, domain.PinnedPolicySnapshot{}, domain.PinnedLadderSnapshot{}, domain.LadderSnapshot{}, domain.LadderRunbookSnapshot{}, domain.AutonomyCounters{}, domain.AutonomyThresholdsSnapshot{}, domain.AutonomyEntry{}, domain.AutonomyOutstanding{}, AutonomyResponse{}, DiagnosisRequest{}, LowerRequest{}, ClearRequest{}, domain.TriggerSnapshot{}, domain.Usage{},
-		application.Overview{}, application.BotDefinition{}, application.OpenIncidentCommand{}, domain.IncidentSnapshot{}, domain.IncidentPostmortemSnapshot{}, PostmortemReviewRequest{}, domain.IncidentTaskSnapshot{}, OpenIncidentResponse{}, IncidentResponse{}, IncidentCurrentTask{}, IncidentApprovalsResponse{}, ResolveRequest{}, application.PublishGroupEventCommand{}, application.PublishAnswer{}, application.GroupTopic{}, application.TopicListener{}, application.GroupLink{}, application.BotPatch{}, application.Group{}, application.GroupMember{}, application.OutputDefinition{}, application.OutputView{}, application.TranscriptRecord{},
+		domain.ToolRulesSnapshot{}, domain.TriggerRef{}, domain.TriggerRefSnapshot{}, domain.TriggerSnapshot{}, domain.Usage{},
+		application.Overview{}, application.BotDefinition{}, application.PublishGroupEventCommand{}, application.PublishAnswer{}, application.GroupTopic{}, application.TopicListener{}, application.GroupLink{}, application.BotPatch{}, application.Group{}, application.GroupMember{}, application.TranscriptRecord{},
 		domain.SkillPinSnapshot{}, domain.RuntimeSnapshot{}, domain.JevProgramSnapshot{}, domain.JevActSnapshot{}, domain.JevTellSnapshot{},
 		application.BudgetsDefinition{}, application.ModelPolicyDefinition{}, application.StagedBotView{},
 		SubmitRequest{}, TaskRequest{}, SubmitResponse{}, RunResponse{}, CancelResponse{}, ReportResponse{},
@@ -212,8 +212,8 @@ func TestContractEnumsAreTheDomains(t *testing.T) {
 			t.Errorf("%s: the domain has %q, the contract lists %q", name, want, got)
 		}
 	}
-	if checked < 10 {
-		t.Fatalf("checked %d enums, expected 10", checked)
+	if checked < 9 {
+		t.Fatalf("checked %d enums, expected 9", checked)
 	}
 }
 

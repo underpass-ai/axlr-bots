@@ -12,7 +12,6 @@ impl App {
             Screen::Nodes => Some(List::Nodes),
             Screen::Bots => Some(List::Bots),
             Screen::Tasks => Some(List::Tasks),
-            Screen::Incidents => Some(List::Incidents),
             Screen::Teams => Some(List::Teams),
             _ => None,
         }
@@ -71,9 +70,6 @@ impl App {
     pub(super) fn bulk_done(&mut self, outcome: BulkOutcome) -> Vec<Effect> {
         self.tables.busy = None;
         self.banner = Some(Banner::bulk(&outcome, self.now));
-        if self.screen == Screen::Incidents {
-            self.incidents.list_loading = false;
-        }
         let mut effects = self.reload_screen();
         effects.extend(self.refresh_now());
         effects
@@ -100,11 +96,6 @@ impl App {
                 fleet.map(|f| f.tasks.as_slice()).unwrap_or_default(),
                 |id| fleet.and_then(|f| f.call_of(id)).map(|c| c.call_id.clone()),
             ),
-            List::Incidents => BulkPlan::for_incidents(
-                action,
-                &tables.incidents.selection,
-                self.incidents.list.as_deref().unwrap_or_default(),
-            ),
             List::Teams => BulkPlan::for_teams(action, &tables.teams.selection, &self.teams()),
         }
     }
@@ -112,10 +103,7 @@ impl App {
     /// The rows a list shows now: the Tasks list after its filter.
     pub fn shown_rows(&self, list: List) -> Vec<RowRef> {
         let Some(fleet) = self.fleet.as_ref() else {
-            return match list {
-                List::Incidents => self.incident_rows(),
-                _ => Vec::new(),
-            };
+            return Vec::new();
         };
         match list {
             List::Nodes => fleet.nodes.iter().map(|n| RowRef::Node(n.id.clone())).collect(),
@@ -126,18 +114,8 @@ impl App {
                 .into_iter()
                 .map(|t| RowRef::Task(t.id.clone()))
                 .collect(),
-            List::Incidents => self.incident_rows(),
             List::Teams => self.teams().into_iter().map(|t| RowRef::Team(t.name)).collect(),
         }
-    }
-
-    fn incident_rows(&self) -> Vec<RowRef> {
-        self.incidents
-            .list
-            .iter()
-            .flatten()
-            .map(|i| RowRef::Incident(i.id.clone()))
-            .collect()
     }
 
     /// Picked rows whose row is gone, or hidden by the Tasks filter,
@@ -160,12 +138,6 @@ impl App {
                 .teams
                 .selection
                 .retain(|name| teams.iter().any(|t| &t.name == name));
-        }
-        if let Some(list) = self.incidents.list.as_ref() {
-            self.tables
-                .incidents
-                .selection
-                .retain(|id| list.iter().any(|i| &i.id == id));
         }
     }
 }
@@ -331,14 +303,8 @@ mod tests {
     }
 
     #[test]
-    fn incidents_resolve_and_nodes_revoke_in_bulk() {
-        let mut app = on(Screen::Incidents);
-        send(&mut app, Message::PickShown(List::Incidents, true));
-        assert!(app.bulk_plan(List::Incidents, BulkAction::Resolve).ready());
-        send(&mut app, Message::AskBulk(List::Incidents, BulkAction::Resolve));
-        send(&mut app, Message::ConfirmYes);
-        assert!(app.banner.as_ref().unwrap().title.ends_with("resolved"));
-        send(&mut app, Message::Go(Screen::Nodes));
+    fn nodes_revoke_in_bulk() {
+        let mut app = on(Screen::Nodes);
         send(&mut app, Message::PickShown(List::Nodes, true));
         send(&mut app, Message::AskBulk(List::Nodes, BulkAction::Revoke));
         assert!(app.confirm.as_ref().is_some_and(|c| c.destructive()));

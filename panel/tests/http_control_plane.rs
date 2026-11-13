@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex};
 use axlr_bots_panel::adapters::http::{HttpConnector, HttpControlPlane};
 use axlr_bots_panel::application::{Connector, ControlPlane, PanelConfig, PanelError};
 use axlr_bots_panel::domain::{
-    BotDefinition, BotForm, BotId, BotPatch, Decision, EnrollmentRequest, ExecutionId, IdempotencyKey,
-    IncidentSeverity, IncidentStatus, NodeId, Objective, TaskFilter, TaskId, TaskStatus, TaskSubmission,
+    BotDefinition, BotForm, BotId, BotPatch, Decision, EnrollmentRequest, ExecutionId, IdempotencyKey, NodeId,
+    Objective, TaskFilter, TaskId, TaskStatus, TaskSubmission,
 };
 use axum::Router;
 use axum::body::Bytes;
@@ -43,7 +43,6 @@ const BOT: &str = r#"{"id":"bot-wrx80","tenantId":"default","name":"bot-wrx80","
 const TASK: &str = r#"{"id":"task-1","botId":"bot-wrx80","objective":"Count","status":"WaitingApproval","idempotencyKey":"k","correlationId":"trace-1","trigger":{"type":"manual","name":"manual"},"executionIds":["exec-1"],"createdAt":"2026-10-24T22:32:26Z","updatedAt":"2026-10-24T22:32:33Z"}"#;
 const EXECUTION: &str = r#"{"id":"exec-1","taskId":"task-1","botId":"bot-wrx80","startedAt":"2026-10-24T22:32:26Z","endedAt":"2026-10-24T22:32:33Z","outcome":"DecisionRequired","result":{"answer":"","pendingDecision":{"tool":"local_write","callId":"c1","sessionId":"s1","arguments":{"path":"a.txt"}}},"usage":{"requests":2,"costUsd":0.001},"kind":"run","nodeId":"wrx80"}"#;
 const EVENT: &str = r#"{"eventId":"evt-1","schemaVersion":"underpass.ai/events/v1","type":"bot.task.submitted","tenantId":"default","botId":"bot-wrx80","taskId":"task-1","createdAt":"2026-10-24T22:32:26Z"}"#;
-const INCIDENT: &str = r#"{"id":"inc-one","tenantId":"acme","botId":"bot-wrx80","groupKey":"g","source":"alertmanager","title":"HighLatency","severity":"sev2","status":"Escalated","fingerprints":["fp-a","fp-b"],"resolvedFingerprints":["fp-a"],"cycle":1,"taskIds":["task-1"],"reason":"no fix","repeats":2,"costUsd":0.01,"openedAt":"2026-10-24T22:00:00Z","updatedAt":"2026-10-24T22:10:00Z","lastSeenAt":"2026-10-24T22:05:00Z"}"#;
 const BUILD: &str = r#"{"running":{"version":"0.4.0","revision":"4924ad73","time":"2026-11-12T21:42:53Z","modified":false},"installed":{"version":"0.4.0","revision":"4924ad73","time":"2026-11-12T21:42:53Z","modified":false},"stale":false,"minimumAxlr":"0.14.0"}"#;
 const OVERVIEW: &str = r#"{"since":"2026-10-24T00:00:00Z","nodes":{"Online":2},"bots":{"Enabled":3},"tasks":{"Completed":5},"tasksSince":{"Completed":1},"executionsSince":1,"costUsdSince":0.5}"#;
 
@@ -99,7 +98,7 @@ async fn route(
         ("POST", "/v1/bots") => json(StatusCode::CREATED, &BOT.replace("Enabled", "Registered")),
         ("PATCH", "/v1/bots/bot-wrx80") => ok(BOT.replace("\"observe\"", "\"propose\"")),
         ("DELETE", "/v1/bots/bot-wrx80") => ok(format!(
-            r#"{{"bot":{BOT},"cancelled":["task-1"],"childrenCancelled":[],"incidentsResolved":["inc-one"],"timersRemoved":1,"notificationsDropped":0,"namedBy":[{{"botId":"watcher","how":"delegation"}}]}}"#
+            r#"{{"bot":{BOT},"cancelled":["task-1"],"childrenCancelled":[],"timersRemoved":1,"notificationsDropped":0,"namedBy":[{{"botId":"watcher","how":"delegation"}}]}}"#
         )),
         ("DELETE", "/v1/bots/ghost") => json(
             StatusCode::NOT_FOUND,
@@ -154,13 +153,6 @@ async fn route(
         )),
         ("GET", "/v1/tasks/task-1/executions") => ok(format!("[{EXECUTION}]")),
         ("GET", "/v1/tasks/task-1/events") => ok(format!("[{EVENT}]")),
-        ("GET", "/v1/incidents") => ok(format!("[{INCIDENT}]")),
-        ("GET", "/v1/incidents/inc-one") => ok(INCIDENT.into()),
-        ("POST", "/v1/incidents/inc-one/resolve") => ok(INCIDENT.replace("Escalated", "Resolved")),
-        ("POST", "/v1/incidents/inc-done/resolve") => json(
-            StatusCode::CONFLICT,
-            r#"{"kind":"state","error":"incident inc-done is Resolved"}"#,
-        ),
         ("GET", "/v1/executions/exec-1/artifacts/weekly%20report.md") => {
             (StatusCode::OK, [("content-type", "text/markdown")], "# Week 44\n").into_response()
         }
@@ -430,7 +422,7 @@ async fn sends_the_acts_with_their_bodies() {
         (server.last().method, server.last().path),
         (Method::DELETE, "/v1/bots/bot-wrx80".to_string())
     );
-    assert_eq!(deleted.summary(), "1 task cancelled · 1 incident resolved");
+    assert_eq!(deleted.summary(), "1 task cancelled");
     assert_eq!(deleted.named_by[0].describe(), "watcher may ask it for a task");
     let gone = api.delete_bot(BotId::new("ghost").unwrap()).await.unwrap_err();
     assert!(matches!(gone, PanelError::NotFound(_)));
@@ -479,40 +471,9 @@ async fn sends_the_acts_with_their_bodies() {
 }
 
 #[tokio::test]
-async fn reads_incidents_resolves_one_and_fetches_an_artifact() {
+async fn fetches_an_artifact() {
     let server = serve().await;
     let api = HttpControlPlane::new(&server.config()).unwrap();
-
-    let incidents = api
-        .list_incidents(Some("acme".into()), Some(IncidentStatus::Escalated), 100)
-        .await
-        .unwrap();
-    assert_eq!(incidents[0].severity, IncidentSeverity::Sev2);
-    assert_eq!(incidents[0].firing(), vec!["fp-b"]);
-    assert_eq!(
-        server.last().path,
-        "/v1/incidents?limit=100&tenant=acme&status=Escalated"
-    );
-    api.list_incidents(None, None, 100).await.unwrap();
-    assert_eq!(server.last().path, "/v1/incidents?limit=100");
-
-    let incident = api.get_incident("inc-one".into()).await.unwrap();
-    assert_eq!(incident.task_ids[0].as_str(), "task-1");
-    assert_eq!(server.last().authorization, format!("Bearer {TOKEN}"));
-
-    let resolved = api
-        .resolve_incident("inc-one".into(), Some("Fixed by hand".into()))
-        .await
-        .unwrap();
-    assert_eq!(resolved.status, IncidentStatus::Resolved);
-    assert_eq!(
-        (server.last().method, server.last().body),
-        (Method::POST, r#"{"reason":"Fixed by hand"}"#.to_string())
-    );
-    api.resolve_incident("inc-one".into(), None).await.unwrap();
-    assert_eq!(server.last().body, "{}");
-    let refused = api.resolve_incident("inc-done".into(), None).await.unwrap_err();
-    assert!(matches!(refused, PanelError::State(ref m) if m.contains("Resolved")));
 
     // The name is one escaped path segment, and the bytes come as sent.
     let bytes = api

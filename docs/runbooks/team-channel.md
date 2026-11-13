@@ -4,11 +4,9 @@ How an operator turns on exactly **one** live link of the [team channel](../arch
 
 ```text
                                            gx10 (one user, one $HOME)
- control plane  axlr-bots.service          ~/.config/axlr-bots/env  ← read by ALL four node units
+ control plane  axlr-bots.service          ~/.config/axlr-bots/env  ← read by every node unit
  nodes          axlr-node        gx10-ff95  QA's bots, qa-vigia     ← switch ON  (drop-in)
                 axlr-node-dev    gx10-dev   dev-go answers          ← switch ON  (drop-in)
-                axlr-node-sre-ro            sre, read-only          ← off
-                axlr-node-sre-rw            sre, writes             ← off
  bots           bots-work-teams installers: TEAM_CHANNEL_ASK / TEAM_CHANNEL_ANSWER
 ```
 
@@ -21,7 +19,7 @@ A link needs both halves: the bots declare it (the teams' installers write `ask.
 | Versions | the control plane first, then the nodes, from a build that has the switch (the `teamChannel` capability). An older control plane ignores the switch |
 | One tenant | QA's and dev's bots are both tenant `default`; the control plane picks who answers only in the asker's tenant |
 | Memory | `AXLR_NODE_MEMORY_TEAMS=*` is already in `~/.config/axlr-bots/env`, so `gx10-dev` shares dev's store. Leave that file as it is |
-| The switch is not in the shared file | `grep -n TEAM_CHANNEL ~/.config/axlr-bots/env` prints nothing. That file is read by all four node units, so the switch there would turn sre-ro and sre-rw on too; and a value there would override the drop-ins below |
+| The switch is not in the shared file | `grep -n TEAM_CHANNEL ~/.config/axlr-bots/env` prints nothing. That file is read by every node unit, so the switch there would turn the other nodes on too; and a value there would override the drop-ins below |
 | The drill | dev's responder playbook was tried with injected questions **first**, with everything still off: [`teams/dev/docs/simulacro-canal.md`](https://github.com/underpass-ai/bots-work-teams/blob/main/teams/dev/docs/simulacro-canal.md) in bots-work-teams, every case passed. A failure stops here |
 | Idle nodes | no task Running on `gx10-ff95` or `gx10-dev` (`axlr-bots task list --status Running`): a restart interrupts a run in flight |
 
@@ -44,7 +42,7 @@ Check:
 journalctl --user -u axlr-node -u axlr-node-dev --since -2min | grep 'team channel on'
 axlr-bots node get gx10-ff95 | jq .capabilities.teamChannel   # true
 axlr-bots node get gx10-dev  | jq .capabilities.teamChannel   # true
-axlr-bots node list | jq '.[] | {id, teamChannel: .capabilities.teamChannel}'   # sre's nodes: null
+axlr-bots node list | jq '.[] | {id, teamChannel: .capabilities.teamChannel}'   # the other nodes: null
 ```
 
 The channel's memory (phase 2) is a second switch, `AXLR_NODE_TEAM_CHANNEL_MEMORY=true`, in the same drop-ins when the product owner wants it; it needs `kmp-mcp` on the unit's `PATH` or `AXLR_NODE_KMP_MCP` naming it, or the node does not start. Without it each bot records the exchange in its own about.

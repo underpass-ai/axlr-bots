@@ -2,10 +2,10 @@ use chrono::{DateTime, Utc};
 
 use super::PortFuture;
 use crate::domain::{
-    Autonomy, Bot, BotDefinition, BotId, BotPatch, BuildStatus, CancelledTask, DecidedTask, Decision, DeletedBot,
-    EnrollmentRequest, EnrollmentToken, Event, Execution, ExecutionId, Incident, IncidentStatus, Node, NodeId,
-    Overview, Publication, Published, RevokedNode, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task, TaskFilter,
-    TaskId, TaskSubmission, TeamLink, Topic,
+    Bot, BotDefinition, BotId, BotPatch, BuildStatus, CancelledTask, DecidedTask, Decision, DeletedBot,
+    EnrollmentRequest, EnrollmentToken, Event, Execution, ExecutionId, Node, NodeId, Overview, Publication, Published,
+    RevokedNode, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId, TaskSubmission, TeamLink,
+    Topic,
 };
 
 /// The control plane as the panel needs it: the operator API's routes.
@@ -39,7 +39,7 @@ pub trait ControlPlane: Send + Sync {
     /// A control plane older than the route answers not found.
     fn stop_bot(&self, id: BotId) -> PortFuture<'_, StoppedBotAnswer>;
     /// Deletes the bot: its unfinished tasks and the children it asked
-    /// for are cancelled, its incidents resolved, its timers removed; the
+    /// for are cancelled, its timers removed; the
     /// answer names the bots that still name it.
     fn delete_bot(&self, id: BotId) -> PortFuture<'_, DeletedBot>;
     /// The bot's newest `limit` events, oldest first.
@@ -76,28 +76,6 @@ pub trait ControlPlane: Send + Sync {
     fn task_events(&self, id: TaskId, limit: u32) -> PortFuture<'_, Vec<Event>>;
     /// The bytes of an artifact the control plane keeps for the execution.
     fn artifact(&self, execution: ExecutionId, name: String) -> PortFuture<'_, Vec<u8>>;
-
-    /// Incidents, the last seen first: of one tenant or all, in one status
-    /// or any, at most `limit`.
-    fn list_incidents(
-        &self,
-        tenant: Option<String>,
-        status: Option<IncidentStatus>,
-        limit: u32,
-    ) -> PortFuture<'_, Vec<Incident>>;
-    fn get_incident(&self, id: String) -> PortFuture<'_, Incident>;
-    /// Closes the incident, with the operator's reason if they gave one.
-    /// One already resolved is a state error.
-    fn resolve_incident(&self, id: String, reason: Option<String>) -> PortFuture<'_, Incident>;
-    /// Marks the diagnosis of the incident's current cycle, as the panel's
-    /// actor: `correct` or `wrong`.
-    fn mark_diagnosis(&self, id: String, verdict: String) -> PortFuture<'_, Autonomy>;
-    /// Approves the postmortem text of the `author` task, the one on
-    /// screen, as the actor the panel decides as.
-    fn approve_postmortem(&self, id: String, author: String) -> PortFuture<'_, Incident>;
-    /// Sends back the text of the `author` task with the person's note; no
-    /// author when none was read, which asks for one if none started.
-    fn send_back_postmortem(&self, id: String, note: String, author: Option<String>) -> PortFuture<'_, Incident>;
 
     /// A task's timeline after the event `after` names, oldest first;
     /// with `wait_seconds`, the control plane answers as soon as there is

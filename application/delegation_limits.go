@@ -46,23 +46,7 @@ func chainDepthLimit(bot domain.Bot, task domain.Task) int {
 // task's grant (the bot's own limit where the grant sets none), else
 // the bot's budgets.
 func taskBudgets(bot domain.Bot, task domain.Task) domain.Budgets {
-	budgets := delegatedBudgets(bot, task)
-	pinned, ok := task.Pinned()
-	if !ok || !pinned.Unattended() {
-		return budgets
-	}
-	// One apply per task (§8.1): a run acting alone has its reads and its
-	// one write, whatever the bot's budget says.
-	unit, _ := pinned.LadderUnit()
-	tools := budgets.MaxToolCallsPerTask()
-	if tools == 0 || tools > unit.MaxToolCalls {
-		tools = unit.MaxToolCalls
-	}
-	capped, err := domain.NewBudgets(budgets.MaxModelCallsPerTask(), tools, budgets.MaxDelegationDepth(), budgets.TaskTimeout())
-	if err != nil {
-		return budgets
-	}
-	return capped
+	return delegatedBudgets(bot, task)
 }
 
 func delegatedBudgets(bot domain.Bot, task domain.Task) domain.Budgets {
@@ -172,8 +156,7 @@ func runTimeout(bot domain.Bot, task domain.Task, now time.Time) (time.Duration,
 	return timeout, true
 }
 
-// allowedTools is the execution's tool allow-list: the task's (the bot's,
-// or its incident phase's), the delegation tool when the bot may ask
+// allowedTools is the execution's tool allow-list: the bot's, the delegation tool when the bot may ask
 // other bots, the emit tool when it is in a team, and the ask tool when
 // it may ask other teams.
 func allowedTools(allowed domain.AllowedTools, offer *DelegationOffer, events *EventsOffer, ask *AskOffer) []string {

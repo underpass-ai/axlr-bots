@@ -34,7 +34,6 @@ mod follow_task_events;
 mod follow_team_events;
 mod get_overview;
 mod import_settings;
-mod incidents;
 mod key_source;
 mod list_bots;
 mod list_executions;
@@ -111,9 +110,6 @@ pub use follow_task_events::{FollowTaskEvents, LIVE_FEED_SIZE, LIVE_WAIT_SECONDS
 pub use follow_team_events::{FollowTeamEvents, TEAM_FEED_SIZE, TEAM_WAIT_SECONDS};
 pub use get_overview::GetOverview;
 pub use import_settings::ImportSettings;
-pub use incidents::{
-    ApprovePostmortem, INCIDENTS, ListIncidents, MarkDiagnosis, ResolveIncident, SendBackPostmortem, ShowIncident,
-};
 pub use key_source::KeySource;
 pub use list_bots::ListBots;
 pub use list_executions::ListExecutions;

@@ -11,9 +11,9 @@ var t0 = time.Date(2026, 10, 23, 15, 0, 0, 0, time.UTC)
 
 func sampleBot(t *testing.T) Bot {
 	t.Helper()
-	id, _ := NewBotID("server-incident-investigator")
+	id, _ := NewBotID("server-investigator")
 	tenant, _ := NewTenantID("engineering")
-	name, _ := NewBotName("Server Incident Investigator")
+	name, _ := NewBotName("Server Investigator")
 	owner, _ := NewOwner("platform-team")
 	mission, _ := NewMission("Do what each task asks, within the policy")
 	tools, _ := NewAllowedTools([]string{"observability.query_logs", "kubernetes.get_pods"})
@@ -31,7 +31,7 @@ func TestBotLifecycle(t *testing.T) {
 	if bot.Status() != BotDraft || bot.AcceptsTasks() {
 		t.Fatal("new bot should be Draft and accept no tasks")
 	}
-	if bot.ID() != "server-incident-investigator" || bot.TenantID() != "engineering" || bot.Name() != "Server Incident Investigator" ||
+	if bot.ID() != "server-investigator" || bot.TenantID() != "engineering" || bot.Name() != "Server Investigator" ||
 		bot.Owner() != "platform-team" || bot.Mission() == "" || bot.AllowedTools().Len() != 2 || bot.ModelPolicy().Model() == "" ||
 		bot.Budgets().TaskTimeout() != 900*time.Second || !bot.CreatedAt().Equal(t0) || !bot.UpdatedAt().Equal(t0) {
 		t.Error("getters wrong")

@@ -4,16 +4,14 @@ package domain
 // a pending call waits for a person (a duration such as 1h, the default),
 // what happens when nobody decides it in time (deny, the default, or
 // cancel), the targets notified when a task starts to wait, and the
-// calls the control plane approves without a person (autoApprove), who
-// may decide (approvers: empty is anyone with the token) and which
-// incidents wait for two different people (twoPersons).
+// calls the control plane approves without a person (autoApprove) and who
+// may decide (approvers: empty is anyone with the token).
 type ApprovalsSnapshot struct {
 	TTL         string                 `json:"ttl,omitempty"`
 	OnExpire    string                 `json:"onExpire,omitempty"`
 	Notify      []NotifyTargetSnapshot `json:"notify,omitempty"`
 	AutoApprove []ToolRuleSnapshot     `json:"autoApprove,omitempty"`
 	Approvers   []string               `json:"approvers,omitempty"`
-	TwoPersons  *TwoPersonsSnapshot    `json:"twoPersons,omitempty"`
 }
 
 // Redacted is the snapshot with every target's secret hidden.

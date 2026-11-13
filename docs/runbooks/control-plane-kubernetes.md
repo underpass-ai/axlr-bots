@@ -12,7 +12,7 @@ Run `axlr-bots serve` as a pod from the chart [`charts/axlr-bots-control-plane`]
 | `<state>/api.token`, readable on the host | a Secret (`apiToken.existingSecret`): the image has no shell to read the volume |
 | env file `~/.config/axlr-bots/env` | a Secret (`env.existingSecret`) for the keys; the bus as `bus.*` values and a Secret for its client certificate |
 | the CLI and input adapters on the socket | `kubectl exec deploy/<release> -- axlr-bots …`, or containers in the same pod (`extraContainers`) on `/var/lib/axlr-bots/axlr-bots.sock` |
-| targets of type `command` | not possible: move them to `webhook` targets before the move ([approvals](approvals.md), [outputs](outputs.md)) |
+| targets of type `command` | not possible: move them to `webhook` targets before the move ([approvals](approvals.md)) |
 
 ## Before you start
 

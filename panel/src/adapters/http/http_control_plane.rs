@@ -8,10 +8,10 @@ use serde::de::DeserializeOwned;
 use super::api_error::ApiError;
 use crate::application::{ControlPlane, LIVE_FEED_SIZE, PanelConfig, PanelError, PortFuture};
 use crate::domain::{
-    Autonomy, Bot, BotDefinition, BotId, BotPatch, BuildStatus, CancelledTask, DecidedTask, Decision, DeletedBot,
-    EnrollmentRequest, EnrollmentToken, Event, Execution, ExecutionId, Incident, IncidentStatus, Node, NodeId,
-    Overview, Publication, Published, RevokedNode, Secret, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task,
-    TaskFilter, TaskId, TaskSubmission, TeamLink, Topic,
+    Bot, BotDefinition, BotId, BotPatch, BuildStatus, CancelledTask, DecidedTask, Decision, DeletedBot,
+    EnrollmentRequest, EnrollmentToken, Event, Execution, ExecutionId, Node, NodeId, Overview, Publication, Published,
+    RevokedNode, Secret, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId, TaskSubmission,
+    TeamLink, Topic,
 };
 
 /// How long a read may take.
@@ -170,26 +170,6 @@ const POLL_MARGIN: Duration = Duration::from_secs(10);
 #[derive(Serialize)]
 struct TextBody {
     text: String,
-}
-
-#[derive(Serialize)]
-struct DiagnosisBody {
-    verdict: String,
-}
-
-#[derive(Serialize)]
-struct ResolveBody {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    reason: Option<String>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct PostmortemReviewBody {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    note: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    author_task_id: Option<String>,
 }
 
 /// How long an artifact's bytes may take to come: one may be large.
@@ -379,54 +359,6 @@ impl ControlPlane for HttpControlPlane {
             .bearer_auth(self.token.expose())
             .timeout(DOWNLOAD_TIMEOUT);
         Box::pin(send_raw(request))
-    }
-
-    fn list_incidents(
-        &self,
-        tenant: Option<String>,
-        status: Option<IncidentStatus>,
-        limit: u32,
-    ) -> PortFuture<'_, Vec<Incident>> {
-        let mut query = vec![("limit", limit.to_string())];
-        if let Some(tenant) = tenant {
-            query.push(("tenant", tenant));
-        }
-        if let Some(status) = status {
-            query.push(("status", status.name().to_string()));
-        }
-        self.get_query("/v1/incidents".into(), query)
-    }
-
-    fn get_incident(&self, id: String) -> PortFuture<'_, Incident> {
-        self.get(format!("/v1/incidents/{id}"))
-    }
-
-    fn resolve_incident(&self, id: String, reason: Option<String>) -> PortFuture<'_, Incident> {
-        self.post(format!("/v1/incidents/{id}/resolve"), Some(ResolveBody { reason }))
-    }
-
-    fn mark_diagnosis(&self, id: String, verdict: String) -> PortFuture<'_, Autonomy> {
-        self.post(format!("/v1/incidents/{id}/diagnosis"), Some(DiagnosisBody { verdict }))
-    }
-
-    fn approve_postmortem(&self, id: String, author: String) -> PortFuture<'_, Incident> {
-        self.post(
-            format!("/v1/incidents/{id}/postmortem/approve"),
-            Some(PostmortemReviewBody {
-                note: None,
-                author_task_id: Some(author),
-            }),
-        )
-    }
-
-    fn send_back_postmortem(&self, id: String, note: String, author: Option<String>) -> PortFuture<'_, Incident> {
-        self.post(
-            format!("/v1/incidents/{id}/postmortem/send-back"),
-            Some(PostmortemReviewBody {
-                note: Some(note),
-                author_task_id: author,
-            }),
-        )
     }
 
     fn task_events_after(&self, id: TaskId, after: Option<String>, wait_seconds: u32) -> PortFuture<'_, Vec<Event>> {

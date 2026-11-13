@@ -9,15 +9,15 @@ import (
 )
 
 func TestNewSkillPinsTakesExactVersions(t *testing.T) {
-	pins, err := NewSkillPins([]SkillPinSnapshot{{Name: "crashloop", Version: "1.2.3", Catalog: "axlr"}, {Name: "crashloop", Version: "2.0.0", Catalog: "lab-1"}})
+	pins, err := NewSkillPins([]SkillPinSnapshot{{Name: "release_notes", Version: "1.2.3", Catalog: "axlr"}, {Name: "release_notes", Version: "2.0.0", Catalog: "lab-1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	all := pins.All()
-	if len(all) != 2 || all[0].Key() != "axlr/crashloop@1.2.3" || all[1].Name() != "crashloop" || all[1].Version() != "2.0.0" || all[1].Catalog() != "lab-1" || pins.IsEmpty() {
+	if len(all) != 2 || all[0].Key() != "axlr/release_notes@1.2.3" || all[1].Name() != "release_notes" || all[1].Version() != "2.0.0" || all[1].Catalog() != "lab-1" || pins.IsEmpty() {
 		t.Errorf("pins = %+v", all)
 	}
-	if got := pins.Snapshot(); len(got) != 2 || got[0] != (SkillPinSnapshot{Name: "crashloop", Version: "1.2.3", Catalog: "axlr"}) {
+	if got := pins.Snapshot(); len(got) != 2 || got[0] != (SkillPinSnapshot{Name: "release_notes", Version: "1.2.3", Catalog: "axlr"}) {
 		t.Errorf("snapshot = %+v", got)
 	}
 	none, err := NewSkillPins(nil)

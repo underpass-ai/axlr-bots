@@ -14,9 +14,7 @@ import (
 // Questions are the questions it asked other teams (team channel), kept
 // apart: they take nothing of its budgets.
 // Priority is urgent for a task that goes first; empty for normal.
-// IncidentID names the incident a phase task works on; Policy the
-// level and tools its phase narrowed the bot's to, pinned at submission;
-// Skills the catalog skills the task runs with, pinned at submission too.
+// Skills are the catalog skills the task runs with, pinned at submission.
 // Expects is what the task records for its subscription's expects: the
 // final events it must emit, the events it carried and the finals it
 // emitted; absent for a task whose subscription expects none.
@@ -25,31 +23,29 @@ import (
 // placement admits is Online with its runtime. The control plane fills
 // it when the task is read; it is never stored.
 type TaskSnapshot struct {
-	ID             string                `json:"id"`
-	BotID          string                `json:"botId"`
-	Objective      string                `json:"objective"`
-	Status         string                `json:"status"`
-	IdempotencyKey string                `json:"idempotencyKey"`
-	CorrelationID  string                `json:"correlationId,omitempty"`
-	Trigger        TriggerRefSnapshot    `json:"trigger"`
-	Input          json.RawMessage       `json:"input,omitempty"`
-	ExecutionIDs   []string              `json:"executionIds"`
-	FailureReason  string                `json:"failureReason,omitempty"`
-	Approval       *ApprovalWait         `json:"approval,omitempty"`
-	Delegation     *TaskLineage          `json:"delegation,omitempty"`
-	Origin         *EventOrigin          `json:"origin,omitempty"`
-	Children       []string              `json:"children,omitempty"`
-	Questions      []string              `json:"questions,omitempty"`
-	GrantedModel   int                   `json:"grantedModelCalls,omitempty"`
-	GrantedTools   int                   `json:"grantedToolCalls,omitempty"`
-	Priority       string                `json:"priority,omitempty"`
-	IncidentID     string                `json:"incidentId,omitempty"`
-	Policy         *PinnedPolicySnapshot `json:"policy,omitempty"`
-	Skills         []SkillPinSnapshot    `json:"skills,omitempty"`
-	Expects        *TaskExpectsSnapshot  `json:"expects,omitempty"`
-	Waiting        string                `json:"waiting,omitempty"`
-	CreatedAt      time.Time             `json:"createdAt"`
-	UpdatedAt      time.Time             `json:"updatedAt"`
+	ID             string               `json:"id"`
+	BotID          string               `json:"botId"`
+	Objective      string               `json:"objective"`
+	Status         string               `json:"status"`
+	IdempotencyKey string               `json:"idempotencyKey"`
+	CorrelationID  string               `json:"correlationId,omitempty"`
+	Trigger        TriggerRefSnapshot   `json:"trigger"`
+	Input          json.RawMessage      `json:"input,omitempty"`
+	ExecutionIDs   []string             `json:"executionIds"`
+	FailureReason  string               `json:"failureReason,omitempty"`
+	Approval       *ApprovalWait        `json:"approval,omitempty"`
+	Delegation     *TaskLineage         `json:"delegation,omitempty"`
+	Origin         *EventOrigin         `json:"origin,omitempty"`
+	Children       []string             `json:"children,omitempty"`
+	Questions      []string             `json:"questions,omitempty"`
+	GrantedModel   int                  `json:"grantedModelCalls,omitempty"`
+	GrantedTools   int                  `json:"grantedToolCalls,omitempty"`
+	Priority       string               `json:"priority,omitempty"`
+	Skills         []SkillPinSnapshot   `json:"skills,omitempty"`
+	Expects        *TaskExpectsSnapshot `json:"expects,omitempty"`
+	Waiting        string               `json:"waiting,omitempty"`
+	CreatedAt      time.Time            `json:"createdAt"`
+	UpdatedAt      time.Time            `json:"updatedAt"`
 }
 
 // TriggerRefSnapshot is a trigger reference as plain data; empty means

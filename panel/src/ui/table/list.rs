@@ -6,7 +6,6 @@ pub enum List {
     Nodes,
     Bots,
     Tasks,
-    Incidents,
     Teams,
 }
 
@@ -17,7 +16,6 @@ impl List {
             Self::Nodes => ("node", "nodes"),
             Self::Bots => ("bot", "bots"),
             Self::Tasks => ("task", "tasks"),
-            Self::Incidents => ("incident", "incidents"),
             Self::Teams => ("team", "teams"),
         };
         format!("{n} {}", if n == 1 { one } else { many })
@@ -36,7 +34,6 @@ impl List {
             ],
             Self::Teams => &[BulkAction::TurnOn, BulkAction::Pause, BulkAction::Stop],
             Self::Tasks => &[BulkAction::Approve, BulkAction::Deny, BulkAction::Cancel],
-            Self::Incidents => &[BulkAction::Resolve],
         }
     }
 }
@@ -50,14 +47,12 @@ mod tests {
         assert_eq!(List::Bots.count(1), "1 bot");
         assert_eq!(List::Tasks.count(3), "3 tasks");
         assert_eq!(List::Nodes.count(0), "0 nodes");
-        assert_eq!(List::Incidents.count(2), "2 incidents");
         assert_eq!(List::Teams.count(1), "1 team");
     }
 
     #[test]
     fn offers_the_acts_that_fit_its_rows() {
         assert_eq!(List::Nodes.actions(), &[BulkAction::Revoke]);
-        assert_eq!(List::Incidents.actions(), &[BulkAction::Resolve]);
         assert!(List::Bots.actions().contains(&BulkAction::Pause));
         assert!(List::Bots.actions().contains(&BulkAction::Delete));
         assert!(!List::Teams.actions().contains(&BulkAction::Delete));

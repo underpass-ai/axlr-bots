@@ -1,11 +1,7 @@
 //! The control plane's resources as the panel sees them: value types
 //! mirroring the operator API's JSON, validated as they are read.
 
-mod approval_mark;
 mod artifact;
-mod autonomy;
-mod autonomy_counters;
-mod autonomy_entry;
 mod autonomy_level;
 mod bot;
 mod bot_approvals;
@@ -37,15 +33,6 @@ mod execution_outcome;
 mod execution_result;
 mod idempotency_key;
 mod identifier;
-mod incident;
-mod incident_approvals;
-mod incident_current_task;
-mod incident_phase;
-mod incident_postmortem;
-mod incident_severity;
-mod incident_status;
-mod incident_task;
-mod incident_wait;
 mod model_policy;
 mod node;
 mod node_behind;
@@ -91,11 +78,7 @@ mod trigger_type;
 mod usage;
 mod version;
 
-pub use approval_mark::ApprovalMark;
 pub use artifact::Artifact;
-pub use autonomy::Autonomy;
-pub use autonomy_counters::AutonomyCounters;
-pub use autonomy_entry::AutonomyEntry;
 pub use autonomy_level::AutonomyLevel;
 pub use bot::Bot;
 pub use bot_approvals::BotApprovals;
@@ -126,15 +109,6 @@ pub use execution_kind::ExecutionKind;
 pub use execution_outcome::ExecutionOutcome;
 pub use execution_result::ExecutionResult;
 pub use idempotency_key::IdempotencyKey;
-pub use incident::Incident;
-pub use incident_approvals::IncidentApprovals;
-pub use incident_current_task::IncidentCurrentTask;
-pub use incident_phase::IncidentPhase;
-pub use incident_postmortem::{IncidentPostmortem, PostmortemState};
-pub use incident_severity::IncidentSeverity;
-pub use incident_status::IncidentStatus;
-pub use incident_task::IncidentTask;
-pub use incident_wait::IncidentWait;
 pub use model_policy::ModelPolicy;
 pub use node::{CertificateHealth, Node};
 pub use node_behind::NodeBehind;

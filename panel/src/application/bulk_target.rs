@@ -13,7 +13,6 @@ pub enum BulkTarget {
         label: String,
     },
     Node(NodeId),
-    Incident(String),
 }
 
 impl BulkTarget {
@@ -24,7 +23,6 @@ impl BulkTarget {
             Self::Task { id, label, .. } if label.is_empty() => id.to_string(),
             Self::Task { label, .. } => label.clone(),
             Self::Node(id) => id.to_string(),
-            Self::Incident(id) => id.clone(),
         }
     }
 }
@@ -49,6 +47,5 @@ mod tests {
         };
         assert_eq!(named.name(), "worker-1 · Restart it");
         assert_eq!(BulkTarget::Node(NodeId::new("edge-1").unwrap()).name(), "edge-1");
-        assert_eq!(BulkTarget::Incident("inc-1".into()).name(), "inc-1");
     }
 }

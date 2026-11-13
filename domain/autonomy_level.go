@@ -36,26 +36,3 @@ func (l AutonomyLevel) String() string { return string(l) }
 func (l AutonomyLevel) Writes() bool {
 	return l == AutonomyActWithApproval || l == AutonomyActWithinPolicy
 }
-
-// rank orders the levels from observe (0) to act-within-policy (3).
-func (l AutonomyLevel) rank() int {
-	switch l {
-	case AutonomyPropose:
-		return 1
-	case AutonomyActWithApproval:
-		return 2
-	case AutonomyActWithinPolicy:
-		return 3
-	}
-	return 0
-}
-
-// AtMost reports a level no higher than the other: what a phase of an
-// incident may narrow a bot's level to, never raise it.
-func (l AutonomyLevel) AtMost(other AutonomyLevel) bool { return l.rank() <= other.rank() }
-
-// lowered is the level n steps down, observe at the bottom.
-func (l AutonomyLevel) lowered(n int) AutonomyLevel {
-	levels := []AutonomyLevel{AutonomyObserve, AutonomyPropose, AutonomyActWithApproval, AutonomyActWithinPolicy}
-	return levels[max(l.rank()-n, 0)]
-}

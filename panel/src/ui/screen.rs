@@ -12,8 +12,6 @@ pub enum Screen {
     Task(TaskId),
     Teams,
     Team(String),
-    Incidents,
-    Incident(String),
     Settings,
 }
 
@@ -25,20 +23,18 @@ pub enum Section {
     Bots,
     Teams,
     Tasks,
-    Incidents,
     Settings,
 }
 
 impl Screen {
     /// `overview`, `nodes`, `bots`, `bot:<id>`, `tasks`, `task:<id>`,
-    /// `teams`, `team:<name>`, `incidents`, `incident:<id>`, `settings`:
+    /// `teams`, `team:<name>`, `settings`:
     /// what `--screen` takes.
     pub fn parse(raw: &str) -> Option<Self> {
         match raw.split_once(':') {
             Some(("bot", id)) => BotId::new(id).ok().map(Self::Bot),
             Some(("task", id)) => TaskId::new(id).ok().map(Self::Task),
             Some(("team", name)) if !name.is_empty() => Some(Self::Team(name.to_string())),
-            Some(("incident", id)) if !id.is_empty() => Some(Self::Incident(id.to_string())),
             Some(_) => None,
             None => match raw {
                 "overview" => Some(Self::Overview),
@@ -46,7 +42,6 @@ impl Screen {
                 "bots" => Some(Self::Bots),
                 "tasks" => Some(Self::Tasks),
                 "teams" => Some(Self::Teams),
-                "incidents" => Some(Self::Incidents),
                 "settings" => Some(Self::Settings),
                 _ => None,
             },
@@ -60,7 +55,6 @@ impl Screen {
             Self::Bots | Self::Bot(_) => Section::Bots,
             Self::Tasks | Self::Task(_) => Section::Tasks,
             Self::Teams | Self::Team(_) => Section::Teams,
-            Self::Incidents | Self::Incident(_) => Section::Incidents,
             Self::Settings => Section::Settings,
         }
     }
@@ -97,12 +91,6 @@ mod tests {
         assert_eq!(Screen::default().section(), Section::Overview);
         assert_eq!(Screen::Nodes.section(), Section::Nodes);
         assert_eq!(Screen::Settings.section(), Section::Settings);
-        assert_eq!(Screen::parse("incidents"), Some(Screen::Incidents));
-        assert_eq!(
-            Screen::parse("incident:inc-disk"),
-            Some(Screen::Incident("inc-disk".into()))
-        );
-        assert_eq!(Screen::parse("incident:"), None);
-        assert_eq!(Screen::Incident("inc-disk".into()).section(), Section::Incidents);
+        assert_eq!(Screen::parse("incidents"), None);
     }
 }

@@ -3,7 +3,7 @@
 //! state keeps one reader per passage (`Readers::sync`).
 
 use super::{App, ReaderKey, Screen, SubmitForm};
-use crate::domain::{Bot, Incident};
+use crate::domain::Bot;
 
 /// Every passage of the screen on show, with its words.
 pub fn of(app: &App) -> Vec<(ReaderKey, String)> {
@@ -30,13 +30,6 @@ pub fn of(app: &App) -> Vec<(ReaderKey, String)> {
                     .collect()
             })
             .unwrap_or_default(),
-        Screen::Incident(id) => app
-            .incidents
-            .detail
-            .as_ref()
-            .filter(|incident| &incident.id == id)
-            .map(incident)
-            .unwrap_or_default(),
         Screen::Nodes => match &app.mint.token {
             Some(token) => vec![
                 (ReaderKey::MintedNode, token.node_id.to_string()),
@@ -58,30 +51,6 @@ fn bot(bot: &Bot) -> Vec<(ReaderKey, String)> {
         (ReaderKey::BotModel, model(bot)),
         (ReaderKey::BotBudgets, budgets(bot)),
     ]
-}
-
-fn incident(incident: &Incident) -> Vec<(ReaderKey, String)> {
-    let mut passages = vec![
-        (ReaderKey::IncidentTitle, incident.title.clone()),
-        (ReaderKey::IncidentSource, incident.source.clone()),
-        (ReaderKey::IncidentGroup, incident.group_key.clone()),
-    ];
-    if !incident.reason.is_empty() {
-        passages.push((ReaderKey::IncidentReason, incident.reason.clone()));
-    }
-    if !incident.diagnosis.is_empty() {
-        passages.push((ReaderKey::IncidentDiagnosis, incident.diagnosis.clone()));
-    }
-    if !incident.proposal.is_empty() {
-        passages.push((ReaderKey::IncidentProposal, incident.proposal.clone()));
-    }
-    if let Some(postmortem) = incident.postmortem.as_ref().filter(|p| !p.markdown.is_empty()) {
-        passages.push((ReaderKey::IncidentPostmortem, postmortem.markdown.clone()));
-    }
-    for fingerprint in incident.fingerprints.iter().chain(&incident.resolved_fingerprints) {
-        passages.push((ReaderKey::Fingerprint(fingerprint.clone()), fingerprint.clone()));
-    }
-    passages
 }
 
 /// The bot's model in a line: its name, how it is routed, where it may run.
