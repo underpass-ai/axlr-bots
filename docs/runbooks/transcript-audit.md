@@ -65,4 +65,4 @@ tail -n 5 <state>/transcript-audit/verdicts.jsonl
 axlr-bots execution transcript <execution> <session> --jsonl
 ```
 
-Each verdict names the blocks Jev flagged, with the probability and the block's first 400 characters.
+Each verdict names the blocks Jev flagged, with the probability, the block's first 400 characters and `evidence`: the lines of the block that show a failure (forbidden, refused, error, a non-zero exit code, ok false, not found…), found by fixed rules, at most 8 of 600 characters. The event carries the same, so its reader decides without reading the block.

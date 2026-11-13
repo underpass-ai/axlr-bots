@@ -163,7 +163,7 @@ func (a *Auditor) audit(ctx context.Context, record application.TranscriptRecord
 		}
 		verdict.InputTokens += judgement.InputTokens
 		if judgement.Choice == OptionHiddenError {
-			verdict.Flagged = append(verdict.Flagged, FlaggedBlock{Block: i + 1, Probability: judgement.Probability, Excerpt: cutBytes(block, excerptBytes)})
+			verdict.Flagged = append(verdict.Flagged, FlaggedBlock{Block: i + 1, Probability: judgement.Probability, Excerpt: cutBytes(block, excerptBytes), Evidence: evidence(block)})
 		}
 	}
 	verdict.Verdict = OptionClean
