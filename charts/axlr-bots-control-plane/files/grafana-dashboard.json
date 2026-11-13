@@ -1194,7 +1194,7 @@
    "id": 22,
    "type": "timeseries",
    "title": "Latencia p95",
-   "description": "Sin streams de nodo ni long polls",
+   "description": "Sin streams de nodo ni long polls (?wait=)",
    "datasource": {
     "type": "prometheus",
     "uid": "${prometheus}"
@@ -1485,7 +1485,7 @@
       "type": "loki",
       "uid": "${loki}"
      },
-     "expr": "{namespace=\"$namespace\", container=~\"$container\"} | json | component=~\"$component\" | task=~\"$task.*\" | line_format \"{{.level}} {{.msg}}\""
+     "expr": "{namespace=\"$namespace\", container=~\"$container\"} | json | component=~\"$component\" | task=~\"$task.*\" | line_format \"{{.msg}}\""
     }
    ],
    "options": {
