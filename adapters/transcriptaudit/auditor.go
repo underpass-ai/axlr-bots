@@ -138,6 +138,19 @@ func (a *Auditor) loadTeams(ctx context.Context) {
 // audit judges one transcript, publishes it when a block hides a failure,
 // and records the verdict.
 func (a *Auditor) audit(ctx context.Context, record application.TranscriptRecord) error {
+	// A task the control plane no longer has is audited: nothing says
+	// it answers the adapter's event, and skipping it would hide it.
+	task, err := a.config.Source.GetTask(ctx, record.Task.String())
+	if err != nil && !domain.IsNotFound(err) {
+		return err
+	}
+	if task.Trigger.Type == "event" && task.Trigger.Name == a.config.Event {
+		// The team's handling of the adapter's own event: auditing it
+		// could publish the event again, and again (13 Nov 2026).
+		verdict := VerdictLine{Seq: int(record.Seq), Task: record.Task.String(), Execution: record.Execution.String(), Session: record.Session, Bot: record.Bot.String(), Sha256: record.SHA256, Verdict: verdictSkipped, Model: a.config.Model, AuditedAt: a.config.Now().UTC().Format(time.RFC3339)}
+		a.config.Logger.Printf("transcript-audit: %d skipped: its task answers %s", record.Seq, a.config.Event)
+		return a.config.Log.Append(verdict)
+	}
 	content, err := a.config.Source.GetTranscript(ctx, record.Execution.String(), record.Session)
 	if err != nil {
 		return err

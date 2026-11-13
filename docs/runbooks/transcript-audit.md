@@ -56,7 +56,7 @@ In the cluster it runs as a container of the control plane's pod, beside `activi
 | `TYPESAFE_API_KEY is required for Jev` | no key | give the container the secret |
 | `does not match the SHA-256 the control plane answered` | the bytes changed on the way | the round stops there and retries; look at the control plane |
 | a round that stops on a transcript | Jev or the publish failed | nothing is recorded for it: the next round audits it again |
-| `skipped` in the verdicts | the transcript is not a session with messages | nothing to judge |
+| `skipped` in the verdicts | the transcript is not a session with messages, or its task answers `--event` (the team handling the audit's own event: auditing it could publish the event again, a loop) | nothing to judge |
 
 ## Read what it decided
 

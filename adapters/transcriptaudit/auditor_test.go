@@ -17,6 +17,8 @@ import (
 var errBoom = errors.New("boom")
 
 type fakeSource struct {
+	triggers map[string]domain.TriggerRefSnapshot
+	taskErr  error
 	records  []application.TranscriptRecord
 	content  map[string][]byte
 	listErr  error
@@ -45,6 +47,13 @@ func (f *fakeSource) ListTranscripts(_ context.Context, after int64, limit int) 
 		}
 	}
 	return out, nil
+}
+
+func (f *fakeSource) GetTask(_ context.Context, id string) (domain.TaskSnapshot, error) {
+	if f.taskErr != nil {
+		return domain.TaskSnapshot{}, f.taskErr
+	}
+	return domain.TaskSnapshot{ID: id, Trigger: f.triggers[id]}, nil
 }
 
 func (f *fakeSource) GetTranscript(_ context.Context, execution, session string) ([]byte, error) {
@@ -197,6 +206,37 @@ func TestAnAuditThatFailsStopsTheRoundAndRetries(t *testing.T) {
 	// The teams of an earlier round are kept when the list fails.
 	if !strings.Contains(publisher.commands[0].Message, "dev-go (dev)") {
 		t.Errorf("kept teams: %s", publisher.commands[0].Message)
+	}
+}
+
+func TestATaskStartedByTheOwnEventIsNotAudited(t *testing.T) {
+	source := &fakeSource{
+		records:  []application.TranscriptRecord{rec(1, "qa-1"), rec(2, "dev-go")},
+		content:  map[string][]byte{"exec-qa-1/s": session(`"{\"ok\": false}"`), "exec-dev-go/s": session(`"{\"ok\": false}"`)},
+		triggers: map[string]domain.TriggerRefSnapshot{"task-qa-1": {Type: "event", Name: "transcripcion.fallo"}, "task-dev-go": {Type: "event", Name: "other.event"}},
+	}
+	judge := &fakeJudge{}
+	publisher := &fakePublisher{}
+	a, vl, logs := newTestAuditor(t, source, judge, publisher)
+	if audited, err := a.Round(context.Background()); err != nil || audited != 2 || vl.Cursor() != 2 {
+		t.Fatalf("round: %d %v", audited, err)
+	}
+	if len(publisher.commands) != 1 || !strings.Contains(publisher.commands[0].Message, "dev-go") || judge.calls != 1 {
+		t.Errorf("published %+v, judge calls %d", publisher.commands, judge.calls)
+	}
+	if !strings.Contains(logs.String(), "1 skipped: its task answers transcripcion.fallo") {
+		t.Errorf("logs = %s", logs.String())
+	}
+	source.taskErr = domain.NotFoundError{Kind: "task", ID: "task-x"}
+	source.records = append(source.records, rec(3, "x"))
+	source.content["exec-x/s"] = session(`"{\"ok\": true}"`)
+	if audited, err := a.Round(context.Background()); err != nil || audited != 1 || vl.Cursor() != 3 {
+		t.Errorf("a gone task is audited: %d %v", audited, err)
+	}
+	source.taskErr = errBoom
+	source.records = append(source.records, rec(4, "y"))
+	if _, err := a.Round(context.Background()); !errors.Is(err, errBoom) || vl.Cursor() != 3 {
+		t.Errorf("task failure: %v %d", err, vl.Cursor())
 	}
 }
 
