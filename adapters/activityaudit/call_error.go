@@ -26,9 +26,12 @@ var (
 	errorField   = regexp.MustCompile(`"error":"((?:[^"\\]|\\.)*)("?)`)
 	messageField = regexp.MustCompile(`"message":"((?:[^"\\]|\\.)*)("?)`)
 	stderrField  = regexp.MustCompile(`"stderr":"((?:[^"\\]|\\.)*)("?)`)
-	exitField    = regexp.MustCompile(`"exit_code":(-?\d+)[,}]`)
-	envelope     = regexp.MustCompile(`^\{"protocol_version":`)
-	completedRun = regexp.MustCompile(`"status":"completed"`)
+	// stdoutErrorField is a program's error inside its cut JSON stdout.
+	stdoutErrorField = regexp.MustCompile(`"error": ?"((?:[^"\\]|\\.)*)`)
+	stdoutField      = regexp.MustCompile(`"stdout":"((?:[^"\\]|\\.)*)("?)`)
+	exitField        = regexp.MustCompile(`"exit_code":(-?\d+)[,}]`)
+	envelope         = regexp.MustCompile(`^\{"protocol_version":`)
+	completedRun     = regexp.MustCompile(`"status":"completed"`)
 )
 
 // readCallError reads the error of a call's tool.ended item.
@@ -65,6 +68,11 @@ func wholeError(fields map[string]any) callError {
 		if stderr, ok := output["stderr"].(string); ok && found.Text == "" {
 			found.Text = stderr
 		}
+		// A team's program answers its refusal on stdout, as JSON with an
+		// error, and leaves stderr empty (13 November 2026).
+		if stdout, ok := output["stdout"].(string); ok && strings.TrimSpace(found.Text) == "" {
+			found.Text = programWords(stdout)
+		}
 	}
 	found.Text = strings.TrimSpace(found.Text)
 	return found
@@ -76,7 +84,7 @@ func cutError(raw string) callError {
 	if m := exitField.FindStringSubmatch(raw); m != nil {
 		found.Exit = m[1]
 	}
-	for _, field := range []*regexp.Regexp{errorField, messageField, stderrField} {
+	for _, field := range []*regexp.Regexp{errorField, messageField, stderrField, stdoutField} {
 		m := field.FindStringSubmatch(raw)
 		if m == nil {
 			continue
@@ -86,6 +94,9 @@ func cutError(raw string) callError {
 			// The cut fell inside the string: what is there is still its
 			// first words.
 			text = strings.TrimSuffix(text, "…")
+		}
+		if field == stdoutField {
+			text = programWords(text)
 		}
 		if text = strings.TrimSpace(text); text != "" {
 			found.Text = text
@@ -111,4 +122,23 @@ func unescape(body string) string {
 		body = body[:len(body)-1]
 	}
 	return ""
+}
+
+// programWords reads a program's stdout: its error, after its refusal when
+// it names one, when stdout is a JSON answer; otherwise stdout itself.
+func programWords(stdout string) string {
+	stdout = strings.TrimSpace(stdout)
+	var answer struct {
+		Refusal string `json:"refusal"`
+		Error   string `json:"error"`
+	}
+	if json.Unmarshal([]byte(stdout), &answer) == nil && answer.Error != "" {
+		return strings.TrimPrefix(answer.Refusal+": "+answer.Error, ": ")
+	}
+	if text, ok := strings.CutPrefix(stdout, "{"); ok {
+		if m := stdoutErrorField.FindStringSubmatch("{" + text); m != nil {
+			return strings.TrimSuffix(unescape(m[1]), "…")
+		}
+	}
+	return stdout
 }
