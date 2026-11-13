@@ -33,13 +33,17 @@ type Dependencies struct {
 	// TranscriptFilter, optional, turns what a node sent into what
 	// Transcripts keeps; nil: kept as sent.
 	TranscriptFilter TranscriptFilter
-	Workspace        Workspace
-	Deliveries       DeliveryRepository
-	Notifier         NotificationSender
-	Clock            Clock
-	IDs              IDGenerator
-	Actor            string
-	OperatorURL      string
+	// SessionItems reads a run's items out of a transcript, to complete
+	// the progress timeline after its cut (GetTaskActivity); nil: a cut is
+	// marked and not completed.
+	SessionItems SessionItemReader
+	Workspace    Workspace
+	Deliveries   DeliveryRepository
+	Notifier     NotificationSender
+	Clock        Clock
+	IDs          IDGenerator
+	Actor        string
+	OperatorURL  string
 	// Daemon says the process serves others (axlr-bots serve): Actor is
 	// then the control plane's own name, which no decision that names
 	// its actor may claim where names count (approvers).
