@@ -48,6 +48,17 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	}
 	defer release()
 	logger := levelLogger{info: options.log(), errors: options.errorLog()}
+	// With a metrics address, the event publisher is decorated before the
+	// service takes the dependencies, so every event any use case
+	// publishes feeds the task metrics.
+	registry := metrics.NewRegistry()
+	if options.MetricsListenAddr != "" || options.MetricsListener != nil {
+		series := metrics.NewTaskMetrics()
+		series.MustRegister(registry)
+		observer := metrics.NewTaskObserver(deps.Events, deps.Tasks, deps.Executions, series)
+		registry.MustRegister(observer)
+		deps.Events = observer
+	}
 	local := unixapi.NewLocal(deps)
 	for _, pusher := range options.Pushers {
 		local.AddPusher(pusher, logger.Printf)
@@ -108,7 +119,6 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	served := make(chan error, 4)
 	server := unixapi.NewServer(local)
 	if metricsListener != nil {
-		registry := metrics.NewRegistry()
 		registry.MustRegister(metrics.NewOverviewCollector(local))
 		server.WithMiddleware(metrics.NewHTTPInstrument(registry).Wrap)
 		listening += " and http://" + metricsListener.Addr().String() + "/metrics"

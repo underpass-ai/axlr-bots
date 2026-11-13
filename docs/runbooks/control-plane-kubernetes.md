@@ -148,6 +148,25 @@ With `logFormat: json` (`--log-format json` or `AXLR_BOTS_LOG_FORMAT=json` on `a
 
 Lines that name a task or execution only in their text (a message from code that has no subject yet) still get `task` and `execution` pulled out of the text as a fallback, so filter on the fields, not on the text: `{container="control-plane"} | json | bot="<bot>" | level="ERROR"`. The text format is unchanged.
 
+### Task metrics, per bot
+
+Measured as events happen, so they count from the control plane's start (a counter restarts at zero with the process; use `rate` and `increase`). No series is labelled by a task, an execution or a correlation id.
+
+| Series | Type | Labels | Measures |
+|---|---|---|---|
+| `axlr_bots_task_duration_seconds` | histogram | `bot`, `state` | task creation to its end; `state` is `Completed`, `Failed`, `Expired` or `Cancelled` |
+| `axlr_bots_task_queue_seconds` | histogram | `bot` | task creation to the start of its first execution |
+| `axlr_bots_execution_duration_seconds` | histogram | `bot`, `outcome` | one execution; `outcome` is `Completed`, `Failed`, `DecisionRequired` or `Cancelled` |
+| `axlr_bots_approval_wait_seconds` | histogram | `bot`, `outcome` | a wait for a person to decide a call; `outcome` is `approved`, `denied`, `expired` or `cancelled` |
+| `axlr_bots_tasks_finished_total` | counter | `bot`, `state` | tasks that ended, by `state` as above |
+| `axlr_bots_cost_usd_total` | counter | `bot` | cost of the executions that ended |
+| `axlr_bots_tokens_total` | counter | `bot`, `kind` | tokens consumed; `kind` is `prompt`, `cached`, `completion` or `reasoning` |
+| `axlr_bots_executions_cost_unknown_total` | counter | `bot` | executions that ended with an unknown cost (stopped before they said what they consumed) |
+| `axlr_bots_tool_calls_total` | counter | `bot`, `status` | tool calls that ended, from the run's progress; `status` is `ok`, `denied`, `failed` or `other` |
+| `axlr_bots_tool_call_duration_seconds` | histogram | `bot` | tool calls that reported a duration |
+
+Cost and tokens are read from the stored execution when the event that ends it arrives, so an execution is counted once whichever events it leaves. A cancelled run that reports after its cancel gives its cost late and publishes no event: that cost is added at the next scrape, so `axlr_bots_cost_usd_total` converges on the overview's `axlr_bots_cost_usd_today` (which only covers executions started today) and `executions_cost_unknown_total` still counts that execution, once. A progress batch the run's bound cut is counted only for the items it kept.
+
 ## Back to the host
 
 While nothing has run in the pod yet, or when what ran there may be lost:
