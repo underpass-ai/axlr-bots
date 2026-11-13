@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -48,6 +47,7 @@ func activityAudit(stateDir, socketPath string, remote remoteControl, args []str
 func activityAuditServe(ctx context.Context, stateDir, socketPath string, remote remoteControl, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("activity-audit serve", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	logFormat := logFormatFlag(flags)
 	team := flags.String("team", "", "the team the events are published to (required)")
 	event := flags.String("event", "", "the name of the event published for each new failure signature, such as activity.failure (required)")
 	ignore := flags.String("ignore-programs", "", "local programs whose failures are not audited, basenames comma-separated (default none)")
@@ -103,7 +103,11 @@ func activityAuditServe(ctx context.Context, stateDir, socketPath string, remote
 		}
 		fmt.Fprintf(stderr, "activity-audit: rearmed %s\n", strings.Join(rearmed, ","))
 	}
-	logger := log.New(stderr, "", log.LstdFlags)
+	loggers, err := newLoggers(stderr, *logFormat)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	logger := loggers.Info
 	client, err := remote.clientOr(socketPath)
 	if err != nil {
 		return fail(stderr, err)

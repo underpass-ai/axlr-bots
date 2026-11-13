@@ -1,0 +1,23 @@
+{{- if and .Values.metrics.enabled .Values.metrics.podMonitor.enabled }}
+# Prometheus (the Prometheus Operator) reads /metrics on the pod's
+# metrics port; the port is on no Service, so nothing outside the
+# cluster reaches it.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "axlr-bots-control-plane.fullname" . }}
+  labels:
+    {{- include "axlr-bots-control-plane.labels" . | nindent 4 }}
+    {{- with .Values.metrics.podMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "axlr-bots-control-plane.selectorLabels" . | nindent 6 }}
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.metrics.podMonitor.interval }}
+      scrapeTimeout: {{ .Values.metrics.podMonitor.scrapeTimeout }}
+{{- end }}

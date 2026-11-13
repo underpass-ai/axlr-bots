@@ -90,6 +90,35 @@ service:
   # More ports for extra containers: [{name, port, targetPort}]
   extraPorts: []
 
+# Logs: text (plain lines) or json (one object per line with level,
+# component and the task, execution and incident ids it names, for
+# Loki). The extra containers take it too when their env says
+# AXLR_BOTS_LOG_FORMAT.
+logFormat: text
+
+# Prometheus: /metrics and /healthz in plain HTTP on this port of the pod,
+# on no Service (the counts carry no secret; keep them in the cluster).
+metrics:
+  enabled: false
+  port: 9464
+  # A PodMonitor for the Prometheus Operator. Its labels must match the
+  # Prometheus' podMonitorSelector (kube-prometheus-stack: release: <its release>).
+  podMonitor:
+    enabled: false
+    labels: {}
+    interval: 30s
+    scrapeTimeout: 10s
+
+# The Grafana dashboard as a ConfigMap for Grafana's sidecar: the label
+# it watches, and the namespace to put it in when the sidecar does not
+# look in every namespace (empty: the release's).
+grafanaDashboard:
+  enabled: false
+  namespace: ""
+  labels:
+    grafana_dashboard: "1"
+  annotations: {}
+
 resources:
   requests: {cpu: 100m, memory: 256Mi}
   limits: {cpu: "2", memory: 2Gi}

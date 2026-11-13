@@ -48,6 +48,13 @@ type Options struct {
 	APIListener net.Listener
 	// APIToken is the bearer token the operator address requires.
 	APIToken string
+	// MetricsListenAddr is an optional plain-HTTP address for Prometheus
+	// (0.0.0.0:9464 in a pod): GET /metrics and GET /healthz, nothing
+	// else. Counts, no secret; keep it inside the cluster.
+	MetricsListenAddr string
+	// MetricsListener is an already bound listener for the metrics
+	// address, in place of MetricsListenAddr.
+	MetricsListener net.Listener
 	// Tick is how often the worker looks for Pending tasks.
 	Tick time.Duration
 	// ReconcileEvery is how often tasks a dead run left Running are failed.
@@ -73,6 +80,8 @@ type Options struct {
 	// Log receives one line per task run, reconciliation and error;
 	// nil discards them.
 	Log *log.Logger
+	// ErrorLog receives the errors; nil sends them to Log.
+	ErrorLog *log.Logger
 }
 
 func (o Options) tick() time.Duration {
@@ -108,4 +117,11 @@ func (o Options) log() *log.Logger {
 		return o.Log
 	}
 	return log.New(io.Discard, "", 0)
+}
+
+func (o Options) errorLog() *log.Logger {
+	if o.ErrorLog != nil {
+		return o.ErrorLog
+	}
+	return o.log()
 }

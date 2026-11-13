@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/url"
 	"os"
@@ -60,6 +59,8 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 	listen := flags.String("listen", os.Getenv("AXLR_BOTS_LISTEN"), "a TLS address to serve nodes on too, such as 127.0.0.1:7878 or 0.0.0.0:7878 (also AXLR_BOTS_LISTEN); needs ca init")
 	names := flags.String("server-names", os.Getenv("AXLR_BOTS_SERVER_NAMES"), "names and addresses nodes dial the control plane by, comma-separated, added to the host's own (also AXLR_BOTS_SERVER_NAMES)")
 	apiListen := flags.String("api-listen", os.Getenv("AXLR_BOTS_API_LISTEN"), "a TLS address to serve operators and webhook senders on, such as 127.0.0.1:7879 (also AXLR_BOTS_API_LISTEN); needs ca init")
+	metricsListen := flags.String("metrics-listen", os.Getenv("AXLR_BOTS_METRICS_LISTEN"), "a plain-HTTP address to serve Prometheus on, GET /metrics and GET /healthz alone, such as 0.0.0.0:9464 (also AXLR_BOTS_METRICS_LISTEN; empty: none); counts, no secret: keep it inside the cluster")
+	logFormat := logFormatFlag(flags)
 	apiTokenFile := flags.String("api-token-file", "", "the file with the operator bearer token (default <state>/api.token; generated when missing)")
 	apiURL := flags.String("api-url", os.Getenv("AXLR_BOTS_API_URL"), "the operator API's base URL that approval notifications link to (also AXLR_BOTS_API_URL; default https://<api-listen>)")
 	panelURL := flags.String("panel-url", os.Getenv("AXLR_BOTS_PANEL_URL"), "the base of the panel link incident outputs carry, <base>/incidents/<id> (also AXLR_BOTS_PANEL_URL; none: no link unless the output names one)")
@@ -138,7 +139,12 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 	probe()
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
-	options.Log = log.New(stderr, "", log.LstdFlags)
+	loggers, err := newLoggers(stderr, *logFormat)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	options.Log, options.ErrorLog = loggers.Info, loggers.Error
+	options.MetricsListenAddr = *metricsListen
 	if *bus == "nats" {
 		publisher, err := natsbus.NewPublisher(natsbus.Config{URL: *natsURL, Credentials: *natsCreds, CertFile: *natsCert, KeyFile: *natsKey, CAFile: *natsCA, Outbox: filepath.Join(stateDir, "outbox", "nats"), Name: "axlr-bots", Log: options.Log})
 		if err != nil {

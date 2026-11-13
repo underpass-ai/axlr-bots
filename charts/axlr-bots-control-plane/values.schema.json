@@ -40,6 +40,32 @@
         "name": {"type": "string", "pattern": "^[a-z0-9-]{1,15}$"},
         "port": {"type": "integer", "minimum": 1, "maximum": 65535},
         "targetPort": {"type": ["integer", "string"]}}}}}},
+    "logFormat": {"enum": ["text", "json"]},
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "port": {"type": "integer", "minimum": 1024, "maximum": 65535},
+        "podMonitor": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "labels": {"type": "object"},
+            "interval": {"type": "string", "pattern": "^[0-9]+(ms|s|m)$"},
+            "scrapeTimeout": {"type": "string", "pattern": "^[0-9]+(ms|s|m)$"}
+          }
+        }
+      }
+    },
+    "grafanaDashboard": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "namespace": {"type": "string"},
+        "labels": {"type": "object"},
+        "annotations": {"type": "object"}
+      }
+    },
     "resources": {"type": "object"},
     "tmpSize": {"type": "string"},
     "terminationGracePeriodSeconds": {"type": "integer", "minimum": 1},

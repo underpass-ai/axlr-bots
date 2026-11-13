@@ -10,6 +10,8 @@ The AXLR Bots control plane (`axlr-bots serve`) as one pod on Kubernetes: the no
 | PersistentVolumeClaim | `<release>-state`, kept on `helm uninstall` (`helm.sh/resource-policy: keep`); or `persistence.existingClaim` |
 | Service | ports `node` 7878 and `api` 7879, passed through (TLS ends in the pod); `LoadBalancer` for nodes outside the cluster |
 | ServiceAccount | no API rights, no token mounted |
+| PodMonitor | with `metrics.podMonitor.enabled`: Prometheus reads `/metrics` on the pod's `metrics` port (9464), which is on no Service |
+| ConfigMap | with `grafanaDashboard.enabled`: the dashboard, for Grafana's sidecar (label `grafana_dashboard: "1"`) |
 
 No Ingress: the node protocol authenticates nodes by their client certificate, so a proxy that ends TLS would break it. Expose it as a `LoadBalancer` (MetalLB, a cloud load balancer) or a `NodePort`.
 
@@ -25,6 +27,9 @@ No Ingress: the node protocol authenticates nodes by their client certificate, s
 | `bus.kind`, `bus.nats.*` | `direct`, or `nats` with `tls://` and a Secret holding `tls.crt`, `tls.key` (from `axlr-bots ca issue-client --name control-plane`) and `ca.crt` (the broker's CA) |
 | `ca.init` | true for the first start of an empty state only: an init container runs `ca init`, which fails when a CA is there |
 | `persistence.existingClaim` | a claim you filled with an existing state |
+| `metrics.enabled`, `metrics.podMonitor.*` | `/metrics` and `/healthz` in plain HTTP on 9464: the overview's counts (`axlr_bots_tasks`, `axlr_bots_nodes`, cost today…), the requests per listener and route, Go and process. The PodMonitor's `labels` must match the Prometheus' `podMonitorSelector` |
+| `logFormat` | `text`, or `json` for Loki: level, `component`, and the `task`, `execution` and `incident` it names |
+| `grafanaDashboard.*` | the dashboard (`files/grafana-dashboard.json`); `namespace` when the sidecar does not look in every namespace |
 | `extraContainers`, `extraVolumes`, `service.extraPorts` | input adapters in the same pod, reaching the daemon through `/var/lib/axlr-bots/axlr-bots.sock` (volume `state`) |
 
 `values.schema.json` checks the types; `values.example.yaml` is a load balancer with a fixed address and a broker.

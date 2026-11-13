@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/adapters/bus/inprocess"
+	"github.com/underpass-ai/axlr-bots/adapters/metrics"
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/internal/statelock"
@@ -47,7 +48,7 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 		return err
 	}
 	defer release()
-	logger := options.log()
+	logger := levelLogger{info: options.log(), errors: options.errorLog()}
 	domainBus := options.DomainBus
 	if domainBus == nil {
 		domainBus = inprocess.New()
@@ -103,9 +104,26 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 		}
 		listening += " and https://" + apiListener.Addr().String() + " (operators, bearer token)"
 	}
+	metricsListener := options.MetricsListener
+	if metricsListener == nil && options.MetricsListenAddr != "" {
+		var err error
+		if metricsListener, err = net.Listen("tcp", options.MetricsListenAddr); err != nil {
+			closeListener(tlsListener)
+			closeListener(apiListener)
+			return fmt.Errorf("daemon: metrics address: %w", err)
+		}
+	}
 	servers := 1
-	served := make(chan error, 3)
+	served := make(chan error, 4)
 	server := unixapi.NewServer(local)
+	if metricsListener != nil {
+		registry := metrics.NewRegistry()
+		registry.MustRegister(metrics.NewOverviewCollector(local))
+		server.WithMiddleware(metrics.NewHTTPInstrument(registry).Wrap)
+		listening += " and http://" + metricsListener.Addr().String() + "/metrics"
+		servers++
+		go func() { served <- metrics.Serve(ctx, metricsListener, registry) }()
+	}
 	go func() { served <- server.Serve(ctx, options.SocketPath) }()
 	if tlsListener != nil {
 		servers++
@@ -157,7 +175,7 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	builds := time.NewTicker(options.buildCheckEvery())
 	defer builds.Stop()
 	logger.Printf("daemon: serving on %s, tick %s", listening, options.tick())
-	logBuild(application.CheckBuild(deps.Build), logger)
+	logBuild(application.CheckBuild(deps.Build), logger.info)
 	for {
 		fireTimers(ctx, local, logger)
 		if working.TryLock() {
@@ -235,7 +253,7 @@ func fireTimers(ctx context.Context, local *unixapi.Local, logger interface{ Pri
 	}
 	result, err := local.TickTimers(ctx)
 	if err != nil {
-		logger.Printf("daemon: timers: %v", err)
+		errorf(logger, "daemon: timers: %v", err)
 		return
 	}
 	for _, fire := range result.Fired {
@@ -246,7 +264,7 @@ func fireTimers(ctx context.Context, local *unixapi.Local, logger interface{ Pri
 		logger.Printf("daemon: timer %s/%s fired for %s, %s task %s", fire.BotID, fire.Trigger, fire.ScheduledAt.UTC().Format(time.RFC3339), verb, fire.TaskID)
 	}
 	for _, failure := range result.Errors {
-		logger.Printf("daemon: timer %s/%s: %v", failure.BotID, failure.Trigger, failure.Err)
+		errorf(logger, "daemon: timer %s/%s: %v", failure.BotID, failure.Trigger, failure.Err)
 	}
 }
 
@@ -265,7 +283,7 @@ func expireApprovals(ctx context.Context, runner *application.SerialRunner, logg
 		logger.Printf("%s", line)
 	}
 	if err != nil {
-		logger.Printf("daemon: approvals: %v", err)
+		errorf(logger, "daemon: approvals: %v", err)
 	}
 }
 
@@ -286,7 +304,7 @@ func deliverLoop(ctx context.Context, deps application.Dependencies, options Opt
 			logger.Printf("%s", line)
 		}
 		if err != nil && ctx.Err() == nil {
-			logger.Printf("daemon: notifications: %v", err)
+			errorf(logger, "daemon: notifications: %v", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -325,7 +343,7 @@ func deliverOutputs(ctx context.Context, uc application.DeliverOutputs, logger i
 		logger.Printf("%s", line)
 	}
 	if err != nil && ctx.Err() == nil {
-		logger.Printf("daemon: outputs: %v", err)
+		errorf(logger, "daemon: outputs: %v", err)
 	}
 }
 
@@ -342,7 +360,7 @@ func drain(ctx context.Context, runner *application.SerialRunner, logger interfa
 		expireApprovals(ctx, runner, logger)
 		result, ran, err := runner.RunNext(ctx)
 		if err != nil {
-			logger.Printf("daemon: run: %v", err)
+			errorf(logger, "daemon: run: %v", err)
 			return
 		}
 		if !ran {
@@ -366,13 +384,13 @@ func drain(ctx context.Context, runner *application.SerialRunner, logger interfa
 // the worker is running in process, whatever the grace.
 func reconcile(ctx context.Context, deps application.Dependencies, runner *application.SerialRunner, options Options, logger interface{ Printf(string, ...any) }) {
 	if offline, err := application.NewMarkOfflineNodes(deps).Execute(ctx, options.NodeOfflineAfter); err != nil {
-		logger.Printf("daemon: nodes: %v", err)
+		errorf(logger, "daemon: nodes: %v", err)
 	} else if len(offline) > 0 {
 		logger.Printf("daemon: nodes offline: %v", offline)
 	}
 	result, err := runner.Reconcile(ctx, options.Grace)
 	if err != nil {
-		logger.Printf("daemon: reconcile: %v", err)
+		errorf(logger, "daemon: reconcile: %v", err)
 		return
 	}
 	if len(result.Failed) > 0 || len(result.Skipped) > 0 || len(result.Orphaned) > 0 {
