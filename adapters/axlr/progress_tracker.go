@@ -68,7 +68,7 @@ func (t *progressTracker) feed(line []byte) {
 		}
 		t.tell(application.ProgressItem{Kind: application.ProgressToolStarted, At: now, Tool: event.Tool, CallID: event.CallID, MCPTool: mcpTool, Summary: summary})
 	case "tool.completed":
-		item := application.ProgressItem{Kind: application.ProgressToolEnded, At: now, Tool: event.Tool, CallID: event.CallID, Status: endedStatus(event), Error: event.Error}
+		item := application.ProgressItem{Kind: application.ProgressToolEnded, At: now, Tool: event.Tool, CallID: event.CallID, Status: endedStatus(event), Error: compactRunError(event.Error)}
 		if started, ok := t.started[event.CallID]; ok {
 			item.DurationMS = now.Sub(started).Milliseconds()
 			delete(t.started, event.CallID)
