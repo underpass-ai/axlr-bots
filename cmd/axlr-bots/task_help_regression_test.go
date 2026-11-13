@@ -16,7 +16,7 @@ func TestTaskHelp(t *testing.T) {
 			if code != exitOK || stderr.Len() != 0 {
 				t.Fatalf("task help: exit %d, stderr %q", code, stderr.String())
 			}
-			for _, want := range []string{"usage: axlr-bots task", "task submit", "task list", "task reconcile"} {
+			for _, want := range []string{"usage: axlr-bots task", "task submit", "task list", "task activity", "task reconcile"} {
 				if !strings.Contains(stdout.String(), want) {
 					t.Errorf("task help missing %q: %s", want, stdout.String())
 				}

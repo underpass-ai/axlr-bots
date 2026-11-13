@@ -43,7 +43,7 @@ func TestHealthUsage(t *testing.T) {
 	if code := run([]string{"--socket", "x.sock", "health", "extra"}, &stdout, &stderr); code != exitUsage {
 		t.Fatalf("an argument: exit %d", code)
 	}
-	if code := health(t.Context(), "", remoteControl{}, nil, &stdout, &stderr); code != exitUsage || !strings.Contains(stderr.String(), "needs a socket") {
+	if code := health(t.Context(), operatorLink{Transport: transportREST}, nil, &stdout, &stderr); code != exitUsage || !strings.Contains(stderr.String(), "needs a socket") {
 		t.Fatalf("no socket: exit %d, stderr %q", code, stderr.String())
 	}
 }

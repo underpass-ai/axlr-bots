@@ -3,8 +3,8 @@
 Two commands come out of this module: `axlr-bots`, the control plane and the operator's CLI, and `axlr-node`, the node agent. Output is JSON on stdout; `task report` prints the report as text. Exit codes: 0 ok, 1 error, 2 usage; `task run` exits 3 when the run stopped for a decision.
 
 ```text
-axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>] <command>
-axlr-bots --control https://host:7879 --token-file <path> [--ca-file <pem>] <command>   the same commands against a control plane on another host
+axlr-bots [--state <dir>] [--axlr-bin <path>] [--grpc-socket <path>] [--actor <name>] <command>
+axlr-bots --control host:7880 --token-file <path> [--ca-file <pem>] <command>   the same commands against a control plane on another host, over gRPC
 
   serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--grpc-listen <addr>] [--grpc-socket <path>] [--api-token-file <path>] [--api-url <url>]
         [--bus direct|nats] [--nats-url <url>] [--nats-creds <file>]              pushes to the nodes also over a broker (bus port)
@@ -29,7 +29,7 @@ axlr-bots --control https://host:7879 --token-file <path> [--ca-file <pem>] <com
   task approve <task-id> | task deny <task-id> | task decide <task-id> approve|deny   [--call <id>]
                                                (exit as task run; 0 too when a node carries the decision;
                                                3 after the first of two approvals; decided as --actor)
-  task get <task-id> | task executions <task-id> | task events <task-id> [--limit 100] | task cancel <task-id>
+  task get <task-id> | task executions <task-id> | task events <task-id> [--limit 100] | task activity <task-id> [--json] [--depth N] [--watch] | task cancel <task-id>
   task list [--bot <id>] [--status <status>] [--since <rfc3339>] [--limit 100]
   task report <task-id> [--path] | task reconcile [--grace <duration>]
   execution get <execution-id> | execution artifact <execution-id> <name> [--out <file>]
@@ -63,8 +63,10 @@ axlr-node codex-proxy [--listen 127.0.0.1:8790] [--codex-home ~/.codex] [--refre
 |---|---|---|---|
 | state directory | `--state` | `AXLR_BOTS_STATE`, then `XDG_STATE_HOME/axlr-bots` | `~/.local/state/axlr-bots` |
 | the AXLR binary | `--axlr-bin` | `AXLR_TUI` | `axlr-tui` on `PATH` |
-| the daemon's socket | `--socket` (`""` never uses a daemon) | `AXLR_BOTS_SOCKET` | `<state>/axlr-bots.sock` |
-| a control plane on another host | `--control https://host:7879` (its operator address), `--token-file` (the operator token), `--ca-file` (the fleet CA, `ca show`) | `AXLR_BOTS_CONTROL`, `AXLR_BOTS_TOKEN_FILE`, `AXLR_BOTS_CA_FILE` | none: the socket. With `--control` every command but `serve`, `ca`, `install`, `uninstall` and `task reconcile` goes to that address (`health` too), never opens the state directory and never falls back to it; `--token-file` is required, `--ca-file` defaults to the system's CAs |
+| how commands talk to the control plane | `--transport grpc\|rest` | `AXLR_BOTS_TRANSPORT` | `grpc`. `rest` is the HTTP API this one replaces, kept until it is removed |
+| the daemon's gRPC socket | `--grpc-socket` (`""` never uses a daemon) | `AXLR_BOTS_GRPC_SOCKET` | `<state>/axlr-bots-grpc.sock`; an explicit empty `--socket` also means no daemon unless `--grpc-socket` names one |
+| the daemon's HTTP socket | `--socket` (`""` never uses a daemon) | `AXLR_BOTS_SOCKET` | `<state>/axlr-bots.sock`; with `--transport rest` the commands use it, and over gRPC `trigger fire` does (a webhook trigger is an HTTP route, not an RPC) |
+| a control plane on another host | `--control host:7880` (its gRPC operator address; a `https://` or `grpcs://` in front is accepted), `--token-file` (the operator token), `--ca-file` (the fleet CA, `ca show`) | `AXLR_BOTS_CONTROL`, `AXLR_BOTS_TOKEN_FILE`, `AXLR_BOTS_CA_FILE` | none: the socket. With `--control` every command but `serve`, `ca`, `install`, `uninstall` and `task reconcile` goes to that address (`health` too), never opens the state directory and never falls back to it; `--token-file` is required, `--ca-file` defaults to the system's CAs. With `--transport rest` it is the HTTPS operator address, `https://host:7879` |
 | node address, server names, operator address | `serve --listen`, `--server-names`, `--api-listen` | `AXLR_BOTS_LISTEN`, `AXLR_BOTS_SERVER_NAMES`, `AXLR_BOTS_API_LISTEN` | none: the socket only |
 | operator gRPC address ([Operator API over gRPC](operator-grpc.md)) | `serve --grpc-listen`, `--grpc-socket` | `AXLR_BOTS_GRPC_LISTEN`, `AXLR_BOTS_GRPC_SOCKET` | none: the socket `<state>/axlr-bots-grpc.sock` only |
 | operator token file | `serve --api-token-file` | | `<state>/api.token` |
@@ -83,7 +85,32 @@ axlr-node codex-proxy [--listen 127.0.0.1:8790] [--codex-home ~/.codex] [--refre
 
 `axlr-node --token-file` is a sidecar's first start ([sidecar](../runbooks/sidecar.md)): with no certificate under its state the node enrolls with the token in the file, refusing a token whose node id is not `--node-id` before sending it; with a certificate it keeps it, unless the file holds a token other than the one the certificate came from (`pki/enrollment.json` records its id), which rotates it; a rotation that fails keeps the certificate. Until it has a certificate it retries every `--enroll-retry`, reading the file again each time, and never exits for it. `axlr-node mcp-relay` is not run by hand: AXLR starts it as the stdio MCP server of an execution whose bot may delegate, and it pipes its stdin and stdout to the agent's socket for that execution, `<state>/run/<execution>.sock` ([delegation](../architecture/delegation.md)). `axlr-node codex-proxy` serves the OpenAI Responses API on a loopback address and sends each request on to Codex's backend with the host user's ChatGPT login, which it refreshes as Codex does; AXLR names it as a `local_models` entry ([Codex subscription](../runbooks/codex-subscription.md)). `axlr-node check` asks the node address's `/healthz` over TLS 1.3, verifying the control plane against the CA in `--ca-file`, the token's, or the one enrollment stored, and presents no certificate; it changes nothing. When the state holds a node certificate it also prints its serial (`certificate`), its expiry (`notAfter`) and `renewalDue` (`no`, `yes` or `expired`).
 
-Every command tries the socket first: when the daemon answers, the command is carried by it, so a `task submit` reaches the running service and never touches the state files. When nothing answers, the command works on the state directory: the task is spooled and runs at the daemon's next start, or with `task run` in process.
+Every command tries the socket first (the gRPC one; with `--transport rest`, the HTTP one): when the daemon answers, the command is carried by it, so a `task submit` reaches the running service and never touches the state files. When nothing answers, the command works on the state directory: the task is spooled and runs at the daemon's next start, or with `task run` in process.
+
+## The gRPC connection
+
+The commands speak the operator API of [`api/proto/axlrbots/operator/v1`](../../api/proto/axlrbots/operator/v1) (the contract is in `common.proto`). Two ways in:
+
+- **The daemon's socket.** `--grpc-socket` (default `<state>/axlr-bots-grpc.sock`) is a Unix socket with no credentials: who can open the file may operate. A command probes it with the cheapest read (`GetBuild`, two seconds); when nothing answers it works on the state directory, as before.
+- **Another host.** `--control host:7880` dials the control plane's gRPC operator address over TLS 1.3. The server certificate is checked against `--ca-file` (the fleet CA from `ca show`; the system's CAs when absent) and the operator token from `--token-file` goes in the `authorization` metadata key as `Bearer <token>` on every call, streams included. A wrong token is `unauthorized`, a node certificate opens nothing.
+
+`--actor` (default `cli:<user>`) is who decides: `task approve`, `deny` and `decide` send it as `decided_by` and in the `x-axlr-actor` metadata key, which a bot's approvers are compared with. An error comes back as a gRPC status with an `ErrorDetail`, and the command prints the same message it printed over HTTP (`bot nope not found`, a `state` refusal in the control plane's words); a failure with no detail (the control plane did not answer) names the address. `health` has no RPC of its own: it asks `GetBuild`, and a control plane that answers with a refusal still counts as there.
+
+Artifacts and transcripts arrive in chunks and are checked against the size and SHA-256 of their first message. The activity snapshot is one message: the client takes up to 64 MiB, where gRPC's default is 4.
+
+## Task activity
+
+`task activity <task-id>` shows everything that happened under a task, from `ActivityService`:
+
+```
+axlr-bots task activity <task-id> [--json] [--depth N] [--watch]
+```
+
+- The task, then each execution with its outcome, node, duration, cost (`cost unknown` when it is not known: unknown is not free) and tokens; the tools it ran with state (`ok`, `FAILED`, `running`) and duration, the decisions it asked and the tasks it delegated, from the task's `bot.task.progress` events; then the task's own timeline, and the tasks it delegated indented under it, recursively. A last line sums the usage of the whole tree.
+- Where the control plane stopped recording an execution's progress (400 events or 256 KiB), a line marks the cut with its reason and what was dropped, and the tools after it, read from the execution's transcript, follow marked `[from transcript]`.
+- `--json` prints the tree (task, executions with `progressCut` and `completedItems`, events, children, `subtreeUsage`); `--depth N` follows N levels of delegated tasks (default: the delegation limit).
+- `--watch` prints the tree, then reprints it after each change until every task in it has finished (exit 0) or Ctrl-C; with `--json` one line per change. It resumes nothing by itself: a lost stream ends the command with the error.
+- It needs gRPC: against the in-process fallback (no daemon) it says so and exits 1.
 
 ## Reports
 

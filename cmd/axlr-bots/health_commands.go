@@ -5,42 +5,77 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/underpass-ai/axlr-bots/adapters/grpcclient"
 	"github.com/underpass-ai/axlr-bots/adapters/system"
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 // health asks the daemon's socket (or the operator address with
-// --control) for /healthz: exit 0 when it answers,
-// 1 when it does not. A container's healthcheck runs it, since a minimal
-// image has no shell or curl.
-func health(ctx context.Context, socketPath string, remote remoteControl, args []string, stdout, stderr io.Writer) int {
+// --control) whether it answers: exit 0 when it does, 1 when it does
+// not. Over gRPC the probe is the cheapest read of the operator API;
+// over REST it is /healthz. A container's healthcheck runs it, since a
+// minimal image has no shell or curl.
+func health(ctx context.Context, link operatorLink, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 0 {
 		fmt.Fprintln(stderr, "axlr-bots: health takes no arguments")
 		return exitUsage
 	}
-	if remote.enabled() {
-		client, err := remote.client()
+	if link.Remote.enabled() {
+		client, err := remoteHealth(link)
 		if err != nil {
 			return fail(stderr, err)
 		}
+		defer client.Close()
 		if err := client.Health(ctx); err != nil {
-			fmt.Fprintf(stderr, "axlr-bots: no service answers on %s: %v\n", remote.URL, err)
+			fmt.Fprintf(stderr, "axlr-bots: no service answers on %s: %v\n", link.Remote.URL, err)
 			return exitError
 		}
 		fmt.Fprintln(stdout, "ok")
 		return exitOK
 	}
-	if socketPath == "" {
+	socket := link.daemonSocket()
+	if socket == "" {
 		fmt.Fprintln(stderr, "axlr-bots: health needs a socket (--socket or AXLR_BOTS_SOCKET)")
 		return exitUsage
 	}
-	if !unixapi.Reachable(ctx, socketPath) {
-		fmt.Fprintf(stderr, "axlr-bots: no service answers on %s\n", socketPath)
+	answers := unixapi.Reachable
+	if link.grpc() {
+		answers = grpcclient.Reachable
+	}
+	if !answers(ctx, socket) {
+		fmt.Fprintf(stderr, "axlr-bots: no service answers on %s\n", socket)
 		return exitError
 	}
 	fmt.Fprintln(stdout, "ok")
 	return exitOK
+}
+
+// remoteHealthClient asks a remote control plane whether it answers.
+type remoteHealthClient interface {
+	Health(ctx context.Context) error
+	Close() error
+}
+
+// restHealth is the HTTP client, which holds no connection to close.
+type restHealth struct {
+	*unixapi.Client
+}
+
+func (restHealth) Close() error { return nil }
+
+// remoteHealth is the client of the remote by the transport; an error is
+// a remote that could not even be dialed (a missing token file, a bad
+// CA).
+func remoteHealth(link operatorLink) (remoteHealthClient, error) {
+	if link.grpc() {
+		return link.Remote.grpcClient()
+	}
+	client, err := link.Remote.client()
+	if err != nil {
+		return nil, err
+	}
+	return restHealth{client}, nil
 }
 
 // version prints the build this binary is: the release, the commit and
