@@ -115,8 +115,6 @@ jobs:
             refused --set-string "$field="
           done
           refused --set-string image.digest=sha256:abc
-          refused --set metrics.port=7879
-          refused --set-string logFormat=yaml
           refused --set-string controlPlane.url=http://192.168.1.75:7878
           refused --set-string node.labels.Zone=eu
           refused --set-string node.idPrefix=Bad
@@ -197,6 +195,8 @@ jobs:
           refused --set-string apiURL=https://192.0.2.10:7879/path
           refused --set-string 'serverNames={bad name}'
           refused --set-string image.digest=sha256:abc
+          refused --set metrics.port=7879
+          refused --set-string logFormat=yaml
 
   node-image:
     needs: changes
