@@ -45,7 +45,7 @@
       "type": "object",
       "properties": {
         "enabled": {"type": "boolean"},
-        "port": {"type": "integer", "minimum": 1024, "maximum": 65535, "not": {"enum": [7878, 7879]}},
+        "port": {"type": "integer", "minimum": 1024, "maximum": 65535},
         "podMonitor": {
           "type": "object",
           "properties": {
