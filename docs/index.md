@@ -46,6 +46,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | Why the bots of a team share one KMP store, what each may write in it, and which team is a bot's | [Memory store per team (ADR)](architecture/memory-store-per-team.md) |
 | How a push reaches a node: its own stream, or a NATS broker, and what a broker needs | [Bus port](architecture/bus-port.md) |
 | How a running task's progress gets from the run to the panel without slowing the run | [Live progress](architecture/live-progress.md) |
+| How each ended task becomes an OpenTelemetry trace (task, executions, tool calls, approval wait), built from stored timestamps, and how to send it to Tempo | [Tracing](architecture/tracing.md) |
 | Where the whole, uncut transcript of each execution is kept, and how to read it | [Transcripts](architecture/transcripts.md) |
 | How a world (a simulation, a camera, a sensor, an operator's hand) reaches the bots as text, through the tools, the bus and the notes that exist | [Input adapters](architecture/input-adapters.md) |
 | The product and architecture vision this implements | [Vision](architecture/vision.md) |
