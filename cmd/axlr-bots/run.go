@@ -40,6 +40,24 @@ func run(args []string, stdout, stderr io.Writer) int {
 		printUsage(stderr)
 		return exitUsage
 	}
+	if len(rest) == 2 && rest[0] == "task" && (rest[1] == "--help" || rest[1] == "-h") {
+		fmt.Fprint(stdout, `usage: axlr-bots task <command>
+
+  task submit <bot-id> --objective "<text>" --key <idempotency-key> [--correlation <id>] [--urgent]
+  task run <task-id>
+  task approve <task-id> [--call <id>]
+  task deny <task-id> [--call <id>]
+  task decide <task-id> approve|deny
+  task get <task-id>
+  task list [--bot <id>] [--status <s>] [--since <time>] [--limit 100]
+  task events <task-id> [--limit 100]
+  task executions <task-id>
+  task cancel <task-id>
+  task report <task-id> [--path]
+  task reconcile [--grace <duration>]
+`)
+		return exitOK
+	}
 	socketPath := *socket
 	if socketPath == "" && !flagSet(flags, "socket") && os.Getenv("AXLR_BOTS_SOCKET") == "" {
 		socketPath = filepath.Join(*stateDir, socketFileName)
