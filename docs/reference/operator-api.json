@@ -6237,7 +6237,16 @@
             "type": "integer"
           },
           "sha256": {
-            "type": "string"
+            "type": "string",
+            "description": "the SHA-256 of what is kept"
+          },
+          "filtered": {
+            "type": "boolean",
+            "description": "true when the control plane's TranscriptFilter changed what the node sent; absent: kept as sent"
+          },
+          "sentSha256": {
+            "type": "string",
+            "description": "the SHA-256 of what the node sent, when filtered"
           },
           "receivedAt": {
             "type": "string",

@@ -76,6 +76,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return githubHooks(socketPath, remote, rest[1:], stdout, stderr)
 	case "activity-audit":
 		return activityAudit(*stateDir, socketPath, remote, rest[1:], stdout, stderr)
+	case "transcript-audit":
+		return transcriptAudit(*stateDir, socketPath, remote, rest[1:], stdout, stderr)
 	case "health":
 		return health(ctx, socketPath, remote, rest[1:], stdout, stderr)
 	case "version":
@@ -435,6 +437,10 @@ func printUsage(w io.Writer) {
                                       to the team --team (see docs/runbooks/activity-audit.md)
   activity-audit report [--store <dir>] [--json]
                                       the signatures seen: published, count, bots, what failed
+  transcript-audit serve --team <team> --event <name> [--store <dir>] [--model jev-1.13.0] [--interval 30s] [--once] [--dry-run]
+                                      ask Jev of every block of every execution's whole transcript
+                                      and tell --team of those that hide a failure; TYPESAFE_API_KEY
+                                      (see docs/runbooks/transcript-audit.md)
   install [--system] [--prefix <dir>] [--state <dir>] [--axlr-bin <path>]
           [--listen <addr>] [--server-names a,b] [--control <url>] [--node-only]
                                       install both binaries, the two systemd units and the

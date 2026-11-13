@@ -172,3 +172,47 @@ func TestAControlPlaneWithoutTranscriptsRefuses(t *testing.T) {
 		t.Error("get without a store")
 	}
 }
+
+// redact is a TranscriptFilter that hides "secret"; fail refuses.
+type redact struct{ fail error }
+
+func (r redact) FilterTranscript(_ context.Context, _ TranscriptRecord, content []byte) ([]byte, error) {
+	if r.fail != nil {
+		return nil, r.fail
+	}
+	return []byte(strings.ReplaceAll(string(content), "secret", "[redacted]")), nil
+}
+
+func TestAnOptionalFilterRunsBeforeTheTranscriptIsKept(t *testing.T) {
+	h := newHarness()
+	store := &memTranscripts{}
+	h.deps.Transcripts = store
+	h.deps.TranscriptFilter = redact{}
+	ctx := context.Background()
+	node, execution := runningOnNode(t, h)
+	sent := `{"messages":[{"content":"token secret"}]}`
+	record, err := NewUploadTranscript(h.deps).Execute(ctx, node.ID(), execution, upload(sent))
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept := strings.ReplaceAll(sent, "secret", "[redacted]")
+	if !record.Filtered || record.SentSHA256 != digest(sent) || record.SHA256 != digest(kept) || record.Size != int64(len(kept)) {
+		t.Fatalf("record = %+v", record)
+	}
+	if _, data, _ := NewGetTranscript(h.deps).Execute(ctx, execution, "sess-1"); string(data) != kept {
+		t.Fatalf("kept %q", data)
+	}
+	if audits := auditsOf(h, "transcript.upload"); len(audits) != 1 || audits[0].Details["filtered"] != "true" {
+		t.Fatalf("audits = %+v", audits)
+	}
+	// A filter that changes nothing leaves the record as sent.
+	clean := TranscriptUpload{Session: "sess-2", Content: []byte(`{"messages":[]}`), SHA256: digest(`{"messages":[]}`)}
+	if record, err := NewUploadTranscript(h.deps).Execute(ctx, node.ID(), execution, clean); err != nil || record.Filtered || record.SentSHA256 != "" {
+		t.Fatalf("unchanged: %+v %v", record, err)
+	}
+	// A filter that fails keeps nothing.
+	h.deps.TranscriptFilter = redact{fail: errBoom}
+	if _, err := NewUploadTranscript(h.deps).Execute(ctx, node.ID(), execution, upload(sent)); !errors.Is(err, errBoom) || len(store.rows) != 2 {
+		t.Fatalf("failing filter: %v rows %d", err, len(store.rows))
+	}
+}

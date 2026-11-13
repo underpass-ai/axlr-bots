@@ -54,6 +54,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | How a push reaches a node: its own stream, or a NATS broker, and what a broker needs | [Bus port](architecture/bus-port.md) |
 | How a running task's progress gets from the run to the panel without slowing the run | [Live progress](architecture/live-progress.md) |
 | Where the whole, uncut transcript of each execution is kept, and how to read it | [Transcripts](architecture/transcripts.md) |
+| Have Jev read every execution's whole transcript and tell a team of the ones that hide a failure | [Transcript audit](runbooks/transcript-audit.md) |
 | Why a postmortem is a field on a Resolved incident, who answers it, what its task is told | [Incident postmortem](architecture/incident-postmortem.md) |
 | How incidents are told to Slack, a webhook or a command: the targets, the filters, the outbox and its retries, what never leaves the control plane | [Incident outputs](architecture/incident-outputs.md) |
 | How a world (a simulation, a camera, a sensor, an operator's hand) reaches the bots as text, through the tools, the bus and the notes that exist | [Input adapters](architecture/input-adapters.md) |
