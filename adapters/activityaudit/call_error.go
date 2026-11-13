@@ -60,6 +60,12 @@ func wholeError(fields map[string]any) callError {
 		code, _ := e["code"].(string)
 		message, _ := e["message"].(string)
 		found.Text = strings.TrimPrefix(code+": "+message, ": ")
+	case nil:
+		// A host tool may answer its refusal as {"code", "message"} with no
+		// "error" around it (local_read, 13 November 2026).
+		code, _ := fields["code"].(string)
+		message, _ := fields["message"].(string)
+		found.Text = strings.TrimPrefix(code+": "+message, ": ")
 	}
 	if output, ok := fields["output"].(map[string]any); ok {
 		if exit, ok := output["exit_code"].(float64); ok {
