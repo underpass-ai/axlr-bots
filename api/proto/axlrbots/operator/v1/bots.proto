@@ -1,0 +1,210 @@
+// BotsService manages bots. Auth, errors and conventions: see common.proto.
+syntax = "proto3";
+
+package axlrbots.operator.v1;
+
+import "axlrbots/operator/v1/bot_model.proto";
+import "axlrbots/operator/v1/common.proto";
+import "axlrbots/operator/v1/task_model.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1;operatorv1";
+
+service BotsService {
+  // ListBots answers every bot (GET /v1/bots).
+  rpc ListBots(ListBotsRequest) returns (ListBotsResponse);
+  rpc GetBot(GetBotRequest) returns (GetBotResponse);
+  // RegisterBot creates a bot from its definition (POST /v1/bots).
+  rpc RegisterBot(RegisterBotRequest) returns (RegisterBotResponse);
+  // UpdateBot applies a partial change (PATCH /v1/bots/{id}).
+  rpc UpdateBot(UpdateBotRequest) returns (UpdateBotResponse);
+  // DeleteBot removes the bot: it cancels its unfinished tasks and the
+  // delegated children it asked for, removes its timers and answers the
+  // bots that still name it. Its history stays.
+  rpc DeleteBot(DeleteBotRequest) returns (DeleteBotResponse);
+  rpc EnableBot(EnableBotRequest) returns (EnableBotResponse);
+  rpc PauseBot(PauseBotRequest) returns (PauseBotResponse);
+  // StopBot pauses the bot and cancels every task it has not finished.
+  rpc StopBot(StopBotRequest) returns (StopBotResponse);
+  // GetStagedBot answers the change the bot holds staged, secrets redacted.
+  rpc GetStagedBot(GetStagedBotRequest) returns (GetStagedBotResponse);
+  // StageBot holds a change for later (PUT /v1/bots/{id}/staged): the patch
+  // UpdateBot takes, naming its version, checked as the update would check
+  // it now.
+  rpc StageBot(StageBotRequest) returns (StageBotResponse);
+  // UnstageBot drops the staged change unapplied.
+  rpc UnstageBot(UnstageBotRequest) returns (UnstageBotResponse);
+  // ApplyStagedBot applies the staged change through the update and drops
+  // it.
+  rpc ApplyStagedBot(ApplyStagedBotRequest) returns (ApplyStagedBotResponse);
+  // ListBotEvents answers the newest `limit` events of the bot, oldest
+  // first (GET /v1/bots/{id}/events).
+  rpc ListBotEvents(ListBotEventsRequest) returns (ListBotEventsResponse);
+  // WatchBotEvents streams the bot's timeline: first the newest
+  // `replay_limit` events oldest first, then each new one as it is
+  // recorded, until the client cancels.
+  rpc WatchBotEvents(WatchBotEventsRequest) returns (stream WatchBotEventsResponse);
+  // SubmitBotTask asks for a task on the bot (POST /v1/bots/{id}/tasks).
+  // The same idempotency_key answers the same task with created false.
+  rpc SubmitBotTask(SubmitBotTaskRequest) returns (SubmitBotTaskResponse);
+}
+
+message ListBotsRequest {}
+
+message ListBotsResponse {
+  repeated Bot bots = 1;
+}
+
+message GetBotRequest {
+  string bot_id = 1;
+}
+
+message GetBotResponse {
+  Bot bot = 1;
+}
+
+message RegisterBotRequest {
+  BotDefinition definition = 1;
+}
+
+message RegisterBotResponse {
+  Bot bot = 1;
+}
+
+message UpdateBotRequest {
+  string bot_id = 1;
+  BotPatch patch = 2;
+}
+
+message UpdateBotResponse {
+  Bot bot = 1;
+}
+
+message DeleteBotRequest {
+  string bot_id = 1;
+}
+
+// BotReference is another bot that still names a deleted one.
+message BotReference {
+  string bot_id = 1;
+  // how is delegation or subscription.
+  string how = 2;
+  string topic = 3;
+}
+
+message DeleteBotResponse {
+  // bot is the bot as it was.
+  Bot bot = 1;
+  repeated string cancelled = 2;
+  repeated string children_cancelled = 3;
+  int32 timers_removed = 4;
+  int32 notifications_dropped = 5;
+  // named_by lists the bots whose delegations and subscriptions still name
+  // it; they are left as they are.
+  repeated BotReference named_by = 6;
+}
+
+message EnableBotRequest {
+  string bot_id = 1;
+}
+
+message EnableBotResponse {
+  Bot bot = 1;
+}
+
+message PauseBotRequest {
+  string bot_id = 1;
+}
+
+message PauseBotResponse {
+  Bot bot = 1;
+}
+
+message StopBotRequest {
+  string bot_id = 1;
+}
+
+message StopRefusal {
+  string task_id = 1;
+  string reason = 2;
+}
+
+message StopBotResponse {
+  // bot is the bot, paused.
+  Bot bot = 1;
+  repeated string cancelled = 2;
+  repeated StopRefusal not_cancelled = 3;
+}
+
+message GetStagedBotRequest {
+  string bot_id = 1;
+}
+
+message GetStagedBotResponse {
+  string version = 1;
+  google.protobuf.Timestamp staged_at = 2;
+  BotPatch patch = 3;
+}
+
+message StageBotRequest {
+  string bot_id = 1;
+  BotPatch patch = 2;
+}
+
+message StageBotResponse {
+  Bot bot = 1;
+}
+
+message UnstageBotRequest {
+  string bot_id = 1;
+}
+
+message UnstageBotResponse {
+  Bot bot = 1;
+}
+
+message ApplyStagedBotRequest {
+  string bot_id = 1;
+}
+
+message ApplyStagedBotResponse {
+  Bot bot = 1;
+}
+
+message ListBotEventsRequest {
+  string bot_id = 1;
+  // limit is at most 1000; zero is the default, 100.
+  int32 limit = 2;
+}
+
+message ListBotEventsResponse {
+  repeated Event events = 1;
+}
+
+message WatchBotEventsRequest {
+  string bot_id = 1;
+  // replay_limit is how many past events come first; zero is 100, at most
+  // 1000. Negative is invalid.
+  int32 replay_limit = 2;
+}
+
+message WatchBotEventsResponse {
+  Event event = 1;
+}
+
+message SubmitBotTaskRequest {
+  string bot_id = 1;
+  string objective = 2;
+  // idempotency_key makes the submission repeatable.
+  string idempotency_key = 3;
+  string correlation_id = 4;
+  // priority is urgent for a task that goes first and cancels the bot's
+  // work in progress; empty or normal waits its turn.
+  string priority = 5;
+}
+
+message SubmitBotTaskResponse {
+  // created is false when the key named a task that already existed.
+  bool created = 1;
+  Task task = 2;
+}

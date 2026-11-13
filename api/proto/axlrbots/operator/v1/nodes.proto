@@ -1,0 +1,92 @@
+// NodesService is the operator's side of the fleet: reading nodes, minting
+// enrollment tokens and revoking nodes. The node protocol itself (assignments,
+// streams, heartbeats, certificates, reports) is not part of this API.
+// Auth, errors and conventions: see common.proto.
+syntax = "proto3";
+
+package axlrbots.operator.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1;operatorv1";
+
+service NodesService {
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+  rpc GetNode(GetNodeRequest) returns (GetNodeResponse);
+  // CreateEnrollment mints a one-time token for a node to come
+  // (POST /v1/enrollments). The token is in the answer and nowhere else.
+  rpc CreateEnrollment(CreateEnrollmentRequest) returns (CreateEnrollmentResponse);
+  // RevokeNode cuts a node off and fails what it was running.
+  rpc RevokeNode(RevokeNodeRequest) returns (RevokeNodeResponse);
+}
+
+message NodeCapabilities {
+  string axlr_version = 1;
+  string node_version = 2;
+  string node_revision = 3;
+  bool policy_supported = 4;
+  bool correlation_supported = 5;
+  bool dedicated = 6;
+  repeated string runtimes = 7;
+  repeated string providers = 8;
+  bool skills_supported = 9;
+}
+
+message Node {
+  string id = 1;
+  string host_name = 2;
+  // labels are the operator's labels over the ones the node reports.
+  map<string, string> labels = 3;
+  map<string, string> operator_labels = 4;
+  map<string, string> reported_labels = 5;
+  NodeCapabilities capabilities = 6;
+  // status is Registered, Online, Offline or Revoked.
+  string status = 7;
+  google.protobuf.Timestamp registered_at = 8;
+  google.protobuf.Timestamp last_seen_at = 9;
+  string certificate_serial = 10;
+  google.protobuf.Timestamp certificate_not_after = 11;
+  google.protobuf.Timestamp revoked_at = 12;
+}
+
+message ListNodesRequest {}
+
+message ListNodesResponse {
+  repeated Node nodes = 1;
+}
+
+message GetNodeRequest {
+  string node_id = 1;
+}
+
+message GetNodeResponse {
+  Node node = 1;
+}
+
+message CreateEnrollmentRequest {
+  // node_id is the id the certificate will name; generated when empty.
+  string node_id = 1;
+  map<string, string> labels = 2;
+  // ttl is how long the token lives; zero is the default.
+  google.protobuf.Duration ttl = 3;
+}
+
+message CreateEnrollmentResponse {
+  // token is shown once.
+  string token = 1;
+  string id = 2;
+  string node_id = 3;
+  map<string, string> labels = 4;
+  google.protobuf.Timestamp expires_at = 5;
+}
+
+message RevokeNodeRequest {
+  string node_id = 1;
+}
+
+message RevokeNodeResponse {
+  Node node = 1;
+  // failed_tasks are the tasks that failed with the node.
+  repeated string failed_tasks = 2;
+}

@@ -1,0 +1,126 @@
+// Messages every service of the operator API shares, and the rules of the
+// whole API.
+//
+// The operator API is what an operator, the command line and the panel use
+// to drive the control plane. It replaces the operator's HTTP/JSON routes;
+// the node protocol, the webhook triggers, /healthz and /metrics stay HTTP
+// and are not part of this package.
+//
+// Transport and authentication, for every RPC:
+//
+//   - gRPC over TLS, the server certificate issued by the fleet CA.
+//   - The bearer token in the metadata key `authorization`, as
+//     `authorization: Bearer <token>` (the same token the HTTP API takes in
+//     the Authorization header). A missing or wrong token is
+//     UNAUTHENTICATED. A node certificate opens nothing here.
+//   - The actor, on the RPCs that decide (ApproveTask, DenyTask, DecideTask),
+//     in the metadata key `x-axlr-actor` (the HTTP API's X-Axlr-Actor
+//     header), which a bot's approvers are compared with. DecideTask's
+//     `decided_by` field says the same; when both are given and differ the
+//     call fails with INVALID_ARGUMENT. Neither: the control plane's own
+//     actor, which a bot that lists approvers refuses.
+//   - Large messages: gRPC's default is 4 MiB. Artifacts and transcripts go
+//     in chunks (see ExecutionsService); a server of this API raises its
+//     send limit for the activity snapshot (see ActivityService).
+//
+// Errors are gRPC statuses with an ErrorDetail in the status details. The
+// kinds are the ones the HTTP API named:
+//
+//	kind              gRPC code
+//	not_found         NOT_FOUND
+//	validation        INVALID_ARGUMENT
+//	state             FAILED_PRECONDITION
+//	approval_expired  FAILED_PRECONDITION
+//	conflict          ABORTED
+//	forbidden         PERMISSION_DENIED
+//	unauthorized      UNAUTHENTICATED
+//	too_large         RESOURCE_EXHAUSTED
+//	internal          INTERNAL
+//
+// Conventions: instants are google.protobuf.Timestamp, durations
+// google.protobuf.Duration, money is double US dollars with a separate
+// `cost_unknown` flag (the cost is then zero and means "not known", never
+// "free"). Status and kind vocabularies (task status, execution outcome,
+// event type, trigger type...) are strings documented by the domain, not
+// enums: the control plane adds values without a new contract. An empty
+// string field is "absent" unless it says otherwise.
+syntax = "proto3";
+
+package axlrbots.operator.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1;operatorv1";
+
+// ErrorDetail is the status detail every failed call carries.
+message ErrorDetail {
+  // kind is one of the kinds in the table of common.proto.
+  string kind = 1;
+  string message = 2;
+  // resource and id say what was not found, when kind is not_found.
+  string resource = 3;
+  string id = 4;
+  // revoked marks a forbidden answer to a revoked node: refused for good.
+  bool revoked = 5;
+}
+
+// StringList is a list whose presence matters: in a patch, an absent list
+// leaves the field alone and an empty one clears it.
+message StringList {
+  repeated string values = 1;
+}
+
+// Event is one entry of a timeline (a bot's, a task's or a team's).
+message Event {
+  string event_id = 1;
+  string schema_version = 2;
+  // type is the event type, such as `bot.task.completed`.
+  string type = 3;
+  string tenant_id = 4;
+  string bot_id = 5;
+  string group_name = 6;
+  string node_id = 7;
+  string task_id = 8;
+  string execution_id = 9;
+  string correlation_id = 10;
+  google.protobuf.Timestamp created_at = 11;
+  // payload is a JSON object whose shape depends on the type.
+  google.protobuf.Struct payload = 12;
+}
+
+// Usage is what an execution consumed.
+message Usage {
+  int32 requests = 1;
+  int32 prompt_tokens = 2;
+  int32 cached_tokens = 3;
+  int32 completion_tokens = 4;
+  int32 reasoning_tokens = 5;
+  int32 tool_calls = 6;
+  // cost_usd is zero when cost_unknown is true.
+  double cost_usd = 7;
+  bool cost_unknown = 8;
+}
+
+// Artifact is a file an execution produced, or the answer kept as one.
+message Artifact {
+  string name = 1;
+  string media_type = 2;
+  string reference = 3;
+  int64 size = 4;
+  // sha256 is the lowercase hex digest of the content.
+  string sha256 = 5;
+  string description = 6;
+  string source = 7;
+  string session_id = 8;
+  string call_id = 9;
+  // stored is true when the control plane keeps the bytes (GetArtifact).
+  bool stored = 10;
+}
+
+// SkillPin is a skill a bot or task is pinned to.
+message SkillPin {
+  string name = 1;
+  string version = 2;
+  string catalog = 3;
+}

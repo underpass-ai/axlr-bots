@@ -1,0 +1,151 @@
+// The task and execution messages the task, execution and activity
+// services share.
+syntax = "proto3";
+
+package axlrbots.operator.v1;
+
+import "axlrbots/operator/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1;operatorv1";
+
+// TriggerRef says what created a task.
+message TriggerRef {
+  // type is manual, timer, webhook, event or delegation.
+  string type = 1;
+  string name = 2;
+}
+
+// ApprovalWait is the pending (or closed) wait of a task for a decision.
+message ApprovalWait {
+  string call_id = 1;
+  string tool = 2;
+  google.protobuf.Timestamp since = 3;
+  google.protobuf.Timestamp deadline = 4;
+  // on_expire is deny or approve: what the deadline decides.
+  string on_expire = 5;
+  // outcome is empty while the wait is open, else approved, denied, expired
+  // or cancelled.
+  string outcome = 6;
+  google.protobuf.Timestamp closed_at = 7;
+}
+
+// DelegationGrant is what a parent task lends its child.
+message DelegationGrant {
+  int32 max_model_calls = 1;
+  int32 max_tool_calls = 2;
+  google.protobuf.Timestamp deadline = 3;
+}
+
+// TaskLineage says how a delegated task came to be.
+message TaskLineage {
+  string parent_task_id = 1;
+  string parent_execution_id = 2;
+  string parent_bot_id = 3;
+  int32 depth = 4;
+  int32 max_depth = 5;
+  // chain names one bot per level above the task.
+  repeated string chain = 6;
+  DelegationGrant grant = 7;
+  string event_id = 8;
+}
+
+// Task is a task as an operator sees it.
+message Task {
+  string id = 1;
+  string bot_id = 2;
+  string objective = 3;
+  // status is Pending, Running, WaitingApproval, Completed, Failed, Expired
+  // or Cancelled.
+  string status = 4;
+  string idempotency_key = 5;
+  string correlation_id = 6;
+  TriggerRef trigger = 7;
+  // input is the task's JSON input, verbatim.
+  bytes input = 8;
+  repeated string execution_ids = 9;
+  string failure_reason = 10;
+  ApprovalWait approval = 11;
+  TaskLineage delegation = 12;
+  // children are the ids of the tasks this one delegated.
+  repeated string children = 13;
+  int32 granted_model_calls = 14;
+  int32 granted_tool_calls = 15;
+  // priority is urgent, or empty for normal.
+  string priority = 16;
+  repeated SkillPin skills = 17;
+  // waiting says what a waiting task waits for.
+  string waiting = 18;
+  google.protobuf.Timestamp created_at = 19;
+  google.protobuf.Timestamp updated_at = 20;
+}
+
+message ToolCall {
+  string name = 1;
+  string call_id = 2;
+  string decision = 3;
+  string status = 4;
+  bool preview = 5;
+}
+
+// PendingDecision is the call an execution stopped on, waiting for a
+// decision.
+message PendingDecision {
+  string tool = 1;
+  string call_id = 2;
+  string session_id = 3;
+  // arguments is the call's JSON arguments, verbatim.
+  bytes arguments = 4;
+}
+
+message Result {
+  string answer = 1;
+  string session_id = 2;
+  repeated string sessions = 3;
+  repeated Artifact artifacts = 4;
+  repeated ToolCall tool_calls = 5;
+  PendingDecision pending_decision = 6;
+  bool not_started = 7;
+}
+
+message PolicyRecord {
+  string level = 1;
+  repeated string allowed_tools = 2;
+  string runtime_level = 3;
+  bool enforced = 4;
+  string path = 5;
+  string delegation = 6;
+}
+
+message CorrelationRecord {
+  string bot_id = 1;
+  string task_id = 2;
+  string execution_id = 3;
+  string trace_id = 4;
+  bool carried = 5;
+  string path = 6;
+}
+
+// Execution is one attempt at a task, on one node.
+message Execution {
+  string id = 1;
+  string task_id = 2;
+  string bot_id = 3;
+  google.protobuf.Timestamp started_at = 4;
+  google.protobuf.Timestamp ended_at = 5;
+  // outcome is Running, Completed, Failed, DecisionRequired or Cancelled.
+  string outcome = 6;
+  Result result = 7;
+  Usage usage = 8;
+  string failure_reason = 9;
+  string trace_path = 10;
+  PolicyRecord policy = 11;
+  CorrelationRecord correlation = 12;
+  string kind = 13;
+  string decision = 14;
+  string node_id = 15;
+  google.protobuf.Timestamp lease_until = 16;
+  // receipt is the runtime's JSON receipt, verbatim (bytes, so that its
+  // digest stays checkable).
+  bytes receipt = 17;
+}

@@ -1,0 +1,215 @@
+// ActivityService shows everything that happened under a task in one
+// place: the task, the tasks it delegated (found through the lineage,
+// recursively), each execution with what it used and cost, the complete
+// timeline, and, where the progress timeline was cut, the cut itself and
+// the missing content completed from the transcript.
+// Auth, errors and conventions: see common.proto.
+syntax = "proto3";
+
+package axlrbots.operator.v1;
+
+import "axlrbots/operator/v1/common.proto";
+import "axlrbots/operator/v1/task_model.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1;operatorv1";
+
+service ActivityService {
+  // GetTaskActivity answers the task's activity tree as it is now.
+  //
+  // The snapshot can be large (many events, transcript-completed content):
+  // it is one message, so the server raises its gRPC send limit above the
+  // 4 MiB default (the client its receive limit) and bounds what it builds
+  // with ActivityOptions. A client that cannot take it whole uses
+  // WatchTaskActivity, which sends the tree as a stream of small updates.
+  rpc GetTaskActivity(GetTaskActivityRequest) returns (GetTaskActivityResponse);
+  // WatchTaskActivity follows the same tree live: first the snapshot (the
+  // same message GetTaskActivity answers), then one update per change, until
+  // the client cancels or the whole tree has finished and the server ends
+  // the stream with OK. Every response carries a cursor; a client that lost
+  // the stream resumes from the last cursor it saw and gets updates, not a
+  // second snapshot, as long as the server still keeps them (else it starts
+  // over with a snapshot, which says so).
+  rpc WatchTaskActivity(WatchTaskActivityRequest) returns (stream WatchTaskActivityResponse);
+}
+
+// ActivityOptions bound what an activity answer holds. The zero value asks
+// for everything with the server's defaults.
+message ActivityOptions {
+  // exclude_children answers the task alone, without the tasks it delegated.
+  bool exclude_children = 1;
+  // max_depth bounds how many levels of children are followed; zero is the
+  // delegation limit (8).
+  int32 max_depth = 2;
+  // skip_completed_progress leaves out the content completed from
+  // transcripts: a cut is still marked, its missing items are not read.
+  bool skip_completed_progress = 3;
+  // max_completed_items bounds the items completed per execution; zero is
+  // the server's default. Past it, the ProgressCut says the completion was
+  // itself bounded.
+  int32 max_completed_items = 4;
+}
+
+message GetTaskActivityRequest {
+  string task_id = 1;
+  ActivityOptions options = 2;
+}
+
+message GetTaskActivityResponse {
+  TaskActivity activity = 1;
+}
+
+message WatchTaskActivityRequest {
+  string task_id = 1;
+  ActivityOptions options = 2;
+  // resume_cursor is the cursor of the last response the client saw; empty
+  // starts with a snapshot.
+  string resume_cursor = 3;
+}
+
+// TaskActivity is one task of the tree with everything under it.
+message TaskActivity {
+  Task task = 1;
+  // executions are this task's, oldest first, each with usage and cost.
+  repeated ExecutionActivity executions = 2;
+  // events are this task's own timeline, complete, oldest first: the
+  // bot.task.* events, including every bot.task.progress event the control
+  // plane kept (see ProgressCut for what it did not).
+  repeated Event events = 3;
+  // children are the tasks this one delegated, by lineage, recursively.
+  repeated TaskActivity children = 4;
+  // subtree_usage is the sum of the usage of this task's executions and of
+  // every descendant's. cost_unknown is true when any of them is unknown;
+  // cost_usd then counts only the known ones.
+  Usage subtree_usage = 5;
+}
+
+// ExecutionActivity is an execution with what it used and what is known
+// about its progress.
+message ExecutionActivity {
+  // execution carries usage and cost (usage.cost_usd, usage.cost_unknown).
+  Execution execution = 1;
+  // progress_cut is set when the control plane stopped recording the
+  // execution's progress timeline: past the bounds of RecordProgress (400
+  // events or 256 KiB per execution) the run went on and its report says
+  // everything, but the timeline stops growing.
+  ProgressCut progress_cut = 2;
+  // completed_items continue the timeline after the cut, read from the
+  // execution's transcript, oldest first. Empty when there is no cut, when
+  // skip_completed_progress was asked, or when no transcript is kept.
+  repeated ProgressItem completed_items = 3;
+}
+
+enum ProgressCutReason {
+  PROGRESS_CUT_REASON_UNSPECIFIED = 0;
+  // PROGRESS_CUT_REASON_EVENT_LIMIT: the execution reached 400 progress
+  // events.
+  PROGRESS_CUT_REASON_EVENT_LIMIT = 1;
+  // PROGRESS_CUT_REASON_BYTE_LIMIT: the items reached 256 KiB.
+  PROGRESS_CUT_REASON_BYTE_LIMIT = 2;
+  // PROGRESS_CUT_REASON_BATCH_TRUNCATED: a batch lost items to a bound and
+  // the last progress event says `truncated`.
+  PROGRESS_CUT_REASON_BATCH_TRUNCATED = 3;
+}
+
+enum CompletionSource {
+  COMPLETION_SOURCE_UNSPECIFIED = 0;
+  // COMPLETION_SOURCE_NONE: nothing was added after the cut.
+  COMPLETION_SOURCE_NONE = 1;
+  // COMPLETION_SOURCE_TRANSCRIPT: completed_items were read from the
+  // execution's transcript.
+  COMPLETION_SOURCE_TRANSCRIPT = 2;
+}
+
+// ProgressCut marks where the recorded progress timeline stops.
+message ProgressCut {
+  ProgressCutReason reason = 1;
+  // events_kept and bytes_kept are what the timeline holds of this
+  // execution's progress.
+  int32 events_kept = 2;
+  int64 bytes_kept = 3;
+  // cut_at is the time of the last item the timeline kept.
+  google.protobuf.Timestamp cut_at = 4;
+  // dropped counts the items the nodes said they dropped before they were
+  // sent.
+  int32 dropped = 5;
+  CompletionSource completion = 6;
+  // transcript_sessions are the transcripts completed_items were read from.
+  repeated string transcript_sessions = 7;
+  // completion_bounded is true when max_completed_items cut the completion
+  // short.
+  bool completion_bounded = 8;
+}
+
+// ProgressItem is one thing a run did, as the node reported it; kinds are
+// tool_started, tool_ended, decision_required, delegation, text and
+// thinking.
+message ProgressItem {
+  string kind = 1;
+  google.protobuf.Timestamp at = 2;
+  string tool = 3;
+  string mcp_tool = 4;
+  string call_id = 5;
+  string summary = 6;
+  string status = 7;
+  string error = 8;
+  google.protobuf.Duration duration = 9;
+  string bot = 10;
+  string task_id = 11;
+  string reason = 12;
+  string text = 13;
+}
+
+message WatchTaskActivityResponse {
+  // cursor identifies this point of the stream; see resume_cursor.
+  string cursor = 1;
+  oneof update {
+    // snapshot is always the first message of a stream with no resume
+    // cursor, and again when a resume could not be honoured.
+    TaskActivity snapshot = 2;
+    TaskChanged task_changed = 3;
+    ExecutionChanged execution_changed = 4;
+    EventAppended event_appended = 5;
+    ChildAttached child_attached = 6;
+    ProgressCompleted progress_completed = 7;
+    // heartbeat keeps an idle stream alive and says nothing changed.
+    Heartbeat heartbeat = 8;
+  }
+}
+
+// TaskChanged replaces a task of the tree (matched by task.id).
+message TaskChanged {
+  Task task = 1;
+}
+
+// ExecutionChanged replaces an execution of the tree (matched by
+// execution.id) or adds it under execution.task_id.
+message ExecutionChanged {
+  Execution execution = 1;
+}
+
+message EventAppended {
+  // task_id is the task whose timeline gets the event.
+  string task_id = 1;
+  Event event = 2;
+}
+
+// ChildAttached adds a delegated task, with what is already known of it,
+// under its parent.
+message ChildAttached {
+  string parent_task_id = 1;
+  TaskActivity child = 2;
+}
+
+// ProgressCompleted says an execution's progress timeline was cut, or that
+// its completion grew.
+message ProgressCompleted {
+  string task_id = 1;
+  string execution_id = 2;
+  ProgressCut progress_cut = 3;
+  // items are appended to the execution's completed_items.
+  repeated ProgressItem items = 4;
+}
+
+message Heartbeat {}

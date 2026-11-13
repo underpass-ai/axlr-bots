@@ -55,6 +55,13 @@ jobs:
           cache-dependency-path: go.sum
       - name: Format
         run: test -z "$(gofmt -l .)"
+      - name: Operator API contract is generated and clean
+        run: |
+          # buf lints the .proto files and regenerates api/gen with the
+          # plugins pinned in go.mod; any difference means the generated
+          # code was not regenerated (make proto).
+          go generate ./api/proto
+          test -z "$(git status --porcelain -- api)" || { git status --short -- api; git diff -- api | head -50; exit 1; }
       - name: Vet
         run: go vet ./... && go vet -tags sqlite ./...
       - name: Staticcheck
@@ -77,12 +84,14 @@ jobs:
           go tool cover -func=coverage.out | tail -n 1
           # Every package on its own, so a well-tested one cannot hide one
           # that is not. bustest is a helper the bus tests import; it has
-          # no tests of its own.
+          # no tests of its own, and api/gen is generated code, checked by
+          # the contract step and exercised in api/proto.
           awk '
             match($0, /coverage: [0-9.]+% of statements/) {
               pkg = ""
               for (i = 1; i <= NF; i++) if ($i ~ /^github\.com\//) pkg = $i
               if (pkg ~ /\/adapters\/bus\/bustest$/) next
+              if (pkg ~ /\/api\/gen\//) next
               value = substr($0, RSTART + 10, index(substr($0, RSTART), "%") - 11)
               checked++
               if (value + 0 < 80) { printf "%s: %s%%, below 80%%\n", pkg, value; low = 1 }
