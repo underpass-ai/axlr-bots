@@ -2,13 +2,14 @@ use chrono::{DateTime, Utc};
 
 use super::PortFuture;
 use crate::domain::{
-    Bot, BotDefinition, BotId, BotPatch, BuildStatus, CancelledTask, DecidedTask, Decision, DeletedBot,
+    ActivityBatch, Bot, BotDefinition, BotId, BotPatch, BuildStatus, CancelledTask, DecidedTask, Decision, DeletedBot,
     EnrollmentRequest, EnrollmentToken, Event, Execution, ExecutionId, Node, NodeId, Overview, Publication, Published,
-    RevokedNode, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task, TaskFilter, TaskId, TaskSubmission, Topic,
+    RevokedNode, SentTaskMessage, StoppedBotAnswer, SubmittedTask, Task, TaskActivity, TaskFilter, TaskId,
+    TaskSubmission, Topic,
 };
 
-/// The control plane as the panel needs it: the operator API's routes.
-/// The HTTP adapter talks to a running control plane; the fake keeps
+/// The control plane as the panel needs it: the operator API's calls.
+/// The gRPC adapter talks to a running control plane; the fake keeps
 /// everything in memory for tests.
 pub trait ControlPlane: Send + Sync {
     fn overview(&self, since: DateTime<Utc>) -> PortFuture<'_, Overview>;
@@ -76,4 +77,20 @@ pub trait ControlPlane: Send + Sync {
     /// with `wait_seconds`, the control plane answers as soon as there is
     /// a new one. A control plane older than `after` answers the newest.
     fn task_events_after(&self, id: TaskId, after: Option<String>, wait_seconds: u32) -> PortFuture<'_, Vec<Event>>;
+
+    /// The task with everything under it, as it is now: its executions
+    /// with usage and cost, its whole timeline and the tasks it
+    /// delegated, recursively. A control plane older than the call
+    /// answers not found.
+    fn task_activity(&self, id: TaskId) -> PortFuture<'_, TaskActivity>;
+
+    /// The updates of the task's activity tree after the `cursor` (none:
+    /// from a snapshot). With `wait_seconds`, the control plane answers
+    /// as soon as there is an update; without, with what is there now.
+    fn watch_task_activity(
+        &self,
+        id: TaskId,
+        cursor: Option<String>,
+        wait_seconds: u32,
+    ) -> PortFuture<'_, ActivityBatch>;
 }

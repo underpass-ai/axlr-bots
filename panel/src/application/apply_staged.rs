@@ -4,7 +4,7 @@ use super::{ControlPlane, PanelError};
 use crate::domain::{Bot, BotId};
 
 /// Updates a bot to the version of its definition staged on the control
-/// plane (`POST /v1/bots/{id}/staged/apply`): the control plane runs the
+/// plane (`ApplyStagedBot`): the control plane runs the
 /// staged change through its update, with the same checks, and answers
 /// the bot at its new version.
 pub struct ApplyStaged {

@@ -2,7 +2,7 @@ use serde::Deserialize;
 
 use super::{BuildIdentity, Version};
 
-/// GET /v1/build: the build the control plane runs, the one installed on
+/// GetBuild: the build the control plane runs, the one installed on
 /// its disk, and whether the running one is stale (a newer binary was
 /// installed and the service was not restarted).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]

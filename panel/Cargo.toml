@@ -11,7 +11,11 @@ publish = false
 
 [dependencies]
 iced = { version = "0.14", features = ["tokio", "svg", "image", "markdown"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+tonic = { version = "0.14", default-features = false, features = ["codegen", "transport", "tls-ring", "channel"] }
+tonic-prost = "0.14"
+prost = "0.14"
+prost-types = "0.14"
+tokio = { version = "1", default-features = false, features = ["time"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.9"
@@ -21,10 +25,16 @@ uuid = { version = "1", features = ["v4"] }
 futures = "0.3"
 notify-rust = { version = "4", default-features = false, features = ["z"] }
 
+[build-dependencies]
+protox = "0.9"
+tonic-prost-build = { version = "0.14", default-features = false }
+prost = "0.14"
+
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 axum = "0.8"
 axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
+tonic = { version = "0.14", default-features = false, features = ["codegen", "transport", "tls-ring", "server", "channel"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 rcgen = "0.14"
 iced_test = "0.14"

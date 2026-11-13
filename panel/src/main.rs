@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use axlr_bots_panel::adapters::config::{InstallDiscovery, JsonSettingsStore, TomlShortcuts};
-use axlr_bots_panel::adapters::http::HttpConnector;
+use axlr_bots_panel::adapters::grpc::GrpcConnector;
 use axlr_bots_panel::adapters::system::{DesktopNotifier, DialogFilePicker, FsDefinitionReader, SystemClock, UuidKeys};
 use axlr_bots_panel::application::Connect;
 use axlr_bots_panel::ui::{App, Command, Services, USAGE, launch};
@@ -37,7 +37,7 @@ fn main() -> std::process::ExitCode {
         discovery.config_dir().join("axlr-bots-panel/shortcuts.toml"),
     ));
     let clock = Arc::new(SystemClock);
-    let connect = Arc::new(Connect::new(Arc::new(HttpConnector), store, clock.clone()));
+    let connect = Arc::new(Connect::new(Arc::new(GrpcConnector), store, clock.clone()));
     let result = launch(move || {
         let (settings, saved) = connect.initial();
         let services = Services {

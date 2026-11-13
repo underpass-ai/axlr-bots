@@ -36,6 +36,20 @@ impl Usage {
     pub fn cost(&self) -> Cost {
         Cost::new(self.cost_usd, u32::from(self.cost_unknown))
     }
+
+    /// Two usages added up; the cost stays unknown when either is.
+    pub fn plus(self, other: Usage) -> Usage {
+        Usage {
+            requests: self.requests + other.requests,
+            prompt_tokens: self.prompt_tokens + other.prompt_tokens,
+            cached_tokens: self.cached_tokens + other.cached_tokens,
+            completion_tokens: self.completion_tokens + other.completion_tokens,
+            reasoning_tokens: self.reasoning_tokens + other.reasoning_tokens,
+            tool_calls: self.tool_calls + other.tool_calls,
+            cost_usd: self.cost_usd + other.cost_usd,
+            cost_unknown: self.cost_unknown || other.cost_unknown,
+        }
+    }
 }
 
 #[cfg(test)]

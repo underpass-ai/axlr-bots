@@ -4,7 +4,7 @@ use super::{ControlPlane, DeletePreview, PanelError};
 use crate::domain::{BotId, BotReference, DeletedBot, TaskFilter};
 
 /// Deletes a bot, and says beforehand what that will do. The control
-/// plane does it in one call (`DELETE /v1/bots/{id}`); the list's bulk
+/// plane does it in one call (`DeleteBot`); the list's bulk
 /// delete calls `delete` once per bot.
 pub struct DeleteBot {
     control_plane: Arc<dyn ControlPlane>,

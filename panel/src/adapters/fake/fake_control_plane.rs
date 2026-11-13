@@ -5,12 +5,12 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::application::{ControlPlane, PanelError, PortFuture, WaitingCall};
 use crate::domain::{
-    Artifact, Bot, BotDefinition, BotId, BotPatch, BotReference, BotStatus, Budgets, BuildStatus, CancelledTask,
-    DecidedTask, Decision, DeletedBot, EnrollmentRequest, EnrollmentToken, Event, Execution, ExecutionId,
-    ExecutionKind, ExecutionOutcome, ExecutionResult, Node, NodeCapabilities, NodeId, NodeStatus, Overview,
-    PendingDecision, Publication, Published, RevokedNode, Secret, SentTaskMessage, StagedDefinition, StoppedBotAnswer,
-    SubmittedTask, Subscription, Task, TaskFilter, TaskId, TaskStatus, TaskSubmission, ToolCall, Topic, TopicListener,
-    TriggerRef, Usage,
+    ActivityBatch, ActivityUpdate, Artifact, Bot, BotDefinition, BotId, BotPatch, BotReference, BotStatus, Budgets,
+    BuildStatus, CancelledTask, DecidedTask, Decision, DeletedBot, EnrollmentRequest, EnrollmentToken, Event,
+    Execution, ExecutionActivity, ExecutionId, ExecutionKind, ExecutionOutcome, ExecutionResult, Node,
+    NodeCapabilities, NodeId, NodeStatus, Overview, PendingDecision, Publication, Published, RevokedNode, Secret,
+    SentTaskMessage, StagedDefinition, StoppedBotAnswer, SubmittedTask, Subscription, Task, TaskActivity, TaskFilter,
+    TaskId, TaskStatus, TaskSubmission, ToolCall, Topic, TopicListener, TriggerRef, Usage,
 };
 
 /// The control plane in memory: what the use cases and the interface are
@@ -34,7 +34,7 @@ struct FakeState {
     failure: Option<PanelError>,
     /// Answers as a control plane from before the stop and message routes.
     older: bool,
-    /// The build GET /v1/build answers; None: a control plane from before
+    /// The build GetBuild answers; None: a control plane from before
     /// the route.
     build: Option<BuildStatus>,
     calls: Vec<String>,
@@ -48,7 +48,7 @@ impl FakeControlPlane {
         fake
     }
 
-    /// Sets what GET /v1/build answers; None answers as a control plane
+    /// Sets what GetBuild answers; None answers as a control plane
     /// from before the route.
     pub fn set_build(&self, build: Option<BuildStatus>) {
         self.state.lock().unwrap().build = build;
@@ -202,7 +202,7 @@ impl FakeControlPlane {
     }
 
     /// Stages the next version of a bot's definition, as an installer
-    /// would with `PUT /v1/bots/{id}/staged`: it replaces one staged
+    /// would with `StageBot`: it replaces one staged
     /// before and publishes `bot.staged`.
     pub fn stage_bot(&self, id: &str, version: &str) {
         let mut state = self.state.lock().unwrap();
@@ -1428,6 +1428,49 @@ impl ControlPlane for FakeControlPlane {
         })
     }
 
+    fn task_activity(&self, id: TaskId) -> PortFuture<'_, TaskActivity> {
+        self.call(format!("task_activity {id}"), move |s| {
+            let task = s.task_mut(&id)?.clone();
+            let executions: Vec<ExecutionActivity> = s
+                .executions
+                .iter()
+                .filter(|e| e.task_id == id)
+                .cloned()
+                .map(ExecutionActivity::bare)
+                .collect();
+            let events = s.events.iter().filter(|e| e.task_id == id.as_str()).cloned().collect();
+            let subtree_usage = executions
+                .iter()
+                .fold(Usage::default(), |sum, e| sum.plus(e.execution.usage));
+            Ok(TaskActivity {
+                task,
+                executions,
+                events,
+                children: Vec::new(),
+                subtree_usage,
+            })
+        })
+    }
+    fn watch_task_activity(
+        &self,
+        id: TaskId,
+        cursor: Option<String>,
+        _wait_seconds: u32,
+    ) -> PortFuture<'_, ActivityBatch> {
+        let snapshot = self.task_activity(id);
+        Box::pin(async move {
+            Ok(match cursor {
+                Some(cursor) => ActivityBatch {
+                    cursor: Some(cursor),
+                    updates: Vec::new(),
+                },
+                None => ActivityBatch {
+                    cursor: Some("1".into()),
+                    updates: vec![ActivityUpdate::Snapshot(Box::new(snapshot.await?))],
+                },
+            })
+        })
+    }
     fn task_events(&self, id: TaskId, limit: u32) -> PortFuture<'_, Vec<Event>> {
         self.call(format!("task_events {id}"), move |s| {
             s.task_mut(&id)?;
