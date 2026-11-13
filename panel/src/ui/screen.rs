@@ -10,6 +10,9 @@ pub enum Screen {
     Bot(BotId),
     Tasks,
     Task(TaskId),
+    /// A task with everything under it: its executions, its tools and the
+    /// tasks it delegated.
+    Activity(TaskId),
     Teams,
     Team(String),
     Settings,
@@ -34,6 +37,7 @@ impl Screen {
         match raw.split_once(':') {
             Some(("bot", id)) => BotId::new(id).ok().map(Self::Bot),
             Some(("task", id)) => TaskId::new(id).ok().map(Self::Task),
+            Some(("activity", id)) => TaskId::new(id).ok().map(Self::Activity),
             Some(("team", name)) if !name.is_empty() => Some(Self::Team(name.to_string())),
             Some(_) => None,
             None => match raw {
@@ -53,7 +57,7 @@ impl Screen {
             Self::Overview => Section::Overview,
             Self::Nodes => Section::Nodes,
             Self::Bots | Self::Bot(_) => Section::Bots,
-            Self::Tasks | Self::Task(_) => Section::Tasks,
+            Self::Tasks | Self::Task(_) | Self::Activity(_) => Section::Tasks,
             Self::Teams | Self::Team(_) => Section::Teams,
             Self::Settings => Section::Settings,
         }
@@ -79,6 +83,12 @@ mod tests {
             Screen::parse("task:task-1"),
             Some(Screen::Task(TaskId::new("task-1").unwrap()))
         );
+        assert_eq!(
+            Screen::parse("activity:task-1"),
+            Some(Screen::Activity(TaskId::new("task-1").unwrap()))
+        );
+        assert_eq!(Screen::parse("activity:Bad Id"), None);
+        assert_eq!(Screen::Activity(TaskId::new("t").unwrap()).section(), Section::Tasks);
         assert_eq!(Screen::parse("task:Bad Id"), None);
         assert_eq!(Screen::parse("node:x"), None);
         assert_eq!(Screen::parse("home"), None);

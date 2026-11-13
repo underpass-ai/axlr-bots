@@ -14,6 +14,7 @@ mod overview;
 mod post_draft;
 mod settings;
 mod shell;
+mod task_activity;
 mod task_detail;
 mod tasks;
 mod teams;
@@ -34,6 +35,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::Bot(id) => bot_detail::view(app, id, tokens),
         Screen::Tasks => tasks::view(app, tokens),
         Screen::Task(id) => task_detail::view(app, id, tokens),
+        Screen::Activity(id) => task_activity::page(app, id, tokens),
         Screen::Teams => teams::list(app, tokens),
         Screen::Team(name) => teams::detail(app, name, tokens),
         Screen::Settings => settings::view(app, tokens),

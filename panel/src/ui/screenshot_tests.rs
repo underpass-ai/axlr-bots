@@ -88,6 +88,14 @@ fn screenshots() {
     let done = task_with(&app, TaskStatus::Completed);
     send(&mut app, Message::Go(Screen::Task(done.clone())));
     camera.both(&mut app, "task");
+
+    // A task and the task it delegated, with what each ran and cost.
+    let root = crate::domain::TaskId::new("task-root").unwrap();
+    app.screen = Screen::Activity(root.clone());
+    let mut tree = ActivityScreen::new(root);
+    tree.loaded(super::view_tests::delegating_activity());
+    app.activity = Some(tree);
+    camera.both(&mut app, "task-activity");
     app.apply(Message::AnswerSelecting(true));
     camera.shoot(&mut app, "task-copy-light");
     app.apply(Message::AnswerSelecting(false));

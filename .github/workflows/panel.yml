@@ -11,6 +11,7 @@ on:
     paths:
       - panel/**
       - adapters/unixapi/**
+      - api/proto/**
       - docs/reference/operator-api.md
       - docs/reference/operator-api.json
       - .github/workflows/panel.yml
@@ -46,7 +47,7 @@ jobs:
           run=true
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
             git diff --name-only HEAD^1 HEAD > "$RUNNER_TEMP/changed"
-            grep -qE '^(panel/|adapters/unixapi/|docs/reference/operator-api\.(md|json)$|\.github/workflows/panel\.yml$)' "$RUNNER_TEMP/changed" || run=false
+            grep -qE '^(panel/|adapters/unixapi/|api/proto/|docs/reference/operator-api\.(md|json)$|\.github/workflows/panel\.yml$)' "$RUNNER_TEMP/changed" || run=false
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
 

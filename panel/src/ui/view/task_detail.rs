@@ -45,6 +45,13 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
     }
     header = header.push(headline(&task.objective, tokens));
     header = header.push(copy_button("Copy task", task.objective.clone(), tokens));
+    header = header.push(action(
+        Kind::Ghost,
+        Icon::Bolt,
+        "Everything it did",
+        Some(Message::Go(Screen::Activity(task.id.clone()))),
+        tokens,
+    ));
     if let Some(stop) = stop {
         header = header.push(stop);
     }

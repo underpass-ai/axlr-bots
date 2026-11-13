@@ -1750,3 +1750,111 @@ fn versions_show_and_a_bot_with_a_newer_one_offers_the_update() {
     send(&mut app, Message::Go(Screen::Nodes));
     shows(&app, &["agent v0.3.0"]);
 }
+
+/// A task with a task it delegated, a tool with its duration, a cut and
+/// the steps completed from the transcript after it.
+pub(super) fn delegating_activity() -> crate::domain::TaskActivity {
+    let mut tree = crate::domain::sample_task_activity();
+    let kept: crate::domain::Event = serde_json::from_value(serde_json::json!({
+        "eventId": "e1", "type": "bot.task.progress", "executionId": "exec-r",
+        "createdAt": "2026-11-02T10:00:01Z", "payload": {"items": [
+            {"kind": "tool.started", "tool": "local_read", "callId": "c1", "at": "2026-11-02T10:00:01Z"},
+            {"kind": "tool.ended", "tool": "local_read", "callId": "c1", "status": "ok", "durationMs": 120}
+        ]}
+    }))
+    .unwrap();
+    tree.events.push(kept);
+    let run = &mut tree.executions[0];
+    run.progress_cut = Some(crate::domain::ProgressCut {
+        reason: crate::domain::CutReason::EventLimit,
+        events_kept: 400,
+        bytes_kept: 1,
+        cut_at: None,
+        dropped: 0,
+        from_transcript: true,
+        transcript_sessions: vec!["s".into()],
+        completion_bounded: false,
+    });
+    run.completed_items = serde_json::from_value(serde_json::json!([
+        {"kind": "tool.started", "tool": "local_write", "callId": "c2", "at": "2026-11-02T10:00:02Z"},
+        {"kind": "tool.ended", "tool": "local_write", "callId": "c2", "status": "failed", "error": "denied", "durationMs": 2400}
+    ]))
+    .unwrap();
+    tree
+}
+
+#[test]
+fn the_activity_screen_shows_the_tree_its_tools_and_the_transcript_mark() {
+    let mut app = connected();
+    let id = crate::domain::TaskId::new("task-root").unwrap();
+    app.screen = Screen::Activity(id.clone());
+    let mut screen = ActivityScreen::new(id.clone());
+    assert!(
+        !view_has(&app, "completed from transcript"),
+        "nothing is drawn before the tree is read"
+    );
+    screen.loaded(delegating_activity());
+    app.activity = Some(screen);
+    shows(
+        &app,
+        &[
+            "Activity",
+            "2 tasks",
+            "local_read",
+            "local_write",
+            "failed",
+            "completed from transcript",
+        ],
+    );
+    // The tasks of the tree open their own pages, and the screen goes back to the task.
+    assert!(
+        messages_of_click(&app, "Task")
+            .iter()
+            .any(|m| matches!(m, Message::Go(Screen::Task(t)) if *t == id))
+    );
+}
+
+fn view_has(app: &App, word: &str) -> bool {
+    !simulator_misses(app, word)
+}
+
+#[test]
+fn a_task_page_opens_the_activity_screen_and_the_tree_is_read_and_followed() {
+    let mut app = connected();
+    let done = app
+        .fleet
+        .as_ref()
+        .unwrap()
+        .tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::Running)
+        .unwrap()
+        .id
+        .clone();
+    send(&mut app, Message::Go(Screen::Task(done.clone())));
+    assert!(
+        messages_of_click(&app, "Everything it did")
+            .iter()
+            .any(|m| matches!(m, Message::Go(Screen::Activity(t)) if *t == done))
+    );
+    send(&mut app, Message::Go(Screen::Activity(done.clone())));
+    let screen = app.activity.as_ref().unwrap();
+    assert!(
+        screen.tree.is_some() && screen.cursor.is_some(),
+        "read once, then followed"
+    );
+    assert!(!screen.finished());
+    shows(&app, &["Activity", "live"]);
+    // Leaving drops the tree: another task's screen starts empty.
+    send(&mut app, Message::Go(Screen::Tasks));
+    send(
+        &mut app,
+        Message::Go(Screen::Activity(crate::domain::TaskId::new("other").unwrap())),
+    );
+    let other = app.activity.as_ref().unwrap();
+    assert!(
+        other.id.as_str() == "other" && other.tree.is_none(),
+        "a task that is not there has no tree"
+    );
+    assert!(app.banner.is_some(), "and the screen says why");
+}

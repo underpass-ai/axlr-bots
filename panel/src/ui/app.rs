@@ -1,9 +1,9 @@
 use chrono::{DateTime, Duration, Utc};
 
 use super::{
-    Answer, Banner, BotChoice, BotEditForm, BotView, Confirm, DeleteForm, Effect, Keypress, Launch, ListenForm,
-    LiveStream, LiveTask, Message, MintForm, NodeChoice, OrderForm, PublishForm, Readers, RegisterForm, Screen,
-    Services, SettingsForm, SettingsJson, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode, passages,
+    ActivityScreen, Answer, Banner, BotChoice, BotEditForm, BotView, Confirm, DeleteForm, Effect, Keypress, Launch,
+    ListenForm, LiveStream, LiveTask, Message, MintForm, NodeChoice, OrderForm, PublishForm, Readers, RegisterForm,
+    Screen, Services, SettingsForm, SettingsJson, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode, passages,
 };
 use crate::application::SubscriptionChange;
 use crate::application::{EventFeed, Fleet, NewBotDefaults, PanelError, PanelSettings, TaskDetail};
@@ -38,6 +38,8 @@ pub struct App {
     task_loading: bool,
     /// The task on screen as it is followed live: its Activity.
     pub live: Option<LiveTask>,
+    /// The activity tree of the task on the activity screen.
+    pub activity: Option<ActivityScreen>,
     pub bot: Option<BotView>,
     bot_loading: bool,
     pub mint: MintForm,
@@ -106,6 +108,7 @@ impl App {
             answer: None,
             task_loading: false,
             live: None,
+            activity: None,
             bot: None,
             bot_loading: false,
             mint: MintForm::default(),
@@ -270,6 +273,8 @@ impl App {
                 self.follow_task()
             }
             Message::TaskFollowed(id, result) => self.task_followed(id, result),
+            Message::ActivityLoaded(id, result) => self.activity_loaded(id, result),
+            Message::ActivityFollowed(id, result) => self.activity_followed(id, result),
             Message::ActivityPick(index) => {
                 if let Some(live) = self.live.as_mut() {
                     live.pick(index);
@@ -1020,6 +1025,7 @@ impl App {
                 effects.extend(self.follow_task());
                 effects
             }
+            Screen::Activity(_) => self.reload_activity(),
             Screen::Bot(id) if !self.bot_loading => {
                 self.bot_loading = true;
                 let feed = self
@@ -1052,6 +1058,11 @@ impl App {
             && self.live.as_ref().is_some_and(|l| &l.id != id)
         {
             self.live = None;
+        }
+        if let Screen::Activity(id) = &screen
+            && self.activity.as_ref().is_some_and(|a| &a.id != id)
+        {
+            self.activity = None;
         }
         if let Screen::Bot(id) = &screen
             && self.bot.as_ref().is_some_and(|b| &b.bot.id != id)

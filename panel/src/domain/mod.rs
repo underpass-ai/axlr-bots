@@ -144,6 +144,8 @@ pub use submitted_task::SubmittedTask;
 pub use subscription::{MAX_SUBSCRIPTIONS, Subscription, validate_topic};
 pub use task::Task;
 pub use task_activity::TaskActivity;
+#[cfg(test)]
+pub(crate) use task_activity::tests::tree as sample_task_activity;
 pub use task_filter::TaskFilter;
 pub use task_id::TaskId;
 pub use task_status::TaskStatus;
