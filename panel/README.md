@@ -106,7 +106,7 @@ Words are set in [Lexend](https://www.lexend.com) (made for reading fluency) and
                     RegisterBot · ApplyStaged · MintEnrollmentToken · RevokeNode · FollowBotEvents · FollowTaskEvents · Connect …
     │  ports: ControlPlane · Clock · KeySource · FilePicker · DefinitionReader · ConfigStore · Connector
     ▼
- adapters           http (reqwest + rustls, fleet CA only, bearer token) · system (clock, uuid keys, files,
+ adapters           grpc (tonic + rustls, fleet CA only, bearer token) · system (clock, uuid keys, files,
                     XDG file dialog) · config (JSON settings, defaults from the axlr-bots unit and the local AXLR) · fake (in memory)
     │
     ▼
