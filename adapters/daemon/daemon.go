@@ -151,6 +151,7 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 		go func() { served <- metrics.Serve(ctx, metricsListener, registry) }()
 	}
 	go func() { served <- server.Serve(ctx, options.SocketPath) }()
+	grpcOptions = append(grpcOptions, grpcapi.WithActivity(grpcapi.NewActivityService(deps, local.ActivityChanges(), 0)))
 	grpcServer := grpcapi.New(local, grpcOptions...)
 	go func() { served <- grpcServer.ServeSocket(ctx, options.grpcSocketPath()) }()
 	if grpcListener != nil {
