@@ -9,7 +9,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
-	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
@@ -115,5 +114,4 @@ func TestSnapshotsGoToTheWireWithoutLosingWhatTheyHold(t *testing.T) {
 	if textOf(nil) != "" || durationText("") != nil || durationText("nope") != nil || seconds(0) != nil {
 		t.Error("absent durations")
 	}
-	var _ = application.BotPatch{}
 }

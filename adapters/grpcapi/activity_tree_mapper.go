@@ -8,10 +8,10 @@ import (
 // activityTree maps the tree to the wire, subtree usage included.
 func activityTree(t application.TaskActivity) *operatorv1.TaskActivity {
 	out := &operatorv1.TaskActivity{
-		Task: activityTask(t.Task), Events: activityEvents(t.Events), SubtreeUsage: activityUsage(t.SubtreeUsage),
+		Task: taskToProto(t.Task.Snapshot()), Events: eventsListToProto(t.Events), SubtreeUsage: usageToProto(t.SubtreeUsage),
 	}
 	for _, e := range t.Executions {
-		item := &operatorv1.ExecutionActivity{Execution: activityExecution(e.Execution), CompletedItems: activityItems(e.Completed)}
+		item := &operatorv1.ExecutionActivity{Execution: executionToProto(e.Execution.Snapshot()), CompletedItems: activityItems(e.Completed)}
 		if e.Cut != nil {
 			item.ProgressCut = activityCut(*e.Cut)
 		}

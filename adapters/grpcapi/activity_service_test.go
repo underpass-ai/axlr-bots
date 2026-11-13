@@ -236,7 +236,7 @@ func TestActivityErrorMapping(t *testing.T) {
 		{context.DeadlineExceeded, codes.DeadlineExceeded},
 		{status.Error(codes.Aborted, "kept"), codes.Aborted},
 	} {
-		if got := status.Code(activityError(tc.err)); got != tc.code {
+		if got := status.Code(statusError(tc.err)); got != tc.code {
 			t.Errorf("%v: %v", tc.err, got)
 		}
 	}
@@ -346,10 +346,10 @@ func TestEveryUpdateKindIsMapped(t *testing.T) {
 	if activityCutReason("") != operatorv1.ProgressCutReason_PROGRESS_CUT_REASON_UNSPECIFIED || activityCompletion("") != operatorv1.CompletionSource_COMPLETION_SOURCE_UNSPECIFIED {
 		t.Error("unknown enums")
 	}
-	if activityCutReason(application.CutBatchTruncated) != operatorv1.ProgressCutReason_PROGRESS_CUT_REASON_BATCH_TRUNCATED || activityTime(time.Time{}) != nil {
+	if activityCutReason(application.CutBatchTruncated) != operatorv1.ProgressCutReason_PROGRESS_CUT_REASON_BATCH_TRUNCATED || timestamp(time.Time{}) != nil {
 		t.Error("cut reasons")
 	}
-	if jsonSafe(map[string]any{"c": make(chan int)}) != nil {
+	if structOf(map[string]any{"c": make(chan int)}) != nil {
 		t.Error("an unmarshalable payload is left out")
 	}
 }

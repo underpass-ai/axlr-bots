@@ -12,11 +12,11 @@ func activityResponse(u application.ActivityUpdate) *operatorv1.WatchTaskActivit
 	case u.Snapshot != nil:
 		out.Update = &operatorv1.WatchTaskActivityResponse_Snapshot{Snapshot: activityTree(*u.Snapshot)}
 	case u.Task != nil:
-		out.Update = &operatorv1.WatchTaskActivityResponse_TaskChanged{TaskChanged: &operatorv1.TaskChanged{Task: activityTask(*u.Task)}}
+		out.Update = &operatorv1.WatchTaskActivityResponse_TaskChanged{TaskChanged: &operatorv1.TaskChanged{Task: taskToProto(u.Task.Snapshot())}}
 	case u.Execution != nil:
-		out.Update = &operatorv1.WatchTaskActivityResponse_ExecutionChanged{ExecutionChanged: &operatorv1.ExecutionChanged{Execution: activityExecution(*u.Execution)}}
+		out.Update = &operatorv1.WatchTaskActivityResponse_ExecutionChanged{ExecutionChanged: &operatorv1.ExecutionChanged{Execution: executionToProto(u.Execution.Snapshot())}}
 	case u.Event != nil:
-		out.Update = &operatorv1.WatchTaskActivityResponse_EventAppended{EventAppended: &operatorv1.EventAppended{TaskId: u.Event.TaskID.String(), Event: activityEvent(u.Event.Event)}}
+		out.Update = &operatorv1.WatchTaskActivityResponse_EventAppended{EventAppended: &operatorv1.EventAppended{TaskId: u.Event.TaskID.String(), Event: eventToProto(u.Event.Event)}}
 	case u.Child != nil:
 		out.Update = &operatorv1.WatchTaskActivityResponse_ChildAttached{ChildAttached: &operatorv1.ChildAttached{ParentTaskId: u.Child.ParentTaskID.String(), Child: activityTree(u.Child.Child)}}
 	case u.Completed != nil:

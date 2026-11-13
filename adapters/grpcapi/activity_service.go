@@ -35,11 +35,11 @@ func (s *ActivityService) Register(server grpc.ServiceRegistrar) {
 func (s *ActivityService) GetTaskActivity(ctx context.Context, req *operatorv1.GetTaskActivityRequest) (*operatorv1.GetTaskActivityResponse, error) {
 	id, options, err := activityRequest(req.GetTaskId(), req.GetOptions())
 	if err != nil {
-		return nil, activityError(err)
+		return nil, statusError(err)
 	}
 	tree, err := s.get.Execute(ctx, id, options)
 	if err != nil {
-		return nil, activityError(err)
+		return nil, statusError(err)
 	}
 	return &operatorv1.GetTaskActivityResponse{Activity: activityTree(tree)}, nil
 }
@@ -49,12 +49,12 @@ func (s *ActivityService) GetTaskActivity(ctx context.Context, req *operatorv1.G
 func (s *ActivityService) WatchTaskActivity(req *operatorv1.WatchTaskActivityRequest, stream grpc.ServerStreamingServer[operatorv1.WatchTaskActivityResponse]) error {
 	id, options, err := activityRequest(req.GetTaskId(), req.GetOptions())
 	if err != nil {
-		return activityError(err)
+		return statusError(err)
 	}
 	err = s.watch.Execute(stream.Context(), id, options, req.GetResumeCursor(), func(u application.ActivityUpdate) error {
 		return stream.Send(activityResponse(u))
 	})
-	return activityError(err)
+	return statusError(err)
 }
 
 // activityRequest reads the task id and the options both calls take.

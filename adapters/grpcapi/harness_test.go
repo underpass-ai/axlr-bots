@@ -19,7 +19,6 @@ import (
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/compose"
-	"github.com/underpass-ai/axlr-bots/domain"
 	"github.com/underpass-ai/axlr-bots/internal/fakeaxlr"
 )
 
@@ -129,8 +128,6 @@ func registerAndEnable(t *testing.T, f *fixture, name, level string) {
 		t.Fatal(err)
 	}
 }
-
-var _ = domain.Redacted
 
 func errorDetail(t *testing.T, err error) *operatorv1.ErrorDetail {
 	t.Helper()
