@@ -41,9 +41,9 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # release publishes beside it (axlr-v<version>-linux-<arch>.tar.gz.sha256).
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS axlr
 ARG TARGETARCH
-ARG AXLR_VERSION=0.16.0
-ARG AXLR_SHA256_AMD64=7463afa066e87bd7f2629c748284a783b79100946cfa5d8f864830cee487ec46
-ARG AXLR_SHA256_ARM64=a5445c7d698922ac978b58b37afacf5397d89b258ebd29409b942db5a465a1c4
+ARG AXLR_VERSION=0.18.3
+ARG AXLR_SHA256_AMD64=f1e54a82b54b00b5dcc893ab1ac068ad90403cedd6d8b2803d285356df49e03d
+ARG AXLR_SHA256_ARM64=3c1a2da18adb152eb3f40965dd7550bee693953d472964dd8a27a85d68a16613
 ADD https://github.com/underpass-ai/AXLR/releases/download/v${AXLR_VERSION}/axlr-v${AXLR_VERSION}-linux-${TARGETARCH}.tar.gz /tmp/axlr.tar.gz
 RUN set -eu; \
     case "$TARGETARCH" in \
