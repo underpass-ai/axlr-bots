@@ -4,13 +4,13 @@
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](../LICENSE)
 
-AXLR Bots Panel is a native desktop application for [AXLR Bots](../README.md), Underpass's control plane for bots that live as infrastructure. It talks to a running control plane through its operator API (HTTPS with the fleet CA, the bearer token from its file) and shows nodes, bots, tasks and executions with status pills, icons and colour, in few words. It is written in Rust with [Iced](https://iced.rs) and draws with the GPU or without one.
+AXLR Bots Panel is a native desktop application for [AXLR Bots](../README.md), Underpass's control plane for bots that live as infrastructure. It talks to a running control plane through its operator API (gRPC over mutual TLS with the fleet CA, an operator certificate and the bearer token from its file) and shows nodes, bots, tasks and executions with status pills, icons and colour, in few words. It is written in Rust with [Iced](https://iced.rs) and draws with the GPU or without one.
 
 <p align="center"><img src="docs/screenshots/overview-light.png" alt="Home: nodes online, bots on, tasks running, waiting, failed and expired today, cost today" width="860"></p>
 
 ## Install
 
-User-level, no root. You need Rust 1.88 or newer and a control plane with its operator address on (`axlr-bots serve --api-listen 127.0.0.1:7879`, as the [install runbook](../docs/runbooks/install.md) sets up). Build the control plane from the same commit as the panel: the two ship together in this repository. A control plane older than the panel's routes answers the first **Connect** with *Check settings: this control plane has no /v1/overview*.
+User-level, no root. You need Rust 1.88 or newer and a control plane with its gRPC operator address on (`axlr-bots serve --grpc-listen 127.0.0.1:7880`, or `AXLR_BOTS_GRPC_LISTEN` in the unit's environment file; see the [install runbook](../docs/runbooks/install.md)). Build the control plane from the same commit as the panel: the two ship together in this repository. A control plane older than the panel's routes answers the first **Connect** with *Check settings: this control plane has no /v1/overview*.
 
 ```bash
 cd panel
@@ -25,13 +25,13 @@ make install        # ~/.local/bin/axlr-bots-panel, the icon, and the menu entry
 axlr-bots-panel
 ```
 
-The first run opens **Settings** with three values read from this host's install: the API address (`https://127.0.0.1:7879`), the fleet CA (`~/.local/state/axlr-bots/ca/ca.crt`) and the token file (`~/.local/state/axlr-bots/api.token`). **Connect** checks them against the control plane and saves them in `~/.config/axlr-bots-panel/settings.json`; connected, it rests until a value changes. The token stays in its file: the panel reads it and never shows or logs it. The address is mutual TLS: the panel also presents an operator certificate, `operator.crt` and `operator.key` in `~/.config/axlr-bots/operator/` (where `axlr-bots ca operator issue <name>` leaves them; `$AXLR_BOTS_OPERATOR_DIR` moves the place), or the files named by `controlPlane.certFile` and `controlPlane.keyFile`. A missing file says how to issue one; a control plane that refuses the certificate says so (*the control plane refused the operator certificate*). The control plane takes the certificate's name as who decides, so a *Decide as* that names another person is refused. A `config.toml` an older panel wrote is read once and left in place.
+The first run opens **Settings** with three values read from this host's install: the API address (`https://127.0.0.1:7880`), the fleet CA (`~/.local/state/axlr-bots/ca/ca.crt`) and the token file (`~/.local/state/axlr-bots/api.token`). **Connect** checks them against the control plane and saves them in `~/.config/axlr-bots-panel/settings.json`; connected, it rests until a value changes. The token stays in its file: the panel reads it and never shows or logs it. The address is mutual TLS: the panel also presents an operator certificate, `operator.crt` and `operator.key` in `~/.config/axlr-bots/operator/` (where `axlr-bots ca operator issue <name>` leaves them; `$AXLR_BOTS_OPERATOR_DIR` moves the place), or the files named by `controlPlane.certFile` and `controlPlane.keyFile`. A missing file says how to issue one; a control plane that refuses the certificate says so (*the control plane refused the operator certificate*). The control plane takes the certificate's name as who decides, so a *Decide as* that names another person is refused. A `config.toml` an older panel wrote is read once and left in place.
 
 The settings file holds the panel's own settings only, as flat keys dotted by section, like an editor's `settings.json`; a bot's configuration lives in the bot's definition, never here:
 
 ```json
 {
-  "controlPlane.apiUrl": "https://127.0.0.1:7879",
+  "controlPlane.apiUrl": "https://127.0.0.1:7880",
   "controlPlane.caFile": "/home/op/.local/state/axlr-bots/ca/ca.crt",
   "controlPlane.tokenFile": "/home/op/.local/state/axlr-bots/api.token",
   "controlPlane.certFile": "/home/op/.config/axlr-bots/operator/operator.crt",
@@ -121,7 +121,7 @@ Words are set in [Lexend](https://www.lexend.com) (made for reading fluency) and
 - **Nothing twice.** A task form keeps one idempotency key from the moment it opens, so sending twice names one task. A refresh carries a generation, and an older answer is dropped.
 - **Acts that cannot be undone ask twice**: revoking a node, stopping a task, denying a call.
 
-The routes the panel reads beyond the original operator API (the task list across bots, a task's timeline, the overview, pausing a bot, a node's certificate expiry) are documented in the [operator API reference](../docs/reference/operator-api.md).
+The routes the panel reads beyond the original operator API (the task list across bots, a task's timeline, the overview, pausing a bot, a node's certificate expiry) are calls of the [operator API over gRPC](../docs/reference/operator-grpc.md).
 
 ## Development
 

@@ -27,7 +27,7 @@ Why, with several bots in the cluster:
 | JSON logs, to Loki | `logFormat: json`; `--log-format json` on `axlr-bots serve` and `axlr-node` | a log collector that ships pod logs | [Log fields](control-plane-kubernetes.md#log-fields) |
 | Metrics per bot | `metrics.enabled`, `metrics.podMonitor.enabled`; `--metrics-listen` | Prometheus Operator for the PodMonitor | [Task metrics](control-plane-kubernetes.md#task-metrics-per-bot) |
 | Traces per task | `tracing.otlpEndpoint`, or `tempo.enabled`; `--otlp-endpoint` | an OTLP/HTTP endpoint (port 4318) | [Tracing](../architecture/tracing.md) |
-| Dashboard | `grafanaDashboard.enabled` | Grafana with its dashboard sidecar | [Observability](control-plane-kubernetes.md#observability) |
+| Dashboard | `grafanaDashboard.enabled` | Grafana with its dashboard sidecar | [The dashboard](#the-dashboard) |
 
 ## Turn it on
 
@@ -117,6 +117,20 @@ kill %1
 
 To make a task to look at: `axlr-bots task submit my-bot --objective "say hello" --key check-1 --correlation check-1`, then search `check-1`. A trace appears when the task **ends**.
 
+## The dashboard
+
+*AXLR Bots · control plane* (uid `axlr-bots-control-plane`) has only template variables, so it fits any fleet:
+
+| Variable | Is |
+|:--|:--|
+| `$prometheus`, `$loki`, `$tempo` | the data sources; Tempo is optional and nothing else uses it |
+| `$namespace` | the release's namespace |
+| `$bot` | the bots, from `axlr_bots_tasks_finished_total`; several or *All* |
+| `$container`, `$component`, `$task` | narrow the logs |
+| `$correlation` | a correlation id (a regular expression; default `.*`) for the logs panel |
+
+Rows: **Estado** and **Tareas** (the fleet), **Tareas por bot** (p50 and p95 of task, queue, execution and approval wait; tasks finished by state; failures; cost and tokens per bot over 24 hours; executions of unknown cost; tool calls by status and their p95), **API** (the gRPC operator API by service, method and code with its latency; the HTTP row is only the node protocol and the webhooks) and **Logs** (`| json | bot=~"$bot" | correlationId=~"$correlation"`). The dashboard link *Trazas (Tempo) de la correlación* opens Tempo in Explore with the `$correlation` value; without a Tempo data source it opens an empty Explore and the rest works.
+
 ## Follow one task
 
 Start from a correlation id, or a task id from `axlr-bots task list`.
@@ -128,7 +142,16 @@ Start from a correlation id, or a task id from `axlr-bots task list`.
 # LogQL:  {namespace="$ns"} | json | task="<task id>"
 ```
 
-<!-- TODO: task activity via gRPC once it lands -->
+The whole activity of a task, one line per step, from the operator API over gRPC (`ActivityService`):
+
+```bash
+axlr-bots task activity <task id>              # the tree: delegated tasks, each execution with duration and cost, the tools with their state
+axlr-bots task activity <task id> --depth 2    # how deep the delegated tasks go
+axlr-bots task activity <task id> --watch      # follow it live while it runs
+axlr-bots task activity <task id> --json       # the same as the machine reads it
+```
+
+Against a control plane in the cluster add `--control <address>:7880 --token-file … --cert-file … --key-file … --ca-file …` ([command reference](../reference/cli.md)). The desktop panel shows the same tree on a task's **Activity** page ([panel](../../panel/README.md#screens)): tools with ✓ and ✕, how long each took, the bots it asked, and the call that waits for a person.
 
 Then the trace: `{ span.axlr.correlation_id = "check-1" }`. Reading it:
 

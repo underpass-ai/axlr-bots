@@ -12,9 +12,10 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | Run a bot with no language model: a fixed program over one MCP server whose every choice Jev makes | [Runtime](reference/bot-definition.md#runtime) |
 | Watch the fleet, send tasks and approve calls from a desktop window | [Control panel](../panel/README.md) |
 | Watch what a running bot does, call by call and word by word, and correct it while it works | [Control panel](../panel/README.md#screens), [ADR](architecture/live-progress.md) |
-| Call the control plane over HTTP: listeners, routes, idempotency key, errors | [Operator API](reference/operator-api.md) |
 | Call the control plane over gRPC: services, listeners, grpcurl, actor, errors | [Operator API over gRPC](reference/operator-grpc.md) |
 | Know what a node and the control plane say to each other, and how a node is identified | [Node protocol](reference/node-protocol.md) |
+
+> Architecture notes written before 14 November 2026 name the operator's REST routes (`GET /v1/tasks/{id}`, `POST /v1/bots/{id}/stop`, …). That API was removed: every route has a call of the same name in the [operator API over gRPC](reference/operator-grpc.md) (`GetTask`, `StopBot`, …). The node protocol and the webhook triggers are still HTTP.
 
 ## Operational runbooks
 

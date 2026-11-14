@@ -36,7 +36,7 @@ A node's labels come from two places: the enrollment token's (`axlr-bots node en
 | subscribe `{topic, why}` | `POST /v1/nodes/{id}/executions/{exec}/subscriptions` | node → control plane, while the execution runs | the bot's ask: a pending subscription a person approves; `200` with `{topic, status: pending}`, or `refused: {reason, message}` (`no_team`, `already_subscribed`, `too_many`) |
 | emit `{name, message, data?, to?}` (an older node's `severity` is ignored: the name's kind fixes it) | `POST /v1/nodes/{id}/executions/{exec}/events` | node → control plane, while the execution runs | per task and call: the same call again is the same event (`deduplicated: true`) and makes no task twice; a refusal is `200` with `refused: {reason, message}` ([below](#team-events)) |
 
-The node address serves only these routes and `/healthz`; a node certificate opens no operator route ([API](operator-api.md)).
+The node address serves only these routes and `/healthz`; a node certificate opens no operator call ([operator API over gRPC](operator-grpc.md)).
 
 ## The agent's loop
 
@@ -100,4 +100,4 @@ The control plane renews only over TLS (over the socket there is no certificate:
 
 ## Limits today
 
-A node certificate lasts a year and the agent renews it from 30 days before it expires; one that expired anyway (the node was off for that month) is replaced only by enrolling again with a fresh token. A renewal whose answer never reaches the node, or that the node cannot write to its state, leaves the node with a denied certificate: it needs a fresh token too. Revocation is the control plane's own denylist (no CRL or OCSP for other verifiers). The CA key lives in the control plane's state directory (no HSM, no intermediate). Operators authenticate with a bearer token, not client certificates ([API](operator-api.md)).
+A node certificate lasts a year and the agent renews it from 30 days before it expires; one that expired anyway (the node was off for that month) is replaced only by enrolling again with a fresh token. A renewal whose answer never reaches the node, or that the node cannot write to its state, leaves the node with a denied certificate: it needs a fresh token too. Revocation is the control plane's own denylist (no CRL or OCSP for other verifiers). The CA key lives in the control plane's state directory (no HSM, no intermediate). Operators authenticate to the gRPC API with a client certificate and a bearer token ([operator API over gRPC](operator-grpc.md)).

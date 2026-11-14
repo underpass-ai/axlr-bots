@@ -223,7 +223,7 @@ Every fire creates a task through the same path as a manual submission, under an
 
 | Type | Fired by | Key | Authentication |
 |---|---|---|---|
-| `manual` | `task submit --key`, `POST /v1/bots/{id}/tasks` with `Idempotency-Key` | the caller's key | the socket, or the operator bearer token |
+| `manual` | `task submit --key`, the `SubmitBotTask` call with an idempotency key | the caller's key | the gRPC socket, or an operator certificate and the bearer token |
 | `webhook` | `POST /v1/triggers/{bot}/{trigger}` with a JSON object as the body | `webhook:<name>:<hash>` of the `Idempotency-Key` header (the delivery id) when the sender set one, else of the body | the trigger's `secret` in `X-Axlr-Secret`, or the HMAC-SHA256 of the body under its `signingKey` in `X-Axlr-Signature: sha256=<hex>` (`X-Hub-Signature-256` is read too); never the bearer token. Over the socket the caller is trusted, as for every route |
 | `timer` | the daemon, on every tick | `timer:<name>:<unix seconds of the slot>` | none: it is the control plane's own |
 | `delegation` | another bot's execution, through its node ([delegation](#delegation)) | `delegation:<asking task>:<hash of the bot and the objective>` | the asking node's certificate, and the asking bot's `delegation.to` or a shared team |

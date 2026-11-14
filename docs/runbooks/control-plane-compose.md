@@ -65,7 +65,7 @@ cd ~/.config/axlr-bots/compose
 | `AXLR_BOTS_STATE_DIR` | `~/.local/state/axlr-bots` | the state, mounted at the same path |
 | `AXLR_BOTS_CONFIG` | `~/.config/axlr-bots` | the directory of the env file, read-only |
 | `AXLR_BOTS_LISTEN` | `0.0.0.0:7878` | the node protocol, mutual TLS |
-| `AXLR_BOTS_API_LISTEN` | `0.0.0.0:7879` | the operator API, bearer token |
+| `AXLR_BOTS_API_LISTEN` | `0.0.0.0:7879` | the webhook triggers, TLS (the operator API is gRPC: add `AXLR_BOTS_GRPC_LISTEN`) |
 
 A host that never ran the control plane runs `docker compose run --rm control-plane ca init` once before `up`: `--listen` needs the fleet CA.
 
@@ -88,7 +88,7 @@ Check:
 - `docker compose logs control-plane | head` names the socket, both addresses and `daemon: build <commit> (<time>)`.
 - `docker compose exec control-plane axlr-bots version` prints `axlr-bots <version> (…)`.
 - `axlr-bots node list` (or through `exec`) shows the host's nodes `Online` again; a node reconnects on its own.
-- The operator API: `curl -sk https://127.0.0.1:7879/healthz` answers `{"status":"ok"}`, and `GET /v1/build` with the token answers `running.version` = the image's version.
+- The webhook address: `curl -sk https://127.0.0.1:7879/healthz` answers `{"status":"ok"}`; `docker compose exec control-plane axlr-bots health` answers `ok` on the gRPC socket.
 
 Leave the unit file and `~/.local/bin/axlr-bots` in place: they are the rollback. Do not run `axlr-bots uninstall`.
 

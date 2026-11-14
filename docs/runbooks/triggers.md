@@ -14,7 +14,7 @@ Check: `bot get bot` lists the three triggers with `"secret": "<redacted>"`; a `
 
 ## Fire a webhook
 
-From outside, over the operator address, with the trigger's own credential and a delivery id:
+From outside, over the webhook address (`serve --api-listen`; the operator API is gRPC only), with the trigger's own credential and a delivery id:
 
 ```bash
 state=~/.local/state/axlr-bots
@@ -22,7 +22,7 @@ curl --cacert $state/ca/ca.crt -H "X-Axlr-Secret: $secret" -H "Idempotency-Key: 
      -d '{"type": "deploy", "service": "web"}' https://cp.example.internal:7879/v1/triggers/bot/deploy
 ```
 
-Or over the socket: `axlr-bots trigger fire bot deploy --body '{"type": "deploy", "service": "web"}' --delivery gh-delivery-1`.
+Or over the daemon's HTTP socket, on its host: `axlr-bots trigger fire bot deploy --body '{"type": "deploy", "service": "web"}' --delivery gh-delivery-1`.
 
 Check: the first delivery answers `201` with `"created": true` and the task; the same `Idempotency-Key` again answers `200`, `"created": false` and the same task id; without the secret `403`; a wrong signature `403`; a body past 256 KiB `413`. `task get` shows the rendered objective (`Handle event deploy for web …`), `"trigger": {"type": "webhook", "name": "deploy"}` and the body as `input`; `bot events bot` has two `bot.trigger.fired` events for the delivery, the second with `"deduplicated": true`.
 

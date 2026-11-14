@@ -1,6 +1,6 @@
 # Operator API over gRPC
 
-The operator API of the control plane as gRPC services. The contract is [`api/proto/axlrbots/operator/v1`](../../api/proto/axlrbots/operator/v1); the Go code generated from it is in `api/gen/axlrbots/operator/v1` (package `operatorv1`). The HTTP routes of the [operator API](operator-api.md) keep working beside it.
+The operator API of the control plane as gRPC services. The contract is [`api/proto/axlrbots/operator/v1`](../../api/proto/axlrbots/operator/v1); the Go code generated from it is in `api/gen/axlrbots/operator/v1` (package `operatorv1`). It is the only operator API: the HTTP routes that stood beside it were removed (14 November 2026). The node protocol, `POST /v1/enroll`, the webhook triggers (`POST /v1/triggers/{bot}/{trigger}`) and `/healthz` stay HTTP: they are not the operator's ([node protocol](node-protocol.md), [triggers](../runbooks/triggers.md)).
 
 ## Services
 
@@ -23,7 +23,7 @@ Every RPC calls the same use case as its HTTP route, so the rules are the HTTP o
 | Unix socket `<state>/axlr-bots-grpc.sock` (mode 0660; `serve --grpc-socket`, `AXLR_BOTS_GRPC_SOCKET`) | always | the socket's permissions; no token |
 | Mutual TLS 1.3 address | `serve --grpc-listen <addr>` (`AXLR_BOTS_GRPC_LISTEN`) | an operator's client certificate **and** `authorization: Bearer <token>` |
 
-The certificate of the TLS address is issued by the fleet CA (`ca init`; clients check it with `<state>/ca/ca.crt`). The token is the operator token of `--api-listen`: `<state>/api.token` (`--api-token-file`), generated at the first start when either flag is used. `--grpc-listen` needs no `--api-listen` and the other way round. The HTTP operator address (`--api-listen`) is unchanged: bearer token only.
+The certificate of the TLS address is issued by the fleet CA (`ca init`; clients check it with `<state>/ca/ca.crt`). The token is the operator token: `<state>/api.token` (`--api-token-file`), generated at the first start with `--grpc-listen`. `--grpc-listen` needs no `--api-listen` and the other way round. The HTTP operator address (`--api-listen`) is unchanged: bearer token only.
 
 ### Operator certificates
 

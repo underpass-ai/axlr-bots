@@ -32,7 +32,7 @@ panel/adapters/grpc ClientTlsConfig::identity       StatusError (refused certifi
 
 ## What is left out
 
-- The HTTP operator address (`--api-listen`) and the node protocol address are unchanged: bearer token and optional client certificate as before.
+- The HTTP operator address that stood beside it was removed afterwards (14 November 2026): the operator API is gRPC only, and `--api-listen` serves webhook triggers and `/healthz`. The node protocol address is unchanged.
 - No per-operator roles. Every operator may do what the token allowed; the certificate says who, not what.
 - No automatic renewal of operator certificates; issue a new one before the 90 days end.
 - The chart changes nothing: the address is the same port, now mutual TLS (documented in its README). Issue certificates with `kubectl exec` into the pod or from a copy of the CA.

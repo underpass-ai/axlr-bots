@@ -28,7 +28,7 @@ go build -o bin/ ./cmd/...
 export OPENROUTER_API_KEY=...
 bin/axlr-bots install --axlr-bin /path/to/axlr-tui \
     --listen 0.0.0.0:7878 --server-names cp.example.internal --control https://cp.example.internal:7878 \
-    --api-listen 127.0.0.1:7879                              # the operator API over TLS (optional)
+    --api-listen 127.0.0.1:7879                              # the webhook triggers over TLS (optional)
 axlr-bots ca init                                            # the fleet CA, once per fleet
 systemctl --user enable --now axlr-bots.service
 token=$(axlr-bots node enroll-token --node-id "$(hostname -s | tr 'A-Z' 'a-z')" | sed -n 's/.*"token": "\([^"]*\)".*/\1/p')

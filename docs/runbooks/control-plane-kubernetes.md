@@ -6,7 +6,7 @@ Run `axlr-bots serve` as a pod from the chart [`charts/axlr-bots-control-plane`]
 
 | On a host | In the cluster |
 |---|---|
-| `serve --listen 0.0.0.0:7878 --api-listen 0.0.0.0:7879` | the same ports in the pod, a `Service` in front; nodes outside the cluster need a `LoadBalancer` (or `NodePort`) |
+| `serve --listen 0.0.0.0:7878 --api-listen 0.0.0.0:7879` (the node protocol, the webhook triggers) | the same ports in the pod, a `Service` in front; nodes outside the cluster need a `LoadBalancer` (or `NodePort`) |
 | the certificate names the host's addresses | it names the pod's, plus `serverNames` and the Service's cluster names: put the load balancer's address there |
 | `~/.local/state/axlr-bots` | a PersistentVolumeClaim mounted at `/var/lib/axlr-bots`, owned by 65532 |
 | `<state>/api.token`, readable on the host | a Secret (`apiToken.existingSecret`): the image has no shell to read the volume |
@@ -39,7 +39,7 @@ helm install axlr-bots charts/axlr-bots-control-plane -n $ns \
   --set apiToken.existingSecret=axlr-bots-api-token \
   --set env.existingSecret=axlr-bots-env \
   --set service.type=LoadBalancer \
-  --set 'serverNames={192.0.2.10}' --set apiURL=https://192.0.2.10:7879 \
+  --set 'serverNames={192.0.2.10}' --set grpcURL=192.0.2.10:7880 --set grpc.enabled=true \
   --set-string 'service.annotations.metallb\.io/loadBalancerIPs=192.0.2.10'
 helm upgrade axlr-bots charts/axlr-bots-control-plane -n $ns --reuse-values --set ca.init=false
 ```
@@ -101,12 +101,12 @@ kubectl -n $ns delete pod axlr-bots-loader
 helm install axlr-bots charts/axlr-bots-control-plane -n $ns \
   --set persistence.existingClaim=axlr-bots-state \
   --set apiToken.existingSecret=axlr-bots-api-token --set env.existingSecret=axlr-bots-env \
-  --set service.type=LoadBalancer --set 'serverNames={<address>}' --set apiURL=https://<address>:7879 \
+  --set service.type=LoadBalancer --set 'serverNames={<address>}' --set grpcURL=<address>:7880 --set grpc.enabled=true \
   --set-string 'service.annotations.metallb\.io/loadBalancerIPs=<address>' \
   --set 'nodeSelector.kubernetes\.io/hostname=<node>'
 ```
 
-**6. Point everything at the address**: each node's `--control https://<address>:7878` (restart it), a node chart's `controlPlane.url` and its NetworkPolicy CIDR, the panel's `api_url`, every client of the operator API. A node that already has a certificate reconnects with it.
+**6. Point everything at the address**: each node's `--control https://<address>:7878` (restart it), a node chart's `controlPlane.url` and its NetworkPolicy CIDR, the panel's `api_url`, every client of the operator gRPC API. A node that already has a certificate reconnects with it.
 
 Leave the host's state, unit file and binary in place: they are the way back.
 
@@ -116,11 +116,10 @@ Leave the host's state, unit file and binary in place: they are the way back.
 kubectl -n $ns exec deploy/axlr-bots-axlr-bots-control-plane -- axlr-bots version
 kubectl -n $ns exec deploy/axlr-bots-axlr-bots-control-plane -- axlr-bots node list
 kubectl -n $ns exec deploy/axlr-bots-axlr-bots-control-plane -- axlr-bots ca show   # the same fingerprint as on the host
-curl --cacert ca.crt https://<address>:7879/healthz
-curl --cacert ca.crt -H "Authorization: Bearer $(kubectl -n $ns get secret axlr-bots-api-token -o jsonpath='{.data.token}' | base64 -d)" https://<address>:7879/v1/build
+curl --cacert ca.crt https://<address>:7879/healthz        # the webhook address; the operator API is gRPC only
 ```
 
-`running.version` is the image's; every node is `Online` within a heartbeat; a task fired by hand runs on its node and ends.
+`axlr-bots version` prints the image's version (the control plane's own build is `GetBuild` on the operator API); every node is `Online` within a heartbeat; a task fired by hand runs on its node and ends.
 
 > Several bots in the cluster? Turn on extended observability: per-bot metrics, JSON logs and a trace per task. See the [observability runbook](observability.md).
 
@@ -132,7 +131,7 @@ With `metrics.enabled`, `metrics.podMonitor.enabled` (its `labels` matching the 
 |---|---|
 | Prometheus | target `podMonitor/<ns>/<release>-axlr-bots-control-plane` is up; `axlr_bots_overview_up == 1` |
 | Loki | `{namespace="<ns>", container="control-plane"} \| json \| level="ERROR"` (any log collector that ships pod logs; nothing in the pod pushes) |
-| Grafana | dashboard *AXLR Bots · control plane* (uid `axlr-bots-control-plane`); pick the Prometheus and Loki at the top |
+| Grafana | dashboard *AXLR Bots · control plane* (uid `axlr-bots-control-plane`); pick the Prometheus and Loki at the top, then a bot (`$bot`) and, for the logs, a correlation id (`$correlation`); the gRPC row shows the operator API by service, method and code, the HTTP row only the nodes and the webhooks |
 
 `axlr_bots_overview_up 0` means the state could not be read at that scrape. The `…_today` gauges go back to zero at midnight on the control plane's clock. The node stream and the long poll are counted but not timed.
 

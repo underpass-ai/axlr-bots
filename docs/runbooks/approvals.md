@@ -44,7 +44,7 @@ The deadline is when the task stopped plus the bot's `approvals.ttl` (default `1
 | `deny` (default) | a new execution hands the session a denial, exactly as `task deny` would (queued for the node, or run in process); the session goes on without the call. A run that completes ends the task `Completed`; one that fails ends it `Expired`, with the run's error as its `failureReason` | `bot.approval.expired`, `bot.task.decided` (`decision: deny`, `reason: approval expired`), then `bot.task.completed` or `bot.task.expired` |
 | `cancel` | the task ends `Expired` (`failureReason`: the call and the deadline); the session stays where it is | `bot.approval.expired`, `bot.task.expired` (`action: cancel`) |
 
-`Expired` is its own end, apart from `Failed`: nobody decided the call in time, so the call never ran. It is counted apart in the [overview](../reference/operator-api.md#the-overview) and listed with `task list --status Expired`. A delegated task still waiting when its delegation's deadline comes ends `Expired` too. A task that failed after a later wait was decided ends `Failed`: only the last wait counts. Tasks that ended before this release keep the status they were stored with.
+`Expired` is its own end, apart from `Failed`: nobody decided the call in time, so the call never ran. It is counted apart in the [overview](../reference/operator-grpc.md) and listed with `task list --status Expired`. A delegated task still waiting when its delegation's deadline comes ends `Expired` too. A task that failed after a later wait was decided ends `Failed`: only the last wait counts. Tasks that ended before this release keep the status they were stored with.
 
 A paused bot cannot carry a denial: its expired task ends `Expired` at once. A task that waited before approvals had deadlines gets one at the daemon's first pass: when it began to wait plus the bot's `ttl`.
 
@@ -59,11 +59,11 @@ axlr-bots: approval expired: task task-… (call c-1) had to be decided by 2026-
 
 When a task starts to wait, the control plane queues one delivery per target in `approvals.notify`, in `<state>/deliveries/` (durable: a restart resumes the retries), and the daemon makes the attempts. Each delivery has an id derived from the stopped execution and the target, the same on every attempt, so a receiver drops a repeat. An attempt that fails is retried after 10 s, 30 s, 1 min, 5 min and 15 min, six attempts in all; a delivery whose wait ended first (decided, expired, cancelled) or whose target the bot no longer has is skipped. Every attempt, retry, give-up and skip is in the audit log as `approval.notify` with the delivery, the task, the target and the reason; the daemon logs one line per attempt.
 
-The payload (`schema: axlr-bots.approval-request/v1`):
+The payload (`schema: axlr-bots.approval-request/v2`):
 
 ```json
 {
-  "schema": "axlr-bots.approval-request/v1",
+  "schema": "axlr-bots.approval-request/v2",
   "deliveryId": "dlv-6f0c…", "event": "bot.task.waiting_approval", "target": "ops",
   "tenantId": "default", "botId": "bot-act-with-approval", "botName": "bot-act-with-approval",
   "taskId": "task-…", "executionId": "exec-…", "correlationId": "trace-…", "nodeId": "gx10-ff95",
@@ -72,14 +72,14 @@ The payload (`schema: axlr-bots.approval-request/v1`):
   "requestedAt": "2026-10-25T18:00:11Z", "deadline": "2026-10-25T18:02:11Z", "onExpire": "deny",
   "correlation": {"botId": "…", "taskId": "…", "executionId": "…", "traceId": "trace-…"},
   "actions": {
-    "approve": {"method": "POST", "path": "/v1/tasks/task-…/approve?call=c-1", "url": "https://cp.example.internal:7879/v1/tasks/task-…/approve?call=c-1"},
-    "deny":    {"method": "POST", "path": "/v1/tasks/task-…/deny?call=c-1",    "url": "https://cp.example.internal:7879/v1/tasks/task-…/deny?call=c-1"},
-    "task":    {"method": "GET",  "path": "/v1/tasks/task-…"}
+    "approve": {"method": "grpc", "path": "/axlrbots.operator.v1.TasksService/ApproveTask", "url": "cp.example.internal:7880", "request": {"taskId": "task-…", "callId": "c-1"}},
+    "deny":    {"method": "grpc", "path": "/axlrbots.operator.v1.TasksService/DenyTask",    "url": "cp.example.internal:7880", "request": {"taskId": "task-…", "callId": "c-1"}},
+    "task":    {"method": "grpc", "path": "/axlrbots.operator.v1.TasksService/GetTask",     "url": "cp.example.internal:7880", "request": {"taskId": "task-…"}}
   }
 }
 ```
 
-Arguments above 64 KiB are left out (`argumentsOmitted: true`; `task executions` has them). The `url`s are on the operator API (`serve --api-url`, default `https://<api-listen>`; absent when the control plane serves no operator address) and need its bearer token; the call id in them makes a link decide only the call it was sent for.
+Arguments above 64 KiB are left out (`argumentsOmitted: true`; `task executions` has them). The actions are calls of the operator gRPC API ([reference](../reference/operator-grpc.md)): `path` is the full method, `request` its fields, `url` the operator address (`serve --grpc-url`, default `--grpc-listen`; absent when the control plane serves no gRPC address). They need an operator certificate and the bearer token, and the same call is `axlr-bots task approve|deny <task> --call <id>`; the call id makes a decision apply only to the call it was sent for. Version 1 of the payload carried REST links (`POST /v1/tasks/…/approve`), which no longer exist.
 
 ### Webhook target
 

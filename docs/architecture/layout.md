@@ -36,7 +36,7 @@ One Go module, hexagonal: the domain depends on nothing, the application holds t
 ```text
 <state>/
   bots/<bot-id>.json       tasks/<task-id>.json      executions/<exec-id>.json   nodes/<node-id>.json
-  timers/<bot-id>~<trigger>.json (the next fire)      api.token (0600, with --api-listen)
+  timers/<bot-id>~<trigger>.json (the next fire)      api.token (0600, with --grpc-listen)
   enrollments/<enr-id>.json (the hash of each token)  ca/ca.key (0600), ca/ca.crt   pki/revoked.json
   events.jsonl             audit.jsonl               axlr-bots.sock (while the daemon runs)
   policies/<exec-id>.json  correlation/<exec-id>.json  skills/<exec-id>.json  artifacts/<task-id>/report.md

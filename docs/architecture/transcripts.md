@@ -50,10 +50,10 @@ Only the control plane can link SQLite; `axlr-node` stays pure Go. The image lin
 
 ### 3. The operator reads it whole
 
-| Route | Answer |
+| Call (operator gRPC API) | Answer |
 |---|---|
-| `GET /v1/transcripts?after=&limit=` | the records after the cursor, oldest first, at most 500 |
-| `GET /v1/executions/{id}/transcripts/{session}` | the bytes as the node sent them; `X-Axlr-Transcript-Sha256` |
+| `ListTranscripts` (`after`, `limit`) | the records after the cursor, oldest first, at most 500 |
+| `GetTranscript` (execution, session) | the bytes as the node sent them, in chunks, with their SHA-256 |
 
 `axlr-bots execution transcripts [--after N]` and `axlr-bots execution transcript <exec> <session> [--jsonl] [--out f]`; `--jsonl` writes one line per message of the session. The client checks the bytes against the hash.
 

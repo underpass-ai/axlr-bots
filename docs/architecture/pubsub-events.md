@@ -174,7 +174,7 @@ Hexagonal, one type per file, as the rest of the repository; every new domain ty
 | `adapters/unixapi/` | the three routes, `publish_request.go`, `subscribe_request.go`, `topics_response.go`; `contract_test.go` |
 | `adapters/filestore/` or `adapters/jsonl/` | events about a group readable by group name |
 | `cmd/` | the CLI verbs |
-| `docs/reference/` | `operator-api.json` + `.md`, `bot-definition.md` (Subscriptions section replaces the event-trigger rows), `node-protocol.md` (subscribe, `bot.event.heard`), `cli.md` |
+| `docs/reference/` | `bot-definition.md` (Subscriptions section replaces the event-trigger rows), `node-protocol.md` (subscribe, `bot.event.heard`), `cli.md` |
 | `panel/` | `domain/subscription.rs`, `delivery_mode.rs`, `topic.rs`; `application/{list_topics,publish_event,save_subscriptions}.rs`; `ui/view/bot_detail.rs` (Listens to, the pending card), `ui/view/teams.rs` (Topics tab, Publish), `ui/view/task_detail.rs` (Told by, Knew); the contract test knows the new event types |
 
 ## Order of PRs

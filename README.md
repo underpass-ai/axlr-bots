@@ -80,7 +80,6 @@ operator · webhooks · timers ──▶ axlr-bots  (control plane: bots · task
 | Add a host: enrollment token, mutual TLS, revocation | [Add a host](docs/runbooks/add-a-host.md) |
 | Run the node agent as a sidecar beside a service in a Kubernetes pod, with Helm | [Sidecar](docs/runbooks/sidecar.md) |
 | Watch the fleet and approve calls from a desktop window | [Control panel](panel/README.md) |
-| Call the control plane over HTTP | [Operator API](docs/reference/operator-api.md) |
 | Call the control plane over gRPC | [Operator API over gRPC](docs/reference/operator-grpc.md) |
 | See what a node and the control plane say to each other | [Node protocol](docs/reference/node-protocol.md) |
 | See how a node runs AXLR and reads the result | [Runtime contract](docs/architecture/runtime-contract.md) |

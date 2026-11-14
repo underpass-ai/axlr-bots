@@ -1,5 +1,7 @@
 # Live run
 
+> A record of a run made while the operator API still had HTTP routes (`https://127.0.0.1:7879`, `curl` on `/v1/tasks/…`). Those routes were removed on 14 November 2026: the operator API is gRPC only (`axlr-bots` commands, the panel, [grpcurl](reference/operator-grpc.md)), and 7879 serves only webhook triggers and `/healthz`. The commands and outputs below are as they were run.
+
 What the whole thing does on one host, user-level, against the real AXLR and a model. The script that runs it is `basics/demo.sh` in the private repo `axlr-bots-examples`, next to a clone of this one; the output below is from 24 October 2026 with `claude-haiku-5.5` through OpenRouter and an `axlr-tui` built from AXLR's execution-policy branch (the policy flag, not yet the correlation flags). The host is shown as `host-1`, the home directory as `~`.
 
 ## The demo script

@@ -4,7 +4,7 @@ Status: accepted, 8 November 2026; amended 13 November 2026: one approval per ca
 
 ## Context
 
-Until now any holder of the operator bearer token could approve or deny any call. The CLI's `--actor` named who was acting, but only in process: through the daemon the decision was recorded as the daemon's own actor, and the panel sent no name at all. There is no user system in the control plane, and this ADR does not add one.
+Until now any holder of the operator bearer token (then the HTTP operator API, since removed) could approve or deny any call. The CLI's `--actor` named who was acting, but only in process: through the daemon the decision was recorded as the daemon's own actor, and the panel sent no name at all. There is no user system in the control plane, and this ADR does not add one.
 
 ## Decisions (8 November 2026)
 
