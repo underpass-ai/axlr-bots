@@ -80,6 +80,8 @@ impl InstallDiscovery {
             ca_path: state.join("ca/ca.crt"),
             token_file,
             actor: None,
+            cert_path: None,
+            key_path: None,
         }
     }
 

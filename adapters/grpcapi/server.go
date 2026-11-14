@@ -15,10 +15,11 @@ const maxSendMessageBytes = 64 << 20
 
 // Server serves the operator API over gRPC on the listeners it is given.
 type Server struct {
-	local    *unixapi.Local
-	activity operatorv1.ActivityServiceServer
-	unary    []grpc.UnaryServerInterceptor
-	stream   []grpc.StreamServerInterceptor
+	local     *unixapi.Local
+	operators OperatorCertificates
+	activity  operatorv1.ActivityServiceServer
+	unary     []grpc.UnaryServerInterceptor
+	stream    []grpc.StreamServerInterceptor
 }
 
 // New serves the local service.
@@ -32,11 +33,16 @@ func New(local *unixapi.Local, options ...Option) *Server {
 
 // build is a gRPC server with the services registered. A token makes
 // every call require it as a bearer; no token is the socket, which serves
-// whoever reaches it, as the HTTP socket does.
-func (s *Server) build(token string, options ...grpc.ServerOption) *grpc.Server {
+// whoever reaches it, as the HTTP socket does. With operators every call
+// must also carry an operator's client certificate, checked first.
+func (s *Server) build(token string, operators OperatorCertificates, options ...grpc.ServerOption) *grpc.Server {
 	unary, stream := append([]grpc.UnaryServerInterceptor(nil), s.unary...), append([]grpc.StreamServerInterceptor(nil), s.stream...)
 	unary = append(unary, errorInterceptor{}.unary)
 	stream = append(stream, errorInterceptor{}.stream)
+	if operators != nil {
+		certificates := certificateInterceptor{operators: operators}
+		unary, stream = append(unary, certificates.unary), append(stream, certificates.stream)
+	}
 	if token != "" {
 		auth := authInterceptor{token: token}
 		unary, stream = append(unary, auth.unary), append(stream, auth.stream)

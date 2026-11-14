@@ -1,10 +1,10 @@
 use std::time::Duration;
 
 use tonic::service::interceptor::InterceptedService;
-use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint};
+use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
 
 use super::operator_auth::OperatorAuth;
-use crate::application::{PanelConfig, PanelError};
+use crate::application::{OperatorFiles, PanelConfig, PanelError};
 use crate::domain::Secret;
 
 /// The service the generated clients talk through: the channel with the
@@ -45,7 +45,10 @@ impl OperatorChannel {
             )));
         }
         let auth = OperatorAuth::new(&Secret::new(token), config.actor.as_deref())?;
-        let tls = ClientTlsConfig::new().ca_certificate(Certificate::from_pem(ca));
+        let identity = Self::identity(config)?;
+        let tls = ClientTlsConfig::new()
+            .ca_certificate(Certificate::from_pem(ca))
+            .identity(identity);
         let endpoint = Endpoint::from_shared(config.base_url())
             .map_err(|e| PanelError::Config(format!("the gRPC address: {e}")))?
             .tls_config(tls)
@@ -55,5 +58,40 @@ impl OperatorChannel {
             .http2_keep_alive_interval(Duration::from_secs(30))
             .keep_alive_while_idle(true);
         Ok(InterceptedService::new(endpoint.connect_lazy(), auth))
+    }
+
+    /// The operator's certificate and key: the ones the settings name, or
+    /// where `ca operator issue` leaves them. The address is mutual TLS,
+    /// so a missing file is a settings error that says how to get one.
+    fn identity(config: &PanelConfig) -> Result<Identity, PanelError> {
+        let env = |name: &str| {
+            std::env::var_os(name)
+                .filter(|v| !v.is_empty())
+                .map(std::path::PathBuf::from)
+        };
+        let files = OperatorFiles::resolve(config, &env);
+        let read = |path: &std::path::Path, what: &str| {
+            std::fs::read(path).map_err(|e| {
+                PanelError::Config(format!(
+                    "the control plane asks for an operator certificate and the {what} {} cannot be read ({e}): run `axlr-bots ca operator issue <name>` on the control plane and copy operator.crt and operator.key here, or set controlPlane.certFile and controlPlane.keyFile",
+                    path.display()
+                ))
+            })
+        };
+        let cert = read(&files.cert, "certificate")?;
+        let key = read(&files.key, "key")?;
+        if !String::from_utf8_lossy(&cert).contains("-----BEGIN CERTIFICATE-----") {
+            return Err(PanelError::Config(format!(
+                "the operator certificate {} is not a PEM certificate",
+                files.cert.display()
+            )));
+        }
+        if !String::from_utf8_lossy(&key).contains("PRIVATE KEY-----") {
+            return Err(PanelError::Config(format!(
+                "the operator key {} is not a PEM private key",
+                files.key.display()
+            )));
+        }
+        Ok(Identity::from_pem(cert, key))
     }
 }

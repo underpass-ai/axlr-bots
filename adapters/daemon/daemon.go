@@ -25,6 +25,7 @@ import (
 
 	"github.com/underpass-ai/axlr-bots/adapters/grpcapi"
 	"github.com/underpass-ai/axlr-bots/adapters/metrics"
+	"github.com/underpass-ai/axlr-bots/adapters/pki"
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/internal/statelock"
@@ -132,7 +133,7 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 				return err
 			}
 		}
-		listening += " and grpc://" + grpcListener.Addr().String() + " (operators, bearer token)"
+		listening += " and grpc://" + grpcListener.Addr().String() + " (operators, client certificate and bearer token)"
 	}
 	metricsListener := options.MetricsListener
 	if metricsListener == nil && options.MetricsListenAddr != "" {
@@ -158,6 +159,7 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 		go func() { served <- metrics.Serve(ctx, metricsListener, registry) }()
 	}
 	go func() { served <- server.Serve(ctx, options.SocketPath) }()
+	grpcOptions = append(grpcOptions, grpcapi.WithOperatorCertificates(pki.NewOperatorCertificates(deps.Denylist)))
 	grpcOptions = append(grpcOptions, grpcapi.WithActivity(grpcapi.NewActivityService(deps, local.ActivityChanges(), 0)))
 	grpcServer := grpcapi.New(local, grpcOptions...)
 	go func() { served <- grpcServer.ServeSocket(ctx, options.grpcSocketPath()) }()

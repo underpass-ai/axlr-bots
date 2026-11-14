@@ -144,6 +144,8 @@ mod tests {
             ca_path: "/ca.crt".into(),
             token_file: "/api.token".into(),
             actor: None,
+            cert_path: None,
+            key_path: None,
         }
     }
 

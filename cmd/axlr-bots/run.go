@@ -34,6 +34,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&remote.URL, "control", os.Getenv("AXLR_BOTS_CONTROL"), "a control plane on another host: its gRPC operator address, host:7880 (with --transport rest, its HTTPS operator address https://host:7879), used in place of the socket (also AXLR_BOTS_CONTROL)")
 	flags.StringVar(&remote.TokenFile, "token-file", os.Getenv("AXLR_BOTS_TOKEN_FILE"), "with --control, the file holding the operator token (also AXLR_BOTS_TOKEN_FILE)")
 	flags.StringVar(&remote.CAFile, "ca-file", os.Getenv("AXLR_BOTS_CA_FILE"), "with --control, the CA the control plane's certificate is checked against, the fleet CA from ca show (also AXLR_BOTS_CA_FILE; default the system's)")
+	flags.StringVar(&remote.CertFile, "cert-file", os.Getenv("AXLR_BOTS_CERT_FILE"), "with --control over gRPC, the operator's client certificate from ca operator issue (also AXLR_BOTS_CERT_FILE; default <user config>/axlr-bots/operator/operator.crt)")
+	flags.StringVar(&remote.KeyFile, "key-file", os.Getenv("AXLR_BOTS_KEY_FILE"), "with --control over gRPC, the key of that certificate (also AXLR_BOTS_KEY_FILE; default <user config>/axlr-bots/operator/operator.key)")
 	flags.Usage = func() { printUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -77,6 +79,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if err := remote.validate(*transport); err != nil {
 		fmt.Fprintln(stderr, "axlr-bots:", err)
 		return exitUsage
+	}
+	// Behind the operator certificate the actor is the operator's name:
+	// the control plane refuses any other.
+	if remote.enabled() && *transport != transportREST && !flagSet(flags, "actor") {
+		if name, ok := remote.operatorName(); ok {
+			*actor = name
+		}
 	}
 	ctx := context.Background()
 	switch rest[0] {
@@ -126,6 +135,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return caShow(*stateDir, rest, stdout, stderr)
 	case "ca issue-client":
 		return caIssueClient(*stateDir, rest, stdout, stderr)
+	case "ca operator":
+		return caOperator(ctx, *stateDir, rest, stdout, stderr)
 	}
 	service, release, err := newService(ctx, app, *stateDir, link, nil)
 	if err != nil {
@@ -270,7 +281,7 @@ func defaultActor() string {
 
 func printUsage(w io.Writer) {
 	fmt.Fprint(w, `usage: axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>] <command>
-       axlr-bots --control host:7880 --token-file <path> [--ca-file <pem>] <command>
+       axlr-bots --control host:7880 --token-file <path> [--cert-file <crt> --key-file <key>] [--ca-file <pem>] <command>
                                       the same commands against a control plane on another
                                       host, through its gRPC operator address (TLS, the fleet
                                       CA, the operator token); --transport rest uses the
@@ -286,6 +297,10 @@ func printUsage(w io.Writer) {
                                       token (<state>/api.token), executions handed to the
                                       nodes, in-process runs when no node is online, and the
                                       timer triggers
+  ca operator issue <name> [--out <dir>] [--lifetime <d>]
+                                      issue an operator certificate for the gRPC operator address
+  ca operator revoke --cert-file <crt> | --serial <hex> [--name <n>]
+                                      refuse an operator certificate from the next call on
   ca init                             create the fleet CA under <state>/ca (once per fleet)
   ca show                             print the CA certificate and its fingerprint
   ca issue-client --name <cn> --out <dir>

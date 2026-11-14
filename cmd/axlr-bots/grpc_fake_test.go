@@ -21,9 +21,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/underpass-ai/axlr-bots/adapters/pki"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 )
 
@@ -48,6 +50,11 @@ type fakeOperatorAPI struct {
 	headers  map[string]metadata.MD
 	watch    []*operatorv1.WatchTaskActivityResponse
 	token    string
+	// certFile and keyFile are an operator's certificate the fake accepts
+	// (serveTLS), and operators the names the
+	// calls' client certificates carried.
+	certFile, keyFile string
+	operators         []string
 }
 
 func newFakeOperatorAPI() *fakeOperatorAPI {
@@ -79,6 +86,15 @@ func (f *fakeOperatorAPI) unary(ctx context.Context, _ any, info *grpc.UnaryServ
 	defer f.mu.Unlock()
 	md, _ := metadata.FromIncomingContext(ctx)
 	f.headers[info.FullMethod] = md
+	if info, ok := peer.FromContext(ctx); ok {
+		if tlsInfo, ok := info.AuthInfo.(credentials.TLSInfo); ok && len(tlsInfo.State.PeerCertificates) > 0 {
+			if name, ok := pki.OperatorName(tlsInfo.State.PeerCertificates[0]); ok {
+				f.operators = append(f.operators, name)
+			} else {
+				return nil, status.Error(codes.PermissionDenied, "not an operator's certificate")
+			}
+		}
+	}
 	if f.token != "" && (len(md.Get("authorization")) != 1 || md.Get("authorization")[0] != "Bearer "+f.token) {
 		return nil, status.Error(codes.Unauthenticated, "bad token")
 	}
@@ -145,7 +161,9 @@ func (f *fakeOperatorAPI) serveTLS(t *testing.T) (address, tokenFile, caFile str
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := f.server(grpc.Creds(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}})))
+	pool := x509.NewCertPool()
+	pool.AddCert(caCert)
+	server := f.server(grpc.Creds(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}, ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pool})))
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	dir := t.TempDir()
@@ -155,6 +173,22 @@ func (f *fakeOperatorAPI) serveTLS(t *testing.T) (address, tokenFile, caFile str
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	caKeyDER, _ := x509.MarshalPKCS8PrivateKey(caKey)
+	authority, err := pki.Parse(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER}), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: caKeyDER}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPEM, certPEM, _, err := authority.IssueOperator("alice", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.certFile, f.keyFile = filepath.Join(dir, operatorCertFile), filepath.Join(dir, operatorKeyFile)
+	if err := os.WriteFile(f.certFile, certPEM, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.keyFile, keyPEM, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return listener.Addr().String(), tokenFile, caFile

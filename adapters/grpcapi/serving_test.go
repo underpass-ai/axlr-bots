@@ -2,6 +2,7 @@ package grpcapi
 
 import (
 	"context"
+	"crypto/tls"
 	"net"
 	"os"
 	"path/filepath"
@@ -13,13 +14,14 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/underpass-ai/axlr-bots/adapters/filestore"
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 )
 
-func TestServeTLSTakesTheFleetCAAndTheToken(t *testing.T) {
+func TestServeTLSTakesTheFleetCAAnOperatorCertificateAndTheToken(t *testing.T) {
 	f := newFixture(t, "completed")
-	api := New(f.local)
+	api := New(f.local, WithOperatorCertificates(pki.NewOperatorCertificates(filestore.NewCertificateDenylist(t.TempDir()))))
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -34,6 +36,8 @@ func TestServeTLSTakesTheFleetCAAndTheToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	operator, _ := operatorCertificate(t, f.ca, "alice")
+	clientConfig.Certificates = []tls.Certificate{operator}
 	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(clientConfig.Clone())))
 	if err != nil {
 		t.Fatal(err)

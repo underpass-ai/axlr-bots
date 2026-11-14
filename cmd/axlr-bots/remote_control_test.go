@@ -24,6 +24,9 @@ type remoteCLI struct {
 	token   string
 	ca      string
 	state   string
+	// certFile and keyFile are the operator's certificate, added as
+	// --cert-file and --key-file when set.
+	certFile, keyFile string
 	// transport is added as --transport when set; gRPC is the default.
 	transport string
 }
@@ -32,6 +35,9 @@ func (c remoteCLI) run(args ...string) (int, string, string) {
 	c.t.Helper()
 	var stdout, stderr bytes.Buffer
 	global := []string{"--state", c.state, "--socket", "", "--actor", "test:remote", "--control", c.control, "--token-file", c.token, "--ca-file", c.ca}
+	if c.certFile != "" {
+		global = append(global, "--cert-file", c.certFile, "--key-file", c.keyFile)
+	}
 	if c.transport != "" {
 		global = append(global, "--transport", c.transport)
 	}
@@ -93,7 +99,36 @@ func TestCommandsReachARemoteControlPlane(t *testing.T) {
 	tokenFile := filepath.Join(elsewhere, "token")
 	_ = os.WriteFile(tokenFile, token, 0o600)
 	localState := filepath.Join(elsewhere, "state")
-	c := remoteCLI{t: t, control: grpcAddr, token: tokenFile, ca: caFile, state: localState}
+	// The operator's certificate, issued on the control plane's host and
+	// copied here.
+	operatorDir := filepath.Join(elsewhere, "operator")
+	var issuedOut bytes.Buffer
+	if code := run([]string{"--state", state, "ca", "operator", "issue", "alice", "--out", operatorDir}, &issuedOut, &stderr); code != exitOK {
+		t.Fatalf("ca operator issue: %s", stderr.String())
+	}
+	certFile, keyFile := filepath.Join(operatorDir, operatorCertFile), filepath.Join(operatorDir, operatorKeyFile)
+	c := remoteCLI{t: t, control: grpcAddr, token: tokenFile, ca: caFile, state: localState, certFile: certFile, keyFile: keyFile}
+	// Without a certificate the operator address refuses the connection,
+	// and the CLI says how to get one before dialling.
+	bare := remoteCLI{t: t, control: grpcAddr, token: tokenFile, ca: caFile, state: localState}
+	t.Setenv("AXLR_BOTS_OPERATOR_DIR", filepath.Join(elsewhere, "nowhere"))
+	if code, _, errText := bare.run("bot", "list"); code == exitOK || !strings.Contains(errText, "ca operator issue") {
+		t.Errorf("no certificate: %d %s", code, errText)
+	}
+	// ... and finds it where ca operator issue leaves it.
+	t.Setenv("AXLR_BOTS_OPERATOR_DIR", operatorDir)
+	if code, _, errText := bare.run("bot", "list"); code != exitOK {
+		t.Errorf("the default location: %d %s", code, errText)
+	}
+	// A node's certificate is no operator's.
+	nodeDir := filepath.Join(elsewhere, "node")
+	if code := run([]string{"--state", state, "ca", "issue-client", "--name", "alice", "--out", nodeDir}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("issue-client: %s", stderr.String())
+	}
+	service := remoteCLI{t: t, control: grpcAddr, token: tokenFile, ca: caFile, state: localState, certFile: filepath.Join(nodeDir, "client.crt"), keyFile: filepath.Join(nodeDir, "client.key")}
+	if code, _, errText := service.run("bot", "list"); code == exitOK || !strings.Contains(errText, "not issued to an operator") {
+		t.Errorf("a service certificate: %d %s", code, errText)
+	}
 	// The HTTP operator address stays served until it is removed.
 	rest := remoteCLI{t: t, control: "https://" + api, token: tokenFile, ca: caFile, state: localState, transport: transportREST}
 	if code, out, errText := rest.run("health"); code != exitOK || strings.TrimSpace(out) != "ok" {
@@ -136,17 +171,45 @@ func TestCommandsReachARemoteControlPlane(t *testing.T) {
 		t.Errorf("a command with --control opened the local state: %v", err)
 	}
 
+	// The CLI acts as the certificate's operator: a decision is recorded
+	// as alice, and the control plane refuses any other actor.
+	var decided, decidedErr bytes.Buffer
+	args := []string{"--state", localState, "--socket", "", "--actor", "someone-else", "--control", grpcAddr, "--token-file", tokenFile, "--ca-file", caFile, "--cert-file", certFile, "--key-file", keyFile, "task", "decide", submitted.Task.ID, "approve"}
+	if code := run(args, &decided, &decidedErr); code == exitOK || !strings.Contains(decidedErr.String(), "someone-else") {
+		t.Errorf("another actor than the certificate's: %d %s", code, decidedErr.String())
+	}
+
+	// Revoked, the operator is refused from the next call on.
+	if code, out, errText := c.run("bot", "list"); code != exitOK {
+		t.Fatalf("before revoking: %d %s %s", code, out, errText)
+	}
+	if code := run([]string{"--state", state, "ca", "operator", "revoke", "--cert-file", certFile}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("ca operator revoke: %s", stderr.String())
+	}
+	if code, _, errText := c.run("bot", "list"); code == exitOK || !strings.Contains(strings.ToLower(errText), "revoked") {
+		t.Errorf("a revoked certificate: %d %s", code, errText)
+	}
+	fresh := filepath.Join(elsewhere, "operator-2")
+	if code := run([]string{"--state", state, "ca", "operator", "issue", "alice", "--out", fresh}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("ca operator issue again: %s", stderr.String())
+	}
+	again := remoteCLI{t: t, control: grpcAddr, token: tokenFile, ca: caFile, state: localState, certFile: filepath.Join(fresh, operatorCertFile), keyFile: filepath.Join(fresh, operatorKeyFile)}
+	if code, _, errText := again.run("bot", "list"); code != exitOK {
+		t.Errorf("a new certificate for the same operator: %d %s", code, errText)
+	}
+	c = again
+
 	// A wrong token is refused, a wrong CA fails the handshake.
 	_ = os.WriteFile(tokenFile, []byte("not-the-token\n"), 0o600)
 	if code, _, errText := c.run("bot", "list"); code == exitOK || !strings.Contains(strings.ToLower(errText), "unauthorized") {
 		t.Errorf("a wrong token: %d %s", code, errText)
 	}
 	_ = os.WriteFile(tokenFile, token, 0o600)
-	other := t.TempDir()
-	if code := run([]string{"--state", other, "ca", "init"}, &stdout, &stderr); code != exitOK {
+	otherState := t.TempDir()
+	if code := run([]string{"--state", otherState, "ca", "init"}, &stdout, &stderr); code != exitOK {
 		t.Fatal("second ca")
 	}
-	otherCA, _ := os.ReadFile(filepath.Join(other, "ca", "ca.crt"))
+	otherCA, _ := os.ReadFile(filepath.Join(otherState, "ca", "ca.crt"))
 	_ = os.WriteFile(caFile, otherCA, 0o644)
 	if code, _, errText := c.run("bot", "list"); code == exitOK || !strings.Contains(errText, "certificate") {
 		t.Errorf("another CA: %d %s", code, errText)
@@ -160,6 +223,7 @@ func TestControlFlagsAreChecked(t *testing.T) {
 		{"--control", "https://127.0.0.1:7879", "bot", "list"},
 		{"--token-file", "/dev/null", "bot", "list"},
 		{"--ca-file", "/dev/null", "bot", "list"},
+		{"--cert-file", "/dev/null", "bot", "list"},
 	} {
 		var stdout, stderr bytes.Buffer
 		if code := run(append([]string{"--state", t.TempDir()}, args...), &stdout, &stderr); code != exitUsage {

@@ -8,9 +8,11 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/underpass-ai/axlr-bots/adapters/grpcclient"
+	"github.com/underpass-ai/axlr-bots/adapters/pki"
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 )
 
@@ -18,7 +20,8 @@ import (
 // operator address (serve --grpc-listen; with --transport rest,
 // --api-listen) instead of the socket: the address, as host:port for
 // gRPC or an https URL for REST,
-// the file holding the operator token, and the CA its certificate is
+// the file holding the operator token, the operator's client certificate
+// and key (gRPC), and the CA its certificate is
 // checked against (the fleet CA, axlr-bots ca show). With a URL every
 // command that would use the socket uses it, and none falls back to the
 // state directory: a control plane that does not answer is an error.
@@ -26,6 +29,11 @@ type remoteControl struct {
 	URL       string
 	TokenFile string
 	CAFile    string
+	// CertFile and KeyFile are the operator's client certificate and key
+	// (ca operator issue) the gRPC operator address requires; empty is
+	// where ca operator issue leaves them. REST does not use them.
+	CertFile string
+	KeyFile  string
 }
 
 // enabled reports whether a URL was given.
@@ -36,8 +44,8 @@ func (r remoteControl) enabled() bool {
 // validate checks the flags go together before any command runs.
 func (r remoteControl) validate(transport string) error {
 	if !r.enabled() {
-		if r.TokenFile != "" || r.CAFile != "" {
-			return errors.New("--token-file and --ca-file go with --control")
+		if r.TokenFile != "" || r.CAFile != "" || r.CertFile != "" || r.KeyFile != "" {
+			return errors.New("--token-file, --ca-file, --cert-file and --key-file go with --control")
 		}
 		return nil
 	}
@@ -98,6 +106,45 @@ func (r remoteControl) credentials() (string, *tls.Config, error) {
 	return token, config, nil
 }
 
+// clientCertificate loads the operator's certificate and key: the files
+// the flags name, or where ca operator issue leaves them. A missing file
+// is an error that says how to get one.
+func (r remoteControl) clientCertificate() (tls.Certificate, error) {
+	certPath, keyPath := r.CertFile, r.KeyFile
+	if certPath == "" {
+		certPath = filepath.Join(defaultOperatorDir(), operatorCertFile)
+	}
+	if keyPath == "" {
+		keyPath = filepath.Join(defaultOperatorDir(), operatorKeyFile)
+	}
+	for _, path := range []string{certPath, keyPath} {
+		if _, err := os.Stat(path); err != nil {
+			return tls.Certificate{}, fmt.Errorf("the operator address needs a client certificate and %s is not readable (%v): issue one on the control plane's host with `axlr-bots ca operator issue <name>` and copy operator.crt and operator.key here, or name them with --cert-file and --key-file", path, errors.Unwrap(err))
+		}
+	}
+	certificate, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("operator certificate %s with key %s: %w", certPath, keyPath, err)
+	}
+	if certificate.Leaf, err = x509.ParseCertificate(certificate.Certificate[0]); err != nil {
+		return tls.Certificate{}, fmt.Errorf("operator certificate %s: %w", certPath, err)
+	}
+	if _, ok := pki.OperatorName(certificate.Leaf); !ok {
+		return tls.Certificate{}, fmt.Errorf("%s was not issued to an operator (use the one `axlr-bots ca operator issue` wrote, not a node's)", certPath)
+	}
+	return certificate, nil
+}
+
+// operatorName is the operator the certificate names, who acts when no
+// --actor says otherwise; false when there is no usable certificate.
+func (r remoteControl) operatorName() (string, bool) {
+	certificate, err := r.clientCertificate()
+	if err != nil {
+		return "", false
+	}
+	return pki.OperatorName(certificate.Leaf)
+}
+
 // client reads the token and the CA and returns the HTTP operator client.
 func (r remoteControl) client() (*unixapi.Client, error) {
 	token, config, err := r.credentials()
@@ -118,6 +165,11 @@ func (r remoteControl) grpcClient() (*grpcclient.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	certificate, err := r.clientCertificate()
+	if err != nil {
+		return nil, err
+	}
+	config.Certificates = []tls.Certificate{certificate}
 	return grpcclient.DialTLS(address, config, token)
 }
 

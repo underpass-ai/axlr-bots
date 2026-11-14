@@ -51,7 +51,8 @@ type Options struct {
 	// APIToken is the bearer token the operator address requires.
 	APIToken string
 	// GRPCListenAddr is an optional TLS address for the operator API over
-	// gRPC (127.0.0.1:7880), behind APIToken; the gRPC API is also served
+	// gRPC (127.0.0.1:7880), behind APIToken and a client certificate
+	// of an operator (ca operator issue); the gRPC API is also served
 	// on GRPCSocketPath whenever the daemon runs. TLS must be set with it.
 	GRPCListenAddr string
 	// GRPCListener is an already bound listener for the gRPC address, in

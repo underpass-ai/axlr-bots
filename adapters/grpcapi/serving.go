@@ -18,14 +18,24 @@ import (
 // before they are cut: a watch never ends on its own.
 const shutdownGrace = 5 * time.Second
 
-// ServeTLS serves the API on the listener over TLS behind the bearer
-// token until ctx ends: the configuration is the fleet CA's
-// (pki.ServerTLSConfig), the token the operator's.
+// ServeTLS serves the API on the listener over mutual TLS behind the
+// bearer token until ctx ends: the configuration is the fleet CA's
+// (pki.ServerTLSConfig) and is made to require a client certificate that
+// chains to it, which must be an operator's (WithOperatorCertificates);
+// the token is the second factor.
 func (s *Server) ServeTLS(ctx context.Context, listener net.Listener, config *tls.Config, token string) error {
 	if token == "" {
 		return errors.New("grpcapi: the operator address needs a bearer token")
 	}
-	return s.serve(ctx, listener, s.build(token, grpc.Creds(credentials.NewTLS(config))), func() {})
+	if s.operators == nil {
+		return errors.New("grpcapi: the operator address needs the operator certificates policy")
+	}
+	if config == nil {
+		return errors.New("grpcapi: the operator address needs a TLS configuration")
+	}
+	mutual := config.Clone()
+	mutual.ClientAuth = tls.RequireAndVerifyClientCert
+	return s.serve(ctx, listener, s.build(token, s.operators, grpc.Creds(credentials.NewTLS(mutual))), func() {})
 }
 
 // ServeSocket serves the API on a Unix socket until ctx ends, with no
@@ -47,7 +57,7 @@ func (s *Server) ServeSocket(ctx context.Context, socketPath string) error {
 		_ = listener.Close()
 		return fmt.Errorf("grpcapi: %w", err)
 	}
-	return s.serve(ctx, listener, s.build(""), func() { _ = os.Remove(socketPath) })
+	return s.serve(ctx, listener, s.build("", nil), func() { _ = os.Remove(socketPath) })
 }
 
 // serve runs the gRPC server on the listener until ctx ends, then stops

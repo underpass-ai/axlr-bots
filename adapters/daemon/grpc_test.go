@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"crypto/tls"
 	"net"
 	"path/filepath"
 	"strings"
@@ -9,9 +10,11 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
@@ -49,25 +52,51 @@ func TestDaemonServesTheOperatorAPIOverGRPC(t *testing.T) {
 		t.Errorf("over the socket: %v", err)
 	}
 
-	// On the TLS address: the fleet CA and the bearer token.
-	clientConfig, _ := pki.EnrollTLSConfig(ca.CertificatePEM())
-	remote, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(clientConfig.Clone())))
+	// On the TLS address: the fleet CA, an operator's certificate and the
+	// bearer token.
+	dial := func(certificates ...tls.Certificate) *grpc.ClientConn {
+		clientConfig, _ := pki.EnrollTLSConfig(ca.CertificatePEM())
+		clientConfig.Certificates = certificates
+		remote, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(clientConfig)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = remote.Close() })
+		return remote
+	}
+	keyPEM, certPEM, _, err := ca.IssueOperator("alice", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer remote.Close()
-	bots := operatorv1.NewBotsServiceClient(remote)
+	operator, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceKey, serviceCert, _ := ca.IssueClient("alice", 0)
+	service, err := tls.X509KeyPair(serviceCert, serviceKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer operator-token")
+	if _, err := operatorv1.NewBotsServiceClient(dial()).ListBots(token, &operatorv1.ListBotsRequest{}); err == nil {
+		t.Error("a call with no client certificate was served")
+	}
+	if _, err := operatorv1.NewBotsServiceClient(dial(service)).ListBots(token, &operatorv1.ListBotsRequest{}); status.Code(err) != codes.PermissionDenied {
+		t.Errorf("a service's certificate: %v", err)
+	}
+	bots := operatorv1.NewBotsServiceClient(dial(operator))
 	if _, err := bots.ListBots(ctx, &operatorv1.ListBotsRequest{}); err == nil {
 		t.Error("a call with no token was served")
 	}
-	if _, err := bots.ListBots(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer operator-token"), &operatorv1.ListBotsRequest{}); err != nil {
-		t.Errorf("over TLS with the token: %v", err)
+	if _, err := bots.ListBots(token, &operatorv1.ListBotsRequest{}); err != nil {
+		t.Errorf("over mutual TLS with the token: %v", err)
 	}
 
 	body := get(t, "http://"+metricsListener.Addr().String()+"/metrics")
 	for _, want := range []string{
 		`axlr_bots_grpc_requests_total{code="OK",method="ListBots",service="axlrbots.operator.v1.BotsService"} 2`,
 		`axlr_bots_grpc_requests_total{code="Unauthenticated",method="ListBots",service="axlrbots.operator.v1.BotsService"} 1`,
+		`axlr_bots_grpc_requests_total{code="PermissionDenied",method="ListBots",service="axlrbots.operator.v1.BotsService"} 1`,
 		`axlr_bots_grpc_request_duration_seconds_count{code="OK",method="ListBots",service="axlrbots.operator.v1.BotsService"} 2`,
 	} {
 		if !strings.Contains(body, want) {

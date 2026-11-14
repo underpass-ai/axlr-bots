@@ -21,9 +21,35 @@ Every RPC calls the same use case as its HTTP route, so the rules are the HTTP o
 | Listener | Flag | Credential |
 |---|---|---|
 | Unix socket `<state>/axlr-bots-grpc.sock` (mode 0660; `serve --grpc-socket`, `AXLR_BOTS_GRPC_SOCKET`) | always | the socket's permissions; no token |
-| TLS 1.3 address | `serve --grpc-listen <addr>` (`AXLR_BOTS_GRPC_LISTEN`) | `authorization: Bearer <token>` |
+| Mutual TLS 1.3 address | `serve --grpc-listen <addr>` (`AXLR_BOTS_GRPC_LISTEN`) | an operator's client certificate **and** `authorization: Bearer <token>` |
 
-The certificate of the TLS address is issued by the fleet CA (`ca init`; clients check it with `<state>/ca/ca.crt`). The token is the operator token of `--api-listen`: `<state>/api.token` (`--api-token-file`), generated at the first start when either flag is used. A node certificate opens nothing here. `--grpc-listen` needs no `--api-listen` and the other way round.
+The certificate of the TLS address is issued by the fleet CA (`ca init`; clients check it with `<state>/ca/ca.crt`). The token is the operator token of `--api-listen`: `<state>/api.token` (`--api-token-file`), generated at the first start when either flag is used. `--grpc-listen` needs no `--api-listen` and the other way round. The HTTP operator address (`--api-listen`) is unchanged: bearer token only.
+
+### Operator certificates
+
+The address is mutual TLS ([ADR](../architecture/operator-mtls.md)). A client without a certificate of the fleet CA, or with one of another CA, fails the handshake. A certificate of the fleet CA that is not an operator's is refused on the first call with `PERMISSION_DENIED` (`kind: forbidden`): a node's, and the service certificates of `ca issue-client`. The token is the second factor: the certificate alone is `UNAUTHENTICATED` (`unauthorized`).
+
+An operator's certificate is the one `axlr-bots ca operator issue <name>` writes. It carries three marks that no other certificate of the CA has, and all three must agree:
+
+| Mark | Value |
+|---|---|
+| organisation | `axlr-bots operators` (nodes: `axlr-bots nodes`; services: `axlr-bots clients`) |
+| URI SAN | `axlr-bots:operator:<name>` |
+| common name | `<name>` |
+
+```sh
+# on the control plane's host: writes operator.key (0600), operator.crt and ca.crt
+axlr-bots ca operator issue alice --out /tmp/alice        # --lifetime 720h; default 90 days, without --out ~/.config/axlr-bots/operator
+# revoke it, by file or by the serial `issue` printed (the daemon sees it on the next call)
+axlr-bots ca operator revoke --cert-file /tmp/alice/operator.crt
+axlr-bots ca operator revoke --serial 5f3a… --name alice
+```
+
+Revocation writes the serial to `<state>/pki/revoked.json`, the denylist node revocations use; it is read on each call and a revoked certificate gets `PERMISSION_DENIED` with `revoked: true` in the `ErrorDetail`. The names are `[A-Za-z0-9][A-Za-z0-9._-]{0,62}`; issue another certificate for the same name after a revocation (a leaked key is revoked by serial, the name stays usable).
+
+The operator named by the certificate is who acts. `x-axlr-actor` is optional: absent, the actor is the certificate's name; present, it must be that name, and any other value is `PERMISSION_DENIED` (a certificate cannot decide in another person's name, so a bot's `approvers` become a fact for the gRPC address, not only a word). `DecideTask`'s `decided_by` is compared with the actor as before. The Unix socket has no certificate and keeps the asserted actor.
+
+The CLI and the panel present the certificate for you ([CLI](cli.md#the-grpc-connection), [panel](../../panel/README.md)). With grpcurl add `-cert operator.crt -key operator.key`.
 
 ## Calling it
 
@@ -32,19 +58,20 @@ With [grpcurl](https://github.com/fullstorydev/grpcurl), from the repository (th
 ```sh
 TOKEN=$(cat ~/.local/state/axlr-bots/api.token)
 CA=~/.local/state/axlr-bots/ca/ca.crt
+CERT=~/.config/axlr-bots/operator/operator.crt KEY=~/.config/axlr-bots/operator/operator.key
 PROTO="-import-path api/proto -proto axlrbots/operator/v1/bots.proto"
 
 # list the bots
-grpcurl -cacert "$CA" -H "authorization: Bearer $TOKEN" $PROTO \
+grpcurl -cacert "$CA" -cert "$CERT" -key "$KEY" -H "authorization: Bearer $TOKEN" $PROTO \
   control.example:7880 axlrbots.operator.v1.BotsService/ListBots
 
 # submit a task
-grpcurl -cacert "$CA" -H "authorization: Bearer $TOKEN" $PROTO \
+grpcurl -cacert "$CA" -cert "$CERT" -key "$KEY" -H "authorization: Bearer $TOKEN" $PROTO \
   -d '{"bot_id":"bot-a","objective":"look at the disks","idempotency_key":"k-1"}' \
   control.example:7880 axlrbots.operator.v1.BotsService/SubmitBotTask
 
 # follow a bot's timeline until Ctrl-C
-grpcurl -cacert "$CA" -H "authorization: Bearer $TOKEN" $PROTO \
+grpcurl -cacert "$CA" -cert "$CERT" -key "$KEY" -H "authorization: Bearer $TOKEN" $PROTO \
   -d '{"bot_id":"bot-a","replay_limit":20}' \
   control.example:7880 axlrbots.operator.v1.BotsService/WatchBotEvents
 
@@ -55,7 +82,7 @@ grpcurl -plaintext -unix $PROTO \
 
 For the other services pass their file too (`tasks.proto`, `groups.proto`, `executions.proto`, `nodes.proto`, `overview.proto`).
 
-A Go client dials with `credentials.NewTLS` over a pool holding the fleet CA and adds the token to every call's metadata (`metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)`).
+A Go client dials with `credentials.NewTLS` over a pool holding the fleet CA and the operator certificate in `Certificates`, and adds the token to every call's metadata (`metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)`).
 
 ## Who decides
 
