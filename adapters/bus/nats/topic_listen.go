@@ -35,7 +35,9 @@ func (t *Topics) Listen(ctx context.Context, service PublicationService) error {
 	if service == nil {
 		return errors.New("nats: the publications need a service")
 	}
+	t.listening.Add(1)
 	go func() {
+		defer t.listening.Done()
 		for ctx.Err() == nil {
 			conn, messages, err := t.consume(ctx)
 			if err != nil {
@@ -52,6 +54,10 @@ func (t *Topics) Listen(ctx context.Context, service PublicationService) error {
 	}()
 	return nil
 }
+
+// Wait blocks until the consumer Listen started has stopped, once its
+// context ended: the daemon joins it before it lets go of the state.
+func (t *Topics) Wait() { t.listening.Wait() }
 
 // consume connects, defines the streams and the consumer, and opens its
 // messages.

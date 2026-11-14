@@ -188,6 +188,34 @@ func TestEachTeamsEventReachesItsSubjectOnceWithItsAuthor(t *testing.T) {
 	}
 }
 
+// JetStream drops a repeat by Nats-Msg-Id across the whole stream, not
+// per subject: the reason an event's copy for each team carries the team
+// in its key.
+func TestTheBrokerDedupesAcrossSubjects(t *testing.T) {
+	url := broker(t).ClientURL()
+	topicsOn(t, Config{URL: url})
+	js := operatorJS(t, url)
+	ctx := context.Background()
+	waitUntil(t, "the stream", func() bool { _, err := js.Stream(ctx, topicwire.TopicStream); return err == nil })
+	for _, team := range []string{"team-a", "team-b"} {
+		if _, err := js.Publish(ctx, topicwire.TopicSubject("default", team, "order.placed"), []byte(`{}`), jetstream.WithMsgID("evt-1")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stream, _ := js.Stream(ctx, topicwire.TopicStream)
+	if info, err := stream.Info(ctx); err != nil || info.State.Msgs != 1 {
+		t.Fatalf("one id on two subjects kept %d messages: %v", info.State.Msgs, err)
+	}
+	for _, team := range []string{"team-a", "team-b"} {
+		if _, err := js.Publish(ctx, topicwire.TopicSubject("default", team, "order.placed"), []byte(`{}`), jetstream.WithMsgID(topicwire.TopicMsgID("evt-2", team))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if info, _ := stream.Info(ctx); info.State.Msgs != 3 {
+		t.Errorf("the team's keys kept %d messages, want 3", info.State.Msgs)
+	}
+}
+
 // A copy that cannot be written to the outbox is logged and never fails
 // the event.
 func TestACopyThatCannotBeWrittenDoesNotFailTheEvent(t *testing.T) {

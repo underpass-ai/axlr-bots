@@ -85,6 +85,9 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 		if err := options.Topics.Listen(ctx, publications{Local: local, refuse: application.NewRefusePublication(deps)}); err != nil {
 			return err
 		}
+		// The consumer stops with the context; it is joined before the
+		// state lock goes.
+		defer func() { cancel(); options.Topics.Wait() }()
 	}
 
 	// The TLS listeners are bound before anything serves, so a bad option

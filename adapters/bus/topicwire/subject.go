@@ -56,14 +56,6 @@ func PublishSubject(tenant, team, name string) string {
 // across the whole stream.
 func TopicMsgID(id, team string) string { return id + "@" + team }
 
-// Address is what a publication's subject names: the tenant's and the
-// team's tokens and the event's name.
-type Address struct {
-	TenantToken string
-	TeamToken   string
-	Name        string
-}
-
 // ParsePublishSubject reads a publication's subject; an error is a
 // subject that is no axlr.publish.<tenant>.<team>.<name>.
 func ParsePublishSubject(subject string) (Address, error) {

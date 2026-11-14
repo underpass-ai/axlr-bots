@@ -45,6 +45,8 @@ type Topics struct {
 	stop    chan struct{}
 	done    chan struct{}
 	once    sync.Once
+	// listening is the consumer's goroutine, which Wait joins.
+	listening sync.WaitGroup
 }
 
 // topicStream keeps a team's topics: every subject under axlr.topic,
@@ -176,6 +178,7 @@ func (t *Topics) run() {
 			delay, refusals = time.Second, 0
 			continue
 		}
+		wait := delay
 		if refused(err) {
 			if refusals++; refusals >= maxRefusals {
 				// One the broker never takes must not hold back the rest.
@@ -184,16 +187,20 @@ func (t *Topics) run() {
 				delay, refusals = time.Second, 0
 				continue
 			}
+			// A refusal is the broker answering: try again soon, not later
+			// and later as for a broker that is away.
+			wait = time.Second
+		} else {
+			delay = min(2*delay, 30*time.Second)
 		}
 		logger.Printf("bus: nats: topic %s not taken: %v (retrying)", e.publishID(), err)
 		if conn.IsClosed() || streamSuspect(err) {
 			conn.Close()
 			conn, js = nil, nil
 		}
-		if !t.pause(delay) {
+		if !t.pause(wait) {
 			return
 		}
-		delay = min(2*delay, 30*time.Second)
 	}
 }
 

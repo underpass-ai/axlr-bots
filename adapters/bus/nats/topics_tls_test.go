@@ -100,8 +100,29 @@ func TestTopicsOverMutualTLSWithTheADRsPermissions(t *testing.T) {
 	}
 	publishOn(t, js, msg.Subject, msg.MsgID, string(msg.Payload))
 	waitUntil(t, "the publication", func() bool { n, _ := svc.counts(); return n == 1 })
-	// Acked, not given again after its ack wait.
-	time.Sleep(300 * time.Millisecond)
+	// Acked: the control plane's ack permission is enough, or the
+	// publication would wait for redelivery after its ack wait.
+	opts, err := options(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := natsio.Connect(url, opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	cp, err := jetstream.New(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	consumer, err := cp.Consumer(ctx, topicwire.PublishStream, topicwire.ControlPlaneConsumer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, "the ack", func() bool {
+		info, err := consumer.Info(ctx)
+		return err == nil && info.NumAckPending == 0 && info.Delivered.Consumer == 1
+	})
 	if strings.Contains(logs.String(), "not acked") {
 		t.Errorf("logs = %q", logs.String())
 	}

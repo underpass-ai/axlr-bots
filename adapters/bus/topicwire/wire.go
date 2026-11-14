@@ -9,15 +9,6 @@ import (
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
-// Message is one message as a bus adapter publishes it: the subject, the
-// key JetStream drops a repeat by (MsgIDHeader) and the payload, a DTO
-// as JSON.
-type Message struct {
-	Subject string
-	MsgID   string
-	Payload []byte
-}
-
 // EncodeTopics writes an event's copies for the wire, one per team it
 // was told to; none for an event that is no team's topic.
 func EncodeTopics(event domain.Event) ([]Message, error) {
@@ -62,14 +53,6 @@ func EncodePublication(tenant, team, key string, p PublicationDTO) (Message, err
 		return Message{}, fmt.Errorf("topics: publication: %w", err)
 	}
 	return Message{Subject: PublishSubject(tenant, team, p.Name), MsgID: key, Payload: payload}, nil
-}
-
-// Publication is a publication read off the wire: where its subject
-// points, its idempotency key and what it says.
-type Publication struct {
-	Address Address
-	Key     string
-	DTO     PublicationDTO
 }
 
 // DecodePublication reads a publication: its subject, its payload and
