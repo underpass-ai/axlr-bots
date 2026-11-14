@@ -373,6 +373,7 @@ async fn route(State(recorder): State<Recorder>, request: Request<Body>) -> Resp
                         content: Some(Content::Artifact(proto::Artifact {
                             name: "weekly report.md".into(),
                             size: 10,
+                            sha256: "a0fed56674657626c120b38b0e27ad2814325c72a3d16e6a66728e708b6eaa06".into(),
                             ..Default::default()
                         }))
                     }),

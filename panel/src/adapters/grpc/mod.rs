@@ -6,6 +6,7 @@
 //! panel's domain types at this boundary and nowhere else.
 
 mod activity_mapper;
+mod artifact_receiver;
 mod bot_mapper;
 mod definition_mapper;
 mod event_mapper;

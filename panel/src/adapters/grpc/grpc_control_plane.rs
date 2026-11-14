@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use tonic::{Request, Status, Streaming};
 
 use super::activity_mapper::ActivityMapper;
+use super::artifact_receiver::ArtifactReceiver;
 use super::bot_mapper::BotMapper;
 use super::definition_mapper::DefinitionMapper;
 use super::event_mapper::EventMapper;
@@ -502,22 +503,11 @@ impl ControlPlane for GrpcControlPlane {
             let mut call = Request::new(request);
             call.set_timeout(DOWNLOAD_TIMEOUT);
             let mut stream = client.get_artifact(call).await.map_err(fail)?.into_inner();
-            let mut bytes = Vec::new();
-            let mut said = None;
+            let mut receiver = ArtifactReceiver::default();
             while let Some(message) = stream.message().await.map_err(fail)? {
-                match message.content {
-                    Some(proto::get_artifact_response::Content::Artifact(artifact)) => said = Some(artifact.size),
-                    Some(proto::get_artifact_response::Content::Chunk(chunk)) => bytes.extend_from_slice(&chunk),
-                    None => {}
-                }
+                receiver.accept(message.content);
             }
-            match said {
-                Some(size) if usize::try_from(size).ok() != Some(bytes.len()) => Err(PanelError::Unreadable(format!(
-                    "the artifact came with {} bytes of the {size} it says it has",
-                    bytes.len()
-                ))),
-                _ => Ok(bytes),
-            }
+            receiver.finish()
         })
     }
 
