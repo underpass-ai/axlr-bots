@@ -51,6 +51,8 @@ mod tests {
                 ca_path: "/s/ca.crt".into(),
                 token_file: "/s/api.token".into(),
                 actor: None,
+                cert_path: None,
+                key_path: None,
             }),
             theme: Theme::Dark,
             new_bot: NewBotDefaults {
@@ -105,6 +107,24 @@ mod tests {
         assert!(matches!(&spaced, PanelError::Config(m) if m.contains("actor")));
         let trailing = PanelSettings::from_json("{\"look.theme\": \"dark\",}").unwrap_err();
         assert!(matches!(&trailing, PanelError::Config(m) if m.contains("line 1")));
+    }
+
+    #[test]
+    fn keeps_the_operators_certificate_and_key() {
+        let mut with = settings();
+        {
+            let config = with.control_plane.as_mut().unwrap();
+            config.cert_path = Some("/o/operator.crt".into());
+            config.key_path = Some("/o/operator.key".into());
+        }
+        let text = with.to_json();
+        assert!(text.contains("\"controlPlane.certFile\": \"/o/operator.crt\""));
+        assert!(text.contains("\"controlPlane.keyFile\": \"/o/operator.key\""));
+        assert_eq!(PanelSettings::from_json(&text).unwrap(), with);
+        // Absent, they are null and mean the default place.
+        assert!(settings().to_json().contains("\"controlPlane.certFile\": null"));
+        let lone = PanelSettings::from_json("{\"controlPlane.certFile\": \"/c\"}").unwrap_err();
+        assert!(matches!(&lone, PanelError::Config(m) if m.contains("controlPlane.certFile")));
     }
 
     #[test]

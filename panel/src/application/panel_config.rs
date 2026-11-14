@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use super::PanelError;
 
 /// Where the control plane's operator API is and how to trust and reach
-/// it: its gRPC address (https://host:port, the one of `--grpc-listen`), the fleet CA and the file holding the bearer
+/// it: its gRPC address (https://host:port, the one of `--grpc-listen`), the fleet CA, the operator's
+/// client certificate and key (the address is mutual TLS) and the file holding the bearer
 /// token (never the token itself), and who the panel decides as: the
 /// actor sent with every request (X-Axlr-Actor), which a bot's
 /// approvers are compared with. The token holder asserts it; absent,
@@ -17,6 +18,14 @@ pub struct PanelConfig {
     pub token_file: PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub actor: Option<String>,
+    /// The operator's client certificate and its key (`axlr-bots ca
+    /// operator issue`), which the gRPC address requires. Absent, the
+    /// panel looks where `ca operator issue` leaves them for the local
+    /// operator (see [`OperatorFiles`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cert_path: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_path: Option<PathBuf>,
 }
 
 impl PanelConfig {
@@ -63,6 +72,8 @@ mod tests {
             ca_path: "ca.crt".into(),
             token_file: "api.token".into(),
             actor: None,
+            cert_path: None,
+            key_path: None,
         }
     }
 

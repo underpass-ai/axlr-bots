@@ -64,7 +64,7 @@ func newFixtureWith(t *testing.T, scenario string, change func(*application.Depe
 	ctx, cancel := context.WithCancel(context.Background())
 	api := New(local, options...)
 	done := make(chan error, 1)
-	go func() { done <- api.serve(ctx, listener, api.build(testToken), func() {}) }()
+	go func() { done <- api.serve(ctx, listener, api.build(testToken, nil), func() {}) }()
 	t.Cleanup(func() {
 		cancel()
 		if err := <-done; err != nil {

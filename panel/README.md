@@ -25,7 +25,7 @@ make install        # ~/.local/bin/axlr-bots-panel, the icon, and the menu entry
 axlr-bots-panel
 ```
 
-The first run opens **Settings** with three values read from this host's install: the API address (`https://127.0.0.1:7879`), the fleet CA (`~/.local/state/axlr-bots/ca/ca.crt`) and the token file (`~/.local/state/axlr-bots/api.token`). **Connect** checks them against the control plane and saves them in `~/.config/axlr-bots-panel/settings.json`; connected, it rests until a value changes. The token stays in its file: the panel reads it and never shows or logs it. A `config.toml` an older panel wrote is read once and left in place.
+The first run opens **Settings** with three values read from this host's install: the API address (`https://127.0.0.1:7879`), the fleet CA (`~/.local/state/axlr-bots/ca/ca.crt`) and the token file (`~/.local/state/axlr-bots/api.token`). **Connect** checks them against the control plane and saves them in `~/.config/axlr-bots-panel/settings.json`; connected, it rests until a value changes. The token stays in its file: the panel reads it and never shows or logs it. The address is mutual TLS: the panel also presents an operator certificate, `operator.crt` and `operator.key` in `~/.config/axlr-bots/operator/` (where `axlr-bots ca operator issue <name>` leaves them; `$AXLR_BOTS_OPERATOR_DIR` moves the place), or the files named by `controlPlane.certFile` and `controlPlane.keyFile`. A missing file says how to issue one; a control plane that refuses the certificate says so (*the control plane refused the operator certificate*). The control plane takes the certificate's name as who decides, so a *Decide as* that names another person is refused. A `config.toml` an older panel wrote is read once and left in place.
 
 The settings file holds the panel's own settings only, as flat keys dotted by section, like an editor's `settings.json`; a bot's configuration lives in the bot's definition, never here:
 
@@ -34,6 +34,8 @@ The settings file holds the panel's own settings only, as flat keys dotted by se
   "controlPlane.apiUrl": "https://127.0.0.1:7879",
   "controlPlane.caFile": "/home/op/.local/state/axlr-bots/ca/ca.crt",
   "controlPlane.tokenFile": "/home/op/.local/state/axlr-bots/api.token",
+  "controlPlane.certFile": "/home/op/.config/axlr-bots/operator/operator.crt",
+  "controlPlane.keyFile": "/home/op/.config/axlr-bots/operator/operator.key",
   "controlPlane.actor": "alice",
   "look.theme": "light",
   "newBot.defaultModel": "anthropic/claude-haiku-5.5",
@@ -106,7 +108,7 @@ Words are set in [Lexend](https://www.lexend.com) (made for reading fluency) and
                     RegisterBot · ApplyStaged · MintEnrollmentToken · RevokeNode · FollowBotEvents · FollowTaskEvents · Connect …
     │  ports: ControlPlane · Clock · KeySource · FilePicker · DefinitionReader · ConfigStore · Connector
     ▼
- adapters           grpc (tonic + rustls, fleet CA only, bearer token) · system (clock, uuid keys, files,
+ adapters           grpc (tonic + rustls, fleet CA only, operator client certificate, bearer token) · system (clock, uuid keys, files,
                     XDG file dialog) · config (JSON settings, defaults from the axlr-bots unit and the local AXLR) · fake (in memory)
     │
     ▼

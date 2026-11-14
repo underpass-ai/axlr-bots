@@ -36,6 +36,8 @@ axlr-node enroll --control https://cp.example.internal:7878 --token "$token" --s
 systemctl --user enable --now axlr-node.service
 ```
 
+To operate from another machine over the gRPC address (`--grpc-listen`), issue an operator certificate on the control plane's host and copy it with the token and the CA: `axlr-bots ca operator issue alice --out /tmp/alice`, then on the operator's machine put `operator.crt` and `operator.key` in `~/.config/axlr-bots/operator/` (the place the CLI and the panel look) and run `axlr-bots --control cp.example.internal:7880 --token-file api.token --ca-file ca.crt health`. The address takes only that certificate and the token: a node's certificate does not open it. Revoke with `axlr-bots ca operator revoke --cert-file operator.crt` ([operator certificates](../reference/operator-grpc.md#operator-certificates)). The certificate lasts 90 days; issue a new one before then (`--lifetime` changes it).
+
 Check: `axlr-bots node list` shows this host `Online` with `certificateSerial` set; the node's first journal line names its client certificate and the serial; `axlr-bots ca show` prints the CA's fingerprint. Without `ca init` the daemon refuses to listen and the unit restarts until it exists.
 
 `--listen 127.0.0.1:7878 --control https://127.0.0.1:7878` keeps the TLS path on one host; the node then authenticates with a certificate as a node elsewhere would. `--listen` means TLS: there is no plaintext node address.

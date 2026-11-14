@@ -129,6 +129,26 @@ fn control_plane<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
                 tokens
             ),
             field(
+                "Operator certificate",
+                "~/.config/axlr-bots/operator/operator.crt",
+                &form.cert_path,
+                Message::SettingsCert,
+                submit.clone(),
+                tokens
+            ),
+            field(
+                "Operator key",
+                "~/.config/axlr-bots/operator/operator.key",
+                &form.key_path,
+                Message::SettingsKey,
+                submit.clone(),
+                tokens
+            ),
+            muted(
+                "The address asks for an operator certificate: run axlr-bots ca operator issue on the control plane. Blank uses the default place.",
+                tokens
+            ),
+            field(
                 "Decide as",
                 "alice",
                 &form.actor,

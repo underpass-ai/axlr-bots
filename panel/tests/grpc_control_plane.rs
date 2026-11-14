@@ -765,6 +765,8 @@ async fn refuses_settings_it_cannot_use() {
         ca_path: dir.path().join(ca),
         token_file: dir.path().join(token),
         actor: None,
+        cert_path: None,
+        key_path: None,
     };
     std::fs::write(dir.path().join("bad.crt"), "not a certificate").unwrap();
     std::fs::write(dir.path().join("empty.token"), "\n").unwrap();
@@ -782,4 +784,47 @@ async fn refuses_settings_it_cannot_use() {
     assert!(matches!(check(plain), PanelError::Config(ref m) if m.contains("https")));
     std::fs::write(dir.path().join("bad.token"), "to\nken").unwrap();
     assert!(matches!(check(config("ca.crt", "bad.token")), PanelError::Config(ref m) if m.contains("cannot carry")));
+}
+
+#[tokio::test]
+async fn presents_the_operators_certificate_and_says_what_is_missing() {
+    let server = server().await;
+    assert!(api(&server).list_nodes().await.is_ok());
+
+    // A certificate of another CA: the handshake is refused before any call.
+    let mut stranger = server.config();
+    stranger.cert_path = Some(server.dir.path().join("stranger.crt"));
+    stranger.key_path = Some(server.dir.path().join("stranger.key"));
+    let calls = server.calls().len();
+    let refused = GrpcControlPlane::new(&stranger)
+        .unwrap()
+        .list_nodes()
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&refused, PanelError::Forbidden(m) if m.contains("ca operator issue")),
+        "{refused:?}"
+    );
+    assert_eq!(server.calls().len(), calls, "the call must not reach the handlers");
+
+    // No file where the settings say, or where `ca operator issue` leaves them.
+    let mut missing = server.config();
+    missing.cert_path = Some(server.dir.path().join("none.crt"));
+    let error = GrpcControlPlane::new(&missing).err().unwrap();
+    assert!(
+        matches!(&error, PanelError::Config(m) if m.contains("ca operator issue") && m.contains("none.crt")),
+        "{error:?}"
+    );
+    let mut not_pem = server.config();
+    std::fs::write(server.dir.path().join("bad.crt"), "nope").unwrap();
+    not_pem.cert_path = Some(server.dir.path().join("bad.crt"));
+    assert!(
+        matches!(GrpcControlPlane::new(&not_pem).err().unwrap(), PanelError::Config(ref m) if m.contains("PEM certificate"))
+    );
+    let mut not_key = server.config();
+    std::fs::write(server.dir.path().join("bad.key"), "nope").unwrap();
+    not_key.key_path = Some(server.dir.path().join("bad.key"));
+    assert!(
+        matches!(GrpcControlPlane::new(&not_key).err().unwrap(), PanelError::Config(ref m) if m.contains("PEM private key"))
+    );
 }

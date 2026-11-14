@@ -29,7 +29,7 @@ Several bots in the cluster? Turn on metrics, JSON logs and traces: [`docs/runbo
 | `bus.kind`, `bus.nats.*` | `direct`, or `nats` with `tls://` and a Secret holding `tls.crt`, `tls.key` (from `axlr-bots ca issue-client --name control-plane`) and `ca.crt` (the broker's CA) |
 | `ca.init` | true for the first start of an empty state only: an init container runs `ca init`, which fails when a CA is there |
 | `persistence.existingClaim` | a claim you filled with an existing state |
-| `grpc.enabled`, `grpc.port` | the operator API over gRPC (TLS, bearer token; [reference](../../docs/reference/operator-grpc.md)) on 7880, in the pod and on the Service as port `grpc` (`AXLR_BOTS_GRPC_LISTEN`) |
+| `grpc.enabled`, `grpc.port` | the operator API over gRPC (mutual TLS: an operator certificate from `axlr-bots ca operator issue`, issued in the pod by `kubectl exec` or from a copy of the CA, plus the bearer token; [reference](../../docs/reference/operator-grpc.md)) on 7880, in the pod and on the Service as port `grpc` (`AXLR_BOTS_GRPC_LISTEN`) |
 | `metrics.enabled`, `metrics.podMonitor.*` | `/metrics` and `/healthz` in plain HTTP on 9464: the overview's counts (`axlr_bots_tasks`, `axlr_bots_nodes`, cost today…), the requests per listener and route, Go and process. The PodMonitor's `labels` must match the Prometheus' `podMonitorSelector` |
 | `tracing.otlpEndpoint` | an OTLP/HTTP endpoint (`http://host:4318`) the control plane sends one trace per ended task to; empty sends nothing |
 | `tempo.enabled`, `tempo.*` | off by default; a single-pod Tempo (Deployment, Service, ConfigMap, pinned image) the traces go to when `tracing.otlpEndpoint` is empty; an emptyDir, or a claim with `tempo.persistence.enabled` |

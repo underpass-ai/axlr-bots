@@ -25,3 +25,10 @@ func WithInterceptors(unary grpc.UnaryServerInterceptor, stream grpc.StreamServe
 		s.stream = append(s.stream, stream)
 	}
 }
+
+// WithOperatorCertificates makes the TLS operator address take only the
+// client certificates the policy names an operator for: without it
+// ServeTLS refuses to serve.
+func WithOperatorCertificates(operators OperatorCertificates) Option {
+	return func(s *Server) { s.operators = operators }
+}

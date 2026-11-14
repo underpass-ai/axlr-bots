@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +17,7 @@ import (
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/domain"
 )
 
 func TestGenerateLoadAndRefuseToOverwrite(t *testing.T) {
@@ -384,4 +387,113 @@ func TestIssueClientSignsAClientCertificateOfTheFleet(t *testing.T) {
 	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}); err == nil {
 		t.Error("a client certificate serves")
 	}
+}
+
+func TestOperatorCertificateIsMarkedAndNeverAnotherKind(t *testing.T) {
+	ca, err := Generate(filepath.Join(t.TempDir(), "ca"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPEM, certPEM, issued, err := ca.IssueOperator("alice", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(keyPEM), "PRIVATE KEY") || issued.Serial == "" || time.Until(issued.NotAfter) > OperatorCertificateLifetime {
+		t.Errorf("issued: %+v", issued)
+	}
+	cert, err := parseCertificate(certPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name, ok := OperatorName(cert); !ok || name != "alice" {
+		t.Errorf("OperatorName = %q %v", name, ok)
+	}
+	if IsNodeCertificate(cert) {
+		t.Error("an operator's certificate passes for a node's")
+	}
+	if name, serial, err := ParseOperatorCertificate(certPEM); err != nil || name != "alice" || serial != issued.Serial {
+		t.Errorf("ParseOperatorCertificate: %q %q %v", name, serial, err)
+	}
+	if _, _, err := ParseOperatorCertificate([]byte("nope")); err == nil {
+		t.Error("parsed a non-certificate")
+	}
+
+	// A node's and a service's certificate are not an operator's.
+	_, csr, _ := NewNodeKeyAndRequest(domain.NodeID("alice"))
+	node, err := ca.IssueNode(csr, domain.NodeID("alice"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, clientPEM, err := ca.IssueClient("alice", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for label, raw := range map[string][]byte{"node": node.CertificatePEM, "service": clientPEM} {
+		other, _ := parseCertificate(raw)
+		if _, ok := OperatorName(other); ok {
+			t.Errorf("a %s certificate is taken for an operator's", label)
+		}
+		if _, _, err := ParseOperatorCertificate(raw); err == nil {
+			t.Errorf("a %s certificate parsed as an operator's", label)
+		}
+	}
+
+	// Each mark alone is not enough.
+	for label, change := range map[string]func(*x509.Certificate){
+		"no organisation": func(c *x509.Certificate) { c.Subject.Organization = nil },
+		"another name":    func(c *x509.Certificate) { c.Subject.CommonName = "bob" },
+		"no URI":          func(c *x509.Certificate) { c.URIs = nil },
+		"another URI":     func(c *x509.Certificate) { c.URIs = []*url.URL{OperatorURI("bob")} },
+		"no client auth":  func(c *x509.Certificate) { c.ExtKeyUsage = nil },
+	} {
+		clone := *cert
+		change(&clone)
+		if _, ok := OperatorName(&clone); ok {
+			t.Errorf("%s: taken for an operator's", label)
+		}
+	}
+
+	for _, bad := range []string{"", "-lead", "has space", "a/b", strings.Repeat("x", 64)} {
+		if _, _, _, err := ca.IssueOperator(bad, 0); err == nil {
+			t.Errorf("issued a certificate for the name %q", bad)
+		}
+	}
+}
+
+func TestOperatorCertificatesPolicyChecksTheMarksAndTheDenylist(t *testing.T) {
+	ca, err := Generate(filepath.Join(t.TempDir(), "ca"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	denied := map[string]bool{}
+	policy := NewOperatorCertificates(fakeDenylist{denied: denied})
+	_, certPEM, issued, _ := ca.IssueOperator("alice", 0)
+	cert, _ := parseCertificate(certPEM)
+	if name, err := policy.Identify(context.Background(), cert); err != nil || name != "alice" {
+		t.Fatalf("Identify: %q %v", name, err)
+	}
+	denied[issued.Serial] = true
+	var forbidden domain.ForbiddenError
+	if _, err := policy.Identify(context.Background(), cert); !errors.As(err, &forbidden) || !forbidden.Revoked {
+		t.Errorf("revoked: %v", err)
+	}
+	_, clientPEM, _ := ca.IssueClient("alice", 0)
+	client, _ := parseCertificate(clientPEM)
+	if _, err := policy.Identify(context.Background(), client); !errors.As(err, &forbidden) || forbidden.Revoked {
+		t.Errorf("not an operator: %v", err)
+	}
+	broken := NewOperatorCertificates(fakeDenylist{err: errors.New("disk")})
+	if _, err := broken.Identify(context.Background(), cert); err == nil || errors.As(err, &forbidden) {
+		t.Errorf("a denylist that cannot be read must fail closed with an error: %v", err)
+	}
+}
+
+type fakeDenylist struct {
+	denied map[string]bool
+	err    error
+}
+
+func (f fakeDenylist) Deny(context.Context, string, string) error { return nil }
+func (f fakeDenylist) IsDenied(_ context.Context, serial string) (bool, error) {
+	return f.denied[serial], f.err
 }

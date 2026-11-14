@@ -96,7 +96,7 @@ func TestCommandsReachARemoteControlPlaneOverGRPC(t *testing.T) {
 	state := filepath.Join(t.TempDir(), "must-stay-untouched")
 	run1 := func(control string, args ...string) (int, string, string) {
 		var stdout, stderr bytes.Buffer
-		global := []string{"--state", state, "--transport", "grpc", "--control", control, "--token-file", tokenFile, "--ca-file", caFile}
+		global := []string{"--state", state, "--transport", "grpc", "--control", control, "--token-file", tokenFile, "--ca-file", caFile, "--cert-file", api.certFile, "--key-file", api.keyFile}
 		code := run(append(global, args...), &stdout, &stderr)
 		return code, stdout.String(), stderr.String()
 	}
@@ -107,6 +107,9 @@ func TestCommandsReachARemoteControlPlaneOverGRPC(t *testing.T) {
 	}
 	if got := api.seen(apiMethod("BotsService", "ListBots")).Get("authorization"); len(got) != 1 || got[0] != "Bearer remote-token" {
 		t.Errorf("the token goes as bearer metadata: %v", got)
+	}
+	if len(api.operators) == 0 || api.operators[0] != "alice" {
+		t.Errorf("the calls carry the operator's certificate: %v", api.operators)
 	}
 	if code, out, _ := run1(address, "health"); code != exitOK || strings.TrimSpace(out) != "ok" {
 		t.Errorf("remote health: %d %q", code, out)

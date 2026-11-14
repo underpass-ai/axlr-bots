@@ -27,6 +27,8 @@ fn live_config() -> Option<PanelConfig> {
             .map(PathBuf::from)
             .unwrap_or_else(|| state.join("api.token")),
         actor: None,
+        cert_path: None,
+        key_path: None,
     })
 }
 

@@ -191,6 +191,8 @@ pub enum Message {
     SettingsUrl(String),
     SettingsCa(String),
     SettingsToken(String),
+    SettingsCert(String),
+    SettingsKey(String),
     /// Who the panel decides as: the actor a bot's approvers name.
     SettingsActor(String),
     SettingsSave,

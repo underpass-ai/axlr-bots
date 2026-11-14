@@ -67,6 +67,8 @@ impl TestServer {
             ca_path: self.dir.path().join("ca.crt"),
             token_file: self.dir.path().join("api.token"),
             actor: None,
+            cert_path: Some(self.dir.path().join("operator.crt")),
+            key_path: Some(self.dir.path().join("operator.key")),
         }
     }
 
@@ -85,8 +87,30 @@ impl Drop for TestServer {
     }
 }
 
+/// Writes a client certificate signed by `issuer` as `<name>.crt` and
+/// `<name>.key`; `operator` gives it the marks of an operator's (the
+/// organisation and the `axlr-bots:operator:<name>` URI).
+fn write_client(dir: &std::path::Path, issuer: &Issuer<'_, &KeyPair>, name: &str, operator: bool) {
+    let key = KeyPair::generate().unwrap();
+    let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
+    params.distinguished_name.push(rcgen::DnType::CommonName, "alice");
+    params.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ClientAuth];
+    if operator {
+        params
+            .distinguished_name
+            .push(rcgen::DnType::OrganizationName, "axlr-bots operators");
+        params.subject_alt_names = vec![rcgen::SanType::URI("axlr-bots:operator:alice".try_into().unwrap())];
+    }
+    let cert = params.signed_by(&key, issuer).unwrap();
+    std::fs::write(dir.join(format!("{name}.crt")), cert.pem()).unwrap();
+    std::fs::write(dir.join(format!("{name}.key")), key.serialize_pem()).unwrap();
+}
+
 /// A fleet CA, a server certificate for 127.0.0.1 it signs, the CA and the
-/// token written where the panel reads them, and `app` serving over TLS.
+/// token written where the panel reads them, an operator certificate of
+/// that CA (`operator.crt`, `operator.key`) and one of another CA
+/// (`stranger.crt`, `stranger.key`), and `app` serving over mutual TLS:
+/// a client certificate that chains to the CA is required.
 pub async fn serve(app: Router, recorder: Recorder) -> TestServer {
     let ca_key = KeyPair::generate().unwrap();
     let mut ca_params = CertificateParams::new(Vec::<String>::new()).unwrap();
@@ -101,14 +125,25 @@ pub async fn serve(app: Router, recorder: Recorder) -> TestServer {
     let server_cert = server_params.signed_by(&server_key, &issuer).unwrap();
 
     let dir = tempfile::tempdir().unwrap();
+    write_client(dir.path(), &issuer, "operator", true);
+    let other_key = KeyPair::generate().unwrap();
+    let mut other_params = CertificateParams::new(Vec::<String>::new()).unwrap();
+    other_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    let other_issuer = Issuer::new(other_params, &other_key);
+    write_client(dir.path(), &other_issuer, "stranger", true);
     std::fs::write(dir.path().join("ca.crt"), ca_cert.pem()).unwrap();
     std::fs::write(dir.path().join("api.token"), format!("{TOKEN}\n")).unwrap();
 
     let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(CertificateDer::from(ca_cert.der().to_vec())).unwrap();
+    let verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(Arc::new(roots), provider.clone())
+        .build()
+        .unwrap();
     let mut tls = rustls::ServerConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .unwrap()
-        .with_no_client_auth()
+        .with_client_cert_verifier(verifier)
         .with_single_cert(
             vec![CertificateDer::from(server_cert.der().to_vec())],
             PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(server_key.serialize_der())),

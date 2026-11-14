@@ -16,6 +16,17 @@ struct RpcStatus {
     details: Vec<prost_types::Any>,
 }
 
+/// The TLS alerts a server sends when it does not take the client's
+/// certificate, in the words rustls gives them.
+const CERTIFICATE_ALERTS: [&str; 6] = [
+    "UnknownCA",
+    "BadCertificate",
+    "CertificateRequired",
+    "CertificateRevoked",
+    "CertificateExpired",
+    "UnsupportedCertificate",
+];
+
 const DETAIL_TYPE: &str = "axlrbots.operator.v1.ErrorDetail";
 
 /// A failed call, as the panel says it: the `kind` of the `ErrorDetail`
@@ -50,6 +61,15 @@ impl StatusError {
                 || status.message().contains("while receiving response with status"))
         {
             return PanelError::NotFound(format!("the address does not speak gRPC ({message})"));
+        }
+        // The control plane refused the handshake because of the panel's
+        // certificate: a received alert, as rustls names it.
+        if matches!(status.code(), Code::Unavailable | Code::Unknown | Code::Internal)
+            && CERTIFICATE_ALERTS.iter().any(|alert| message.contains(alert))
+        {
+            return PanelError::Forbidden(format!(
+                "the control plane refused the operator certificate ({message}): issue one with `axlr-bots ca operator issue <name>` on the control plane and set controlPlane.certFile and controlPlane.keyFile, or put it where the command leaves it"
+            ));
         }
         match status.code() {
             Code::InvalidArgument | Code::OutOfRange | Code::ResourceExhausted => PanelError::Invalid(message),
@@ -202,5 +222,26 @@ mod tests {
         assert_eq!(StatusError::classify(&status), PanelError::Forbidden("revoked".into()));
         let garbage = Status::with_details(Code::Internal, "plain", vec![0xff, 0xff].into());
         assert_eq!(StatusError::classify(&garbage), PanelError::Server("plain".into()));
+    }
+
+    #[test]
+    fn a_refused_operator_certificate_says_how_to_get_one() {
+        for alert in [
+            "UnknownCA",
+            "BadCertificate",
+            "CertificateRequired",
+            "CertificateRevoked",
+        ] {
+            let status = Status::unavailable(format!(
+                "transport error: connection error: received fatal alert: {alert}"
+            ));
+            assert!(
+                matches!(StatusError::classify(&status), PanelError::Forbidden(m) if m.contains("ca operator issue") && m.contains(alert)),
+                "{alert}"
+            );
+        }
+        // Other transport failures stay unreachable.
+        let down = Status::unavailable("transport error: tcp connect error: Connection refused");
+        assert!(matches!(StatusError::classify(&down), PanelError::Unreachable(_)));
     }
 }

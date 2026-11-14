@@ -11,6 +11,10 @@ pub struct SettingsForm {
     /// Who the panel decides as (controlPlane.actor); empty is nobody
     /// named, as before approvers existed.
     pub actor: String,
+    /// The operator's certificate and key (controlPlane.certFile and
+    /// keyFile); empty is where `ca operator issue` leaves them.
+    pub cert_path: String,
+    pub key_path: String,
     /// The New bot defaults: the model proposed and the models offered,
     /// comma-separated.
     pub default_model: String,
@@ -33,6 +37,12 @@ impl SettingsForm {
             ca_path: config.map_or(String::new(), |c| c.ca_path.display().to_string()),
             token_file: config.map_or(String::new(), |c| c.token_file.display().to_string()),
             actor: config.and_then(|c| c.actor.clone()).unwrap_or_default(),
+            cert_path: config
+                .and_then(|c| c.cert_path.as_ref())
+                .map_or(String::new(), |p| p.display().to_string()),
+            key_path: config
+                .and_then(|c| c.key_path.as_ref())
+                .map_or(String::new(), |p| p.display().to_string()),
             default_model: settings.new_bot.model.clone(),
             models: settings.new_bot.models.join(", "),
             busy: false,
@@ -51,6 +61,8 @@ impl SettingsForm {
             self.ca_path = filled.ca_path;
             self.token_file = filled.token_file;
             self.actor = filled.actor;
+            self.cert_path = filled.cert_path;
+            self.key_path = filled.key_path;
         }
         self.default_model = filled.default_model;
         self.models = filled.models;
@@ -63,6 +75,8 @@ impl SettingsForm {
             ca_path: PathBuf::from(self.ca_path.trim()),
             token_file: PathBuf::from(self.token_file.trim()),
             actor: Some(self.actor.trim().to_string()).filter(|a| !a.is_empty()),
+            cert_path: Some(self.cert_path.trim()).filter(|p| !p.is_empty()).map(PathBuf::from),
+            key_path: Some(self.key_path.trim()).filter(|p| !p.is_empty()).map(PathBuf::from),
         }
     }
 
@@ -107,6 +121,8 @@ mod tests {
                 ca_path: "/ca".into(),
                 token_file: "/t".into(),
                 actor: None,
+                cert_path: None,
+                key_path: None,
             }),
             theme: Theme::Dark,
             new_bot: NewBotDefaults {
@@ -138,6 +154,29 @@ mod tests {
         assert_eq!(SettingsForm::from_settings(&named, true).actor, "alice");
         other.take(&named);
         assert_eq!(other.actor, "alice");
+    }
+
+    #[test]
+    fn carries_the_operators_certificate_and_key() {
+        let mut named = settings();
+        {
+            let config = named.control_plane.as_mut().unwrap();
+            config.cert_path = Some("/o/operator.crt".into());
+            config.key_path = Some("/o/operator.key".into());
+        }
+        let mut form = SettingsForm::from_settings(&named, true);
+        assert_eq!(
+            (form.cert_path.as_str(), form.key_path.as_str()),
+            ("/o/operator.crt", "/o/operator.key")
+        );
+        assert_eq!(form.settings(Theme::Dark), named);
+        form.cert_path = "  ".into();
+        form.key_path = String::new();
+        assert_eq!(form.config().cert_path, None, "blank is the default place");
+        assert_eq!(form.config().key_path, None);
+        let mut other = SettingsForm::from_settings(&PanelSettings::default(), false);
+        other.take(&named);
+        assert_eq!(other.cert_path, "/o/operator.crt");
     }
 
     #[test]

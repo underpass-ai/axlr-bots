@@ -805,6 +805,14 @@ impl App {
                 self.settings.token_file = value;
                 Vec::new()
             }
+            Message::SettingsCert(value) => {
+                self.settings.cert_path = value;
+                Vec::new()
+            }
+            Message::SettingsKey(value) => {
+                self.settings.key_path = value;
+                Vec::new()
+            }
             Message::SettingsActor(value) => {
                 self.settings.actor = value;
                 Vec::new()

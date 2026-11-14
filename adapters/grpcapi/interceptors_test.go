@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -143,10 +144,11 @@ func TestStatusErrorNamesTheKindAndTheCode(t *testing.T) {
 
 func TestActorComesFromTheMetadata(t *testing.T) {
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(ActorMetadata, "alice", ActorMetadata, "bob"))
-	if actorOf(actorFrom(ctx)) != "alice" {
+	acting, err := actorFrom(ctx)
+	if err != nil || actorOf(acting) != "alice" {
 		t.Error("the first value is the actor")
 	}
-	if actorOf(actorFrom(context.Background())) != "" {
+	if none, err := actorFrom(context.Background()); err != nil || actorOf(none) != "" {
 		t.Error("no metadata is no actor")
 	}
 	var seen string
@@ -164,5 +166,32 @@ func TestAPanickingHandlerAnswersInternal(t *testing.T) {
 	err = (errorInterceptor{}).stream(nil, nil, &grpc.StreamServerInfo{}, func(any, grpc.ServerStream) error { panic("boom") })
 	if k, c := kind(t, err); k != "internal" || c != "Internal" {
 		t.Errorf("stream: %s %s", k, c)
+	}
+}
+
+func TestActorBehindACertificateIsTheOperator(t *testing.T) {
+	base := withOperator(context.Background(), "alice")
+	acting, err := actorFrom(base)
+	if err != nil || actorOf(acting) != "alice" {
+		t.Errorf("no key: %q %v", actorOf(acting), err)
+	}
+	same := metadata.NewIncomingContext(base, metadata.Pairs(ActorMetadata, "alice"))
+	if acting, err := actorFrom(same); err != nil || actorOf(acting) != "alice" {
+		t.Errorf("the same name: %q %v", actorOf(acting), err)
+	}
+	other := metadata.NewIncomingContext(base, metadata.Pairs(ActorMetadata, "alice", ActorMetadata, "mallory"))
+	if _, err := actorFrom(other); err == nil || !strings.Contains(err.Error(), "mallory") {
+		t.Errorf("another name: %v", err)
+	}
+	handler := func(context.Context, any) (any, error) { t.Error("the handler ran"); return nil, nil }
+	if _, err := (actorInterceptor{}).unary(other, nil, &grpc.UnaryServerInfo{}, handler); err == nil {
+		t.Error("unary served another actor")
+	}
+	if err := (actorInterceptor{}).stream(nil, wrappedStream{ctx: other}, &grpc.StreamServerInfo{}, func(any, grpc.ServerStream) error { t.Error("the handler ran"); return nil }); err == nil {
+		t.Error("stream served another actor")
+	}
+	var seen string
+	if err := (actorInterceptor{}).stream(nil, wrappedStream{ctx: base}, &grpc.StreamServerInfo{}, func(_ any, s grpc.ServerStream) error { seen = actorOf(s.Context()); return nil }); err != nil || seen != "alice" {
+		t.Errorf("stream: %q %v", seen, err)
 	}
 }

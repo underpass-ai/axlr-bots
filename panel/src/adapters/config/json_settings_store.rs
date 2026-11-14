@@ -99,6 +99,8 @@ mod tests {
             ca_path: "/s/ca.crt".into(),
             token_file: "/s/api.token".into(),
             actor: None,
+            cert_path: None,
+            key_path: None,
         }
     }
 

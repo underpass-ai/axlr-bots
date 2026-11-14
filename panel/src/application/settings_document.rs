@@ -19,6 +19,13 @@ pub struct SettingsDocument {
     /// Who the panel decides as; optional, with the other three.
     #[serde(rename = "controlPlane.actor", default)]
     pub actor: Option<String>,
+    /// The operator's client certificate and key; optional, with the
+    /// other three: absent, the panel looks where `ca operator issue`
+    /// leaves them.
+    #[serde(rename = "controlPlane.certFile", default)]
+    pub cert_file: Option<PathBuf>,
+    #[serde(rename = "controlPlane.keyFile", default)]
+    pub key_file: Option<PathBuf>,
     #[serde(rename = "look.theme", default)]
     pub theme: Theme,
     #[serde(rename = "newBot.defaultModel", default = "default_model")]
@@ -43,6 +50,8 @@ impl From<&PanelSettings> for SettingsDocument {
             ca_file: control_plane.map(|c| c.ca_path.clone()),
             token_file: control_plane.map(|c| c.token_file.clone()),
             actor: control_plane.and_then(|c| c.actor.clone()),
+            cert_file: control_plane.and_then(|c| c.cert_path.clone()),
+            key_file: control_plane.and_then(|c| c.key_path.clone()),
             theme: settings.theme,
             default_model: settings.new_bot.model.clone(),
             models: settings.new_bot.models.clone(),
@@ -55,10 +64,11 @@ impl TryFrom<SettingsDocument> for PanelSettings {
 
     fn try_from(document: SettingsDocument) -> Result<Self, PanelError> {
         let actor = document.actor.map(|a| a.trim().to_string()).filter(|a| !a.is_empty());
+        let (cert_path, key_path) = (document.cert_file, document.key_file);
         let control_plane = match (document.api_url, document.ca_file, document.token_file) {
-            (None, None, None) if actor.is_some() => {
+            (None, None, None) if actor.is_some() || cert_path.is_some() || key_path.is_some() => {
                 return Err(PanelError::Config(
-                    "controlPlane.actor goes with controlPlane.apiUrl, controlPlane.caFile and controlPlane.tokenFile"
+                    "controlPlane.actor, controlPlane.certFile and controlPlane.keyFile go with controlPlane.apiUrl, controlPlane.caFile and controlPlane.tokenFile"
                         .into(),
                 ));
             }
@@ -68,6 +78,8 @@ impl TryFrom<SettingsDocument> for PanelSettings {
                 ca_path,
                 token_file,
                 actor,
+                cert_path,
+                key_path,
             }),
             _ => {
                 return Err(PanelError::Config(
