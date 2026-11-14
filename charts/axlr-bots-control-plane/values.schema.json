@@ -22,6 +22,7 @@
       "nats": {"type": "object", "properties": {
         "url": {"type": "string"},
         "existingSecret": {"type": "string"}}}}},
+    "topics": {"enum": ["off", "nats", false]},
     "ca": {"type": "object", "properties": {"init": {"type": "boolean"}}},
     "persistence": {"type": "object", "properties": {
       "existingClaim": {"type": "string"},

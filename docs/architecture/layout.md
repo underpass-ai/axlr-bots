@@ -18,7 +18,8 @@ One Go module, hexagonal: the domain depends on nothing, the application holds t
 | `adapters/daemon` | The control plane as a service: the API on the socket and the two TLS addresses, in-process runs for bots no node may run, the timer triggers on every tick, reconciliation and offline nodes on a timer |
 | `adapters/jev` | The jev runtime on the node: a bot's fixed program over its MCP server, each decision one question to Jev through TypeSafe's API; the receipt of each decision ([bot definition](../reference/bot-definition.md#runtime)) |
 | `adapters/codex` | The loopback Responses endpoint on the host user's ChatGPT login: `auth.json` read per request, refreshed and written back as Codex does, each request sent on to Codex's backend ([Codex subscription](../runbooks/codex-subscription.md)) |
-| `adapters/bus/nats` | The bus port over a NATS broker: the control plane's publisher with its outbox, the node's subscriber with its durable consumer ([bus port](bus-port.md)) |
+| `adapters/bus/nats` | The bus port over a NATS broker: the control plane's publisher with its outbox, the node's subscriber with its durable consumer ([bus port](bus-port.md)); `Topics`, the decorator of the event publisher that copies a team's events to `AXLR_TOPIC` through an outbox, and the consumer `control-plane` of `AXLR_PUBLISH` ([topics on NATS](topics-on-nats.md)) |
+| `adapters/bus/topicwire` | A team's topics on the wire ([topics on NATS](topics-on-nats.md)): the DTOs generated from [`docs/reference/topics.asyncapi.json`](../reference/topics.asyncapi.json) (`go generate`, checked by a drift test), the mappers from the recorded events and to the operator's publication, the subjects, the streams and the message ids; an application imports it to read and write the same subjects |
 | `adapters/bus/bustest` | The bus port's contract, run against the direct stream and against NATS |
 | `adapters/nodeagent` | The node agent's loop: register, heartbeat, poll, run, renew, report; the queue and sender of a run's progress ([live progress](live-progress.md)); one working slot, lent by an execution that waits on a child; the delegation tool's MCP server (newline JSON-RPC over `<node-state>/run/<execution>.sock`) and its calls to the control plane |
 | `adapters/systemd` | Renders and installs the two units and the environment file (or the node's alone, for a host that joins a control plane elsewhere); removes them |
@@ -28,6 +29,7 @@ One Go module, hexagonal: the domain depends on nothing, the application holds t
 | `cmd/axlr-bots`, `cmd/axlr-node` | The two commands; `axlr-node`'s first start from a token file, its `check`, its `mcp-relay`, the stdio end of the delegation tool, and its `codex-proxy` |
 | `distribution/node.Dockerfile` | The node image: `axlr-node` and AXLR's `axlr-tui` from its release archive, checked by sha256; distroless, user 65532 |
 | `charts/axlr-bots-node` | The Helm chart of the sidecar: the templates another chart includes, the demo StatefulSet, the NetworkPolicy, the chart test ([sidecar](../runbooks/sidecar.md)) |
+| `internal/asyncapigen` | Writes Go DTOs from the schemas of an AsyncAPI 3 document that name an `x-go-type`; `go generate` runs its command |
 | `internal/fakeaxlr` | A shell stand-in for `axlr-tui` the tests run |
 | `panel` | The desktop control panel, a Rust crate of its own (Iced) over the operator API; hexagonal like the Go side, one file per type ([panel](../../panel/README.md)) |
 
@@ -43,6 +45,7 @@ One Go module, hexagonal: the domain depends on nothing, the application holds t
   artifacts/executions/<exec-id>/<name> (+ .listing/<name>.json)   the artifacts an execution delivered
   deliveries/pending/<dlv-id>.json, deliveries/done/   the outbox of approval notifications
   outbox/nats/<node>/<time>-<seq>.json   with serve --bus nats: the pushes the broker has not acknowledged yet
+  outbox/topics/topic/<time>-<seq>.json  with serve --topics nats: the copies of a team's events the broker has not taken yet
   traces/, workspaces/     (single-process runs; a node keeps its own under its state)
   .lock                    the daemon holds it while it runs (a command working on the files takes it too)
   <kind>/.quarantine/<id>.json.<unixnano>   a record a listing could not parse or the domain refused, set aside

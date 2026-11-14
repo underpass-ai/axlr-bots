@@ -1,7 +1,8 @@
 {{- if not (has .Values.bus.kind (list "direct" "nats")) }}{{ fail "bus.kind is direct or nats" }}{{ end -}}
-{{- if eq .Values.bus.kind "nats" }}
+{{- if not (has (toString .Values.topics) (list "off" "false" "nats")) }}{{ fail "topics is off or nats" }}{{ end -}}
+{{- if or (eq .Values.bus.kind "nats") (eq (toString .Values.topics) "nats") }}
 {{- if not (regexMatch "^(tls|nats)://[^/ ]+$" (toString .Values.bus.nats.url)) }}{{ fail "bus.nats.url must be tls://host:port (or nats://)" }}{{ end -}}
-{{- if not .Values.bus.nats.existingSecret }}{{ fail "bus.nats.existingSecret is required with bus.kind nats (tls.crt, tls.key, ca.crt)" }}{{ end -}}
+{{- if not .Values.bus.nats.existingSecret }}{{ fail "bus.nats.existingSecret is required with bus.kind nats or topics nats (tls.crt, tls.key, ca.crt)" }}{{ end -}}
 {{- end }}
 {{- with .Values.apiURL }}{{ if not (regexMatch "^https://[^/ ]+$" .) }}{{ fail "apiURL must be https://host[:port] with no path" }}{{ end }}{{ end -}}
 {{- range .Values.serverNames }}{{ if not (regexMatch "^[A-Za-z0-9.:-]+$" (toString .)) }}{{ fail (printf "serverNames: %q is not a host name or an address" .) }}{{ end }}{{ end -}}

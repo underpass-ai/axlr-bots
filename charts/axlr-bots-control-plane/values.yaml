@@ -57,6 +57,12 @@ bus:
     # tls.key, and ca.crt, the CA of the broker's certificate.
     existingSecret: ""
 
+# A team's topics on the same broker (docs/architecture/topics-on-nats.md):
+# off, or nats to copy every event told to a team to axlr.topic.> and read
+# what an application publishes on axlr.publish.>. Independent of
+# bus.kind; nats uses bus.nats.url and bus.nats.existingSecret.
+topics: "off"
+
 # The fleet CA. A state that has none needs `ca init` once: with init
 # true an init container runs it before serve. It fails when a CA is
 # already there, so set it for the first start of an empty state only.
