@@ -66,7 +66,7 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 		registry.MustRegister(observer)
 		deps.Events = observer
 	}
-	local := unixapi.NewLocal(deps)
+	local := application.NewLocalOperator(deps)
 	for _, pusher := range options.Pushers {
 		local.AddPusher(pusher, logger.Printf)
 	}
@@ -97,11 +97,7 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	if options.APIListenAddr != "" || options.APIListener != nil {
 		if options.TLS == nil {
 			closeListener(tlsListener)
-			return errors.New("daemon: the operator address needs a TLS configuration (the fleet CA)")
-		}
-		if options.APIToken == "" {
-			closeListener(tlsListener)
-			return errors.New("daemon: the operator address needs a bearer token")
+			return errors.New("daemon: the webhook address needs a TLS configuration (the fleet CA)")
 		}
 		apiListener = options.APIListener
 		if apiListener == nil {
@@ -111,7 +107,7 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 				return err
 			}
 		}
-		listening += " and https://" + apiListener.Addr().String() + " (operators, bearer token)"
+		listening += " and https://" + apiListener.Addr().String() + " (webhooks)"
 	}
 	if options.GRPCListenAddr != "" || options.GRPCListener != nil {
 		if options.TLS == nil {
@@ -177,7 +173,7 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	}
 	if apiListener != nil {
 		servers++
-		go func() { served <- server.ServeAPI(ctx, apiListener, apiTLS, options.APIToken) }()
+		go func() { served <- server.ServeWebhooks(ctx, apiListener, apiTLS) }()
 	}
 	// stopped waits for every server to end; the socket's cleanup must
 	// have run before Run returns, or a daemon started next on the same
@@ -267,7 +263,7 @@ func closeListener(listener net.Listener) {
 // fireTimers runs the scheduler's pass: every timer whose slot has come
 // fires once (TickTimers), under the same locks as a submission and a
 // delete, and the pass is logged.
-func fireTimers(ctx context.Context, local *unixapi.Local, logger interface{ Printf(string, ...any) }) {
+func fireTimers(ctx context.Context, local *application.LocalOperator, logger interface{ Printf(string, ...any) }) {
 	if ctx.Err() != nil {
 		return
 	}

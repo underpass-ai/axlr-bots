@@ -2,12 +2,12 @@ package grpcclient
 
 import (
 	"errors"
+	"github.com/underpass-ai/axlr-bots/application"
 	"testing"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -43,13 +43,13 @@ func TestErrorsComeBackAsTheTypesTheCommandKnows(t *testing.T) {
 	}
 
 	h.fake.fail(method("TasksService", "GetTask"), detailed(t, codes.Unauthenticated, &operatorv1.ErrorDetail{Kind: "unauthorized", Message: "no"}))
-	if err := call(); !errors.As(err, new(unixapi.UnauthorizedError)) {
+	if err := call(); !errors.As(err, new(application.UnauthorizedError)) {
 		t.Errorf("unauthorized: %#v", err)
 	}
 
 	for kind, code := range map[string]codes.Code{"validation": codes.InvalidArgument, "state": codes.FailedPrecondition, "approval_expired": codes.FailedPrecondition, "conflict": codes.Aborted, "too_large": codes.ResourceExhausted, "internal": codes.Internal} {
 		h.fake.fail(method("TasksService", "GetTask"), detailed(t, code, &operatorv1.ErrorDetail{Kind: kind, Message: "the daemon's words"}))
-		var remote unixapi.RemoteError
+		var remote application.RemoteError
 		if err := call(); !errors.As(err, &remote) || remote.Kind != kind || err.Error() != "the daemon's words" {
 			t.Errorf("%s: %#v", kind, err)
 		}
@@ -70,7 +70,7 @@ func TestAStatusWithoutDetailIsReadByItsCode(t *testing.T) {
 	for code, kind := range cases {
 		h.fake.fail(method("TasksService", "GetTask"), status.Error(code, "plain"))
 		err := call()
-		var remote unixapi.RemoteError
+		var remote application.RemoteError
 		switch kind {
 		case "not_found":
 			if !domain.IsNotFound(err) {
@@ -81,7 +81,7 @@ func TestAStatusWithoutDetailIsReadByItsCode(t *testing.T) {
 				t.Errorf("%v: %#v", code, err)
 			}
 		case "unauthorized":
-			if !errors.As(err, new(unixapi.UnauthorizedError)) {
+			if !errors.As(err, new(application.UnauthorizedError)) {
 				t.Errorf("%v: %#v", code, err)
 			}
 		default:
@@ -143,11 +143,11 @@ func TestEveryCallMapsItsError(t *testing.T) {
 		"ListGroupTopics":   func() error { _, err := h.client.ListGroupTopics(ctx, "g", ""); return err },
 		"ListGroupEvents":   func() error { _, err := h.client.ListGroupEvents(ctx, query0); return err },
 		"PublishGroupEvent": func() error { _, err := h.client.PublishGroupEvent(ctx, publish0); return err },
-		"SubmitTask":        func() error { _, err := h.client.SubmitTask(ctx, unixapi.SubmitRequest{}); return err },
+		"SubmitTask":        func() error { _, err := h.client.SubmitTask(ctx, application.SubmitRequest{}); return err },
 		"RunTask":           func() error { _, err := h.client.RunTask(ctx, "t"); return err },
-		"DecideTask":        func() error { _, err := h.client.DecideTask(ctx, "t", unixapi.DecideRequest{}); return err },
+		"DecideTask":        func() error { _, err := h.client.DecideTask(ctx, "t", application.DecideRequest{}); return err },
 		"CancelTask":        func() error { _, err := h.client.CancelTask(ctx, "t"); return err },
-		"SendTaskMessage":   func() error { _, err := h.client.SendTaskMessage(ctx, "t", unixapi.MessageRequest{}); return err },
+		"SendTaskMessage":   func() error { _, err := h.client.SendTaskMessage(ctx, "t", application.MessageRequest{}); return err },
 		"GetTask":           func() error { _, err := h.client.GetTask(ctx, "t"); return err },
 		"ListTasks":         func() error { _, err := h.client.ListTasks(ctx, taskQuery0); return err },
 		"ListTaskEvents":    func() error { _, err := h.client.ListTaskEvents(ctx, taskEvents0); return err },
@@ -160,13 +160,16 @@ func TestEveryCallMapsItsError(t *testing.T) {
 		"GetTranscript":     func() error { _, err := h.client.GetTranscript(ctx, "e", "s"); return err },
 		"ListNodes":         func() error { _, err := h.client.ListNodes(ctx); return err },
 		"GetNode":           func() error { _, err := h.client.GetNode(ctx, "n"); return err },
-		"CreateEnrollment":  func() error { _, err := h.client.CreateEnrollmentToken(ctx, unixapi.EnrollTokenRequest{}); return err },
-		"RevokeNode":        func() error { _, err := h.client.RevokeNode(ctx, "n"); return err },
-		"ActivityGet":       func() error { _, err := h.client.Get(ctx, "t", options0); return err },
-		"ActivityWatch":     func() error { return h.client.Watch(ctx, "t", options0, "", nil) },
+		"CreateEnrollment": func() error {
+			_, err := h.client.CreateEnrollmentToken(ctx, application.EnrollTokenRequest{})
+			return err
+		},
+		"RevokeNode":    func() error { _, err := h.client.RevokeNode(ctx, "n"); return err },
+		"ActivityGet":   func() error { _, err := h.client.Get(ctx, "t", options0); return err },
+		"ActivityWatch": func() error { return h.client.Watch(ctx, "t", options0, "", nil) },
 	}
 	for name, call := range calls {
-		var remote unixapi.RemoteError
+		var remote application.RemoteError
 		if err := call(); !errors.As(err, &remote) || remote.Kind != "state" || remote.Message != "refused" {
 			t.Errorf("%s: %#v", name, err)
 		}

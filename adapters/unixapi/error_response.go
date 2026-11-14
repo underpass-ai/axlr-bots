@@ -13,18 +13,3 @@ type ErrorResponse struct {
 	// good, until it is enrolled again.
 	Revoked bool `json:"revoked,omitempty"`
 }
-
-// Kinds of errors the API names.
-const (
-	KindNotFound     = "not_found"
-	KindValidation   = "validation"
-	KindState        = "state"
-	KindConflict     = "conflict"
-	KindForbidden    = "forbidden"
-	KindUnauthorized = "unauthorized"
-	KindTooLarge     = "too_large"
-	// KindApprovalExpired is a decision after the pending call's
-	// deadline: it authorises nothing.
-	KindApprovalExpired = "approval_expired"
-	KindInternal        = "internal"
-)

@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"net/url"
 	"strings"
 
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -66,10 +65,10 @@ func (n approvalNotifier) payload(id domain.DeliveryID, target domain.NotifyTarg
 	} else {
 		call.Arguments = pending.Arguments
 	}
-	taskPath := "/v1/tasks/" + url.PathEscape(task.ID().String())
-	query := ""
+	taskID := task.ID().String()
+	decide := map[string]string{"taskId": taskID}
 	if pending.CallID != "" {
-		query = "?call=" + url.QueryEscape(pending.CallID)
+		decide["callId"] = pending.CallID
 	}
 	return ApprovalNotification{
 		Schema: ApprovalNotificationSchema, DeliveryID: id.String(), Event: domain.EventTaskWaitingApproval.String(), Target: target.Name(),
@@ -78,19 +77,18 @@ func (n approvalNotifier) payload(id domain.DeliveryID, target domain.NotifyTarg
 		Objective: task.Objective().String(), Call: call, RequestedAt: wait.Since, Deadline: wait.Deadline, OnExpire: wait.OnExpire.String(),
 		Correlation: domain.CorrelationRecord{BotID: bot.ID().String(), TaskID: task.ID().String(), ExecutionID: execution.ID().String(), TraceID: task.CorrelationID().String()},
 		Actions: ApprovalActions{
-			Approve: n.action("POST", taskPath+"/approve"+query),
-			Deny:    n.action("POST", taskPath+"/deny"+query),
-			Task:    n.action("GET", taskPath),
+			Approve: n.action(tasksServicePath+"ApproveTask", decide),
+			Deny:    n.action(tasksServicePath+"DenyTask", decide),
+			Task:    n.action(tasksServicePath+"GetTask", map[string]string{"taskId": taskID}),
 		},
 	}
 }
 
-func (n approvalNotifier) action(method, path string) ApprovalAction {
-	action := ApprovalAction{Method: method, Path: path}
-	if base := strings.TrimRight(n.deps.OperatorURL, "/"); base != "" {
-		action.URL = base + path
-	}
-	return action
+// tasksServicePath is the prefix of the operator API's task methods.
+const tasksServicePath = "/axlrbots.operator.v1.TasksService/"
+
+func (n approvalNotifier) action(path string, request map[string]string) ApprovalAction {
+	return ApprovalAction{Method: "grpc", Path: path, URL: strings.TrimRight(n.deps.OperatorAddress, "/"), Request: request}
 }
 
 // deliveryID is the delivery of the wait an execution stopped on to one

@@ -8,8 +8,8 @@ import (
 
 // Dependencies are the ports every use case may need, wired once by the
 // composition root. Actor names who is acting, for the audit log;
-// OperatorURL is the operator API's base URL (https://host:7879), for
-// the approve and deny links a notification carries, and may be empty.
+// OperatorAddress is the operator gRPC address (host:7880), for
+// the approve and deny actions a notification carries, and may be empty.
 type Dependencies struct {
 	Bots        BotRepository
 	Tasks       TaskRepository
@@ -36,14 +36,14 @@ type Dependencies struct {
 	// SessionItems reads a run's items out of a transcript, to complete
 	// the progress timeline after its cut (GetTaskActivity); nil: a cut is
 	// marked and not completed.
-	SessionItems SessionItemReader
-	Workspace    Workspace
-	Deliveries   DeliveryRepository
-	Notifier     NotificationSender
-	Clock        Clock
-	IDs          IDGenerator
-	Actor        string
-	OperatorURL  string
+	SessionItems    SessionItemReader
+	Workspace       Workspace
+	Deliveries      DeliveryRepository
+	Notifier        NotificationSender
+	Clock           Clock
+	IDs             IDGenerator
+	Actor           string
+	OperatorAddress string
 	// Daemon says the process serves others (axlr-bots serve): Actor is
 	// then the control plane's own name, which no decision that names
 	// its actor may claim where names count (approvers).

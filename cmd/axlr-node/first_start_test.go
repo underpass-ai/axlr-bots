@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"github.com/underpass-ai/axlr-bots/application"
+	"github.com/underpass-ai/axlr-bots/internal/operatortest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,14 +13,13 @@ import (
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/internal/fakeaxlr"
 )
 
 // mintToFile mints a token for the node id and writes it to a file.
-func mintToFile(t *testing.T, operator *unixapi.Client, nodeID string) (string, string) {
+func mintToFile(t *testing.T, operator *operatortest.Client, nodeID string) (string, string) {
 	t.Helper()
-	minted, err := operator.CreateEnrollmentToken(context.Background(), unixapi.EnrollTokenRequest{NodeID: nodeID, Labels: map[string]string{"zone": "k8s"}})
+	minted, err := operator.CreateEnrollmentToken(context.Background(), application.EnrollTokenRequest{NodeID: nodeID, Labels: map[string]string{"zone": "k8s"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +144,7 @@ func TestUntilEnrolledWaitsForTheToken(t *testing.T) {
 		t.Fatalf("retries logged: %v", lines)
 	}
 	// The token appears while the node waits (a Secret's update).
-	minted, _ := operator.CreateEnrollmentToken(context.Background(), unixapi.EnrollTokenRequest{NodeID: "pod-1"})
+	minted, _ := operator.CreateEnrollmentToken(context.Background(), application.EnrollTokenRequest{NodeID: "pod-1"})
 	go func() {
 		time.Sleep(30 * time.Millisecond)
 		_ = os.WriteFile(tokenFile, []byte(minted.Token), 0o600)

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/adapters/axlr"
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
 	"github.com/underpass-ai/axlr-bots/internal/fakeaxlr"
@@ -36,13 +35,13 @@ func TestAnOperatorMessageReachesTheRunningExecution(t *testing.T) {
 	if _, err := f.client.EnableBot(ctx, "bot"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, err := f.client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "watch the queue", IdempotencyKey: "k1"})
+	submitted, err := f.client.SubmitTask(ctx, application.SubmitRequest{BotID: "bot", Objective: "watch the queue", IdempotencyKey: "k1"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	task := submitted.Task.ID
 	waitFor(t, f.client, task, "Running")
-	sent, err := f.client.SendTaskMessage(ctx, task, unixapi.MessageRequest{Text: "check row F too"})
+	sent, err := f.client.SendTaskMessage(ctx, task, application.MessageRequest{Text: "check row F too"})
 	if err != nil || sent.ExecutionID == "" {
 		t.Fatalf("%+v %v", sent, err)
 	}
@@ -77,7 +76,7 @@ func TestAnOperatorMessageReachesTheRunningExecution(t *testing.T) {
 	if !strings.Contains(f.logs.String(), "1 message(s) from the operator handed to the run") {
 		t.Fatalf("logs: %s", f.logs.String())
 	}
-	if _, err := f.client.SendTaskMessage(ctx, task, unixapi.MessageRequest{Text: "still there?"}); err == nil {
+	if _, err := f.client.SendTaskMessage(ctx, task, application.MessageRequest{Text: "still there?"}); err == nil {
 		t.Fatal("a finished task takes no message")
 	}
 }

@@ -87,8 +87,8 @@ spec:
             - {name: AXLR_BOTS_LISTEN, value: "0.0.0.0:7878"}
             - {name: AXLR_BOTS_API_LISTEN, value: "0.0.0.0:7879"}
             - {name: AXLR_BOTS_SERVER_NAMES, value: {{ include "axlr-bots-control-plane.serverNames" . | quote }}}
-            {{- with .Values.apiURL }}
-            - {name: AXLR_BOTS_API_URL, value: {{ . | quote }}}
+            {{- with .Values.grpcURL }}
+            - {name: AXLR_BOTS_GRPC_URL, value: {{ . | quote }}}
             {{- end }}
             {{- with .Values.minAXLRVersion }}
             - {name: AXLR_BOTS_MIN_AXLR_VERSION, value: {{ . | quote }}}

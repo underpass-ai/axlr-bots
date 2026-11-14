@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -27,25 +26,25 @@ func (c *Client) GetExecution(ctx context.Context, id string) (domain.ExecutionS
 // message names it and the chunks that follow are its content, which
 // Read checks against the size and SHA-256 at the end. The caller closes
 // the body, which ends the stream.
-func (c *Client) GetArtifact(ctx context.Context, execution, name string) (unixapi.ArtifactContent, error) {
+func (c *Client) GetArtifact(ctx context.Context, execution, name string) (application.ArtifactContent, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	stream, err := c.execs.GetArtifact(ctx, &operatorv1.GetArtifactRequest{ExecutionId: execution, Name: name})
 	if err != nil {
 		cancel()
-		return unixapi.ArtifactContent{}, fromStatus(c.address, err)
+		return application.ArtifactContent{}, fromStatus(c.address, err)
 	}
 	first, err := stream.Recv()
 	if err != nil {
 		cancel()
-		return unixapi.ArtifactContent{}, fromStatus(c.address, err)
+		return application.ArtifactContent{}, fromStatus(c.address, err)
 	}
 	if first.GetArtifact() == nil {
 		cancel()
-		return unixapi.ArtifactContent{}, fmt.Errorf("control plane at %s: artifact %s: the stream did not start with the artifact", c.address, name)
+		return application.ArtifactContent{}, fmt.Errorf("control plane at %s: artifact %s: the stream did not start with the artifact", c.address, name)
 	}
 	artifact := artifactOf(first.GetArtifact())
 	artifact.Stored = true
-	return unixapi.ArtifactContent{Artifact: artifact, Body: newArtifactBody(artifactChunks{stream: stream}, cancel, artifact, c.address)}, nil
+	return application.ArtifactContent{Artifact: artifact, Body: newArtifactBody(artifactChunks{stream: stream}, cancel, artifact, c.address)}, nil
 }
 
 func (c *Client) ListTranscripts(ctx context.Context, after int64, limit int) ([]application.TranscriptRecord, error) {

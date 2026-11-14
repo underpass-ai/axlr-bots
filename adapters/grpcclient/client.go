@@ -1,5 +1,5 @@
 // Package grpcclient is the operator's client of the control plane over
-// gRPC: the same Service the command used over HTTP (unixapi.Service),
+// gRPC: the same Service the command used over HTTP (application.OperatorService),
 // spoken through the services of axlrbots.operator.v1. It dials the
 // daemon's local socket (no credentials: the file is the permission) or
 // an address over TLS with the fleet CA and the operator token in the
@@ -8,17 +8,17 @@
 package grpcclient
 
 import (
+	"github.com/underpass-ai/axlr-bots/application"
 	"io"
 
 	"google.golang.org/grpc"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 )
 
-var _ unixapi.Service = (*Client)(nil)
+var _ application.OperatorService = (*Client)(nil)
 
-// Client implements unixapi.Service over the operator API.
+// Client implements application.OperatorService over the operator API.
 type Client struct {
 	address  string
 	closer   io.Closer

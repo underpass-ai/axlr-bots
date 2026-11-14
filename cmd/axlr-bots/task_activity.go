@@ -7,17 +7,17 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/underpass-ai/axlr-bots/application"
 	"io"
 	"time"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application/taskactivity"
 )
 
 // taskActivity is task activity <id>: everything that happened under a
 // task, its delegated tasks included, as text or --json; --watch follows
 // it live until the whole tree has finished.
-func taskActivity(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func taskActivity(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) < 1 || args[0] == "" || args[0][0] == '-' {
 		fmt.Fprintln(stderr, "axlr-bots: task activity needs <task-id> first")
 		return exitUsage

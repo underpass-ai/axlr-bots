@@ -2,15 +2,15 @@ package grpcapi
 
 import (
 	"context"
+	"github.com/underpass-ai/axlr-bots/application"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 )
 
 // nodesService is NodesService: the operator's side of the fleet.
 type nodesService struct {
 	operatorv1.UnimplementedNodesServiceServer
-	local *unixapi.Local
+	local *application.LocalOperator
 }
 
 func (s nodesService) ListNodes(ctx context.Context, _ *operatorv1.ListNodesRequest) (*operatorv1.ListNodesResponse, error) {
@@ -30,7 +30,7 @@ func (s nodesService) GetNode(ctx context.Context, request *operatorv1.GetNodeRe
 }
 
 func (s nodesService) CreateEnrollment(ctx context.Context, request *operatorv1.CreateEnrollmentRequest) (*operatorv1.CreateEnrollmentResponse, error) {
-	token, err := s.local.CreateEnrollmentToken(ctx, unixapi.EnrollTokenRequest{NodeID: request.GetNodeId(), Labels: request.GetLabels(), TTL: textOf(request.GetTtl())})
+	token, err := s.local.CreateEnrollmentToken(ctx, application.EnrollTokenRequest{NodeID: request.GetNodeId(), Labels: request.GetLabels(), TTL: textOf(request.GetTtl())})
 	if err != nil {
 		return nil, err
 	}

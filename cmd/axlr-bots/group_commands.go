@@ -10,12 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 )
 
 // groupList prints every team the bots name, with its members.
-func groupList(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func groupList(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 0 {
 		fmt.Fprintln(stderr, "axlr-bots: group list takes no arguments")
 		return exitUsage
@@ -29,7 +28,7 @@ func groupList(ctx context.Context, service unixapi.Service, args []string, stdo
 }
 
 // groupGet prints one team, in the tenant given when several have it.
-func groupGet(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func groupGet(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("group get", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	tenant := flags.String("tenant", "", "the tenant, when several have a team of that name")
@@ -51,7 +50,7 @@ func groupGet(ctx context.Context, service unixapi.Service, args []string, stdou
 
 // groupEvents prints a team's timeline: its members' events, oldest
 // first, after the one --after names.
-func groupEvents(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func groupEvents(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("group events", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	tenant := flags.String("tenant", "", "the tenant, when several have a team of that name")
@@ -75,7 +74,7 @@ func groupEvents(ctx context.Context, service unixapi.Service, args []string, st
 
 // groupTopics prints a team's topics: who publishes, who listens and
 // how, the last event, and the ones nobody listens to.
-func groupTopics(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func groupTopics(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	return groupDerived(ctx, "topics", args, stdout, stderr, func(ctx context.Context, name, tenant string) (any, error) {
 		return service.ListGroupTopics(ctx, name, tenant)
 	})
@@ -104,7 +103,7 @@ func groupDerived(ctx context.Context, verb string, args []string, stdout, stder
 }
 
 // groupPublish publishes the operator's event on a team.
-func groupPublish(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func groupPublish(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("group publish", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	tenant := flags.String("tenant", "", "the tenant, when several have a team of that name")

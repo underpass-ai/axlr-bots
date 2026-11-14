@@ -3,7 +3,6 @@ package grpcapi
 import (
 	"context"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -12,7 +11,7 @@ import (
 // tasksService is TasksService over the same service the HTTP routes use.
 type tasksService struct {
 	operatorv1.UnimplementedTasksServiceServer
-	local *unixapi.Local
+	local *application.LocalOperator
 }
 
 func (s tasksService) ListTasks(ctx context.Context, request *operatorv1.ListTasksRequest) (*operatorv1.ListTasksResponse, error) {
@@ -36,7 +35,7 @@ func (s tasksService) GetTask(ctx context.Context, request *operatorv1.GetTaskRe
 }
 
 func (s tasksService) SubmitTask(ctx context.Context, request *operatorv1.SubmitTaskRequest) (*operatorv1.SubmitTaskResponse, error) {
-	submitted, err := s.local.SubmitTask(ctx, unixapi.SubmitRequest{
+	submitted, err := s.local.SubmitTask(ctx, application.SubmitRequest{
 		BotID: request.GetBotId(), Objective: request.GetObjective(), IdempotencyKey: request.GetIdempotencyKey(),
 		CorrelationID: request.GetCorrelationId(), Priority: request.GetPriority(),
 	})
@@ -55,7 +54,7 @@ func (s tasksService) RunTask(ctx context.Context, request *operatorv1.RunTaskRe
 }
 
 func (s tasksService) ApproveTask(ctx context.Context, request *operatorv1.ApproveTaskRequest) (*operatorv1.ApproveTaskResponse, error) {
-	decided, err := s.local.DecideTask(ctx, request.GetTaskId(), unixapi.DecideRequest{Decision: application.DecisionApprove, CallID: request.GetCallId(), DecidedBy: actorOf(ctx)})
+	decided, err := s.local.DecideTask(ctx, request.GetTaskId(), application.DecideRequest{Decision: application.DecisionApprove, CallID: request.GetCallId(), DecidedBy: actorOf(ctx)})
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +62,7 @@ func (s tasksService) ApproveTask(ctx context.Context, request *operatorv1.Appro
 }
 
 func (s tasksService) DenyTask(ctx context.Context, request *operatorv1.DenyTaskRequest) (*operatorv1.DenyTaskResponse, error) {
-	decided, err := s.local.DecideTask(ctx, request.GetTaskId(), unixapi.DecideRequest{Decision: application.DecisionDeny, CallID: request.GetCallId(), DecidedBy: actorOf(ctx)})
+	decided, err := s.local.DecideTask(ctx, request.GetTaskId(), application.DecideRequest{Decision: application.DecisionDeny, CallID: request.GetCallId(), DecidedBy: actorOf(ctx)})
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +80,7 @@ func (s tasksService) DecideTask(ctx context.Context, request *operatorv1.Decide
 	if by == "" {
 		by = header
 	}
-	decided, err := s.local.DecideTask(ctx, request.GetTaskId(), unixapi.DecideRequest{Decision: request.GetDecision(), CallID: request.GetCallId(), DecidedBy: by})
+	decided, err := s.local.DecideTask(ctx, request.GetTaskId(), application.DecideRequest{Decision: request.GetDecision(), CallID: request.GetCallId(), DecidedBy: by})
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +96,7 @@ func (s tasksService) CancelTask(ctx context.Context, request *operatorv1.Cancel
 }
 
 func (s tasksService) SendTaskMessage(ctx context.Context, request *operatorv1.SendTaskMessageRequest) (*operatorv1.SendTaskMessageResponse, error) {
-	sent, err := s.local.SendTaskMessage(ctx, request.GetTaskId(), unixapi.MessageRequest{Text: request.GetText()})
+	sent, err := s.local.SendTaskMessage(ctx, request.GetTaskId(), application.MessageRequest{Text: request.GetText()})
 	if err != nil {
 		return nil, err
 	}

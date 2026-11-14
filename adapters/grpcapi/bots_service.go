@@ -2,8 +2,8 @@ package grpcapi
 
 import (
 	"context"
+	"github.com/underpass-ai/axlr-bots/application"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -11,7 +11,7 @@ import (
 // botsService is BotsService over the same service the HTTP routes use.
 type botsService struct {
 	operatorv1.UnimplementedBotsServiceServer
-	local *unixapi.Local
+	local *application.LocalOperator
 }
 
 func (s botsService) ListBots(ctx context.Context, _ *operatorv1.ListBotsRequest) (*operatorv1.ListBotsResponse, error) {
@@ -147,7 +147,7 @@ func (s botsService) WatchBotEvents(request *operatorv1.WatchBotEventsRequest, s
 }
 
 func (s botsService) SubmitBotTask(ctx context.Context, request *operatorv1.SubmitBotTaskRequest) (*operatorv1.SubmitBotTaskResponse, error) {
-	submitted, err := s.local.SubmitTask(ctx, unixapi.SubmitRequest{
+	submitted, err := s.local.SubmitTask(ctx, application.SubmitRequest{
 		BotID: request.GetBotId(), Objective: request.GetObjective(), IdempotencyKey: request.GetIdempotencyKey(),
 		CorrelationID: request.GetCorrelationId(), Priority: request.GetPriority(),
 	})

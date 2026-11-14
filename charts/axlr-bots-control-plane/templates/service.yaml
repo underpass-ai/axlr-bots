@@ -18,7 +18,7 @@ spec:
   ports:
     # The node protocol, mutual TLS: passed through, never terminated.
     - {name: node, port: {{ .Values.service.nodePort }}, targetPort: node, protocol: TCP}
-    # The operator API, TLS from the fleet CA, bearer token.
+    # The webhook triggers, TLS from the fleet CA; each trigger has its own secret.
     - {name: api, port: {{ .Values.service.apiPort }}, targetPort: api, protocol: TCP}
     {{- if .Values.grpc.enabled }}
     - {name: grpc, port: {{ .Values.grpc.port }}, targetPort: grpc, protocol: TCP}

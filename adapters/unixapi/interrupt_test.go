@@ -29,23 +29,23 @@ func (b blockingRuntime) Execute(ctx context.Context, _ application.ExecutionReq
 // worker (QA 5 Nov 2026: a stopped bot's run went on for its timeout).
 func TestStopAndPreemptionInterruptAnInProcessRun(t *testing.T) {
 	runtime := blockingRuntime{started: make(chan struct{}, 4)}
-	client, _, _ := serveWith(t, "completed", func(deps *application.Dependencies) { deps.Runtime = runtime })
+	_, local, _ := serveWith(t, "completed", func(deps *application.Dependencies) { deps.Runtime = runtime })
 	ctx := context.Background()
-	if _, err := client.RegisterBot(ctx, definition("bot-i", "observe")); err != nil {
+	if _, err := local.RegisterBot(ctx, definition("bot-i", "observe")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.EnableBot(ctx, "bot-i"); err != nil {
+	if _, err := local.EnableBot(ctx, "bot-i"); err != nil {
 		t.Fatal(err)
 	}
-	run := func(key string) <-chan RunResponse {
+	run := func(key string) <-chan application.RunResponse {
 		t.Helper()
-		submitted, err := client.SubmitTask(ctx, SubmitRequest{BotID: "bot-i", Objective: "take a while", IdempotencyKey: key})
+		submitted, err := local.SubmitTask(ctx, application.SubmitRequest{BotID: "bot-i", Objective: "take a while", IdempotencyKey: key})
 		if err != nil {
 			t.Fatal(err)
 		}
-		ran := make(chan RunResponse, 1)
+		ran := make(chan application.RunResponse, 1)
 		go func() {
-			result, _ := client.RunTask(ctx, submitted.Task.ID)
+			result, _ := local.RunTask(ctx, submitted.Task.ID)
 			ran <- result
 		}()
 		select {
@@ -55,7 +55,7 @@ func TestStopAndPreemptionInterruptAnInProcessRun(t *testing.T) {
 		}
 		return ran
 	}
-	ended := func(what string, ran <-chan RunResponse) {
+	ended := func(what string, ran <-chan application.RunResponse) {
 		t.Helper()
 		select {
 		case result := <-ran:
@@ -67,15 +67,15 @@ func TestStopAndPreemptionInterruptAnInProcessRun(t *testing.T) {
 		}
 	}
 	ran := run("stop-1")
-	if stopped, err := client.StopBot(ctx, "bot-i"); err != nil || len(stopped.Cancelled) != 1 {
+	if stopped, err := local.StopBot(ctx, "bot-i"); err != nil || len(stopped.Cancelled) != 1 {
 		t.Fatalf("stop: %v %+v", err, stopped)
 	}
 	ended("stop", ran)
-	if _, err := client.EnableBot(ctx, "bot-i"); err != nil {
+	if _, err := local.EnableBot(ctx, "bot-i"); err != nil {
 		t.Fatal(err)
 	}
 	ran = run("slow-2")
-	if _, err := client.SubmitTask(ctx, SubmitRequest{BotID: "bot-i", Objective: "now", IdempotencyKey: "urgent-1", Priority: "urgent"}); err != nil {
+	if _, err := local.SubmitTask(ctx, application.SubmitRequest{BotID: "bot-i", Objective: "now", IdempotencyKey: "urgent-1", Priority: "urgent"}); err != nil {
 		t.Fatal(err)
 	}
 	ended("urgent", ran)
@@ -86,21 +86,21 @@ func TestStopAndPreemptionInterruptAnInProcessRun(t *testing.T) {
 // history and the same id may be registered again.
 func TestDeleteBotInterruptsAnInProcessRunAndKeepsTheHistory(t *testing.T) {
 	runtime := blockingRuntime{started: make(chan struct{}, 2)}
-	client, _, _ := serveWith(t, "completed", func(deps *application.Dependencies) { deps.Runtime = runtime })
+	_, local, _ := serveWith(t, "completed", func(deps *application.Dependencies) { deps.Runtime = runtime })
 	ctx := context.Background()
-	if _, err := client.RegisterBot(ctx, definition("bot-d", "observe")); err != nil {
+	if _, err := local.RegisterBot(ctx, definition("bot-d", "observe")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.EnableBot(ctx, "bot-d"); err != nil {
+	if _, err := local.EnableBot(ctx, "bot-d"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, err := client.SubmitTask(ctx, SubmitRequest{BotID: "bot-d", Objective: "take a while", IdempotencyKey: "k-1"})
+	submitted, err := local.SubmitTask(ctx, application.SubmitRequest{BotID: "bot-d", Objective: "take a while", IdempotencyKey: "k-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ran := make(chan RunResponse, 1)
+	ran := make(chan application.RunResponse, 1)
 	go func() {
-		result, _ := client.RunTask(ctx, submitted.Task.ID)
+		result, _ := local.RunTask(ctx, submitted.Task.ID)
 		ran <- result
 	}()
 	select {
@@ -108,7 +108,7 @@ func TestDeleteBotInterruptsAnInProcessRunAndKeepsTheHistory(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the run never started")
 	}
-	deleted, err := client.DeleteBot(ctx, "bot-d")
+	deleted, err := local.DeleteBot(ctx, "bot-d")
 	if err != nil || len(deleted.Cancelled) != 1 || deleted.Cancelled[0] != submitted.Task.ID || deleted.Bot.ID != "bot-d" || deleted.NamedBy == nil {
 		t.Fatalf("delete: %v %+v", err, deleted)
 	}
@@ -120,19 +120,19 @@ func TestDeleteBotInterruptsAnInProcessRunAndKeepsTheHistory(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the in-process run was not interrupted")
 	}
-	if _, err := client.GetBot(ctx, "bot-d"); !domain.IsNotFound(err) {
+	if _, err := local.GetBot(ctx, "bot-d"); !domain.IsNotFound(err) {
 		t.Errorf("get after delete: %v", err)
 	}
-	if task, err := client.GetTask(ctx, submitted.Task.ID); err != nil || task.FailureReason != application.DeletedReason {
+	if task, err := local.GetTask(ctx, submitted.Task.ID); err != nil || task.FailureReason != application.DeletedReason {
 		t.Errorf("task after delete: %v %+v", err, task)
 	}
-	if _, err := client.DeleteBot(ctx, "bot-d"); !domain.IsNotFound(err) {
+	if _, err := local.DeleteBot(ctx, "bot-d"); !domain.IsNotFound(err) {
 		t.Errorf("second delete: %v", err)
 	}
-	if _, err := client.DeleteBot(ctx, "Not An Id"); err == nil {
+	if _, err := local.DeleteBot(ctx, "Not An Id"); err == nil {
 		t.Error("a bad id was taken")
 	}
-	if _, err := client.RegisterBot(ctx, definition("bot-d", "observe")); err != nil {
+	if _, err := local.RegisterBot(ctx, definition("bot-d", "observe")); err != nil {
 		t.Errorf("register again: %v", err)
 	}
 }

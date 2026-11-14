@@ -283,7 +283,7 @@ func TestADurationThatIsNoDurationIsRefusedBeforeTheCall(t *testing.T) {
 	if _, err := h.client.StageBot(ctx, "b", application.BotPatch{Approvals: &domain.ApprovalsSnapshot{TTL: "x"}}); !isValidation(err, "approvals.ttl") {
 		t.Errorf("patch ttl: %v", err)
 	}
-	if _, err := h.client.CreateEnrollmentToken(ctx, unixapiEnroll("yesterday")); !isValidation(err, "ttl") {
+	if _, err := h.client.CreateEnrollmentToken(ctx, enrollRequest("yesterday")); !isValidation(err, "ttl") {
 		t.Errorf("enroll ttl: %v", err)
 	}
 	if h.fake.request(method("BotsService", "RegisterBot")) != nil {

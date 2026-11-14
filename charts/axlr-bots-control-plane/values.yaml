@@ -1,5 +1,5 @@
 # The control plane of AXLR Bots (axlr-bots serve) as one pod: the node
-# protocol (mutual TLS) on 7878, the operator API (bearer token) on 7879,
+# protocol (mutual TLS) on 7878, the webhook triggers (TLS) on 7879,
 # and its state (bots, tasks, the fleet CA, the operator token, the
 # socket) on a volume. One replica, always: the state lock refuses a
 # second serve on the same state, so an update stops the old pod before
@@ -22,11 +22,11 @@ imagePullSecrets: []
 # carries them, with the Service's cluster names, which the chart adds.
 serverNames: []
 
-# The operator API's base URL that approval notifications link to, such
-# as https://<address>:7879. Empty: the pod's own name, which nothing
-# outside the cluster resolves.
-apiURL: ""
-# The least AXLR the nodes should run (GET /v1/build); empty: no minimum.
+# The operator gRPC address that approval notifications name for
+# deciding, as host:port, such as 192.0.2.10:7880 (grpc.enabled). Empty:
+# the pod's own name, which nothing outside the cluster resolves.
+grpcURL: ""
+# The least AXLR the nodes should run (the GetBuild call); empty: no minimum.
 minAXLRVersion: ""
 
 # Environment from a Secret you create, every key as a variable: the
@@ -38,7 +38,7 @@ env:
   # More container env entries, as given.
   extra: []
 
-# The operator API's bearer token, from a Secret you create (key token),
+# The gRPC operator API's bearer token, from a Secret you create (key token),
 # so the panel, the CLI and adapters outside the pod can be given it; the
 # image has no shell to read it from the volume. Empty: the daemon writes
 # one to <state>/api.token on its first start and keeps it there.
@@ -88,7 +88,7 @@ service:
   # More ports for extra containers: [{name, port, targetPort}]
   extraPorts: []
 
-# The operator API over gRPC (axlrbots.operator.v1, docs/reference/operator-grpc.md):
+# The operator API over gRPC (axlrbots.operator.v1, docs/reference/operator-grpc.md), the only operator API:
 # TLS 1.3 with the fleet CA's certificate, the operator's bearer token,
 # on this port of the pod and of the Service. Needs the fleet CA (ca.init
 # or a state that has one). The unix socket beside the HTTP one is always

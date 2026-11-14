@@ -7,13 +7,12 @@ import (
 	"io"
 	"time"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
 	"github.com/underpass-ai/axlr-bots/internal/statelock"
 )
 
-func taskSubmit(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func taskSubmit(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) < 1 || len(args[0]) == 0 || args[0][0] == '-' {
 		fmt.Fprintln(stderr, "axlr-bots: task submit needs <bot-id> first, then --objective and --key")
 		return exitUsage
@@ -36,7 +35,7 @@ func taskSubmit(ctx context.Context, service unixapi.Service, args []string, std
 	if *urgent {
 		priority = "urgent"
 	}
-	result, err := service.SubmitTask(ctx, unixapi.SubmitRequest{BotID: botID, Objective: *objective, IdempotencyKey: *key, CorrelationID: *correlation, Priority: priority})
+	result, err := service.SubmitTask(ctx, application.SubmitRequest{BotID: botID, Objective: *objective, IdempotencyKey: *key, CorrelationID: *correlation, Priority: priority})
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -44,7 +43,7 @@ func taskSubmit(ctx context.Context, service unixapi.Service, args []string, std
 	return exitOK
 }
 
-func taskRun(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func taskRun(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "axlr-bots: task run needs exactly one <task-id>")
 		return exitUsage
@@ -59,7 +58,7 @@ func taskRun(ctx context.Context, service unixapi.Service, args []string, stdout
 
 // taskDecide is task decide <id> approve|deny, decided as the global
 // --actor: the name a bot's approvers are compared with.
-func taskDecide(ctx context.Context, service unixapi.Service, actor string, args []string, stdout, stderr io.Writer) int {
+func taskDecide(ctx context.Context, service application.OperatorService, actor string, args []string, stdout, stderr io.Writer) int {
 	positional, call, ok := decideArgs("task decide", args, stderr)
 	if !ok {
 		return exitUsage
@@ -72,11 +71,11 @@ func taskDecide(ctx context.Context, service unixapi.Service, actor string, args
 		fmt.Fprintf(stderr, "axlr-bots: task decide takes approve or deny, not %q\n", positional[1])
 		return exitUsage
 	}
-	return decide(ctx, service, positional[0], unixapi.DecideRequest{Decision: positional[1], CallID: call, DecidedBy: actor}, stdout, stderr)
+	return decide(ctx, service, positional[0], application.DecideRequest{Decision: positional[1], CallID: call, DecidedBy: actor}, stdout, stderr)
 }
 
 // taskDecideAs is task approve and task deny: the decision is the verb.
-func taskDecideAs(ctx context.Context, service unixapi.Service, actor, decision string, args []string, stdout, stderr io.Writer) int {
+func taskDecideAs(ctx context.Context, service application.OperatorService, actor, decision string, args []string, stdout, stderr io.Writer) int {
 	positional, call, ok := decideArgs("task "+decision, args, stderr)
 	if !ok {
 		return exitUsage
@@ -85,7 +84,7 @@ func taskDecideAs(ctx context.Context, service unixapi.Service, actor, decision 
 		fmt.Fprintf(stderr, "axlr-bots: task %s needs exactly one <task-id>\n", decision)
 		return exitUsage
 	}
-	return decide(ctx, service, positional[0], unixapi.DecideRequest{Decision: decision, CallID: call, DecidedBy: actor}, stdout, stderr)
+	return decide(ctx, service, positional[0], application.DecideRequest{Decision: decision, CallID: call, DecidedBy: actor}, stdout, stderr)
 }
 
 // decideArgs reads --call, before or after the positional arguments.
@@ -97,7 +96,7 @@ func decideArgs(name string, args []string, stderr io.Writer) ([]string, string,
 	return positional, *call, ok
 }
 
-func decide(ctx context.Context, service unixapi.Service, id string, request unixapi.DecideRequest, stdout, stderr io.Writer) int {
+func decide(ctx context.Context, service application.OperatorService, id string, request application.DecideRequest, stdout, stderr io.Writer) int {
 	result, err := service.DecideTask(ctx, id, request)
 	if err != nil {
 		return fail(stderr, err)
@@ -106,7 +105,7 @@ func decide(ctx context.Context, service unixapi.Service, id string, request uni
 	return exitCodeFor(result.Execution.Outcome)
 }
 
-func taskGet(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func taskGet(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "axlr-bots: task get needs exactly one <task-id>")
 		return exitUsage
@@ -120,7 +119,7 @@ func taskGet(ctx context.Context, service unixapi.Service, args []string, stdout
 }
 
 // taskReport prints the task's report as text, or only its path.
-func taskReport(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func taskReport(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("task report", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	pathOnly := flags.Bool("path", false, "print only where the report is kept")
@@ -187,7 +186,7 @@ func taskIDStrings(ids []domain.TaskID) []string {
 }
 
 // taskCancel stops a task that has not finished.
-func taskCancel(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func taskCancel(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "axlr-bots: task cancel needs exactly one <task-id>")
 		return exitUsage
@@ -201,7 +200,7 @@ func taskCancel(ctx context.Context, service unixapi.Service, args []string, std
 }
 
 // taskExecutions lists a task's executions, oldest first.
-func taskExecutions(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func taskExecutions(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "axlr-bots: task executions needs exactly one <task-id>")
 		return exitUsage
@@ -215,7 +214,7 @@ func taskExecutions(ctx context.Context, service unixapi.Service, args []string,
 }
 
 // taskList lists the tasks across bots, newest first.
-func taskList(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func taskList(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("task list", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	bot := flags.String("bot", "", "only this bot's tasks")
@@ -247,7 +246,7 @@ func taskList(ctx context.Context, service unixapi.Service, args []string, stdou
 }
 
 // taskEvents prints the task's timeline, oldest first.
-func taskEvents(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func taskEvents(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) < 1 || args[0] == "" || args[0][0] == '-' {
 		fmt.Fprintln(stderr, "axlr-bots: task events needs <task-id> first")
 		return exitUsage
@@ -282,7 +281,7 @@ func startOfToday(now time.Time) time.Time {
 
 // overview prints the dashboard's counts: nodes, bots and tasks by
 // status, and the tasks, executions and cost since a moment.
-func overview(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func overview(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("overview", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	since := flags.String("since", "", "count from this RFC 3339 time (default: the start of today)")

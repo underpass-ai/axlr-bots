@@ -29,12 +29,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	actor := flags.String("actor", defaultActor(), "who is acting, for the audit log; task approve, deny and decide send it as who decides (a bot's approvers name it exactly)")
 	socket := flags.String("socket", defaultSocket(), "the daemon's socket (also AXLR_BOTS_SOCKET; default <state>/axlr-bots.sock; empty: never use a daemon)")
 	grpcSocket := flags.String("grpc-socket", os.Getenv("AXLR_BOTS_GRPC_SOCKET"), "the daemon's gRPC socket (also AXLR_BOTS_GRPC_SOCKET; default <state>/"+grpcSocketFileName+")")
-	transport := flags.String("transport", defaultTransport(), "how commands talk to the control plane: grpc (the default) or rest, the HTTP API that is going away (also AXLR_BOTS_TRANSPORT)")
 	var remote remoteControl
-	flags.StringVar(&remote.URL, "control", os.Getenv("AXLR_BOTS_CONTROL"), "a control plane on another host: its gRPC operator address, host:7880 (with --transport rest, its HTTPS operator address https://host:7879), used in place of the socket (also AXLR_BOTS_CONTROL)")
+	flags.StringVar(&remote.URL, "control", os.Getenv("AXLR_BOTS_CONTROL"), "a control plane on another host: its gRPC operator address, host:7880, used in place of the socket (also AXLR_BOTS_CONTROL)")
 	flags.StringVar(&remote.TokenFile, "token-file", os.Getenv("AXLR_BOTS_TOKEN_FILE"), "with --control, the file holding the operator token (also AXLR_BOTS_TOKEN_FILE)")
 	flags.StringVar(&remote.CAFile, "ca-file", os.Getenv("AXLR_BOTS_CA_FILE"), "with --control, the CA the control plane's certificate is checked against, the fleet CA from ca show (also AXLR_BOTS_CA_FILE; default the system's)")
-	flags.StringVar(&remote.CertFile, "cert-file", os.Getenv("AXLR_BOTS_CERT_FILE"), "with --control over gRPC, the operator's client certificate from ca operator issue (also AXLR_BOTS_CERT_FILE; default <user config>/axlr-bots/operator/operator.crt)")
+	flags.StringVar(&remote.CertFile, "cert-file", os.Getenv("AXLR_BOTS_CERT_FILE"), "with --control the operator's client certificate from ca operator issue (also AXLR_BOTS_CERT_FILE; default <user config>/axlr-bots/operator/operator.crt)")
 	flags.StringVar(&remote.KeyFile, "key-file", os.Getenv("AXLR_BOTS_KEY_FILE"), "with --control over gRPC, the key of that certificate (also AXLR_BOTS_KEY_FILE; default <user config>/axlr-bots/operator/operator.key)")
 	flags.Usage = func() { printUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
@@ -71,18 +70,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if socketPath == "" && !flagSet(flags, "socket") && os.Getenv("AXLR_BOTS_SOCKET") == "" {
 		socketPath = filepath.Join(*stateDir, socketFileName)
 	}
-	if err := validateTransport(*transport); err != nil {
-		fmt.Fprintln(stderr, "axlr-bots:", err)
-		return exitUsage
-	}
-	link := operatorLink{Transport: *transport, Socket: socketPath, GRPCSocket: grpcSocketPath(*grpcSocket, flagSet(flags, "grpc-socket"), flagSet(flags, "socket"), socketPath, *stateDir), Remote: remote}
-	if err := remote.validate(*transport); err != nil {
+	link := operatorLink{Socket: socketPath, GRPCSocket: grpcSocketPath(*grpcSocket, flagSet(flags, "grpc-socket"), flagSet(flags, "socket"), socketPath, *stateDir), Remote: remote}
+	if err := remote.validate(); err != nil {
 		fmt.Fprintln(stderr, "axlr-bots:", err)
 		return exitUsage
 	}
 	// Behind the operator certificate the actor is the operator's name:
 	// the control plane refuses any other.
-	if remote.enabled() && *transport != transportREST && !flagSet(flags, "actor") {
+	if remote.enabled() && !flagSet(flags, "actor") {
 		if name, ok := remote.operatorName(); ok {
 			*actor = name
 		}
@@ -284,17 +279,18 @@ func printUsage(w io.Writer) {
        axlr-bots --control host:7880 --token-file <path> [--cert-file <crt> --key-file <key>] [--ca-file <pem>] <command>
                                       the same commands against a control plane on another
                                       host, through its gRPC operator address (TLS, the fleet
-                                      CA, the operator token); --transport rest uses the
-                                      HTTP API instead
+                                      CA, the operator token)
 
   serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--grpc-listen <addr>] [--grpc-socket <path>] [--api-token-file <path>]
         [--bus direct|nats] [--nats-url <url>] [--nats-creds <file>]
         [--nats-cert <file> --nats-key <file>] [--nats-ca <file>]
         [--tick 2s] [--reconcile-every 1m] [--min-axlr-version 0.20.0]
-                                      run the control plane: the API on the socket, the node
-                                      protocol over TLS on --listen (nodes on other hosts), the
-                                      operator API over TLS on --api-listen behind a bearer
-                                      token (<state>/api.token), executions handed to the
+                                      run the control plane: the operator API over gRPC on
+                                      the gRPC socket, and on --grpc-listen behind an operator
+                                      certificate and a bearer token (<state>/api.token); the
+                                      node protocol over TLS on --listen (nodes on other
+                                      hosts); webhook triggers over TLS on --api-listen;
+                                      executions handed to the
                                       nodes, in-process runs when no node is online, and the
                                       timer triggers
   ca operator issue <name> [--out <dir>] [--lifetime <d>]
@@ -350,7 +346,7 @@ func printUsage(w io.Writer) {
                                       goes first, cancels the bot's work in progress and drops
                                       its queued tasks
   trigger fire <bot-id> <trigger> --body '<json>' | --file <event.json> [--delivery <id>]
-                                      fire a webhook trigger with an event (over the socket)
+                                      fire a webhook trigger with an event (over the HTTP socket)
   task run <task-id>                  run a pending task now, in process
                                       (exit 0 completed, 3 decision required, 1 failed)
   task approve <task-id> [--call <id>] approve the call a WaitingApproval task stopped on
@@ -386,7 +382,7 @@ func printUsage(w io.Writer) {
                                       against its SHA-256
   overview [--since <time>]           nodes, bots and tasks by status; tasks, executions
                                       and cost since the start of today
-  health                              exit 0 when the daemon answers /healthz on the socket
+  health                              exit 0 when the daemon answers on its gRPC socket
                                       (a container's healthcheck), 1 when it does not
   version                             the release, commit and time this binary was built from
   install [--system] [--prefix <dir>] [--state <dir>] [--axlr-bin <path>]

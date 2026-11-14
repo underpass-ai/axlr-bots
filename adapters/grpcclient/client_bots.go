@@ -3,7 +3,6 @@ package grpcclient
 import (
 	"context"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -37,24 +36,24 @@ func (c *Client) PauseBot(ctx context.Context, id string) (domain.BotSnapshot, e
 	return botSnapshot(answer.GetBot()), nil
 }
 
-func (c *Client) StopBot(ctx context.Context, id string) (unixapi.StopResponse, error) {
+func (c *Client) StopBot(ctx context.Context, id string) (application.StopResponse, error) {
 	answer, err := c.bots.StopBot(ctx, &operatorv1.StopBotRequest{BotId: id})
 	if err != nil {
-		return unixapi.StopResponse{}, fromStatus(c.address, err)
+		return application.StopResponse{}, fromStatus(c.address, err)
 	}
-	response := unixapi.StopResponse{Bot: botSnapshot(answer.GetBot()), Cancelled: nonNil(answer.GetCancelled()), NotCancelled: []application.StopRefusal{}}
+	response := application.StopResponse{Bot: botSnapshot(answer.GetBot()), Cancelled: nonNil(answer.GetCancelled()), NotCancelled: []application.StopRefusal{}}
 	for _, refusal := range answer.GetNotCancelled() {
 		response.NotCancelled = append(response.NotCancelled, application.StopRefusal{TaskID: refusal.GetTaskId(), Reason: refusal.GetReason()})
 	}
 	return response, nil
 }
 
-func (c *Client) DeleteBot(ctx context.Context, id string) (unixapi.DeleteResponse, error) {
+func (c *Client) DeleteBot(ctx context.Context, id string) (application.DeleteResponse, error) {
 	answer, err := c.bots.DeleteBot(ctx, &operatorv1.DeleteBotRequest{BotId: id})
 	if err != nil {
-		return unixapi.DeleteResponse{}, fromStatus(c.address, err)
+		return application.DeleteResponse{}, fromStatus(c.address, err)
 	}
-	response := unixapi.DeleteResponse{
+	response := application.DeleteResponse{
 		Bot: botSnapshot(answer.GetBot()), Cancelled: nonNil(answer.GetCancelled()), ChildrenCancelled: nonNil(answer.GetChildrenCancelled()),
 		TimersRemoved: int(answer.GetTimersRemoved()), NotificationsDropped: int(answer.GetNotificationsDropped()), NamedBy: []application.BotReference{},
 	}

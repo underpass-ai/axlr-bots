@@ -42,14 +42,14 @@ func proxied(t *testing.T) (*httptest.Server, *stubModels, domain.ExecutionID) {
 	models := &stubModels{}
 	deps.ModelGateway = models
 	deps.JudgeGateway = stubJudge{}
-	local := NewLocal(deps)
+	local := application.NewLocalOperator(deps)
 	if _, err := local.RegisterBot(ctx, definition("bot-a", "observe")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := local.EnableBot(ctx, "bot-a"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := local.SubmitTask(ctx, SubmitRequest{BotID: "bot-a", Objective: "light", IdempotencyKey: "k-1"}); err != nil {
+	if _, err := local.SubmitTask(ctx, application.SubmitRequest{BotID: "bot-a", Objective: "light", IdempotencyKey: "k-1"}); err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(NewServer(local).Handler())

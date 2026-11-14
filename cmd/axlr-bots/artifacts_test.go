@@ -99,17 +99,17 @@ func TestExecutionArtifactPrintsWhatTheControlPlaneKeeps(t *testing.T) {
 	}
 }
 
-func TestOperatorURL(t *testing.T) {
+func TestOperatorAddress(t *testing.T) {
 	host, _ := os.Hostname()
 	for _, c := range []struct{ explicit, listen, want string }{
-		{"https://cp.example.com:7879/", "127.0.0.1:7879", "https://cp.example.com:7879"},
-		{"", "127.0.0.1:7879", "https://127.0.0.1:7879"},
-		{"", "0.0.0.0:7879", "https://" + host + ":7879"},
+		{"cp.example.com:7880/", "127.0.0.1:7880", "cp.example.com:7880"},
+		{"", "127.0.0.1:7880", "127.0.0.1:7880"},
+		{"", "0.0.0.0:7880", host + ":7880"},
 		{"", "", ""},
 		{"", "nonsense", ""},
 	} {
-		if got := operatorURL(c.explicit, c.listen); got != c.want {
-			t.Errorf("operatorURL(%q, %q) = %q, want %q", c.explicit, c.listen, got, c.want)
+		if got := operatorAddress(c.explicit, c.listen); got != c.want {
+			t.Errorf("operatorAddress(%q, %q) = %q, want %q", c.explicit, c.listen, got, c.want)
 		}
 	}
 }

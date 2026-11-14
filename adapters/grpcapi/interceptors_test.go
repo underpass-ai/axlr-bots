@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/underpass-ai/axlr-bots/application"
 	"strings"
 	"testing"
 
@@ -12,7 +13,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -115,7 +115,7 @@ func TestStatusErrorNamesTheKindAndTheCode(t *testing.T) {
 		{domain.ApprovalExpiredError{}, "approval_expired", "FailedPrecondition"},
 		{domain.ConflictError{}, "conflict", "Aborted"},
 		{domain.ForbiddenError{Reason: "no"}, "forbidden", "PermissionDenied"},
-		{unixapi.UnauthorizedError{}, "unauthorized", "Unauthenticated"},
+		{application.UnauthorizedError{}, "unauthorized", "Unauthenticated"},
 		{errors.New("disk on fire"), "internal", "Internal"},
 		{fmt.Errorf("wrapped: %w", domain.NotFoundError{Kind: "bot", ID: "b"}), "not_found", "NotFound"},
 	} {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/underpass-ai/axlr-bots/internal/operatortest"
 	"io"
 	"log"
 	"os"
@@ -27,7 +28,7 @@ type fixture struct {
 	dir     string
 	deps    application.Dependencies
 	socket  string
-	client  *unixapi.Client
+	client  *operatortest.Client
 	cancel  context.CancelFunc
 	served  chan error
 	logs    *syncBuffer
@@ -76,7 +77,8 @@ func controlWith(t *testing.T, change func(*application.Dependencies)) *fixture 
 	socket := filepath.Join(dir, "cp.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	served := make(chan error, 1)
-	go func() { served <- unixapi.NewServer(unixapi.NewLocal(deps)).Serve(ctx, socket) }()
+	local := application.NewLocalOperator(deps)
+	go func() { served <- unixapi.NewServer(local).Serve(ctx, socket) }()
 	deadline := time.Now().Add(5 * time.Second)
 	for !unixapi.Reachable(context.Background(), socket) {
 		if time.Now().After(deadline) {
@@ -85,7 +87,7 @@ func controlWith(t *testing.T, change func(*application.Dependencies)) *fixture 
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Cleanup(func() { cancel(); <-served })
-	return &fixture{dir: dir, deps: deps, socket: socket, client: unixapi.NewClient(socket), cancel: cancel, served: served, logs: &syncBuffer{}, marker: filepath.Join(dir, "marker"), nodeDir: filepath.Join(dir, "node")}
+	return &fixture{dir: dir, deps: deps, socket: socket, client: operatortest.New(unixapi.NewClient(socket), local), cancel: cancel, served: served, logs: &syncBuffer{}, marker: filepath.Join(dir, "marker"), nodeDir: filepath.Join(dir, "node")}
 }
 
 // agent builds the node agent with the fake axlr scenario.
@@ -102,7 +104,7 @@ func (f *fixture) agent(t *testing.T, scenario string) Agent {
 	}
 }
 
-func waitFor(t *testing.T, client *unixapi.Client, id, status string) domain.TaskSnapshot {
+func waitFor(t *testing.T, client *operatortest.Client, id, status string) domain.TaskSnapshot {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for {
@@ -156,7 +158,7 @@ func TestAgentRunsAssignedTasksAndDecisions(t *testing.T) {
 	if _, err := f.client.EnableBot(ctx, "bot"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, err := f.client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "write hello.txt", IdempotencyKey: "k-1"})
+	submitted, err := f.client.SubmitTask(ctx, application.SubmitRequest{BotID: "bot", Objective: "write hello.txt", IdempotencyKey: "k-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +170,7 @@ func TestAgentRunsAssignedTasksAndDecisions(t *testing.T) {
 	if _, err := os.Stat(f.marker); err == nil {
 		t.Fatal("the write ran before the approval")
 	}
-	decided, err := f.client.DecideTask(ctx, submitted.Task.ID, unixapi.DecideRequest{Decision: "approve"})
+	decided, err := f.client.DecideTask(ctx, submitted.Task.ID, application.DecideRequest{Decision: "approve"})
 	if err != nil || decided.Task.Status != "Running" || decided.Execution.NodeID != "web-1" || decided.Execution.Kind != "decide" {
 		t.Fatalf("decide: %v %+v", err, decided)
 	}
@@ -241,7 +243,7 @@ func TestAgentRetriesRegistrationAndReportsRuntimeErrors(t *testing.T) {
 	if _, err := f.client.EnableBot(ctx, "bot"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, _ := f.client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "o", IdempotencyKey: "k"})
+	submitted, _ := f.client.SubmitTask(ctx, application.SubmitRequest{BotID: "bot", Objective: "o", IdempotencyKey: "k"})
 	failed := waitFor(t, f.client, submitted.Task.ID, "Failed")
 	if !strings.Contains(failed.FailureReason, "no model provider") {
 		t.Errorf("task = %+v", failed)
@@ -411,7 +413,7 @@ func TestAgentHeartbeatsWhileItRuns(t *testing.T) {
 	if _, err := f.client.EnableBot(ctx, "bot"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, _ := f.client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "o", IdempotencyKey: "k"})
+	submitted, _ := f.client.SubmitTask(ctx, application.SubmitRequest{BotID: "bot", Objective: "o", IdempotencyKey: "k"})
 	waitFor(t, f.client, submitted.Task.ID, "Running")
 	before, _ := f.client.GetNode(ctx, "web-1")
 	time.Sleep(200 * time.Millisecond)
@@ -435,7 +437,7 @@ func TestAgentStopsARunWhoseLeaseIsLost(t *testing.T) {
 	if _, err := f.client.EnableBot(ctx, "bot"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, err := f.client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "take a while", IdempotencyKey: "k-slow"})
+	submitted, err := f.client.SubmitTask(ctx, application.SubmitRequest{BotID: "bot", Objective: "take a while", IdempotencyKey: "k-slow"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -500,7 +502,7 @@ func TestAgentUploadsWhatTheExecutionDeliveredBeforeItReports(t *testing.T) {
 	if _, err := f.client.EnableBot(ctx, "bot"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, _ := f.client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "write the notes", IdempotencyKey: "k"})
+	submitted, _ := f.client.SubmitTask(ctx, application.SubmitRequest{BotID: "bot", Objective: "write the notes", IdempotencyKey: "k"})
 	completed := waitFor(t, f.client, submitted.Task.ID, "Completed")
 	executions, err := f.client.ListExecutions(ctx, completed.ID)
 	if err != nil || len(executions) != 1 {
@@ -575,7 +577,7 @@ func TestAPushedCancelStopsTheRunAtOnce(t *testing.T) {
 	if _, err := f.client.EnableBot(ctx, "bot"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, err := f.client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "take a while", IdempotencyKey: "k-slow"})
+	submitted, err := f.client.SubmitTask(ctx, application.SubmitRequest{BotID: "bot", Objective: "take a while", IdempotencyKey: "k-slow"})
 	if err != nil {
 		t.Fatal(err)
 	}

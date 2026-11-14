@@ -12,7 +12,7 @@ import (
 
 // delegatingPair registers bot-a, which may ask bot-b, and bot-b, and
 // returns the assignment of a task of bot-a to the node.
-func delegatingPair(t *testing.T, operator, node *Client, nodeID string) application.Assignment {
+func delegatingPair(t *testing.T, local *application.LocalOperator, node *Client, nodeID string) application.Assignment {
 	t.Helper()
 	ctx := context.Background()
 	a := definition("bot-a", "observe")
@@ -21,17 +21,17 @@ func delegatingPair(t *testing.T, operator, node *Client, nodeID string) applica
 	b := definition("bot-b", "observe")
 	b.ID, b.Triggers = "bot-b", []domain.TriggerSnapshot{{Type: "delegation"}}
 	for _, d := range []application.BotDefinition{a, b} {
-		if _, err := operator.RegisterBot(ctx, d); err != nil {
+		if _, err := local.RegisterBot(ctx, d); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := operator.EnableBot(ctx, d.ID); err != nil {
+		if _, err := local.EnableBot(ctx, d.ID); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if _, err := node.Register(ctx, application.NodeRegistration{ID: nodeID, HostName: nodeID, Capabilities: domain.NodeCapabilities{PolicySupported: true}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := operator.SubmitTask(ctx, SubmitRequest{BotID: "bot-a", Objective: "Ask bot-b", IdempotencyKey: "k-1"}); err != nil {
+	if _, err := local.SubmitTask(ctx, application.SubmitRequest{BotID: "bot-a", Objective: "Ask bot-b", IdempotencyKey: "k-1"}); err != nil {
 		t.Fatal(err)
 	}
 	assignment, found, err := node.NextAssignment(ctx, domain.NodeID(nodeID), time.Second)
@@ -42,9 +42,9 @@ func delegatingPair(t *testing.T, operator, node *Client, nodeID string) applica
 }
 
 func TestDelegationOverTheSocket(t *testing.T) {
-	client, _, _ := serve(t, "completed")
+	client, local, _ := serve(t, "completed")
 	ctx := context.Background()
-	assignment := delegatingPair(t, client, client, "web-1")
+	assignment := delegatingPair(t, local, client, "web-1")
 	if assignment.Run.Delegation == nil || assignment.Run.Delegation.Targets[0] != "bot-b" || assignment.Run.Delegation.MaxDepth != 1 {
 		t.Fatalf("the assignment offers no delegation: %+v", assignment.Run)
 	}
@@ -61,11 +61,11 @@ func TestDelegationOverTheSocket(t *testing.T) {
 	if err != nil || waited.Done || waited.Status != domain.TaskPending || time.Since(started) < 250*time.Millisecond {
 		t.Errorf("await: %v %+v", err, waited)
 	}
-	child, err := client.GetTask(ctx, answer.TaskID.String())
+	child, err := local.GetTask(ctx, answer.TaskID.String())
 	if err != nil || child.Delegation == nil || child.Delegation.ParentTaskID != assignment.Run.TaskID.String() {
 		t.Errorf("GET /v1/tasks/{child}: %v %+v", err, child.Delegation)
 	}
-	parent, err := client.GetTask(ctx, assignment.Run.TaskID.String())
+	parent, err := local.GetTask(ctx, assignment.Run.TaskID.String())
 	if err != nil || len(parent.Children) != 1 || parent.Children[0] != answer.TaskID.String() {
 		t.Errorf("GET /v1/tasks/{parent}: %v %v", err, parent.Children)
 	}
@@ -111,7 +111,7 @@ func TestDelegationOverTLSIsTheCertificatesNode(t *testing.T) {
 	ctx := context.Background()
 	_, web1 := f.enroll(t, f.token(t, "web-1", nil))
 	_, web2 := f.enroll(t, f.token(t, "web-2", nil))
-	assignment := delegatingPair(t, f.operator, web1, "web-1")
+	assignment := delegatingPair(t, f.local, web1, "web-1")
 	answer, err := web1.Delegate(ctx, "web-1", assignment.ExecutionID, application.DelegateCommand{Bot: "bot-b", Objective: "Say hello"})
 	if err != nil || !answer.Created {
 		t.Fatalf("over TLS: %v %+v", err, answer)

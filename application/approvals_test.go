@@ -418,7 +418,7 @@ func TestExpiryPortErrors(t *testing.T) {
 
 func TestAWaitQueuesANotificationPerTarget(t *testing.T) {
 	h := newHarness()
-	h.deps.OperatorURL = "https://cp.example.internal:7879/"
+	h.deps.OperatorAddress = "cp.example.internal:7880"
 	approvals := domain.ApprovalsSnapshot{TTL: "2m", Notify: []domain.NotifyTargetSnapshot{
 		{Type: "webhook", Name: "ops", URL: "https://hooks.example.com/axlr", Secret: hookSecret},
 		{Type: "command", Name: "desk", Command: []string{"/usr/local/bin/notify"}},
@@ -438,7 +438,9 @@ func TestAWaitQueuesANotificationPerTarget(t *testing.T) {
 			n.CorrelationID != "trace-abc" || n.Correlation.TraceID != "trace-abc" || n.Correlation.ExecutionID != task.CurrentExecutionID().String() {
 			t.Errorf("notification = %+v", n)
 		}
-		if n.Actions.Approve.URL != "https://cp.example.internal:7879/v1/tasks/"+task.ID().String()+"/approve?call=c1" || n.Actions.Deny.Path != "/v1/tasks/"+task.ID().String()+"/deny?call=c1" || n.Actions.Task.Method != "GET" {
+		if n.Actions.Approve.URL != "cp.example.internal:7880" || n.Actions.Approve.Method != "grpc" || n.Actions.Approve.Path != "/axlrbots.operator.v1.TasksService/ApproveTask" ||
+			n.Actions.Approve.Request["taskId"] != task.ID().String() || n.Actions.Approve.Request["callId"] != "c1" ||
+			n.Actions.Deny.Path != "/axlrbots.operator.v1.TasksService/DenyTask" || n.Actions.Task.Path != "/axlrbots.operator.v1.TasksService/GetTask" || n.Actions.Task.Request["callId"] != "" {
 			t.Errorf("actions = %+v", n.Actions)
 		}
 		if d.CallID() != "c1" || d.ExecutionID() != task.CurrentExecutionID() {

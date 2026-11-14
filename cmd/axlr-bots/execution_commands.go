@@ -6,13 +6,12 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"github.com/underpass-ai/axlr-bots/application"
 	"io"
 	"os"
-
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 )
 
-func executionGet(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func executionGet(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "axlr-bots: execution get needs exactly one <execution-id>")
 		return exitUsage
@@ -27,7 +26,7 @@ func executionGet(ctx context.Context, service unixapi.Service, args []string, s
 
 // executionArtifact writes an artifact the control plane keeps to stdout
 // or to --out, and checks its bytes against the SHA-256 it was kept with.
-func executionArtifact(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func executionArtifact(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("execution artifact", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	out := flags.String("out", "", "write the artifact to this file instead of stdout")

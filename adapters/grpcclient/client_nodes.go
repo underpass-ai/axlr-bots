@@ -2,8 +2,8 @@ package grpcclient
 
 import (
 	"context"
+	"github.com/underpass-ai/axlr-bots/application"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -24,22 +24,22 @@ func (c *Client) GetNode(ctx context.Context, id string) (domain.NodeSnapshot, e
 	return nodeSnapshot(answer.GetNode()), nil
 }
 
-func (c *Client) CreateEnrollmentToken(ctx context.Context, request unixapi.EnrollTokenRequest) (unixapi.EnrollTokenResponse, error) {
+func (c *Client) CreateEnrollmentToken(ctx context.Context, request application.EnrollTokenRequest) (application.EnrollTokenResponse, error) {
 	message, err := enrollmentRequest(request)
 	if err != nil {
-		return unixapi.EnrollTokenResponse{}, err
+		return application.EnrollTokenResponse{}, err
 	}
 	answer, err := c.nodes.CreateEnrollment(ctx, message)
 	if err != nil {
-		return unixapi.EnrollTokenResponse{}, fromStatus(c.address, err)
+		return application.EnrollTokenResponse{}, fromStatus(c.address, err)
 	}
-	return unixapi.EnrollTokenResponse{Token: answer.GetToken(), ID: answer.GetId(), NodeID: answer.GetNodeId(), Labels: answer.GetLabels(), ExpiresAt: timeOf(answer.GetExpiresAt())}, nil
+	return application.EnrollTokenResponse{Token: answer.GetToken(), ID: answer.GetId(), NodeID: answer.GetNodeId(), Labels: answer.GetLabels(), ExpiresAt: timeOf(answer.GetExpiresAt())}, nil
 }
 
-func (c *Client) RevokeNode(ctx context.Context, id string) (unixapi.RevokeResponse, error) {
+func (c *Client) RevokeNode(ctx context.Context, id string) (application.RevokeResponse, error) {
 	answer, err := c.nodes.RevokeNode(ctx, &operatorv1.RevokeNodeRequest{NodeId: id})
 	if err != nil {
-		return unixapi.RevokeResponse{}, fromStatus(c.address, err)
+		return application.RevokeResponse{}, fromStatus(c.address, err)
 	}
-	return unixapi.RevokeResponse{Node: nodeSnapshot(answer.GetNode()), FailedTasks: nonNil(answer.GetFailedTasks())}, nil
+	return application.RevokeResponse{Node: nodeSnapshot(answer.GetNode()), FailedTasks: nonNil(answer.GetFailedTasks())}, nil
 }

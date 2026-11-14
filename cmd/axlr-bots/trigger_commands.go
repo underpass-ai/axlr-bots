@@ -5,17 +5,16 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/underpass-ai/axlr-bots/application"
 	"io"
 	"os"
-
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 )
 
 // triggerFire fires a bot's webhook trigger from the command line, with
 // the event from --body or --file: what a sender does with a POST on the
 // operator address, done here over the socket (no secret needed: the
 // caller is trusted there).
-func triggerFire(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func triggerFire(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) < 2 || args[0] == "" || args[0][0] == '-' || args[1] == "" || args[1][0] == '-' {
 		fmt.Fprintln(stderr, "axlr-bots: trigger fire needs <bot-id> <trigger> first, then --body or --file")
 		return exitUsage
@@ -41,7 +40,7 @@ func triggerFire(ctx context.Context, service unixapi.Service, args []string, st
 		}
 		event = raw
 	}
-	result, err := service.FireTrigger(ctx, unixapi.FireRequest{BotID: botID, Trigger: trigger, DeliveryID: *delivery, Body: json.RawMessage(event)})
+	result, err := service.FireTrigger(ctx, application.FireRequest{BotID: botID, Trigger: trigger, DeliveryID: *delivery, Body: json.RawMessage(event)})
 	if err != nil {
 		return fail(stderr, err)
 	}

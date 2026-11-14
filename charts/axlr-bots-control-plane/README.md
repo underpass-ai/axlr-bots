@@ -1,6 +1,6 @@
 # axlr-bots-control-plane
 
-The AXLR Bots control plane (`axlr-bots serve`) as one pod on Kubernetes: the node protocol (mutual TLS) on 7878, the operator API (bearer token) on 7879, and the state (bots, tasks, events, the fleet CA and its key, the socket) on a persistent volume. The runbook is [`docs/runbooks/control-plane-kubernetes.md`](../../docs/runbooks/control-plane-kubernetes.md): a first install, moving a running control plane's state in, rollback and update.
+The AXLR Bots control plane (`axlr-bots serve`) as one pod on Kubernetes: the node protocol (mutual TLS) on 7878, the webhook triggers on 7879, and the state (bots, tasks, events, the fleet CA and its key, the socket) on a persistent volume. The runbook is [`docs/runbooks/control-plane-kubernetes.md`](../../docs/runbooks/control-plane-kubernetes.md): a first install, moving a running control plane's state in, rollback and update.
 
 ## What it renders
 
@@ -23,13 +23,13 @@ Several bots in the cluster? Turn on metrics, JSON logs and traces: [`docs/runbo
 |---|---|
 | `image.tag` | the release without `v` (`0.4.0`); empty takes `appVersion`. The panel compares nodes and bots with it |
 | `serverNames` | the addresses and DNS names nodes and operators dial; the certificate carries them and the Service's cluster names. Required with a `LoadBalancer` |
-| `apiURL` | `https://<address>:7879`, the base approval notifications link to |
-| `apiToken.existingSecret` | the operator token as a Secret (`token`), so the panel and the CLI outside the pod can be given it; without it the daemon writes `<state>/api.token`, which a distroless image gives no way to read |
+| `grpcURL` | `<address>:7880`, the operator gRPC address approval notifications name for deciding |
+| `apiToken.existingSecret` | the operator token as a Secret (`token`), so the panel and the CLI outside the pod can be given it; without it the daemon writes `<state>/api.token` (with `grpc.enabled`), which a distroless image gives no way to read |
 | `env.existingSecret` | every key as a variable: `OPENROUTER_API_KEY` and `TYPESAFE_API_KEY` for the model and Jev proxies |
 | `bus.kind`, `bus.nats.*` | `direct`, or `nats` with `tls://` and a Secret holding `tls.crt`, `tls.key` (from `axlr-bots ca issue-client --name control-plane`) and `ca.crt` (the broker's CA) |
 | `ca.init` | true for the first start of an empty state only: an init container runs `ca init`, which fails when a CA is there |
 | `persistence.existingClaim` | a claim you filled with an existing state |
-| `grpc.enabled`, `grpc.port` | the operator API over gRPC (mutual TLS: an operator certificate from `axlr-bots ca operator issue`, issued in the pod by `kubectl exec` or from a copy of the CA, plus the bearer token; [reference](../../docs/reference/operator-grpc.md)) on 7880, in the pod and on the Service as port `grpc` (`AXLR_BOTS_GRPC_LISTEN`) |
+| `grpc.enabled`, `grpc.port` | the operator API, gRPC only (mutual TLS: an operator certificate from `axlr-bots ca operator issue`, issued in the pod by `kubectl exec` or from a copy of the CA, plus the bearer token; [reference](../../docs/reference/operator-grpc.md)) on 7880, in the pod and on the Service as port `grpc` (`AXLR_BOTS_GRPC_LISTEN`) |
 | `metrics.enabled`, `metrics.podMonitor.*` | `/metrics` and `/healthz` in plain HTTP on 9464: the overview's counts (`axlr_bots_tasks`, `axlr_bots_nodes`, cost today…), the requests per listener and route, Go and process. The PodMonitor's `labels` must match the Prometheus' `podMonitorSelector` |
 | `tracing.otlpEndpoint` | an OTLP/HTTP endpoint (`http://host:4318`) the control plane sends one trace per ended task to; empty sends nothing |
 | `tempo.enabled`, `tempo.*` | off by default; a single-pod Tempo (Deployment, Service, ConfigMap, pinned image) the traces go to when `tracing.otlpEndpoint` is empty; an emptyDir, or a claim with `tempo.persistence.enabled` |

@@ -15,7 +15,6 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/compose"
@@ -28,7 +27,7 @@ const testToken = "operator-token-for-tests"
 // bufconn: authed carries the bearer token, anonymous none.
 type fixture struct {
 	ca        pki.Authority
-	local     *unixapi.Local
+	local     *application.LocalOperator
 	deps      application.Dependencies
 	authed    *grpc.ClientConn
 	anonymous *grpc.ClientConn
@@ -59,7 +58,7 @@ func newFixtureWith(t *testing.T, scenario string, change func(*application.Depe
 	if change != nil {
 		change(&deps)
 	}
-	local := unixapi.NewLocal(deps)
+	local := application.NewLocalOperator(deps)
 	listener := bufconn.Listen(1 << 20)
 	ctx, cancel := context.WithCancel(context.Background())
 	api := New(local, options...)

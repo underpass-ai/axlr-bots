@@ -30,14 +30,14 @@ const (
 	maxReportBytes = 8 << 20
 )
 
-// Server serves the operator's Service and the node protocol over HTTP:
-// everything on a Unix socket (the same host), the node protocol alone
-// on a TLS address (nodes on other hosts), where a client certificate
-// issued by the fleet CA names the node and an enrollment token is the
-// one way in without one, and the operator routes alone on an optional
-// TLS address behind a bearer token.
+// Server serves the node protocol and the webhook triggers over HTTP:
+// both on a Unix socket (the same host), the node protocol alone on a TLS
+// address (nodes on other hosts), where a client certificate issued by
+// the fleet CA names the node and an enrollment token is the one way in
+// without one, and the webhook triggers alone on an optional TLS address.
+// The operator API is gRPC only (adapters/grpcapi).
 type Server struct {
-	service  *Local
+	service  *application.LocalOperator
 	timeouts Timeouts
 	// closing ends the node streams when the server shuts down: a
 	// stream is never idle, so a graceful shutdown would wait for it.
@@ -51,7 +51,7 @@ type Server struct {
 }
 
 // NewServer serves the local service.
-func NewServer(service *Local) *Server {
+func NewServer(service *application.LocalOperator) *Server {
 	return &Server{service: service, timeouts: DefaultTimeouts, closing: make(chan struct{}), models: application.NewModelProxy(service.Dependencies())}
 }
 
@@ -115,11 +115,12 @@ const recheckEvery = 5 * time.Second
 // maxPollWait bounds a long poll.
 const maxPollWait = 30 * time.Second
 
-// Handler is the API's routes, all of them: what the socket serves.
+// Handler is the node protocol and the webhook triggers: what the socket
+// serves.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	s.nodeRoutes(mux)
-	s.operatorRoutes(mux)
+	s.webhookRoutes(mux)
 	return mux
 }
 
@@ -131,63 +132,22 @@ func (s *Server) NodeHandler() http.Handler {
 	return mux
 }
 
-// OperatorHandler is the operator's routes alone behind the bearer
-// token, with the health check and the trigger routes open: what the
-// operator address serves. No node route is on it.
-func (s *Server) OperatorHandler(token string) http.Handler {
+// WebhookHandler is the webhook triggers and the health check alone: what
+// the --api-listen address serves. No node route is on it, and no
+// operator route either: the operator API is gRPC.
+func (s *Server) WebhookHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
-	s.operatorRoutes(mux)
-	return bearer(token, mux)
+	s.webhookRoutes(mux)
+	return mux
 }
 
-// operatorRoutes are the vision's minimal API (§11.1), the routes the
-// command uses beside them, and the webhook triggers.
-func (s *Server) operatorRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /v1/build", s.getBuild)
-	mux.HandleFunc("POST /v1/bots", s.registerBot)
-	mux.HandleFunc("GET /v1/bots", s.listBots)
-	mux.HandleFunc("GET /v1/bots/{id}", s.getBot)
-	mux.HandleFunc("PATCH /v1/bots/{id}", s.patchBot)
-	mux.HandleFunc("DELETE /v1/bots/{id}", s.deleteBot)
-	mux.HandleFunc("POST /v1/bots/{id}/enable", s.enableBot)
-	mux.HandleFunc("POST /v1/bots/{id}/pause", s.pauseBot)
-	mux.HandleFunc("POST /v1/bots/{id}/stop", s.stopBot)
-	mux.HandleFunc("PUT /v1/bots/{id}/staged", s.stageBot)
-	mux.HandleFunc("GET /v1/bots/{id}/staged", s.getStagedBot)
-	mux.HandleFunc("DELETE /v1/bots/{id}/staged", s.unstageBot)
-	mux.HandleFunc("POST /v1/bots/{id}/staged/apply", s.applyStagedBot)
-	mux.HandleFunc("POST /v1/bots/{id}/tasks", s.submitBotTask)
-	mux.HandleFunc("GET /v1/bots/{id}/events", s.listEvents)
-	mux.HandleFunc("GET /v1/groups", s.listGroups)
-	mux.HandleFunc("GET /v1/groups/{name}", s.getGroup)
-	mux.HandleFunc("GET /v1/groups/{name}/events", s.listGroupEvents)
-	mux.HandleFunc("POST /v1/groups/{name}/events", s.publishGroupEvent)
-	mux.HandleFunc("GET /v1/groups/{name}/topics", s.listGroupTopics)
-	mux.HandleFunc("POST /v1/tasks", s.submitTask)
-	mux.HandleFunc("GET /v1/tasks", s.listTasks)
-	mux.HandleFunc("GET /v1/tasks/{id}", s.getTask)
-	mux.HandleFunc("GET /v1/tasks/{id}/events", s.listTaskEvents)
-	mux.HandleFunc("GET /v1/tasks/{id}/executions", s.listExecutions)
-	mux.HandleFunc("POST /v1/tasks/{id}/cancel", s.cancelTask)
-	mux.HandleFunc("POST /v1/tasks/{id}/messages", s.sendTaskMessage)
-	mux.HandleFunc("POST /v1/tasks/{id}/run", s.runTask)
-	mux.HandleFunc("POST /v1/tasks/{id}/decide", s.decideTask)
-	mux.HandleFunc("POST /v1/tasks/{id}/approve", s.decideAs(application.DecisionApprove))
-	mux.HandleFunc("POST /v1/tasks/{id}/deny", s.decideAs(application.DecisionDeny))
-	mux.HandleFunc("GET /v1/tasks/{id}/report", s.getReport)
-	mux.HandleFunc("GET /v1/executions/{id}", s.getExecution)
-	mux.HandleFunc("GET /v1/executions/{id}/artifacts/{name}", s.getArtifact)
-	mux.HandleFunc("GET /v1/executions/{id}/transcripts/{session}", s.getTranscript)
-	mux.HandleFunc("GET /v1/transcripts", s.listTranscripts)
+// webhookRoutes are the webhook triggers: the one route a sender outside
+// the fleet reaches. The operator API is gRPC only (grpcapi).
+func (s *Server) webhookRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/triggers/{bot}/{trigger}", s.fireTrigger)
-	mux.HandleFunc("GET /v1/overview", s.getOverview)
-	mux.HandleFunc("GET /v1/nodes", s.listNodes)
-	mux.HandleFunc("GET /v1/nodes/{id}", s.getNode)
-	mux.HandleFunc("POST /v1/enrollments", s.createEnrollmentToken)
-	mux.HandleFunc("POST /v1/nodes/{id}/revoke", s.revokeNode)
 }
 
 // nodeRoutes are the routes a node uses. Enrollment is the one route a
@@ -226,13 +186,10 @@ func (s *Server) ServeTLS(ctx context.Context, listener net.Listener, config *tl
 	return s.run(ctx, server, func() error { return server.ServeTLS(listener, "", "") }, func() {})
 }
 
-// ServeAPI serves the operator routes on the listener over TLS behind
-// the bearer token until ctx ends.
-func (s *Server) ServeAPI(ctx context.Context, listener net.Listener, config *tls.Config, token string) error {
-	if token == "" {
-		return errors.New("unixapi: the operator address needs a bearer token")
-	}
-	server := s.httpServer(s.wrapped("operator", s.OperatorHandler(token)), config)
+// ServeWebhooks serves the webhook triggers on the listener over TLS
+// until ctx ends. A trigger authenticates with its own credential.
+func (s *Server) ServeWebhooks(ctx context.Context, listener net.Listener, config *tls.Config) error {
+	server := s.httpServer(s.wrapped("webhooks", s.WebhookHandler()), config)
 	return s.run(ctx, server, func() error { return server.ServeTLS(listener, "", "") }, func() {})
 }
 
@@ -295,291 +252,6 @@ func (s *Server) run(ctx context.Context, server *http.Server, start func() erro
 	}
 }
 
-func (s *Server) registerBot(w http.ResponseWriter, r *http.Request) {
-	var definition botDefinition
-	if !readJSON(w, r, &definition) {
-		return
-	}
-	value, err := s.service.RegisterBot(r.Context(), definition.BotDefinition)
-	respond(w, http.StatusCreated, value, err)
-}
-
-func (s *Server) listBots(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.ListBots(r.Context())
-	respond(w, http.StatusOK, value, err)
-}
-
-func (s *Server) getBot(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.GetBot(r.Context(), r.PathValue("id"))
-	respond(w, http.StatusOK, value, err)
-}
-
-func (s *Server) listGroups(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.ListGroups(r.Context())
-	respond(w, http.StatusOK, value, err)
-}
-
-func (s *Server) getGroup(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.GetGroup(r.Context(), r.PathValue("name"), r.URL.Query().Get("tenant"))
-	respond(w, http.StatusOK, value, err)
-}
-
-// listGroupEvents is GET /v1/groups/{name}/events?after=&limit=&wait=:
-// the team's timeline after the caller's last event; with wait, it
-// answers as soon as there is a new one, or empty when wait passes.
-func (s *Server) listGroupEvents(w http.ResponseWriter, r *http.Request) {
-	limit, err := queryLimit(r)
-	if err != nil {
-		respond(w, 0, nil, err)
-		return
-	}
-	wait, err := queryWait(r)
-	if err != nil {
-		respond(w, 0, nil, err)
-		return
-	}
-	query := application.GroupEventsQuery{Name: r.PathValue("name"), Tenant: r.URL.Query().Get("tenant"), After: r.URL.Query().Get("after"), Limit: limit}
-	s.pollEvents(w, r, wait, func() ([]domain.Event, error) { return s.service.ListGroupEvents(r.Context(), query) })
-}
-
-// pollEvents answers what read finds: at once when it finds an event or
-// fails, else as soon as a change brings one, or [] when wait passes.
-func (s *Server) pollEvents(w http.ResponseWriter, r *http.Request, wait time.Duration, read func() ([]domain.Event, error)) {
-	deadline := time.Now().Add(wait)
-	for {
-		changed, _ := s.service.changes.next()
-		events, err := read()
-		if err != nil || len(events) > 0 || !time.Now().Before(deadline) {
-			respond(w, http.StatusOK, events, err)
-			return
-		}
-		if !awaitChange(r.Context(), changed, min(recheckEvery, time.Until(deadline))) {
-			respond(w, http.StatusOK, events, nil)
-			return
-		}
-	}
-}
-
-// queryWait reads the wait parameter of a long poll, at most
-// maxPollWait: zero when it is absent.
-func queryWait(r *http.Request) (time.Duration, error) {
-	raw := r.URL.Query().Get("wait")
-	if raw == "" {
-		return 0, nil
-	}
-	parsed, err := time.ParseDuration(raw)
-	if err != nil || parsed < 0 {
-		return 0, domain.ValidationError{Field: "wait", Reason: "must be a duration"}
-	}
-	return min(parsed, maxPollWait), nil
-}
-
-// publishGroupEvent is POST /v1/groups/{name}/events?tenant=: the
-// operator publishes on the team, the key in the Idempotency-Key header
-// or the body; 201 for a new event, 200 for the one the key published.
-func (s *Server) publishGroupEvent(w http.ResponseWriter, r *http.Request) {
-	var command application.PublishGroupEventCommand
-	if !readJSON(w, r, &command) {
-		return
-	}
-	command.Group, command.Tenant = r.PathValue("name"), r.URL.Query().Get("tenant")
-	if key := r.Header.Get(IdempotencyKeyHeader); key != "" {
-		command.IdempotencyKey = key
-	}
-	answer, err := s.service.PublishGroupEvent(r.Context(), command)
-	respond(w, createdStatus(answer.Created), answer, err)
-}
-
-// listGroupTopics is GET /v1/groups/{name}/topics?tenant=.
-func (s *Server) listGroupTopics(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.ListGroupTopics(r.Context(), r.PathValue("name"), r.URL.Query().Get("tenant"))
-	respond(w, http.StatusOK, value, err)
-}
-
-func (s *Server) enableBot(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.EnableBot(r.Context(), r.PathValue("id"))
-	respond(w, http.StatusOK, value, err)
-}
-
-func (s *Server) pauseBot(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.PauseBot(r.Context(), r.PathValue("id"))
-	respond(w, http.StatusOK, value, err)
-}
-
-func (s *Server) stopBot(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.StopBot(r.Context(), r.PathValue("id"))
-	respond(w, http.StatusOK, value, err)
-}
-
-func (s *Server) deleteBot(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.DeleteBot(r.Context(), r.PathValue("id"))
-	respond(w, http.StatusOK, value, err)
-}
-
-func (s *Server) patchBot(w http.ResponseWriter, r *http.Request) {
-	var patch application.BotPatch
-	if !readJSON(w, r, &patch) {
-		return
-	}
-	value, err := s.service.UpdateBot(r.Context(), r.PathValue("id"), patch)
-	respond(w, http.StatusOK, value, err)
-}
-
-// stageBot is PUT /v1/bots/{id}/staged: the patch the update takes,
-// naming its version, held for later.
-func (s *Server) stageBot(w http.ResponseWriter, r *http.Request) {
-	var patch application.BotPatch
-	if !readJSON(w, r, &patch) {
-		return
-	}
-	value, err := s.service.StageBot(r.Context(), r.PathValue("id"), patch)
-	respond(w, http.StatusOK, value, err)
-}
-
-func (s *Server) getStagedBot(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.GetStagedBot(r.Context(), r.PathValue("id"))
-	respond(w, http.StatusOK, value, err)
-}
-
-func (s *Server) applyStagedBot(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.ApplyStagedBot(r.Context(), r.PathValue("id"))
-	respond(w, http.StatusOK, value, err)
-}
-
-func (s *Server) unstageBot(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.UnstageBot(r.Context(), r.PathValue("id"))
-	respond(w, http.StatusOK, value, err)
-}
-
-// submitTask is POST /v1/tasks: the bot in the body, the key in the
-// Idempotency-Key header or the body.
-func (s *Server) submitTask(w http.ResponseWriter, r *http.Request) {
-	var request SubmitRequest
-	if !readJSON(w, r, &request) {
-		return
-	}
-	if key := r.Header.Get(IdempotencyKeyHeader); key != "" {
-		request.IdempotencyKey = key
-	}
-	response, err := s.service.SubmitTask(r.Context(), request)
-	respond(w, createdStatus(response.Created), response, err)
-}
-
-// submitBotTask is POST /v1/bots/{id}/tasks: the bot in the path, the
-// key in the Idempotency-Key header or the body.
-func (s *Server) submitBotTask(w http.ResponseWriter, r *http.Request) {
-	var request TaskRequest
-	if !readJSON(w, r, &request) {
-		return
-	}
-	key := r.Header.Get(IdempotencyKeyHeader)
-	if key == "" {
-		key = request.IdempotencyKey
-	}
-	response, err := s.service.SubmitTask(r.Context(), SubmitRequest{BotID: r.PathValue("id"), Objective: request.Objective, IdempotencyKey: key, CorrelationID: request.CorrelationID, Priority: request.Priority})
-	respond(w, createdStatus(response.Created), response, err)
-}
-
-func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) {
-	limit, err := queryLimit(r)
-	if err != nil {
-		respond(w, 0, nil, err)
-		return
-	}
-	value, err := s.service.ListEvents(r.Context(), r.PathValue("id"), limit)
-	respond(w, http.StatusOK, value, err)
-}
-
-// listTasks is GET /v1/tasks?bot=&status=&since=&limit=: the tasks
-// across bots, newest first.
-func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
-	limit, err := queryLimit(r)
-	if err != nil {
-		respond(w, 0, nil, err)
-		return
-	}
-	since, err := querySince(r)
-	if err != nil {
-		respond(w, 0, nil, err)
-		return
-	}
-	query := application.TaskQuery{BotID: r.URL.Query().Get("bot"), Status: r.URL.Query().Get("status"), Since: since, Limit: limit}
-	value, err := s.service.ListTasks(r.Context(), query)
-	respond(w, http.StatusOK, value, err)
-}
-
-// listTaskEvents is GET /v1/tasks/{id}/events?after=&limit=&wait=: the
-// task's timeline after the caller's last event, waiting for a new one
-// as a team's timeline does.
-func (s *Server) listTaskEvents(w http.ResponseWriter, r *http.Request) {
-	limit, err := queryLimit(r)
-	if err != nil {
-		respond(w, 0, nil, err)
-		return
-	}
-	wait, err := queryWait(r)
-	if err != nil {
-		respond(w, 0, nil, err)
-		return
-	}
-	query := application.TaskEventsQuery{ID: domain.TaskID(r.PathValue("id")), After: r.URL.Query().Get("after"), Limit: limit}
-	s.pollEvents(w, r, wait, func() ([]domain.Event, error) { return s.service.ListTaskEvents(r.Context(), query) })
-}
-
-// getOverview is GET /v1/overview?since=: the dashboard's counts.
-func (s *Server) getOverview(w http.ResponseWriter, r *http.Request) {
-	since, err := querySince(r)
-	if err != nil {
-		respond(w, 0, nil, err)
-		return
-	}
-	value, err := s.service.GetOverview(r.Context(), since)
-	respond(w, http.StatusOK, value, err)
-}
-
-// queryLimit reads the limit parameter: zero when it is absent.
-func queryLimit(r *http.Request) (int, error) {
-	raw := r.URL.Query().Get("limit")
-	if raw == "" {
-		return 0, nil
-	}
-	parsed, err := strconv.Atoi(raw)
-	if err != nil || parsed < 0 {
-		return 0, domain.ValidationError{Field: "limit", Reason: "must be a number"}
-	}
-	return parsed, nil
-}
-
-// querySince reads the since parameter as an RFC 3339 time: zero when it
-// is absent.
-func querySince(r *http.Request) (time.Time, error) {
-	raw := r.URL.Query().Get("since")
-	if raw == "" {
-		return time.Time{}, nil
-	}
-	since, err := time.Parse(time.RFC3339Nano, raw)
-	if err != nil {
-		return time.Time{}, domain.ValidationError{Field: "since", Reason: "must be an RFC 3339 time"}
-	}
-	return since, nil
-}
-
-func (s *Server) listExecutions(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.ListExecutions(r.Context(), r.PathValue("id"))
-	respond(w, http.StatusOK, value, err)
-}
-
-// sendTaskMessage is POST /v1/tasks/{id}/messages: the operator writes to
-// a running task.
-func (s *Server) sendTaskMessage(w http.ResponseWriter, r *http.Request) {
-	var request MessageRequest
-	if !readJSON(w, r, &request) {
-		return
-	}
-	value, err := s.service.SendTaskMessage(r.Context(), r.PathValue("id"), request)
-	respond(w, http.StatusOK, value, err)
-}
-
 // executionMessages is GET .../executions/{exec}/messages?after=<id>: the
 // operator's messages for the node's running execution.
 func (s *Server) executionMessages(w http.ResponseWriter, r *http.Request) {
@@ -625,11 +297,6 @@ func (s *Server) progress(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, answer, err)
 }
 
-func (s *Server) cancelTask(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.CancelTask(r.Context(), r.PathValue("id"))
-	respond(w, http.StatusOK, value, err)
-}
-
 // fireTrigger is POST /v1/triggers/{bot}/{trigger}: the body is the
 // event. Over TLS (the operator address) the request must carry the
 // trigger's secret or a signature of the body under its signing key;
@@ -647,8 +314,8 @@ func (s *Server) fireTrigger(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	response, err := s.service.FireTrigger(r.Context(), FireRequest{BotID: botID, Trigger: trigger, DeliveryID: r.Header.Get(IdempotencyKeyHeader), Body: body})
-	respond(w, createdStatus(response.Created), response, err)
+	response, err := s.service.FireTrigger(r.Context(), application.FireRequest{BotID: botID, Trigger: trigger, DeliveryID: r.Header.Get(IdempotencyKeyHeader), Body: body})
+	respond(w, createdStatus(response.Created), newFiredAnswer(response), err)
 }
 
 // authenticateWebhook checks the request against the trigger's
@@ -676,97 +343,6 @@ func (s *Server) authenticateWebhook(r *http.Request, botID, trigger string, bod
 		return refused
 	}
 	return nil
-}
-
-func (s *Server) getTask(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.GetTask(r.Context(), r.PathValue("id"))
-	respond(w, http.StatusOK, value, err)
-}
-
-func (s *Server) runTask(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.RunTask(r.Context(), r.PathValue("id"))
-	respond(w, http.StatusOK, value, err)
-}
-
-func (s *Server) decideTask(w http.ResponseWriter, r *http.Request) {
-	var request DecideRequest
-	if !readJSON(w, r, &request) {
-		return
-	}
-	header := r.Header.Get(ActorHeader)
-	if request.DecidedBy != "" && header != "" && request.DecidedBy != header {
-		respond(w, 0, nil, domain.ValidationError{Field: "decidedBy", Reason: "names another actor than " + ActorHeader})
-		return
-	}
-	if request.DecidedBy == "" {
-		request.DecidedBy = header
-	}
-	value, err := s.service.DecideTask(r.Context(), r.PathValue("id"), request)
-	respond(w, http.StatusOK, value, err)
-}
-
-// decideAs is POST /v1/tasks/{id}/approve and /deny: the decision is the
-// route, the pending call the optional ?call= (what a notification's
-// links carry), who decides the X-Axlr-Actor header, and no body is
-// read.
-func (s *Server) decideAs(decision string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		request := DecideRequest{Decision: decision, CallID: r.URL.Query().Get("call"), DecidedBy: r.Header.Get(ActorHeader)}
-		value, err := s.service.DecideTask(r.Context(), r.PathValue("id"), request)
-		respond(w, http.StatusOK, value, err)
-	}
-}
-
-// getArtifact is GET /v1/executions/{id}/artifacts/{name}: the bytes of
-// an artifact the control plane keeps, with its media type, size and
-// hash in the headers, as a download.
-func (s *Server) getArtifact(w http.ResponseWriter, r *http.Request) {
-	content, err := s.service.GetArtifact(r.Context(), r.PathValue("id"), r.PathValue("name"))
-	if err != nil {
-		respond(w, 0, nil, err)
-		return
-	}
-	defer content.Body.Close()
-	artifact := content.Artifact
-	mediaType := artifact.MediaType
-	if domain.ValidateMediaType(mediaType) != nil {
-		mediaType = application.DefaultArtifactMediaType
-	}
-	w.Header().Set("Content-Type", mediaType)
-	w.Header().Set("Content-Length", strconv.FormatInt(artifact.Size, 10))
-	w.Header().Set("Content-Disposition", `attachment; filename="`+artifact.Name+`"`)
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set(nodeproto.ArtifactSHA256Header, artifact.SHA256)
-	writeDeadline(w, artifactWriteTimeout)
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, content.Body)
-}
-
-func (s *Server) getReport(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.GetReport(r.Context(), r.PathValue("id"))
-	respond(w, http.StatusOK, value, err)
-}
-
-// getBuild answers which build the control plane runs and whether a
-// newer one is installed.
-func (s *Server) getBuild(w http.ResponseWriter, _ *http.Request) {
-	deps := s.service.Dependencies()
-	writeJSON(w, http.StatusOK, newBuildAnswer(application.CheckBuild(deps.Build), deps.MinimumAXLR))
-}
-
-func (s *Server) getExecution(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.GetExecution(r.Context(), r.PathValue("id"))
-	respond(w, http.StatusOK, value, err)
-}
-
-func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.ListNodes(r.Context())
-	respond(w, http.StatusOK, value, err)
-}
-
-func (s *Server) getNode(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.GetNode(r.Context(), r.PathValue("id"))
-	respond(w, http.StatusOK, value, err)
 }
 
 func (s *Server) registerNode(w http.ResponseWriter, r *http.Request) {
@@ -831,7 +407,7 @@ func (s *Server) nextAssignment(w http.ResponseWriter, r *http.Request) {
 	}
 	deadline := time.Now().Add(wait)
 	for {
-		changed := s.service.changes.nextWork()
+		changed := s.service.Changes().NextWork()
 		assignment, found, err := s.service.Runner().NextAssignment(r.Context(), id)
 		if err != nil {
 			respond(w, 0, nil, err)
@@ -982,7 +558,7 @@ func (s *Server) awaitDelegation(w http.ResponseWriter, r *http.Request) {
 	deadline := time.Now().Add(wait)
 	read := application.NewGetDelegation(s.service.Dependencies())
 	for {
-		changed, _ := s.service.changes.next()
+		changed, _ := s.service.Changes().Next()
 		answer, err := read.Execute(r.Context(), id, executionID, child)
 		if err != nil {
 			respond(w, 0, nil, err)
@@ -1077,20 +653,6 @@ func (s *Server) renewCertificate(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, nodeproto.EnrollResponse{Node: result.Node.Snapshot(), Certificate: string(result.CertificatePEM), CA: string(result.CAPEM), Serial: result.Serial, NotAfter: result.NotAfter}, nil)
 }
 
-func (s *Server) createEnrollmentToken(w http.ResponseWriter, r *http.Request) {
-	var request EnrollTokenRequest
-	if !readJSON(w, r, &request) {
-		return
-	}
-	value, err := s.service.CreateEnrollmentToken(r.Context(), request)
-	respond(w, http.StatusCreated, value, err)
-}
-
-func (s *Server) revokeNode(w http.ResponseWriter, r *http.Request) {
-	value, err := s.service.RevokeNode(r.Context(), r.PathValue("id"))
-	respond(w, http.StatusOK, value, err)
-}
-
 func createdStatus(created bool) int {
 	if created {
 		return http.StatusCreated
@@ -1114,7 +676,7 @@ func readJSONLimit(w http.ResponseWriter, r *http.Request, into any, limit int64
 			respond(w, 0, nil, err)
 			return false
 		}
-		writeJSON(w, http.StatusBadRequest, ErrorResponse{Kind: KindValidation, Message: "request body: " + err.Error()})
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Kind: application.KindValidation, Message: "request body: " + err.Error()})
 		return false
 	}
 	return true

@@ -27,8 +27,6 @@ type remoteCLI struct {
 	// certFile and keyFile are the operator's certificate, added as
 	// --cert-file and --key-file when set.
 	certFile, keyFile string
-	// transport is added as --transport when set; gRPC is the default.
-	transport string
 }
 
 func (c remoteCLI) run(args ...string) (int, string, string) {
@@ -37,9 +35,6 @@ func (c remoteCLI) run(args ...string) (int, string, string) {
 	global := []string{"--state", c.state, "--socket", "", "--actor", "test:remote", "--control", c.control, "--token-file", c.token, "--ca-file", c.ca}
 	if c.certFile != "" {
 		global = append(global, "--cert-file", c.certFile, "--key-file", c.keyFile)
-	}
-	if c.transport != "" {
-		global = append(global, "--transport", c.transport)
 	}
 	code := run(append(global, args...), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
@@ -73,13 +68,12 @@ func TestCommandsReachARemoteControlPlane(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &ca); err != nil || ca.Certificate == "" {
 		t.Fatalf("ca init answered %s (%v)", stdout.String(), err)
 	}
-	api := freeAddress(t)
 	grpcAddr := freeAddress(t)
 	ctx, stop := context.WithCancel(context.Background())
 	done := make(chan int, 1)
 	var serveOut, serveErr syncBuffer
 	go func() {
-		done <- serve(ctx, mustApp(t, state, fake), state, socket, []string{"--api-listen", api, "--grpc-listen", grpcAddr, "--tick", "20ms"}, &serveOut, &serveErr)
+		done <- serve(ctx, mustApp(t, state, fake), state, socket, []string{"--grpc-listen", grpcAddr, "--tick", "20ms"}, &serveOut, &serveErr)
 	}()
 	defer func() { stop(); <-done }()
 	for deadline := time.Now().Add(5 * time.Second); !unixapi.Reachable(context.Background(), socket) || !grpcclient.Reachable(context.Background(), filepath.Join(state, grpcSocketFileName)); {
@@ -129,12 +123,6 @@ func TestCommandsReachARemoteControlPlane(t *testing.T) {
 	if code, _, errText := service.run("bot", "list"); code == exitOK || !strings.Contains(errText, "not issued to an operator") {
 		t.Errorf("a service certificate: %d %s", code, errText)
 	}
-	// The HTTP operator address stays served until it is removed.
-	rest := remoteCLI{t: t, control: "https://" + api, token: tokenFile, ca: caFile, state: localState, transport: transportREST}
-	if code, out, errText := rest.run("health"); code != exitOK || strings.TrimSpace(out) != "ok" {
-		t.Fatalf("rest health: %d %s %s", code, out, errText)
-	}
-
 	if code, out, errText := c.run("health"); code != exitOK || strings.TrimSpace(out) != "ok" {
 		t.Fatalf("health: %d %s %s", code, out, errText)
 	}

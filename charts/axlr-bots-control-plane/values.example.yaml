@@ -2,7 +2,7 @@
 # keys from a Secret, and a NATS broker for the pushes. The names are
 # examples: put your own address and Secrets.
 serverNames: [192.0.2.10, axlr.example.internal]
-apiURL: https://192.0.2.10:7879
+grpcURL: 192.0.2.10:7880
 
 apiToken:
   existingSecret: axlr-bots-api-token

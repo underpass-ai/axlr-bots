@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/underpass-ai/axlr-bots/application"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +17,6 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 )
 
@@ -24,7 +24,7 @@ import (
 func grpcCLI(t *testing.T, socket string, args ...string) (int, string, string) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	global := []string{"--state", t.TempDir(), "--transport", "grpc", "--grpc-socket", socket, "--actor", "test:grpc"}
+	global := []string{"--state", t.TempDir(), "--grpc-socket", socket, "--actor", "test:grpc"}
 	code := run(append(global, args...), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
@@ -96,7 +96,7 @@ func TestCommandsReachARemoteControlPlaneOverGRPC(t *testing.T) {
 	state := filepath.Join(t.TempDir(), "must-stay-untouched")
 	run1 := func(control string, args ...string) (int, string, string) {
 		var stdout, stderr bytes.Buffer
-		global := []string{"--state", state, "--transport", "grpc", "--control", control, "--token-file", tokenFile, "--ca-file", caFile, "--cert-file", api.certFile, "--key-file", api.keyFile}
+		global := []string{"--state", state, "--control", control, "--token-file", tokenFile, "--ca-file", caFile, "--cert-file", api.certFile, "--key-file", api.keyFile}
 		code := run(append(global, args...), &stdout, &stderr)
 		return code, stdout.String(), stderr.String()
 	}
@@ -121,36 +121,27 @@ func TestCommandsReachARemoteControlPlaneOverGRPC(t *testing.T) {
 		t.Errorf("nobody there: %d %q", code, errText)
 	}
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"--transport", "grpc", "--control", address, "--token-file", filepath.Join(t.TempDir(), "missing"), "health"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "--token-file") {
+	if code := run([]string{"--control", address, "--token-file", filepath.Join(t.TempDir(), "missing"), "health"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "--token-file") {
 		t.Errorf("a missing token file: %d %q", code, stderr.String())
 	}
 }
 
-func TestTheControlFlagsAreCheckedPerTransport(t *testing.T) {
+func TestTheControlFlagsAreChecked(t *testing.T) {
 	for control, ok := range map[string]bool{"host:7880": true, "https://host:7880": true, "grpcs://host:7880": true, "host": false, "https://host:7880/v1": false, ":7880": false, "host:": false} {
-		err := remoteControl{URL: control, TokenFile: "t"}.validate(transportGRPC)
+		err := remoteControl{URL: control, TokenFile: "t"}.validate()
 		if (err == nil) != ok {
-			t.Errorf("grpc %q: %v", control, err)
+			t.Errorf("%q: %v", control, err)
 		}
 	}
-	if err := (remoteControl{URL: "host:7880"}).validate(transportGRPC); err == nil {
+	if err := (remoteControl{URL: "host:7880"}).validate(); err == nil {
 		t.Error("a control address needs the token file")
 	}
-	if err := (remoteControl{URL: "https://host:7879", TokenFile: "t"}).validate(transportREST); err != nil {
-		t.Errorf("rest keeps its https URL: %v", err)
-	}
-	if err := (remoteControl{URL: "host:7879", TokenFile: "t"}).validate(transportREST); err == nil {
-		t.Error("rest needs https://")
-	}
-	if err := (remoteControl{TokenFile: "t"}).validate(transportGRPC); err == nil {
+	if err := (remoteControl{TokenFile: "t"}).validate(); err == nil {
 		t.Error("a token file goes with --control")
 	}
-	if validateTransport("carrier-pigeon") == nil || validateTransport("grpc") != nil || validateTransport("rest") != nil {
-		t.Error("transports are grpc and rest")
-	}
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"--transport", "ftp", "health"}, &stdout, &stderr); code != exitUsage {
-		t.Errorf("a bad transport is a usage error: %d", code)
+	if code := run([]string{"--transport", "rest", "health"}, &stdout, &stderr); code != exitUsage {
+		t.Errorf("--transport is gone: %d", code)
 	}
 }
 
@@ -177,7 +168,7 @@ func TestFiringATriggerOverGRPCNeedsTheHTTPSocket(t *testing.T) {
 		t.Errorf("no HTTP socket answers: %d %q", code, errText)
 	}
 	var stdout, stderr bytes.Buffer
-	args := []string{"--state", t.TempDir(), "--transport", "grpc", "--grpc-socket", socket, "--socket", "", "trigger", "fire", "bot-a", "hook", "--body", `{"a":1}`}
+	args := []string{"--state", t.TempDir(), "--grpc-socket", socket, "--socket", "", "trigger", "fire", "bot-a", "hook", "--body", `{"a":1}`}
 	if code := run(args, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "not part of the gRPC operator API") {
 		t.Errorf("without any HTTP socket it says so: %d %q", code, stderr.String())
 	}
@@ -286,7 +277,7 @@ func TestTaskActivityFollowsTheTreeUntilItEnds(t *testing.T) {
 	}
 }
 
-type noActivityService struct{ unixapi.Service }
+type noActivityService struct{ application.OperatorService }
 
 func TestTaskActivityNeedsGRPC(t *testing.T) {
 	var stdout, stderr bytes.Buffer

@@ -4,13 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/underpass-ai/axlr-bots/application"
 	"io"
 	"strings"
-
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 )
 
-func nodeList(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func nodeList(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 0 {
 		fmt.Fprintln(stderr, "axlr-bots: node list takes no arguments")
 		return exitUsage
@@ -23,7 +22,7 @@ func nodeList(ctx context.Context, service unixapi.Service, args []string, stdou
 	return exitOK
 }
 
-func nodeGet(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func nodeGet(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "axlr-bots: node get needs exactly one <node-id>")
 		return exitUsage
@@ -39,7 +38,7 @@ func nodeGet(ctx context.Context, service unixapi.Service, args []string, stdout
 // nodeEnrollToken mints a one-time token for a node on another host.
 // The token is printed once and stored nowhere; the operator carries it
 // (and the control plane's URL) to the new host.
-func nodeEnrollToken(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func nodeEnrollToken(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("node enroll-token", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	nodeID := flags.String("node-id", "", "the id the node's certificate will carry (default: generated)")
@@ -57,7 +56,7 @@ func nodeEnrollToken(ctx context.Context, service unixapi.Service, args []string
 		fmt.Fprintln(stderr, "axlr-bots:", err)
 		return exitUsage
 	}
-	request := unixapi.EnrollTokenRequest{NodeID: *nodeID, Labels: parsed}
+	request := application.EnrollTokenRequest{NodeID: *nodeID, Labels: parsed}
 	if *ttl != 0 {
 		request.TTL = ttl.String()
 	}
@@ -71,7 +70,7 @@ func nodeEnrollToken(ctx context.Context, service unixapi.Service, args []string
 
 // nodeRevoke cuts a node off: its certificate is refused from the next
 // request on and what it was running is failed.
-func nodeRevoke(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func nodeRevoke(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "axlr-bots: node revoke needs exactly one <node-id>")
 		return exitUsage

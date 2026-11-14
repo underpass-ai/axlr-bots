@@ -2,9 +2,11 @@ package daemon
 
 import (
 	"context"
-	"errors"
+	"github.com/underpass-ai/axlr-bots/adapters/grpcclient"
+	"github.com/underpass-ai/axlr-bots/internal/operatortest"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +25,7 @@ import (
 
 // startTLS runs the daemon on the socket and a TLS address on the
 // loopback, with the fleet CA under the state directory.
-func (f *fixture) startTLS(t *testing.T) (*unixapi.Client, string, func()) {
+func (f *fixture) startTLS(t *testing.T) (*operatortest.Client, string, func()) {
 	t.Helper()
 	ca, err := pki.Generate(filepath.Join(f.state, pki.CADirName))
 	if err != nil {
@@ -38,10 +40,10 @@ func (f *fixture) startTLS(t *testing.T) (*unixapi.Client, string, func()) {
 	go func() {
 		done <- Run(ctx, f.deps, Options{StateDir: f.state, SocketPath: f.socket, Listener: listener, TLS: pki.ServerTLSConfig(ca, []string{"127.0.0.1"}), Tick: 20 * time.Millisecond, ReconcileEvery: 50 * time.Millisecond, Grace: time.Hour, NodeOfflineAfter: time.Second, Log: log.New(f.logs, "", 0)})
 	}()
-	for !unixapi.Reachable(context.Background(), f.socket) {
+	for !unixapi.Reachable(context.Background(), f.socket) || !grpcclient.Reachable(context.Background(), f.grpcSocket()) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	return unixapi.NewClient(f.socket), "https://" + listener.Addr().String(), func() {
+	return f.operator(t), "https://" + listener.Addr().String(), func() {
 		cancel()
 		if err := <-done; err != nil {
 			t.Error(err)
@@ -51,10 +53,10 @@ func (f *fixture) startTLS(t *testing.T) (*unixapi.Client, string, func()) {
 
 // enrolledAgent enrolls a node with a token and returns an agent that
 // speaks to the control plane over TLS with the certificate it got.
-func enrolledAgent(t *testing.T, operator *unixapi.Client, url, nodeID string, labels map[string]string, axlrBin, nodeDir string) nodeagent.Agent {
+func enrolledAgent(t *testing.T, operator *operatortest.Client, url, nodeID string, labels map[string]string, axlrBin, nodeDir string) nodeagent.Agent {
 	t.Helper()
 	ctx := context.Background()
-	minted, err := operator.CreateEnrollmentToken(ctx, unixapi.EnrollTokenRequest{NodeID: nodeID, Labels: labels})
+	minted, err := operator.CreateEnrollmentToken(ctx, application.EnrollTokenRequest{NodeID: nodeID, Labels: labels})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +125,7 @@ func twoNodesBySelector(t *testing.T, axlrBin string, objective string) {
 	if _, err := operator.EnableBot(context.Background(), "bot-us"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, err := operator.SubmitTask(context.Background(), unixapi.SubmitRequest{BotID: "bot-us", Objective: objective, IdempotencyKey: "k-us"})
+	submitted, err := operator.SubmitTask(context.Background(), application.SubmitRequest{BotID: "bot-us", Objective: objective, IdempotencyKey: "k-us"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,18 +205,15 @@ func TestDaemonTLSOptions(t *testing.T) {
 	}
 }
 
-func TestDaemonOperatorAddressOptions(t *testing.T) {
+func TestDaemonWebhookAddressOptions(t *testing.T) {
 	f := newFixture(t, "completed")
-	if err := Run(context.Background(), f.deps, Options{StateDir: f.state, SocketPath: f.socket, APIListenAddr: "127.0.0.1:0", APIToken: "t"}); err == nil || !strings.Contains(err.Error(), "TLS configuration") {
-		t.Errorf("operator address without TLS: %v", err)
+	if err := Run(context.Background(), f.deps, Options{StateDir: f.state, SocketPath: f.socket, APIListenAddr: "127.0.0.1:0"}); err == nil || !strings.Contains(err.Error(), "TLS configuration") {
+		t.Errorf("webhook address without TLS: %v", err)
 	}
 	ca, _ := pki.Generate(filepath.Join(f.state, pki.CADirName))
 	tlsConfig := pki.ServerTLSConfig(ca, []string{"127.0.0.1"})
-	if err := Run(context.Background(), f.deps, Options{StateDir: f.state, SocketPath: f.socket, APIListenAddr: "127.0.0.1:0", TLS: tlsConfig}); err == nil || !strings.Contains(err.Error(), "bearer token") {
-		t.Errorf("operator address without a token: %v", err)
-	}
-	if err := Run(context.Background(), f.deps, Options{StateDir: f.state, SocketPath: f.socket, ListenAddr: "127.0.0.1:0", APIListenAddr: "300.0.0.1:0", APIToken: "t", TLS: tlsConfig}); err == nil {
-		t.Error("a bad operator address listened")
+	if err := Run(context.Background(), f.deps, Options{StateDir: f.state, SocketPath: f.socket, ListenAddr: "127.0.0.1:0", APIListenAddr: "300.0.0.1:0", TLS: tlsConfig}); err == nil {
+		t.Error("a bad webhook address listened")
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -223,25 +222,30 @@ func TestDaemonOperatorAddressOptions(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, f.deps, Options{StateDir: f.state, SocketPath: f.socket, APIListener: listener, APIToken: "operator-token", TLS: tlsConfig, Tick: 20 * time.Millisecond, Log: log.New(f.logs, "", 0)})
+		done <- Run(ctx, f.deps, Options{StateDir: f.state, SocketPath: f.socket, APIListener: listener, TLS: tlsConfig, Tick: 20 * time.Millisecond, Log: log.New(f.logs, "", 0)})
 	}()
 	for !unixapi.Reachable(context.Background(), f.socket) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	clientConfig, _ := pki.EnrollTLSConfig(ca.CertificatePEM())
+	httpClient := &http.Client{Transport: &http.Transport{TLSClientConfig: clientConfig.Clone()}}
 	url := "https://" + listener.Addr().String()
-	if bots, err := unixapi.NewTLSClient(url, clientConfig.Clone()).WithToken("operator-token").ListBots(context.Background()); err != nil || len(bots) != 0 {
-		t.Errorf("operator address with the token: %v", err)
+	if response, err := httpClient.Get(url + "/healthz"); err != nil || response.StatusCode != http.StatusOK {
+		t.Errorf("webhook address health: %v", err)
+	} else {
+		_ = response.Body.Close()
 	}
-	var unauthorized unixapi.UnauthorizedError
-	if _, err := unixapi.NewTLSClient(url, clientConfig.Clone()).ListBots(context.Background()); !errors.As(err, &unauthorized) {
-		t.Errorf("operator address without the token: %v", err)
+	// The operator API is not on it.
+	if response, err := httpClient.Get(url + "/v1/bots"); err != nil || response.StatusCode != http.StatusNotFound {
+		t.Errorf("operator route on the webhook address: %v %v", err, response)
+	} else {
+		_ = response.Body.Close()
 	}
 	cancel()
 	if err := <-done; err != nil {
 		t.Error(err)
 	}
-	if !strings.Contains(f.logs.String(), "(operators, bearer token)") {
+	if !strings.Contains(f.logs.String(), "(webhooks)") {
 		t.Errorf("logs = %s", f.logs.String())
 	}
 }

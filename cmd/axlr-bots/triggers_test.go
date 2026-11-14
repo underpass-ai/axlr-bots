@@ -2,10 +2,7 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -128,7 +125,7 @@ func TestTriggerAndTaskCommandsWithoutADaemon(t *testing.T) {
 	}
 }
 
-func TestServeWithTheOperatorAddressFiresWebhooksAndTimers(t *testing.T) {
+func TestServeWithTheWebhookAddressFiresWebhooksAndTimers(t *testing.T) {
 	state := t.TempDir()
 	socket := filepath.Join(t.TempDir(), "cp.sock")
 	c := cli{t: t, state: state, axlr: fakeAXLR(t, "completed"), socket: ""}
@@ -158,49 +155,33 @@ func TestServeWithTheOperatorAddressFiresWebhooksAndTimers(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	tokenPath := filepath.Join(state, "api.token")
-	raw, err := os.ReadFile(tokenPath)
-	if err != nil {
-		t.Fatalf("token file: %v", err)
-	}
-	if info, _ := os.Stat(tokenPath); info.Mode().Perm() != 0o600 || len(strings.TrimSpace(string(raw))) != 64 {
-		t.Errorf("token file mode %v, %d bytes", info.Mode().Perm(), len(raw))
-	}
-	token := strings.TrimSpace(string(raw))
-	if strings.Contains(serveErr.String(), token) {
-		t.Error("the token was logged")
+	if _, err := os.Stat(filepath.Join(state, "api.token")); !os.IsNotExist(err) {
+		t.Errorf("--api-listen alone made an operator token: %v", err)
 	}
 	authority, _ := pki.Load(filepath.Join(state, pki.CADirName))
 	config, _ := pki.EnrollTLSConfig(authority.CertificatePEM())
 	url := "https://127.0.0.1:" + port
-	api := unixapi.NewTLSClient(url, config.Clone()).WithToken(token)
+	httpClient := &http.Client{Transport: &http.Transport{TLSClientConfig: config.Clone()}}
 	deadline = time.Now().Add(5 * time.Second)
 	for {
-		if _, err = api.ListBots(context.Background()); err == nil || time.Now().After(deadline) {
+		response, err := httpClient.Get(url + "/healthz")
+		if err == nil {
+			response.Body.Close()
 			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("webhook address: %v\n%s", err, serveErr.String())
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if err != nil {
-		t.Fatalf("operator address: %v\n%s", err, serveErr.String())
-	}
-	var unauthorized unixapi.UnauthorizedError
-	if _, err := unixapi.NewTLSClient(url, config.Clone()).ListBots(context.Background()); !errors.As(err, &unauthorized) {
-		t.Errorf("without the token: %v", err)
-	}
-	// A webhook from outside, with the trigger's secret, as curl would send it.
-	httpClient := &http.Client{Transport: &http.Transport{TLSClientConfig: config.Clone()}}
-	// The build route says the least AXLR the nodes should run.
-	buildRequest, _ := http.NewRequest(http.MethodGet, url+"/v1/build", nil)
-	buildRequest.Header.Set("Authorization", "Bearer "+token)
-	if response, err := httpClient.Do(buildRequest); err != nil {
-		t.Fatal(err)
+	// The operator API is not on it: it is gRPC only.
+	if response, err := httpClient.Get(url + "/v1/bots"); err != nil || response.StatusCode != http.StatusNotFound {
+		t.Errorf("an operator route on the webhook address: %v %v", err, response)
 	} else {
-		raw, _ := io.ReadAll(response.Body)
 		response.Body.Close()
-		if !strings.Contains(string(raw), `"minimumAxlr":"0.20.0"`) || !strings.Contains(serveErr.String(), "AXLR 0.20.0 or newer") {
-			t.Errorf("GET /v1/build = %s", raw)
-		}
+	}
+	if !strings.Contains(serveErr.String(), "AXLR 0.20.0 or newer") {
+		t.Errorf("the minimum AXLR is not logged: %s", serveErr.String())
 	}
 	post := func(delivery string) map[string]any {
 		t.Helper()
@@ -259,24 +240,10 @@ func TestServeWithTheOperatorAddressFiresWebhooksAndTimers(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("serve did not stop")
 	}
-	for _, want := range []string{"operator token written to " + tokenPath, "(operators, bearer token)", "daemon: timer bot/tick fired"} {
+	for _, want := range []string{"(webhooks)", "daemon: timer bot/tick fired"} {
 		if !strings.Contains(serveErr.String(), want) {
 			t.Errorf("serve log lacks %q:\n%s", want, serveErr.String())
 		}
-	}
-	// A second start reads the token back.
-	var again bytes.Buffer
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		done <- serve(ctx, mustApp(t, state, c.axlr), state, socket, []string{"--api-listen", "127.0.0.1:0"}, &out, &again)
-	}()
-	for !unixapi.Reachable(context.Background(), socket) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	cancel()
-	<-done
-	if !strings.Contains(again.String(), "operator token read from "+tokenPath) {
-		t.Errorf("second start log = %s", again.String())
 	}
 }
 

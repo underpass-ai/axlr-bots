@@ -206,8 +206,8 @@ jobs:
           refused --set bus.kind=nats
           refused --set bus.kind=nats --set-string bus.nats.url=tls://nats:4222
           refused --set bus.kind=kafka
-          refused --set-string apiURL=http://192.0.2.10:7879
-          refused --set-string apiURL=https://192.0.2.10:7879/path
+          refused --set-string grpcURL=https://192.0.2.10:7880
+          refused --set-string grpcURL=192.0.2.10
           refused --set-string 'serverNames={bad name}'
           refused --set-string image.digest=sha256:abc
           refused --set metrics.port=7879
@@ -281,14 +281,11 @@ jobs:
           $compose logs
           test "$status" = healthy
           test -S "$root/state/axlr-bots.sock"
-          test "$(stat -c %u "$root/state/api.token")" = "$(id -u)"
+          test -S "$root/state/axlr-bots-grpc.sock"
+          # The webhook address answers its health check; the operator API
+          # is gRPC only, so no operator route is on it.
           curl -fsk https://127.0.0.1:17879/healthz
-          curl -fsk -H "Authorization: Bearer $(cat "$root/state/api.token")" https://127.0.0.1:17879/v1/build | tee build.json
-          grep -q '"running":{"version":"0.0.0-ci"' build.json
-          # The installed binary's stamp is read from the file: a build with
-          # -trimpath records no -ldflags and this would be empty.
-          grep -q '"installed":{"version":"0.0.0-ci"' build.json
-          grep -q '"stale":false' build.json
+          test "$(curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:17879/v1/build)" = 404
           $compose down
 
   # The check branch protection requires from this workflow. It reports on

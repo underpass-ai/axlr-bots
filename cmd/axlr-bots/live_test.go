@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"github.com/underpass-ai/axlr-bots/adapters/grpcclient"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,7 +33,16 @@ func TestLiveWebhookRunsOnTheNode(t *testing.T) {
 	if !unixapi.Reachable(ctx, socket) {
 		t.Fatalf("no daemon answers on %s", socket)
 	}
-	client := unixapi.NewClient(socket)
+	fire := unixapi.NewClient(socket)
+	grpcSocket := os.Getenv("AXLR_BOTS_GRPC_SOCKET")
+	if grpcSocket == "" {
+		grpcSocket = filepath.Join(filepath.Dir(socket), grpcSocketFileName)
+	}
+	client, err := grpcclient.DialUnix(grpcSocket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
 	const secret = "live-webhook-secret-0123456789"
 	triggers := []domain.TriggerSnapshot{
 		{Type: "manual"},
@@ -60,11 +70,11 @@ func TestLiveWebhookRunsOnTheNode(t *testing.T) {
 	}
 	delivery := "live-" + time.Now().UTC().Format("20060102T150405Z")
 	body := json.RawMessage(`{"type": "deploy", "service": "web"}`)
-	fired, err := client.FireTrigger(ctx, unixapi.FireRequest{BotID: "live-webhook", Trigger: "deploy", DeliveryID: delivery, Body: body})
+	fired, err := fire.FireTrigger(ctx, application.FireRequest{BotID: "live-webhook", Trigger: "deploy", DeliveryID: delivery, Body: body})
 	if err != nil || !fired.Created {
 		t.Fatalf("fire: %v %+v", err, fired)
 	}
-	again, err := client.FireTrigger(ctx, unixapi.FireRequest{BotID: "live-webhook", Trigger: "deploy", DeliveryID: delivery, Body: body})
+	again, err := fire.FireTrigger(ctx, application.FireRequest{BotID: "live-webhook", Trigger: "deploy", DeliveryID: delivery, Body: body})
 	if err != nil || again.Created || again.Task.ID != fired.Task.ID {
 		t.Errorf("redelivery: %v %+v", err, again)
 	}

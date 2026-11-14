@@ -3,25 +3,25 @@ package grpcapi
 import (
 	"context"
 	"errors"
+	"github.com/underpass-ai/axlr-bots/application"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 )
 
 // codes of the kinds the API names, as common.proto tabulates them.
 var kindCodes = map[string]codes.Code{
-	unixapi.KindNotFound:        codes.NotFound,
-	unixapi.KindValidation:      codes.InvalidArgument,
-	unixapi.KindState:           codes.FailedPrecondition,
-	unixapi.KindApprovalExpired: codes.FailedPrecondition,
-	unixapi.KindConflict:        codes.Aborted,
-	unixapi.KindForbidden:       codes.PermissionDenied,
-	unixapi.KindUnauthorized:    codes.Unauthenticated,
-	unixapi.KindTooLarge:        codes.ResourceExhausted,
-	unixapi.KindInternal:        codes.Internal,
+	application.KindNotFound:        codes.NotFound,
+	application.KindValidation:      codes.InvalidArgument,
+	application.KindState:           codes.FailedPrecondition,
+	application.KindApprovalExpired: codes.FailedPrecondition,
+	application.KindConflict:        codes.Aborted,
+	application.KindForbidden:       codes.PermissionDenied,
+	application.KindUnauthorized:    codes.Unauthenticated,
+	application.KindTooLarge:        codes.ResourceExhausted,
+	application.KindInternal:        codes.Internal,
 }
 
 // statusError is the gRPC status of an error: the code of its kind, its
@@ -40,7 +40,7 @@ func statusError(err error) error {
 	case errors.Is(err, context.DeadlineExceeded):
 		return status.FromContextError(err).Err()
 	}
-	response := unixapi.Classify(err)
+	response := application.ClassifyError(err)
 	code, ok := kindCodes[response.Kind]
 	if !ok {
 		code = codes.Internal

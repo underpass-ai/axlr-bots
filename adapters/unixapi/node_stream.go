@@ -34,7 +34,7 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "streaming is not supported", http.StatusInternalServerError)
 		return
 	}
-	changed, seq := s.service.changes.next()
+	changed, seq := s.service.Changes().Next()
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
@@ -62,10 +62,10 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case <-changed:
-			changed, _ = s.service.changes.next()
+			changed, _ = s.service.Changes().Next()
 			var pushes []application.NodePush
 			var complete bool
-			pushes, seq, complete = s.service.changes.since(id, seq)
+			pushes, seq, complete = s.service.Changes().Since(id, seq)
 			if !complete {
 				if !send(nodeproto.StreamMessage{Type: nodeproto.StreamResync}) {
 					return

@@ -9,11 +9,10 @@ import (
 	"io"
 	"os"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 )
 
-func botRegister(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func botRegister(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("bot register", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	file := flags.String("file", "", "bot definition (JSON)")
@@ -46,7 +45,7 @@ func botRegister(ctx context.Context, service unixapi.Service, args []string, st
 	return exitOK
 }
 
-func botEnable(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func botEnable(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "axlr-bots: bot enable needs exactly one <bot-id>")
 		return exitUsage
@@ -59,7 +58,7 @@ func botEnable(ctx context.Context, service unixapi.Service, args []string, stdo
 	return exitOK
 }
 
-func botPause(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func botPause(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "axlr-bots: bot pause needs exactly one <bot-id>")
 		return exitUsage
@@ -73,7 +72,7 @@ func botPause(ctx context.Context, service unixapi.Service, args []string, stdou
 }
 
 // botStop pauses the bot and cancels every task it has not finished.
-func botStop(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func botStop(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "axlr-bots: bot stop needs exactly one <bot-id>")
 		return exitUsage
@@ -89,7 +88,7 @@ func botStop(ctx context.Context, service unixapi.Service, args []string, stdout
 // botDelete deletes the bot: its unfinished tasks and the children it
 // asked for are cancelled and its timers removed;
 // the answer names the bots that still name it.
-func botDelete(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func botDelete(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "axlr-bots: bot delete needs exactly one <bot-id>")
 		return exitUsage
@@ -102,7 +101,7 @@ func botDelete(ctx context.Context, service unixapi.Service, args []string, stdo
 	return exitOK
 }
 
-func botList(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func botList(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 0 {
 		fmt.Fprintln(stderr, "axlr-bots: bot list takes no arguments")
 		return exitUsage
@@ -115,7 +114,7 @@ func botList(ctx context.Context, service unixapi.Service, args []string, stdout
 	return exitOK
 }
 
-func botGet(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func botGet(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "axlr-bots: bot get needs exactly one <bot-id>")
 		return exitUsage
@@ -129,7 +128,7 @@ func botGet(ctx context.Context, service unixapi.Service, args []string, stdout,
 }
 
 // botUpdate applies a patch file to a bot's definition (PATCH /v1/bots/{id}).
-func botUpdate(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func botUpdate(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) < 1 || args[0] == "" || args[0][0] == '-' {
 		fmt.Fprintln(stderr, "axlr-bots: bot update needs <bot-id> first, then --file <patch.json>")
 		return exitUsage
@@ -164,7 +163,7 @@ func botUpdate(ctx context.Context, service unixapi.Service, args []string, stdo
 }
 
 // botEvents prints the newest events of a bot, oldest first.
-func botEvents(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func botEvents(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) < 1 || args[0] == "" || args[0][0] == '-' {
 		fmt.Fprintln(stderr, "axlr-bots: bot events needs <bot-id> first")
 		return exitUsage

@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
+	"github.com/underpass-ai/axlr-bots/application"
 	"math/big"
 	"net"
 	"os"
@@ -20,7 +21,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 )
 
@@ -84,7 +84,7 @@ func TestDialTLSChecksTheFleetCAAndSendsTheToken(t *testing.T) {
 
 	wrong, _ := DialTLS(address, &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: roots}, "another")
 	defer wrong.Close()
-	if _, err := wrong.ListBots(t.Context()); !errors.As(err, new(unixapi.UnauthorizedError)) {
+	if _, err := wrong.ListBots(t.Context()); !errors.As(err, new(application.UnauthorizedError)) {
 		t.Errorf("a wrong token is unauthorized: %v", err)
 	}
 	if err := wrong.Health(t.Context()); err != nil {

@@ -5,7 +5,6 @@ import (
 
 	"google.golang.org/grpc/metadata"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -14,48 +13,48 @@ import (
 // ActorKey is the metadata key that says who decides a pending call.
 const ActorKey = "x-axlr-actor"
 
-func (c *Client) SubmitTask(ctx context.Context, request unixapi.SubmitRequest) (unixapi.SubmitResponse, error) {
+func (c *Client) SubmitTask(ctx context.Context, request application.SubmitRequest) (application.SubmitResponse, error) {
 	answer, err := c.tasks.SubmitTask(ctx, &operatorv1.SubmitTaskRequest{
 		BotId: request.BotID, Objective: request.Objective, IdempotencyKey: request.IdempotencyKey,
 		CorrelationId: request.CorrelationID, Priority: request.Priority,
 	})
 	if err != nil {
-		return unixapi.SubmitResponse{}, fromStatus(c.address, err)
+		return application.SubmitResponse{}, fromStatus(c.address, err)
 	}
-	return unixapi.SubmitResponse{Created: answer.GetCreated(), Task: taskSnapshot(answer.GetTask())}, nil
+	return application.SubmitResponse{Created: answer.GetCreated(), Task: taskSnapshot(answer.GetTask())}, nil
 }
 
-func (c *Client) RunTask(ctx context.Context, id string) (unixapi.RunResponse, error) {
+func (c *Client) RunTask(ctx context.Context, id string) (application.RunResponse, error) {
 	answer, err := c.tasks.RunTask(ctx, &operatorv1.RunTaskRequest{TaskId: id})
 	if err != nil {
-		return unixapi.RunResponse{}, fromStatus(c.address, err)
+		return application.RunResponse{}, fromStatus(c.address, err)
 	}
-	return unixapi.RunResponse{Task: taskSnapshot(answer.GetTask()), Execution: executionSnapshot(answer.GetExecution())}, nil
+	return application.RunResponse{Task: taskSnapshot(answer.GetTask()), Execution: executionSnapshot(answer.GetExecution())}, nil
 }
 
 // DecideTask decides the pending call as request.DecidedBy: it goes in
 // the decided_by field and in the actor metadata, which the contract
 // compares, so the two always agree.
-func (c *Client) DecideTask(ctx context.Context, id string, request unixapi.DecideRequest) (unixapi.RunResponse, error) {
+func (c *Client) DecideTask(ctx context.Context, id string, request application.DecideRequest) (application.RunResponse, error) {
 	if request.DecidedBy != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, ActorKey, request.DecidedBy)
 	}
 	answer, err := c.tasks.DecideTask(ctx, &operatorv1.DecideTaskRequest{TaskId: id, Decision: request.Decision, CallId: request.CallID, DecidedBy: request.DecidedBy})
 	if err != nil {
-		return unixapi.RunResponse{}, fromStatus(c.address, err)
+		return application.RunResponse{}, fromStatus(c.address, err)
 	}
-	return unixapi.RunResponse{Task: taskSnapshot(answer.GetTask()), Execution: executionSnapshot(answer.GetExecution())}, nil
+	return application.RunResponse{Task: taskSnapshot(answer.GetTask()), Execution: executionSnapshot(answer.GetExecution())}, nil
 }
 
-func (c *Client) CancelTask(ctx context.Context, id string) (unixapi.CancelResponse, error) {
+func (c *Client) CancelTask(ctx context.Context, id string) (application.CancelResponse, error) {
 	answer, err := c.tasks.CancelTask(ctx, &operatorv1.CancelTaskRequest{TaskId: id})
 	if err != nil {
-		return unixapi.CancelResponse{}, fromStatus(c.address, err)
+		return application.CancelResponse{}, fromStatus(c.address, err)
 	}
-	return unixapi.CancelResponse{Task: taskSnapshot(answer.GetTask()), Execution: executionPtr(answer.GetExecution()), Changed: answer.GetChanged()}, nil
+	return application.CancelResponse{Task: taskSnapshot(answer.GetTask()), Execution: executionPtr(answer.GetExecution()), Changed: answer.GetChanged()}, nil
 }
 
-func (c *Client) SendTaskMessage(ctx context.Context, id string, request unixapi.MessageRequest) (application.SentTaskMessage, error) {
+func (c *Client) SendTaskMessage(ctx context.Context, id string, request application.MessageRequest) (application.SentTaskMessage, error) {
 	answer, err := c.tasks.SendTaskMessage(ctx, &operatorv1.SendTaskMessageRequest{TaskId: id, Text: request.Text})
 	if err != nil {
 		return application.SentTaskMessage{}, fromStatus(c.address, err)
@@ -95,20 +94,20 @@ func (c *Client) ListExecutions(ctx context.Context, id string) ([]domain.Execut
 	return executionSnapshots(answer.GetExecutions()), nil
 }
 
-func (c *Client) GetReport(ctx context.Context, id string) (unixapi.ReportResponse, error) {
+func (c *Client) GetReport(ctx context.Context, id string) (application.ReportResponse, error) {
 	answer, err := c.tasks.GetTaskReport(ctx, &operatorv1.GetTaskReportRequest{TaskId: id})
 	if err != nil {
-		return unixapi.ReportResponse{}, fromStatus(c.address, err)
+		return application.ReportResponse{}, fromStatus(c.address, err)
 	}
-	return unixapi.ReportResponse{TaskID: answer.GetTaskId(), Reference: answer.GetReference(), Content: answer.GetContent()}, nil
+	return application.ReportResponse{TaskID: answer.GetTaskId(), Reference: answer.GetReference(), Content: answer.GetContent()}, nil
 }
 
 // FireTrigger fires a webhook trigger. Triggers are HTTP routes, not
 // RPCs of the operator API: the client that was given a firer uses it,
 // and any other says so.
-func (c *Client) FireTrigger(ctx context.Context, request unixapi.FireRequest) (unixapi.FireResponse, error) {
+func (c *Client) FireTrigger(ctx context.Context, request application.FireRequest) (application.FireResponse, error) {
 	if c.triggers == nil {
-		return unixapi.FireResponse{}, domain.ValidationError{Field: "trigger", Reason: "firing a webhook trigger is not part of the gRPC operator API; POST the event to the trigger's webhook route (/v1/triggers/<bot>/<trigger>)"}
+		return application.FireResponse{}, domain.ValidationError{Field: "trigger", Reason: "firing a webhook trigger is not part of the gRPC operator API; fire it with `axlr-bots trigger fire` on the daemon host, or POST the event to the trigger's webhook route (/v1/triggers/<bot>/<trigger>)"}
 	}
 	return c.triggers.FireTrigger(ctx, request)
 }

@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -52,7 +51,7 @@ func TestDaemonNotifiesThenExpiresAnApprovalAndRefusesTheLateDecision(t *testing
 	if _, err := client.EnableBot(ctx, "writer"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, err := client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "writer", Objective: "restart the unit", IdempotencyKey: "k"})
+	submitted, err := client.SubmitTask(ctx, application.SubmitRequest{BotID: "writer", Objective: "restart the unit", IdempotencyKey: "k"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,9 +84,9 @@ func TestDaemonNotifiesThenExpiresAnApprovalAndRefusesTheLateDecision(t *testing
 	if len(executions) != 2 || executions[1].Decision != "deny" || !strings.Contains(executions[1].Result.Answer, "denied") {
 		t.Errorf("executions = %+v", executions)
 	}
-	_, err = client.DecideTask(ctx, submitted.Task.ID, unixapi.DecideRequest{Decision: "approve"})
-	var remote unixapi.RemoteError
-	if !errors.As(err, &remote) || remote.Kind != unixapi.KindApprovalExpired {
+	_, err = client.DecideTask(ctx, submitted.Task.ID, application.DecideRequest{Decision: "approve"})
+	var remote application.RemoteError
+	if !errors.As(err, &remote) || remote.Kind != application.KindApprovalExpired {
 		t.Errorf("late approve: %v", err)
 	}
 	events, _ := client.ListTaskEvents(ctx, application.TaskEventsQuery{ID: domain.TaskID(submitted.Task.ID), Limit: 0})

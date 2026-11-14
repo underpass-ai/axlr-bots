@@ -10,7 +10,6 @@ import (
 
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
@@ -20,8 +19,8 @@ func durationpbNew(d time.Duration) *durationpb.Duration { return durationpb.New
 
 func asValidation(err error, target *domain.ValidationError) bool { return errors.As(err, target) }
 
-func unixapiEnroll(ttl string) unixapi.EnrollTokenRequest {
-	return unixapi.EnrollTokenRequest{TTL: ttl}
+func enrollRequest(ttl string) application.EnrollTokenRequest {
+	return application.EnrollTokenRequest{TTL: ttl}
 }
 
 var (

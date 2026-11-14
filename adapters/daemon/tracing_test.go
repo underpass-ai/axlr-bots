@@ -7,7 +7,6 @@ import (
 
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 )
 
@@ -65,8 +64,8 @@ func TestDaemonRefusesABadOTLPEndpoint(t *testing.T) {
 	}
 }
 
-func unixapiSubmit(key string) unixapi.SubmitRequest {
-	return unixapi.SubmitRequest{BotID: "bot", Objective: "List the files in your workspace", IdempotencyKey: key}
+func unixapiSubmit(key string) application.SubmitRequest {
+	return application.SubmitRequest{BotID: "bot", Objective: "List the files in your workspace", IdempotencyKey: key}
 }
 
 func serviceName(span tracetest.SpanStub) (string, bool) {

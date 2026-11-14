@@ -7,7 +7,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -15,7 +14,7 @@ import (
 // botSubscribe makes the bot listen to a topic of its teams: it reads
 // the bot's subscriptions, adds the topic (or replaces the one of the
 // same pattern) and writes the list back (PATCH /v1/bots/{id}).
-func botSubscribe(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func botSubscribe(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("bot subscribe", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	mode := flags.String("mode", "", "task, message or note; absent: by the event's severity")
@@ -54,7 +53,7 @@ func botSubscribe(ctx context.Context, service unixapi.Service, args []string, s
 
 // botUnsubscribe stops the bot listening to a topic, or drops a pending
 // ask for it.
-func botUnsubscribe(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func botUnsubscribe(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 2 {
 		fmt.Fprintln(stderr, "axlr-bots: bot unsubscribe needs <bot-id> <topic>")
 		return exitUsage
@@ -80,7 +79,7 @@ func botUnsubscribe(ctx context.Context, service unixapi.Service, args []string,
 
 // botSubscriptions prints the topics the bot listens to; a pending ask
 // carries status pending.
-func botSubscriptions(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func botSubscriptions(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "axlr-bots: bot subscriptions needs exactly one <bot-id>")
 		return exitUsage
@@ -97,7 +96,7 @@ func botSubscriptions(ctx context.Context, service unixapi.Service, args []strin
 	return exitOK
 }
 
-func writeSubscriptions(ctx context.Context, service unixapi.Service, id string, list []domain.SubscriptionSnapshot, stdout, stderr io.Writer) int {
+func writeSubscriptions(ctx context.Context, service application.OperatorService, id string, list []domain.SubscriptionSnapshot, stdout, stderr io.Writer) int {
 	bot, err := service.UpdateBot(ctx, id, application.BotPatch{Subscriptions: &list})
 	if err != nil {
 		return fail(stderr, err)

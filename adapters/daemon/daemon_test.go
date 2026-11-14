@@ -3,6 +3,8 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"github.com/underpass-ai/axlr-bots/adapters/grpcclient"
+	"github.com/underpass-ai/axlr-bots/internal/operatortest"
 	"log"
 	"os"
 	"path/filepath"
@@ -60,15 +62,32 @@ func newFixture(t *testing.T, scenario string) *fixture {
 	return &fixture{dir: dir, state: state, socket: filepath.Join(dir, "cp.sock"), deps: deps, logs: &syncBuffer{}}
 }
 
+// grpcSocket is where the daemon serves the operator API on the host.
+func (f *fixture) grpcSocket() string {
+	return filepath.Join(filepath.Dir(f.socket), "axlr-bots-grpc.sock")
+}
+
+// operator is the node protocol's client of the daemon's HTTP socket and
+// the operator API's client of its gRPC socket in one.
+func (f *fixture) operator(t *testing.T) *operatortest.Client {
+	t.Helper()
+	operator, err := grpcclient.DialUnix(f.grpcSocket())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = operator.Close() })
+	return operatortest.New(unixapi.NewClient(f.socket), operator)
+}
+
 // start runs the daemon with fast ticks and returns a stop function
 // that waits for it.
-func (f *fixture) start(t *testing.T) (*unixapi.Client, func()) {
+func (f *fixture) start(t *testing.T) (*operatortest.Client, func()) {
 	t.Helper()
 	return f.startWith(t, nil)
 }
 
 // startWith is start with a change to the options.
-func (f *fixture) startWith(t *testing.T, change func(*Options)) (*unixapi.Client, func()) {
+func (f *fixture) startWith(t *testing.T, change func(*Options)) (*operatortest.Client, func()) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -80,13 +99,13 @@ func (f *fixture) startWith(t *testing.T, change func(*Options)) (*unixapi.Clien
 		done <- Run(ctx, f.deps, options)
 	}()
 	deadline := time.Now().Add(5 * time.Second)
-	for !unixapi.Reachable(context.Background(), f.socket) {
+	for !unixapi.Reachable(context.Background(), f.socket) || !grpcclient.Reachable(context.Background(), f.grpcSocket()) {
 		if time.Now().After(deadline) {
 			t.Fatal("daemon not reachable")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	return unixapi.NewClient(f.socket), func() {
+	return f.operator(t), func() {
 		cancel()
 		if err := <-done; err != nil {
 			t.Error(err)
@@ -94,7 +113,7 @@ func (f *fixture) startWith(t *testing.T, change func(*Options)) (*unixapi.Clien
 	}
 }
 
-func waitFor(t *testing.T, client *unixapi.Client, id string, status string) domain.TaskSnapshot {
+func waitFor(t *testing.T, client *operatortest.Client, id string, status string) domain.TaskSnapshot {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -133,7 +152,7 @@ func TestDaemonRunsWhatArrivesOverTheSocketAndSurvivesARestart(t *testing.T) {
 	if _, err := client.EnableBot(ctx, "bot"); err != nil {
 		t.Fatal(err)
 	}
-	alert, err := client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "List the files in your workspace", IdempotencyKey: "k-1"})
+	alert, err := client.SubmitTask(ctx, application.SubmitRequest{BotID: "bot", Objective: "List the files in your workspace", IdempotencyKey: "k-1"})
 	if err != nil || !alert.Created {
 		t.Fatalf("submit: %v %+v", err, alert)
 	}
@@ -160,8 +179,8 @@ func TestDaemonRunsWhatArrivesOverTheSocketAndSurvivesARestart(t *testing.T) {
 
 	// Restart: the bot and the task are still there, and a task spooled
 	// straight into the state directory while the daemon was down runs.
-	local := unixapi.NewLocal(f.deps)
-	spooled, err := local.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "spooled while down", IdempotencyKey: "spool-1"})
+	local := application.NewLocalOperator(f.deps)
+	spooled, err := local.SubmitTask(ctx, application.SubmitRequest{BotID: "bot", Objective: "spooled while down", IdempotencyKey: "spool-1"})
 	if err != nil || !spooled.Created {
 		t.Fatal(err)
 	}
@@ -174,7 +193,7 @@ func TestDaemonRunsWhatArrivesOverTheSocketAndSurvivesARestart(t *testing.T) {
 		t.Errorf("task after restart: %v %+v", err, task)
 	}
 	waitFor(t, client, spooled.Task.ID, "Completed")
-	if repeat, err := client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "List the files in your workspace", IdempotencyKey: "k-1"}); err != nil || repeat.Created || repeat.Task.ID != alert.Task.ID {
+	if repeat, err := client.SubmitTask(ctx, application.SubmitRequest{BotID: "bot", Objective: "List the files in your workspace", IdempotencyKey: "k-1"}); err != nil || repeat.Created || repeat.Task.ID != alert.Task.ID {
 		t.Errorf("repeated submission after restart: %v %+v", err, repeat)
 	}
 }
@@ -182,14 +201,14 @@ func TestDaemonRunsWhatArrivesOverTheSocketAndSurvivesARestart(t *testing.T) {
 func TestDaemonReconcilesWhatACrashLeftRunning(t *testing.T) {
 	f := newFixture(t, "completed")
 	ctx := context.Background()
-	local := unixapi.NewLocal(f.deps)
+	local := application.NewLocalOperator(f.deps)
 	if _, err := local.RegisterBot(ctx, application.BotDefinition{Tenant: "ops", Name: "b", Owner: "o", Mission: "m", Budgets: application.BudgetsDefinition{TaskTimeoutSeconds: 1}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := local.EnableBot(ctx, "b"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, err := local.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "b", Objective: "o", IdempotencyKey: "k"})
+	submitted, err := local.SubmitTask(ctx, application.SubmitRequest{BotID: "b", Objective: "o", IdempotencyKey: "k"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,14 +237,14 @@ func TestDaemonReconcilesWhatACrashLeftRunning(t *testing.T) {
 func TestDaemonLogsRunErrorsAndKeepsGoing(t *testing.T) {
 	f := newFixture(t, "failed")
 	ctx := context.Background()
-	local := unixapi.NewLocal(f.deps)
+	local := application.NewLocalOperator(f.deps)
 	if _, err := local.RegisterBot(ctx, application.BotDefinition{Tenant: "ops", Name: "b", Owner: "o", Mission: "m"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := local.EnableBot(ctx, "b"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, _ := local.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "b", Objective: "o", IdempotencyKey: "k"})
+	submitted, _ := local.SubmitTask(ctx, application.SubmitRequest{BotID: "b", Objective: "o", IdempotencyKey: "k"})
 	// A task directory that cannot be listed makes the Pending scan fail
 	// (a bad file in it would be set aside); the daemon logs it and keeps
 	// serving.
@@ -306,7 +325,7 @@ func TestDaemonLeavesNodeBackedTasksToTheNodeAndMarksItOffline(t *testing.T) {
 			}
 		}
 	}()
-	submitted, _ := client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "o", IdempotencyKey: "k"})
+	submitted, _ := client.SubmitTask(ctx, application.SubmitRequest{BotID: "bot", Objective: "o", IdempotencyKey: "k"})
 	time.Sleep(100 * time.Millisecond)
 	if task, _ := client.GetTask(ctx, submitted.Task.ID); task.Status != "Pending" {
 		stopBeating()
@@ -344,7 +363,7 @@ func TestDaemonLeavesNodeBackedTasksToTheNodeAndMarksItOffline(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	next, _ := client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "o2", IdempotencyKey: "k2"})
+	next, _ := client.SubmitTask(ctx, application.SubmitRequest{BotID: "bot", Objective: "o2", IdempotencyKey: "k2"})
 	waitFor(t, client, next.Task.ID, "Completed")
 	_ = assignment
 }
@@ -363,7 +382,7 @@ func timerDefinition(name string) application.BotDefinition {
 func TestDaemonFiresTimersAndCatchesUpOnceAfterARestart(t *testing.T) {
 	f := newFixture(t, "completed")
 	ctx := context.Background()
-	local := unixapi.NewLocal(f.deps)
+	local := application.NewLocalOperator(f.deps)
 	if _, err := local.RegisterBot(ctx, timerDefinition("ticker")); err != nil {
 		t.Fatal(err)
 	}
@@ -468,7 +487,7 @@ func TestDaemonFiresTimersWhileARunIsInTheRuntime(t *testing.T) {
 	runtime := heldRuntime{started: make(chan string, 4)}
 	f.deps.Runtime = runtime
 	ctx := context.Background()
-	local := unixapi.NewLocal(f.deps)
+	local := application.NewLocalOperator(f.deps)
 	if _, err := local.RegisterBot(ctx, timerDefinition("slow")); err != nil {
 		t.Fatal(err)
 	}

@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -298,8 +297,8 @@ func TestAgentHandsTheModelTheRefusalOfALoop(t *testing.T) {
 	}
 }
 
-func unixapiSubmit(bot, objective string) unixapi.SubmitRequest {
-	return unixapi.SubmitRequest{BotID: bot, Objective: objective, IdempotencyKey: "k-" + bot}
+func unixapiSubmit(bot, objective string) application.SubmitRequest {
+	return application.SubmitRequest{BotID: bot, Objective: objective, IdempotencyKey: "k-" + bot}
 }
 
 func containsTool(tools []string) bool {

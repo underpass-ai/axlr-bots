@@ -8,13 +8,12 @@ import (
 	"io"
 	"os"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 )
 
 // botStage stages a patch file for later (PUT /v1/bots/{id}/staged): the
 // patch bot update takes, naming the version it brings.
-func botStage(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func botStage(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) < 1 || args[0] == "" || args[0][0] == '-' {
 		fmt.Fprintln(stderr, "axlr-bots: bot stage needs <bot-id> first, then --file <patch.json>")
 		return exitUsage
@@ -49,7 +48,7 @@ func botStage(ctx context.Context, service unixapi.Service, args []string, stdou
 }
 
 // botStaged prints the change a bot holds staged, its secrets redacted.
-func botStaged(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func botStaged(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "axlr-bots: bot staged needs exactly one <bot-id>")
 		return exitUsage
@@ -64,7 +63,7 @@ func botStaged(ctx context.Context, service unixapi.Service, args []string, stdo
 
 // botApplyStaged applies the change a bot holds staged, through the
 // update, and drops it.
-func botApplyStaged(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func botApplyStaged(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "axlr-bots: bot apply-staged needs exactly one <bot-id>")
 		return exitUsage
@@ -78,7 +77,7 @@ func botApplyStaged(ctx context.Context, service unixapi.Service, args []string,
 }
 
 // botUnstage drops the change a bot holds staged, unapplied.
-func botUnstage(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func botUnstage(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "axlr-bots: bot unstage needs exactly one <bot-id>")
 		return exitUsage

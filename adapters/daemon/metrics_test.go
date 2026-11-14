@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 )
 
@@ -31,9 +30,10 @@ func TestDaemonServesMetricsOnItsOwnAddress(t *testing.T) {
 	for _, want := range []string{
 		"axlr_bots_overview_up 1",
 		`axlr_bots_tasks{state="Pending"} 0`,
-		`axlr_bots_http_requests_total{code="200",listener="socket",route="GET /v1/bots"} 1`,
-		`axlr_bots_http_request_duration_seconds_count{code="200",listener="socket",route="GET /v1/bots"} 1`,
-		`route="GET /v1/tasks/{id}"`,
+		`axlr_bots_grpc_requests_total{code="OK",method="ListBots",service="axlrbots.operator.v1.BotsService"} 1`,
+		`axlr_bots_grpc_request_duration_seconds_count{code="OK",method="ListBots",service="axlrbots.operator.v1.BotsService"} 1`,
+		`axlr_bots_grpc_requests_total{code="NotFound",method="GetTask",service="axlrbots.operator.v1.TasksService"} 1`,
+		`axlr_bots_http_requests_total{code="200",listener="socket",route="GET /healthz"}`,
 		"go_goroutines",
 		"process_cpu_seconds_total",
 	} {
@@ -69,7 +69,7 @@ func TestDaemonCountsTheTasksItRunsPerBot(t *testing.T) {
 	if _, err := client.EnableBot(ctx, "bot"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, err := client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "List the files", IdempotencyKey: "k-1"})
+	submitted, err := client.SubmitTask(ctx, application.SubmitRequest{BotID: "bot", Objective: "List the files", IdempotencyKey: "k-1"})
 	if err != nil {
 		t.Fatal(err)
 	}

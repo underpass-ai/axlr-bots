@@ -3,7 +3,6 @@ package grpcapi
 import (
 	"context"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -12,7 +11,7 @@ import (
 // groupsService is GroupsService over the same service the HTTP routes use.
 type groupsService struct {
 	operatorv1.UnimplementedGroupsServiceServer
-	local *unixapi.Local
+	local *application.LocalOperator
 }
 
 func (s groupsService) ListGroups(ctx context.Context, _ *operatorv1.ListGroupsRequest) (*operatorv1.ListGroupsResponse, error) {

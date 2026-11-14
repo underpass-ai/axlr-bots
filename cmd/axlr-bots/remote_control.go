@@ -6,22 +6,18 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/underpass-ai/axlr-bots/adapters/grpcclient"
 	"github.com/underpass-ai/axlr-bots/adapters/pki"
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 )
 
 // remoteControl is a control plane on another host, reached through its
-// operator address (serve --grpc-listen; with --transport rest,
-// --api-listen) instead of the socket: the address, as host:port for
-// gRPC or an https URL for REST,
-// the file holding the operator token, the operator's client certificate
-// and key (gRPC), and the CA its certificate is
+// operator address (serve --grpc-listen) instead of the socket: the
+// address, as host:port, the file holding the operator token, the
+// operator's client certificate and key, and the CA its certificate is
 // checked against (the fleet CA, axlr-bots ca show). With a URL every
 // command that would use the socket uses it, and none falls back to the
 // state directory: a control plane that does not answer is an error.
@@ -30,8 +26,8 @@ type remoteControl struct {
 	TokenFile string
 	CAFile    string
 	// CertFile and KeyFile are the operator's client certificate and key
-	// (ca operator issue) the gRPC operator address requires; empty is
-	// where ca operator issue leaves them. REST does not use them.
+	// (ca operator issue) the operator address requires; empty is where
+	// ca operator issue leaves them.
 	CertFile string
 	KeyFile  string
 }
@@ -42,25 +38,15 @@ func (r remoteControl) enabled() bool {
 }
 
 // validate checks the flags go together before any command runs.
-func (r remoteControl) validate(transport string) error {
+func (r remoteControl) validate() error {
 	if !r.enabled() {
 		if r.TokenFile != "" || r.CAFile != "" || r.CertFile != "" || r.KeyFile != "" {
 			return errors.New("--token-file, --ca-file, --cert-file and --key-file go with --control")
 		}
 		return nil
 	}
-	if transport != transportREST {
-		if _, err := r.grpcAddress(); err != nil {
-			return err
-		}
-		if r.TokenFile == "" {
-			return errors.New("--control needs --token-file (or AXLR_BOTS_TOKEN_FILE), the operator token")
-		}
-		return nil
-	}
-	parsed, err := url.Parse(r.URL)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" {
-		return fmt.Errorf("--control %s: give the operator address as https://host:port", r.URL)
+	if _, err := r.grpcAddress(); err != nil {
+		return err
 	}
 	if r.TokenFile == "" {
 		return errors.New("--control needs --token-file (or AXLR_BOTS_TOKEN_FILE), the operator token")
@@ -145,17 +131,7 @@ func (r remoteControl) operatorName() (string, bool) {
 	return pki.OperatorName(certificate.Leaf)
 }
 
-// client reads the token and the CA and returns the HTTP operator client.
-func (r remoteControl) client() (*unixapi.Client, error) {
-	token, config, err := r.credentials()
-	if err != nil {
-		return nil, err
-	}
-	return unixapi.NewOperatorClient(r.URL, config, token), nil
-}
-
-// grpcClient reads the token and the CA and returns the gRPC operator
-// client.
+// grpcClient reads the token and the CA and returns the operator client.
 func (r remoteControl) grpcClient() (*grpcclient.Client, error) {
 	address, err := r.grpcAddress()
 	if err != nil {

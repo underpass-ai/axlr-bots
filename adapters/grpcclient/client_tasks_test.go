@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -83,7 +82,7 @@ func TestTaskCommandsSendWhatTheCommandAsked(t *testing.T) {
 	h.fake.answer(method("TasksService", "ListTaskExecutions"), &operatorv1.ListTaskExecutionsResponse{Executions: []*operatorv1.Execution{fullExecution("e-1")}})
 	h.fake.answer(method("TasksService", "GetTaskReport"), &operatorv1.GetTaskReportResponse{TaskId: "t-1", Reference: "/r", Content: "pong"})
 	ctx := t.Context()
-	submitted, err := h.client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot-a", Objective: "o", IdempotencyKey: "k1", CorrelationID: "c", Priority: "urgent"})
+	submitted, err := h.client.SubmitTask(ctx, application.SubmitRequest{BotID: "bot-a", Objective: "o", IdempotencyKey: "k1", CorrelationID: "c", Priority: "urgent"})
 	if err != nil || !submitted.Created || submitted.Task.ID != "t-1" {
 		t.Fatalf("submit: %+v %v", submitted, err)
 	}
@@ -100,7 +99,7 @@ func TestTaskCommandsSendWhatTheCommandAsked(t *testing.T) {
 	if cancel, _ := h.client.CancelTask(ctx, "t-1"); cancel.Execution == nil || cancel.Execution.ID != "e-1" {
 		t.Errorf("cancel with execution: %+v", cancel)
 	}
-	sent, err := h.client.SendTaskMessage(ctx, "t-1", unixapi.MessageRequest{Text: "hi"})
+	sent, err := h.client.SendTaskMessage(ctx, "t-1", application.MessageRequest{Text: "hi"})
 	if err != nil || sent.TaskID != "t-1" || sent.ExecutionID != "e-1" || !sent.CreatedAt.Equal(t1) {
 		t.Errorf("message: %+v %v", sent, err)
 	}
@@ -137,7 +136,7 @@ func TestTaskCommandsSendWhatTheCommandAsked(t *testing.T) {
 func TestTheActorIsSentWithTheDecisionAndAgreesWithIt(t *testing.T) {
 	h := newHarness(t)
 	h.fake.answer(method("TasksService", "DecideTask"), &operatorv1.DecideTaskResponse{Task: fullTask("t-1"), Execution: fullExecution("e-1")})
-	run, err := h.client.DecideTask(t.Context(), "t-1", unixapi.DecideRequest{Decision: "approve", CallID: "c1", DecidedBy: "cli:ana"})
+	run, err := h.client.DecideTask(t.Context(), "t-1", application.DecideRequest{Decision: "approve", CallID: "c1", DecidedBy: "cli:ana"})
 	if err != nil || run.Execution.ID != "e-1" {
 		t.Fatalf("decide: %+v %v", run, err)
 	}
@@ -152,7 +151,7 @@ func TestTheActorIsSentWithTheDecisionAndAgreesWithIt(t *testing.T) {
 	if got := headers.Get("authorization"); len(got) != 1 || got[0] != "Bearer "+testToken {
 		t.Errorf("authorization metadata: %v", headers)
 	}
-	if _, err := h.client.DecideTask(t.Context(), "t-1", unixapi.DecideRequest{Decision: "deny"}); err != nil {
+	if _, err := h.client.DecideTask(t.Context(), "t-1", application.DecideRequest{Decision: "deny"}); err != nil {
 		t.Fatal(err)
 	}
 	if got := h.fake.headers(method("TasksService", "DecideTask")).Get(ActorKey); len(got) != 0 {
@@ -160,22 +159,22 @@ func TestTheActorIsSentWithTheDecisionAndAgreesWithIt(t *testing.T) {
 	}
 }
 
-type recordingFirer struct{ got unixapi.FireRequest }
+type recordingFirer struct{ got application.FireRequest }
 
-func (r *recordingFirer) FireTrigger(_ context.Context, request unixapi.FireRequest) (unixapi.FireResponse, error) {
+func (r *recordingFirer) FireTrigger(_ context.Context, request application.FireRequest) (application.FireResponse, error) {
 	r.got = request
-	return unixapi.FireResponse{Created: true}, nil
+	return application.FireResponse{Created: true}, nil
 }
 
 func TestFiringATriggerNeedsTheHTTPRouteAndSaysSo(t *testing.T) {
 	h := newHarness(t)
-	_, err := h.client.FireTrigger(t.Context(), unixapi.FireRequest{BotID: "b", Trigger: "hook"})
+	_, err := h.client.FireTrigger(t.Context(), application.FireRequest{BotID: "b", Trigger: "hook"})
 	var v domain.ValidationError
 	if !asValidation(err, &v) || v.Field != "trigger" {
 		t.Fatalf("without a firer: %v", err)
 	}
 	firer := &recordingFirer{}
-	fired, err := h.client.WithTriggerFirer(firer).FireTrigger(t.Context(), unixapi.FireRequest{BotID: "b", Trigger: "hook", DeliveryID: "d"})
+	fired, err := h.client.WithTriggerFirer(firer).FireTrigger(t.Context(), application.FireRequest{BotID: "b", Trigger: "hook", DeliveryID: "d"})
 	if err != nil || !fired.Created || firer.got.DeliveryID != "d" {
 		t.Errorf("with a firer: %+v %v %+v", fired, err, firer.got)
 	}
@@ -203,14 +202,14 @@ func TestNodesEnrollmentAndRevocation(t *testing.T) {
 	if node, err := h.client.GetNode(t.Context(), "n1"); err != nil || node.ID != "n1" {
 		t.Errorf("get: %+v %v", node, err)
 	}
-	token, err := h.client.CreateEnrollmentToken(t.Context(), unixapi.EnrollTokenRequest{NodeID: "n1", Labels: map[string]string{"a": "1"}, TTL: "1h"})
+	token, err := h.client.CreateEnrollmentToken(t.Context(), application.EnrollTokenRequest{NodeID: "n1", Labels: map[string]string{"a": "1"}, TTL: "1h"})
 	if err != nil || token.Token != "tok" || token.ID != "en-1" || token.NodeID != "n1" || !token.ExpiresAt.Equal(t1) {
 		t.Errorf("token: %+v %v", token, err)
 	}
 	if r := h.fake.request(method("NodesService", "CreateEnrollment")).(*operatorv1.CreateEnrollmentRequest); r.GetNodeId() != "n1" || r.GetTtl().AsDuration() != time.Hour || r.GetLabels()["a"] != "1" {
 		t.Errorf("enrollment request: %v", r)
 	}
-	if _, err := h.client.CreateEnrollmentToken(t.Context(), unixapi.EnrollTokenRequest{}); err != nil {
+	if _, err := h.client.CreateEnrollmentToken(t.Context(), application.EnrollTokenRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	if r := h.fake.request(method("NodesService", "CreateEnrollment")).(*operatorv1.CreateEnrollmentRequest); r.GetTtl() != nil {

@@ -3,7 +3,6 @@ package grpcapi
 import (
 	"context"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -12,7 +11,7 @@ import (
 // overviewService is OverviewService: the dashboard's counts and the build.
 type overviewService struct {
 	operatorv1.UnimplementedOverviewServiceServer
-	local *unixapi.Local
+	local *application.LocalOperator
 }
 
 func (s overviewService) GetOverview(ctx context.Context, request *operatorv1.GetOverviewRequest) (*operatorv1.GetOverviewResponse, error) {

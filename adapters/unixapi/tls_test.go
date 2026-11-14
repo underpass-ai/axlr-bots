@@ -25,6 +25,7 @@ import (
 // fleet is a control plane with a CA, serving the socket and a TLS
 // address on the loopback.
 type fleet struct {
+	local    *application.LocalOperator
 	operator *Client
 	url      string
 	state    string
@@ -52,7 +53,7 @@ func serveFleetWith(t *testing.T, timeouts Timeouts) *fleet {
 		t.Fatal(err)
 	}
 	other, _ := pki.Generate(filepath.Join(dir, "other"))
-	local := NewLocal(deps)
+	local := application.NewLocalOperator(deps)
 	server := NewServer(local).WithTimeouts(timeouts)
 	socket := filepath.Join(dir, "cp.sock")
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -74,13 +75,13 @@ func serveFleetWith(t *testing.T, timeouts Timeouts) *fleet {
 	for !Reachable(context.Background(), socket) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	return &fleet{operator: NewClient(socket), url: "https://" + listener.Addr().String(), state: state, ca: ca, other: other}
+	return &fleet{local: local, operator: NewClient(socket), url: "https://" + listener.Addr().String(), state: state, ca: ca, other: other}
 }
 
 // token mints a token for the node through the operator's socket.
 func (f *fleet) token(t *testing.T, nodeID string, labels map[string]string) nodeproto.EnrollToken {
 	t.Helper()
-	response, err := f.operator.CreateEnrollmentToken(context.Background(), EnrollTokenRequest{NodeID: nodeID, Labels: labels})
+	response, err := f.local.CreateEnrollmentToken(context.Background(), application.EnrollTokenRequest{NodeID: nodeID, Labels: labels})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +135,7 @@ func TestEnrolledNodesSpeakOverTLS(t *testing.T) {
 	if _, found, err := node.NextAssignment(ctx, "web-1", 50*time.Millisecond); err != nil || found {
 		t.Errorf("poll: %v %v", err, found)
 	}
-	listed, err := f.operator.ListNodes(ctx)
+	listed, err := f.local.ListNodes(ctx)
 	if err != nil || len(listed) != 1 || listed[0].CertificateSerial != creds.Serial {
 		t.Errorf("list: %v %+v", err, listed)
 	}
@@ -154,17 +155,17 @@ func TestEnrolledNodesSpeakOverTLS(t *testing.T) {
 	if _, err := node.Heartbeat(ctx, "web-1"); err != nil {
 		t.Fatal(err)
 	}
-	if again, _ := f.operator.GetNode(ctx, "web-1"); again.CertificateNotAfter == nil || !again.CertificateNotAfter.Equal(creds.NotAfter) {
+	if again, _ := f.local.GetNode(ctx, "web-1"); again.CertificateNotAfter == nil || !again.CertificateNotAfter.Equal(creds.NotAfter) {
 		t.Errorf("expiry after the heartbeat = %v", again.CertificateNotAfter)
 	}
 	// The whole flow: a task assigned, leased and reported over TLS.
-	if _, err := f.operator.RegisterBot(ctx, definition("bot-a", "observe")); err != nil {
+	if _, err := f.local.RegisterBot(ctx, definition("bot-a", "observe")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.operator.EnableBot(ctx, "bot-a"); err != nil {
+	if _, err := f.local.EnableBot(ctx, "bot-a"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, _ := f.operator.SubmitTask(ctx, SubmitRequest{BotID: "bot-a", Objective: "list", IdempotencyKey: "k-1"})
+	submitted, _ := f.local.SubmitTask(ctx, application.SubmitRequest{BotID: "bot-a", Objective: "list", IdempotencyKey: "k-1"})
 	assignment, found, err := node.NextAssignment(ctx, "web-1", 5*time.Second)
 	if err != nil || !found || assignment.Run.TaskID != domain.TaskID(submitted.Task.ID) {
 		t.Fatalf("assignment: %v %v", err, found)
@@ -179,18 +180,18 @@ func TestEnrolledNodesSpeakOverTLS(t *testing.T) {
 	// The token is spent.
 	_, csr, _ := pki.NewNodeKeyAndRequest("web-1")
 	anonymous, _ := pki.EnrollTLSConfig([]byte(token.CAPEM))
-	var remote RemoteError
-	if _, err := NewTLSClient(f.url, anonymous).Enroll(ctx, nodeproto.EnrollRequest{TokenID: token.ID, Secret: token.Secret, CSR: string(csr)}); !errors.As(err, &remote) || remote.Kind != KindState || !strings.Contains(err.Error(), "used at") {
+	var remote application.RemoteError
+	if _, err := NewTLSClient(f.url, anonymous).Enroll(ctx, nodeproto.EnrollRequest{TokenID: token.ID, Secret: token.Secret, CSR: string(csr)}); !errors.As(err, &remote) || remote.Kind != application.KindState || !strings.Contains(err.Error(), "used at") {
 		t.Errorf("reused token: %v", err)
 	}
 	// A token that expired.
-	short, err := f.operator.CreateEnrollmentToken(ctx, EnrollTokenRequest{NodeID: "db-1", TTL: "1ms"})
+	short, err := f.local.CreateEnrollmentToken(ctx, application.EnrollTokenRequest{NodeID: "db-1", TTL: "1ms"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(5 * time.Millisecond)
 	expired, _ := nodeproto.DecodeEnrollToken(short.Token)
-	if _, err := NewTLSClient(f.url, anonymous).Enroll(ctx, nodeproto.EnrollRequest{TokenID: expired.ID, Secret: expired.Secret, CSR: string(csr)}); !errors.As(err, &remote) || remote.Kind != KindState || !strings.Contains(err.Error(), "expired") {
+	if _, err := NewTLSClient(f.url, anonymous).Enroll(ctx, nodeproto.EnrollRequest{TokenID: expired.ID, Secret: expired.Secret, CSR: string(csr)}); !errors.As(err, &remote) || remote.Kind != application.KindState || !strings.Contains(err.Error(), "expired") {
 		t.Errorf("expired token: %v", err)
 	}
 	// A wrong secret, an unknown token, a bad TTL.
@@ -201,7 +202,7 @@ func TestEnrolledNodesSpeakOverTLS(t *testing.T) {
 	if _, err := NewTLSClient(f.url, anonymous).Enroll(ctx, nodeproto.EnrollRequest{TokenID: "enr-404", Secret: "nope", CSR: string(csr)}); !domain.IsForbidden(err) {
 		t.Errorf("unknown token: %v", err)
 	}
-	if _, err := f.operator.CreateEnrollmentToken(ctx, EnrollTokenRequest{TTL: "soon"}); err == nil {
+	if _, err := f.local.CreateEnrollmentToken(ctx, application.EnrollTokenRequest{TTL: "soon"}); err == nil {
 		t.Error("a bad TTL was accepted")
 	}
 }
@@ -241,12 +242,6 @@ func TestTLSRefusals(t *testing.T) {
 	if _, err := plain.Register(ctx, application.NodeRegistration{ID: "web-9", HostName: "h"}); !domain.IsForbidden(err) {
 		t.Errorf("anonymous register: %v", err)
 	}
-	if _, err := plain.ListBots(ctx); err == nil || !strings.Contains(err.Error(), "HTTP 404") {
-		t.Errorf("operator route over TLS: %v", err)
-	}
-	if _, err := node.ListBots(ctx); err == nil || !strings.Contains(err.Error(), "HTTP 404") {
-		t.Errorf("operator route with a node certificate: %v", err)
-	}
 	// The certificate names web-1: it cannot speak for web-2.
 	if _, err := node.Heartbeat(ctx, "web-2"); !domain.IsForbidden(err) || !strings.Contains(err.Error(), "the request names web-2") {
 		t.Errorf("mismatched path: %v", err)
@@ -265,19 +260,19 @@ func TestTLSRefusals(t *testing.T) {
 	}
 	// Revocation: the serial is refused at the next request, the node is
 	// Revoked, and what it ran is failed.
-	if _, err := f.operator.RegisterBot(ctx, definition("bot-a", "observe")); err != nil {
+	if _, err := f.local.RegisterBot(ctx, definition("bot-a", "observe")); err != nil {
 		t.Fatal(err)
 	}
-	_, _ = f.operator.EnableBot(ctx, "bot-a")
-	submitted, _ := f.operator.SubmitTask(ctx, SubmitRequest{BotID: "bot-a", Objective: "list", IdempotencyKey: "k-1"})
+	_, _ = f.local.EnableBot(ctx, "bot-a")
+	submitted, _ := f.local.SubmitTask(ctx, application.SubmitRequest{BotID: "bot-a", Objective: "list", IdempotencyKey: "k-1"})
 	if _, found, err := node.NextAssignment(ctx, "web-1", 5*time.Second); err != nil || !found {
 		t.Fatalf("assignment: %v %v", err, found)
 	}
-	revoked, err := f.operator.RevokeNode(ctx, "web-1")
+	revoked, err := f.local.RevokeNode(ctx, "web-1")
 	if err != nil || revoked.Node.Status != "Revoked" || len(revoked.FailedTasks) != 1 || revoked.FailedTasks[0] != submitted.Task.ID {
 		t.Fatalf("revoke: %v %+v", err, revoked)
 	}
-	if task, _ := f.operator.GetTask(ctx, submitted.Task.ID); task.Status != "Failed" || !strings.Contains(task.FailureReason, "revoked: node web-1") {
+	if task, _ := f.local.GetTask(ctx, submitted.Task.ID); task.Status != "Failed" || !strings.Contains(task.FailureReason, "revoked: node web-1") {
 		t.Errorf("task = %+v", task)
 	}
 	if _, err := node.Heartbeat(ctx, "web-1"); !domain.IsForbidden(err) || !strings.Contains(err.Error(), "revoked") {
@@ -291,10 +286,10 @@ func TestTLSRefusals(t *testing.T) {
 	if _, err := NewTLSClient(f.url, freshConfig).Heartbeat(ctx, "web-1"); !domain.IsForbidden(err) {
 		t.Errorf("revoked on a new connection: %v", err)
 	}
-	if _, err := f.operator.RevokeNode(ctx, "web-1"); err == nil {
+	if _, err := f.local.RevokeNode(ctx, "web-1"); err == nil {
 		t.Error("revoked twice")
 	}
-	if _, err := f.operator.RevokeNode(ctx, "Bad Id"); err == nil {
+	if _, err := f.local.RevokeNode(ctx, "Bad Id"); err == nil {
 		t.Error("bad id revoked")
 	}
 	// Readmitted with a fresh token: the new certificate works, the old
@@ -350,7 +345,7 @@ func TestTLSRefusals(t *testing.T) {
 	if _, err := service.Heartbeat(ctx, "web-9"); !domain.IsForbidden(err) {
 		t.Errorf("client certificate heartbeat: %v", err)
 	}
-	if listed, err := f.operator.ListNodes(ctx); err != nil || slices.ContainsFunc(listed, func(n domain.NodeSnapshot) bool { return n.ID == "web-9" }) {
+	if listed, err := f.local.ListNodes(ctx); err != nil || slices.ContainsFunc(listed, func(n domain.NodeSnapshot) bool { return n.ID == "web-9" }) {
 		t.Errorf("a client certificate made a node: %v %+v", err, listed)
 	}
 	_ = tls.VersionTLS13
@@ -387,7 +382,7 @@ func TestAForgottenNodeRegistersAgainWithItsCertificate(t *testing.T) {
 			t.Fatalf("heartbeat after registering again: %v %+v", err, beat)
 		}
 	}
-	got, err := f.operator.GetNode(ctx, "web-1")
+	got, err := f.local.GetNode(ctx, "web-1")
 	if err != nil || got.CertificateSerial != creds.Serial || got.CertificateNotAfter == nil || !got.CertificateNotAfter.Equal(creds.NotAfter) {
 		t.Errorf("node = %v %+v", err, got)
 	}
@@ -466,7 +461,7 @@ func TestTheNodeAddressClosesIdleAndStalledConnections(t *testing.T) {
 		t.Fatal(err)
 	}
 	const limit = 500 * time.Millisecond
-	server := NewServer(NewLocal(deps)).WithTimeouts(Timeouts{Read: limit, Idle: limit})
+	server := NewServer(application.NewLocalOperator(deps)).WithTimeouts(Timeouts{Read: limit, Idle: limit})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- server.ServeTLS(ctx, listener, pki.ServerTLSConfig(ca, []string{"127.0.0.1"})) }()
@@ -581,8 +576,8 @@ func TestANodeRenewsItsCertificateOverTLS(t *testing.T) {
 	}
 	// A request for another node's name is refused; nothing changes.
 	_, foreign, _ := pki.NewNodeKeyAndRequest("web-9")
-	var remote RemoteError
-	if _, err := node.RenewCertificate(ctx, "web-1", foreign); !errors.As(err, &remote) || remote.Kind != KindValidation {
+	var remote application.RemoteError
+	if _, err := node.RenewCertificate(ctx, "web-1", foreign); !errors.As(err, &remote) || remote.Kind != application.KindValidation {
 		t.Errorf("a request for web-9: %v", err)
 	}
 	// Over the socket there is no certificate to renew.
@@ -625,7 +620,7 @@ func TestANodeRenewsItsCertificateOverTLS(t *testing.T) {
 	if beat, err := node.Heartbeat(ctx, "web-1"); err != nil || beat.Status != "Online" || beat.CertificateSerial != renewed.Serial {
 		t.Errorf("new certificate: %v %+v", err, beat)
 	}
-	got, err := f.operator.GetNode(ctx, "web-1")
+	got, err := f.local.GetNode(ctx, "web-1")
 	if err != nil || got.CertificateSerial != renewed.Serial || got.CertificateNotAfter == nil || !got.CertificateNotAfter.Equal(renewed.NotAfter) || got.Labels["zone"] != "eu" {
 		t.Errorf("node = %v %+v", err, got)
 	}

@@ -11,29 +11,17 @@ import (
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
-func TestHealthAnswersWhatTheSocketSays(t *testing.T) {
-	socket := filepath.Join(t.TempDir(), "cp.sock")
+func TestHealthAnswersWhatTheGRPCSocketSays(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"--transport", "rest", "--socket", socket, "health"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "no service answers") {
+	socket := filepath.Join(t.TempDir(), "grpc.sock")
+	if code := run([]string{"--grpc-socket", socket, "health"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "no service answers") {
 		t.Fatalf("nothing listening: exit %d, stderr %q", code, stderr.String())
 	}
-	listener, err := net.Listen("unix", socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/healthz" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})}
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() { _ = server.Close() })
+	api := newFakeOperatorAPI()
+	live := api.serveSocket(t)
 	stdout.Reset()
 	stderr.Reset()
-	if code := run([]string{"--transport", "rest", "--socket", socket, "health"}, &stdout, &stderr); code != exitOK || strings.TrimSpace(stdout.String()) != "ok" {
+	if code := run([]string{"--grpc-socket", live, "health"}, &stdout, &stderr); code != exitOK || strings.TrimSpace(stdout.String()) != "ok" {
 		t.Fatalf("a daemon answering: exit %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
 	}
 }
@@ -43,7 +31,7 @@ func TestHealthUsage(t *testing.T) {
 	if code := run([]string{"--socket", "x.sock", "health", "extra"}, &stdout, &stderr); code != exitUsage {
 		t.Fatalf("an argument: exit %d", code)
 	}
-	if code := health(t.Context(), operatorLink{Transport: transportREST}, nil, &stdout, &stderr); code != exitUsage || !strings.Contains(stderr.String(), "needs a socket") {
+	if code := health(t.Context(), operatorLink{}, nil, &stdout, &stderr); code != exitUsage || !strings.Contains(stderr.String(), "needs a socket") {
 		t.Fatalf("no socket: exit %d, stderr %q", code, stderr.String())
 	}
 }

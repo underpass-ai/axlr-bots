@@ -51,9 +51,8 @@ type Layout struct {
 	// ServerNames are extra names the control plane's certificate is
 	// valid for, comma-separated: the public name nodes dial.
 	ServerNames string
-	// APIListen is the TLS address the control plane serves operators
-	// and webhook senders on (127.0.0.1:7879); empty serves operators on
-	// the socket only.
+	// APIListen is the TLS address the control plane serves webhook
+	// triggers on (127.0.0.1:7879); empty serves them on the socket only.
 	APIListen string
 	// Control is the control plane the node unit talks to; empty means
 	// the socket on this host.

@@ -20,17 +20,17 @@ import (
 	"github.com/underpass-ai/axlr-bots/internal/statelock"
 )
 
-// operatorURL is the base of the links an approval notification carries:
-// --api-url, or the operator address itself; a wildcard address names
-// the host instead.
-func operatorURL(explicit, apiListen string) string {
+// operatorAddress is the address the actions of an approval notification
+// name: --grpc-url, or the gRPC operator address itself; a wildcard
+// address names the host instead.
+func operatorAddress(explicit, grpcListen string) string {
 	if explicit != "" {
 		return strings.TrimRight(explicit, "/")
 	}
-	if apiListen == "" {
+	if grpcListen == "" {
 		return ""
 	}
-	host, port, err := net.SplitHostPort(apiListen)
+	host, port, err := net.SplitHostPort(grpcListen)
 	if err != nil {
 		return ""
 	}
@@ -41,30 +41,33 @@ func operatorURL(explicit, apiListen string) string {
 			host = "localhost"
 		}
 	}
-	return "https://" + net.JoinHostPort(host, port)
+	return net.JoinHostPort(host, port)
 }
 
 // serve runs the control plane as a service until SIGTERM or SIGINT.
 // With --listen it also serves the node protocol over TLS, with a
 // certificate the fleet CA (ca init) issues for the host's names and
 // client certificates verified against that CA; with --api-listen it
-// serves the operator routes over TLS on another address, behind the
-// bearer token in --api-token-file (generated when the file is missing),
-// and --api-url is the base the approval notifications link to.
+// serves the webhook triggers over TLS on another address (each trigger
+// authenticates with its own secret or signing key), and with
+// --grpc-listen the operator API over gRPC behind an operator
+// certificate and the bearer token in --api-token-file (generated when
+// the file is missing); --grpc-url is the address the approval
+// notifications name for deciding.
 func serve(ctx context.Context, app application.Dependencies, stateDir, socketPath string, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	listen := flags.String("listen", os.Getenv("AXLR_BOTS_LISTEN"), "a TLS address to serve nodes on too, such as 127.0.0.1:7878 or 0.0.0.0:7878 (also AXLR_BOTS_LISTEN); needs ca init")
 	names := flags.String("server-names", os.Getenv("AXLR_BOTS_SERVER_NAMES"), "names and addresses nodes dial the control plane by, comma-separated, added to the host's own (also AXLR_BOTS_SERVER_NAMES)")
-	apiListen := flags.String("api-listen", os.Getenv("AXLR_BOTS_API_LISTEN"), "a TLS address to serve operators and webhook senders on, such as 127.0.0.1:7879 (also AXLR_BOTS_API_LISTEN); needs ca init")
-	grpcListen := flags.String("grpc-listen", os.Getenv("AXLR_BOTS_GRPC_LISTEN"), "a TLS address to serve the operator API over gRPC on, such as 127.0.0.1:7880 (also AXLR_BOTS_GRPC_LISTEN); needs ca init, takes the same bearer token as --api-listen and an operator client certificate (ca operator issue); the same API is always on the gRPC socket")
+	apiListen := flags.String("api-listen", os.Getenv("AXLR_BOTS_API_LISTEN"), "a TLS address to serve webhook triggers and /healthz on, such as 127.0.0.1:7879 (also AXLR_BOTS_API_LISTEN); needs ca init; it carries no operator API, which is gRPC only")
+	grpcListen := flags.String("grpc-listen", os.Getenv("AXLR_BOTS_GRPC_LISTEN"), "a TLS address to serve the operator API over gRPC on, such as 127.0.0.1:7880 (also AXLR_BOTS_GRPC_LISTEN); needs ca init, takes the bearer token in --api-token-file and an operator client certificate (ca operator issue); the same API is always on the gRPC socket")
 	grpcSocket := flags.String("grpc-socket", os.Getenv("AXLR_BOTS_GRPC_SOCKET"), "the Unix socket to serve the operator API over gRPC on, with no token (also AXLR_BOTS_GRPC_SOCKET; default <state>/axlr-bots-grpc.sock)")
 	metricsListen := flags.String("metrics-listen", os.Getenv("AXLR_BOTS_METRICS_LISTEN"), "a plain-HTTP address to serve Prometheus on, GET /metrics and GET /healthz alone, such as 0.0.0.0:9464 (also AXLR_BOTS_METRICS_LISTEN; empty: none); counts, no secret: keep it inside the cluster")
 	otlpEndpoint := flags.String("otlp-endpoint", os.Getenv("AXLR_BOTS_OTLP_ENDPOINT"), "an OTLP/HTTP endpoint to send one trace per ended task to, such as http://tempo:4318 (also AXLR_BOTS_OTLP_ENDPOINT; empty: nothing is exported)")
 	logFormat := logFormatFlag(flags)
 	apiTokenFile := flags.String("api-token-file", "", "the file with the operator bearer token (default <state>/api.token; generated when missing)")
-	apiURL := flags.String("api-url", os.Getenv("AXLR_BOTS_API_URL"), "the operator API's base URL that approval notifications link to (also AXLR_BOTS_API_URL; default https://<api-listen>)")
-	minAXLR := flags.String("min-axlr-version", os.Getenv("AXLR_BOTS_MIN_AXLR_VERSION"), "the least AXLR the nodes should run, a semantic version such as 0.20.0, answered by GET /v1/build so a client flags an older node (also AXLR_BOTS_MIN_AXLR_VERSION; empty: no minimum)")
+	grpcURL := flags.String("grpc-url", os.Getenv("AXLR_BOTS_GRPC_URL"), "the operator gRPC address, host:port, that approval notifications name for approving or denying (also AXLR_BOTS_GRPC_URL; default --grpc-listen)")
+	minAXLR := flags.String("min-axlr-version", os.Getenv("AXLR_BOTS_MIN_AXLR_VERSION"), "the least AXLR the nodes should run, a semantic version such as 0.20.0, answered by the GetBuild call so a client flags an older node (also AXLR_BOTS_MIN_AXLR_VERSION; empty: no minimum)")
 	tick := flags.Duration("tick", daemon.DefaultTick, "how often to look for Pending tasks")
 	reconcileEvery := flags.Duration("reconcile-every", daemon.DefaultReconcileEvery, "how often to fail the tasks a dead run left Running")
 	grace := flags.Duration("grace", 0, "reconciliation grace (default: the bot's task timeout plus 1m)")
@@ -163,14 +166,14 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 		options.Pushers = append(options.Pushers, publisher)
 		options.Log.Printf("daemon: bus nats at %s (outbox %s)", *natsURL, filepath.Join(stateDir, "outbox", "nats"))
 	}
-	if *apiListen != "" || *grpcListen != "" {
+	if *grpcListen != "" {
 		path := *apiTokenFile
 		if path == "" {
 			path = filepath.Join(stateDir, apiTokenFileName)
 		}
 		token, created, err := loadOrCreateAPIToken(path)
 		if err != nil {
-			fmt.Fprintln(stderr, "axlr-bots: serve --api-listen/--grpc-listen: token file:", err)
+			fmt.Fprintln(stderr, "axlr-bots: serve --grpc-listen: token file:", err)
 			return exitError
 		}
 		options.APIToken = token
@@ -180,10 +183,10 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 			options.Log.Printf("daemon: operator token read from %s", path)
 		}
 	}
-	app.OperatorURL = operatorURL(*apiURL, *apiListen)
+	app.OperatorAddress = operatorAddress(*grpcURL, *grpcListen)
 	app.Daemon = true
-	if app.OperatorURL != "" {
-		options.Log.Printf("daemon: approval notifications link to %s", app.OperatorURL)
+	if app.OperatorAddress != "" {
+		options.Log.Printf("daemon: approval notifications name the operator address %s", app.OperatorAddress)
 	}
 	if !app.MinimumAXLR.IsZero() {
 		options.Log.Printf("daemon: nodes should run AXLR %s or newer", app.MinimumAXLR)

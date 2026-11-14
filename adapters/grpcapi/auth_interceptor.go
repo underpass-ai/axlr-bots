@@ -3,12 +3,11 @@ package grpcapi
 import (
 	"context"
 	"crypto/subtle"
+	"github.com/underpass-ai/axlr-bots/application"
 	"strings"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 )
 
 // authInterceptor requires `authorization: Bearer <token>` in the
@@ -27,7 +26,7 @@ func (a authInterceptor) check(ctx context.Context) error {
 			return nil
 		}
 	}
-	return unixapi.UnauthorizedError{}
+	return application.UnauthorizedError{}
 }
 
 func (a authInterceptor) unary(ctx context.Context, request any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {

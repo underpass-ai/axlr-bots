@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/adapters/axlr"
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
 	"github.com/underpass-ai/axlr-bots/internal/fakeaxlr"
@@ -35,7 +34,7 @@ func TestTheRunsProgressReachesTheTasksTimeline(t *testing.T) {
 	if _, err := f.client.EnableBot(ctx, "bot"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, err := f.client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "are the pods up?", IdempotencyKey: "k1"})
+	submitted, err := f.client.SubmitTask(ctx, application.SubmitRequest{BotID: "bot", Objective: "are the pods up?", IdempotencyKey: "k1"})
 	if err != nil {
 		t.Fatal(err)
 	}

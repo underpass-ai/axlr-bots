@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/underpass-ai/axlr-bots/application"
 
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 )
@@ -13,6 +14,6 @@ type restTriggers struct {
 	socket string
 }
 
-func (r restTriggers) FireTrigger(ctx context.Context, request unixapi.FireRequest) (unixapi.FireResponse, error) {
+func (r restTriggers) FireTrigger(ctx context.Context, request application.FireRequest) (application.FireResponse, error) {
 	return unixapi.NewClient(r.socket).FireTrigger(ctx, request)
 }

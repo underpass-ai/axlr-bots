@@ -14,7 +14,7 @@ import (
 const recheckEvery = 5 * time.Second
 
 // eventWatch is what the Watch RPCs wait on: the long polls' change
-// signal of unixapi.Local, held for as long as the client stays.
+// signal of application.LocalOperator, held for as long as the client stays.
 type eventWatch struct {
 	changed func() <-chan struct{}
 }

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/adapters/logline"
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 )
 
@@ -27,7 +26,7 @@ func TestJSONLineOfARunNamesBotTaskAndExecutionAsFields(t *testing.T) {
 	if _, err := client.EnableBot(ctx, "bot"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, err := client.SubmitTask(ctx, unixapi.SubmitRequest{BotID: "bot", Objective: "list the files", IdempotencyKey: "k-1"})
+	submitted, err := client.SubmitTask(ctx, application.SubmitRequest{BotID: "bot", Objective: "list the files", IdempotencyKey: "k-1"})
 	if err != nil {
 		t.Fatal(err)
 	}

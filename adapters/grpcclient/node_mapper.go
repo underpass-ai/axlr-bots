@@ -1,11 +1,11 @@
 package grpcclient
 
 import (
+	"github.com/underpass-ai/axlr-bots/application"
 	"time"
 
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -33,7 +33,7 @@ func nodeSnapshots(nodes []*operatorv1.Node) []domain.NodeSnapshot {
 
 // enrollmentRequest is the enrollment token request on the wire; the TTL
 // is text such as 1h in the command and a Duration there.
-func enrollmentRequest(r unixapi.EnrollTokenRequest) (*operatorv1.CreateEnrollmentRequest, error) {
+func enrollmentRequest(r application.EnrollTokenRequest) (*operatorv1.CreateEnrollmentRequest, error) {
 	message := &operatorv1.CreateEnrollmentRequest{NodeId: r.NodeID, Labels: r.Labels}
 	if r.TTL != "" {
 		ttl, err := time.ParseDuration(r.TTL)

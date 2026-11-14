@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/underpass-ai/axlr-bots/internal/operatortest"
 	"net"
 	"os"
 	"path/filepath"
@@ -22,7 +23,7 @@ import (
 
 // tlsControlPlane serves the node protocol over TLS and returns the
 // operator's client, the https URL and the CA.
-func tlsControlPlane(t *testing.T) (*unixapi.Client, string, pki.Authority) {
+func tlsControlPlane(t *testing.T) (*operatortest.Client, string, pki.Authority) {
 	t.Helper()
 	dir := t.TempDir()
 	state := filepath.Join(dir, "cp")
@@ -39,7 +40,8 @@ func tlsControlPlane(t *testing.T) (*unixapi.Client, string, pki.Authority) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := unixapi.NewServer(unixapi.NewLocal(deps))
+	local := application.NewLocalOperator(deps)
+	server := unixapi.NewServer(local)
 	ctx, cancel := context.WithCancel(context.Background())
 	served := make(chan error, 2)
 	go func() { served <- server.Serve(ctx, socket) }()
@@ -48,12 +50,12 @@ func tlsControlPlane(t *testing.T) (*unixapi.Client, string, pki.Authority) {
 	for !unixapi.Reachable(context.Background(), socket) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	return unixapi.NewClient(socket), "https://" + listener.Addr().String(), ca
+	return operatortest.New(unixapi.NewClient(socket), local), "https://" + listener.Addr().String(), ca
 }
 
 func TestEnrollThenRunOverTLS(t *testing.T) {
 	operator, url, ca := tlsControlPlane(t)
-	minted, err := operator.CreateEnrollmentToken(context.Background(), unixapi.EnrollTokenRequest{NodeID: "web-2", Labels: map[string]string{"zone": "eu"}})
+	minted, err := operator.CreateEnrollmentToken(context.Background(), application.EnrollTokenRequest{NodeID: "web-2", Labels: map[string]string{"zone": "eu"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +116,7 @@ func TestEnrollThenRunOverTLS(t *testing.T) {
 	if _, err := operator.EnableBot(context.Background(), "bot"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, _ := operator.SubmitTask(context.Background(), unixapi.SubmitRequest{BotID: "bot", Objective: "o", IdempotencyKey: "k"})
+	submitted, _ := operator.SubmitTask(context.Background(), application.SubmitRequest{BotID: "bot", Objective: "o", IdempotencyKey: "k"})
 	deadline = time.Now().Add(5 * time.Second)
 	for {
 		task, _ := operator.GetTask(context.Background(), submitted.Task.ID)
@@ -138,7 +140,7 @@ func TestEnrollThenRunOverTLS(t *testing.T) {
 	// --ca-file in place of the CA the token carries.
 	caFile := filepath.Join(t.TempDir(), "ca.crt")
 	_ = os.WriteFile(caFile, ca.CertificatePEM(), 0o644)
-	other, _ := operator.CreateEnrollmentToken(context.Background(), unixapi.EnrollTokenRequest{NodeID: "db-1"})
+	other, _ := operator.CreateEnrollmentToken(context.Background(), application.EnrollTokenRequest{NodeID: "db-1"})
 	stderr.Reset()
 	if code := run([]string{"enroll", "--control", url, "--token", other.Token, "--ca-file", caFile, "--state", filepath.Join(t.TempDir(), "db")}, &stdout, &stderr); code != exitOK {
 		t.Errorf("enroll with --ca-file: %d %s", code, stderr.String())
@@ -146,7 +148,7 @@ func TestEnrollThenRunOverTLS(t *testing.T) {
 	// A wrong CA file: the server is not trusted.
 	wrong, _ := pki.Generate(filepath.Join(t.TempDir(), "wrong"))
 	_ = os.WriteFile(caFile, wrong.CertificatePEM(), 0o644)
-	third, _ := operator.CreateEnrollmentToken(context.Background(), unixapi.EnrollTokenRequest{NodeID: "db-2"})
+	third, _ := operator.CreateEnrollmentToken(context.Background(), application.EnrollTokenRequest{NodeID: "db-2"})
 	stderr.Reset()
 	if code := run([]string{"enroll", "--control", url, "--token", third.Token, "--ca-file", caFile, "--state", filepath.Join(t.TempDir(), "db2")}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "certificate") {
 		t.Errorf("enroll with the wrong CA: %d %s", code, stderr.String())

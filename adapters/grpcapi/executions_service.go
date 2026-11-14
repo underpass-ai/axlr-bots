@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
@@ -19,7 +18,7 @@ const chunkSize = 64 << 10
 // the transcripts the nodes upload.
 type executionsService struct {
 	operatorv1.UnimplementedExecutionsServiceServer
-	local *unixapi.Local
+	local *application.LocalOperator
 }
 
 func (s executionsService) GetExecution(ctx context.Context, request *operatorv1.GetExecutionRequest) (*operatorv1.GetExecutionResponse, error) {

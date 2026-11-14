@@ -1,9 +1,9 @@
 package grpcapi
 
 import (
+	"github.com/underpass-ai/axlr-bots/application"
 	"google.golang.org/grpc"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	operatorv1 "github.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1"
 )
 
@@ -15,7 +15,7 @@ const maxSendMessageBytes = 64 << 20
 
 // Server serves the operator API over gRPC on the listeners it is given.
 type Server struct {
-	local     *unixapi.Local
+	local     *application.LocalOperator
 	operators OperatorCertificates
 	activity  operatorv1.ActivityServiceServer
 	unary     []grpc.UnaryServerInterceptor
@@ -23,7 +23,7 @@ type Server struct {
 }
 
 // New serves the local service.
-func New(local *unixapi.Local, options ...Option) *Server {
+func New(local *application.LocalOperator, options ...Option) *Server {
 	server := &Server{local: local, activity: operatorv1.UnimplementedActivityServiceServer{}}
 	for _, option := range options {
 		option(server)

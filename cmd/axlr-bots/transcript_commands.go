@@ -6,15 +6,14 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/underpass-ai/axlr-bots/application"
 	"io"
 	"os"
-
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 )
 
 // executionTranscripts lists the transcripts the control plane keeps,
 // oldest first, after --after (docs/architecture/transcripts.md).
-func executionTranscripts(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func executionTranscripts(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("execution transcripts", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	after := flags.Int64("after", 0, "only the transcripts after this seq")
@@ -38,7 +37,7 @@ func executionTranscripts(ctx context.Context, service unixapi.Service, args []s
 // executionTranscript writes one transcript whole, as the node sent it,
 // to stdout or --out; --jsonl writes one line per message of the session
 // instead.
-func executionTranscript(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
+func executionTranscript(ctx context.Context, service application.OperatorService, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("execution transcript", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	out := flags.String("out", "", "write the transcript to this file instead of stdout")

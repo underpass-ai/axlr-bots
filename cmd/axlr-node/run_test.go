@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"github.com/underpass-ai/axlr-bots/internal/operatortest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -27,7 +28,8 @@ func TestNodeRegistersRunsAndStops(t *testing.T) {
 	socket := filepath.Join(dir, "cp.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	served := make(chan error, 1)
-	go func() { served <- unixapi.NewServer(unixapi.NewLocal(deps)).Serve(ctx, socket) }()
+	local := application.NewLocalOperator(deps)
+	go func() { served <- unixapi.NewServer(local).Serve(ctx, socket) }()
 	defer func() { cancel(); <-served }()
 	for !unixapi.Reachable(context.Background(), socket) {
 		time.Sleep(10 * time.Millisecond)
@@ -48,7 +50,7 @@ func TestNodeRegistersRunsAndStops(t *testing.T) {
 	go func() {
 		done <- run([]string{"--control", "unix://" + socket, "--node-id", "test-node", "--labels", "host=box, zone=eu", "--state", filepath.Join(dir, "node"), "--axlr-bin", bin, "--heartbeat", "50ms", "--poll", "100ms"}, &stdout, &stderr)
 	}()
-	client := unixapi.NewClient(socket)
+	client := operatortest.New(unixapi.NewClient(socket), local)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if node, err := client.GetNode(context.Background(), "test-node"); err == nil && node.Status == "Online" && node.Labels["zone"] == "eu" {
@@ -72,7 +74,7 @@ func TestNodeRegistersRunsAndStops(t *testing.T) {
 	if _, err := client.EnableBot(context.Background(), "bot"); err != nil {
 		t.Fatal(err)
 	}
-	submitted, _ := client.SubmitTask(context.Background(), unixapi.SubmitRequest{BotID: "bot", Objective: "o", IdempotencyKey: "k"})
+	submitted, _ := client.SubmitTask(context.Background(), application.SubmitRequest{BotID: "bot", Objective: "o", IdempotencyKey: "k"})
 	deadline = time.Now().Add(5 * time.Second)
 	for {
 		task, _ := client.GetTask(context.Background(), submitted.Task.ID)
