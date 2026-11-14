@@ -93,6 +93,10 @@ type Options struct {
 	// Pushers are the bus adapters the pushes to nodes also go through
 	// (a broker), beside the stream each node holds open to the daemon.
 	Pushers []application.NodePusher
+	// Topics, when set, copies every event told to a team to a broker and
+	// publishes on a team what an application publishes there (serve
+	// --topics nats); nil leaves teams as they are.
+	Topics TopicBus
 	// Log receives one line per task run, reconciliation and error;
 	// nil discards them.
 	Log application.LogPrinter

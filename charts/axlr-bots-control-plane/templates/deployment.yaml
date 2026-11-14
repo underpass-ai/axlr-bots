@@ -1,5 +1,6 @@
 {{- $name := include "axlr-bots-control-plane.fullname" . }}
-{{- $nats := eq .Values.bus.kind "nats" }}
+{{- $topics := eq (toString .Values.topics) "nats" }}
+{{- $nats := or (eq .Values.bus.kind "nats") $topics }}
 # One pod, never two: the state lock refuses a second serve, so Recreate
 # stops the old pod before the new one starts.
 apiVersion: apps/v1
@@ -94,6 +95,7 @@ spec:
             - {name: AXLR_BOTS_MIN_AXLR_VERSION, value: {{ . | quote }}}
             {{- end }}
             - {name: AXLR_BOTS_BUS, value: {{ .Values.bus.kind | quote }}}
+            - {name: AXLR_BOTS_TOPICS, value: {{ ternary "nats" "off" $topics | quote }}}
             - {name: AXLR_BOTS_LOG_FORMAT, value: {{ .Values.logFormat | quote }}}
             {{- if .Values.grpc.enabled }}
             - {name: AXLR_BOTS_GRPC_LISTEN, value: {{ printf "0.0.0.0:%d" (int .Values.grpc.port) | quote }}}

@@ -196,6 +196,13 @@ jobs:
           grep -q '^kind: PodMonitor$' observability.yaml
           grep -q 'grafana_dashboard: "1"' observability.yaml
           grep -q 'name: AXLR_BOTS_LOG_FORMAT, value: "json"' observability.yaml
+          # A team's topics: off by default; nats sets the env and mounts the
+          # broker's Secret, whatever bus.kind is.
+          grep -q 'name: AXLR_BOTS_TOPICS, value: "off"' default.yaml
+          helm template test $chart --set topics=nats --set-string bus.nats.url=tls://nats:4222 --set-string bus.nats.existingSecret=nats-client > topics.yaml
+          grep -q 'name: AXLR_BOTS_TOPICS, value: "nats"' topics.yaml
+          grep -q 'name: AXLR_BOTS_BUS, value: "direct"' topics.yaml
+          grep -q 'name: AXLR_BOTS_NATS_CERT, value: /etc/axlr-bots/nats/tls.crt' topics.yaml
           refused() {
             if helm template test $chart "$@" >/dev/null 2>&1; then
               echo "accepted: $*" >&2
@@ -206,6 +213,8 @@ jobs:
           refused --set bus.kind=nats
           refused --set bus.kind=nats --set-string bus.nats.url=tls://nats:4222
           refused --set bus.kind=kafka
+          refused --set topics=nats
+          refused --set topics=kafka
           refused --set-string apiURL=http://192.0.2.10:7879
           refused --set-string apiURL=https://192.0.2.10:7879/path
           refused --set-string 'serverNames={bad name}'

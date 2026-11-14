@@ -9,6 +9,7 @@ axlr-bots --control host:7880 --token-file <path> [--cert-file <crt> --key-file 
   serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--grpc-listen <addr>] [--grpc-socket <path>] [--api-token-file <path>] [--api-url <url>]
         [--bus direct|nats] [--nats-url <url>] [--nats-creds <file>]              pushes to the nodes also over a broker (bus port)
         [--nats-cert <file> --nats-key <file>] [--nats-ca <file>]                  mutual TLS to the broker
+        [--topics off|nats]                                                         a team's topics on the same broker (topics on NATS)
         [--tick 2s] [--reconcile-every 1m] [--grace <duration>]
         [--min-axlr-version <semver>]                                               the least AXLR the nodes should run, answered by GET /v1/build (also AXLR_BOTS_MIN_AXLR_VERSION)
   ca init | ca show
@@ -74,6 +75,7 @@ axlr-node codex-proxy [--listen 127.0.0.1:8790] [--codex-home ~/.codex] [--refre
 | operator token file | `serve --api-token-file` | | `<state>/api.token` |
 | the operator API's base URL in approval notifications | `serve --api-url` | `AXLR_BOTS_API_URL` | `https://` and the `--api-listen` address (the host's name for a wildcard address) |
 | control plane: bus | `serve --bus direct\|nats`, `--nats-url`, `--nats-creds`, `--nats-cert`, `--nats-key`, `--nats-ca` | `AXLR_BOTS_BUS`, `AXLR_BOTS_NATS_URL`, `AXLR_BOTS_NATS_CREDS`, `AXLR_BOTS_NATS_CERT`, `AXLR_BOTS_NATS_KEY`, `AXLR_BOTS_NATS_CA` | `direct`: the nodes' own streams only; `nats` also publishes every push to the broker ([bus port](../architecture/bus-port.md#configuration)) |
+| control plane: a team's topics | `serve --topics off\|nats`, and the broker flags of the bus (`--nats-url` and the rest) | `AXLR_BOTS_TOPICS` and the same `AXLR_BOTS_NATS_*` | `off`: nothing is published or read. `nats` copies every event told to a team to `axlr.topic.<tenant>.<team>.<name>` (stream `AXLR_TOPIC`, outbox `<state>/outbox/topics`) and publishes on the team, as the operator, what an application publishes on `axlr.publish.<tenant>.<team>.<name>` (stream `AXLR_PUBLISH`); independent of `--bus` ([topics on NATS](../architecture/topics-on-nats.md), [the spec](topics.asyncapi.json)) |
 | who acts (audit), and who decides | `--actor`: `task approve`, `deny` and `decide` send it as who decides, the name a bot's `approvals.approvers` lists ([who may decide](../runbooks/approvals.md#who-may-decide)) | | `cli:<$USER>` (`cli:unknown` when `USER` is unset) |
 | node: control plane, id, labels, state | `--control`, `--node-id`, `--labels`, `--state` | `AXLR_NODE_CONTROL`, `AXLR_NODE_ID`, `AXLR_NODE_LABELS`, `AXLR_NODE_STATE` | the state is `~/.local/state/axlr-node`; over the socket the id is the host name; over `https://` it is the certificate's, and a `--node-id` that disagrees is refused |
 | node: the enrollment token (`axlr-node enroll` only) | `--token` | `AXLR_NODE_TOKEN` | none |

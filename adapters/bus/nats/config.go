@@ -2,9 +2,12 @@
 // control plane publishes each push to a node on the node's own subject
 // through an outbox, and the node reads its subject with a durable
 // consumer, so a push survives the broker's and the node's absences and
-// a node that was away reads what it missed. Nothing here is known to
-// the domain or the use cases: they see application.NodePusher and
-// nodeagent.Streamer.
+// a node that was away reads what it missed. Beside the pushes, Topics
+// carries a team's topics (docs/architecture/topics-on-nats.md): a copy
+// of every event told to a team out, and the publications an
+// application makes on a team in. Nothing here is known to the domain
+// or the use cases: they see application.NodePusher,
+// application.EventPublisher and nodeagent.Streamer.
 package nats
 
 import (
@@ -54,6 +57,17 @@ type Config struct {
 	Name string
 	// Log hears connections, retries and refusals; nil discards.
 	Log application.LogPrinter
+	// TopicDuplicates is the window the topic streams drop a repeat in;
+	// zero is Duplicates, two minutes. A test shortens it to see a repeat
+	// past it.
+	TopicDuplicates time.Duration
+}
+
+func (c Config) duplicatesWindow() time.Duration {
+	if c.TopicDuplicates > 0 {
+		return c.TopicDuplicates
+	}
+	return Duplicates
 }
 
 func (c Config) stream() string {

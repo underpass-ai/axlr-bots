@@ -1,0 +1,279 @@
+{
+  "asyncapi": "3.0.0",
+  "info": {
+    "title": "AXLR Bots team topics",
+    "version": "1.0.0",
+    "description": "A team's topics on NATS, beside the delivery (docs/architecture/topics-on-nats.md). With `axlr-bots serve --topics nats` the control plane publishes a copy of every event told to a team (a bot's, the operator's and its own) on `axlr.topic.{tenant}.{team}.{name}`, and reads what an application publishes on a team on `axlr.publish.{tenant}.{team}.{name}`, which it publishes on the team as the operator, with the rules of `POST /v1/groups/{name}/events`. The platform names no topic: an application declares the ones it reads and writes in its own spec, on these subjects and with these messages. The wire forms are `adapters/bus/topicwire.TopicEventDTO` and `adapters/bus/topicwire.PublicationDTO`, generated from this document; the domain never sees them."
+  },
+  "defaultContentType": "application/json",
+  "servers": {
+    "broker": {
+      "host": "nats.example:4222",
+      "protocol": "nats",
+      "description": "NATS with JetStream; mutual TLS and the users' permissions as in docs/architecture/bus-port.md. Both streams are defined by the control plane as it connects: AXLR_TOPIC (subjects axlr.topic.>, file storage, 24 hours, at most 1 GB, a republish dropped within 2 minutes by Nats-Msg-Id) and AXLR_PUBLISH (subjects axlr.publish.>, file storage, 24 hours, a republish dropped within 2 minutes by Nats-Msg-Id)."
+    }
+  },
+  "channels": {
+    "topic": {
+      "address": "axlr.topic.{tenant}.{team}.{name}",
+      "title": "A team's topic",
+      "description": "One message per team an event was told to, in the order the control plane recorded them. Only the control plane publishes here; an application reads with a durable consumer of its own on AXLR_TOPIC, filtered as it likes: `axlr.topic.{tenant}.{team}.>` is the whole team, `axlr.topic.{tenant}.{team}.order.>` the platform's `order.**`.",
+      "parameters": {
+        "tenant": {
+          "$ref": "#/components/parameters/tenant"
+        },
+        "team": {
+          "$ref": "#/components/parameters/team"
+        },
+        "name": {
+          "$ref": "#/components/parameters/name"
+        }
+      },
+      "messages": {
+        "topicEvent": {
+          "$ref": "#/components/messages/topicEvent"
+        }
+      }
+    },
+    "publish": {
+      "address": "axlr.publish.{tenant}.{team}.{name}",
+      "title": "A publication on a team",
+      "description": "What an application tells a team, as the operator. Only the control plane reads here, with its durable consumer `control-plane` on AXLR_PUBLISH. The subject names the team and its tenant; the payload's name must be the subject's. A publication refused (done.* and error.* are the control plane's own, an unknown team, a bad envelope, a missing key) is taken off and audited as event.publish denied, never given again; one that failed (the store) is given again after a growing delay.",
+      "parameters": {
+        "tenant": {
+          "$ref": "#/components/parameters/tenant"
+        },
+        "team": {
+          "$ref": "#/components/parameters/team"
+        },
+        "name": {
+          "$ref": "#/components/parameters/name"
+        }
+      },
+      "messages": {
+        "publication": {
+          "$ref": "#/components/messages/publication"
+        }
+      }
+    }
+  },
+  "operations": {
+    "sendTopicEvent": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/topic"
+      },
+      "summary": "The control plane publishes a copy of a team's event after it recorded and delivered it.",
+      "messages": [
+        {
+          "$ref": "#/channels/topic/messages/topicEvent"
+        }
+      ]
+    },
+    "receivePublication": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/publish"
+      },
+      "summary": "The control plane publishes what an application sent on the team as the operator, and acks it once that is done.",
+      "messages": [
+        {
+          "$ref": "#/channels/publish/messages/publication"
+        }
+      ]
+    }
+  },
+  "components": {
+    "parameters": {
+      "tenant": {
+        "description": "The tenant, one token: '.', '*', '>' and spaces written '_'. The envelope's tenant is exact.",
+        "examples": [
+          "default"
+        ]
+      },
+      "team": {
+        "description": "The team, one token, written as the tenant is. Two teams whose names differ only there share a subject: a reader checks the envelope's team, which is exact; a publication on a subject two teams share is refused.",
+        "examples": [
+          "team-a",
+          "team-b"
+        ]
+      },
+      "name": {
+        "description": "The event's name, its own dots kept as tokens: segments of lowercase letters, digits and '-'. The first segment is its kind: error, danger, stop, warn, done, else info.",
+        "examples": [
+          "order.placed",
+          "done.task"
+        ]
+      }
+    },
+    "messages": {
+      "topicEvent": {
+        "name": "topicEvent",
+        "title": "An event told to a team",
+        "contentType": "application/json",
+        "headers": {
+          "type": "object",
+          "required": [
+            "Nats-Msg-Id"
+          ],
+          "properties": {
+            "Nats-Msg-Id": {
+              "type": "string",
+              "description": "The payload's id, '@' and the team: one event told to two teams is two messages of one stream, so the team is part of the key JetStream drops a repeat by. A reader that dedupes past the 2-minute window does so by the payload's id and team."
+            }
+          }
+        },
+        "payload": {
+          "$ref": "#/components/schemas/TopicEvent"
+        }
+      },
+      "publication": {
+        "name": "publication",
+        "title": "A publication on a team, as the operator",
+        "contentType": "application/json",
+        "headers": {
+          "type": "object",
+          "required": [
+            "Nats-Msg-Id"
+          ],
+          "properties": {
+            "Nats-Msg-Id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "description": "The idempotency key, as POST /v1/groups/{name}/events takes it, required: JetStream drops a repeat within 2 minutes, and the control plane makes nothing of one past it. The stream is one for every team, so a key is unique across the application's publications."
+            }
+          }
+        },
+        "payload": {
+          "$ref": "#/components/schemas/Publication"
+        }
+      }
+    },
+    "schemas": {
+      "TopicEvent": {
+        "type": "object",
+        "x-go-type": "topicwire.TopicEventDTO",
+        "description": "An event told to a team, as the control plane recorded it.",
+        "additionalProperties": false,
+        "required": [
+          "specVersion",
+          "id",
+          "tenant",
+          "team",
+          "name",
+          "severity",
+          "message",
+          "publisher",
+          "at"
+        ],
+        "properties": {
+          "specVersion": {
+            "type": "string",
+            "const": "1"
+          },
+          "id": {
+            "type": "string",
+            "description": "The event's id, as the team's timeline shows it (GET /v1/groups/{name}/events, its after cursor)."
+          },
+          "tenant": {
+            "type": "string",
+            "description": "The team's tenant, exact."
+          },
+          "team": {
+            "type": "string",
+            "description": "The team the event was told to, exact."
+          },
+          "name": {
+            "type": "string",
+            "examples": [
+              "order.placed"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ],
+            "description": "What the name's kind fixes."
+          },
+          "message": {
+            "type": "string",
+            "description": "The event's one line."
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "The facts, as recorded; absent when there were none."
+          },
+          "publisher": {
+            "type": "string",
+            "enum": [
+              "bot",
+              "operator",
+              "control-plane"
+            ],
+            "description": "Who put the event on the team's bus: a bot's run, the operator (the API or a publication on axlr.publish), or the control plane telling a fact of its own (done.task, error.bot, warn.approval)."
+          },
+          "bot": {
+            "type": "string",
+            "description": "The bot that emitted it, or the one the control plane spoke of; absent for the operator."
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The teammates it was addressed to; absent when it was told to whoever listens."
+          },
+          "traceId": {
+            "type": "string",
+            "description": "The emitter's trace, when there is one."
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the control plane recorded it, RFC 3339 with nanoseconds, UTC."
+          }
+        }
+      },
+      "Publication": {
+        "type": "object",
+        "x-go-type": "topicwire.PublicationDTO",
+        "description": "What an application tells a team, as the body of POST /v1/groups/{name}/events.",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "message"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The event's name, the subject's last tokens; never done.* or error.*.",
+            "examples": [
+              "order.placed"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "The event's one line."
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "The facts, a JSON object of at most 8 KiB."
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The members it is addressed to, at most 16."
+          }
+        }
+      }
+    }
+  }
+}

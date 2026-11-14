@@ -27,6 +27,7 @@ Several bots in the cluster? Turn on metrics, JSON logs and traces: [`docs/runbo
 | `apiToken.existingSecret` | the operator token as a Secret (`token`), so the panel and the CLI outside the pod can be given it; without it the daemon writes `<state>/api.token`, which a distroless image gives no way to read |
 | `env.existingSecret` | every key as a variable: `OPENROUTER_API_KEY` and `TYPESAFE_API_KEY` for the model and Jev proxies |
 | `bus.kind`, `bus.nats.*` | `direct`, or `nats` with `tls://` and a Secret holding `tls.crt`, `tls.key` (from `axlr-bots ca issue-client --name control-plane`) and `ca.crt` (the broker's CA) |
+| `topics` | `off`, or `nats`: a team's topics on the broker of `bus.nats.*` ([topics on NATS](../../docs/architecture/topics-on-nats.md)), whatever `bus.kind` is; sets `AXLR_BOTS_TOPICS` |
 | `ca.init` | true for the first start of an empty state only: an init container runs `ca init`, which fails when a CA is there |
 | `persistence.existingClaim` | a claim you filled with an existing state |
 | `grpc.enabled`, `grpc.port` | the operator API over gRPC (mutual TLS: an operator certificate from `axlr-bots ca operator issue`, issued in the pod by `kubectl exec` or from a copy of the CA, plus the bearer token; [reference](../../docs/reference/operator-grpc.md)) on 7880, in the pod and on the Service as port `grpc` (`AXLR_BOTS_GRPC_LISTEN`) |

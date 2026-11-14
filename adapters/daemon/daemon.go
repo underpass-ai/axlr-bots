@@ -66,6 +66,11 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 		registry.MustRegister(observer)
 		deps.Events = observer
 	}
+	// With the topics on a broker, every event a use case records is also
+	// copied to the team's topics, once it is recorded.
+	if options.Topics != nil {
+		deps.Events = options.Topics.Tap(deps.Events)
+	}
 	local := unixapi.NewLocal(deps)
 	for _, pusher := range options.Pushers {
 		local.AddPusher(pusher, logger.Printf)
@@ -76,6 +81,14 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	runner := local.Runner()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	if options.Topics != nil {
+		if err := options.Topics.Listen(ctx, publications{Local: local, refuse: application.NewRefusePublication(deps)}); err != nil {
+			return err
+		}
+		// The consumer stops with the context; it is joined before the
+		// state lock goes.
+		defer func() { cancel(); options.Topics.Wait() }()
+	}
 
 	// The TLS listeners are bound before anything serves, so a bad option
 	// returns before the socket exists and no server is left behind.

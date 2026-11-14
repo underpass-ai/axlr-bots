@@ -69,11 +69,12 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 	reconcileEvery := flags.Duration("reconcile-every", daemon.DefaultReconcileEvery, "how often to fail the tasks a dead run left Running")
 	grace := flags.Duration("grace", 0, "reconciliation grace (default: the bot's task timeout plus 1m)")
 	bus := flags.String("bus", busDefault(os.Getenv("AXLR_BOTS_BUS")), "how pushes reach the nodes: direct (each node's stream over its own connection, always on) or nats (a broker beside it, for nodes that read it; also AXLR_BOTS_BUS)")
-	natsURL := flags.String("nats-url", os.Getenv("AXLR_BOTS_NATS_URL"), "with --bus nats, the broker, nats://host:4222 (also AXLR_BOTS_NATS_URL)")
-	natsCreds := flags.String("nats-creds", os.Getenv("AXLR_BOTS_NATS_CREDS"), "with --bus nats, a NATS credentials file (also AXLR_BOTS_NATS_CREDS)")
-	natsCert := flags.String("nats-cert", os.Getenv("AXLR_BOTS_NATS_CERT"), "with --bus nats, a client certificate in PEM for mutual TLS, such as one ca issue-client wrote (also AXLR_BOTS_NATS_CERT)")
+	topics := flags.String("topics", topicsDefault(os.Getenv("AXLR_BOTS_TOPICS")), "a team's topics on a broker: off, or nats (every event told to a team is copied to axlr.topic.<tenant>.<team>.<name>, and what an application publishes on axlr.publish.<tenant>.<team>.<name> is published on the team as the operator; also AXLR_BOTS_TOPICS)")
+	natsURL := flags.String("nats-url", os.Getenv("AXLR_BOTS_NATS_URL"), "with --bus nats or --topics nats, the broker, nats://host:4222 (also AXLR_BOTS_NATS_URL)")
+	natsCreds := flags.String("nats-creds", os.Getenv("AXLR_BOTS_NATS_CREDS"), "with --bus nats or --topics nats, a NATS credentials file (also AXLR_BOTS_NATS_CREDS)")
+	natsCert := flags.String("nats-cert", os.Getenv("AXLR_BOTS_NATS_CERT"), "with --bus nats or --topics nats, a client certificate in PEM for mutual TLS, such as one ca issue-client wrote (also AXLR_BOTS_NATS_CERT)")
 	natsKey := flags.String("nats-key", os.Getenv("AXLR_BOTS_NATS_KEY"), "with --nats-cert, its key (also AXLR_BOTS_NATS_KEY)")
-	natsCA := flags.String("nats-ca", os.Getenv("AXLR_BOTS_NATS_CA"), "with --bus nats, the CA the broker's certificate is checked against (also AXLR_BOTS_NATS_CA; default the system's)")
+	natsCA := flags.String("nats-ca", os.Getenv("AXLR_BOTS_NATS_CA"), "with --bus nats or --topics nats, the CA the broker's certificate is checked against (also AXLR_BOTS_NATS_CA; default the system's)")
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -91,6 +92,14 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 	}
 	if *bus == "nats" && *natsURL == "" {
 		fmt.Fprintln(stderr, "axlr-bots: --bus nats needs --nats-url (or AXLR_BOTS_NATS_URL)")
+		return exitUsage
+	}
+	if *topics != "off" && *topics != "nats" {
+		fmt.Fprintln(stderr, "axlr-bots: --topics is off or nats")
+		return exitUsage
+	}
+	if *topics == "nats" && *natsURL == "" {
+		fmt.Fprintln(stderr, "axlr-bots: --topics nats needs --nats-url (or AXLR_BOTS_NATS_URL)")
 		return exitUsage
 	}
 	if (*natsCert == "") != (*natsKey == "") {
@@ -163,6 +172,17 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 		options.Pushers = append(options.Pushers, publisher)
 		options.Log.Printf("daemon: bus nats at %s (outbox %s)", *natsURL, filepath.Join(stateDir, "outbox", "nats"))
 	}
+	if *topics == "nats" {
+		outbox := filepath.Join(stateDir, "outbox", "topics")
+		bus, err := natsbus.NewTopics(natsbus.Config{URL: *natsURL, Credentials: *natsCreds, CertFile: *natsCert, KeyFile: *natsKey, CAFile: *natsCA, Outbox: outbox, Name: "axlr-bots topics", Log: options.Log})
+		if err != nil {
+			fmt.Fprintln(stderr, "axlr-bots: serve --topics nats:", err)
+			return exitError
+		}
+		defer bus.Close()
+		options.Topics = bus
+		options.Log.Printf("daemon: topics nats at %s (outbox %s)", *natsURL, outbox)
+	}
 	if *apiListen != "" || *grpcListen != "" {
 		path := *apiTokenFile
 		if path == "" {
@@ -199,6 +219,14 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 func busDefault(env string) string {
 	if env == "" {
 		return "direct"
+	}
+	return env
+}
+
+// topicsDefault is the topics when the environment names none: off.
+func topicsDefault(env string) string {
+	if env == "" {
+		return "off"
 	}
 	return env
 }
