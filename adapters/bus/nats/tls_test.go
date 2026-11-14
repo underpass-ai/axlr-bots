@@ -118,6 +118,12 @@ func tlsBrokerFor(t *testing.T, f fleet, publish []string, nodes ...domain.NodeI
 	for _, node := range nodes {
 		users = append(users, nodeUser(node))
 	}
+	return tlsBrokerOf(t, f, users)
+}
+
+// tlsBrokerOf is a broker that lists exactly these users.
+func tlsBrokerOf(t *testing.T, f fleet, users []string) *server.Server {
+	t.Helper()
 	conf := fmt.Sprintf(`listen: "127.0.0.1:-1"
 jetstream { store_dir: %q }
 tls { cert_file: %q, key_file: %q, ca_file: %q, verify_and_map: true, timeout: 2 }

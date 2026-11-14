@@ -14,10 +14,12 @@ import (
 	"github.com/underpass-ai/axlr-bots/internal/atomicfile"
 )
 
-// entry is one message in the outbox: a push's node, the bytes to
-// publish and the file that keeps them until the broker took them. A
-// push's file name is the publish's id, so a republish after a lost
-// answer is dropped by the broker within the duplicates window.
+// entry is one message in the outbox: a push's node, or a topic's
+// subject and message id, the bytes to publish and the file that keeps
+// them until the broker took them. A push's file name is the publish's
+// id; a topic's id is its event's and team's. Either way a republish
+// after a lost answer is dropped by the broker within the duplicates
+// window.
 type entry struct {
 	id      string
 	node    domain.NodeID
@@ -74,6 +76,12 @@ func (o outbox) add(node domain.NodeID, seq uint64, payload []byte) (entry, erro
 	return o.write(token(node), entry{node: node, payload: payload}, seq)
 }
 
+// addMessage writes a message for the subject, dropped as a repeat by
+// msgID, in the outbox's folder named folder.
+func (o outbox) addMessage(folder, subject, msgID string, seq uint64, payload []byte) (entry, error) {
+	return o.write(folder, entry{subject: subject, msgID: msgID, payload: payload}, seq)
+}
+
 func (o outbox) write(folder string, e entry, seq uint64) (entry, error) {
 	dir := filepath.Join(o.dir, folder)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -105,6 +113,13 @@ func (o outbox) sweep() []entry {
 			out = append(out, o.read(d.Name())...)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].id < out[j].id })
+	return out
+}
+
+// sweepFolder reads the messages left in one folder, oldest first.
+func (o outbox) sweepFolder(folder string) []entry {
+	out := o.read(folder)
 	sort.Slice(out, func(i, j int) bool { return out[i].id < out[j].id })
 	return out
 }

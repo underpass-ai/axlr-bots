@@ -85,3 +85,21 @@ func TestServeRefusesAMinimumAXLRThatIsNoVersion(t *testing.T) {
 		t.Fatalf("serve --min-axlr-version v0.20: %d %s", code, errText)
 	}
 }
+
+func TestServeRefusesTopicsItCannotCarry(t *testing.T) {
+	c := cli{t: t, state: t.TempDir(), axlr: fakeAXLR(t, "completed"), socket: filepath.Join(t.TempDir(), "cp.sock")}
+	for _, tc := range []struct {
+		args []string
+		text string
+	}{
+		{[]string{"serve", "--topics", "kafka"}, "--topics is off or nats"},
+		{[]string{"serve", "--topics", "nats"}, "--topics nats needs --nats-url"},
+	} {
+		if code, _, errText := c.run(tc.args...); code != exitUsage || !strings.Contains(errText, tc.text) {
+			t.Errorf("%v: %d %s", tc.args, code, errText)
+		}
+	}
+	if topicsDefault("") != "off" || topicsDefault("nats") != "nats" {
+		t.Error("the topics' default")
+	}
+}
