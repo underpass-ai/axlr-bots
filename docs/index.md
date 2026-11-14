@@ -34,6 +34,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | Let a bot warn or stop its teammates with an event, and follow the team's timeline | [Events](reference/bot-definition.md#events), [ADR](architecture/groups-and-events.md) |
 | Let bots publish on topics and choose who listens, in what mode, from the panel | [ADR](architecture/pubsub-events.md) |
 | Set up teams and events from the panel, step by step: the urgent order, a message to a running task, the shortcuts | [Teams and events from the panel](runbooks/teams-and-events.md) |
+| Turn on per-bot metrics, JSON logs in Loki and a trace per task, recommended with several bots in Kubernetes; follow one task, find a slow or failing one, cost per bot | [Observability](runbooks/observability.md) |
 | Recover after a crash, a silent node or a lost control plane | [Recovery](runbooks/recovery.md) |
 
 ## Architecture
