@@ -2,11 +2,13 @@ use std::path::PathBuf;
 
 use crate::application::{NewBotDefaults, PanelConfig};
 
-/// The operator address the install runbook uses.
-const DEFAULT_API: &str = "127.0.0.1:7879";
+/// The operator API's gRPC address when the unit does not say (the one of
+/// `serve --grpc-listen`): next to the HTTP API port the node protocol
+/// uses.
+const DEFAULT_API: &str = "127.0.0.1:7880";
 
 /// Finds the local install's settings: the state directory, the operator
-/// address and the token file the `axlr-bots` unit runs with, with the
+/// gRPC address and the token file the `axlr-bots` unit runs with, with the
 /// install's defaults where the unit says nothing.
 pub struct InstallDiscovery {
     home: PathBuf,
@@ -69,7 +71,7 @@ impl InstallDiscovery {
         let state = flag("--state")
             .map(|s| self.expand(&s))
             .unwrap_or_else(|| self.default_state());
-        let api = flag("--api-listen").unwrap_or_else(|| DEFAULT_API.to_string());
+        let api = flag("--grpc-listen").unwrap_or_else(|| DEFAULT_API.to_string());
         let token_file = flag("--api-token-file")
             .map(|s| self.expand(&s))
             .unwrap_or_else(|| state.join("api.token"));
@@ -153,7 +155,7 @@ mod tests {
 
     #[test]
     fn reads_the_units_exec_start() {
-        let unit = "[Service]\nExecStart=/home/op/.local/bin/axlr-bots --state /srv/axlr --socket /srv/axlr/s.sock serve --listen 0.0.0.0:7878 --api-listen 0.0.0.0:7900 --api-token-file=%h/secret.token\n";
+        let unit = "[Service]\nExecStart=/home/op/.local/bin/axlr-bots --state /srv/axlr --socket /srv/axlr/s.sock serve --listen 0.0.0.0:7878 --api-listen 0.0.0.0:7879 --grpc-listen 0.0.0.0:7900 --api-token-file=%h/secret.token\n";
         let config = discovery().from_unit(Some(unit));
         assert_eq!(config.api_url, "https://127.0.0.1:7900");
         assert_eq!(config.ca_path, PathBuf::from("/srv/axlr/ca/ca.crt"));
@@ -163,7 +165,7 @@ mod tests {
     #[test]
     fn falls_back_to_the_install_defaults() {
         let config = discovery().from_unit(None);
-        assert_eq!(config.api_url, "https://127.0.0.1:7879");
+        assert_eq!(config.api_url, "https://127.0.0.1:7880");
         assert_eq!(
             config.ca_path,
             PathBuf::from("/home/op/.local/state/axlr-bots/ca/ca.crt")
@@ -179,9 +181,9 @@ mod tests {
         );
         assert_eq!(xdg.config_dir(), PathBuf::from("/cfg"));
         let tilde = discovery().from_unit(Some(
-            "ExecStart=axlr-bots --state ~/state serve --api-listen cp.example:7879",
+            "ExecStart=axlr-bots --state ~/state serve --grpc-listen cp.example:7880",
         ));
-        assert_eq!(tilde.api_url, "https://cp.example:7879");
+        assert_eq!(tilde.api_url, "https://cp.example:7880");
         assert_eq!(tilde.ca_path, PathBuf::from("/home/op/state/ca/ca.crt"));
     }
 
@@ -224,7 +226,7 @@ mod tests {
         std::fs::create_dir_all(&units).unwrap();
         std::fs::write(
             units.join("axlr-bots.service"),
-            "ExecStart=axlr-bots --state /var/x serve --api-listen 127.0.0.1:7999\n",
+            "ExecStart=axlr-bots --state /var/x serve --grpc-listen 127.0.0.1:7999\n",
         )
         .unwrap();
         let discovery = InstallDiscovery::new(home.path().to_path_buf(), None, None);

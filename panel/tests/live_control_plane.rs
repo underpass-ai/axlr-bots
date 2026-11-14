@@ -1,14 +1,14 @@
 //! Reads the running control plane of this host, when `AXLR_PANEL_LIVE=1`:
-//! every list and one task's detail, to prove the panel reads the real
-//! JSON. Nothing is changed. The settings are the local install's
-//! (`~/.local/state/axlr-bots`, `https://127.0.0.1:7879`) unless
+//! every list and one task's detail and activity tree, to prove the panel
+//! reads the real gRPC answers. Nothing is changed. The settings are the local install's
+//! (`~/.local/state/axlr-bots`, `https://127.0.0.1:7880`, the gRPC address) unless
 //! `AXLR_PANEL_API`, `AXLR_PANEL_CA` and `AXLR_PANEL_TOKEN_FILE` say
 //! otherwise.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use axlr_bots_panel::adapters::http::HttpControlPlane;
+use axlr_bots_panel::adapters::grpc::GrpcControlPlane;
 use axlr_bots_panel::adapters::system::SystemClock;
 use axlr_bots_panel::application::{ControlPlane, LoadTaskDetail, PanelConfig, RefreshFleet, ShowBot};
 
@@ -19,7 +19,7 @@ fn live_config() -> Option<PanelConfig> {
     let state = PathBuf::from(std::env::var("HOME").unwrap()).join(".local/state/axlr-bots");
     let var = |name: &str| std::env::var(name).ok();
     Some(PanelConfig {
-        api_url: var("AXLR_PANEL_API").unwrap_or_else(|| "https://127.0.0.1:7879".into()),
+        api_url: var("AXLR_PANEL_API").unwrap_or_else(|| "https://127.0.0.1:7880".into()),
         ca_path: var("AXLR_PANEL_CA")
             .map(PathBuf::from)
             .unwrap_or_else(|| state.join("ca/ca.crt")),
@@ -36,7 +36,7 @@ async fn reads_the_running_control_plane() {
         eprintln!("skipped: set AXLR_PANEL_LIVE=1 to read the running control plane");
         return;
     };
-    let api: Arc<dyn ControlPlane> = Arc::new(HttpControlPlane::new(&config).unwrap());
+    let api: Arc<dyn ControlPlane> = Arc::new(GrpcControlPlane::new(&config).unwrap());
     let fleet = RefreshFleet::new(api.clone(), Arc::new(SystemClock))
         .execute()
         .await
@@ -62,6 +62,8 @@ async fn reads_the_running_control_plane() {
     for task in fleet.tasks.iter().take(25) {
         let detail = LoadTaskDetail::new(api.clone()).execute(task.id.clone()).await.unwrap();
         assert_eq!(detail.task.id, task.id);
+        let tree = api.task_activity(task.id.clone()).await.unwrap();
+        assert_eq!(tree.task.id, task.id);
     }
     println!("read {} task details", fleet.tasks.len().min(25));
 }

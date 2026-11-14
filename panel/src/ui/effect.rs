@@ -17,6 +17,12 @@ pub enum Effect {
         generation: u64,
     },
     LoadTask(TaskId),
+    LoadActivity(TaskId),
+    FollowActivity {
+        id: TaskId,
+        cursor: Option<String>,
+        wait: u32,
+    },
     /// Read a task's timeline after the feed, waiting up to `wait` seconds.
     FollowTask {
         id: TaskId,

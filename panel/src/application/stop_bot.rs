@@ -5,7 +5,7 @@ use crate::domain::{Bot, BotId, TaskFilter};
 
 /// Stops a bot at once: pauses it so it takes no new task, and cancels
 /// every task of it still pending, running or waiting for a person. The
-/// control plane does it in one call (`POST /v1/bots/{id}/stop`).
+/// control plane does it in one call (`StopBot`).
 pub struct StopBot {
     control_plane: Arc<dyn ControlPlane>,
 }

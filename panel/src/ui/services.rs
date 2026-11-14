@@ -3,10 +3,10 @@ use std::sync::Arc;
 use super::{BotView, Connection, Effect, Message};
 use crate::application::{
     ApplyInBulk, ApplyStaged, BulkOutcome, CancelTask, Clock, Connect, ControlPlane, DecideTask, DefinitionReader,
-    DeleteBot, DownloadArtifact, ExportSettings, FilePicker, FollowBotEvents, FollowTaskEvents, FollowTeamEvents,
-    ImportSettings, KeySource, ListTopics, LoadChat, LoadTaskDetail, MintEnrollmentToken, Notifier, PanelError,
-    PatchBot, PublishEvent, RefreshFleet, RegisterBot, RevokeNode, SaveBotEdit, SaveSubscriptions, SendChat,
-    ShortcutSource, StopBot, SubmitTask, SwitchBot,
+    DeleteBot, DownloadArtifact, ExportSettings, FilePicker, FollowBotEvents, FollowTaskActivity, FollowTaskEvents,
+    FollowTeamEvents, ImportSettings, KeySource, ListTopics, LoadChat, LoadTaskActivity, LoadTaskDetail,
+    MintEnrollmentToken, Notifier, PanelError, PatchBot, PublishEvent, RefreshFleet, RegisterBot, RevokeNode,
+    SaveBotEdit, SaveSubscriptions, SendChat, ShortcutSource, StopBot, SubmitTask, SwitchBot,
 };
 use crate::domain::BotPatch;
 
@@ -81,6 +81,20 @@ impl Services {
                     Err(e) => Err(e),
                 };
                 Message::TaskLoaded(id, result)
+            }
+            Effect::LoadActivity(id) => {
+                let result = match self.control_plane() {
+                    Ok(cp) => LoadTaskActivity::new(cp).execute(id.clone()).await,
+                    Err(e) => Err(e),
+                };
+                Message::ActivityLoaded(id, result)
+            }
+            Effect::FollowActivity { id, cursor, wait } => {
+                let result = match self.control_plane() {
+                    Ok(cp) => FollowTaskActivity::new(cp).execute(id.clone(), cursor, wait).await,
+                    Err(e) => Err(e),
+                };
+                Message::ActivityFollowed(id, result)
             }
             Effect::FollowTask { id, feed, wait } => {
                 let result = match self.control_plane() {

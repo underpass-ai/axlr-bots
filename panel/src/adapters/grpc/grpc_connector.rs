@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use super::HttpControlPlane;
+use super::GrpcControlPlane;
 use crate::application::{Connector, ControlPlane, PanelConfig, PanelError};
 
-/// Connects to the control plane the settings name, over HTTPS.
+/// Connects to the control plane the settings name, over gRPC with TLS.
 #[derive(Default)]
-pub struct HttpConnector;
+pub struct GrpcConnector;
 
-impl Connector for HttpConnector {
+impl Connector for GrpcConnector {
     fn connect(&self, config: &PanelConfig) -> Result<Arc<dyn ControlPlane>, PanelError> {
-        Ok(Arc::new(HttpControlPlane::new(config)?))
+        Ok(Arc::new(GrpcControlPlane::new(config)?))
     }
 }

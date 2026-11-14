@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::PanelError;
 
 /// Where the control plane's operator API is and how to trust and reach
-/// it: its https address, the fleet CA and the file holding the bearer
+/// it: its gRPC address (https://host:port, the one of `--grpc-listen`), the fleet CA and the file holding the bearer
 /// token (never the token itself), and who the panel decides as: the
 /// actor sent with every request (X-Axlr-Actor), which a bot's
 /// approvers are compared with. The token holder asserts it; absent,
@@ -20,15 +20,15 @@ pub struct PanelConfig {
 }
 
 impl PanelConfig {
-    /// The address without a trailing slash, checked to be https.
+    /// The gRPC address without a trailing slash, checked to be https.
     pub fn validate(&self) -> Result<(), PanelError> {
         let url = self.api_url.trim();
         let Some(rest) = url.strip_prefix("https://") else {
-            return Err(PanelError::Config("the API address must start with https://".into()));
+            return Err(PanelError::Config("the gRPC address must start with https://".into()));
         };
         if rest.trim_end_matches('/').is_empty() || rest.contains(char::is_whitespace) {
             return Err(PanelError::Config(
-                "the API address needs a host, like https://127.0.0.1:7879".into(),
+                "the gRPC address needs a host, like https://127.0.0.1:7880".into(),
             ));
         }
         if self.ca_path.as_os_str().is_empty() {

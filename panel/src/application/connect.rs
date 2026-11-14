@@ -29,25 +29,43 @@ impl Connect {
             .await
             .map_err(|error| match error {
                 PanelError::NotFound(_) => PanelError::Config(
-                    "this control plane has no /v1/overview: the panel needs axlr-bots with its routes \
-                 (underpass-ai/axlr-bots#3)"
+                    "this control plane does not serve the gRPC operator API: start it with --grpc-listen and \
+                     give the panel that gRPC address, not the HTTP one"
                         .into(),
                 ),
+                PanelError::Unreachable(detail) if Self::speaks_no_grpc(&detail) => PanelError::Unreachable(format!(
+                    "{detail} (is this the gRPC address, the one of --grpc-listen?)"
+                )),
                 other => other,
             })?;
         Self::check_build(control_plane.as_ref()).await?;
         Ok(control_plane)
     }
 
+    /// Whether a connection error is what an HTTP/1 or plain server
+    /// answers to a gRPC client: the address is not a gRPC one.
+    fn speaks_no_grpc(detail: &str) -> bool {
+        let detail = detail.to_lowercase();
+        [
+            "http2",
+            "http/2",
+            "h2 protocol",
+            "frame with invalid size",
+            "invalid http",
+        ]
+        .iter()
+        .any(|sign| detail.contains(sign))
+    }
+
     /// Fails fast on a control plane that is not at its installed build:
-    /// one that predates GET /v1/build, or one that keeps running after a
+    /// one that predates the GetBuild call, or one that keeps running after a
     /// newer binary was installed. Either serves old code under a newer
     /// panel and install, so nothing it says can be trusted.
     async fn check_build(control_plane: &dyn ControlPlane) -> Result<(), PanelError> {
         let status = control_plane.build().await.map_err(|error| match error {
             PanelError::NotFound(_) => PanelError::Config(
-                "the control plane is not at the installed version: it has no /v1/build, so it runs a binary \
-                 from before that route. Restart it (systemctl --user restart axlr-bots)"
+                "the control plane is not at the installed version: it has no GetBuild call, so it runs a binary \
+                 from before it. Restart it (systemctl --user restart axlr-bots)"
                     .into(),
             ),
             other => other,
@@ -154,7 +172,7 @@ mod tests {
         control_plane.fail_with(Some(PanelError::NotFound("404 page not found".into())));
         let older = run(connect.save(config("https://127.0.0.1:7879/"))).err();
         assert!(
-            matches!(older, Some(PanelError::Config(ref m)) if m.contains("/v1/overview")),
+            matches!(older, Some(PanelError::Config(ref m)) if m.contains("--grpc-listen")),
             "{older:?}"
         );
         control_plane.fail_with(Some(PanelError::Unauthorized("bad token".into())));
@@ -209,7 +227,7 @@ mod tests {
         control_plane.set_build(None);
         let older = run(connect.save(config("https://127.0.0.1:7879"))).err();
         assert!(
-            matches!(&older, Some(PanelError::Config(text)) if text.contains("no /v1/build") && text.contains("systemctl --user restart axlr-bots")),
+            matches!(&older, Some(PanelError::Config(text)) if text.contains("no GetBuild call") && text.contains("systemctl --user restart axlr-bots")),
             "{older:?}"
         );
 
