@@ -88,7 +88,9 @@ fn box_alone<'a>(words: &str, alone: impl Into<El<'a>>) -> Rectangle {
 
 fn messages_of_click(app: &App, label: &str) -> Vec<Message> {
     let _turn = turn();
-    let mut ui = simulator(view::view(app));
+    // As wide as the panel opens and tall enough for the whole page: the
+    // page scrolls, and a click is about the control, not the fold.
+    let mut ui = Simulator::with_size(panel_settings(), Size::new(WINDOW.width, 2000.0), view::view(app));
     ui.click(label)
         .unwrap_or_else(|e| panic!("cannot click {label}: {e:?}"));
     ui.into_messages().collect()
