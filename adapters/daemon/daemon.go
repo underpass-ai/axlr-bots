@@ -161,17 +161,21 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	grpcOptions = append(grpcOptions, grpcapi.WithActivity(grpcapi.NewActivityService(deps, local.ActivityChanges(), 0)))
 	grpcServer := grpcapi.New(local, grpcOptions...)
 	go func() { served <- grpcServer.ServeSocket(ctx, options.grpcSocketPath()) }()
+	// Each TLS listener gets its own copy of the configuration, made here
+	// before any of them starts: net/http writes its protocols into the
+	// configuration it is given, which races with another listener reading it.
+	grpcTLS, nodeTLS, apiTLS := options.TLS.Clone(), options.TLS.Clone(), options.TLS.Clone()
 	if grpcListener != nil {
 		servers++
-		go func() { served <- grpcServer.ServeTLS(ctx, grpcListener, options.TLS, options.APIToken) }()
+		go func() { served <- grpcServer.ServeTLS(ctx, grpcListener, grpcTLS, options.APIToken) }()
 	}
 	if tlsListener != nil {
 		servers++
-		go func() { served <- server.ServeTLS(ctx, tlsListener, options.TLS) }()
+		go func() { served <- server.ServeTLS(ctx, tlsListener, nodeTLS) }()
 	}
 	if apiListener != nil {
 		servers++
-		go func() { served <- server.ServeAPI(ctx, apiListener, options.TLS, options.APIToken) }()
+		go func() { served <- server.ServeAPI(ctx, apiListener, apiTLS, options.APIToken) }()
 	}
 	// stopped waits for every server to end; the socket's cleanup must
 	// have run before Run returns, or a daemon started next on the same
