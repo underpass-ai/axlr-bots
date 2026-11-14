@@ -47,6 +47,7 @@ AXLR Bots runs persistent, governed bots on your own hosts: one control plane, N
 | Why each bot has its own KMP store under the node's state, and how the node names it to AXLR | [Memory store per bot (ADR)](architecture/memory-store-per-bot.md) |
 | Why the bots of a team share one KMP store, what each may write in it, and which team is a bot's | [Memory store per team (ADR)](architecture/memory-store-per-team.md) |
 | How a push reaches a node: its own stream, or a NATS broker, and what a broker needs | [Bus port](architecture/bus-port.md) |
+| Copy a team's events to NATS and let an application publish on a team through it | [ADR](architecture/topics-on-nats.md) |
 | How a running task's progress gets from the run to the panel without slowing the run | [Live progress](architecture/live-progress.md) |
 | How each ended task becomes an OpenTelemetry trace (task, executions, tool calls, approval wait), built from stored timestamps, and how to send it to Tempo | [Tracing](architecture/tracing.md) |
 | Where the whole, uncut transcript of each execution is kept, and how to read it | [Transcripts](architecture/transcripts.md) |
