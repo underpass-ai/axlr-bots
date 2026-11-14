@@ -41,8 +41,10 @@ bot ─emit─▶ control plane ─record─▶ deliveries in the team (as today
 | Stream | `AXLR_TOPIC`, defined by the control plane | `AXLR_PUBLISH`, defined by the control plane |
 | Who publishes | only the control plane | an application |
 | Who reads | an application, with a durable consumer of its own | only the control plane (consumer `control-plane`) |
-| `Nats-Msg-Id` | the event's id | the publication's idempotency key (1 to 128 characters), required |
+| `Nats-Msg-Id` | `<event id>@<team>`: JetStream drops a repeated id across the whole stream, so an event told to two teams needs one id per team | the publication's idempotency key (1 to 128 characters), required, unique across all the application's teams (the window covers the whole stream) |
 | Retention | 24 hours, 1 GB at most | 24 hours |
+
+An inbound publication carries no team in its envelope: the control plane matches the subject's tokens against the existing teams, and no match or two matches is a refusal, as is a `name` other than the subject's.
 
 The tenant and the team are one token each: `.`, `*`, `>` and spaces are written `_`. Two names that differ only there share a subject, so a reader checks the envelope's `team` and `tenant`, which are exact. The event's name keeps its dots as tokens, so a NATS filter `axlr.topic.t.team-a.order.>` is the platform's `order.**`.
 
@@ -90,7 +92,7 @@ The schemas will be in the spec `docs/reference/topics.asyncapi.json` (PR 2 belo
 |---|---|
 | control plane | `axlr-bots serve --topics nats --nats-url … [--nats-creds file] [--nats-cert file --nats-key file] [--nats-ca file]` (`AXLR_BOTS_TOPICS`). The broker flags are the ones of `--bus nats`; the two are independent |
 | broker, control plane's user | publish `axlr.topic.>` and `$JS.API.>`, ack `$JS.ACK.AXLR_PUBLISH.>` |
-| broker, an application's user | publish `axlr.publish.>`; its own consumer on `AXLR_TOPIC` (`$JS.API.CONSUMER.*.AXLR_TOPIC.<its name>`, `$JS.ACK.AXLR_TOPIC.<its name>.>`) |
+| broker, an application's user | publish `axlr.publish.>`; its own consumer on `AXLR_TOPIC`: `$JS.API.CONSUMER.*.AXLR_TOPIC.<its name>`, `$JS.API.CONSUMER.MSG.NEXT.AXLR_TOPIC.<its name>` (two tokens, not covered by `*`), `$JS.ACK.AXLR_TOPIC.<its name>.>`, and with a single filter `$JS.API.CONSUMER.CREATE.AXLR_TOPIC.<its name>.<filter>`. The full list is in [bus port](bus-port.md) |
 
 ## Order of work
 
