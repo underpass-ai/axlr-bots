@@ -1,6 +1,6 @@
 # The bus port
 
-How the control plane's pushes reach the nodes, and so how one bot's event reaches another bot's running task fast. A port in the application layer, two adapters, and nothing of either in the domain or the use cases.
+How the control plane's pushes reach the nodes, and so how one bot's event reaches another bot's running task fast. A team's topics have their own subjects on the same broker: [topics on NATS](topics-on-nats.md). A port in the application layer, two adapters, and nothing of either in the domain or the use cases.
 
 ```
 bot A ──emit──▶ control plane ──record──▶ events.jsonl
