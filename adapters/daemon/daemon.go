@@ -49,6 +49,13 @@ func Run(ctx context.Context, deps application.Dependencies, options Options) er
 	}
 	defer release()
 	logger := levelLogger{info: options.log(), errors: options.errorLog()}
+	deps, stopTracing, err := withTracing(ctx, deps, options, logger)
+	if err != nil {
+		return err
+	}
+	// Last out: the traces under way are built and the exporter flushed
+	// after every loop that publishes has stopped.
+	defer stopTracing()
 	// With a metrics address, the event publisher is decorated before the
 	// service takes the dependencies, so every event any use case
 	// publishes feeds the task metrics.

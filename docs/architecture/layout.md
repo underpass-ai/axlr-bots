@@ -22,6 +22,7 @@ One Go module, hexagonal: the domain depends on nothing, the application holds t
 | `adapters/bus/bustest` | The bus port's contract, run against the direct stream and against NATS |
 | `adapters/nodeagent` | The node agent's loop: register, heartbeat, poll, run, renew, report; the queue and sender of a run's progress ([live progress](live-progress.md)); one working slot, lent by an execution that waits on a child; the delegation tool's MCP server (newline JSON-RPC over `<node-state>/run/<execution>.sock`) and its calls to the control plane |
 | `adapters/systemd` | Renders and installs the two units and the environment file (or the node's alone, for a host that joins a control plane elsewhere); removes them |
+| `adapters/tracing` | The decorator of the event publisher that turns an ended task into an OpenTelemetry trace from what is stored, and its OTLP/HTTP exporter ([tracing](tracing.md)) |
 | `adapters/system` | Wall clock, random ids |
 | `compose` | The composition root the commands share |
 | `cmd/axlr-bots`, `cmd/axlr-node` | The two commands; `axlr-node`'s first start from a token file, its `check`, its `mcp-relay`, the stdio end of the delegation tool, and its `codex-proxy` |

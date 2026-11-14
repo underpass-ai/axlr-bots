@@ -1,0 +1,32 @@
+{{- if .Values.tempo.enabled }}
+# Tempo, monolithic: every component in one process, blocks on local disk.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "axlr-bots-control-plane.tempoName" . }}
+  labels:
+    {{- include "axlr-bots-control-plane.tempoLabels" . | nindent 4 }}
+data:
+  tempo.yaml: |
+    stream_over_http_enabled: true
+    server:
+      http_listen_port: 3200
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            http:
+              endpoint: 0.0.0.0:4318
+    ingester:
+      max_block_duration: 5m
+    compactor:
+      compaction:
+        block_retention: {{ .Values.tempo.retention }}
+    storage:
+      trace:
+        backend: local
+        wal:
+          path: /var/tempo/wal
+        local:
+          path: /var/tempo/blocks
+{{- end }}

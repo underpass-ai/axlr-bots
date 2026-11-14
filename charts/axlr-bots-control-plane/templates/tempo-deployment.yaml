@@ -1,0 +1,81 @@
+{{- if .Values.tempo.enabled }}
+# One pod, never two: local blocks belong to one process, so Recreate
+# stops the old pod before the new one starts.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "axlr-bots-control-plane.tempoName" . }}
+  labels:
+    {{- include "axlr-bots-control-plane.tempoLabels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "axlr-bots-control-plane.tempoSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "axlr-bots-control-plane.tempoSelectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: tracing
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/tempo-configmap.yaml") . | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: tempo
+          image: {{ printf "%s:%s" .Values.tempo.image.repository .Values.tempo.image.tag }}
+          imagePullPolicy: {{ .Values.tempo.image.pullPolicy }}
+          args: ["-config.file=/etc/tempo/tempo.yaml"]
+          ports:
+            - {name: otlp-http, containerPort: 4318, protocol: TCP}
+            - {name: http, containerPort: 3200, protocol: TCP}
+          readinessProbe:
+            httpGet: {path: /ready, port: http}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.tempo.resources | nindent 12 }}
+          volumeMounts:
+            - {name: config, mountPath: /etc/tempo, readOnly: true}
+            - {name: data, mountPath: /var/tempo}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "axlr-bots-control-plane.tempoName" . }}
+        - name: data
+          {{- if .Values.tempo.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (include "axlr-bots-control-plane.tempoName" .) .Values.tempo.persistence.existingClaim }}
+          {{- else }}
+          emptyDir:
+            sizeLimit: {{ .Values.tempo.emptyDirSize }}
+          {{- end }}
+{{- end }}

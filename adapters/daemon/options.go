@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/underpass-ai/axlr-bots/adapters/tracing"
 	"github.com/underpass-ai/axlr-bots/application"
 )
 
@@ -66,6 +67,13 @@ type Options struct {
 	// MetricsListener is an already bound listener for the metrics
 	// address, in place of MetricsListenAddr.
 	MetricsListener net.Listener
+	// OTLPEndpoint, when set, exports one OpenTelemetry trace per ended
+	// task to this OTLP/HTTP endpoint (http://tempo:4318); empty creates
+	// no exporter and records nothing (docs/architecture/tracing.md).
+	OTLPEndpoint string
+	// TraceExporter is a span exporter to use in place of the OTLP one
+	// (a test's in-memory exporter); setting it turns tracing on.
+	TraceExporter tracing.SpanExporter
 	// Tick is how often the worker looks for Pending tasks.
 	Tick time.Duration
 	// ReconcileEvery is how often tasks a dead run left Running are failed.

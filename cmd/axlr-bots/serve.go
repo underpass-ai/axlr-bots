@@ -60,6 +60,7 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 	grpcListen := flags.String("grpc-listen", os.Getenv("AXLR_BOTS_GRPC_LISTEN"), "a TLS address to serve the operator API over gRPC on, such as 127.0.0.1:7880 (also AXLR_BOTS_GRPC_LISTEN); needs ca init and takes the same bearer token as --api-listen; the same API is always on the gRPC socket")
 	grpcSocket := flags.String("grpc-socket", os.Getenv("AXLR_BOTS_GRPC_SOCKET"), "the Unix socket to serve the operator API over gRPC on, with no token (also AXLR_BOTS_GRPC_SOCKET; default <state>/axlr-bots-grpc.sock)")
 	metricsListen := flags.String("metrics-listen", os.Getenv("AXLR_BOTS_METRICS_LISTEN"), "a plain-HTTP address to serve Prometheus on, GET /metrics and GET /healthz alone, such as 0.0.0.0:9464 (also AXLR_BOTS_METRICS_LISTEN; empty: none); counts, no secret: keep it inside the cluster")
+	otlpEndpoint := flags.String("otlp-endpoint", os.Getenv("AXLR_BOTS_OTLP_ENDPOINT"), "an OTLP/HTTP endpoint to send one trace per ended task to, such as http://tempo:4318 (also AXLR_BOTS_OTLP_ENDPOINT; empty: nothing is exported)")
 	logFormat := logFormatFlag(flags)
 	apiTokenFile := flags.String("api-token-file", "", "the file with the operator bearer token (default <state>/api.token; generated when missing)")
 	apiURL := flags.String("api-url", os.Getenv("AXLR_BOTS_API_URL"), "the operator API's base URL that approval notifications link to (also AXLR_BOTS_API_URL; default https://<api-listen>)")
@@ -151,6 +152,7 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 	}
 	options.Log, options.ErrorLog = loggers.Info, loggers.Error
 	options.MetricsListenAddr = *metricsListen
+	options.OTLPEndpoint = *otlpEndpoint
 	if *bus == "nats" {
 		publisher, err := natsbus.NewPublisher(natsbus.Config{URL: *natsURL, Credentials: *natsCreds, CertFile: *natsCert, KeyFile: *natsKey, CAFile: *natsCA, Outbox: filepath.Join(stateDir, "outbox", "nats"), Name: "axlr-bots", Log: options.Log})
 		if err != nil {

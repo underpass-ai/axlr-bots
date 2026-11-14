@@ -116,6 +116,37 @@ metrics:
     interval: 30s
     scrapeTimeout: 10s
 
+# Traces (docs/architecture/tracing.md): one OpenTelemetry trace per ended
+# task, sent over OTLP/HTTP (port 4318 of a collector or Tempo). Empty
+# sends nothing, and no exporter is created. With tempo.enabled and no
+# endpoint here, the endpoint is the Tempo this chart runs.
+tracing:
+  otlpEndpoint: ""
+
+# An optional single-pod Tempo (monolithic mode) for the traces: a
+# Deployment, a Service and a ConfigMap beside the control plane, on no
+# Ingress. Off by default: most clusters have a collector already; point
+# tracing.otlpEndpoint at it instead. Traces are kept in an emptyDir
+# (gone with the pod) unless persistence.enabled gives them a claim.
+tempo:
+  enabled: false
+  image:
+    repository: grafana/tempo
+    tag: "2.8.2"
+    pullPolicy: IfNotPresent
+  # How long Tempo keeps a block of traces.
+  retention: 168h
+  persistence:
+    enabled: false
+    size: 5Gi
+    storageClassName: ""
+    existingClaim: ""
+  # The emptyDir's size limit when there is no claim.
+  emptyDirSize: 2Gi
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: "1", memory: 1Gi}
+
 # The Grafana dashboard as a ConfigMap for Grafana's sidecar: the label
 # it watches, and the namespace to put it in when the sidecar does not
 # look in every namespace (empty: the release's).

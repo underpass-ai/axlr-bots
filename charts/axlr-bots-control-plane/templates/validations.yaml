@@ -9,3 +9,5 @@
 {{- if has (int .Values.metrics.port) (list 7878 7879) }}{{ fail "metrics.port must not be 7878 or 7879: those are the node protocol and the operator API" }}{{ end -}}
 {{- if and .Values.grpc.enabled (has (int .Values.grpc.port) (list 7878 7879 (int .Values.metrics.port))) }}{{ fail "grpc.port must not be 7878, 7879 or metrics.port" }}{{ end -}}
 {{- if not (has (toString .Values.logFormat) (list "text" "json")) }}{{ fail "logFormat is text or json" }}{{ end -}}
+{{- with .Values.tracing.otlpEndpoint }}{{ if not (regexMatch "^https?://[^/ ]+(/[^ ]*)?$" .) }}{{ fail "tracing.otlpEndpoint must be http://host:port or https://host:port (OTLP/HTTP; the port is 4318 on a collector or Tempo)" }}{{ end }}{{ end -}}
+{{- if and .Values.tempo.enabled .Values.tempo.persistence.enabled (not .Values.tempo.persistence.size) (not .Values.tempo.persistence.existingClaim) }}{{ fail "tempo.persistence needs a size or an existingClaim" }}{{ end -}}

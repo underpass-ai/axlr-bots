@@ -29,6 +29,8 @@ No Ingress: the node protocol authenticates nodes by their client certificate, s
 | `persistence.existingClaim` | a claim you filled with an existing state |
 | `grpc.enabled`, `grpc.port` | the operator API over gRPC (TLS, bearer token; [reference](../../docs/reference/operator-grpc.md)) on 7880, in the pod and on the Service as port `grpc` (`AXLR_BOTS_GRPC_LISTEN`) |
 | `metrics.enabled`, `metrics.podMonitor.*` | `/metrics` and `/healthz` in plain HTTP on 9464: the overview's counts (`axlr_bots_tasks`, `axlr_bots_nodes`, cost today…), the requests per listener and route, Go and process. The PodMonitor's `labels` must match the Prometheus' `podMonitorSelector` |
+| `tracing.otlpEndpoint` | an OTLP/HTTP endpoint (`http://host:4318`) the control plane sends one trace per ended task to; empty sends nothing |
+| `tempo.enabled`, `tempo.*` | off by default; a single-pod Tempo (Deployment, Service, ConfigMap, pinned image) the traces go to when `tracing.otlpEndpoint` is empty; an emptyDir, or a claim with `tempo.persistence.enabled` |
 | `logFormat` | `text`, or `json` for Loki: level, `component`, and, when a line is about one, `bot`, `node`, `task`, `execution` and `correlationId` as fields |
 | `grafanaDashboard.*` | the dashboard (`files/grafana-dashboard.json`); `namespace` when the sidecar does not look in every namespace |
 | `extraContainers`, `extraVolumes`, `service.extraPorts` | input adapters in the same pod, reaching the daemon through `/var/lib/axlr-bots/axlr-bots.sock` (volume `state`) |
