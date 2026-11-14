@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/underpass-ai/axlr-bots/adapters/grpcclient"
 	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 )
 
@@ -29,7 +30,8 @@ func TestServeRunsWhatTheCommandsSendOverTheSocket(t *testing.T) {
 		done <- run([]string{"--state", state, "--axlr-bin", fake, "--socket", socket, "serve", "--tick", "20ms", "--reconcile-every", "50ms"}, &serveOut, &serveErr)
 	}()
 	deadline := time.Now().Add(5 * time.Second)
-	for !unixapi.Reachable(t.Context(), socket) {
+	grpcSocket := filepath.Join(state, grpcSocketFileName)
+	for !unixapi.Reachable(t.Context(), socket) || !grpcclient.Reachable(t.Context(), grpcSocket) {
 		if time.Now().After(deadline) {
 			t.Fatalf("daemon not reachable: %s", serveErr.String())
 		}
@@ -118,7 +120,7 @@ func TestServeRunsWhatTheCommandsSendOverTheSocket(t *testing.T) {
 	// While serve holds the state nothing else writes it: a second serve
 	// (on another socket), task reconcile, ca init and a command that does
 	// not reach the daemon are refused with the reason, and leave nothing.
-	direct := cli{t: t, state: state, axlr: "/nonexistent/axlr-tui", socket: filepath.Join(t.TempDir(), "none.sock")}
+	direct := cli{t: t, state: state, axlr: "/nonexistent/axlr-tui", socket: filepath.Join(t.TempDir(), "none.sock"), grpcSocket: filepath.Join(t.TempDir(), "none-grpc.sock")}
 	for _, args := range [][]string{{"serve"}, {"task", "reconcile"}, {"ca", "init"}, {"bot", "list"}, {"overview"}} {
 		code, _, errText := direct.run(args...)
 		if code != exitError || !strings.Contains(errText, "the state at "+state+" is in use by another process") || !strings.Contains(errText, "use the socket or stop it") {

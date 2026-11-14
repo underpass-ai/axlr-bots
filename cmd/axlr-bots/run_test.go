@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/underpass-ai/axlr-bots/adapters/filestore"
+	"github.com/underpass-ai/axlr-bots/adapters/grpcclient"
+	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/domain"
 )
 
@@ -58,6 +60,9 @@ type cli struct {
 	state  string
 	axlr   string
 	socket string
+	// grpcSocket, when set, is --grpc-socket; otherwise the commands look
+	// for the gRPC socket serve makes under the state directory.
+	grpcSocket string
 }
 
 func (c cli) run(args ...string) (int, string, string) {
@@ -66,6 +71,9 @@ func (c cli) run(args ...string) (int, string, string) {
 	global := []string{"--state", c.state, "--axlr-bin", c.axlr, "--actor", "test:cli"}
 	if c.socket != "" {
 		global = append(global, "--socket", c.socket)
+	}
+	if c.grpcSocket != "" {
+		global = append(global, "--grpc-socket", c.grpcSocket)
 	}
 	code := run(append(global, args...), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
@@ -554,4 +562,10 @@ func TestTaskReconcileFailsWhatACrashLeftRunning(t *testing.T) {
 	if skipped, _ := json.Marshal(out["skipped"]); code != exitOK || string(skipped) != `["task-orphan"]` {
 		t.Errorf("orphan: %d %v", code, out)
 	}
+}
+
+// daemonAnswers reports whether a serve over state answers on both its
+// HTTP socket and its gRPC socket.
+func daemonAnswers(ctx context.Context, state, socket string) bool {
+	return unixapi.Reachable(ctx, socket) && grpcclient.Reachable(ctx, filepath.Join(state, grpcSocketFileName))
 }

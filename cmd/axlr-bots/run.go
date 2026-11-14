@@ -12,8 +12,12 @@ import (
 	"github.com/underpass-ai/axlr-bots/application"
 )
 
-// socketFileName is the daemon's socket under the state directory.
+// socketFileName is the daemon's HTTP socket under the state directory.
 const socketFileName = "axlr-bots.sock"
+
+// grpcSocketFileName is the daemon's gRPC socket under the state
+// directory: the one the commands dial by default.
+const grpcSocketFileName = "axlr-bots-grpc.sock"
 
 // run parses the global flags, wires the application and dispatches the
 // subcommand. It returns the exit code.
@@ -24,8 +28,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	axlrBin := flags.String("axlr-bin", defaultAXLRBinary(), "the axlr-tui to run tasks with (also AXLR_TUI)")
 	actor := flags.String("actor", defaultActor(), "who is acting, for the audit log; task approve, deny and decide send it as who decides (a bot's approvers name it exactly)")
 	socket := flags.String("socket", defaultSocket(), "the daemon's socket (also AXLR_BOTS_SOCKET; default <state>/axlr-bots.sock; empty: never use a daemon)")
+	grpcSocket := flags.String("grpc-socket", os.Getenv("AXLR_BOTS_GRPC_SOCKET"), "the daemon's gRPC socket (also AXLR_BOTS_GRPC_SOCKET; default <state>/"+grpcSocketFileName+")")
+	transport := flags.String("transport", defaultTransport(), "how commands talk to the control plane: grpc (the default) or rest, the HTTP API that is going away (also AXLR_BOTS_TRANSPORT)")
 	var remote remoteControl
-	flags.StringVar(&remote.URL, "control", os.Getenv("AXLR_BOTS_CONTROL"), "a control plane on another host: its operator address, https://host:7879, used in place of the socket (also AXLR_BOTS_CONTROL)")
+	flags.StringVar(&remote.URL, "control", os.Getenv("AXLR_BOTS_CONTROL"), "a control plane on another host: its gRPC operator address, host:7880 (with --transport rest, its HTTPS operator address https://host:7879), used in place of the socket (also AXLR_BOTS_CONTROL)")
 	flags.StringVar(&remote.TokenFile, "token-file", os.Getenv("AXLR_BOTS_TOKEN_FILE"), "with --control, the file holding the operator token (also AXLR_BOTS_TOKEN_FILE)")
 	flags.StringVar(&remote.CAFile, "ca-file", os.Getenv("AXLR_BOTS_CA_FILE"), "with --control, the CA the control plane's certificate is checked against, the fleet CA from ca show (also AXLR_BOTS_CA_FILE; default the system's)")
 	flags.Usage = func() { printUsage(stderr) }
@@ -51,6 +57,7 @@ func run(args []string, stdout, stderr io.Writer) int {
   task get <task-id>
   task list [--bot <id>] [--status <s>] [--since <time>] [--limit 100]
   task events <task-id> [--limit 100]
+  task activity <task-id> [--json] [--depth N] [--watch]
   task executions <task-id>
   task cancel <task-id>
   task report <task-id> [--path]
@@ -62,7 +69,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if socketPath == "" && !flagSet(flags, "socket") && os.Getenv("AXLR_BOTS_SOCKET") == "" {
 		socketPath = filepath.Join(*stateDir, socketFileName)
 	}
-	if err := remote.validate(); err != nil {
+	if err := validateTransport(*transport); err != nil {
+		fmt.Fprintln(stderr, "axlr-bots:", err)
+		return exitUsage
+	}
+	link := operatorLink{Transport: *transport, Socket: socketPath, GRPCSocket: grpcSocketPath(*grpcSocket, flagSet(flags, "grpc-socket"), flagSet(flags, "socket"), socketPath, *stateDir), Remote: remote}
+	if err := remote.validate(*transport); err != nil {
 		fmt.Fprintln(stderr, "axlr-bots:", err)
 		return exitUsage
 	}
@@ -73,7 +85,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "uninstall":
 		return uninstall(rest[1:], stdout, stderr)
 	case "health":
-		return health(ctx, socketPath, remote, rest[1:], stdout, stderr)
+		return health(ctx, link, rest[1:], stdout, stderr)
 	case "version":
 		return version(rest[1:], stdout, stderr)
 	}
@@ -93,7 +105,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return serve(ctx, app, *stateDir, socketPath, rest[1:], stdout, stderr)
 	}
 	if rest[0] == "overview" {
-		service, release, err := newService(ctx, app, *stateDir, socketPath, remote, nil)
+		service, release, err := newService(ctx, app, *stateDir, link, nil)
 		if err != nil {
 			return fail(stderr, err)
 		}
@@ -115,7 +127,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "ca issue-client":
 		return caIssueClient(*stateDir, rest, stdout, stderr)
 	}
-	service, release, err := newService(ctx, app, *stateDir, socketPath, remote, nil)
+	service, release, err := newService(ctx, app, *stateDir, link, nil)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -171,6 +183,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return taskEvents(ctx, service, rest, stdout, stderr)
 	case "task cancel":
 		return taskCancel(ctx, service, rest, stdout, stderr)
+	case "task activity":
+		return taskActivity(ctx, service, rest, stdout, stderr)
 	case "task executions":
 		return taskExecutions(ctx, service, rest, stdout, stderr)
 	case "trigger fire":
@@ -256,9 +270,11 @@ func defaultActor() string {
 
 func printUsage(w io.Writer) {
 	fmt.Fprint(w, `usage: axlr-bots [--state <dir>] [--axlr-bin <path>] [--socket <path>] [--actor <name>] <command>
-       axlr-bots --control https://host:7879 --token-file <path> [--ca-file <pem>] <command>
+       axlr-bots --control host:7880 --token-file <path> [--ca-file <pem>] <command>
                                       the same commands against a control plane on another
-                                      host, through its operator address
+                                      host, through its gRPC operator address (TLS, the fleet
+                                      CA, the operator token); --transport rest uses the
+                                      HTTP API instead
 
   serve [--listen <addr>] [--server-names a,b] [--api-listen <addr>] [--grpc-listen <addr>] [--grpc-socket <path>] [--api-token-file <path>]
         [--bus direct|nats] [--nats-url <url>] [--nats-creds <file>]
@@ -332,6 +348,11 @@ func printUsage(w io.Writer) {
   task list [--bot <id>] [--status <s>] [--since <time>] [--limit 100]
                                       the tasks across bots, newest first
   task events <task-id> [--limit 100] the task's timeline, oldest first
+  task activity <task-id> [--json] [--depth N] [--watch]
+                                      everything under a task: the tasks it delegated, each
+                                      execution with duration and cost, the tools with their
+                                      state, what was completed from the transcript; --watch
+                                      follows it live (needs the daemon, gRPC)
   task executions <task-id>           the task's executions, oldest first
   task cancel <task-id>               stop a task that has not finished
   task report <task-id> [--path]      print the task's report (or only where it is)

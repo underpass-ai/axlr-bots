@@ -152,7 +152,7 @@ func TestServeWithTheOperatorAddressFiresWebhooksAndTimers(t *testing.T) {
 		done <- run([]string{"--state", state, "--axlr-bin", c.axlr, "--socket", socket, "serve", "--api-listen", "127.0.0.1:" + port, "--tick", "20ms", "--min-axlr-version", "0.20.0"}, &serveOut, &serveErr)
 	}()
 	deadline := time.Now().Add(5 * time.Second)
-	for !unixapi.Reachable(t.Context(), socket) {
+	for !daemonAnswers(t.Context(), state, socket) {
 		if time.Now().After(deadline) {
 			t.Fatalf("daemon not reachable: %s", serveErr.String())
 		}

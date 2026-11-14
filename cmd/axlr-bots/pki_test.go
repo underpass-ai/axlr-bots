@@ -61,7 +61,7 @@ func TestCAInitAndServeOverTLS(t *testing.T) {
 		done <- run([]string{"--state", state, "--axlr-bin", c.axlr, "--socket", socket, "serve", "--listen", "127.0.0.1:" + port, "--server-names", "cp.example", "--tick", "20ms"}, &serveOut, &serveErr)
 	}()
 	deadline := time.Now().Add(5 * time.Second)
-	for !unixapi.Reachable(t.Context(), socket) {
+	for !daemonAnswers(t.Context(), state, socket) {
 		if time.Now().After(deadline) {
 			t.Fatalf("daemon not reachable: %s", serveErr.String())
 		}
