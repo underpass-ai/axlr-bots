@@ -39,6 +39,7 @@ RUN set -eu; \
 WORKDIR /src
 COPY go.mod go.sum ./
 COPY adapters ./adapters
+COPY api ./api
 COPY application ./application
 COPY cmd ./cmd
 COPY compose ./compose

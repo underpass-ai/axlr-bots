@@ -57,6 +57,8 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 	listen := flags.String("listen", os.Getenv("AXLR_BOTS_LISTEN"), "a TLS address to serve nodes on too, such as 127.0.0.1:7878 or 0.0.0.0:7878 (also AXLR_BOTS_LISTEN); needs ca init")
 	names := flags.String("server-names", os.Getenv("AXLR_BOTS_SERVER_NAMES"), "names and addresses nodes dial the control plane by, comma-separated, added to the host's own (also AXLR_BOTS_SERVER_NAMES)")
 	apiListen := flags.String("api-listen", os.Getenv("AXLR_BOTS_API_LISTEN"), "a TLS address to serve operators and webhook senders on, such as 127.0.0.1:7879 (also AXLR_BOTS_API_LISTEN); needs ca init")
+	grpcListen := flags.String("grpc-listen", os.Getenv("AXLR_BOTS_GRPC_LISTEN"), "a TLS address to serve the operator API over gRPC on, such as 127.0.0.1:7880 (also AXLR_BOTS_GRPC_LISTEN); needs ca init and takes the same bearer token as --api-listen; the same API is always on the gRPC socket")
+	grpcSocket := flags.String("grpc-socket", os.Getenv("AXLR_BOTS_GRPC_SOCKET"), "the Unix socket to serve the operator API over gRPC on, with no token (also AXLR_BOTS_GRPC_SOCKET; default <state>/axlr-bots-grpc.sock)")
 	metricsListen := flags.String("metrics-listen", os.Getenv("AXLR_BOTS_METRICS_LISTEN"), "a plain-HTTP address to serve Prometheus on, GET /metrics and GET /healthz alone, such as 0.0.0.0:9464 (also AXLR_BOTS_METRICS_LISTEN; empty: none); counts, no secret: keep it inside the cluster")
 	logFormat := logFormatFlag(flags)
 	apiTokenFile := flags.String("api-token-file", "", "the file with the operator bearer token (default <state>/api.token; generated when missing)")
@@ -103,28 +105,35 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 		app.MinimumAXLR = minimum
 	}
 	app = withModelProxy(app, stderr)
-	options := daemon.Options{StateDir: stateDir, SocketPath: socketPath, Tick: *tick, ReconcileEvery: *reconcileEvery, Grace: *grace}
-	if *listen != "" || *apiListen != "" {
+	grpcSocketPath := *grpcSocket
+	if grpcSocketPath == "" {
+		grpcSocketPath = filepath.Join(stateDir, "axlr-bots-grpc.sock")
+	}
+	options := daemon.Options{StateDir: stateDir, SocketPath: socketPath, GRPCSocketPath: grpcSocketPath, Tick: *tick, ReconcileEvery: *reconcileEvery, Grace: *grace}
+	if *listen != "" || *apiListen != "" || *grpcListen != "" {
 		authority, err := pki.Load(caDir(stateDir))
 		if err != nil {
-			fmt.Fprintln(stderr, "axlr-bots: serve --listen/--api-listen:", err)
+			fmt.Fprintln(stderr, "axlr-bots: serve --listen/--api-listen/--grpc-listen:", err)
 			return exitError
 		}
 		// The names are read at each handshake: a listener on every
 		// interface must also carry an address that arrives after start.
-		listenAddr, apiAddr, extra := *listen, *apiListen, *names
+		listenAddr, apiAddr, grpcAddr, extra := *listen, *apiListen, *grpcListen, *names
 		hosts := func() []string {
-			if listenAddr == "" {
-				return serverNames(apiAddr, extra)
-			}
-			names := serverNames(listenAddr, extra)
-			if apiAddr != "" {
-				names = append(names, serverNames(apiAddr, "")...)
+			var names []string
+			rest := extra
+			for _, addr := range []string{listenAddr, apiAddr, grpcAddr} {
+				if addr == "" {
+					continue
+				}
+				names = append(names, serverNames(addr, rest)...)
+				rest = ""
 			}
 			return names
 		}
 		options.ListenAddr = *listen
 		options.APIListenAddr = *apiListen
+		options.GRPCListenAddr = *grpcListen
 		options.TLS = pki.ServerTLSConfigFor(authority, hosts)
 	}
 	// A second serve on the state is refused here, before its bus sweeps
@@ -152,14 +161,14 @@ func serve(ctx context.Context, app application.Dependencies, stateDir, socketPa
 		options.Pushers = append(options.Pushers, publisher)
 		options.Log.Printf("daemon: bus nats at %s (outbox %s)", *natsURL, filepath.Join(stateDir, "outbox", "nats"))
 	}
-	if *apiListen != "" {
+	if *apiListen != "" || *grpcListen != "" {
 		path := *apiTokenFile
 		if path == "" {
 			path = filepath.Join(stateDir, apiTokenFileName)
 		}
 		token, created, err := loadOrCreateAPIToken(path)
 		if err != nil {
-			fmt.Fprintln(stderr, "axlr-bots: serve --api-listen: token file:", err)
+			fmt.Fprintln(stderr, "axlr-bots: serve --api-listen/--grpc-listen: token file:", err)
 			return exitError
 		}
 		options.APIToken = token

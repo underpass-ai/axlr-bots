@@ -8,7 +8,7 @@ The AXLR Bots control plane (`axlr-bots serve`) as one pod on Kubernetes: the no
 |---|---|
 | Deployment | one replica, `strategy: Recreate` (the state lock refuses a second `serve`), user 65532, read-only root, `/tmp` on a memory `emptyDir`, probes `axlr-bots health` |
 | PersistentVolumeClaim | `<release>-state`, kept on `helm uninstall` (`helm.sh/resource-policy: keep`); or `persistence.existingClaim` |
-| Service | ports `node` 7878 and `api` 7879, passed through (TLS ends in the pod); `LoadBalancer` for nodes outside the cluster |
+| Service | ports `node` 7878 and `api` 7879 (and `grpc` 7880 with `grpc.enabled`), passed through (TLS ends in the pod); `LoadBalancer` for nodes outside the cluster |
 | ServiceAccount | no API rights, no token mounted |
 | PodMonitor | with `metrics.podMonitor.enabled`: Prometheus reads `/metrics` on the pod's `metrics` port (9464), which is on no Service |
 | ConfigMap | with `grafanaDashboard.enabled`: the dashboard, for Grafana's sidecar (label `grafana_dashboard: "1"`) |
@@ -27,6 +27,7 @@ No Ingress: the node protocol authenticates nodes by their client certificate, s
 | `bus.kind`, `bus.nats.*` | `direct`, or `nats` with `tls://` and a Secret holding `tls.crt`, `tls.key` (from `axlr-bots ca issue-client --name control-plane`) and `ca.crt` (the broker's CA) |
 | `ca.init` | true for the first start of an empty state only: an init container runs `ca init`, which fails when a CA is there |
 | `persistence.existingClaim` | a claim you filled with an existing state |
+| `grpc.enabled`, `grpc.port` | the operator API over gRPC (TLS, bearer token; [reference](../../docs/reference/operator-grpc.md)) on 7880, in the pod and on the Service as port `grpc` (`AXLR_BOTS_GRPC_LISTEN`) |
 | `metrics.enabled`, `metrics.podMonitor.*` | `/metrics` and `/healthz` in plain HTTP on 9464: the overview's counts (`axlr_bots_tasks`, `axlr_bots_nodes`, cost today…), the requests per listener and route, Go and process. The PodMonitor's `labels` must match the Prometheus' `podMonitorSelector` |
 | `logFormat` | `text`, or `json` for Loki: level, `component`, and, when a line is about one, `bot`, `node`, `task`, `execution` and `correlationId` as fields |
 | `grafanaDashboard.*` | the dashboard (`files/grafana-dashboard.json`); `namespace` when the sidecar does not look in every namespace |

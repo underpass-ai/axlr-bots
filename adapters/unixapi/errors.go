@@ -74,3 +74,10 @@ func fromWire(status int, response ErrorResponse) error {
 	}
 	return RemoteError{Kind: response.Kind, Message: response.Message}
 }
+
+// Classify answers the kind of an error and what goes with it, as the
+// operator APIs report it (the HTTP status is left to the HTTP adapter).
+func Classify(err error) ErrorResponse {
+	_, response := toWire(err)
+	return response
+}

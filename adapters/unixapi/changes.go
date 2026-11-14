@@ -213,3 +213,11 @@ func (p *pushers) push(ctx context.Context, node domain.NodeID, push application
 		}
 	}
 }
+
+// Changed answers the channel the next change the control plane records
+// closes: take it before reading the state a long poll or a watch looks
+// at, so a change while reading is not missed.
+func (l *Local) Changed() <-chan struct{} {
+	changed, _ := l.changes.next()
+	return changed
+}

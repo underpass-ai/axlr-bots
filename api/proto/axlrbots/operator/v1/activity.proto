@@ -143,8 +143,8 @@ message ProgressCut {
 }
 
 // ProgressItem is one thing a run did, as the node reported it; kinds are
-// tool_started, tool_ended, decision_required, delegation, text and
-// thinking.
+// tool.started, tool.ended, decision.required, delegation, text,
+// text.truncated, thinking and thinking.truncated.
 message ProgressItem {
   string kind = 1;
   google.protobuf.Timestamp at = 2;

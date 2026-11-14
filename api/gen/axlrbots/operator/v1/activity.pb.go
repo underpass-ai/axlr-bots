@@ -640,8 +640,8 @@ func (x *ProgressCut) GetCompletionBounded() bool {
 }
 
 // ProgressItem is one thing a run did, as the node reported it; kinds are
-// tool_started, tool_ended, decision_required, delegation, text and
-// thinking.
+// tool.started, tool.ended, decision.required, delegation, text,
+// text.truncated, thinking and thinking.truncated.
 type ProgressItem struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
