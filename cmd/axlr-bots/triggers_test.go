@@ -129,8 +129,8 @@ func TestTriggerAndTaskCommandsWithoutADaemon(t *testing.T) {
 }
 
 func TestServeWithTheOperatorAddressFiresWebhooksAndTimers(t *testing.T) {
-	state := t.TempDir()
-	socket := filepath.Join(t.TempDir(), "cp.sock")
+	state := shortDir(t)
+	socket := filepath.Join(shortDir(t), "cp.sock")
 	c := cli{t: t, state: state, axlr: fakeAXLR(t, "completed"), socket: ""}
 	var out, errText bytes.Buffer
 	if code := run([]string{"--state", state, "--socket", socket, "serve", "--api-listen", "127.0.0.1:0"}, &out, &errText); code != exitError || !strings.Contains(errText.String(), "ca init") {

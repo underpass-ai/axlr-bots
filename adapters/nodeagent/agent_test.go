@@ -73,14 +73,19 @@ func controlWith(t *testing.T, change func(*application.Dependencies)) *fixture 
 	if change != nil {
 		change(&deps)
 	}
-	socket := filepath.Join(dir, "cp.sock")
+	socket := filepath.Join(shortDir(t), "cp.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	served := make(chan error, 1)
 	go func() { served <- unixapi.NewServer(unixapi.NewLocal(deps)).Serve(ctx, socket) }()
 	deadline := time.Now().Add(5 * time.Second)
 	for !unixapi.Reachable(context.Background(), socket) {
+		select {
+		case err := <-served:
+			t.Fatalf("control plane stopped before it was reachable on %s: %v", socket, err)
+		default:
+		}
 		if time.Now().After(deadline) {
-			t.Fatal("control plane not reachable")
+			t.Fatalf("control plane not reachable on %s", socket)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

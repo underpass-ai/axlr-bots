@@ -24,14 +24,12 @@ func TestNodeRegistersRunsAndStops(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	socket := filepath.Join(dir, "cp.sock")
+	socket := filepath.Join(shortDir(t), "cp.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	served := make(chan error, 1)
 	go func() { served <- unixapi.NewServer(unixapi.NewLocal(deps)).Serve(ctx, socket) }()
 	defer func() { cancel(); <-served }()
-	for !unixapi.Reachable(context.Background(), socket) {
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitServing(t, socket, served)
 	bin, _, _ := fakeaxlr.Write(dir, fakeaxlr.Options{Scenario: "completed"})
 	// The host has OpenRouter's key, a Codex proxy listening and two local
 	// models in its AXLR settings: the node names them, and only them.
@@ -153,5 +151,40 @@ func TestParseMemoryTeams(t *testing.T) {
 	}
 	if _, err := parseMemoryTeams("ops,Not A Team"); err == nil || !strings.Contains(err.Error(), "--memory-teams") {
 		t.Fatalf("bad name: %v", err)
+	}
+}
+
+// shortDir is a directory for the Unix socket of a test's control
+// plane. A socket path holds at most 107 bytes on Linux, and
+// t.TempDir() spends them on $TMPDIR and the test's name; this one is
+// short whatever the test is called.
+func shortDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
+// waitServing waits until the control plane answers on the socket.
+// served carries what its servers returned: one that stopped before it
+// answered fails the test with its error, at once.
+func waitServing(t *testing.T, socket string, served chan error) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !unixapi.Reachable(context.Background(), socket) {
+		select {
+		case err := <-served:
+			// Back for whoever waits for the server to stop.
+			served <- err
+			t.Fatalf("control plane stopped before it was reachable on %s: %v", socket, err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("control plane not reachable on %s", socket)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

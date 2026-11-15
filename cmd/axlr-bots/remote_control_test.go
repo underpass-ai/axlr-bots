@@ -60,8 +60,8 @@ func freeAddress(t *testing.T) string {
 // address and drives it from "another host": a state directory of its
 // own that the commands never open, the token and the CA as files.
 func TestCommandsReachARemoteControlPlane(t *testing.T) {
-	state := t.TempDir()
-	socket := filepath.Join(t.TempDir(), "cp.sock")
+	state := shortDir(t)
+	socket := filepath.Join(shortDir(t), "cp.sock")
 	fake := fakeAXLR(t, "completed")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"--state", state, "ca", "init"}, &stdout, &stderr); code != exitOK {

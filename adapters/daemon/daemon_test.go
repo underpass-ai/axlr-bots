@@ -57,7 +57,22 @@ func newFixture(t *testing.T, scenario string) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &fixture{dir: dir, state: state, socket: filepath.Join(dir, "cp.sock"), deps: deps, logs: &syncBuffer{}}
+	return &fixture{dir: dir, state: state, socket: filepath.Join(socketDir(t), "cp.sock"), deps: deps, logs: &syncBuffer{}}
+}
+
+// socketDir is a directory for the Unix sockets of a test. A socket
+// path holds at most 107 bytes on Linux, and t.TempDir() spends them
+// on $TMPDIR and the test's name: under a long $TMPDIR the daemon's
+// sockets, the gRPC one beside the control one, did not bind. This
+// one is short whatever the test is called.
+func socketDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }
 
 // start runs the daemon with fast ticks and returns a stop function
@@ -79,18 +94,34 @@ func (f *fixture) startWith(t *testing.T, change func(*Options)) (*unixapi.Clien
 	go func() {
 		done <- Run(ctx, f.deps, options)
 	}()
-	deadline := time.Now().Add(5 * time.Second)
-	for !unixapi.Reachable(context.Background(), f.socket) {
-		if time.Now().After(deadline) {
-			t.Fatal("daemon not reachable")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	f.waitReachable(t, done)
 	return unixapi.NewClient(f.socket), func() {
 		cancel()
 		if err := <-done; err != nil {
 			t.Error(err)
 		}
+	}
+}
+
+// waitReachable waits until the daemon answers on its socket. done
+// carries what Run returned: a daemon that stopped before it served
+// fails the test with that error, at once, and one that never serves
+// fails it with what it logged.
+func (f *fixture) waitReachable(t *testing.T, done chan error) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !unixapi.Reachable(context.Background(), f.socket) {
+		select {
+		case err := <-done:
+			// Back for whoever waits for the daemon to stop.
+			done <- err
+			t.Fatalf("daemon stopped before it was reachable on %s: %v\nlogs:\n%s", f.socket, err, f.logs.String())
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("daemon not reachable on %s\nlogs:\n%s", f.socket, f.logs.String())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

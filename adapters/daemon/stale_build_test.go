@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/underpass-ai/axlr-bots/adapters/unixapi"
 	"github.com/underpass-ai/axlr-bots/application"
 	"github.com/underpass-ai/axlr-bots/domain"
 )
@@ -41,13 +40,7 @@ func TestDaemonStopsWhenANewerBinaryIsInstalled(t *testing.T) {
 	done := make(chan error, 1)
 	options := Options{StateDir: f.state, SocketPath: f.socket, Tick: 20 * time.Millisecond, BuildCheckEvery: 20 * time.Millisecond, Log: log.New(f.logs, "", 0)}
 	go func() { done <- Run(ctx, f.deps, options) }()
-	deadline := time.Now().Add(5 * time.Second)
-	for !unixapi.Reachable(context.Background(), f.socket) {
-		if time.Now().After(deadline) {
-			t.Fatal("daemon not reachable")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	f.waitReachable(t, done)
 	// The same build on disk keeps it serving through several checks.
 	time.Sleep(100 * time.Millisecond)
 	select {

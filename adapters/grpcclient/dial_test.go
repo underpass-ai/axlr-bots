@@ -105,7 +105,7 @@ func TestDialUnixTalksToTheDaemonSocketWithNoToken(t *testing.T) {
 	fake := newFake()
 	fake.answer(method("OverviewService", "GetBuild"), &operatorv1.GetBuildResponse{})
 	fake.answer(method("BotsService", "ListBots"), &operatorv1.ListBotsResponse{})
-	socket := filepath.Join(t.TempDir(), "cp-grpc.sock")
+	socket := filepath.Join(socketDir(t), "cp-grpc.sock")
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +136,7 @@ func TestReachableIsFalseWhenNothingListens(t *testing.T) {
 	if Reachable(t.Context(), filepath.Join(t.TempDir(), "none.sock")) {
 		t.Error("no daemon, not reachable")
 	}
-	dead := filepath.Join(t.TempDir(), "dead.sock")
+	dead := filepath.Join(socketDir(t), "dead.sock")
 	if listener, err := net.Listen("unix", dead); err == nil {
 		listener.Close()
 		_ = os.Remove(dead)
@@ -163,4 +163,18 @@ func TestADeadlineMakesTheProbeFail(t *testing.T) {
 	if err := h.client.Health(t.Context()); err == nil {
 		t.Error("an unavailable control plane does not answer")
 	}
+}
+
+// socketDir is a directory for the Unix sockets of a test. A socket
+// path holds at most 107 bytes on Linux, and t.TempDir() spends them
+// on $TMPDIR and the test's name; this one is short whatever the test
+// is called.
+func socketDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }

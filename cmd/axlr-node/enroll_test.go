@@ -34,7 +34,7 @@ func tlsControlPlane(t *testing.T) (*unixapi.Client, string, pki.Authority) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	socket := filepath.Join(dir, "cp.sock")
+	socket := filepath.Join(shortDir(t), "cp.sock")
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -45,9 +45,7 @@ func tlsControlPlane(t *testing.T) (*unixapi.Client, string, pki.Authority) {
 	go func() { served <- server.Serve(ctx, socket) }()
 	go func() { served <- server.ServeTLS(ctx, listener, pki.ServerTLSConfig(ca, []string{"127.0.0.1"})) }()
 	t.Cleanup(func() { cancel(); <-served; <-served })
-	for !unixapi.Reachable(context.Background(), socket) {
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitServing(t, socket, served)
 	return unixapi.NewClient(socket), "https://" + listener.Addr().String(), ca
 }
 

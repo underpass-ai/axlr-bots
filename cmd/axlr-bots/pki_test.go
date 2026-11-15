@@ -22,8 +22,8 @@ import (
 )
 
 func TestCAInitAndServeOverTLS(t *testing.T) {
-	state := t.TempDir()
-	socket := filepath.Join(t.TempDir(), "cp.sock")
+	state := shortDir(t)
+	socket := filepath.Join(shortDir(t), "cp.sock")
 	c := cli{t: t, state: state, axlr: "/nonexistent/axlr-tui", socket: ""}
 	// serve --listen needs the CA.
 	var out, errText bytes.Buffer
