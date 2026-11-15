@@ -213,8 +213,7 @@ func (t *Topics) pause(d time.Duration) bool {
 	}
 }
 
-// connectDefining opens the connection and creates or updates the
-// streams.
+// connectDefining opens the connection and defines the streams.
 func connectDefining(cfg Config, streams ...jetstream.StreamConfig) (*natsio.Conn, jetstream.JetStream, error) {
 	conn, js, err := connectStream(cfg, streams[0], true)
 	if err != nil {
@@ -223,7 +222,7 @@ func connectDefining(cfg Config, streams ...jetstream.StreamConfig) (*natsio.Con
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	for _, stream := range streams[1:] {
-		if _, err := js.CreateOrUpdateStream(ctx, stream); err != nil {
+		if err := defineStream(ctx, js, stream); err != nil {
 			conn.Close()
 			return nil, nil, err
 		}
