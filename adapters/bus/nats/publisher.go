@@ -306,7 +306,7 @@ func connectStream(cfg Config, stream jetstream.StreamConfig, define bool) (*nat
 			}
 		}
 	}
-	if _, err := js.CreateOrUpdateStream(ctx, stream); err != nil {
+	if err := defineStream(ctx, js, stream); err != nil {
 		conn.Close()
 		return nil, nil, err
 	}
