@@ -21,8 +21,8 @@ func sreDefinitionFile(t *testing.T) string {
 // the serve command, drives it with the other commands over its socket
 // and stops it with SIGINT, as systemd would with SIGTERM.
 func TestServeRunsWhatTheCommandsSendOverTheSocket(t *testing.T) {
-	state := t.TempDir()
-	socket := filepath.Join(t.TempDir(), "cp.sock")
+	state := shortDir(t)
+	socket := filepath.Join(shortDir(t), "cp.sock")
 	fake := fakeAXLR(t, "completed")
 	var serveOut, serveErr syncBuffer
 	done := make(chan int, 1)

@@ -128,7 +128,7 @@ func (f *fakeOperatorAPI) server(options ...grpc.ServerOption) *grpc.Server {
 // serveSocket serves the fake on a Unix socket and returns its path.
 func (f *fakeOperatorAPI) serveSocket(t *testing.T) string {
 	t.Helper()
-	socket := filepath.Join(t.TempDir(), "grpc.sock")
+	socket := filepath.Join(shortDir(t), "grpc.sock")
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatal(err)

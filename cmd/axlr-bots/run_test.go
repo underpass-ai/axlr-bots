@@ -65,6 +65,21 @@ type cli struct {
 	grpcSocket string
 }
 
+// shortDir is a directory for what a test binds a Unix socket in: the
+// control socket, and the state directory of a daemon, which keeps its
+// gRPC socket there. A socket path holds at most 107 bytes on Linux,
+// and t.TempDir() spends them on $TMPDIR and the test's name; this one
+// is short whatever the test is called.
+func shortDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
 func (c cli) run(args ...string) (int, string, string) {
 	c.t.Helper()
 	var stdout, stderr bytes.Buffer

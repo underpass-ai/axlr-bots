@@ -43,7 +43,7 @@ func delegatingBotFile(t *testing.T, dir, id string, delegates bool) string {
 // bot, starts serve and reads the tree with task activity over the
 // daemon's gRPC socket, as text and as --json.
 func TestTaskActivityAgainstTheRealDaemon(t *testing.T) {
-	state := t.TempDir()
+	state := shortDir(t)
 	files := t.TempDir()
 	seed := cli{t: t, state: state, axlr: "/nonexistent/axlr-tui"}
 	for _, def := range []struct {
@@ -78,7 +78,7 @@ func TestTaskActivityAgainstTheRealDaemon(t *testing.T) {
 	}
 	childID := answer.TaskID.String()
 
-	socket := filepath.Join(t.TempDir(), "cp.sock")
+	socket := filepath.Join(shortDir(t), "cp.sock")
 	serveCtx, stop := context.WithCancel(ctx)
 	done := make(chan int, 1)
 	var serveOut, serveErr syncBuffer

@@ -12,7 +12,7 @@ import (
 )
 
 func TestHealthAnswersWhatTheSocketSays(t *testing.T) {
-	socket := filepath.Join(t.TempDir(), "cp.sock")
+	socket := filepath.Join(shortDir(t), "cp.sock")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"--transport", "rest", "--socket", socket, "health"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "no service answers") {
 		t.Fatalf("nothing listening: exit %d, stderr %q", code, stderr.String())
@@ -76,7 +76,7 @@ func TestDescribeVersion(t *testing.T) {
 // answers over HTTP only. The commands, which speak gRPC by default, stop
 // and say to update it, instead of working on the state files under it.
 func TestADaemonWithoutGRPCIsNeverRacedOnItsStore(t *testing.T) {
-	socket := filepath.Join(t.TempDir(), "cp.sock")
+	socket := filepath.Join(shortDir(t), "cp.sock")
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatal(err)

@@ -54,7 +54,7 @@ func serveFleetWith(t *testing.T, timeouts Timeouts) *fleet {
 	other, _ := pki.Generate(filepath.Join(dir, "other"))
 	local := NewLocal(deps)
 	server := NewServer(local).WithTimeouts(timeouts)
-	socket := filepath.Join(dir, "cp.sock")
+	socket := filepath.Join(socketDir(t), "cp.sock")
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -71,9 +71,7 @@ func serveFleetWith(t *testing.T, timeouts Timeouts) *fleet {
 			}
 		}
 	})
-	for !Reachable(context.Background(), socket) {
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitServing(t, socket, done)
 	return &fleet{operator: NewClient(socket), url: "https://" + listener.Addr().String(), state: state, ca: ca, other: other}
 }
 

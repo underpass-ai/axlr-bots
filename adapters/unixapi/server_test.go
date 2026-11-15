@@ -45,7 +45,7 @@ func serveWith(t *testing.T, scenario string, change func(*application.Dependenc
 		change(&deps)
 	}
 	local := NewLocal(deps)
-	socket := filepath.Join(dir, "cp.sock")
+	socket := filepath.Join(socketDir(t), "cp.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- NewServer(local).Serve(ctx, socket) }()
@@ -58,14 +58,43 @@ func serveWith(t *testing.T, scenario string, change func(*application.Dependenc
 			t.Error("socket left behind")
 		}
 	})
+	waitServing(t, socket, done)
+	return NewClient(socket), local, dir
+}
+
+// socketDir is a directory for the Unix sockets of a test. A socket
+// path holds at most 107 bytes on Linux, and t.TempDir() spends them
+// on $TMPDIR and the test's name; this one is short whatever the test
+// is called.
+func socketDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
+// waitServing waits until a server answers on the socket. served
+// carries what the servers returned: one that stopped before it
+// answered fails the test with its error, at once.
+func waitServing(t *testing.T, socket string, served chan error) {
+	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for !Reachable(context.Background(), socket) {
+		select {
+		case err := <-served:
+			// Back for whoever waits for the server to stop.
+			served <- err
+			t.Fatalf("server stopped before it was reachable on %s: %v", socket, err)
+		default:
+		}
 		if time.Now().After(deadline) {
-			t.Fatal("daemon not reachable")
+			t.Fatalf("server not reachable on %s", socket)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	return NewClient(socket), local, dir
 }
 
 func definition(name string, level string) application.BotDefinition {
@@ -268,7 +297,7 @@ func TestServeErrorsAndReachability(t *testing.T) {
 		t.Fatal("odd temp dir")
 	}
 	// A stale socket file is replaced.
-	stale := filepath.Join(dir, "stale.sock")
+	stale := filepath.Join(socketDir(t), "stale.sock")
 	if err := os.WriteFile(stale, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}

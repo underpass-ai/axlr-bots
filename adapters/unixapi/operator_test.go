@@ -233,8 +233,8 @@ func TestPanelRoutesOverTheSocket(t *testing.T) {
 }
 
 func TestPanelRoutesRefuseBadQueries(t *testing.T) {
-	_, _, dir := serve(t, "complete")
-	socket := filepath.Join(dir, "cp.sock")
+	client, _, _ := serve(t, "complete")
+	socket := client.address
 	httpClient := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		var dialer net.Dialer
 		return dialer.DialContext(ctx, "unix", socket)
@@ -255,13 +255,13 @@ func TestPanelRoutesRefuseBadQueries(t *testing.T) {
 }
 
 func TestTaskRoutesTakeTheKeyFromTheHeaderOrTheBody(t *testing.T) {
-	_, local, dir := serve(t, "completed")
+	client, local, _ := serve(t, "completed")
 	ctx := context.Background()
 	if _, err := local.RegisterBot(ctx, definition("bot-h", "observe")); err != nil {
 		t.Fatal(err)
 	}
 	_, _ = local.EnableBot(ctx, "bot-h")
-	httpClient := NewClient(filepath.Join(dir, "cp.sock")).http
+	httpClient := client.http
 	post := func(path, key, body string) (int, map[string]any) {
 		t.Helper()
 		request, _ := http.NewRequest(http.MethodPost, "http://axlr-bots"+path, strings.NewReader(body))
@@ -348,7 +348,7 @@ func serveOperatorAddressWith(t *testing.T, change func(*application.Dependencie
 	}
 	local := NewLocal(deps)
 	server := NewServer(local)
-	socket := filepath.Join(dir, "cp.sock")
+	socket := filepath.Join(socketDir(t), "cp.sock")
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -367,9 +367,7 @@ func serveOperatorAddressWith(t *testing.T, change func(*application.Dependencie
 			}
 		}
 	})
-	for !Reachable(context.Background(), socket) {
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitServing(t, socket, done)
 	config, err := pki.EnrollTLSConfig(ca.CertificatePEM())
 	if err != nil {
 		t.Fatal(err)
@@ -544,12 +542,12 @@ func TestSimultaneousRedeliveriesMakeOneTask(t *testing.T) {
 // PATCH autoApprove takes tool names as well as rules; any other shape
 // is a 400 that shows both.
 func TestPatchAutoApproveTakesToolNamesOrRules(t *testing.T) {
-	_, local, dir := serve(t, "completed")
+	client, local, _ := serve(t, "completed")
 	ctx := context.Background()
 	if _, err := local.RegisterBot(ctx, definition("bot-a", "act-with-approval")); err != nil {
 		t.Fatal(err)
 	}
-	httpClient := NewClient(filepath.Join(dir, "cp.sock")).http
+	httpClient := client.http
 	patch := func(body string) (int, map[string]any) {
 		t.Helper()
 		request, _ := http.NewRequest(http.MethodPatch, "http://axlr-bots/v1/bots/bot-a", strings.NewReader(body))

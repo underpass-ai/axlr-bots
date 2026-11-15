@@ -76,7 +76,7 @@ func TestServeTLSTakesTheFleetCAAnOperatorCertificateAndTheToken(t *testing.T) {
 
 func TestServeSocketServesTheLocalUserWithNoToken(t *testing.T) {
 	f := newFixture(t, "completed")
-	socket := filepath.Join(t.TempDir(), "run", "cp.sock.grpc")
+	socket := filepath.Join(socketDir(t), "run", "cp.sock.grpc")
 	if err := os.MkdirAll(filepath.Dir(socket), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestServeSocketServesTheLocalUserWithNoToken(t *testing.T) {
 func TestStoppingTheServerEndsOpenWatches(t *testing.T) {
 	f := newFixture(t, "completed")
 	registerAndEnable(t, f, "bot-w", "observe")
-	socket := filepath.Join(t.TempDir(), "w.sock")
+	socket := filepath.Join(socketDir(t), "w.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- New(f.local).ServeSocket(ctx, socket) }()
@@ -148,4 +148,18 @@ func TestStoppingTheServerEndsOpenWatches(t *testing.T) {
 			break // the replayed events, then the end
 		}
 	}
+}
+
+// socketDir is a directory for the Unix sockets of a test. A socket
+// path holds at most 107 bytes on Linux, and t.TempDir() spends them
+// on $TMPDIR and the test's name; this one is short whatever the test
+// is called.
+func socketDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }
