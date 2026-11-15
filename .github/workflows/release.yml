@@ -15,9 +15,10 @@ name: Release
 # replaced and their lines in SHA256SUMS replaced, other lines kept.
 #
 # workflow_dispatch is a dry run: it builds the binaries and the panel of
-# the dispatched ref, named after the `tag` input, and prints the
-# SHA256SUMS the publish job would write against that tag's release. It
-# pushes no image and creates, uploads or changes no release.
+# the dispatched ref, named after the `tag` input, and the dry-run job
+# prints, with a read-only token, the SHA256SUMS publish would write
+# against that tag's release. It pushes no image and creates, uploads or
+# changes no release.
 on:
   push:
     tags: ["v*.*.*"]
@@ -176,13 +177,19 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
+    # A build takes about four minutes.
+    timeout-minutes: 30
     env:
       CARGO_TERM_COLOR: always
       # panel/.cargo/config.toml keeps gx10 at two jobs; a runner has four cores.
       CARGO_BUILD_JOBS: 4
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned by commit (master, 2026-10-16), and the compiler with it: a
+      # release builds with a known rustc, not whatever stable is that day.
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: 1.100.0
       - name: Build axlr-bots-panel
         shell: bash
         working-directory: panel
@@ -213,15 +220,15 @@ jobs:
 
   publish:
     needs: [version, images, binaries, panel]
-    # images is skipped only in a dry run, where this job publishes nothing.
-    if: >-
-      !cancelled() && needs.version.result == 'success' && needs.binaries.result == 'success'
-      && needs.panel.result == 'success'
-      && (needs.images.result == 'success' || (github.event_name == 'workflow_dispatch' && needs.images.result == 'skipped'))
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          sparse-checkout: .github/scripts
       - uses: actions/download-artifact@v8
         with:
           pattern: binaries-*
@@ -232,36 +239,54 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ inputs.tag || github.ref_name }}
-          DRY_RUN: ${{ github.event_name != 'push' }}
+          TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           cd dist
-          exists=true
-          gh release view "$TAG" >/dev/null 2>&1 || exists=false
-          if [ "$exists" = false ] && [ "$DRY_RUN" = false ]; then
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --draft --verify-tag --title "AXLR Bots $TAG" \
               --notes "Draft created by the release workflow: the containers, binaries and the panel's archive are attached; the notes are still to be added."
-            exists=true
           fi
           # SHA256SUMS keeps the lines of assets this job does not make and
           # replaces those it does, the panel's archives among them.
-          : > SHA256SUMS
-          if [ "$exists" = true ]; then
-            gh release download "$TAG" --pattern SHA256SUMS --output SHA256SUMS --clobber 2>/dev/null || : > SHA256SUMS
-          fi
           ours=$(ls axlr-bots-v*-linux-*.tar.gz axlr-bots-panel-v*-linux-*.tar.gz)
-          awk 'NR == FNR { ours[$0]; next } !($2 in ours)' <(printf '%s\n' $ours) SHA256SUMS > sums.keep
-          sha256sum $ours >> sums.keep
-          sort -k2 sums.keep > SHA256SUMS
-          cat SHA256SUMS
-          if [ "$DRY_RUN" = true ]; then
-            {
-              echo "Dry run for $TAG: nothing was uploaded. SHA256SUMS would be:"
-              echo '```'
-              cat SHA256SUMS
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
+          "$GITHUB_WORKSPACE/.github/scripts/release-sha256sums.sh" "$TAG" $ours
           gh release upload "$TAG" $ours SHA256SUMS --clobber
+
+  # What publish would write, with a read-only token: it prints the
+  # SHA256SUMS against the tag's release and changes nothing. A draft
+  # release is not visible to this token, so against a draft it starts
+  # from an empty SHA256SUMS.
+  dry-run:
+    needs: [version, binaries, panel]
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: binaries-*
+          path: dist
+          merge-multiple: true
+      - name: SHA256SUMS publish would write
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          cd dist
+          ours=$(ls axlr-bots-v*-linux-*.tar.gz axlr-bots-panel-v*-linux-*.tar.gz)
+          "$GITHUB_WORKSPACE/.github/scripts/release-sha256sums.sh" "$TAG" $ours
+          {
+            echo "Dry run for $TAG: nothing was uploaded. SHA256SUMS would be:"
+            echo '```'
+            cat SHA256SUMS
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
