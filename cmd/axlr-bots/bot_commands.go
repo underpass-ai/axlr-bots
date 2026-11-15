@@ -51,6 +51,10 @@ func botEnable(ctx context.Context, service unixapi.Service, args []string, stdo
 		fmt.Fprintln(stderr, "axlr-bots: bot enable needs exactly one <bot-id>")
 		return exitUsage
 	}
+	if args[0] == "" {
+		fmt.Fprintln(stderr, "axlr-bots: bot id must not be empty")
+		return exitUsage
+	}
 	bot, err := service.EnableBot(ctx, args[0])
 	if err != nil {
 		return fail(stderr, err)
@@ -62,6 +66,10 @@ func botEnable(ctx context.Context, service unixapi.Service, args []string, stdo
 func botPause(ctx context.Context, service unixapi.Service, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "axlr-bots: bot pause needs exactly one <bot-id>")
+		return exitUsage
+	}
+	if args[0] == "" {
+		fmt.Fprintln(stderr, "axlr-bots: bot id must not be empty")
 		return exitUsage
 	}
 	bot, err := service.PauseBot(ctx, args[0])
