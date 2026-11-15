@@ -35,7 +35,7 @@ func TestASecondDaemonOnTheSameStateIsRefused(t *testing.T) {
 		t.Errorf("the first daemon stopped answering: %v", err)
 	}
 	// Another socket path does not get around it: the lock is the state's.
-	other := filepath.Join(f.dir, "other.sock")
+	other := filepath.Join(filepath.Dir(f.socket), "other.sock")
 	if err := Run(context.Background(), f.deps, Options{StateDir: f.state, SocketPath: other}); !errors.Is(err, statelock.ErrLocked) {
 		t.Errorf("second daemon on another socket = %v", err)
 	}

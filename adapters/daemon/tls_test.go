@@ -38,9 +38,7 @@ func (f *fixture) startTLS(t *testing.T) (*unixapi.Client, string, func()) {
 	go func() {
 		done <- Run(ctx, f.deps, Options{StateDir: f.state, SocketPath: f.socket, Listener: listener, TLS: pki.ServerTLSConfig(ca, []string{"127.0.0.1"}), Tick: 20 * time.Millisecond, ReconcileEvery: 50 * time.Millisecond, Grace: time.Hour, NodeOfflineAfter: time.Second, Log: log.New(f.logs, "", 0)})
 	}()
-	for !unixapi.Reachable(context.Background(), f.socket) {
-		time.Sleep(10 * time.Millisecond)
-	}
+	f.waitReachable(t, done)
 	return unixapi.NewClient(f.socket), "https://" + listener.Addr().String(), func() {
 		cancel()
 		if err := <-done; err != nil {
@@ -191,9 +189,7 @@ func TestDaemonTLSOptions(t *testing.T) {
 	go func() {
 		done <- Run(ctx, f.deps, Options{StateDir: f.state, SocketPath: f.socket, ListenAddr: "127.0.0.1:0", TLS: pki.ServerTLSConfig(ca, []string{"127.0.0.1"}), Tick: 20 * time.Millisecond, Log: log.New(f.logs, "", 0)})
 	}()
-	for !unixapi.Reachable(context.Background(), f.socket) {
-		time.Sleep(10 * time.Millisecond)
-	}
+	f.waitReachable(t, done)
 	cancel()
 	if err := <-done; err != nil {
 		t.Error(err)
@@ -225,9 +221,7 @@ func TestDaemonOperatorAddressOptions(t *testing.T) {
 	go func() {
 		done <- Run(ctx, f.deps, Options{StateDir: f.state, SocketPath: f.socket, APIListener: listener, APIToken: "operator-token", TLS: tlsConfig, Tick: 20 * time.Millisecond, Log: log.New(f.logs, "", 0)})
 	}()
-	for !unixapi.Reachable(context.Background(), f.socket) {
-		time.Sleep(10 * time.Millisecond)
-	}
+	f.waitReachable(t, done)
 	clientConfig, _ := pki.EnrollTLSConfig(ca.CertificatePEM())
 	url := "https://" + listener.Addr().String()
 	if bots, err := unixapi.NewTLSClient(url, clientConfig.Clone()).WithToken("operator-token").ListBots(context.Background()); err != nil || len(bots) != 0 {
