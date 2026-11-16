@@ -11,8 +11,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use iced::advanced::graphics::image as pictures;
-use iced::widget::{Space, column, container, image, row, text};
-use iced::{Alignment, Background, Border, Element, Length, Padding, Point, Rectangle, Size};
+use iced::advanced::mouse;
+use iced::widget::{Space, column, container, image, row, scrollable, text};
+use iced::{Alignment, Background, Border, Element, Event, Length, Padding, Point, Rectangle, Size};
 use iced_test::Simulator;
 
 use super::*;
@@ -206,6 +207,60 @@ fn scene(hover: &Hover, tokens: Tokens) -> Element<'_, Signal> {
     .into()
 }
 
+/// Where the list that scrolls shows its rows, and how far it is
+/// scrolled: its second row is cut by its top edge.
+const SIGHT: Rectangle = Rectangle {
+    x: 40.0,
+    y: 30.0,
+    width: 500.0,
+    height: 120.0,
+};
+const SCROLLED: f32 = 51.0;
+
+/// The row `index` of the list that scrolls, where it is once scrolled.
+fn scrolled_row(index: usize) -> Rectangle {
+    Rectangle {
+        y: SIGHT.y + index as f32 * ROW_HEIGHT - SCROLLED,
+        height: ROW_HEIGHT,
+        ..SIGHT
+    }
+}
+
+/// Five rows in a list too short for them, on the bare page.
+fn scrolling_scene(hover: &Hover, tokens: Tokens) -> Element<'_, Signal> {
+    let rows = BOTS.iter().enumerate().map(|(index, name)| {
+        backdrop(
+            hover,
+            row_surface(index),
+            Tint::of(tokens),
+            container(text(*name).size(14).color(tokens.text).font(SEMIBOLD))
+                .padding(Padding::from([0, 14]))
+                .align_y(Alignment::Center)
+                .width(Length::Fill)
+                .height(ROW_HEIGHT),
+            |signal| signal,
+        )
+        .into()
+    });
+    container(
+        container(scrollable(column(rows)).height(Length::Fill))
+            .width(SIGHT.width)
+            .height(SIGHT.height),
+    )
+    .padding(Padding {
+        top: SIGHT.y,
+        left: SIGHT.x,
+        ..Padding::ZERO
+    })
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .style(move |_| container::Style {
+        background: Some(Background::Color(tokens.page)),
+        ..container::Style::default()
+    })
+    .into()
+}
+
 /// The pointer has been on this surface, at this place, long enough for
 /// its glow to be whole, and the waves are `seconds` old.
 fn lit(surface: Surface, bounds: Rectangle, at: Point, seconds: f32) -> Hover {
@@ -241,8 +296,26 @@ struct Shot {
 impl Shot {
     /// Draws the scene and, with a name, keeps the drawing as a PNG.
     fn take(hover: &Hover, tokens: Tokens, name: Option<&str>) -> Self {
+        Self::draw(scene(hover, tokens), tokens, name, None)
+    }
+
+    /// Draws the list that scrolls, scrolled.
+    fn take_scrolled(hover: &Hover, tokens: Tokens, name: Option<&str>) -> Self {
+        Self::draw(scrolling_scene(hover, tokens), tokens, name, Some(SCROLLED))
+    }
+
+    /// Draws a scene, after turning the wheel over the list by `wheel`
+    /// points if it is given, and with a name keeps the drawing.
+    fn draw(scene: Element<'_, Signal>, tokens: Tokens, name: Option<&str>, wheel: Option<f32>) -> Self {
         let _turn = turn();
-        let mut ui = Simulator::with_size(panel_settings(), WINDOW, scene(hover, tokens));
+        let mut ui = Simulator::with_size(panel_settings(), WINDOW, scene);
+        if let Some(wheel) = wheel {
+            ui.point_at(SIGHT.center());
+            let _ = ui.simulate([Event::Mouse(mouse::Event::WheelScrolled {
+                delta: mouse::ScrollDelta::Pixels { x: 0.0, y: -wheel },
+            })]);
+            ui.point_at(Point::new(WINDOW.width - 2.0, WINDOW.height - 2.0));
+        }
         let snapshot = ui.snapshot(&tokens.theme()).unwrap();
         // `matches_image` writes a new file named after the renderer, so
         // it writes into an empty directory and the file is read there.
@@ -425,5 +498,25 @@ fn organic_shots() {
         check(&drawn, &plain, (bounds, 0.0), place(bounds, at), false, &what);
         let end = Point::new(bounds.x + bounds.width - 0.25, bounds.y + bounds.height - 0.25);
         assert!(drawn.change_at(&plain, end) >= 6, "{what}: no glow in the last pixel");
+
+        // In a list that is scrolled the glow goes with its row: on the
+        // row in sight, and on what is left in sight of the row the
+        // list's top edge cuts, never above that edge.
+        let plain = Shot::take_scrolled(&Hover::new(Motion::Off), tokens, None);
+        let (bounds, at) = (scrolled_row(2), Point::new(0.3, 0.5));
+        let hover = lit(row_surface(2), bounds, at, 5.0);
+        let drawn = Shot::take_scrolled(&hover, tokens, Some(&format!("scrolled-{theme}")));
+        let what = format!("row in a scrolled list, {theme}");
+        check(&drawn, &plain, (bounds, 0.0), place(bounds, at), true, &what);
+        for edge in [0.25, ROW_HEIGHT - 0.25] {
+            let edge = Point::new(place(bounds, at).x, bounds.y + edge);
+            assert!(drawn.change_at(&plain, edge) >= 6, "{what}: no glow at {edge:?}");
+        }
+        let (bounds, at) = (scrolled_row(1), Point::new(0.3, 0.8));
+        let hover = lit(row_surface(1), bounds, at, 5.0);
+        let drawn = Shot::take_scrolled(&hover, tokens, None);
+        let in_sight = bounds.intersection(&SIGHT).unwrap();
+        let what = format!("row cut by the list's edge, {theme}");
+        check(&drawn, &plain, (in_sight, 0.0), place(bounds, at), false, &what);
     }
 }
