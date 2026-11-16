@@ -337,10 +337,18 @@ fn plain(tokens: Tokens) -> impl Fn(&iced::Theme, button::Status) -> button::Sty
 /// A card of Home: its title with a few words beside it and the way to
 /// the whole list, over a body that scrolls by itself when it is long.
 fn column_card<'a>(title: &'a str, note: String, all: (&'a str, Message), body: El<'a>, tokens: Tokens) -> El<'a> {
+    // The note has what the title and the link leave, cut at its edge
+    // in a narrow window: the link never leaves the card.
     let head = row![
         semibold(title).size(SMALL).color(tokens.muted),
-        text(note).size(SMALL).color(tokens.muted),
-        Space::new().width(Length::Fill),
+        container(
+            text(note)
+                .size(SMALL)
+                .color(tokens.muted)
+                .wrapping(text::Wrapping::None)
+        )
+        .width(Length::Fill)
+        .clip(true),
         link(all.0.to_string(), all.1, tokens),
     ]
     .spacing(8)
@@ -457,7 +465,7 @@ fn latest<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
         empty(Icon::Tasks, "No task yet", tokens)
     } else {
         responsive(move |space| {
-            let what = (space.width - 8.0 - 16.0 - STATUS - BOT - 40.0 - 3.0 * 10.0).max(60.0);
+            let what = (space.width - 8.0 - 16.0 - STATUS - BOT - SEEN - 3.0 * 10.0).max(24.0);
             let mut list = column![].padding(Padding::from([0, 4]).bottom(6));
             for task in fleet.tasks.iter().take(LATEST_SHOWN) {
                 list = list.push(task_line(task, what, now, tokens));
@@ -484,7 +492,7 @@ fn task_line<'a>(task: &'a Task, what: f32, now: chrono::DateTime<chrono::Utc>, 
             container(sheet::words(task.bot_id.to_string(), BOT, Ink::Strong, tokens)).width(BOT),
             container(sheet::words(first, what, Ink::Quiet, tokens)).width(Length::Fill),
             container(Ink::Quiet.write(format::age(task.created_at, now), tokens))
-                .width(40)
+                .width(SEEN)
                 .align_x(Alignment::End),
         ]
         .spacing(10)
@@ -499,8 +507,11 @@ fn task_line<'a>(task: &'a Task, what: f32, now: chrono::DateTime<chrono::Utc>, 
     .into()
 }
 
-/// The nodes of the fleet, the ones online first, each with when it
-/// was last seen; the revoked ones are only counted.
+/// The width of an age at the end of a line of Home's lists.
+const SEEN: f32 = 40.0;
+
+/// The nodes of the fleet, the ones online first, each with how long
+/// ago it was last seen; the revoked ones are only counted.
 fn nodes<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
     let now = app.now;
     let mut live = NodeListing::default().shown(&fleet.nodes);
@@ -515,7 +526,7 @@ fn nodes<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
         empty(Icon::Nodes, "No node yet", tokens)
     } else {
         responsive(move |space| {
-            let name = (space.width - 8.0 - 16.0 - STATUS - 64.0 - 2.0 * 10.0).max(60.0);
+            let name = (space.width - 8.0 - 16.0 - STATUS - SEEN - 2.0 * 10.0).max(24.0);
             let mut list = column![].padding(Padding::from([0, 4]).bottom(6));
             for node in &live {
                 list = list.push(
@@ -523,11 +534,9 @@ fn nodes<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
                         row![
                             container(status::node(node.status, tokens)).width(STATUS),
                             container(sheet::words(node.id.to_string(), name, Ink::Strong, tokens)).width(Length::Fill),
-                            container(
-                                Ink::Quiet.write(format!("seen {}", format::age(node.last_seen_at, now)), tokens)
-                            )
-                            .width(64)
-                            .align_x(Alignment::End),
+                            container(Ink::Quiet.write(format::age(node.last_seen_at, now), tokens))
+                                .width(SEEN)
+                                .align_x(Alignment::End),
                         ]
                         .spacing(10)
                         .height(Length::Fill)

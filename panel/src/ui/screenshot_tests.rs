@@ -37,10 +37,15 @@ impl Camera {
     /// Draws the panel without the last act's banner ("Connected", "Task
     /// sent"), which would sit on top of every shot.
     fn shoot(&self, app: &mut App, name: &str) {
+        self.shoot_at(app, name, WINDOW);
+    }
+
+    /// The same, in a window of another size.
+    fn shoot_at(&self, app: &mut App, name: &str, window: iced::Size) {
         let _ = app.apply(Message::DismissBanner);
         let _turn = turn();
         let theme = Tokens::of(app.mode).theme();
-        let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(app));
+        let mut ui = Simulator::with_size(panel_settings(), window, view::view(app));
         let snapshot = ui.snapshot(&theme).unwrap();
         // `matches_image` writes a new file named after the renderer, so
         // it writes into an empty directory and the file is moved.
@@ -219,9 +224,14 @@ fn redesign_shots() {
     send(&mut app, Message::Go(Screen::Tasks));
     camera.shoot(&mut app, "s1-tasks-compact-light");
     send(&mut app, Message::SetDensity(crate::application::Density::Comfortable));
+    camera.shoot_at(&mut app, "s1-tasks-small-light", super::runtime::MIN_WINDOW);
+    send(&mut app, Message::Go(Screen::Overview));
+    camera.shoot_at(&mut app, "s1-home-small-light", super::runtime::MIN_WINDOW);
+    send(&mut app, Message::Go(Screen::Tasks));
     send(&mut app, Message::FilterStatus(Some(TaskStatus::Failed)));
     send(&mut app, Message::PickShown(table::List::Tasks, true));
     camera.shoot(&mut app, "s1-tasks-picked-light");
+    send(&mut app, Message::ClearPicks(table::List::Tasks));
     send(&mut app, Message::FilterStatus(None));
     app.apply(Message::SubmitOpen(None));
     camera.shoot(&mut app, "s1-tasks-new-light");

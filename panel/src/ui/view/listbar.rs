@@ -10,31 +10,35 @@ use super::widgets::{El, HEADING, SMALL, muted, semibold};
 use crate::ui::styles::{self, Kind};
 use crate::ui::{Message, Tokens};
 
-/// The bar's height, its line apart.
+/// The bar's height while its chips fit one line, its line apart.
 pub const BAR: f32 = 46.0;
 
+/// The height of a chip.
+const CHIP: f32 = 28.0;
+
+/// The height of an act beside the chips: a button, a picker.
+const ACT: f32 = 30.0;
+
 /// The bar over a list: its title with how many it holds, what narrows
-/// it at the left and its acts at the right, on one line.
+/// it at the left and its acts at the right, on one line. The chips
+/// have the room the title and the acts leave and go on to a second
+/// line in a narrow window, so the acts never leave it.
 pub fn bar<'a>(title: &'a str, count: String, left: Vec<El<'a>>, right: Vec<El<'a>>, tokens: Tokens) -> El<'a> {
     let mut line = row![
         row![semibold(title).size(HEADING), muted(count, tokens)]
             .spacing(8)
-            .align_y(Alignment::End)
+            .align_y(Alignment::End),
+        Space::new().width(4),
+        container(row(left).spacing(8).wrap().vertical_spacing(6)).width(Length::Fill),
     ]
     .spacing(8)
     .align_y(Alignment::Center);
-    line = line.push(Space::new().width(4));
-    for part in left {
-        line = line.push(part);
-    }
-    line = line.push(Space::new().width(Length::Fill));
     for part in right {
         line = line.push(part);
     }
     ruled(
         container(line)
-            .padding(Padding::from([0.0, SIDE]))
-            .height(BAR)
+            .padding(Padding::from([(BAR - ACT) / 2.0, SIDE]))
             .align_y(Alignment::Center)
             .into(),
         tokens,
@@ -59,7 +63,7 @@ pub fn toggle<'a>(label: &'a str, count: usize, on: bool, press: Option<Message>
         .spacing(6)
         .align_y(Alignment::Center),
     )
-    .height(28)
+    .height(CHIP)
     .padding(Padding::from([0, 9]))
     .style(styles::button_style(tokens, kind))
     .on_press_maybe(press)

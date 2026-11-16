@@ -281,9 +281,9 @@ fn home_shows_the_counts_and_what_needs_a_person() {
         ],
     );
     shows_wide(&app, &["wants local_write · hello", "Approve", "Deny"]);
-    // Each node says when it was last seen.
+    // Each node says how long ago it was last seen.
     let node = &app.fleet.as_ref().unwrap().nodes[0];
-    let seen = format!("seen {}", crate::ui::format::age(node.last_seen_at, app.now));
+    let seen = crate::ui::format::age(node.last_seen_at, app.now);
     shows(&app, &[seen.as_str()]);
     assert!(matches!(
         messages_of_click(&app, "Approve").as_slice(),
@@ -388,6 +388,21 @@ fn home_fits_the_window_with_a_large_fleet() {
     let age = crate::ui::format::age(last.created_at, app.now);
     let placed = ui.find(age.as_str()).unwrap().visible_bounds();
     assert!(placed.is_some(), "the twentieth task is cut out of Latest");
+    drop(ui);
+    // In the smallest window each card keeps its link whole and cuts a
+    // node's name with an ellipsis, not at its edge.
+    let mut ui = Simulator::with_size(panel_settings(), MIN_WINDOW, view::view(&app));
+    for words in ["All bots", "All tasks", "All", "Nodes", "stopped today"] {
+        let placed = ui.find(words).unwrap_or_else(|e| panic!("{words}: {e:?}"));
+        let seen = placed
+            .visible_bounds()
+            .unwrap_or_else(|| panic!("{words} is out of sight"));
+        assert!(seen.width >= placed.bounds().width - 0.5, "{words} is cut at {seen:?}");
+    }
+    assert!(ui.find("gx10-ff95").is_err(), "a long name is cut to its column");
+    let online = ui.find("wrx80").unwrap();
+    let seen = online.visible_bounds().unwrap();
+    assert!(seen.width >= online.bounds().width - 0.5, "wrx80 is cut at {seen:?}");
 }
 
 /// Objectives longer than Home shows: one with a path, one with a name
@@ -580,6 +595,50 @@ fn the_nodes_list_puts_revoked_nodes_away_until_asked_for() {
     shows(&app, &["48", "40 revoked nodes are shown.", "Hide them", "old-node-01"]);
     let sent = messages_of_click(&app, "Revoked");
     assert!(matches!(sent.as_slice(), [Message::ShowRevoked(false)]), "{sent:?}");
+}
+
+/// In the smallest window a list's chips go on to a second line and
+/// its acts stay in the window; the top bar keeps its right end with a
+/// long address and a version.
+#[test]
+fn the_bars_keep_their_acts_in_the_smallest_window() {
+    let mut app = large(Screen::Tasks);
+    app.endpoint = Some("control-plane.fleet.example.internal:7879".into());
+    app.fleet.as_mut().unwrap().build = Some(crate::domain::BuildStatus {
+        running: crate::domain::BuildIdentity {
+            version: "0.4.7".into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), MIN_WINDOW, view::view(&app));
+    for words in [
+        // The bot picker stands before New task, the last in the bar.
+        "New task",
+        "All",
+        "Stopped",
+        "· v0.4.7",
+        "updated 10:00:00",
+        "Search bots, tasks, nodes, actions…",
+    ] {
+        let placed = ui.find(words).unwrap_or_else(|e| panic!("{words}: {e:?}"));
+        let seen = placed
+            .visible_bounds()
+            .unwrap_or_else(|| panic!("{words} is out of sight"));
+        assert!(
+            seen.width >= placed.bounds().width - 0.5 && seen.x + seen.width <= MIN_WINDOW.width,
+            "{words} is cut at {seen:?}"
+        );
+    }
+    drop(ui);
+    // In the window's size at start the chips are one line and the bar
+    // is as high as the design's.
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+    let (all, stopped) = (ui.find("All").unwrap().bounds(), ui.find("Stopped").unwrap().bounds());
+    assert_eq!(all.y, stopped.y);
+    let head = ui.find("STATUS").unwrap().bounds();
+    assert!(head.y < 44.0 + 1.0 + 46.0 + 1.0 + 30.0 + 30.0, "{head:?}");
 }
 
 /// A form open over a list takes the room it needs and scrolls by
@@ -1318,6 +1377,9 @@ fn the_teams_screen_shows_who_is_in_each_and_what_happens() {
     );
     send(&mut app, Message::Tick(tick + chrono::Duration::seconds(3)));
     shows(&app, &["ops", "MEMBERS", "LAST WORD", "lab", "bot · bot-wrx80"]);
+    // A team of one bot has a mark beside its name whose tip asks
+    // whether the name is a typo; the simulator draws no tip, so the
+    // words are not looked for here.
     // A team's name opens its page.
     let sent = messages_of_click(&app, "lab");
     assert!(matches!(sent.as_slice(), [Message::Go(Screen::Team(name))] if name == "lab"));
