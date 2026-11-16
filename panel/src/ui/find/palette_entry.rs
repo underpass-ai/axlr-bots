@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 
 use super::{Marks, NO_TEAM, PaletteGlyph, PaletteSection, PaletteTarget, Place, Query, Score, TaskWhat};
 use crate::application::Fleet;
-use crate::domain::{BotStatus, NodeStatus, Task, TaskStatus, Team};
+use crate::domain::{BotStatus, NodeStatus, Task, TaskId, TaskStatus, Team};
 use crate::ui::format;
 
 /// The fewest characters typed before the tasks are searched: one
@@ -13,6 +13,10 @@ const TASKS_FROM: usize = 2;
 
 /// The fewest characters typed before the revoked nodes are searched.
 const REVOKED_FROM: usize = 3;
+
+/// How the control plane begins a task's id: what a pasted id is
+/// known by when the panel does not hold that task.
+const TASK_ID_PREFIX: &str = "task-";
 
 /// One result of the command palette: the section it goes under, the
 /// mark before it, its words with the typed parts to highlight, and
@@ -139,7 +143,7 @@ impl PaletteEntry {
         if typed.is_empty() {
             return Vec::new();
         }
-        fleet
+        let held: Vec<PaletteEntry> = fleet
             .tasks
             .iter()
             .filter(|task| {
@@ -158,7 +162,28 @@ impl PaletteEntry {
                     score: Score::any(),
                 }
             })
-            .collect()
+            .collect();
+        if !held.is_empty() {
+            return held;
+        }
+        // A task id older than the tasks the panel holds: the control
+        // plane still has it, and the inspector reads it by its id.
+        match typed.strip_prefix(TASK_ID_PREFIX).filter(|rest| !rest.is_empty()) {
+            Some(_) => TaskId::new(&typed.to_ascii_lowercase())
+                .ok()
+                .map(|id| PaletteEntry {
+                    section: PaletteSection::Tasks,
+                    glyph: PaletteGlyph::Go,
+                    marks: Marks::default(),
+                    label: format!("Open task {id}"),
+                    sublabel: "older than the newest 200: read from the control plane".to_string(),
+                    target: PaletteTarget::Task(id),
+                    score: Score::any(),
+                })
+                .into_iter()
+                .collect(),
+            None => Vec::new(),
+        }
     }
 
     /// A result when it answers the query: by its label and sublabel, or
@@ -302,6 +327,36 @@ mod tests {
             .filter(|e| e.section == section)
             .map(|e| e.label.clone())
             .collect()
+    }
+
+    #[test]
+    fn a_pasted_task_id_the_panel_does_not_hold_opens_from_the_control_plane() {
+        let fleet = Fleet::default();
+        let found = PaletteEntry::search(
+            &Query::new("task-4906be03ca64"),
+            &fleet,
+            "2026-10-25T09:05:00Z".parse().unwrap(),
+        );
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            found[0].target,
+            PaletteTarget::Task(TaskId::new("task-4906be03ca64").unwrap())
+        );
+        assert_eq!(found[0].label, "Open task task-4906be03ca64");
+        let words = PaletteEntry::search(&Query::new("task-"), &fleet, "2026-10-25T09:05:00Z".parse().unwrap());
+        assert!(
+            words.iter().all(|e| !matches!(e.target, PaletteTarget::Task(_))),
+            "a bare prefix is no id"
+        );
+        let spaced = PaletteEntry::search(
+            &Query::new("task-1 now"),
+            &fleet,
+            "2026-10-25T09:05:00Z".parse().unwrap(),
+        );
+        assert!(
+            spaced.iter().all(|e| !matches!(e.target, PaletteTarget::Task(_))),
+            "words are no id"
+        );
     }
 
     #[test]
@@ -531,7 +586,12 @@ mod tests {
         let acts_only = PaletteEntry::search(&Query::new(""), &Fleet::default(), now());
         assert_eq!(acts_only.len(), 6);
         assert!(acts_only.iter().all(|e| e.section == PaletteSection::Actions));
-        assert!(PaletteEntry::search(&Query::new("task-1"), &Fleet::default(), now()).is_empty());
+        let pasted = PaletteEntry::search(&Query::new("task-1"), &Fleet::default(), now());
+        assert_eq!(
+            pasted.len(),
+            1,
+            "a task id the panel does not hold is only offered to open"
+        );
     }
 
     #[test]

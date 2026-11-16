@@ -172,9 +172,11 @@ fn facts<'a>(app: &'a App, task: &'a Task, detail: Option<&'a TaskDetail>, width
         .map(|e| e.place().to_string())
         .unwrap_or_else(|| "—".into());
     let took = match detail {
-        _ if !task.status.is_terminal() => format!("{} so far", format::span(app.now - task.created_at)),
-        Some(d) => format::span(d.last_change() - task.created_at),
-        None => format::span(task.updated_at - task.created_at),
+        // A run's length, never a moment's word: two seconds read `2s`,
+        // not `now`.
+        _ if !task.status.is_terminal() => format!("{} so far", format::run_length(app.now - task.created_at)),
+        Some(d) => format::run_length(d.last_change() - task.created_at),
+        None => format::run_length(task.updated_at - task.created_at),
     };
     let cost = detail.map_or_else(
         || "—".to_string(),

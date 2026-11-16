@@ -105,7 +105,7 @@ pub fn view<'a>(app: &'a App, room: f32, tokens: Tokens) -> El<'a> {
         key_cap("Enter", tokens),
         words("open"),
         Space::new().width(Length::Fill),
-        words("Paste a task or trace id to jump to it"),
+        words("Paste a task id to open it"),
     ]
     .spacing(4)
     .height(FOOT)

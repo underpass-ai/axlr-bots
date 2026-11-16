@@ -2684,7 +2684,7 @@ fn the_palette_takes_what_is_typed_and_its_results_are_clicked() {
             "TEAMS",
             "NODES",
             "Esc",
-            "Paste a task or trace id to jump to it",
+            "Paste a task id to open it",
             "audit · Paused",
         ],
     );
@@ -2722,7 +2722,7 @@ fn the_palette_takes_what_is_typed_and_its_results_are_clicked() {
     assert_eq!(app.palette.selected(app.palette_entries().len()), Some(1));
     send(&mut app, Message::Key(Keypress::Enter));
     assert_eq!(app.screen, Screen::Bot(BotId::new("ops-night").unwrap()));
-    assert!(simulator_misses(&app, "Paste a task or trace id to jump to it"));
+    assert!(simulator_misses(&app, "Paste a task id to open it"));
     send(&mut app, Message::PaletteOpen);
     app.apply(Message::PaletteTyped("zzzz".into()));
     shows(&app, &["Nothing found. Tasks are searched among the newest 200."]);
