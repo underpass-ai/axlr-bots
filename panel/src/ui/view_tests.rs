@@ -2579,3 +2579,145 @@ fn home_folds_the_latest_repeats() {
     let app = large(Screen::Overview);
     shows(&app, &["Latest", "×39"]);
 }
+
+/// The large fleet on the task with the long run, inspected beside the
+/// Tasks list.
+fn long_run_inspected() -> App {
+    let mut app = large(Screen::Tasks);
+    let id = app
+        .fleet
+        .as_ref()
+        .unwrap()
+        .tasks
+        .iter()
+        .find(|t| t.bot_id.as_str() == "ops-deploy")
+        .unwrap()
+        .id
+        .clone();
+    send(&mut app, Message::RowPicked(table::RowRef::Task(id)));
+    app
+}
+
+#[test]
+fn a_task_inspected_shows_its_header_facts_tabs_and_steps_beside_a_narrow_list() {
+    let app = long_run_inspected();
+    shows_wide(
+        &app,
+        &[
+            "Done",
+            "ops-deploy",
+            "Run again",
+            "item-4198 · service-3 · gate failed: the unit tests of the client",
+            "NODE",
+            "STARTED",
+            "TOOK",
+            "COST",
+            "FROM",
+            "TEAM",
+            "TASK ID",
+            "TRACE",
+            "Activity",
+            "Answer",
+            "Files",
+            "Runs",
+            "Timeline",
+            "Raw",
+            "local_read",
+            "notes_search",
+            "ops.item.progress",
+            "→ ops-lead",
+            "Find in activity",
+            "12.3 s",
+        ],
+    );
+    // The list beside it keeps its filter, its note and its act.
+    shows_wide(&app, &["Filter…", "New task", "BOT", "WHAT", "AGE"]);
+    assert!(simulator_misses(&app, "Fold repeats"), "its options wait");
+    assert!(simulator_misses(&app, "STARTED BY"), "and its wide columns");
+    assert!(matches!(
+        messages_of_click(&app, "Run again").as_slice(),
+        [Message::RunAgain(_)]
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Answer").as_slice(),
+        [Message::Tab(inspector::Tab::Task(inspector::TaskTab::Answer))]
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "notes_search").as_slice(),
+        [Message::ActivityPick(_)]
+    ));
+}
+
+#[test]
+fn the_find_counts_its_matches_and_the_chips_their_steps() {
+    let mut app = long_run_inspected();
+    shows_wide(&app, &["All", "29", "Tools", "25", "Failed", "1", "Events", "3"]);
+    send(&mut app, Message::FindTyped("tests".into()));
+    let label = app.find.label(&app.steps_text());
+    assert!(label.starts_with("1/"), "{label}");
+    shows_wide(&app, &[label.as_str(), "Copy activity"]);
+    assert!(matches!(
+        messages_of_click(&app, "Events").as_slice(),
+        [Message::FindShow(crate::ui::find::StepFilter::Events)]
+    ));
+    send(&mut app, Message::FindShow(crate::ui::find::StepFilter::Failed));
+    shows_wide(&app, &["Read the team's playbook before handl…"]);
+    assert!(
+        simulator_misses(&app, "notes_search"),
+        "the chip shows the failed alone"
+    );
+}
+
+#[test]
+fn a_running_task_scrolled_up_in_offers_to_jump_to_its_newest_step() {
+    let mut app = large(Screen::Tasks);
+    let running = app
+        .fleet
+        .as_ref()
+        .unwrap()
+        .tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::Running)
+        .unwrap()
+        .id
+        .clone();
+    send(&mut app, Message::Go(Screen::Task(running)));
+    shows_wide(&app, &["Running", "Talk to it", "Stop", "running"]);
+    assert!(simulator_misses(&app, "↓ Jump to latest"), "it follows its newest step");
+    send(&mut app, Message::ActivityScrolled(LiveStream::Steps, false));
+    assert!(matches!(
+        messages_of_click(&app, "↓ Jump to latest").as_slice(),
+        [Message::JumpToLatest]
+    ));
+}
+
+#[test]
+fn a_node_inspected_shows_its_facts_labels_providers_and_its_bots() {
+    let mut app = large(Screen::Nodes);
+    send(&mut app, Message::Go(Screen::Node(NodeId::new("gx10-ff95").unwrap())));
+    shows_wide(
+        &app,
+        &[
+            "Online",
+            "Revoke",
+            "SEEN",
+            "AXLR",
+            "AGENT",
+            "CERTIFICATE",
+            "LABELS",
+            "host=gx10-ff95",
+            "MODEL PROVIDERS",
+            "local:codex/gpt-6.1-sol",
+            "BOTS THAT RUN HERE · 11",
+            "ops-lead",
+        ],
+    );
+    assert!(matches!(
+        messages_of_click(&app, "Revoke").as_slice(),
+        [Message::AskRevoke(id)] if id.as_str() == "gx10-ff95"
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "ops-lead").as_slice(),
+        [Message::Go(Screen::Bot(id))] if id.as_str() == "ops-lead"
+    ));
+}
