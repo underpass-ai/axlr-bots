@@ -198,13 +198,21 @@ fn mine<'a>(app: &'a App, bot: &'a Bot) -> impl Iterator<Item = &'a crate::domai
 /// A task of the bot on one line: its status, what it is about and its
 /// age; a press opens it.
 fn work_line<'a>(app: &'a App, task: &'a crate::domain::Task, tokens: Tokens) -> El<'a> {
-    let what = crate::ui::find::TaskWhat::of(task);
+    let title = crate::ui::find::TaskWhat::of(task).title().to_string();
+    // The title cut with an ellipsis to the characters its room holds,
+    // so a long one never stops mid-word at the edge.
+    let fitted = iced::widget::responsive(move |room| {
+        let fits = ((room.width / (0.52 * SMALL)).floor() as usize).max(4);
+        text(super::super::grid::shorten(&title, fits))
+            .size(SMALL)
+            .wrapping(Wrapping::None)
+            .into()
+    })
+    .height(Length::Shrink);
     super::mini(
         row![
             container(super::super::status::task(task.status, tokens)).width(96),
-            container(text(what.title().to_string()).size(SMALL).wrapping(Wrapping::None))
-                .width(Length::Fill)
-                .clip(true),
+            container(fitted).width(Length::Fill).clip(true),
             container(muted(format::age(task.created_at, app.now), tokens))
                 .width(40)
                 .align_x(Alignment::End),

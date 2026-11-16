@@ -34,10 +34,11 @@ impl Hover {
     pub const FADE_IN: Duration = Duration::from_millis(250);
     /// And this long to go.
     pub const FADE_OUT: Duration = Duration::from_millis(450);
-    /// The time between two frames: a little under thirty a second.
-    pub const FRAME: Duration = Duration::from_millis(34);
+    /// The time between two frames: twenty a second, enough for waves
+    /// this slow and a third less work than thirty.
+    pub const FRAME: Duration = Duration::from_millis(50);
     /// A pointer that has not moved for this long lets its glow go out.
-    pub const REST_AFTER: Duration = Duration::from_secs(10);
+    pub const REST_AFTER: Duration = Duration::from_secs(3);
     /// A surface that was heard this short ago still has the pointer: a
     /// bigger one around it does not take the glow from it.
     pub const HOLD: Duration = Duration::from_millis(250);
@@ -266,7 +267,7 @@ mod tests {
         let mut at = from;
         while at <= until {
             hover.tick(start + ms(at));
-            at += 34;
+            at += Hover::FRAME.as_millis() as u64;
         }
         hover.tick(start + ms(until));
     }
@@ -493,10 +494,11 @@ mod tests {
         let start = Instant::now();
         let mut hover = Hover::default();
         hover.signal(over("a", ROW, start));
-        run(&mut hover, start, 34, 9_990);
+        let rest = Hover::REST_AFTER.as_millis() as u64;
+        run(&mut hover, start, 50, rest - 10);
         assert_eq!(fade(&hover, "a"), 1.0);
         assert!(hover.is_animating());
-        run(&mut hover, start, 10_000, 10_500);
+        run(&mut hover, start, rest, rest + 500);
         assert_eq!(hover.shine(surface("a")), None);
         assert!(!hover.is_animating(), "a panel nobody touches asks for no frames");
         hover.signal(over("a", ROW, start + ms(60_000)));

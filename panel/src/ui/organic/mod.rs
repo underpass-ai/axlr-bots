@@ -59,7 +59,7 @@ pub use spread::Spread;
 pub use surface::Surface;
 pub use tint::Tint;
 
-/// The frames of the glows: a moment about thirty times a second while
+/// The frames of the glows: a moment twenty times a second while
 /// a glow is changing, and nothing at all otherwise.
 pub fn frames(hover: &Hover) -> Subscription<Instant> {
     if hover.is_animating() {

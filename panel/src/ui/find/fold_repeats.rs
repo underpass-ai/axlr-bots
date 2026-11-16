@@ -1,13 +1,15 @@
 use std::collections::BTreeMap;
 
-use super::{TaskLine, TaskWhat};
+use super::{MessageShape, TaskLine, TaskWhat};
 use crate::domain::Task;
 
 /// Whether the task list folds its repeats: the tasks of one bot that
 /// the same trigger started and that stand the same fold into the
 /// newest of them, so a timer's two hundred runs take one line. A task
-/// an event made with a message of its own never folds: its message is
-/// what tells it apart. On until a person turns it off.
+/// an event made folds only with tasks whose message has its shape (the
+/// same words once dates and times are left out, [`MessageShape`]): an
+/// hourly event's runs fold, two pieces of work with their own ids do
+/// not. On until a person turns it off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FoldRepeats {
     on: bool,
@@ -41,9 +43,9 @@ impl FoldRepeats {
     /// folded into it wherever they come. Off, every task is a line.
     pub fn lines<'a>(self, tasks: impl IntoIterator<Item = &'a Task>) -> Vec<TaskLine<'a>> {
         let mut lines: Vec<TaskLine<'a>> = Vec::new();
-        let mut seen: BTreeMap<(&str, &str, &str, &str), usize> = BTreeMap::new();
+        let mut seen: BTreeMap<(&str, &str, &str, &str, Option<MessageShape>), usize> = BTreeMap::new();
         for task in tasks {
-            if !self.on || TaskWhat::of(task).message.is_some() {
+            if !self.on {
                 lines.push(TaskLine::alone(task));
                 continue;
             }
@@ -52,6 +54,7 @@ impl FoldRepeats {
                 task.trigger.trigger_type.as_str(),
                 task.trigger.name.as_str(),
                 task.status.name(),
+                TaskWhat::of(task).message.map(MessageShape::of),
             );
             match seen.get(&alike) {
                 Some(&line) => lines[line].alike.push(task),
@@ -139,7 +142,7 @@ mod tests {
     }
 
     #[test]
-    fn a_task_with_an_event_message_never_folds_nor_takes_others() {
+    fn a_task_with_an_event_message_folds_only_with_messages_of_its_shape() {
         let tasks = [
             task(
                 "task-5",
@@ -160,13 +163,61 @@ mod tests {
             task("task-1", "ops-fixer", "Completed", "event:stock.low", Some(" ")),
         ];
         let lines = FoldRepeats::on().lines(&tasks);
-        assert_eq!(
-            shape(&lines),
-            vec![line("task-5", 1), line("task-4", 3), line("task-3", 1)]
-        );
+        assert_eq!(shape(&lines), vec![line("task-5", 2), line("task-4", 3)]);
         assert!(
             lines[1].holds(&tasks[4].id),
             "an empty message is no message: the task folds"
+        );
+    }
+
+    #[test]
+    fn a_periodic_event_folds_and_pieces_of_work_with_their_own_ids_do_not() {
+        let tasks = [
+            task(
+                "task-5",
+                "qa-runner",
+                "Completed",
+                "event:qa.sync",
+                Some("hourly sync 2026-11-16T09:00:00Z"),
+            ),
+            task(
+                "task-4",
+                "qa-runner",
+                "Completed",
+                "event:qa.item",
+                Some("item-4198 · gate failed"),
+            ),
+            task(
+                "task-3",
+                "qa-runner",
+                "Completed",
+                "event:qa.sync",
+                Some("hourly sync 2026-11-16T08:00:00Z"),
+            ),
+            task(
+                "task-2",
+                "qa-runner",
+                "Completed",
+                "event:qa.item",
+                Some("item-4182 · gate failed"),
+            ),
+            task(
+                "task-1",
+                "qa-runner",
+                "Completed",
+                "event:qa.sync",
+                Some("daily sync 2026-11-16T00:00:00Z"),
+            ),
+        ];
+        let lines = FoldRepeats::on().lines(&tasks);
+        assert_eq!(
+            shape(&lines),
+            vec![
+                line("task-5", 2),
+                line("task-4", 1),
+                line("task-2", 1),
+                line("task-1", 1)
+            ]
         );
     }
 
