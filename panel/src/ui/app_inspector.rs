@@ -391,6 +391,32 @@ mod tests {
     }
 
     #[test]
+    fn a_task_that_ended_opens_at_its_first_step() {
+        let mut app = large(Screen::Tasks);
+        let id = app
+            .fleet
+            .as_ref()
+            .unwrap()
+            .tasks
+            .iter()
+            .find(|t| t.bot_id.as_str() == "ops-deploy")
+            .unwrap()
+            .id
+            .clone();
+        let opened = app.apply(Message::RowPicked(RowRef::Task(id.clone())));
+        let read = opened
+            .into_iter()
+            .find(|e| matches!(e, Effect::FollowTask { .. }))
+            .expect("its timeline is read");
+        let effects = super::super::test_runtime::drive(&mut app, vec![read]);
+        assert!(effects.is_empty());
+        assert!(app.live.as_ref().is_some_and(|l| l.read && !l.activity.is_empty()));
+        let feed = app.live.as_ref().unwrap().feed.clone();
+        let again = app.task_followed(id, Ok(feed));
+        assert!(!again.iter().any(|e| matches!(e, Effect::ShowEnd(_))), "{again:?}");
+    }
+
+    #[test]
     fn run_again_opens_the_new_task_form_with_its_bot_and_objective() {
         let (mut app, id) = long_run();
         send(&mut app, Message::RunAgain(id.clone()));

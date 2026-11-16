@@ -21,11 +21,16 @@ impl App {
     }
 
     /// Esc that a field took and left: the palette's closes the
-    /// palette; on a list with no form open the only field is the
-    /// filter, which Esc empties as it leaves it.
+    /// palette; the find in a task's activity empties as it leaves it,
+    /// when the list's filter has nothing to empty; on a list with no
+    /// form open the other field is the filter, which Esc empties.
     pub(super) fn escape_taken(&mut self) -> Vec<Effect> {
         if self.palette.is_open() {
             self.palette.close();
+            return Vec::new();
+        }
+        if self.find_shown() && !self.find.typed().is_empty() && self.tables.query.is_empty() {
+            self.find.type_in("");
             return Vec::new();
         }
         if self.list_on_screen().is_some() && !self.form_over_list() && !self.tables.query.is_empty() {
@@ -252,6 +257,14 @@ mod tests {
         app.apply(Message::EscapeTaken);
         assert!(!app.palette.is_open(), "the palette's field closes the palette");
         assert_eq!(app.tables.query, "gate", "and leaves the filter alone");
+        // The find in a task's activity empties when the filter has
+        // nothing to empty.
+        app.apply(Message::ListFilterTyped(String::new()));
+        let task = app.task_lines_drawn().keys()[0].clone();
+        send(&mut app, Message::RowPicked(super::super::table::RowRef::Task(task)));
+        app.apply(Message::FindTyped("round".into()));
+        app.apply(Message::EscapeTaken);
+        assert_eq!(app.find.typed(), "");
         // Off a list, there is no filter to empty.
         send(&mut app, Message::Go(Screen::Settings));
         app.tables.query = "left".into();

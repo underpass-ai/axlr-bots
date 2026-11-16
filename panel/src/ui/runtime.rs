@@ -58,8 +58,13 @@ pub fn run(app: &App, effect: Effect) -> Task<Message> {
         Effect::ShowEnd(stream) => iced::widget::operation::snap_to_end(stream.id()),
         Effect::ScrollTop => iced::widget::operation::snap_to(widgets::PAGE, RelativeOffset::START),
         Effect::InspectorTop => iced::widget::operation::snap_to(widgets::INSPECTOR, RelativeOffset::START),
+        // Where the step is drawn, then a scroll just enough to show it.
         Effect::ShowStep(at) => {
-            iced::advanced::widget::operate(RevealChild::new(LiveStream::Steps.id(), widgets::step_id(at))).discard()
+            iced::advanced::widget::operate(RevealChild::new(LiveStream::Steps.id(), widgets::step_id(at))).then(
+                |(top, height)| {
+                    iced::advanced::widget::operate(Reveal::new(LiveStream::Steps.id(), top, height)).discard()
+                },
+            )
         }
         Effect::AskFind(key) => {
             iced::widget::operation::is_focused(Field::ActivityFind.id()).map(move |taken| Message::FindKey(key, taken))

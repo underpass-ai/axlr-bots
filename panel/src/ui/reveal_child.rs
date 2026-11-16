@@ -2,12 +2,10 @@ use iced::advanced::widget::operation::{Outcome, scrollable::Scrollable};
 use iced::advanced::widget::{Id, Operation};
 use iced::{Rectangle, Vector};
 
-use super::Reveal;
-
-/// Brings a part of a scrollable into sight by its id, however tall the
-/// parts before it are: a first pass reads where the part is drawn in
-/// the scrollable's content, then a `Reveal` scrolls just enough. What a
-/// find needs to show its match among lines of many heights.
+/// Finds where a part of a scrollable is drawn in its content, by the
+/// part's id: its top and its height, however tall the parts before it
+/// are. A `Reveal` then scrolls just enough to bring it into sight: what
+/// a find needs to show its match among lines of many heights.
 #[derive(Debug, Clone)]
 pub struct RevealChild {
     scroller: Id,
@@ -29,8 +27,8 @@ impl RevealChild {
     }
 }
 
-impl Operation for RevealChild {
-    fn traverse(&mut self, operate: &mut dyn FnMut(&mut dyn Operation<()>)) {
+impl Operation<(f32, f32)> for RevealChild {
+    fn traverse(&mut self, operate: &mut dyn FnMut(&mut dyn Operation<(f32, f32)>)) {
         operate(self);
     }
 
@@ -56,9 +54,9 @@ impl Operation for RevealChild {
         }
     }
 
-    fn finish(&self) -> Outcome<()> {
+    fn finish(&self) -> Outcome<(f32, f32)> {
         match self.found {
-            Some((top, height)) => Outcome::Chain(Box::new(Reveal::new(self.scroller.clone(), top, height))),
+            Some(span) => Outcome::Some(span),
             None => Outcome::None,
         }
     }
@@ -84,7 +82,7 @@ mod tests {
     }
 
     #[test]
-    fn finds_the_part_in_its_scrollables_content_then_reveals_it() {
+    fn finds_where_the_part_is_drawn_in_its_scrollables_content() {
         let mut op = RevealChild::new("steps", "step-7");
         assert!(matches!(op.finish(), Outcome::None), "nothing met yet");
         op.container(Some(&Id::new("step-7")), rect(500.0, 30.0));
@@ -108,7 +106,6 @@ mod tests {
         );
         op.container(Some(&Id::new("step-6")), rect(440.0, 30.0));
         op.container(Some(&Id::new("step-7")), rect(470.0, 60.0));
-        assert_eq!(op.found, Some((370.0, 60.0)));
-        assert!(matches!(op.finish(), Outcome::Chain(_)));
+        assert!(matches!(op.finish(), Outcome::Some((top, height)) if top == 370.0 && height == 60.0));
     }
 }
