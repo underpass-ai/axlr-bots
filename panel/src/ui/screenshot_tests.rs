@@ -25,7 +25,11 @@ struct Camera {
 
 impl Camera {
     fn new() -> Self {
-        let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/screenshots");
+        Self::into(Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/screenshots"))
+    }
+
+    /// A camera that writes into `out`, made if it is not there.
+    fn into(out: PathBuf) -> Self {
         fs::create_dir_all(&out).unwrap();
         Self { out }
     }
@@ -183,4 +187,28 @@ fn screenshots() {
     );
     send(&mut app, Message::Go(Screen::Task(publishing)));
     camera.both(&mut app, "task-post-draft");
+}
+
+/// The screens of the redesign at the size of a real fleet, light and
+/// dark, into the directory `PANEL_SHOTS_DIR` names: what a slice of
+/// the redesign is looked at before it is called done. It never writes
+/// into `docs/screenshots`.
+#[test]
+#[ignore = "writes into PANEL_SHOTS_DIR; run it with --ignored"]
+fn redesign_shots() {
+    let out = std::env::var("PANEL_SHOTS_DIR").expect("PANEL_SHOTS_DIR names where the shots go");
+    let camera = Camera::into(PathBuf::from(out));
+    let fake = Arc::new(FakeControlPlane::large("2026-10-25T10:00:00Z".parse().unwrap()));
+    let mut app = app_over(fake);
+    send(&mut app, Message::SettingsSave);
+
+    camera.both(&mut app, "s1-home");
+    send(&mut app, Message::Go(Screen::Tasks));
+    camera.both(&mut app, "s1-tasks");
+    send(&mut app, Message::Go(Screen::Bots));
+    camera.both(&mut app, "s1-bots");
+    send(&mut app, Message::Go(Screen::Nodes));
+    camera.both(&mut app, "s1-nodes");
+    send(&mut app, Message::Go(Screen::Settings));
+    camera.both(&mut app, "s1-settings");
 }
