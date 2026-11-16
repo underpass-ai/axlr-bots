@@ -24,6 +24,7 @@ mod confirm;
 mod connection;
 mod delete_form;
 mod effect;
+pub mod find;
 pub mod format;
 mod icon;
 mod keypress;
