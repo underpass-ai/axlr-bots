@@ -228,7 +228,7 @@ fn redesign_shots() {
     app.apply(Message::SubmitClose);
     send(&mut app, Message::Go(Screen::Nodes));
     send(&mut app, Message::ShowRevoked(true));
-    camera.shoot(&mut app, "s1-nodes-revoked-dark");
+    camera.shoot(&mut app, "s1-nodes-revoked-light");
     send(&mut app, Message::ShowRevoked(false));
     app.apply(Message::MintOpen);
     send(&mut app, Message::MintSubmit);
@@ -251,7 +251,7 @@ fn redesign_shots() {
     send(&mut app, Message::Go(Screen::Task(waiting)));
     camera.shoot(&mut app, "s1-task-light");
     send(&mut app, Message::Go(Screen::Bot(bot("bot"))));
-    camera.shoot(&mut app, "s1-bot-dark-page");
+    camera.shoot(&mut app, "s1-bot-light");
     send(&mut app, Message::Go(Screen::Team("ops".into())));
     camera.shoot(&mut app, "s1-team-light");
 }
