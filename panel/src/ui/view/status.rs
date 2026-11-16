@@ -2,19 +2,34 @@
 //! was put away on purpose is quiet; what is abnormal or at work keeps
 //! its colour.
 
-use super::widgets::{El, status};
+use super::widgets::{El, icon, status};
 use crate::domain::{BotStatus, NodeStatus, TaskStatus};
 use crate::ui::{Icon, Tokens, Tone};
 
 /// A task's status: Done and Stopped are quiet.
 pub fn task<'a>(state: TaskStatus, tokens: Tokens) -> El<'a> {
     let tone = Tone::of_task(state);
-    let glyph = match state {
+    status(task_glyph(state), tone, state.label(), task_is_quiet(state), tokens)
+}
+
+/// A task's status as its glyph alone, with its word on hover, for a
+/// list narrowed beside the inspector.
+pub fn task_glyph_only<'a>(state: TaskStatus, tokens: Tokens) -> El<'a> {
+    let tone = Tone::of_task(state);
+    let ink = match (task_is_quiet(state), tone) {
+        (true, Tone::Good) | (false, _) => crate::ui::styles::pill_ink(tokens, tone),
+        (true, _) => tokens.muted,
+    };
+    super::sheet::tip(icon(task_glyph(state), 12.0, ink), state.label().to_string(), tokens)
+}
+
+/// The glyph of a task's status.
+fn task_glyph(state: TaskStatus) -> Icon {
+    match state {
         TaskStatus::Cancelled => Icon::Stop,
         TaskStatus::Pending => Icon::Dot,
-        _ => tone.icon(),
-    };
-    status(glyph, tone, state.label(), task_is_quiet(state), tokens)
+        _ => Tone::of_task(state).icon(),
+    }
 }
 
 /// Whether a task's status is nothing to look at: it ended well, or a

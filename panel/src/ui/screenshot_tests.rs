@@ -100,11 +100,19 @@ fn screenshots() {
 
     // A task and the task it delegated, with what each ran and cost.
     let root = crate::domain::TaskId::new("task-root").unwrap();
-    app.screen = Screen::Activity(root.clone());
+    let delegating = super::view_tests::delegating_activity();
+    app.screen = Screen::Task(root.clone());
+    app.tabs.task = inspector::TaskTab::Runs;
+    app.task = Some(crate::application::TaskDetail {
+        task: delegating.task.clone(),
+        executions: Vec::new(),
+        events: Vec::new(),
+    });
     let mut tree = ActivityScreen::new(root);
-    tree.loaded(super::view_tests::delegating_activity());
+    tree.loaded(delegating);
     app.activity = Some(tree);
     camera.both(&mut app, "task-activity");
+    app.tabs.task = inspector::TaskTab::Activity;
     app.apply(Message::AnswerSelecting(true));
     camera.shoot(&mut app, "task-copy-light");
     app.apply(Message::AnswerSelecting(false));

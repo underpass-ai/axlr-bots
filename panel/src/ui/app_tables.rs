@@ -181,7 +181,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::super::test_runtime::{connected, send};
-    use super::super::{Keypress, Message};
+    use super::super::{Keypress, Message, Screen};
     use super::*;
     use crate::domain::{BotId, BotStatus, TaskId, TaskStatus};
     use crate::ui::table::{BotColumn, TaskColumn};

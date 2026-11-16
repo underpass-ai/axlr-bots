@@ -1,5 +1,5 @@
-//! Teams: who is in each, what each member is for, and the team's
-//! timeline as it happens.
+//! Teams: one line each with how many bots it has and how many are on;
+//! the team inspected beside it says who is in it and what happens.
 
 use std::rc::Rc;
 
@@ -9,14 +9,13 @@ use iced::{Alignment, Length};
 use super::sheet::{self, Column, Head, Ink, Line};
 use super::widgets::{El, empty, muted};
 use super::{grid, listbar};
-use crate::domain::Team;
+use crate::domain::{BotStatus, Team};
 use crate::ui::find::Query;
-use crate::ui::format;
-use crate::ui::styles::Kind;
 use crate::ui::table::{ColumnRef, List, RowRef, SortColumn, TeamColumn};
-use crate::ui::{App, Icon, Message, Screen, Tokens};
+use crate::ui::{App, Icon, Message, Screen, Tokens, Tone};
 
-/// Every team with its members and its last word, one line each.
+/// Every team, one line each: its name, its bots and how many are on.
+/// One is always inspected beside the list.
 pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     if app.fleet.is_none() {
         return super::overview::loading(app, tokens);
@@ -107,45 +106,18 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             44.0,
             of(|_, team, _, _, tokens| Ink::Plain.write(team.members.len().to_string(), tokens).into()),
         ),
-        Column::share(
-            Head::Plain("Members"),
-            8,
-            of(|_, team, width, query, tokens| {
-                let names: Vec<String> = team.members.iter().map(|b| b.id.to_string()).collect();
-                sheet::found(names.join(" · "), width, Ink::Quiet, query, tokens)
-            }),
-        ),
-        Column::share(
-            Head::Plain("Last word"),
-            8,
-            of(|app, team, width, _, tokens| {
-                let last = app
-                    .watch
-                    .feed(&team.name)
-                    .and_then(|f| f.events.iter().rev().find(|e| e.event_type == "bot.event.emitted"));
-                match last {
-                    Some(event) => sheet::pair(
-                        &format!("{} {}", format::clock(event.created_at), event.label()),
-                        &format::event_detail(event),
-                        width,
-                        &Query::default(),
-                        tokens,
-                    ),
-                    None => muted("—", tokens).into(),
-                }
-            }),
-        ),
+        // How many of its bots are on: green while one is, quiet when
+        // all are paused.
         Column::fixed(
-            Head::None,
-            grid::ACT,
+            Head::Plain("On"),
+            96.0,
             of(|_, team, _, _, tokens| {
-                grid::act_slot(Some(grid::icon_act(
-                    Kind::Ghost,
-                    Icon::Next,
-                    "Open",
-                    Some(Message::Go(Screen::Team(team.name.clone()))),
-                    tokens,
-                )))
+                let on = team.members.iter().filter(|b| b.status == BotStatus::Enabled).count();
+                if on > 0 {
+                    super::widgets::status(Icon::Check, Tone::Good, format!("{on} on"), false, tokens)
+                } else {
+                    super::widgets::status(Icon::Pause, Tone::Idle, "paused", true, tokens)
+                }
             }),
         ),
     ];

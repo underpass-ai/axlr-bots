@@ -23,8 +23,10 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     };
     let show = app.tables.bot_show;
     let query = app.list_query();
+    // Beside the inspector the list keeps its filter and New bot.
+    let narrow = app.screen.inspected().is_some();
     let mut chips = vec![listbar::filter(&app.tables.query, tokens)];
-    chips.extend(BotShow::ALL.into_iter().map(|chip| {
+    chips.extend(BotShow::ALL.into_iter().filter(|_| !narrow).map(|chip| {
         listbar::chip(
             chip.label(),
             fleet.bots.iter().filter(|b| chip.takes(b)).count(),
@@ -33,22 +35,25 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             tokens,
         )
     }));
-    let acts = vec![
-        action(
-            Kind::Secondary,
-            Icon::File,
-            "From file",
-            (!app.register.busy).then_some(Message::PickFile),
-            tokens,
-        ),
-        action(
-            Kind::Primary,
-            Icon::Plus,
-            "New bot",
-            (!app.register.open).then_some(Message::RegisterOpen),
-            tokens,
-        ),
-    ];
+    let mut acts = vec![action(
+        Kind::Primary,
+        Icon::Plus,
+        "New bot",
+        (!app.register.open).then_some(Message::RegisterOpen),
+        tokens,
+    )];
+    if !narrow {
+        acts.insert(
+            0,
+            action(
+                Kind::Secondary,
+                Icon::File,
+                "From file",
+                (!app.register.busy).then_some(Message::PickFile),
+                tokens,
+            ),
+        );
+    }
     let groups = app.bot_groups();
     let through: usize = groups.iter().map(|g| g.bots.len()).sum();
     let count = if query.is_empty() {
@@ -71,7 +76,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     } else if groups.is_empty() {
         listbar::nothing(empty(Icon::Bots, "No bot here", tokens))
     } else {
-        list(app, fleet, groups, query, tokens)
+        list(app, fleet, groups, query, narrow, tokens)
     });
     grid::with_bar(app, List::Bots, page.into(), tokens)
 }
@@ -80,12 +85,14 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
 /// table's order within their team: a box, the status (what the bot is
 /// doing now, when it is doing something), the name, its level, model
 /// and place, how it starts, and its acts. A click on a row opens the
-/// bot.
+/// bot in the inspector; beside it, `narrow`, a row keeps the status,
+/// the name and the level.
 fn list<'a>(
     app: &'a App,
     fleet: &'a crate::application::Fleet,
     groups: Vec<TeamGroup<'a>>,
     query: Query,
+    narrow: bool,
     tokens: Tokens,
 ) -> El<'a> {
     let switching = app.switching;
@@ -99,99 +106,117 @@ fn list<'a>(
     let shown = TeamGroup::shown(&groups);
     let all = state.selection.covers(shown.iter().map(|b| &b.id));
     let found = query.clone();
-    let columns = vec![
-        Column::fixed(Head::Check { all, list: List::Bots }, 18.0, move |b: &'a Bot, _| {
-            let id = b.id.clone();
-            grid::check(
-                state.selection.contains(&b.id),
-                move |on| Message::Pick(RowRef::Bot(id.clone()), on),
-                tokens,
-            )
-        }),
-        // What it is doing now when it is doing something, else its
-        // status; and the mark of a newer version ready beside it.
-        Column::fixed(head(BotColumn::Status), 112.0, move |b: &'a Bot, _| {
-            let mut cell = row![now(b, &fleet.tasks, tokens)].spacing(4).align_y(Alignment::Center);
-            if let Some(update) = b.update() {
-                cell = cell.push(mark(Icon::Update, tokens.accent, update.tip(), tokens));
-            }
-            cell.into()
-        }),
-        // The name, and its definition's version after it when it has one.
-        Column::share(head(BotColumn::Bot), 4, move |b: &'a Bot, width| {
-            let name = b.id.to_string();
-            let open = Message::Go(Screen::Bot(b.id.clone()));
-            match b.version_label() {
-                Some(version) => {
-                    let room = width - 8.0 - Ink::Quiet.span(version.chars().count());
-                    let short = grid::shorten(&name, Ink::Strong.fits(room));
-                    let line = row![
-                        sheet::link(short, room, open, &found, tokens),
-                        Ink::Quiet.write(version, tokens)
-                    ]
-                    .spacing(8)
-                    .align_y(Alignment::Center);
-                    sheet::tip(container(line).clip(true).into(), name, tokens)
+    let columns = if narrow {
+        let found = query.clone();
+        vec![
+            Column::fixed(head(BotColumn::Status), 96.0, move |b: &'a Bot, _| {
+                now(b, &fleet.tasks, tokens)
+            }),
+            Column::share(head(BotColumn::Bot), 1, move |b: &'a Bot, width| {
+                sheet::found(b.id.to_string(), width, Ink::Strong, &found, tokens)
+            }),
+            Column::fixed(head(BotColumn::Level), 96.0, move |b: &'a Bot, _| {
+                Ink::Quiet.write(b.level.label(), tokens).into()
+            })
+            .end(),
+        ]
+    } else {
+        vec![
+            Column::fixed(Head::Check { all, list: List::Bots }, 18.0, move |b: &'a Bot, _| {
+                let id = b.id.clone();
+                grid::check(
+                    state.selection.contains(&b.id),
+                    move |on| Message::Pick(RowRef::Bot(id.clone()), on),
+                    tokens,
+                )
+            }),
+            // What it is doing now when it is doing something, else its
+            // status; and the mark of a newer version ready beside it.
+            Column::fixed(head(BotColumn::Status), 112.0, move |b: &'a Bot, _| {
+                let mut cell = row![now(b, &fleet.tasks, tokens)].spacing(4).align_y(Alignment::Center);
+                if let Some(update) = b.update() {
+                    cell = cell.push(mark(Icon::Update, tokens.accent, update.tip(), tokens));
                 }
-                None => sheet::link(name, width, open, &found, tokens),
-            }
-        }),
-        Column::fixed(head(BotColumn::Level), 86.0, move |b: &'a Bot, _| {
-            Ink::Quiet.write(b.level.label(), tokens).into()
-        }),
-        Column::share(head(BotColumn::Model), 4, {
-            let query = query.clone();
-            move |b: &'a Bot, width| sheet::found(b.model.short_model().to_string(), width, Ink::Quiet, &query, tokens)
-        }),
-        Column::share(head(BotColumn::RunsOn), 3, {
-            let query = query.clone();
-            move |b: &'a Bot, width| sheet::found(b.placement.describe(), width, Ink::Quiet, &query, tokens)
-        }),
-        Column::share(head(BotColumn::StartsBy), 3, move |b: &'a Bot, width| {
-            sheet::words(b.trigger_summary(), width, Ink::Quiet, tokens)
-        }),
-        Column::fixed(Head::None, 3.0 * grid::ACT + 8.0, move |b: &'a Bot, _| {
-            let switch = if b.status.can_pause() {
-                Some(grid::icon_act(
-                    Kind::Ghost,
-                    Icon::Pause,
-                    "Pause",
-                    (!switching).then(|| Message::Pause(b.id.clone())),
-                    tokens,
-                ))
-            } else if b.status.can_enable() {
-                Some(grid::icon_act(
-                    Kind::Good,
-                    Icon::Play,
-                    "Turn on",
-                    (!switching).then(|| Message::Enable(b.id.clone())),
-                    tokens,
-                ))
-            } else {
-                None
-            };
-            row![
-                grid::act_slot(switch),
-                grid::act_slot(Some(grid::icon_act(
-                    Kind::Ghost,
-                    Icon::Stop,
-                    "Stop bot and its tasks",
-                    (!switching).then(|| Message::AskStopBot(b.id.clone())),
-                    tokens
-                ))),
-                grid::act_slot(Some(grid::icon_act(
-                    Kind::Ghost,
-                    Icon::Next,
-                    "Open",
-                    Some(Message::Go(Screen::Bot(b.id.clone()))),
-                    tokens,
-                ))),
-            ]
-            .spacing(4)
-            .align_y(Alignment::Center)
-            .into()
-        }),
-    ];
+                cell.into()
+            }),
+            // The name, and its definition's version after it when it has one.
+            Column::share(head(BotColumn::Bot), 4, move |b: &'a Bot, width| {
+                let name = b.id.to_string();
+                let open = Message::Go(Screen::Bot(b.id.clone()));
+                match b.version_label() {
+                    Some(version) => {
+                        let room = width - 8.0 - Ink::Quiet.span(version.chars().count());
+                        let short = grid::shorten(&name, Ink::Strong.fits(room));
+                        let line = row![
+                            sheet::link(short, room, open, &found, tokens),
+                            Ink::Quiet.write(version, tokens)
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::Center);
+                        sheet::tip(container(line).clip(true).into(), name, tokens)
+                    }
+                    None => sheet::link(name, width, open, &found, tokens),
+                }
+            }),
+            Column::fixed(head(BotColumn::Level), 86.0, move |b: &'a Bot, _| {
+                Ink::Quiet.write(b.level.label(), tokens).into()
+            }),
+            Column::share(head(BotColumn::Model), 4, {
+                let query = query.clone();
+                move |b: &'a Bot, width| {
+                    sheet::found(b.model.short_model().to_string(), width, Ink::Quiet, &query, tokens)
+                }
+            }),
+            Column::share(head(BotColumn::RunsOn), 3, {
+                let query = query.clone();
+                move |b: &'a Bot, width| sheet::found(b.placement.describe(), width, Ink::Quiet, &query, tokens)
+            }),
+            Column::share(head(BotColumn::StartsBy), 3, move |b: &'a Bot, width| {
+                sheet::words(b.trigger_summary(), width, Ink::Quiet, tokens)
+            }),
+            Column::fixed(Head::None, 3.0 * grid::ACT + 8.0, move |b: &'a Bot, _| {
+                let switch = if b.status.can_pause() {
+                    Some(grid::icon_act(
+                        Kind::Ghost,
+                        Icon::Pause,
+                        "Pause",
+                        (!switching).then(|| Message::Pause(b.id.clone())),
+                        tokens,
+                    ))
+                } else if b.status.can_enable() {
+                    Some(grid::icon_act(
+                        Kind::Good,
+                        Icon::Play,
+                        "Turn on",
+                        (!switching).then(|| Message::Enable(b.id.clone())),
+                        tokens,
+                    ))
+                } else {
+                    None
+                };
+                row![
+                    grid::act_slot(switch),
+                    grid::act_slot(Some(grid::icon_act(
+                        Kind::Ghost,
+                        Icon::Stop,
+                        "Stop bot and its tasks",
+                        (!switching).then(|| Message::AskStopBot(b.id.clone())),
+                        tokens
+                    ))),
+                    grid::act_slot(Some(grid::icon_act(
+                        Kind::Ghost,
+                        Icon::Next,
+                        "Open",
+                        Some(Message::Go(Screen::Bot(b.id.clone()))),
+                        tokens,
+                    ))),
+                ]
+                .spacing(4)
+                .align_y(Alignment::Center)
+                .into()
+            }),
+        ]
+    };
     let cursor = state.cursor.selected();
     let mut lines = Vec::new();
     for group in groups {

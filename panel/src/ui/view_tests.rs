@@ -2182,21 +2182,28 @@ pub(super) fn delegating_activity() -> crate::domain::TaskActivity {
 }
 
 #[test]
-fn the_activity_screen_shows_the_tree_its_tools_and_the_transcript_mark() {
+fn the_runs_tab_shows_the_tree_its_tools_and_the_transcript_mark() {
     let mut app = connected();
-    let id = crate::domain::TaskId::new("task-root").unwrap();
-    app.screen = Screen::Activity(id.clone());
+    let tree = delegating_activity();
+    let id = tree.task.id.clone();
+    app.screen = Screen::Task(id.clone());
+    app.tabs.task = inspector::TaskTab::Runs;
+    app.task = Some(crate::application::TaskDetail {
+        task: tree.task.clone(),
+        executions: Vec::new(),
+        events: Vec::new(),
+    });
     let mut screen = ActivityScreen::new(id.clone());
     assert!(
         !view_has(&app, "completed from transcript"),
         "nothing is drawn before the tree is read"
     );
-    screen.loaded(delegating_activity());
+    screen.loaded(tree);
     app.activity = Some(screen);
-    shows(
+    shows_wide(
         &app,
         &[
-            "Activity",
+            "Everything it did, with what it asked",
             "2 tasks",
             "local_read",
             "local_write",
@@ -2204,11 +2211,11 @@ fn the_activity_screen_shows_the_tree_its_tools_and_the_transcript_mark() {
             "completed from transcript",
         ],
     );
-    // The tasks of the tree open their own pages, and the screen goes back to the task.
+    // A task of the tree opens in the inspector.
     assert!(
-        messages_of_click(&app, "Task")
+        messages_of_click(&app, "Open")
             .iter()
-            .any(|m| matches!(m, Message::Go(Screen::Task(t)) if *t == id))
+            .any(|m| matches!(m, Message::Go(Screen::Task(_))))
     );
 }
 
@@ -2217,9 +2224,9 @@ fn view_has(app: &App, word: &str) -> bool {
 }
 
 #[test]
-fn a_task_page_opens_the_activity_screen_and_the_tree_is_read_and_followed() {
+fn the_runs_tab_reads_the_tree_and_follows_it_while_it_runs() {
     let mut app = connected();
-    let done = app
+    let running = app
         .fleet
         .as_ref()
         .unwrap()
@@ -2229,25 +2236,25 @@ fn a_task_page_opens_the_activity_screen_and_the_tree_is_read_and_followed() {
         .unwrap()
         .id
         .clone();
-    send(&mut app, Message::Go(Screen::Task(done.clone())));
+    send(&mut app, Message::Go(Screen::Task(running.clone())));
+    assert!(app.activity.is_none(), "the tree waits for its tab");
     assert!(
-        messages_of_click(&app, "Everything it did")
+        messages_of_click(&app, "Runs")
             .iter()
-            .any(|m| matches!(m, Message::Go(Screen::Activity(t)) if *t == done))
+            .any(|m| matches!(m, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Runs))))
     );
-    send(&mut app, Message::Go(Screen::Activity(done.clone())));
+    send(&mut app, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Runs)));
     let screen = app.activity.as_ref().unwrap();
     assert!(
         screen.tree.is_some() && screen.cursor.is_some(),
         "read once, then followed"
     );
     assert!(!screen.finished());
-    shows(&app, &["Activity", "live"]);
-    // Leaving drops the tree: another task's screen starts empty.
-    send(&mut app, Message::Go(Screen::Tasks));
+    shows_wide(&app, &["Everything it did, with what it asked", "live"]);
+    // Another task drops the tree: its own starts empty.
     send(
         &mut app,
-        Message::Go(Screen::Activity(crate::domain::TaskId::new("other").unwrap())),
+        Message::Go(Screen::Task(crate::domain::TaskId::new("other").unwrap())),
     );
     let other = app.activity.as_ref().unwrap();
     assert!(

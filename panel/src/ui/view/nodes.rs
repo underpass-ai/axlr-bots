@@ -21,6 +21,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     };
     let rows = app.tables.nodes_shown;
     let query = app.list_query();
+    let narrow = app.screen.inspected().is_some();
     let shown = app.node_rows();
     let revoked = NodeRows::revoked(&fleet.nodes);
     let mut chips = vec![listbar::filter(&app.tables.query, tokens)];
@@ -80,7 +81,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     } else if shown.is_empty() {
         listbar::nothing(empty(Icon::Nodes, "No node in the fleet now", tokens))
     } else {
-        list(app, shown, query, tokens)
+        list(app, shown, query, narrow, tokens)
     });
     grid::with_bar(app, List::Nodes, page.into(), tokens)
 }
@@ -88,8 +89,9 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
 /// The nodes on show in the table's order, one line each: a box, the
 /// status with the marks of what needs a look, the node, its host, when
 /// it was last seen, its AXLR, its agent, its providers, and Revoke. A
-/// click on a row puts the list on it.
-fn list<'a>(app: &'a App, shown: Vec<&'a Node>, query: Query, tokens: Tokens) -> El<'a> {
+/// click on a row opens it in the inspector; beside it, `narrow`, a row
+/// keeps the status, the name and when it was seen.
+fn list<'a>(app: &'a App, shown: Vec<&'a Node>, query: Query, narrow: bool, tokens: Tokens) -> El<'a> {
     let now = app.now;
     let fleet = app.fleet.as_ref();
     let state = &app.tables.nodes;
@@ -100,74 +102,90 @@ fn list<'a>(app: &'a App, shown: Vec<&'a Node>, query: Query, tokens: Tokens) ->
         column: ColumnRef::Nodes(c),
     };
     let all = state.selection.covers(shown.iter().map(|n| &n.id));
-    let columns = vec![
-        Column::fixed(Head::Check { all, list: List::Nodes }, 18.0, move |n: &'a Node, _| {
-            let id = n.id.clone();
-            grid::check(
-                state.selection.contains(&n.id),
-                move |on| Message::Pick(RowRef::Node(id.clone()), on),
-                tokens,
-            )
-        }),
-        // The status, and beside it the marks of a node behind the fleet
-        // and of a certificate that runs out: each tip says what to do.
-        Column::fixed(head(NodeColumn::Status), 132.0, move |n: &'a Node, _| {
-            let word = status::node(n.status, tokens);
-            let word = match (n.status, n.revoked_at) {
-                (NodeStatus::Revoked, Some(at)) => {
-                    sheet::tip(word, format!("Revoked {}", format::ago(at, now)), tokens)
-                }
-                _ => word,
-            };
-            let mut cell = row![word].spacing(4).align_y(Alignment::Center);
-            if let Some(behind) = fleet.and_then(|f| f.behind(n)) {
-                cell = cell.push(mark(Icon::Update, tokens.wait, behind.tip(), tokens));
-            }
-            if let Some((tone, tip)) = certificate_mark(n, now) {
-                cell = cell.push(mark(Icon::Alert, tone.color(&tokens), tip, tokens));
-            }
-            cell.into()
-        }),
-        // The node's name; on hover its labels and its certificate,
-        // which have no column of their own.
-        Column::share(head(NodeColumn::Node), 3, {
-            let query = query.clone();
-            move |n: &'a Node, width| {
-                let name = n.id.to_string();
-                let short = grid::shorten(&name, Ink::Strong.fits(width));
-                let line = container(Ink::Strong.write_found(short, &query, tokens)).clip(true);
-                sheet::tip(line.into(), about(n, now), tokens)
-            }
-        }),
-        Column::share(head(NodeColumn::Host), 3, {
-            let query = query.clone();
-            move |n: &'a Node, width| sheet::found(n.host_name.clone(), width, Ink::Quiet, &query, tokens)
-        }),
-        Column::fixed(head(NodeColumn::LastSeen), 64.0, move |n: &'a Node, _| {
-            Ink::Quiet.write(format::age(n.last_seen_at, now), tokens).into()
-        }),
-        Column::fixed(head(NodeColumn::Axlr), 110.0, move |n: &'a Node, width| {
-            sheet::words(dash(&n.capabilities.axlr_version), width, Ink::Code, tokens)
-        }),
-        Column::fixed(Head::Plain("Agent"), 124.0, move |n: &'a Node, width| {
-            sheet::words(agent_version(n).unwrap_or_default(), width, Ink::Code, tokens)
-        }),
-        Column::share(Head::Plain("Providers"), 6, {
-            let query = query.clone();
-            move |n: &'a Node, width| sheet::found(providers(n), width, Ink::Quiet, &query, tokens)
-        }),
-        Column::fixed(Head::None, grid::ACT, move |n: &'a Node, _| {
-            grid::act_slot(n.status.can_revoke().then(|| {
-                grid::icon_act(
-                    Kind::Ghost,
-                    Icon::Ban,
-                    "Revoke",
-                    Some(Message::AskRevoke(n.id.clone())),
+    let columns = if narrow {
+        let query = query.clone();
+        vec![
+            Column::fixed(head(NodeColumn::Status), 100.0, move |n: &'a Node, _| {
+                status::node(n.status, tokens)
+            }),
+            Column::share(head(NodeColumn::Node), 1, move |n: &'a Node, width| {
+                sheet::found(n.id.to_string(), width, Ink::Strong, &query, tokens)
+            }),
+            Column::fixed(head(NodeColumn::LastSeen), 64.0, move |n: &'a Node, _| {
+                Ink::Quiet.write(format::age(n.last_seen_at, now), tokens).into()
+            })
+            .end(),
+        ]
+    } else {
+        vec![
+            Column::fixed(Head::Check { all, list: List::Nodes }, 18.0, move |n: &'a Node, _| {
+                let id = n.id.clone();
+                grid::check(
+                    state.selection.contains(&n.id),
+                    move |on| Message::Pick(RowRef::Node(id.clone()), on),
                     tokens,
                 )
-            }))
-        }),
-    ];
+            }),
+            // The status, and beside it the marks of a node behind the fleet
+            // and of a certificate that runs out: each tip says what to do.
+            Column::fixed(head(NodeColumn::Status), 132.0, move |n: &'a Node, _| {
+                let word = status::node(n.status, tokens);
+                let word = match (n.status, n.revoked_at) {
+                    (NodeStatus::Revoked, Some(at)) => {
+                        sheet::tip(word, format!("Revoked {}", format::ago(at, now)), tokens)
+                    }
+                    _ => word,
+                };
+                let mut cell = row![word].spacing(4).align_y(Alignment::Center);
+                if let Some(behind) = fleet.and_then(|f| f.behind(n)) {
+                    cell = cell.push(mark(Icon::Update, tokens.wait, behind.tip(), tokens));
+                }
+                if let Some((tone, tip)) = certificate_mark(n, now) {
+                    cell = cell.push(mark(Icon::Alert, tone.color(&tokens), tip, tokens));
+                }
+                cell.into()
+            }),
+            // The node's name; on hover its labels and its certificate,
+            // which have no column of their own.
+            Column::share(head(NodeColumn::Node), 3, {
+                let query = query.clone();
+                move |n: &'a Node, width| {
+                    let name = n.id.to_string();
+                    let short = grid::shorten(&name, Ink::Strong.fits(width));
+                    let line = container(Ink::Strong.write_found(short, &query, tokens)).clip(true);
+                    sheet::tip(line.into(), about(n, now), tokens)
+                }
+            }),
+            Column::share(head(NodeColumn::Host), 3, {
+                let query = query.clone();
+                move |n: &'a Node, width| sheet::found(n.host_name.clone(), width, Ink::Quiet, &query, tokens)
+            }),
+            Column::fixed(head(NodeColumn::LastSeen), 64.0, move |n: &'a Node, _| {
+                Ink::Quiet.write(format::age(n.last_seen_at, now), tokens).into()
+            }),
+            Column::fixed(head(NodeColumn::Axlr), 110.0, move |n: &'a Node, width| {
+                sheet::words(dash(&n.capabilities.axlr_version), width, Ink::Code, tokens)
+            }),
+            Column::fixed(Head::Plain("Agent"), 124.0, move |n: &'a Node, width| {
+                sheet::words(agent_version(n).unwrap_or_default(), width, Ink::Code, tokens)
+            }),
+            Column::share(Head::Plain("Providers"), 6, {
+                let query = query.clone();
+                move |n: &'a Node, width| sheet::found(providers(n), width, Ink::Quiet, &query, tokens)
+            }),
+            Column::fixed(Head::None, grid::ACT, move |n: &'a Node, _| {
+                grid::act_slot(n.status.can_revoke().then(|| {
+                    grid::icon_act(
+                        Kind::Ghost,
+                        Icon::Ban,
+                        "Revoke",
+                        Some(Message::AskRevoke(n.id.clone())),
+                        tokens,
+                    )
+                }))
+            }),
+        ]
+    };
     let cursor = state.cursor.selected();
     let lines = shown
         .into_iter()
