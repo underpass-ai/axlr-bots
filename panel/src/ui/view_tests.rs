@@ -582,6 +582,35 @@ fn the_nodes_list_puts_revoked_nodes_away_until_asked_for() {
     assert!(matches!(sent.as_slice(), [Message::ShowRevoked(false)]), "{sent:?}");
 }
 
+/// A form open over a list takes the room it needs and scrolls by
+/// itself: in the smallest window the list's bar stays where it was
+/// and the form's foot is cut by the form's own scroll, not by a page
+/// that grew.
+#[test]
+fn a_form_open_over_a_list_scrolls_by_itself_in_the_smallest_window() {
+    let mut app = large(Screen::Bots);
+    app.apply(Message::RegisterOpen);
+    app.apply(Message::RegisterAdvanced(true));
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), MIN_WINDOW, view::view(&app));
+    let bar = ui.find("From file").unwrap();
+    assert!(bar.visible_bounds().is_some() && bar.bounds().y < 44.0 + 46.0);
+    let name = ui.find("What should it do?").unwrap();
+    assert!(name.visible_bounds().is_some());
+    let foot = ui.find("It starts when you give it a task.").unwrap();
+    assert!(
+        foot.bounds().y > MIN_WINDOW.height || foot.visible_bounds().is_none(),
+        "the form's foot is reached by scrolling the form"
+    );
+    drop(ui);
+    // In the window's size at start the whole form and the first rows show.
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+    for words in ["It starts when you give it a task.", "STATUS", "ops"] {
+        let placed = ui.find(words).unwrap();
+        assert!(placed.visible_bounds().is_some(), "{words} is out of sight");
+    }
+}
+
 /// The frame: the search button asks for the palette, the rail goes to
 /// each place and counts what needs a person on Tasks.
 #[test]

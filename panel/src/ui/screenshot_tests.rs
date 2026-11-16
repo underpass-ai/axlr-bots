@@ -211,4 +211,47 @@ fn redesign_shots() {
     camera.both(&mut app, "s1-nodes");
     send(&mut app, Message::Go(Screen::Settings));
     camera.both(&mut app, "s1-settings");
+
+    // The same lists as a person changes them: compact rows, the
+    // revoked nodes shown, a closed team opened, rows picked, a form
+    // open over the rows.
+    send(&mut app, Message::SetDensity(crate::application::Density::Compact));
+    send(&mut app, Message::Go(Screen::Tasks));
+    camera.shoot(&mut app, "s1-tasks-compact-light");
+    send(&mut app, Message::SetDensity(crate::application::Density::Comfortable));
+    send(&mut app, Message::FilterStatus(Some(TaskStatus::Failed)));
+    send(&mut app, Message::PickShown(table::List::Tasks, true));
+    camera.shoot(&mut app, "s1-tasks-picked-light");
+    send(&mut app, Message::FilterStatus(None));
+    app.apply(Message::SubmitOpen(None));
+    camera.shoot(&mut app, "s1-tasks-new-light");
+    app.apply(Message::SubmitClose);
+    send(&mut app, Message::Go(Screen::Nodes));
+    send(&mut app, Message::ShowRevoked(true));
+    camera.shoot(&mut app, "s1-nodes-revoked-dark");
+    send(&mut app, Message::ShowRevoked(false));
+    app.apply(Message::MintOpen);
+    send(&mut app, Message::MintSubmit);
+    camera.shoot(&mut app, "s1-nodes-token-light");
+    app.apply(Message::MintClose);
+    send(&mut app, Message::Go(Screen::Bots));
+    send(&mut app, Message::FoldTeam("docs".into()));
+    send(&mut app, Message::ShowBots(table::BotShow::Paused));
+    camera.shoot(&mut app, "s1-bots-paused-light");
+    send(&mut app, Message::ShowBots(table::BotShow::All));
+    app.apply(Message::RegisterOpen);
+    app.apply(Message::RegisterAdvanced(true));
+    camera.shoot(&mut app, "s1-bots-new-light");
+    app.apply(Message::RegisterClose);
+    send(&mut app, Message::Go(Screen::Teams));
+    camera.shoot(&mut app, "s1-teams-light");
+
+    // The pages the frame and the sizes changed without rebuilding them.
+    let waiting = task_with(&app, TaskStatus::WaitingApproval);
+    send(&mut app, Message::Go(Screen::Task(waiting)));
+    camera.shoot(&mut app, "s1-task-light");
+    send(&mut app, Message::Go(Screen::Bot(bot("bot"))));
+    camera.shoot(&mut app, "s1-bot-dark-page");
+    send(&mut app, Message::Go(Screen::Team("ops".into())));
+    camera.shoot(&mut app, "s1-team-light");
 }

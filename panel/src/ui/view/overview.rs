@@ -117,7 +117,7 @@ fn needs_you<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
         let mut list = column![].spacing(4);
         // The age and the buttons keep their room; what the task asks
         // has the rest, on one line.
-        let what = (space.width - 24.0 - STATUS - BOT - 44.0 - ANSWERS - 4.0 * 10.0).max(80.0);
+        let what = (space.width - 24.0 - STATUS - ASKER - 44.0 - ANSWERS - 4.0 * 10.0).max(80.0);
         for task in waiting.iter().take(NEEDS_YOU_SHOWN) {
             // What the bot wants to do, so an OK here is not blind.
             let (asked, _) = tasks::what(task);
@@ -128,7 +128,7 @@ fn needs_you<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
             list = list.push(
                 row![
                     container(status::task(task.status, tokens)).width(STATUS),
-                    container(sheet::words(task.bot_id.to_string(), BOT, Ink::Strong, tokens)).width(BOT),
+                    container(sheet::words(task.bot_id.to_string(), ASKER, Ink::Strong, tokens)).width(ASKER),
                     container(sheet::pair(&asked, &wants, what, tokens)).width(Length::Fill),
                     container(Ink::Quiet.write(format::age(task.created_at, app.now), tokens))
                         .width(44)
@@ -170,6 +170,10 @@ fn needs_you<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
     });
     block.height(Length::Shrink).into()
 }
+
+/// The width of the bot's name on a waiting task's line, which has
+/// the window's whole width: more than in a column's list.
+const ASKER: f32 = 180.0;
 
 /// The room Approve, Deny and Review take at the end of a waiting
 /// task's line.

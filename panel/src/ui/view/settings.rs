@@ -206,7 +206,7 @@ fn look<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             ]
             .spacing(10)
             .align_y(Alignment::Center),
-            muted("Kept as you switch. Compact rows show more of a list at once.", tokens),
+            muted("Kept as you switch.", tokens),
         ]
         .spacing(14),
         tokens,

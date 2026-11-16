@@ -97,7 +97,7 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         ),
         Column::share(
             Head::Plain("Members"),
-            6,
+            8,
             of(|_, team, width, tokens| {
                 let names: Vec<String> = team.members.iter().map(|b| b.id.to_string()).collect();
                 sheet::words(names.join(" · "), width, Ink::Quiet, tokens)
