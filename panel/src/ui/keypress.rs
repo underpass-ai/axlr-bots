@@ -3,9 +3,11 @@ use iced::keyboard::{self, Key, Modifiers, key::Named};
 /// A key the panel answers to by itself: Esc closes, Enter confirms or
 /// opens, the arrows move over rows and tabs, and a few shortcuts open
 /// the palette, the find and the filter. A key a widget took first
-/// never becomes one: a focused field keeps the letters typed into it
-/// (so `/`, `j` and `k`), Left and Right, Esc, and Enter when it
-/// submits. Up, Down and the Ctrl shortcuts pass through a field.
+/// never becomes one: a focused one-line field keeps the letters typed
+/// into it (so `/`, `j` and `k`), Left and Right, Esc, and Enter when it
+/// submits, and lets Up, Down and the Ctrl shortcuts through; a focused
+/// text of several lines (a passage being selected, the settings as
+/// JSON) keeps the arrows too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Keypress {
     Escape,

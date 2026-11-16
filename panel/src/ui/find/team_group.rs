@@ -150,7 +150,7 @@ mod tests {
 
     fn many() -> Vec<Bot> {
         let mut bots = fleet();
-        bots.push(bot("qa-checker", "qa", "Paused"));
+        bots.push(bot("web-checker", "web", "Paused"));
         bots
     }
 
@@ -158,7 +158,7 @@ mod tests {
     fn with_many_teams_one_with_no_bot_on_starts_closed() {
         let bots = many();
         let groups = TeamGroup::of(&bots, false, &Collapsed::default());
-        assert_eq!(names(&groups), vec!["dev", "no team", "ops", "lab", "qa"]);
+        assert_eq!(names(&groups), vec!["dev", "no team", "ops", "lab", "web"]);
         assert_eq!(
             groups.iter().map(|g| g.open).collect::<Vec<_>>(),
             vec![true, true, true, false, false]
