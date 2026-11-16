@@ -1,25 +1,36 @@
 //! The row cursor of the list on show: the arrows (and `j`, `k`) move
 //! it over the rows the list shows and bring its row into sight, Enter
-//! opens its row, Esc lets go of it; a click on a row puts it there and
-//! opens the row. Each list keeps its own cursor in its table.
+//! opens its row in the inspector, Esc closes the inspector, then lets
+//! go of the cursor; a click on a row puts it there and opens the row.
+//! While a row is inspected the inspector follows the cursor. Each list
+//! keeps its own cursor in its table.
 
 use super::find::{DrawnRows, RowCursor, RowSpot};
 use super::table::{List, RowRef};
 use super::{App, Effect, Field, Keypress, Screen, Scroller};
 
 impl App {
-    /// A key for the list on show: the arrows move its cursor, Enter
-    /// opens the row under it (or puts it on the first row), Esc lets
-    /// go of the cursor, then of the picked rows, then of the filter,
-    /// and `/` puts the keyboard in the filter.
+    /// A key for the list on show: the arrows move its cursor (and the
+    /// inspector with it), Enter opens the row under it (or puts it on
+    /// the first row), Esc closes the inspector, then lets go of the
+    /// cursor, of the picked rows, then of the filter, and `/` puts the
+    /// keyboard in the filter. The Teams list always inspects a team.
     pub(super) fn list_key(&mut self, list: List, key: Keypress) -> Vec<Effect> {
+        let inspecting = self.screen.inspected().is_some();
         match key {
-            Keypress::Up | Keypress::Down => self.move_cursor(list, key),
+            Keypress::Up | Keypress::Down => {
+                let mut effects = self.move_cursor(list, key);
+                if inspecting && let Some(row) = self.cursor_row(list) {
+                    effects.extend(self.go(Screen::of_row(row)));
+                }
+                effects
+            }
             Keypress::Enter => match self.cursor_row(list) {
                 Some(row) => self.open_row(row),
                 None => self.move_cursor(list, Keypress::Down),
             },
-            Keypress::Escape if self.cursor_row(list).is_some() => {
+            Keypress::Escape if inspecting && list != List::Teams => self.go(Screen::of_list(list)),
+            Keypress::Escape if self.cursor_row(list).is_some() && list != List::Teams => {
                 self.clear_cursor(list);
                 Vec::new()
             }
@@ -87,17 +98,11 @@ impl App {
         }
     }
 
-    /// Opens a row: its list's cursor goes to it, and its page opens. A
-    /// node has no page: it stays selected in its list. The one place a
-    /// row is opened, by a click, Enter or the palette.
+    /// Opens a row in the inspector beside its list, its list's cursor
+    /// on it. The one place a row is opened, by a click, Enter or the
+    /// palette.
     pub(super) fn open_row(&mut self, row: RowRef) -> Vec<Effect> {
-        self.select_row(row.clone());
-        match row {
-            RowRef::Task(id) => self.go(Screen::Task(id)),
-            RowRef::Bot(id) => self.go(Screen::Bot(id)),
-            RowRef::Team(name) => self.go(Screen::Team(name)),
-            RowRef::Node(_) => Vec::new(),
-        }
+        self.go(Screen::of_row(row))
     }
 
     /// Where the row under the cursor is drawn in the list on show.

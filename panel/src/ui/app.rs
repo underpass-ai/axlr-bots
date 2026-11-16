@@ -8,9 +8,10 @@ use super::{
 use crate::application::SubscriptionChange;
 use crate::application::{Density, EventFeed, Fleet, NewBotDefaults, PanelError, PanelSettings, TaskDetail};
 use crate::domain::{Decision, Shortcut, TaskId, TaskStatus};
-use crate::ui::find::{Palette, TeamGroup};
+use crate::ui::find::{ActivityFind, Palette, TeamGroup};
 use crate::ui::format;
-use crate::ui::table::Tables;
+use crate::ui::inspector::Tabs;
+use crate::ui::table::{List, Tables};
 
 /// How long a refresh may stay unanswered before the next tick tries again.
 const REFRESH_PATIENCE: i64 = 20;
@@ -90,6 +91,10 @@ pub struct App {
     pub tables: Tables,
     /// The command palette.
     pub palette: Palette,
+    /// The inspector's tab open for each kind of row.
+    pub tabs: Tabs,
+    /// The find in the activity of the task inspected.
+    pub find: ActivityFind,
 }
 
 impl App {
@@ -148,6 +153,8 @@ impl App {
             readers: Readers::default(),
             tables: Tables::default(),
             palette: Palette::default(),
+            tabs: Tabs::default(),
+            find: ActivityFind::default(),
         };
         match app.services.shortcuts.load() {
             Ok(list) => app.shortcuts = list,
@@ -270,6 +277,10 @@ impl App {
                         self.fleet_error = None;
                         self.last_refresh = Some(self.now);
                         effects.extend(self.follow_teams());
+                        // The Teams list waited for its first team.
+                        if self.screen == Screen::Teams {
+                            effects.extend(self.go(Screen::Teams));
+                        }
                         effects
                     }
                     Err(error) => {
@@ -330,6 +341,18 @@ impl App {
                 }
                 Vec::new()
             }
+            Message::Tab(tab) => self.tab_picked(tab),
+            Message::FindTyped(typed) => self.find_typed(typed),
+            Message::FindNext => self.find_step(true),
+            Message::FindPrevious => self.find_step(false),
+            Message::FindSubmit => self.find_step(!self.tables.shift),
+            Message::FindShow(kind) => {
+                self.find.show(kind);
+                Vec::new()
+            }
+            Message::JumpToLatest => self.jump_to_latest(),
+            Message::FindKey(key, in_find) => self.find_key(key, in_find),
+            Message::RunAgain(id) => self.run_again(id),
             Message::BotLoaded(id, result) => {
                 self.bot_loading = false;
                 if self.screen != Screen::Bot(id) {
@@ -670,7 +693,7 @@ impl App {
             Message::FilterStatus(status) => {
                 self.filter.status = status;
                 self.rows_changed();
-                if self.screen != Screen::Tasks {
+                if self.screen.list() != Some(List::Tasks) {
                     return self.go(Screen::Tasks);
                 }
                 Vec::new()
@@ -686,7 +709,8 @@ impl App {
             Message::SubmitOpen(bot) => {
                 let bot = bot.or_else(|| self.filter.bot.clone());
                 self.submit = SubmitForm::opened(bot, self.services.keys.next_key());
-                if self.screen != Screen::Tasks {
+                // Over the Tasks list, a task inspected or not.
+                if self.screen.list() != Some(List::Tasks) {
                     return self.go(Screen::Tasks);
                 }
                 Vec::new()
@@ -1064,9 +1088,9 @@ impl App {
                     effects.push(Effect::LoadTask(id.clone()));
                 }
                 effects.extend(self.follow_task());
+                effects.extend(self.reload_activity());
                 effects
             }
-            Screen::Activity(_) => self.reload_activity(),
             Screen::Bot(id) if !self.bot_loading => {
                 self.bot_loading = true;
                 let feed = self
@@ -1089,6 +1113,7 @@ impl App {
     }
 
     pub(super) fn go(&mut self, screen: Screen) -> Vec<Effect> {
+        let screen = self.settled(screen);
         if let Screen::Task(id) = &screen
             && self.task.as_ref().is_some_and(|t| &t.task.id != id)
         {
@@ -1100,7 +1125,7 @@ impl App {
         {
             self.live = None;
         }
-        if let Screen::Activity(id) = &screen
+        if let Screen::Task(id) = &screen
             && self.activity.as_ref().is_some_and(|a| &a.id != id)
         {
             self.activity = None;
@@ -1110,12 +1135,11 @@ impl App {
         {
             self.bot = None;
         }
-        // Another screen opens at its top, not where the last one was
-        // scrolled to; a refresh of the same one keeps its place.
         let mut effects = Vec::new();
+        // Another row in the inspector, or none: what belongs to the row
+        // left goes, and the inspector's body opens at its top.
         let changed = screen != self.screen;
         if changed {
-            effects.push(Effect::ScrollTop);
             self.advanced = false;
             self.chat_draft.clear();
             self.watch.editing = None;
@@ -1126,16 +1150,31 @@ impl App {
             self.order = OrderForm::default();
             self.task_loading = false;
             self.bot_loading = false;
-            // The picked rows and the filter belong to the list left;
-            // its order and its cursor stay.
+            self.find.reset();
+            if screen.inspected().is_some() {
+                effects.push(Effect::InspectorTop);
+            }
+        }
+        // Another place opens at its top, not where the last one was
+        // scrolled to; the list beside a row that opens stays where it is.
+        // The picked rows and the filter belong to the list left; its
+        // order and its cursor stay.
+        let left = screen.section() != self.screen.section();
+        if left {
+            effects.push(Effect::ScrollTop);
             self.tables.clear_all();
             self.tables.query.clear();
         }
+        // The row inspected is the row under its list's cursor, however
+        // it was opened: a click, a key, the palette, a notice, a link.
+        if let Some(row) = screen.inspected() {
+            self.select_row(row);
+        }
         self.screen = screen;
         self.confirm = None;
-        // Back on a list whose cursor is on a row: the row in sight
-        // rather than the list's top.
-        if changed && let Some(spot) = self.list_on_screen().and_then(|list| self.cursor_spot(list)) {
+        // Back on a list whose cursor is on a row, or a row opened: its
+        // line in sight rather than the list's top.
+        if changed && let Some(spot) = self.screen.list().and_then(|list| self.cursor_spot(list)) {
             effects.retain(|effect| effect != &Effect::ScrollTop);
             effects.push(Effect::Reveal(super::Scroller::Rows, spot));
         }
@@ -1146,14 +1185,30 @@ impl App {
         effects
     }
 
+    /// Where a place opens: the Teams list opens on a team, the one
+    /// under its cursor or the first, once there is one.
+    fn settled(&self, screen: Screen) -> Screen {
+        if screen != Screen::Teams {
+            return screen;
+        }
+        let rows = self.team_lines_drawn().keys();
+        match self.tables.teams.cursor.selected().filter(|name| rows.contains(name)) {
+            Some(name) => Screen::Team(name.clone()),
+            None => rows.first().cloned().map_or(Screen::Teams, Screen::Team),
+        }
+    }
+
     /// A key no widget took. The open palette takes every key first. A
     /// dialog then: Esc keeps what it would do, Enter does what it asks,
     /// and nothing else reaches the page behind it, Ctrl+K neither.
     /// Ctrl+K opens the palette. Esc closes the new task's form or a
-    /// bot's Edit or Delete card; on a list the arrows, Enter, Esc and
-    /// `/` drive its cursor and its filter (see `list_key`), Esc alone
-    /// while a form is open over it. Other screens ignore them.
-    fn key(&mut self, key: Keypress) -> Vec<Effect> {
+    /// bot's Edit or Delete card. With a row inspected, Left and Right
+    /// change its tab and Ctrl+F finds in a task's activity; the up and
+    /// down arrows first ask whether the find has the keyboard. On a list
+    /// the arrows, Enter, Esc and `/` drive its cursor and its filter
+    /// (see `list_key`), Esc alone while a form is open over it. Other
+    /// screens ignore them.
+    pub(super) fn key(&mut self, key: Keypress) -> Vec<Effect> {
         if self.palette.is_open() {
             return self.palette_key(key);
         }
@@ -1165,12 +1220,22 @@ impl App {
             Keypress::Escape if self.submit.open && !self.submit.busy => self.handle(Message::SubmitClose),
             Keypress::Escape if self.delete.bot.is_some() && !self.delete.busy => self.handle(Message::DeleteClose),
             Keypress::Escape if self.edit.bot.is_some() && !self.edit.busy => self.handle(Message::EditClose),
-            // A form open over a list keeps the arrows and Enter its
-            // fields let through: the rows behind it do not move.
-            _ => match self.list_on_screen() {
-                Some(list) if key == Keypress::Escape || !self.form_over_list() => self.list_key(list, key),
-                _ => Vec::new(),
-            },
+            Keypress::Find => self.find_focus(),
+            Keypress::Left | Keypress::Right => self.tab_key(key == Keypress::Right),
+            Keypress::Up | Keypress::Down if self.find_shown() && !self.form_over_list() => {
+                vec![Effect::AskFind(key)]
+            }
+            _ => self.list_or_nothing(key),
+        }
+    }
+
+    /// The key for the list on show, if there is one. A form open over
+    /// a list keeps the arrows and Enter its fields let through: the rows
+    /// behind it do not move.
+    pub(super) fn list_or_nothing(&mut self, key: Keypress) -> Vec<Effect> {
+        match self.list_on_screen() {
+            Some(list) if key == Keypress::Escape || !self.form_over_list() => self.list_key(list, key),
+            _ => Vec::new(),
         }
     }
 

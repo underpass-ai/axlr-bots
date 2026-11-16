@@ -5,20 +5,14 @@ use std::collections::BTreeSet;
 
 use super::find::{GroupKey, TeamGroup};
 use super::table::{BotShow, BulkPlan, ColumnRef, List, RowRef};
-use super::{App, Banner, Confirm, Effect, Screen};
+use super::{App, Banner, Confirm, Effect};
 use crate::application::{BulkAction, BulkOutcome};
 use crate::domain::{BotId, NodeId, TaskId};
 
 impl App {
     /// The list the screen on show is, if it has a table to pick in.
     pub fn list_on_screen(&self) -> Option<List> {
-        match self.screen {
-            Screen::Nodes => Some(List::Nodes),
-            Screen::Bots => Some(List::Bots),
-            Screen::Tasks => Some(List::Tasks),
-            Screen::Teams => Some(List::Teams),
-            _ => None,
-        }
+        self.screen.list()
     }
 
     pub(super) fn sort_by(&mut self, column: ColumnRef) -> Vec<Effect> {

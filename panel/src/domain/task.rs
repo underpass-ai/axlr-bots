@@ -64,6 +64,13 @@ impl Task {
         }
     }
 
+    /// Who told it, for a task an event made (`input.from`): the bot or
+    /// the operator that sent the event.
+    pub fn told_from(&self) -> Option<&str> {
+        let from = self.input.as_ref()?.get("from")?.as_str()?.trim();
+        (!from.is_empty()).then_some(from)
+    }
+
     /// The words the event carried, for a task an event made
     /// (`input.message`): `item-12 · planned`. None for any other task,
     /// or when the event said nothing.

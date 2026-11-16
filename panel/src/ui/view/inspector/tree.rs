@@ -1,12 +1,13 @@
-//! A task with everything under it: the task and the tasks it delegated,
-//! each with its executions (how long, what it cost), the tools they
-//! called with their state and duration, and a mark where the steps were
-//! completed from the transcript.
+//! A task with everything under it, on its Runs tab: the task and the
+//! tasks it delegated, each with its executions (how long, what it
+//! cost), the tools they called with their state and duration, and a
+//! mark where the steps were completed from the transcript. A task it
+//! asked opens in the inspector.
 
-use iced::widget::{Space, column, container, row, scrollable, text};
+use iced::widget::{Space, column, container, row, text};
 use iced::{Alignment, Length, Padding};
 
-use super::widgets::{El, SMALL, action, bold, card, chip, empty, icon, link, muted, pill, section_title};
+use super::super::widgets::{El, SMALL, action, bold, card, chip, empty, icon, link, muted, pill, section_title};
 use crate::application::{ActivityBranch, ActivityRun, ToolActivity};
 use crate::domain::{ExecutionKind, TaskId};
 use crate::ui::format;
@@ -14,34 +15,31 @@ use crate::ui::styles::Kind;
 use crate::ui::{ActivityScreen, App, Icon, Message, Screen, Tokens, Tone};
 
 /// How far a delegated task is set in, per level.
-const INDENT: f32 = 26.0;
+const INDENT: f32 = 20.0;
 
+/// Everything the task did, with the tasks it asked; read when the tab
+/// opens.
 pub fn view<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
-    let back = action(
-        Kind::Ghost,
-        Icon::Back,
-        "Task",
-        Some(Message::Go(Screen::Task(id.clone()))),
-        tokens,
-    );
     let Some(screen) = app.activity.as_ref().filter(|a| &a.id == id && a.tree.is_some()) else {
-        return column![back, empty(Icon::Hourglass, "Loading everything it did…", tokens)]
-            .spacing(14)
-            .into();
+        return empty(Icon::Hourglass, "Reading everything it did…", tokens);
     };
-    let mut page = column![header(back, screen, tokens)].spacing(16);
+    let mut page = column![header(screen, tokens)].spacing(12);
     for branch in &screen.outline {
         page = page.push(branch_card(app, branch, tokens));
     }
     page.into()
 }
 
-fn header<'a>(back: El<'a>, screen: &'a ActivityScreen, tokens: Tokens) -> El<'a> {
+fn header<'a>(screen: &'a ActivityScreen, tokens: Tokens) -> El<'a> {
     let runs: usize = screen.outline.iter().map(|b| b.runs.len()).sum();
     let usage = screen.outline.first().map(|b| b.subtree).unwrap_or_default();
-    let mut head = row![back, section_title(Icon::Bolt, "Activity", tokens)]
-        .spacing(12)
-        .align_y(Alignment::Center);
+    let mut head = row![section_title(
+        Icon::Bolt,
+        "Everything it did, with what it asked",
+        tokens
+    )]
+    .spacing(12)
+    .align_y(Alignment::Center);
     if !screen.finished() {
         head = head.push(pill(Tone::Busy, "live", tokens));
     }
@@ -54,7 +52,7 @@ fn header<'a>(back: El<'a>, screen: &'a ActivityScreen, tokens: Tokens) -> El<'a
         .push(chip(format::count(runs as u64, "run", "runs"), tokens))
         .push(chip(format!("{} tokens", format::tokens(usage.total_tokens())), tokens))
         .push(chip(format!("cost {}", format::spend(usage.cost())), tokens));
-    head.spacing(8).into()
+    head.spacing(8).wrap().vertical_spacing(6).into()
 }
 
 fn branch_card<'a>(app: &'a App, branch: &'a ActivityBranch, tokens: Tokens) -> El<'a> {
@@ -145,7 +143,7 @@ fn run_block<'a>(app: &'a App, run: &'a ActivityRun, tokens: Tokens) -> El<'a> {
 }
 
 fn pill_from_transcript<'a>(tokens: Tokens) -> El<'a> {
-    super::widgets::pill_with(Icon::File, Tone::Wait, "completed from transcript", tokens)
+    super::super::widgets::pill_with(Icon::File, Tone::Wait, "completed from transcript", tokens)
 }
 
 fn tool_line<'a>(tool: &'a ToolActivity, tokens: Tokens) -> El<'a> {
@@ -167,15 +165,4 @@ fn tool_line<'a>(tool: &'a ToolActivity, tokens: Tokens) -> El<'a> {
             ..Default::default()
         })
         .into()
-}
-
-/// The screen, scrolling as one page.
-pub fn page<'a>(app: &'a App, id: &'a TaskId, tokens: Tokens) -> El<'a> {
-    scrollable(container(view(app, id, tokens)).padding(Padding {
-        right: 12.0,
-        ..Default::default()
-    }))
-    .id(super::widgets::PAGE)
-    .height(Length::Fill)
-    .into()
 }

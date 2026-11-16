@@ -16,6 +16,16 @@ pub type El<'a> = Element<'a, Message>;
 /// top when another screen opens.
 pub const PAGE: &str = "page";
 
+/// The id of the inspector's scrollable body, which goes back to its
+/// top when another row or tab opens.
+pub const INSPECTOR: &str = "inspector";
+
+/// The id of a line of a task's activity, by its place: what a find
+/// brings into sight.
+pub fn step_id(at: usize) -> iced::widget::Id {
+    iced::widget::Id::from(format!("step-{at}"))
+}
+
 /// The panel's typeface for words: Lexend, made for reading fluency,
 /// embedded with the binary (`assets/fonts`).
 pub const REGULAR: Font = Font {

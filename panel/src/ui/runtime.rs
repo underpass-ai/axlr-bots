@@ -9,7 +9,7 @@ use iced::widget::operation::RelativeOffset;
 use iced::{Size, Subscription, Task, Theme, window};
 
 use super::view::widgets;
-use super::{App, Effect, Keypress, Message, Reveal, Tokens, brand, view};
+use super::{App, Effect, Field, Keypress, LiveStream, Message, Reveal, RevealChild, Tokens, brand, view};
 
 /// How often the panel reads the control plane again.
 pub const REFRESH_EVERY: Duration = Duration::from_secs(3);
@@ -57,6 +57,13 @@ pub fn run(app: &App, effect: Effect) -> Task<Message> {
         Effect::FocusWindow => window::latest().and_then(window::gain_focus),
         Effect::ShowEnd(stream) => iced::widget::operation::snap_to_end(stream.id()),
         Effect::ScrollTop => iced::widget::operation::snap_to(widgets::PAGE, RelativeOffset::START),
+        Effect::InspectorTop => iced::widget::operation::snap_to(widgets::INSPECTOR, RelativeOffset::START),
+        Effect::ShowStep(at) => {
+            iced::advanced::widget::operate(RevealChild::new(LiveStream::Steps.id(), widgets::step_id(at))).discard()
+        }
+        Effect::AskFind(key) => {
+            iced::widget::operation::is_focused(Field::ActivityFind.id()).map(move |taken| Message::FindKey(key, taken))
+        }
         Effect::Focus(field) => iced::widget::operation::focus(field.id()),
         Effect::Reveal(scroller, spot) => {
             let (top, height) = view::span(scroller, spot, app.density);

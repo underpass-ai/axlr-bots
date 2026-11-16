@@ -18,6 +18,13 @@ pub enum Effect {
     Focus(Field),
     /// A row brought into sight in what scrolls it, when it is not.
     Reveal(Scroller, RowSpot),
+    /// The inspector's body back at its top: another row or tab opened.
+    InspectorTop,
+    /// A step of the task's activity brought into sight, by its place.
+    ShowStep(usize),
+    /// Ask whether the find in the activity has the keyboard, then let
+    /// the key act: an arrow there goes from match to match.
+    AskFind(super::Keypress),
     Refresh {
         generation: u64,
     },

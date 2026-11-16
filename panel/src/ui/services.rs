@@ -42,7 +42,12 @@ impl Services {
             | Effect::ShowEnd(_)
             | Effect::ScrollTop
             | Effect::Focus(_)
+            | Effect::InspectorTop
+            | Effect::ShowStep(_)
             | Effect::Reveal(..) => return None,
+            // The runtime asks the window; driven by hand, the key goes
+            // to the list.
+            Effect::AskFind(key) => return Some(Message::FindKey(key, false)),
             Effect::Notify { notice, open } => {
                 return match self.notifier.show(notice).await {
                     Ok(true) => Some(Message::NoticeClicked(open)),

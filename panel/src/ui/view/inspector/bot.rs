@@ -1,130 +1,229 @@
-//! One bot, in plain words: Pause and Stop, what waits for a person,
-//! what it does now and an urgent order, its events and recent work; its
-//! definition under Advanced, closed by default.
+//! A bot in the inspector, in plain words: Pause, Stop, Edit, Delete and
+//! Update in its header; what waits for a person, what it does now with
+//! an urgent order, its latest work and its chat on Now; then its work,
+//! its mission and team, its rules and tools, what it listens to and
+//! emits with its events.
 
 use iced::widget::text::{LineHeight, Wrapping};
-use iced::widget::{Space, column, container, mouse_area, pick_list, row, scrollable, text, text_input};
-use iced::{Alignment, Length, mouse};
+use iced::widget::{Space, column, container, mouse_area, pick_list, row, text, text_input};
+use iced::{Alignment, Length, Padding, mouse};
 
-use super::levels;
-use super::widgets::{
-    El, SMALL, Voice, action, bold, chip, copy_button, empty, fact, icon, mark, muted, pill, reader, section,
-    section_title, section_with, title,
+use super::super::levels;
+use super::super::widgets::{
+    El, SMALL, Voice, action, bold, chip, copy_button, empty, fact, icon, mark, muted, pill, reader, section_title,
 };
+use super::part;
 use crate::application::{BotNow, ChatLine};
 use crate::domain::{Bot, BotId, BotStatus, TaskId};
 use crate::ui::format;
+use crate::ui::inspector::{BotTab, Tab};
 use crate::ui::styles::{self, Kind};
 use crate::ui::{App, BotView, Icon, Message, ModeChoice, ReaderKey, Screen, Tokens, Tone, passages};
 
-pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
-    let back = action(Kind::Ghost, Icon::Back, "Bots", Some(Message::Go(Screen::Bots)), tokens);
+/// The bot inspected, `width` wide: its status, team and place with its
+/// acts, its name, and its tabs. Edit and Delete, once asked for, come
+/// first in the tab's body.
+pub fn view<'a>(app: &'a App, id: &'a BotId, width: f32, tokens: Tokens) -> El<'a> {
     let Some(view) = app.bot.as_ref().filter(|v| &v.bot.id == id) else {
-        return column![back, empty(Icon::Hourglass, "Loading the bot…", tokens)]
-            .spacing(14)
-            .into();
+        return column![
+            super::head(
+                Vec::new(),
+                Vec::new(),
+                super::close_of(app),
+                id.as_str(),
+                None,
+                width,
+                tokens
+            ),
+            empty(Icon::Hourglass, "Loading the bot…", tokens)
+        ]
+        .into();
     };
     let bot = &view.bot;
-    // Pause and Stop, always in sight.
-    let switch = if bot.status.can_pause() {
-        action(
-            Kind::Secondary,
-            Icon::Pause,
-            "Pause",
-            (!app.switching).then(|| Message::Pause(bot.id.clone())),
-            tokens,
-        )
-    } else if bot.status.can_enable() {
-        action(
-            Kind::Good,
-            Icon::Play,
-            "Turn on",
-            (!app.switching).then(|| Message::Enable(bot.id.clone())),
-            tokens,
-        )
-    } else {
-        Space::new().into()
+    let tab = app.tabs.bot;
+    let mut pane = column![
+        header(app, bot, width, tokens),
+        super::tabs(Tab::Bot(tab), |t| count(app, bot, t), tokens)
+    ];
+    let mut top = column![].spacing(14);
+    if let Some(card) = super::super::bot_delete::card(app, bot, tokens) {
+        top = top.push(card);
+    }
+    if let Some(card) = super::super::bot_edit::card(app, bot, tokens) {
+        top = top.push(card);
+    }
+    let content: El<'a> = match tab {
+        BotTab::Now => now_tab(app, view, tokens),
+        BotTab::Work => work(app, bot, tokens),
+        BotTab::Mission => mission(app, bot, tokens),
+        BotTab::Rules => advanced(app, bot, tokens),
+        BotTab::Listens => listens_and_emits(app, bot, tokens),
     };
+    pane = pane.push(super::body(column![top, content].spacing(16)));
+    if tab == BotTab::Now {
+        pane = pane.push(chat_foot(app, view, tokens));
+    }
+    pane.into()
+}
+
+/// The number beside a tab: its tasks, its tools, its topics.
+fn count(app: &App, bot: &Bot, tab: Tab) -> Option<usize> {
+    match tab {
+        Tab::Bot(BotTab::Work) => Some(mine(app, bot).count()),
+        Tab::Bot(BotTab::Rules) => Some(bot.allowed_tools.len()),
+        Tab::Bot(BotTab::Listens) => {
+            Some(bot.subscriptions.iter().filter(|s| !s.is_pending()).count() + emits(app).len())
+        }
+        _ => None,
+    }
+}
+
+/// Its status, team and place, its version, and its acts: Update to a
+/// staged version, Pause or Turn on, Stop, Edit, Delete.
+fn header<'a>(app: &'a App, bot: &'a Bot, width: f32, tokens: Tokens) -> El<'a> {
+    let team = if bot.groups.is_empty() {
+        "no team".to_string()
+    } else {
+        bot.groups.join(", ")
+    };
+    let mut first = vec![
+        pill(Tone::of_bot(bot.status), bot.status.name(), tokens),
+        muted(format!("{team} · {}", bot.placement.describe()), tokens)
+            .wrapping(Wrapping::None)
+            .into(),
+    ];
     // Its definition's version, and the newer one ready to apply: its
     // mark says from and to, the button asks before it updates.
     let update = bot.update();
-    let version: El<'a> = match (bot.version_label(), &update) {
-        (Some(version), Some(update)) => row![
-            chip(version, tokens),
-            mark(Icon::Update, tokens.accent, update.tip(), tokens)
-        ]
-        .spacing(6)
-        .align_y(Alignment::Center)
-        .into(),
-        (Some(version), None) => chip(version, tokens),
-        (None, Some(update)) => mark(Icon::Update, tokens.accent, update.tip(), tokens),
-        (None, None) => Space::new().into(),
-    };
-    let update_act: El<'a> = match &update {
-        Some(update) => action(
+    if let Some(version) = bot.version_label() {
+        first.push(chip(version, tokens));
+    }
+    if let Some(update) = &update {
+        first.push(mark(Icon::Update, tokens.accent, update.tip(), tokens));
+    }
+    let mut acts = Vec::new();
+    if let Some(update) = &update {
+        acts.push(action(
             Kind::Primary,
             Icon::Update,
             update.act(),
             (!app.switching).then(|| Message::AskUpdateBot(bot.id.clone())),
             tokens,
-        ),
-        None => Space::new().into(),
-    };
-    let header = row![
-        back,
-        title(Icon::Bots, bot.id.to_string(), tokens),
-        pill(Tone::of_bot(bot.status), bot.status.name(), tokens),
-        version,
-        Space::new().width(Length::Fill),
-        update_act,
-        switch,
-        action(
-            Kind::Danger,
-            Icon::Stop,
-            "Stop",
-            (!app.switching).then(|| Message::AskStopBot(bot.id.clone())),
-            tokens,
-        ),
-        action(
+        ));
+    }
+    if bot.status.can_pause() {
+        acts.push(action(
             Kind::Secondary,
-            Icon::Wrench,
-            "Edit",
-            (!app.edit.is_open_for(&bot.id)).then(|| Message::EditOpen(bot.id.clone())),
+            Icon::Pause,
+            "Pause",
+            (!app.switching).then(|| Message::Pause(bot.id.clone())),
             tokens,
-        ),
-        action(
-            Kind::Secondary,
-            Icon::Ban,
-            "Delete",
-            (!app.delete.is_open_for(&bot.id)).then(|| Message::DeleteOpen(bot.id.clone())),
+        ));
+    } else if bot.status.can_enable() {
+        acts.push(action(
+            Kind::Good,
+            Icon::Play,
+            "Turn on",
+            (!app.switching).then(|| Message::Enable(bot.id.clone())),
             tokens,
-        ),
-    ]
-    .spacing(12)
-    .align_y(Alignment::Center)
-    // In a narrow window the acts go under the name, never out of sight.
-    .wrap()
-    .vertical_spacing(10);
+        ));
+    }
+    acts.push(action(
+        Kind::Danger,
+        Icon::Stop,
+        "Stop",
+        (!app.switching).then(|| Message::AskStopBot(bot.id.clone())),
+        tokens,
+    ));
+    acts.push(action(
+        Kind::Secondary,
+        Icon::Wrench,
+        "Edit",
+        (!app.edit.is_open_for(&bot.id)).then(|| Message::EditOpen(bot.id.clone())),
+        tokens,
+    ));
+    acts.push(action(
+        Kind::Secondary,
+        Icon::Ban,
+        "Delete",
+        (!app.delete.is_open_for(&bot.id)).then(|| Message::DeleteOpen(bot.id.clone())),
+        tokens,
+    ));
+    super::head(first, acts, super::close_of(app), bot.id.as_str(), None, width, tokens)
+}
 
-    let mut left = column![].spacing(14).width(Length::FillPortion(3));
+/// Now: the calls and asks that wait for a person, what it does right
+/// now with the urgent order, its latest work, how it starts and its
+/// chat.
+fn now_tab<'a>(app: &'a App, view: &'a BotView, tokens: Tokens) -> El<'a> {
+    let bot = &view.bot;
+    let mut page = column![].spacing(16);
     if let Some(asking) = asking(app, &bot.id, tokens) {
-        left = left.push(asking);
+        page = page.push(asking);
     }
     for card in asks(app, bot, tokens) {
-        left = left.push(card);
+        page = page.push(card);
     }
-    left = left
-        .push(section_with(
-            Icon::Play,
-            "Now",
-            vec![super::order::button(app, bot, tokens)],
-            now_and_order(app, bot, tokens),
-            tokens,
-        ))
-        .push(section(Icon::Bolt, "Talk to it", chat(app, view, tokens), tokens))
-        .push(listens(app, bot, tokens));
+    page = page.push(part("Right now", now_and_order(app, bot, tokens), tokens));
+    let latest: Vec<_> = mine(app, bot).take(10).collect();
+    if !latest.is_empty() {
+        let mut list = column![];
+        for task in latest {
+            list = list.push(work_line(app, task, tokens));
+        }
+        page = page.push(part("Latest work", list, tokens));
+    }
+    let starts = bot.triggers.iter().map(|trigger| {
+        let schedule = trigger.schedule();
+        if schedule.is_empty() {
+            format!("{} {}", trigger.trigger_type.label(), trigger.display_name())
+        } else {
+            format!(
+                "{} {} · {schedule}",
+                trigger.trigger_type.label(),
+                trigger.display_name()
+            )
+        }
+    });
+    page = page.push(part("Starts by", super::tags(starts, tokens), tokens));
+    page.push(part("Talk to it", chat(app, view, tokens), tokens)).into()
+}
+
+/// The bot's newest tasks. A task older than the bot is a predecessor's
+/// that had its id: a bot deleted and registered again starts afresh.
+fn mine<'a>(app: &'a App, bot: &'a Bot) -> impl Iterator<Item = &'a crate::domain::Task> + 'a {
+    app.fleet
+        .iter()
+        .flat_map(|f| f.tasks.iter())
+        .filter(move |t| t.bot_id == bot.id && t.created_at >= bot.created_at)
+}
+
+/// A task of the bot on one line: its status, what it is about and its
+/// age; a press opens it.
+fn work_line<'a>(app: &'a App, task: &'a crate::domain::Task, tokens: Tokens) -> El<'a> {
+    let what = crate::ui::find::TaskWhat::of(task);
+    super::mini(
+        row![
+            container(super::super::status::task(task.status, tokens)).width(96),
+            container(text(what.title().to_string()).size(SMALL).wrapping(Wrapping::None))
+                .width(Length::Fill)
+                .clip(true),
+            container(muted(format::age(task.created_at, app.now), tokens))
+                .width(40)
+                .align_x(Alignment::End),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center)
+        .into(),
+        Some(Message::Go(Screen::Task(task.id.clone()))),
+        tokens,
+    )
+}
+
+/// Work: every task of the bot among the newest, and a new one.
+fn work<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
     let new_task = action(
-        Kind::Ghost,
+        Kind::Secondary,
         Icon::Plus,
         "New task",
         bot.status
@@ -132,67 +231,114 @@ pub fn view<'a>(app: &'a App, id: &'a BotId, tokens: Tokens) -> El<'a> {
             .then(|| Message::SubmitOpen(Some(bot.id.clone()))),
         tokens,
     );
-    let advanced_toggle = action(
-        Kind::Ghost,
-        if app.advanced { Icon::Cross } else { Icon::Settings },
-        if app.advanced { "Hide advanced" } else { "Advanced" },
-        Some(Message::ShowAdvanced(!app.advanced)),
-        tokens,
-    );
-    let right = column![
-        section_with(
-            Icon::Tasks,
-            "Recent work",
-            vec![new_task],
-            tasks(app, bot, tokens),
+    let mut list = column![row![new_task]].spacing(8);
+    let mut lines = column![];
+    let mut any = false;
+    for task in mine(app, bot).take(60) {
+        any = true;
+        lines = lines.push(work_line(app, task, tokens));
+    }
+    if !any {
+        return list.push(empty(Icon::Tasks, "No task among the newest", tokens)).into();
+    }
+    list = list.push(lines);
+    list.into()
+}
+
+/// Mission: what it does, in its own words to select, and its team.
+fn mission<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
+    column![
+        part(
+            "What it does",
+            column![
+                reader(
+                    &app.readers,
+                    ReaderKey::BotMission,
+                    bot.mission.clone(),
+                    Voice::Body,
+                    tokens
+                ),
+                copy_button("Copy mission", bot.mission.clone(), tokens)
+            ]
+            .spacing(8),
             tokens
         ),
-        section_with(
-            Icon::Bolt,
-            "What it does",
-            vec![copy_button("Copy mission", bot.mission.clone(), tokens)],
-            reader(
-                &app.readers,
-                ReaderKey::BotMission,
-                bot.mission.clone(),
-                Voice::Body,
-                tokens
-            ),
-            tokens,
-        ),
         team(app, bot, tokens),
-        advanced_toggle,
-        section_with(
-            Icon::Clock,
-            "Events",
-            event_tools(app, tokens),
-            events(app, tokens),
-            tokens,
-        ),
     ]
-    .spacing(14)
-    .width(Length::FillPortion(2));
+    .spacing(16)
+    .into()
+}
 
-    // Open, Advanced comes first, under the name, as the operator asked
-    // for it.
-    let mut page = column![header].spacing(18);
-    // Delete and Edit, once asked for, come first, under the name.
-    if let Some(card) = super::bot_delete::card(app, bot, tokens) {
-        page = page.push(card);
+/// Listens & emits: the topics it listens to with the form for one
+/// more, the names it emitted, and its events.
+fn listens_and_emits<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
+    let emitted = emits(app);
+    let emits: El<'a> = if emitted.is_empty() {
+        muted("Nothing among its newest events", tokens).into()
+    } else {
+        super::tags(emitted, tokens)
+    };
+    let mut events_part = column![].spacing(8);
+    for tool in event_tools(app, tokens) {
+        events_part = events_part.push(tool);
     }
-    if let Some(card) = super::bot_edit::card(app, bot, tokens) {
-        page = page.push(card);
+    events_part = events_part.push(events(app, tokens));
+    column![
+        listens(app, bot, tokens),
+        part("Emits", emits, tokens),
+        part("Events", events_part, tokens),
+    ]
+    .spacing(16)
+    .into()
+}
+
+/// The names of the events the bot emitted, as its newest events say,
+/// each once.
+fn emits(app: &App) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for event in app.feed().map(|f| f.events.as_slice()).unwrap_or_default() {
+        if event.event_type == "bot.event.emitted"
+            && let Some(name) = event.payload_text("name")
+            && !names.contains(&name)
+        {
+            names.push(name);
+        }
     }
-    if app.advanced {
-        page = page.push(advanced(app, bot, tokens));
-    }
-    page = page.push(row![left, right].spacing(14));
-    scrollable(page.padding(iced::Padding {
-        right: 12.0,
-        ..Default::default()
-    }))
-    .id(super::widgets::PAGE)
-    .height(Length::Fill)
+    names
+}
+
+/// The foot of Now: a message to the bot, which runs as a task or goes
+/// to its running task, and the urgent order.
+fn chat_foot<'a>(app: &'a App, view: &'a BotView, tokens: Tokens) -> El<'a> {
+    let ready = !app.chat_busy && !app.chat_draft.trim().is_empty() && view.bot.status.accepts_tasks();
+    let input = text_input(
+        &format!("Message {}… each message runs as a task", view.bot.id),
+        &app.chat_draft,
+    )
+    .on_input(Message::ChatInput)
+    .on_submit_maybe(ready.then_some(Message::ChatSend))
+    .padding(8)
+    .size(SMALL)
+    .style(styles::field(tokens));
+    column![
+        container(Space::new().width(Length::Fill).height(1)).style(styles::rule(tokens)),
+        container(
+            row![
+                input,
+                action(
+                    Kind::Primary,
+                    Icon::Play,
+                    if app.chat_busy { "Sending…" } else { "Send" },
+                    ready.then_some(Message::ChatSend),
+                    tokens
+                ),
+                super::super::order::button(app, &view.bot, tokens),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center)
+        )
+        .padding(Padding::from([10, 14]))
+    ]
     .into()
 }
 
@@ -214,7 +360,7 @@ fn chat<'a>(app: &'a App, view: &'a BotView, tokens: Tokens) -> El<'a> {
         let bubble = mouse_area(
             container(text(cut(&line.text, 400)).size(15.0))
                 .padding(10)
-                .max_width(560)
+                .max_width(440)
                 .style(styles::bubble(tokens, line.mine)),
         )
         .on_press(Message::Go(Screen::Task(line.task)))
@@ -225,28 +371,7 @@ fn chat<'a>(app: &'a App, view: &'a BotView, tokens: Tokens) -> El<'a> {
             row![bubble, Space::new().width(Length::Fill)]
         });
     }
-    let ready = !app.chat_busy && !app.chat_draft.trim().is_empty() && view.bot.status.accepts_tasks();
-    let input = text_input(&format!("Message {}…", view.bot.id), &app.chat_draft)
-        .on_input(Message::ChatInput)
-        .on_submit_maybe(ready.then_some(Message::ChatSend))
-        .padding(10)
-        .style(styles::field(tokens));
-    let mut body = column![
-        list,
-        row![
-            input,
-            action(
-                Kind::Primary,
-                Icon::Play,
-                if app.chat_busy { "Sending…" } else { "Send" },
-                ready.then_some(Message::ChatSend),
-                tokens
-            )
-        ]
-        .spacing(10)
-        .align_y(Alignment::Center),
-    ]
-    .spacing(12);
+    let mut body = column![list].spacing(12);
     if !view.bot.status.accepts_tasks() {
         body = body.push(muted("Turn it on to talk to it.", tokens));
     }
@@ -267,7 +392,7 @@ fn now_and_order<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
     if !app.order.is_open_for(&bot.id) {
         return now(app, bot, tokens);
     }
-    column![now(app, bot, tokens), super::order::form(app, bot, tokens)]
+    column![now(app, bot, tokens), super::super::order::form(app, bot, tokens)]
         .spacing(14)
         .into()
 }
@@ -314,7 +439,7 @@ fn now<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
     .spacing(12)
     .align_y(Alignment::Center);
     if let Some(task) = state.task() {
-        body = body.push(super::widgets::open(
+        body = body.push(super::super::widgets::open(
             "Open task",
             Message::Go(Screen::Task(task.id.clone())),
             tokens,
@@ -328,7 +453,7 @@ fn team<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
     let editing = app.watch.editing.as_ref().filter(|(id, _)| id == &bot.id);
     let body: El<'a> = match editing {
         Some((_, words)) => row![
-            container(super::widgets::field(
+            container(super::super::widgets::field(
                 "Team",
                 "ops",
                 words,
@@ -385,7 +510,7 @@ fn team<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
             .into()
         }
     };
-    section(Icon::Team, "Team", body, tokens)
+    part("Team", body, tokens)
 }
 
 /// The bot's asks to hear a topic, each a card a person answers in one
@@ -462,7 +587,7 @@ fn listens<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
         let form = &app.listen;
         body = body.push(
             column![
-                super::widgets::field(
+                super::super::widgets::field(
                     "Topic",
                     "pedido.* or warn.stock",
                     &form.topic,
@@ -480,7 +605,7 @@ fn listens<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
                         muted(form.default_label(), tokens),
                     ]
                     .spacing(6),
-                    container(super::widgets::field(
+                    container(super::super::widgets::field(
                         "From",
                         "anyone",
                         &form.from,
@@ -513,7 +638,7 @@ fn listens<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
         (!app.listen.is_open_for(&bot.id)).then(|| Message::ListenOpen(bot.id.clone())),
         tokens,
     );
-    section_with(Icon::Bolt, "Listens to", vec![open], body, tokens)
+    part("Listens to", column![open, body].spacing(8), tokens)
 }
 
 /// The calls of this bot waiting for a person, each answered in one
@@ -535,7 +660,7 @@ fn asking<'a>(app: &'a App, bot: &BotId, tokens: Tokens) -> Option<El<'a>> {
                 column![bold(task.headline(60)), muted(wants, tokens)]
                     .spacing(2)
                     .width(Length::Fill),
-                super::decide::buttons(app, &task.id, tokens),
+                super::super::decide::buttons(app, &task.id, tokens),
             ]
             .spacing(12)
             .align_y(Alignment::Center),
@@ -615,16 +740,9 @@ fn advanced<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
         ),
     ]
     .spacing(12);
-    section(
-        Icon::Settings,
-        "Advanced",
-        row![
-            container(choices).width(Length::FillPortion(1)),
-            container(facts).width(Length::FillPortion(1))
-        ]
-        .spacing(24),
-        tokens,
-    )
+    column![part("How much may it do alone", choices, tokens), facts]
+        .spacing(16)
+        .into()
 }
 
 fn tools<'a>(bot: &'a Bot, tokens: Tokens) -> El<'a> {
@@ -693,44 +811,6 @@ fn events<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     }
     if feed.events.is_empty() {
         return empty(Icon::Clock, "No event yet", tokens);
-    }
-    list.into()
-}
-
-/// The bot's newest tasks. A task older than the bot is a predecessor's
-/// that had its id: a bot deleted and registered again starts afresh.
-fn tasks<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
-    let mut list = column![].spacing(8);
-    let mine: Vec<_> = app
-        .fleet
-        .iter()
-        .flat_map(|f| f.tasks.iter())
-        .filter(|t| t.bot_id == bot.id && t.created_at >= bot.created_at)
-        .take(8)
-        .collect();
-    if mine.is_empty() {
-        return empty(Icon::Tasks, "No task yet", tokens);
-    }
-    for task in mine {
-        list = list.push(
-            mouse_area(
-                row![
-                    super::widgets::slot(
-                        pill(Tone::of_task(task.status), task.status.label(), tokens),
-                        super::widgets::PILL_SLOT
-                    ),
-                    text(task.headline(44))
-                        .size(SMALL)
-                        .wrapping(Wrapping::WordOrGlyph)
-                        .width(Length::Fill),
-                    muted(format::age(task.created_at, app.now), tokens),
-                ]
-                .spacing(10)
-                .align_y(Alignment::Center),
-            )
-            .on_press(Message::Go(Screen::Task(task.id.clone())))
-            .interaction(mouse::Interaction::Pointer),
-        );
     }
     list.into()
 }

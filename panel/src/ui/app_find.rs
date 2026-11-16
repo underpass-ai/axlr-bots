@@ -104,10 +104,9 @@ impl App {
         }
     }
 
-    /// Does what a result of the palette says. A bot, a team and a task
-    /// open their page with their list's cursor on them; a node has no
-    /// page, so the Nodes list opens on it, the revoked ones shown first
-    /// when it is one of them.
+    /// Does what a result of the palette says. A bot, a team, a node and
+    /// a task open in the inspector beside their list, its cursor on
+    /// them; a revoked node shows the revoked ones first.
     pub(super) fn carry_out(&mut self, target: PaletteTarget) -> Vec<Effect> {
         match target {
             PaletteTarget::Go(place) => self.go(place_screen(place)),
@@ -123,18 +122,11 @@ impl App {
             PaletteTarget::Team(name) => self.open_row(RowRef::Team(name)),
             PaletteTarget::Task(id) => self.open_row(RowRef::Task(id)),
             PaletteTarget::Node { id, revoked } => {
-                let mut effects = self.go(Screen::Nodes);
                 if revoked {
                     self.tables.nodes_shown.set(true);
+                    self.rows_changed();
                 }
-                self.select_row(RowRef::Node(id));
-                self.rows_changed();
-                // Its row in sight, rather than the list's top.
-                if let Some(spot) = self.cursor_spot(super::table::List::Nodes) {
-                    effects.retain(|effect| effect != &Effect::ScrollTop);
-                    effects.push(Effect::Reveal(Scroller::Rows, spot));
-                }
-                effects
+                self.open_row(RowRef::Node(id))
             }
         }
     }

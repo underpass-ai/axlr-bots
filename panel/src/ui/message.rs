@@ -69,6 +69,27 @@ pub enum Message {
     /// The person scrolled a box of the running task's Activity: whether
     /// it now shows its end.
     ActivityScrolled(super::LiveStream, bool),
+    /// A press on a tab of the inspector.
+    Tab(super::inspector::Tab),
+    /// What the find in the activity holds now.
+    FindTyped(String),
+    /// The find's next match, or the one before.
+    FindNext,
+    FindPrevious,
+    /// Enter in the find's field: the next match, the one before with
+    /// Shift held.
+    FindSubmit,
+    /// A chip over the activity: all steps, the calls, the failed, the
+    /// events.
+    FindShow(super::find::StepFilter),
+    /// Follow the running task's newest step again.
+    JumpToLatest,
+    /// An arrow the find's field let through, and whether that field
+    /// had the keyboard.
+    FindKey(Keypress, bool),
+    /// Open the new task's form with a task's bot and objective, to send
+    /// it again.
+    RunAgain(TaskId),
     BotLoaded(BotId, Result<BotView, PanelError>),
 
     MintOpen,

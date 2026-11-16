@@ -2,11 +2,37 @@
 //! a detail page's prose and ids. The views draw them with readers; the
 //! state keeps one reader per passage (`Readers::sync`).
 
-use super::{App, ReaderKey, Screen, SubmitForm};
+use super::{App, ReaderKey, Screen, Section, SubmitForm};
 use crate::domain::Bot;
 
-/// Every passage of the screen on show, with its words.
+/// Every passage of the screen on show, with its words: the list's and
+/// the inspector's.
 pub fn of(app: &App) -> Vec<(ReaderKey, String)> {
+    let mut passages = list(app);
+    passages.extend(inspected(app));
+    passages
+}
+
+/// The passages of the list on show: the token just made, the open new
+/// task's key.
+fn list(app: &App) -> Vec<(ReaderKey, String)> {
+    match app.screen.section() {
+        Section::Nodes => match &app.mint.token {
+            Some(token) => vec![
+                (ReaderKey::MintedNode, token.node_id.to_string()),
+                (ReaderKey::MintedToken, token.token.expose().to_string()),
+            ],
+            None => Vec::new(),
+        },
+        Section::Tasks => submit_key(&app.submit)
+            .map(|words| vec![(ReaderKey::SubmitKey, words)])
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
+/// The passages of the row inspected: a bot's prose, a team's members'.
+fn inspected(app: &App) -> Vec<(ReaderKey, String)> {
     match &app.screen {
         Screen::Bot(id) => app
             .bot
@@ -29,16 +55,6 @@ pub fn of(app: &App) -> Vec<(ReaderKey, String)> {
                     })
                     .collect()
             })
-            .unwrap_or_default(),
-        Screen::Nodes => match &app.mint.token {
-            Some(token) => vec![
-                (ReaderKey::MintedNode, token.node_id.to_string()),
-                (ReaderKey::MintedToken, token.token.expose().to_string()),
-            ],
-            None => Vec::new(),
-        },
-        Screen::Tasks => submit_key(&app.submit)
-            .map(|words| vec![(ReaderKey::SubmitKey, words)])
             .unwrap_or_default(),
         _ => Vec::new(),
     }

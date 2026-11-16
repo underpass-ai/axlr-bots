@@ -1,12 +1,11 @@
 //! What the panel draws for each screen.
 
-mod activity;
 mod bot_delete;
-mod bot_detail;
 mod bot_edit;
 mod bots;
 mod decide;
 mod grid;
+mod inspector;
 mod levels;
 mod listbar;
 mod nodes;
@@ -18,8 +17,6 @@ mod settings;
 mod sheet;
 mod shell;
 mod status;
-mod task_activity;
-mod task_detail;
 mod tasks;
 mod teams;
 mod voice;
@@ -35,17 +32,14 @@ use crate::application::Density;
 pub fn view(app: &App) -> Element<'_, Message> {
     let tokens = Tokens::of(app.mode);
     // Home and the lists reach the window's edges and scroll their own
-    // rows; every other screen is a page in a margin.
+    // rows, a list with the row it inspects beside it; Settings is a page
+    // in a margin.
     let content = match &app.screen {
         Screen::Overview => overview::view(app, tokens),
-        Screen::Nodes => nodes::view(app, tokens),
-        Screen::Bots => bots::view(app, tokens),
-        Screen::Bot(id) => page(bot_detail::view(app, id, tokens)),
-        Screen::Tasks => tasks::view(app, tokens),
-        Screen::Task(id) => page(task_detail::view(app, id, tokens)),
-        Screen::Activity(id) => page(task_activity::page(app, id, tokens)),
-        Screen::Teams => teams::list(app, tokens),
-        Screen::Team(name) => page(teams::detail(app, name, tokens)),
+        Screen::Nodes | Screen::Node(_) => inspector::beside(app, tokens, move || nodes::view(app, tokens)),
+        Screen::Bots | Screen::Bot(_) => inspector::beside(app, tokens, move || bots::view(app, tokens)),
+        Screen::Tasks | Screen::Task(_) => inspector::beside(app, tokens, move || tasks::view(app, tokens)),
+        Screen::Teams | Screen::Team(_) => inspector::beside(app, tokens, move || teams::list(app, tokens)),
         Screen::Settings => page(settings::view(app, tokens)),
     };
     shell::frame(app, content, tokens)

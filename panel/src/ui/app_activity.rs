@@ -1,18 +1,22 @@
-//! The activity screen: a task with everything under it, read once and
-//! then followed through the control plane's stream while any task of
-//! the tree may still change.
+//! The tree of what a task did, on its Runs tab: the task with
+//! everything under it, read once and then followed through the control
+//! plane's stream while any task of the tree may still change.
 
+use super::inspector::TaskTab;
 use super::{ActivityScreen, App, Effect, Screen};
 use crate::application::{ACTIVITY_WAIT_SECONDS, PanelError};
 use crate::domain::{ActivityBatch, TaskActivity, TaskId};
 
 impl App {
-    /// What the activity screen asks for: the tree when it has none, the
-    /// stream while the tree may change.
+    /// What the Runs tab asks for: the tree when it has none, the stream
+    /// while the tree may change. Nothing while another tab is open.
     pub(super) fn reload_activity(&mut self) -> Vec<Effect> {
-        let Screen::Activity(id) = &self.screen else {
+        let Screen::Task(id) = &self.screen else {
             return Vec::new();
         };
+        if self.tabs.task != TaskTab::Runs {
+            return Vec::new();
+        }
         let id = id.clone();
         if self.activity.as_ref().is_none_or(|a| a.id != id) {
             self.activity = Some(ActivityScreen::new(id.clone()));
@@ -52,7 +56,7 @@ impl App {
     }
 
     pub(super) fn activity_followed(&mut self, id: TaskId, result: Result<ActivityBatch, PanelError>) -> Vec<Effect> {
-        let on_screen = self.screen == Screen::Activity(id.clone());
+        let on_screen = self.screen == Screen::Task(id.clone()) && self.tabs.task == TaskTab::Runs;
         let Some(screen) = self.activity.as_mut().filter(|a| a.id == id) else {
             return Vec::new();
         };

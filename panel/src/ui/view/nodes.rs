@@ -192,7 +192,7 @@ fn dash(value: &str) -> String {
 
 /// The node agent's own build, `v0.4.0`, with its commit when it names
 /// one; none for a node older than the field.
-fn agent_version(node: &Node) -> Option<String> {
+pub(super) fn agent_version(node: &Node) -> Option<String> {
     let raw = node.capabilities.node_version.trim();
     if raw.is_empty() {
         return None;
@@ -236,7 +236,7 @@ fn about(node: &Node, now: chrono::DateTime<chrono::Utc>) -> String {
 
 /// The mark of a certificate that needs a look: amber while it runs
 /// out, red once it has. None for a healthy one, or a revoked node's.
-fn certificate_mark(node: &Node, now: chrono::DateTime<chrono::Utc>) -> Option<(Tone, String)> {
+pub(super) fn certificate_mark(node: &Node, now: chrono::DateTime<chrono::Utc>) -> Option<(Tone, String)> {
     if node.status == NodeStatus::Revoked {
         return None;
     }
