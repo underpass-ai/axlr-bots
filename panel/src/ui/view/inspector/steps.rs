@@ -32,7 +32,7 @@ const AT_END: f32 = 24.0;
 /// How much of the model's words a line shows; its details show them all.
 const WORDS_SHOWN: usize = 600;
 /// The width of the find's field.
-const FIND: f32 = 186.0;
+const FIND: f32 = 200.0;
 /// The narrowest inspector whose find and chips share one line.
 const ONE_LINE: f32 = 620.0;
 /// The room the scroll bar takes at the right of the steps.
@@ -48,7 +48,7 @@ pub fn view<'a>(app: &'a App, status: TaskStatus, width: f32, tokens: Tokens) ->
         _ => None,
     };
     let steps = app.steps_text();
-    let column = column![bar(app, live, &steps, width, tokens)];
+    let column = column![bar(app, &steps, width, tokens)];
     let Some(live) = live.filter(|l| l.read) else {
         return column
             .push(empty(Icon::Hourglass, "Reading what it does…", tokens))
@@ -66,10 +66,10 @@ pub fn view<'a>(app: &'a App, status: TaskStatus, width: f32, tokens: Tokens) ->
 }
 
 /// The bar over the steps: the find with where it is among its matches
-/// and its arrows, then the chips with their counts and a copy of it all.
-fn bar<'a>(app: &'a App, live: Option<&'a LiveTask>, steps: &[StepText], width: f32, tokens: Tokens) -> El<'a> {
+/// and its arrows, then the chips with their counts.
+fn bar<'a>(app: &'a App, steps: &[StepText], width: f32, tokens: Tokens) -> El<'a> {
     let find = &app.find;
-    let field = text_input("Find in activity…", find.typed())
+    let field = text_input("Find in activity", find.typed())
         .id(Field::ActivityFind.id())
         .on_input(Message::FindTyped)
         .on_submit(Message::FindSubmit)
@@ -104,14 +104,6 @@ fn bar<'a>(app: &'a App, live: Option<&'a LiveTask>, steps: &[StepText], width: 
             count,
             find.kind() == kind,
             Message::FindShow(kind),
-            tokens,
-        ));
-    }
-    if let Some(live) = live.filter(|l| !l.activity.is_empty()) {
-        chips = chips.push(small_button(
-            Icon::Copy,
-            "Copy activity",
-            Message::Copy(format::activity(&live.activity)),
             tokens,
         ));
     }
@@ -200,6 +192,15 @@ fn stream<'a>(
             tokens,
         ));
     }
+    // Every step, its words and its thinking, to copy at once.
+    list = list.push(
+        container(super::super::widgets::copy_button(
+            "Copy activity",
+            format::activity(&live.activity),
+            tokens,
+        ))
+        .padding(Padding::from([6, 6])),
+    );
     let steps_box = scrollable(list.width(Length::Fill))
         .direction(iced::widget::scrollable::Direction::Vertical(
             iced::widget::scrollable::Scrollbar::new()
@@ -610,6 +611,16 @@ fn marked<'a>(words: String, query: &Query, size: f32, font: Font, ink: Color, t
 /// matched on the mark's wash.
 fn marked_wrapped<'a>(words: String, query: &Query, tokens: Tokens) -> El<'a> {
     let marks = query.marks(&words);
+    if marks.is_empty() {
+        return text(words)
+            .size(SMALL)
+            .font(REGULAR)
+            .color(tokens.text)
+            .line_height(1.45)
+            .wrapping(Wrapping::WordOrGlyph)
+            .width(Length::Fill)
+            .into();
+    }
     let wash = styles::mark_fill(tokens);
     let spans: Vec<Span<'a, (), Font>> = marks
         .pieces(&words)

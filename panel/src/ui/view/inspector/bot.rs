@@ -683,7 +683,7 @@ fn asking<'a>(app: &'a App, bot: &BotId, tokens: Tokens) -> Option<El<'a>> {
 /// What a person rarely changes: how much the bot may do alone, then its
 /// triggers, placement, tools, model and budgets.
 fn advanced<'a>(app: &'a App, bot: &'a Bot, tokens: Tokens) -> El<'a> {
-    let mut choices = column![bold("How much may it do alone?")].spacing(10);
+    let mut choices = column![].spacing(10);
     let mut offered = levels::CHOICES.to_vec();
     if !offered.contains(&bot.level) {
         offered.push(bot.level);

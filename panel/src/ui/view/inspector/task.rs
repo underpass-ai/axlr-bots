@@ -113,6 +113,16 @@ fn header<'a>(app: &'a App, task: &'a Task, width: f32, tokens: Tokens) -> El<'a
         .into(),
     );
     let mut acts = Vec::new();
+    // The bot's chat writes to its running task.
+    if task.status == TaskStatus::Running {
+        acts.push(action(
+            Kind::Ghost,
+            Icon::Bots,
+            "Talk to it",
+            Some(Message::Go(Screen::Bot(task.bot_id.clone()))),
+            tokens,
+        ));
+    }
     if task.status == TaskStatus::WaitingApproval {
         acts.push(if app.deciding.is_some() {
             row![icon(Icon::Hourglass, 16.0, tokens.wait), bold("Sending…").size(SMALL)]
@@ -230,12 +240,7 @@ fn ended<'a>(task: &'a Task, tokens: Tokens) -> Option<El<'a>> {
             icon(glyph, 16.0, tone.color(&tokens)),
             bold(why).size(SMALL),
             text(task.failure_reason.clone()).size(SMALL).width(Length::Fill),
-            icon_button(
-                Icon::Copy,
-                "Copy reason",
-                Some(Message::Copy(task.failure_reason.clone())),
-                tokens
-            ),
+            copy_button("Copy reason", task.failure_reason.clone(), tokens),
         ]
         .spacing(10)
         .align_y(Alignment::Center)

@@ -135,18 +135,18 @@ fn screenshots() {
     camera.shoot(&mut app, "steps-light");
 
     send(&mut app, Message::Go(Screen::Bot(bot("bot-wrx80"))));
-    app.apply(Message::ShowAdvanced(true));
+    app.apply(Message::Tab(inspector::Tab::Bot(inspector::BotTab::Rules)));
     camera.both(&mut app, "bot");
-    app.apply(Message::ShowAdvanced(false));
+    app.apply(Message::Tab(inspector::Tab::Bot(inspector::BotTab::Now)));
 
     send(&mut app, Message::Go(Screen::Bot(bot("bot"))));
     camera.shoot(&mut app, "now-bot-light");
 
     send(&mut app, Message::Go(Screen::Bot(bot("bot-act-with-approval"))));
     camera.shoot(&mut app, "control-bot-light");
-    app.apply(Message::ShowAdvanced(true));
+    app.apply(Message::Tab(inspector::Tab::Bot(inspector::BotTab::Rules)));
     camera.shoot(&mut app, "control-advanced-light");
-    app.apply(Message::ShowAdvanced(false));
+    app.apply(Message::Tab(inspector::Tab::Bot(inspector::BotTab::Now)));
 
     send(&mut app, Message::Go(Screen::Bot(bot("bot-wrx80"))));
     app.apply(Message::ChatInput("How many files are in the workspace?".into()));

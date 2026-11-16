@@ -26,6 +26,7 @@ impl App {
                 effects
             }
             Keypress::Enter => match self.cursor_row(list) {
+                Some(row) if self.screen.inspected().as_ref() == Some(&row) => Vec::new(),
                 Some(row) => self.open_row(row),
                 None => self.move_cursor(list, Keypress::Down),
             },
@@ -297,8 +298,12 @@ mod tests {
         assert_eq!(app.screen, Screen::Team("ops".into()));
         send(&mut app, Message::Go(Screen::Nodes));
         let node = NodeId::new("node-03").unwrap();
-        assert!(send(&mut app, Message::RowPicked(RowRef::Node(node.clone()))).is_empty());
-        assert_eq!(app.screen, Screen::Nodes, "a node has no page yet: it stays selected");
+        send(&mut app, Message::RowPicked(RowRef::Node(node.clone())));
+        assert_eq!(
+            app.screen,
+            Screen::Node(node.clone()),
+            "a node opens in the inspector too"
+        );
         assert_eq!(app.cursor_row(List::Nodes), Some(RowRef::Node(node)));
     }
 

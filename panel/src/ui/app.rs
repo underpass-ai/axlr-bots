@@ -63,8 +63,6 @@ pub struct App {
     /// is on its way.
     pub chat_draft: String,
     pub chat_busy: bool,
-    /// A bot page's Advanced part is open.
-    pub advanced: bool,
     /// A bot being switched on or paused.
     pub switching: bool,
     /// The teams' timelines and a bot's team being edited.
@@ -135,7 +133,6 @@ impl App {
             deciding: None,
             chat_draft: String::new(),
             chat_busy: false,
-            advanced: false,
             switching: false,
             watch: TeamWatch::default(),
             listen: ListenForm::default(),
@@ -556,10 +553,6 @@ impl App {
                 let mut effects = self.reload_screen();
                 effects.extend(self.refresh_now());
                 effects
-            }
-            Message::ShowAdvanced(open) => {
-                self.advanced = open;
-                Vec::new()
             }
             Message::SetLevel(id, level) => self.switch(Effect::SetLevel(id, level)),
             Message::Leveled(result) => {
@@ -1140,7 +1133,6 @@ impl App {
         // left goes, and the inspector's body opens at its top.
         let changed = screen != self.screen;
         if changed {
-            self.advanced = false;
             self.chat_draft.clear();
             self.watch.editing = None;
             self.listen = ListenForm::default();

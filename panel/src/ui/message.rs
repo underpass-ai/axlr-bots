@@ -120,8 +120,6 @@ pub enum Message {
     Enable(BotId),
     Pause(BotId),
     Switched(Result<Bot, PanelError>),
-    /// Open or close a bot page's Advanced part.
-    ShowAdvanced(bool),
     /// Set how much a bot may do alone.
     SetLevel(BotId, AutonomyLevel),
     Leveled(Result<Bot, PanelError>),

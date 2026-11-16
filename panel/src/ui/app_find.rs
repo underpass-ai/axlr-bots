@@ -384,7 +384,7 @@ mod tests {
         for (place, screen) in [
             (Place::Tasks, Screen::Tasks),
             (Place::Bots, Screen::Bots),
-            (Place::Teams, Screen::Teams),
+            (Place::Teams, Screen::Team("audit".into())),
             (Place::Nodes, Screen::Nodes),
             (Place::Settings, Screen::Settings),
             (Place::Home, Screen::Overview),
@@ -418,21 +418,23 @@ mod tests {
         app.carry_out(PaletteTarget::Task(task.clone()));
         assert_eq!(app.screen, Screen::Task(task.clone()));
         assert_eq!(app.tables.tasks.cursor.selected(), Some(&task));
-        // A node has no page: the list opens on it, the revoked shown
-        // first when it is one of them, and its row is brought into sight.
+        // A node opens in the inspector beside its list, the revoked
+        // shown first when it is one of them, its row brought into sight.
         let old = NodeId::new("old-node-40").unwrap();
         let effects = app.carry_out(PaletteTarget::Node {
             id: old.clone(),
             revoked: true,
         });
-        assert_eq!(app.screen, Screen::Nodes);
+        assert_eq!(app.screen, Screen::Node(old.clone()));
         assert!(app.tables.nodes_shown.shows_revoked());
         assert_eq!(
             app.cursor_row(List::Nodes),
             Some(super::super::table::RowRef::Node(old))
         );
         assert!(
-            matches!(effects.last(), Some(Effect::Reveal(Scroller::Rows, spot)) if spot.rows == 47),
+            effects
+                .iter()
+                .any(|e| matches!(e, Effect::Reveal(Scroller::Rows, spot) if spot.rows == 47)),
             "{effects:?}"
         );
         assert!(!effects.contains(&Effect::ScrollTop), "the reveal alone moves the rows");

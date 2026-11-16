@@ -914,18 +914,17 @@ fn the_bots_screen_lists_switches_and_adds() {
         &[
             "Pause",
             "Stop",
+            "Edit",
+            "Delete",
             "It asks before acting",
             "wants local_write · hello",
             "Approve",
-            "What it does",
-            "Events",
-            "Recent work",
-            "New task",
-            "Copy mission",
-            "Advanced",
-            "Now",
+            "RIGHT NOW",
             "Needs OK",
             "It waits for your OK before it goes on.",
+            "LATEST WORK",
+            "STARTS BY",
+            "Urgent order",
         ],
     );
     assert!(matches!(
@@ -933,21 +932,9 @@ fn the_bots_screen_lists_switches_and_adds() {
         [Message::Go(Screen::Task(_))]
     ));
     assert!(
-        simulator_misses(&app, "How much may it do alone?"),
-        "Advanced is closed by default"
+        simulator_misses(&app, "Only watch and report"),
+        "its rules have their own tab"
     );
-    let sent = messages_of_click(&app, "Copy mission");
-    assert!(matches!(
-        sent.as_slice(),
-        [Message::Copy(mission)] if mission == "Do what each task asks, within the policy."
-    ));
-    assert!(!app.feed().unwrap().events.is_empty(), "the sample bot has events");
-    assert!(matches!(
-        messages_of_click(&app, "Copy events").as_slice(),
-        [Message::Copy(events)] if !events.is_empty()
-    ));
-    let sent = messages_of_click(&app, "New task");
-    assert!(matches!(sent.as_slice(), [Message::SubmitOpen(Some(_))]));
     assert!(matches!(
         messages_of_click(&app, "Approve").as_slice(),
         [Message::Approve(_)]
@@ -956,22 +943,34 @@ fn the_bots_screen_lists_switches_and_adds() {
         messages_of_click(&app, "Stop").as_slice(),
         [Message::AskStopBot(_)]
     ));
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Mission)));
+    shows(&app, &["WHAT IT DOES", "Copy mission"]);
+    let sent = messages_of_click(&app, "Copy mission");
     assert!(matches!(
-        messages_of_click(&app, "Advanced").as_slice(),
-        [Message::ShowAdvanced(true)]
+        sent.as_slice(),
+        [Message::Copy(mission)] if mission == "Do what each task asks, within the policy."
     ));
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Listens)));
+    shows(&app, &["EVENTS", "EMITS"]);
+    assert!(!app.feed().unwrap().events.is_empty(), "the sample bot has events");
+    assert!(matches!(
+        messages_of_click(&app, "Copy events").as_slice(),
+        [Message::Copy(events)] if !events.is_empty()
+    ));
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Work)));
+    let sent = messages_of_click(&app, "New task");
+    assert!(matches!(sent.as_slice(), [Message::SubmitOpen(Some(_))]));
 
-    app.apply(Message::ShowAdvanced(true));
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Rules)));
     shows(
         &app,
         &[
-            "How much may it do alone?",
+            "HOW MUCH MAY IT DO ALONE",
             "Ask me before acting",
             "Act on its own within its rules",
             "Only watch and report",
             "Starts by",
             "Budgets",
-            "Hide advanced",
         ],
     );
     assert!(
@@ -999,10 +998,13 @@ fn the_bots_screen_lists_switches_and_adds() {
             crate::domain::AutonomyLevel::Propose,
         ),
     );
-    app.apply(Message::ShowAdvanced(true));
     shows(&app, &["Propose only"]);
     send(&mut app, Message::Go(Screen::Bots));
-    assert!(!app.advanced, "Advanced closes when the page changes");
+    assert_eq!(
+        app.tabs.bot,
+        inspector::BotTab::Rules,
+        "the next bot opens on the same tab"
+    );
 }
 
 #[test]
@@ -1098,18 +1100,16 @@ fn a_waiting_task_shows_the_call_and_its_answers() {
         &app,
         &[
             "Needs OK",
-            "It asked you",
             "local_write",
             "hello.txt",
             "Approve",
             "Deny",
             "Runs",
             "Timeline",
-            "Needs OK",
-            "gx10-ff95",
-            "trace carried",
         ],
     );
+    send(&mut app, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Runs)));
+    shows(&app, &["It asked you", "gx10-ff95", "trace carried"]);
     assert!(matches!(
         messages_of_click(&app, "Approve").as_slice(),
         [Message::Approve(_)]
@@ -1123,7 +1123,7 @@ fn a_waiting_task_shows_the_call_and_its_answers() {
         [Message::Copy(call)] if call.starts_with("local_write\n") && call.contains("path: hello.txt")
     ));
     app.deciding = app.task.as_ref().map(|t| t.task.id.clone());
-    shows(&app, &["Sending your answer…"]);
+    shows(&app, &["Sending…"]);
 }
 
 /// The call a bot stops on before it publishes a post: a program on the
@@ -1212,29 +1212,33 @@ fn a_finished_task_shows_its_answer_and_failure() {
         });
     }
     send(&mut app, Message::Go(Screen::Task(done)));
-    shows(&app, &["Its rules: allows local_list(path=*)"]);
-    shows(
+    // Its runs, with each call and why it ran, on Runs.
+    send(&mut app, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Runs)));
+    shows_wide(
         &app,
         &[
-            "Answer",
+            "Its rules: allows local_list(path=*)",
             "Steps",
             "Allowed by its rules",
             "done",
             "40 ms",
             "wrx80",
-            "Copy task",
-            "Copy answer",
-            "Select text",
-            "Copy timeline",
         ],
     );
-    assert!(matches!(
-        messages_of_click(&app, "Copy answer").as_slice(),
-        [Message::Copy(answer)] if answer == "There are 3 files."
-    ));
+    send(
+        &mut app,
+        Message::Tab(inspector::Tab::Task(inspector::TaskTab::Timeline)),
+    );
     assert!(matches!(
         messages_of_click(&app, "Copy timeline").as_slice(),
         [Message::Copy(timeline)] if timeline.contains("Done")
+    ));
+    // Its answer, what it was asked, to copy or to select, on Answer.
+    send(&mut app, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Answer)));
+    shows(&app, &["ANSWER", "Copy task", "Copy answer", "Select text"]);
+    assert!(matches!(
+        messages_of_click(&app, "Copy answer").as_slice(),
+        [Message::Copy(answer)] if answer == "There are 3 files."
     ));
     let objective = app.task.as_ref().unwrap().task.objective.clone();
     assert!(matches!(
@@ -1251,7 +1255,7 @@ fn a_finished_task_shows_its_answer_and_failure() {
         messages_of_click(&app, "Formatted").as_slice(),
         [Message::AnswerSelecting(false)]
     ));
-    // A long objective shows whole under the header's first line.
+    // A long objective shows whole under what it was asked.
     app.task.as_mut().unwrap().task.objective = "Count the files\nthen list them".into();
     shows(&app, &["Count the files\nthen list them"]);
     assert_eq!(
@@ -1332,7 +1336,7 @@ fn the_chat_sends_and_shows_the_turns() {
     shows(
         &app,
         &[
-            "Talk to it",
+            "TALK TO IT",
             "Ask it something or give it an order. Each message runs as a task.",
             "Send",
         ],
@@ -1380,13 +1384,15 @@ fn the_teams_screen_shows_who_is_in_each_and_what_happens() {
         serde_json::json!({"name": "stop.halt", "severity": "warning", "message": "a deploy is starting", "to": ["bot-wrx80"]}),
     );
     send(&mut app, Message::Tick(tick + chrono::Duration::seconds(3)));
-    shows(&app, &["ops", "MEMBERS", "LAST WORD", "lab", "bot · bot-wrx80"]);
+    // The first team opens in the inspector as the list fills.
+    assert_eq!(app.screen, Screen::Team("lab".into()));
+    shows(&app, &["ops", "BOTS", "ON", "lab", "Team lab"]);
     // A team of one bot has a mark beside its name whose tip asks
     // whether the name is a typo; the simulator draws no tip, so the
     // words are not looked for here.
-    // A team's name opens its page.
-    let sent = messages_of_click(&app, "lab");
-    assert!(matches!(sent.as_slice(), [Message::Go(Screen::Team(name))] if name == "lab"));
+    // A team's name opens it in the inspector.
+    let sent = messages_of_click(&app, "ops");
+    assert!(matches!(sent.as_slice(), [Message::Go(Screen::Team(name))] if name == "ops"));
     send(&mut app, Message::Go(Screen::Team("ops".into())));
     shows(
         &app,
@@ -1396,9 +1402,13 @@ fn the_teams_screen_shows_who_is_in_each_and_what_happens() {
             "What happens",
             "Warning to the team",
             "bot → bot-wrx80: a deploy is starting",
-            "Urgent order",
         ],
     );
+    send(
+        &mut app,
+        Message::Tab(inspector::Tab::Team(inspector::TeamTab::Members)),
+    );
+    shows(&app, &["bot", "bot-wrx80", "Urgent order"]);
     assert!(matches!(
         messages_of_click(&app, "Urgent order").as_slice(),
         [Message::OrderOpen(_)]
@@ -1457,7 +1467,16 @@ fn a_bot_page_shows_its_team_and_an_urgent_order() {
     send(&mut app, Message::RegisterSubmit);
     let id = BotId::new("worker-1").unwrap();
     send(&mut app, Message::Go(Screen::Bot(id.clone())));
-    shows(&app, &["Team", "ops", "Change", "Urgent order"]);
+    // Its team is on its Mission tab; the urgent order at the foot of Now.
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Mission)));
+    shows(&app, &["TEAM", "ops", "Change"]);
+    let sent = messages_of_click(&app, "Change");
+    assert!(matches!(sent.as_slice(), [Message::TeamEdit(_, words)] if words == "ops"));
+    app.apply(Message::TeamEdit(id.clone(), "ops".into()));
+    shows(&app, &["Save", "Cancel"]);
+    app.apply(Message::TeamCancel);
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Now)));
+    shows(&app, &["Urgent order"]);
     assert!(
         messages_of_click(&app, "Urgent order").is_empty(),
         "a bot not switched on takes no order"
@@ -1465,11 +1484,6 @@ fn a_bot_page_shows_its_team_and_an_urgent_order() {
     send(&mut app, Message::Enable(id.clone()));
     let sent = messages_of_click(&app, "Urgent order");
     assert!(matches!(sent.as_slice(), [Message::OrderOpen(to)] if *to == id));
-    let sent = messages_of_click(&app, "Change");
-    assert!(matches!(sent.as_slice(), [Message::TeamEdit(_, words)] if words == "ops"));
-    app.apply(Message::TeamEdit(id.clone(), "ops".into()));
-    shows(&app, &["Save", "Cancel"]);
-    app.apply(Message::TeamCancel);
 
     // The order asks for its words, and goes only with some.
     send(&mut app, Message::OrderOpen(id.clone()));
@@ -1496,7 +1510,7 @@ fn a_bot_page_shows_its_team_and_an_urgent_order() {
 
     // Any bot takes one, in a team or not.
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
-    shows(&app, &["In no team: it knows no other bot", "Urgent order"]);
+    shows(&app, &["Urgent order"]);
     assert!(simulator_misses(&app, "Send the order"));
     assert!(matches!(
         messages_of_click(&app, "Urgent order").as_slice(),
@@ -1525,8 +1539,10 @@ fn a_task_says_it_was_urgent_and_why_it_stopped() {
     );
     app.apply(Message::SubmitObjective("Come back".into()));
     send(&mut app, Message::SubmitSend);
-    shows(&app, &["urgent", "Started by", "Not run yet: waiting for a node"]);
+    shows(&app, &["urgent", "STARTED"]);
     hides(&app, &["Told by", "nobody"]);
+    send(&mut app, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Runs)));
+    shows(&app, &["Not run yet: waiting for a node"]);
     // Cancelled before a node took it: it never ran and waits for nothing.
     let Screen::Task(queued) = app.screen.clone() else {
         panic!("not on the task: {:?}", app.screen)
@@ -1559,11 +1575,13 @@ fn the_chat_writes_to_a_running_task_and_shows_its_answer() {
     fake.say(&running, "OK, row F next.");
     let tick = app.now + chrono::Duration::seconds(5);
     send(&mut app, Message::Tick(tick));
-    shows(&app, &["check row F", "OK, row F next.", "You wrote", "It answered"]);
+    shows(&app, &["check row F", "OK, row F next."]);
     assert!(matches!(
         messages_of_click(&app, "OK, row F next.").as_slice(),
         [Message::Go(Screen::Task(id))] if *id == running
     ));
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Listens)));
+    shows(&app, &["You wrote", "It answered"]);
 }
 
 #[test]
@@ -1588,6 +1606,7 @@ fn a_bot_page_shows_the_task_of_each_event_whole() {
     )
     .unwrap();
     app.bot.as_mut().unwrap().feed.events.push(failed);
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Listens)));
     let tokens = Tokens::of(app.mode);
     for width in [MIN_WINDOW.width, WINDOW.width] {
         for id in [running.as_str(), "task-68ed…"] {
@@ -1600,6 +1619,7 @@ fn a_bot_page_shows_the_task_of_each_event_whole() {
 fn a_bot_page_keeps_the_button_that_changes_its_teams_in_sight() {
     let mut app = connected();
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Mission)));
     let tokens = Tokens::of(app.mode);
     let none = "In no team: it knows no other bot";
     for teams in [&[][..], &["ops", "night-shift", "weekly-reports", "storage"]] {
@@ -1642,16 +1662,23 @@ fn a_bot_page_shows_what_it_listens_to_and_its_asks() {
     let waiting_before = app.waiting_count();
     assert_eq!(app.pending_asks(), 1);
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
+    // Its asks wait on Now; what it listens to has its own tab.
     shows(
         &app,
         &[
-            "Listens to",
-            "pedido.*",
-            "from bot-wrx80",
             "bot asks to listen to error.*",
             "\u{201c}para reintentar si recepcion falla\u{201d}",
             "Approve",
             "Deny",
+        ],
+    );
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Listens)));
+    shows(
+        &app,
+        &[
+            "LISTENS TO",
+            "pedido.*",
+            "from bot-wrx80",
             "Listen to a topic",
             "Remove",
         ],
@@ -1718,10 +1745,14 @@ fn a_team_shows_its_topics_and_the_operator_publishes() {
         serde_json::json!({"name": "info.turno", "from": "bot-wrx80", "message": "shift"}),
     );
     send(&mut app, Message::Go(Screen::Team("ops".into())));
+    send(
+        &mut app,
+        Message::Tab(inspector::Tab::Team(inspector::TeamTab::Members)),
+    );
     shows(
         &app,
         &[
-            "Topics",
+            "TOPICS",
             "pedido.nuevo",
             "publishes bot-wrx80",
             "listens bot (task)",
@@ -1732,6 +1763,10 @@ fn a_team_shows_its_topics_and_the_operator_publishes() {
     );
     let sent = messages_of_click(&app, "Publish an event");
     assert!(matches!(sent.as_slice(), [Message::PublishOpen(team)] if team == "ops"));
+    send(
+        &mut app,
+        Message::Tab(inspector::Tab::Team(inspector::TeamTab::Happens)),
+    );
     send(&mut app, Message::PublishOpen("ops".into()));
     app.apply(Message::PublishName("stop.all".into()));
     app.apply(Message::PublishMessage("Everyone stop".into()));
@@ -1748,7 +1783,7 @@ fn a_team_shows_its_topics_and_the_operator_publishes() {
 fn a_shortcut_publishes_its_event_in_one_press() {
     let (fake, mut app) = subscribed_fleet();
     send(&mut app, Message::Go(Screen::Team("ops".into())));
-    shows(&app, &["Shortcuts", "Notice", "Stop all"]);
+    shows(&app, &["SHORTCUTS", "Notice", "Stop all"]);
     let sent = messages_of_click(&app, "Stop all");
     assert!(matches!(sent.as_slice(), [Message::Shortcut(1)]));
     send(&mut app, Message::Shortcut(0));
@@ -1766,6 +1801,10 @@ fn an_older_control_plane_has_no_topics_and_nothing_else_breaks() {
     let (fake, mut app) = subscribed_fleet();
     fake.without_newer_routes();
     send(&mut app, Message::Go(Screen::Team("ops".into())));
+    send(
+        &mut app,
+        Message::Tab(inspector::Tab::Team(inspector::TeamTab::Members)),
+    );
     shows(
         &app,
         &[
@@ -1800,16 +1839,12 @@ fn a_task_an_event_made_says_who_told_it_and_what_it_knew() {
         "evt-9",
     );
     send(&mut app, Message::Go(Screen::Task(running)));
-    shows(
-        &app,
-        &[
-            "Told by",
-            "bot-wrx80 · pedido.nuevo: table 4",
-            "Knew",
-            "bot-wrx80 · info.turno: shift at six",
-        ],
-    );
+    // The event's message is its title; who told it is its From.
+    shows(&app, &["table 4", "FROM", "bot-wrx80"]);
+    send(&mut app, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Answer)));
+    shows(&app, &["KNEW", "bot-wrx80 · info.turno: shift at six"]);
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Listens)));
     shows(&app, &["Your teammate bot-wrx80 says (warn.stock): low on boxes"]);
 }
 
@@ -1827,6 +1862,7 @@ fn a_finished_task_lists_its_files_and_saves_a_kept_one() {
         .id
         .clone();
     send(&mut app, Message::Go(Screen::Task(done)));
+    send(&mut app, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Files)));
     shows(
         &app,
         &[
@@ -1881,22 +1917,17 @@ fn a_running_task_shows_its_activity_live_and_every_part_copies() {
     shows(
         &app,
         &[
-            "What it thinks",
-            "The clock may drift.",
-            "Copy thinking",
             "Activity",
-            "live",
             "Talk to it",
             "Copy activity",
             "local_exec",
-            "ok",
             "40 ms",
             "get_time",
             "running",
             "Asked bot-wrx80",
             "Open task",
-            "What it says",
-            "Copy words",
+            "I will read the host's clock.",
+            "Checking it against the time server.",
         ],
     );
     // The run's progress is in the Activity, not in the timeline.
@@ -1914,6 +1945,18 @@ fn a_running_task_shows_its_activity_live_and_every_part_copies() {
         copied.as_slice(),
         [Message::Copy(all)] if all.contains("local_exec · ok · 40 ms") && all.contains("Checking it against the time server.") && all.contains("Thinking: The clock may drift.")
     ));
+    // Its words so far and its thinking, on Answer.
+    send(&mut app, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Answer)));
+    shows(
+        &app,
+        &[
+            "WHAT IT THOUGHT",
+            "The clock may drift.",
+            "Copy thinking",
+            "WHAT IT SAYS SO FAR",
+            "Copy words",
+        ],
+    );
     assert!(matches!(
         messages_of_click(&app, "Copy thinking").as_slice(),
         [Message::Copy(thoughts)] if thoughts == "The clock may drift."
@@ -1922,6 +1965,10 @@ fn a_running_task_shows_its_activity_live_and_every_part_copies() {
         messages_of_click(&app, "Copy words").as_slice(),
         [Message::Copy(words)] if words.starts_with("I will read the host's clock.")
     ));
+    send(
+        &mut app,
+        Message::Tab(inspector::Tab::Task(inspector::TaskTab::Activity)),
+    );
 
     // A click on a step opens its details, which copy too.
     assert!(matches!(
@@ -1931,7 +1978,7 @@ fn a_running_task_shows_its_activity_live_and_every_part_copies() {
     send(&mut app, Message::ActivityPick(1));
     shows(
         &app,
-        &["Arguments", "{\"program\":\"date\"}", "Call id", "c1", "Copy step"],
+        &["ARGUMENTS", "{\"program\":\"date\"}", "CALL ID", "c1", "Copy step"],
     );
     assert!(matches!(
         messages_of_click(&app, "Copy step").as_slice(),
@@ -1962,14 +2009,14 @@ fn a_finished_task_keeps_its_activity_and_a_task_without_one_shows_none() {
         .id
         .clone();
     send(&mut app, Message::Go(Screen::Task(done)));
-    assert!(simulator_misses(&app, "Activity"));
+    shows(&app, &["It told nothing of what it did"]);
     send(&mut app, Message::Go(Screen::Task(running.clone())));
     send(&mut app, Message::AskCancel(running));
     send(&mut app, Message::ConfirmYes);
     let tick = app.now + chrono::Duration::seconds(3);
     send(&mut app, Message::Tick(tick));
-    shows(&app, &["Activity", "local_exec", "no end seen", "Copy activity"]);
-    assert!(simulator_misses(&app, "Talk to it"));
+    shows(&app, &["Activity", "local_exec", "no end seen"]);
+    assert!(simulator_misses(&app, "Jump to latest"), "it no longer runs");
 }
 
 #[test]
@@ -1999,14 +2046,11 @@ fn a_bridged_call_shows_its_mcp_tool_its_arguments_and_why_it_failed() {
         ]),
     );
     send(&mut app, Message::Go(Screen::Task(running)));
-    shows(
+    // A call that says no why shows its arguments; its error waits in
+    // its details.
+    shows_wide(
         &app,
-        &[
-            "get_status",
-            "{\"env\":\"pre\",\"only_failed\":true}",
-            "failed",
-            "the session expired: log in again",
-        ],
+        &["get_status", "{\"env\":\"pre\",\"only_failed\":true}", "300 ms"],
     );
     let index = app
         .live
@@ -2018,7 +2062,15 @@ fn a_bridged_call_shows_its_mcp_tool_its_arguments_and_why_it_failed() {
         .position(|e| e.headline().starts_with("get_status"))
         .unwrap();
     send(&mut app, Message::ActivityPick(index));
-    shows(&app, &["MCP tool", "axlr_call_tool", "Error"]);
+    shows(
+        &app,
+        &[
+            "MCP TOOL",
+            "axlr_call_tool",
+            "WHY IT FAILED",
+            "the session expired: log in again",
+        ],
+    );
 }
 
 #[test]
@@ -2042,10 +2094,12 @@ fn a_waiting_task_shows_approve_first_and_its_words_to_read_or_select() {
         let mut ui = simulator(view::view(&app));
         ui.find(word).unwrap_or_else(|e| panic!("{word}: {e:?}")).bounds().y
     };
-    // Approve and Deny come before the Activity, in the first view.
-    assert!(top("Approve") < top("What it says"));
-    assert!(top("Approve") < 600.0);
-    shows(&app, &["Needs OK to call local_write", "Select words"]);
+    // Approve and Deny are in the inspector's header, at its top.
+    assert!(top("Approve") < 120.0);
+    shows(&app, &["Needs OK to call local_write"]);
+    // What it said before it asked, on Answer.
+    send(&mut app, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Answer)));
+    shows(&app, &["Select words"]);
     // The words read formatted: no Markdown marks in sight.
     assert!(simulator_misses(&app, "The file is **missing**; I want to write it."));
     assert!(!app.live.as_ref().unwrap().markdown.items().is_empty());
@@ -2061,8 +2115,8 @@ fn a_waiting_task_shows_approve_first_and_its_words_to_read_or_select() {
     // What its run said before it asked is not an answer: the task has
     // not ended.
     app.answer = Some(crate::ui::Answer::new("I want to write it.".into()));
-    shows(&app, &["What it said before asking you"]);
-    assert!(simulator_misses(&app, "Answer"));
+    shows(&app, &["WHAT IT SAID BEFORE ASKING YOU"]);
+    assert!(simulator_misses(&app, "ANSWER"));
 }
 
 #[test]

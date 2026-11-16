@@ -404,10 +404,11 @@ fn filters_open_the_task_list() {
 fn without_a_connection_nothing_is_asked_of_the_control_plane() {
     let mut app = app();
     assert!(app.apply(Message::Tick(app.now)).is_empty());
-    // Only the page's own scroll: nothing goes to the control plane.
+    // Only the scrolls of the list and the inspector: nothing goes to
+    // the control plane.
     assert_eq!(
         app.apply(Message::Go(Screen::Task(TaskId::new("task-1").unwrap()))),
-        vec![Effect::ScrollTop]
+        vec![Effect::InspectorTop, Effect::ScrollTop]
     );
     let message = futures::executor::block_on(app.services.clone().execute(Effect::Refresh { generation: 1 }));
     assert!(matches!(
