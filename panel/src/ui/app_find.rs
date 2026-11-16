@@ -10,6 +10,7 @@ use crate::application::Fleet;
 impl App {
     /// The filter typed into: the list shows what answers, from its top.
     pub(super) fn list_filter_typed(&mut self, typed: String) -> Vec<Effect> {
+        self.typed_in = Some(Field::ListFilter);
         self.tables.query = typed;
         self.rows_changed();
         vec![Effect::ScrollTop]
@@ -22,14 +23,16 @@ impl App {
 
     /// Esc that a field took and left: the palette's closes the
     /// palette; the find in a task's activity empties as it leaves it,
-    /// when the list's filter has nothing to empty; on a list with no
-    /// form open the other field is the filter, which Esc empties.
+    /// when it was typed into last or the list's filter has nothing to
+    /// empty; on a list with no form open the other field is the filter,
+    /// which Esc empties.
     pub(super) fn escape_taken(&mut self) -> Vec<Effect> {
         if self.palette.is_open() {
             self.palette.close();
             return Vec::new();
         }
-        if self.find_shown() && !self.find.typed().is_empty() && self.tables.query.is_empty() {
+        let find_last = self.typed_in == Some(Field::ActivityFind) || self.tables.query.is_empty();
+        if self.find_shown() && !self.find.typed().is_empty() && find_last {
             self.find.type_in("");
             return Vec::new();
         }
@@ -265,6 +268,16 @@ mod tests {
         app.apply(Message::FindTyped("round".into()));
         app.apply(Message::EscapeTaken);
         assert_eq!(app.find.typed(), "");
+        // Both hold words: the one typed into last empties.
+        app.apply(Message::FindTyped("round".into()));
+        app.apply(Message::ListFilterTyped("ops".into()));
+        app.apply(Message::EscapeTaken);
+        assert!(app.tables.query.is_empty() && app.find.typed() == "round");
+        app.apply(Message::ListFilterTyped("ops".into()));
+        app.apply(Message::FindTyped("round".into()));
+        app.apply(Message::EscapeTaken);
+        assert!(app.find.typed().is_empty() && app.tables.query == "ops");
+        app.apply(Message::ListFilterTyped(String::new()));
         // Off a list, there is no filter to empty.
         send(&mut app, Message::Go(Screen::Settings));
         app.tables.query = "left".into();

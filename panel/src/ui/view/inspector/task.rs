@@ -53,35 +53,36 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, width: f32, tokens: Tokens) -> El<
     if let Some(waiting) = detail.and_then(|d| approval(app, d, tokens)) {
         pane = pane.push(waiting);
     }
-    let Some(detail) = detail else {
-        return pane.push(empty(Icon::Hourglass, "Loading the task…", tokens)).into();
-    };
+    // The tabs and the Activity, which follows the task by itself, stand
+    // while its detail is read: moving from row to row never flickers.
     let tab = app.tabs.task;
-    pane = pane.push(super::tabs(Tab::Task(tab), |t| count(app, detail, t), tokens));
-    pane.push(match tab {
-        TaskTab::Activity => super::steps::view(app, task.status, width, tokens),
-        TaskTab::Answer => super::body(answer(app, detail, tokens)),
-        TaskTab::Files => super::body(files(app, detail, tokens)),
-        TaskTab::Runs => super::body(runs(app, detail, tokens)),
-        TaskTab::Timeline => super::body(timeline(app, detail, tokens)),
-        TaskTab::Raw => super::body(raw(task, tokens)),
+    pane = pane.push(super::tabs(Tab::Task(tab), |t| count(app, task, detail, t), tokens));
+    let loading = || empty(Icon::Hourglass, "Loading the task…", tokens);
+    pane.push(match (tab, detail) {
+        (TaskTab::Activity, _) => super::steps::view(app, task.status, width, tokens),
+        (_, None) => loading(),
+        (TaskTab::Answer, Some(detail)) => super::body(answer(app, detail, tokens)),
+        (TaskTab::Files, Some(detail)) => super::body(files(app, detail, tokens)),
+        (TaskTab::Runs, Some(detail)) => super::body(runs(app, detail, tokens)),
+        (TaskTab::Timeline, Some(detail)) => super::body(timeline(app, detail, tokens)),
+        (TaskTab::Raw, Some(_)) => super::body(raw(task, tokens)),
     })
     .into()
 }
 
 /// The number beside a tab: the calls of the Activity, the files, the
 /// runs.
-fn count(app: &App, detail: &TaskDetail, tab: Tab) -> Option<usize> {
+fn count(app: &App, task: &Task, detail: Option<&TaskDetail>, tab: Tab) -> Option<usize> {
     match tab {
-        Tab::Task(TaskTab::Activity) => app.live.as_ref().filter(|l| l.id == detail.task.id && l.read).map(|l| {
+        Tab::Task(TaskTab::Activity) => app.live.as_ref().filter(|l| l.id == task.id && l.read).map(|l| {
             l.activity
                 .entries
                 .iter()
                 .filter(|e| matches!(e, crate::application::ActivityEntry::Tool(_)))
                 .count()
         }),
-        Tab::Task(TaskTab::Files) => Some(detail.executions.iter().map(|e| e.result.artifacts.len()).sum()),
-        Tab::Task(TaskTab::Runs) => Some(detail.executions.len()),
+        Tab::Task(TaskTab::Files) => detail.map(|d| d.executions.iter().map(|e| e.result.artifacts.len()).sum()),
+        Tab::Task(TaskTab::Runs) => detail.map(|d| d.executions.len()),
         _ => None,
     }
 }

@@ -424,34 +424,40 @@ fn step<'a>(
                 )
         }
     };
-    // The match the find is at: the accent's bar at its left.
-    let selected = mark.current;
-    let accent = container(Space::new().width(3).height(Length::Fill)).style(move |_| container::Style {
-        background: selected.then(|| tokens.accent.into()),
-        ..container::Style::default()
-    });
-    let line = button(row![
-        accent,
+    let line = button(
         container(cells)
             .padding(Padding {
-                left: 7.0,
+                left: 10.0,
                 right: 10.0 + SCROLL_BAR,
                 ..Padding::ZERO
             })
             .height(if tall { Length::Shrink } else { Length::Fill })
-            .align_y(Alignment::Center)
-    ])
+            .align_y(Alignment::Center),
+    )
     .width(Length::Fill)
     .padding(0)
     .style(styles::row(tokens, mark.hit || mark.open))
     .on_press(Message::ActivityPick(at));
     let line: El<'a> = if tall {
-        container(line).width(Length::Fill).into()
+        line.into()
     } else {
-        container(line.height(LINE - 1.0)).width(Length::Fill).into()
+        line.height(LINE - 1.0).into()
+    };
+    // The match the find is at: the accent's bar at its left, as tall as
+    // its line however many lines its words take.
+    let selected = mark.current;
+    let accent: El<'a> = if selected {
+        container(Space::new().width(3).height(Length::Fill))
+            .style(move |_| container::Style {
+                background: Some(tokens.accent.into()),
+                ..container::Style::default()
+            })
+            .into()
+    } else {
+        Space::new().into()
     };
     column![
-        line,
+        stack![line, accent].width(Length::Fill),
         container(Space::new().width(Length::Fill).height(1)).style(styles::hairline(tokens))
     ]
     .into()

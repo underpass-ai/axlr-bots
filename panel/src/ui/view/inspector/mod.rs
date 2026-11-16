@@ -3,6 +3,7 @@
 //! task, a bot, a node or a team; the list stays beside it, narrower.
 
 mod bot;
+mod fact;
 mod node;
 mod step_mark;
 mod steps;
@@ -15,10 +16,11 @@ use iced::widget::{Space, button, column, container, responsive, row, scrollable
 use iced::{Alignment, Font, Length, Padding};
 
 use super::grid;
-use super::widgets::{El, INSPECTOR, SMALL, icon, icon_button, label, semibold};
+use super::widgets::{El, INSPECTOR, SMALL, icon_button, label, semibold};
 use crate::ui::inspector::Tab;
 use crate::ui::styles::{self, Kind};
 use crate::ui::{App, Icon, Message, Screen, Tokens};
+use fact::Fact;
 use step_mark::StepMark;
 
 /// The inspector's width in the window at start; a narrower window
@@ -175,44 +177,6 @@ fn facts<'a>(cells: Vec<(&'static str, Fact)>, width: f32, tokens: Tokens) -> El
             .into(),
         tokens,
     )
-}
-
-/// A value among the facts: words, or an id in the fixed face with a
-/// button that copies it whole.
-enum Fact {
-    Words(String),
-    Copy(String),
-}
-
-impl Fact {
-    fn draw<'a>(&self, width: f32, tokens: Tokens) -> El<'a> {
-        match self {
-            Self::Words(words) => {
-                let fits = ((width / (EM * SMALL)).floor() as usize).max(4);
-                text(grid::shorten(words, fits))
-                    .size(SMALL)
-                    .wrapping(Wrapping::None)
-                    .into()
-            }
-            Self::Copy(value) if value.is_empty() => text("—").size(SMALL).into(),
-            Self::Copy(value) => {
-                let fits = (((width - 20.0) / (0.61 * 12.5)).floor() as usize).max(4);
-                row![
-                    text(grid::shorten(value, fits))
-                        .size(12.5)
-                        .font(Font::MONOSPACE)
-                        .wrapping(Wrapping::None),
-                    button(icon(Icon::Copy, 12.0, tokens.muted))
-                        .padding(2)
-                        .style(styles::button_style(tokens, Kind::Ghost))
-                        .on_press(Message::Copy(value.clone())),
-                ]
-                .spacing(4)
-                .align_y(Alignment::Center)
-                .into()
-            }
-        }
-    }
 }
 
 /// The tabs of the row's kind, the open one in ink over the accent's

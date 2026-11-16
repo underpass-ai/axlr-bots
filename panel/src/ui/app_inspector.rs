@@ -83,6 +83,7 @@ impl App {
 
     /// The find typed into: its first match in sight.
     pub(super) fn find_typed(&mut self, typed: String) -> Vec<Effect> {
+        self.typed_in = Some(Field::ActivityFind);
         self.find.type_in(typed);
         self.show_match()
     }

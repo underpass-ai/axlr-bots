@@ -93,6 +93,9 @@ pub struct App {
     pub tabs: Tabs,
     /// The find in the activity of the task inspected.
     pub find: ActivityFind,
+    /// The field typed into last, the list's filter or the find, for an
+    /// Esc that leaves a field without saying which.
+    pub(super) typed_in: Option<super::Field>,
 }
 
 impl App {
@@ -152,7 +155,13 @@ impl App {
             palette: Palette::default(),
             tabs: Tabs::default(),
             find: ActivityFind::default(),
+            typed_in: None,
         };
+        // A row named at start (`--screen task:<id>`) is under its list's
+        // cursor, as one opened by hand.
+        if let Some(row) = app.screen.inspected() {
+            app.select_row(row);
+        }
         match app.services.shortcuts.load() {
             Ok(list) => app.shortcuts = list,
             Err(error) => app.banner = Some(Banner::error(&error, now)),
@@ -267,16 +276,23 @@ impl App {
                 self.refreshing_since = None;
                 match result {
                     Ok(fleet) => {
-                        let mut effects = self.notice_waiting(&fleet, self.fleet.is_none());
+                        let first = self.fleet.is_none();
+                        let mut effects = self.notice_waiting(&fleet, first);
                         TeamGroup::meet(&fleet.bots, &mut self.tables.collapsed);
                         self.fleet = Some(fleet);
                         self.rows_changed();
                         self.fleet_error = None;
                         self.last_refresh = Some(self.now);
                         effects.extend(self.follow_teams());
-                        // The Teams list waited for its first team.
+                        // The Teams list waited for its first team; a row
+                        // named at start is brought into sight in its list.
                         if self.screen == Screen::Teams {
                             effects.extend(self.go(Screen::Teams));
+                        } else if first
+                            && self.screen.inspected().is_some()
+                            && let Some(spot) = self.screen.list().and_then(|list| self.cursor_spot(list))
+                        {
+                            effects.push(Effect::Reveal(super::Scroller::Rows, spot));
                         }
                         effects
                     }

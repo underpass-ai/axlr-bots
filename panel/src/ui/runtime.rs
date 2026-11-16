@@ -66,9 +66,11 @@ pub fn run(app: &App, effect: Effect) -> Task<Message> {
                 },
             )
         }
-        Effect::AskFind(key) => {
-            iced::widget::operation::is_focused(Field::ActivityFind.id()).map(move |taken| Message::FindKey(key, taken))
-        }
+        // A field that is not drawn answers nothing: the key is then the
+        // list's, never lost.
+        Effect::AskFind(key) => iced::widget::operation::is_focused(Field::ActivityFind.id())
+            .collect()
+            .map(move |seen| Message::FindKey(key, seen.first().copied().unwrap_or(false))),
         Effect::Focus(field) => iced::widget::operation::focus(field.id()),
         Effect::Reveal(scroller, spot) => {
             let (top, height) = view::span(scroller, spot, app.density);

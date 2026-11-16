@@ -2721,3 +2721,31 @@ fn a_node_inspected_shows_its_facts_labels_providers_and_its_bots() {
         [Message::Go(Screen::Bot(id))] if id.as_str() == "ops-lead"
     ));
 }
+
+#[test]
+fn a_task_whose_detail_is_still_read_keeps_its_tabs_and_its_activity() {
+    let mut app = long_run_inspected();
+    // Moving to another row clears the detail until its read comes back:
+    // the header, the tabs and the find stand from the fleet meanwhile.
+    app.task = None;
+    shows_wide(
+        &app,
+        &["ops-deploy", "Activity", "Answer", "Find in activity", "local_read"],
+    );
+    app.tabs.task = inspector::TaskTab::Files;
+    shows_wide(&app, &["Loading the task…"]);
+}
+
+#[test]
+fn a_row_named_at_start_is_under_its_lists_cursor() {
+    let now = "2026-10-25T10:00:00Z".parse().unwrap();
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::large(now));
+    let bot = BotId::new("support-lead").unwrap();
+    let mut app = super::view::tests::app_over(fake);
+    app.screen = Screen::Bot(bot.clone());
+    app.tables.bots.cursor.select(bot.clone());
+    let effects = app.apply(Message::SettingsSave);
+    super::test_runtime::drive(&mut app, effects);
+    assert_eq!(app.tables.bots.cursor.selected(), Some(&bot));
+    assert_eq!(app.cursor_row(table::List::Bots), Some(table::RowRef::Bot(bot)));
+}
