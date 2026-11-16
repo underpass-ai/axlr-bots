@@ -33,7 +33,7 @@ axlr-bots bot events bot                                                        
 
 A desktop window over the operator API, in [`panel/`](panel/README.md): see the fleet, send tasks, say yes or no to a bot. Rust and [Iced](https://iced.rs), light and dark, no root.
 
-<p align="center"><img src="panel/docs/screenshots/overview-light.png" alt="The panel's Home: nodes online, bots on, tasks running, waiting, failed and expired today, cost today" width="860"></p>
+<p align="center"><img src="panel/docs/screenshots/overview-light.png" alt="The panel's Home: what needs you, the fleet's numbers, the bots by team, the latest tasks and the nodes" width="860"></p>
 
 | Tasks | A call waiting for you | Nodes |
 |:--:|:--:|:--:|
