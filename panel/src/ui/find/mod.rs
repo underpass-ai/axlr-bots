@@ -4,6 +4,7 @@
 //! find of a task's activity. Plain state the views read; no widget
 //! here.
 
+mod activity_find;
 mod collapsed;
 mod fold_repeats;
 mod folded;
@@ -21,6 +22,9 @@ mod query;
 mod row_cursor;
 mod score;
 mod searchable;
+mod step_filter;
+mod step_kind;
+mod step_text;
 mod task_group;
 mod task_grouping;
 mod task_line;
@@ -30,6 +34,7 @@ mod team_group;
 mod test_rows;
 mod text_match;
 
+pub use activity_find::ActivityFind;
 pub use collapsed::Collapsed;
 pub use fold_repeats::FoldRepeats;
 use folded::Folded;
@@ -47,6 +52,9 @@ pub use query::Query;
 pub use row_cursor::RowCursor;
 pub use score::Score;
 pub use searchable::Searchable;
+pub use step_filter::StepFilter;
+pub use step_kind::StepKind;
+pub use step_text::StepText;
 pub use task_group::TaskGroup;
 pub use task_grouping::TaskGrouping;
 pub use task_line::TaskLine;
