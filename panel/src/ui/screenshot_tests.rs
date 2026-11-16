@@ -328,3 +328,79 @@ fn redesign_shots_s2() {
     send(&mut app, Message::PaletteClose);
     camera.shoot_at(&mut app, "s2-tasks-small-light", super::runtime::MIN_WINDOW);
 }
+
+/// The third slice of the redesign at the size of a real fleet, light
+/// and dark, into `PANEL_SHOTS_DIR`: a task inspected beside its list on
+/// its Activity, found in, with a step open and on its Answer; a task
+/// that waits for a person; a bot on Now and on its rules; a node; a
+/// team; a running task scrolled up in, with Jump to latest.
+#[test]
+#[ignore = "writes into PANEL_SHOTS_DIR; run it with --ignored"]
+fn redesign_shots_s3() {
+    let out = std::env::var("PANEL_SHOTS_DIR").expect("PANEL_SHOTS_DIR names where the shots go");
+    let camera = Camera::into(PathBuf::from(out));
+    let fake = Arc::new(FakeControlPlane::large("2026-10-25T10:00:00Z".parse().unwrap()));
+    let mut app = app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+
+    // The newest task of the bot that deploys has the long run.
+    let long = {
+        let fleet = app.fleet.as_ref().unwrap();
+        fleet
+            .tasks
+            .iter()
+            .find(|t| t.bot_id.as_str() == "ops-deploy")
+            .unwrap()
+            .id
+            .clone()
+    };
+    send(&mut app, Message::Go(Screen::Tasks));
+    send(&mut app, Message::RowPicked(table::RowRef::Task(long.clone())));
+    camera.both(&mut app, "s3-task-activity");
+    send(&mut app, Message::FindTyped("tests".into()));
+    send(&mut app, Message::FindNext);
+    camera.both(&mut app, "s3-task-find");
+    send(&mut app, Message::FindTyped(String::new()));
+    send(&mut app, Message::ActivityPick(0));
+    camera.both(&mut app, "s3-task-step");
+    send(&mut app, Message::ActivityPick(0));
+    send(&mut app, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Answer)));
+    camera.both(&mut app, "s3-task-answer");
+    send(
+        &mut app,
+        Message::Tab(inspector::Tab::Task(inspector::TaskTab::Activity)),
+    );
+
+    // A call that publishes a post, waiting for a person.
+    let publishing = fake.add_waiting_call(
+        "ops-report",
+        "Propose today's post about the release",
+        super::view_tests::publishing_call(),
+    );
+    let refresh = app.refresh_now();
+    drive(&mut app, refresh);
+    send(&mut app, Message::Go(Screen::Task(publishing)));
+    camera.both(&mut app, "s3-task-waiting");
+
+    send(&mut app, Message::Go(Screen::Bot(bot("ops-lead"))));
+    camera.both(&mut app, "s3-bot-now");
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Rules)));
+    camera.both(&mut app, "s3-bot-rules");
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Now)));
+
+    send(
+        &mut app,
+        Message::Go(Screen::Node(crate::domain::NodeId::new("gx10-ff95").unwrap())),
+    );
+    camera.both(&mut app, "s3-node");
+
+    send(&mut app, Message::Go(Screen::Teams));
+    camera.both(&mut app, "s3-team");
+
+    // The running task, scrolled up in: it stops following its newest
+    // step and offers to jump back to it.
+    let running = task_with(&app, TaskStatus::Running);
+    send(&mut app, Message::Go(Screen::Task(running)));
+    send(&mut app, Message::ActivityScrolled(LiveStream::Steps, false));
+    camera.both(&mut app, "s3-task-live");
+}

@@ -59,7 +59,7 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, width: f32, tokens: Tokens) -> El<
     let tab = app.tabs.task;
     pane = pane.push(super::tabs(Tab::Task(tab), |t| count(app, detail, t), tokens));
     pane.push(match tab {
-        TaskTab::Activity => super::steps::view(app, task.status, tokens),
+        TaskTab::Activity => super::steps::view(app, task.status, width, tokens),
         TaskTab::Answer => super::body(answer(app, detail, tokens)),
         TaskTab::Files => super::body(files(app, detail, tokens)),
         TaskTab::Runs => super::body(runs(app, detail, tokens)),
@@ -169,7 +169,7 @@ fn facts<'a>(app: &'a App, task: &'a Task, detail: Option<&'a TaskDetail>, width
         .map(|e| e.place().to_string())
         .unwrap_or_else(|| "—".into());
     let took = match detail {
-        _ if !task.status.is_terminal() => task.status.label().to_lowercase(),
+        _ if !task.status.is_terminal() => format!("{} so far", format::span(app.now - task.created_at)),
         Some(d) => format::span(d.last_change() - task.created_at),
         None => format::span(task.updated_at - task.created_at),
     };

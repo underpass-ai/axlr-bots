@@ -31,6 +31,9 @@ const FACT_GAP: f32 = 14.0;
 const EM: f32 = 0.54;
 /// The size of the title.
 const TITLE: f32 = 16.0;
+/// How wide an average character of a tab's semibold word is, in its
+/// size.
+const TAB_EM: f32 = 0.6;
 
 /// How wide the inspector is when the page has `room`.
 pub fn width(room: f32) -> f32 {
@@ -86,8 +89,15 @@ fn head<'a>(
     width: f32,
     tokens: Tokens,
 ) -> El<'a> {
-    let mut line = row(first).spacing(8).align_y(Alignment::Center);
-    line = line.push(Space::new().width(Length::Fill));
+    // The acts keep their room; what is before them takes the rest and
+    // is cut at its edge in a narrow window.
+    let mut line = row![
+        container(row(first).spacing(8).align_y(Alignment::Center))
+            .width(Length::Fill)
+            .clip(true)
+    ]
+    .spacing(6)
+    .align_y(Alignment::Center);
     for act in acts {
         line = line.push(act);
     }
@@ -97,7 +107,7 @@ fn head<'a>(
     let room = width - 2.0 * SIDE;
     let fits = ((room / (EM * TITLE)).floor() as usize).max(8);
     let mut body = column![
-        line.spacing(6).wrap().vertical_spacing(6),
+        line,
         semibold(grid::shorten(title.trim(), 2 * fits))
             .size(TITLE)
             .wrapping(Wrapping::WordOrGlyph)
@@ -213,18 +223,25 @@ fn tabs<'a>(open: Tab, count: impl Fn(Tab) -> Option<usize>, tokens: Tokens) -> 
         let mut words = row![semibold(tab.label()).size(13.5).color(ink)]
             .spacing(5)
             .align_y(Alignment::Center);
+        // The accent's line under the open tab is as wide as its words.
+        let mut wide = tab.label().chars().count() as f32 * 13.5 * TAB_EM + 18.0;
         if let Some(n) = count(tab) {
-            words = words.push(text(n.to_string()).size(12.0).color(tokens.muted));
+            let n = n.to_string();
+            wide += n.chars().count() as f32 * 12.0 * 0.6 + 5.0;
+            words = words.push(text(n).size(12.0).color(tokens.muted));
         }
-        let mark = container(Space::new().width(Length::Fill).height(2)).style(move |_| container::Style {
+        let mark = container(Space::new().width(wide).height(2)).style(move |_| container::Style {
             background: on.then(|| tokens.accent.into()),
             ..container::Style::default()
         });
         line = line.push(
-            button(column![container(words).padding(Padding::from([9, 9]).bottom(7)), mark])
-                .padding(0)
-                .style(styles::button_style(tokens, Kind::Link))
-                .on_press(Message::Tab(tab)),
+            button(column![
+                container(words.wrap()).padding(Padding::from([9, 9]).bottom(7)),
+                mark
+            ])
+            .padding(0)
+            .style(styles::button_style(tokens, Kind::Link))
+            .on_press(Message::Tab(tab)),
         );
     }
     ruled(container(line).padding(Padding::from([0, 10])).into(), tokens)

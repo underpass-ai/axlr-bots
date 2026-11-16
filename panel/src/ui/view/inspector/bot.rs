@@ -86,8 +86,13 @@ fn header<'a>(app: &'a App, bot: &'a Bot, width: f32, tokens: Tokens) -> El<'a> 
     } else {
         bot.groups.join(", ")
     };
+    let word = if bot.status == BotStatus::Enabled {
+        "On"
+    } else {
+        bot.status.name()
+    };
     let mut first = vec![
-        pill(Tone::of_bot(bot.status), bot.status.name(), tokens),
+        pill(Tone::of_bot(bot.status), word, tokens),
         muted(format!("{team} · {}", bot.placement.describe()), tokens)
             .wrapping(Wrapping::None)
             .into(),

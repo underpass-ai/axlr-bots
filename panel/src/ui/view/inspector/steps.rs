@@ -8,8 +8,8 @@ use iced::widget::text::{Span, Wrapping};
 use iced::widget::{Space, button, column, container, rich_text, row, scrollable, span, stack, text, text_input};
 use iced::{Alignment, Color, Font, Length, Padding};
 
-use super::super::listbar;
-use super::super::widgets::{El, REGULAR, SMALL, empty, icon, icon_button, key_cap, label, step_id};
+use super::super::widgets::{El, REGULAR, SMALL, empty, icon, key_cap, label, step_id};
+use super::super::{grid, listbar};
 use crate::application::{ActivityEntry, DelegationActivity, ToolActivity, ToolState};
 use crate::domain::TaskStatus;
 use crate::ui::find::{Query, StepFilter, StepText};
@@ -32,17 +32,23 @@ const AT_END: f32 = 24.0;
 /// How much of the model's words a line shows; its details show them all.
 const WORDS_SHOWN: usize = 600;
 /// The width of the find's field.
-const FIND: f32 = 200.0;
+const FIND: f32 = 186.0;
+/// The narrowest inspector whose find and chips share one line.
+const ONE_LINE: f32 = 620.0;
+/// The room the scroll bar takes at the right of the steps.
+const SCROLL_BAR: f32 = 10.0;
+/// How wide an average character of a step's words is, in its size.
+const EM: f32 = 0.53;
 
 /// The Activity tab of the task inspected: the find and the chips over
 /// the steps, the steps alone scrolling under them.
-pub fn view<'a>(app: &'a App, status: TaskStatus, tokens: Tokens) -> El<'a> {
+pub fn view<'a>(app: &'a App, status: TaskStatus, width: f32, tokens: Tokens) -> El<'a> {
     let live = match &app.screen {
         Screen::Task(id) => app.live.as_ref().filter(|l| &l.id == id),
         _ => None,
     };
     let steps = app.steps_text();
-    let column = column![bar(app, live, &steps, tokens)];
+    let column = column![bar(app, live, &steps, width, tokens)];
     let Some(live) = live.filter(|l| l.read) else {
         return column
             .push(empty(Icon::Hourglass, "Reading what it does…", tokens))
@@ -56,12 +62,12 @@ pub fn view<'a>(app: &'a App, status: TaskStatus, tokens: Tokens) -> El<'a> {
         };
         return column.push(empty(Icon::Hourglass, words, tokens)).into();
     }
-    column.push(stream(app, live, &steps, status, tokens)).into()
+    column.push(stream(app, live, &steps, status, width, tokens)).into()
 }
 
 /// The bar over the steps: the find with where it is among its matches
 /// and its arrows, then the chips with their counts and a copy of it all.
-fn bar<'a>(app: &'a App, live: Option<&'a LiveTask>, steps: &[StepText], tokens: Tokens) -> El<'a> {
+fn bar<'a>(app: &'a App, live: Option<&'a LiveTask>, steps: &[StepText], width: f32, tokens: Tokens) -> El<'a> {
     let find = &app.find;
     let field = text_input("Find in activity…", find.typed())
         .id(Field::ActivityFind.id())
@@ -83,17 +89,11 @@ fn bar<'a>(app: &'a App, live: Option<&'a LiveTask>, steps: &[StepText], tokens:
     .align_y(Alignment::Center)
     .height(28)
     .padding(Padding::from([0, 8]));
-    let mut line = row![
+    let find_part = row![
         container(stack![field, ends]).width(FIND).height(28),
-        container(text(find.label(steps)).size(12.0).color(tokens.muted)).center_x(40),
-        icon_button(
-            Icon::Up,
-            "Previous match (Shift+Enter)",
-            Some(Message::FindPrevious),
-            tokens
-        ),
-        icon_button(Icon::Down, "Next match (Enter)", Some(Message::FindNext), tokens),
-        Space::new().width(Length::Fill),
+        container(text(find.label(steps)).size(12.0).color(tokens.muted)).center_x(36),
+        small_button(Icon::Up, "Previous match (Shift+Enter)", Message::FindPrevious, tokens),
+        small_button(Icon::Down, "Next match (Enter)", Message::FindNext, tokens),
     ]
     .spacing(4)
     .align_y(Alignment::Center);
@@ -107,17 +107,25 @@ fn bar<'a>(app: &'a App, live: Option<&'a LiveTask>, steps: &[StepText], tokens:
             tokens,
         ));
     }
-    line = line.push(chips);
     if let Some(live) = live.filter(|l| !l.activity.is_empty()) {
-        line = line.push(icon_button(
+        chips = chips.push(small_button(
             Icon::Copy,
             "Copy activity",
-            Some(Message::Copy(format::activity(&live.activity))),
+            Message::Copy(format::activity(&live.activity)),
             tokens,
         ));
     }
+    // On one line in the window at start, the chips at its right; in a
+    // narrower one they go on to a line of their own.
+    let line: El<'a> = if width >= ONE_LINE {
+        row![find_part, Space::new().width(Length::Fill), chips]
+            .align_y(Alignment::Center)
+            .into()
+    } else {
+        column![find_part, chips].spacing(6).into()
+    };
     super::ruled(
-        container(line.wrap().vertical_spacing(6))
+        container(line)
             .padding(Padding::from([7, 10]))
             .width(Length::Fill)
             .into(),
@@ -125,10 +133,30 @@ fn bar<'a>(app: &'a App, live: Option<&'a LiveTask>, steps: &[StepText], tokens:
     )
 }
 
+/// A small icon button with a tip, for the bar over the steps.
+fn small_button<'a>(glyph: Icon, tip: &'a str, press: Message, tokens: Tokens) -> El<'a> {
+    iced::widget::tooltip(
+        button(icon(glyph, 14.0, tokens.text))
+            .padding(6)
+            .style(styles::button_style(tokens, Kind::Ghost))
+            .on_press(press),
+        container(text(tip).size(SMALL)).padding(6).style(styles::chip(tokens)),
+        iced::widget::tooltip::Position::Bottom,
+    )
+    .into()
+}
+
 /// The steps the chip shows, the find's matches washed and the current
 /// one marked, the open one with its details under it; on a running
 /// task that the person scrolled up in, Jump to latest over its foot.
-fn stream<'a>(app: &'a App, live: &'a LiveTask, steps: &[StepText], status: TaskStatus, tokens: Tokens) -> El<'a> {
+fn stream<'a>(
+    app: &'a App,
+    live: &'a LiveTask,
+    steps: &[StepText],
+    status: TaskStatus,
+    width: f32,
+    tokens: Tokens,
+) -> El<'a> {
     let find = &app.find;
     let query = find.query();
     let hits = find.hits(steps);
@@ -143,6 +171,9 @@ fn stream<'a>(app: &'a App, live: &'a LiveTask, steps: &[StepText], status: Task
         })
         .max()
         .unwrap_or(1);
+    // The room of a step's words: what the line leaves after its time,
+    // glyph, tool and duration.
+    let room = (width - 20.0 - SCROLL_BAR - TIME - GLYPH - TOOL - TOOK - 4.0 * 8.0).max(60.0);
     let mut list = column![];
     for at in find.shown(steps) {
         let entry = &live.activity.entries[at];
@@ -151,7 +182,7 @@ fn stream<'a>(app: &'a App, live: &'a LiveTask, steps: &[StepText], status: Task
             current: current == Some(at),
             open: live.selected == Some(at),
         };
-        let mut lines = column![step(at, entry, mark, &query, longest, tokens)];
+        let mut lines = column![step(at, entry, mark, &query, longest, room, tokens)];
         if mark.open {
             lines = lines.push(details(entry, tokens));
         }
@@ -170,6 +201,12 @@ fn stream<'a>(app: &'a App, live: &'a LiveTask, steps: &[StepText], status: Task
         ));
     }
     let steps_box = scrollable(list.width(Length::Fill))
+        .direction(iced::widget::scrollable::Direction::Vertical(
+            iced::widget::scrollable::Scrollbar::new()
+                .width(6)
+                .scroller_width(6)
+                .margin(2),
+        ))
         .id(LiveStream::Steps.id())
         .width(Length::Fill)
         .height(Length::Fill)
@@ -210,7 +247,18 @@ struct Mark {
 }
 
 /// One step on its line; a click opens its details in place.
-fn step<'a>(at: usize, entry: &'a ActivityEntry, mark: Mark, query: &Query, longest: u64, tokens: Tokens) -> El<'a> {
+fn step<'a>(
+    at: usize,
+    entry: &'a ActivityEntry,
+    mark: Mark,
+    query: &Query,
+    longest: u64,
+    room: f32,
+    tokens: Tokens,
+) -> El<'a> {
+    // Words cut with an ellipsis to the characters that fit a width.
+    let fit =
+        |words: String, width: f32, size: f32| grid::shorten(&words, ((width / (EM * size)).floor() as usize).max(4));
     let time = text(format::clock(entry.at()))
         .size(12.0)
         .color(tokens.muted)
@@ -232,9 +280,16 @@ fn step<'a>(at: usize, entry: &'a ActivityEntry, mark: Mark, query: &Query, long
                 tokens.text
             };
             let what = match call.why() {
-                Some(why) => cut(marked(why, query, SMALL, REGULAR, tokens.text, tokens)),
+                Some(why) => cut(marked(
+                    fit(why, room, SMALL),
+                    query,
+                    SMALL,
+                    REGULAR,
+                    tokens.text,
+                    tokens,
+                )),
                 None => cut(marked(
-                    call.summary.clone(),
+                    fit(call.summary.clone(), room, 12.5 * 1.15),
                     query,
                     12.5,
                     Font::MONOSPACE,
@@ -245,7 +300,7 @@ fn step<'a>(at: usize, entry: &'a ActivityEntry, mark: Mark, query: &Query, long
             cells
                 .push(
                     container(cut(marked(
-                        call.name().to_string(),
+                        fit(call.name().to_string(), TOOL, SMALL * 1.15),
                         query,
                         SMALL,
                         Font::MONOSPACE,
@@ -260,7 +315,7 @@ fn step<'a>(at: usize, entry: &'a ActivityEntry, mark: Mark, query: &Query, long
         ActivityEntry::Emitted(event) => cells
             .push(
                 container(cut(marked(
-                    event.name.clone(),
+                    fit(event.name.clone(), TOOL, SMALL * 1.15),
                     query,
                     SMALL,
                     Font::MONOSPACE,
@@ -271,7 +326,7 @@ fn step<'a>(at: usize, entry: &'a ActivityEntry, mark: Mark, query: &Query, long
             )
             .push(
                 container(cut(marked(
-                    event.message.clone(),
+                    fit(event.message.clone(), room, SMALL),
                     query,
                     SMALL,
                     REGULAR,
@@ -282,7 +337,7 @@ fn step<'a>(at: usize, entry: &'a ActivityEntry, mark: Mark, query: &Query, long
             )
             .push(
                 container(cut(marked(
-                    event.recipients(),
+                    fit(event.recipients(), TOOK, 12.0),
                     query,
                     12.0,
                     REGULAR,
@@ -385,7 +440,7 @@ fn step<'a>(at: usize, entry: &'a ActivityEntry, mark: Mark, query: &Query, long
         container(cells)
             .padding(Padding {
                 left: 7.0,
-                right: 10.0,
+                right: 10.0 + SCROLL_BAR,
                 ..Padding::ZERO
             })
             .height(if tall { Length::Shrink } else { Length::Fill })
