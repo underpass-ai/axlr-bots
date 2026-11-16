@@ -560,7 +560,10 @@ mod tests {
             panic!("{:?}", first.handle);
         };
         assert_eq!((*width, *height, pixels.len()), (401, 101, 401 * 101 * 4));
-        assert!(pixels.chunks_exact(4).any(|pixel| pixel[3] > 20), "the glow is in it");
+        assert!(
+            pixels.as_chunks::<4>().0.iter().any(|pixel| pixel[3] > 20),
+            "the glow is in it"
+        );
 
         // Drawn again before the next frame: the same picture.
         over(&hover, "a").prepare(&mut state, BOUNDS);

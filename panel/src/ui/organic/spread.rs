@@ -201,7 +201,13 @@ mod tests {
     fn a_flat_field_stays_flat() {
         let spread = Spread::over(Size::new(200.0, 80.0), 0.0).unwrap();
         let picture = spread.stretch(Field::SMALL, &flat(Field::SMALL));
-        assert!(picture.chunks_exact(4).all(|pixel| pixel == [10, 20, 30, 128]));
+        assert!(
+            picture
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|pixel| *pixel == [10, 20, 30, 128])
+        );
     }
 
     /// No blocks and no hard edge: from one pixel to the next the
@@ -224,7 +230,7 @@ mod tests {
             }
             assert!(steepest <= 3, "a step of {steepest} on {size:?}");
             assert!(
-                picture.chunks_exact(4).any(|pixel| pixel[3] > 20),
+                picture.as_chunks::<4>().0.iter().any(|pixel| pixel[3] > 20),
                 "it shows on {size:?}"
             );
         }

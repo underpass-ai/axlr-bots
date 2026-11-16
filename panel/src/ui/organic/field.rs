@@ -143,7 +143,7 @@ mod tests {
                             aspect,
                             ..glow()
                         });
-                        let strongest = pixels.chunks_exact(4).map(|pixel| pixel[3]).max().unwrap();
+                        let strongest = pixels.as_chunks::<4>().0.iter().map(|pixel| pixel[3]).max().unwrap();
                         assert!(strongest <= most(halo, fade), "{strongest} at fade {fade}");
                         assert!(strongest > 0, "something shows at fade {fade}");
                     }
@@ -207,7 +207,7 @@ mod tests {
     #[test]
     fn nothing_shows_before_it_fades_in() {
         let pixels = Field::SMALL.pixels(&Glow { fade: 0.0, ..glow() });
-        assert!(pixels.chunks_exact(4).all(|pixel| pixel[3] == 0));
+        assert!(pixels.as_chunks::<4>().0.iter().all(|pixel| pixel[3] == 0));
     }
 
     /// Stretching blends a clear pixel with its neighbours: it must
@@ -220,7 +220,7 @@ mod tests {
             fade: 0.0,
             ..glow()
         });
-        for pixel in pixels.chunks_exact(4) {
+        for pixel in pixels.as_chunks::<4>().0 {
             assert!(pixel[0] >= 0x9F && pixel[0] <= 0xE0, "red {}", pixel[0]);
             assert!(pixel[2] >= 0x5A && pixel[2] <= 0xCE, "blue {}", pixel[2]);
         }
@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn the_colour_runs_between_the_two_ends_of_the_tint() {
         let pixels = Field::SMALL.pixels(&glow());
-        let reds: Vec<u8> = pixels.chunks_exact(4).map(|pixel| pixel[0]).collect();
+        let reds: Vec<u8> = pixels.as_chunks::<4>().0.iter().map(|pixel| pixel[0]).collect();
         assert!(reds.iter().all(|red| (0x44..=0xB8).contains(red)));
         assert!(
             reds.iter().max().unwrap() - reds.iter().min().unwrap() > 40,
