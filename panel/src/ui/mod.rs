@@ -35,6 +35,7 @@ mod live_task;
 mod message;
 mod mint_form;
 mod order_form;
+pub mod organic;
 mod passages;
 mod publish_form;
 mod reader;
