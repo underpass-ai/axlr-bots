@@ -46,16 +46,24 @@ impl Camera {
 
     /// The same, in a window of another size.
     fn shoot_at(&self, app: &mut App, name: &str, window: iced::Size) {
-        self.draw(app, name, window, None);
+        self.draw(app, name, window, None, 0.0);
     }
 
     /// Draws the panel with the pointer at `pointer`, if one is given:
-    /// what is under it has the pointer's wash, as in the window.
-    fn draw(&self, app: &mut App, name: &str, window: iced::Size, pointer: Option<Point>) {
+    /// what is under it has the pointer's wash, as in the window. With a
+    /// `wheel`, the page is first scrolled down by that many points.
+    fn draw(&self, app: &mut App, name: &str, window: iced::Size, pointer: Option<Point>, wheel: f32) {
         let _ = app.apply(Message::DismissBanner);
         let _turn = turn();
         let theme = Tokens::of(app.mode).theme();
         let mut ui = Simulator::with_size(panel_settings(), window, view::view(app));
+        if wheel > 0.0 {
+            ui.point_at(Point::new(window.width / 2.0, window.height / 2.0));
+            let _ = ui.simulate([iced::Event::Mouse(iced::mouse::Event::WheelScrolled {
+                delta: iced::mouse::ScrollDelta::Pixels { x: 0.0, y: -wheel },
+            })]);
+            ui.point_at(pointer.unwrap_or(Point::new(window.width - 2.0, window.height - 2.0)));
+        }
         if let Some(pointer) = pointer {
             ui.point_at(pointer);
         }
@@ -75,10 +83,20 @@ impl Camera {
 
     /// The same state, light and dark, with the pointer at `pointer`.
     fn both_at(&self, app: &mut App, name: &str, pointer: Option<Point>) {
+        self.both_drawn(app, name, pointer, 0.0);
+    }
+
+    /// The same state, light and dark, the page scrolled down by `wheel`
+    /// points: the Settings' look and file, under its control plane.
+    fn both_scrolled(&self, app: &mut App, name: &str, wheel: f32) {
+        self.both_drawn(app, name, None, wheel);
+    }
+
+    fn both_drawn(&self, app: &mut App, name: &str, pointer: Option<Point>, wheel: f32) {
         for mode in [ThemeMode::Light, ThemeMode::Dark] {
             app.mode = mode;
             let suffix = if mode == ThemeMode::Dark { "dark" } else { "light" };
-            self.draw(app, &format!("{name}-{suffix}"), WINDOW, pointer);
+            self.draw(app, &format!("{name}-{suffix}"), WINDOW, pointer, wheel);
         }
         app.mode = ThemeMode::Light;
     }
@@ -122,6 +140,10 @@ fn place_of(app: &App, words: &str) -> iced::Rectangle {
         .unwrap_or_else(|e| panic!("{words} is not on {:?}: {e:?}", app.screen))
         .bounds()
 }
+
+/// How far the Settings screen is scrolled for its shots: its look and
+/// its file in sight whole, under the end of its control plane.
+const SETTINGS_WHEEL: f32 = 320.0;
 
 fn task_with(app: &App, status: TaskStatus) -> crate::domain::TaskId {
     let fleet = app.fleet.as_ref().unwrap();
@@ -199,7 +221,7 @@ fn screenshots() {
     app.apply(Message::SettingsToken(
         "/home/operator/.local/state/axlr-bots/api.token".into(),
     ));
-    camera.both(&mut app, "settings");
+    camera.both_scrolled(&mut app, "settings", SETTINGS_WHEEL);
     app.apply(Message::SettingsJsonOpen);
     camera.shoot(&mut app, "settings-json-light");
     app.apply(Message::SettingsJsonClose);
@@ -490,7 +512,7 @@ fn redesign_shots_s4() {
 
     // The Settings screen with the switch, on and off.
     send(&mut app, Message::Go(Screen::Settings));
-    camera.both(&mut app, "s4-settings");
+    camera.both_scrolled(&mut app, "s4-settings", SETTINGS_WHEEL);
     send(&mut app, Message::SetMotion(crate::application::Motion::Off));
-    camera.shoot(&mut app, "s4-settings-off-light");
+    camera.draw(&mut app, "s4-settings-off-light", WINDOW, None, SETTINGS_WHEEL);
 }
