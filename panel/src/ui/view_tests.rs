@@ -631,6 +631,12 @@ fn the_bars_keep_their_acts_in_the_smallest_window() {
         },
         ..Default::default()
     });
+    // The bar shows the refresh in local time (format::clock): on a
+    // machine east of UTC the fleet's 10:00:00Z reads 11:00:00.
+    let updated = format!(
+        "updated {}",
+        crate::ui::format::clock("2026-10-25T10:00:00Z".parse().unwrap())
+    );
     let _turn = turn();
     let mut ui = Simulator::with_size(panel_settings(), MIN_WINDOW, view::view(&app));
     for words in [
@@ -639,7 +645,7 @@ fn the_bars_keep_their_acts_in_the_smallest_window() {
         "All",
         "Stopped",
         "· v0.4.7",
-        "updated 10:00:00",
+        updated.as_str(),
         "Search bots, tasks, nodes, actions…",
     ] {
         let placed = ui.find(words).unwrap_or_else(|e| panic!("{words}: {e:?}"));
