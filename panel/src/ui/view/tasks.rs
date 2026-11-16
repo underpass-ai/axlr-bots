@@ -207,7 +207,7 @@ fn list<'a>(app: &'a App, groups: Vec<TaskGroup<'a>>, query: Query, narrow: bool
                 row: shown.len(),
                 picked: line.alike.iter().all(|t| state.selection.contains(&t.id)),
                 selected: open.is_some_and(|id| line.holds(id)),
-                press: Box::new(Message::RowPicked(RowRef::Task(line.key(open)))),
+                opens: RowRef::Task(line.key(open)),
             });
             shown.push(line);
         }
@@ -260,7 +260,14 @@ fn list<'a>(app: &'a App, groups: Vec<TaskGroup<'a>>, query: Query, narrow: bool
             what,
             age,
         ];
-        return sheet::sheet(columns, lines, app.density, app.tables.picked(List::Tasks) > 0, tokens);
+        return sheet::sheet(
+            columns,
+            lines,
+            app.density,
+            &app.hover,
+            app.tables.picked(List::Tasks) > 0,
+            tokens,
+        );
     }
     let columns = vec![
         Column::fixed(
@@ -343,7 +350,14 @@ fn list<'a>(app: &'a App, groups: Vec<TaskGroup<'a>>, query: Query, narrow: bool
             }
         }),
     ];
-    sheet::sheet(columns, lines, app.density, app.tables.picked(List::Tasks) > 0, tokens)
+    sheet::sheet(
+        columns,
+        lines,
+        app.density,
+        &app.hover,
+        app.tables.picked(List::Tasks) > 0,
+        tokens,
+    )
 }
 
 fn submit_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {

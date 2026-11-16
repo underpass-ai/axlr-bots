@@ -26,15 +26,7 @@ use crate::ui::{App, BotView, Icon, Message, ModeChoice, ReaderKey, Screen, Toke
 pub fn view<'a>(app: &'a App, id: &'a BotId, width: f32, tokens: Tokens) -> El<'a> {
     let Some(view) = app.bot.as_ref().filter(|v| &v.bot.id == id) else {
         return column![
-            super::head(
-                Vec::new(),
-                Vec::new(),
-                super::close_of(app),
-                id.as_str(),
-                None,
-                width,
-                tokens
-            ),
+            super::head(app, Vec::new(), Vec::new(), id.as_str(), None, width, tokens),
             empty(Icon::Hourglass, "Loading the bot…", tokens)
         ]
         .into();
@@ -154,7 +146,7 @@ fn header<'a>(app: &'a App, bot: &'a Bot, width: f32, tokens: Tokens) -> El<'a> 
         (!app.delete.is_open_for(&bot.id)).then(|| Message::DeleteOpen(bot.id.clone())),
         tokens,
     ));
-    super::head(first, acts, super::close_of(app), bot.id.as_str(), None, width, tokens)
+    super::head(app, first, acts, bot.id.as_str(), None, width, tokens)
 }
 
 /// Now: the calls and asks that wait for a person, what it does right

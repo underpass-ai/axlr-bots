@@ -1,6 +1,7 @@
 //! A list as a sheet: a header that stays, and under it the rows, one
 //! line each at the height the settings' density gives, which alone
-//! scroll. Groups of rows fold under their own header.
+//! scroll. Groups of rows fold under their own header. The row under the
+//! pointer glows faintly behind its words.
 
 mod column;
 mod head;
@@ -20,9 +21,10 @@ use super::grid;
 use super::widgets::{El, PAGE, SMALL, icon, label, semibold};
 use crate::application::Density;
 use crate::ui::find::Query;
+use crate::ui::organic::{self, Hover, Tint};
 use crate::ui::styles::{self, Kind};
 use crate::ui::table::SortDirection;
-use crate::ui::{Icon, Message, Tokens};
+use crate::ui::{HoverSpot, Icon, Message, Tokens};
 
 /// The height of a sheet's header, its line included.
 pub const HEAD: f32 = 30.0;
@@ -37,14 +39,16 @@ const BAR: f32 = 3.0;
 
 /// The sheet of a list: `columns` over `lines`. Only the lines scroll.
 /// With `room`, the last line can be scrolled clear of the bar of acts
-/// that floats over the sheet's foot.
+/// that floats over the sheet's foot. `hover` says which row glows.
 pub fn sheet<'a, T: Copy + 'a>(
     columns: Vec<Column<'a, T>>,
     lines: Vec<Line<T>>,
     density: Density,
+    hover: &'a Hover,
     room: bool,
     tokens: Tokens,
 ) -> El<'a> {
+    let tint = Tint::of(tokens);
     responsive(move |space| {
         let widths = widths(&columns, space.width);
         let mut head = row![].spacing(GAP).align_y(Alignment::Center);
@@ -58,7 +62,7 @@ pub fn sheet<'a, T: Copy + 'a>(
                     row: item,
                     picked,
                     selected,
-                    press,
+                    opens,
                 } => {
                     let mut cells = row![].spacing(GAP).align_y(Alignment::Center);
                     for (column, width) in columns.iter().zip(&widths) {
@@ -73,7 +77,8 @@ pub fn sheet<'a, T: Copy + 'a>(
                     // The row is a button: a click opens it, the pointer
                     // washes it; its box, its name and its acts are
                     // buttons of their own and take their clicks first.
-                    let line = button(row![
+                    // The glow lies over its wash and under its words.
+                    let content = row![
                         bar,
                         container(cells)
                             .padding(Padding {
@@ -83,12 +88,16 @@ pub fn sheet<'a, T: Copy + 'a>(
                             })
                             .height(Length::Fill)
                             .align_y(Alignment::Center)
-                    ])
+                    ]
                     .width(Length::Fill)
-                    .height(density.row_height() - 1.0)
-                    .padding(0)
-                    .style(styles::row(tokens, *picked || selected))
-                    .on_press((**press).clone());
+                    .height(Length::Fill);
+                    let surface = HoverSpot::Row(opens.clone()).surface();
+                    let line = button(organic::backdrop(hover, surface, tint, content, Message::Hover))
+                        .width(Length::Fill)
+                        .height(density.row_height() - 1.0)
+                        .padding(0)
+                        .style(styles::row(tokens, *picked || selected))
+                        .on_press(Message::RowPicked(opens.clone()));
                     strip(line.into(), styles::hairline(tokens))
                 }
                 Line::Group {

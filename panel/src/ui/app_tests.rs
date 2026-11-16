@@ -1442,3 +1442,90 @@ fn nodes_behind_the_control_plane_are_known_after_a_refresh() {
         ]
     );
 }
+
+/// The organic glow: a row's news of the pointer light it and the
+/// frames fade it in; another screen, or another row in the inspector,
+/// lets the glow go while the pointer stays still; the frames are asked
+/// for only while a glow changes. With motion off nothing of it.
+#[test]
+fn the_glow_follows_the_pointer_and_asks_for_frames_only_while_it_changes() {
+    use std::time::{Duration as Span, Instant};
+
+    use iced::{Point, Size};
+
+    use super::organic::{Hover, Signal};
+
+    let ms = Span::from_millis;
+    let over = |spot: HoverSpot, when: Instant| {
+        Message::Hover(Signal::Over {
+            surface: spot.surface(),
+            at: Point::new(0.3, 0.5),
+            size: Size::new(1200.0, 35.0),
+            when,
+        })
+    };
+    let fade = |app: &App, spot: &HoverSpot| app.hover.shine(spot.surface()).map_or(0.0, |shine| shine.fade);
+    let frames = |app: &App| super::runtime::subscription(app).units();
+
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Tasks));
+    let idle = frames(&app);
+    assert!(!app.hover.is_animating());
+    let (first, second) = {
+        let tasks = &app.fleet.as_ref().unwrap().tasks;
+        (tasks[0].id.clone(), tasks[1].id.clone())
+    };
+    let row = HoverSpot::Row(table::RowRef::Task(first.clone()));
+
+    // The pointer comes onto a row: frames, and the glow fades in.
+    let start = Instant::now();
+    send(&mut app, over(row.clone(), start));
+    assert!(app.hover.is_animating());
+    assert_eq!(frames(&app), idle + 1, "the frames come while the glow changes");
+    send(&mut app, Message::Frame(start + ms(125)));
+    assert!((fade(&app, &row) - 0.5).abs() < 0.01, "{}", fade(&app, &row));
+    send(&mut app, Message::Frame(start + ms(300)));
+    assert_eq!(fade(&app, &row), 1.0);
+
+    // The row opens in the inspector under a still pointer: the list's
+    // row lets go, it lights again as soon as it hears of the pointer.
+    send(&mut app, Message::RowPicked(table::RowRef::Task(first.clone())));
+    assert_eq!(app.screen, Screen::Task(first.clone()));
+    send(&mut app, Message::Frame(start + ms(300) + Hover::FADE_OUT / 2));
+    assert!(fade(&app, &row) > 0.0 && fade(&app, &row) < 1.0, "fading out");
+    send(&mut app, Message::Frame(start + ms(300) + Hover::FADE_OUT + ms(10)));
+    assert_eq!(fade(&app, &row), 0.0);
+    assert!(!app.hover.is_animating());
+    assert_eq!(frames(&app), idle, "no glow changes, no frames");
+
+    // The inspector's header glows; another row in the inspector lets
+    // its glow go.
+    let head = HoverSpot::Head(table::RowRef::Task(first));
+    let later = start + Span::from_secs(2);
+    send(&mut app, over(head.clone(), later));
+    send(&mut app, Message::Frame(later + ms(300)));
+    assert_eq!(fade(&app, &head), 1.0);
+    send(&mut app, Message::Go(Screen::Task(second)));
+    send(&mut app, Message::Frame(later + ms(300) + Hover::FADE_OUT + ms(10)));
+    assert_eq!(fade(&app, &head), 0.0);
+    assert_eq!(frames(&app), idle);
+
+    // Motion off: the news are not heard, nothing glows, no frame.
+    send(&mut app, Message::SetMotion(Motion::Off));
+    let latest = start + Span::from_secs(4);
+    send(&mut app, over(row.clone(), latest));
+    send(&mut app, Message::Frame(latest + ms(300)));
+    assert_eq!(fade(&app, &row), 0.0);
+    assert!(!app.hover.is_animating());
+    assert_eq!(frames(&app), idle);
+    assert_eq!(app.services.connect.initial().0.motion, Motion::Off);
+
+    // On again under a glowing row, then off: the glow goes at once.
+    send(&mut app, Message::SetMotion(Motion::On));
+    send(&mut app, over(row.clone(), latest + ms(400)));
+    send(&mut app, Message::Frame(latest + ms(800)));
+    assert_eq!(fade(&app, &row), 1.0);
+    send(&mut app, Message::SetMotion(Motion::Off));
+    assert_eq!(fade(&app, &row), 0.0);
+    assert_eq!(frames(&app), idle);
+}

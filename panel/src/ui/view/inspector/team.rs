@@ -23,7 +23,7 @@ pub fn view<'a>(app: &'a App, name: &'a str, width: f32, tokens: Tokens) -> El<'
     let title = format!("Team {name}");
     let Some(team) = app.teams().into_iter().find(|t| t.name == name) else {
         return column![
-            super::head(Vec::new(), Vec::new(), None, &title, None, width, tokens),
+            super::head(app, Vec::new(), Vec::new(), &title, None, width, tokens),
             empty(Icon::Team, "No bot is in this team now", tokens)
         ]
         .into();
@@ -54,7 +54,7 @@ pub fn view<'a>(app: &'a App, name: &'a str, width: f32, tokens: Tokens) -> El<'
         TeamTab::Members => members_of(app, team, name, tokens),
     };
     column![
-        super::head(first, acts, None, &title, None, width, tokens),
+        super::head(app, first, acts, &title, None, width, tokens),
         super::tabs(Tab::Team(tab), counts, tokens),
         super::body(content),
     ]

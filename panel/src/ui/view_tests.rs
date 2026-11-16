@@ -95,7 +95,13 @@ fn messages_of_click(app: &App, label: &str) -> Vec<Message> {
     let mut ui = Simulator::with_size(panel_settings(), Size::new(WINDOW.width, 2000.0), view::view(app));
     ui.click(label)
         .unwrap_or_else(|e| panic!("cannot click {label}: {e:?}"));
-    ui.into_messages().collect()
+    said(ui)
+}
+
+/// What the screen sent, without the news of the pointer the glowing
+/// rows, cards and tiles under it give with every move.
+fn said<'a>(ui: Simulator<'a, Message>) -> Vec<Message> {
+    ui.into_messages().filter(|m| !matches!(m, Message::Hover(_))).collect()
 }
 
 fn simulator_misses(app: &App, word: &str) -> bool {
@@ -2471,7 +2477,7 @@ fn a_click_on_a_row_opens_it_and_its_box_only_picks() {
     // The row's box is the first thing on its line.
     ui.point_at(iced::Point::new(69.0 + 14.0 + 9.0, row.center_y()));
     let _ = ui.simulate(iced_test::simulator::click());
-    let sent: Vec<Message> = ui.into_messages().collect();
+    let sent = said(ui);
     assert!(
         matches!(sent.as_slice(), [Message::Pick(table::RowRef::Task(id), true)] if *id == running),
         "{sent:?}"
@@ -2507,6 +2513,142 @@ fn the_row_under_the_cursor_has_the_accents_bar_and_the_wash() {
         assert_eq!(colour_at(&drawing, edge, first), rgb(tokens.page), "{mode:?}");
         assert_eq!(colour_at(&drawing, edge + 6.0, first), rgb(tokens.page), "{mode:?}");
     }
+}
+
+/// The row under the pointer glows: the signal comes from the screen
+/// itself, and once the glow has faded in the row is tinted around the
+/// pointer, its words still drawn over it, and nothing else changes: the
+/// rows around it, the row the keyboard is on with its wash. With
+/// motion off the same pointer draws nothing.
+#[test]
+fn the_row_under_the_pointer_glows_behind_its_words_and_motion_off_draws_none() {
+    use iced::{Event, Point, mouse};
+
+    use super::organic::Signal;
+
+    let mut app = large(Screen::Tasks);
+    send(&mut app, Message::Key(Keypress::Down));
+    send(&mut app, Message::Key(Keypress::Down));
+    let (picked, hovered, below) = {
+        let _turn = turn();
+        let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+        (
+            ui.find("Write the weekly report").unwrap().bounds().center_y(),
+            ui.find("Read the missing file").unwrap().bounds().center_y(),
+            ui.find("Write hello into hello.txt").unwrap().bounds().center_y(),
+        )
+    };
+    let pointer = Point::new(700.0, hovered);
+    // What the row tells as the pointer comes onto it.
+    let told = |app: &App| {
+        let _turn = turn();
+        let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(app));
+        ui.point_at(pointer);
+        let _ = ui.simulate([Event::Mouse(mouse::Event::CursorMoved { position: pointer })]);
+        let signals: Vec<Signal> = ui
+            .into_messages()
+            .filter_map(|m| match m {
+                Message::Hover(signal) => Some(signal),
+                _ => None,
+            })
+            .collect();
+        signals
+    };
+    let signals = told(&app);
+    let [
+        Signal::Over {
+            surface,
+            at,
+            size,
+            when,
+        },
+    ] = signals[..]
+    else {
+        panic!("{signals:?}");
+    };
+    let id = {
+        let tasks = &app.fleet.as_ref().unwrap().tasks;
+        let mut same = tasks.iter().filter(|t| t.objective == "Read the missing file");
+        let task = same.next().unwrap();
+        assert!(same.next().is_none(), "one task says it");
+        task.id.clone()
+    };
+    assert_eq!(surface, HoverSpot::Row(table::RowRef::Task(id)).surface());
+    assert_eq!(size.height, Density::Comfortable.row_height() - 1.0);
+
+    let ms = std::time::Duration::from_millis;
+    for (round, mode) in [ThemeMode::Light, ThemeMode::Dark].into_iter().enumerate() {
+        app.mode = mode;
+        let tokens = Tokens::of(mode);
+        let plain = pixels(&app);
+        // The same news, told later each round.
+        let start = when + ms(2_000 * round as u64);
+        let news = Message::Hover(Signal::Over {
+            surface,
+            at,
+            size,
+            when: start,
+        });
+        app.apply(news.clone());
+        app.apply(Message::Frame(start + ms(400)));
+        assert!(app.hover.shine(surface).is_some_and(|shine| shine.fade == 1.0));
+        let lit = pixels(&app);
+        let change = |x: f32, y: f32| {
+            let (a, b) = (colour_at(&plain, x, y), colour_at(&lit, x, y));
+            (0..3).map(|c| a[c].abs_diff(b[c])).max().unwrap_or(0)
+        };
+        // Around the pointer the row is tinted.
+        let around = [-60.0, -20.0, 0.0, 20.0, 60.0]
+            .iter()
+            .flat_map(|dx| [-8.0, 0.0, 8.0].map(|dy| change(pointer.x + dx, hovered + dy)))
+            .max()
+            .unwrap_or(0);
+        assert!(around >= 8, "{mode:?}: the glow hardly shows ({around})");
+        // The rows around it are as they were, the picked one with its
+        // wash and the accent's bar.
+        for y in [picked, below, hovered - 30.0, hovered + 30.0] {
+            for x in [80.0, 400.0, pointer.x, 1200.0] {
+                assert_eq!(change(x, y), 0, "{mode:?}: the glow spills to {x},{y}");
+            }
+        }
+        assert_eq!(colour_at(&lit, 70.0, picked), rgb(tokens.accent), "{mode:?}");
+        assert_eq!(
+            colour_at(&lit, 76.0, picked),
+            rgb(styles::picked_fill(tokens)),
+            "{mode:?}"
+        );
+        // The words of the row are still drawn over the glow: its
+        // inkiest pixel stays as inky.
+        let ink = |drawing: &(usize, Vec<u8>)| {
+            let mut darkest = 255u32 * 3;
+            let mut lightest = 0u32;
+            for x in (300..1100).step_by(1) {
+                for dy in [-4.0, -2.0, 0.0, 2.0, 4.0] {
+                    let [r, g, b] = colour_at(drawing, x as f32, hovered + dy);
+                    let sum = u32::from(r) + u32::from(g) + u32::from(b);
+                    darkest = darkest.min(sum);
+                    lightest = lightest.max(sum);
+                }
+            }
+            if tokens.dark { lightest } else { darkest }
+        };
+        let (before, after) = (ink(&plain), ink(&lit));
+        assert!(
+            before.abs_diff(after) <= 24,
+            "{mode:?}: the words fade under the glow ({before} → {after})"
+        );
+
+        // Motion off: nothing glows, and the same news draw nothing.
+        send(&mut app, Message::SetMotion(crate::application::Motion::Off));
+        app.apply(news);
+        app.apply(Message::Frame(start + ms(800)));
+        let off = pixels(&app);
+        assert!(off.1 == plain.1, "{mode:?}: motion off draws the page as it was");
+        send(&mut app, Message::SetMotion(crate::application::Motion::On));
+    }
+    // Off, the rows tell nothing about the pointer either.
+    send(&mut app, Message::SetMotion(crate::application::Motion::Off));
+    assert!(told(&app).is_empty());
 }
 
 /// The palette: its field, its results under their headings with the
@@ -2557,7 +2699,7 @@ fn the_palette_takes_what_is_typed_and_its_results_are_clicked() {
         let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
         ui.point_at(iced::Point::new(200.0, WINDOW.height - 40.0));
         let _ = ui.simulate(iced_test::simulator::click());
-        let sent: Vec<Message> = ui.into_messages().collect();
+        let sent = said(ui);
         assert!(matches!(sent.as_slice(), [Message::PaletteClose]), "{sent:?}");
     }
     // Typing, moving and Enter, as the keys reach the panel.

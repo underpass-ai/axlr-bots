@@ -129,12 +129,19 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             row: at,
             picked: state.selection.contains(&team.name),
             selected: cursor == Some(&team.name),
-            press: Box::new(Message::RowPicked(RowRef::Team(team.name.clone()))),
+            opens: RowRef::Team(team.name.clone()),
         })
         .collect();
     let page = column![
         bar,
-        sheet::sheet(columns, lines, app.density, app.tables.picked(List::Teams) > 0, tokens)
+        sheet::sheet(
+            columns,
+            lines,
+            app.density,
+            &app.hover,
+            app.tables.picked(List::Teams) > 0,
+            tokens
+        )
     ];
     grid::with_bar(app, List::Teams, page.into(), tokens)
 }

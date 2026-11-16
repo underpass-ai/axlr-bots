@@ -1,6 +1,7 @@
 //! The inspector beside a list: the row's header with its acts, its
 //! facts, its tabs and the tab open, of which only the body scrolls. A
 //! task, a bot, a node or a team; the list stays beside it, narrower.
+//! The header glows faintly under the pointer.
 
 mod bot;
 mod fact;
@@ -18,8 +19,9 @@ use iced::{Alignment, Font, Length, Padding};
 use super::grid;
 use super::widgets::{El, INSPECTOR, SMALL, icon_button, label, semibold};
 use crate::ui::inspector::Tab;
+use crate::ui::organic::{self, Tint};
 use crate::ui::styles::{self, Kind};
-use crate::ui::{App, Icon, Message, Screen, Tokens};
+use crate::ui::{App, HoverSpot, Icon, Message, Screen, Tokens};
 use fact::Fact;
 use step_mark::StepMark;
 
@@ -83,11 +85,11 @@ fn pane<'a>(app: &'a App, width: f32, tokens: Tokens) -> El<'a> {
 /// The header of the inspector: its first line (the status, who, what
 /// started it) with the acts at its right and the close button, then
 /// the title on at most two lines and, under it, a line of what the
-/// title does not say.
+/// title does not say. Under the pointer it glows.
 fn head<'a>(
+    app: &'a App,
     first: Vec<El<'a>>,
     acts: Vec<El<'a>>,
-    close: Option<Message>,
     title: &str,
     under: Option<&str>,
     width: f32,
@@ -105,7 +107,7 @@ fn head<'a>(
     for act in acts {
         line = line.push(act);
     }
-    if let Some(close) = close {
+    if let Some(close) = close_of(app) {
         line = line.push(icon_button(Icon::Cross, "Close (Esc)", Some(close), tokens));
     }
     let room = width - 2.0 * SIDE;
@@ -133,23 +135,37 @@ fn head<'a>(
             .clip(true),
         );
     }
+    let content = container(body)
+        .padding(Padding {
+            top: 10.0,
+            right: SIDE,
+            bottom: 8.0,
+            left: SIDE,
+        })
+        .width(Length::Fill);
+    let Some(row) = app.screen.inspected() else {
+        return ruled(content.into(), tokens);
+    };
     ruled(
-        container(body)
-            .padding(Padding {
-                top: 10.0,
-                right: SIDE,
-                bottom: 8.0,
-                left: SIDE,
-            })
-            .width(Length::Fill)
-            .into(),
+        organic::backdrop(
+            &app.hover,
+            HoverSpot::Head(row).surface(),
+            Tint::of(tokens),
+            content,
+            Message::Hover,
+        )
+        .into(),
         tokens,
     )
 }
 
-/// The close button's message: back to the list alone.
+/// The close button's message: back to the list alone. A team has
+/// none: the Teams list always inspects one.
 fn close_of(app: &App) -> Option<Message> {
-    app.screen.list().map(|list| Message::Go(Screen::of_list(list)))
+    match &app.screen {
+        Screen::Team(_) => None,
+        screen => screen.list().map(|list| Message::Go(Screen::of_list(list))),
+    }
 }
 
 /// The facts of a row in four columns, label over value, each value on

@@ -17,15 +17,7 @@ pub fn view<'a>(app: &'a App, id: &'a NodeId, width: f32, tokens: Tokens) -> El<
     let fleet = app.fleet.as_ref();
     let Some(node) = fleet.and_then(|f| f.nodes.iter().find(|n| &n.id == id)) else {
         return column![
-            super::head(
-                Vec::new(),
-                Vec::new(),
-                super::close_of(app),
-                id.as_str(),
-                None,
-                width,
-                tokens
-            ),
+            super::head(app, Vec::new(), Vec::new(), id.as_str(), None, width, tokens),
             empty(Icon::Nodes, "This node is not in the fleet now", tokens)
         ]
         .into();
@@ -135,7 +127,7 @@ pub fn view<'a>(app: &'a App, id: &'a NodeId, width: f32, tokens: Tokens) -> El<
     };
     page = page.push(part_owned(heading, bots, tokens));
     column![
-        super::head(first, acts, super::close_of(app), node.id.as_str(), None, width, tokens),
+        super::head(app, first, acts, node.id.as_str(), None, width, tokens),
         facts,
         super::body(page),
     ]

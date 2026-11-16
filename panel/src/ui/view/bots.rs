@@ -231,11 +231,18 @@ fn list<'a>(
                 row: b,
                 picked: state.selection.contains(&b.id),
                 selected: cursor == Some(&b.id),
-                press: Box::new(Message::RowPicked(RowRef::Bot(b.id.clone()))),
+                opens: RowRef::Bot(b.id.clone()),
             }));
         }
     }
-    sheet::sheet(columns, lines, app.density, app.tables.picked(List::Bots) > 0, tokens)
+    sheet::sheet(
+        columns,
+        lines,
+        app.density,
+        &app.hover,
+        app.tables.picked(List::Bots) > 0,
+        tokens,
+    )
 }
 
 /// A bot's status in the list. A bot at work, waiting for a person or

@@ -1,6 +1,7 @@
 //! Home: what needs a person, the fleet's numbers, and the fleet, the
 //! latest tasks and the nodes side by side. The page never scrolls: at
-//! most a column scrolls its own rows.
+//! most a column scrolls its own rows. A card, a number or a bot's tile
+//! under the pointer glows faintly behind its words.
 
 use iced::widget::scrollable::{Direction, Scrollbar};
 use iced::widget::{Space, button, column, container, responsive, row, scrollable, text, tooltip};
@@ -13,9 +14,10 @@ use crate::application::Fleet;
 use crate::domain::{Bot, BotStatus, NodeStatus, TaskStatus};
 use crate::ui::find::{Collapsed, FoldRepeats, NodeRows, Query, TaskLine, TaskWhat, TeamGroup};
 use crate::ui::format;
+use crate::ui::organic::{self, Hover, Tint};
 use crate::ui::styles::{self, Kind};
 use crate::ui::view::widgets::{NUMBER, number_width};
-use crate::ui::{App, Icon, Message, Screen, Tokens, Tone};
+use crate::ui::{App, HoverSpot, Icon, Message, Screen, Tokens, Tone};
 
 /// The room between Home's parts and around them.
 const GAP: f32 = 12.0;
@@ -39,7 +41,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         needs_you(app, fleet, tokens),
         numbers(app, fleet, tokens),
         row![
-            container(fleet_card(fleet, tokens)).width(Length::FillPortion(21)),
+            container(fleet_card(&app.hover, fleet, tokens)).width(Length::FillPortion(21)),
             container(latest(app, fleet, tokens)).width(Length::FillPortion(27)),
             container(nodes(app, fleet, tokens)).width(Length::FillPortion(16)),
         ]
@@ -182,6 +184,7 @@ const ANSWERS: f32 = 290.0;
 /// The fleet's numbers in one strip, in the order an operator reads
 /// them; each goes to the list it counts.
 fn numbers<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
+    let hover = &app.hover;
     let o = &fleet.overview;
     let online = o.nodes_in(NodeStatus::Online);
     let waiting = app.waiting_count();
@@ -206,6 +209,7 @@ fn numbers<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
     });
     let cells = [
         number(
+            hover,
             "nodes online",
             format!("{online}/{}", o.total_nodes()),
             if o.nodes_down() > 0 { Tone::Bad } else { Tone::Idle },
@@ -214,6 +218,7 @@ fn numbers<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
             tokens,
         ),
         number(
+            hover,
             "bots on",
             format!("{}/{}", o.bots_in(BotStatus::Enabled), o.total_bots()),
             Tone::Idle,
@@ -222,6 +227,7 @@ fn numbers<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
             tokens,
         ),
         number(
+            hover,
             "running",
             running.to_string(),
             if running > 0 { Tone::Busy } else { Tone::Idle },
@@ -230,6 +236,7 @@ fn numbers<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
             tokens,
         ),
         number(
+            hover,
             "need you",
             waiting.to_string(),
             if waiting > 0 { Tone::Wait } else { Tone::Idle },
@@ -238,6 +245,7 @@ fn numbers<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
             tokens,
         ),
         number(
+            hover,
             "failed today",
             failed.to_string(),
             if failed > 0 { Tone::Bad } else { Tone::Idle },
@@ -249,6 +257,7 @@ fn numbers<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
         // ran to its end. It goes to the ones that expired when there
         // are any, as those were nobody's choice.
         number(
+            hover,
             "stopped today",
             (stopped + expired).to_string(),
             if expired > 0 { Tone::Late } else { Tone::Idle },
@@ -261,6 +270,7 @@ fn numbers<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
             tokens,
         ),
         number(
+            hover,
             "cost today",
             format::spend(o.cost_since()),
             Tone::Idle,
@@ -289,7 +299,16 @@ const NUMBERS: f32 = 60.0;
 /// One number of the strip: its words over it, small, and the number
 /// in the pixel face; in its tone only when it calls for a look. A
 /// click goes where the number comes from; `tip` says more on hover.
-fn number<'a>(words: &'a str, value: String, tone: Tone, tip: Option<String>, go: Message, tokens: Tokens) -> El<'a> {
+/// Under the pointer it glows.
+fn number<'a>(
+    hover: &'a Hover,
+    words: &'static str,
+    value: String,
+    tone: Tone,
+    tip: Option<String>,
+    go: Message,
+    tokens: Tokens,
+) -> El<'a> {
     let ink = match tone {
         Tone::Wait | Tone::Late | Tone::Bad | Tone::Busy => styles::pill_ink(tokens, tone),
         Tone::Good | Tone::Idle => tokens.text,
@@ -300,7 +319,7 @@ fn number<'a>(words: &'a str, value: String, tone: Tone, tip: Option<String>, go
     } else {
         NUMBER
     };
-    let cell = button(
+    let content = container(
         column![
             text(words).size(LABEL).color(tokens.muted),
             container(pixel_number(&value, size, ink))
@@ -310,10 +329,23 @@ fn number<'a>(words: &'a str, value: String, tone: Tone, tip: Option<String>, go
         ]
         .spacing(3),
     )
-    .width(Length::Fill)
     .padding(Padding::from([7, 12]))
-    .style(plain(tokens))
-    .on_press(go);
+    .width(Length::Fill)
+    .height(Length::Fill);
+    let glow = organic::backdrop(
+        hover,
+        HoverSpot::Number(words).surface(),
+        Tint::of(tokens),
+        content,
+        Message::Hover,
+    )
+    .radius(styles::RADIUS_S)
+    .inset(1.0);
+    let cell = button(glow)
+        .width(Length::Fill)
+        .padding(0)
+        .style(plain(tokens))
+        .on_press(go);
     let cell: El<'a> = match tip {
         Some(tip) => sheet::tip(cell.into(), tip, tokens),
         None => cell.into(),
@@ -336,7 +368,15 @@ fn plain(tokens: Tokens) -> impl Fn(&iced::Theme, button::Status) -> button::Sty
 
 /// A card of Home: its title with a few words beside it and the way to
 /// the whole list, over a body that scrolls by itself when it is long.
-fn column_card<'a>(title: &'a str, note: String, all: (&'a str, Message), body: El<'a>, tokens: Tokens) -> El<'a> {
+/// Under the pointer it glows, unless a tile in it has the pointer.
+fn column_card<'a>(
+    hover: &'a Hover,
+    title: &'static str,
+    note: String,
+    all: (&'a str, Message),
+    body: El<'a>,
+    tokens: Tokens,
+) -> El<'a> {
     // The note has what the title and the link leave, cut at its edge
     // in a narrow window: the link never leaves the card.
     let head = row![
@@ -353,7 +393,7 @@ fn column_card<'a>(title: &'a str, note: String, all: (&'a str, Message), body: 
     ]
     .spacing(8)
     .align_y(Alignment::Center);
-    container(column![
+    let content = column![
         container(head).padding(Padding::from([8, 12]).bottom(6)),
         scrollable(body)
             .direction(Direction::Vertical(
@@ -361,11 +401,23 @@ fn column_card<'a>(title: &'a str, note: String, all: (&'a str, Message), body: 
             ))
             .width(Length::Fill)
             .height(Length::Fill)
-    ])
+    ]
     .width(Length::Fill)
-    .height(Length::Fill)
-    .style(styles::card(tokens))
-    .into()
+    .height(Length::Fill);
+    let glow = organic::backdrop(
+        hover,
+        HoverSpot::Card(title).surface(),
+        Tint::of(tokens),
+        content,
+        Message::Hover,
+    )
+    .radius(styles::RADIUS)
+    .inset(1.0);
+    container(glow)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(styles::card(tokens))
+        .into()
 }
 
 /// A few words in the accent that go somewhere: `All tasks ›`.
@@ -387,7 +439,7 @@ const TEAM: f32 = 78.0;
 
 /// Every bot as a small tile, by team: a bot that is on has a dot and
 /// stands out, one that is not is muted. A click opens the bot.
-fn fleet_card<'a>(fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
+fn fleet_card<'a>(hover: &'a Hover, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
     let groups = TeamGroup::of(&fleet.bots, |_| true, false, &Collapsed::default());
     let on = fleet.bots.iter().filter(|b| b.status == BotStatus::Enabled).count();
     let off = fleet.bots.len() - on;
@@ -399,7 +451,7 @@ fn fleet_card<'a>(fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
     for group in &groups {
         let mut tiles = row![].spacing(4);
         for bot in &group.bots {
-            tiles = tiles.push(tile(bot, team_of(&group.name), tokens));
+            tiles = tiles.push(tile(hover, bot, team_of(&group.name), tokens));
         }
         body = body.push(
             row![
@@ -416,7 +468,14 @@ fn fleet_card<'a>(fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
     } else {
         body.into()
     };
-    column_card("Fleet", note, ("All bots", Message::Go(Screen::Bots)), body, tokens)
+    column_card(
+        hover,
+        "Fleet",
+        note,
+        ("All bots", Message::Go(Screen::Bots)),
+        body,
+        tokens,
+    )
 }
 
 /// The team a group of tiles stands for: none for the bots in no team.
@@ -436,7 +495,9 @@ fn tile_name(bot: &Bot, team: &str) -> String {
     grid::shorten(short, 20)
 }
 
-fn tile<'a>(bot: &'a Bot, team: &str, tokens: Tokens) -> El<'a> {
+/// A bot's tile: under the pointer it glows, and the card around it
+/// does not.
+fn tile<'a>(hover: &'a Hover, bot: &'a Bot, team: &str, tokens: Tokens) -> El<'a> {
     let on = bot.status == BotStatus::Enabled;
     let (glyph, ink) = if on {
         (Icon::Dot, tokens.good)
@@ -444,16 +505,29 @@ fn tile<'a>(bot: &'a Bot, team: &str, tokens: Tokens) -> El<'a> {
         (Icon::Pause, tokens.muted)
     };
     let state = if on { "On" } else { bot.status.name() };
+    let content = container(
+        row![icon(glyph, 10.0, ink), text(tile_name(bot, team)).size(LABEL)]
+            .spacing(4)
+            .align_y(Alignment::Center),
+    )
+    .padding(Padding::from([0, 7]))
+    .height(Length::Fill)
+    .align_y(Alignment::Center);
+    let glow = organic::backdrop(
+        hover,
+        HoverSpot::Tile(bot.id.clone()).surface(),
+        Tint::of(tokens),
+        content,
+        Message::Hover,
+    )
+    .radius(styles::RADIUS_S)
+    .inset(1.0);
     tooltip(
-        button(
-            row![icon(glyph, 10.0, ink), text(tile_name(bot, team)).size(LABEL)]
-                .spacing(4)
-                .align_y(Alignment::Center),
-        )
-        .height(24)
-        .padding(Padding::from([0, 7]))
-        .style(styles::tile(tokens, on))
-        .on_press(Message::Go(Screen::Bot(bot.id.clone()))),
+        button(glow)
+            .height(24)
+            .padding(0)
+            .style(styles::tile(tokens, on))
+            .on_press(Message::Go(Screen::Bot(bot.id.clone()))),
         container(text(format!("{} · {state}", bot.id)).size(SMALL))
             .padding(6)
             .style(styles::chip(tokens)),
@@ -491,7 +565,14 @@ fn latest<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
         .height(Length::Shrink)
         .into()
     };
-    column_card("Latest", note, ("All tasks", Message::FilterStatus(None)), body, tokens)
+    column_card(
+        &app.hover,
+        "Latest",
+        note,
+        ("All tasks", Message::FilterStatus(None)),
+        body,
+        tokens,
+    )
 }
 
 fn task_line<'a>(line: &TaskLine<'a>, what: f32, now: chrono::DateTime<chrono::Utc>, tokens: Tokens) -> El<'a> {
@@ -579,7 +660,14 @@ fn nodes<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
         .height(Length::Shrink)
         .into()
     };
-    column_card("Nodes", note, ("All", Message::Go(Screen::Nodes)), body, tokens)
+    column_card(
+        &app.hover,
+        "Nodes",
+        note,
+        ("All", Message::Go(Screen::Nodes)),
+        body,
+        tokens,
+    )
 }
 
 /// Before the first answer: connecting, or why not.

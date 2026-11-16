@@ -193,10 +193,17 @@ fn list<'a>(app: &'a App, shown: Vec<&'a Node>, query: Query, narrow: bool, toke
             row: n,
             picked: state.selection.contains(&n.id),
             selected: cursor == Some(&n.id),
-            press: Box::new(Message::RowPicked(RowRef::Node(n.id.clone()))),
+            opens: RowRef::Node(n.id.clone()),
         })
         .collect();
-    sheet::sheet(columns, lines, app.density, app.tables.picked(List::Nodes) > 0, tokens)
+    sheet::sheet(
+        columns,
+        lines,
+        app.density,
+        &app.hover,
+        app.tables.picked(List::Nodes) > 0,
+        tokens,
+    )
 }
 
 /// The value, or a dash for one the node did not say.

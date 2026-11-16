@@ -1,4 +1,5 @@
 use crate::ui::Message;
+use crate::ui::table::RowRef;
 
 /// One line of a list: a row, or the header of a group of rows that
 /// opens and closes them.
@@ -10,9 +11,9 @@ pub enum Line<T> {
         picked: bool,
         /// The keyboard is on it: the picked wash and the accent's bar.
         selected: bool,
-        /// What a click on the row sends; boxed, as a message is far
-        /// larger than a row.
-        press: Box<Message>,
+        /// The row a click opens in the inspector, and the name its
+        /// glow under the pointer goes by.
+        opens: RowRef,
     },
     Group {
         name: String,

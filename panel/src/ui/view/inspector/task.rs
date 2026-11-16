@@ -30,15 +30,7 @@ pub fn view<'a>(app: &'a App, id: &'a TaskId, width: f32, tokens: Tokens) -> El<
         .or_else(|| app.fleet.as_ref().and_then(|f| f.tasks.iter().find(|t| &t.id == id)));
     let Some(task) = task else {
         return column![
-            super::head(
-                Vec::new(),
-                Vec::new(),
-                super::close_of(app),
-                id.as_str(),
-                None,
-                width,
-                tokens
-            ),
+            super::head(app, Vec::new(), Vec::new(), id.as_str(), None, width, tokens),
             empty(Icon::Hourglass, "Loading the task…", tokens)
         ]
         .into();
@@ -170,7 +162,7 @@ fn header<'a>(app: &'a App, task: &'a Task, width: f32, tokens: Tokens) -> El<'a
     }
     let what = TaskWhat::of(task);
     let under = what.message.map(|_| what.objective);
-    super::head(first, acts, super::close_of(app), what.title(), under, width, tokens)
+    super::head(app, first, acts, what.title(), under, width, tokens)
 }
 
 /// Node, started, took, cost, from, team, task id and trace.
