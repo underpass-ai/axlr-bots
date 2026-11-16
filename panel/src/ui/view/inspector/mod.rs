@@ -4,6 +4,7 @@
 
 mod bot;
 mod node;
+mod step_mark;
 mod steps;
 mod task;
 mod team;
@@ -18,6 +19,7 @@ use super::widgets::{El, INSPECTOR, SMALL, icon, icon_button, label, semibold};
 use crate::ui::inspector::Tab;
 use crate::ui::styles::{self, Kind};
 use crate::ui::{App, Icon, Message, Screen, Tokens};
+use step_mark::StepMark;
 
 /// The inspector's width in the window at start; a narrower window
 /// gives it half the room beside the rail.

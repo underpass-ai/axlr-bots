@@ -394,8 +394,20 @@ fn redesign_shots_s3() {
     );
     camera.both(&mut app, "s3-node");
 
+    // The Teams list opens on its first team; a team at work shows what
+    // happens in it.
     send(&mut app, Message::Go(Screen::Teams));
+    send(&mut app, Message::Go(Screen::Team("ops".into())));
     camera.both(&mut app, "s3-team");
+    send(
+        &mut app,
+        Message::Tab(inspector::Tab::Team(inspector::TeamTab::Members)),
+    );
+    camera.shoot(&mut app, "s3-team-members-light");
+    send(
+        &mut app,
+        Message::Tab(inspector::Tab::Team(inspector::TeamTab::Happens)),
+    );
 
     // The running task, scrolled up in: it stops following its newest
     // step and offers to jump back to it.
@@ -403,4 +415,9 @@ fn redesign_shots_s3() {
     send(&mut app, Message::Go(Screen::Task(running)));
     send(&mut app, Message::ActivityScrolled(LiveStream::Steps, false));
     camera.both(&mut app, "s3-task-live");
+
+    // The smallest window: the list narrower, the find's chips on a
+    // line of their own.
+    send(&mut app, Message::Go(Screen::Task(long)));
+    camera.shoot_at(&mut app, "s3-task-small-light", super::runtime::MIN_WINDOW);
 }

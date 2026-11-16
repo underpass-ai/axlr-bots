@@ -10,6 +10,7 @@ use iced::{Alignment, Color, Font, Length, Padding};
 
 use super::super::widgets::{El, REGULAR, SMALL, empty, icon, key_cap, label, step_id};
 use super::super::{grid, listbar};
+use super::StepMark as Mark;
 use crate::application::{ActivityEntry, DelegationActivity, ToolActivity, ToolState};
 use crate::domain::TaskStatus;
 use crate::ui::find::{Query, StepFilter, StepText};
@@ -163,9 +164,6 @@ fn stream<'a>(
         })
         .max()
         .unwrap_or(1);
-    // The room of a step's words: what the line leaves after its time,
-    // glyph, tool and duration.
-    let room = (width - 20.0 - SCROLL_BAR - TIME - GLYPH - TOOL - TOOK - 4.0 * 8.0).max(60.0);
     let mut list = column![];
     for at in find.shown(steps) {
         let entry = &live.activity.entries[at];
@@ -174,7 +172,7 @@ fn stream<'a>(
             current: current == Some(at),
             open: live.selected == Some(at),
         };
-        let mut lines = column![step(at, entry, mark, &query, longest, room, tokens)];
+        let mut lines = column![step(at, entry, mark, &query, longest, width, tokens)];
         if mark.open {
             lines = lines.push(details(entry, tokens));
         }
@@ -238,15 +236,6 @@ fn stream<'a>(
     stack![steps_box, jump].width(Length::Fill).height(Length::Fill).into()
 }
 
-/// How a line stands to the find and to the person: a match, the match
-/// the find is at, open.
-#[derive(Debug, Clone, Copy)]
-struct Mark {
-    hit: bool,
-    current: bool,
-    open: bool,
-}
-
 /// One step on its line; a click opens its details in place.
 fn step<'a>(
     at: usize,
@@ -254,9 +243,14 @@ fn step<'a>(
     mark: Mark,
     query: &Query,
     longest: u64,
-    room: f32,
+    width: f32,
     tokens: Tokens,
 ) -> El<'a> {
+    // The tool's column, narrower in a narrow inspector, and the room
+    // of a step's words: what the line leaves after its time, glyph,
+    // tool and duration.
+    let tool = (width * 0.235).clamp(104.0, TOOL);
+    let room = (width - 20.0 - SCROLL_BAR - TIME - GLYPH - tool - TOOK - 4.0 * 8.0).max(60.0);
     // Words cut with an ellipsis to the characters that fit a width.
     let fit =
         |words: String, width: f32, size: f32| grid::shorten(&words, ((width / (EM * size)).floor() as usize).max(4));
@@ -301,14 +295,14 @@ fn step<'a>(
             cells
                 .push(
                     container(cut(marked(
-                        fit(call.name().to_string(), TOOL, SMALL * 1.15),
+                        fit(call.name().to_string(), tool, SMALL * 1.15),
                         query,
                         SMALL,
                         Font::MONOSPACE,
                         name_ink,
                         tokens,
                     )))
-                    .width(TOOL),
+                    .width(tool),
                 )
                 .push(container(what).width(Length::Fill))
                 .push(took(call, longest, tokens))
@@ -316,14 +310,14 @@ fn step<'a>(
         ActivityEntry::Emitted(event) => cells
             .push(
                 container(cut(marked(
-                    fit(event.name.clone(), TOOL, SMALL * 1.15),
+                    fit(event.name.clone(), tool, SMALL * 1.15),
                     query,
                     SMALL,
                     Font::MONOSPACE,
                     tokens.text,
                     tokens,
                 )))
-                .width(TOOL),
+                .width(tool),
             )
             .push(
                 container(cut(marked(
@@ -376,7 +370,7 @@ fn step<'a>(
                         tokens.muted,
                         tokens,
                     )))
-                    .width(TOOL),
+                    .width(tool),
                 )
                 .push(container(cut(marked(words, query, SMALL, REGULAR, tokens.text, tokens))).width(Length::Fill));
             if let DelegationActivity { task: Some(child), .. } = asked {
@@ -393,17 +387,17 @@ fn step<'a>(
             }
             cells
         }
-        ActivityEntry::Waiting { tool, .. } => cells
+        ActivityEntry::Waiting { tool: called, .. } => cells
             .push(
                 container(cut(marked(
-                    tool.clone(),
+                    called.clone(),
                     query,
                     SMALL,
                     Font::MONOSPACE,
                     tokens.text,
                     tokens,
                 )))
-                .width(TOOL),
+                .width(tool),
             )
             .push(
                 container(cut(marked(
@@ -423,7 +417,7 @@ fn step<'a>(
                 "it answered"
             };
             cells
-                .push(container(text(who).size(12.0).color(tokens.muted).wrapping(Wrapping::None)).width(TOOL))
+                .push(container(text(who).size(12.0).color(tokens.muted).wrapping(Wrapping::None)).width(tool))
                 .push(
                     container(cut(marked(words.clone(), query, SMALL, REGULAR, tokens.text, tokens)))
                         .width(Length::Fill),
