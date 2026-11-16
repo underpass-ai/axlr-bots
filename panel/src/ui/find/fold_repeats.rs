@@ -1,15 +1,18 @@
 use std::collections::BTreeMap;
 
 use super::{MessageShape, TaskLine, TaskWhat};
-use crate::domain::Task;
+use crate::domain::{Task, TaskStatus};
 
 /// Whether the task list folds its repeats: the tasks of one bot that
 /// the same trigger started and that stand the same fold into the
-/// newest of them, so a timer's two hundred runs take one line. A task
-/// an event made folds only with tasks whose message has its shape (the
-/// same words once dates and times are left out, [`MessageShape`]): an
-/// hourly event's runs fold, two pieces of work with their own ids do
-/// not. On until a person turns it off.
+/// newest of them, so a timer's two hundred runs take one line. Tasks
+/// fold only when they read alike: the same words in the event's
+/// message, or in what they were asked when no event started them, once
+/// dates and times are left out ([`MessageShape`]). An hourly event's
+/// runs fold; two pieces of work with their own ids, or two different
+/// asks sent by hand, do not. A task that waits for a person or is
+/// running stays a line of its own: each needs its own look. On until a
+/// person turns it off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FoldRepeats {
     on: bool,
@@ -43,18 +46,20 @@ impl FoldRepeats {
     /// folded into it wherever they come. Off, every task is a line.
     pub fn lines<'a>(self, tasks: impl IntoIterator<Item = &'a Task>) -> Vec<TaskLine<'a>> {
         let mut lines: Vec<TaskLine<'a>> = Vec::new();
-        let mut seen: BTreeMap<(&str, &str, &str, &str, Option<MessageShape>), usize> = BTreeMap::new();
+        let mut seen: BTreeMap<(&str, &str, &str, &str, bool, MessageShape), usize> = BTreeMap::new();
         for task in tasks {
-            if !self.on {
+            if !self.on || matches!(task.status, TaskStatus::WaitingApproval | TaskStatus::Running) {
                 lines.push(TaskLine::alone(task));
                 continue;
             }
+            let what = TaskWhat::of(task);
             let alike = (
                 task.bot_id.as_str(),
                 task.trigger.trigger_type.as_str(),
                 task.trigger.name.as_str(),
                 task.status.name(),
-                TaskWhat::of(task).message.map(MessageShape::of),
+                what.message.is_some(),
+                MessageShape::of(what.message.unwrap_or(&task.objective)),
             );
             match seen.get(&alike) {
                 Some(&line) => lines[line].alike.push(task),
@@ -219,6 +224,43 @@ mod tests {
                 line("task-1", 1)
             ]
         );
+    }
+
+    #[test]
+    fn different_asks_sent_by_hand_keep_apart_and_timer_runs_fold() {
+        let tasks = [
+            task("task-4", "ops-watcher", "Completed", "manual", None),
+            task("task-3", "ops-watcher", "Completed", "manual", None),
+            task("task-2", "ops-watcher", "Completed", "manual", None),
+            task("task-1", "ops-watcher", "Completed", "manual", None),
+        ];
+        let mut tasks = tasks;
+        tasks[0].objective = "Check service-1 after its deploy".into();
+        tasks[1].objective = "Check service-2 after its deploy".into();
+        tasks[2].objective = "Check service-1 after its deploy".into();
+        tasks[3].objective = "Round of the queue (timer fired at 2026-11-16T09:00:00Z)".into();
+        let lines = FoldRepeats::on().lines(&tasks);
+        assert_eq!(
+            shape(&lines),
+            vec![line("task-4", 2), line("task-3", 1), line("task-1", 1)]
+        );
+        let mut timer = tasks.clone();
+        timer[0].objective = "Round of the queue (timer fired at 2026-11-16T10:00:00Z)".into();
+        timer[1].objective = "Round of the queue (timer fired at 2026-11-16T09:30:00Z)".into();
+        assert_eq!(FoldRepeats::on().lines(&timer[..2]).len(), 1);
+    }
+
+    #[test]
+    fn a_task_that_waits_for_a_person_or_runs_never_folds() {
+        let tasks = [
+            task("task-4", "ops-watcher", "WaitingApproval", "timer:clock", None),
+            task("task-3", "ops-watcher", "WaitingApproval", "timer:clock", None),
+            task("task-2", "ops-watcher", "Running", "timer:clock", None),
+            task("task-1", "ops-watcher", "Running", "timer:clock", None),
+        ];
+        let lines = FoldRepeats::on().lines(&tasks);
+        assert_eq!(lines.len(), 4);
+        assert!(lines.iter().all(|l| l.count() == 1));
     }
 
     #[test]

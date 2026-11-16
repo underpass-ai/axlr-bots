@@ -2436,7 +2436,7 @@ fn the_filter_leaves_the_rows_that_answer_and_says_when_none_does() {
 #[test]
 fn a_folded_line_counts_its_repeats() {
     let mut app = large(Screen::Tasks);
-    shows(&app, &["×39", "×18", "Fold repeats", "Group:", "none"]);
+    shows(&app, &["×39", "Fold repeats", "Group:", "none"]);
     let sent = messages_of_click(&app, "Fold repeats");
     assert!(matches!(sent.as_slice(), [Message::FoldToggled]), "{sent:?}");
     send(&mut app, Message::FoldToggled);

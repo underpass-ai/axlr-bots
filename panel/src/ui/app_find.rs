@@ -191,14 +191,14 @@ mod tests {
     }
 
     #[test]
-    fn two_hundred_tasks_fold_into_ninety_lines() {
+    fn two_hundred_tasks_fold_into_ninety_three_lines() {
         let app = large(Screen::Tasks);
         assert!(app.tables.fold.is_on(), "folded until a person says otherwise");
         assert_eq!(app.tasks_through().len(), 200);
-        assert_eq!(lines(&app), 90);
+        assert_eq!(lines(&app), 93);
         let groups = app.task_groups();
         let all: Vec<_> = groups.iter().flat_map(|g| g.lines.iter().cloned()).collect();
-        assert_eq!(super::super::find::FoldRepeats::folded(&all), 110);
+        assert_eq!(super::super::find::FoldRepeats::folded(&all), 107);
     }
 
     #[test]
@@ -291,7 +291,7 @@ mod tests {
         assert_eq!(app.apply(Message::FoldToggled), vec![Effect::ScrollTop]);
         assert_eq!(lines(&app), 200);
         app.apply(Message::FoldToggled);
-        assert_eq!(lines(&app), 90);
+        assert_eq!(lines(&app), 93);
         assert_eq!(app.apply(Message::GroupingCycled), vec![Effect::ScrollTop]);
         assert_eq!(app.tables.grouping, TaskGrouping::Trigger);
         let groups = app.task_groups();
