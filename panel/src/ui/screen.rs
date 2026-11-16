@@ -18,7 +18,7 @@ pub enum Screen {
     Settings,
 }
 
-/// The side bar's entries; a detail belongs to its list's entry.
+/// The rail's places; a detail belongs to its list's place.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Section {
     Overview,

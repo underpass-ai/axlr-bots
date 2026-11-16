@@ -337,6 +337,64 @@ mod tests {
         assert!(fake.calls().iter().filter(|c| c.starts_with("stop_bot")).count() == 2);
     }
 
+    /// The fleet of a real size, on `screen`.
+    fn large(screen: Screen) -> App {
+        let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::large(
+            "2026-10-25T10:00:00Z".parse().unwrap(),
+        ));
+        let mut app = super::super::view::tests::app_over(fake);
+        send(&mut app, Message::SettingsSave);
+        send(&mut app, Message::Go(screen));
+        app
+    }
+
+    #[test]
+    fn the_box_for_all_never_picks_a_node_put_away() {
+        let mut app = large(Screen::Nodes);
+        send(&mut app, Message::PickShown(List::Nodes, true));
+        assert_eq!(app.tables.picked(List::Nodes), 8, "the revoked ones are out of sight");
+        send(&mut app, Message::ShowRevoked(true));
+        send(&mut app, Message::PickShown(List::Nodes, true));
+        assert_eq!(app.tables.picked(List::Nodes), 48);
+        assert_eq!(
+            app.bulk_plan(List::Nodes, BulkAction::Revoke).button(),
+            "Revoke 8 of 48"
+        );
+        send(&mut app, Message::ShowRevoked(false));
+        assert_eq!(app.tables.picked(List::Nodes), 8, "put away, they are let go");
+    }
+
+    #[test]
+    fn the_box_for_all_picks_the_bots_on_show_and_a_fold_or_a_chip_lets_go() {
+        let mut app = large(Screen::Bots);
+        send(&mut app, Message::PickShown(List::Bots, true));
+        // Two teams at work of five bots each and three bots in no team;
+        // the six teams with no bot on were met closed.
+        assert_eq!(app.tables.picked(List::Bots), 13);
+        send(&mut app, Message::FoldTeam("ops".into()));
+        assert_eq!(app.tables.picked(List::Bots), 8, "a closed team's rows are let go");
+        send(&mut app, Message::ShowBots(BotShow::Paused));
+        assert_eq!(
+            app.tables.picked(List::Bots),
+            1,
+            "only support's paused bot is in sight"
+        );
+        send(&mut app, Message::FoldTeam("audit".into()));
+        send(&mut app, Message::PickShown(List::Bots, true));
+        assert_eq!(app.tables.picked(List::Bots), 5);
+        // A pause does not fold a team under the hand: its rows stay
+        // picked for the next act.
+        send(&mut app, Message::ShowBots(BotShow::All));
+        send(&mut app, Message::FoldTeam("audit".into()));
+        send(&mut app, Message::ClearPicks(List::Bots));
+        send(&mut app, Message::PickShown(List::Bots, true));
+        assert_eq!(app.tables.picked(List::Bots), 8);
+        send(&mut app, Message::AskBulk(List::Bots, BulkAction::Pause));
+        send(&mut app, Message::ConfirmYes);
+        assert_eq!(app.tables.picked(List::Bots), 8);
+        assert_eq!(app.shown_rows(List::Bots).len(), 8);
+    }
+
     #[test]
     fn nodes_revoke_in_bulk() {
         let mut app = on(Screen::Nodes);

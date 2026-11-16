@@ -80,7 +80,7 @@ pub fn page(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
     }
 }
 
-/// The side bar and the header strip.
+/// The rail and the top bar.
 pub fn raised(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
     move |_| container::Style {
         text_color: Some(tokens.text),
@@ -193,7 +193,7 @@ pub fn tile(tokens: Tokens, on: bool) -> impl Fn(&Theme, button::Status) -> butt
     }
 }
 
-/// A thin line between the side bar or the header and the content.
+/// A thin line between the rail or the top bar and the content.
 pub fn rule(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
     move |_| container::Style {
         background: Some(Background::Color(tokens.border)),
@@ -363,9 +363,6 @@ pub enum Kind {
     Good,
     /// A quiet act in a row: no fill until hovered.
     Ghost,
-    /// A side bar entry; `true` when it is the current place, which the
-    /// accent marks (the bar beside it is drawn by the side bar).
-    Nav(bool),
     /// A filter chip; `true` when it is on.
     Chip(bool),
     /// A place on the rail; `true` for the current one, in the accent
@@ -410,12 +407,6 @@ pub fn button_style(tokens: Tokens, kind: Kind) -> impl Fn(&Theme, button::Statu
             }
             Kind::Secondary => (Some(tokens.surface), tokens.text, tokens.border),
             Kind::Ghost => (hovered.then_some(tokens.raised), tokens.text, Color::TRANSPARENT),
-            Kind::Nav(true) => (None, tokens.accent, Color::TRANSPARENT),
-            Kind::Nav(false) => (
-                hovered.then(|| mix(tokens.raised, tokens.text, 0.06)),
-                tokens.text,
-                Color::TRANSPARENT,
-            ),
             Kind::Rail(true) => (None, accent_ink(tokens), Color::TRANSPARENT),
             Kind::Rail(false) => (
                 None,
@@ -448,7 +439,7 @@ pub fn button_style(tokens: Tokens, kind: Kind) -> impl Fn(&Theme, button::Statu
         let disabled = status == button::Status::Disabled
             && !matches!(
                 kind,
-                Kind::Chip(true) | Kind::Nav(true) | Kind::Segment(true) | Kind::Rail(true) | Kind::Filter(true)
+                Kind::Chip(true) | Kind::Segment(true) | Kind::Rail(true) | Kind::Filter(true)
             );
         let radius = match kind {
             Kind::Segment(_) => RADIUS_S - 2.0,
@@ -708,19 +699,6 @@ mod tests {
         );
         assert!(
             button_style(tokens, Kind::Ghost)(&theme, button::Status::Hovered)
-                .background
-                .is_some()
-        );
-        let current = button_style(tokens, Kind::Nav(true))(&theme, button::Status::Active);
-        assert_eq!(current.background, None);
-        assert_eq!(current.text_color, tokens.accent);
-        assert!(
-            button_style(tokens, Kind::Nav(false))(&theme, button::Status::Active)
-                .background
-                .is_none()
-        );
-        assert!(
-            button_style(tokens, Kind::Nav(false))(&theme, button::Status::Hovered)
                 .background
                 .is_some()
         );

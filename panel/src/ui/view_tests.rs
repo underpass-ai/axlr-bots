@@ -14,6 +14,7 @@ use super::test_runtime::{connected, send};
 use super::view::tests::app;
 use super::view::widgets::{self, El};
 use super::*;
+use crate::application::Density;
 use crate::domain::{BotId, NodeId, TaskStatus};
 
 /// The headless renderer is not safe to run on two threads at once: the
@@ -443,6 +444,217 @@ fn home_shows_the_latest_tasks_on_one_line_beside_their_ages() {
             shows_whole(&app, width, "30m", |_| text("30m").size(widgets::SMALL));
         }
     }
+}
+
+/// The panel over the fleet of a real size, connected, on `screen`.
+fn large(screen: Screen) -> App {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::large(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake);
+    send(&mut app, Message::SettingsSave);
+    send(&mut app, Message::Go(screen));
+    app
+}
+
+/// How many rows of the list on `app` show whole in the window's size
+/// at start, from where its first two rows are laid: `first` and
+/// `second` are words of those rows.
+fn rows_in_sight(app: &App, first: &str, second: &str) -> (usize, f32) {
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(app));
+    let top = ui.find(first).unwrap().bounds();
+    let next = ui.find(second).unwrap().bounds();
+    let pitch = next.y - top.y;
+    let centre = top.y + top.height / 2.0;
+    let mut rows = 0;
+    while centre + pitch * rows as f32 + pitch / 2.0 <= WINDOW.height {
+        rows += 1;
+    }
+    (rows, pitch)
+}
+
+/// The Tasks list of a real fleet in the window's size at start: one
+/// line a task at the density's height, nineteen of them in sight
+/// under a header that stays, twenty-three when compact.
+#[test]
+fn the_tasks_list_shows_nineteen_rows_and_more_when_compact() {
+    let mut app = large(Screen::Tasks);
+    shows(&app, &["200 tasks", "All", "Done", "Stopped", "Failed"]);
+    shows(
+        &app,
+        &["Newest 200 tasks. The counts, the order and Select all cover only those."],
+    );
+    let (rows, pitch) = rows_in_sight(&app, "Say the time", "Write the weekly report");
+    assert_eq!(pitch, Density::Comfortable.row_height());
+    assert!(rows >= 19, "{rows} rows in sight");
+    send(&mut app, Message::SetDensity(Density::Compact));
+    let (compact, pitch) = rows_in_sight(&app, "Say the time", "Write the weekly report");
+    assert_eq!(pitch, Density::Compact.row_height());
+    assert!(compact >= 23, "{compact} rows in sight when compact");
+    // The header is over the rows, not among them: it is where it was
+    // whatever the rows do, right under the bar and its note.
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+    let head = ui.find("STATUS").unwrap().bounds();
+    let row = ui.find("Say the time").unwrap().bounds();
+    assert!(head.y < row.y && row.y - head.y < Density::Compact.row_height());
+    // A task an event made says the event's words first.
+    assert!(
+        ui.find("item-4198 · service-3 · gate failed: the unit tests of the client")
+            .is_ok()
+    );
+    assert!(ui.find("ops.item.assigned").is_ok() && ui.find("round").is_ok());
+}
+
+/// Bots are listed by team under headers that fold; a team with no
+/// bot on is met closed; the chips narrow them.
+#[test]
+fn the_bots_list_groups_by_team_and_folds_and_narrows() {
+    let mut app = large(Screen::Bots);
+    shows(
+        &app,
+        &[
+            "40",
+            "ops",
+            "4 on · 1 paused",
+            "ops-lead",
+            "audit",
+            "4 paused",
+            "no team",
+            "3 on",
+        ],
+    );
+    assert!(
+        simulator_misses(&app, "audit-lead"),
+        "a team with no bot on starts closed"
+    );
+    let sent = messages_of_click(&app, "audit");
+    assert!(
+        matches!(sent.as_slice(), [Message::FoldTeam(team)] if team == "audit"),
+        "{sent:?}"
+    );
+    send(&mut app, Message::FoldTeam("audit".into()));
+    shows(&app, &["audit-lead", "audit-spend"]);
+    send(&mut app, Message::FoldTeam("ops".into()));
+    assert!(simulator_misses(&app, "ops-lead"));
+    // A bot's name opens its page.
+    let sent = messages_of_click(&app, "audit-lead");
+    assert!(
+        matches!(sent.as_slice(), [Message::Go(Screen::Bot(id))] if id.as_str() == "audit-lead"),
+        "{sent:?}"
+    );
+    // The chips come before the rows, whose status says the same word.
+    let sent = messages_of_click(&app, "Paused");
+    assert!(
+        matches!(sent.as_slice(), [Message::ShowBots(crate::ui::table::BotShow::Paused)]),
+        "{sent:?}"
+    );
+    send(&mut app, Message::ShowBots(crate::ui::table::BotShow::On));
+    shows(&app, &["support-lead", "bot-wrx80"]);
+    assert!(simulator_misses(&app, "audit"), "a team with no bot on is left out");
+    assert!(simulator_misses(&app, "support-survey"));
+    assert!(messages_of_click(&app, "On").is_empty(), "the chip that is on rests");
+}
+
+/// Revoked nodes are put away under a note that brings them back.
+#[test]
+fn the_nodes_list_puts_revoked_nodes_away_until_asked_for() {
+    let mut app = large(Screen::Nodes);
+    shows(
+        &app,
+        &["8", "Revoked", "40 revoked nodes are hidden.", "Show them", "node-03"],
+    );
+    assert!(simulator_misses(&app, "old-node-01"));
+    // The nodes online come first.
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+    let online = ui.find("wrx80").unwrap().bounds();
+    let away = ui.find("node-05").unwrap().bounds();
+    assert!(online.y < away.y);
+    drop(ui);
+    drop(_turn);
+    let sent = messages_of_click(&app, "Show them");
+    assert!(matches!(sent.as_slice(), [Message::ShowRevoked(true)]), "{sent:?}");
+    send(&mut app, Message::ShowRevoked(true));
+    shows(&app, &["48", "40 revoked nodes are shown.", "Hide them", "old-node-01"]);
+    let sent = messages_of_click(&app, "Revoked");
+    assert!(matches!(sent.as_slice(), [Message::ShowRevoked(false)]), "{sent:?}");
+}
+
+/// The frame: the search button asks for the palette, the rail goes to
+/// each place and counts what needs a person on Tasks.
+#[test]
+fn the_top_bar_searches_and_the_rail_goes_places() {
+    let mut app = connected();
+    let sent = messages_of_click(&app, "Search bots, tasks, nodes, actions…");
+    assert!(matches!(sent.as_slice(), [Message::PaletteOpen]), "{sent:?}");
+    let before = app.screen.clone();
+    assert!(
+        app.apply(Message::PaletteOpen).is_empty(),
+        "the palette is another slice's"
+    );
+    assert_eq!(app.screen, before);
+    shows(&app, &["Ctrl K", "Home", "Tasks", "Bots", "Teams", "Nodes", "Settings"]);
+    for (place, screen) in [
+        ("Tasks", Screen::Tasks),
+        ("Bots", Screen::Bots),
+        ("Teams", Screen::Teams),
+        ("Settings", Screen::Settings),
+    ] {
+        let sent = messages_of_click(&app, place);
+        assert!(
+            matches!(sent.as_slice(), [Message::Go(s)] if *s == screen),
+            "{place}: {sent:?}"
+        );
+    }
+    // The rail is 68 px wide under a bar 44 px high, and the count of
+    // what needs a person sits on Tasks.
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+    let tasks = ui.find("Tasks").unwrap().bounds();
+    assert!(
+        tasks.x >= 0.0 && tasks.x + tasks.width <= 68.0 && tasks.y > 44.0,
+        "{tasks:?}"
+    );
+    let badge = ui.find("1").unwrap().bounds();
+    assert!(badge.x < 68.0 && badge.y < tasks.y && badge.y > 44.0, "{badge:?}");
+    let search = ui.find("Search bots, tasks, nodes, actions…").unwrap().bounds();
+    assert!(search.y + search.height < 44.0 && search.width < 520.0, "{search:?}");
+}
+
+/// With nothing waiting, Home says so in one quiet line; a bot's ask
+/// to listen, which is no task, still calls for a person.
+#[test]
+fn home_says_when_nothing_needs_a_person() {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    let waiting = app.fleet.as_ref().unwrap().waiting()[0].id.clone();
+    fake.finish_task(&waiting, TaskStatus::Completed);
+    let tick = app.now + chrono::Duration::seconds(3);
+    send(&mut app, Message::Tick(tick));
+    assert_eq!(app.waiting_count(), 0);
+    shows(
+        &app,
+        &["Nothing needs you", "No task waits for your OK. 1 task failed today."],
+    );
+    assert!(simulator_misses(&app, "Approve"));
+
+    let (_, asked) = subscribed_fleet();
+    let mut asked = asked;
+    let waiting = asked.fleet.as_ref().unwrap().waiting()[0].id.clone();
+    asked.fleet.as_mut().unwrap().tasks.retain(|t| t.id != waiting);
+    assert!(asked.waiting_count() > 0);
+    assert!(simulator_misses(&asked, "Nothing needs you"));
+    shows(&asked, &["bot asks to listen to a topic.", "Review"]);
+    let sent = messages_of_click(&asked, "Review");
+    assert!(
+        matches!(sent.as_slice(), [Message::Go(Screen::Bot(id))] if id.as_str() == "bot"),
+        "{sent:?}"
+    );
 }
 
 #[test]
