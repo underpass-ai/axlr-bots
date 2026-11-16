@@ -265,7 +265,7 @@ pub fn words<'a>(words: impl Into<String>, width: f32, ink: Ink, tokens: Tokens)
 /// shows of them, once cut.
 pub fn found<'a>(words: impl Into<String>, width: f32, ink: Ink, query: &Query, tokens: Tokens) -> El<'a> {
     let words = words.into();
-    let short = grid::shorten(&words, ink.fits(width));
+    let short = ink.cut(&words, width);
     let line = container(ink.write_found(short.clone(), query, tokens)).clip(true);
     if short == words {
         return line.into();
@@ -279,7 +279,7 @@ pub fn found<'a>(words: impl Into<String>, width: f32, ink: Ink, query: &Query, 
 /// the mark's wash.
 pub fn link<'a>(words: impl Into<String>, width: f32, press: Message, query: &Query, tokens: Tokens) -> El<'a> {
     let words = words.into();
-    let short = grid::shorten(&words, Ink::Strong.fits(width));
+    let short = Ink::Strong.cut(&words, width);
     let cut = short != words;
     let line: El<'a> = button(Ink::Strong.write_found(short, query, tokens))
         .padding(0)

@@ -45,6 +45,48 @@ impl Ink {
         ((width / (self.em() * self.size())).floor() as usize).max(4)
     }
 
+    /// The words cut with an ellipsis to what `width` holds, measured
+    /// letter by letter: a capital, a digit or an `m` takes more room
+    /// than an `i` or a space, so a line of ids is cut sooner than a
+    /// line of words and ends in its ellipsis, never at the edge.
+    pub fn cut(self, words: &str, width: f32) -> String {
+        let size = self.size();
+        let wide = |c: char| self.letter(c) * size;
+        if words.chars().map(wide).sum::<f32>() <= width {
+            return words.to_string();
+        }
+        let room = width - wide('…');
+        let mut used = 0.0;
+        let mut kept = String::new();
+        for c in words.chars() {
+            used += wide(c);
+            if used > room {
+                break;
+            }
+            kept.push(c);
+        }
+        let kept = kept.trim_end();
+        format!("{kept}…")
+    }
+
+    /// The width of one letter in this ink, in ems.
+    fn letter(self, c: char) -> f32 {
+        if self == Self::Code {
+            return 0.61;
+        }
+        let em = match c {
+            ' ' => 0.26,
+            'i' | 'l' | 'j' | 'I' | '.' | ',' | ':' | ';' | '\'' | '|' | '!' | '(' | ')' | '[' | ']' | '·' => 0.3,
+            'f' | 't' | 'r' => 0.38,
+            '-' | '_' => 0.42,
+            'm' | 'w' | 'M' | 'W' => 0.82,
+            'A'..='Z' | '0'..='9' => 0.64,
+            'a'..='z' => 0.55,
+            _ => 0.6,
+        };
+        if self == Self::Strong { em * 1.06 } else { em }
+    }
+
     /// The width `chars` characters take, on average.
     pub fn span(self, chars: usize) -> f32 {
         chars as f32 * self.em() * self.size()
@@ -111,6 +153,24 @@ impl Ink {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_line_of_ids_is_cut_sooner_than_a_line_of_words() {
+        let width = 200.0;
+        let words = Ink::Plain.cut("the bot reads a file and says what is in it today", width);
+        let ids = Ink::Plain.cut("20261116T000025Z-BOTS-WORK-TEAMS-GATES-7722-ABCDEF", width);
+        assert!(words.ends_with('…') && ids.ends_with('…'));
+        assert!(ids.chars().count() < words.chars().count());
+    }
+
+    #[test]
+    fn words_that_fit_stay_whole_and_a_cut_ends_in_its_ellipsis() {
+        assert_eq!(Ink::Plain.cut("Say the time", 300.0), "Say the time");
+        let cut = Ink::Strong.cut("bot-act-with-approval and more", 120.0);
+        assert!(cut.ends_with('…') && !cut.ends_with(" …"), "{cut}");
+        assert_eq!(Ink::Code.cut("0123456789", 0.61 * 12.5 * 10.0), "0123456789");
+        assert_eq!(Ink::Plain.cut("anything", 0.0), "…");
+    }
 
     #[test]
     fn a_wider_cell_fits_more_and_a_name_fewer() {
