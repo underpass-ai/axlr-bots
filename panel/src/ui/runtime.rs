@@ -1,5 +1,6 @@
 //! Runs the panel with Iced: the state machine's effects become tasks,
-//! the clock ticks every few seconds.
+//! the clock ticks every few seconds, and the organic glow gets its
+//! frames while it changes.
 
 use std::borrow::Cow;
 use std::time::Duration;
@@ -9,7 +10,7 @@ use iced::widget::operation::RelativeOffset;
 use iced::{Size, Subscription, Task, Theme, window};
 
 use super::view::widgets;
-use super::{App, Effect, Field, Keypress, LiveStream, Message, Reveal, RevealChild, Tokens, brand, view};
+use super::{App, Effect, Field, Keypress, LiveStream, Message, Reveal, RevealChild, Tokens, brand, organic, view};
 
 /// How often the panel reads the control plane again.
 pub const REFRESH_EVERY: Duration = Duration::from_secs(3);
@@ -88,12 +89,14 @@ pub fn run(app: &App, effect: Effect) -> Task<Message> {
 /// Esc, which leaves it; see `Keypress`); Esc again when a field did
 /// take it, since leaving the palette's field closes the palette and
 /// leaving the filter empties it; and Shift as it is held or let go,
-/// for a header press that adds its column.
-pub fn subscription(_: &App) -> Subscription<Message> {
+/// for a header press that adds its column; and the glow's frames,
+/// only while a glow is changing.
+pub fn subscription(app: &App) -> Subscription<Message> {
     Subscription::batch([
         iced::time::every(REFRESH_EVERY).map(|_| Message::Tick(Utc::now())),
         iced::keyboard::listen().filter_map(keyboard),
         iced::event::listen_with(escape_taken),
+        organic::frames(&app.hover).map(Message::Frame),
     ])
 }
 

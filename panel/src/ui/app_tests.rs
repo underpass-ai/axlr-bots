@@ -3,7 +3,7 @@ use chrono::Duration;
 use super::test_runtime::{connected, drive, send};
 use super::view::tests::{app, config, settings};
 use super::*;
-use crate::application::{Density, PanelError, PanelSettings};
+use crate::application::{Density, Motion, PanelError, PanelSettings};
 use crate::domain::{AutonomyLevel, BotId, BotStatus, NodeId, NodeStatus, TaskId, TaskStatus};
 
 fn task_in(app: &App, status: TaskStatus) -> TaskId {
@@ -1137,10 +1137,14 @@ fn the_look_and_the_new_bot_defaults_are_kept_as_they_change() {
     send(&mut app, Message::SetDensity(Density::Compact));
     assert_eq!(app.density, Density::Compact);
     assert!(app.banner.is_none(), "nor does the rows' height");
+    assert_eq!(app.hover.motion(), Motion::On);
+    send(&mut app, Message::SetMotion(Motion::Off));
+    assert_eq!(app.hover.motion(), Motion::Off);
+    assert!(app.banner.is_none(), "nor does the glow");
     let (initial, saved) = app.services.connect.initial();
     assert_eq!(
-        (initial.theme, initial.density, saved),
-        (ThemeMode::Dark, Density::Compact, false),
+        (initial.theme, initial.density, initial.motion, saved),
+        (ThemeMode::Dark, Density::Compact, Motion::Off, false),
         "saved without a control plane"
     );
     app.apply(Message::SettingsModel(" codex/gpt-6-luna ".into()));
@@ -1169,11 +1173,11 @@ fn the_look_and_the_new_bot_defaults_are_kept_as_they_change() {
     send(&mut app, Message::SettingsSave);
     let kept = app.services.connect.initial().0;
     assert!(kept.control_plane.is_some() && kept.theme == ThemeMode::Dark);
-    assert_eq!(kept.density, Density::Compact);
+    assert_eq!((kept.density, kept.motion), (Density::Compact, Motion::Off));
     assert_eq!(kept.new_bot.model, "codex/gpt-6-luna");
-    // The next start draws the lists as they were left.
+    // The next start draws the lists as they were left, and still.
     let (again, _) = App::new(app.services.clone(), Launch::default(), &kept, true);
-    assert_eq!(again.density, Density::Compact);
+    assert_eq!((again.density, again.hover.motion()), (Density::Compact, Motion::Off));
 }
 
 #[test]
@@ -1185,14 +1189,18 @@ fn the_settings_are_edited_as_json_and_applied() {
     assert!(text.contains("\"controlPlane.apiUrl\": \"https://127.0.0.1:7879\""));
     assert!(text.contains("\"look.theme\": \"light\""));
     assert!(text.contains("\"look.density\": \"comfortable\""));
+    assert!(text.contains("\"look.motion\": \"on\""));
     let edited = text
         .replace("\"look.theme\": \"light\"", "\"look.theme\": \"dark\"")
         .replace("\"look.density\": \"comfortable\"", "\"look.density\": \"compact\"")
+        .replace("\"look.motion\": \"on\"", "\"look.motion\": \"off\"")
         .replace("127.0.0.1:7879", "cp.example:7879");
     app.settings_json.content = iced::widget::text_editor::Content::with_text(&edited);
     send(&mut app, Message::SettingsJsonApply);
     assert!(!app.settings_json.open && app.settings_json.error.is_none());
     assert_eq!((app.mode, app.density), (ThemeMode::Dark, Density::Compact));
+    assert_eq!(app.hover.motion(), Motion::Off);
+    assert_eq!(app.services.connect.initial().0.motion, Motion::Off);
     assert_eq!(app.settings.api_url, "https://cp.example:7879");
     assert!(app.settings.changed() && app.settings.can_connect());
     assert!(app.connected(), "the connection stays until Connect");
@@ -1241,6 +1249,7 @@ fn the_settings_are_exported_imported_and_reset() {
         control_plane: Some(config()),
         theme: ThemeMode::Dark,
         density: Density::Compact,
+        motion: Motion::Off,
         new_bot: crate::application::NewBotDefaults {
             model: "codex/gpt-6-luna".into(),
             models: vec![],
@@ -1256,6 +1265,7 @@ fn the_settings_are_exported_imported_and_reset() {
         (app.mode, app.density, app.new_bot.model.as_str()),
         (ThemeMode::Dark, Density::Compact, "codex/gpt-6-luna")
     );
+    assert_eq!(app.hover.motion(), Motion::Off);
     assert!(!app.settings.changed());
 
     store.put("/in/look.json", "{\"look.theme\": \"light\"}");
@@ -1282,6 +1292,7 @@ fn the_settings_are_exported_imported_and_reset() {
     assert_eq!(app.settings.config(), config());
     assert_eq!((app.mode, app.new_bot.clone()), (ThemeMode::Light, Default::default()));
     assert_eq!(app.density, Density::Comfortable);
+    assert_eq!(app.hover.motion(), Motion::On);
     assert_eq!(app.banner.as_ref().unwrap().title, "Back to the defaults");
 }
 

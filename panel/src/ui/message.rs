@@ -32,6 +32,13 @@ pub enum Message {
     SetTheme(ThemeMode),
     /// How tall the lists' rows are, kept as `look.density`.
     SetDensity(crate::application::Density),
+    /// Whether the organic backgrounds move, kept as `look.motion`.
+    SetMotion(crate::application::Motion),
+    /// A row, card or tile tells where the pointer is on it, or that it
+    /// left.
+    Hover(super::organic::Signal),
+    /// A frame of the glow, while one is changing.
+    Frame(std::time::Instant),
     /// The search button: open the command palette.
     PaletteOpen,
     /// A click on the dim layer around the palette.

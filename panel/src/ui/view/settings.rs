@@ -5,11 +5,11 @@
 //! lives in the bot's definition. The first run starts here with the
 //! local install's values.
 
-use iced::widget::{column, container, row, scrollable, text, text_editor};
+use iced::widget::{Space, column, container, row, scrollable, text, text_editor};
 use iced::{Alignment, Font, Length};
 
 use super::widgets::{El, SMALL, action, bold, card, field, icon, muted, pill_with, section, segmented, title};
-use crate::application::Density;
+use crate::application::{Density, Motion};
 use crate::ui::styles::{self, Kind};
 use crate::ui::{App, Icon, Message, ThemeMode, Tokens};
 
@@ -203,10 +203,16 @@ fn look<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             row![
                 muted("Rows", tokens),
                 segmented(Density::ALL, app.density, Density::label, Message::SetDensity, tokens),
+                Space::new().width(14),
+                muted("Hover glow", tokens),
+                segmented(Motion::ALL, app.hover.motion(), Motion::label, Message::SetMotion, tokens),
             ]
             .spacing(10)
             .align_y(Alignment::Center),
-            muted("Kept as you switch.", tokens),
+            muted(
+                "Kept as you switch. The hover glow is a faint moving light behind the row, card or tile under the pointer.",
+                tokens
+            ),
         ]
         .spacing(14),
         tokens,

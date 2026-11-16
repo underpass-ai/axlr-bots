@@ -6,11 +6,12 @@ use super::{
     Screen, Services, SettingsForm, SettingsJson, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode, passages,
 };
 use crate::application::SubscriptionChange;
-use crate::application::{Density, EventFeed, Fleet, NewBotDefaults, PanelError, PanelSettings, TaskDetail};
+use crate::application::{Density, EventFeed, Fleet, Motion, NewBotDefaults, PanelError, PanelSettings, TaskDetail};
 use crate::domain::{Decision, Shortcut, TaskId, TaskStatus};
 use crate::ui::find::{ActivityFind, Palette, TeamGroup};
 use crate::ui::format;
 use crate::ui::inspector::Tabs;
+use crate::ui::organic::Hover;
 use crate::ui::table::{List, Tables};
 
 /// How long a refresh may stay unanswered before the next tick tries again.
@@ -24,6 +25,9 @@ pub struct App {
     pub mode: ThemeMode,
     /// How tall the lists' rows are.
     pub density: Density,
+    /// The organic glow behind the row, card or tile the pointer is on;
+    /// its motion is the look's `look.motion`.
+    pub hover: Hover,
     pub screen: Screen,
     pub now: DateTime<Utc>,
     pub fleet: Option<Fleet>,
@@ -108,6 +112,7 @@ impl App {
             services,
             mode: launch.theme.unwrap_or(settings.theme),
             density: settings.density,
+            hover: Hover::new(settings.motion),
             screen: if saved { launch.screen.clone() } else { Screen::Settings },
             now,
             fleet: None,
@@ -181,7 +186,7 @@ impl App {
 
     /// Everything the settings screen shows, as settings.
     pub fn current_settings(&self) -> PanelSettings {
-        self.settings.settings(self.mode, self.density)
+        self.settings.settings(self.mode, self.density, self.hover.motion())
     }
 
     pub fn connected(&self) -> bool {
@@ -212,8 +217,13 @@ impl App {
     }
 
     pub fn apply(&mut self, message: Message) -> Vec<Effect> {
+        // The glow's news come up to thirty times a second and change no
+        // passage a person reads.
+        let glow = matches!(message, Message::Hover(_) | Message::Frame(_));
         let effects = self.handle(message);
-        self.readers.sync(passages::of(self));
+        if !glow {
+            self.readers.sync(passages::of(self));
+        }
         effects
     }
 
@@ -238,6 +248,18 @@ impl App {
             Message::SetDensity(density) => {
                 self.density = density;
                 self.save_preferences(self.new_bot.clone(), true)
+            }
+            Message::SetMotion(motion) => {
+                self.hover.set_motion(motion);
+                self.save_preferences(self.new_bot.clone(), true)
+            }
+            Message::Hover(signal) => {
+                self.hover.signal(signal);
+                Vec::new()
+            }
+            Message::Frame(now) => {
+                self.hover.tick(now);
+                Vec::new()
             }
             Message::PaletteOpen => self.palette_open(),
             Message::PaletteClose => {
@@ -947,6 +969,7 @@ impl App {
                     control_plane: Some(control_plane),
                     theme: ThemeMode::default(),
                     density: Density::default(),
+                    motion: Motion::default(),
                     new_bot,
                 };
                 self.take_settings(settings, "Back to the defaults")
@@ -1046,6 +1069,7 @@ impl App {
         self.settings.take(&settings);
         self.mode = settings.theme;
         self.density = settings.density;
+        self.hover.set_motion(settings.motion);
         let words = if self.settings.changed() || (!self.connected() && !self.settings.busy) {
             "Press Connect to try the control plane values"
         } else {
@@ -1159,6 +1183,10 @@ impl App {
             self.task_loading = false;
             self.bot_loading = false;
             self.find.reset();
+            // What the pointer was on may be gone without a word: its
+            // glow fades out, and the surface it is on now lights again
+            // as it hears of the pointer.
+            self.hover.release();
             if screen.inspected().is_some() {
                 effects.push(Effect::InspectorTop);
             }

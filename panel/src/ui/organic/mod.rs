@@ -36,7 +36,6 @@ mod field;
 mod glow;
 mod halo;
 mod hover;
-mod motion;
 mod picture;
 mod shine;
 mod signal;
@@ -48,12 +47,12 @@ use std::time::Instant;
 
 use iced::Subscription;
 
+pub use crate::application::Motion;
 pub use backdrop::{Backdrop, backdrop};
 pub use field::Field;
 pub use glow::Glow;
 pub use halo::Halo;
 pub use hover::Hover;
-pub use motion::Motion;
 pub use shine::Shine;
 pub use signal::Signal;
 pub use spread::Spread;
