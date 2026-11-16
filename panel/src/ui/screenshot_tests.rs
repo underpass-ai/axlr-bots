@@ -9,6 +9,9 @@ use std::sync::Arc;
 
 use iced_test::Simulator;
 
+use iced::Point;
+
+use super::organic::Signal;
 use super::runtime::WINDOW;
 use super::test_runtime::{connected, drive, send};
 use super::view::tests::app_over;
@@ -42,10 +45,19 @@ impl Camera {
 
     /// The same, in a window of another size.
     fn shoot_at(&self, app: &mut App, name: &str, window: iced::Size) {
+        self.draw(app, name, window, None);
+    }
+
+    /// Draws the panel with the pointer at `pointer`, if one is given:
+    /// what is under it has the pointer's wash, as in the window.
+    fn draw(&self, app: &mut App, name: &str, window: iced::Size, pointer: Option<Point>) {
         let _ = app.apply(Message::DismissBanner);
         let _turn = turn();
         let theme = Tokens::of(app.mode).theme();
         let mut ui = Simulator::with_size(panel_settings(), window, view::view(app));
+        if let Some(pointer) = pointer {
+            ui.point_at(pointer);
+        }
         let snapshot = ui.snapshot(&theme).unwrap();
         // `matches_image` writes a new file named after the renderer, so
         // it writes into an empty directory and the file is moved.
@@ -57,13 +69,57 @@ impl Camera {
 
     /// The same state, light and dark.
     fn both(&self, app: &mut App, name: &str) {
+        self.both_at(app, name, None);
+    }
+
+    /// The same state, light and dark, with the pointer at `pointer`.
+    fn both_at(&self, app: &mut App, name: &str, pointer: Option<Point>) {
         for mode in [ThemeMode::Light, ThemeMode::Dark] {
             app.mode = mode;
             let suffix = if mode == ThemeMode::Dark { "dark" } else { "light" };
-            self.shoot(app, &format!("{name}-{suffix}"));
+            self.draw(app, &format!("{name}-{suffix}"), WINDOW, pointer);
         }
         app.mode = ThemeMode::Light;
     }
+}
+
+/// Puts the pointer at `at` as a person would: what the screen tells
+/// about it goes to the panel, and the glow fades in whole while its
+/// waves move on for `seconds`.
+fn hover_at(app: &mut App, at: Point, seconds: f32) {
+    let signals: Vec<Signal> = {
+        let _turn = turn();
+        let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(app));
+        ui.point_at(at);
+        let _ = ui.simulate([iced::Event::Mouse(iced::mouse::Event::CursorMoved { position: at })]);
+        ui.into_messages()
+            .filter_map(|m| match m {
+                Message::Hover(signal) => Some(signal),
+                _ => None,
+            })
+            .collect()
+    };
+    let when = signals
+        .iter()
+        .filter_map(|signal| match signal {
+            Signal::Over { when, .. } => Some(*when),
+            Signal::Left { .. } => None,
+        })
+        .max()
+        .unwrap_or_else(|| panic!("nothing glows at {at:?}"));
+    for signal in signals {
+        let _ = app.apply(Message::Hover(signal));
+    }
+    let _ = app.apply(Message::Frame(when + std::time::Duration::from_secs_f32(seconds)));
+}
+
+/// Where words are drawn on the panel as it stands.
+fn place_of(app: &App, words: &str) -> iced::Rectangle {
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(app));
+    ui.find(words)
+        .unwrap_or_else(|e| panic!("{words} is not on {:?}: {e:?}", app.screen))
+        .bounds()
 }
 
 fn task_with(app: &App, status: TaskStatus) -> crate::domain::TaskId {
@@ -420,4 +476,63 @@ fn redesign_shots_s3() {
     // line of their own.
     send(&mut app, Message::Go(Screen::Task(long)));
     camera.shoot_at(&mut app, "s3-task-small-light", super::runtime::MIN_WINDOW);
+}
+
+/// The organic hover on the real screens, light and dark, into
+/// `PANEL_SHOTS_DIR`: a task's row, a card, a number and a bot's tile
+/// of Home, and the inspector's header, each with the pointer on it and
+/// its glow whole; and the Settings screen with the hover glow's switch.
+#[test]
+#[ignore = "writes into PANEL_SHOTS_DIR; run it with --ignored"]
+fn redesign_shots_s4() {
+    let out = std::env::var("PANEL_SHOTS_DIR").expect("PANEL_SHOTS_DIR names where the shots go");
+    let camera = Camera::into(PathBuf::from(out));
+    let fake = Arc::new(FakeControlPlane::large("2026-10-25T10:00:00Z".parse().unwrap()));
+    let mut app = app_over(fake);
+    send(&mut app, Message::SettingsSave);
+
+    // Home: the Fleet card where no tile is, a number, a tile.
+    let team = place_of(&app, "billing");
+    let pointer = Point::new(team.x + 20.0, team.y + 60.0);
+    hover_at(&mut app, pointer, 3.0);
+    camera.both_at(&mut app, "s4-home-card", Some(pointer));
+    let number = place_of(&app, "running");
+    let pointer = Point::new(number.x + 40.0, number.y + 22.0);
+    hover_at(&mut app, pointer, 5.0);
+    camera.both_at(&mut app, "s4-home-number", Some(pointer));
+    let tile = place_of(&app, "deploy");
+    let pointer = Point::new(tile.x + tile.width * 0.6, tile.center_y());
+    hover_at(&mut app, pointer, 7.0);
+    camera.both_at(&mut app, "s4-home-tile", Some(pointer));
+
+    // A row of the Tasks list.
+    send(&mut app, Message::Go(Screen::Tasks));
+    let row = place_of(&app, "Read the missing file");
+    let pointer = Point::new(row.x + 260.0, row.center_y());
+    hover_at(&mut app, pointer, 4.0);
+    camera.both_at(&mut app, "s4-task-row", Some(pointer));
+
+    // The inspector's header over a task.
+    let long = {
+        let fleet = app.fleet.as_ref().unwrap();
+        fleet
+            .tasks
+            .iter()
+            .find(|t| t.bot_id.as_str() == "ops-deploy")
+            .unwrap()
+            .id
+            .clone()
+    };
+    send(&mut app, Message::RowPicked(table::RowRef::Task(long)));
+    let tab = place_of(&app, "Activity");
+    // Under the top bar's 44 points, on the title's line.
+    let pointer = Point::new(tab.x + 360.0, 44.0 + 50.0);
+    hover_at(&mut app, pointer, 6.0);
+    camera.both_at(&mut app, "s4-inspector-head", Some(pointer));
+
+    // The Settings screen with the switch, on and off.
+    send(&mut app, Message::Go(Screen::Settings));
+    camera.both(&mut app, "s4-settings");
+    send(&mut app, Message::SetMotion(crate::application::Motion::Off));
+    camera.shoot(&mut app, "s4-settings-off-light");
 }

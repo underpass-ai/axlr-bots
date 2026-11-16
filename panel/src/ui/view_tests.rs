@@ -195,6 +195,19 @@ fn the_settings_screen_shows_its_sections_and_rests_connect_once_connected() {
         messages_of_click(&app, "Compact").as_slice(),
         [Message::SetDensity(crate::application::Density::Compact)]
     ));
+    // The hover glow, on by default: Off is one click, and On once off.
+    shows(&app, &["Hover glow", "On", "Off"]);
+    assert!(messages_of_click(&app, "On").is_empty());
+    assert!(matches!(
+        messages_of_click(&app, "Off").as_slice(),
+        [Message::SetMotion(crate::application::Motion::Off)]
+    ));
+    app.hover.set_motion(crate::application::Motion::Off);
+    assert!(matches!(
+        messages_of_click(&app, "On").as_slice(),
+        [Message::SetMotion(crate::application::Motion::On)]
+    ));
+    app.hover.set_motion(crate::application::Motion::On);
     app.apply(Message::SettingsCa("/other.crt".into()));
     shows(&app, &["Changed", "Connect"]);
     assert!(matches!(

@@ -5,7 +5,7 @@
 //! lives in the bot's definition. The first run starts here with the
 //! local install's values.
 
-use iced::widget::{Space, column, container, row, scrollable, text, text_editor};
+use iced::widget::{column, container, row, scrollable, text, text_editor};
 use iced::{Alignment, Font, Length};
 
 use super::widgets::{El, SMALL, action, bold, card, field, icon, muted, pill_with, section, segmented, title};
@@ -200,23 +200,33 @@ fn look<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
                 ),
             ]
             .spacing(10),
-            row![
-                muted("Rows", tokens),
+            choice(
+                "Rows",
                 segmented(Density::ALL, app.density, Density::label, Message::SetDensity, tokens),
-                Space::new().width(14),
-                muted("Hover glow", tokens),
+                tokens
+            ),
+            choice(
+                "Hover glow",
                 segmented(Motion::ALL, app.hover.motion(), Motion::label, Message::SetMotion, tokens),
-            ]
-            .spacing(10)
-            .align_y(Alignment::Center),
+                tokens
+            ),
             muted(
-                "Kept as you switch. The hover glow is a faint moving light behind the row, card or tile under the pointer.",
+                "Kept as you switch. The hover glow is a faint light that moves behind the row, card or tile under the pointer.",
                 tokens
             ),
         ]
         .spacing(14),
         tokens,
     )
+}
+
+/// One choice of the look: its name, then its buttons, which start at
+/// one edge under each other.
+fn choice<'a>(name: &'a str, buttons: El<'a>, tokens: Tokens) -> El<'a> {
+    row![container(muted(name, tokens)).width(84), buttons]
+        .spacing(10)
+        .align_y(Alignment::Center)
+        .into()
 }
 
 /// What the New bot form proposes: a panel preference about the form.
