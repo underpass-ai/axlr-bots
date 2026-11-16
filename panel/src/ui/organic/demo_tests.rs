@@ -21,12 +21,12 @@ use crate::ui::view::widgets::{REGULAR, SEMIBOLD};
 use crate::ui::view_tests::{panel_settings, turn};
 use crate::ui::{Tokens, Tone};
 
-const WINDOW: Size = Size::new(960.0, 360.0);
+const WINDOW: Size = Size::new(960.0, 430.0);
 const CARD: Rectangle = Rectangle {
     x: 20.0,
     y: 20.0,
     width: 420.0,
-    height: 230.0,
+    height: 300.0,
 };
 const ROW_HEIGHT: f32 = 36.0;
 const TILE: Size = Size::new(96.0, 26.0);
@@ -46,7 +46,7 @@ fn row_bounds(index: usize) -> Rectangle {
 fn tile_bounds(index: usize) -> Rectangle {
     Rectangle {
         x: 20.0 + index as f32 * (TILE.width + 8.0),
-        y: 294.0,
+        y: CARD.y + CARD.height + 44.0,
         width: TILE.width,
         height: TILE.height,
     }
@@ -291,7 +291,7 @@ fn shots_dir() -> PathBuf {
     out
 }
 
-/// Whether the place (in pixels) is inside the surface's rounded shape,
+/// Whether the pixel's middle is inside the surface's rounded shape,
 /// shrunk by `margin` points.
 fn inside(bounds: Rectangle, radius: f32, margin: f32, x: usize, y: usize) -> bool {
     let (x, y) = ((x as f32 + 0.5) / 2.0, (y as f32 + 0.5) / 2.0);
@@ -309,21 +309,14 @@ fn inside(bounds: Rectangle, radius: f32, margin: f32, x: usize, y: usize) -> bo
 /// the same scene without it. `centred` is for a pointer well inside
 /// the surface, where none of the glow is cut away: its middle is then
 /// near the pointer.
-fn check(
-    lit: &Shot,
-    plain: &Shot,
-    (bounds, radius): (Rectangle, f32),
-    pointer: Point,
-    halo: Halo,
-    centred: bool,
-    what: &str,
-) {
+fn check(lit: &Shot, plain: &Shot, (bounds, radius): (Rectangle, f32), pointer: Point, centred: bool, what: &str) {
     assert_eq!((lit.width, lit.height), (plain.width, plain.height));
+    let halo = Halo::of(bounds.size());
     let (mut strongest, mut sum, mut sum_x, mut sum_y) = (0, 0.0, 0.0, 0.0);
     for y in 0..lit.height {
         for x in 0..lit.width {
             let change = lit.change(plain, x, y);
-            if inside(bounds, radius, -0.75, x, y) {
+            if inside(bounds, radius, 0.0, x, y) {
                 strongest = strongest.max(change);
                 let weight = f64::from(change);
                 sum += weight;
@@ -386,9 +379,9 @@ fn organic_shots() {
             let hover = lit(card_surface(), CARD, at, seconds);
             let drawn = Shot::take(&hover, tokens, Some(&format!("card-{theme}-{shot}")));
             let what = format!("card, {theme}, {seconds} s");
-            check(&drawn, &plain, (CARD, RADIUS), place(CARD, at), Halo::WIDE, true, &what);
+            check(&drawn, &plain, (CARD, RADIUS), place(CARD, at), true, &what);
             // The line under the card's words, through the glow.
-            check_smooth(&drawn, Point::new(CARD.x + 40.0, CARD.y + 205.0), 340.0, &what);
+            check_smooth(&drawn, Point::new(CARD.x + 40.0, CARD.y + 230.0), 340.0, &what);
         }
 
         // A row, and its glow along the row.
@@ -396,15 +389,7 @@ fn organic_shots() {
         let hover = lit(row_surface(2), bounds, at, 9.0);
         let drawn = Shot::take(&hover, tokens, Some(&format!("row-{theme}")));
         let what = format!("row, {theme}");
-        check(
-            &drawn,
-            &plain,
-            (bounds, 0.0),
-            place(bounds, at),
-            Halo::NEAR,
-            true,
-            &what,
-        );
+        check(&drawn, &plain, (bounds, 0.0), place(bounds, at), true, &what);
         check_smooth(&drawn, Point::new(bounds.x + 4.0, bounds.y + 3.0), 470.0, &what);
 
         // A tile.
@@ -412,15 +397,7 @@ fn organic_shots() {
         let hover = lit(tile_surface(1), bounds, at, 17.0);
         let drawn = Shot::take(&hover, tokens, Some(&format!("tile-{theme}")));
         let what = format!("tile, {theme}");
-        check(
-            &drawn,
-            &plain,
-            (bounds, RADIUS_S),
-            place(bounds, at),
-            Halo::NEAR,
-            true,
-            &what,
-        );
+        check(&drawn, &plain, (bounds, RADIUS_S), place(bounds, at), true, &what);
 
         // The pointer in the card's far corner: the glow reaches the
         // edges there and stays inside the rounded corner.
@@ -428,15 +405,7 @@ fn organic_shots() {
         let hover = lit(card_surface(), CARD, at, 5.0);
         let drawn = Shot::take(&hover, tokens, Some(&format!("corner-{theme}")));
         let what = format!("card's corner, {theme}");
-        check(
-            &drawn,
-            &plain,
-            (CARD, RADIUS),
-            place(CARD, at),
-            Halo::WIDE,
-            false,
-            &what,
-        );
+        check(&drawn, &plain, (CARD, RADIUS), place(CARD, at), false, &what);
         let (right, bottom) = (CARD.x + CARD.width, CARD.y + CARD.height);
         for edge in [
             Point::new(right - 1.75, bottom - 30.0),
@@ -453,15 +422,7 @@ fn organic_shots() {
         let hover = lit(row_surface(4), bounds, at, 5.0);
         let drawn = Shot::take(&hover, tokens, Some(&format!("edge-{theme}")));
         let what = format!("row's end, {theme}");
-        check(
-            &drawn,
-            &plain,
-            (bounds, 0.0),
-            place(bounds, at),
-            Halo::NEAR,
-            false,
-            &what,
-        );
+        check(&drawn, &plain, (bounds, 0.0), place(bounds, at), false, &what);
         let end = Point::new(bounds.x + bounds.width - 0.25, bounds.y + bounds.height - 0.25);
         assert!(drawn.change_at(&plain, end) >= 6, "{what}: no glow in the last pixel");
     }
