@@ -135,14 +135,16 @@ impl PaletteEntry {
     /// whatever its case, newest first: a pasted id goes straight to its
     /// task.
     fn pasted(query: &Query, fleet: &Fleet, now: DateTime<Utc>) -> Vec<PaletteEntry> {
-        let typed = query.text().to_lowercase();
+        let typed = query.text();
         if typed.is_empty() {
             return Vec::new();
         }
         fleet
             .tasks
             .iter()
-            .filter(|task| task.id.as_str().to_lowercase() == typed || task.correlation_id.to_lowercase() == typed)
+            .filter(|task| {
+                task.id.as_str().eq_ignore_ascii_case(typed) || task.correlation_id.eq_ignore_ascii_case(typed)
+            })
             .take(PaletteSection::Tasks.cap(true))
             .map(|task| {
                 let label = TaskWhat::of(task).title().to_string();
