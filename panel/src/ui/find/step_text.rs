@@ -42,12 +42,21 @@ impl StepText {
     }
 
     /// A line of the activity the panel folds from a task's timeline: a
-    /// call by its name and its arguments' summary, failed when it ended
-    /// so; any other line by its words.
+    /// call by its name, why it was made and its arguments, failed when it
+    /// ended so; an event by its name, its message and whom it reached;
+    /// any other line by its words.
     pub fn of(entry: &ActivityEntry) -> Self {
         match entry {
-            ActivityEntry::Tool(call) => Self::tool(call.name(), "", &call.summary, call.state == ToolState::Failed),
-            ActivityEntry::YouWrote { text, .. } | ActivityEntry::Said { text, .. } => Self::note(text),
+            ActivityEntry::Tool(call) => Self::tool(
+                call.name(),
+                &call.why().unwrap_or_default(),
+                &call.summary,
+                call.state == ToolState::Failed,
+            ),
+            ActivityEntry::Emitted(event) => Self::event(&event.name, &join(&[&event.message, &event.to.join(" ")])),
+            ActivityEntry::YouWrote { text, .. }
+            | ActivityEntry::Said { text, .. }
+            | ActivityEntry::Words { text, .. } => Self::note(text),
             other => Self::note(&other.headline()),
         }
     }
@@ -105,6 +114,24 @@ mod tests {
         };
         let failed = StepText::of(&ActivityEntry::Tool(call.clone()));
         assert_eq!(failed, StepText::tool("list_pods", "", "namespace=web", true));
+        let mut reasoned = call.clone();
+        reasoned.summary = r#"{"why":"See the pods","namespace":"web"}"#.into();
+        assert_eq!(
+            StepText::of(&ActivityEntry::Tool(reasoned)).text,
+            r#"list_pods See the pods {"why":"See the pods","namespace":"web"}"#
+        );
+        let emitted = StepText::of(&ActivityEntry::Emitted(crate::application::EmittedActivity {
+            name: "item.done".into(),
+            message: "item-1 read".into(),
+            to: vec!["lead".into(), "worker".into()],
+            at: at(),
+        }));
+        assert_eq!(emitted, StepText::event("item.done", "item-1 read lead worker"));
+        let words = StepText::of(&ActivityEntry::Words {
+            text: "Reading the notes.".into(),
+            at: at(),
+        });
+        assert_eq!(words, StepText::note("Reading the notes."));
         for state in [
             ToolState::Ok,
             ToolState::Denied,

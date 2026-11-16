@@ -213,7 +213,8 @@ mod tests {
             )],
             10,
         );
-        assert!(live.update(feed.clone(), true).is_empty());
+        // Its words are a line of the steps too, which still follow.
+        assert_eq!(live.update(feed.clone(), true), [LiveStream::Steps]);
         assert_eq!(live.activity.thinking, "Hm, the log.");
         live.scrolled(LiveStream::Words, true);
         feed.merge(

@@ -895,7 +895,7 @@ fn a_running_task_is_followed_live_and_keeps_its_history_once_it_ends() {
     send(&mut app, Message::Go(Screen::Task(running.clone())));
     let live = app.live.as_ref().unwrap();
     assert!(live.read && !live.following && !live.settled);
-    assert_eq!(live.activity.entries.len(), 2);
+    assert_eq!(live.activity.entries.len(), 4, "two steps and the words before each");
     assert_eq!(live.activity.running(), 1);
     assert!(live.words.text().starts_with("I will read the host's clock."));
 
@@ -924,7 +924,11 @@ fn a_running_task_is_followed_live_and_keeps_its_history_once_it_ends() {
     send(&mut app, Message::Tick(tick + Duration::seconds(3)));
     let live = app.live.as_ref().unwrap();
     assert_eq!(live.activity.running(), 0);
-    assert_eq!(live.activity.entries.len(), 4);
+    assert_eq!(
+        live.activity.entries.len(),
+        7,
+        "the words, the bot asked and its answer"
+    );
     assert!(live.words.text().contains("It is ten."));
     send(&mut app, Message::ActivityPick(2));
     send(
@@ -955,7 +959,7 @@ fn a_running_task_is_followed_live_and_keeps_its_history_once_it_ends() {
     send(&mut app, Message::Tick(tick + Duration::seconds(6)));
     let live = app.live.as_ref().unwrap();
     assert!(live.settled && live.read);
-    assert_eq!(live.activity.entries.len(), 4);
+    assert_eq!(live.activity.entries.len(), 7);
     let effects = app.apply(Message::Tick(tick + Duration::seconds(9)));
     assert!(effects.iter().all(|e| !matches!(e, Effect::FollowTask { .. })));
 

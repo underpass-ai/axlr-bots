@@ -212,7 +212,10 @@ fn line<'a>(index: usize, entry: &'a ActivityEntry, open: bool, tokens: Tokens) 
         ActivityEntry::Delegation(_) => (Icon::Team, tokens.text),
         ActivityEntry::Waiting { decision, .. } if decision.is_empty() => (Icon::Alert, tokens.wait),
         ActivityEntry::Waiting { .. } => (Icon::Check, tokens.muted),
-        ActivityEntry::YouWrote { .. } | ActivityEntry::Said { .. } => (Icon::Dot, tokens.muted),
+        ActivityEntry::YouWrote { .. } | ActivityEntry::Said { .. } | ActivityEntry::Words { .. } => {
+            (Icon::Dot, tokens.muted)
+        }
+        ActivityEntry::Emitted(_) => (Icon::Bolt, tokens.wait),
     };
     let mut content = row![container(when).width(70), icon(glyph, 14.0, color)]
         .spacing(10)
@@ -240,6 +243,9 @@ fn line<'a>(index: usize, entry: &'a ActivityEntry, open: bool, tokens: Tokens) 
         }
         ActivityEntry::Said { text: words, .. } => {
             content.push(text(format!("It answered: {words}")).size(SMALL).width(Length::Fill))
+        }
+        ActivityEntry::Words { .. } | ActivityEntry::Emitted(_) => {
+            content.push(text(entry.headline()).size(SMALL).width(Length::Fill))
         }
     };
     let kind = if open { Kind::Secondary } else { Kind::Ghost };

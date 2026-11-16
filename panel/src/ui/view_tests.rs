@@ -1926,9 +1926,9 @@ fn a_running_task_shows_its_activity_live_and_every_part_copies() {
     // A click on a step opens its details, which copy too.
     assert!(matches!(
         messages_of_click(&app, "local_exec").as_slice(),
-        [Message::ActivityPick(0)]
+        [Message::ActivityPick(1)]
     ));
-    send(&mut app, Message::ActivityPick(0));
+    send(&mut app, Message::ActivityPick(1));
     shows(
         &app,
         &["Arguments", "{\"program\":\"date\"}", "Call id", "c1", "Copy step"],
