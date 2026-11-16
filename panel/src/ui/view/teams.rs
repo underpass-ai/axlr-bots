@@ -10,6 +10,7 @@ use super::sheet::{self, Column, Head, Ink, Line};
 use super::widgets::{El, SMALL, Voice, action, bold, chip, empty, field, icon, muted, pill, reader, section, title};
 use super::{grid, listbar};
 use crate::domain::{Event, TaskId, Team};
+use crate::ui::find::Query;
 use crate::ui::format;
 use crate::ui::styles::Kind;
 use crate::ui::table::{ColumnRef, List, RowRef, SortColumn, TeamColumn};
@@ -24,7 +25,15 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         return super::overview::loading(app, tokens);
     }
     let teams = app.teams();
-    let bar = listbar::bar("Teams", teams.len().to_string(), Vec::new(), Vec::new(), tokens);
+    let query = app.list_query();
+    let rows = app.team_rows();
+    let count = if query.is_empty() {
+        teams.len().to_string()
+    } else {
+        format!("{} of {}", rows.len(), teams.len())
+    };
+    let filter = vec![listbar::filter(&app.tables.query, tokens)];
+    let bar = listbar::bar("Teams", count, filter, Vec::new(), tokens);
     if teams.is_empty() {
         return column![
             bar,
@@ -43,8 +52,13 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         ]
         .into();
     }
+    if rows.is_empty() {
+        let words = format!("Nothing matches {} among the {} teams.", query.text(), teams.len());
+        return column![bar, listbar::nothing(empty(Icon::Lens, words, tokens))].into();
+    }
     let state = &app.tables.teams;
-    let shown: Rc<Vec<Team>> = Rc::new(state.sort.order(&teams).into_iter().cloned().collect());
+    let query = Rc::new(query);
+    let shown: Rc<Vec<Team>> = Rc::new(rows);
     let head = |c: TeamColumn| Head::Sort {
         label: c.label(),
         badge: state.sort.badge(c),
@@ -52,15 +66,16 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     };
     let all = state.selection.covers(shown.iter().map(|t| &t.name));
     // A row is its team's place in `shown`, which every cell keeps.
-    let of = |cell: fn(&'a App, &Team, f32, Tokens) -> El<'a>| {
+    let of = |cell: fn(&'a App, &Team, f32, &Query, Tokens) -> El<'a>| {
         let shown = shown.clone();
-        move |at: usize, width: f32| cell(app, &shown[at], width, tokens)
+        let query = query.clone();
+        move |at: usize, width: f32| cell(app, &shown[at], width, &query, tokens)
     };
     let columns = vec![
         Column::fixed(
             Head::Check { all, list: List::Teams },
             18.0,
-            of(|app, team, _, tokens| {
+            of(|app, team, _, _, tokens| {
                 let name = team.name.clone();
                 grid::check(
                     app.tables.teams.selection.contains(&team.name),
@@ -72,11 +87,11 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         Column::share(
             head(TeamColumn::Team),
             3,
-            of(|_, team, width, tokens| {
+            of(|_, team, width, query, tokens| {
                 let lonely = team.lonely();
                 let room = if lonely { width - 24.0 } else { width };
                 let open = Message::Go(Screen::Team(team.name.clone()));
-                let mut cell = row![sheet::link(team.name.clone(), room, open, tokens)]
+                let mut cell = row![sheet::link(team.name.clone(), room, open, query, tokens)]
                     .spacing(4)
                     .align_y(Alignment::Center);
                 if lonely {
@@ -93,20 +108,20 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         Column::fixed(
             head(TeamColumn::Bots),
             44.0,
-            of(|_, team, _, tokens| Ink::Plain.write(team.members.len().to_string(), tokens).into()),
+            of(|_, team, _, _, tokens| Ink::Plain.write(team.members.len().to_string(), tokens).into()),
         ),
         Column::share(
             Head::Plain("Members"),
             8,
-            of(|_, team, width, tokens| {
+            of(|_, team, width, query, tokens| {
                 let names: Vec<String> = team.members.iter().map(|b| b.id.to_string()).collect();
-                sheet::words(names.join(" · "), width, Ink::Quiet, tokens)
+                sheet::found(names.join(" · "), width, Ink::Quiet, query, tokens)
             }),
         ),
         Column::share(
             Head::Plain("Last word"),
             8,
-            of(|app, team, width, tokens| {
+            of(|app, team, width, _, tokens| {
                 let last = app
                     .watch
                     .feed(&team.name)
@@ -116,6 +131,7 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
                         &format!("{} {}", format::clock(event.created_at), event.label()),
                         &format::event_detail(event),
                         width,
+                        &Query::default(),
                         tokens,
                     ),
                     None => muted("—", tokens).into(),
@@ -125,7 +141,7 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         Column::fixed(
             Head::None,
             grid::ACT,
-            of(|_, team, _, tokens| {
+            of(|_, team, _, _, tokens| {
                 grid::act_slot(Some(grid::icon_act(
                     Kind::Ghost,
                     Icon::Next,
@@ -136,12 +152,15 @@ pub fn list<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             }),
         ),
     ];
+    let cursor = state.cursor.selected();
     let lines = shown
         .iter()
         .enumerate()
         .map(|(at, team)| Line::Row {
             row: at,
             picked: state.selection.contains(&team.name),
+            selected: cursor == Some(&team.name),
+            press: Box::new(Message::RowPicked(RowRef::Team(team.name.clone()))),
         })
         .collect();
     let page = column![

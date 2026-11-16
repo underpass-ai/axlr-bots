@@ -167,6 +167,19 @@ mod tests {
         }
     }
 
+    /// The words a search found are read on their wash, in a row's ink
+    /// and in its muted ink, and a row under the pointer keeps its words.
+    #[test]
+    fn found_words_and_hovered_rows_read() {
+        use crate::ui::styles::{hover_fill, mark_fill};
+        for tokens in [Tokens::LIGHT, Tokens::DARK] {
+            assert!(contrast(tokens.text, mark_fill(tokens)) >= 7.0, "dark={}", tokens.dark);
+            assert!(contrast(tokens.muted, mark_fill(tokens)) >= 4.5, "dark={}", tokens.dark);
+            assert!(contrast(tokens.text, hover_fill(tokens)) >= 7.0);
+            assert!(contrast(tokens.muted, hover_fill(tokens)) >= 4.5);
+        }
+    }
+
     /// Copper is the one accent: work in progress has a tone of its own,
     /// apart from the accent and from the quiet grey of what is idle.
     #[test]

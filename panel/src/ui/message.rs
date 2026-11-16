@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 
 use super::ModeChoice;
+use super::find::GroupKey;
 use super::table::{BotShow, ColumnRef, List, RowRef};
 use super::{BotChoice, BotView, Connection, Keypress, NodeChoice, ReaderKey, Screen, ThemeMode};
 use crate::application::{
@@ -20,16 +21,25 @@ use crate::domain::{
 pub enum Message {
     Tick(DateTime<Utc>),
     Go(Screen),
-    /// Esc or Enter, when no widget took it.
+    /// A key the panel answers to, when no widget took it.
     Key(Keypress),
+    /// Esc that a field took first, which left the field: it closes the
+    /// palette, or empties the filter of the list on show.
+    EscapeTaken,
     /// A click, drag or key in a reader: it selects, it never edits.
     Read(ReaderKey, iced::widget::text_editor::Action),
     ToggleTheme,
     SetTheme(ThemeMode),
     /// How tall the lists' rows are, kept as `look.density`.
     SetDensity(crate::application::Density),
-    /// The search button, or Ctrl+K: open the command palette.
+    /// The search button: open the command palette.
     PaletteOpen,
+    /// A click on the dim layer around the palette.
+    PaletteClose,
+    /// What the palette's field holds now.
+    PaletteTyped(String),
+    /// A click on a result of the palette, by its place among them.
+    PalettePicked(usize),
     DismissBanner,
     Copy(String),
     /// The person clicked a desktop notice about this place.
@@ -239,8 +249,17 @@ pub enum Message {
     ClearPicks(List),
     /// A chip over the Bots list: every bot, the ones on, the paused.
     ShowBots(BotShow),
-    /// A team's header in the Bots list pressed: open it or close it.
-    FoldTeam(String),
+    /// A group's header pressed, a team's in the Bots list or a task
+    /// group's: open it or close it.
+    GroupToggled(GroupKey),
+    /// What the filter field over the list holds now.
+    ListFilterTyped(String),
+    /// The Tasks list's Fold repeats chip.
+    FoldToggled,
+    /// The Tasks list's Group button: none, trigger, bot, status.
+    GroupingCycled,
+    /// A click on a row: the list's cursor goes to it and it opens.
+    RowPicked(RowRef),
     /// List the revoked nodes too, or put them away again.
     ShowRevoked(bool),
     /// An act from the bar over a list, on its picked rows: weigh it,

@@ -8,6 +8,7 @@ use super::{
 use crate::application::SubscriptionChange;
 use crate::application::{Density, EventFeed, Fleet, NewBotDefaults, PanelError, PanelSettings, TaskDetail};
 use crate::domain::{Decision, Shortcut, TaskId, TaskStatus};
+use crate::ui::find::{Palette, TeamGroup};
 use crate::ui::format;
 use crate::ui::table::Tables;
 
@@ -84,8 +85,11 @@ pub struct App {
     target: Screen,
     /// The passages of the screen on show a person can select a part of.
     pub readers: Readers,
-    /// The list screens' tables: their order and their picked rows.
+    /// The list screens' tables: their order, their picked rows, their
+    /// row cursors, the filter and how the rows are folded and grouped.
     pub tables: Tables,
+    /// The command palette.
+    pub palette: Palette,
 }
 
 impl App {
@@ -143,6 +147,7 @@ impl App {
             },
             readers: Readers::default(),
             tables: Tables::default(),
+            palette: Palette::default(),
         };
         match app.services.shortcuts.load() {
             Ok(list) => app.shortcuts = list,
@@ -199,11 +204,12 @@ impl App {
         effects
     }
 
-    fn handle(&mut self, message: Message) -> Vec<Effect> {
+    pub(super) fn handle(&mut self, message: Message) -> Vec<Effect> {
         match message {
             Message::Tick(now) => self.tick(now),
             Message::Go(screen) => self.go(screen),
             Message::Key(key) => self.key(key),
+            Message::EscapeTaken => self.escape_taken(),
             Message::Read(key, action) => {
                 self.readers.act(&key, action);
                 Vec::new()
@@ -220,9 +226,16 @@ impl App {
                 self.density = density;
                 self.save_preferences(self.new_bot.clone(), true)
             }
-            // The palette is another slice's: the search button already
-            // asks for it.
-            Message::PaletteOpen => Vec::new(),
+            Message::PaletteOpen => self.palette_open(),
+            Message::PaletteClose => {
+                self.palette.close();
+                Vec::new()
+            }
+            Message::PaletteTyped(typed) => {
+                self.palette.type_in(typed);
+                Vec::new()
+            }
+            Message::PalettePicked(index) => self.palette_picked(index),
             Message::DismissBanner => {
                 self.banner = None;
                 Vec::new()
@@ -251,9 +264,9 @@ impl App {
                 match result {
                     Ok(fleet) => {
                         let mut effects = self.notice_waiting(&fleet, self.fleet.is_none());
-                        self.tables.bot_listing.meet(&fleet.bots);
+                        TeamGroup::meet(&fleet.bots, &mut self.tables.collapsed);
                         self.fleet = Some(fleet);
-                        self.drop_gone_picks();
+                        self.rows_changed();
                         self.fleet_error = None;
                         self.last_refresh = Some(self.now);
                         effects.extend(self.follow_teams());
@@ -656,7 +669,7 @@ impl App {
 
             Message::FilterStatus(status) => {
                 self.filter.status = status;
-                self.drop_gone_picks();
+                self.rows_changed();
                 if self.screen != Screen::Tasks {
                     return self.go(Screen::Tasks);
                 }
@@ -667,7 +680,7 @@ impl App {
                     BotChoice::All => None,
                     BotChoice::One(id) => Some(id),
                 };
-                self.drop_gone_picks();
+                self.rows_changed();
                 Vec::new()
             }
             Message::SubmitOpen(bot) => {
@@ -950,7 +963,11 @@ impl App {
             Message::PickShown(list, picked) => self.pick_shown(list, picked),
             Message::ClearPicks(list) => self.clear_picks(list),
             Message::ShowBots(show) => self.show_bots(show),
-            Message::FoldTeam(team) => self.fold_team(&team),
+            Message::GroupToggled(key) => self.group_toggled(key),
+            Message::ListFilterTyped(typed) => self.list_filter_typed(typed),
+            Message::FoldToggled => self.fold_toggled(),
+            Message::GroupingCycled => self.grouping_cycled(),
+            Message::RowPicked(row) => self.open_row(row),
             Message::ShowRevoked(revoked) => self.show_revoked(revoked),
             Message::AskBulk(list, action) => self.ask_bulk(list, action),
             Message::BulkDone(outcome) => self.bulk_done(outcome),
@@ -1096,7 +1113,8 @@ impl App {
         // Another screen opens at its top, not where the last one was
         // scrolled to; a refresh of the same one keeps its place.
         let mut effects = Vec::new();
-        if screen != self.screen {
+        let changed = screen != self.screen;
+        if changed {
             effects.push(Effect::ScrollTop);
             self.advanced = false;
             self.chat_draft.clear();
@@ -1108,11 +1126,19 @@ impl App {
             self.order = OrderForm::default();
             self.task_loading = false;
             self.bot_loading = false;
-            // The picked rows belong to the list left; its order stays.
+            // The picked rows and the filter belong to the list left;
+            // its order and its cursor stay.
             self.tables.clear_all();
+            self.tables.query.clear();
         }
         self.screen = screen;
         self.confirm = None;
+        // Back on a list whose cursor is on a row: the row in sight
+        // rather than the list's top.
+        if changed && let Some(spot) = self.list_on_screen().and_then(|list| self.cursor_spot(list)) {
+            effects.retain(|effect| effect != &Effect::ScrollTop);
+            effects.push(Effect::Reveal(super::Scroller::Rows, spot));
+        }
         if self.screen == Screen::Settings && !self.settings.busy {
             self.settings.saved = self.settings.saved || self.connected();
         }
@@ -1120,21 +1146,28 @@ impl App {
         effects
     }
 
-    /// Esc keeps what a dialog would do, closes the new task's form or
-    /// a bot's Edit or Delete card, or lets go of the rows picked in a
-    /// list; Enter does what the dialog asks. Other screens ignore them.
+    /// A key no widget took. The open palette takes every key first;
+    /// Ctrl+K opens it. A dialog then: Esc keeps what it would do, Enter
+    /// does what it asks, and nothing else reaches the page behind it.
+    /// Esc closes the new task's form or a bot's Edit or Delete card;
+    /// on a list the arrows, Enter, Esc and `/` drive its cursor and its
+    /// filter (see `list_key`). Other screens ignore them.
     fn key(&mut self, key: Keypress) -> Vec<Effect> {
+        if self.palette.is_open() {
+            return self.palette_key(key);
+        }
         match key {
+            Keypress::Palette => self.palette_open(),
             Keypress::Escape if self.confirm.is_some() => self.handle(Message::ConfirmNo),
             Keypress::Enter if self.confirm.is_some() => self.handle(Message::ConfirmYes),
+            _ if self.confirm.is_some() => Vec::new(),
             Keypress::Escape if self.submit.open && !self.submit.busy => self.handle(Message::SubmitClose),
             Keypress::Escape if self.delete.bot.is_some() && !self.delete.busy => self.handle(Message::DeleteClose),
             Keypress::Escape if self.edit.bot.is_some() && !self.edit.busy => self.handle(Message::EditClose),
-            Keypress::Escape => match self.list_on_screen() {
-                Some(list) if self.tables.picked(list) > 0 => self.clear_picks(list),
-                _ => Vec::new(),
+            _ => match self.list_on_screen() {
+                Some(list) => self.list_key(list, key),
+                None => Vec::new(),
             },
-            _ => Vec::new(),
         }
     }
 

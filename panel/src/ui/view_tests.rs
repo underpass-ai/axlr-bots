@@ -495,11 +495,12 @@ fn rows_in_sight(app: &App, first: &str, second: &str) -> (usize, f32) {
 #[test]
 fn the_tasks_list_shows_nineteen_rows_and_more_when_compact() {
     let mut app = large(Screen::Tasks);
-    shows(&app, &["200 tasks", "All", "Done", "Stopped", "Failed"]);
-    shows(
-        &app,
-        &["Newest 200 tasks. The counts, the order and Select all cover only those."],
-    );
+    let fleet = app.fleet.as_ref().unwrap();
+    let lines = find::FoldRepeats::on().lines(&fleet.tasks);
+    let folded = find::FoldRepeats::folded(&lines);
+    let count = format!("{} lines · 200 tasks", lines.len());
+    shows(&app, &[count.as_str(), "All", "Done", "Stopped", "Failed"]);
+    shows(&app, &[format!("Newest 200 tasks · {folded} repeats folded").as_str()]);
     let (rows, pitch) = rows_in_sight(&app, "Say the time", "Write the weekly report");
     assert_eq!(pitch, Density::Comfortable.row_height());
     assert!(rows >= 19, "{rows} rows in sight");
@@ -546,12 +547,12 @@ fn the_bots_list_groups_by_team_and_folds_and_narrows() {
     );
     let sent = messages_of_click(&app, "audit");
     assert!(
-        matches!(sent.as_slice(), [Message::FoldTeam(team)] if team == "audit"),
+        matches!(sent.as_slice(), [Message::GroupToggled(find::GroupKey::Team(team))] if team == "audit"),
         "{sent:?}"
     );
-    send(&mut app, Message::FoldTeam("audit".into()));
+    send(&mut app, Message::GroupToggled(find::GroupKey::Team("audit".into())));
     shows(&app, &["audit-lead", "audit-spend"]);
-    send(&mut app, Message::FoldTeam("ops".into()));
+    send(&mut app, Message::GroupToggled(find::GroupKey::Team("ops".into())));
     assert!(simulator_misses(&app, "ops-lead"));
     // A bot's name opens its page.
     let sent = messages_of_click(&app, "audit-lead");
@@ -678,11 +679,14 @@ fn the_top_bar_searches_and_the_rail_goes_places() {
     let sent = messages_of_click(&app, "Search bots, tasks, nodes, actions…");
     assert!(matches!(sent.as_slice(), [Message::PaletteOpen]), "{sent:?}");
     let before = app.screen.clone();
-    assert!(
-        app.apply(Message::PaletteOpen).is_empty(),
-        "the palette is another slice's"
+    assert_eq!(
+        app.apply(Message::PaletteOpen),
+        vec![Effect::Focus(Field::Palette)],
+        "the palette opens with the keyboard in its field"
     );
+    assert!(app.palette.is_open());
     assert_eq!(app.screen, before);
+    app.apply(Message::PaletteClose);
     shows(&app, &["Ctrl K", "Home", "Tasks", "Bots", "Teams", "Nodes", "Settings"]);
     for (place, screen) in [
         ("Tasks", Screen::Tasks),

@@ -8,12 +8,12 @@ use iced::{Alignment, Color, Length, Padding};
 
 use super::sheet::{self, Ink};
 use super::widgets::{El, LABEL, SMALL, action, bold, card, empty, icon, muted, pixel_number, semibold};
-use super::{grid, status, tasks};
+use super::{grid, status};
 use crate::application::Fleet;
-use crate::domain::{Bot, BotStatus, NodeStatus, Task, TaskStatus};
+use crate::domain::{Bot, BotStatus, NodeStatus, TaskStatus};
+use crate::ui::find::{Collapsed, FoldRepeats, NodeRows, Query, TaskLine, TaskWhat, TeamGroup};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
-use crate::ui::table::{BotListing, NodeListing};
 use crate::ui::view::widgets::{NUMBER, number_width};
 use crate::ui::{App, Icon, Message, Screen, Tokens, Tone};
 
@@ -120,7 +120,7 @@ fn needs_you<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
         let what = (space.width - 24.0 - STATUS - ASKER - 44.0 - ANSWERS - 4.0 * 10.0).max(80.0);
         for task in waiting.iter().take(NEEDS_YOU_SHOWN) {
             // What the bot wants to do, so an OK here is not blind.
-            let (asked, _) = tasks::what(task);
+            let asked = TaskWhat::of(task).title();
             let wants = fleet
                 .call_of(&task.id)
                 .map(|call| format!("wants {}", call.summary(40)))
@@ -129,7 +129,7 @@ fn needs_you<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
                 row![
                     container(status::task(task.status, tokens)).width(STATUS),
                     container(sheet::words(task.bot_id.to_string(), ASKER, Ink::Strong, tokens)).width(ASKER),
-                    container(sheet::pair(&asked, &wants, what, tokens)).width(Length::Fill),
+                    container(sheet::pair(asked, &wants, what, &Query::default(), tokens)).width(Length::Fill),
                     container(Ink::Quiet.write(format::age(task.created_at, app.now), tokens))
                         .width(44)
                         .align_x(Alignment::End),
@@ -388,7 +388,7 @@ const TEAM: f32 = 78.0;
 /// Every bot as a small tile, by team: a bot that is on has a dot and
 /// stands out, one that is not is muted. A click opens the bot.
 fn fleet_card<'a>(fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
-    let groups = BotListing::default().groups(&fleet.bots);
+    let groups = TeamGroup::of(&fleet.bots, |_| true, false, &Collapsed::default());
     let on = fleet.bots.iter().filter(|b| b.status == BotStatus::Enabled).count();
     let off = fleet.bots.len() - on;
     let note = match (on, off) {
@@ -399,11 +399,11 @@ fn fleet_card<'a>(fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
     for group in &groups {
         let mut tiles = row![].spacing(4);
         for bot in &group.bots {
-            tiles = tiles.push(tile(bot, &group.team, tokens));
+            tiles = tiles.push(tile(bot, team_of(&group.name), tokens));
         }
         body = body.push(
             row![
-                container(sheet::words(group.name().to_string(), TEAM, Ink::Quiet, tokens))
+                container(sheet::words(group.name.clone(), TEAM, Ink::Quiet, tokens))
                     .width(TEAM)
                     .padding(Padding::ZERO.top(4)),
                 container(tiles.wrap().vertical_spacing(4)).width(Length::Fill)
@@ -417,6 +417,11 @@ fn fleet_card<'a>(fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
         body.into()
     };
     column_card("Fleet", note, ("All bots", Message::Go(Screen::Bots)), body, tokens)
+}
+
+/// The team a group of tiles stands for: none for the bots in no team.
+fn team_of(name: &str) -> &str {
+    if name == crate::ui::find::NO_TEAM { "" } else { name }
 }
 
 /// A bot's name on its tile: without its team's name before it, which
@@ -457,40 +462,61 @@ fn tile<'a>(bot: &'a Bot, team: &str, tokens: Tokens) -> El<'a> {
     .into()
 }
 
-/// The newest tasks, one line each: status, bot, what it is about, how
-/// long ago. A click opens the task.
+/// The newest tasks with their repeats folded, one line each: status,
+/// bot, what it is about with the count of the repeats it folds, how
+/// long ago. A click opens the line's newest task.
 fn latest<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
     let now = app.now;
+    let lines: Vec<TaskLine<'a>> = FoldRepeats::on()
+        .lines(&fleet.tasks)
+        .into_iter()
+        .take(LATEST_SHOWN)
+        .collect();
+    let note = match FoldRepeats::folded(&lines) {
+        0 => String::new(),
+        1 => "1 repeat folded".to_string(),
+        folded => format!("{folded} repeats folded"),
+    };
     let body: El<'a> = if fleet.tasks.is_empty() {
         empty(Icon::Tasks, "No task yet", tokens)
     } else {
         responsive(move |space| {
             let what = (space.width - 8.0 - 16.0 - STATUS - BOT - SEEN - 3.0 * 10.0).max(24.0);
             let mut list = column![].padding(Padding::from([0, 4]).bottom(6));
-            for task in fleet.tasks.iter().take(LATEST_SHOWN) {
-                list = list.push(task_line(task, what, now, tokens));
+            for line in &lines {
+                list = list.push(task_line(line, what, now, tokens));
             }
             list.into()
         })
         .height(Length::Shrink)
         .into()
     };
-    column_card(
-        "Latest",
-        String::new(),
-        ("All tasks", Message::FilterStatus(None)),
-        body,
-        tokens,
-    )
+    column_card("Latest", note, ("All tasks", Message::FilterStatus(None)), body, tokens)
 }
 
-fn task_line<'a>(task: &'a Task, what: f32, now: chrono::DateTime<chrono::Utc>, tokens: Tokens) -> El<'a> {
-    let (first, _) = tasks::what(task);
+fn task_line<'a>(line: &TaskLine<'a>, what: f32, now: chrono::DateTime<chrono::Utc>, tokens: Tokens) -> El<'a> {
+    let task = line.task;
+    let first = TaskWhat::of(task).title().to_string();
+    let words: El<'a> = match line.badge() {
+        Some(count) => {
+            let room = 12.0 + 7.0 * count.chars().count() as f32;
+            row![
+                sheet::words(first, what - room - 6.0, Ink::Quiet, tokens),
+                container(text(count).size(11.0).color(tokens.muted))
+                    .padding(Padding::from([0, 4]))
+                    .style(styles::count_tag(tokens))
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .into()
+        }
+        None => sheet::words(first, what, Ink::Quiet, tokens),
+    };
     button(
         row![
             container(status::task(task.status, tokens)).width(STATUS),
             container(sheet::words(task.bot_id.to_string(), BOT, Ink::Strong, tokens)).width(BOT),
-            container(sheet::words(first, what, Ink::Quiet, tokens)).width(Length::Fill),
+            container(words).width(Length::Fill),
             container(Ink::Quiet.write(format::age(task.created_at, now), tokens))
                 .width(SEEN)
                 .align_x(Alignment::End),
@@ -514,9 +540,8 @@ const SEEN: f32 = 40.0;
 /// ago it was last seen; the revoked ones are only counted.
 fn nodes<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
     let now = app.now;
-    let mut live = NodeListing::default().shown(&fleet.nodes);
-    live.sort_by_key(|n| n.status != NodeStatus::Online);
-    let revoked = NodeListing::revoked_among(&fleet.nodes);
+    let live = NodeRows::default().rows(&fleet.nodes);
+    let revoked = NodeRows::revoked(&fleet.nodes);
     let note = if revoked > 0 {
         format!("{revoked} revoked hidden")
     } else {

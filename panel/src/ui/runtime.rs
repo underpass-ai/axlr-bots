@@ -9,7 +9,7 @@ use iced::widget::operation::RelativeOffset;
 use iced::{Size, Subscription, Task, Theme, window};
 
 use super::view::widgets;
-use super::{App, Effect, Keypress, Message, Tokens, brand, view};
+use super::{App, Effect, Keypress, Message, Reveal, Tokens, brand, view};
 
 /// How often the panel reads the control plane again.
 pub const REFRESH_EVERY: Duration = Duration::from_secs(3);
@@ -57,6 +57,11 @@ pub fn run(app: &App, effect: Effect) -> Task<Message> {
         Effect::FocusWindow => window::latest().and_then(window::gain_focus),
         Effect::ShowEnd(stream) => iced::widget::operation::snap_to_end(stream.id()),
         Effect::ScrollTop => iced::widget::operation::snap_to(widgets::PAGE, RelativeOffset::START),
+        Effect::Focus(field) => iced::widget::operation::focus(field.id()),
+        Effect::Reveal(scroller, spot) => {
+            let (top, height) = view::span(scroller, spot, app.density);
+            iced::advanced::widget::operate(Reveal::new(scroller.id(), top, height)).discard()
+        }
         other => {
             let services = app.services.clone();
             Task::perform(services.execute(other), |message| message).and_then(Task::done)
@@ -64,13 +69,33 @@ pub fn run(app: &App, effect: Effect) -> Task<Message> {
     }
 }
 
-/// The clock, Esc and Enter when no widget took them, and Shift as it
-/// is held or let go, for a header press that adds its column.
+/// The clock; the keys the panel answers to when no widget took them
+/// (a focused field keeps what is typed into it, Left and Right, and
+/// Esc, which leaves it; see `Keypress`); Esc again when a field did
+/// take it, since leaving the palette's field closes the palette and
+/// leaving the filter empties it; and Shift as it is held or let go,
+/// for a header press that adds its column.
 pub fn subscription(_: &App) -> Subscription<Message> {
     Subscription::batch([
         iced::time::every(REFRESH_EVERY).map(|_| Message::Tick(Utc::now())),
         iced::keyboard::listen().filter_map(keyboard),
+        iced::event::listen_with(escape_taken),
     ])
+}
+
+/// Esc alone that a widget took first: a field it made leave.
+fn escape_taken(event: iced::Event, status: iced::event::Status, _: window::Id) -> Option<Message> {
+    match (event, status) {
+        (
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+                modifiers,
+                ..
+            }),
+            iced::event::Status::Captured,
+        ) if modifiers.is_empty() => Some(Message::EscapeTaken),
+        _ => None,
+    }
 }
 
 /// A key no widget took, or the modifiers held when they change.
@@ -122,6 +147,50 @@ pub fn launch(boot: impl Fn() -> (App, Vec<Effect>) + 'static) -> iced::Result {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pressed(key: iced::keyboard::Key, modifiers: iced::keyboard::Modifiers) -> iced::Event {
+        iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: key.clone(),
+            modified_key: key,
+            physical_key: iced::keyboard::key::Physical::Unidentified(iced::keyboard::key::NativeCode::Unidentified),
+            location: iced::keyboard::Location::Standard,
+            modifiers,
+            text: None,
+            repeat: false,
+        })
+    }
+
+    #[test]
+    fn hears_esc_only_when_a_field_took_it() {
+        use iced::event::Status;
+        use iced::keyboard::{Key, Modifiers, key::Named};
+        let esc = || pressed(Key::Named(Named::Escape), Modifiers::empty());
+        let window = window::Id::unique();
+        assert!(matches!(
+            escape_taken(esc(), Status::Captured, window),
+            Some(Message::EscapeTaken)
+        ));
+        assert!(
+            escape_taken(esc(), Status::Ignored, window).is_none(),
+            "an Esc no field took comes as a key"
+        );
+        assert!(
+            escape_taken(
+                pressed(Key::Named(Named::Escape), Modifiers::SHIFT),
+                Status::Captured,
+                window
+            )
+            .is_none()
+        );
+        assert!(
+            escape_taken(
+                pressed(Key::Named(Named::Enter), Modifiers::empty()),
+                Status::Captured,
+                window
+            )
+            .is_none()
+        );
+    }
 
     #[test]
     fn the_window_gets_the_typefaces_and_lexend_by_default() {

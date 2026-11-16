@@ -1,15 +1,17 @@
 //! Tasks: the list across bots, filters, sending a task and stopping one.
 
-use iced::widget::{Space, column, container, pick_list, row, text_input};
-use iced::{Alignment, Length};
+use std::rc::Rc;
+
+use iced::widget::{Space, column, container, pick_list, row, text, text_input};
+use iced::{Alignment, Length, Padding};
 
 use super::sheet::{self, Column, Head, Ink, Line};
 use super::widgets::{
     BODY, El, SMALL, Voice, action, bold, card, empty, icon, icon_button, muted, reader, section_title,
 };
 use super::{grid, listbar, status};
-use crate::application::RECENT_TASKS;
-use crate::domain::{Task, TaskStatus};
+use crate::domain::TaskStatus;
+use crate::ui::find::{FoldRepeats, Query, TaskGroup, TaskLine, TaskWhat};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
 use crate::ui::table::{ColumnRef, List, RowRef, SortColumn, TaskColumn};
@@ -31,21 +33,30 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let Some(fleet) = &app.fleet else {
         return super::overview::loading(app, tokens);
     };
-    let shown = app.filter.apply(&fleet.tasks);
-    let count = if shown.len() == fleet.tasks.len() {
-        format::count(shown.len() as u64, "task", "tasks")
+    let query = app.list_query();
+    let through = app.tasks_through().len();
+    let groups = app.task_groups();
+    let lines: Vec<TaskLine<'a>> = groups.iter().flat_map(|g| g.lines.iter().cloned()).collect();
+    let total = format::count(through as u64, "task", "tasks");
+    let count = if lines.len() < through {
+        format!("{} · {total}", format::count(lines.len() as u64, "line", "lines"))
+    } else if through == fleet.tasks.len() {
+        total
     } else {
-        format!("{} of {}", shown.len(), fleet.tasks.len())
+        format!("{through} of {}", fleet.tasks.len())
     };
-    // A chip per status that has tasks, and the one that is on even
-    // when its last task left it.
-    let mut chips = vec![listbar::chip(
-        "All",
-        fleet.tasks.len(),
-        app.filter.status.is_none(),
-        Message::FilterStatus(None),
-        tokens,
-    )];
+    // The filter, then a chip per status that has tasks, and the one
+    // that is on even when its last task left it.
+    let mut chips = vec![
+        listbar::filter(&app.tables.query, tokens),
+        listbar::chip(
+            "All",
+            fleet.tasks.len(),
+            app.filter.status.is_none(),
+            Message::FilterStatus(None),
+            tokens,
+        ),
+    ];
     for status in FILTERS {
         let on = app.filter.status == Some(status);
         let count = fleet.tasks.iter().filter(|t| t.status == status).count();
@@ -63,55 +74,64 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         .chain(fleet.bots.iter().map(|b| BotChoice::One(b.id.clone())))
         .collect();
     let selected = Some(app.filter.bot.clone().map(BotChoice::One).unwrap_or(BotChoice::All));
-    let acts = vec![
+    let grouping = app.tables.grouping;
+    let options = vec![
+        listbar::flag(
+            "Fold repeats",
+            None,
+            app.tables.fold.is_on(),
+            Message::FoldToggled,
+            tokens,
+        ),
+        listbar::flag(
+            "Group:",
+            Some(grouping.label()),
+            grouping.is_grouped(),
+            Message::GroupingCycled,
+            tokens,
+        ),
         pick_list(bots, selected, Message::FilterBot)
-            .padding([5, 8])
-            .text_size(SMALL)
-            .width(190)
+            .padding([3, 8])
+            .text_size(12.5)
+            .width(150)
             .style(styles::picker(tokens))
             .menu_style(styles::menu(tokens))
             .into(),
-        action(
-            Kind::Primary,
-            Icon::Plus,
-            "New task",
-            (!app.submit.open).then_some(Message::SubmitOpen(None)),
-            tokens,
-        ),
     ];
+    let acts = vec![action(
+        Kind::Primary,
+        Icon::Plus,
+        "New task",
+        (!app.submit.open).then_some(Message::SubmitOpen(None)),
+        tokens,
+    )];
     let mut page = column![listbar::bar("Tasks", count, chips, acts, tokens)];
     if app.submit.open {
         page = page.push(listbar::panel(submit_form(app, tokens), tokens));
     }
-    if fleet.tasks.len() >= RECENT_TASKS as usize {
-        page = page.push(listbar::note(
-            format!("Newest {RECENT_TASKS} tasks. The counts, the order and Select all cover only those."),
-            None,
+    page = page.push(listbar::note(
+        FoldRepeats::note(&lines, fleet.tasks.len()),
+        None,
+        options,
+        Some(listbar::keys(tokens)),
+        tokens,
+    ));
+    page = page.push(if through == 0 && !query.is_empty() {
+        listbar::nothing(empty(
+            Icon::Lens,
+            format!(
+                "Nothing matches {} in the newest {} tasks.",
+                query.text(),
+                fleet.tasks.len()
+            ),
             tokens,
-        ));
-    }
-    page = page.push(if shown.is_empty() {
+        ))
+    } else if through == 0 {
         listbar::nothing(empty(Icon::Tasks, "No task here", tokens))
     } else {
-        list(app, shown, tokens)
+        list(app, groups, query, tokens)
     });
     grid::with_bar(app, List::Tasks, page.into(), tokens)
-}
-
-/// What a task is about, for its one line in a list: the words of the
-/// event that made it when there is one, else what it was asked; and
-/// what follows them, muted: what a queued task waits for, or what the
-/// event's task was asked.
-pub fn what(task: &Task) -> (String, String) {
-    let asked = task.ask().to_string();
-    let (first, rest) = match task.event_message() {
-        Some(message) => (message.lines().next().unwrap_or_default().to_string(), asked),
-        None => (asked, String::new()),
-    };
-    match task.waits_for() {
-        Some(why) => (first, why),
-        None => (first, rest),
-    }
 }
 
 /// The glyph of what started a task, by the kind of its trigger.
@@ -125,63 +145,145 @@ pub fn trigger_icon(kind: &str) -> Icon {
     }
 }
 
-/// The tasks the filter shows, in the table's order, one line each: a
-/// box, the status, the bot, what it is about, what started it, when,
-/// how long ago, and the row's acts as icons.
-fn list<'a>(app: &'a App, tasks: Vec<&'a Task>, tokens: Tokens) -> El<'a> {
+/// The `×12` of a line that folds repeats, and the room it takes.
+fn badge<'a>(line: &TaskLine<'_>, tokens: Tokens) -> Option<(El<'a>, f32)> {
+    let words = line.badge()?;
+    let width = 12.0 + 7.0 * words.chars().count() as f32;
+    let tag = container(text(words).size(11.5).color(tokens.muted))
+        .padding(Padding::from([0, 5]))
+        .style(styles::count_tag(tokens));
+    Some((tag.into(), width))
+}
+
+/// The task lines on show, in their groups, one line each: a box (for
+/// every task the line holds), the status, the bot, what it is about
+/// with the count of the repeats it folds, what started it, when, how
+/// long ago, and the row's acts as icons. A click on a line opens its
+/// task.
+fn list<'a>(app: &'a App, groups: Vec<TaskGroup<'a>>, query: Query, tokens: Tokens) -> El<'a> {
     let state = &app.tables.tasks;
-    let shown = state.sort.order(tasks);
     let now = app.now;
+    let query = Rc::new(query);
     let head = |c: TaskColumn| Head::Sort {
         label: c.label(),
         badge: state.sort.badge(c),
         column: ColumnRef::Tasks(c),
     };
-    let all = state.selection.covers(shown.iter().map(|t| &t.id));
+    let on_show: Vec<&TaskLine<'a>> = TaskGroup::shown(&groups);
+    let all = state
+        .selection
+        .covers(on_show.iter().flat_map(|l| l.alike.iter().map(|t| &t.id)));
     // Each act keeps its slot, there or not, so Stop and Open stand in
     // one column down the table whatever the row's status.
-    let deciding = shown.iter().any(|t| t.status == TaskStatus::WaitingApproval);
+    let deciding = on_show.iter().any(|l| l.task.status == TaskStatus::WaitingApproval);
     let slots = if deciding { 4.0 } else { 2.0 };
+    // The lines drawn, each row its line's place among them.
+    let mut shown: Vec<TaskLine<'a>> = Vec::new();
+    let mut lines = Vec::new();
+    let open = state.cursor.selected();
+    for group in groups {
+        if app.tables.grouping.is_grouped() {
+            lines.push(Line::Group {
+                name: group.label.clone(),
+                note: group.count().to_string(),
+                open: group.open,
+                press: Box::new(Message::GroupToggled(group.key.clone())),
+            });
+        }
+        if !group.open {
+            continue;
+        }
+        for line in group.lines {
+            lines.push(Line::Row {
+                row: shown.len(),
+                picked: line.alike.iter().all(|t| state.selection.contains(&t.id)),
+                selected: open.is_some_and(|id| line.holds(id)),
+                press: Box::new(Message::RowPicked(RowRef::Task(line.key(open)))),
+            });
+            shown.push(line);
+        }
+    }
+    let shown = Rc::new(shown);
+    let line = move |at: usize| -> TaskLine<'a> { shown[at].clone() };
+    let of = |cell: fn(&'a App, &TaskLine<'a>, f32, &Query, Tokens) -> El<'a>| {
+        let line = line.clone();
+        let query = query.clone();
+        move |at: usize, width: f32| cell(app, &line(at), width, &query, tokens)
+    };
     let columns = vec![
-        Column::fixed(Head::Check { all, list: List::Tasks }, 18.0, move |t: &'a Task, _| {
-            let id = t.id.clone();
-            grid::check(
-                state.selection.contains(&t.id),
-                move |on| Message::Pick(RowRef::Task(id.clone()), on),
-                tokens,
-            )
-        }),
-        Column::fixed(head(TaskColumn::Status), 96.0, move |t: &'a Task, _| {
-            status::task(t.status, tokens)
-        }),
-        Column::fixed(head(TaskColumn::Bot), 150.0, move |t: &'a Task, width| {
-            sheet::words(t.bot_id.to_string(), width, Ink::Strong, tokens)
-        }),
-        Column::share(head(TaskColumn::Task), 1, move |t: &'a Task, width| {
-            let (first, rest) = what(t);
-            sheet::pair(&first, &rest, width, tokens)
-        }),
-        Column::fixed(head(TaskColumn::From), 180.0, move |t: &'a Task, width| {
-            row![
-                icon(trigger_icon(t.trigger.kind()), 12.0, tokens.muted),
-                sheet::words(t.trigger.label(), width - 18.0, Ink::Quiet, tokens)
-            ]
-            .spacing(6)
-            .align_y(Alignment::Center)
-            .into()
-        }),
-        Column::fixed(Head::Plain("At"), 40.0, move |t: &'a Task, _| {
-            Ink::Quiet.write(format::hour(t.created_at), tokens).into()
-        })
-        .end(),
-        Column::fixed(head(TaskColumn::Age), 40.0, move |t: &'a Task, _| {
-            Ink::Quiet.write(format::age(t.created_at, now), tokens).into()
-        })
-        .end(),
         Column::fixed(
-            Head::None,
-            slots * grid::ACT + (slots - 1.0) * 4.0,
-            move |t: &'a Task, _| {
+            Head::Check { all, list: List::Tasks },
+            18.0,
+            of(|app, line, _, _, tokens| {
+                let id = line.task.id.clone();
+                let ticked = line.alike.iter().all(|t| app.tables.tasks.selection.contains(&t.id));
+                let check = grid::check(ticked, move |on| Message::Pick(RowRef::Task(id.clone()), on), tokens);
+                match line.count() {
+                    1 => check,
+                    n => sheet::tip(check, format!("Picks the {n} tasks this line holds"), tokens),
+                }
+            }),
+        ),
+        Column::fixed(
+            head(TaskColumn::Status),
+            96.0,
+            of(|_, line, _, _, tokens| status::task(line.task.status, tokens)),
+        ),
+        Column::fixed(
+            head(TaskColumn::Bot),
+            150.0,
+            of(|_, line, width, query, tokens| {
+                sheet::found(line.task.bot_id.to_string(), width, Ink::Strong, query, tokens)
+            }),
+        ),
+        Column::share(
+            head(TaskColumn::Task),
+            1,
+            of(|_, line, width, query, tokens| {
+                let what = TaskWhat::of(line.task);
+                let rest = what.rest().unwrap_or_default().to_string();
+                match badge(line, tokens) {
+                    Some((tag, room)) => row![sheet::pair(what.title(), &rest, width - room - 6.0, query, tokens), tag]
+                        .spacing(6)
+                        .align_y(Alignment::Center)
+                        .into(),
+                    None => sheet::pair(what.title(), &rest, width, query, tokens),
+                }
+            }),
+        ),
+        Column::fixed(
+            head(TaskColumn::From),
+            180.0,
+            of(|_, line, width, query, tokens| {
+                let trigger = &line.task.trigger;
+                row![
+                    icon(trigger_icon(trigger.kind()), 12.0, tokens.muted),
+                    sheet::found(trigger.label(), width - 18.0, Ink::Quiet, query, tokens)
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center)
+                .into()
+            }),
+        ),
+        Column::fixed(
+            Head::Plain("At"),
+            40.0,
+            of(|_, line, _, _, tokens| Ink::Quiet.write(format::hour(line.task.created_at), tokens).into()),
+        )
+        .end(),
+        Column::fixed(head(TaskColumn::Age), 40.0, {
+            let line = line.clone();
+            move |at: usize, _| {
+                Ink::Quiet
+                    .write(format::age(line(at).task.created_at, now), tokens)
+                    .into()
+            }
+        })
+        .end(),
+        Column::fixed(Head::None, slots * grid::ACT + (slots - 1.0) * 4.0, {
+            let line = line.clone();
+            move |at: usize, _| {
+                let t = line(at).task;
                 let mut buttons = row![].spacing(4).align_y(Alignment::Center);
                 if deciding {
                     buttons = buttons.push(if t.status == TaskStatus::WaitingApproval {
@@ -208,16 +310,9 @@ fn list<'a>(app: &'a App, tasks: Vec<&'a Task>, tokens: Tokens) -> El<'a> {
                         tokens,
                     ))))
                     .into()
-            },
-        ),
+            }
+        }),
     ];
-    let lines = shown
-        .into_iter()
-        .map(|t| Line::Row {
-            row: t,
-            picked: state.selection.contains(&t.id),
-        })
-        .collect();
     sheet::sheet(columns, lines, app.density, app.tables.picked(List::Tasks) > 0, tokens)
 }
 

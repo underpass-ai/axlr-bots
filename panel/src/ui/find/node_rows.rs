@@ -24,6 +24,11 @@ impl NodeRows {
         self.revoked = !self.revoked;
     }
 
+    /// Shows the revoked nodes (`true`), or hides them.
+    pub fn set(&mut self, revoked: bool) {
+        self.revoked = revoked;
+    }
+
     /// The nodes on show: online first, then the ones not heard yet, the
     /// silent ones and, when asked for, the revoked ones; by id inside
     /// each.
@@ -122,6 +127,10 @@ mod tests {
         assert_eq!(rows.note(&nodes), None);
         rows.toggle();
         assert!(!rows.shows_revoked());
+        rows.set(true);
+        assert_eq!(rows, NodeRows::with_revoked());
+        rows.set(false);
+        assert_eq!(rows, NodeRows::default());
     }
 
     #[test]

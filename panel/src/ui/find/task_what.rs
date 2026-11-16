@@ -3,40 +3,41 @@ use crate::domain::Task;
 /// What a task is about, as its row says it: the message of the event
 /// that started it, when one did (`input.message`), and what it was
 /// asked. A task an event made reads by its message first, since its
-/// objective is the same for every event of its kind.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// objective is the same for every event of its kind; a queued task
+/// says what it waits for after it.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskWhat<'a> {
-    /// The event's own message; none for a task no event made, or when
-    /// the message is empty.
+    /// The event's own message, whole; none for a task no event made,
+    /// or when the message is empty.
     pub message: Option<&'a str>,
     /// What it was asked, in its first line.
     pub objective: &'a str,
+    /// What a queued task waits for, when it says.
+    pub waits: Option<String>,
 }
 
 impl<'a> TaskWhat<'a> {
     pub fn of(task: &'a Task) -> Self {
-        let message = task
-            .input
-            .as_ref()
-            .and_then(|input| input.get("message"))
-            .and_then(|message| message.as_str())
-            .map(str::trim)
-            .filter(|message| !message.is_empty());
         Self {
-            message,
+            message: task.event_message(),
             objective: task.ask(),
+            waits: task.waits_for(),
         }
     }
 
-    /// The words the row leads with: the message, or the objective.
+    /// The words the row leads with: the message's first line, or the
+    /// objective.
     pub fn title(&self) -> &'a str {
-        self.message.unwrap_or(self.objective)
+        match self.message {
+            Some(message) => message.lines().next().unwrap_or(message),
+            None => self.objective,
+        }
     }
 
-    /// The objective, when the row leads with a message and shows it
-    /// after, muted.
-    pub fn rest(&self) -> Option<&'a str> {
-        self.message.map(|_| self.objective)
+    /// The muted words after the title: what a queued task waits for,
+    /// else the objective of a task that leads with a message.
+    pub fn rest(&self) -> Option<&str> {
+        self.waits.as_deref().or(self.message.map(|_| self.objective))
     }
 }
 
@@ -61,6 +62,20 @@ mod tests {
     }
 
     #[test]
+    fn a_message_of_several_lines_leads_with_its_first() {
+        let made = task(
+            "task-1",
+            "ops-watcher",
+            "Completed",
+            "event:stock.low",
+            Some("3 left of A-12\nreorder before Friday"),
+        );
+        let what = TaskWhat::of(&made);
+        assert_eq!(what.title(), "3 left of A-12");
+        assert_eq!(what.message, Some("3 left of A-12\nreorder before Friday"));
+    }
+
+    #[test]
     fn any_other_task_leads_with_what_it_was_asked() {
         let by_hand = task("task-1", "ops-watcher", "Completed", "manual", None);
         let what = TaskWhat::of(&by_hand);
@@ -77,5 +92,19 @@ mod tests {
             odd.input = Some(input);
             assert_eq!(TaskWhat::of(&odd).message, None);
         }
+    }
+
+    #[test]
+    fn a_queued_task_says_what_it_waits_for() {
+        let mut queued = task("task-1", "ops-watcher", "Pending", "manual", None);
+        queued.waiting = "another task of the bot runs".into();
+        let what = TaskWhat::of(&queued);
+        assert_eq!(what.title(), "Do the work of ops-watcher.");
+        assert_eq!(what.rest(), Some("Another task of the bot runs"));
+        let mut made = task("task-2", "ops-fixer", "Pending", "event:stock.low", Some("3 left"));
+        made.waiting = "a free node".into();
+        assert_eq!(TaskWhat::of(&made).rest(), Some("A free node"), "the wait comes first");
+        made.status = crate::domain::TaskStatus::Running;
+        assert_eq!(TaskWhat::of(&made).rest(), Some("Do the work of ops-fixer."));
     }
 }

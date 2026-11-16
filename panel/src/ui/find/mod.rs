@@ -6,6 +6,7 @@
 
 mod activity_find;
 mod collapsed;
+mod drawn_rows;
 mod fold_repeats;
 mod folded;
 mod group_key;
@@ -20,6 +21,7 @@ mod palette_target;
 mod place;
 mod query;
 mod row_cursor;
+mod row_spot;
 mod score;
 mod searchable;
 mod step_filter;
@@ -36,6 +38,7 @@ mod text_match;
 
 pub use activity_find::ActivityFind;
 pub use collapsed::Collapsed;
+pub use drawn_rows::DrawnRows;
 pub use fold_repeats::FoldRepeats;
 use folded::Folded;
 pub use group_key::GroupKey;
@@ -50,6 +53,7 @@ pub use palette_target::PaletteTarget;
 pub use place::Place;
 pub use query::Query;
 pub use row_cursor::RowCursor;
+pub use row_spot::RowSpot;
 pub use score::Score;
 pub use searchable::Searchable;
 pub use step_filter::StepFilter;

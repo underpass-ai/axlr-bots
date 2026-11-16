@@ -2,7 +2,7 @@
 //! search button and the connection, the rail of places, the banner,
 //! and the dialog of an act to confirm.
 
-use iced::widget::{Space, button, center, column, container, opaque, row, stack, svg, text, tooltip};
+use iced::widget::{Space, button, center, column, container, mouse_area, opaque, row, stack, svg, text, tooltip};
 use iced::{Alignment, Color, Element, Length, Padding};
 
 use super::widgets::{BODY, El, SMALL, TINY, action, bold, icon, icon_button, key_cap, muted, semibold};
@@ -64,6 +64,17 @@ pub fn frame<'a>(app: &'a App, content: El<'a>, tokens: Tokens) -> Element<'a, M
             );
             let dialog = container(body).padding(24).max_width(520).style(styles::card(tokens));
             stack![page, opaque(center(opaque(dialog)).style(styles::scrim))].into()
+        }
+        None if app.palette.is_open() => {
+            // A click on the dim layer closes the palette; one on the
+            // palette stays in it.
+            let layer = container(opaque(super::palette::view(app, tokens)))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(Alignment::Center)
+                .padding(Padding::ZERO.top(super::palette::TOP))
+                .style(styles::scrim);
+            stack![page, opaque(mouse_area(layer).on_press(Message::PaletteClose))].into()
         }
         None => page.into(),
     }

@@ -245,7 +245,7 @@ fn redesign_shots() {
     camera.shoot(&mut app, "s1-nodes-token-light");
     app.apply(Message::MintClose);
     send(&mut app, Message::Go(Screen::Bots));
-    send(&mut app, Message::FoldTeam("docs".into()));
+    send(&mut app, Message::GroupToggled(find::GroupKey::Team("docs".into())));
     send(&mut app, Message::ShowBots(table::BotShow::Paused));
     camera.shoot(&mut app, "s1-bots-paused-light");
     send(&mut app, Message::ShowBots(table::BotShow::All));
@@ -264,4 +264,52 @@ fn redesign_shots() {
     camera.shoot(&mut app, "s1-bot-light");
     send(&mut app, Message::Go(Screen::Team("ops".into())));
     camera.shoot(&mut app, "s1-team-light");
+}
+
+/// The second slice of the redesign at the size of a real fleet, light
+/// and dark, into `PANEL_SHOTS_DIR`: the Tasks list folded, grouped,
+/// filtered and with the keyboard on a row; the Bots list filtered; the
+/// palette empty and searching.
+#[test]
+#[ignore = "writes into PANEL_SHOTS_DIR; run it with --ignored"]
+fn redesign_shots_s2() {
+    let out = std::env::var("PANEL_SHOTS_DIR").expect("PANEL_SHOTS_DIR names where the shots go");
+    let camera = Camera::into(PathBuf::from(out));
+    let fake = Arc::new(FakeControlPlane::large("2026-10-25T10:00:00Z".parse().unwrap()));
+    let mut app = app_over(fake);
+    send(&mut app, Message::SettingsSave);
+
+    send(&mut app, Message::Go(Screen::Tasks));
+    camera.both(&mut app, "s2-tasks-folded");
+
+    send(&mut app, Message::GroupingCycled);
+    let second = app.task_groups()[1].key.clone();
+    send(&mut app, Message::GroupToggled(second));
+    camera.both(&mut app, "s2-tasks-grouped");
+    send(&mut app, Message::GroupingCycled);
+    send(&mut app, Message::GroupingCycled);
+    send(&mut app, Message::GroupingCycled);
+
+    send(&mut app, Message::ListFilterTyped("gate".into()));
+    camera.both(&mut app, "s2-tasks-filtered");
+    send(&mut app, Message::ListFilterTyped(String::new()));
+
+    for _ in 0..4 {
+        send(&mut app, Message::Key(Keypress::Down));
+    }
+    camera.both(&mut app, "s2-tasks-cursor");
+    send(&mut app, Message::Key(Keypress::Escape));
+
+    send(&mut app, Message::Go(Screen::Bots));
+    send(&mut app, Message::ListFilterTyped("lead".into()));
+    camera.both(&mut app, "s2-bots-filtered");
+    send(&mut app, Message::ListFilterTyped(String::new()));
+
+    send(&mut app, Message::Go(Screen::Tasks));
+    send(&mut app, Message::PaletteOpen);
+    camera.both(&mut app, "s2-palette-empty");
+    send(&mut app, Message::PaletteTyped("ops".into()));
+    send(&mut app, Message::Key(Keypress::Down));
+    camera.both(&mut app, "s2-palette-query");
+    send(&mut app, Message::PaletteClose);
 }

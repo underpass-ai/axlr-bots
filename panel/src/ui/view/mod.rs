@@ -12,6 +12,7 @@ mod listbar;
 mod nodes;
 mod order;
 mod overview;
+mod palette;
 mod post_draft;
 mod settings;
 mod sheet;
@@ -26,7 +27,9 @@ pub mod widgets;
 
 use iced::Element;
 
-use super::{App, Message, Screen, Tokens};
+use super::find::RowSpot;
+use super::{App, Message, Screen, Scroller, Tokens};
+use crate::application::Density;
 
 /// The whole window for the panel's state.
 pub fn view(app: &App) -> Element<'_, Message> {
@@ -46,6 +49,20 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::Settings => page(settings::view(app, tokens)),
     };
     shell::frame(app, content, tokens)
+}
+
+/// Where a row is drawn in what scrolls it, in pixels: its top in the
+/// content and its height. The lists' rows are as tall as the density
+/// says under group headers of their own height; the palette's results
+/// sit under their section headings.
+pub fn span(scroller: Scroller, spot: RowSpot, density: Density) -> (f32, f32) {
+    match scroller {
+        Scroller::Rows => {
+            let row = density.row_height();
+            (spot.top(0.0, row, sheet::GROUP), row)
+        }
+        Scroller::Palette => (spot.top(palette::PAD, palette::ENTRY, palette::SECTION), palette::ENTRY),
+    }
 }
 
 /// A screen that is a page to read: in a margin, away from the rail.

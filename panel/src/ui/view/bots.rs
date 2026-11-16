@@ -1,5 +1,7 @@
 //! Bots: the list by team, switching them on and off, and adding one.
 
+use std::rc::Rc;
+
 use iced::widget::{Space, column, container, pick_list, row, text};
 use iced::{Alignment, Length};
 
@@ -10,6 +12,7 @@ use super::widgets::{
 use super::{grid, levels, listbar, status};
 use crate::application::BotNow;
 use crate::domain::{AutonomyLevel, Bot, BotForm, ModelFit, NodeCapabilities, team_names};
+use crate::ui::find::{Query, TeamGroup};
 use crate::ui::styles::{self, Kind};
 use crate::ui::table::{BotColumn, BotShow, ColumnRef, List, RowRef, SortColumn};
 use crate::ui::{App, Icon, Message, NodeChoice, Screen, Tokens, Tone};
@@ -18,19 +21,18 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let Some(fleet) = &app.fleet else {
         return super::overview::loading(app, tokens);
     };
-    let listing = &app.tables.bot_listing;
-    let chips = BotShow::ALL
-        .into_iter()
-        .map(|show| {
-            listbar::chip(
-                show.label(),
-                fleet.bots.iter().filter(|b| show.takes(b)).count(),
-                listing.show == show,
-                Message::ShowBots(show),
-                tokens,
-            )
-        })
-        .collect();
+    let show = app.tables.bot_show;
+    let query = app.list_query();
+    let mut chips = vec![listbar::filter(&app.tables.query, tokens)];
+    chips.extend(BotShow::ALL.into_iter().map(|chip| {
+        listbar::chip(
+            chip.label(),
+            fleet.bots.iter().filter(|b| chip.takes(b)).count(),
+            show == chip,
+            Message::ShowBots(chip),
+            tokens,
+        )
+    }));
     let acts = vec![
         action(
             Kind::Secondary,
@@ -47,16 +49,29 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             tokens,
         ),
     ];
-    let mut page = column![listbar::bar("Bots", fleet.bots.len().to_string(), chips, acts, tokens)];
+    let groups = app.bot_groups();
+    let through: usize = groups.iter().map(|g| g.bots.len()).sum();
+    let count = if query.is_empty() {
+        fleet.bots.len().to_string()
+    } else {
+        format!("{through} of {}", fleet.bots.len())
+    };
+    let mut page = column![listbar::bar("Bots", count, chips, acts, tokens)];
     if app.register.open {
         page = page.push(listbar::panel(register_form(app, tokens), tokens));
     }
     page = page.push(if fleet.bots.is_empty() {
         listbar::nothing(empty(Icon::Bots, "No bot yet: add one", tokens))
-    } else if !fleet.bots.iter().any(|b| listing.show.takes(b)) {
+    } else if groups.is_empty() && !query.is_empty() {
+        listbar::nothing(empty(
+            Icon::Lens,
+            format!("Nothing matches {} among the {} bots.", query.text(), fleet.bots.len()),
+            tokens,
+        ))
+    } else if groups.is_empty() {
         listbar::nothing(empty(Icon::Bots, "No bot here", tokens))
     } else {
-        list(app, fleet, tokens)
+        list(app, fleet, groups, query, tokens)
     });
     grid::with_bar(app, List::Bots, page.into(), tokens)
 }
@@ -64,19 +79,26 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
 /// The bots by team, each team under a header that folds it, in the
 /// table's order within their team: a box, the status (what the bot is
 /// doing now, when it is doing something), the name, its level, model
-/// and place, how it starts, and its acts.
-fn list<'a>(app: &'a App, fleet: &'a crate::application::Fleet, tokens: Tokens) -> El<'a> {
+/// and place, how it starts, and its acts. A click on a row opens the
+/// bot.
+fn list<'a>(
+    app: &'a App,
+    fleet: &'a crate::application::Fleet,
+    groups: Vec<TeamGroup<'a>>,
+    query: Query,
+    tokens: Tokens,
+) -> El<'a> {
     let switching = app.switching;
     let state = &app.tables.bots;
-    let listing = &app.tables.bot_listing;
-    let groups = listing.groups(state.sort.order(&fleet.bots));
+    let query = Rc::new(query);
     let head = |c: BotColumn| Head::Sort {
         label: c.label(),
         badge: state.sort.badge(c),
         column: ColumnRef::Bots(c),
     };
-    let shown = listing.shown(&fleet.bots);
+    let shown = TeamGroup::shown(&groups);
     let all = state.selection.covers(shown.iter().map(|b| &b.id));
+    let found = query.clone();
     let columns = vec![
         Column::fixed(Head::Check { all, list: List::Bots }, 18.0, move |b: &'a Bot, _| {
             let id = b.id.clone();
@@ -98,30 +120,32 @@ fn list<'a>(app: &'a App, fleet: &'a crate::application::Fleet, tokens: Tokens) 
         // The name, and its definition's version after it when it has one.
         Column::share(head(BotColumn::Bot), 4, move |b: &'a Bot, width| {
             let name = b.id.to_string();
+            let open = Message::Go(Screen::Bot(b.id.clone()));
             match b.version_label() {
                 Some(version) => {
                     let room = width - 8.0 - Ink::Quiet.span(version.chars().count());
                     let short = grid::shorten(&name, Ink::Strong.fits(room));
-                    let open = Message::Go(Screen::Bot(b.id.clone()));
                     let line = row![
-                        sheet::link(short, room, open, tokens),
+                        sheet::link(short, room, open, &found, tokens),
                         Ink::Quiet.write(version, tokens)
                     ]
                     .spacing(8)
                     .align_y(Alignment::Center);
                     sheet::tip(container(line).clip(true).into(), name, tokens)
                 }
-                None => sheet::link(name, width, Message::Go(Screen::Bot(b.id.clone())), tokens),
+                None => sheet::link(name, width, open, &found, tokens),
             }
         }),
         Column::fixed(head(BotColumn::Level), 86.0, move |b: &'a Bot, _| {
             Ink::Quiet.write(b.level.label(), tokens).into()
         }),
-        Column::share(head(BotColumn::Model), 4, move |b: &'a Bot, width| {
-            sheet::words(b.model.short_model().to_string(), width, Ink::Quiet, tokens)
+        Column::share(head(BotColumn::Model), 4, {
+            let query = query.clone();
+            move |b: &'a Bot, width| sheet::found(b.model.short_model().to_string(), width, Ink::Quiet, &query, tokens)
         }),
-        Column::share(head(BotColumn::RunsOn), 3, move |b: &'a Bot, width| {
-            sheet::words(b.placement.describe(), width, Ink::Quiet, tokens)
+        Column::share(head(BotColumn::RunsOn), 3, {
+            let query = query.clone();
+            move |b: &'a Bot, width| sheet::found(b.placement.describe(), width, Ink::Quiet, &query, tokens)
         }),
         Column::share(head(BotColumn::StartsBy), 3, move |b: &'a Bot, width| {
             sheet::words(b.trigger_summary(), width, Ink::Quiet, tokens)
@@ -168,18 +192,21 @@ fn list<'a>(app: &'a App, fleet: &'a crate::application::Fleet, tokens: Tokens) 
             .into()
         }),
     ];
+    let cursor = state.cursor.selected();
     let mut lines = Vec::new();
     for group in groups {
         lines.push(Line::Group {
-            name: group.name().to_string(),
-            note: group.counts(),
+            name: group.name.clone(),
+            note: group.summary(),
             open: group.open,
-            press: Box::new(Message::FoldTeam(group.team.clone())),
+            press: Box::new(Message::GroupToggled(group.key.clone())),
         });
         if group.open {
             lines.extend(group.bots.into_iter().map(|b| Line::Row {
                 row: b,
                 picked: state.selection.contains(&b.id),
+                selected: cursor == Some(&b.id),
+                press: Box::new(Message::RowPicked(RowRef::Bot(b.id.clone()))),
             }));
         }
     }

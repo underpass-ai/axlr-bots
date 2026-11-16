@@ -19,6 +19,7 @@ pub use line::Line;
 use super::grid;
 use super::widgets::{El, PAGE, SMALL, icon, label, semibold};
 use crate::application::Density;
+use crate::ui::find::Query;
 use crate::ui::styles::{self, Kind};
 use crate::ui::table::SortDirection;
 use crate::ui::{Icon, Message, Tokens};
@@ -31,6 +32,8 @@ pub const GROUP: f32 = 28.0;
 pub const SIDE: f32 = 14.0;
 /// The room between two columns.
 pub const GAP: f32 = 12.0;
+/// The width of the accent's bar beside the row the keyboard is on.
+const BAR: f32 = 3.0;
 
 /// The sheet of a list: `columns` over `lines`. Only the lines scroll.
 /// With `room`, the last line can be scrolled clear of the bar of acts
@@ -51,24 +54,42 @@ pub fn sheet<'a, T: Copy + 'a>(
         let mut body = column![];
         for line in &lines {
             body = body.push(match line {
-                Line::Row { row: item, picked } => {
+                Line::Row {
+                    row: item,
+                    picked,
+                    selected,
+                    press,
+                } => {
                     let mut cells = row![].spacing(GAP).align_y(Alignment::Center);
                     for (column, width) in columns.iter().zip(&widths) {
                         cells = cells.push(cell((column.cell)(*item, *width), *width, column.end));
                     }
-                    let picked = *picked;
-                    strip(
+                    let selected = *selected;
+                    let bar =
+                        container(Space::new().width(BAR).height(Length::Fill)).style(move |_| container::Style {
+                            background: selected.then(|| tokens.accent.into()),
+                            ..container::Style::default()
+                        });
+                    // The row is a button: a click opens it, the pointer
+                    // washes it; its box, its name and its acts are
+                    // buttons of their own and take their clicks first.
+                    let line = button(row![
+                        bar,
                         container(cells)
-                            .padding(Padding::from([0.0, SIDE]))
-                            .height(density.row_height() - 1.0)
-                            .align_y(Alignment::Center)
-                            .style(move |_| container::Style {
-                                background: picked.then(|| styles::picked_fill(tokens).into()),
-                                ..container::Style::default()
+                            .padding(Padding {
+                                left: SIDE - BAR,
+                                right: SIDE,
+                                ..Padding::ZERO
                             })
-                            .into(),
-                        styles::hairline(tokens),
-                    )
+                            .height(Length::Fill)
+                            .align_y(Alignment::Center)
+                    ])
+                    .width(Length::Fill)
+                    .height(density.row_height() - 1.0)
+                    .padding(0)
+                    .style(styles::row(tokens, *picked || selected))
+                    .on_press((**press).clone());
+                    strip(line.into(), styles::hairline(tokens))
                 }
                 Line::Group {
                     name,
@@ -227,9 +248,16 @@ fn group<'a>(name: &str, note: &str, open: bool, press: Message, tokens: Tokens)
 /// Words on one line in a cell `width` wide: cut with an ellipsis to
 /// the characters that fit, whole on hover when cut.
 pub fn words<'a>(words: impl Into<String>, width: f32, ink: Ink, tokens: Tokens) -> El<'a> {
+    found(words, width, ink, &Query::default(), tokens)
+}
+
+/// Words on one line in a cell `width` wide, as `words` draws them,
+/// with the parts the list's filter found on the mark's wash: in what
+/// shows of them, once cut.
+pub fn found<'a>(words: impl Into<String>, width: f32, ink: Ink, query: &Query, tokens: Tokens) -> El<'a> {
     let words = words.into();
     let short = grid::shorten(&words, ink.fits(width));
-    let line = container(ink.write(short.clone(), tokens)).clip(true);
+    let line = container(ink.write_found(short.clone(), query, tokens)).clip(true);
     if short == words {
         return line.into();
     }
@@ -238,12 +266,13 @@ pub fn words<'a>(words: impl Into<String>, width: f32, ink: Ink, tokens: Tokens)
 
 /// A row's name on one line in a cell `width` wide, which opens the
 /// row's own page: ink, the accent under the pointer; cut with an
-/// ellipsis, whole on hover when cut.
-pub fn link<'a>(words: impl Into<String>, width: f32, press: Message, tokens: Tokens) -> El<'a> {
+/// ellipsis, whole on hover when cut; what the filter found in it on
+/// the mark's wash.
+pub fn link<'a>(words: impl Into<String>, width: f32, press: Message, query: &Query, tokens: Tokens) -> El<'a> {
     let words = words.into();
     let short = grid::shorten(&words, Ink::Strong.fits(width));
     let cut = short != words;
-    let line: El<'a> = button(Ink::Strong.write(short, tokens))
+    let line: El<'a> = button(Ink::Strong.write_found(short, query, tokens))
         .padding(0)
         .style(styles::button_style(tokens, Kind::Link))
         .on_press(press)
@@ -253,8 +282,9 @@ pub fn link<'a>(words: impl Into<String>, width: f32, press: Message, tokens: To
 
 /// Two parts on one line in a cell `width` wide: the first in ink, the
 /// second muted after it in what the first leaves, both cut to fit and
-/// whole on hover when cut.
-pub fn pair<'a>(first: &str, second: &str, width: f32, tokens: Tokens) -> El<'a> {
+/// whole on hover when cut; what the filter found in them on the mark's
+/// wash.
+pub fn pair<'a>(first: &str, second: &str, width: f32, query: &Query, tokens: Tokens) -> El<'a> {
     let fit = Ink::Plain.fits(width);
     let head = grid::shorten(first, fit);
     let used = head.chars().count();
@@ -265,11 +295,11 @@ pub fn pair<'a>(first: &str, second: &str, width: f32, tokens: Tokens) -> El<'a>
         grid::shorten(second, fit - used - 3)
     };
     let cut = head != first || tail != second;
-    let mut line = row![Ink::Plain.write(head, tokens)]
+    let mut line = row![Ink::Plain.write_found(head, query, tokens)]
         .spacing(8)
         .align_y(Alignment::Center);
     if !tail.is_empty() {
-        line = line.push(Ink::Plain.write(tail, tokens).color(tokens.muted));
+        line = line.push(Ink::Muted.write_found(tail, query, tokens));
     }
     let line = container(line).clip(true);
     if !cut {

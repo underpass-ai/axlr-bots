@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-use super::{LiveStream, Screen};
+use super::find::RowSpot;
+use super::{Field, LiveStream, Screen, Scroller};
 use crate::application::{
     BotEdit, BulkAction, BulkTarget, ChatTurn, EventFeed, Notice, PanelConfig, PanelSettings, SubscriptionChange,
 };
@@ -13,6 +14,10 @@ use crate::domain::{AutonomyLevel, BotForm, BotId, Decision, ExecutionId, Idempo
 pub enum Effect {
     /// The page on show back at its top: another screen opened.
     ScrollTop,
+    /// The keyboard in a field: the filter over the list, the palette's.
+    Focus(Field),
+    /// A row brought into sight in what scrolls it, when it is not.
+    Reveal(Scroller, RowSpot),
     Refresh {
         generation: u64,
     },

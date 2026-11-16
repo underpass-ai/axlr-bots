@@ -1,5 +1,7 @@
 //! Nodes: who runs the bots, how healthy, and enrolling a new host.
 
+use std::rc::Rc;
+
 use iced::widget::{Space, column, container, row, text};
 use iced::{Alignment, Length};
 
@@ -7,25 +9,27 @@ use super::sheet::{self, Column, Head, Ink, Line};
 use super::widgets::{BODY, El, Voice, action, bold, card, empty, field, icon, mark, reader, section_title};
 use super::{grid, listbar, status};
 use crate::domain::{CertificateHealth, Node, NodeStatus, Version};
+use crate::ui::find::{NodeRows, Query};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
-use crate::ui::table::{ColumnRef, List, NodeColumn, NodeListing, RowRef, SortColumn};
+use crate::ui::table::{ColumnRef, List, NodeColumn, RowRef, SortColumn};
 use crate::ui::{App, Icon, Message, ReaderKey, Tokens, Tone};
 
 pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let Some(fleet) = &app.fleet else {
         return super::overview::loading(app, tokens);
     };
-    let listing = app.tables.node_listing;
-    let shown = listing.shown(&fleet.nodes);
-    let revoked = NodeListing::revoked_among(&fleet.nodes);
-    let mut chips = Vec::new();
-    if revoked > 0 || listing.revoked {
+    let rows = app.tables.nodes_shown;
+    let query = app.list_query();
+    let shown = app.node_rows();
+    let revoked = NodeRows::revoked(&fleet.nodes);
+    let mut chips = vec![listbar::filter(&app.tables.query, tokens)];
+    if revoked > 0 || rows.shows_revoked() {
         chips.push(listbar::toggle(
             "Revoked",
             revoked,
-            listing.revoked,
-            Some(Message::ShowRevoked(!listing.revoked)),
+            rows.shows_revoked(),
+            Some(Message::ShowRevoked(!rows.shows_revoked())),
             tokens,
         ));
     }
@@ -42,16 +46,20 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     }
     if revoked > 0 {
         let nodes = format::count(revoked as u64, "revoked node is", "revoked nodes are");
-        page = page.push(if listing.revoked {
+        page = page.push(if rows.shows_revoked() {
             listbar::note(
                 format!("{nodes} shown."),
                 Some(("Hide them", Message::ShowRevoked(false))),
+                Vec::new(),
+                Some(listbar::keys(tokens)),
                 tokens,
             )
         } else {
             listbar::note(
                 format!("{nodes} hidden."),
                 Some(("Show them", Message::ShowRevoked(true))),
+                Vec::new(),
+                Some(listbar::keys(tokens)),
                 tokens,
             )
         });
@@ -62,22 +70,30 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             "No node yet: make a token and enroll a host",
             tokens,
         ))
+    } else if shown.is_empty() && !query.is_empty() {
+        let among = rows.rows(&fleet.nodes).len();
+        listbar::nothing(empty(
+            Icon::Lens,
+            format!("Nothing matches {} among the {among} nodes.", query.text()),
+            tokens,
+        ))
     } else if shown.is_empty() {
         listbar::nothing(empty(Icon::Nodes, "No node in the fleet now", tokens))
     } else {
-        list(app, shown, tokens)
+        list(app, shown, query, tokens)
     });
     grid::with_bar(app, List::Nodes, page.into(), tokens)
 }
 
 /// The nodes on show in the table's order, one line each: a box, the
 /// status with the marks of what needs a look, the node, its host, when
-/// it was last seen, its AXLR, its agent, its providers, and Revoke.
-fn list<'a>(app: &'a App, nodes: Vec<&'a Node>, tokens: Tokens) -> El<'a> {
+/// it was last seen, its AXLR, its agent, its providers, and Revoke. A
+/// click on a row puts the list on it.
+fn list<'a>(app: &'a App, shown: Vec<&'a Node>, query: Query, tokens: Tokens) -> El<'a> {
     let now = app.now;
     let fleet = app.fleet.as_ref();
     let state = &app.tables.nodes;
-    let shown = state.sort.order(nodes);
+    let query = Rc::new(query);
     let head = |c: NodeColumn| Head::Sort {
         label: c.label(),
         badge: state.sort.badge(c),
@@ -114,14 +130,18 @@ fn list<'a>(app: &'a App, nodes: Vec<&'a Node>, tokens: Tokens) -> El<'a> {
         }),
         // The node's name; on hover its labels and its certificate,
         // which have no column of their own.
-        Column::share(head(NodeColumn::Node), 3, move |n: &'a Node, width| {
-            let name = n.id.to_string();
-            let short = grid::shorten(&name, Ink::Strong.fits(width));
-            let line = container(Ink::Strong.write(short, tokens)).clip(true);
-            sheet::tip(line.into(), about(n, now), tokens)
+        Column::share(head(NodeColumn::Node), 3, {
+            let query = query.clone();
+            move |n: &'a Node, width| {
+                let name = n.id.to_string();
+                let short = grid::shorten(&name, Ink::Strong.fits(width));
+                let line = container(Ink::Strong.write_found(short, &query, tokens)).clip(true);
+                sheet::tip(line.into(), about(n, now), tokens)
+            }
         }),
-        Column::share(head(NodeColumn::Host), 3, move |n: &'a Node, width| {
-            sheet::words(n.host_name.clone(), width, Ink::Quiet, tokens)
+        Column::share(head(NodeColumn::Host), 3, {
+            let query = query.clone();
+            move |n: &'a Node, width| sheet::found(n.host_name.clone(), width, Ink::Quiet, &query, tokens)
         }),
         Column::fixed(head(NodeColumn::LastSeen), 64.0, move |n: &'a Node, _| {
             Ink::Quiet.write(format::age(n.last_seen_at, now), tokens).into()
@@ -132,8 +152,9 @@ fn list<'a>(app: &'a App, nodes: Vec<&'a Node>, tokens: Tokens) -> El<'a> {
         Column::fixed(Head::Plain("Agent"), 124.0, move |n: &'a Node, width| {
             sheet::words(agent_version(n).unwrap_or_default(), width, Ink::Code, tokens)
         }),
-        Column::share(Head::Plain("Providers"), 6, move |n: &'a Node, width| {
-            sheet::words(providers(n), width, Ink::Quiet, tokens)
+        Column::share(Head::Plain("Providers"), 6, {
+            let query = query.clone();
+            move |n: &'a Node, width| sheet::found(providers(n), width, Ink::Quiet, &query, tokens)
         }),
         Column::fixed(Head::None, grid::ACT, move |n: &'a Node, _| {
             grid::act_slot(n.status.can_revoke().then(|| {
@@ -147,11 +168,14 @@ fn list<'a>(app: &'a App, nodes: Vec<&'a Node>, tokens: Tokens) -> El<'a> {
             }))
         }),
     ];
+    let cursor = state.cursor.selected();
     let lines = shown
         .into_iter()
         .map(|n| Line::Row {
             row: n,
             picked: state.selection.contains(&n.id),
+            selected: cursor == Some(&n.id),
+            press: Box::new(Message::RowPicked(RowRef::Node(n.id.clone()))),
         })
         .collect();
     sheet::sheet(columns, lines, app.density, app.tables.picked(List::Nodes) > 0, tokens)

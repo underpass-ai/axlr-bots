@@ -155,6 +155,93 @@ pub fn picked_fill(tokens: Tokens) -> Color {
     mix(tokens.page, tokens.accent, if tokens.dark { 0.13 } else { 0.10 })
 }
 
+/// The wash under the words a search found in a row or a result: the
+/// accent mixed into the page, light enough that the row's ink, muted
+/// or not, still reads on it.
+pub fn mark_fill(tokens: Tokens) -> Color {
+    mix(tokens.page, tokens.accent, if tokens.dark { 0.28 } else { 0.25 })
+}
+
+/// The faint wash of a row under the pointer.
+pub fn hover_fill(tokens: Tokens) -> Color {
+    mix(tokens.page, tokens.text, if tokens.dark { 0.05 } else { 0.035 })
+}
+
+/// A row of a list, which a click opens: the page's own ground, the
+/// faint wash under the pointer, and the picked wash when it is picked
+/// or the keyboard is on it (the accent's bar beside it is drawn by the
+/// row).
+pub fn row(tokens: Tokens, tinted: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_, status| {
+        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+        let fill = if tinted {
+            Some(picked_fill(tokens))
+        } else if hovered {
+            Some(hover_fill(tokens))
+        } else {
+            None
+        };
+        button::Style {
+            background: fill.map(Background::Color),
+            text_color: tokens.text,
+            border: Border::default(),
+            shadow: Shadow::default(),
+            snap: true,
+        }
+    }
+}
+
+/// A result of the palette: rounded, the picked wash when the arrows
+/// are on it, the faint wash under the pointer.
+pub fn palette_entry(tokens: Tokens, selected: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |theme, status| button::Style {
+        border: Border {
+            radius: RADIUS_S.into(),
+            ..Border::default()
+        },
+        ..row(tokens, selected)(theme, status)
+    }
+}
+
+/// The count of repeats a line folds, `×12`: small muted words in a
+/// hairline box.
+pub fn count_tag(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
+        text_color: Some(tokens.muted),
+        border: Border {
+            color: tokens.border,
+            width: 1.0,
+            radius: 5.0.into(),
+        },
+        ..container::Style::default()
+    }
+}
+
+/// The command palette over the page: the surface in a stronger line
+/// and larger corners than a card, as it floats over everything.
+pub fn palette(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
+        text_color: Some(tokens.text),
+        background: Some(Background::Color(tokens.surface)),
+        border: Border {
+            color: mix(tokens.border, tokens.text, 0.25),
+            width: 1.0,
+            radius: 12.0.into(),
+        },
+        ..container::Style::default()
+    }
+}
+
+/// A field without its own frame, inside one that draws it: the
+/// palette's.
+pub fn bare_field(tokens: Tokens) -> impl Fn(&Theme, text_input::Status) -> text_input::Style {
+    move |theme, status| text_input::Style {
+        background: Background::Color(Color::TRANSPARENT),
+        border: Border::default(),
+        ..field(tokens)(theme, status)
+    }
+}
+
 /// The search button of the top bar: a field to look at, a button to
 /// press. The accent's line under the pointer.
 pub fn search(tokens: Tokens) -> impl Fn(&Theme, button::Status) -> button::Style {
