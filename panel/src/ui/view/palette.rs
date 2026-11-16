@@ -2,6 +2,7 @@
 //! their sections with what was typed marked, the one the arrows are on
 //! tinted, and the keys it answers to at its foot.
 
+use iced::widget::scrollable::{Direction, Scrollbar};
 use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Length, Padding};
 
@@ -26,6 +27,8 @@ const HEIGHT: f32 = 560.0;
 const FIELD: f32 = 48.0;
 /// The height of its foot.
 const FOOT: f32 = 31.0;
+/// The room the results' scroll bar takes beside them.
+const BAR: f32 = 12.0;
 /// The room at each side of a result, inside its tint.
 const INSET: f32 = 10.0;
 /// The room of a result's mark.
@@ -80,7 +83,11 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             .center_x(Length::Fill)
             .into()
     } else {
+        // A thin bar beside the results, not over their right edge.
         scrollable(results)
+            .direction(Direction::Vertical(
+                Scrollbar::new().width(6).scroller_width(6).margin(2).spacing(2),
+            ))
             .id(Scroller::Palette.id())
             .height(tall.min(HEIGHT - FIELD - FOOT - 2.0))
             .into()
@@ -111,7 +118,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
 /// click does what it says.
 fn line<'a>(app: &App, entry: &PaletteEntry, at: usize, selected: bool, tokens: Tokens) -> El<'a> {
     let sub = entry.sublabel.chars().count() as f32 * 0.52 * SUB;
-    let room = WIDTH - 2.0 * PAD - 2.0 * INSET - GLYPH - 2.0 * 10.0 - sub;
+    let room = WIDTH - 2.0 * PAD - BAR - 2.0 * INSET - GLYPH - 2.0 * 10.0 - sub;
     let short = super::grid::shorten(&entry.label, Ink::Plain.fits(room));
     let (mark, ink) = glyph(app, entry.glyph, tokens);
     button(

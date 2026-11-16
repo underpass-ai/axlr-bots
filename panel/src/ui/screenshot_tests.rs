@@ -283,8 +283,8 @@ fn redesign_shots_s2() {
     camera.both(&mut app, "s2-tasks-folded");
 
     send(&mut app, Message::GroupingCycled);
-    let second = app.task_groups()[1].key.clone();
-    send(&mut app, Message::GroupToggled(second));
+    let first = app.task_groups()[0].key.clone();
+    send(&mut app, Message::GroupToggled(first));
     camera.both(&mut app, "s2-tasks-grouped");
     send(&mut app, Message::GroupingCycled);
     send(&mut app, Message::GroupingCycled);
@@ -294,7 +294,8 @@ fn redesign_shots_s2() {
     camera.both(&mut app, "s2-tasks-filtered");
     send(&mut app, Message::ListFilterTyped(String::new()));
 
-    for _ in 0..4 {
+    // The keyboard on a line that folds the repeats of a timer.
+    for _ in 0..6 {
         send(&mut app, Message::Key(Keypress::Down));
     }
     camera.both(&mut app, "s2-tasks-cursor");
