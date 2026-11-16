@@ -1,5 +1,6 @@
-//! The README's screenshots, drawn headless from the sample bots with
-//! Iced's simulator, the panel's own typefaces and its window size.
+//! The README's screenshots, drawn headless from the fleet of a real
+//! size with Iced's simulator, the panel's own typefaces and its window
+//! size.
 //! Not part of the suite: run it to write `docs/screenshots/*.png` again
 //! (`ICED_TEST_BACKEND=tiny-skia TZ=UTC cargo test screenshots -- --ignored`).
 
@@ -13,12 +14,12 @@ use iced::Point;
 
 use super::organic::Signal;
 use super::runtime::WINDOW;
-use super::test_runtime::{connected, drive, send};
+use super::test_runtime::{drive, send};
 use super::view::tests::app_over;
 use super::view_tests::{panel_settings, turn};
 use super::*;
 use crate::adapters::fake::FakeControlPlane;
-use crate::domain::{BotId, TaskStatus, ToolRule};
+use crate::domain::{BotId, TaskStatus};
 
 /// Draws the panel as it stands, in the window's size at start (the
 /// simulator draws it at twice the pixels), and writes it as `<name>.png`.
@@ -131,85 +132,56 @@ fn bot(id: &str) -> BotId {
     BotId::new(id).unwrap()
 }
 
+/// The README's screens, from the fleet of a real size: Home, the
+/// Tasks list with its repeats folded, a long run inspected on its
+/// Activity, a task that waits for a person and one whose call
+/// publishes a post, the Bots list and a bot inspected, the Nodes, a
+/// team, the palette searching, the New bot form and the Settings,
+/// light and dark where the README shows both.
 #[test]
 #[ignore = "writes docs/screenshots; run it with --ignored"]
 fn screenshots() {
     let camera = Camera::new();
-    let mut app = connected();
+    let fake = Arc::new(FakeControlPlane::large("2026-10-25T10:00:00Z".parse().unwrap()));
+    let mut app = app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
 
     camera.both(&mut app, "overview");
-    send(&mut app, Message::Go(Screen::Nodes));
-    camera.both(&mut app, "nodes");
-    send(&mut app, Message::Go(Screen::Bots));
-    camera.both(&mut app, "bots");
-    camera.shoot(&mut app, "now-bots-light");
     send(&mut app, Message::Go(Screen::Tasks));
     camera.both(&mut app, "tasks");
 
+    // The newest task of the bot that deploys has the long run.
+    let long = {
+        let fleet = app.fleet.as_ref().unwrap();
+        fleet
+            .tasks
+            .iter()
+            .find(|t| t.bot_id.as_str() == "ops-deploy")
+            .unwrap()
+            .id
+            .clone()
+    };
+    send(&mut app, Message::RowPicked(table::RowRef::Task(long)));
+    camera.both(&mut app, "task-activity");
     let waiting = task_with(&app, TaskStatus::WaitingApproval);
     send(&mut app, Message::Go(Screen::Task(waiting)));
     camera.both(&mut app, "task-waiting");
 
-    let done = task_with(&app, TaskStatus::Completed);
-    send(&mut app, Message::Go(Screen::Task(done.clone())));
-    camera.both(&mut app, "task");
-
-    // A task and the task it delegated, with what each ran and cost.
-    let root = crate::domain::TaskId::new("task-root").unwrap();
-    let delegating = super::view_tests::delegating_activity();
-    app.screen = Screen::Task(root.clone());
-    app.tabs.task = inspector::TaskTab::Runs;
-    app.task = Some(crate::application::TaskDetail {
-        task: delegating.task.clone(),
-        executions: Vec::new(),
-        events: Vec::new(),
-    });
-    let mut tree = ActivityScreen::new(root);
-    tree.loaded(delegating);
-    app.activity = Some(tree);
-    camera.both(&mut app, "task-activity");
-    app.tabs.task = inspector::TaskTab::Activity;
-    app.apply(Message::AnswerSelecting(true));
-    camera.shoot(&mut app, "task-copy-light");
-    app.apply(Message::AnswerSelecting(false));
-
-    // The bot's own rules about the tool show under the step.
-    if let Some(b) = app
-        .fleet
-        .as_mut()
-        .unwrap()
-        .bots
-        .iter_mut()
-        .find(|b| b.id == bot("bot-wrx80"))
-    {
-        b.tool_rules.allow.push(ToolRule {
-            tool: "local_list".into(),
-            arguments: [("path".to_string(), "workspace/*".to_string())].into(),
-        });
-    }
-    send(&mut app, Message::Go(Screen::Task(done)));
-    camera.shoot(&mut app, "steps-light");
-
-    send(&mut app, Message::Go(Screen::Bot(bot("bot-wrx80"))));
-    app.apply(Message::Tab(inspector::Tab::Bot(inspector::BotTab::Rules)));
+    send(&mut app, Message::Go(Screen::Bots));
+    camera.both(&mut app, "bots");
+    send(&mut app, Message::Go(Screen::Bot(bot("ops-lead"))));
     camera.both(&mut app, "bot");
-    app.apply(Message::Tab(inspector::Tab::Bot(inspector::BotTab::Now)));
+    send(&mut app, Message::Go(Screen::Nodes));
+    camera.both(&mut app, "nodes");
+    send(&mut app, Message::Go(Screen::Teams));
+    send(&mut app, Message::Go(Screen::Team("ops".into())));
+    camera.both(&mut app, "teams");
 
-    send(&mut app, Message::Go(Screen::Bot(bot("bot"))));
-    camera.shoot(&mut app, "now-bot-light");
-
-    send(&mut app, Message::Go(Screen::Bot(bot("bot-act-with-approval"))));
-    camera.shoot(&mut app, "control-bot-light");
-    app.apply(Message::Tab(inspector::Tab::Bot(inspector::BotTab::Rules)));
-    camera.shoot(&mut app, "control-advanced-light");
-    app.apply(Message::Tab(inspector::Tab::Bot(inspector::BotTab::Now)));
-
-    send(&mut app, Message::Go(Screen::Bot(bot("bot-wrx80"))));
-    app.apply(Message::ChatInput("How many files are in the workspace?".into()));
-    send(&mut app, Message::ChatSend);
-    app.apply(Message::ChatInput("Then list the three biggest".into()));
-    camera.shoot(&mut app, "chat-light");
-    app.apply(Message::ChatInput(String::new()));
+    send(&mut app, Message::Go(Screen::Tasks));
+    send(&mut app, Message::PaletteOpen);
+    send(&mut app, Message::PaletteTyped("ops".into()));
+    camera.both(&mut app, "palette");
+    send(&mut app, Message::PaletteClose);
 
     send(&mut app, Message::Go(Screen::Bots));
     app.apply(Message::RegisterOpen);
@@ -218,8 +190,6 @@ fn screenshots() {
         "Check the free disk space on every node each hour and tell me when one falls under 10 %.".into(),
     ));
     camera.shoot(&mut app, "new-bot-light");
-    app.apply(Message::RegisterAdvanced(true));
-    camera.shoot(&mut app, "new-bot-advanced-light");
     app.apply(Message::RegisterClose);
 
     send(&mut app, Message::Go(Screen::Settings));
@@ -234,26 +204,14 @@ fn screenshots() {
     camera.shoot(&mut app, "settings-json-light");
     app.apply(Message::SettingsJsonClose);
 
-    // A message to a running task, and what its run says back.
-    let fake = Arc::new(FakeControlPlane::sample("2026-10-25T10:00:00Z".parse().unwrap()));
-    let mut app = app_over(fake.clone());
-    send(&mut app, Message::SettingsSave);
-    send(&mut app, Message::Go(Screen::Bot(bot("bot"))));
-    let running = app.running_task(&app.bot.as_ref().unwrap().bot.clone()).unwrap();
-    app.apply(Message::ChatInput("Say the date too, please.".into()));
-    let effects = app.apply(Message::ChatSend);
-    drive(&mut app, effects);
-    fake.say(&running, "OK, I will say the date too: 25 October 2026.");
-    let tick = app.now + chrono::Duration::seconds(5);
-    send(&mut app, Message::Tick(tick));
-    camera.shoot(&mut app, "live-chat-light");
-
     // A call that publishes a post: the post drawn as it would read.
     let publishing = fake.add_waiting_call(
-        "bot-act-with-approval",
-        "Propose today's post about AI news",
+        "ops-report",
+        "Propose today's post about the release",
         super::view_tests::publishing_call(),
     );
+    let refresh = app.refresh_now();
+    drive(&mut app, refresh);
     send(&mut app, Message::Go(Screen::Task(publishing)));
     camera.both(&mut app, "task-post-draft");
 }
