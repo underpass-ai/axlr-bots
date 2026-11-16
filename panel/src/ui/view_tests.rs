@@ -169,6 +169,13 @@ fn the_settings_screen_shows_its_sections_and_rests_connect_once_connected() {
         messages_of_click(&app, "Edit as JSON").as_slice(),
         [Message::SettingsJsonOpen]
     ));
+    // The rows' height: the one in use rests, the other is one click.
+    shows(&app, &["Rows", "Comfortable", "Compact"]);
+    assert!(messages_of_click(&app, "Comfortable").is_empty());
+    assert!(matches!(
+        messages_of_click(&app, "Compact").as_slice(),
+        [Message::SetDensity(crate::application::Density::Compact)]
+    ));
     app.apply(Message::SettingsCa("/other.crt".into()));
     shows(&app, &["Changed", "Connect"]);
     assert!(matches!(

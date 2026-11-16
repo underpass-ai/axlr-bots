@@ -3,7 +3,7 @@ use chrono::Duration;
 use super::test_runtime::{connected, drive, send};
 use super::view::tests::{app, config, settings};
 use super::*;
-use crate::application::{PanelError, PanelSettings};
+use crate::application::{Density, PanelError, PanelSettings};
 use crate::domain::{AutonomyLevel, BotId, BotStatus, NodeId, NodeStatus, TaskId, TaskStatus};
 
 fn task_in(app: &App, status: TaskStatus) -> TaskId {
@@ -1128,10 +1128,14 @@ fn the_look_and_the_new_bot_defaults_are_kept_as_they_change() {
     send(&mut app, Message::ToggleTheme);
     assert_eq!(app.mode, ThemeMode::Dark);
     assert!(app.banner.is_none(), "the theme switch says nothing");
+    assert_eq!(app.density, Density::Comfortable);
+    send(&mut app, Message::SetDensity(Density::Compact));
+    assert_eq!(app.density, Density::Compact);
+    assert!(app.banner.is_none(), "nor does the rows' height");
     let (initial, saved) = app.services.connect.initial();
     assert_eq!(
-        (initial.theme, saved),
-        (ThemeMode::Dark, false),
+        (initial.theme, initial.density, saved),
+        (ThemeMode::Dark, Density::Compact, false),
         "saved without a control plane"
     );
     app.apply(Message::SettingsModel(" codex/gpt-6-luna ".into()));
@@ -1160,7 +1164,11 @@ fn the_look_and_the_new_bot_defaults_are_kept_as_they_change() {
     send(&mut app, Message::SettingsSave);
     let kept = app.services.connect.initial().0;
     assert!(kept.control_plane.is_some() && kept.theme == ThemeMode::Dark);
+    assert_eq!(kept.density, Density::Compact);
     assert_eq!(kept.new_bot.model, "codex/gpt-6-luna");
+    // The next start draws the lists as they were left.
+    let (again, _) = App::new(app.services.clone(), Launch::default(), &kept, true);
+    assert_eq!(again.density, Density::Compact);
 }
 
 #[test]
@@ -1171,13 +1179,15 @@ fn the_settings_are_edited_as_json_and_applied() {
     let text = app.settings_json.text();
     assert!(text.contains("\"controlPlane.apiUrl\": \"https://127.0.0.1:7879\""));
     assert!(text.contains("\"look.theme\": \"light\""));
+    assert!(text.contains("\"look.density\": \"comfortable\""));
     let edited = text
         .replace("\"look.theme\": \"light\"", "\"look.theme\": \"dark\"")
+        .replace("\"look.density\": \"comfortable\"", "\"look.density\": \"compact\"")
         .replace("127.0.0.1:7879", "cp.example:7879");
     app.settings_json.content = iced::widget::text_editor::Content::with_text(&edited);
     send(&mut app, Message::SettingsJsonApply);
     assert!(!app.settings_json.open && app.settings_json.error.is_none());
-    assert_eq!(app.mode, ThemeMode::Dark);
+    assert_eq!((app.mode, app.density), (ThemeMode::Dark, Density::Compact));
     assert_eq!(app.settings.api_url, "https://cp.example:7879");
     assert!(app.settings.changed() && app.settings.can_connect());
     assert!(app.connected(), "the connection stays until Connect");
@@ -1225,6 +1235,7 @@ fn the_settings_are_exported_imported_and_reset() {
     let imported = PanelSettings {
         control_plane: Some(config()),
         theme: ThemeMode::Dark,
+        density: Density::Compact,
         new_bot: crate::application::NewBotDefaults {
             model: "codex/gpt-6-luna".into(),
             models: vec![],
@@ -1237,8 +1248,8 @@ fn the_settings_are_exported_imported_and_reset() {
     assert_eq!(banner.title, "Settings imported");
     assert!(banner.detail.contains("kept"), "same control plane: nothing to connect");
     assert_eq!(
-        (app.mode, app.new_bot.model.as_str()),
-        (ThemeMode::Dark, "codex/gpt-6-luna")
+        (app.mode, app.density, app.new_bot.model.as_str()),
+        (ThemeMode::Dark, Density::Compact, "codex/gpt-6-luna")
     );
     assert!(!app.settings.changed());
 
@@ -1265,6 +1276,7 @@ fn the_settings_are_exported_imported_and_reset() {
     send(&mut app, Message::SettingsReset);
     assert_eq!(app.settings.config(), config());
     assert_eq!((app.mode, app.new_bot.clone()), (ThemeMode::Light, Default::default()));
+    assert_eq!(app.density, Density::Comfortable);
     assert_eq!(app.banner.as_ref().unwrap().title, "Back to the defaults");
 }
 

@@ -8,7 +8,8 @@
 use iced::widget::{column, container, row, scrollable, text, text_editor};
 use iced::{Alignment, Font, Length};
 
-use super::widgets::{El, SMALL, action, bold, card, field, icon, muted, pill_with, section, title};
+use super::widgets::{El, SMALL, action, bold, card, field, icon, muted, pill_with, section, segmented, title};
+use crate::application::Density;
 use crate::ui::styles::{self, Kind};
 use crate::ui::{App, Icon, Message, ThemeMode, Tokens};
 
@@ -199,7 +200,13 @@ fn look<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
                 ),
             ]
             .spacing(10),
-            muted("Kept as you switch.", tokens),
+            row![
+                muted("Rows", tokens),
+                segmented(Density::ALL, app.density, Density::label, Message::SetDensity, tokens),
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center),
+            muted("Kept as you switch. Compact rows show more of a list at once.", tokens),
         ]
         .spacing(14),
         tokens,

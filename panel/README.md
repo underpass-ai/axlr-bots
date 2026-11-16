@@ -38,6 +38,7 @@ The settings file holds the panel's own settings only, as flat keys dotted by se
   "controlPlane.keyFile": "/home/op/.config/axlr-bots/operator/operator.key",
   "controlPlane.actor": "alice",
   "look.theme": "light",
+  "look.density": "comfortable",
   "newBot.defaultModel": "anthropic/claude-haiku-5.5",
   "newBot.models": ["anthropic/claude-haiku-5.5", "codex/gpt-6-luna"]
 }
@@ -48,6 +49,7 @@ The settings file holds the panel's own settings only, as flat keys dotted by se
 | `controlPlane.*` | where the operator API is and how to trust it; the three go together, and only Connect saves them, once the control plane answers |
 | `controlPlane.actor` | who you decide as (**Decide as** on the Settings screen): sent as `X-Axlr-Actor` with every request, the name a bot's `approvals.approvers` lists. Optional; `null` or absent sends none, and a bot that lists approvers then refuses the panel's Approve and Deny. It is your word, not a login ([who may decide](../docs/runbooks/approvals.md#who-may-decide)) |
 | `look.theme` | `light` or `dark`, kept as you switch; `--theme` overrides it for one run |
+| `look.density` | how tall the lists' rows are: `comfortable` (36 px, the default) or `compact` (30 px), switched under **Look** on the Settings screen |
 | `newBot.defaultModel`, `newBot.models` | what the New bot form proposes and the models it offers as one-click chips; on this host they start from the local AXLR's `~/.config/axlr/settings.json` (its `model` and the ids of its `local_models`, never a key). A bot keeps its own model in its definition |
 
 The Settings screen edits the file in place (**Edit as JSON**, with the line and column of a mistake; an unknown key is one), **Export…** writes it where you say and **Import…** reads one back: the look and the New bot defaults take at once, new control plane values wait for Connect. Plain JSON: no comments, no trailing commas.

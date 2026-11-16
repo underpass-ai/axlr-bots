@@ -96,6 +96,7 @@ impl Connect {
     pub fn save_preferences(&self, settings: &PanelSettings) -> Result<PanelSettings, PanelError> {
         let mut kept = self.store.load()?.unwrap_or_default();
         kept.theme = settings.theme;
+        kept.density = settings.density;
         kept.new_bot = settings.new_bot.tidy();
         self.store.save(&kept)?;
         Ok(kept)
@@ -136,7 +137,7 @@ mod tests {
     use super::*;
     use crate::adapters::fake::{FakeConnector, MemoryConfigStore};
     use crate::application::test_support::{fleet, run};
-    use crate::application::{NewBotDefaults, Theme};
+    use crate::application::{Density, NewBotDefaults, Theme};
 
     fn config(url: &str) -> PanelConfig {
         PanelConfig {
@@ -201,6 +202,7 @@ mod tests {
             .save_preferences(&PanelSettings {
                 control_plane: Some(config("https://evil:1")),
                 theme: Theme::Dark,
+                density: Density::Compact,
                 new_bot: NewBotDefaults {
                     model: " codex/gpt-6-luna ".into(),
                     models: vec![],
@@ -208,7 +210,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(kept.control_plane, None);
-        assert_eq!(kept.theme, Theme::Dark);
+        assert_eq!((kept.theme, kept.density), (Theme::Dark, Density::Compact));
         assert_eq!(kept.new_bot.model, "codex/gpt-6-luna");
         let (initial, saved) = connect.initial();
         assert!(!saved && initial.theme == Theme::Dark);

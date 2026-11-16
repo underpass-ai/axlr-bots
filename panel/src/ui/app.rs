@@ -6,7 +6,7 @@ use super::{
     Screen, Services, SettingsForm, SettingsJson, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode, passages,
 };
 use crate::application::SubscriptionChange;
-use crate::application::{EventFeed, Fleet, NewBotDefaults, PanelError, PanelSettings, TaskDetail};
+use crate::application::{Density, EventFeed, Fleet, NewBotDefaults, PanelError, PanelSettings, TaskDetail};
 use crate::domain::{Decision, Shortcut, TaskId, TaskStatus};
 use crate::ui::format;
 use crate::ui::table::Tables;
@@ -20,6 +20,8 @@ const REFRESH_PATIENCE: i64 = 20;
 pub struct App {
     pub services: Services,
     pub mode: ThemeMode,
+    /// How tall the lists' rows are.
+    pub density: Density,
     pub screen: Screen,
     pub now: DateTime<Utc>,
     pub fleet: Option<Fleet>,
@@ -95,6 +97,7 @@ impl App {
         let mut app = Self {
             services,
             mode: launch.theme.unwrap_or(settings.theme),
+            density: settings.density,
             screen: if saved { launch.screen.clone() } else { Screen::Settings },
             now,
             fleet: None,
@@ -160,7 +163,7 @@ impl App {
 
     /// Everything the settings screen shows, as settings.
     pub fn current_settings(&self) -> PanelSettings {
-        self.settings.settings(self.mode)
+        self.settings.settings(self.mode, self.density)
     }
 
     pub fn connected(&self) -> bool {
@@ -213,6 +216,13 @@ impl App {
                 self.mode = mode;
                 self.save_preferences(self.new_bot.clone(), true)
             }
+            Message::SetDensity(density) => {
+                self.density = density;
+                self.save_preferences(self.new_bot.clone(), true)
+            }
+            // The palette is another slice's: the search button already
+            // asks for it.
+            Message::PaletteOpen => Vec::new(),
             Message::DismissBanner => {
                 self.banner = None;
                 Vec::new()
@@ -889,6 +899,7 @@ impl App {
                 let settings = PanelSettings {
                     control_plane: Some(control_plane),
                     theme: ThemeMode::default(),
+                    density: Density::default(),
                     new_bot,
                 };
                 self.take_settings(settings, "Back to the defaults")
@@ -980,6 +991,7 @@ impl App {
     fn take_settings(&mut self, settings: PanelSettings, title: &str) -> Vec<Effect> {
         self.settings.take(&settings);
         self.mode = settings.theme;
+        self.density = settings.density;
         let words = if self.settings.changed() || (!self.connected() && !self.settings.busy) {
             "Press Connect to try the control plane values"
         } else {

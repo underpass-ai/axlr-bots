@@ -26,6 +26,10 @@ pub enum Message {
     Read(ReaderKey, iced::widget::text_editor::Action),
     ToggleTheme,
     SetTheme(ThemeMode),
+    /// How tall the lists' rows are, kept as `look.density`.
+    SetDensity(crate::application::Density),
+    /// The search button, or Ctrl+K: open the command palette.
+    PaletteOpen,
     DismissBanner,
     Copy(String),
     /// The person clicked a desktop notice about this place.
