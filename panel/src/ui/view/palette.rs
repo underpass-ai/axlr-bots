@@ -38,8 +38,12 @@ const SUB: f32 = 12.0;
 /// How far below the window's top the palette opens.
 pub const TOP: f32 = 96.0;
 
-/// The palette: the field, the results, the foot.
-pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
+/// The room the palette keeps under it in a short window.
+const UNDER: f32 = 16.0;
+
+/// The palette: the field, the results, the foot; no taller than
+/// `room`, the height under its top, leaves.
+pub fn view<'a>(app: &'a App, room: f32, tokens: Tokens) -> El<'a> {
     let entries = app.palette_entries();
     let selected = app.palette.selected(entries.len());
     let field = row![
@@ -89,7 +93,7 @@ pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
                 Scrollbar::new().width(6).scroller_width(6).margin(2).spacing(2),
             ))
             .id(Scroller::Palette.id())
-            .height(tall.min(HEIGHT - FIELD - FOOT - 2.0))
+            .height(tall.min(HEIGHT.min(room - UNDER) - FIELD - FOOT - 2.0).max(ENTRY))
             .into()
     };
     let words = |w: &'a str| text(w).size(SUB).color(tokens.muted);

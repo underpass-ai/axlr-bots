@@ -251,6 +251,36 @@ mod tests {
     }
 
     #[test]
+    fn a_form_open_over_a_list_keeps_the_arrows_and_enter_from_its_rows() {
+        let mut app = large(Screen::Bots);
+        app.apply(Message::RegisterOpen);
+        assert!(app.apply(Message::Key(Keypress::Down)).is_empty());
+        assert!(app.apply(Message::Key(Keypress::Enter)).is_empty());
+        assert!(app.apply(Message::Key(Keypress::Filter)).is_empty());
+        assert_eq!(app.cursor_row(List::Bots), None);
+        assert_eq!(app.screen, Screen::Bots);
+        app.apply(Message::RegisterClose);
+        send(&mut app, Message::Go(Screen::Nodes));
+        app.apply(Message::MintOpen);
+        assert!(app.apply(Message::Key(Keypress::Down)).is_empty());
+        app.apply(Message::MintClose);
+        send(&mut app, Message::Go(Screen::Tasks));
+        app.apply(Message::SubmitOpen(None));
+        assert!(app.apply(Message::Key(Keypress::Up)).is_empty());
+        app.apply(Message::Key(Keypress::Escape));
+        assert!(!app.submit.open, "Esc still closes the form");
+    }
+
+    #[test]
+    fn ctrl_k_under_a_dialog_opens_nothing_behind_it() {
+        let mut app = large(Screen::Bots);
+        app.apply(Message::AskStopBot(BotId::new("ops-lead").unwrap()));
+        assert!(app.apply(Message::Key(Keypress::Palette)).is_empty());
+        assert!(!app.palette.is_open());
+        assert!(app.confirm.is_some(), "the dialog still waits for its answer");
+    }
+
+    #[test]
     fn a_click_on_a_row_puts_the_cursor_there_and_opens_it() {
         let mut app = large(Screen::Bots);
         let bot = BotId::new("support-lead").unwrap();

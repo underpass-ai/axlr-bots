@@ -1146,29 +1146,38 @@ impl App {
         effects
     }
 
-    /// A key no widget took. The open palette takes every key first;
-    /// Ctrl+K opens it. A dialog then: Esc keeps what it would do, Enter
-    /// does what it asks, and nothing else reaches the page behind it.
-    /// Esc closes the new task's form or a bot's Edit or Delete card;
-    /// on a list the arrows, Enter, Esc and `/` drive its cursor and its
-    /// filter (see `list_key`). Other screens ignore them.
+    /// A key no widget took. The open palette takes every key first. A
+    /// dialog then: Esc keeps what it would do, Enter does what it asks,
+    /// and nothing else reaches the page behind it, Ctrl+K neither.
+    /// Ctrl+K opens the palette. Esc closes the new task's form or a
+    /// bot's Edit or Delete card; on a list the arrows, Enter, Esc and
+    /// `/` drive its cursor and its filter (see `list_key`), Esc alone
+    /// while a form is open over it. Other screens ignore them.
     fn key(&mut self, key: Keypress) -> Vec<Effect> {
         if self.palette.is_open() {
             return self.palette_key(key);
         }
         match key {
-            Keypress::Palette => self.palette_open(),
             Keypress::Escape if self.confirm.is_some() => self.handle(Message::ConfirmNo),
             Keypress::Enter if self.confirm.is_some() => self.handle(Message::ConfirmYes),
             _ if self.confirm.is_some() => Vec::new(),
+            Keypress::Palette => self.palette_open(),
             Keypress::Escape if self.submit.open && !self.submit.busy => self.handle(Message::SubmitClose),
             Keypress::Escape if self.delete.bot.is_some() && !self.delete.busy => self.handle(Message::DeleteClose),
             Keypress::Escape if self.edit.bot.is_some() && !self.edit.busy => self.handle(Message::EditClose),
+            // A form open over a list keeps the arrows and Enter its
+            // fields let through: the rows behind it do not move.
             _ => match self.list_on_screen() {
-                Some(list) => self.list_key(list, key),
-                None => Vec::new(),
+                Some(list) if key == Keypress::Escape || !self.form_over_list() => self.list_key(list, key),
+                _ => Vec::new(),
             },
         }
+    }
+
+    /// Whether a form is open over the list on show: the new task, the
+    /// new bot, the new host token.
+    pub(super) fn form_over_list(&self) -> bool {
+        self.submit.open || self.register.open || self.mint.open
     }
 
     /// The task a bot runs now, as the newest read of the fleet and its

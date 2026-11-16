@@ -28,8 +28,7 @@ impl App {
             self.palette.close();
             return Vec::new();
         }
-        let form = self.submit.open || self.register.open || self.mint.open;
-        if self.list_on_screen().is_some() && !form && !self.tables.query.is_empty() {
+        if self.list_on_screen().is_some() && !self.form_over_list() && !self.tables.query.is_empty() {
             return self.clear_filter();
         }
         Vec::new()
@@ -130,7 +129,9 @@ impl App {
                 }
                 self.select_row(RowRef::Node(id));
                 self.rows_changed();
+                // Its row in sight, rather than the list's top.
                 if let Some(spot) = self.cursor_spot(super::table::List::Nodes) {
+                    effects.retain(|effect| effect != &Effect::ScrollTop);
                     effects.push(Effect::Reveal(Scroller::Rows, spot));
                 }
                 effects
@@ -442,6 +443,7 @@ mod tests {
             matches!(effects.last(), Some(Effect::Reveal(Scroller::Rows, spot)) if spot.rows == 47),
             "{effects:?}"
         );
+        assert!(!effects.contains(&Effect::ScrollTop), "the reveal alone moves the rows");
         let _ = TaskId::new("t");
     }
 

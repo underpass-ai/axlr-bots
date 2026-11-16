@@ -313,4 +313,10 @@ fn redesign_shots_s2() {
     send(&mut app, Message::Key(Keypress::Down));
     camera.both(&mut app, "s2-palette-query");
     send(&mut app, Message::PaletteClose);
+
+    // The smallest window.
+    send(&mut app, Message::PaletteOpen);
+    camera.shoot_at(&mut app, "s2-palette-small-light", super::runtime::MIN_WINDOW);
+    send(&mut app, Message::PaletteClose);
+    camera.shoot_at(&mut app, "s2-tasks-small-light", super::runtime::MIN_WINDOW);
 }
