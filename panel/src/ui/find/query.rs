@@ -1,4 +1,4 @@
-use super::{Folded, Marks, Matcher, TextMatch};
+use super::{Folded, Marks, Matcher, Searchable, TextMatch};
 
 /// What a person typed to find something: trimmed, read without case,
 /// its words apart. A text answers when every word is in it, in any
@@ -47,6 +47,13 @@ impl Query {
         Matcher::strict(self).marks(text)
     }
 
+    /// The rows of a list that answer, in the order they came.
+    pub fn filter<'a, T: Searchable>(&self, rows: impl IntoIterator<Item = &'a T>) -> Vec<&'a T> {
+        rows.into_iter()
+            .filter(|row| self.is_empty() || self.matches(&row.search_text()))
+            .collect()
+    }
+
     /// The text scored for a ranked search, words found letter by letter
     /// too; none when it does not answer.
     pub fn rank(&self, text: &str) -> Option<TextMatch> {
@@ -56,6 +63,7 @@ impl Query {
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_rows::task;
     use super::*;
 
     #[test]
@@ -89,6 +97,33 @@ mod tests {
         assert!(query.matches("OPS TIMER"));
         assert!(!query.matches("ops-watcher · manual"));
         assert_eq!(query.marks("ops timer ops").ranges(), &[0..3, 4..9, 10..13]);
+    }
+
+    #[test]
+    fn keeps_the_rows_of_a_list_that_answer_in_their_order() {
+        let tasks = [
+            task("task-3", "ops-watcher", "Completed", "timer:clock", None),
+            task("task-2", "lab-reader", "Failed", "manual", None),
+            task(
+                "task-1",
+                "ops-fixer",
+                "Completed",
+                "event:stock.low",
+                Some("3 left of A-12"),
+            ),
+        ];
+        let ids = |typed: &str| -> Vec<&str> {
+            Query::new(typed)
+                .filter(&tasks)
+                .into_iter()
+                .map(|t| t.id.as_str())
+                .collect()
+        };
+        assert_eq!(ids("ops"), vec!["task-3", "task-1"]);
+        assert_eq!(ids("ops a-12"), vec!["task-1"]);
+        assert_eq!(ids(""), vec!["task-3", "task-2", "task-1"]);
+        assert!(ids("nothing-like-it").is_empty());
+        assert!(Query::new("ops").filter(&[] as &[crate::domain::Task]).is_empty());
     }
 
     #[test]
