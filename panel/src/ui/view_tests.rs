@@ -2256,3 +2256,265 @@ fn a_task_page_opens_the_activity_screen_and_the_tree_is_read_and_followed() {
     );
     assert!(app.banner.is_some(), "and the screen says why");
 }
+
+/// A drawing of the panel as pixels: its width and its colours, four
+/// bytes each, at twice the window's points.
+fn pixels(app: &App) -> (usize, Vec<u8>) {
+    let _turn = turn();
+    let theme = Tokens::of(app.mode).theme();
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(app));
+    let snapshot = ui.snapshot(&theme).unwrap();
+    let scratch = tempfile::tempdir().unwrap();
+    assert!(snapshot.matches_image(scratch.path().join("shot")).unwrap());
+    let drawn = std::fs::read_dir(scratch.path())
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let picture = iced::advanced::graphics::image::load(&iced::widget::image::Handle::from_path(&drawn)).unwrap();
+    (picture.width() as usize, picture.as_raw().to_vec())
+}
+
+/// The colour drawn at a place, in points.
+fn colour_at(drawing: &(usize, Vec<u8>), x: f32, y: f32) -> [u8; 3] {
+    let at = (((y * 2.0) as usize) * drawing.0 + (x * 2.0) as usize) * 4;
+    [drawing.1[at], drawing.1[at + 1], drawing.1[at + 2]]
+}
+
+fn rgb(colour: iced::Color) -> [u8; 3] {
+    let [r, g, b, _] = colour.into_rgba8();
+    [r, g, b]
+}
+
+/// The filter: a click puts the keyboard in it and what is typed there
+/// (`/`, `j` and `k` too) filters the list; Esc is the field's (it
+/// leaves it, and the panel hears it as a key a field took); the arrows
+/// and Enter go on to the list's cursor.
+#[test]
+fn the_filter_keeps_what_is_typed_and_lets_the_arrows_and_enter_through() {
+    use iced::event::Status;
+    use iced::keyboard::{Key, key::Named};
+    let app = large(Screen::Tasks);
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+    ui.click(iced::widget::Id::new(Field::ListFilter.id())).unwrap();
+    assert!(ui.find(iced_test::selector::is_focused()).is_ok());
+    ui.typewrite("gate/jk");
+    assert_eq!(ui.tap_key(Key::Named(Named::ArrowDown)), Status::Ignored);
+    assert_eq!(ui.tap_key(Key::Named(Named::Enter)), Status::Ignored);
+    assert_eq!(ui.tap_key(Key::Named(Named::Escape)), Status::Captured);
+    assert!(
+        ui.find(iced_test::selector::is_focused()).is_err(),
+        "Esc left the field"
+    );
+    let typed: Vec<String> = ui
+        .into_messages()
+        .filter_map(|m| match m {
+            Message::ListFilterTyped(typed) => Some(typed),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(typed.first().map(String::as_str), Some("g"));
+    assert_eq!(typed.last().map(String::as_str), Some("gate/jk"));
+}
+
+/// What the filter leaves: the rows that answer, counted, with what it
+/// found marked (a marked cell is drawn in pieces, so its words are not
+/// one text any more); nothing left says so.
+#[test]
+fn the_filter_leaves_the_rows_that_answer_and_says_when_none_does() {
+    let mut app = large(Screen::Tasks);
+    send(&mut app, Message::ListFilterTyped("gate".into()));
+    shows(
+        &app,
+        &["19 of 200", "ops-deploy", "support-triage", "gate", "Newest 200 tasks"],
+    );
+    assert!(simulator_misses(&app, "Say the time"));
+    assert!(
+        simulator_misses(
+            &app,
+            "item-4198 · service-3 · gate failed: the unit tests of the client"
+        ),
+        "the word found is marked in it"
+    );
+    send(&mut app, Message::ListFilterTyped("zzzz".into()));
+    shows(&app, &["Nothing matches zzzz in the newest 200 tasks."]);
+    send(&mut app, Message::Go(Screen::Bots));
+    send(&mut app, Message::ListFilterTyped("zzzz".into()));
+    shows(&app, &["Nothing matches zzzz among the 40 bots."]);
+    send(&mut app, Message::Go(Screen::Nodes));
+    send(&mut app, Message::ListFilterTyped("zzzz".into()));
+    shows(&app, &["Nothing matches zzzz among the 8 nodes."]);
+    send(&mut app, Message::Go(Screen::Teams));
+    send(&mut app, Message::ListFilterTyped("zzzz".into()));
+    shows(&app, &["Nothing matches zzzz among the 8 teams."]);
+}
+
+/// Folded, a line counts the repeats it holds; unfolded, every task is
+/// a line. The options sit on the note line.
+#[test]
+fn a_folded_line_counts_its_repeats() {
+    let mut app = large(Screen::Tasks);
+    shows(&app, &["×39", "×18", "Fold repeats", "Group:", "none"]);
+    let sent = messages_of_click(&app, "Fold repeats");
+    assert!(matches!(sent.as_slice(), [Message::FoldToggled]), "{sent:?}");
+    send(&mut app, Message::FoldToggled);
+    assert!(simulator_misses(&app, "×39"));
+    shows(&app, &["200 tasks", "Newest 200 tasks"]);
+    let sent = messages_of_click(&app, "none");
+    assert!(matches!(sent.as_slice(), [Message::GroupingCycled]), "{sent:?}");
+}
+
+/// Grouped, the lines go under headers that carry their counts; a
+/// press on one closes it.
+#[test]
+fn a_group_header_counts_its_lines_and_closes() {
+    let mut app = large(Screen::Tasks);
+    send(&mut app, Message::GroupingCycled);
+    shows(&app, &["event ops.item.assigned", "39", "trigger"]);
+    let sent = messages_of_click(&app, "event ops.item.assigned");
+    let key = find::GroupKey::Tasks(find::TaskGrouping::Trigger, "event ops.item.assigned".into());
+    assert!(
+        matches!(sent.as_slice(), [Message::GroupToggled(k)] if *k == key),
+        "{sent:?}"
+    );
+    send(&mut app, Message::GroupToggled(key));
+    shows(&app, &["event ops.item.assigned", "timer round"]);
+    assert!(simulator_misses(&app, "ops-deploy"), "its rows are put away");
+}
+
+/// A click on a row's words opens the row; its box, its name and its
+/// acts keep their own clicks.
+#[test]
+fn a_click_on_a_row_opens_it_and_its_box_only_picks() {
+    let app = large(Screen::Tasks);
+    let running = app
+        .fleet
+        .as_ref()
+        .unwrap()
+        .tasks
+        .iter()
+        .find(|t| t.objective == "Say the time")
+        .unwrap()
+        .id
+        .clone();
+    let sent = messages_of_click(&app, "Say the time");
+    assert!(
+        matches!(sent.as_slice(), [Message::RowPicked(table::RowRef::Task(id))] if *id == running),
+        "{sent:?}"
+    );
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+    let row = ui.find("Say the time").unwrap().bounds();
+    // The row's box is the first thing on its line.
+    ui.point_at(iced::Point::new(69.0 + 14.0 + 9.0, row.center_y()));
+    let _ = ui.simulate(iced_test::simulator::click());
+    let sent: Vec<Message> = ui.into_messages().collect();
+    assert!(
+        matches!(sent.as_slice(), [Message::Pick(table::RowRef::Task(id), true)] if *id == running),
+        "{sent:?}"
+    );
+}
+
+/// The row the keyboard is on: the accent's bar at its left and the
+/// picked wash over it, light and dark; the rows around keep the page.
+#[test]
+fn the_row_under_the_cursor_has_the_accents_bar_and_the_wash() {
+    let mut app = large(Screen::Tasks);
+    send(&mut app, Message::Key(Keypress::Down));
+    send(&mut app, Message::Key(Keypress::Down));
+    let (first, second) = {
+        let _turn = turn();
+        let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+        (
+            ui.find("Say the time").unwrap().bounds().center_y(),
+            ui.find("Write the weekly report").unwrap().bounds().center_y(),
+        )
+    };
+    for mode in [ThemeMode::Light, ThemeMode::Dark] {
+        app.mode = mode;
+        let tokens = Tokens::of(mode);
+        let drawing = pixels(&app);
+        let edge = 69.0 + 1.0;
+        assert_eq!(colour_at(&drawing, edge, second), rgb(tokens.accent), "{mode:?}");
+        assert_eq!(
+            colour_at(&drawing, edge + 6.0, second),
+            rgb(styles::picked_fill(tokens)),
+            "{mode:?}"
+        );
+        assert_eq!(colour_at(&drawing, edge, first), rgb(tokens.page), "{mode:?}");
+        assert_eq!(colour_at(&drawing, edge + 6.0, first), rgb(tokens.page), "{mode:?}");
+    }
+}
+
+/// The palette: its field, its results under their headings with the
+/// keys at its foot. What is typed goes to it; the arrows and Enter go
+/// on to the panel, Esc is its field's (which the panel hears as a key
+/// a field took); a click on a result picks it, one on the dim layer
+/// closes it.
+#[test]
+fn the_palette_takes_what_is_typed_and_its_results_are_clicked() {
+    use iced::event::Status;
+    use iced::keyboard::{Key, key::Named};
+    let mut app = large(Screen::Tasks);
+    send(&mut app, Message::PaletteOpen);
+    shows(
+        &app,
+        &[
+            "ACTIONS",
+            "Go to Home",
+            "BOTS",
+            "TEAMS",
+            "NODES",
+            "Esc",
+            "Paste a task or trace id to jump to it",
+            "audit · Paused",
+        ],
+    );
+    {
+        let _turn = turn();
+        let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+        ui.click(iced::widget::Id::new(Field::Palette.id())).unwrap();
+        ui.typewrite("ops");
+        assert_eq!(ui.tap_key(Key::Named(Named::ArrowDown)), Status::Ignored);
+        assert_eq!(ui.tap_key(Key::Named(Named::Enter)), Status::Ignored);
+        assert_eq!(ui.tap_key(Key::Named(Named::Escape)), Status::Captured);
+        let typed: Vec<String> = ui
+            .into_messages()
+            .filter_map(|m| match m {
+                Message::PaletteTyped(typed) => Some(typed),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(typed, vec!["o", "op", "ops"]);
+    }
+    let sent = messages_of_click(&app, "Go to Bots");
+    assert!(matches!(sent.as_slice(), [Message::PalettePicked(2)]), "{sent:?}");
+    {
+        let _turn = turn();
+        let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+        ui.point_at(iced::Point::new(200.0, WINDOW.height - 40.0));
+        let _ = ui.simulate(iced_test::simulator::click());
+        let sent: Vec<Message> = ui.into_messages().collect();
+        assert!(matches!(sent.as_slice(), [Message::PaletteClose]), "{sent:?}");
+    }
+    // Typing, moving and Enter, as the keys reach the panel.
+    app.apply(Message::PaletteTyped("ops".into()));
+    shows(&app, &["ops · On", "ops · Paused", "5 bots"]);
+    app.apply(Message::Key(Keypress::Down));
+    assert_eq!(app.palette.selected(app.palette_entries().len()), Some(1));
+    send(&mut app, Message::Key(Keypress::Enter));
+    assert_eq!(app.screen, Screen::Bot(BotId::new("ops-night").unwrap()));
+    assert!(simulator_misses(&app, "Paste a task or trace id to jump to it"));
+    send(&mut app, Message::PaletteOpen);
+    app.apply(Message::PaletteTyped("zzzz".into()));
+    shows(&app, &["Nothing found. Tasks are searched among the newest 200."]);
+}
+
+/// Home's latest tasks are folded too.
+#[test]
+fn home_folds_the_latest_repeats() {
+    let app = large(Screen::Overview);
+    shows(&app, &["Latest", "×39"]);
+}
