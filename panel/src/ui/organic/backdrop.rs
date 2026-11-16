@@ -325,3 +325,289 @@ where
         Element::new(backdrop)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use iced::widget::{Space, container};
+    use iced_test::Simulator;
+
+    use super::*;
+    use crate::ui::Tokens;
+    use crate::ui::organic::Motion;
+    use crate::ui::view_tests::{panel_settings, turn};
+
+    const BOUNDS: Rectangle = Rectangle {
+        x: 100.0,
+        y: 50.0,
+        width: 402.0,
+        height: 102.0,
+    };
+    const WINDOW: Rectangle = Rectangle {
+        x: 0.0,
+        y: 0.0,
+        width: 800.0,
+        height: 600.0,
+    };
+
+    fn surface(name: &str) -> Surface {
+        Surface::of(name)
+    }
+
+    /// A surface with a hairline border, as a card has.
+    fn over<'a>(hover: &Hover, name: &str) -> Backdrop<'a, Signal> {
+        backdrop(
+            hover,
+            surface(name),
+            Tint::of(Tokens::LIGHT),
+            Space::new().width(BOUNDS.width).height(BOUNDS.height),
+            |signal| signal,
+        )
+        .radius(8.0)
+        .inset(1.0)
+    }
+
+    /// What the surface tells when the pointer is here.
+    fn told(
+        widget: &Backdrop<'_, Signal>,
+        state: &mut BackdropState,
+        cursor: mouse::Cursor,
+        frame: bool,
+    ) -> Vec<Signal> {
+        let mut messages = Vec::new();
+        let mut shell = Shell::new(&mut messages);
+        widget.follow(state, BOUNDS, cursor, &WINDOW, frame, &mut shell);
+        messages
+    }
+
+    fn pointer(x: f32, y: f32) -> mouse::Cursor {
+        mouse::Cursor::Available(Point::new(x, y))
+    }
+
+    /// A hover whose glow on this surface is whole.
+    fn glowing(name: &str) -> Hover {
+        let start = Instant::now();
+        let mut hover = Hover::default();
+        hover.signal(Signal::Over {
+            surface: surface(name),
+            at: Point::new(0.5, 0.5),
+            size: BOUNDS.size(),
+            when: start,
+        });
+        hover.tick(start + Hover::FADE_IN * 2);
+        hover
+    }
+
+    #[test]
+    fn tells_where_on_its_ground_the_pointer_is() {
+        let hover = Hover::default();
+        let widget = over(&hover, "a");
+        let mut state = BackdropState::default();
+        let signals = told(&widget, &mut state, pointer(201.0, 76.0), false);
+        let [
+            Signal::Over {
+                surface: told_surface,
+                at,
+                size,
+                ..
+            },
+        ] = signals[..]
+        else {
+            panic!("{signals:?}");
+        };
+        assert_eq!(told_surface, surface("a"));
+        // Inside the border: 400 by 100, from 101, 51.
+        assert_eq!(size, Size::new(400.0, 100.0));
+        assert_eq!(at, Point::new(0.25, 0.25));
+        assert!(state.hovered);
+
+        // On the border itself it is at the ground's very edge.
+        let mut state = BackdropState::default();
+        let signals = told(&widget, &mut state, pointer(100.2, 151.8), false);
+        let [Signal::Over { at, .. }] = signals[..] else {
+            panic!("{signals:?}");
+        };
+        assert_eq!(at, Point::new(0.0, 1.0));
+    }
+
+    #[test]
+    fn says_nothing_while_the_pointer_is_elsewhere_or_still() {
+        let hover = Hover::default();
+        let widget = over(&hover, "a");
+        let mut state = BackdropState::default();
+        assert_eq!(told(&widget, &mut state, pointer(20.0, 20.0), false), []);
+        assert_eq!(told(&widget, &mut state, mouse::Cursor::Unavailable, false), []);
+        assert_eq!(told(&widget, &mut state, pointer(300.0, 100.0), false).len(), 1);
+        assert_eq!(told(&widget, &mut state, pointer(300.0, 100.0), false), []);
+        assert_eq!(told(&widget, &mut state, pointer(300.0, 100.0), true), []);
+    }
+
+    #[test]
+    fn tells_a_move_once_a_frame_and_the_last_one_with_the_next_frame() {
+        let hover = Hover::default();
+        let widget = over(&hover, "a");
+        let mut state = BackdropState::default();
+        assert_eq!(told(&widget, &mut state, pointer(300.0, 100.0), false).len(), 1);
+        // Two moves right after: too soon, they are owed.
+        assert_eq!(told(&widget, &mut state, pointer(310.0, 100.0), false), []);
+        assert_eq!(told(&widget, &mut state, pointer(321.0, 100.0), false), []);
+        assert!(state.owed);
+        assert_eq!(
+            told(&widget, &mut state, pointer(321.0, 100.0), true),
+            [],
+            "a frame that comes too soon"
+        );
+        // A frame's time later the next frame tells where it stopped.
+        state.told = state.told.map(|told| told - Hover::FRAME);
+        let signals = told(&widget, &mut state, pointer(321.0, 100.0), true);
+        let [Signal::Over { at, .. }] = signals[..] else {
+            panic!("{signals:?}");
+        };
+        assert_eq!(at, Point::new(0.55, 0.49));
+        assert!(!state.owed);
+        // And a move then is told at once.
+        state.told = state.told.map(|told| told - Hover::FRAME);
+        assert_eq!(told(&widget, &mut state, pointer(330.0, 100.0), false).len(), 1);
+    }
+
+    #[test]
+    fn tells_when_the_pointer_leaves() {
+        let hover = Hover::default();
+        let widget = over(&hover, "a");
+        for gone in [
+            pointer(20.0, 20.0),
+            mouse::Cursor::Unavailable,
+            mouse::Cursor::Levitating(Point::new(300.0, 100.0)),
+        ] {
+            let mut state = BackdropState::default();
+            assert_eq!(told(&widget, &mut state, pointer(300.0, 100.0), false).len(), 1);
+            let signals = told(&widget, &mut state, gone, false);
+            assert!(
+                matches!(signals[..], [Signal::Left { surface: left, .. }] if left == surface("a")),
+                "{signals:?}"
+            );
+            assert!(!state.hovered);
+            assert_eq!(told(&widget, &mut state, gone, false), []);
+        }
+    }
+
+    /// A row scrolled out of sight is not under the pointer, wherever
+    /// the pointer is.
+    #[test]
+    fn a_surface_out_of_sight_has_no_pointer() {
+        let hover = Hover::default();
+        let widget = over(&hover, "a");
+        let mut state = BackdropState::default();
+        let mut messages = Vec::new();
+        let mut shell = Shell::new(&mut messages);
+        let sight = Rectangle { y: 200.0, ..WINDOW };
+        widget.follow(&mut state, BOUNDS, pointer(300.0, 100.0), &sight, false, &mut shell);
+        assert_eq!(messages, []);
+    }
+
+    /// A list that changes puts another row where this one was.
+    #[test]
+    fn another_surface_in_its_place_says_the_first_one_was_left() {
+        let hover = Hover::default();
+        let mut state = BackdropState::default();
+        assert_eq!(
+            told(&over(&hover, "a"), &mut state, pointer(300.0, 100.0), false).len(),
+            1
+        );
+        let signals = told(&over(&hover, "b"), &mut state, pointer(300.0, 100.0), false);
+        let [
+            Signal::Left { surface: left, .. },
+            Signal::Over { surface: entered, .. },
+        ] = signals[..]
+        else {
+            panic!("{signals:?}");
+        };
+        assert_eq!((left, entered), (surface("a"), surface("b")));
+        assert_eq!(state.surface, Some(surface("b")));
+    }
+
+    #[test]
+    fn with_motion_off_it_says_and_keeps_nothing() {
+        let off = Hover::new(Motion::Off);
+        let widget = over(&off, "a");
+        let mut state = BackdropState::default();
+        assert_eq!(told(&widget, &mut state, pointer(300.0, 100.0), false), []);
+        assert_eq!(told(&widget, &mut state, pointer(20.0, 20.0), true), []);
+        widget.prepare(&mut state, BOUNDS);
+        assert!(state.picture.is_none() && !state.hovered);
+
+        // Turned off under the pointer: no word about leaving either.
+        let mut state = BackdropState::default();
+        assert_eq!(
+            told(&over(&Hover::default(), "a"), &mut state, pointer(300.0, 100.0), false).len(),
+            1
+        );
+        assert_eq!(told(&widget, &mut state, pointer(20.0, 20.0), false), []);
+        assert!(!state.hovered);
+    }
+
+    #[test]
+    fn keeps_one_picture_for_each_frame() {
+        let mut hover = glowing("a");
+        let mut state = BackdropState::default();
+        over(&hover, "a").prepare(&mut state, BOUNDS);
+        let first = state.picture.clone().expect("a glowing surface has a picture");
+        assert_eq!(first.surface, Size::new(400.0, 100.0));
+        assert_eq!(first.covers, Size::new(401.0, 101.0));
+        let image::Handle::Rgba {
+            width, height, pixels, ..
+        } = &first.handle
+        else {
+            panic!("{:?}", first.handle);
+        };
+        assert_eq!((*width, *height, pixels.len()), (401, 101, 401 * 101 * 4));
+        assert!(pixels.chunks_exact(4).any(|pixel| pixel[3] > 20), "the glow is in it");
+
+        // Drawn again before the next frame: the same picture.
+        over(&hover, "a").prepare(&mut state, BOUNDS);
+        assert_eq!(
+            state.picture.as_ref().map(|picture| picture.handle.id()),
+            Some(first.handle.id())
+        );
+
+        // The next frame, another size or the other theme: a new one.
+        hover.tick(Instant::now() + Hover::FADE_IN * 3);
+        over(&hover, "a").prepare(&mut state, BOUNDS);
+        let second = state.picture.clone().unwrap();
+        assert_ne!(second.handle.id(), first.handle.id());
+        let wider = Rectangle { width: 502.0, ..BOUNDS };
+        over(&hover, "a").prepare(&mut state, wider);
+        assert_eq!(
+            state.picture.as_ref().map(|picture| picture.surface),
+            Some(Size::new(500.0, 100.0))
+        );
+        let mut dark = over(&hover, "a");
+        dark.tint = Tint::of(Tokens::DARK);
+        let before = state.picture.as_ref().map(|picture| picture.handle.id());
+        dark.prepare(&mut state, wider);
+        assert_ne!(state.picture.as_ref().map(|picture| picture.handle.id()), before);
+
+        // A surface that does not glow keeps none.
+        over(&hover, "b").prepare(&mut state, BOUNDS);
+        assert!(state.picture.is_none());
+    }
+
+    /// In a real tree: it is as big as its content, and a move of the
+    /// pointer over it comes out as its signal.
+    #[test]
+    fn takes_the_size_of_its_content_and_signals_through_the_interface() {
+        let _turn = turn();
+        let hover = Hover::default();
+        let scene = container(over(&hover, "a")).padding(40);
+        let mut ui = Simulator::with_size(panel_settings(), Size::new(600.0, 300.0), scene);
+        ui.point_at(Point::new(141.0, 91.0));
+        let _ = ui.simulate([Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(141.0, 91.0),
+        })]);
+        let signals: Vec<Signal> = ui.into_messages().collect();
+        let [Signal::Over { at, size, .. }] = signals[..] else {
+            panic!("{signals:?}");
+        };
+        assert_eq!(size, Size::new(400.0, 100.0));
+        assert_eq!(at, Point::new(0.25, 0.5));
+    }
+}
