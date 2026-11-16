@@ -6,10 +6,13 @@ use super::{
     Screen, Services, SettingsForm, SettingsJson, SubmitForm, TaskViewFilter, TeamWatch, ThemeMode, passages,
 };
 use crate::application::SubscriptionChange;
-use crate::application::{EventFeed, Fleet, NewBotDefaults, PanelError, PanelSettings, TaskDetail};
+use crate::application::{Density, EventFeed, Fleet, Motion, NewBotDefaults, PanelError, PanelSettings, TaskDetail};
 use crate::domain::{Decision, Shortcut, TaskId, TaskStatus};
+use crate::ui::find::{ActivityFind, Palette, TeamGroup};
 use crate::ui::format;
-use crate::ui::table::Tables;
+use crate::ui::inspector::Tabs;
+use crate::ui::organic::Hover;
+use crate::ui::table::{List, Tables};
 
 /// How long a refresh may stay unanswered before the next tick tries again.
 const REFRESH_PATIENCE: i64 = 20;
@@ -20,6 +23,11 @@ const REFRESH_PATIENCE: i64 = 20;
 pub struct App {
     pub services: Services,
     pub mode: ThemeMode,
+    /// How tall the lists' rows are.
+    pub density: Density,
+    /// The organic glow behind the row, card or tile the pointer is on;
+    /// its motion is the look's `look.motion`.
+    pub hover: Hover,
     pub screen: Screen,
     pub now: DateTime<Utc>,
     pub fleet: Option<Fleet>,
@@ -59,8 +67,6 @@ pub struct App {
     /// is on its way.
     pub chat_draft: String,
     pub chat_busy: bool,
-    /// A bot page's Advanced part is open.
-    pub advanced: bool,
     /// A bot being switched on or paused.
     pub switching: bool,
     /// The teams' timelines and a bot's team being edited.
@@ -82,8 +88,18 @@ pub struct App {
     target: Screen,
     /// The passages of the screen on show a person can select a part of.
     pub readers: Readers,
-    /// The list screens' tables: their order and their picked rows.
+    /// The list screens' tables: their order, their picked rows, their
+    /// row cursors, the filter and how the rows are folded and grouped.
     pub tables: Tables,
+    /// The command palette.
+    pub palette: Palette,
+    /// The inspector's tab open for each kind of row.
+    pub tabs: Tabs,
+    /// The find in the activity of the task inspected.
+    pub find: ActivityFind,
+    /// The field typed into last, the list's filter or the find, for an
+    /// Esc that leaves a field without saying which.
+    pub(super) typed_in: Option<super::Field>,
 }
 
 impl App {
@@ -95,6 +111,8 @@ impl App {
         let mut app = Self {
             services,
             mode: launch.theme.unwrap_or(settings.theme),
+            density: settings.density,
+            hover: Hover::new(settings.motion),
             screen: if saved { launch.screen.clone() } else { Screen::Settings },
             now,
             fleet: None,
@@ -123,7 +141,6 @@ impl App {
             deciding: None,
             chat_draft: String::new(),
             chat_busy: false,
-            advanced: false,
             switching: false,
             watch: TeamWatch::default(),
             listen: ListenForm::default(),
@@ -140,7 +157,16 @@ impl App {
             },
             readers: Readers::default(),
             tables: Tables::default(),
+            palette: Palette::default(),
+            tabs: Tabs::default(),
+            find: ActivityFind::default(),
+            typed_in: None,
         };
+        // A row named at start (`--screen task:<id>`) is under its list's
+        // cursor, as one opened by hand.
+        if let Some(row) = app.screen.inspected() {
+            app.select_row(row);
+        }
         match app.services.shortcuts.load() {
             Ok(list) => app.shortcuts = list,
             Err(error) => app.banner = Some(Banner::error(&error, now)),
@@ -160,7 +186,7 @@ impl App {
 
     /// Everything the settings screen shows, as settings.
     pub fn current_settings(&self) -> PanelSettings {
-        self.settings.settings(self.mode)
+        self.settings.settings(self.mode, self.density, self.hover.motion())
     }
 
     pub fn connected(&self) -> bool {
@@ -191,16 +217,22 @@ impl App {
     }
 
     pub fn apply(&mut self, message: Message) -> Vec<Effect> {
+        // The glow's news come up to thirty times a second and change no
+        // passage a person reads.
+        let glow = matches!(message, Message::Hover(_) | Message::Frame(_));
         let effects = self.handle(message);
-        self.readers.sync(passages::of(self));
+        if !glow {
+            self.readers.sync(passages::of(self));
+        }
         effects
     }
 
-    fn handle(&mut self, message: Message) -> Vec<Effect> {
+    pub(super) fn handle(&mut self, message: Message) -> Vec<Effect> {
         match message {
             Message::Tick(now) => self.tick(now),
             Message::Go(screen) => self.go(screen),
             Message::Key(key) => self.key(key),
+            Message::EscapeTaken => self.escape_taken(),
             Message::Read(key, action) => {
                 self.readers.act(&key, action);
                 Vec::new()
@@ -213,6 +245,32 @@ impl App {
                 self.mode = mode;
                 self.save_preferences(self.new_bot.clone(), true)
             }
+            Message::SetDensity(density) => {
+                self.density = density;
+                self.save_preferences(self.new_bot.clone(), true)
+            }
+            Message::SetMotion(motion) => {
+                self.hover.set_motion(motion);
+                self.save_preferences(self.new_bot.clone(), true)
+            }
+            Message::Hover(signal) => {
+                self.hover.signal(signal);
+                Vec::new()
+            }
+            Message::Frame(now) => {
+                self.hover.tick(now);
+                Vec::new()
+            }
+            Message::PaletteOpen => self.palette_open(),
+            Message::PaletteClose => {
+                self.palette.close();
+                Vec::new()
+            }
+            Message::PaletteTyped(typed) => {
+                self.palette.type_in(typed);
+                Vec::new()
+            }
+            Message::PalettePicked(index) => self.palette_picked(index),
             Message::DismissBanner => {
                 self.banner = None;
                 Vec::new()
@@ -240,12 +298,24 @@ impl App {
                 self.refreshing_since = None;
                 match result {
                     Ok(fleet) => {
-                        let mut effects = self.notice_waiting(&fleet, self.fleet.is_none());
+                        let first = self.fleet.is_none();
+                        let mut effects = self.notice_waiting(&fleet, first);
+                        TeamGroup::meet(&fleet.bots, &mut self.tables.collapsed);
                         self.fleet = Some(fleet);
-                        self.drop_gone_picks();
+                        self.rows_changed();
                         self.fleet_error = None;
                         self.last_refresh = Some(self.now);
                         effects.extend(self.follow_teams());
+                        // The Teams list waited for its first team; a row
+                        // named at start is brought into sight in its list.
+                        if self.screen == Screen::Teams {
+                            effects.extend(self.go(Screen::Teams));
+                        } else if first
+                            && self.screen.inspected().is_some()
+                            && let Some(spot) = self.screen.list().and_then(|list| self.cursor_spot(list))
+                        {
+                            effects.push(Effect::Reveal(super::Scroller::Rows, spot));
+                        }
                         effects
                     }
                     Err(error) => {
@@ -306,6 +376,18 @@ impl App {
                 }
                 Vec::new()
             }
+            Message::Tab(tab) => self.tab_picked(tab),
+            Message::FindTyped(typed) => self.find_typed(typed),
+            Message::FindNext => self.find_step(true),
+            Message::FindPrevious => self.find_step(false),
+            Message::FindSubmit => self.find_step(!self.tables.shift),
+            Message::FindShow(kind) => {
+                self.find.show(kind);
+                Vec::new()
+            }
+            Message::JumpToLatest => self.jump_to_latest(),
+            Message::FindKey(key, in_find) => self.find_key(key, in_find),
+            Message::RunAgain(id) => self.run_again(id),
             Message::BotLoaded(id, result) => {
                 self.bot_loading = false;
                 if self.screen != Screen::Bot(id) {
@@ -510,10 +592,6 @@ impl App {
                 effects.extend(self.refresh_now());
                 effects
             }
-            Message::ShowAdvanced(open) => {
-                self.advanced = open;
-                Vec::new()
-            }
             Message::SetLevel(id, level) => self.switch(Effect::SetLevel(id, level)),
             Message::Leveled(result) => {
                 self.switching = false;
@@ -645,8 +723,8 @@ impl App {
 
             Message::FilterStatus(status) => {
                 self.filter.status = status;
-                self.drop_gone_picks();
-                if self.screen != Screen::Tasks {
+                self.rows_changed();
+                if self.screen.list() != Some(List::Tasks) {
                     return self.go(Screen::Tasks);
                 }
                 Vec::new()
@@ -656,13 +734,14 @@ impl App {
                     BotChoice::All => None,
                     BotChoice::One(id) => Some(id),
                 };
-                self.drop_gone_picks();
+                self.rows_changed();
                 Vec::new()
             }
             Message::SubmitOpen(bot) => {
                 let bot = bot.or_else(|| self.filter.bot.clone());
                 self.submit = SubmitForm::opened(bot, self.services.keys.next_key());
-                if self.screen != Screen::Tasks {
+                // Over the Tasks list, a task inspected or not.
+                if self.screen.list() != Some(List::Tasks) {
                     return self.go(Screen::Tasks);
                 }
                 Vec::new()
@@ -889,6 +968,8 @@ impl App {
                 let settings = PanelSettings {
                     control_plane: Some(control_plane),
                     theme: ThemeMode::default(),
+                    density: Density::default(),
+                    motion: Motion::default(),
                     new_bot,
                 };
                 self.take_settings(settings, "Back to the defaults")
@@ -937,6 +1018,13 @@ impl App {
             Message::Pick(row, picked) => self.pick(row, picked),
             Message::PickShown(list, picked) => self.pick_shown(list, picked),
             Message::ClearPicks(list) => self.clear_picks(list),
+            Message::ShowBots(show) => self.show_bots(show),
+            Message::GroupToggled(key) => self.group_toggled(key),
+            Message::ListFilterTyped(typed) => self.list_filter_typed(typed),
+            Message::FoldToggled => self.fold_toggled(),
+            Message::GroupingCycled => self.grouping_cycled(),
+            Message::RowPicked(row) => self.open_row(row),
+            Message::ShowRevoked(revoked) => self.show_revoked(revoked),
             Message::AskBulk(list, action) => self.ask_bulk(list, action),
             Message::BulkDone(outcome) => self.bulk_done(outcome),
         }
@@ -980,6 +1068,8 @@ impl App {
     fn take_settings(&mut self, settings: PanelSettings, title: &str) -> Vec<Effect> {
         self.settings.take(&settings);
         self.mode = settings.theme;
+        self.density = settings.density;
+        self.hover.set_motion(settings.motion);
         let words = if self.settings.changed() || (!self.connected() && !self.settings.busy) {
             "Press Connect to try the control plane values"
         } else {
@@ -1031,9 +1121,9 @@ impl App {
                     effects.push(Effect::LoadTask(id.clone()));
                 }
                 effects.extend(self.follow_task());
+                effects.extend(self.reload_activity());
                 effects
             }
-            Screen::Activity(_) => self.reload_activity(),
             Screen::Bot(id) if !self.bot_loading => {
                 self.bot_loading = true;
                 let feed = self
@@ -1056,6 +1146,7 @@ impl App {
     }
 
     pub(super) fn go(&mut self, screen: Screen) -> Vec<Effect> {
+        let screen = self.settled(screen);
         if let Screen::Task(id) = &screen
             && self.task.as_ref().is_some_and(|t| &t.task.id != id)
         {
@@ -1067,7 +1158,7 @@ impl App {
         {
             self.live = None;
         }
-        if let Screen::Activity(id) = &screen
+        if let Screen::Task(id) = &screen
             && self.activity.as_ref().is_some_and(|a| &a.id != id)
         {
             self.activity = None;
@@ -1077,12 +1168,11 @@ impl App {
         {
             self.bot = None;
         }
-        // Another screen opens at its top, not where the last one was
-        // scrolled to; a refresh of the same one keeps its place.
         let mut effects = Vec::new();
-        if screen != self.screen {
-            effects.push(Effect::ScrollTop);
-            self.advanced = false;
+        // Another row in the inspector, or none: what belongs to the row
+        // left goes, and the inspector's body opens at its top.
+        let changed = screen != self.screen;
+        if changed {
             self.chat_draft.clear();
             self.watch.editing = None;
             self.listen = ListenForm::default();
@@ -1092,11 +1182,38 @@ impl App {
             self.order = OrderForm::default();
             self.task_loading = false;
             self.bot_loading = false;
-            // The picked rows belong to the list left; its order stays.
+            self.find.reset();
+            // What the pointer was on may be gone without a word: its
+            // glow fades out, and the surface it is on now lights again
+            // as it hears of the pointer.
+            self.hover.release();
+            if screen.inspected().is_some() {
+                effects.push(Effect::InspectorTop);
+            }
+        }
+        // Another place opens at its top, not where the last one was
+        // scrolled to; the list beside a row that opens stays where it is.
+        // The picked rows and the filter belong to the list left; its
+        // order and its cursor stay.
+        let left = screen.section() != self.screen.section();
+        if left {
+            effects.push(Effect::ScrollTop);
             self.tables.clear_all();
+            self.tables.query.clear();
+        }
+        // The row inspected is the row under its list's cursor, however
+        // it was opened: a click, a key, the palette, a notice, a link.
+        if let Some(row) = screen.inspected() {
+            self.select_row(row);
         }
         self.screen = screen;
         self.confirm = None;
+        // Back on a list whose cursor is on a row, or a row opened: its
+        // line in sight rather than the list's top.
+        if changed && let Some(spot) = self.screen.list().and_then(|list| self.cursor_spot(list)) {
+            effects.retain(|effect| effect != &Effect::ScrollTop);
+            effects.push(Effect::Reveal(super::Scroller::Rows, spot));
+        }
         if self.screen == Screen::Settings && !self.settings.busy {
             self.settings.saved = self.settings.saved || self.connected();
         }
@@ -1104,22 +1221,64 @@ impl App {
         effects
     }
 
-    /// Esc keeps what a dialog would do, closes the new task's form or
-    /// a bot's Edit or Delete card, or lets go of the rows picked in a
-    /// list; Enter does what the dialog asks. Other screens ignore them.
-    fn key(&mut self, key: Keypress) -> Vec<Effect> {
+    /// Where a place opens: the Teams list opens on a team, the one
+    /// under its cursor or the first, once there is one.
+    fn settled(&self, screen: Screen) -> Screen {
+        if screen != Screen::Teams {
+            return screen;
+        }
+        let rows = self.team_lines_drawn().keys();
+        match self.tables.teams.cursor.selected().filter(|name| rows.contains(name)) {
+            Some(name) => Screen::Team(name.clone()),
+            None => rows.first().cloned().map_or(Screen::Teams, Screen::Team),
+        }
+    }
+
+    /// A key no widget took. The open palette takes every key first. A
+    /// dialog then: Esc keeps what it would do, Enter does what it asks,
+    /// and nothing else reaches the page behind it, Ctrl+K neither.
+    /// Ctrl+K opens the palette. Esc closes the new task's form or a
+    /// bot's Edit or Delete card. With a row inspected, Left and Right
+    /// change its tab and Ctrl+F finds in a task's activity; the up and
+    /// down arrows first ask whether the find has the keyboard. On a list
+    /// the arrows, Enter, Esc and `/` drive its cursor and its filter
+    /// (see `list_key`), Esc alone while a form is open over it. Other
+    /// screens ignore them.
+    pub(super) fn key(&mut self, key: Keypress) -> Vec<Effect> {
+        if self.palette.is_open() {
+            return self.palette_key(key);
+        }
         match key {
             Keypress::Escape if self.confirm.is_some() => self.handle(Message::ConfirmNo),
             Keypress::Enter if self.confirm.is_some() => self.handle(Message::ConfirmYes),
+            _ if self.confirm.is_some() => Vec::new(),
+            Keypress::Palette => self.palette_open(),
             Keypress::Escape if self.submit.open && !self.submit.busy => self.handle(Message::SubmitClose),
             Keypress::Escape if self.delete.bot.is_some() && !self.delete.busy => self.handle(Message::DeleteClose),
             Keypress::Escape if self.edit.bot.is_some() && !self.edit.busy => self.handle(Message::EditClose),
-            Keypress::Escape => match self.list_on_screen() {
-                Some(list) if self.tables.picked(list) > 0 => self.clear_picks(list),
-                _ => Vec::new(),
-            },
+            Keypress::Find => self.find_focus(),
+            Keypress::Left | Keypress::Right => self.tab_key(key == Keypress::Right),
+            Keypress::Up | Keypress::Down if self.find_shown() && !self.form_over_list() => {
+                vec![Effect::AskFind(key)]
+            }
+            _ => self.list_or_nothing(key),
+        }
+    }
+
+    /// The key for the list on show, if there is one. A form open over
+    /// a list keeps the arrows and Enter its fields let through: the rows
+    /// behind it do not move.
+    pub(super) fn list_or_nothing(&mut self, key: Keypress) -> Vec<Effect> {
+        match self.list_on_screen() {
+            Some(list) if key == Keypress::Escape || !self.form_over_list() => self.list_key(list, key),
             _ => Vec::new(),
         }
+    }
+
+    /// Whether a form is open over the list on show: the new task, the
+    /// new bot, the new host token.
+    pub(super) fn form_over_list(&self) -> bool {
+        self.submit.open || self.register.open || self.mint.open
     }
 
     /// The task a bot runs now, as the newest read of the fleet and its

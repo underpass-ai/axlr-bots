@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-use super::{LiveStream, Screen};
+use super::find::RowSpot;
+use super::{Field, LiveStream, Screen, Scroller};
 use crate::application::{
     BotEdit, BulkAction, BulkTarget, ChatTurn, EventFeed, Notice, PanelConfig, PanelSettings, SubscriptionChange,
 };
@@ -13,6 +14,17 @@ use crate::domain::{AutonomyLevel, BotForm, BotId, Decision, ExecutionId, Idempo
 pub enum Effect {
     /// The page on show back at its top: another screen opened.
     ScrollTop,
+    /// The keyboard in a field: the filter over the list, the palette's.
+    Focus(Field),
+    /// A row brought into sight in what scrolls it, when it is not.
+    Reveal(Scroller, RowSpot),
+    /// The inspector's body back at its top: another row or tab opened.
+    InspectorTop,
+    /// A step of the task's activity brought into sight, by its place.
+    ShowStep(usize),
+    /// Ask whether the find in the activity has the keyboard, then let
+    /// the key act: an arrow there goes from match to match.
+    AskFind(super::Keypress),
     Refresh {
         generation: u64,
     },

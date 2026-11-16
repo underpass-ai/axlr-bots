@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use super::{NewBotDefaults, PanelConfig, PanelError, PanelSettings, Theme};
+use super::{Density, Motion, NewBotDefaults, PanelConfig, PanelError, PanelSettings, Theme};
 
 /// The settings file as written: one flat object whose keys are dotted
 /// by section, like an editor's `settings.json`. The three control
@@ -28,6 +28,12 @@ pub struct SettingsDocument {
     pub key_file: Option<PathBuf>,
     #[serde(rename = "look.theme", default)]
     pub theme: Theme,
+    /// Absent in a file from before the key: comfortable.
+    #[serde(rename = "look.density", default)]
+    pub density: Density,
+    /// Absent in a file from before the key: on.
+    #[serde(rename = "look.motion", default)]
+    pub motion: Motion,
     #[serde(rename = "newBot.defaultModel", default = "default_model")]
     pub default_model: String,
     #[serde(rename = "newBot.models", default = "default_models")]
@@ -53,6 +59,8 @@ impl From<&PanelSettings> for SettingsDocument {
             cert_file: control_plane.and_then(|c| c.cert_path.clone()),
             key_file: control_plane.and_then(|c| c.key_path.clone()),
             theme: settings.theme,
+            density: settings.density,
+            motion: settings.motion,
             default_model: settings.new_bot.model.clone(),
             models: settings.new_bot.models.clone(),
         }
@@ -90,6 +98,8 @@ impl TryFrom<SettingsDocument> for PanelSettings {
         Ok(Self {
             control_plane,
             theme: document.theme,
+            density: document.density,
+            motion: document.motion,
             new_bot: NewBotDefaults {
                 model: document.default_model,
                 models: document.models,

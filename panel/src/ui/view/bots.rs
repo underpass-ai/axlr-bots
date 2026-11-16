@@ -1,197 +1,268 @@
-//! Bots: the list, switching them on and off, and adding one.
+//! Bots: the list by team, switching them on and off, and adding one.
 
-use iced::widget::{Space, column, container, pick_list, responsive, row, scrollable, table, text};
+use std::rc::Rc;
+
+use iced::widget::{Space, column, container, pick_list, row, text};
 use iced::{Alignment, Length};
 
+use super::sheet::{self, Column, Head, Ink, Line};
 use super::widgets::{
-    El, SMALL, action, bold, card, chip, empty, field, icon, icon_button, mark, muted, pill, section_title, title,
+    El, SMALL, action, bold, card, empty, field, icon, icon_button, mark, muted, section_title, status as status_word,
 };
-use super::{grid, levels};
+use super::{grid, levels, listbar, status};
 use crate::application::BotNow;
 use crate::domain::{AutonomyLevel, Bot, BotForm, ModelFit, NodeCapabilities, team_names};
+use crate::ui::find::{Query, TeamGroup};
 use crate::ui::styles::{self, Kind};
-use crate::ui::table::{BotColumn, ColumnRef, List, RowRef, SortColumn};
+use crate::ui::table::{BotColumn, BotShow, ColumnRef, List, RowRef, SortColumn};
 use crate::ui::{App, Icon, Message, NodeChoice, Screen, Tokens, Tone};
 
 pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let Some(fleet) = &app.fleet else {
         return super::overview::loading(app, tokens);
     };
-    let mut page = column![
-        row![
-            title(Icon::Bots, "Bots", tokens),
-            Space::new().width(Length::Fill),
+    let show = app.tables.bot_show;
+    let query = app.list_query();
+    // Beside the inspector the list keeps its filter and New bot.
+    let narrow = app.screen.inspected().is_some();
+    let mut chips = vec![listbar::filter(&app.tables.query, tokens)];
+    chips.extend(BotShow::ALL.into_iter().filter(|_| !narrow).map(|chip| {
+        listbar::chip(
+            chip.label(),
+            fleet.bots.iter().filter(|b| chip.takes(b)).count(),
+            show == chip,
+            Message::ShowBots(chip),
+            tokens,
+        )
+    }));
+    let mut acts = vec![action(
+        Kind::Primary,
+        Icon::Plus,
+        "New bot",
+        (!app.register.open).then_some(Message::RegisterOpen),
+        tokens,
+    )];
+    if !narrow {
+        acts.insert(
+            0,
             action(
                 Kind::Secondary,
                 Icon::File,
                 "From file",
                 (!app.register.busy).then_some(Message::PickFile),
-                tokens
+                tokens,
             ),
-            action(
-                Kind::Primary,
-                Icon::Plus,
-                "New bot",
-                (!app.register.open).then_some(Message::RegisterOpen),
-                tokens
-            ),
-        ]
-        .spacing(10)
-        .align_y(Alignment::Center)
-    ]
-    .spacing(18);
-    if app.register.open {
-        page = page.push(register_form(app, tokens));
+        );
     }
-    let list: El<'a> = if fleet.bots.is_empty() {
-        empty(Icon::Bots, "No bot yet: add one", tokens)
+    let groups = app.bot_groups();
+    let through: usize = groups.iter().map(|g| g.bots.len()).sum();
+    let count = if query.is_empty() {
+        fleet.bots.len().to_string()
     } else {
-        responsive(move |space| list(app, fleet, space.width < NARROW, tokens))
-            .height(Length::Shrink)
-            .into()
+        format!("{through} of {}", fleet.bots.len())
     };
-    page = page.push(card(list, tokens));
-    let page = scrollable(page.padding(iced::Padding {
-        right: 12.0,
-        bottom: grid::BAR_ROOM,
-        ..Default::default()
-    }))
-    .id(super::widgets::PAGE)
-    .height(Length::Fill);
+    let mut page = column![listbar::bar("Bots", count, chips, acts, tokens)];
+    if app.register.open {
+        page = page.push(listbar::panel(register_form(app, tokens), tokens));
+    }
+    page = page.push(if fleet.bots.is_empty() {
+        listbar::nothing(empty(Icon::Bots, "No bot yet: add one", tokens))
+    } else if groups.is_empty() && !query.is_empty() {
+        listbar::nothing(empty(
+            Icon::Lens,
+            format!("Nothing matches {} among the {} bots.", query.text(), fleet.bots.len()),
+            tokens,
+        ))
+    } else if groups.is_empty() {
+        listbar::nothing(empty(Icon::Bots, "No bot here", tokens))
+    } else {
+        list(app, fleet, groups, query, narrow, tokens)
+    });
     grid::with_bar(app, List::Bots, page.into(), tokens)
 }
 
-/// Under this width the table leaves out Starts by and Open is an icon,
-/// so a bot's name and what it does now keep room.
-const NARROW: f32 = 900.0;
-
-/// The bots in the table's order: a box, the status, the name and
-/// model, what it does now, its level, team and place, how it starts
-/// unless `narrow`, and its acts.
-fn list<'a>(app: &'a App, fleet: &'a crate::application::Fleet, narrow: bool, tokens: Tokens) -> El<'a> {
+/// The bots by team, each team under a header that folds it, in the
+/// table's order within their team: a box, the status (what the bot is
+/// doing now, when it is doing something), the name, its level, model
+/// and place, how it starts, and its acts. A click on a row opens the
+/// bot in the inspector; beside it, `narrow`, a row keeps the status,
+/// the name and the level.
+fn list<'a>(
+    app: &'a App,
+    fleet: &'a crate::application::Fleet,
+    groups: Vec<TeamGroup<'a>>,
+    query: Query,
+    narrow: bool,
+    tokens: Tokens,
+) -> El<'a> {
     let switching = app.switching;
     let state = &app.tables.bots;
-    let shown = state.sort.order(&fleet.bots);
-    let head = |c: BotColumn| {
-        grid::header(
-            c.label(),
-            state.sort.badge(c),
-            Message::SortBy(ColumnRef::Bots(c)),
-            tokens,
-        )
+    let query = Rc::new(query);
+    let head = |c: BotColumn| Head::Sort {
+        label: c.label(),
+        badge: state.sort.badge(c),
+        column: ColumnRef::Bots(c),
     };
+    let shown = TeamGroup::shown(&groups);
     let all = state.selection.covers(shown.iter().map(|b| &b.id));
-    let mut columns = vec![
-        table::column(
-            grid::check(all, |on| Message::PickShown(List::Bots, on), tokens),
-            move |b: &'a Bot| {
+    let found = query.clone();
+    let columns = if narrow {
+        let found = query.clone();
+        vec![
+            Column::fixed(head(BotColumn::Status), 96.0, move |b: &'a Bot, _| {
+                now(b, &fleet.tasks, tokens)
+            }),
+            Column::share(head(BotColumn::Bot), 1, move |b: &'a Bot, width| {
+                sheet::found(b.id.to_string(), width, Ink::Strong, &found, tokens)
+            }),
+            Column::fixed(head(BotColumn::Level), 96.0, move |b: &'a Bot, _| {
+                Ink::Quiet.write(b.level.label(), tokens).into()
+            })
+            .end(),
+        ]
+    } else {
+        vec![
+            Column::fixed(Head::Check { all, list: List::Bots }, 18.0, move |b: &'a Bot, _| {
                 let id = b.id.clone();
                 grid::check(
                     state.selection.contains(&b.id),
                     move |on| Message::Pick(RowRef::Bot(id.clone()), on),
                     tokens,
                 )
-            },
-        ),
-        // The pill, and the mark of a newer version ready beside it.
-        table::column(head(BotColumn::Status), move |b: &'a Bot| -> El<'a> {
-            let mut cell = row![pill(Tone::of_bot(b.status), b.status.name(), tokens)]
-                .spacing(6)
-                .align_y(Alignment::Center);
-            if let Some(update) = b.update() {
-                cell = cell.push(mark(Icon::Update, tokens.accent, update.tip(), tokens));
-            }
-            cell.into()
-        }),
-        // A long name is cut to one line, whole on hover; its
-        // definition's version and its model under it.
-        table::column(head(BotColumn::Bot), move |b: &'a Bot| -> El<'a> {
-            let under = match b.version_label() {
-                // The version first: a narrow column cuts the model.
-                Some(version) => format!("{version} · {}", b.model.short_model()),
-                None => b.model.short_model().to_string(),
-            };
-            column![
-                grid::fitted(b.id.to_string(), true, tokens),
-                grid::fitted_muted(under, tokens)
-            ]
-            .spacing(2)
-            .into()
-        })
-        .width(Length::FillPortion(3)),
-        // The pill, and what it works on in one line under it, so every
-        // row keeps the height of a name over its model.
-        table::column(bold("Now"), move |b: &'a Bot| -> El<'a> {
-            let state = BotNow::of(b, &fleet.tasks, &[]);
-            let mut cell = column![pill(Tone::of_now(&state), state.word(), tokens)].spacing(2);
-            if let Some(task) = state.task() {
-                cell = cell.push(grid::fitted_muted(task.headline(120), tokens));
-            }
-            cell.into()
-        })
-        .width(Length::FillPortion(3)),
-        table::column(head(BotColumn::Level), move |b: &'a Bot| chip(b.level.label(), tokens)),
-        table::column(head(BotColumn::Team), move |b: &'a Bot| {
-            grid::clipped(b.team_summary(), 14, false, tokens)
-        }),
-        table::column(head(BotColumn::RunsOn), move |b: &'a Bot| text(b.placement.describe()))
-            .width(Length::FillPortion(2)),
-    ];
-    if !narrow {
-        columns.push(
-            table::column(head(BotColumn::StartsBy), move |b: &'a Bot| {
-                text(b.trigger_summary()).size(SMALL)
-            })
-            .width(Length::FillPortion(2)),
-        );
-    }
-    columns.push(table::column(text(""), move |b: &'a Bot| -> El<'a> {
-        let switch = if b.status.can_pause() {
-            Some(grid::icon_act(
-                Kind::Ghost,
-                Icon::Pause,
-                "Pause",
-                (!switching).then(|| Message::Pause(b.id.clone())),
-                tokens,
-            ))
-        } else if b.status.can_enable() {
-            Some(grid::icon_act(
-                Kind::Good,
-                Icon::Play,
-                "Turn on",
-                (!switching).then(|| Message::Enable(b.id.clone())),
-                tokens,
-            ))
-        } else {
-            None
-        };
-        let open = if narrow {
-            grid::act_slot(Some(grid::icon_act(
-                Kind::Ghost,
-                Icon::Next,
-                "Open",
-                Some(Message::Go(Screen::Bot(b.id.clone()))),
-                tokens,
-            )))
-        } else {
-            super::widgets::open("Open", Message::Go(Screen::Bot(b.id.clone())), tokens)
-        };
-        row![
-            grid::act_slot(switch),
-            grid::act_slot(Some(grid::icon_act(
-                Kind::Ghost,
-                Icon::Stop,
-                "Stop bot and its tasks",
-                (!switching).then(|| Message::AskStopBot(b.id.clone())),
-                tokens
-            ))),
-            open
+            }),
+            // What it is doing now when it is doing something, else its
+            // status; and the mark of a newer version ready beside it.
+            Column::fixed(head(BotColumn::Status), 112.0, move |b: &'a Bot, _| {
+                let mut cell = row![now(b, &fleet.tasks, tokens)].spacing(4).align_y(Alignment::Center);
+                if let Some(update) = b.update() {
+                    cell = cell.push(mark(Icon::Update, tokens.accent, update.tip(), tokens));
+                }
+                cell.into()
+            }),
+            // The name, and its definition's version after it when it has one.
+            Column::share(head(BotColumn::Bot), 4, move |b: &'a Bot, width| {
+                let name = b.id.to_string();
+                let open = Message::Go(Screen::Bot(b.id.clone()));
+                match b.version_label() {
+                    Some(version) => {
+                        let room = width - 8.0 - Ink::Quiet.span(version.chars().count());
+                        let short = grid::shorten(&name, Ink::Strong.fits(room));
+                        let line = row![
+                            sheet::link(short, room, open, &found, tokens),
+                            Ink::Quiet.write(version, tokens)
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::Center);
+                        sheet::tip(container(line).clip(true).into(), name, tokens)
+                    }
+                    None => sheet::link(name, width, open, &found, tokens),
+                }
+            }),
+            Column::fixed(head(BotColumn::Level), 86.0, move |b: &'a Bot, _| {
+                Ink::Quiet.write(b.level.label(), tokens).into()
+            }),
+            Column::share(head(BotColumn::Model), 4, {
+                let query = query.clone();
+                move |b: &'a Bot, width| {
+                    sheet::found(b.model.short_model().to_string(), width, Ink::Quiet, &query, tokens)
+                }
+            }),
+            Column::share(head(BotColumn::RunsOn), 3, {
+                let query = query.clone();
+                move |b: &'a Bot, width| sheet::found(b.placement.describe(), width, Ink::Quiet, &query, tokens)
+            }),
+            Column::share(head(BotColumn::StartsBy), 3, move |b: &'a Bot, width| {
+                sheet::words(b.trigger_summary(), width, Ink::Quiet, tokens)
+            }),
+            Column::fixed(Head::None, 3.0 * grid::ACT + 8.0, move |b: &'a Bot, _| {
+                let switch = if b.status.can_pause() {
+                    Some(grid::icon_act(
+                        Kind::Ghost,
+                        Icon::Pause,
+                        "Pause",
+                        (!switching).then(|| Message::Pause(b.id.clone())),
+                        tokens,
+                    ))
+                } else if b.status.can_enable() {
+                    Some(grid::icon_act(
+                        Kind::Good,
+                        Icon::Play,
+                        "Turn on",
+                        (!switching).then(|| Message::Enable(b.id.clone())),
+                        tokens,
+                    ))
+                } else {
+                    None
+                };
+                row![
+                    grid::act_slot(switch),
+                    grid::act_slot(Some(grid::icon_act(
+                        Kind::Ghost,
+                        Icon::Stop,
+                        "Stop bot and its tasks",
+                        (!switching).then(|| Message::AskStopBot(b.id.clone())),
+                        tokens
+                    ))),
+                    grid::act_slot(Some(grid::icon_act(
+                        Kind::Ghost,
+                        Icon::Next,
+                        "Open",
+                        Some(Message::Go(Screen::Bot(b.id.clone()))),
+                        tokens,
+                    ))),
+                ]
+                .spacing(4)
+                .align_y(Alignment::Center)
+                .into()
+            }),
         ]
-        .spacing(4)
-        .align_y(Alignment::Center)
-        .into()
-    }));
-    grid::sheet(columns, shown)
+    };
+    let cursor = state.cursor.selected();
+    let mut lines = Vec::new();
+    for group in groups {
+        lines.push(Line::Group {
+            name: group.name.clone(),
+            note: group.summary(),
+            open: group.open,
+            press: Box::new(Message::GroupToggled(group.key.clone())),
+        });
+        if group.open {
+            lines.extend(group.bots.into_iter().map(|b| Line::Row {
+                row: b,
+                picked: state.selection.contains(&b.id),
+                selected: cursor == Some(&b.id),
+                opens: RowRef::Bot(b.id.clone()),
+            }));
+        }
+    }
+    sheet::sheet(
+        columns,
+        lines,
+        app.density,
+        &app.hover,
+        app.tables.picked(List::Bots) > 0,
+        tokens,
+    )
+}
+
+/// A bot's status in the list. A bot at work, waiting for a person or
+/// with a task queued says that instead, in its colour, with the task
+/// on hover: the list is where a person looks for who is busy.
+fn now<'a>(bot: &'a Bot, tasks: &[crate::domain::Task], tokens: Tokens) -> El<'a> {
+    let state = BotNow::of(bot, tasks, &[]);
+    let Some(task) = state.task() else {
+        return status::bot(bot.status, tokens);
+    };
+    let tone = Tone::of_now(&state);
+    let glyph = match state {
+        BotNow::Queued { .. } => Icon::Hourglass,
+        _ => tone.icon(),
+    };
+    sheet::tip(
+        status_word(glyph, tone, state.word(), false, tokens),
+        format!("{}: {}", state.word(), task.headline(160)),
+        tokens,
+    )
 }
 
 /// The Team question: a name its teammates share, with the teams there

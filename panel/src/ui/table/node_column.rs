@@ -8,6 +8,7 @@ use crate::domain::{Node, NodeStatus};
 pub enum NodeColumn {
     Status,
     Node,
+    Host,
     /// Ascending, the one seen last first.
     LastSeen,
     /// Ascending, the certificate that runs out first on top.
@@ -22,7 +23,8 @@ impl SortColumn for NodeColumn {
         match self {
             Self::Status => "Status",
             Self::Node => "Node",
-            Self::LastSeen => "Last seen",
+            Self::Host => "Host",
+            Self::LastSeen => "Seen",
             Self::Certificate => "Certificate",
             Self::Axlr => "AXLR",
         }
@@ -32,6 +34,7 @@ impl SortColumn for NodeColumn {
         match self {
             Self::Status => rank(a.status).cmp(&rank(b.status)),
             Self::Node => a.id.cmp(&b.id),
+            Self::Host => a.host_name.cmp(&b.host_name),
             Self::LastSeen => b.last_seen_at.cmp(&a.last_seen_at),
             // A node with no certificate (a local socket) goes last.
             Self::Certificate => match (a.certificate_not_after, b.certificate_not_after) {
@@ -120,9 +123,14 @@ mod tests {
             NodeStatus::Unknown,
         ];
         assert!(all.windows(2).all(|w| rank(w[0]) < rank(w[1])));
+        assert_eq!(
+            ids(SortSpec::by(NodeColumn::Host, SortDirection::Descending), &nodes)[0],
+            "wrx80"
+        );
         for column in [
             NodeColumn::Status,
             NodeColumn::Node,
+            NodeColumn::Host,
             NodeColumn::LastSeen,
             NodeColumn::Certificate,
             NodeColumn::Axlr,

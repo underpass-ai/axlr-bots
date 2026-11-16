@@ -10,6 +10,21 @@ pub struct TriggerRef {
 }
 
 impl TriggerRef {
+    /// The kind of trigger, `manual` when the task names none.
+    pub fn kind(&self) -> &str {
+        if self.trigger_type.is_empty() {
+            "manual"
+        } else {
+            &self.trigger_type
+        }
+    }
+
+    /// The trigger's own name, or its kind when it has none: `round`,
+    /// `ops.item.assigned`, `manual`.
+    pub fn label(&self) -> &str {
+        if self.name.is_empty() { self.kind() } else { &self.name }
+    }
+
     /// `manual`, `webhook deploy`, `timer clock`.
     pub fn describe(&self) -> String {
         let kind = if self.trigger_type.is_empty() {
@@ -42,5 +57,11 @@ mod tests {
             name: "clock".into(),
         };
         assert_eq!(timer.describe(), "timer clock");
+        assert_eq!((timer.kind(), timer.label()), ("timer", "clock"));
+        assert_eq!((manual.kind(), manual.label()), ("manual", "manual"));
+        assert_eq!(
+            (TriggerRef::default().kind(), TriggerRef::default().label()),
+            ("manual", "manual")
+        );
     }
 }

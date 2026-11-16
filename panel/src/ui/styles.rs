@@ -80,7 +80,7 @@ pub fn page(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
     }
 }
 
-/// The side bar and the header strip.
+/// The rail and the top bar.
 pub fn raised(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
     move |_| container::Style {
         text_color: Some(tokens.text),
@@ -94,7 +94,193 @@ pub fn raised(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
     }
 }
 
-/// A thin line between the side bar or the header and the content.
+/// A line between two rows of a list: fainter than the line under its
+/// header, so two hundred of them do not rule the page.
+pub fn hairline(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
+        background: Some(Background::Color(mix(tokens.page, tokens.border, 0.55))),
+        ..container::Style::default()
+    }
+}
+
+/// The header of a group of rows: a strip of the raised grey.
+pub fn group(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
+        text_color: Some(tokens.muted),
+        background: Some(Background::Color(tokens.raised)),
+        ..container::Style::default()
+    }
+}
+
+/// A key's name beside what it does: small, in a hairline box.
+pub fn key_cap(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
+        text_color: Some(tokens.muted),
+        border: Border {
+            color: tokens.border,
+            width: 1.0,
+            radius: 4.0.into(),
+        },
+        ..container::Style::default()
+    }
+}
+
+/// The count on a place of the rail that waits for a person: ink on
+/// the amber, a pill.
+pub fn badge(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
+        text_color: Some(on(tokens.wait)),
+        background: Some(Background::Color(tokens.wait)),
+        border: Border {
+            radius: 8.0.into(),
+            ..Border::default()
+        },
+        ..container::Style::default()
+    }
+}
+
+/// The accent as ink for words on the page or the raised grey: a shade
+/// darker in the light theme, where the copper alone is too faint for
+/// small words.
+pub fn accent_ink(tokens: Tokens) -> Color {
+    if tokens.dark {
+        tokens.accent
+    } else {
+        shade(tokens.accent, 0.18)
+    }
+}
+
+/// The wash behind what is picked among its like: a chip that is on.
+pub fn picked_fill(tokens: Tokens) -> Color {
+    mix(tokens.page, tokens.accent, if tokens.dark { 0.13 } else { 0.10 })
+}
+
+/// The wash under the words a search found in a row or a result: the
+/// accent mixed into the page, light enough that the row's ink, muted
+/// or not, still reads on it.
+pub fn mark_fill(tokens: Tokens) -> Color {
+    mix(tokens.page, tokens.accent, if tokens.dark { 0.28 } else { 0.25 })
+}
+
+/// The faint wash of a row under the pointer.
+pub fn hover_fill(tokens: Tokens) -> Color {
+    mix(tokens.page, tokens.text, if tokens.dark { 0.05 } else { 0.035 })
+}
+
+/// A row of a list, which a click opens: the page's own ground, the
+/// faint wash under the pointer, and the picked wash when it is picked
+/// or the keyboard is on it (the accent's bar beside it is drawn by the
+/// row).
+pub fn row(tokens: Tokens, tinted: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_, status| {
+        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+        let fill = if tinted {
+            Some(picked_fill(tokens))
+        } else if hovered {
+            Some(hover_fill(tokens))
+        } else {
+            None
+        };
+        button::Style {
+            background: fill.map(Background::Color),
+            text_color: tokens.text,
+            border: Border::default(),
+            shadow: Shadow::default(),
+            snap: true,
+        }
+    }
+}
+
+/// A result of the palette: rounded, the picked wash when the arrows
+/// are on it, the faint wash under the pointer.
+pub fn palette_entry(tokens: Tokens, selected: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |theme, status| button::Style {
+        border: Border {
+            radius: RADIUS_S.into(),
+            ..Border::default()
+        },
+        ..row(tokens, selected)(theme, status)
+    }
+}
+
+/// The count of repeats a line folds, `×12`: small muted words in a
+/// hairline box.
+pub fn count_tag(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
+        text_color: Some(tokens.muted),
+        border: Border {
+            color: tokens.border,
+            width: 1.0,
+            radius: 5.0.into(),
+        },
+        ..container::Style::default()
+    }
+}
+
+/// The command palette over the page: the surface in a stronger line
+/// and larger corners than a card, as it floats over everything.
+pub fn palette(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
+        text_color: Some(tokens.text),
+        background: Some(Background::Color(tokens.surface)),
+        border: Border {
+            color: mix(tokens.border, tokens.text, 0.25),
+            width: 1.0,
+            radius: 12.0.into(),
+        },
+        ..container::Style::default()
+    }
+}
+
+/// A field without its own frame, inside one that draws it: the
+/// palette's.
+pub fn bare_field(tokens: Tokens) -> impl Fn(&Theme, text_input::Status) -> text_input::Style {
+    move |theme, status| text_input::Style {
+        background: Background::Color(Color::TRANSPARENT),
+        border: Border::default(),
+        ..field(tokens)(theme, status)
+    }
+}
+
+/// The search button of the top bar: a field to look at, a button to
+/// press. The accent's line under the pointer.
+pub fn search(tokens: Tokens) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_, status| {
+        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+        button::Style {
+            background: Some(Background::Color(tokens.surface)),
+            text_color: tokens.muted,
+            border: Border {
+                color: if hovered { tokens.accent } else { tokens.border },
+                width: 1.0,
+                radius: RADIUS.into(),
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        }
+    }
+}
+
+/// A bot as a small tile on Home: a hairline box, the accent's line
+/// under the pointer; a bot that is not on is muted.
+pub fn tile(tokens: Tokens, on: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_, status| {
+        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+        button::Style {
+            background: on.then_some(Background::Color(tokens.raised)),
+            text_color: if on { tokens.text } else { tokens.muted },
+            border: Border {
+                color: if hovered { tokens.accent } else { tokens.border },
+                width: 1.0,
+                radius: RADIUS_S.into(),
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        }
+    }
+}
+
+/// A thin line between the rail or the top bar and the content.
 pub fn rule(tokens: Tokens) -> impl Fn(&Theme) -> container::Style {
     move |_| container::Style {
         background: Some(Background::Color(tokens.border)),
@@ -264,11 +450,16 @@ pub enum Kind {
     Good,
     /// A quiet act in a row: no fill until hovered.
     Ghost,
-    /// A side bar entry; `true` when it is the current place, which the
-    /// accent marks (the bar beside it is drawn by the side bar).
-    Nav(bool),
     /// A filter chip; `true` when it is on.
     Chip(bool),
+    /// A place on the rail; `true` for the current one, in the accent
+    /// (the bar beside it is drawn by the rail). The others are muted
+    /// until the pointer is on them.
+    Rail(bool),
+    /// A chip over a list that narrows it; `true` when it is on: the
+    /// accent's line and ink on a light wash, not a solid block, so a
+    /// row of them stays quiet.
+    Filter(bool),
     /// A name that opens its page: ink, the accent under the pointer.
     Link,
     /// One choice of a segmented control; `true` when it is picked,
@@ -303,12 +494,14 @@ pub fn button_style(tokens: Tokens, kind: Kind) -> impl Fn(&Theme, button::Statu
             }
             Kind::Secondary => (Some(tokens.surface), tokens.text, tokens.border),
             Kind::Ghost => (hovered.then_some(tokens.raised), tokens.text, Color::TRANSPARENT),
-            Kind::Nav(true) => (None, tokens.accent, Color::TRANSPARENT),
-            Kind::Nav(false) => (
-                hovered.then(|| mix(tokens.raised, tokens.text, 0.06)),
-                tokens.text,
+            Kind::Rail(true) => (None, accent_ink(tokens), Color::TRANSPARENT),
+            Kind::Rail(false) => (
+                None,
+                if hovered { tokens.text } else { tokens.muted },
                 Color::TRANSPARENT,
             ),
+            Kind::Filter(true) => (Some(picked_fill(tokens)), accent_ink(tokens), tokens.accent),
+            Kind::Filter(false) => (hovered.then_some(tokens.raised), tokens.text, tokens.border),
             Kind::Chip(true) => (Some(tokens.accent), tokens.on_accent, tokens.accent),
             Kind::Chip(false) => (Some(tokens.surface), tokens.text, tokens.border),
             Kind::Link => (
@@ -331,7 +524,10 @@ pub fn button_style(tokens: Tokens, kind: Kind) -> impl Fn(&Theme, button::Statu
         // A chip or an entry that is on has no act left, but it is not off:
         // it keeps its full colour.
         let disabled = status == button::Status::Disabled
-            && !matches!(kind, Kind::Chip(true) | Kind::Nav(true) | Kind::Segment(true));
+            && !matches!(
+                kind,
+                Kind::Chip(true) | Kind::Segment(true) | Kind::Rail(true) | Kind::Filter(true)
+            );
         let radius = match kind {
             Kind::Segment(_) => RADIUS_S - 2.0,
             Kind::Link => 0.0,
@@ -593,19 +789,6 @@ mod tests {
                 .background
                 .is_some()
         );
-        let current = button_style(tokens, Kind::Nav(true))(&theme, button::Status::Active);
-        assert_eq!(current.background, None);
-        assert_eq!(current.text_color, tokens.accent);
-        assert!(
-            button_style(tokens, Kind::Nav(false))(&theme, button::Status::Active)
-                .background
-                .is_none()
-        );
-        assert!(
-            button_style(tokens, Kind::Nav(false))(&theme, button::Status::Hovered)
-                .background
-                .is_some()
-        );
         for kind in [Kind::Secondary, Kind::Good, Kind::Chip(true), Kind::Chip(false)] {
             let active = button_style(tokens, kind)(&theme, button::Status::Active);
             let hover = button_style(tokens, kind)(&theme, button::Status::Pressed);
@@ -648,6 +831,47 @@ mod tests {
             Some(Background::Color(tokens.surface))
         );
         assert_eq!(stat_call(tokens, Tone::Wait)(&theme).border.width, 1.0);
+    }
+
+    #[test]
+    fn the_rail_the_chips_over_a_list_and_the_small_parts() {
+        for tokens in [Tokens::LIGHT, Tokens::DARK] {
+            let theme = tokens.theme();
+            let here = button_style(tokens, Kind::Rail(true))(&theme, button::Status::Disabled);
+            assert_eq!((here.background, here.text_color), (None, accent_ink(tokens)));
+            let there = button_style(tokens, Kind::Rail(false))(&theme, button::Status::Active);
+            assert_eq!(there.text_color, tokens.muted);
+            let hovered = button_style(tokens, Kind::Rail(false))(&theme, button::Status::Hovered);
+            assert_eq!(hovered.text_color, tokens.text);
+            let on = button_style(tokens, Kind::Filter(true))(&theme, button::Status::Disabled);
+            assert_eq!(on.background, Some(Background::Color(picked_fill(tokens))));
+            assert_eq!((on.text_color, on.border.color), (accent_ink(tokens), tokens.accent));
+            let off = button_style(tokens, Kind::Filter(false))(&theme, button::Status::Active);
+            assert_eq!((off.background, off.border.color), (None, tokens.border));
+            assert_eq!(
+                search(tokens)(&theme, button::Status::Hovered).border.color,
+                tokens.accent
+            );
+            assert_eq!(
+                search(tokens)(&theme, button::Status::Active).border.color,
+                tokens.border
+            );
+            assert_eq!(
+                tile(tokens, true)(&theme, button::Status::Active).text_color,
+                tokens.text
+            );
+            assert_eq!(tile(tokens, false)(&theme, button::Status::Active).background, None);
+            assert_eq!(
+                tile(tokens, false)(&theme, button::Status::Hovered).border.color,
+                tokens.accent
+            );
+            assert_eq!(group(tokens)(&theme).background, Some(Background::Color(tokens.raised)));
+            assert_eq!(badge(tokens)(&theme).background, Some(Background::Color(tokens.wait)));
+            assert_eq!(key_cap(tokens)(&theme).border.color, tokens.border);
+            assert_ne!(hairline(tokens)(&theme).background, rule(tokens)(&theme).background);
+        }
+        assert_eq!(accent_ink(Tokens::DARK), Tokens::DARK.accent);
+        assert_ne!(accent_ink(Tokens::LIGHT), Tokens::LIGHT.accent);
     }
 
     /// Approve and Deny are tonal: a light tint, the tone's word, no

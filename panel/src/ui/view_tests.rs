@@ -14,6 +14,7 @@ use super::test_runtime::{connected, send};
 use super::view::tests::app;
 use super::view::widgets::{self, El};
 use super::*;
+use crate::application::Density;
 use crate::domain::{BotId, NodeId, TaskStatus};
 
 /// The headless renderer is not safe to run on two threads at once: the
@@ -35,6 +36,7 @@ pub(super) fn panel_settings() -> Settings {
     Settings {
         fonts,
         default_font: widgets::REGULAR,
+        default_text_size: widgets::BODY.into(),
         ..Settings::default()
     }
 }
@@ -93,7 +95,13 @@ fn messages_of_click(app: &App, label: &str) -> Vec<Message> {
     let mut ui = Simulator::with_size(panel_settings(), Size::new(WINDOW.width, 2000.0), view::view(app));
     ui.click(label)
         .unwrap_or_else(|e| panic!("cannot click {label}: {e:?}"));
-    ui.into_messages().collect()
+    said(ui)
+}
+
+/// What the screen sent, without the news of the pointer the glowing
+/// rows, cards and tiles under it give with every move.
+fn said<'a>(ui: Simulator<'a, Message>) -> Vec<Message> {
+    ui.into_messages().filter(|m| !matches!(m, Message::Hover(_))).collect()
 }
 
 fn simulator_misses(app: &App, word: &str) -> bool {
@@ -109,6 +117,17 @@ fn reads(app: &App, key: ReaderKey, words: &str) {
         .get(&key)
         .unwrap_or_else(|| panic!("no reader {key:?} on {:?}", app.screen));
     assert!(reader.source().contains(words), "{key:?} reads {:?}", reader.source());
+}
+
+/// Fails unless every word shows in the window's size at start: a
+/// list's cells cut their words to their column, so what a narrow
+/// window cuts is looked for in this one.
+fn shows_wide(app: &App, words: &[&str]) {
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(app));
+    for word in words {
+        assert!(ui.find(*word).is_ok(), "{word} is not on {:?}", app.screen);
+    }
 }
 
 fn shows(app: &App, words: &[&str]) {
@@ -169,6 +188,26 @@ fn the_settings_screen_shows_its_sections_and_rests_connect_once_connected() {
         messages_of_click(&app, "Edit as JSON").as_slice(),
         [Message::SettingsJsonOpen]
     ));
+    // The rows' height: the one in use rests, the other is one click.
+    shows(&app, &["Rows", "Comfortable", "Compact"]);
+    assert!(messages_of_click(&app, "Comfortable").is_empty());
+    assert!(matches!(
+        messages_of_click(&app, "Compact").as_slice(),
+        [Message::SetDensity(crate::application::Density::Compact)]
+    ));
+    // The hover glow, on by default: Off is one click, and On once off.
+    shows(&app, &["Hover glow", "On", "Off"]);
+    assert!(messages_of_click(&app, "On").is_empty());
+    assert!(matches!(
+        messages_of_click(&app, "Off").as_slice(),
+        [Message::SetMotion(crate::application::Motion::Off)]
+    ));
+    app.hover.set_motion(crate::application::Motion::Off);
+    assert!(matches!(
+        messages_of_click(&app, "On").as_slice(),
+        [Message::SetMotion(crate::application::Motion::On)]
+    ));
+    app.hover.set_motion(crate::application::Motion::On);
     app.apply(Message::SettingsCa("/other.crt".into()));
     shows(&app, &["Changed", "Connect"]);
     assert!(matches!(
@@ -214,9 +253,9 @@ fn the_new_bot_form_offers_the_models_the_settings_name() {
 }
 
 /// Home lists the five newest calls and the way to all of them, and
-/// the nodes that are not online before the others.
+/// the nodes that are away with the others.
 #[test]
-fn home_caps_what_needs_you_and_puts_nodes_away_first() {
+fn home_caps_what_needs_you_and_lists_the_nodes_that_are_away() {
     let mut app = connected();
     let fleet = app.fleet.as_mut().unwrap();
     let waiting = fleet
@@ -250,18 +289,20 @@ fn home_shows_the_counts_and_what_needs_a_person() {
             "nodes online",
             "need you",
             "failed today",
-            "expired today",
-            "Needs you",
+            "stopped today",
+            "Needs OK",
             "Review",
-            "Latest tasks",
+            "Fleet",
+            "Latest",
+            "All tasks",
             "2/2 nodes online",
             "127.0.0.1:7879",
         ],
     );
-    shows(&app, &["wants local_write · hello", "Approve", "Deny"]);
-    // Each node says when it was last seen.
+    shows_wide(&app, &["wants local_write · hello", "Approve", "Deny"]);
+    // Each node says how long ago it was last seen.
     let node = &app.fleet.as_ref().unwrap().nodes[0];
-    let seen = format!("seen {}", crate::ui::format::age(node.last_seen_at, app.now));
+    let seen = crate::ui::format::age(node.last_seen_at, app.now);
     shows(&app, &[seen.as_str()]);
     assert!(matches!(
         messages_of_click(&app, "Approve").as_slice(),
@@ -273,11 +314,33 @@ fn home_shows_the_counts_and_what_needs_a_person() {
     ));
     let sent = messages_of_click(&app, "Review");
     assert!(matches!(sent.as_slice(), [Message::Go(Screen::Task(_))]));
-    let sent = messages_of_click(&app, "expired today");
+    // Stopped and expired share a number, which goes to the expired.
+    let sent = messages_of_click(&app, "stopped today");
     assert!(matches!(
         sent.as_slice(),
         [Message::FilterStatus(Some(TaskStatus::Expired))]
     ));
+    // Every number goes to its list, the cost to the tasks that made it.
+    for (words, goes) in [
+        ("nodes online", Message::Go(Screen::Nodes)),
+        ("bots on", Message::Go(Screen::Bots)),
+        ("running", Message::FilterStatus(Some(TaskStatus::Running))),
+        ("need you", Message::FilterStatus(Some(TaskStatus::WaitingApproval))),
+        ("failed today", Message::FilterStatus(Some(TaskStatus::Failed))),
+        ("cost today", Message::FilterStatus(None)),
+    ] {
+        let sent = messages_of_click(&app, words);
+        assert_eq!(format!("{sent:?}"), format!("{:?}", [goes]), "{words}");
+    }
+    // A bot of the fleet is a tile that opens it, and a latest task a
+    // line that opens it.
+    let sent = messages_of_click(&app, "bot-wrx80");
+    assert!(
+        matches!(sent.as_slice(), [Message::Go(Screen::Bot(id))] if id.as_str() == "bot-wrx80"),
+        "{sent:?}"
+    );
+    let sent = messages_of_click(&app, "Say the time");
+    assert!(matches!(sent.as_slice(), [Message::Go(Screen::Task(_))]), "{sent:?}");
     let sent = messages_of_click(&app, "Nodes");
     assert!(matches!(sent.as_slice(), [Message::Go(Screen::Nodes)]));
     app.apply(Message::ToggleTheme);
@@ -291,29 +354,74 @@ fn the_cost_of_the_day_shows_whole_and_the_short_counts_stay_big() {
         app.fleet.as_mut().unwrap().overview.cost_usd_since = usd;
         let cost = format::cost(usd);
         for width in [MIN_WINDOW.width, WINDOW.width] {
-            // In the pixel face at the size its card gives it, which its
+            // In the pixel face at the size its cell gives it, which its
             // line's height tells; the point in a cell of its own.
             for part in cost.split('.') {
                 shows_whole(&app, width, part, |room| {
-                    widgets::number(part.to_string()).size(room.height / 1.3)
+                    widgets::number(part.to_string()).size(room.height)
                 });
             }
         }
     }
-    // Runs that did not tell their cost: at least, and how many.
+    // Runs that did not tell their cost: the number says at least.
     app.fleet.as_mut().unwrap().overview.cost_unknown_since = 2;
-    shows(&app, &["≥", "2 runs unknown"]);
-    app.fleet.as_mut().unwrap().overview.cost_unknown_since = 1;
-    shows(&app, &["1 run unknown"]);
+    shows(&app, &["≥"]);
     let _turn = turn();
     for width in [MIN_WINDOW.width, WINDOW.width] {
         let mut ui = Simulator::with_size(panel_settings(), Size::new(width, 2000.0), view::view(&app));
         let count = ui.find("2/2").unwrap().bounds();
         assert!(
-            (count.height - widgets::NUMBER * 1.3).abs() < 0.01,
+            (count.height - widgets::NUMBER).abs() < 0.01,
             "2/2 is smaller, {width} px wide"
         );
     }
+}
+
+/// Home never scrolls as a page: in the window's size at start its
+/// three columns end inside the window, with the fleet of a real size.
+#[test]
+fn home_fits_the_window_with_a_large_fleet() {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::large(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake);
+    send(&mut app, Message::SettingsSave);
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+    for words in [
+        "Fleet",
+        "Latest",
+        "Nodes",
+        "40 revoked hidden",
+        "All bots",
+        "stopped today",
+    ] {
+        let placed = ui.find(words).unwrap_or_else(|e| panic!("{words}: {e:?}")).bounds();
+        assert!(
+            placed.y + placed.height <= WINDOW.height && placed.x + placed.width <= WINDOW.width,
+            "{words} is out of the window at {placed:?}"
+        );
+    }
+    // Twenty of the newest tasks, one line each, the last one in sight.
+    let last = &app.fleet.as_ref().unwrap().tasks[19];
+    let age = crate::ui::format::age(last.created_at, app.now);
+    let placed = ui.find(age.as_str()).unwrap().visible_bounds();
+    assert!(placed.is_some(), "the twentieth task is cut out of Latest");
+    drop(ui);
+    // In the smallest window each card keeps its link whole and cuts a
+    // node's name with an ellipsis, not at its edge.
+    let mut ui = Simulator::with_size(panel_settings(), MIN_WINDOW, view::view(&app));
+    for words in ["All bots", "All tasks", "All", "Nodes", "stopped today"] {
+        let placed = ui.find(words).unwrap_or_else(|e| panic!("{words}: {e:?}"));
+        let seen = placed
+            .visible_bounds()
+            .unwrap_or_else(|| panic!("{words} is out of sight"));
+        assert!(seen.width >= placed.bounds().width - 0.5, "{words} is cut at {seen:?}");
+    }
+    assert!(ui.find("gx10-ff95").is_err(), "a long name is cut to its column");
+    let online = ui.find("wrx80").unwrap();
+    let seen = online.visible_bounds().unwrap();
+    assert!(seen.width >= online.bounds().width - 0.5, "wrx80 is cut at {seen:?}");
 }
 
 /// Objectives longer than Home shows: one with a path, one with a name
@@ -329,41 +437,335 @@ fn set_objective(app: &mut App, status: TaskStatus, words: &str) {
     tasks.iter_mut().find(|t| t.status == status).unwrap().objective = words.to_string();
 }
 
+/// A waiting task is one line on Home: what it asks whole when it is
+/// short, cut when it is long, and its age and its answers whole
+/// beside it either way.
 #[test]
-fn home_shows_what_a_waiting_task_asks_whole_beside_its_age_and_buttons() {
+fn home_shows_what_a_waiting_task_asks_on_one_line_beside_its_age_and_buttons() {
     let mut app = connected();
     let tokens = Tokens::of(app.mode);
+    shows_whole(&app, WINDOW.width, "Write hello into hello.txt", |_| {
+        text("Write hello into hello.txt")
+    });
+    shows_whole(&app, WINDOW.width, "wants local_write · hello", |_| {
+        text("wants local_write · hello").color(tokens.muted)
+    });
     for objective in ["Write hello into hello.txt"].iter().chain(&LONG_OBJECTIVES) {
         set_objective(&mut app, TaskStatus::WaitingApproval, objective);
-        let fleet = app.fleet.as_ref().unwrap();
-        let task = fleet.waiting()[0];
-        let headline = task.headline(70);
-        let wants = format!("wants {}", fleet.call_of(&task.id).unwrap().summary(40));
         for width in [MIN_WINDOW.width, WINDOW.width] {
-            shows_whole(&app, width, &headline, |_| text(headline.clone()));
-            shows_whole(&app, width, &wants, |_| widgets::muted(wants.clone(), tokens));
             for button in ["Approve", "Deny", "Review"] {
                 shows_whole(&app, width, button, |_| widgets::semibold(button).size(widgets::BODY));
             }
+            shows_whole(&app, width, "5m", |_| text("5m").size(widgets::SMALL));
+        }
+    }
+    // A long one is cut to its line, with an ellipsis.
+    assert!(simulator_misses(&app, LONG_OBJECTIVES[1]));
+}
+
+/// A latest task is one line too: whole when short in the window's
+/// size at start, cut when long, its age whole beside it.
+#[test]
+fn home_shows_the_latest_tasks_on_one_line_beside_their_ages() {
+    let mut app = connected();
+    shows_whole(&app, WINDOW.width, "List the files in your workspace", |_| {
+        text("List the files in your workspace").size(widgets::SMALL)
+    });
+    for objective in LONG_OBJECTIVES {
+        set_objective(&mut app, TaskStatus::Completed, objective);
+        assert!(simulator_misses(&app, objective));
+        for width in [MIN_WINDOW.width, WINDOW.width] {
+            shows_whole(&app, width, "30m", |_| text("30m").size(widgets::SMALL));
         }
     }
 }
 
-#[test]
-fn home_shows_the_latest_tasks_whole_beside_their_ages() {
-    let mut app = connected();
-    for objective in ["List the files in your workspace"].iter().chain(&LONG_OBJECTIVES) {
-        set_objective(&mut app, TaskStatus::Completed, objective);
-        let tasks = &app.fleet.as_ref().unwrap().tasks;
-        let headline = tasks
-            .iter()
-            .find(|t| t.status == TaskStatus::Completed)
-            .unwrap()
-            .headline(48);
-        for width in [MIN_WINDOW.width, WINDOW.width] {
-            shows_whole(&app, width, &headline, |_| text(headline.clone()).size(widgets::SMALL));
-        }
+/// The panel over the fleet of a real size, connected, on `screen`.
+fn large(screen: Screen) -> App {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::large(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake);
+    send(&mut app, Message::SettingsSave);
+    send(&mut app, Message::Go(screen));
+    app
+}
+
+/// How many rows of the list on `app` show whole in the window's size
+/// at start, from where its first two rows are laid: `first` and
+/// `second` are words of those rows.
+fn rows_in_sight(app: &App, first: &str, second: &str) -> (usize, f32) {
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(app));
+    let top = ui.find(first).unwrap().bounds();
+    let next = ui.find(second).unwrap().bounds();
+    let pitch = next.y - top.y;
+    let centre = top.y + top.height / 2.0;
+    let mut rows = 0;
+    while centre + pitch * rows as f32 + pitch / 2.0 <= WINDOW.height {
+        rows += 1;
     }
+    (rows, pitch)
+}
+
+/// The Tasks list of a real fleet in the window's size at start: one
+/// line a task at the density's height, nineteen of them in sight
+/// under a header that stays, twenty-three when compact.
+#[test]
+fn the_tasks_list_shows_nineteen_rows_and_more_when_compact() {
+    let mut app = large(Screen::Tasks);
+    let fleet = app.fleet.as_ref().unwrap();
+    let lines = find::FoldRepeats::on().lines(&fleet.tasks);
+    let folded = find::FoldRepeats::folded(&lines);
+    let count = format!("{} lines · 200 tasks", lines.len());
+    shows(&app, &[count.as_str(), "All", "Done", "Stopped", "Failed"]);
+    shows(&app, &[format!("Newest 200 tasks · {folded} repeats folded").as_str()]);
+    let (rows, pitch) = rows_in_sight(&app, "Say the time", "Write the weekly report");
+    assert_eq!(pitch, Density::Comfortable.row_height());
+    assert!(rows >= 19, "{rows} rows in sight");
+    send(&mut app, Message::SetDensity(Density::Compact));
+    let (compact, pitch) = rows_in_sight(&app, "Say the time", "Write the weekly report");
+    assert_eq!(pitch, Density::Compact.row_height());
+    assert!(compact >= 23, "{compact} rows in sight when compact");
+    // The header is over the rows, not among them: it is where it was
+    // whatever the rows do, right under the bar and its note.
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+    let head = ui.find("STATUS").unwrap().bounds();
+    let row = ui.find("Say the time").unwrap().bounds();
+    assert!(head.y < row.y && row.y - head.y < Density::Compact.row_height());
+    // A task an event made says the event's words first.
+    assert!(
+        ui.find("item-4198 · service-3 · gate failed: the unit tests of the client")
+            .is_ok()
+    );
+    assert!(ui.find("ops.item.assigned").is_ok() && ui.find("round").is_ok());
+}
+
+/// Bots are listed by team under headers that fold; a team with no
+/// bot on is met closed; the chips narrow them.
+#[test]
+fn the_bots_list_groups_by_team_and_folds_and_narrows() {
+    let mut app = large(Screen::Bots);
+    shows(
+        &app,
+        &[
+            "40",
+            "ops",
+            "4 on · 1 paused",
+            "ops-lead",
+            "audit",
+            "4 paused",
+            "no team",
+            "3 on",
+        ],
+    );
+    assert!(
+        simulator_misses(&app, "audit-lead"),
+        "a team with no bot on starts closed"
+    );
+    let sent = messages_of_click(&app, "audit");
+    assert!(
+        matches!(sent.as_slice(), [Message::GroupToggled(find::GroupKey::Team(team))] if team == "audit"),
+        "{sent:?}"
+    );
+    send(&mut app, Message::GroupToggled(find::GroupKey::Team("audit".into())));
+    shows(&app, &["audit-lead", "audit-spend"]);
+    send(&mut app, Message::GroupToggled(find::GroupKey::Team("ops".into())));
+    assert!(simulator_misses(&app, "ops-lead"));
+    // A bot's name opens its page.
+    let sent = messages_of_click(&app, "audit-lead");
+    assert!(
+        matches!(sent.as_slice(), [Message::Go(Screen::Bot(id))] if id.as_str() == "audit-lead"),
+        "{sent:?}"
+    );
+    // The chips come before the rows, whose status says the same word.
+    let sent = messages_of_click(&app, "Paused");
+    assert!(
+        matches!(sent.as_slice(), [Message::ShowBots(crate::ui::table::BotShow::Paused)]),
+        "{sent:?}"
+    );
+    send(&mut app, Message::ShowBots(crate::ui::table::BotShow::On));
+    shows(&app, &["support-lead", "bot-wrx80"]);
+    assert!(simulator_misses(&app, "audit"), "a team with no bot on is left out");
+    assert!(simulator_misses(&app, "support-survey"));
+    assert!(messages_of_click(&app, "On").is_empty(), "the chip that is on rests");
+}
+
+/// Revoked nodes are put away under a note that brings them back.
+#[test]
+fn the_nodes_list_puts_revoked_nodes_away_until_asked_for() {
+    let mut app = large(Screen::Nodes);
+    shows(
+        &app,
+        &["8", "Revoked", "40 revoked nodes are hidden.", "Show them", "node-03"],
+    );
+    assert!(simulator_misses(&app, "old-node-01"));
+    // The nodes online come first.
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+    let online = ui.find("wrx80").unwrap().bounds();
+    let away = ui.find("node-05").unwrap().bounds();
+    assert!(online.y < away.y);
+    drop(ui);
+    drop(_turn);
+    let sent = messages_of_click(&app, "Show them");
+    assert!(matches!(sent.as_slice(), [Message::ShowRevoked(true)]), "{sent:?}");
+    send(&mut app, Message::ShowRevoked(true));
+    shows(&app, &["48", "40 revoked nodes are shown.", "Hide them", "old-node-01"]);
+    let sent = messages_of_click(&app, "Revoked");
+    assert!(matches!(sent.as_slice(), [Message::ShowRevoked(false)]), "{sent:?}");
+}
+
+/// In the smallest window a list's chips go on to a second line and
+/// its acts stay in the window; the top bar keeps its right end with a
+/// long address and a version.
+#[test]
+fn the_bars_keep_their_acts_in_the_smallest_window() {
+    let mut app = large(Screen::Tasks);
+    app.endpoint = Some("control-plane.fleet.example.internal:7879".into());
+    app.fleet.as_mut().unwrap().build = Some(crate::domain::BuildStatus {
+        running: crate::domain::BuildIdentity {
+            version: "0.4.7".into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), MIN_WINDOW, view::view(&app));
+    for words in [
+        // The bot picker stands before New task, the last in the bar.
+        "New task",
+        "All",
+        "Stopped",
+        "· v0.4.7",
+        "updated 10:00:00",
+        "Search bots, tasks, nodes, actions…",
+    ] {
+        let placed = ui.find(words).unwrap_or_else(|e| panic!("{words}: {e:?}"));
+        let seen = placed
+            .visible_bounds()
+            .unwrap_or_else(|| panic!("{words} is out of sight"));
+        assert!(
+            seen.width >= placed.bounds().width - 0.5 && seen.x + seen.width <= MIN_WINDOW.width,
+            "{words} is cut at {seen:?}"
+        );
+    }
+    drop(ui);
+    // In the window's size at start the chips are one line and the bar
+    // is as high as the design's.
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+    let (all, stopped) = (ui.find("All").unwrap().bounds(), ui.find("Stopped").unwrap().bounds());
+    assert_eq!(all.y, stopped.y);
+    let head = ui.find("STATUS").unwrap().bounds();
+    assert!(head.y < 44.0 + 1.0 + 46.0 + 1.0 + 30.0 + 30.0, "{head:?}");
+}
+
+/// A form open over a list takes the room it needs and scrolls by
+/// itself: in the smallest window the list's bar stays where it was
+/// and the form's foot is cut by the form's own scroll, not by a page
+/// that grew.
+#[test]
+fn a_form_open_over_a_list_scrolls_by_itself_in_the_smallest_window() {
+    let mut app = large(Screen::Bots);
+    app.apply(Message::RegisterOpen);
+    app.apply(Message::RegisterAdvanced(true));
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), MIN_WINDOW, view::view(&app));
+    let bar = ui.find("From file").unwrap();
+    assert!(bar.visible_bounds().is_some() && bar.bounds().y < 44.0 + 46.0);
+    let name = ui.find("What should it do?").unwrap();
+    assert!(name.visible_bounds().is_some());
+    let foot = ui.find("It starts when you give it a task.").unwrap();
+    assert!(
+        foot.bounds().y > MIN_WINDOW.height || foot.visible_bounds().is_none(),
+        "the form's foot is reached by scrolling the form"
+    );
+    drop(ui);
+    // In the window's size at start the whole form and the first rows show.
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+    for words in ["It starts when you give it a task.", "STATUS", "ops"] {
+        let placed = ui.find(words).unwrap();
+        assert!(placed.visible_bounds().is_some(), "{words} is out of sight");
+    }
+}
+
+/// The frame: the search button asks for the palette, the rail goes to
+/// each place and counts what needs a person on Tasks.
+#[test]
+fn the_top_bar_searches_and_the_rail_goes_places() {
+    let mut app = connected();
+    let sent = messages_of_click(&app, "Search bots, tasks, nodes, actions…");
+    assert!(matches!(sent.as_slice(), [Message::PaletteOpen]), "{sent:?}");
+    let before = app.screen.clone();
+    assert_eq!(
+        app.apply(Message::PaletteOpen),
+        vec![Effect::Focus(Field::Palette)],
+        "the palette opens with the keyboard in its field"
+    );
+    assert!(app.palette.is_open());
+    assert_eq!(app.screen, before);
+    app.apply(Message::PaletteClose);
+    shows(&app, &["Ctrl K", "Home", "Tasks", "Bots", "Teams", "Nodes", "Settings"]);
+    for (place, screen) in [
+        ("Tasks", Screen::Tasks),
+        ("Bots", Screen::Bots),
+        ("Teams", Screen::Teams),
+        ("Settings", Screen::Settings),
+    ] {
+        let sent = messages_of_click(&app, place);
+        assert!(
+            matches!(sent.as_slice(), [Message::Go(s)] if *s == screen),
+            "{place}: {sent:?}"
+        );
+    }
+    // The rail is 68 px wide under a bar 44 px high, and the count of
+    // what needs a person sits on Tasks.
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+    let tasks = ui.find("Tasks").unwrap().bounds();
+    assert!(
+        tasks.x >= 0.0 && tasks.x + tasks.width <= 68.0 && tasks.y > 44.0,
+        "{tasks:?}"
+    );
+    let badge = ui.find("1").unwrap().bounds();
+    assert!(badge.x < 68.0 && badge.y < tasks.y && badge.y > 44.0, "{badge:?}");
+    let search = ui.find("Search bots, tasks, nodes, actions…").unwrap().bounds();
+    assert!(search.y + search.height < 44.0 && search.width < 520.0, "{search:?}");
+}
+
+/// With nothing waiting, Home says so in one quiet line; a bot's ask
+/// to listen, which is no task, still calls for a person.
+#[test]
+fn home_says_when_nothing_needs_a_person() {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::sample(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake.clone());
+    send(&mut app, Message::SettingsSave);
+    let waiting = app.fleet.as_ref().unwrap().waiting()[0].id.clone();
+    fake.finish_task(&waiting, TaskStatus::Completed);
+    let tick = app.now + chrono::Duration::seconds(3);
+    send(&mut app, Message::Tick(tick));
+    assert_eq!(app.waiting_count(), 0);
+    shows(
+        &app,
+        &["Nothing needs you", "No task waits for your OK. 1 task failed today."],
+    );
+    assert!(simulator_misses(&app, "Approve"));
+
+    let (_, asked) = subscribed_fleet();
+    let mut asked = asked;
+    let waiting = asked.fleet.as_ref().unwrap().waiting()[0].id.clone();
+    asked.fleet.as_mut().unwrap().tasks.retain(|t| t.id != waiting);
+    assert!(asked.waiting_count() > 0);
+    assert!(simulator_misses(&asked, "Nothing needs you"));
+    shows(&asked, &["bot asks to listen to a topic.", "Review"]);
+    let sent = messages_of_click(&asked, "Review");
+    assert!(
+        matches!(sent.as_slice(), [Message::Go(Screen::Bot(id))] if id.as_str() == "bot"),
+        "{sent:?}"
+    );
 }
 
 #[test]
@@ -372,35 +774,33 @@ fn the_nodes_screen_lists_the_nodes_and_mints_a_token() {
     send(&mut app, Message::Go(Screen::Nodes));
     shows(
         &app,
-        &["Nodes", "wrx80", "wrx80-node1", "gpu=rtx3090", "364 days", "0.14.0"],
+        &[
+            "Nodes",
+            "wrx80",
+            "wrx80-node1",
+            "0.14.0",
+            "HOST",
+            "SEEN",
+            "AXLR",
+            "AGENT",
+        ],
     );
-    // In the smallest window Revoke is an icon on each row; picked rows
-    // get it in words on the bar, and a wide window has both.
+    // Revoke is an icon on each row; picked rows get it in words on the
+    // bar.
+    assert!(simulator_misses(&app, "Revoke"));
     send(&mut app, Message::PickShown(crate::ui::table::List::Nodes, true));
     shows(&app, &["2 nodes selected", "Revoke"]);
     send(&mut app, Message::ClearPicks(crate::ui::table::List::Nodes));
-    {
-        let _turn = turn();
-        let mut wide = Simulator::with_size(panel_settings(), Size::new(1600.0, 1000.0), view::view(&app));
-        for word in ["AXLR", "0.14.0", "Revoke"] {
-            assert!(wide.find(word).is_ok(), "{word} is not on the wide Nodes");
-        }
-    }
-    // Each node's providers are chips under it, a local model by its id.
-    shows(
-        &app,
-        &["openrouter", "codex", "jev", "codex/gpt-6.1-sol", "codex/gpt-6-luna"],
-    );
+    // Each node's providers are on its line, a local model by its id.
+    shows_wide(&app, &["PROVIDERS", "openrouter"]);
     if let Some(fleet) = app.fleet.as_mut() {
-        fleet.nodes[1].capabilities.dedicated = true;
         for node in &mut fleet.nodes {
             node.capabilities.providers.clear();
         }
     }
-    shows(&app, &["dedicated"]);
     assert!(
-        simulator_misses(&app, "codex/gpt-6.1-sol"),
-        "a node that named no provider shows no chip"
+        simulator_misses(&app, "openrouter"),
+        "a node that named no provider shows none"
     );
     assert!(matches!(
         messages_of_click(&app, "New host token").as_slice(),
@@ -430,17 +830,23 @@ fn the_bots_screen_lists_switches_and_adds() {
     send(&mut app, Message::Go(Screen::Bots));
     shows(
         &app,
-        &["Bots", "bot-wrx80", "Ask first", "wrx80", "From file", "Runs on"],
+        &[
+            "Bots",
+            "bot-wrx80",
+            "Ask first",
+            "wrx80",
+            "From file",
+            "RUNS ON",
+            "no team",
+            "3 on",
+        ],
     );
-    // The model is cut to its column in the smallest window, whole in
-    // a wide one.
-    {
-        let _turn = turn();
-        let mut wide = Simulator::with_size(panel_settings(), Size::new(1600.0, 1000.0), view::view(&app));
-        for word in ["claude-haiku-5.5", "bot-act-with-approval", "Starts by"] {
-            assert!(wide.find(word).is_ok(), "{word} is not on the wide Bots");
-        }
-    }
+    // A cell cuts its words to its column in the smallest window; in
+    // the window's size at start they are whole.
+    shows_wide(
+        &app,
+        &["claude-haiku-5.5", "bot-act-with-approval", "MODEL", "STARTS BY"],
+    );
     app.apply(Message::RegisterOpen);
     shows(
         &app,
@@ -527,18 +933,17 @@ fn the_bots_screen_lists_switches_and_adds() {
         &[
             "Pause",
             "Stop",
+            "Edit",
+            "Delete",
             "It asks before acting",
             "wants local_write · hello",
             "Approve",
-            "What it does",
-            "Events",
-            "Recent work",
-            "New task",
-            "Copy mission",
-            "Advanced",
-            "Now",
+            "RIGHT NOW",
             "Needs OK",
             "It waits for your OK before it goes on.",
+            "LATEST WORK",
+            "STARTS BY",
+            "Urgent order",
         ],
     );
     assert!(matches!(
@@ -546,21 +951,9 @@ fn the_bots_screen_lists_switches_and_adds() {
         [Message::Go(Screen::Task(_))]
     ));
     assert!(
-        simulator_misses(&app, "How much may it do alone?"),
-        "Advanced is closed by default"
+        simulator_misses(&app, "Only watch and report"),
+        "its rules have their own tab"
     );
-    let sent = messages_of_click(&app, "Copy mission");
-    assert!(matches!(
-        sent.as_slice(),
-        [Message::Copy(mission)] if mission == "Do what each task asks, within the policy."
-    ));
-    assert!(!app.feed().unwrap().events.is_empty(), "the sample bot has events");
-    assert!(matches!(
-        messages_of_click(&app, "Copy events").as_slice(),
-        [Message::Copy(events)] if !events.is_empty()
-    ));
-    let sent = messages_of_click(&app, "New task");
-    assert!(matches!(sent.as_slice(), [Message::SubmitOpen(Some(_))]));
     assert!(matches!(
         messages_of_click(&app, "Approve").as_slice(),
         [Message::Approve(_)]
@@ -569,22 +962,34 @@ fn the_bots_screen_lists_switches_and_adds() {
         messages_of_click(&app, "Stop").as_slice(),
         [Message::AskStopBot(_)]
     ));
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Mission)));
+    shows(&app, &["WHAT IT DOES", "Copy mission"]);
+    let sent = messages_of_click(&app, "Copy mission");
     assert!(matches!(
-        messages_of_click(&app, "Advanced").as_slice(),
-        [Message::ShowAdvanced(true)]
+        sent.as_slice(),
+        [Message::Copy(mission)] if mission == "Do what each task asks, within the policy."
     ));
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Listens)));
+    shows(&app, &["EVENTS", "EMITS"]);
+    assert!(!app.feed().unwrap().events.is_empty(), "the sample bot has events");
+    assert!(matches!(
+        messages_of_click(&app, "Copy events").as_slice(),
+        [Message::Copy(events)] if !events.is_empty()
+    ));
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Work)));
+    let sent = messages_of_click(&app, "New task");
+    assert!(matches!(sent.as_slice(), [Message::SubmitOpen(Some(_))]));
 
-    app.apply(Message::ShowAdvanced(true));
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Rules)));
     shows(
         &app,
         &[
-            "How much may it do alone?",
+            "HOW MUCH MAY IT DO ALONE",
             "Ask me before acting",
             "Act on its own within its rules",
             "Only watch and report",
             "Starts by",
             "Budgets",
-            "Hide advanced",
         ],
     );
     assert!(
@@ -612,10 +1017,13 @@ fn the_bots_screen_lists_switches_and_adds() {
             crate::domain::AutonomyLevel::Propose,
         ),
     );
-    app.apply(Message::ShowAdvanced(true));
     shows(&app, &["Propose only"]);
     send(&mut app, Message::Go(Screen::Bots));
-    assert!(!app.advanced, "Advanced closes when the page changes");
+    assert_eq!(
+        app.tabs.bot,
+        inspector::BotTab::Rules,
+        "the next bot opens on the same tab"
+    );
 }
 
 #[test]
@@ -626,14 +1034,21 @@ fn the_tasks_screen_filters_and_sends() {
         &app,
         &[
             "Tasks",
-            "All 5",
-            "Needs OK 1",
-            "Failed 1",
-            "Expired 1",
+            "5 tasks",
+            "All",
+            "Needs OK",
+            "Failed",
+            "Expired",
             "Write hello into hello.txt",
-            "Age",
+            "STARTED BY",
+            "manual",
+            "AT",
+            "AGE",
         ],
     );
+    // A chip only for a status that has tasks.
+    assert!(simulator_misses(&app, "Stopped"));
+    assert!(simulator_misses(&app, "Queued"));
     // A row's acts are icons with tips; the words are on the bar once
     // rows are picked.
     send(&mut app, Message::PickShown(crate::ui::table::List::Tasks, true));
@@ -646,13 +1061,18 @@ fn the_tasks_screen_filters_and_sends() {
         [Message::AskBulk(_, crate::application::BulkAction::Approve)]
     ));
     send(&mut app, Message::ClearPicks(crate::ui::table::List::Tasks));
-    let sent = messages_of_click(&app, "Failed 1");
+    // The chip comes before the rows, whose status says the same word.
+    let sent = messages_of_click(&app, "Failed");
     assert!(matches!(
         sent.as_slice(),
         [Message::FilterStatus(Some(TaskStatus::Failed))]
     ));
     app.apply(Message::FilterStatus(Some(TaskStatus::Completed)));
-    shows(&app, &["List the files in your workspace"]);
+    shows(&app, &["List the files in your workspace", "1 of 5"]);
+    // The chip that is on stays when its last task leaves it.
+    app.apply(Message::FilterStatus(Some(TaskStatus::Cancelled)));
+    shows(&app, &["Stopped", "No task here", "0 of 5"]);
+    app.apply(Message::FilterStatus(Some(TaskStatus::Completed)));
     app.apply(Message::SubmitOpen(Some(BotId::new("bot-wrx80").unwrap())));
     app.apply(Message::SubmitObjective("Count the files".into()));
     shows(&app, &["New task", "Send"]);
@@ -685,7 +1105,7 @@ fn a_pending_task_whose_node_is_away_says_what_it_waits_for() {
     let mut app = super::view::tests::app_over(control_plane);
     send(&mut app, Message::SettingsSave);
     send(&mut app, Message::Go(Screen::Tasks));
-    shows(&app, &["Count the files", "Waiting for node wrx80, which is Offline"]);
+    shows_wide(&app, &["Count the files", "Waiting for node wrx80, which is Offline"]);
     send(&mut app, Message::Go(Screen::Task(task.id)));
     shows(&app, &["Waiting for node wrx80, which is Offline"]);
 }
@@ -699,18 +1119,16 @@ fn a_waiting_task_shows_the_call_and_its_answers() {
         &app,
         &[
             "Needs OK",
-            "It asked you",
             "local_write",
             "hello.txt",
             "Approve",
             "Deny",
             "Runs",
             "Timeline",
-            "Needs OK",
-            "gx10-ff95",
-            "trace carried",
         ],
     );
+    send(&mut app, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Runs)));
+    shows(&app, &["It asked you", "gx10-ff95", "trace carried"]);
     assert!(matches!(
         messages_of_click(&app, "Approve").as_slice(),
         [Message::Approve(_)]
@@ -724,7 +1142,7 @@ fn a_waiting_task_shows_the_call_and_its_answers() {
         [Message::Copy(call)] if call.starts_with("local_write\n") && call.contains("path: hello.txt")
     ));
     app.deciding = app.task.as_ref().map(|t| t.task.id.clone());
-    shows(&app, &["Sending your answer…"]);
+    shows(&app, &["Sending…"]);
 }
 
 /// The call a bot stops on before it publishes a post: a program on the
@@ -813,29 +1231,33 @@ fn a_finished_task_shows_its_answer_and_failure() {
         });
     }
     send(&mut app, Message::Go(Screen::Task(done)));
-    shows(&app, &["Its rules: allows local_list(path=*)"]);
-    shows(
+    // Its runs, with each call and why it ran, on Runs.
+    send(&mut app, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Runs)));
+    shows_wide(
         &app,
         &[
-            "Answer",
+            "Its rules: allows local_list(path=*)",
             "Steps",
             "Allowed by its rules",
             "done",
             "40 ms",
             "wrx80",
-            "Copy task",
-            "Copy answer",
-            "Select text",
-            "Copy timeline",
         ],
     );
-    assert!(matches!(
-        messages_of_click(&app, "Copy answer").as_slice(),
-        [Message::Copy(answer)] if answer == "There are 3 files."
-    ));
+    send(
+        &mut app,
+        Message::Tab(inspector::Tab::Task(inspector::TaskTab::Timeline)),
+    );
     assert!(matches!(
         messages_of_click(&app, "Copy timeline").as_slice(),
         [Message::Copy(timeline)] if timeline.contains("Done")
+    ));
+    // Its answer, what it was asked, to copy or to select, on Answer.
+    send(&mut app, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Answer)));
+    shows(&app, &["ANSWER", "Copy task", "Copy answer", "Select text"]);
+    assert!(matches!(
+        messages_of_click(&app, "Copy answer").as_slice(),
+        [Message::Copy(answer)] if answer == "There are 3 files."
     ));
     let objective = app.task.as_ref().unwrap().task.objective.clone();
     assert!(matches!(
@@ -852,7 +1274,7 @@ fn a_finished_task_shows_its_answer_and_failure() {
         messages_of_click(&app, "Formatted").as_slice(),
         [Message::AnswerSelecting(false)]
     ));
-    // A long objective shows whole under the header's first line.
+    // A long objective shows whole under what it was asked.
     app.task.as_mut().unwrap().task.objective = "Count the files\nthen list them".into();
     shows(&app, &["Count the files\nthen list them"]);
     assert_eq!(
@@ -913,7 +1335,10 @@ fn errors_and_empty_places_say_so() {
 fn now_says_what_each_bot_is_doing() {
     let mut app = connected();
     send(&mut app, Message::Go(Screen::Bots));
-    shows(&app, &["Now", "Working", "Say the time", "Needs OK", "Idle"]);
+    // In the list a bot that is doing something says that in the place
+    // of its status; one that is not says it is on.
+    shows(&app, &["Working", "Needs OK", "On"]);
+    assert!(simulator_misses(&app, "Enabled"));
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
     shows(&app, &["Working", "Say the time", "Open task"]);
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot-wrx80").unwrap())));
@@ -930,7 +1355,7 @@ fn the_chat_sends_and_shows_the_turns() {
     shows(
         &app,
         &[
-            "Talk to it",
+            "TALK TO IT",
             "Ask it something or give it an order. Each message runs as a task.",
             "Send",
         ],
@@ -978,19 +1403,15 @@ fn the_teams_screen_shows_who_is_in_each_and_what_happens() {
         serde_json::json!({"name": "stop.halt", "severity": "warning", "message": "a deploy is starting", "to": ["bot-wrx80"]}),
     );
     send(&mut app, Message::Tick(tick + chrono::Duration::seconds(3)));
-    shows(
-        &app,
-        &[
-            "ops",
-            "Members",
-            "Last word",
-            "lab",
-            "only one bot: a typo?",
-            "bot · bot-wrx80",
-        ],
-    );
-    let sent = messages_of_click(&app, "Open");
-    assert!(matches!(sent.as_slice(), [Message::Go(Screen::Team(name))] if name == "lab"));
+    // The first team opens in the inspector as the list fills.
+    assert_eq!(app.screen, Screen::Team("lab".into()));
+    shows(&app, &["ops", "BOTS", "ON", "lab", "Team lab"]);
+    // A team of one bot has a mark beside its name whose tip asks
+    // whether the name is a typo; the simulator draws no tip, so the
+    // words are not looked for here.
+    // A team's name opens it in the inspector.
+    let sent = messages_of_click(&app, "ops");
+    assert!(matches!(sent.as_slice(), [Message::Go(Screen::Team(name))] if name == "ops"));
     send(&mut app, Message::Go(Screen::Team("ops".into())));
     shows(
         &app,
@@ -1000,9 +1421,13 @@ fn the_teams_screen_shows_who_is_in_each_and_what_happens() {
             "What happens",
             "Warning to the team",
             "bot → bot-wrx80: a deploy is starting",
-            "Urgent order",
         ],
     );
+    send(
+        &mut app,
+        Message::Tab(inspector::Tab::Team(inspector::TeamTab::Members)),
+    );
+    shows(&app, &["bot", "bot-wrx80", "Urgent order"]);
     assert!(matches!(
         messages_of_click(&app, "Urgent order").as_slice(),
         [Message::OrderOpen(_)]
@@ -1061,7 +1486,16 @@ fn a_bot_page_shows_its_team_and_an_urgent_order() {
     send(&mut app, Message::RegisterSubmit);
     let id = BotId::new("worker-1").unwrap();
     send(&mut app, Message::Go(Screen::Bot(id.clone())));
-    shows(&app, &["Team", "ops", "Change", "Urgent order"]);
+    // Its team is on its Mission tab; the urgent order at the foot of Now.
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Mission)));
+    shows(&app, &["TEAM", "ops", "Change"]);
+    let sent = messages_of_click(&app, "Change");
+    assert!(matches!(sent.as_slice(), [Message::TeamEdit(_, words)] if words == "ops"));
+    app.apply(Message::TeamEdit(id.clone(), "ops".into()));
+    shows(&app, &["Save", "Cancel"]);
+    app.apply(Message::TeamCancel);
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Now)));
+    shows(&app, &["Urgent order"]);
     assert!(
         messages_of_click(&app, "Urgent order").is_empty(),
         "a bot not switched on takes no order"
@@ -1069,11 +1503,6 @@ fn a_bot_page_shows_its_team_and_an_urgent_order() {
     send(&mut app, Message::Enable(id.clone()));
     let sent = messages_of_click(&app, "Urgent order");
     assert!(matches!(sent.as_slice(), [Message::OrderOpen(to)] if *to == id));
-    let sent = messages_of_click(&app, "Change");
-    assert!(matches!(sent.as_slice(), [Message::TeamEdit(_, words)] if words == "ops"));
-    app.apply(Message::TeamEdit(id.clone(), "ops".into()));
-    shows(&app, &["Save", "Cancel"]);
-    app.apply(Message::TeamCancel);
 
     // The order asks for its words, and goes only with some.
     send(&mut app, Message::OrderOpen(id.clone()));
@@ -1100,7 +1529,7 @@ fn a_bot_page_shows_its_team_and_an_urgent_order() {
 
     // Any bot takes one, in a team or not.
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
-    shows(&app, &["In no team: it knows no other bot", "Urgent order"]);
+    shows(&app, &["Urgent order"]);
     assert!(simulator_misses(&app, "Send the order"));
     assert!(matches!(
         messages_of_click(&app, "Urgent order").as_slice(),
@@ -1129,8 +1558,10 @@ fn a_task_says_it_was_urgent_and_why_it_stopped() {
     );
     app.apply(Message::SubmitObjective("Come back".into()));
     send(&mut app, Message::SubmitSend);
-    shows(&app, &["urgent", "Started by", "Not run yet: waiting for a node"]);
+    shows(&app, &["urgent", "STARTED"]);
     hides(&app, &["Told by", "nobody"]);
+    send(&mut app, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Runs)));
+    shows(&app, &["Not run yet: waiting for a node"]);
     // Cancelled before a node took it: it never ran and waits for nothing.
     let Screen::Task(queued) = app.screen.clone() else {
         panic!("not on the task: {:?}", app.screen)
@@ -1163,11 +1594,13 @@ fn the_chat_writes_to_a_running_task_and_shows_its_answer() {
     fake.say(&running, "OK, row F next.");
     let tick = app.now + chrono::Duration::seconds(5);
     send(&mut app, Message::Tick(tick));
-    shows(&app, &["check row F", "OK, row F next.", "You wrote", "It answered"]);
+    shows(&app, &["check row F", "OK, row F next."]);
     assert!(matches!(
         messages_of_click(&app, "OK, row F next.").as_slice(),
         [Message::Go(Screen::Task(id))] if *id == running
     ));
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Listens)));
+    shows(&app, &["You wrote", "It answered"]);
 }
 
 #[test]
@@ -1192,6 +1625,7 @@ fn a_bot_page_shows_the_task_of_each_event_whole() {
     )
     .unwrap();
     app.bot.as_mut().unwrap().feed.events.push(failed);
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Listens)));
     let tokens = Tokens::of(app.mode);
     for width in [MIN_WINDOW.width, WINDOW.width] {
         for id in [running.as_str(), "task-68ed…"] {
@@ -1204,6 +1638,7 @@ fn a_bot_page_shows_the_task_of_each_event_whole() {
 fn a_bot_page_keeps_the_button_that_changes_its_teams_in_sight() {
     let mut app = connected();
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Mission)));
     let tokens = Tokens::of(app.mode);
     let none = "In no team: it knows no other bot";
     for teams in [&[][..], &["ops", "night-shift", "weekly-reports", "storage"]] {
@@ -1246,16 +1681,23 @@ fn a_bot_page_shows_what_it_listens_to_and_its_asks() {
     let waiting_before = app.waiting_count();
     assert_eq!(app.pending_asks(), 1);
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
+    // Its asks wait on Now; what it listens to has its own tab.
     shows(
         &app,
         &[
-            "Listens to",
-            "pedido.*",
-            "from bot-wrx80",
             "bot asks to listen to error.*",
             "\u{201c}para reintentar si recepcion falla\u{201d}",
             "Approve",
             "Deny",
+        ],
+    );
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Listens)));
+    shows(
+        &app,
+        &[
+            "LISTENS TO",
+            "pedido.*",
+            "from bot-wrx80",
             "Listen to a topic",
             "Remove",
         ],
@@ -1322,10 +1764,14 @@ fn a_team_shows_its_topics_and_the_operator_publishes() {
         serde_json::json!({"name": "info.turno", "from": "bot-wrx80", "message": "shift"}),
     );
     send(&mut app, Message::Go(Screen::Team("ops".into())));
+    send(
+        &mut app,
+        Message::Tab(inspector::Tab::Team(inspector::TeamTab::Members)),
+    );
     shows(
         &app,
         &[
-            "Topics",
+            "TOPICS",
             "pedido.nuevo",
             "publishes bot-wrx80",
             "listens bot (task)",
@@ -1336,6 +1782,10 @@ fn a_team_shows_its_topics_and_the_operator_publishes() {
     );
     let sent = messages_of_click(&app, "Publish an event");
     assert!(matches!(sent.as_slice(), [Message::PublishOpen(team)] if team == "ops"));
+    send(
+        &mut app,
+        Message::Tab(inspector::Tab::Team(inspector::TeamTab::Happens)),
+    );
     send(&mut app, Message::PublishOpen("ops".into()));
     app.apply(Message::PublishName("stop.all".into()));
     app.apply(Message::PublishMessage("Everyone stop".into()));
@@ -1352,7 +1802,7 @@ fn a_team_shows_its_topics_and_the_operator_publishes() {
 fn a_shortcut_publishes_its_event_in_one_press() {
     let (fake, mut app) = subscribed_fleet();
     send(&mut app, Message::Go(Screen::Team("ops".into())));
-    shows(&app, &["Shortcuts", "Notice", "Stop all"]);
+    shows(&app, &["SHORTCUTS", "Notice", "Stop all"]);
     let sent = messages_of_click(&app, "Stop all");
     assert!(matches!(sent.as_slice(), [Message::Shortcut(1)]));
     send(&mut app, Message::Shortcut(0));
@@ -1370,6 +1820,10 @@ fn an_older_control_plane_has_no_topics_and_nothing_else_breaks() {
     let (fake, mut app) = subscribed_fleet();
     fake.without_newer_routes();
     send(&mut app, Message::Go(Screen::Team("ops".into())));
+    send(
+        &mut app,
+        Message::Tab(inspector::Tab::Team(inspector::TeamTab::Members)),
+    );
     shows(
         &app,
         &[
@@ -1404,16 +1858,12 @@ fn a_task_an_event_made_says_who_told_it_and_what_it_knew() {
         "evt-9",
     );
     send(&mut app, Message::Go(Screen::Task(running)));
-    shows(
-        &app,
-        &[
-            "Told by",
-            "bot-wrx80 · pedido.nuevo: table 4",
-            "Knew",
-            "bot-wrx80 · info.turno: shift at six",
-        ],
-    );
+    // The event's message is its title; who told it is its From.
+    shows(&app, &["table 4", "FROM", "bot-wrx80"]);
+    send(&mut app, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Answer)));
+    shows(&app, &["KNEW", "bot-wrx80 · info.turno: shift at six"]);
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
+    send(&mut app, Message::Tab(inspector::Tab::Bot(inspector::BotTab::Listens)));
     shows(&app, &["Your teammate bot-wrx80 says (warn.stock): low on boxes"]);
 }
 
@@ -1431,6 +1881,7 @@ fn a_finished_task_lists_its_files_and_saves_a_kept_one() {
         .id
         .clone();
     send(&mut app, Message::Go(Screen::Task(done)));
+    send(&mut app, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Files)));
     shows(
         &app,
         &[
@@ -1485,22 +1936,17 @@ fn a_running_task_shows_its_activity_live_and_every_part_copies() {
     shows(
         &app,
         &[
-            "What it thinks",
-            "The clock may drift.",
-            "Copy thinking",
             "Activity",
-            "live",
             "Talk to it",
             "Copy activity",
             "local_exec",
-            "ok",
             "40 ms",
             "get_time",
             "running",
             "Asked bot-wrx80",
             "Open task",
-            "What it says",
-            "Copy words",
+            "I will read the host's clock.",
+            "Checking it against the time server.",
         ],
     );
     // The run's progress is in the Activity, not in the timeline.
@@ -1518,6 +1964,18 @@ fn a_running_task_shows_its_activity_live_and_every_part_copies() {
         copied.as_slice(),
         [Message::Copy(all)] if all.contains("local_exec · ok · 40 ms") && all.contains("Checking it against the time server.") && all.contains("Thinking: The clock may drift.")
     ));
+    // Its words so far and its thinking, on Answer.
+    send(&mut app, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Answer)));
+    shows(
+        &app,
+        &[
+            "WHAT IT THOUGHT",
+            "The clock may drift.",
+            "Copy thinking",
+            "WHAT IT SAYS SO FAR",
+            "Copy words",
+        ],
+    );
     assert!(matches!(
         messages_of_click(&app, "Copy thinking").as_slice(),
         [Message::Copy(thoughts)] if thoughts == "The clock may drift."
@@ -1526,16 +1984,20 @@ fn a_running_task_shows_its_activity_live_and_every_part_copies() {
         messages_of_click(&app, "Copy words").as_slice(),
         [Message::Copy(words)] if words.starts_with("I will read the host's clock.")
     ));
+    send(
+        &mut app,
+        Message::Tab(inspector::Tab::Task(inspector::TaskTab::Activity)),
+    );
 
     // A click on a step opens its details, which copy too.
     assert!(matches!(
         messages_of_click(&app, "local_exec").as_slice(),
-        [Message::ActivityPick(0)]
+        [Message::ActivityPick(1)]
     ));
-    send(&mut app, Message::ActivityPick(0));
+    send(&mut app, Message::ActivityPick(1));
     shows(
         &app,
-        &["Arguments", "{\"program\":\"date\"}", "Call id", "c1", "Copy step"],
+        &["ARGUMENTS", "{\"program\":\"date\"}", "CALL ID", "c1", "Copy step"],
     );
     assert!(matches!(
         messages_of_click(&app, "Copy step").as_slice(),
@@ -1566,14 +2028,14 @@ fn a_finished_task_keeps_its_activity_and_a_task_without_one_shows_none() {
         .id
         .clone();
     send(&mut app, Message::Go(Screen::Task(done)));
-    assert!(simulator_misses(&app, "Activity"));
+    shows(&app, &["It told nothing of what it did"]);
     send(&mut app, Message::Go(Screen::Task(running.clone())));
     send(&mut app, Message::AskCancel(running));
     send(&mut app, Message::ConfirmYes);
     let tick = app.now + chrono::Duration::seconds(3);
     send(&mut app, Message::Tick(tick));
-    shows(&app, &["Activity", "local_exec", "no end seen", "Copy activity"]);
-    assert!(simulator_misses(&app, "Talk to it"));
+    shows(&app, &["Activity", "local_exec", "no end seen"]);
+    assert!(simulator_misses(&app, "Jump to latest"), "it no longer runs");
 }
 
 #[test]
@@ -1603,14 +2065,11 @@ fn a_bridged_call_shows_its_mcp_tool_its_arguments_and_why_it_failed() {
         ]),
     );
     send(&mut app, Message::Go(Screen::Task(running)));
-    shows(
+    // A call that says no why shows its arguments; its error waits in
+    // its details.
+    shows_wide(
         &app,
-        &[
-            "get_status",
-            "{\"env\":\"pre\",\"only_failed\":true}",
-            "failed",
-            "the session expired: log in again",
-        ],
+        &["get_status", "{\"env\":\"pre\",\"only_failed\":true}", "300 ms"],
     );
     let index = app
         .live
@@ -1622,7 +2081,15 @@ fn a_bridged_call_shows_its_mcp_tool_its_arguments_and_why_it_failed() {
         .position(|e| e.headline().starts_with("get_status"))
         .unwrap();
     send(&mut app, Message::ActivityPick(index));
-    shows(&app, &["MCP tool", "axlr_call_tool", "Error"]);
+    shows(
+        &app,
+        &[
+            "MCP TOOL",
+            "axlr_call_tool",
+            "WHY IT FAILED",
+            "the session expired: log in again",
+        ],
+    );
 }
 
 #[test]
@@ -1646,10 +2113,12 @@ fn a_waiting_task_shows_approve_first_and_its_words_to_read_or_select() {
         let mut ui = simulator(view::view(&app));
         ui.find(word).unwrap_or_else(|e| panic!("{word}: {e:?}")).bounds().y
     };
-    // Approve and Deny come before the Activity, in the first view.
-    assert!(top("Approve") < top("What it says"));
-    assert!(top("Approve") < 600.0);
-    shows(&app, &["Needs OK to call local_write", "Select words"]);
+    // Approve and Deny are in the inspector's header, at its top.
+    assert!(top("Approve") < 120.0);
+    shows(&app, &["Needs OK to call local_write"]);
+    // What it said before it asked, on Answer.
+    send(&mut app, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Answer)));
+    shows(&app, &["Select words"]);
     // The words read formatted: no Markdown marks in sight.
     assert!(simulator_misses(&app, "The file is **missing**; I want to write it."));
     assert!(!app.live.as_ref().unwrap().markdown.items().is_empty());
@@ -1665,8 +2134,8 @@ fn a_waiting_task_shows_approve_first_and_its_words_to_read_or_select() {
     // What its run said before it asked is not an answer: the task has
     // not ended.
     app.answer = Some(crate::ui::Answer::new("I want to write it.".into()));
-    shows(&app, &["What it said before asking you"]);
-    assert!(simulator_misses(&app, "Answer"));
+    shows(&app, &["WHAT IT SAID BEFORE ASKING YOU"]);
+    assert!(simulator_misses(&app, "ANSWER"));
 }
 
 #[test]
@@ -1725,7 +2194,7 @@ fn versions_show_and_a_bot_with_a_newer_one_offers_the_update() {
     {
         let _turn = turn();
         let mut wide = Simulator::with_size(panel_settings(), Size::new(1600.0, 1000.0), view::view(&app));
-        for words in ["v1.2.0 · claude-haiku-5.5", "v2.0.0 · claude-haiku-5.5"] {
+        for words in ["v1.2.0", "v2.0.0", "claude-haiku-5.5"] {
             assert!(wide.find(words).is_ok(), "{words} is not on the wide Bots");
         }
     }
@@ -1750,7 +2219,7 @@ fn versions_show_and_a_bot_with_a_newer_one_offers_the_update() {
     assert!(simulator_misses(&app, "Update to"));
 
     send(&mut app, Message::Go(Screen::Nodes));
-    shows(&app, &["agent v0.3.0"]);
+    shows(&app, &["v0.3.0"]);
 }
 
 /// A task with a task it delegated, a tool with its duration, a cut and
@@ -1786,21 +2255,28 @@ pub(super) fn delegating_activity() -> crate::domain::TaskActivity {
 }
 
 #[test]
-fn the_activity_screen_shows_the_tree_its_tools_and_the_transcript_mark() {
+fn the_runs_tab_shows_the_tree_its_tools_and_the_transcript_mark() {
     let mut app = connected();
-    let id = crate::domain::TaskId::new("task-root").unwrap();
-    app.screen = Screen::Activity(id.clone());
+    let tree = delegating_activity();
+    let id = tree.task.id.clone();
+    app.screen = Screen::Task(id.clone());
+    app.tabs.task = inspector::TaskTab::Runs;
+    app.task = Some(crate::application::TaskDetail {
+        task: tree.task.clone(),
+        executions: Vec::new(),
+        events: Vec::new(),
+    });
     let mut screen = ActivityScreen::new(id.clone());
     assert!(
         !view_has(&app, "completed from transcript"),
         "nothing is drawn before the tree is read"
     );
-    screen.loaded(delegating_activity());
+    screen.loaded(tree);
     app.activity = Some(screen);
-    shows(
+    shows_wide(
         &app,
         &[
-            "Activity",
+            "Everything it did, with what it asked",
             "2 tasks",
             "local_read",
             "local_write",
@@ -1808,11 +2284,11 @@ fn the_activity_screen_shows_the_tree_its_tools_and_the_transcript_mark() {
             "completed from transcript",
         ],
     );
-    // The tasks of the tree open their own pages, and the screen goes back to the task.
+    // A task of the tree opens in the inspector.
     assert!(
-        messages_of_click(&app, "Task")
+        messages_of_click(&app, "Open")
             .iter()
-            .any(|m| matches!(m, Message::Go(Screen::Task(t)) if *t == id))
+            .any(|m| matches!(m, Message::Go(Screen::Task(_))))
     );
 }
 
@@ -1821,9 +2297,9 @@ fn view_has(app: &App, word: &str) -> bool {
 }
 
 #[test]
-fn a_task_page_opens_the_activity_screen_and_the_tree_is_read_and_followed() {
+fn the_runs_tab_reads_the_tree_and_follows_it_while_it_runs() {
     let mut app = connected();
-    let done = app
+    let running = app
         .fleet
         .as_ref()
         .unwrap()
@@ -1833,25 +2309,25 @@ fn a_task_page_opens_the_activity_screen_and_the_tree_is_read_and_followed() {
         .unwrap()
         .id
         .clone();
-    send(&mut app, Message::Go(Screen::Task(done.clone())));
+    send(&mut app, Message::Go(Screen::Task(running.clone())));
+    assert!(app.activity.is_none(), "the tree waits for its tab");
     assert!(
-        messages_of_click(&app, "Everything it did")
+        messages_of_click(&app, "Runs")
             .iter()
-            .any(|m| matches!(m, Message::Go(Screen::Activity(t)) if *t == done))
+            .any(|m| matches!(m, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Runs))))
     );
-    send(&mut app, Message::Go(Screen::Activity(done.clone())));
+    send(&mut app, Message::Tab(inspector::Tab::Task(inspector::TaskTab::Runs)));
     let screen = app.activity.as_ref().unwrap();
     assert!(
         screen.tree.is_some() && screen.cursor.is_some(),
         "read once, then followed"
     );
     assert!(!screen.finished());
-    shows(&app, &["Activity", "live"]);
-    // Leaving drops the tree: another task's screen starts empty.
-    send(&mut app, Message::Go(Screen::Tasks));
+    shows_wide(&app, &["Everything it did, with what it asked", "live"]);
+    // Another task drops the tree: its own starts empty.
     send(
         &mut app,
-        Message::Go(Screen::Activity(crate::domain::TaskId::new("other").unwrap())),
+        Message::Go(Screen::Task(crate::domain::TaskId::new("other").unwrap())),
     );
     let other = app.activity.as_ref().unwrap();
     assert!(
@@ -1859,4 +2335,572 @@ fn a_task_page_opens_the_activity_screen_and_the_tree_is_read_and_followed() {
         "a task that is not there has no tree"
     );
     assert!(app.banner.is_some(), "and the screen says why");
+}
+
+/// A drawing of the panel as pixels: its width and its colours, four
+/// bytes each, at twice the window's points.
+fn pixels(app: &App) -> (usize, Vec<u8>) {
+    let _turn = turn();
+    let theme = Tokens::of(app.mode).theme();
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(app));
+    let snapshot = ui.snapshot(&theme).unwrap();
+    let scratch = tempfile::tempdir().unwrap();
+    assert!(snapshot.matches_image(scratch.path().join("shot")).unwrap());
+    let drawn = std::fs::read_dir(scratch.path())
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let picture = iced::advanced::graphics::image::load(&iced::widget::image::Handle::from_path(&drawn)).unwrap();
+    (picture.width() as usize, picture.as_raw().to_vec())
+}
+
+/// The colour drawn at a place, in points.
+fn colour_at(drawing: &(usize, Vec<u8>), x: f32, y: f32) -> [u8; 3] {
+    let at = (((y * 2.0) as usize) * drawing.0 + (x * 2.0) as usize) * 4;
+    [drawing.1[at], drawing.1[at + 1], drawing.1[at + 2]]
+}
+
+fn rgb(colour: iced::Color) -> [u8; 3] {
+    let [r, g, b, _] = colour.into_rgba8();
+    [r, g, b]
+}
+
+/// The filter: a click puts the keyboard in it and what is typed there
+/// (`/`, `j` and `k` too) filters the list; Esc is the field's (it
+/// leaves it, and the panel hears it as a key a field took); the arrows
+/// and Enter go on to the list's cursor.
+#[test]
+fn the_filter_keeps_what_is_typed_and_lets_the_arrows_and_enter_through() {
+    use iced::event::Status;
+    use iced::keyboard::{Key, key::Named};
+    let app = large(Screen::Tasks);
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+    ui.click(iced::widget::Id::new(Field::ListFilter.id())).unwrap();
+    assert!(ui.find(iced_test::selector::is_focused()).is_ok());
+    ui.typewrite("gate/jk");
+    assert_eq!(ui.tap_key(Key::Named(Named::ArrowDown)), Status::Ignored);
+    assert_eq!(ui.tap_key(Key::Named(Named::Enter)), Status::Ignored);
+    assert_eq!(ui.tap_key(Key::Named(Named::Escape)), Status::Captured);
+    assert!(
+        ui.find(iced_test::selector::is_focused()).is_err(),
+        "Esc left the field"
+    );
+    let typed: Vec<String> = ui
+        .into_messages()
+        .filter_map(|m| match m {
+            Message::ListFilterTyped(typed) => Some(typed),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(typed.first().map(String::as_str), Some("g"));
+    assert_eq!(typed.last().map(String::as_str), Some("gate/jk"));
+}
+
+/// What the filter leaves: the rows that answer, counted, with what it
+/// found marked (a marked cell is drawn in pieces, so its words are not
+/// one text any more); nothing left says so.
+#[test]
+fn the_filter_leaves_the_rows_that_answer_and_says_when_none_does() {
+    let mut app = large(Screen::Tasks);
+    send(&mut app, Message::ListFilterTyped("gate".into()));
+    shows(
+        &app,
+        &["19 of 200", "ops-deploy", "support-triage", "gate", "Newest 200 tasks"],
+    );
+    assert!(simulator_misses(&app, "Say the time"));
+    assert!(
+        simulator_misses(
+            &app,
+            "item-4198 · service-3 · gate failed: the unit tests of the client"
+        ),
+        "the word found is marked in it"
+    );
+    send(&mut app, Message::ListFilterTyped("zzzz".into()));
+    shows(&app, &["Nothing matches zzzz in the newest 200 tasks."]);
+    send(&mut app, Message::Go(Screen::Bots));
+    send(&mut app, Message::ListFilterTyped("zzzz".into()));
+    shows(&app, &["Nothing matches zzzz among the 40 bots."]);
+    send(&mut app, Message::Go(Screen::Nodes));
+    send(&mut app, Message::ListFilterTyped("zzzz".into()));
+    shows(&app, &["Nothing matches zzzz among the 8 nodes."]);
+    send(&mut app, Message::Go(Screen::Teams));
+    send(&mut app, Message::ListFilterTyped("zzzz".into()));
+    shows(&app, &["Nothing matches zzzz among the 8 teams."]);
+}
+
+/// Folded, a line counts the repeats it holds; unfolded, every task is
+/// a line. The options sit on the note line.
+#[test]
+fn a_folded_line_counts_its_repeats() {
+    let mut app = large(Screen::Tasks);
+    shows(&app, &["×39", "Fold repeats", "Group:", "none"]);
+    let sent = messages_of_click(&app, "Fold repeats");
+    assert!(matches!(sent.as_slice(), [Message::FoldToggled]), "{sent:?}");
+    send(&mut app, Message::FoldToggled);
+    assert!(simulator_misses(&app, "×39"));
+    shows(&app, &["200 tasks", "Newest 200 tasks"]);
+    let sent = messages_of_click(&app, "none");
+    assert!(matches!(sent.as_slice(), [Message::GroupingCycled]), "{sent:?}");
+}
+
+/// Grouped, the lines go under headers that carry their counts; a
+/// press on one closes it.
+#[test]
+fn a_group_header_counts_its_lines_and_closes() {
+    let mut app = large(Screen::Tasks);
+    send(&mut app, Message::GroupingCycled);
+    shows(&app, &["event ops.item.assigned", "39", "trigger"]);
+    let sent = messages_of_click(&app, "event ops.item.assigned");
+    let key = find::GroupKey::Tasks(find::TaskGrouping::Trigger, "event ops.item.assigned".into());
+    assert!(
+        matches!(sent.as_slice(), [Message::GroupToggled(k)] if *k == key),
+        "{sent:?}"
+    );
+    send(&mut app, Message::GroupToggled(key));
+    shows(&app, &["event ops.item.assigned", "timer round"]);
+    assert!(simulator_misses(&app, "ops-deploy"), "its rows are put away");
+}
+
+/// A click on a row's words opens the row; its box, its name and its
+/// acts keep their own clicks.
+#[test]
+fn a_click_on_a_row_opens_it_and_its_box_only_picks() {
+    let app = large(Screen::Tasks);
+    let running = app
+        .fleet
+        .as_ref()
+        .unwrap()
+        .tasks
+        .iter()
+        .find(|t| t.objective == "Say the time")
+        .unwrap()
+        .id
+        .clone();
+    let sent = messages_of_click(&app, "Say the time");
+    assert!(
+        matches!(sent.as_slice(), [Message::RowPicked(table::RowRef::Task(id))] if *id == running),
+        "{sent:?}"
+    );
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+    let row = ui.find("Say the time").unwrap().bounds();
+    // The row's box is the first thing on its line.
+    ui.point_at(iced::Point::new(69.0 + 14.0 + 9.0, row.center_y()));
+    let _ = ui.simulate(iced_test::simulator::click());
+    let sent = said(ui);
+    assert!(
+        matches!(sent.as_slice(), [Message::Pick(table::RowRef::Task(id), true)] if *id == running),
+        "{sent:?}"
+    );
+}
+
+/// The row the keyboard is on: the accent's bar at its left and the
+/// picked wash over it, light and dark; the rows around keep the page.
+#[test]
+fn the_row_under_the_cursor_has_the_accents_bar_and_the_wash() {
+    let mut app = large(Screen::Tasks);
+    send(&mut app, Message::Key(Keypress::Down));
+    send(&mut app, Message::Key(Keypress::Down));
+    let (first, second) = {
+        let _turn = turn();
+        let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+        (
+            ui.find("Say the time").unwrap().bounds().center_y(),
+            ui.find("Write the weekly report").unwrap().bounds().center_y(),
+        )
+    };
+    for mode in [ThemeMode::Light, ThemeMode::Dark] {
+        app.mode = mode;
+        let tokens = Tokens::of(mode);
+        let drawing = pixels(&app);
+        let edge = 69.0 + 1.0;
+        assert_eq!(colour_at(&drawing, edge, second), rgb(tokens.accent), "{mode:?}");
+        assert_eq!(
+            colour_at(&drawing, edge + 6.0, second),
+            rgb(styles::picked_fill(tokens)),
+            "{mode:?}"
+        );
+        assert_eq!(colour_at(&drawing, edge, first), rgb(tokens.page), "{mode:?}");
+        assert_eq!(colour_at(&drawing, edge + 6.0, first), rgb(tokens.page), "{mode:?}");
+    }
+}
+
+/// The row under the pointer glows: the signal comes from the screen
+/// itself, and once the glow has faded in the row is tinted around the
+/// pointer, its words still drawn over it, and nothing else changes: the
+/// rows around it, the row the keyboard is on with its wash. With
+/// motion off the same pointer draws nothing.
+#[test]
+fn the_row_under_the_pointer_glows_behind_its_words_and_motion_off_draws_none() {
+    use iced::{Event, Point, mouse};
+
+    use super::organic::Signal;
+
+    let mut app = large(Screen::Tasks);
+    send(&mut app, Message::Key(Keypress::Down));
+    send(&mut app, Message::Key(Keypress::Down));
+    let (picked, hovered, below) = {
+        let _turn = turn();
+        let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+        (
+            ui.find("Write the weekly report").unwrap().bounds().center_y(),
+            ui.find("Read the missing file").unwrap().bounds().center_y(),
+            ui.find("Write hello into hello.txt").unwrap().bounds().center_y(),
+        )
+    };
+    let pointer = Point::new(700.0, hovered);
+    // What the row tells as the pointer comes onto it.
+    let told = |app: &App| {
+        let _turn = turn();
+        let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(app));
+        ui.point_at(pointer);
+        let _ = ui.simulate([Event::Mouse(mouse::Event::CursorMoved { position: pointer })]);
+        let signals: Vec<Signal> = ui
+            .into_messages()
+            .filter_map(|m| match m {
+                Message::Hover(signal) => Some(signal),
+                _ => None,
+            })
+            .collect();
+        signals
+    };
+    let signals = told(&app);
+    let [
+        Signal::Over {
+            surface,
+            at,
+            size,
+            when,
+        },
+    ] = signals[..]
+    else {
+        panic!("{signals:?}");
+    };
+    let id = {
+        let tasks = &app.fleet.as_ref().unwrap().tasks;
+        let mut same = tasks.iter().filter(|t| t.objective == "Read the missing file");
+        let task = same.next().unwrap();
+        assert!(same.next().is_none(), "one task says it");
+        task.id.clone()
+    };
+    assert_eq!(surface, HoverSpot::Row(table::RowRef::Task(id)).surface());
+    assert_eq!(size.height, Density::Comfortable.row_height() - 1.0);
+
+    let ms = std::time::Duration::from_millis;
+    for (round, mode) in [ThemeMode::Light, ThemeMode::Dark].into_iter().enumerate() {
+        app.mode = mode;
+        let tokens = Tokens::of(mode);
+        let plain = pixels(&app);
+        // The same news, told later each round.
+        let start = when + ms(2_000 * round as u64);
+        let news = Message::Hover(Signal::Over {
+            surface,
+            at,
+            size,
+            when: start,
+        });
+        app.apply(news.clone());
+        app.apply(Message::Frame(start + ms(400)));
+        assert!(app.hover.shine(surface).is_some_and(|shine| shine.fade == 1.0));
+        let lit = pixels(&app);
+        let change = |x: f32, y: f32| {
+            let (a, b) = (colour_at(&plain, x, y), colour_at(&lit, x, y));
+            (0..3).map(|c| a[c].abs_diff(b[c])).max().unwrap_or(0)
+        };
+        // Around the pointer the row is tinted.
+        let around = [-60.0, -20.0, 0.0, 20.0, 60.0]
+            .iter()
+            .flat_map(|dx| [-8.0, 0.0, 8.0].map(|dy| change(pointer.x + dx, hovered + dy)))
+            .max()
+            .unwrap_or(0);
+        assert!(around >= 8, "{mode:?}: the glow hardly shows ({around})");
+        // The rows around it are as they were, the picked one with its
+        // wash and the accent's bar.
+        for y in [picked, below, hovered - 30.0, hovered + 30.0] {
+            for x in [80.0, 400.0, pointer.x, 1200.0] {
+                assert_eq!(change(x, y), 0, "{mode:?}: the glow spills to {x},{y}");
+            }
+        }
+        assert_eq!(colour_at(&lit, 70.0, picked), rgb(tokens.accent), "{mode:?}");
+        assert_eq!(
+            colour_at(&lit, 76.0, picked),
+            rgb(styles::picked_fill(tokens)),
+            "{mode:?}"
+        );
+        // The words of the row are still drawn over the glow: its
+        // inkiest pixel stays as inky.
+        let ink = |drawing: &(usize, Vec<u8>)| {
+            let mut darkest = 255u32 * 3;
+            let mut lightest = 0u32;
+            for x in (300..1100).step_by(1) {
+                for dy in [-4.0, -2.0, 0.0, 2.0, 4.0] {
+                    let [r, g, b] = colour_at(drawing, x as f32, hovered + dy);
+                    let sum = u32::from(r) + u32::from(g) + u32::from(b);
+                    darkest = darkest.min(sum);
+                    lightest = lightest.max(sum);
+                }
+            }
+            if tokens.dark { lightest } else { darkest }
+        };
+        let (before, after) = (ink(&plain), ink(&lit));
+        assert!(
+            before.abs_diff(after) <= 24,
+            "{mode:?}: the words fade under the glow ({before} → {after})"
+        );
+
+        // Motion off: nothing glows, and the same news draw nothing.
+        send(&mut app, Message::SetMotion(crate::application::Motion::Off));
+        app.apply(news);
+        app.apply(Message::Frame(start + ms(800)));
+        let off = pixels(&app);
+        assert!(off.1 == plain.1, "{mode:?}: motion off draws the page as it was");
+        send(&mut app, Message::SetMotion(crate::application::Motion::On));
+    }
+    // Off, the rows tell nothing about the pointer either.
+    send(&mut app, Message::SetMotion(crate::application::Motion::Off));
+    assert!(told(&app).is_empty());
+}
+
+/// The palette: its field, its results under their headings with the
+/// keys at its foot. What is typed goes to it; the arrows and Enter go
+/// on to the panel, Esc is its field's (which the panel hears as a key
+/// a field took); a click on a result picks it, one on the dim layer
+/// closes it.
+#[test]
+fn the_palette_takes_what_is_typed_and_its_results_are_clicked() {
+    use iced::event::Status;
+    use iced::keyboard::{Key, key::Named};
+    let mut app = large(Screen::Tasks);
+    send(&mut app, Message::PaletteOpen);
+    shows(
+        &app,
+        &[
+            "ACTIONS",
+            "Go to Home",
+            "BOTS",
+            "TEAMS",
+            "NODES",
+            "Esc",
+            "Paste a task id to open it",
+            "audit · Paused",
+        ],
+    );
+    {
+        let _turn = turn();
+        let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+        ui.click(iced::widget::Id::new(Field::Palette.id())).unwrap();
+        ui.typewrite("ops");
+        assert_eq!(ui.tap_key(Key::Named(Named::ArrowDown)), Status::Ignored);
+        assert_eq!(ui.tap_key(Key::Named(Named::Enter)), Status::Ignored);
+        assert_eq!(ui.tap_key(Key::Named(Named::Escape)), Status::Captured);
+        let typed: Vec<String> = ui
+            .into_messages()
+            .filter_map(|m| match m {
+                Message::PaletteTyped(typed) => Some(typed),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(typed, vec!["o", "op", "ops"]);
+    }
+    let sent = messages_of_click(&app, "Go to Bots");
+    assert!(matches!(sent.as_slice(), [Message::PalettePicked(2)]), "{sent:?}");
+    {
+        let _turn = turn();
+        let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+        ui.point_at(iced::Point::new(200.0, WINDOW.height - 40.0));
+        let _ = ui.simulate(iced_test::simulator::click());
+        let sent = said(ui);
+        assert!(matches!(sent.as_slice(), [Message::PaletteClose]), "{sent:?}");
+    }
+    // Typing, moving and Enter, as the keys reach the panel.
+    app.apply(Message::PaletteTyped("ops".into()));
+    shows(&app, &["ops · On", "ops · Paused", "5 bots"]);
+    app.apply(Message::Key(Keypress::Down));
+    assert_eq!(app.palette.selected(app.palette_entries().len()), Some(1));
+    send(&mut app, Message::Key(Keypress::Enter));
+    assert_eq!(app.screen, Screen::Bot(BotId::new("ops-night").unwrap()));
+    assert!(simulator_misses(&app, "Paste a task id to open it"));
+    send(&mut app, Message::PaletteOpen);
+    app.apply(Message::PaletteTyped("zzzz".into()));
+    shows(&app, &["Nothing found. Tasks are searched among the newest 200."]);
+}
+
+/// Home's latest tasks are folded too.
+#[test]
+fn home_folds_the_latest_repeats() {
+    let app = large(Screen::Overview);
+    shows(&app, &["Latest", "×39"]);
+}
+
+/// The large fleet on the task with the long run, inspected beside the
+/// Tasks list.
+fn long_run_inspected() -> App {
+    let mut app = large(Screen::Tasks);
+    let id = app
+        .fleet
+        .as_ref()
+        .unwrap()
+        .tasks
+        .iter()
+        .find(|t| t.bot_id.as_str() == "ops-deploy")
+        .unwrap()
+        .id
+        .clone();
+    send(&mut app, Message::RowPicked(table::RowRef::Task(id)));
+    app
+}
+
+#[test]
+fn a_task_inspected_shows_its_header_facts_tabs_and_steps_beside_a_narrow_list() {
+    let app = long_run_inspected();
+    shows_wide(
+        &app,
+        &[
+            "Done",
+            "ops-deploy",
+            "Run again",
+            "item-4198 · service-3 · gate failed: the unit tests of the client",
+            "NODE",
+            "STARTED",
+            "TOOK",
+            "COST",
+            "FROM",
+            "TEAM",
+            "TASK ID",
+            "TRACE",
+            "Activity",
+            "Answer",
+            "Files",
+            "Runs",
+            "Timeline",
+            "Raw",
+            "local_read",
+            "notes_search",
+            "ops.item.progress",
+            "→ ops-lead",
+            "Find in activity",
+            "12.3 s",
+        ],
+    );
+    // The list beside it keeps its filter, its note and its act.
+    shows_wide(&app, &["Filter…", "New task", "BOT", "WHAT", "AGE"]);
+    assert!(simulator_misses(&app, "Fold repeats"), "its options wait");
+    assert!(simulator_misses(&app, "STARTED BY"), "and its wide columns");
+    assert!(matches!(
+        messages_of_click(&app, "Run again").as_slice(),
+        [Message::RunAgain(_)]
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "Answer").as_slice(),
+        [Message::Tab(inspector::Tab::Task(inspector::TaskTab::Answer))]
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "notes_search").as_slice(),
+        [Message::ActivityPick(_)]
+    ));
+}
+
+#[test]
+fn the_find_counts_its_matches_and_the_chips_their_steps() {
+    let mut app = long_run_inspected();
+    shows_wide(&app, &["All", "29", "Tools", "25", "Failed", "1", "Events", "3"]);
+    send(&mut app, Message::FindTyped("tests".into()));
+    let label = app.find.label(&app.steps_text());
+    assert!(label.starts_with("1/"), "{label}");
+    shows_wide(&app, &[label.as_str(), "Copy activity"]);
+    assert!(matches!(
+        messages_of_click(&app, "Events").as_slice(),
+        [Message::FindShow(crate::ui::find::StepFilter::Events)]
+    ));
+    send(&mut app, Message::FindShow(crate::ui::find::StepFilter::Failed));
+    shows_wide(&app, &["Read the team's playbook before handl…"]);
+    assert!(
+        simulator_misses(&app, "notes_search"),
+        "the chip shows the failed alone"
+    );
+}
+
+#[test]
+fn a_running_task_scrolled_up_in_offers_to_jump_to_its_newest_step() {
+    let mut app = large(Screen::Tasks);
+    let running = app
+        .fleet
+        .as_ref()
+        .unwrap()
+        .tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::Running)
+        .unwrap()
+        .id
+        .clone();
+    send(&mut app, Message::Go(Screen::Task(running)));
+    shows_wide(&app, &["Running", "Talk to it", "Stop", "running"]);
+    assert!(simulator_misses(&app, "↓ Jump to latest"), "it follows its newest step");
+    send(&mut app, Message::ActivityScrolled(LiveStream::Steps, false));
+    assert!(matches!(
+        messages_of_click(&app, "↓ Jump to latest").as_slice(),
+        [Message::JumpToLatest]
+    ));
+}
+
+#[test]
+fn a_node_inspected_shows_its_facts_labels_providers_and_its_bots() {
+    let mut app = large(Screen::Nodes);
+    send(&mut app, Message::Go(Screen::Node(NodeId::new("gx10-ff95").unwrap())));
+    shows_wide(
+        &app,
+        &[
+            "Online",
+            "Revoke",
+            "SEEN",
+            "AXLR",
+            "AGENT",
+            "CERTIFICATE",
+            "LABELS",
+            "host=gx10-ff95",
+            "MODEL PROVIDERS",
+            "local:codex/gpt-6.1-sol",
+            "BOTS THAT RUN HERE · 11",
+            "ops-lead",
+        ],
+    );
+    assert!(matches!(
+        messages_of_click(&app, "Revoke").as_slice(),
+        [Message::AskRevoke(id)] if id.as_str() == "gx10-ff95"
+    ));
+    assert!(matches!(
+        messages_of_click(&app, "ops-lead").as_slice(),
+        [Message::Go(Screen::Bot(id))] if id.as_str() == "ops-lead"
+    ));
+}
+
+#[test]
+fn a_task_whose_detail_is_still_read_keeps_its_tabs_and_its_activity() {
+    let mut app = long_run_inspected();
+    // Moving to another row clears the detail until its read comes back:
+    // the header, the tabs and the find stand from the fleet meanwhile.
+    app.task = None;
+    shows_wide(
+        &app,
+        &["ops-deploy", "Activity", "Answer", "Find in activity", "local_read"],
+    );
+    app.tabs.task = inspector::TaskTab::Files;
+    shows_wide(&app, &["Loading the task…"]);
+}
+
+#[test]
+fn a_row_named_at_start_is_under_its_lists_cursor() {
+    let now = "2026-10-25T10:00:00Z".parse().unwrap();
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::large(now));
+    let bot = BotId::new("support-lead").unwrap();
+    let mut app = super::view::tests::app_over(fake);
+    app.screen = Screen::Bot(bot.clone());
+    app.tables.bots.cursor.select(bot.clone());
+    let effects = app.apply(Message::SettingsSave);
+    super::test_runtime::drive(&mut app, effects);
+    assert_eq!(app.tables.bots.cursor.selected(), Some(&bot));
+    assert_eq!(app.cursor_row(table::List::Bots), Some(table::RowRef::Bot(bot)));
 }

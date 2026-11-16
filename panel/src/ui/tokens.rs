@@ -142,6 +142,44 @@ mod tests {
         }
     }
 
+    /// A list's rows sit on the page, and the rail and a group's header
+    /// on the raised grey: a quiet status, a coloured one, the accent of
+    /// the current place and a chip that is on all read there.
+    #[test]
+    fn list_words_read_on_the_page_and_the_raised_grey() {
+        use crate::ui::styles::{accent_ink, badge, on, picked_fill};
+        for tokens in [Tokens::LIGHT, Tokens::DARK] {
+            for ground in [tokens.page, tokens.raised] {
+                assert!(contrast(tokens.muted, ground) >= 4.5);
+                assert!(contrast(accent_ink(tokens), ground) >= 4.5, "dark={}", tokens.dark);
+                for tone in [Tone::Good, Tone::Busy, Tone::Wait, Tone::Bad, Tone::Idle] {
+                    assert!(
+                        contrast(pill_ink(tokens, tone), ground) >= 4.5,
+                        "{tone:?} dark={}",
+                        tokens.dark
+                    );
+                }
+            }
+            assert!(contrast(accent_ink(tokens), picked_fill(tokens)) >= 4.5);
+            assert!(contrast(tokens.text, picked_fill(tokens)) >= 7.0);
+            assert!(contrast(on(tokens.wait), tokens.wait) >= 4.5);
+            assert_eq!(badge(tokens)(&tokens.theme()).text_color, Some(on(tokens.wait)));
+        }
+    }
+
+    /// The words a search found are read on their wash, in a row's ink
+    /// and in its muted ink, and a row under the pointer keeps its words.
+    #[test]
+    fn found_words_and_hovered_rows_read() {
+        use crate::ui::styles::{hover_fill, mark_fill};
+        for tokens in [Tokens::LIGHT, Tokens::DARK] {
+            assert!(contrast(tokens.text, mark_fill(tokens)) >= 7.0, "dark={}", tokens.dark);
+            assert!(contrast(tokens.muted, mark_fill(tokens)) >= 4.5, "dark={}", tokens.dark);
+            assert!(contrast(tokens.text, hover_fill(tokens)) >= 7.0);
+            assert!(contrast(tokens.muted, hover_fill(tokens)) >= 4.5);
+        }
+    }
+
     /// Copper is the one accent: work in progress has a tone of its own,
     /// apart from the accent and from the quiet grey of what is idle.
     #[test]

@@ -1,5 +1,6 @@
 //! Runs the panel with Iced: the state machine's effects become tasks,
-//! the clock ticks every few seconds.
+//! the clock ticks every few seconds, and the organic glow gets its
+//! frames while it changes.
 
 use std::borrow::Cow;
 use std::time::Duration;
@@ -9,7 +10,7 @@ use iced::widget::operation::RelativeOffset;
 use iced::{Size, Subscription, Task, Theme, window};
 
 use super::view::widgets;
-use super::{App, Effect, Keypress, Message, Tokens, brand, view};
+use super::{App, Effect, Field, Keypress, LiveStream, Message, Reveal, RevealChild, Tokens, brand, organic, view};
 
 /// How often the panel reads the control plane again.
 pub const REFRESH_EVERY: Duration = Duration::from_secs(3);
@@ -29,8 +30,8 @@ pub const FONTS: [&[u8]; 4] = [
     include_bytes!("../../assets/fonts/DotGothic16-Latin.ttf"),
 ];
 
-/// The application's settings: its id, the embedded typefaces and Lexend
-/// as the default. Iced's `.settings()` replaces every field, so the
+/// The application's settings: its id, the embedded typefaces, Lexend
+/// as the default and the body size for every text that names none. Iced's `.settings()` replaces every field, so the
 /// typefaces go in here and nowhere else, or the window draws with the
 /// system's sans.
 pub fn settings() -> iced::Settings {
@@ -38,6 +39,7 @@ pub fn settings() -> iced::Settings {
         id: Some("axlr-bots-panel".into()),
         fonts: FONTS.iter().map(|font| Cow::Borrowed(*font)).collect(),
         default_font: widgets::REGULAR,
+        default_text_size: widgets::BODY.into(),
         ..iced::Settings::default()
     }
 }
@@ -56,6 +58,25 @@ pub fn run(app: &App, effect: Effect) -> Task<Message> {
         Effect::FocusWindow => window::latest().and_then(window::gain_focus),
         Effect::ShowEnd(stream) => iced::widget::operation::snap_to_end(stream.id()),
         Effect::ScrollTop => iced::widget::operation::snap_to(widgets::PAGE, RelativeOffset::START),
+        Effect::InspectorTop => iced::widget::operation::snap_to(widgets::INSPECTOR, RelativeOffset::START),
+        // Where the step is drawn, then a scroll just enough to show it.
+        Effect::ShowStep(at) => {
+            iced::advanced::widget::operate(RevealChild::new(LiveStream::Steps.id(), widgets::step_id(at))).then(
+                |(top, height)| {
+                    iced::advanced::widget::operate(Reveal::new(LiveStream::Steps.id(), top, height)).discard()
+                },
+            )
+        }
+        // A field that is not drawn answers nothing: the key is then the
+        // list's, never lost.
+        Effect::AskFind(key) => iced::widget::operation::is_focused(Field::ActivityFind.id())
+            .collect()
+            .map(move |seen| Message::FindKey(key, seen.first().copied().unwrap_or(false))),
+        Effect::Focus(field) => iced::widget::operation::focus(field.id()),
+        Effect::Reveal(scroller, spot) => {
+            let (top, height) = view::span(scroller, spot, app.density);
+            iced::advanced::widget::operate(Reveal::new(scroller.id(), top, height)).discard()
+        }
         other => {
             let services = app.services.clone();
             Task::perform(services.execute(other), |message| message).and_then(Task::done)
@@ -63,13 +84,35 @@ pub fn run(app: &App, effect: Effect) -> Task<Message> {
     }
 }
 
-/// The clock, Esc and Enter when no widget took them, and Shift as it
-/// is held or let go, for a header press that adds its column.
-pub fn subscription(_: &App) -> Subscription<Message> {
+/// The clock; the keys the panel answers to when no widget took them
+/// (a focused field keeps what is typed into it, Left and Right, and
+/// Esc, which leaves it; see `Keypress`); Esc again when a field did
+/// take it, since leaving the palette's field closes the palette and
+/// leaving the filter empties it; and Shift as it is held or let go,
+/// for a header press that adds its column; and the glow's frames,
+/// only while a glow is changing.
+pub fn subscription(app: &App) -> Subscription<Message> {
     Subscription::batch([
         iced::time::every(REFRESH_EVERY).map(|_| Message::Tick(Utc::now())),
         iced::keyboard::listen().filter_map(keyboard),
+        iced::event::listen_with(escape_taken),
+        organic::frames(&app.hover).map(Message::Frame),
     ])
+}
+
+/// Esc alone that a widget took first: a field it made leave.
+fn escape_taken(event: iced::Event, status: iced::event::Status, _: window::Id) -> Option<Message> {
+    match (event, status) {
+        (
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+                modifiers,
+                ..
+            }),
+            iced::event::Status::Captured,
+        ) if modifiers.is_empty() => Some(Message::EscapeTaken),
+        _ => None,
+    }
 }
 
 /// A key no widget took, or the modifiers held when they change.
@@ -122,6 +165,50 @@ pub fn launch(boot: impl Fn() -> (App, Vec<Effect>) + 'static) -> iced::Result {
 mod tests {
     use super::*;
 
+    fn pressed(key: iced::keyboard::Key, modifiers: iced::keyboard::Modifiers) -> iced::Event {
+        iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: key.clone(),
+            modified_key: key,
+            physical_key: iced::keyboard::key::Physical::Unidentified(iced::keyboard::key::NativeCode::Unidentified),
+            location: iced::keyboard::Location::Standard,
+            modifiers,
+            text: None,
+            repeat: false,
+        })
+    }
+
+    #[test]
+    fn hears_esc_only_when_a_field_took_it() {
+        use iced::event::Status;
+        use iced::keyboard::{Key, Modifiers, key::Named};
+        let esc = || pressed(Key::Named(Named::Escape), Modifiers::empty());
+        let window = window::Id::unique();
+        assert!(matches!(
+            escape_taken(esc(), Status::Captured, window),
+            Some(Message::EscapeTaken)
+        ));
+        assert!(
+            escape_taken(esc(), Status::Ignored, window).is_none(),
+            "an Esc no field took comes as a key"
+        );
+        assert!(
+            escape_taken(
+                pressed(Key::Named(Named::Escape), Modifiers::SHIFT),
+                Status::Captured,
+                window
+            )
+            .is_none()
+        );
+        assert!(
+            escape_taken(
+                pressed(Key::Named(Named::Enter), Modifiers::empty()),
+                Status::Captured,
+                window
+            )
+            .is_none()
+        );
+    }
+
     #[test]
     fn the_window_gets_the_typefaces_and_lexend_by_default() {
         let settings = settings();
@@ -130,6 +217,7 @@ mod tests {
             assert_eq!(given.as_ref(), embedded);
         }
         assert_eq!(settings.default_font, widgets::REGULAR);
+        assert_eq!(settings.default_text_size, iced::Pixels(widgets::BODY));
         assert_eq!(settings.id.as_deref(), Some("axlr-bots-panel"));
     }
 }

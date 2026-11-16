@@ -3,6 +3,7 @@
 //! an act on all of them. Plain state the views read; no widget here.
 
 mod bot_column;
+mod bot_show;
 mod bulk_plan;
 mod column_ref;
 mod list;
@@ -20,6 +21,7 @@ mod task_column;
 mod team_column;
 
 pub use bot_column::BotColumn;
+pub use bot_show::BotShow;
 pub use bulk_plan::BulkPlan;
 pub use column_ref::ColumnRef;
 pub use list::List;

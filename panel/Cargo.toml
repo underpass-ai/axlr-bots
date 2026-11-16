@@ -10,7 +10,7 @@ repository = "https://github.com/underpass-ai/axlr-bots"
 publish = false
 
 [dependencies]
-iced = { version = "0.14", features = ["tokio", "svg", "image", "markdown"] }
+iced = { version = "0.14", features = ["tokio", "svg", "image", "markdown", "advanced"] }
 tonic = { version = "0.14", default-features = false, features = ["codegen", "transport", "tls-ring", "channel"] }
 tonic-prost = "0.14"
 prost = "0.14"

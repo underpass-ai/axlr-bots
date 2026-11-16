@@ -1,32 +1,38 @@
-//! The window around every screen: the side bar with the emblem, the thin
-//! header with the connection, the banner, and the dialog of an act to
-//! confirm.
+//! The window around every screen: the top bar with the emblem, the
+//! search button and the connection, the rail of places, the banner,
+//! and the dialog of an act to confirm.
 
-use iced::widget::{Space, button, center, column, container, opaque, row, stack, svg, text, tooltip};
+use iced::widget::{
+    Space, button, center, column, container, mouse_area, opaque, responsive, row, stack, svg, text, tooltip,
+};
 use iced::{Alignment, Color, Element, Length, Padding};
 
-use super::widgets::{BODY, El, SEMIBOLD, SMALL, action, bold, icon, icon_button, muted};
+use super::widgets::{BODY, El, SMALL, TINY, action, bold, icon, icon_button, key_cap, muted, semibold};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
 use crate::ui::{App, Icon, Message, Screen, Section, ThemeMode, Tokens, Tone, brand};
 
-/// The emblem's width in the side bar; its height keeps the 50 × 34 ratio
-/// of the two-line mark.
-const EMBLEM_WIDTH: f32 = 100.0;
-/// The side bar's width.
-const SIDEBAR_WIDTH: f32 = 196.0;
+/// The top bar's height.
+pub const TOP_BAR: f32 = 44.0;
+/// The rail's width; the emblem sits over it in the top bar.
+pub const RAIL: f32 = 68.0;
+/// The emblem's height in the top bar; its width keeps the 50 × 34
+/// ratio of the two-line mark.
+const EMBLEM_HEIGHT: f32 = 26.0;
+/// The widest the search button gets.
+const SEARCH_WIDTH: f32 = 520.0;
 /// The widest the banner gets over the page's foot.
 const BANNER_WIDTH: f32 = 820.0;
 
 pub fn frame<'a>(app: &'a App, content: El<'a>, tokens: Tokens) -> Element<'a, Message> {
     let body = row![
-        sidebar(app, tokens),
+        rail(app, tokens),
         container(Space::new().width(1).height(Length::Fill)).style(styles::rule(tokens)),
         main(app, content, tokens)
     ]
     .height(Length::Fill);
     let page = container(column![
-        header(app, tokens),
+        top_bar(app, tokens),
         container(Space::new().width(Length::Fill).height(1)).style(styles::rule(tokens)),
         body
     ])
@@ -43,7 +49,7 @@ pub fn frame<'a>(app: &'a App, content: El<'a>, tokens: Tokens) -> Element<'a, M
                 (Kind::Primary, Icon::Check, tokens.accent)
             };
             let mut body = column![
-                row![icon(Icon::Alert, 26.0, ink), bold(confirm.title()).size(22.0)]
+                row![icon(Icon::Alert, 22.0, ink), bold(confirm.title()).size(20.0)]
                     .spacing(12)
                     .align_y(Alignment::Center)
             ]
@@ -58,16 +64,33 @@ pub fn frame<'a>(app: &'a App, content: El<'a>, tokens: Tokens) -> Element<'a, M
                 ]
                 .spacing(12),
             );
-            let dialog = container(body).padding(26).max_width(520).style(styles::card(tokens));
+            let dialog = container(body).padding(24).max_width(520).style(styles::card(tokens));
             stack![page, opaque(center(opaque(dialog)).style(styles::scrim))].into()
+        }
+        None if app.palette.is_open() => {
+            // A click on the dim layer closes the palette; one on the
+            // palette stays in it.
+            let palette = responsive(move |space| {
+                container(opaque(super::palette::view(app, space.height, tokens)))
+                    .width(Length::Fill)
+                    .align_x(Alignment::Center)
+                    .into()
+            });
+            let layer = container(palette)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .padding(Padding::ZERO.top(super::palette::TOP))
+                .style(styles::scrim);
+            stack![page, opaque(mouse_area(layer).on_press(Message::PaletteClose))].into()
         }
         None => page.into(),
     }
 }
 
-/// The thin strip over everything: the connection, when it was last read,
-/// the theme.
-fn header<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
+/// The strip over everything: the emblem over the rail, the search
+/// button in the middle, then the control plane and its version, the
+/// nodes online, when it was last read and the theme.
+fn top_bar<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let (tone, status) = connection(app);
     let refreshed = match app.last_refresh {
         Some(at) => format!("updated {}", format::clock(at)),
@@ -81,9 +104,14 @@ fn header<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         ThemeMode::Light => "Dark theme",
         ThemeMode::Dark => "Light theme",
     };
-    let mut place = row![icon(Icon::Nodes, 14.0, tokens.muted), muted(where_to(app), tokens)]
-        .spacing(6)
-        .align_y(Alignment::Center);
+    let emblem = container(
+        svg(brand::emblem(tokens.dark))
+            .width(EMBLEM_HEIGHT * 50.0 / 34.0)
+            .height(EMBLEM_HEIGHT),
+    )
+    .center_x(RAIL)
+    .center_y(Length::Fill);
+    let mut place = row![muted(where_to(app), tokens)].spacing(6).align_y(Alignment::Center);
     if let Some((version, tip)) = server_version(app) {
         place = place.push(tooltip(
             muted(version, tokens),
@@ -93,24 +121,49 @@ fn header<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     }
     container(
         row![
-            Space::new().width(Length::Fill),
+            emblem,
+            container(search(tokens)).width(Length::Fill).center_x(Length::Fill),
             place,
-            row![
-                icon(Icon::Dot, 16.0, tone.color(&tokens)),
-                text(status).font(SEMIBOLD).size(SMALL)
-            ]
-            .spacing(4)
-            .align_y(Alignment::Center),
+            row![icon(Icon::Dot, 14.0, tone.color(&tokens)), semibold(status).size(SMALL)]
+                .spacing(3)
+                .align_y(Alignment::Center),
             muted(refreshed, tokens),
             icon_button(theme_icon, theme_tip, Some(Message::ToggleTheme), tokens),
         ]
-        .spacing(16)
+        .spacing(14)
         .align_y(Alignment::Center),
     )
-    .padding(Padding::from([4, 16]))
+    .padding(Padding {
+        right: 10.0,
+        ..Padding::ZERO
+    })
     .width(Length::Fill)
+    .height(TOP_BAR)
     .style(styles::raised(tokens))
     .into()
+}
+
+/// The search button: it looks like the field it opens, says what can
+/// be found and the keys that open it too.
+fn search<'a>(tokens: Tokens) -> El<'a> {
+    let field = button(
+        row![
+            icon(Icon::Lens, 14.0, tokens.muted),
+            text("Search bots, tasks, nodes, actions…")
+                .size(BODY)
+                .color(tokens.muted)
+                .width(Length::Fill),
+            key_cap("Ctrl K", tokens),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .height(30)
+    .padding(Padding::from([0, 10]))
+    .style(styles::search(tokens))
+    .on_press(Message::PaletteOpen);
+    container(field).max_width(SEARCH_WIDTH).into()
 }
 
 /// The control plane this window talks to, so two windows on two
@@ -141,7 +194,7 @@ pub(crate) fn server_version(app: &App) -> Option<(String, String)> {
     Some((format!("· {shown}"), tip))
 }
 
-/// The dot and the word of the header: online, connecting, or why not.
+/// The dot and the word of the top bar: online, connecting, or why not.
 fn connection(app: &App) -> (Tone, String) {
     if let Some(error) = &app.fleet_error {
         return (Tone::Bad, error.title().to_string());
@@ -170,41 +223,29 @@ fn connection(app: &App) -> (Tone, String) {
     }
 }
 
-/// The side bar: the two-line emblem, then the places. The current one
-/// reads in the accent with a bar beside it; a count that needs a person
-/// sits at the end of its line.
-fn sidebar<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
+/// The rail: the places, each an icon over its name. The current one
+/// reads in the accent with a bar at the window's edge; the count that
+/// needs a person is a badge on Tasks. Settings sits at the foot.
+fn rail<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let current = app.screen.section();
     let waiting = app.waiting_count();
     let entry = |glyph: Icon, label: &'a str, section: Section, screen: Screen, badge: u32| -> El<'a> {
         let selected = current == section;
-        let color = if selected { tokens.accent } else { tokens.text };
-        let mut line = row![
-            icon(glyph, 18.0, color),
-            text(label).font(SEMIBOLD).size(BODY).color(color)
-        ]
-        .spacing(12)
-        .align_y(Alignment::Center);
-        if badge > 0 {
-            line = line.push(Space::new().width(Length::Fill)).push(
-                container(
-                    text(badge.to_string())
-                        .font(SEMIBOLD)
-                        .size(SMALL)
-                        .color(styles::on(tokens.wait)),
-                )
-                .padding(Padding::from([1, 7]))
-                .style(move |_| container::Style {
-                    background: Some(tokens.wait.into()),
-                    border: iced::Border {
-                        radius: styles::RADIUS_PILL.into(),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                }),
-            );
-        }
-        let bar = container(Space::new().width(3).height(22)).style(move |_| container::Style {
+        let kind = Kind::Rail(selected);
+        let place = button(
+            column![
+                icon(glyph, 20.0, super::widgets::ink(kind, tokens)),
+                semibold(label).size(TINY)
+            ]
+            .spacing(3)
+            .width(Length::Fill)
+            .align_x(Alignment::Center),
+        )
+        .width(Length::Fill)
+        .padding(Padding::from([8, 0]).bottom(7))
+        .style(styles::button_style(tokens, kind))
+        .on_press(Message::Go(screen));
+        let bar = container(Space::new().width(3).height(Length::Fill)).style(move |_| container::Style {
             background: Some(if selected { tokens.accent } else { Color::TRANSPARENT }.into()),
             border: iced::Border {
                 radius: 2.0.into(),
@@ -212,39 +253,39 @@ fn sidebar<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
             },
             ..Default::default()
         });
-        row![
-            bar,
-            button(line)
+        let mut layers = stack![place, container(bar).padding(Padding::from([9, 0]))];
+        if badge > 0 {
+            layers = layers.push(
+                container(
+                    container(semibold(badge.to_string()).size(10.5))
+                        .padding(Padding::from([0, 5]))
+                        .style(styles::badge(tokens)),
+                )
                 .width(Length::Fill)
-                .padding(Padding::from([10, 12]))
-                .style(styles::button_style(tokens, Kind::Nav(selected)))
-                .on_press(Message::Go(screen))
-        ]
-        .spacing(6)
-        .align_y(Alignment::Center)
-        .into()
+                .align_x(Alignment::End)
+                .padding(Padding {
+                    top: 3.0,
+                    right: 10.0,
+                    ..Padding::ZERO
+                }),
+            );
+        }
+        layers.into()
     };
-    let emblem = container(
-        svg(brand::emblem(tokens.dark))
-            .width(EMBLEM_WIDTH)
-            .height(EMBLEM_WIDTH * 34.0 / 50.0),
-    )
-    .padding(Padding::from([10, 12]).bottom(18));
     container(
         column![
-            emblem,
             entry(Icon::Overview, "Home", Section::Overview, Screen::Overview, 0),
-            entry(Icon::Nodes, "Nodes", Section::Nodes, Screen::Nodes, 0),
+            entry(Icon::Tasks, "Tasks", Section::Tasks, Screen::Tasks, waiting),
             entry(Icon::Bots, "Bots", Section::Bots, Screen::Bots, 0),
             entry(Icon::Team, "Teams", Section::Teams, Screen::Teams, 0),
-            entry(Icon::Tasks, "Tasks", Section::Tasks, Screen::Tasks, waiting),
+            entry(Icon::Nodes, "Nodes", Section::Nodes, Screen::Nodes, 0),
             Space::new().height(Length::Fill),
             entry(Icon::Settings, "Settings", Section::Settings, Screen::Settings, 0),
         ]
         .spacing(2),
     )
-    .padding(Padding::from([10, 8]))
-    .width(SIDEBAR_WIDTH)
+    .padding(Padding::from([8, 0]))
+    .width(RAIL)
     .height(Length::Fill)
     .style(styles::raised(tokens))
     .into()
@@ -253,17 +294,14 @@ fn sidebar<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
 /// The page, and over its foot the banner after an act: it floats, so
 /// the page never moves when it comes or goes.
 fn main<'a>(app: &'a App, content: El<'a>, tokens: Tokens) -> El<'a> {
-    let page = container(content)
-        .padding(Padding::from([20, 28]))
-        .width(Length::Fill)
-        .height(Length::Fill);
+    let page = container(content).width(Length::Fill).height(Length::Fill);
     // Always two layers, so the page keeps its widgets (its scroll) when
     // the banner comes and goes.
     let Some(banner) = &app.banner else {
         return stack![page, Space::new()].into();
     };
     let mut words = row![
-        icon(banner.tone.icon(), 20.0, banner.tone.color(&tokens)),
+        icon(banner.tone.icon(), 18.0, banner.tone.color(&tokens)),
         bold(banner.title.clone()).size(BODY)
     ]
     .spacing(10)
@@ -298,7 +336,7 @@ fn main<'a>(app: &'a App, content: El<'a>, tokens: Tokens) -> El<'a> {
     stack![
         page,
         container(toast)
-            .padding(Padding::from([20, 28]))
+            .padding(Padding::from([16, 18]))
             .width(Length::Fill)
             .height(Length::Fill)
             .align_x(Alignment::Center)

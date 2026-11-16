@@ -2,7 +2,7 @@ use super::List;
 use crate::domain::{BotId, NodeId, TaskId};
 
 /// A row's box ticked or not: which list, which row.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RowRef {
     Node(NodeId),
     Bot(BotId),

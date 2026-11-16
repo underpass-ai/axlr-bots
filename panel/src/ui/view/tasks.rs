@@ -1,216 +1,363 @@
 //! Tasks: the list across bots, filters, sending a task and stopping one.
 
-use iced::widget::text::Wrapping;
-use iced::widget::{Space, button, column, container, pick_list, responsive, row, scrollable, table, text, text_input};
+use std::rc::Rc;
+
+use iced::widget::{Space, column, container, pick_list, row, text, text_input};
 use iced::{Alignment, Length, Padding};
 
-use super::grid;
+use super::sheet::{self, Column, Head, Ink, Line};
 use super::widgets::{
-    BODY, El, SMALL, Voice, action, bold, card, empty, icon_button, muted, pill, reader, section_title, title,
+    BODY, El, SMALL, Voice, action, bold, card, empty, icon, icon_button, muted, reader, section_title,
 };
-use crate::application::RECENT_TASKS;
-use crate::domain::{Task, TaskStatus};
+use super::{grid, listbar, status};
+use crate::domain::TaskStatus;
+use crate::ui::find::{FoldRepeats, Query, TaskGroup, TaskLine, TaskWhat};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
 use crate::ui::table::{ColumnRef, List, RowRef, SortColumn, TaskColumn};
-use crate::ui::{App, BotChoice, Icon, Message, ReaderKey, Screen, Tokens, Tone, passages};
+use crate::ui::{App, BotChoice, Icon, Message, ReaderKey, Screen, Tokens, passages};
 
 /// The status chips, in the order an operator looks for them, each
-/// named as its tasks' pills are.
-const FILTERS: [(Option<TaskStatus>, &str); 8] = [
-    (None, "All"),
-    status(TaskStatus::WaitingApproval),
-    status(TaskStatus::Running),
-    status(TaskStatus::Pending),
-    status(TaskStatus::Failed),
-    status(TaskStatus::Expired),
-    status(TaskStatus::Completed),
-    status(TaskStatus::Cancelled),
+/// named as its tasks' statuses are.
+const FILTERS: [TaskStatus; 7] = [
+    TaskStatus::WaitingApproval,
+    TaskStatus::Running,
+    TaskStatus::Pending,
+    TaskStatus::Failed,
+    TaskStatus::Expired,
+    TaskStatus::Completed,
+    TaskStatus::Cancelled,
 ];
-
-const fn status(status: TaskStatus) -> (Option<TaskStatus>, &'static str) {
-    (Some(status), status.label())
-}
 
 pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let Some(fleet) = &app.fleet else {
         return super::overview::loading(app, tokens);
     };
-    let mut page = column![
-        row![
-            title(Icon::Tasks, "Tasks", tokens),
-            Space::new().width(Length::Fill),
-            action(
-                Kind::Primary,
-                Icon::Plus,
-                "New task",
-                (!app.submit.open).then_some(Message::SubmitOpen(None)),
-                tokens
-            ),
-        ]
-        .align_y(Alignment::Center)
-    ]
-    .spacing(18);
-    if app.submit.open {
-        page = page.push(submit_form(app, tokens));
+    let query = app.list_query();
+    // Beside the inspector the list keeps its filter, its note and its
+    // act; its chips and options wait for it to close.
+    let narrow = app.screen.inspected().is_some();
+    let through = app.tasks_through().len();
+    let groups = app.task_groups();
+    let lines: Vec<TaskLine<'a>> = groups.iter().flat_map(|g| g.lines.iter().cloned()).collect();
+    let total = format::count(through as u64, "task", "tasks");
+    let count = if lines.len() < through {
+        format!("{} · {total}", format::count(lines.len() as u64, "line", "lines"))
+    } else if through == fleet.tasks.len() {
+        total
+    } else {
+        format!("{through} of {}", fleet.tasks.len())
+    };
+    // The filter, then a chip per status that has tasks, and the one
+    // that is on even when its last task left it.
+    let mut chips = vec![listbar::filter(&app.tables.query, tokens)];
+    if !narrow {
+        chips.push(listbar::chip(
+            "All",
+            fleet.tasks.len(),
+            app.filter.status.is_none(),
+            Message::FilterStatus(None),
+            tokens,
+        ));
     }
-
-    let mut chips = row![].spacing(8).align_y(Alignment::Center);
-    for (status, label) in FILTERS {
-        let on = app.filter.status == status;
-        let count = match status {
-            Some(s) => fleet.tasks.iter().filter(|t| t.status == s).count(),
-            None => fleet.tasks.len(),
-        };
-        chips = chips.push(
-            button(text(format!("{label} {count}")).size(SMALL).font(super::widgets::BOLD))
-                .padding(Padding::from([6, 12]))
-                .style(styles::button_style(tokens, Kind::Chip(on)))
-                .on_press(Message::FilterStatus(status)),
-        );
+    for status in FILTERS.into_iter().filter(|_| !narrow) {
+        let on = app.filter.status == Some(status);
+        let count = fleet.tasks.iter().filter(|t| t.status == status).count();
+        if count > 0 || on {
+            chips.push(listbar::chip(
+                status.label(),
+                count,
+                on,
+                Message::FilterStatus(Some(status)),
+                tokens,
+            ));
+        }
     }
     let bots: Vec<BotChoice> = std::iter::once(BotChoice::All)
         .chain(fleet.bots.iter().map(|b| BotChoice::One(b.id.clone())))
         .collect();
     let selected = Some(app.filter.bot.clone().map(BotChoice::One).unwrap_or(BotChoice::All));
-    // The chips go on to a second line in a narrow window; the bot
-    // picker keeps its width beside them.
-    page = page.push(
-        row![
-            container(chips.wrap().vertical_spacing(8)).width(Length::Fill),
-            pick_list(bots, selected, Message::FilterBot)
-                .padding(8)
-                .width(220)
-                .style(styles::picker(tokens))
-                .menu_style(styles::menu(tokens))
-        ]
-        .spacing(12)
-        .align_y(Alignment::Center),
-    );
-
-    if fleet.tasks.len() >= RECENT_TASKS as usize {
-        page = page.push(muted(
+    let grouping = app.tables.grouping;
+    let options = vec![
+        listbar::flag(
+            "Fold repeats",
+            None,
+            app.tables.fold.is_on(),
+            Message::FoldToggled,
+            tokens,
+        ),
+        listbar::flag(
+            "Group:",
+            Some(grouping.label()),
+            grouping.is_grouped(),
+            Message::GroupingCycled,
+            tokens,
+        ),
+        pick_list(bots, selected, Message::FilterBot)
+            .padding([3, 8])
+            .text_size(12.5)
+            .width(150)
+            .style(styles::picker(tokens))
+            .menu_style(styles::menu(tokens))
+            .into(),
+    ];
+    let acts = vec![action(
+        Kind::Primary,
+        Icon::Plus,
+        "New task",
+        (!app.submit.open).then_some(Message::SubmitOpen(None)),
+        tokens,
+    )];
+    let mut page = column![listbar::bar("Tasks", count, chips, acts, tokens)];
+    if app.submit.open {
+        page = page.push(listbar::panel(submit_form(app, tokens), tokens));
+    }
+    let (options, keys) = if narrow {
+        (Vec::new(), None)
+    } else {
+        (options, Some(listbar::keys(tokens)))
+    };
+    page = page.push(listbar::note(
+        FoldRepeats::note(&lines, fleet.tasks.len()),
+        None,
+        options,
+        keys,
+        tokens,
+    ));
+    page = page.push(if through == 0 && !query.is_empty() {
+        listbar::nothing(empty(
+            Icon::Lens,
             format!(
-                "The list holds the newest {RECENT_TASKS} tasks. The counts, the order and Select all cover only those."
+                "Nothing matches {} in the newest {} tasks.",
+                query.text(),
+                fleet.tasks.len()
             ),
             tokens,
-        ));
-    }
-
-    let list: El<'a> = if app.filter.apply(&fleet.tasks).is_empty() {
-        empty(Icon::Tasks, "No task here", tokens)
+        ))
+    } else if through == 0 {
+        listbar::nothing(empty(Icon::Tasks, "No task here", tokens))
     } else {
-        responsive(move |space| list(app, &fleet.tasks, space.width < NARROW, tokens))
-            .height(Length::Shrink)
-            .into()
-    };
-    page = page.push(card(list, tokens));
-    let page = scrollable(page.padding(iced::Padding {
-        right: 12.0,
-        bottom: grid::BAR_ROOM,
-        ..Default::default()
-    }))
-    .id(super::widgets::PAGE)
-    .height(Length::Fill);
+        list(app, groups, query, narrow, tokens)
+    });
     grid::with_bar(app, List::Tasks, page.into(), tokens)
 }
 
-/// Under this width the table leaves out From, so the bot and the task
-/// keep room enough to read: the smallest window.
-const NARROW: f32 = 820.0;
-
-/// The tasks the filter shows, in the table's order: a box, the status,
-/// the bot and the task sharing what the narrow columns leave, the
-/// origin unless `narrow`, the age and the row's acts as icons.
-fn list<'a>(app: &'a App, tasks: &'a [Task], narrow: bool, tokens: Tokens) -> El<'a> {
-    let state = &app.tables.tasks;
-    let shown = state.sort.order(app.filter.apply(tasks));
-    let now = app.now;
-    let head = |c: TaskColumn| {
-        grid::header(
-            c.label(),
-            state.sort.badge(c),
-            Message::SortBy(ColumnRef::Tasks(c)),
-            tokens,
-        )
-    };
-    let all = state.selection.covers(shown.iter().map(|t| &t.id));
-    let mut columns = vec![
-        table::column(
-            grid::check(all, |on| Message::PickShown(List::Tasks, on), tokens),
-            move |t: &'a Task| {
-                let id = t.id.clone();
-                grid::check(
-                    state.selection.contains(&t.id),
-                    move |on| Message::Pick(RowRef::Task(id.clone()), on),
-                    tokens,
-                )
-            },
-        ),
-        table::column(head(TaskColumn::Status), move |t: &'a Task| {
-            pill(Tone::of_task(t.status), t.status.label(), tokens)
-        }),
-        // The bot and the task share what the narrow columns leave: a
-        // long bot name is cut, never the task squeezed.
-        table::column(head(TaskColumn::Bot), move |t: &'a Task| {
-            grid::fitted(t.bot_id.to_string(), true, tokens)
-        })
-        .width(Length::FillPortion(if narrow { 3 } else { 2 })),
-        // A Pending task that waits for its node says why, under its
-        // objective.
-        table::column(head(TaskColumn::Task), move |t: &'a Task| -> El<'a> {
-            let headline = text(t.headline(64)).wrapping(Wrapping::WordOrGlyph);
-            match t.waits_for() {
-                Some(why) => column![headline, muted(why, tokens).size(SMALL).wrapping(Wrapping::WordOrGlyph)]
-                    .spacing(2)
-                    .into(),
-                None => headline.into(),
-            }
-        })
-        .width(Length::FillPortion(5)),
-    ];
-    if !narrow {
-        columns.push(table::column(head(TaskColumn::From), move |t: &'a Task| -> El<'a> {
-            muted(grid::shorten(&t.trigger.describe(), 14), tokens)
-                .wrapping(Wrapping::None)
-                .into()
-        }));
+/// The glyph of what started a task, by the kind of its trigger.
+pub fn trigger_icon(kind: &str) -> Icon {
+    match kind {
+        "timer" => Icon::Clock,
+        "event" => Icon::Bolt,
+        "webhook" => Icon::Hook,
+        "delegation" => Icon::Bots,
+        _ => Icon::Person,
     }
-    columns.push(table::column(head(TaskColumn::Age), move |t: &'a Task| {
-        text(format::age(t.created_at, now)).wrapping(Wrapping::None)
-    }));
+}
+
+/// The `×12` of a line that folds repeats, and the room it takes.
+fn badge<'a>(line: &TaskLine<'_>, tokens: Tokens) -> Option<(El<'a>, f32)> {
+    let words = line.badge()?;
+    let width = 12.0 + 7.0 * words.chars().count() as f32;
+    let tag = container(text(words).size(11.5).color(tokens.muted))
+        .padding(Padding::from([0, 5]))
+        .style(styles::count_tag(tokens));
+    Some((tag.into(), width))
+}
+
+/// The task lines on show, in their groups, one line each: a box (for
+/// every task the line holds), the status, the bot, what it is about
+/// with the count of the repeats it folds, what started it, when, how
+/// long ago, and the row's acts as icons. A click on a line opens its
+/// task in the inspector; beside it, `narrow`, a line keeps the
+/// status's glyph, the bot, what it is about and its age.
+fn list<'a>(app: &'a App, groups: Vec<TaskGroup<'a>>, query: Query, narrow: bool, tokens: Tokens) -> El<'a> {
+    let state = &app.tables.tasks;
+    let now = app.now;
+    let query = Rc::new(query);
+    let head = |c: TaskColumn| Head::Sort {
+        label: c.label(),
+        badge: state.sort.badge(c),
+        column: ColumnRef::Tasks(c),
+    };
+    let on_show: Vec<&TaskLine<'a>> = TaskGroup::shown(&groups);
+    let all = state
+        .selection
+        .covers(on_show.iter().flat_map(|l| l.alike.iter().map(|t| &t.id)));
     // Each act keeps its slot, there or not, so Stop and Open stand in
     // one column down the table whatever the row's status.
-    let deciding = shown.iter().any(|t| t.status == TaskStatus::WaitingApproval);
-    columns.push(table::column(text(""), move |t: &'a Task| -> El<'a> {
-        let mut buttons = row![].spacing(4).align_y(Alignment::Center);
-        if deciding {
-            buttons = buttons.push(if t.status == TaskStatus::WaitingApproval {
-                super::decide::icons(app, &t.id, tokens)
-            } else {
-                Space::new().width(2.0 * grid::ACT + 4.0).into()
+    let deciding = on_show.iter().any(|l| l.task.status == TaskStatus::WaitingApproval);
+    let slots = if deciding { 4.0 } else { 2.0 };
+    // The lines drawn, each row its line's place among them.
+    let mut shown: Vec<TaskLine<'a>> = Vec::new();
+    let mut lines = Vec::new();
+    let open = state.cursor.selected();
+    for group in groups {
+        if app.tables.grouping.is_grouped() {
+            lines.push(Line::Group {
+                name: group.label.clone(),
+                note: group.count().to_string(),
+                open: group.open,
+                press: Box::new(Message::GroupToggled(group.key.clone())),
             });
         }
-        buttons
-            .push(grid::act_slot(t.status.can_cancel().then(|| {
-                grid::icon_act(
-                    Kind::Ghost,
-                    Icon::Stop,
-                    "Stop",
-                    Some(Message::AskCancel(t.id.clone())),
-                    tokens,
-                )
-            })))
-            .push(grid::act_slot(Some(grid::icon_act(
-                Kind::Ghost,
-                Icon::Next,
-                "Open",
-                Some(Message::Go(Screen::Task(t.id.clone()))),
-                tokens,
-            ))))
-            .into()
-    }));
-    grid::sheet(columns, shown)
+        if !group.open {
+            continue;
+        }
+        for line in group.lines {
+            lines.push(Line::Row {
+                row: shown.len(),
+                picked: line.alike.iter().all(|t| state.selection.contains(&t.id)),
+                selected: open.is_some_and(|id| line.holds(id)),
+                opens: RowRef::Task(line.key(open)),
+            });
+            shown.push(line);
+        }
+    }
+    let shown = Rc::new(shown);
+    let line = move |at: usize| -> TaskLine<'a> { shown[at].clone() };
+    let of = |cell: fn(&'a App, &TaskLine<'a>, f32, &Query, Tokens) -> El<'a>| {
+        let line = line.clone();
+        let query = query.clone();
+        move |at: usize, width: f32| cell(app, &line(at), width, &query, tokens)
+    };
+    let what = Column::share(
+        head(TaskColumn::Task),
+        1,
+        of(|_, line, width, query, tokens| {
+            let what = TaskWhat::of(line.task);
+            let rest = what.rest().unwrap_or_default().to_string();
+            match badge(line, tokens) {
+                Some((tag, room)) => row![sheet::pair(what.title(), &rest, width - room - 6.0, query, tokens), tag]
+                    .spacing(6)
+                    .align_y(Alignment::Center)
+                    .into(),
+                None => sheet::pair(what.title(), &rest, width, query, tokens),
+            }
+        }),
+    );
+    let age = Column::fixed(head(TaskColumn::Age), 40.0, {
+        let line = line.clone();
+        move |at: usize, _| {
+            Ink::Quiet
+                .write(format::age(line(at).task.created_at, now), tokens)
+                .into()
+        }
+    })
+    .end();
+    if narrow {
+        let columns = vec![
+            Column::fixed(
+                Head::None,
+                12.0,
+                of(|_, line, _, _, tokens| status::task_glyph_only(line.task.status, tokens)),
+            ),
+            Column::fixed(
+                head(TaskColumn::Bot),
+                108.0,
+                of(|_, line, width, query, tokens| {
+                    sheet::found(line.task.bot_id.to_string(), width, Ink::Strong, query, tokens)
+                }),
+            ),
+            what,
+            age,
+        ];
+        return sheet::sheet(
+            columns,
+            lines,
+            app.density,
+            &app.hover,
+            app.tables.picked(List::Tasks) > 0,
+            tokens,
+        );
+    }
+    let columns = vec![
+        Column::fixed(
+            Head::Check { all, list: List::Tasks },
+            18.0,
+            of(|app, line, _, _, tokens| {
+                let id = line.task.id.clone();
+                let ticked = line.alike.iter().all(|t| app.tables.tasks.selection.contains(&t.id));
+                let check = grid::check(ticked, move |on| Message::Pick(RowRef::Task(id.clone()), on), tokens);
+                match line.count() {
+                    1 => check,
+                    n => sheet::tip(check, format!("Picks the {n} tasks this line holds"), tokens),
+                }
+            }),
+        ),
+        Column::fixed(
+            head(TaskColumn::Status),
+            96.0,
+            of(|_, line, _, _, tokens| status::task(line.task.status, tokens)),
+        ),
+        Column::fixed(
+            head(TaskColumn::Bot),
+            150.0,
+            of(|_, line, width, query, tokens| {
+                sheet::found(line.task.bot_id.to_string(), width, Ink::Strong, query, tokens)
+            }),
+        ),
+        what,
+        Column::fixed(
+            head(TaskColumn::From),
+            180.0,
+            of(|_, line, width, query, tokens| {
+                let trigger = &line.task.trigger;
+                row![
+                    icon(trigger_icon(trigger.kind()), 12.0, tokens.muted),
+                    sheet::found(trigger.label(), width - 18.0, Ink::Quiet, query, tokens)
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center)
+                .into()
+            }),
+        ),
+        Column::fixed(
+            Head::Plain("At"),
+            40.0,
+            of(|_, line, _, _, tokens| Ink::Quiet.write(format::hour(line.task.created_at), tokens).into()),
+        )
+        .end(),
+        age,
+        Column::fixed(Head::None, slots * grid::ACT + (slots - 1.0) * 4.0, {
+            let line = line.clone();
+            move |at: usize, _| {
+                let t = line(at).task;
+                let mut buttons = row![].spacing(4).align_y(Alignment::Center);
+                if deciding {
+                    buttons = buttons.push(if t.status == TaskStatus::WaitingApproval {
+                        super::decide::icons(app, &t.id, tokens)
+                    } else {
+                        Space::new().width(2.0 * grid::ACT + 4.0).into()
+                    });
+                }
+                buttons
+                    .push(grid::act_slot(t.status.can_cancel().then(|| {
+                        grid::icon_act(
+                            Kind::Ghost,
+                            Icon::Stop,
+                            "Stop",
+                            Some(Message::AskCancel(t.id.clone())),
+                            tokens,
+                        )
+                    })))
+                    .push(grid::act_slot(Some(grid::icon_act(
+                        Kind::Ghost,
+                        Icon::Next,
+                        "Open",
+                        Some(Message::Go(Screen::Task(t.id.clone()))),
+                        tokens,
+                    ))))
+                    .into()
+            }
+        }),
+    ];
+    sheet::sheet(
+        columns,
+        lines,
+        app.density,
+        &app.hover,
+        app.tables.picked(List::Tasks) > 0,
+        tokens,
+    )
 }
 
 fn submit_form<'a>(app: &'a App, tokens: Tokens) -> El<'a> {

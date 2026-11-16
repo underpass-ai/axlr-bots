@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 
 use super::ModeChoice;
-use super::table::{ColumnRef, List, RowRef};
+use super::find::GroupKey;
+use super::table::{BotShow, ColumnRef, List, RowRef};
 use super::{BotChoice, BotView, Connection, Keypress, NodeChoice, ReaderKey, Screen, ThemeMode};
 use crate::application::{
     BulkAction, BulkOutcome, ChatSent, DeletePreview, EventFeed, Fleet, PanelError, PanelSettings, SavedEdit,
@@ -20,12 +21,32 @@ use crate::domain::{
 pub enum Message {
     Tick(DateTime<Utc>),
     Go(Screen),
-    /// Esc or Enter, when no widget took it.
+    /// A key the panel answers to, when no widget took it.
     Key(Keypress),
+    /// Esc that a field took first, which left the field: it closes the
+    /// palette, or empties the filter of the list on show.
+    EscapeTaken,
     /// A click, drag or key in a reader: it selects, it never edits.
     Read(ReaderKey, iced::widget::text_editor::Action),
     ToggleTheme,
     SetTheme(ThemeMode),
+    /// How tall the lists' rows are, kept as `look.density`.
+    SetDensity(crate::application::Density),
+    /// Whether the organic backgrounds move, kept as `look.motion`.
+    SetMotion(crate::application::Motion),
+    /// A row, card or tile tells where the pointer is on it, or that it
+    /// left.
+    Hover(super::organic::Signal),
+    /// A frame of the glow, while one is changing.
+    Frame(std::time::Instant),
+    /// The search button: open the command palette.
+    PaletteOpen,
+    /// A click on the dim layer around the palette.
+    PaletteClose,
+    /// What the palette's field holds now.
+    PaletteTyped(String),
+    /// A click on a result of the palette, by its place among them.
+    PalettePicked(usize),
     DismissBanner,
     Copy(String),
     /// The person clicked a desktop notice about this place.
@@ -55,6 +76,27 @@ pub enum Message {
     /// The person scrolled a box of the running task's Activity: whether
     /// it now shows its end.
     ActivityScrolled(super::LiveStream, bool),
+    /// A press on a tab of the inspector.
+    Tab(super::inspector::Tab),
+    /// What the find in the activity holds now.
+    FindTyped(String),
+    /// The find's next match, or the one before.
+    FindNext,
+    FindPrevious,
+    /// Enter in the find's field: the next match, the one before with
+    /// Shift held.
+    FindSubmit,
+    /// A chip over the activity: all steps, the calls, the failed, the
+    /// events.
+    FindShow(super::find::StepFilter),
+    /// Follow the running task's newest step again.
+    JumpToLatest,
+    /// An arrow the find's field let through, and whether that field
+    /// had the keyboard.
+    FindKey(Keypress, bool),
+    /// Open the new task's form with a task's bot and objective, to send
+    /// it again.
+    RunAgain(TaskId),
     BotLoaded(BotId, Result<BotView, PanelError>),
 
     MintOpen,
@@ -85,8 +127,6 @@ pub enum Message {
     Enable(BotId),
     Pause(BotId),
     Switched(Result<Bot, PanelError>),
-    /// Open or close a bot page's Advanced part.
-    ShowAdvanced(bool),
     /// Set how much a bot may do alone.
     SetLevel(BotId, AutonomyLevel),
     Leveled(Result<Bot, PanelError>),
@@ -233,6 +273,21 @@ pub enum Message {
     PickShown(List, bool),
     /// Let go of a list's picked rows.
     ClearPicks(List),
+    /// A chip over the Bots list: every bot, the ones on, the paused.
+    ShowBots(BotShow),
+    /// A group's header pressed, a team's in the Bots list or a task
+    /// group's: open it or close it.
+    GroupToggled(GroupKey),
+    /// What the filter field over the list holds now.
+    ListFilterTyped(String),
+    /// The Tasks list's Fold repeats chip.
+    FoldToggled,
+    /// The Tasks list's Group button: none, trigger, bot, status.
+    GroupingCycled,
+    /// A click on a row: the list's cursor goes to it and it opens.
+    RowPicked(RowRef),
+    /// List the revoked nodes too, or put them away again.
+    ShowRevoked(bool),
     /// An act from the bar over a list, on its picked rows: weigh it,
     /// then ask once.
     AskBulk(List, BulkAction),

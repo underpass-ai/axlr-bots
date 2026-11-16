@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 
-use super::{ActivityEntry, DelegationActivity, ToolActivity, ToolState};
+use super::{ActivityEntry, DelegationActivity, EmittedActivity, ToolActivity, ToolState};
 use crate::domain::{Event, TaskId};
 
 /// What a task's executions did, folded from its timeline: each tool call
@@ -127,6 +127,15 @@ impl Activity {
                                 }
                                 words_of = Some(event.execution_id.clone());
                                 activity.text.push_str(said);
+                                // The same paragraph as a line of its own:
+                                // it grows while nothing comes between.
+                                match activity.entries.last_mut() {
+                                    Some(ActivityEntry::Words { text, .. }) if !turn => text.push_str(said),
+                                    _ => activity.entries.push(ActivityEntry::Words {
+                                        text: said.to_string(),
+                                        at,
+                                    }),
+                                }
                             }
                             "text.truncated" => activity.text_cut = true,
                             "thinking" => {
@@ -168,9 +177,23 @@ impl Activity {
                     text: event.payload_text("text").unwrap_or_default(),
                     at: event.created_at,
                 }),
+                "bot.event.emitted" => {
+                    if let Some(emitted) = EmittedActivity::of(event) {
+                        activity.entries.push(ActivityEntry::Emitted(emitted));
+                    }
+                }
                 _ => {}
             }
         }
+        // A paragraph reads without the spaces around it; one of spaces
+        // alone says nothing.
+        activity.entries.retain_mut(|entry| match entry {
+            ActivityEntry::Words { text, .. } => {
+                *text = text.trim().to_string();
+                !text.is_empty()
+            }
+            _ => true,
+        });
         if !live {
             for entry in &mut activity.entries {
                 if let ActivityEntry::Tool(call) = entry
@@ -345,6 +368,7 @@ mod tests {
         assert_eq!(
             lines,
             [
+                "It said: Looking at the pods.",
                 "list_pods · ok · 120 ms",
                 "local_read · running",
                 "local_grep · failed",
@@ -353,6 +377,7 @@ mod tests {
                 "Asked helper · task task-other",
                 "You wrote: check row F",
                 "It answered: Row F next.",
+                "It said: All pods run.",
                 "service_restart · needs OK",
                 "Needs OK to call service_restart",
                 "x · ok",
@@ -368,7 +393,7 @@ mod tests {
         assert_eq!(activity.running(), 1);
         assert!(!activity.is_empty());
         assert_eq!(
-            activity.entries[0].at(),
+            activity.entries[1].at(),
             "2026-11-02T10:00:01Z".parse::<chrono::DateTime<chrono::Utc>>().unwrap()
         );
     }
@@ -377,13 +402,13 @@ mod tests {
     fn a_task_that_ended_leaves_no_call_running() {
         let activity = Activity::of(&timeline(), false);
         assert_eq!(activity.running(), 0);
-        assert_eq!(activity.entries[1].headline(), "local_read · no end seen");
+        assert_eq!(activity.entries[2].headline(), "local_read · no end seen");
         assert!(
-            activity.entries[2]
+            activity.entries[3]
                 .details()
                 .contains(&("Error", "no such file".to_string()))
         );
-        assert_eq!(activity.entries[8].headline(), "service_restart · no end seen");
+        assert_eq!(activity.entries[10].headline(), "service_restart · no end seen");
         assert!(Activity::of(&[], false).is_empty());
         let thought = Activity::of(
             &[progress("e1", serde_json::json!([{"kind": "thinking", "text": "Hm."}]))],
@@ -396,7 +421,7 @@ mod tests {
     fn each_step_tells_its_details() {
         let activity = Activity::of(&timeline(), true);
         assert_eq!(
-            activity.entries[0].details(),
+            activity.entries[1].details(),
             [
                 ("Tool", "axlr_call_tool".to_string()),
                 ("MCP tool", "list_pods".to_string()),
@@ -407,16 +432,16 @@ mod tests {
             ]
         );
         assert_eq!(
-            activity.entries[3].details_text(),
+            activity.entries[4].details_text(),
             "Asked worker · task task-child\nBot: worker\nTask: task-child"
         );
         assert_eq!(
-            activity.entries[4].details(),
+            activity.entries[5].details(),
             [("Bot", "stranger".to_string()), ("Refused", "not_allowed".to_string())]
         );
-        assert_eq!(activity.entries[6].details(), [("Words", "check row F".to_string())]);
+        assert_eq!(activity.entries[7].details(), [("Words", "check row F".to_string())]);
         assert_eq!(
-            activity.entries[9].details(),
+            activity.entries[11].details(),
             [("Tool", "service_restart".to_string()), ("Call id", "c3".to_string())]
         );
         let unnamed = Activity::of(
@@ -447,9 +472,9 @@ mod tests {
             serde_json::json!({"decision": "approve", "callId": "c3"}),
         ));
         let decided = Activity::of(&events, true);
-        assert_eq!(decided.entries[8].headline(), "service_restart · running");
+        assert_eq!(decided.entries[10].headline(), "service_restart · running");
         assert_eq!(
-            decided.entries[9].headline(),
+            decided.entries[11].headline(),
             "You approved the call to service_restart"
         );
         events.push(event(
@@ -460,7 +485,7 @@ mod tests {
         ));
         let ended = Activity::of(&events, true);
         // No time from its own run: from the decision, here the same moment.
-        assert_eq!(ended.entries[8].headline(), "service_restart · ok · 0 ms");
+        assert_eq!(ended.entries[10].headline(), "service_restart · ok · 0 ms");
         events.push(event(
             "e10",
             "bot.task.progress",
@@ -481,8 +506,8 @@ mod tests {
             serde_json::json!({"decision": "deny", "callId": "c3"}),
         ));
         let denied = Activity::of(&denied, true);
-        assert_eq!(denied.entries[8].headline(), "service_restart · denied");
-        assert_eq!(denied.entries[9].headline(), "You denied the call to service_restart");
+        assert_eq!(denied.entries[10].headline(), "service_restart · denied");
+        assert_eq!(denied.entries[11].headline(), "You denied the call to service_restart");
     }
 
     #[test]
@@ -540,5 +565,67 @@ mod tests {
             Activity::of(&events, true).entries[0].headline(),
             "local_exec · ok · 300 ms"
         );
+    }
+
+    #[test]
+    fn the_models_words_and_the_events_it_emitted_are_lines_in_order() {
+        let mut events = vec![
+            progress(
+                "e1",
+                serde_json::json!([
+                    {"kind": "text", "text": "  "},
+                    {"kind": "text", "text": "Reading "},
+                    {"kind": "text", "text": "the notes."},
+                    {"kind": "tool.started", "tool": "local_read", "callId": "c1", "summary": "{\"why\":\"See the notes\"}"},
+                    {"kind": "tool.ended", "tool": "local_read", "callId": "c1", "status": "ok"},
+                    {"kind": "text", "text": "Done."}
+                ]),
+            ),
+            event(
+                "e2",
+                "bot.event.emitted",
+                "exec-1",
+                serde_json::json!({"name": "item.done", "message": "item-1 · read", "deliveries": [{"botId": "lead"}]}),
+            ),
+            event(
+                "e3",
+                "bot.event.emitted",
+                "exec-1",
+                serde_json::json!({"message": "no name"}),
+            ),
+        ];
+        let lines = |events: &[Event]| -> Vec<String> {
+            Activity::of(events, true)
+                .entries
+                .iter()
+                .map(ActivityEntry::headline)
+                .collect()
+        };
+        assert_eq!(
+            lines(&events),
+            [
+                "It said: Reading the notes.",
+                "local_read · ok · 0 ms",
+                "It said: Done.",
+                "Emitted item.done: item-1 · read → lead",
+            ]
+        );
+        // More words after the event: a line of their own, after it.
+        events.push(progress(
+            "e4",
+            serde_json::json!([{"kind": "text", "text": " And more."}]),
+        ));
+        let activity = Activity::of(&events, true);
+        assert_eq!(activity.entries.len(), 5);
+        assert_eq!(activity.entries[4].headline(), "It said: And more.");
+        assert_eq!(
+            activity.entries[3].details(),
+            [
+                ("Event", "item.done".to_string()),
+                ("Message", "item-1 · read".to_string()),
+                ("To", "lead".to_string())
+            ]
+        );
+        assert!(!activity.entries[2].is_running());
     }
 }

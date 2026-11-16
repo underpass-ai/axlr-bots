@@ -3,7 +3,7 @@ use chrono::Duration;
 use super::test_runtime::{connected, drive, send};
 use super::view::tests::{app, config, settings};
 use super::*;
-use crate::application::{PanelError, PanelSettings};
+use crate::application::{Density, Motion, PanelError, PanelSettings};
 use crate::domain::{AutonomyLevel, BotId, BotStatus, NodeId, NodeStatus, TaskId, TaskStatus};
 
 fn task_in(app: &App, status: TaskStatus) -> TaskId {
@@ -404,10 +404,11 @@ fn filters_open_the_task_list() {
 fn without_a_connection_nothing_is_asked_of_the_control_plane() {
     let mut app = app();
     assert!(app.apply(Message::Tick(app.now)).is_empty());
-    // Only the page's own scroll: nothing goes to the control plane.
+    // Only the scrolls of the list and the inspector: nothing goes to
+    // the control plane.
     assert_eq!(
         app.apply(Message::Go(Screen::Task(TaskId::new("task-1").unwrap()))),
-        vec![Effect::ScrollTop]
+        vec![Effect::InspectorTop, Effect::ScrollTop]
     );
     let message = futures::executor::block_on(app.services.clone().execute(Effect::Refresh { generation: 1 }));
     assert!(matches!(
@@ -895,7 +896,7 @@ fn a_running_task_is_followed_live_and_keeps_its_history_once_it_ends() {
     send(&mut app, Message::Go(Screen::Task(running.clone())));
     let live = app.live.as_ref().unwrap();
     assert!(live.read && !live.following && !live.settled);
-    assert_eq!(live.activity.entries.len(), 2);
+    assert_eq!(live.activity.entries.len(), 4, "two steps and the words before each");
     assert_eq!(live.activity.running(), 1);
     assert!(live.words.text().starts_with("I will read the host's clock."));
 
@@ -924,7 +925,11 @@ fn a_running_task_is_followed_live_and_keeps_its_history_once_it_ends() {
     send(&mut app, Message::Tick(tick + Duration::seconds(3)));
     let live = app.live.as_ref().unwrap();
     assert_eq!(live.activity.running(), 0);
-    assert_eq!(live.activity.entries.len(), 4);
+    assert_eq!(
+        live.activity.entries.len(),
+        7,
+        "the words, the bot asked and its answer"
+    );
     assert!(live.words.text().contains("It is ten."));
     send(&mut app, Message::ActivityPick(2));
     send(
@@ -955,7 +960,7 @@ fn a_running_task_is_followed_live_and_keeps_its_history_once_it_ends() {
     send(&mut app, Message::Tick(tick + Duration::seconds(6)));
     let live = app.live.as_ref().unwrap();
     assert!(live.settled && live.read);
-    assert_eq!(live.activity.entries.len(), 4);
+    assert_eq!(live.activity.entries.len(), 7);
     let effects = app.apply(Message::Tick(tick + Duration::seconds(9)));
     assert!(effects.iter().all(|e| !matches!(e, Effect::FollowTask { .. })));
 
@@ -1128,10 +1133,18 @@ fn the_look_and_the_new_bot_defaults_are_kept_as_they_change() {
     send(&mut app, Message::ToggleTheme);
     assert_eq!(app.mode, ThemeMode::Dark);
     assert!(app.banner.is_none(), "the theme switch says nothing");
+    assert_eq!(app.density, Density::Comfortable);
+    send(&mut app, Message::SetDensity(Density::Compact));
+    assert_eq!(app.density, Density::Compact);
+    assert!(app.banner.is_none(), "nor does the rows' height");
+    assert_eq!(app.hover.motion(), Motion::On);
+    send(&mut app, Message::SetMotion(Motion::Off));
+    assert_eq!(app.hover.motion(), Motion::Off);
+    assert!(app.banner.is_none(), "nor does the glow");
     let (initial, saved) = app.services.connect.initial();
     assert_eq!(
-        (initial.theme, saved),
-        (ThemeMode::Dark, false),
+        (initial.theme, initial.density, initial.motion, saved),
+        (ThemeMode::Dark, Density::Compact, Motion::Off, false),
         "saved without a control plane"
     );
     app.apply(Message::SettingsModel(" codex/gpt-6-luna ".into()));
@@ -1160,7 +1173,11 @@ fn the_look_and_the_new_bot_defaults_are_kept_as_they_change() {
     send(&mut app, Message::SettingsSave);
     let kept = app.services.connect.initial().0;
     assert!(kept.control_plane.is_some() && kept.theme == ThemeMode::Dark);
+    assert_eq!((kept.density, kept.motion), (Density::Compact, Motion::Off));
     assert_eq!(kept.new_bot.model, "codex/gpt-6-luna");
+    // The next start draws the lists as they were left, and still.
+    let (again, _) = App::new(app.services.clone(), Launch::default(), &kept, true);
+    assert_eq!((again.density, again.hover.motion()), (Density::Compact, Motion::Off));
 }
 
 #[test]
@@ -1171,13 +1188,19 @@ fn the_settings_are_edited_as_json_and_applied() {
     let text = app.settings_json.text();
     assert!(text.contains("\"controlPlane.apiUrl\": \"https://127.0.0.1:7879\""));
     assert!(text.contains("\"look.theme\": \"light\""));
+    assert!(text.contains("\"look.density\": \"comfortable\""));
+    assert!(text.contains("\"look.motion\": \"on\""));
     let edited = text
         .replace("\"look.theme\": \"light\"", "\"look.theme\": \"dark\"")
+        .replace("\"look.density\": \"comfortable\"", "\"look.density\": \"compact\"")
+        .replace("\"look.motion\": \"on\"", "\"look.motion\": \"off\"")
         .replace("127.0.0.1:7879", "cp.example:7879");
     app.settings_json.content = iced::widget::text_editor::Content::with_text(&edited);
     send(&mut app, Message::SettingsJsonApply);
     assert!(!app.settings_json.open && app.settings_json.error.is_none());
-    assert_eq!(app.mode, ThemeMode::Dark);
+    assert_eq!((app.mode, app.density), (ThemeMode::Dark, Density::Compact));
+    assert_eq!(app.hover.motion(), Motion::Off);
+    assert_eq!(app.services.connect.initial().0.motion, Motion::Off);
     assert_eq!(app.settings.api_url, "https://cp.example:7879");
     assert!(app.settings.changed() && app.settings.can_connect());
     assert!(app.connected(), "the connection stays until Connect");
@@ -1225,6 +1248,8 @@ fn the_settings_are_exported_imported_and_reset() {
     let imported = PanelSettings {
         control_plane: Some(config()),
         theme: ThemeMode::Dark,
+        density: Density::Compact,
+        motion: Motion::Off,
         new_bot: crate::application::NewBotDefaults {
             model: "codex/gpt-6-luna".into(),
             models: vec![],
@@ -1237,9 +1262,10 @@ fn the_settings_are_exported_imported_and_reset() {
     assert_eq!(banner.title, "Settings imported");
     assert!(banner.detail.contains("kept"), "same control plane: nothing to connect");
     assert_eq!(
-        (app.mode, app.new_bot.model.as_str()),
-        (ThemeMode::Dark, "codex/gpt-6-luna")
+        (app.mode, app.density, app.new_bot.model.as_str()),
+        (ThemeMode::Dark, Density::Compact, "codex/gpt-6-luna")
     );
+    assert_eq!(app.hover.motion(), Motion::Off);
     assert!(!app.settings.changed());
 
     store.put("/in/look.json", "{\"look.theme\": \"light\"}");
@@ -1265,6 +1291,8 @@ fn the_settings_are_exported_imported_and_reset() {
     send(&mut app, Message::SettingsReset);
     assert_eq!(app.settings.config(), config());
     assert_eq!((app.mode, app.new_bot.clone()), (ThemeMode::Light, Default::default()));
+    assert_eq!(app.density, Density::Comfortable);
+    assert_eq!(app.hover.motion(), Motion::On);
     assert_eq!(app.banner.as_ref().unwrap().title, "Back to the defaults");
 }
 
@@ -1413,4 +1441,91 @@ fn nodes_behind_the_control_plane_are_known_after_a_refresh() {
                 .to_string()
         ]
     );
+}
+
+/// The organic glow: a row's news of the pointer light it and the
+/// frames fade it in; another screen, or another row in the inspector,
+/// lets the glow go while the pointer stays still; the frames are asked
+/// for only while a glow changes. With motion off nothing of it.
+#[test]
+fn the_glow_follows_the_pointer_and_asks_for_frames_only_while_it_changes() {
+    use std::time::{Duration as Span, Instant};
+
+    use iced::{Point, Size};
+
+    use super::organic::{Hover, Signal};
+
+    let ms = Span::from_millis;
+    let over = |spot: HoverSpot, when: Instant| {
+        Message::Hover(Signal::Over {
+            surface: spot.surface(),
+            at: Point::new(0.3, 0.5),
+            size: Size::new(1200.0, 35.0),
+            when,
+        })
+    };
+    let fade = |app: &App, spot: &HoverSpot| app.hover.shine(spot.surface()).map_or(0.0, |shine| shine.fade);
+    let frames = |app: &App| super::runtime::subscription(app).units();
+
+    let mut app = connected();
+    send(&mut app, Message::Go(Screen::Tasks));
+    let idle = frames(&app);
+    assert!(!app.hover.is_animating());
+    let (first, second) = {
+        let tasks = &app.fleet.as_ref().unwrap().tasks;
+        (tasks[0].id.clone(), tasks[1].id.clone())
+    };
+    let row = HoverSpot::Row(table::RowRef::Task(first.clone()));
+
+    // The pointer comes onto a row: frames, and the glow fades in.
+    let start = Instant::now();
+    send(&mut app, over(row.clone(), start));
+    assert!(app.hover.is_animating());
+    assert_eq!(frames(&app), idle + 1, "the frames come while the glow changes");
+    send(&mut app, Message::Frame(start + ms(125)));
+    assert!((fade(&app, &row) - 0.5).abs() < 0.01, "{}", fade(&app, &row));
+    send(&mut app, Message::Frame(start + ms(300)));
+    assert_eq!(fade(&app, &row), 1.0);
+
+    // The row opens in the inspector under a still pointer: the list's
+    // row lets go, it lights again as soon as it hears of the pointer.
+    send(&mut app, Message::RowPicked(table::RowRef::Task(first.clone())));
+    assert_eq!(app.screen, Screen::Task(first.clone()));
+    send(&mut app, Message::Frame(start + ms(300) + Hover::FADE_OUT / 2));
+    assert!(fade(&app, &row) > 0.0 && fade(&app, &row) < 1.0, "fading out");
+    send(&mut app, Message::Frame(start + ms(300) + Hover::FADE_OUT + ms(10)));
+    assert_eq!(fade(&app, &row), 0.0);
+    assert!(!app.hover.is_animating());
+    assert_eq!(frames(&app), idle, "no glow changes, no frames");
+
+    // The inspector's header glows; another row in the inspector lets
+    // its glow go.
+    let head = HoverSpot::Head(table::RowRef::Task(first));
+    let later = start + Span::from_secs(2);
+    send(&mut app, over(head.clone(), later));
+    send(&mut app, Message::Frame(later + ms(300)));
+    assert_eq!(fade(&app, &head), 1.0);
+    send(&mut app, Message::Go(Screen::Task(second)));
+    send(&mut app, Message::Frame(later + ms(300) + Hover::FADE_OUT + ms(10)));
+    assert_eq!(fade(&app, &head), 0.0);
+    assert_eq!(frames(&app), idle);
+
+    // Motion off: the news are not heard, nothing glows, no frame.
+    send(&mut app, Message::SetMotion(Motion::Off));
+    let latest = start + Span::from_secs(4);
+    send(&mut app, over(row.clone(), latest));
+    send(&mut app, Message::Frame(latest + ms(300)));
+    assert_eq!(fade(&app, &row), 0.0);
+    assert!(!app.hover.is_animating());
+    assert_eq!(frames(&app), idle);
+    assert_eq!(app.services.connect.initial().0.motion, Motion::Off);
+
+    // On again under a glowing row, then off: the glow goes at once.
+    send(&mut app, Message::SetMotion(Motion::On));
+    send(&mut app, over(row.clone(), latest + ms(400)));
+    send(&mut app, Message::Frame(latest + ms(800)));
+    assert_eq!(fade(&app, &row), 1.0);
+    send(&mut app, Message::SetMotion(Motion::Off));
+    assert_eq!(fade(&app, &row), 0.0);
+    assert_eq!(frames(&app), idle);
 }

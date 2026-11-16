@@ -1,20 +1,18 @@
 //! The list screens' tables: sorting by a header, picking rows, and one
 //! act on the picked rows from the bar over the list.
 
-use super::table::{BulkPlan, ColumnRef, List, RowRef};
-use super::{App, Banner, Confirm, Effect, Screen};
+use std::collections::BTreeSet;
+
+use super::find::{GroupKey, TeamGroup};
+use super::table::{BotShow, BulkPlan, ColumnRef, List, RowRef};
+use super::{App, Banner, Confirm, Effect};
 use crate::application::{BulkAction, BulkOutcome};
+use crate::domain::{BotId, NodeId, TaskId};
 
 impl App {
     /// The list the screen on show is, if it has a table to pick in.
     pub fn list_on_screen(&self) -> Option<List> {
-        match self.screen {
-            Screen::Nodes => Some(List::Nodes),
-            Screen::Bots => Some(List::Bots),
-            Screen::Tasks => Some(List::Tasks),
-            Screen::Teams => Some(List::Teams),
-            _ => None,
-        }
+        self.screen.list()
     }
 
     pub(super) fn sort_by(&mut self, column: ColumnRef) -> Vec<Effect> {
@@ -22,8 +20,16 @@ impl App {
         Vec::new()
     }
 
+    /// A row's box. On a task line that folds repeats, the box picks
+    /// or lets go every task the line holds, as its tip says.
     pub(super) fn pick(&mut self, row: RowRef, picked: bool) -> Vec<Effect> {
-        self.tables.pick(row, picked);
+        let rows = match &row {
+            RowRef::Task(id) => self
+                .line_of(id)
+                .map_or_else(|| vec![row.clone()], |ids| ids.into_iter().map(RowRef::Task).collect()),
+            _ => vec![row],
+        };
+        self.tables.pick_all(rows, picked);
         Vec::new()
     }
 
@@ -37,6 +43,38 @@ impl App {
 
     pub(super) fn clear_picks(&mut self, list: List) -> Vec<Effect> {
         self.tables.clear(list);
+        Vec::new()
+    }
+
+    /// A chip over the Bots list; the picked rows it hides are let go.
+    pub(super) fn show_bots(&mut self, show: BotShow) -> Vec<Effect> {
+        self.tables.bot_show = show;
+        self.rows_changed();
+        Vec::new()
+    }
+
+    /// A group's header pressed, a team's or a task group's: it opens
+    /// when it was closed and closes when it was open, whichever way it
+    /// started; the picked rows a closed group hides are let go.
+    pub(super) fn group_toggled(&mut self, key: GroupKey) -> Vec<Effect> {
+        let starts_closed = match &key {
+            GroupKey::Team(_) => self
+                .bot_groups()
+                .iter()
+                .find(|group| group.key == key)
+                .is_some_and(|group| group.starts_closed),
+            GroupKey::Tasks(..) => false,
+        };
+        self.tables.collapsed.toggle(key, starts_closed);
+        self.rows_changed();
+        Vec::new()
+    }
+
+    /// The revoked nodes listed or put away; put away, the picked ones
+    /// are let go.
+    pub(super) fn show_revoked(&mut self, revoked: bool) -> Vec<Effect> {
+        self.tables.nodes_shown.set(revoked);
+        self.rows_changed();
         Vec::new()
     }
 
@@ -100,52 +138,50 @@ impl App {
         }
     }
 
-    /// The rows a list shows now: the Tasks list after its filter.
+    /// The rows a list shows now, as `app_lists` reads them: every task
+    /// the task lines on show hold, the folded ones too; the nodes the
+    /// filter lets through without the revoked ones put away; the bots
+    /// of the chip and the filter in the teams that are open; the teams
+    /// the filter lets through.
     pub fn shown_rows(&self, list: List) -> Vec<RowRef> {
-        let Some(fleet) = self.fleet.as_ref() else {
-            return Vec::new();
-        };
         match list {
-            List::Nodes => fleet.nodes.iter().map(|n| RowRef::Node(n.id.clone())).collect(),
-            List::Bots => fleet.bots.iter().map(|b| RowRef::Bot(b.id.clone())).collect(),
-            List::Tasks => self
-                .filter
-                .apply(&fleet.tasks)
+            List::Nodes => self
+                .node_rows()
                 .into_iter()
-                .map(|t| RowRef::Task(t.id.clone()))
+                .map(|n| RowRef::Node(n.id.clone()))
                 .collect(),
-            List::Teams => self.teams().into_iter().map(|t| RowRef::Team(t.name)).collect(),
+            List::Bots => TeamGroup::shown(&self.bot_groups())
+                .into_iter()
+                .map(|b| RowRef::Bot(b.id.clone()))
+                .collect(),
+            List::Tasks => self.tasks_on_show().into_iter().map(RowRef::Task).collect(),
+            List::Teams => self.team_rows().into_iter().map(|t| RowRef::Team(t.name)).collect(),
         }
     }
 
-    /// Picked rows whose row is gone, or hidden by the Tasks filter,
-    /// drop out.
+    /// Picked rows whose row is gone, or hidden by a list's filter, its
+    /// chips or a closed group, drop out: an act never reaches a row out
+    /// of sight.
     pub(super) fn drop_gone_picks(&mut self) {
-        if let Some(fleet) = self.fleet.as_ref() {
-            let tables = &mut self.tables;
-            tables
-                .nodes
-                .selection
-                .retain(|id| fleet.nodes.iter().any(|n| &n.id == id));
-            tables
-                .bots
-                .selection
-                .retain(|id| fleet.bots.iter().any(|b| &b.id == id));
-            let shown = self.filter.apply(&fleet.tasks);
-            tables.tasks.selection.retain(|id| shown.iter().any(|t| &t.id == id));
-            let teams = crate::domain::Team::from_bots(&fleet.bots);
-            tables
-                .teams
-                .selection
-                .retain(|name| teams.iter().any(|t| &t.name == name));
+        if self.fleet.is_none() {
+            return;
         }
+        let nodes: BTreeSet<NodeId> = self.node_rows().into_iter().map(|n| n.id.clone()).collect();
+        let bots: BTreeSet<BotId> = TeamGroup::keys(&self.bot_groups()).into_iter().collect();
+        let tasks: BTreeSet<TaskId> = self.tasks_on_show().into_iter().collect();
+        let teams: BTreeSet<String> = self.team_rows().into_iter().map(|t| t.name).collect();
+        let tables = &mut self.tables;
+        tables.nodes.selection.retain(|id| nodes.contains(id));
+        tables.bots.selection.retain(|id| bots.contains(id));
+        tables.tasks.selection.retain(|id| tasks.contains(id));
+        tables.teams.selection.retain(|name| teams.contains(name));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::test_runtime::{connected, send};
-    use super::super::{Keypress, Message};
+    use super::super::{Keypress, Message, Screen};
     use super::*;
     use crate::domain::{BotId, BotStatus, TaskId, TaskStatus};
     use crate::ui::table::{BotColumn, TaskColumn};
@@ -300,6 +336,64 @@ mod tests {
         send(&mut app, Message::ConfirmYes);
         assert_eq!(app.banner.as_ref().unwrap().title, "2 stopped");
         assert!(fake.calls().iter().filter(|c| c.starts_with("stop_bot")).count() == 2);
+    }
+
+    /// The fleet of a real size, on `screen`.
+    fn large(screen: Screen) -> App {
+        let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::large(
+            "2026-10-25T10:00:00Z".parse().unwrap(),
+        ));
+        let mut app = super::super::view::tests::app_over(fake);
+        send(&mut app, Message::SettingsSave);
+        send(&mut app, Message::Go(screen));
+        app
+    }
+
+    #[test]
+    fn the_box_for_all_never_picks_a_node_put_away() {
+        let mut app = large(Screen::Nodes);
+        send(&mut app, Message::PickShown(List::Nodes, true));
+        assert_eq!(app.tables.picked(List::Nodes), 8, "the revoked ones are out of sight");
+        send(&mut app, Message::ShowRevoked(true));
+        send(&mut app, Message::PickShown(List::Nodes, true));
+        assert_eq!(app.tables.picked(List::Nodes), 48);
+        assert_eq!(
+            app.bulk_plan(List::Nodes, BulkAction::Revoke).button(),
+            "Revoke 8 of 48"
+        );
+        send(&mut app, Message::ShowRevoked(false));
+        assert_eq!(app.tables.picked(List::Nodes), 8, "put away, they are let go");
+    }
+
+    #[test]
+    fn the_box_for_all_picks_the_bots_on_show_and_a_fold_or_a_chip_lets_go() {
+        let mut app = large(Screen::Bots);
+        send(&mut app, Message::PickShown(List::Bots, true));
+        // Two teams at work of five bots each and three bots in no team;
+        // the six teams with no bot on were met closed.
+        assert_eq!(app.tables.picked(List::Bots), 13);
+        send(&mut app, Message::GroupToggled(GroupKey::Team("ops".into())));
+        assert_eq!(app.tables.picked(List::Bots), 8, "a closed team's rows are let go");
+        send(&mut app, Message::ShowBots(BotShow::Paused));
+        assert_eq!(
+            app.tables.picked(List::Bots),
+            1,
+            "only support's paused bot is in sight"
+        );
+        send(&mut app, Message::GroupToggled(GroupKey::Team("audit".into())));
+        send(&mut app, Message::PickShown(List::Bots, true));
+        assert_eq!(app.tables.picked(List::Bots), 5);
+        // A pause does not fold a team under the hand: its rows stay
+        // picked for the next act.
+        send(&mut app, Message::ShowBots(BotShow::All));
+        send(&mut app, Message::GroupToggled(GroupKey::Team("audit".into())));
+        send(&mut app, Message::ClearPicks(List::Bots));
+        send(&mut app, Message::PickShown(List::Bots, true));
+        assert_eq!(app.tables.picked(List::Bots), 8);
+        send(&mut app, Message::AskBulk(List::Bots, BulkAction::Pause));
+        send(&mut app, Message::ConfirmYes);
+        assert_eq!(app.tables.picked(List::Bots), 8);
+        assert_eq!(app.shown_rows(List::Bots).len(), 8);
     }
 
     #[test]

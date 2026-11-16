@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::application::{NewBotDefaults, PanelConfig, PanelSettings, Theme};
+use crate::application::{Density, Motion, NewBotDefaults, PanelConfig, PanelSettings, Theme};
 
 /// The settings screen's fields, as typed.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -90,10 +90,12 @@ impl SettingsForm {
     }
 
     /// Everything on the screen as settings, with the look given.
-    pub fn settings(&self, theme: Theme) -> PanelSettings {
+    pub fn settings(&self, theme: Theme, density: Density, motion: Motion) -> PanelSettings {
         PanelSettings {
             control_plane: Some(self.config()),
             theme,
+            density,
+            motion,
             new_bot: self.new_bot(),
         }
     }
@@ -125,6 +127,8 @@ mod tests {
                 key_path: None,
             }),
             theme: Theme::Dark,
+            density: Density::Compact,
+            motion: Motion::Off,
             new_bot: NewBotDefaults {
                 model: "a/b".into(),
                 models: vec!["a/b".into(), "c/d".into()],
@@ -139,7 +143,7 @@ mod tests {
         assert_eq!(form.models, "a/b, c/d");
         form.api_url = " https://h:1 ".into();
         form.models = "a/b,c/d , ".into();
-        assert_eq!(form.settings(Theme::Dark), settings());
+        assert_eq!(form.settings(Theme::Dark, Density::Compact, Motion::Off), settings());
         let mut other = SettingsForm::from_settings(&PanelSettings::default(), false);
         assert_eq!(other.api_url, "");
         other.take(&settings());
@@ -169,7 +173,7 @@ mod tests {
             (form.cert_path.as_str(), form.key_path.as_str()),
             ("/o/operator.crt", "/o/operator.key")
         );
-        assert_eq!(form.settings(Theme::Dark), named);
+        assert_eq!(form.settings(Theme::Dark, Density::Compact, Motion::Off), named);
         form.cert_path = "  ".into();
         form.key_path = String::new();
         assert_eq!(form.config().cert_path, None, "blank is the default place");

@@ -1,21 +1,22 @@
 //! What the panel draws for each screen.
 
-mod activity;
 mod bot_delete;
-mod bot_detail;
 mod bot_edit;
 mod bots;
 mod decide;
 mod grid;
+mod inspector;
 mod levels;
+mod listbar;
 mod nodes;
 mod order;
 mod overview;
+mod palette;
 mod post_draft;
 mod settings;
+mod sheet;
 mod shell;
-mod task_activity;
-mod task_detail;
+mod status;
 mod tasks;
 mod teams;
 mod voice;
@@ -23,24 +24,48 @@ pub mod widgets;
 
 use iced::Element;
 
-use super::{App, Message, Screen, Tokens};
+use super::find::RowSpot;
+use super::{App, Message, Screen, Scroller, Tokens};
+use crate::application::Density;
 
 /// The whole window for the panel's state.
 pub fn view(app: &App) -> Element<'_, Message> {
     let tokens = Tokens::of(app.mode);
+    // Home and the lists reach the window's edges and scroll their own
+    // rows, a list with the row it inspects beside it; Settings is a page
+    // in a margin.
     let content = match &app.screen {
         Screen::Overview => overview::view(app, tokens),
-        Screen::Nodes => nodes::view(app, tokens),
-        Screen::Bots => bots::view(app, tokens),
-        Screen::Bot(id) => bot_detail::view(app, id, tokens),
-        Screen::Tasks => tasks::view(app, tokens),
-        Screen::Task(id) => task_detail::view(app, id, tokens),
-        Screen::Activity(id) => task_activity::page(app, id, tokens),
-        Screen::Teams => teams::list(app, tokens),
-        Screen::Team(name) => teams::detail(app, name, tokens),
-        Screen::Settings => settings::view(app, tokens),
+        Screen::Nodes | Screen::Node(_) => inspector::beside(app, tokens, move || nodes::view(app, tokens)),
+        Screen::Bots | Screen::Bot(_) => inspector::beside(app, tokens, move || bots::view(app, tokens)),
+        Screen::Tasks | Screen::Task(_) => inspector::beside(app, tokens, move || tasks::view(app, tokens)),
+        Screen::Teams | Screen::Team(_) => inspector::beside(app, tokens, move || teams::list(app, tokens)),
+        Screen::Settings => page(settings::view(app, tokens)),
     };
     shell::frame(app, content, tokens)
+}
+
+/// Where a row is drawn in what scrolls it, in pixels: its top in the
+/// content and its height. The lists' rows are as tall as the density
+/// says under group headers of their own height; the palette's results
+/// sit under their section headings.
+pub fn span(scroller: Scroller, spot: RowSpot, density: Density) -> (f32, f32) {
+    match scroller {
+        Scroller::Rows => {
+            let row = density.row_height();
+            (spot.top(0.0, row, sheet::GROUP), row)
+        }
+        Scroller::Palette => (spot.top(palette::PAD, palette::ENTRY, palette::SECTION), palette::ENTRY),
+    }
+}
+
+/// A screen that is a page to read: in a margin, away from the rail.
+fn page<'a>(content: widgets::El<'a>) -> widgets::El<'a> {
+    iced::widget::container(content)
+        .padding(iced::Padding::from([14, 18]))
+        .width(iced::Length::Fill)
+        .height(iced::Length::Fill)
+        .into()
 }
 
 #[cfg(test)]

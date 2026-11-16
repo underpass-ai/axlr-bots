@@ -53,10 +53,12 @@ impl App {
             return Vec::new();
         };
         let brought = feed.new > 0;
+        // A task that ended opens at its first step; one that runs keeps
+        // its newest lines in view.
         let mut effects: Vec<Effect> = live
             .update(feed, !ended)
             .into_iter()
-            .filter(|_| on_screen)
+            .filter(|_| on_screen && !ended)
             .map(Effect::ShowEnd)
             .collect();
         live.settled = live.asked_ended;
@@ -66,12 +68,18 @@ impl App {
         effects
     }
 
-    /// Whether the task as last read ended: a task not read yet may run.
+    /// Whether the task as last read ended: its detail says so, or the
+    /// fleet's list until its detail is read; a task read nowhere yet may
+    /// run.
     fn task_ended(&self, id: &TaskId) -> bool {
-        self.task
-            .as_ref()
-            .filter(|d| &d.task.id == id)
-            .is_some_and(|d| d.task.status.is_terminal())
+        match self.task.as_ref().filter(|d| &d.task.id == id) {
+            Some(detail) => detail.task.status.is_terminal(),
+            None => self
+                .fleet
+                .as_ref()
+                .and_then(|f| f.tasks.iter().find(|t| &t.id == id))
+                .is_some_and(|t| t.status.is_terminal()),
+        }
     }
 
     /// The task's Activity again once its detail says it ended: a call

@@ -104,6 +104,11 @@ pub fn clock(moment: DateTime<Utc>) -> String {
     moment.with_timezone(&Local).format("%H:%M:%S").to_string()
 }
 
+/// The local hour and minute, `14:05`: when a row of a list was made.
+pub fn hour(moment: DateTime<Utc>) -> String {
+    moment.with_timezone(&Local).format("%H:%M").to_string()
+}
+
 /// A task's Activity one entry per line, `14:05:09 list_pods · ok ·
 /// 120 ms`, then the model's words: what a copy of the Activity takes.
 pub fn activity(activity: &crate::application::Activity) -> String {
@@ -322,6 +327,8 @@ mod tests {
         assert_eq!(short_id("bot", 13), "bot");
         let moment: DateTime<Utc> = "2026-10-25T10:00:00Z".parse().unwrap();
         assert_eq!(clock(moment).len(), 8);
+        assert_eq!(hour(moment).len(), 5);
+        assert!(clock(moment).starts_with(&hour(moment)));
         assert!(when(moment).contains("Oct"));
     }
 }

@@ -1,14 +1,21 @@
 use chrono::{DateTime, Utc};
 
-use super::{DelegationActivity, ToolActivity, ToolState};
+use super::{DelegationActivity, EmittedActivity, ToolActivity, ToolState};
 
 /// One line of a task's Activity: a tool call, a bot asked, a call that
 /// waits for a person (and, once they decided, what they said), what the
-/// person wrote to the run and what it said back.
+/// person wrote to the run and what it said back, an event it emitted
+/// and the model's words, a paragraph each, in the order they came.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ActivityEntry {
     Tool(ToolActivity),
     Delegation(DelegationActivity),
+    Emitted(EmittedActivity),
+    /// A paragraph of the model's words: what came between two steps.
+    Words {
+        text: String,
+        at: DateTime<Utc>,
+    },
     Waiting {
         tool: String,
         call_id: String,
@@ -32,7 +39,10 @@ impl ActivityEntry {
         match self {
             Self::Tool(call) => call.started_at,
             Self::Delegation(asked) => asked.at,
-            Self::Waiting { at, .. } | Self::YouWrote { at, .. } | Self::Said { at, .. } => *at,
+            Self::Emitted(event) => event.at,
+            Self::Waiting { at, .. } | Self::YouWrote { at, .. } | Self::Said { at, .. } | Self::Words { at, .. } => {
+                *at
+            }
         }
     }
 
@@ -58,6 +68,13 @@ impl ActivityEntry {
             },
             Self::YouWrote { text, .. } => format!("You wrote: {text}"),
             Self::Said { text, .. } => format!("It answered: {text}"),
+            Self::Emitted(event) => match (event.message.is_empty(), event.to.is_empty()) {
+                (true, true) => format!("Emitted {}", event.name),
+                (false, true) => format!("Emitted {}: {}", event.name, event.message),
+                (true, false) => format!("Emitted {} {}", event.name, event.recipients()),
+                (false, false) => format!("Emitted {}: {} {}", event.name, event.message, event.recipients()),
+            },
+            Self::Words { text, .. } => format!("It said: {text}"),
         }
     }
 
@@ -88,7 +105,14 @@ impl ActivityEntry {
                 put("Tool", tool.clone());
                 put("Call id", call_id.clone());
             }
-            Self::YouWrote { text, .. } | Self::Said { text, .. } => put("Words", text.clone()),
+            Self::YouWrote { text, .. } | Self::Said { text, .. } | Self::Words { text, .. } => {
+                put("Words", text.clone())
+            }
+            Self::Emitted(event) => {
+                put("Event", event.name.clone());
+                put("Message", event.message.clone());
+                put("To", event.to.join(", "));
+            }
         }
         out
     }

@@ -1,4 +1,4 @@
-use super::{NewBotDefaults, PanelConfig, PanelError, Theme};
+use super::{Density, Motion, NewBotDefaults, PanelConfig, PanelError, Theme};
 
 /// Everything the panel keeps for itself between runs, in sections as
 /// the settings file names them: `controlPlane.*` (where the operator
@@ -8,6 +8,10 @@ use super::{NewBotDefaults, PanelConfig, PanelError, Theme};
 pub struct PanelSettings {
     pub control_plane: Option<PanelConfig>,
     pub theme: Theme,
+    /// How tall the lists' rows are.
+    pub density: Density,
+    /// Whether the organic backgrounds move under the pointer.
+    pub motion: Motion,
     pub new_bot: NewBotDefaults,
 }
 
@@ -55,6 +59,8 @@ mod tests {
                 key_path: None,
             }),
             theme: Theme::Dark,
+            density: Density::Compact,
+            motion: Motion::Off,
             new_bot: NewBotDefaults {
                 model: "codex/gpt-6-luna".into(),
                 models: vec!["codex/gpt-6-luna".into(), "anthropic/claude-haiku-5.5".into()],
@@ -67,6 +73,8 @@ mod tests {
         let text = settings().to_json();
         assert!(text.contains("\"controlPlane.apiUrl\": \"https://127.0.0.1:7879\""));
         assert!(text.contains("\"look.theme\": \"dark\""));
+        assert!(text.contains("\"look.density\": \"compact\""));
+        assert!(text.contains("\"look.motion\": \"off\""));
         assert!(text.contains("\"newBot.defaultModel\": \"codex/gpt-6-luna\""));
         assert!(text.ends_with("}\n"));
         assert_eq!(PanelSettings::from_json(&text).unwrap(), settings());
@@ -74,6 +82,14 @@ mod tests {
         assert!(first_run.contains("\"controlPlane.apiUrl\": null"));
         assert_eq!(PanelSettings::from_json(&first_run).unwrap().control_plane, None);
         assert_eq!(PanelSettings::from_json("{}").unwrap(), PanelSettings::default());
+        // A file from before the key reads as comfortable.
+        assert!(first_run.contains("\"look.density\": \"comfortable\""));
+        let older = text.replace("  \"look.density\": \"compact\",\n", "");
+        assert_eq!(PanelSettings::from_json(&older).unwrap().density, Density::Comfortable);
+        // And the motion as on.
+        assert!(first_run.contains("\"look.motion\": \"on\""));
+        let still = text.replace("  \"look.motion\": \"off\",\n", "");
+        assert_eq!(PanelSettings::from_json(&still).unwrap().motion, Motion::On);
     }
 
     #[test]
@@ -82,6 +98,16 @@ mod tests {
         assert!(
             matches!(&broken, PanelError::Config(m) if m.contains("line 2") && m.contains("blue")),
             "{broken:?}"
+        );
+        let cosy = PanelSettings::from_json("{\n  \"look.density\": \"cosy\"\n}").unwrap_err();
+        assert!(
+            matches!(&cosy, PanelError::Config(m) if m.contains("line 2") && m.contains("cosy")),
+            "{cosy:?}"
+        );
+        let still = PanelSettings::from_json("{\n  \"look.motion\": \"still\"\n}").unwrap_err();
+        assert!(
+            matches!(&still, PanelError::Config(m) if m.contains("line 2") && m.contains("still")),
+            "{still:?}"
         );
         let unknown = PanelSettings::from_json("{\"bots.model\": \"x\"}").unwrap_err();
         assert!(
