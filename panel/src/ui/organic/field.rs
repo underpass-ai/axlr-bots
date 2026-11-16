@@ -13,6 +13,18 @@ impl Field {
     /// The grid the design asks for.
     pub const SMALL: Field = Field { width: 56, height: 28 };
 
+    /// The grid for a surface of this shape: the design's, with more
+    /// columns on a long row, where 56 would be too few to follow the
+    /// waves (they are as long as the row is tall) and would make them
+    /// flicker instead of drift.
+    pub fn fitting(aspect: f32) -> Self {
+        let columns = (aspect * 4.0).ceil().max(Self::SMALL.width as f32).min(320.0);
+        Self {
+            width: columns as u32,
+            ..Self::SMALL
+        }
+    }
+
     /// The grid's pixels for this frame, row by row from the top, four
     /// bytes each: red, green, blue and opacity (not multiplied in).
     pub fn pixels(&self, glow: &Glow) -> Vec<u8> {
@@ -100,6 +112,22 @@ mod tests {
         assert_eq!(Field::SMALL.pixels(&glow()).len(), 56 * 28 * 4);
         let odd = Field { width: 9, height: 5 };
         assert_eq!(odd.pixels(&glow()).len(), 9 * 5 * 4);
+    }
+
+    #[test]
+    fn a_long_row_gets_more_columns() {
+        assert_eq!(Field::fitting(1.8), Field::SMALL);
+        assert_eq!(Field::fitting(13.0), Field::SMALL);
+        assert_eq!(Field::fitting(36.0), Field { width: 144, height: 28 });
+        assert_eq!(Field::fitting(900.0).width, 320);
+        assert_eq!(Field::fitting(f32::NAN), Field::SMALL);
+        // From one column to the next the waves turn by less than a
+        // quarter of a turn, whatever the shape.
+        for aspect in [0.5, 2.0, 13.0, 36.0, 60.0] {
+            let field = Field::fitting(aspect);
+            let turn = aspect * 1.6 * 3.1 / field.width as f32;
+            assert!(turn < std::f32::consts::FRAC_PI_2, "{turn} at {aspect}");
+        }
     }
 
     #[test]

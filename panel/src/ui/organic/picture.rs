@@ -24,8 +24,9 @@ impl Picture {
     /// kept from frame to frame. None for a surface that is not there.
     pub fn paint(frame: u64, surface: Size, radius: f32, glow: &Glow, grid: &mut Vec<u8>) -> Option<Self> {
         let spread = Spread::over(surface, radius)?;
-        Field::SMALL.paint(glow, grid);
-        let pixels = spread.stretch(Field::SMALL, grid);
+        let field = Field::fitting(glow.aspect);
+        field.paint(glow, grid);
+        let pixels = spread.stretch(field, grid);
         Some(Self {
             frame,
             surface,

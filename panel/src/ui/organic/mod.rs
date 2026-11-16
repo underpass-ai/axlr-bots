@@ -22,6 +22,8 @@
 
 mod backdrop;
 mod backdrop_state;
+#[cfg(test)]
+mod demo_tests;
 mod ember;
 mod field;
 mod glow;
