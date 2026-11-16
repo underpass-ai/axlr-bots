@@ -10,15 +10,22 @@
 //!
 //! In the panel:
 //!
-//! - the state keeps a `Hover`, made with the settings' `look.motion`;
-//! - a view wraps a surface's content, inside the box that paints the
-//!   surface's ground, with `backdrop(&hover, surface, tint, content,
-//!   Message::…)`;
+//! - the state keeps a `Hover`, made with the settings' `look.motion`
+//!   (`Hover::set_motion` when the setting changes);
+//! - a view wraps a surface's content with `backdrop(&hover, surface,
+//!   Tint::of(tokens), content, Message::…)`, *inside* the box that
+//!   paints the surface's ground (a card's container, a row's button)
+//!   and with that box's padding moved inside the backdrop, so the glow
+//!   fills the surface and lies over its ground and under its words;
+//!   `.radius(…)` and `.inset(…)` give the surface's corners and the
+//!   width of its border;
 //! - the update hands that message's `Signal` to `Hover::signal` and a
 //!   frame's time to `Hover::tick`, and calls `Hover::release` when the
-//!   screen changes;
+//!   screen changes under the pointer;
 //! - the subscription adds `frames(&hover)`, which is empty unless a
 //!   glow is changing.
+//!
+//! `examples/organic.rs` is all of that in a window of its own.
 
 mod backdrop;
 mod backdrop_state;

@@ -73,7 +73,8 @@ mod tests {
         assert_eq!(Halo::of(Size::new(640.0, 300.0)), Halo::WIDE);
         assert_eq!(Halo::of(Size::new(1290.0, 36.0)), Halo::NEAR);
         assert_eq!(Halo::of(Size::new(140.0, 24.0)), Halo::NEAR);
-        assert!(Halo::WIDE.peak < Halo::NEAR.peak && Halo::WIDE.reach < Halo::NEAR.reach);
+        let (card, tile) = (Halo::of(Size::new(640.0, 300.0)), Halo::of(Size::new(140.0, 24.0)));
+        assert!(card.peak < tile.peak && card.reach < tile.reach);
     }
 
     /// The words stay readable where the glow is strongest: whatever
