@@ -8,7 +8,9 @@ use crate::domain::{Task, TaskStatus};
 pub enum TaskColumn {
     Status,
     Bot,
+    /// What it was asked.
     Task,
+    /// What started it.
     From,
     /// Ascending, the youngest first.
     Age,
@@ -21,8 +23,8 @@ impl SortColumn for TaskColumn {
         match self {
             Self::Status => "Status",
             Self::Bot => "Bot",
-            Self::Task => "Task",
-            Self::From => "From",
+            Self::Task => "What",
+            Self::From => "Started by",
             Self::Age => "Age",
         }
     }
@@ -94,7 +96,7 @@ mod tests {
         assert_eq!(by_words[0].objective, "List the files in your workspace");
         let by_origin = SortSpec::by(TaskColumn::From, SortDirection::Ascending).order(&tasks);
         assert_eq!(by_origin.len(), tasks.len());
-        assert_eq!(TaskColumn::From.label(), "From");
+        assert_eq!(TaskColumn::From.label(), "Started by");
         let all = [
             TaskStatus::WaitingApproval,
             TaskStatus::Running,

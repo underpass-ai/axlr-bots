@@ -251,6 +251,7 @@ impl App {
                 match result {
                     Ok(fleet) => {
                         let mut effects = self.notice_waiting(&fleet, self.fleet.is_none());
+                        self.tables.bot_listing.meet(&fleet.bots);
                         self.fleet = Some(fleet);
                         self.drop_gone_picks();
                         self.fleet_error = None;
@@ -948,6 +949,9 @@ impl App {
             Message::Pick(row, picked) => self.pick(row, picked),
             Message::PickShown(list, picked) => self.pick_shown(list, picked),
             Message::ClearPicks(list) => self.clear_picks(list),
+            Message::ShowBots(show) => self.show_bots(show),
+            Message::FoldTeam(team) => self.fold_team(&team),
+            Message::ShowRevoked(revoked) => self.show_revoked(revoked),
             Message::AskBulk(list, action) => self.ask_bulk(list, action),
             Message::BulkDone(outcome) => self.bulk_done(outcome),
         }

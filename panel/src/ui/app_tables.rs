@@ -1,7 +1,7 @@
 //! The list screens' tables: sorting by a header, picking rows, and one
 //! act on the picked rows from the bar over the list.
 
-use super::table::{BulkPlan, ColumnRef, List, RowRef};
+use super::table::{BotShow, BulkPlan, ColumnRef, List, RowRef};
 use super::{App, Banner, Confirm, Effect, Screen};
 use crate::application::{BulkAction, BulkOutcome};
 
@@ -37,6 +37,30 @@ impl App {
 
     pub(super) fn clear_picks(&mut self, list: List) -> Vec<Effect> {
         self.tables.clear(list);
+        Vec::new()
+    }
+
+    /// A chip over the Bots list; the picked rows it hides are let go.
+    pub(super) fn show_bots(&mut self, show: BotShow) -> Vec<Effect> {
+        self.tables.bot_listing.show = show;
+        self.drop_gone_picks();
+        Vec::new()
+    }
+
+    /// A team's header pressed; the picked rows a closed team hides are
+    /// let go.
+    pub(super) fn fold_team(&mut self, team: &str) -> Vec<Effect> {
+        let bots = self.fleet.as_ref().map(|f| f.bots.as_slice()).unwrap_or_default();
+        self.tables.bot_listing.fold(team, bots);
+        self.drop_gone_picks();
+        Vec::new()
+    }
+
+    /// The revoked nodes listed or put away; put away, the picked ones
+    /// are let go.
+    pub(super) fn show_revoked(&mut self, revoked: bool) -> Vec<Effect> {
+        self.tables.node_listing.revoked = revoked;
+        self.drop_gone_picks();
         Vec::new()
     }
 
@@ -100,14 +124,28 @@ impl App {
         }
     }
 
-    /// The rows a list shows now: the Tasks list after its filter.
+    /// The rows a list shows now: the Tasks list after its filter, the
+    /// nodes without the revoked ones put away, the bots of the chip
+    /// that is on in the teams that are open.
     pub fn shown_rows(&self, list: List) -> Vec<RowRef> {
         let Some(fleet) = self.fleet.as_ref() else {
             return Vec::new();
         };
         match list {
-            List::Nodes => fleet.nodes.iter().map(|n| RowRef::Node(n.id.clone())).collect(),
-            List::Bots => fleet.bots.iter().map(|b| RowRef::Bot(b.id.clone())).collect(),
+            List::Nodes => self
+                .tables
+                .node_listing
+                .shown(&fleet.nodes)
+                .into_iter()
+                .map(|n| RowRef::Node(n.id.clone()))
+                .collect(),
+            List::Bots => self
+                .tables
+                .bot_listing
+                .shown(&fleet.bots)
+                .into_iter()
+                .map(|b| RowRef::Bot(b.id.clone()))
+                .collect(),
             List::Tasks => self
                 .filter
                 .apply(&fleet.tasks)
@@ -118,19 +156,16 @@ impl App {
         }
     }
 
-    /// Picked rows whose row is gone, or hidden by the Tasks filter,
-    /// drop out.
+    /// Picked rows whose row is gone, or hidden by a list's filter, its
+    /// chips or a closed team, drop out: an act never reaches a row out
+    /// of sight.
     pub(super) fn drop_gone_picks(&mut self) {
         if let Some(fleet) = self.fleet.as_ref() {
             let tables = &mut self.tables;
-            tables
-                .nodes
-                .selection
-                .retain(|id| fleet.nodes.iter().any(|n| &n.id == id));
-            tables
-                .bots
-                .selection
-                .retain(|id| fleet.bots.iter().any(|b| &b.id == id));
+            let nodes = tables.node_listing.shown(&fleet.nodes);
+            tables.nodes.selection.retain(|id| nodes.iter().any(|n| &n.id == id));
+            let bots = tables.bot_listing.shown(&fleet.bots);
+            tables.bots.selection.retain(|id| bots.iter().any(|b| &b.id == id));
             let shown = self.filter.apply(&fleet.tasks);
             tables.tasks.selection.retain(|id| shown.iter().any(|t| &t.id == id));
             let teams = crate::domain::Team::from_bots(&fleet.bots);

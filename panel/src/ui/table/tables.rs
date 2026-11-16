@@ -1,5 +1,6 @@
 use super::{
-    BotColumn, ColumnRef, List, NodeColumn, RowRef, SortDirection, SortSpec, TableState, TaskColumn, TeamColumn,
+    BotColumn, BotListing, ColumnRef, List, NodeColumn, NodeListing, RowRef, SortDirection, SortSpec, TableState,
+    TaskColumn, TeamColumn,
 };
 use crate::application::BulkAction;
 use crate::domain::{BotId, NodeId, TaskId};
@@ -12,6 +13,10 @@ pub struct Tables {
     pub bots: TableState<BotColumn, BotId>,
     pub tasks: TableState<TaskColumn, TaskId>,
     pub teams: TableState<TeamColumn, String>,
+    /// Which bots the Bots list shows, and its teams folded or open.
+    pub bot_listing: BotListing,
+    /// Whether the Nodes list shows the revoked nodes too.
+    pub node_listing: NodeListing,
     /// Shift is held: a header press adds its column to the order.
     pub shift: bool,
     /// The bulk act on its way, if one is: the bars wait for it.
@@ -29,6 +34,8 @@ impl Default for Tables {
             bots: TableState::sorted(SortSpec::by(BotColumn::Bot, Ascending)),
             tasks: TableState::sorted(SortSpec::by(TaskColumn::Age, Ascending)),
             teams: TableState::sorted(SortSpec::by(TeamColumn::Team, Ascending)),
+            bot_listing: BotListing::default(),
+            node_listing: NodeListing::default(),
             shift: false,
             busy: None,
         }

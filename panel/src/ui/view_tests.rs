@@ -35,6 +35,7 @@ pub(super) fn panel_settings() -> Settings {
     Settings {
         fonts,
         default_font: widgets::REGULAR,
+        default_text_size: widgets::BODY.into(),
         ..Settings::default()
     }
 }
@@ -109,6 +110,17 @@ fn reads(app: &App, key: ReaderKey, words: &str) {
         .get(&key)
         .unwrap_or_else(|| panic!("no reader {key:?} on {:?}", app.screen));
     assert!(reader.source().contains(words), "{key:?} reads {:?}", reader.source());
+}
+
+/// Fails unless every word shows in the window's size at start: a
+/// list's cells cut their words to their column, so what a narrow
+/// window cuts is looked for in this one.
+fn shows_wide(app: &App, words: &[&str]) {
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(app));
+    for word in words {
+        assert!(ui.find(*word).is_ok(), "{word} is not on {:?}", app.screen);
+    }
 }
 
 fn shows(app: &App, words: &[&str]) {
@@ -221,9 +233,9 @@ fn the_new_bot_form_offers_the_models_the_settings_name() {
 }
 
 /// Home lists the five newest calls and the way to all of them, and
-/// the nodes that are not online before the others.
+/// the nodes that are away with the others.
 #[test]
-fn home_caps_what_needs_you_and_puts_nodes_away_first() {
+fn home_caps_what_needs_you_and_lists_the_nodes_that_are_away() {
     let mut app = connected();
     let fleet = app.fleet.as_mut().unwrap();
     let waiting = fleet
@@ -257,15 +269,17 @@ fn home_shows_the_counts_and_what_needs_a_person() {
             "nodes online",
             "need you",
             "failed today",
-            "expired today",
-            "Needs you",
+            "stopped today",
+            "Needs OK",
             "Review",
-            "Latest tasks",
+            "Fleet",
+            "Latest",
+            "All tasks",
             "2/2 nodes online",
             "127.0.0.1:7879",
         ],
     );
-    shows(&app, &["wants local_write · hello", "Approve", "Deny"]);
+    shows_wide(&app, &["wants local_write · hello", "Approve", "Deny"]);
     // Each node says when it was last seen.
     let node = &app.fleet.as_ref().unwrap().nodes[0];
     let seen = format!("seen {}", crate::ui::format::age(node.last_seen_at, app.now));
@@ -280,11 +294,33 @@ fn home_shows_the_counts_and_what_needs_a_person() {
     ));
     let sent = messages_of_click(&app, "Review");
     assert!(matches!(sent.as_slice(), [Message::Go(Screen::Task(_))]));
-    let sent = messages_of_click(&app, "expired today");
+    // Stopped and expired share a number, which goes to the expired.
+    let sent = messages_of_click(&app, "stopped today");
     assert!(matches!(
         sent.as_slice(),
         [Message::FilterStatus(Some(TaskStatus::Expired))]
     ));
+    // Every number goes to its list, the cost to the tasks that made it.
+    for (words, goes) in [
+        ("nodes online", Message::Go(Screen::Nodes)),
+        ("bots on", Message::Go(Screen::Bots)),
+        ("running", Message::FilterStatus(Some(TaskStatus::Running))),
+        ("need you", Message::FilterStatus(Some(TaskStatus::WaitingApproval))),
+        ("failed today", Message::FilterStatus(Some(TaskStatus::Failed))),
+        ("cost today", Message::FilterStatus(None)),
+    ] {
+        let sent = messages_of_click(&app, words);
+        assert_eq!(format!("{sent:?}"), format!("{:?}", [goes]), "{words}");
+    }
+    // A bot of the fleet is a tile that opens it, and a latest task a
+    // line that opens it.
+    let sent = messages_of_click(&app, "bot-wrx80");
+    assert!(
+        matches!(sent.as_slice(), [Message::Go(Screen::Bot(id))] if id.as_str() == "bot-wrx80"),
+        "{sent:?}"
+    );
+    let sent = messages_of_click(&app, "Say the time");
+    assert!(matches!(sent.as_slice(), [Message::Go(Screen::Task(_))]), "{sent:?}");
     let sent = messages_of_click(&app, "Nodes");
     assert!(matches!(sent.as_slice(), [Message::Go(Screen::Nodes)]));
     app.apply(Message::ToggleTheme);
@@ -298,29 +334,59 @@ fn the_cost_of_the_day_shows_whole_and_the_short_counts_stay_big() {
         app.fleet.as_mut().unwrap().overview.cost_usd_since = usd;
         let cost = format::cost(usd);
         for width in [MIN_WINDOW.width, WINDOW.width] {
-            // In the pixel face at the size its card gives it, which its
+            // In the pixel face at the size its cell gives it, which its
             // line's height tells; the point in a cell of its own.
             for part in cost.split('.') {
                 shows_whole(&app, width, part, |room| {
-                    widgets::number(part.to_string()).size(room.height / 1.3)
+                    widgets::number(part.to_string()).size(room.height)
                 });
             }
         }
     }
-    // Runs that did not tell their cost: at least, and how many.
+    // Runs that did not tell their cost: the number says at least.
     app.fleet.as_mut().unwrap().overview.cost_unknown_since = 2;
-    shows(&app, &["≥", "2 runs unknown"]);
-    app.fleet.as_mut().unwrap().overview.cost_unknown_since = 1;
-    shows(&app, &["1 run unknown"]);
+    shows(&app, &["≥"]);
     let _turn = turn();
     for width in [MIN_WINDOW.width, WINDOW.width] {
         let mut ui = Simulator::with_size(panel_settings(), Size::new(width, 2000.0), view::view(&app));
         let count = ui.find("2/2").unwrap().bounds();
         assert!(
-            (count.height - widgets::NUMBER * 1.3).abs() < 0.01,
+            (count.height - widgets::NUMBER).abs() < 0.01,
             "2/2 is smaller, {width} px wide"
         );
     }
+}
+
+/// Home never scrolls as a page: in the window's size at start its
+/// three columns end inside the window, with the fleet of a real size.
+#[test]
+fn home_fits_the_window_with_a_large_fleet() {
+    let fake = std::sync::Arc::new(crate::adapters::fake::FakeControlPlane::large(
+        "2026-10-25T10:00:00Z".parse().unwrap(),
+    ));
+    let mut app = super::view::tests::app_over(fake);
+    send(&mut app, Message::SettingsSave);
+    let _turn = turn();
+    let mut ui = Simulator::with_size(panel_settings(), WINDOW, view::view(&app));
+    for words in [
+        "Fleet",
+        "Latest",
+        "Nodes",
+        "40 revoked hidden",
+        "All bots",
+        "stopped today",
+    ] {
+        let placed = ui.find(words).unwrap_or_else(|e| panic!("{words}: {e:?}")).bounds();
+        assert!(
+            placed.y + placed.height <= WINDOW.height && placed.x + placed.width <= WINDOW.width,
+            "{words} is out of the window at {placed:?}"
+        );
+    }
+    // Twenty of the newest tasks, one line each, the last one in sight.
+    let last = &app.fleet.as_ref().unwrap().tasks[19];
+    let age = crate::ui::format::age(last.created_at, app.now);
+    let placed = ui.find(age.as_str()).unwrap().visible_bounds();
+    assert!(placed.is_some(), "the twentieth task is cut out of Latest");
 }
 
 /// Objectives longer than Home shows: one with a path, one with a name
@@ -336,39 +402,45 @@ fn set_objective(app: &mut App, status: TaskStatus, words: &str) {
     tasks.iter_mut().find(|t| t.status == status).unwrap().objective = words.to_string();
 }
 
+/// A waiting task is one line on Home: what it asks whole when it is
+/// short, cut when it is long, and its age and its answers whole
+/// beside it either way.
 #[test]
-fn home_shows_what_a_waiting_task_asks_whole_beside_its_age_and_buttons() {
+fn home_shows_what_a_waiting_task_asks_on_one_line_beside_its_age_and_buttons() {
     let mut app = connected();
     let tokens = Tokens::of(app.mode);
+    shows_whole(&app, WINDOW.width, "Write hello into hello.txt", |_| {
+        text("Write hello into hello.txt")
+    });
+    shows_whole(&app, WINDOW.width, "wants local_write · hello", |_| {
+        text("wants local_write · hello").color(tokens.muted)
+    });
     for objective in ["Write hello into hello.txt"].iter().chain(&LONG_OBJECTIVES) {
         set_objective(&mut app, TaskStatus::WaitingApproval, objective);
-        let fleet = app.fleet.as_ref().unwrap();
-        let task = fleet.waiting()[0];
-        let headline = task.headline(70);
-        let wants = format!("wants {}", fleet.call_of(&task.id).unwrap().summary(40));
         for width in [MIN_WINDOW.width, WINDOW.width] {
-            shows_whole(&app, width, &headline, |_| text(headline.clone()));
-            shows_whole(&app, width, &wants, |_| widgets::muted(wants.clone(), tokens));
             for button in ["Approve", "Deny", "Review"] {
                 shows_whole(&app, width, button, |_| widgets::semibold(button).size(widgets::BODY));
             }
+            shows_whole(&app, width, "5m", |_| text("5m").size(widgets::SMALL));
         }
     }
+    // A long one is cut to its line, with an ellipsis.
+    assert!(simulator_misses(&app, LONG_OBJECTIVES[1]));
 }
 
+/// A latest task is one line too: whole when short in the window's
+/// size at start, cut when long, its age whole beside it.
 #[test]
-fn home_shows_the_latest_tasks_whole_beside_their_ages() {
+fn home_shows_the_latest_tasks_on_one_line_beside_their_ages() {
     let mut app = connected();
-    for objective in ["List the files in your workspace"].iter().chain(&LONG_OBJECTIVES) {
+    shows_whole(&app, WINDOW.width, "List the files in your workspace", |_| {
+        text("List the files in your workspace").size(widgets::SMALL)
+    });
+    for objective in LONG_OBJECTIVES {
         set_objective(&mut app, TaskStatus::Completed, objective);
-        let tasks = &app.fleet.as_ref().unwrap().tasks;
-        let headline = tasks
-            .iter()
-            .find(|t| t.status == TaskStatus::Completed)
-            .unwrap()
-            .headline(48);
+        assert!(simulator_misses(&app, objective));
         for width in [MIN_WINDOW.width, WINDOW.width] {
-            shows_whole(&app, width, &headline, |_| text(headline.clone()).size(widgets::SMALL));
+            shows_whole(&app, width, "30m", |_| text("30m").size(widgets::SMALL));
         }
     }
 }
@@ -379,35 +451,33 @@ fn the_nodes_screen_lists_the_nodes_and_mints_a_token() {
     send(&mut app, Message::Go(Screen::Nodes));
     shows(
         &app,
-        &["Nodes", "wrx80", "wrx80-node1", "gpu=rtx3090", "364 days", "0.14.0"],
+        &[
+            "Nodes",
+            "wrx80",
+            "wrx80-node1",
+            "0.14.0",
+            "HOST",
+            "SEEN",
+            "AXLR",
+            "AGENT",
+        ],
     );
-    // In the smallest window Revoke is an icon on each row; picked rows
-    // get it in words on the bar, and a wide window has both.
+    // Revoke is an icon on each row; picked rows get it in words on the
+    // bar.
+    assert!(simulator_misses(&app, "Revoke"));
     send(&mut app, Message::PickShown(crate::ui::table::List::Nodes, true));
     shows(&app, &["2 nodes selected", "Revoke"]);
     send(&mut app, Message::ClearPicks(crate::ui::table::List::Nodes));
-    {
-        let _turn = turn();
-        let mut wide = Simulator::with_size(panel_settings(), Size::new(1600.0, 1000.0), view::view(&app));
-        for word in ["AXLR", "0.14.0", "Revoke"] {
-            assert!(wide.find(word).is_ok(), "{word} is not on the wide Nodes");
-        }
-    }
-    // Each node's providers are chips under it, a local model by its id.
-    shows(
-        &app,
-        &["openrouter", "codex", "jev", "codex/gpt-6.1-sol", "codex/gpt-6-luna"],
-    );
+    // Each node's providers are on its line, a local model by its id.
+    shows_wide(&app, &["PROVIDERS", "openrouter"]);
     if let Some(fleet) = app.fleet.as_mut() {
-        fleet.nodes[1].capabilities.dedicated = true;
         for node in &mut fleet.nodes {
             node.capabilities.providers.clear();
         }
     }
-    shows(&app, &["dedicated"]);
     assert!(
-        simulator_misses(&app, "codex/gpt-6.1-sol"),
-        "a node that named no provider shows no chip"
+        simulator_misses(&app, "openrouter"),
+        "a node that named no provider shows none"
     );
     assert!(matches!(
         messages_of_click(&app, "New host token").as_slice(),
@@ -437,17 +507,23 @@ fn the_bots_screen_lists_switches_and_adds() {
     send(&mut app, Message::Go(Screen::Bots));
     shows(
         &app,
-        &["Bots", "bot-wrx80", "Ask first", "wrx80", "From file", "Runs on"],
+        &[
+            "Bots",
+            "bot-wrx80",
+            "Ask first",
+            "wrx80",
+            "From file",
+            "RUNS ON",
+            "no team",
+            "3 on",
+        ],
     );
-    // The model is cut to its column in the smallest window, whole in
-    // a wide one.
-    {
-        let _turn = turn();
-        let mut wide = Simulator::with_size(panel_settings(), Size::new(1600.0, 1000.0), view::view(&app));
-        for word in ["claude-haiku-5.5", "bot-act-with-approval", "Starts by"] {
-            assert!(wide.find(word).is_ok(), "{word} is not on the wide Bots");
-        }
-    }
+    // A cell cuts its words to its column in the smallest window; in
+    // the window's size at start they are whole.
+    shows_wide(
+        &app,
+        &["claude-haiku-5.5", "bot-act-with-approval", "MODEL", "STARTS BY"],
+    );
     app.apply(Message::RegisterOpen);
     shows(
         &app,
@@ -633,14 +709,21 @@ fn the_tasks_screen_filters_and_sends() {
         &app,
         &[
             "Tasks",
-            "All 5",
-            "Needs OK 1",
-            "Failed 1",
-            "Expired 1",
+            "5 tasks",
+            "All",
+            "Needs OK",
+            "Failed",
+            "Expired",
             "Write hello into hello.txt",
-            "Age",
+            "STARTED BY",
+            "manual",
+            "AT",
+            "AGE",
         ],
     );
+    // A chip only for a status that has tasks.
+    assert!(simulator_misses(&app, "Stopped"));
+    assert!(simulator_misses(&app, "Queued"));
     // A row's acts are icons with tips; the words are on the bar once
     // rows are picked.
     send(&mut app, Message::PickShown(crate::ui::table::List::Tasks, true));
@@ -653,13 +736,18 @@ fn the_tasks_screen_filters_and_sends() {
         [Message::AskBulk(_, crate::application::BulkAction::Approve)]
     ));
     send(&mut app, Message::ClearPicks(crate::ui::table::List::Tasks));
-    let sent = messages_of_click(&app, "Failed 1");
+    // The chip comes before the rows, whose status says the same word.
+    let sent = messages_of_click(&app, "Failed");
     assert!(matches!(
         sent.as_slice(),
         [Message::FilterStatus(Some(TaskStatus::Failed))]
     ));
     app.apply(Message::FilterStatus(Some(TaskStatus::Completed)));
-    shows(&app, &["List the files in your workspace"]);
+    shows(&app, &["List the files in your workspace", "1 of 5"]);
+    // The chip that is on stays when its last task leaves it.
+    app.apply(Message::FilterStatus(Some(TaskStatus::Cancelled)));
+    shows(&app, &["Stopped", "No task here", "0 of 5"]);
+    app.apply(Message::FilterStatus(Some(TaskStatus::Completed)));
     app.apply(Message::SubmitOpen(Some(BotId::new("bot-wrx80").unwrap())));
     app.apply(Message::SubmitObjective("Count the files".into()));
     shows(&app, &["New task", "Send"]);
@@ -692,7 +780,7 @@ fn a_pending_task_whose_node_is_away_says_what_it_waits_for() {
     let mut app = super::view::tests::app_over(control_plane);
     send(&mut app, Message::SettingsSave);
     send(&mut app, Message::Go(Screen::Tasks));
-    shows(&app, &["Count the files", "Waiting for node wrx80, which is Offline"]);
+    shows_wide(&app, &["Count the files", "Waiting for node wrx80, which is Offline"]);
     send(&mut app, Message::Go(Screen::Task(task.id)));
     shows(&app, &["Waiting for node wrx80, which is Offline"]);
 }
@@ -920,7 +1008,10 @@ fn errors_and_empty_places_say_so() {
 fn now_says_what_each_bot_is_doing() {
     let mut app = connected();
     send(&mut app, Message::Go(Screen::Bots));
-    shows(&app, &["Now", "Working", "Say the time", "Needs OK", "Idle"]);
+    // In the list a bot that is doing something says that in the place
+    // of its status; one that is not says it is on.
+    shows(&app, &["Working", "Needs OK", "On"]);
+    assert!(simulator_misses(&app, "Enabled"));
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot").unwrap())));
     shows(&app, &["Working", "Say the time", "Open task"]);
     send(&mut app, Message::Go(Screen::Bot(BotId::new("bot-wrx80").unwrap())));
@@ -985,18 +1076,9 @@ fn the_teams_screen_shows_who_is_in_each_and_what_happens() {
         serde_json::json!({"name": "stop.halt", "severity": "warning", "message": "a deploy is starting", "to": ["bot-wrx80"]}),
     );
     send(&mut app, Message::Tick(tick + chrono::Duration::seconds(3)));
-    shows(
-        &app,
-        &[
-            "ops",
-            "Members",
-            "Last word",
-            "lab",
-            "only one bot: a typo?",
-            "bot · bot-wrx80",
-        ],
-    );
-    let sent = messages_of_click(&app, "Open");
+    shows(&app, &["ops", "MEMBERS", "LAST WORD", "lab", "bot · bot-wrx80"]);
+    // A team's name opens its page.
+    let sent = messages_of_click(&app, "lab");
     assert!(matches!(sent.as_slice(), [Message::Go(Screen::Team(name))] if name == "lab"));
     send(&mut app, Message::Go(Screen::Team("ops".into())));
     shows(
@@ -1732,7 +1814,7 @@ fn versions_show_and_a_bot_with_a_newer_one_offers_the_update() {
     {
         let _turn = turn();
         let mut wide = Simulator::with_size(panel_settings(), Size::new(1600.0, 1000.0), view::view(&app));
-        for words in ["v1.2.0 · claude-haiku-5.5", "v2.0.0 · claude-haiku-5.5"] {
+        for words in ["v1.2.0", "v2.0.0", "claude-haiku-5.5"] {
             assert!(wide.find(words).is_ok(), "{words} is not on the wide Bots");
         }
     }
@@ -1757,7 +1839,7 @@ fn versions_show_and_a_bot_with_a_newer_one_offers_the_update() {
     assert!(simulator_misses(&app, "Update to"));
 
     send(&mut app, Message::Go(Screen::Nodes));
-    shows(&app, &["agent v0.3.0"]);
+    shows(&app, &["v0.3.0"]);
 }
 
 /// A task with a task it delegated, a tool with its duration, a cut and

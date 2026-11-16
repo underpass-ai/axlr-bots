@@ -3,10 +3,14 @@
 //! an act on all of them. Plain state the views read; no widget here.
 
 mod bot_column;
+mod bot_group;
+mod bot_listing;
+mod bot_show;
 mod bulk_plan;
 mod column_ref;
 mod list;
 mod node_column;
+mod node_listing;
 mod row_ref;
 mod selection;
 mod sort_badge;
@@ -20,10 +24,14 @@ mod task_column;
 mod team_column;
 
 pub use bot_column::BotColumn;
+pub use bot_group::BotGroup;
+pub use bot_listing::BotListing;
+pub use bot_show::BotShow;
 pub use bulk_plan::BulkPlan;
 pub use column_ref::ColumnRef;
 pub use list::List;
 pub use node_column::NodeColumn;
+pub use node_listing::NodeListing;
 pub use row_ref::RowRef;
 pub use selection::Selection;
 pub use sort_badge::SortBadge;

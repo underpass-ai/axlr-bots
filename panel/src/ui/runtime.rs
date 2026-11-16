@@ -29,8 +29,8 @@ pub const FONTS: [&[u8]; 4] = [
     include_bytes!("../../assets/fonts/DotGothic16-Latin.ttf"),
 ];
 
-/// The application's settings: its id, the embedded typefaces and Lexend
-/// as the default. Iced's `.settings()` replaces every field, so the
+/// The application's settings: its id, the embedded typefaces, Lexend
+/// as the default and the body size for every text that names none. Iced's `.settings()` replaces every field, so the
 /// typefaces go in here and nowhere else, or the window draws with the
 /// system's sans.
 pub fn settings() -> iced::Settings {
@@ -38,6 +38,7 @@ pub fn settings() -> iced::Settings {
         id: Some("axlr-bots-panel".into()),
         fonts: FONTS.iter().map(|font| Cow::Borrowed(*font)).collect(),
         default_font: widgets::REGULAR,
+        default_text_size: widgets::BODY.into(),
         ..iced::Settings::default()
     }
 }
@@ -130,6 +131,7 @@ mod tests {
             assert_eq!(given.as_ref(), embedded);
         }
         assert_eq!(settings.default_font, widgets::REGULAR);
+        assert_eq!(settings.default_text_size, iced::Pixels(widgets::BODY));
         assert_eq!(settings.id.as_deref(), Some("axlr-bots-panel"));
     }
 }

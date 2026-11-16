@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 
 use super::ModeChoice;
-use super::table::{ColumnRef, List, RowRef};
+use super::table::{BotShow, ColumnRef, List, RowRef};
 use super::{BotChoice, BotView, Connection, Keypress, NodeChoice, ReaderKey, Screen, ThemeMode};
 use crate::application::{
     BulkAction, BulkOutcome, ChatSent, DeletePreview, EventFeed, Fleet, PanelError, PanelSettings, SavedEdit,
@@ -237,6 +237,12 @@ pub enum Message {
     PickShown(List, bool),
     /// Let go of a list's picked rows.
     ClearPicks(List),
+    /// A chip over the Bots list: every bot, the ones on, the paused.
+    ShowBots(BotShow),
+    /// A team's header in the Bots list pressed: open it or close it.
+    FoldTeam(String),
+    /// List the revoked nodes too, or put them away again.
+    ShowRevoked(bool),
     /// An act from the bar over a list, on its picked rows: weigh it,
     /// then ask once.
     AskBulk(List, BulkAction),

@@ -3,10 +3,8 @@
 use iced::font::{Family, Weight};
 use iced::widget::text::{LineHeight, Wrapping};
 use iced::widget::text_editor::Binding;
-use iced::widget::{
-    Space, button, column, container, mouse_area, responsive, row, svg, text, text_editor, text_input, tooltip,
-};
-use iced::{Alignment, Color, Element, Font, Length, Padding, mouse};
+use iced::widget::{Space, button, column, container, row, svg, text, text_editor, text_input, tooltip};
+use iced::{Alignment, Color, Element, Font, Length, Padding};
 
 pub use super::voice::Voice;
 use crate::ui::styles::{self, Kind};
@@ -48,12 +46,16 @@ pub const NUMERAL: Font = Font {
     ..Font::DEFAULT
 };
 
-/// The text sizes: body, small, section title, page title, big number.
-pub const BODY: f32 = 16.0;
-pub const SMALL: f32 = 14.0;
-pub const SECTION: f32 = 15.0;
-pub const TITLE: f32 = 26.0;
-pub const NUMBER: f32 = 40.0;
+/// The text sizes: body, small, a column's or a fact's label, the
+/// rail's label, section title, a list's title, page title, big number.
+pub const BODY: f32 = 14.0;
+pub const SMALL: f32 = 13.0;
+pub const LABEL: f32 = 12.0;
+pub const TINY: f32 = 11.5;
+pub const SECTION: f32 = 13.0;
+pub const HEADING: f32 = 17.0;
+pub const TITLE: f32 = 20.0;
+pub const NUMBER: f32 = 26.0;
 
 pub fn icon<'a>(glyph: Icon, size: f32, color: Color) -> El<'a> {
     svg(glyph.handle())
@@ -77,7 +79,10 @@ pub fn muted<'a>(words: impl text::IntoFragment<'a>, tokens: Tokens) -> text::Te
 
 /// A number in the pixel face.
 pub fn number<'a>(words: impl text::IntoFragment<'a>) -> text::Text<'a> {
-    text(words).font(NUMERAL).size(NUMBER)
+    text(words)
+        .font(NUMERAL)
+        .size(NUMBER)
+        .line_height(LineHeight::Relative(1.0))
 }
 
 /// The sign of a floor, `≥ $0.42`: a cost some run did not tell. The
@@ -105,17 +110,14 @@ fn number_ems(value: &str) -> f32 {
         .sum()
 }
 
-/// The size at which `value` fits `width` in the pixel face: `NUMBER`
-/// while it fits, smaller for a long value, a cost of `$1234.56` in a
-/// narrow window, never under `SMALL`.
-fn number_size(value: &str, width: f32) -> f32 {
-    // Two pixels to spare, so rounding never pushes the last digit out.
-    ((width - 2.0) / number_ems(value).max(0.5)).clamp(SMALL, NUMBER)
+/// How wide `value` is drawn in the pixel face at `size`.
+pub fn number_width(value: &str, size: f32) -> f32 {
+    number_ems(value) * size
 }
 
 /// A number in the pixel face at `size`: each point in a cell as wide as
 /// its ink, and the sign of a floor in the face for words.
-fn pixel_number<'a>(value: &str, size: f32, color: Color) -> El<'a> {
+pub fn pixel_number<'a>(value: &str, size: f32, color: Color) -> El<'a> {
     let mut line = row![].align_y(Alignment::End);
     let value = match value.strip_prefix(FLOOR) {
         Some(rest) => {
@@ -151,19 +153,6 @@ fn pixel_number<'a>(value: &str, size: f32, color: Color) -> El<'a> {
     line.into()
 }
 
-/// A number in the pixel face as big as its place lets it be, on a line
-/// as high as a big number's, so the cards of a row end level.
-fn fitted_number<'a>(value: String, color: Color) -> El<'a> {
-    responsive(move |space| {
-        container(pixel_number(&value, number_size(&value, space.width), color))
-            .height(LineHeight::default().to_absolute(NUMBER.into()))
-            .align_y(Alignment::End)
-            .into()
-    })
-    .height(Length::Shrink)
-    .into()
-}
-
 /// How Markdown reads in the panel: in its face for words, with the
 /// theme's colours. Iced's own style draws it in the system's face.
 /// Code in a line is ink on a chip, as the rest of the panel's chips,
@@ -184,8 +173,8 @@ pub fn markdown_style(tokens: Tokens) -> iced::widget::markdown::Style {
 
 /// A page title with its icon.
 pub fn title<'a>(glyph: Icon, words: impl text::IntoFragment<'a>, tokens: Tokens) -> El<'a> {
-    row![icon(glyph, 26.0, tokens.accent), bold(words).size(TITLE)]
-        .spacing(12)
+    row![icon(glyph, 20.0, tokens.accent), semibold(words).size(TITLE)]
+        .spacing(10)
         .align_y(Alignment::Center)
         .into()
 }
@@ -193,8 +182,8 @@ pub fn title<'a>(glyph: Icon, words: impl text::IntoFragment<'a>, tokens: Tokens
 /// A section title with its icon: small and bold, in the muted ink.
 pub fn section_title<'a>(glyph: Icon, words: impl text::IntoFragment<'a>, tokens: Tokens) -> El<'a> {
     row![
-        icon(glyph, 16.0, tokens.muted),
-        bold(words).size(SECTION).color(tokens.muted)
+        icon(glyph, 14.0, tokens.muted),
+        semibold(words).size(SECTION).color(tokens.muted)
     ]
     .spacing(8)
     .align_y(Alignment::Center)
@@ -218,6 +207,40 @@ pub fn pill_with<'a>(glyph: Icon, tone: Tone, label: impl text::IntoFragment<'a>
     .padding(Padding::from([2, 8]))
     .style(styles::pill(tokens, tone))
     .into()
+}
+
+/// A status in a list: its glyph and its word, no box. A `quiet` one
+/// (done, stopped, paused, revoked: nothing to look at) is a muted word,
+/// its glyph alone keeping the green of what went well; any other keeps
+/// its tone's colour and a stronger weight.
+pub fn status<'a>(glyph: Icon, tone: Tone, label: impl text::IntoFragment<'a>, quiet: bool, tokens: Tokens) -> El<'a> {
+    let ink = styles::pill_ink(tokens, tone);
+    let (mark, word) = match (quiet, tone) {
+        (true, Tone::Good) => (ink, tokens.muted),
+        (true, _) => (tokens.muted, tokens.muted),
+        (false, _) => (ink, ink),
+    };
+    let words = if quiet { text(label) } else { semibold(label) };
+    row![
+        icon(glyph, 12.0, mark),
+        words.size(SMALL).color(word).wrapping(Wrapping::None)
+    ]
+    .spacing(6)
+    .align_y(Alignment::Center)
+    .into()
+}
+
+/// A label over a column or a fact: small capitals in the muted ink.
+pub fn label<'a>(words: &str, tokens: Tokens) -> text::Text<'a> {
+    semibold(words.to_uppercase()).size(LABEL).color(tokens.muted)
+}
+
+/// A key's name, `Ctrl K`, in its small box.
+pub fn key_cap<'a>(keys: &'a str, tokens: Tokens) -> El<'a> {
+    container(text(keys).font(Font::MONOSPACE).size(11.0).color(tokens.muted))
+        .padding(Padding::from([1, 5]))
+        .style(styles::key_cap(tokens))
+        .into()
 }
 
 /// A small neutral tag: a tool, a label, an id.
@@ -245,54 +268,6 @@ pub fn section<'a>(glyph: Icon, words: impl text::IntoFragment<'a>, body: impl I
     .into()
 }
 
-/// A big number in a card: two words and the icon on top, the number in
-/// the pixel face under them, smaller only when it would not fit. A
-/// number that needs a person (amber) or says something failed (red)
-/// tints the whole card. A click goes where the number comes from.
-pub fn stat<'a>(
-    glyph: Icon,
-    value: String,
-    label: &'a str,
-    tone: Tone,
-    on_press: Option<Message>,
-    tokens: Tokens,
-) -> El<'a> {
-    // Calm by default: a grey icon and an ink number; only a number that
-    // calls for a look keeps its tone, and only the one card that asks a
-    // person to act is tinted.
-    let number_ink = match tone {
-        Tone::Wait | Tone::Late | Tone::Bad => tone.color(&tokens),
-        Tone::Good | Tone::Busy | Tone::Idle => tokens.text,
-    };
-    let body = column![
-        // A gap the label never closes, even when the card is narrow.
-        row![
-            text(label).size(SMALL).color(tokens.muted),
-            Space::new().width(Length::Fill),
-            icon(glyph, 16.0, tokens.muted)
-        ]
-        .spacing(6)
-        .align_y(Alignment::Center),
-        fitted_number(value, number_ink),
-    ]
-    .spacing(4);
-    // Seven cards share a row: a side of 12 leaves the longest label,
-    // `expired today`, its gap to the icon at 1360 px.
-    let card = container(body).padding(12).width(Length::Fill);
-    let card = if tone == Tone::Wait {
-        card.style(styles::stat_call(tokens, tone))
-    } else {
-        card.style(styles::card(tokens))
-    };
-    let area = mouse_area(card);
-    match on_press {
-        Some(message) => container(area.on_press(message).interaction(mouse::Interaction::Pointer))
-            .width(Length::Fill)
-            .into(),
-        None => container(area).width(Length::Fill).into(),
-    }
-}
-
 /// A button with an icon and a word or two; disabled without a message.
 pub fn action<'a>(
     kind: Kind,
@@ -302,11 +277,11 @@ pub fn action<'a>(
     tokens: Tokens,
 ) -> El<'a> {
     button(
-        row![icon(glyph, 16.0, ink(kind, tokens)), semibold(label).size(BODY)]
-            .spacing(8)
+        row![icon(glyph, 14.0, ink(kind, tokens)), semibold(label).size(BODY)]
+            .spacing(7)
             .align_y(Alignment::Center),
     )
-    .padding(Padding::from([8, 14]))
+    .padding(Padding::from([6, 12]))
     .style(styles::button_style(tokens, kind))
     .on_press_maybe(on_press)
     .into()
@@ -316,6 +291,8 @@ pub fn action<'a>(
 pub fn ink(kind: Kind, tokens: Tokens) -> Color {
     match kind {
         Kind::Primary | Kind::Chip(true) => tokens.on_accent,
+        Kind::Filter(true) | Kind::Rail(true) => styles::accent_ink(tokens),
+        Kind::Rail(false) => tokens.muted,
         Kind::Danger => styles::pill_ink(tokens, Tone::Bad),
         Kind::Good => styles::pill_ink(tokens, Tone::Good),
         _ => tokens.text,
@@ -357,8 +334,8 @@ pub fn section_with<'a>(
 
 /// An icon alone in a quiet button, with a tip on hover.
 pub fn icon_button<'a>(glyph: Icon, tip: &'a str, on_press: Option<Message>, tokens: Tokens) -> El<'a> {
-    let button = button(icon(glyph, 18.0, tokens.text))
-        .padding(8)
+    let button = button(icon(glyph, 16.0, tokens.text))
+        .padding(7)
         .style(styles::button_style(tokens, Kind::Ghost))
         .on_press_maybe(on_press);
     tooltip(
@@ -526,9 +503,6 @@ mod tests {
         assert_eq!(number_ems("12"), 1.0);
         assert_eq!(number_ems("$0.12"), 2.25);
         assert_eq!(number_ems("≥ $0.12"), 2.85);
-        assert_eq!(number_size("1/43", 400.0), NUMBER);
-        assert_eq!(number_size("$1234.56", 40.0), SMALL);
-        assert!((number_size("$0.12", 92.0) - 40.0).abs() < 1e-3);
-        assert_eq!(number_size("", 100.0), NUMBER);
+        assert_eq!(number_width("$0.12", 20.0), 45.0);
     }
 }

@@ -8,12 +8,15 @@ mod bots;
 mod decide;
 mod grid;
 mod levels;
+mod listbar;
 mod nodes;
 mod order;
 mod overview;
 mod post_draft;
 mod settings;
+mod sheet;
 mod shell;
+mod status;
 mod task_activity;
 mod task_detail;
 mod tasks;
@@ -28,19 +31,30 @@ use super::{App, Message, Screen, Tokens};
 /// The whole window for the panel's state.
 pub fn view(app: &App) -> Element<'_, Message> {
     let tokens = Tokens::of(app.mode);
+    // Home and the lists reach the window's edges and scroll their own
+    // rows; every other screen is a page in a margin.
     let content = match &app.screen {
         Screen::Overview => overview::view(app, tokens),
         Screen::Nodes => nodes::view(app, tokens),
         Screen::Bots => bots::view(app, tokens),
-        Screen::Bot(id) => bot_detail::view(app, id, tokens),
+        Screen::Bot(id) => page(bot_detail::view(app, id, tokens)),
         Screen::Tasks => tasks::view(app, tokens),
-        Screen::Task(id) => task_detail::view(app, id, tokens),
-        Screen::Activity(id) => task_activity::page(app, id, tokens),
+        Screen::Task(id) => page(task_detail::view(app, id, tokens)),
+        Screen::Activity(id) => page(task_activity::page(app, id, tokens)),
         Screen::Teams => teams::list(app, tokens),
-        Screen::Team(name) => teams::detail(app, name, tokens),
-        Screen::Settings => settings::view(app, tokens),
+        Screen::Team(name) => page(teams::detail(app, name, tokens)),
+        Screen::Settings => page(settings::view(app, tokens)),
     };
     shell::frame(app, content, tokens)
+}
+
+/// A screen that is a page to read: in a margin, away from the rail.
+fn page<'a>(content: widgets::El<'a>) -> widgets::El<'a> {
+    iced::widget::container(content)
+        .padding(iced::Padding::from([14, 18]))
+        .width(iced::Length::Fill)
+        .height(iced::Length::Fill)
+        .into()
 }
 
 #[cfg(test)]

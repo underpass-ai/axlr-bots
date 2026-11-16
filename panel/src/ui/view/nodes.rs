@@ -1,181 +1,173 @@
 //! Nodes: who runs the bots, how healthy, and enrolling a new host.
 
-use iced::widget::{Space, column, container, responsive, row, scrollable, table, text};
+use iced::widget::{Space, column, container, row, text};
 use iced::{Alignment, Length};
 
-use super::grid;
-use super::widgets::{
-    BODY, El, SMALL, Voice, action, bold, card, chip, empty, field, icon, mark, muted, pill, reader, section_title,
-    title,
-};
-use crate::domain::{CertificateHealth, Node, Version};
+use super::sheet::{self, Column, Head, Ink, Line};
+use super::widgets::{BODY, El, Voice, action, bold, card, empty, field, icon, mark, reader, section_title};
+use super::{grid, listbar, status};
+use crate::domain::{CertificateHealth, Node, NodeStatus, Version};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
-use crate::ui::table::{ColumnRef, List, NodeColumn, RowRef, SortColumn};
+use crate::ui::table::{ColumnRef, List, NodeColumn, NodeListing, RowRef, SortColumn};
 use crate::ui::{App, Icon, Message, ReaderKey, Tokens, Tone};
 
 pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let Some(fleet) = &app.fleet else {
         return super::overview::loading(app, tokens);
     };
-    let mut page = column![
-        row![
-            title(Icon::Nodes, "Nodes", tokens),
-            Space::new().width(Length::Fill),
-            action(
-                Kind::Primary,
-                Icon::Key,
-                "New host token",
-                (!app.mint.open).then_some(Message::MintOpen),
-                tokens
-            ),
-        ]
-        .align_y(Alignment::Center)
-    ]
-    .spacing(18);
-    if app.mint.open {
-        page = page.push(mint_form(app, tokens));
+    let listing = app.tables.node_listing;
+    let shown = listing.shown(&fleet.nodes);
+    let revoked = NodeListing::revoked_among(&fleet.nodes);
+    let mut chips = Vec::new();
+    if revoked > 0 || listing.revoked {
+        chips.push(listbar::toggle(
+            "Revoked",
+            revoked,
+            listing.revoked,
+            Some(Message::ShowRevoked(!listing.revoked)),
+            tokens,
+        ));
     }
-    let list: El<'a> = if fleet.nodes.is_empty() {
-        empty(Icon::Nodes, "No node yet: make a token and enroll a host", tokens)
+    let acts = vec![action(
+        Kind::Primary,
+        Icon::Key,
+        "New host token",
+        (!app.mint.open).then_some(Message::MintOpen),
+        tokens,
+    )];
+    let mut page = column![listbar::bar("Nodes", shown.len().to_string(), chips, acts, tokens)];
+    if app.mint.open {
+        page = page.push(listbar::panel(mint_form(app, tokens), tokens));
+    }
+    if revoked > 0 {
+        let nodes = format::count(revoked as u64, "revoked node is", "revoked nodes are");
+        page = page.push(if listing.revoked {
+            listbar::note(
+                format!("{nodes} shown."),
+                Some(("Hide them", Message::ShowRevoked(false))),
+                tokens,
+            )
+        } else {
+            listbar::note(
+                format!("{nodes} hidden."),
+                Some(("Show them", Message::ShowRevoked(true))),
+                tokens,
+            )
+        });
+    }
+    page = page.push(if fleet.nodes.is_empty() {
+        listbar::nothing(empty(
+            Icon::Nodes,
+            "No node yet: make a token and enroll a host",
+            tokens,
+        ))
+    } else if shown.is_empty() {
+        listbar::nothing(empty(Icon::Nodes, "No node in the fleet now", tokens))
     } else {
-        responsive(move |space| list(app, &fleet.nodes, space.width < NARROW, tokens))
-            .height(Length::Shrink)
-            .into()
-    };
-    page = page.push(card(list, tokens));
-    let page = scrollable(page.padding(iced::Padding {
-        right: 12.0,
-        bottom: grid::BAR_ROOM,
-        ..Default::default()
-    }))
-    .id(super::widgets::PAGE)
-    .height(Length::Fill);
+        list(app, shown, tokens)
+    });
     grid::with_bar(app, List::Nodes, page.into(), tokens)
 }
 
-/// Under this width the table leaves out the AXLR column (its version
-/// goes under the node) and Revoke is an icon, so the node keeps room.
-const NARROW: f32 = 900.0;
-
-/// The nodes in the table's order: a box, the status, the node, its
-/// labels, when it was last seen, its certificate, AXLR unless `narrow`,
-/// and Revoke.
-fn list<'a>(app: &'a App, nodes: &'a [Node], narrow: bool, tokens: Tokens) -> El<'a> {
+/// The nodes on show in the table's order, one line each: a box, the
+/// status with the marks of what needs a look, the node, its host, when
+/// it was last seen, its AXLR, its agent, its providers, and Revoke.
+fn list<'a>(app: &'a App, nodes: Vec<&'a Node>, tokens: Tokens) -> El<'a> {
     let now = app.now;
     let fleet = app.fleet.as_ref();
     let state = &app.tables.nodes;
     let shown = state.sort.order(nodes);
-    let head = |c: NodeColumn| {
-        grid::header(
-            c.label(),
-            state.sort.badge(c),
-            Message::SortBy(ColumnRef::Nodes(c)),
-            tokens,
-        )
+    let head = |c: NodeColumn| Head::Sort {
+        label: c.label(),
+        badge: state.sort.badge(c),
+        column: ColumnRef::Nodes(c),
     };
     let all = state.selection.covers(shown.iter().map(|n| &n.id));
-    let mut columns = vec![
-        table::column(
-            grid::check(all, |on| Message::PickShown(List::Nodes, on), tokens),
-            move |n: &'a Node| {
-                let id = n.id.clone();
-                grid::check(
-                    state.selection.contains(&n.id),
-                    move |on| Message::Pick(RowRef::Node(id.clone()), on),
-                    tokens,
-                )
-            },
-        ),
-        // The pill, and the mark of a node behind the fleet beside it: its
-        // tip says on what and the version to reach.
-        table::column(head(NodeColumn::Status), move |n: &'a Node| -> El<'a> {
-            let mut cell = row![pill(Tone::of_node(n.status), n.status.name(), tokens)]
-                .spacing(6)
-                .align_y(Alignment::Center);
+    let columns = vec![
+        Column::fixed(Head::Check { all, list: List::Nodes }, 18.0, move |n: &'a Node, _| {
+            let id = n.id.clone();
+            grid::check(
+                state.selection.contains(&n.id),
+                move |on| Message::Pick(RowRef::Node(id.clone()), on),
+                tokens,
+            )
+        }),
+        // The status, and beside it the marks of a node behind the fleet
+        // and of a certificate that runs out: each tip says what to do.
+        Column::fixed(head(NodeColumn::Status), 132.0, move |n: &'a Node, _| {
+            let word = status::node(n.status, tokens);
+            let word = match (n.status, n.revoked_at) {
+                (NodeStatus::Revoked, Some(at)) => {
+                    sheet::tip(word, format!("Revoked {}", format::ago(at, now)), tokens)
+                }
+                _ => word,
+            };
+            let mut cell = row![word].spacing(4).align_y(Alignment::Center);
             if let Some(behind) = fleet.and_then(|f| f.behind(n)) {
                 cell = cell.push(mark(Icon::Update, tokens.wait, behind.tip(), tokens));
             }
-            cell.into()
-        }),
-        table::column(head(NodeColumn::Node), move |n: &'a Node| -> El<'a> {
-            let mut cell = column![
-                grid::fitted(n.id.to_string(), true, tokens),
-                muted(grid::shorten(&n.host_name, 28), tokens)
-            ]
-            .spacing(2);
-            if narrow && !n.capabilities.axlr_version.is_empty() {
-                cell = cell.push(muted(grid::shorten(&n.capabilities.axlr_version, 24), tokens));
-            }
-            if let Some(agent) = agent_version(n) {
-                cell = cell.push(muted(agent, tokens).size(SMALL));
-            }
-            if n.capabilities.dedicated {
-                cell = cell.push(chip("dedicated", tokens));
-            }
-            if !n.capabilities.providers.is_empty() {
-                cell = cell.push(providers(n, tokens));
+            if let Some((tone, tip)) = certificate_mark(n, now) {
+                cell = cell.push(mark(Icon::Alert, tone.color(&tokens), tip, tokens));
             }
             cell.into()
-        })
-        .width(Length::FillPortion(if narrow { 3 } else { 2 })),
-        table::column(bold("Labels"), move |n: &'a Node| -> El<'a> {
-            let mut chips = row![].spacing(6);
-            for pair in n.label_pairs() {
-                chips = chips.push(chip(pair, tokens));
-            }
-            chips.wrap().into()
-        })
-        .width(Length::FillPortion(if narrow { 2 } else { 3 })),
-        table::column(head(NodeColumn::LastSeen), move |n: &'a Node| {
-            text(format::age(n.last_seen_at, now))
         }),
-        table::column(head(NodeColumn::Certificate), move |n: &'a Node| {
-            certificate(n, now, tokens)
+        // The node's name; on hover its labels and its certificate,
+        // which have no column of their own.
+        Column::share(head(NodeColumn::Node), 3, move |n: &'a Node, width| {
+            let name = n.id.to_string();
+            let short = grid::shorten(&name, Ink::Strong.fits(width));
+            let line = container(Ink::Strong.write(short, tokens)).clip(true);
+            sheet::tip(line.into(), about(n, now), tokens)
+        }),
+        Column::share(head(NodeColumn::Host), 3, move |n: &'a Node, width| {
+            sheet::words(n.host_name.clone(), width, Ink::Quiet, tokens)
+        }),
+        Column::fixed(head(NodeColumn::LastSeen), 64.0, move |n: &'a Node, _| {
+            Ink::Quiet.write(format::age(n.last_seen_at, now), tokens).into()
+        }),
+        Column::fixed(head(NodeColumn::Axlr), 110.0, move |n: &'a Node, width| {
+            sheet::words(dash(&n.capabilities.axlr_version), width, Ink::Code, tokens)
+        }),
+        Column::fixed(Head::Plain("Agent"), 124.0, move |n: &'a Node, width| {
+            sheet::words(agent_version(n).unwrap_or_default(), width, Ink::Code, tokens)
+        }),
+        Column::share(Head::Plain("Providers"), 6, move |n: &'a Node, width| {
+            sheet::words(providers(n), width, Ink::Quiet, tokens)
+        }),
+        Column::fixed(Head::None, grid::ACT, move |n: &'a Node, _| {
+            grid::act_slot(n.status.can_revoke().then(|| {
+                grid::icon_act(
+                    Kind::Ghost,
+                    Icon::Ban,
+                    "Revoke",
+                    Some(Message::AskRevoke(n.id.clone())),
+                    tokens,
+                )
+            }))
         }),
     ];
-    if !narrow {
-        columns.push(table::column(head(NodeColumn::Axlr), move |n: &'a Node| {
-            text(if n.capabilities.axlr_version.is_empty() {
-                "—".to_string()
-            } else {
-                n.capabilities.axlr_version.clone()
-            })
-        }));
-    }
-    columns.push(table::column(text(""), move |n: &'a Node| -> El<'a> {
-        if n.status.can_revoke() && narrow {
-            grid::icon_act(
-                Kind::Ghost,
-                Icon::Ban,
-                "Revoke",
-                Some(Message::AskRevoke(n.id.clone())),
-                tokens,
-            )
-        } else if n.status.can_revoke() {
-            action(
-                Kind::Ghost,
-                Icon::Ban,
-                "Revoke",
-                Some(Message::AskRevoke(n.id.clone())),
-                tokens,
-            )
-        } else {
-            muted(
-                format!(
-                    "revoked {}",
-                    n.revoked_at.map(|at| format::age(at, now)).unwrap_or_default()
-                ),
-                tokens,
-            )
-            .into()
-        }
-    }));
-    grid::sheet(columns, shown)
+    let lines = shown
+        .into_iter()
+        .map(|n| Line::Row {
+            row: n,
+            picked: state.selection.contains(&n.id),
+        })
+        .collect();
+    sheet::sheet(columns, lines, app.density, app.tables.picked(List::Nodes) > 0, tokens)
 }
 
-/// The node agent's own build, `agent v0.4.0`, with its commit when it
-/// names one; none for a node older than the field.
+/// The value, or a dash for one the node did not say.
+fn dash(value: &str) -> String {
+    if value.trim().is_empty() {
+        "—".to_string()
+    } else {
+        value.to_string()
+    }
+}
+
+/// The node agent's own build, `v0.4.0`, with its commit when it names
+/// one; none for a node older than the field.
 fn agent_version(node: &Node) -> Option<String> {
     let raw = node.capabilities.node_version.trim();
     if raw.is_empty() {
@@ -184,37 +176,50 @@ fn agent_version(node: &Node) -> Option<String> {
     let version = Version::parse(raw).map_or_else(|| raw.to_string(), |v| v.label());
     let revision: String = node.capabilities.node_revision.chars().take(7).collect();
     Some(if revision.is_empty() {
-        format!("agent {version}")
+        version
     } else {
-        format!("agent {version} · {revision}")
+        format!("{version} · {revision}")
     })
 }
 
-/// The model providers the node named, one chip each: a local model by
-/// its id, without the `local:`.
-fn providers<'a>(node: &Node, tokens: Tokens) -> El<'a> {
-    let mut chips = row![].spacing(6);
-    for provider in &node.capabilities.providers {
-        chips = chips.push(chip(
-            provider.strip_prefix("local:").unwrap_or(provider).to_string(),
-            tokens,
-        ));
-    }
-    chips.wrap().into()
+/// The model providers the node named, on one line; a local model
+/// keeps its `local:` so it is told from a provider.
+fn providers(node: &Node) -> String {
+    node.capabilities.providers.join(" · ")
 }
 
-fn certificate<'a>(node: &Node, now: chrono::DateTime<chrono::Utc>, tokens: Tokens) -> El<'a> {
-    match node.certificate_health(now) {
-        CertificateHealth::Good(days) => pill(Tone::Good, format!("{days} days"), tokens),
-        CertificateHealth::Soon(days) => pill(Tone::Wait, format!("{days} days"), tokens),
-        CertificateHealth::Expired => pill(Tone::Bad, "Expired", tokens),
-        CertificateHealth::Unknown => {
-            if node.certificate_serial.is_some() {
-                muted("not seen yet", tokens).into()
-            } else {
-                muted("local socket", tokens).into()
-            }
+/// What the list has no column for, said on the node's name: its
+/// labels, whether it is dedicated, and its certificate.
+fn about(node: &Node, now: chrono::DateTime<chrono::Utc>) -> String {
+    let mut lines = vec![node.id.to_string()];
+    let labels = node.label_pairs();
+    if !labels.is_empty() {
+        lines.push(format!("Labels: {}", labels.join(", ")));
+    }
+    if node.capabilities.dedicated {
+        lines.push("Dedicated: it runs only the bots placed on it".to_string());
+    }
+    lines.push(match node.certificate_health(now) {
+        CertificateHealth::Good(days) | CertificateHealth::Soon(days) => {
+            format!("Certificate: {days} days left")
         }
+        CertificateHealth::Expired => "Certificate: expired".to_string(),
+        CertificateHealth::Unknown if node.certificate_serial.is_some() => "Certificate: not seen yet".to_string(),
+        CertificateHealth::Unknown => "Local socket: no certificate".to_string(),
+    });
+    lines.join("\n")
+}
+
+/// The mark of a certificate that needs a look: amber while it runs
+/// out, red once it has. None for a healthy one, or a revoked node's.
+fn certificate_mark(node: &Node, now: chrono::DateTime<chrono::Utc>) -> Option<(Tone, String)> {
+    if node.status == NodeStatus::Revoked {
+        return None;
+    }
+    match node.certificate_health(now) {
+        CertificateHealth::Soon(days) => Some((Tone::Wait, format!("Its certificate runs out in {days} days"))),
+        CertificateHealth::Expired => Some((Tone::Bad, "Its certificate expired".to_string())),
+        CertificateHealth::Good(_) | CertificateHealth::Unknown => None,
     }
 }
 
@@ -343,6 +348,37 @@ fn control_address(app: &App) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn says_what_has_no_column_and_marks_a_certificate_that_runs_out() {
+        use crate::application::ControlPlane;
+        use crate::application::test_support::{fleet, now, run};
+        let (cp, _) = fleet();
+        let mut node = run(cp.list_nodes()).unwrap().remove(1);
+        let said = about(&node, now());
+        assert!(said.starts_with("wrx80\nLabels: "), "{said}");
+        assert!(said.contains("gpu=rtx3090") && said.ends_with("days left"), "{said}");
+        assert_eq!(certificate_mark(&node, now()), None);
+        node.certificate_not_after = Some(now() + chrono::Duration::days(3));
+        let (tone, tip) = certificate_mark(&node, now()).unwrap();
+        assert_eq!((tone, tip.as_str()), (Tone::Wait, "Its certificate runs out in 3 days"));
+        node.certificate_not_after = Some(now() - chrono::Duration::days(1));
+        assert_eq!(certificate_mark(&node, now()).unwrap().0, Tone::Bad);
+        assert!(about(&node, now()).ends_with("Certificate: expired"));
+        node.status = NodeStatus::Revoked;
+        assert_eq!(certificate_mark(&node, now()), None, "a revoked node needs no look");
+        node.capabilities.dedicated = true;
+        node.certificate_not_after = None;
+        node.certificate_serial = None;
+        let said = about(&node, now());
+        assert!(said.contains("Dedicated") && said.ends_with("no certificate"), "{said}");
+        assert_eq!(dash(" "), "—");
+        assert_eq!(agent_version(&node), None);
+        node.capabilities.node_version = "0.4.0".into();
+        node.capabilities.node_revision = "4924ad73145295ce".into();
+        assert_eq!(agent_version(&node).as_deref(), Some("v0.4.0 · 4924ad7"));
+        assert_eq!(providers(&node), "openrouter");
+    }
 
     #[test]
     fn the_node_address_takes_the_api_host() {

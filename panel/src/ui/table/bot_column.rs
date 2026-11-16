@@ -10,6 +10,7 @@ pub enum BotColumn {
     Bot,
     Level,
     Team,
+    Model,
     RunsOn,
     StartsBy,
 }
@@ -23,6 +24,7 @@ impl SortColumn for BotColumn {
             Self::Bot => "Bot",
             Self::Level => "Level",
             Self::Team => "Team",
+            Self::Model => "Model",
             Self::RunsOn => "Runs on",
             Self::StartsBy => "Starts by",
         }
@@ -34,6 +36,7 @@ impl SortColumn for BotColumn {
             Self::Bot => a.id.cmp(&b.id),
             Self::Level => level(a.level).cmp(&level(b.level)),
             Self::Team => a.team_summary().cmp(&b.team_summary()),
+            Self::Model => a.model.short_model().cmp(b.model.short_model()),
             Self::RunsOn => a.placement.describe().cmp(&b.placement.describe()),
             Self::StartsBy => a.trigger_summary().cmp(&b.trigger_summary()),
         }
@@ -109,6 +112,13 @@ mod tests {
         let by_trigger = ids(SortSpec::by(BotColumn::StartsBy, SortDirection::Ascending), &bots);
         assert_eq!(by_trigger.len(), 3);
         assert_eq!(BotColumn::RunsOn.label(), "Runs on");
+        let mut bots = bots;
+        bots[2].model.model = "codex/a-model".into();
+        assert_eq!(
+            ids(SortSpec::by(BotColumn::Model, SortDirection::Ascending), &bots)[0],
+            bots[2].id.to_string()
+        );
+        assert_eq!(BotColumn::Model.label(), "Model");
     }
 
     #[test]

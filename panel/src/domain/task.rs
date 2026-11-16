@@ -64,6 +64,14 @@ impl Task {
         }
     }
 
+    /// The words the event carried, for a task an event made
+    /// (`input.message`): `item-12 · planned`. None for any other task,
+    /// or when the event said nothing.
+    pub fn event_message(&self) -> Option<&str> {
+        let message = self.input.as_ref()?.get("message")?.as_str()?.trim();
+        (!message.is_empty()).then_some(message)
+    }
+
     /// What its node read of the team's memory before the run
     /// (`input.earlier`), one line per key: `ws:s1 (team team-b): a · b`, or
     /// the line that says why nothing was read.
@@ -152,9 +160,13 @@ mod tests {
     fn says_who_told_it_and_whether_it_was_urgent() {
         let mut task = sample();
         assert!(!task.is_urgent() && task.told_by().is_none());
+        assert_eq!(task.event_message(), None);
         task.priority = "urgent".into();
+        task.input = Some(serde_json::json!({"from": "watcher", "message": " "}));
+        assert_eq!(task.event_message(), None, "an event that said nothing");
         task.input = Some(serde_json::json!({"from": "watcher", "message": "a deploy is starting"}));
         assert!(task.is_urgent());
+        assert_eq!(task.event_message(), Some("a deploy is starting"));
         assert_eq!(task.told_by().as_deref(), Some("watcher: a deploy is starting"));
         task.input = Some(
             serde_json::json!({"from": "watcher", "name": "stop.halt", "message": "a deploy is starting",

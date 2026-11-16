@@ -1,230 +1,183 @@
-//! Home: the fleet at a glance and what needs a person.
+//! Home: what needs a person, the fleet's numbers, and the fleet, the
+//! latest tasks and the nodes side by side. The page never scrolls: at
+//! most a column scrolls its own rows.
 
-use iced::widget::text::Wrapping;
-use iced::widget::{Space, button, column, container, mouse_area, responsive, row, scrollable, text};
-use iced::{Alignment, Length, Padding, mouse};
+use iced::widget::scrollable::{Direction, Scrollbar};
+use iced::widget::{Space, button, column, container, responsive, row, scrollable, text, tooltip};
+use iced::{Alignment, Color, Length, Padding};
 
-use super::widgets::{
-    El, PILL_SLOT, SMALL, action, bold, card, empty, icon, muted, open, pill, section, semibold, slot, title,
-};
-use crate::domain::{BotStatus, NodeStatus, TaskStatus};
+use super::sheet::{self, Ink};
+use super::widgets::{El, LABEL, SMALL, action, bold, card, empty, icon, muted, pixel_number, semibold};
+use super::{grid, status, tasks};
+use crate::application::Fleet;
+use crate::domain::{Bot, BotStatus, NodeStatus, Task, TaskStatus};
 use crate::ui::format;
 use crate::ui::styles::{self, Kind};
+use crate::ui::table::{BotListing, NodeListing};
+use crate::ui::view::widgets::{NUMBER, number_width};
 use crate::ui::{App, Icon, Message, Screen, Tokens, Tone};
+
+/// The room between Home's parts and around them.
+const GAP: f32 = 12.0;
+/// The height of a line of Home's lists.
+const LINE: f32 = 30.0;
+/// The width of a status in Home's lists, so the words after it start
+/// at one edge.
+const STATUS: f32 = 86.0;
+/// The width of a bot's name in Home's lists.
+const BOT: f32 = 124.0;
+/// How many waiting tasks Home lists before «See all».
+const NEEDS_YOU_SHOWN: usize = 5;
+/// How many of the newest tasks Home lists.
+const LATEST_SHOWN: usize = 20;
 
 pub fn view<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
     let Some(fleet) = &app.fleet else {
         return loading(app, tokens);
     };
-    let o = &fleet.overview;
-    // Runs stopped before they said what they spent: the cost today is a
-    // floor, and a note by its card says how many.
-    let note = o.cost_since().is_floor().then(|| {
-        let runs = o.cost_unknown_since;
-        if runs == 1 {
-            "1 run unknown".to_string()
-        } else {
-            format!("{runs} runs unknown")
-        }
-    });
-    // Seven cards in a row while they fit at a readable size; in a
-    // narrow window, four over three, every card as wide as the others,
-    // the note in the place the eighth would take.
-    let stats: El<'a> = responsive(move |space| {
-        let mut cards = stat_cards(app, fleet, tokens).into_iter();
-        if space.width >= STATS_ONE_ROW {
-            let line = row(cards).spacing(14);
-            return match &note {
-                Some(note) => column![
-                    line,
-                    row![Space::new().width(Length::Fill), muted(note.clone(), tokens)].padding(Padding {
-                        right: 12.0,
-                        ..Padding::ZERO
-                    })
-                ]
-                .spacing(4)
-                .into(),
-                None => line.into(),
-            };
-        }
-        let top = row(cards.by_ref().take(4)).spacing(14);
-        let eighth: El<'a> = match &note {
-            Some(note) => container(muted(note.clone(), tokens))
-                .width(Length::Fill)
-                .padding(Padding::from([0, 4]))
-                .align_bottom(Length::Fill)
-                .into(),
-            None => Space::new().width(Length::Fill).into(),
-        };
-        let bottom = row(cards.chain(std::iter::once(eighth)))
-            .spacing(14)
-            .height(Length::Shrink);
-        column![top, bottom].spacing(14).into()
-    })
-    .height(Length::Shrink)
-    .into();
-
-    let mut page = column![
+    column![
+        needs_you(app, fleet, tokens),
+        numbers(app, fleet, tokens),
         row![
-            title(Icon::Overview, "Home", tokens),
-            Space::new().width(Length::Fill),
-            action(
-                Kind::Primary,
-                Icon::Plus,
-                "New task",
-                Some(Message::SubmitOpen(None)),
-                tokens
-            )
+            container(fleet_card(fleet, tokens)).width(Length::FillPortion(21)),
+            container(latest(app, fleet, tokens)).width(Length::FillPortion(27)),
+            container(nodes(app, fleet, tokens)).width(Length::FillPortion(16)),
         ]
-        .align_y(Alignment::Center),
-        stats
+        .spacing(GAP)
+        .height(Length::Fill),
     ]
-    .spacing(20);
+    .spacing(GAP)
+    .padding(Padding::from([GAP, sheet::SIDE]))
+    .into()
+}
 
-    let waiting_tasks = fleet.waiting();
-    if !waiting_tasks.is_empty() {
-        let mut list = column![].spacing(10);
-        for task in waiting_tasks.iter().take(NEEDS_YOU_SHOWN) {
+/// The first line of Home: the tasks that wait for a person, each with
+/// its answers, in an amber block; a bot's ask to listen when only that
+/// waits; or one quiet line when nothing does.
+fn needs_you<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
+    let waiting = fleet.waiting();
+    if waiting.is_empty() {
+        return match fleet.bots.iter().find(|b| b.pending_asks().next().is_some()) {
+            // Asks to listen and no waiting task: the line opens the bot
+            // that asks.
+            Some(bot) => {
+                let asks = app.pending_asks();
+                let words = if asks == 1 {
+                    format!("{} asks to listen to a topic.", bot.id)
+                } else {
+                    format!("{asks} asks to listen to a topic wait for your answer.")
+                };
+                container(
+                    row![
+                        status::task(TaskStatus::WaitingApproval, tokens),
+                        text(words).width(Length::Fill),
+                        action(
+                            Kind::Secondary,
+                            Icon::Next,
+                            "Review",
+                            Some(Message::Go(Screen::Bot(bot.id.clone()))),
+                            tokens
+                        ),
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                )
+                .padding(Padding::from([6, 12]))
+                .width(Length::Fill)
+                .style(styles::tone_card(tokens, Tone::Wait))
+                .into()
+            }
+            None => {
+                let failed = fleet.overview.tasks_since_in(TaskStatus::Failed);
+                let rest = if failed == 0 {
+                    "No task waits for your OK. Nothing failed today.".to_string()
+                } else {
+                    format!(
+                        "No task waits for your OK. {} failed today.",
+                        format::count(u64::from(failed), "task", "tasks")
+                    )
+                };
+                container(
+                    row![
+                        super::widgets::status(Icon::Check, Tone::Good, "Nothing needs you", false, tokens),
+                        text(rest).color(tokens.muted)
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                )
+                .padding(Padding::from([9, 12]))
+                .width(Length::Fill)
+                .style(styles::card(tokens))
+                .into()
+            }
+        };
+    }
+    let total = waiting.len();
+    let block = responsive(move |space| {
+        let mut list = column![].spacing(4);
+        // The age and the buttons keep their room; what the task asks
+        // has the rest, on one line.
+        let what = (space.width - 24.0 - STATUS - BOT - 44.0 - ANSWERS - 4.0 * 10.0).max(80.0);
+        for task in waiting.iter().take(NEEDS_YOU_SHOWN) {
             // What the bot wants to do, so an OK here is not blind.
-            let wants: El<'a> = match fleet.call_of(&task.id) {
-                Some(call) => row![
-                    icon(Icon::Wrench, 14.0, tokens.muted),
-                    muted(format!("wants {}", call.summary(40)), tokens).wrapping(Wrapping::WordOrGlyph)
-                ]
-                .spacing(6)
-                .align_y(Alignment::Center)
-                .into(),
-                None => Space::new().into(),
-            };
-            // The bot and what it asks share a line while they fit and go
-            // one under the other when they do not; the age and the
-            // buttons are laid out first and keep their room.
-            let words = row![
-                bold(task.bot_id.to_string()),
-                column![text(task.headline(70)).wrapping(Wrapping::WordOrGlyph), wants].spacing(2),
-            ]
-            .spacing(14)
-            .align_y(Alignment::Center)
-            .width(Length::Fill)
-            .wrap()
-            .vertical_spacing(2);
+            let (asked, _) = tasks::what(task);
+            let wants = fleet
+                .call_of(&task.id)
+                .map(|call| format!("wants {}", call.summary(40)))
+                .unwrap_or_default();
             list = list.push(
                 row![
-                    pill(Tone::Wait, TaskStatus::WaitingApproval.label(), tokens),
-                    words,
-                    muted(format::age(task.created_at, app.now), tokens),
+                    container(status::task(task.status, tokens)).width(STATUS),
+                    container(sheet::words(task.bot_id.to_string(), BOT, Ink::Strong, tokens)).width(BOT),
+                    container(sheet::pair(&asked, &wants, what, tokens)).width(Length::Fill),
+                    container(Ink::Quiet.write(format::age(task.created_at, app.now), tokens))
+                        .width(44)
+                        .align_x(Alignment::End),
                     super::decide::buttons(app, &task.id, tokens),
-                    open("Review", Message::Go(Screen::Task(task.id.clone())), tokens),
+                    action(
+                        Kind::Ghost,
+                        Icon::Next,
+                        "Review",
+                        Some(Message::Go(Screen::Task(task.id.clone()))),
+                        tokens
+                    ),
                 ]
-                .spacing(14)
+                .spacing(10)
                 .align_y(Alignment::Center),
             );
         }
         // The newest few, then the way to all of them: what came in last
-        // stays above the fold.
-        if waiting_tasks.len() > NEEDS_YOU_SHOWN {
-            list = list.push(more(
-                format!("{} more wait for you", waiting_tasks.len() - NEEDS_YOU_SHOWN),
-                format!("See all {}", waiting_tasks.len()),
-                Message::FilterStatus(Some(TaskStatus::WaitingApproval)),
-                tokens,
-            ));
-        }
-        page = page.push(
-            container(column![super::widgets::section_title(Icon::Alert, "Needs you", tokens), list].spacing(14))
-                .padding(18)
-                .width(Length::Fill)
-                .style(styles::tone_card(tokens, Tone::Wait)),
-        );
-    }
-
-    // The nodes that are not online first, as they are the news; a
-    // few, then the way to the rest.
-    let mut ordered: Vec<_> = fleet.nodes.iter().collect();
-    ordered.sort_by_key(|n| n.status == NodeStatus::Online);
-    let mut nodes = column![].spacing(10);
-    for node in ordered.iter().take(NODES_SHOWN) {
-        nodes = nodes.push(
-            row![
-                slot(pill(Tone::of_node(node.status), node.status.name(), tokens), PILL_SLOT),
-                container(super::grid::fitted(node.id.to_string(), true, tokens)).width(Length::FillPortion(3)),
-                container(super::grid::fitted_muted(node.host_name.clone(), tokens)).width(Length::FillPortion(2)),
-                container(
-                    muted(format!("seen {}", format::age(node.last_seen_at, app.now)), tokens).wrapping(Wrapping::None)
-                )
-                .width(SEEN)
-                .align_right(SEEN),
-            ]
-            .spacing(12)
-            .align_y(Alignment::Center),
-        );
-    }
-    if fleet.nodes.len() > NODES_SHOWN {
-        let rest = &ordered[NODES_SHOWN..];
-        let words = if rest.iter().all(|n| n.status == NodeStatus::Online) {
-            format!("{} more, all online", rest.len())
-        } else {
-            format!("{} more", rest.len())
-        };
-        nodes = nodes.push(more(
-            words,
-            format!("See all {}", fleet.nodes.len()),
-            Message::Go(Screen::Nodes),
-            tokens,
-        ));
-    }
-    if fleet.nodes.is_empty() {
-        nodes = nodes.push(empty(Icon::Nodes, "No node yet", tokens));
-    }
-
-    // A headline wraps in what the age leaves it, as on a bot's page.
-    let mut latest = column![].spacing(8);
-    for task in fleet.tasks.iter().take(8) {
-        latest = latest.push(
-            mouse_area(
+        // stays in sight.
+        if total > NEEDS_YOU_SHOWN {
+            list = list.push(
                 row![
-                    slot(pill(Tone::of_task(task.status), task.status.label(), tokens), PILL_SLOT),
-                    container(super::grid::fitted(task.bot_id.to_string(), true, tokens)).width(BOT_SLOT),
-                    text(task.headline(48))
-                        .size(SMALL)
-                        .wrapping(Wrapping::WordOrGlyph)
-                        .width(Length::Fill),
-                    muted(format::age(task.created_at, app.now), tokens),
+                    muted(format!("{} more wait for you", total - NEEDS_YOU_SHOWN), tokens),
+                    Space::new().width(Length::Fill),
+                    link(
+                        format!("See all {total}"),
+                        Message::FilterStatus(Some(TaskStatus::WaitingApproval)),
+                        tokens
+                    ),
                 ]
-                .spacing(10)
                 .align_y(Alignment::Center),
-            )
-            .on_press(Message::Go(Screen::Task(task.id.clone())))
-            .interaction(mouse::Interaction::Pointer),
-        );
-    }
-    if fleet.tasks.is_empty() {
-        latest = latest.push(empty(Icon::Tasks, "No task yet", tokens));
-    }
-
-    page = page.push(
-        row![
-            container(section(Icon::Nodes, "Nodes", nodes, tokens)).width(Length::FillPortion(2)),
-            container(section(Icon::Tasks, "Latest tasks", latest, tokens)).width(Length::FillPortion(3)),
-        ]
-        .spacing(16),
-    );
-    scrollable(page.padding(iced::Padding {
-        right: 12.0,
-        ..Default::default()
-    }))
-    .id(super::widgets::PAGE)
-    .height(Length::Fill)
-    .into()
+            );
+        }
+        container(list)
+            .padding(Padding::from([8, 12]))
+            .width(Length::Fill)
+            .style(styles::tone_card(tokens, Tone::Wait))
+            .into()
+    });
+    block.height(Length::Shrink).into()
 }
 
-/// Under this width of the page the seven stat cards go on two rows:
-/// a window under about 1200 px.
-const STATS_ONE_ROW: f32 = 960.0;
+/// The room Approve, Deny and Review take at the end of a waiting
+/// task's line.
+const ANSWERS: f32 = 290.0;
 
-/// The fleet's numbers, one card each, in the order an operator reads
-/// them.
-fn stat_cards<'a>(app: &'a App, fleet: &'a crate::application::Fleet, tokens: Tokens) -> Vec<El<'a>> {
+/// The fleet's numbers in one strip, in the order an operator reads
+/// them; each goes to the list it counts.
+fn numbers<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
     let o = &fleet.overview;
     let online = o.nodes_in(NodeStatus::Online);
     let waiting = app.waiting_count();
@@ -233,113 +186,362 @@ fn stat_cards<'a>(app: &'a App, fleet: &'a crate::application::Fleet, tokens: To
         Some(bot) if o.tasks_in(TaskStatus::WaitingApproval) == 0 => Message::Go(Screen::Bot(bot.id.clone())),
         _ => Message::FilterStatus(Some(TaskStatus::WaitingApproval)),
     };
-    let failed_today = o.tasks_since_in(TaskStatus::Failed);
-    let expired_today = o.tasks_since_in(TaskStatus::Expired);
-    vec![
-        stat(
-            Icon::Nodes,
-            format!("{online}/{}", o.total_nodes()),
+    let running = o.tasks_in(TaskStatus::Running);
+    let failed = o.tasks_since_in(TaskStatus::Failed);
+    let (stopped, expired) = (
+        o.tasks_since_in(TaskStatus::Cancelled),
+        o.tasks_since_in(TaskStatus::Expired),
+    );
+    // Runs stopped before they said what they spent: the cost today is a
+    // floor, and the number says on hover how many.
+    let cost_note = o.cost_since().is_floor().then(|| {
+        format!(
+            "At least: {} did not say what it cost.",
+            format::count(u64::from(o.cost_unknown_since), "run", "runs")
+        )
+    });
+    let cells = [
+        number(
             "nodes online",
-            if o.nodes_down() > 0 { Tone::Bad } else { Tone::Good },
-            Some(Message::Go(Screen::Nodes)),
+            format!("{online}/{}", o.total_nodes()),
+            if o.nodes_down() > 0 { Tone::Bad } else { Tone::Idle },
+            None,
+            Message::Go(Screen::Nodes),
             tokens,
         ),
-        stat(
-            Icon::Bots,
-            o.bots_in(BotStatus::Enabled).to_string(),
+        number(
             "bots on",
-            Tone::Good,
-            Some(Message::Go(Screen::Bots)),
-            tokens,
-        ),
-        stat(
-            Icon::Play,
-            o.tasks_in(TaskStatus::Running).to_string(),
-            "running",
-            if o.tasks_in(TaskStatus::Running) > 0 {
-                Tone::Busy
-            } else {
-                Tone::Idle
-            },
-            Some(Message::FilterStatus(Some(TaskStatus::Running))),
-            tokens,
-        ),
-        stat(
-            Icon::Alert,
-            waiting.to_string(),
-            "need you",
-            if waiting > 0 { Tone::Wait } else { Tone::Idle },
-            Some(need_you),
-            tokens,
-        ),
-        stat(
-            Icon::Cross,
-            failed_today.to_string(),
-            "failed today",
-            if failed_today > 0 { Tone::Bad } else { Tone::Idle },
-            Some(Message::FilterStatus(Some(TaskStatus::Failed))),
-            tokens,
-        ),
-        stat(
-            Icon::Hourglass,
-            expired_today.to_string(),
-            "expired today",
-            if expired_today > 0 { Tone::Late } else { Tone::Idle },
-            Some(Message::FilterStatus(Some(TaskStatus::Expired))),
-            tokens,
-        ),
-        stat(
-            Icon::Coin,
-            format::spend(o.cost_since()),
-            "cost today",
+            format!("{}/{}", o.bots_in(BotStatus::Enabled), o.total_bots()),
             Tone::Idle,
             None,
+            Message::Go(Screen::Bots),
             tokens,
         ),
-    ]
+        number(
+            "running",
+            running.to_string(),
+            if running > 0 { Tone::Busy } else { Tone::Idle },
+            None,
+            Message::FilterStatus(Some(TaskStatus::Running)),
+            tokens,
+        ),
+        number(
+            "need you",
+            waiting.to_string(),
+            if waiting > 0 { Tone::Wait } else { Tone::Idle },
+            None,
+            need_you,
+            tokens,
+        ),
+        number(
+            "failed today",
+            failed.to_string(),
+            if failed > 0 { Tone::Bad } else { Tone::Idle },
+            None,
+            Message::FilterStatus(Some(TaskStatus::Failed)),
+            tokens,
+        ),
+        // Stopped by a person or expired with nobody deciding: neither
+        // ran to its end. It goes to the ones that expired when there
+        // are any, as those were nobody's choice.
+        number(
+            "stopped today",
+            (stopped + expired).to_string(),
+            if expired > 0 { Tone::Late } else { Tone::Idle },
+            (stopped + expired > 0).then(|| format!("{stopped} stopped · {expired} expired")),
+            Message::FilterStatus(Some(if expired > 0 || stopped == 0 {
+                TaskStatus::Expired
+            } else {
+                TaskStatus::Cancelled
+            })),
+            tokens,
+        ),
+        number(
+            "cost today",
+            format::spend(o.cost_since()),
+            Tone::Idle,
+            cost_note,
+            Message::FilterStatus(None),
+            tokens,
+        ),
+    ];
+    let mut strip = row![].height(Length::Shrink);
+    for (index, cell) in cells.into_iter().enumerate() {
+        if index > 0 {
+            strip = strip.push(container(Space::new().width(1).height(Length::Fill)).style(styles::rule(tokens)));
+        }
+        strip = strip.push(cell);
+    }
+    container(strip)
+        .width(Length::Fill)
+        .height(NUMBERS)
+        .style(styles::card(tokens))
+        .into()
 }
 
-/// How many waiting tasks Home lists before «See all».
-const NEEDS_YOU_SHOWN: usize = 5;
+/// The height of the strip of numbers.
+const NUMBERS: f32 = 60.0;
 
-/// How many nodes Home lists before «See all».
-const NODES_SHOWN: usize = 5;
+/// One number of the strip: its words over it, small, and the number
+/// in the pixel face; in its tone only when it calls for a look. A
+/// click goes where the number comes from; `tip` says more on hover.
+fn number<'a>(words: &'a str, value: String, tone: Tone, tip: Option<String>, go: Message, tokens: Tokens) -> El<'a> {
+    let ink = match tone {
+        Tone::Wait | Tone::Late | Tone::Bad | Tone::Busy => styles::pill_ink(tokens, tone),
+        Tone::Good | Tone::Idle => tokens.text,
+    };
+    // A long cost in a narrow window is drawn smaller, never cut.
+    let size = if number_width(&value, NUMBER) > 104.0 {
+        NUMBER * 0.8
+    } else {
+        NUMBER
+    };
+    let cell = button(
+        column![
+            text(words).size(LABEL).color(tokens.muted),
+            container(pixel_number(&value, size, ink))
+                .height(NUMBER)
+                .align_y(Alignment::End)
+                .clip(false)
+        ]
+        .spacing(3),
+    )
+    .width(Length::Fill)
+    .padding(Padding::from([7, 12]))
+    .style(plain(tokens))
+    .on_press(go);
+    let cell: El<'a> = match tip {
+        Some(tip) => sheet::tip(cell.into(), tip, tokens),
+        None => cell.into(),
+    };
+    container(cell).width(Length::FillPortion(1)).into()
+}
 
-/// The width of a bot's name in Latest tasks, so the tasks' words start
-/// at one edge.
-const BOT_SLOT: f32 = 150.0;
+/// A line or a number that is pressed whole: nothing around it at
+/// rest, the raised grey under the pointer.
+fn plain(tokens: Tokens) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
+    move |theme, status| button::Style {
+        border: iced::Border {
+            radius: styles::RADIUS_S.into(),
+            color: Color::TRANSPARENT,
+            width: 0.0,
+        },
+        ..styles::button_style(tokens, Kind::Ghost)(theme, status)
+    }
+}
 
-/// The width of «seen 12m», kept to its right edge.
-const SEEN: f32 = 84.0;
-
-/// The line under a capped list: how many more, and the way to all.
-fn more<'a>(words: String, label: String, go: Message, tokens: Tokens) -> El<'a> {
-    row![
-        muted(words, tokens),
+/// A card of Home: its title with a few words beside it and the way to
+/// the whole list, over a body that scrolls by itself when it is long.
+fn column_card<'a>(title: &'a str, note: String, all: (&'a str, Message), body: El<'a>, tokens: Tokens) -> El<'a> {
+    let head = row![
+        semibold(title).size(SMALL).color(tokens.muted),
+        text(note).size(SMALL).color(tokens.muted),
         Space::new().width(Length::Fill),
-        button(
-            row![semibold(label).size(SMALL), icon(Icon::Next, 12.0, tokens.muted)]
-                .spacing(6)
-                .align_y(Alignment::Center),
-        )
-        .padding(Padding::from([4, 8]))
-        .style(styles::button_style(tokens, Kind::Ghost))
-        .on_press(go),
+        link(all.0.to_string(), all.1, tokens),
     ]
-    .align_y(Alignment::Center)
+    .spacing(8)
+    .align_y(Alignment::Center);
+    container(column![
+        container(head).padding(Padding::from([8, 12]).bottom(6)),
+        scrollable(body)
+            .direction(Direction::Vertical(
+                Scrollbar::new().width(6).scroller_width(6).margin(2)
+            ))
+            .width(Length::Fill)
+            .height(Length::Fill)
+    ])
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .style(styles::card(tokens))
     .into()
 }
 
-/// A big number in a card; see `widgets::stat`.
-fn stat<'a>(
-    glyph: Icon,
-    value: String,
-    label: &'a str,
-    tone: Tone,
-    on_press: Option<Message>,
-    tokens: Tokens,
-) -> El<'a> {
-    super::widgets::stat(glyph, value, label, tone, on_press, tokens)
+/// A few words in the accent that go somewhere: `All tasks ›`.
+fn link<'a>(words: String, go: Message, tokens: Tokens) -> El<'a> {
+    let ink = styles::accent_ink(tokens);
+    button(
+        row![semibold(words).size(12.5).color(ink), icon(Icon::Next, 10.0, ink)]
+            .spacing(3)
+            .align_y(Alignment::Center),
+    )
+    .padding(0)
+    .style(styles::button_style(tokens, Kind::Link))
+    .on_press(go)
+    .into()
+}
+
+/// The width of a team's name beside its bots.
+const TEAM: f32 = 78.0;
+
+/// Every bot as a small tile, by team: a bot that is on has a dot and
+/// stands out, one that is not is muted. A click opens the bot.
+fn fleet_card<'a>(fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
+    let groups = BotListing::default().groups(&fleet.bots);
+    let on = fleet.bots.iter().filter(|b| b.status == BotStatus::Enabled).count();
+    let off = fleet.bots.len() - on;
+    let note = match (on, off) {
+        (_, 0) => format!("{on} on"),
+        _ => format!("{on} on · {off} not on"),
+    };
+    let mut body = column![].spacing(7).padding(Padding::from([0, 12]).bottom(10));
+    for group in &groups {
+        let mut tiles = row![].spacing(4);
+        for bot in &group.bots {
+            tiles = tiles.push(tile(bot, &group.team, tokens));
+        }
+        body = body.push(
+            row![
+                container(sheet::words(group.name().to_string(), TEAM, Ink::Quiet, tokens))
+                    .width(TEAM)
+                    .padding(Padding::ZERO.top(4)),
+                container(tiles.wrap().vertical_spacing(4)).width(Length::Fill)
+            ]
+            .spacing(8),
+        );
+    }
+    let body: El<'a> = if fleet.bots.is_empty() {
+        empty(Icon::Bots, "No bot yet", tokens)
+    } else {
+        body.into()
+    };
+    column_card("Fleet", note, ("All bots", Message::Go(Screen::Bots)), body, tokens)
+}
+
+/// A bot's name on its tile: without its team's name before it, which
+/// the line already says.
+fn tile_name(bot: &Bot, team: &str) -> String {
+    let id = bot.id.as_str();
+    let short = id
+        .strip_prefix(team)
+        .and_then(|rest| rest.strip_prefix('-'))
+        .filter(|rest| !team.is_empty() && !rest.is_empty())
+        .unwrap_or(id);
+    grid::shorten(short, 20)
+}
+
+fn tile<'a>(bot: &'a Bot, team: &str, tokens: Tokens) -> El<'a> {
+    let on = bot.status == BotStatus::Enabled;
+    let (glyph, ink) = if on {
+        (Icon::Dot, tokens.good)
+    } else {
+        (Icon::Pause, tokens.muted)
+    };
+    let state = if on { "On" } else { bot.status.name() };
+    tooltip(
+        button(
+            row![icon(glyph, 10.0, ink), text(tile_name(bot, team)).size(LABEL)]
+                .spacing(4)
+                .align_y(Alignment::Center),
+        )
+        .height(24)
+        .padding(Padding::from([0, 7]))
+        .style(styles::tile(tokens, on))
+        .on_press(Message::Go(Screen::Bot(bot.id.clone()))),
+        container(text(format!("{} · {state}", bot.id)).size(SMALL))
+            .padding(6)
+            .style(styles::chip(tokens)),
+        tooltip::Position::Bottom,
+    )
+    .into()
+}
+
+/// The newest tasks, one line each: status, bot, what it is about, how
+/// long ago. A click opens the task.
+fn latest<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
+    let now = app.now;
+    let body: El<'a> = if fleet.tasks.is_empty() {
+        empty(Icon::Tasks, "No task yet", tokens)
+    } else {
+        responsive(move |space| {
+            let what = (space.width - 8.0 - 16.0 - STATUS - BOT - 40.0 - 3.0 * 10.0).max(60.0);
+            let mut list = column![].padding(Padding::from([0, 4]).bottom(6));
+            for task in fleet.tasks.iter().take(LATEST_SHOWN) {
+                list = list.push(task_line(task, what, now, tokens));
+            }
+            list.into()
+        })
+        .height(Length::Shrink)
+        .into()
+    };
+    column_card(
+        "Latest",
+        String::new(),
+        ("All tasks", Message::FilterStatus(None)),
+        body,
+        tokens,
+    )
+}
+
+fn task_line<'a>(task: &'a Task, what: f32, now: chrono::DateTime<chrono::Utc>, tokens: Tokens) -> El<'a> {
+    let (first, _) = tasks::what(task);
+    button(
+        row![
+            container(status::task(task.status, tokens)).width(STATUS),
+            container(sheet::words(task.bot_id.to_string(), BOT, Ink::Strong, tokens)).width(BOT),
+            container(sheet::words(first, what, Ink::Quiet, tokens)).width(Length::Fill),
+            container(Ink::Quiet.write(format::age(task.created_at, now), tokens))
+                .width(40)
+                .align_x(Alignment::End),
+        ]
+        .spacing(10)
+        .height(Length::Fill)
+        .align_y(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .height(LINE)
+    .padding(Padding::from([0, 8]))
+    .style(plain(tokens))
+    .on_press(Message::Go(Screen::Task(task.id.clone())))
+    .into()
+}
+
+/// The nodes of the fleet, the ones online first, each with when it
+/// was last seen; the revoked ones are only counted.
+fn nodes<'a>(app: &'a App, fleet: &'a Fleet, tokens: Tokens) -> El<'a> {
+    let now = app.now;
+    let mut live = NodeListing::default().shown(&fleet.nodes);
+    live.sort_by_key(|n| n.status != NodeStatus::Online);
+    let revoked = NodeListing::revoked_among(&fleet.nodes);
+    let note = if revoked > 0 {
+        format!("{revoked} revoked hidden")
+    } else {
+        String::new()
+    };
+    let body: El<'a> = if live.is_empty() {
+        empty(Icon::Nodes, "No node yet", tokens)
+    } else {
+        responsive(move |space| {
+            let name = (space.width - 8.0 - 16.0 - STATUS - 64.0 - 2.0 * 10.0).max(60.0);
+            let mut list = column![].padding(Padding::from([0, 4]).bottom(6));
+            for node in &live {
+                list = list.push(
+                    button(
+                        row![
+                            container(status::node(node.status, tokens)).width(STATUS),
+                            container(sheet::words(node.id.to_string(), name, Ink::Strong, tokens)).width(Length::Fill),
+                            container(
+                                Ink::Quiet.write(format!("seen {}", format::age(node.last_seen_at, now)), tokens)
+                            )
+                            .width(64)
+                            .align_x(Alignment::End),
+                        ]
+                        .spacing(10)
+                        .height(Length::Fill)
+                        .align_y(Alignment::Center),
+                    )
+                    .width(Length::Fill)
+                    .height(LINE)
+                    .padding(Padding::from([0, 8]))
+                    .style(plain(tokens))
+                    .on_press(Message::Go(Screen::Nodes)),
+                );
+            }
+            list.into()
+        })
+        .height(Length::Shrink)
+        .into()
+    };
+    column_card("Nodes", note, ("All", Message::Go(Screen::Nodes)), body, tokens)
 }
 
 /// Before the first answer: connecting, or why not.
@@ -375,5 +577,31 @@ pub fn loading<'a>(app: &'a App, tokens: Tokens) -> El<'a> {
         .align_x(Alignment::Center)
         .into(),
     };
-    card(body, tokens).into()
+    container(card(body, tokens)).padding(Padding::from([14, 18])).into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_tile_leaves_out_the_team_its_line_already_says() {
+        let bot = |id: &str| -> Bot {
+            serde_json::from_value(serde_json::json!({
+                "id": id, "name": id, "mission": "Do it.", "status": "Enabled",
+                "createdAt": "2026-10-26T10:00:00Z", "updatedAt": "2026-10-26T10:00:00Z"
+            }))
+            .unwrap()
+        };
+        assert_eq!(tile_name(&bot("ops-watch"), "ops"), "watch");
+        assert_eq!(tile_name(&bot("opsy"), "ops"), "opsy");
+        assert_eq!(tile_name(&bot("ops-"), "ops"), "ops-");
+        assert_eq!(tile_name(&bot("alone"), ""), "alone");
+        assert_eq!(
+            tile_name(&bot("a-bot-with-a-very-long-name-indeed"), "ops")
+                .chars()
+                .count(),
+            20
+        );
+    }
 }
