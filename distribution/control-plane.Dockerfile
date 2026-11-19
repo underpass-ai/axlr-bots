@@ -71,9 +71,9 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # The same pin as node.Dockerfile: CI refuses the two drifting apart.
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS axlr
 ARG TARGETARCH
-ARG AXLR_VERSION=0.20.0
-ARG AXLR_SHA256_AMD64=ed09f72f7c4312c37f9d7181db9d86b77fcd830f9b411589b0886810949f8309
-ARG AXLR_SHA256_ARM64=108b02936b022570c4cb3646858b2b7076910b16fcf3e164368a5db66ffef4bf
+ARG AXLR_VERSION=0.20.1
+ARG AXLR_SHA256_AMD64=0bb3b64472c08dc498e00a7d1a8b42e49e1631e01d158c85e0138af84d18774d
+ARG AXLR_SHA256_ARM64=01d07c277adfc5f97b27bf7e9b1eb08b9e1b71981ecbbfc0bd2a1837b04c28b9
 ADD https://github.com/underpass-ai/AXLR/releases/download/v${AXLR_VERSION}/axlr-v${AXLR_VERSION}-linux-${TARGETARCH}.tar.gz /tmp/axlr.tar.gz
 RUN set -eu; \
     case "$TARGETARCH" in \
