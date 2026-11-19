@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -137,5 +138,50 @@ func TestTheDefaultsAreCodexs(t *testing.T) {
 	auth := &AuthFile{}
 	if auth.tokenURL() != DefaultTokenURL || auth.refreshBefore() != DefaultRefreshBefore || auth.client() != http.DefaultClient || auth.now().IsZero() {
 		t.Fatal("defaults changed")
+	}
+}
+
+// A response the backend fails inside its HTTP 200 stream is logged with
+// the backend's code and message, and passed on unchanged; one cut before
+// its last event is logged too.
+func TestTheProxyLogsAFailureInsideTheStream(t *testing.T) {
+	for name, tc := range map[string]struct {
+		events string
+		logged string
+	}{
+		"nested error": {"data: {\"type\":\"response.created\"}\n\ndata: {\"type\":\"error\",\"error\":{\"type\":\"service_unavailable_error\",\"code\":\"server_is_overloaded\",\"message\":\"Our servers are\\ncurrently overloaded.\"}}\n\n",
+			"; the backend failed the response: error server_is_overloaded: Our servers are currently overloaded."},
+		"flat error":      {"data: {\"type\":\"error\",\"code\":\"rate_limit_exceeded\",\"message\":\"slow down\"}\n\n", "; the backend failed the response: error rate_limit_exceeded: slow down"},
+		"failed":          {"event: response.failed\r\ndata: {\"type\":\"response.failed\",\"response\":{\"error\":{\"code\":\"server_error\",\"message\":\"boom\"}}}\r\n\r\n", "; the backend failed the response: response.failed server_error: boom"},
+		"failed bare":     {"data: {\"type\":\"response.failed\",\"response\":{\"error\":null}}\n\n", "; the backend failed the response: response.failed"},
+		"cut":             {"data: {\"type\":\"response.created\"}\n\n", "; the stream ended before the response did"},
+		"completed":       {"data: {\"type\":\"response.output_text.delta\",\"delta\":\"" + strings.Repeat("x", 70<<10) + "\"}\n\ndata: {\"type\":\"response.completed\"}\n\n", ""},
+		"long line, then": {"data: {\"type\":\"error\",\"message\":\"" + strings.Repeat("y", 70<<10) + "\"}\n\ndata: {\"type\":\"response.completed\"}\n\n", ""},
+	} {
+		backend := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			rw.Header().Set("Content-Type", "text/event-stream")
+			// In small pieces, so events straddle the reads.
+			for rest := tc.events; rest != ""; {
+				n := min(7, len(rest))
+				_, _ = rw.Write([]byte(rest[:n]))
+				rw.(http.Flusher).Flush()
+				rest = rest[n:]
+			}
+		}))
+		var lines []string
+		proxy := &Proxy{Auth: &fakeLogin{tokens: []string{"tok-1"}}, Upstream: backend.URL, Logf: func(format string, args ...any) {
+			lines = append(lines, fmt.Sprintf(format, args...))
+		}}
+		recorder := post(t, proxy, "/v1/responses", "", `{}`)
+		backend.Close()
+		if recorder.Code != http.StatusOK || recorder.Body.String() != tc.events {
+			t.Fatalf("%s: the stream changed: %d %q", name, recorder.Code, recorder.Body.String())
+		}
+		if len(lines) != 1 || !strings.HasPrefix(lines[0], "codex-proxy: /v1/responses 200 in ") {
+			t.Fatalf("%s: logged %q", name, lines)
+		}
+		if strings.Contains(lines[0], ";") != (tc.logged != "") || !strings.HasSuffix(lines[0], tc.logged) {
+			t.Fatalf("%s: logged %q, want suffix %q", name, lines[0], tc.logged)
+		}
 	}
 }
