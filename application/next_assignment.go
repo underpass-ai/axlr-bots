@@ -231,6 +231,9 @@ func (uc NextAssignment) start(ctx context.Context, node domain.Node, bot domain
 	if err := execution.AssignTo(node.ID()); err != nil {
 		return Assignment{}, false, err
 	}
+	if err := execution.RecordVersions(versionsOf(uc.deps, bot, &node)); err != nil {
+		return Assignment{}, false, err
+	}
 	if err := uc.deps.Executions.Save(ctx, execution); err != nil {
 		return Assignment{}, false, err
 	}

@@ -185,6 +185,16 @@ A wait ends in `approved`, `denied`, `expired` or `cancelled`. See [approvals](a
 | Tokens per bot and kind | `sum by (bot, kind) (increase(axlr_bots_tokens_total[24h]))` |
 | Cost that is not in the total | `sum by (bot) (increase(axlr_bots_executions_cost_unknown_total[24h]))` |
 
+### Which version ran
+
+Every execution records, when it starts, what runs it (`versions` in the execution): the bot definition's version, the control plane's build, and, on a node, the node's build and the AXLR it reported when it registered. A release build's `revision` is the commit its tag names: the proof of the version.
+
+| Question | PromQL |
+|:--|:--|
+| Executions with no proof of what ran them | `sum by (bot) (increase(axlr_bots_executions_unproven_total[24h]))` |
+
+A non-zero value is a node or control plane built without a release revision (a development build) or an execution started before an upgrade that records versions.
+
 `executions_cost_unknown_total` counts runs that ended before they said what they used. A late report adds that cost to `cost_usd_total` afterwards, so a non-zero value is a bound, not a hole.
 
 ## Costs and limits

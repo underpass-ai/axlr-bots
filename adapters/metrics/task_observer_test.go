@@ -479,3 +479,39 @@ func TestTheLedgerForgetsTheOldestAndRemembersWhatWaitsForACost(t *testing.T) {
 		t.Errorf("unknown = %v: the evicted are forgotten", ledger.unknown())
 	}
 }
+
+type runningBuild domain.BuildIdentity
+
+func (b runningBuild) Running() domain.BuildIdentity            { return domain.BuildIdentity(b) }
+func (b runningBuild) Installed() (domain.BuildIdentity, error) { return domain.BuildIdentity(b), nil }
+
+// An execution that ended counts as unproven when the build that ran it
+// names no commit: here the control plane names one, the node does not.
+func TestUnprovenCountsAnExecutionWhoseBuildNamesNoCommit(t *testing.T) {
+	o := newObserved(t)
+	o.deps.Build = runningBuild{Version: "0.5.0", Revision: "cp-commit"}
+	alpha := o.bot("alpha", nil)
+	beta := o.bot("beta", map[string]string{"host": "n1"})
+	o.runtime.runs = []application.ExecutionReport{completed(0.01, 10, 1)}
+	if _, err := application.NewRunTask(o.deps).Execute(o.ctx, o.submit(alpha, "a1").ID()); err != nil {
+		t.Fatal(err)
+	}
+	node, err := application.NewRegisterNode(o.deps).Execute(o.ctx, application.NodeRegistration{ID: "n1", HostName: "n1.example", Labels: map[string]string{"host": "n1"}, Capabilities: domain.NodeCapabilities{AXLRVersion: "0.14.0", NodeVersion: "0.0.0-dev", PolicySupported: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.submit(beta, "b1")
+	assignment, found, err := application.NewNextAssignment(o.deps).Execute(o.ctx, node.ID())
+	if err != nil || !found {
+		t.Fatalf("assignment: %v %v", err, found)
+	}
+	if _, err := application.NewReportExecution(o.deps).Execute(o.ctx, node.ID(), assignment.ExecutionID, completed(0.1, 30, 3)); err != nil {
+		t.Fatal(err)
+	}
+	if got := o.counter("axlr_bots_executions_unproven_total", map[string]string{"bot": "alpha"}); got != 0 {
+		t.Errorf("alpha (in process, control plane with a commit) unproven = %v, want 0", got)
+	}
+	if got := o.counter("axlr_bots_executions_unproven_total", map[string]string{"bot": "beta"}); got != 1 {
+		t.Errorf("beta (a node with no commit) unproven = %v, want 1", got)
+	}
+}

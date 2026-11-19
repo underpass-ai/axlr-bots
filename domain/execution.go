@@ -29,6 +29,7 @@ type Execution struct {
 	nodeID        NodeID
 	leaseUntil    time.Time
 	receipt       json.RawMessage
+	versions      ExecutionVersions
 }
 
 // NewExecution starts an attempt at the task.
@@ -37,6 +38,30 @@ func NewExecution(id ExecutionID, task TaskID, bot BotID, startedAt time.Time) (
 		return Execution{}, invalid("started at", "must not be zero")
 	}
 	return Execution{id: id, taskID: task, botID: bot, startedAt: startedAt, outcome: ExecutionRunning, kind: ExecutionRun}, nil
+}
+
+// Versions is what ran the execution (ExecutionVersions); zero for one
+// kept before versions were recorded.
+func (e Execution) Versions() ExecutionVersions {
+	v := e.versions
+	if v.Node != nil {
+		node := *v.Node
+		v.Node = &node
+	}
+	return v
+}
+
+// RecordVersions keeps what runs the execution, when it starts.
+func (e *Execution) RecordVersions(v ExecutionVersions) error {
+	if err := v.validate(); err != nil {
+		return err
+	}
+	if v.Node != nil {
+		node := *v.Node
+		v.Node = &node
+	}
+	e.versions = v
+	return nil
 }
 
 // Kind is what the execution carries: a run or a decision.
@@ -297,6 +322,10 @@ func (e Execution) Snapshot() ExecutionSnapshot {
 	}
 	s.NodeID = e.nodeID.String()
 	s.Receipt = e.Receipt()
+	if !e.versions.IsZero() {
+		versions := e.Versions()
+		s.Versions = &versions
+	}
 	if !e.leaseUntil.IsZero() {
 		lease := e.leaseUntil
 		s.LeaseUntil = &lease
@@ -365,6 +394,11 @@ func RestoreExecution(s ExecutionSnapshot) (Execution, error) {
 			return Execution{}, invalid("lease until", "needs a node")
 		}
 		execution.leaseUntil = *s.LeaseUntil
+	}
+	if s.Versions != nil {
+		if err := execution.RecordVersions(*s.Versions); err != nil {
+			return Execution{}, err
+		}
 	}
 	if err := execution.RecordReceipt(s.Receipt); err != nil {
 		return Execution{}, err

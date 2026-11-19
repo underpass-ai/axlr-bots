@@ -62,6 +62,9 @@ func (uc RunTask) Execute(ctx context.Context, id domain.TaskID) (RunTaskResult,
 	if err := execution.Correlate(task.CorrelationID()); err != nil {
 		return RunTaskResult{}, err
 	}
+	if err := execution.RecordVersions(versionsOf(uc.deps, bot, nil)); err != nil {
+		return RunTaskResult{}, err
+	}
 	if err := uc.deps.Executions.Save(ctx, execution); err != nil {
 		return RunTaskResult{}, err
 	}

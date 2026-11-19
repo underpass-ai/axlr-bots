@@ -24,4 +24,5 @@ type ExecutionSnapshot struct {
 	NodeID        string             `json:"nodeId,omitempty"`
 	LeaseUntil    *time.Time         `json:"leaseUntil,omitempty"`
 	Receipt       json.RawMessage    `json:"receipt,omitempty"`
+	Versions      *ExecutionVersions `json:"versions,omitempty"`
 }
