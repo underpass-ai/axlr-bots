@@ -19,6 +19,13 @@ func executionToProto(s domain.ExecutionSnapshot) *operatorv1.Execution {
 	if c := s.Correlation; c != nil {
 		execution.Correlation = &operatorv1.CorrelationRecord{BotId: c.BotID, TaskId: c.TaskID, ExecutionId: c.ExecutionID, TraceId: c.TraceID, Carried: c.Carried, Path: c.Path}
 	}
+	if v := s.Versions; v != nil {
+		execution.Versions = &operatorv1.ExecutionVersions{Bot: v.Bot, Axlr: v.AXLR,
+			ControlPlane: &operatorv1.BuildVersion{Version: v.ControlPlane.Version, Revision: v.ControlPlane.Revision}}
+		if n := v.Node; n != nil {
+			execution.Versions.Node = &operatorv1.BuildVersion{Version: n.Version, Revision: n.Revision}
+		}
+	}
 	return execution
 }
 
