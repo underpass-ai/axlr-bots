@@ -64,9 +64,16 @@ func TestExecutionSnapshotMapsEveryField(t *testing.T) {
 	if e.Policy == nil || e.Policy.Level != "observe" || !e.Policy.Enforced || e.Correlation == nil || e.Correlation.TraceID != "tr" || !e.Correlation.Carried {
 		t.Errorf("policy and correlation: %+v %+v", e.Policy, e.Correlation)
 	}
+	h.fake.answer(method("ExecutionsService", "GetExecution"), &operatorv1.GetExecutionResponse{Execution: &operatorv1.Execution{Id: "e-3",
+		Versions: &operatorv1.ExecutionVersions{Bot: "2.4.0", Axlr: "0.20.1", ControlPlane: &operatorv1.BuildVersion{Version: "0.5.1", Revision: "cp"},
+			Node: &operatorv1.BuildVersion{Version: "0.5.1", Revision: "nd"}}}})
+	versioned, _ := h.client.GetExecution(t.Context(), "e-3")
+	if v := versioned.Versions; v == nil || v.Bot != "2.4.0" || v.AXLR != "0.20.1" || v.ControlPlane.Revision != "cp" || v.Node == nil || v.Node.Revision != "nd" {
+		t.Errorf("versions: %+v", versioned.Versions)
+	}
 	h.fake.answer(method("ExecutionsService", "GetExecution"), &operatorv1.GetExecutionResponse{Execution: &operatorv1.Execution{Id: "e-2"}})
 	bare, _ := h.client.GetExecution(t.Context(), "e-2")
-	if bare.EndedAt != nil || bare.Policy != nil || bare.Correlation != nil || bare.Receipt != nil || bare.LeaseUntil != nil {
+	if bare.EndedAt != nil || bare.Policy != nil || bare.Correlation != nil || bare.Receipt != nil || bare.LeaseUntil != nil || bare.Versions != nil {
 		t.Errorf("a bare execution has no optional parts: %+v", bare)
 	}
 }

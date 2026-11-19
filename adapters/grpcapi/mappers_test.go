@@ -92,7 +92,14 @@ func TestSnapshotsGoToTheWireWithoutLosingWhatTheyHold(t *testing.T) {
 			PendingDecision: &domain.PendingDecision{Tool: "t", Arguments: []byte(`{"x":1}`)}, NotStarted: true},
 		Usage:  domain.Usage{CostUnknown: true, ToolCalls: 2},
 		Policy: &domain.PolicyRecord{Level: "observe", Enforced: true}, Correlation: &domain.CorrelationRecord{TraceID: "tr", Carried: true},
+		Versions: &domain.ExecutionVersions{Bot: "2.4.0", ControlPlane: domain.BuildVersion{Version: "0.5.1", Revision: "cp"}, Node: &domain.BuildVersion{Revision: "nd"}, AXLR: "0.20.1"},
 	})
+	if v := execution.GetVersions(); v.GetBot() != "2.4.0" || v.GetControlPlane().GetRevision() != "cp" || v.GetNode().GetRevision() != "nd" || v.GetAxlr() != "0.20.1" {
+		t.Errorf("versions: %v", v)
+	}
+	if executionToProto(domain.ExecutionSnapshot{ID: "old"}).GetVersions() != nil {
+		t.Error("an execution kept before versions has none on the wire")
+	}
 	if !execution.GetResult().GetNotStarted() || !execution.GetResult().GetToolCalls()[0].GetPreview() || string(execution.GetResult().GetPendingDecision().GetArguments()) != `{"x":1}` ||
 		!execution.GetUsage().GetCostUnknown() || !execution.GetPolicy().GetEnforced() || execution.GetCorrelation().GetTraceId() != "tr" {
 		t.Errorf("execution: %v", execution)

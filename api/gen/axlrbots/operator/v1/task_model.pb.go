@@ -970,7 +970,10 @@ type Execution struct {
 	LeaseUntil    *timestamppb.Timestamp `protobuf:"bytes,16,opt,name=lease_until,json=leaseUntil,proto3" json:"lease_until,omitempty"`
 	// receipt is the runtime's JSON receipt, verbatim (bytes, so that its
 	// digest stays checkable).
-	Receipt       []byte `protobuf:"bytes,17,opt,name=receipt,proto3" json:"receipt,omitempty"`
+	Receipt []byte `protobuf:"bytes,17,opt,name=receipt,proto3" json:"receipt,omitempty"`
+	// versions is what ran the execution, recorded when it started; absent
+	// on one kept before versions were recorded.
+	Versions      *ExecutionVersions `protobuf:"bytes,18,opt,name=versions,proto3" json:"versions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1124,6 +1127,138 @@ func (x *Execution) GetReceipt() []byte {
 	return nil
 }
 
+func (x *Execution) GetVersions() *ExecutionVersions {
+	if x != nil {
+		return x.Versions
+	}
+	return nil
+}
+
+// BuildVersion names a build: the release it was cut as and the commit it
+// was built from (the proof of the version).
+type BuildVersion struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	Revision      string                 `protobuf:"bytes,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BuildVersion) Reset() {
+	*x = BuildVersion{}
+	mi := &file_axlrbots_operator_v1_task_model_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BuildVersion) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BuildVersion) ProtoMessage() {}
+
+func (x *BuildVersion) ProtoReflect() protoreflect.Message {
+	mi := &file_axlrbots_operator_v1_task_model_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BuildVersion.ProtoReflect.Descriptor instead.
+func (*BuildVersion) Descriptor() ([]byte, []int) {
+	return file_axlrbots_operator_v1_task_model_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *BuildVersion) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *BuildVersion) GetRevision() string {
+	if x != nil {
+		return x.Revision
+	}
+	return ""
+}
+
+// ExecutionVersions is what ran an execution: the bot definition's
+// version, the control plane's build and, on a node, the node's build and
+// the AXLR it reported when it registered.
+type ExecutionVersions struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Bot           string                 `protobuf:"bytes,1,opt,name=bot,proto3" json:"bot,omitempty"`
+	ControlPlane  *BuildVersion          `protobuf:"bytes,2,opt,name=control_plane,json=controlPlane,proto3" json:"control_plane,omitempty"`
+	Node          *BuildVersion          `protobuf:"bytes,3,opt,name=node,proto3" json:"node,omitempty"`
+	Axlr          string                 `protobuf:"bytes,4,opt,name=axlr,proto3" json:"axlr,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExecutionVersions) Reset() {
+	*x = ExecutionVersions{}
+	mi := &file_axlrbots_operator_v1_task_model_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExecutionVersions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExecutionVersions) ProtoMessage() {}
+
+func (x *ExecutionVersions) ProtoReflect() protoreflect.Message {
+	mi := &file_axlrbots_operator_v1_task_model_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExecutionVersions.ProtoReflect.Descriptor instead.
+func (*ExecutionVersions) Descriptor() ([]byte, []int) {
+	return file_axlrbots_operator_v1_task_model_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ExecutionVersions) GetBot() string {
+	if x != nil {
+		return x.Bot
+	}
+	return ""
+}
+
+func (x *ExecutionVersions) GetControlPlane() *BuildVersion {
+	if x != nil {
+		return x.ControlPlane
+	}
+	return nil
+}
+
+func (x *ExecutionVersions) GetNode() *BuildVersion {
+	if x != nil {
+		return x.Node
+	}
+	return nil
+}
+
+func (x *ExecutionVersions) GetAxlr() string {
+	if x != nil {
+		return x.Axlr
+	}
+	return ""
+}
+
 var File_axlrbots_operator_v1_task_model_proto protoreflect.FileDescriptor
 
 const file_axlrbots_operator_v1_task_model_proto_rawDesc = "" +
@@ -1218,7 +1353,7 @@ const file_axlrbots_operator_v1_task_model_proto_rawDesc = "" +
 	"\fexecution_id\x18\x03 \x01(\tR\vexecutionId\x12\x19\n" +
 	"\btrace_id\x18\x04 \x01(\tR\atraceId\x12\x18\n" +
 	"\acarried\x18\x05 \x01(\bR\acarried\x12\x12\n" +
-	"\x04path\x18\x06 \x01(\tR\x04path\"\xad\x05\n" +
+	"\x04path\x18\x06 \x01(\tR\x04path\"\xf2\x05\n" +
 	"\tExecution\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12\x15\n" +
@@ -1240,7 +1375,16 @@ const file_axlrbots_operator_v1_task_model_proto_rawDesc = "" +
 	"\anode_id\x18\x0f \x01(\tR\x06nodeId\x12;\n" +
 	"\vlease_until\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"leaseUntil\x12\x18\n" +
-	"\areceipt\x18\x11 \x01(\fR\areceiptBKZIgithub.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1;operatorv1b\x06proto3"
+	"\areceipt\x18\x11 \x01(\fR\areceipt\x12C\n" +
+	"\bversions\x18\x12 \x01(\v2'.axlrbots.operator.v1.ExecutionVersionsR\bversions\"D\n" +
+	"\fBuildVersion\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\tR\aversion\x12\x1a\n" +
+	"\brevision\x18\x02 \x01(\tR\brevision\"\xba\x01\n" +
+	"\x11ExecutionVersions\x12\x10\n" +
+	"\x03bot\x18\x01 \x01(\tR\x03bot\x12G\n" +
+	"\rcontrol_plane\x18\x02 \x01(\v2\".axlrbots.operator.v1.BuildVersionR\fcontrolPlane\x126\n" +
+	"\x04node\x18\x03 \x01(\v2\".axlrbots.operator.v1.BuildVersionR\x04node\x12\x12\n" +
+	"\x04axlr\x18\x04 \x01(\tR\x04axlrBKZIgithub.com/underpass-ai/axlr-bots/api/gen/axlrbots/operator/v1;operatorv1b\x06proto3"
 
 var (
 	file_axlrbots_operator_v1_task_model_proto_rawDescOnce sync.Once
@@ -1254,7 +1398,7 @@ func file_axlrbots_operator_v1_task_model_proto_rawDescGZIP() []byte {
 	return file_axlrbots_operator_v1_task_model_proto_rawDescData
 }
 
-var file_axlrbots_operator_v1_task_model_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_axlrbots_operator_v1_task_model_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_axlrbots_operator_v1_task_model_proto_goTypes = []any{
 	(*TriggerRef)(nil),            // 0: axlrbots.operator.v1.TriggerRef
 	(*ApprovalWait)(nil),          // 1: axlrbots.operator.v1.ApprovalWait
@@ -1267,38 +1411,43 @@ var file_axlrbots_operator_v1_task_model_proto_goTypes = []any{
 	(*PolicyRecord)(nil),          // 8: axlrbots.operator.v1.PolicyRecord
 	(*CorrelationRecord)(nil),     // 9: axlrbots.operator.v1.CorrelationRecord
 	(*Execution)(nil),             // 10: axlrbots.operator.v1.Execution
-	(*timestamppb.Timestamp)(nil), // 11: google.protobuf.Timestamp
-	(*SkillPin)(nil),              // 12: axlrbots.operator.v1.SkillPin
-	(*Artifact)(nil),              // 13: axlrbots.operator.v1.Artifact
-	(*Usage)(nil),                 // 14: axlrbots.operator.v1.Usage
+	(*BuildVersion)(nil),          // 11: axlrbots.operator.v1.BuildVersion
+	(*ExecutionVersions)(nil),     // 12: axlrbots.operator.v1.ExecutionVersions
+	(*timestamppb.Timestamp)(nil), // 13: google.protobuf.Timestamp
+	(*SkillPin)(nil),              // 14: axlrbots.operator.v1.SkillPin
+	(*Artifact)(nil),              // 15: axlrbots.operator.v1.Artifact
+	(*Usage)(nil),                 // 16: axlrbots.operator.v1.Usage
 }
 var file_axlrbots_operator_v1_task_model_proto_depIdxs = []int32{
-	11, // 0: axlrbots.operator.v1.ApprovalWait.since:type_name -> google.protobuf.Timestamp
-	11, // 1: axlrbots.operator.v1.ApprovalWait.deadline:type_name -> google.protobuf.Timestamp
-	11, // 2: axlrbots.operator.v1.ApprovalWait.closed_at:type_name -> google.protobuf.Timestamp
-	11, // 3: axlrbots.operator.v1.DelegationGrant.deadline:type_name -> google.protobuf.Timestamp
+	13, // 0: axlrbots.operator.v1.ApprovalWait.since:type_name -> google.protobuf.Timestamp
+	13, // 1: axlrbots.operator.v1.ApprovalWait.deadline:type_name -> google.protobuf.Timestamp
+	13, // 2: axlrbots.operator.v1.ApprovalWait.closed_at:type_name -> google.protobuf.Timestamp
+	13, // 3: axlrbots.operator.v1.DelegationGrant.deadline:type_name -> google.protobuf.Timestamp
 	2,  // 4: axlrbots.operator.v1.TaskLineage.grant:type_name -> axlrbots.operator.v1.DelegationGrant
 	0,  // 5: axlrbots.operator.v1.Task.trigger:type_name -> axlrbots.operator.v1.TriggerRef
 	1,  // 6: axlrbots.operator.v1.Task.approval:type_name -> axlrbots.operator.v1.ApprovalWait
 	3,  // 7: axlrbots.operator.v1.Task.delegation:type_name -> axlrbots.operator.v1.TaskLineage
-	12, // 8: axlrbots.operator.v1.Task.skills:type_name -> axlrbots.operator.v1.SkillPin
-	11, // 9: axlrbots.operator.v1.Task.created_at:type_name -> google.protobuf.Timestamp
-	11, // 10: axlrbots.operator.v1.Task.updated_at:type_name -> google.protobuf.Timestamp
-	13, // 11: axlrbots.operator.v1.Result.artifacts:type_name -> axlrbots.operator.v1.Artifact
+	14, // 8: axlrbots.operator.v1.Task.skills:type_name -> axlrbots.operator.v1.SkillPin
+	13, // 9: axlrbots.operator.v1.Task.created_at:type_name -> google.protobuf.Timestamp
+	13, // 10: axlrbots.operator.v1.Task.updated_at:type_name -> google.protobuf.Timestamp
+	15, // 11: axlrbots.operator.v1.Result.artifacts:type_name -> axlrbots.operator.v1.Artifact
 	5,  // 12: axlrbots.operator.v1.Result.tool_calls:type_name -> axlrbots.operator.v1.ToolCall
 	6,  // 13: axlrbots.operator.v1.Result.pending_decision:type_name -> axlrbots.operator.v1.PendingDecision
-	11, // 14: axlrbots.operator.v1.Execution.started_at:type_name -> google.protobuf.Timestamp
-	11, // 15: axlrbots.operator.v1.Execution.ended_at:type_name -> google.protobuf.Timestamp
+	13, // 14: axlrbots.operator.v1.Execution.started_at:type_name -> google.protobuf.Timestamp
+	13, // 15: axlrbots.operator.v1.Execution.ended_at:type_name -> google.protobuf.Timestamp
 	7,  // 16: axlrbots.operator.v1.Execution.result:type_name -> axlrbots.operator.v1.Result
-	14, // 17: axlrbots.operator.v1.Execution.usage:type_name -> axlrbots.operator.v1.Usage
+	16, // 17: axlrbots.operator.v1.Execution.usage:type_name -> axlrbots.operator.v1.Usage
 	8,  // 18: axlrbots.operator.v1.Execution.policy:type_name -> axlrbots.operator.v1.PolicyRecord
 	9,  // 19: axlrbots.operator.v1.Execution.correlation:type_name -> axlrbots.operator.v1.CorrelationRecord
-	11, // 20: axlrbots.operator.v1.Execution.lease_until:type_name -> google.protobuf.Timestamp
-	21, // [21:21] is the sub-list for method output_type
-	21, // [21:21] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	13, // 20: axlrbots.operator.v1.Execution.lease_until:type_name -> google.protobuf.Timestamp
+	12, // 21: axlrbots.operator.v1.Execution.versions:type_name -> axlrbots.operator.v1.ExecutionVersions
+	11, // 22: axlrbots.operator.v1.ExecutionVersions.control_plane:type_name -> axlrbots.operator.v1.BuildVersion
+	11, // 23: axlrbots.operator.v1.ExecutionVersions.node:type_name -> axlrbots.operator.v1.BuildVersion
+	24, // [24:24] is the sub-list for method output_type
+	24, // [24:24] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_axlrbots_operator_v1_task_model_proto_init() }
@@ -1313,7 +1462,7 @@ func file_axlrbots_operator_v1_task_model_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_axlrbots_operator_v1_task_model_proto_rawDesc), len(file_axlrbots_operator_v1_task_model_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

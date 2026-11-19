@@ -148,4 +148,24 @@ message Execution {
   // receipt is the runtime's JSON receipt, verbatim (bytes, so that its
   // digest stays checkable).
   bytes receipt = 17;
+  // versions is what ran the execution, recorded when it started; absent
+  // on one kept before versions were recorded.
+  ExecutionVersions versions = 18;
+}
+
+// BuildVersion names a build: the release it was cut as and the commit it
+// was built from (the proof of the version).
+message BuildVersion {
+  string version = 1;
+  string revision = 2;
+}
+
+// ExecutionVersions is what ran an execution: the bot definition's
+// version, the control plane's build and, on a node, the node's build and
+// the AXLR it reported when it registered.
+message ExecutionVersions {
+  string bot = 1;
+  BuildVersion control_plane = 2;
+  BuildVersion node = 3;
+  string axlr = 4;
 }

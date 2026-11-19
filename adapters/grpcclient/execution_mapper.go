@@ -27,6 +27,14 @@ func executionSnapshot(execution *operatorv1.Execution) domain.ExecutionSnapshot
 	if receipt := execution.GetReceipt(); len(receipt) > 0 {
 		snapshot.Receipt = json.RawMessage(receipt)
 	}
+	if v := execution.GetVersions(); v != nil {
+		cp := v.GetControlPlane()
+		snapshot.Versions = &domain.ExecutionVersions{Bot: v.GetBot(), AXLR: v.GetAxlr(),
+			ControlPlane: domain.BuildVersion{Version: cp.GetVersion(), Revision: cp.GetRevision()}}
+		if n := v.GetNode(); n != nil {
+			snapshot.Versions.Node = &domain.BuildVersion{Version: n.GetVersion(), Revision: n.GetRevision()}
+		}
+	}
 	return snapshot
 }
 
