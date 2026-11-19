@@ -7,7 +7,13 @@ all-features = true
 # panel depends on it directly: the ones below Iced, rfd and the test TLS
 # server are theirs to replace.
 unmaintained = "workspace"
-ignore = []
+ignore = [
+  # chrono, a direct dependency of the panel (59 uses), was declared unmaintained on
+  # 2026-09-14 (informational, no vulnerability, no patched version). Every pull request
+  # failed panel-gate on it from 2026-11-19. Allowed until the panel moves to jiff or time,
+  # the replacements the advisory names.
+  { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained (informational); the panel moves to jiff or time" },
+]
 
 [licenses]
 allow = ["Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-3.0", "Zlib", "CC0-1.0", "MPL-2.0", "BSL-1.0", "NCSA", "CDLA-Permissive-2.0"]
