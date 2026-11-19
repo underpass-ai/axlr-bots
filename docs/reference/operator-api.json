@@ -2715,6 +2715,9 @@
           },
           "usage": {
             "$ref": "#/components/schemas/Usage"
+          },
+          "versions": {
+            "$ref": "#/components/schemas/ExecutionVersions"
           }
         },
         "required": [
@@ -4177,6 +4180,45 @@
             "format": "date-time"
           }
         }
+      },
+      "BuildVersion": {
+        "type": "object",
+        "x-go-type": "domain.BuildVersion",
+        "description": "a build: the release it was cut as and the commit it was built from (the proof of the version)",
+        "properties": {
+          "version": {
+            "type": "string",
+            "example": "0.5.0"
+          },
+          "revision": {
+            "type": "string",
+            "example": "9bb54422f4bf0a4ffdd88d0232383c53678c4d73"
+          }
+        }
+      },
+      "ExecutionVersions": {
+        "type": "object",
+        "x-go-type": "domain.ExecutionVersions",
+        "description": "what ran the execution, recorded when it starts: the bot definition's version, the control plane's build and, on a node, the node's build and the AXLR it reported when it registered",
+        "properties": {
+          "bot": {
+            "type": "string",
+            "example": "2.4.0"
+          },
+          "controlPlane": {
+            "$ref": "#/components/schemas/BuildVersion"
+          },
+          "node": {
+            "$ref": "#/components/schemas/BuildVersion"
+          },
+          "axlr": {
+            "type": "string",
+            "example": "0.20.0"
+          }
+        },
+        "required": [
+          "controlPlane"
+        ]
       }
     }
   }

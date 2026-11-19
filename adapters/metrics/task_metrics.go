@@ -20,6 +20,7 @@ type TaskMetrics struct {
 	tokens            *prometheus.CounterVec
 	costUnknown       *prometheus.CounterVec
 	toolCalls         *prometheus.CounterVec
+	unproven          *prometheus.CounterVec
 }
 
 // Bounds, in seconds, of what each histogram measures.
@@ -52,13 +53,14 @@ func NewTaskMetrics() *TaskMetrics {
 		tokens:            counter("axlr_bots_tokens_total", "Tokens the executions that ended consumed, by kind (prompt, cached, completion, reasoning).", "bot", "kind"),
 		costUnknown:       counter("axlr_bots_executions_cost_unknown_total", "Executions that ended with an unknown cost (a late report may still tell it).", "bot"),
 		toolCalls:         counter("axlr_bots_tool_calls_total", "Tool calls that ended, by status (ok, denied, failed, other).", "bot", "status"),
+		unproven:          counter("axlr_bots_executions_unproven_total", "Executions that ended without the commit of the build that ran them: a node (or, in process, the control plane) built without a release revision, or one started before versions were recorded.", "bot"),
 	}
 }
 
 // collectors are every series, as the collectors they are.
 func (m *TaskMetrics) collectors() []prometheus.Collector {
 	return []prometheus.Collector{m.taskDuration, m.taskQueue, m.executionDuration, m.approvalWait, m.toolCallDuration,
-		m.tasksFinished, m.costUSD, m.tokens, m.costUnknown, m.toolCalls}
+		m.tasksFinished, m.costUSD, m.tokens, m.costUnknown, m.toolCalls, m.unproven}
 }
 
 // Describe sends the description of every series.

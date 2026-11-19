@@ -150,6 +150,9 @@ func (o *TaskObserver) account(ctx context.Context, id domain.ExecutionID) {
 		return
 	}
 	o.series.executionDuration.WithLabelValues(bot, execution.Outcome().String()).Observe(seconds(execution.EndedAt().Sub(execution.StartedAt())))
+	if !execution.Versions().Proven() {
+		o.series.unproven.WithLabelValues(bot).Inc()
+	}
 	if usage.CostUnknown {
 		o.series.costUnknown.WithLabelValues(bot).Inc()
 		return

@@ -226,6 +226,13 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 			return ApproveTaskResult{}, err
 		}
 	}
+	versions, err := uc.versionsOf(ctx, bot, previous)
+	if err != nil {
+		return ApproveTaskResult{}, err
+	}
+	if err := execution.RecordVersions(versions); err != nil {
+		return ApproveTaskResult{}, err
+	}
 	if err := uc.deps.Executions.Save(ctx, execution); err != nil {
 		return ApproveTaskResult{}, err
 	}
@@ -292,6 +299,25 @@ func (uc ApproveTask) resume(ctx context.Context, bot domain.Bot, task domain.Ta
 // the node is unseen past the grace). Before, the task showed Running
 // with no hint (QA, 5 November 2026). busyWith lists the tasks the node
 // runs; waiting says it in words. Nothing is added for a free node.
+// versionsOf is what runs the decision: the node of the run it decides,
+// as that node is registered now; the run's own record when the node is
+// gone.
+func (uc ApproveTask) versionsOf(ctx context.Context, bot domain.Bot, previous domain.Execution) (domain.ExecutionVersions, error) {
+	if !previous.IsAssigned() {
+		return versionsOf(uc.deps, bot, nil), nil
+	}
+	node, err := uc.deps.Nodes.Get(ctx, previous.NodeID())
+	if domain.IsNotFound(err) {
+		v := versionsOf(uc.deps, bot, nil)
+		v.Node, v.AXLR = previous.Versions().Node, previous.Versions().AXLR
+		return v, nil
+	}
+	if err != nil {
+		return domain.ExecutionVersions{}, err
+	}
+	return versionsOf(uc.deps, bot, &node), nil
+}
+
 func (uc ApproveTask) waitingFor(ctx context.Context, nodeID domain.NodeID, own domain.TaskID, payload map[string]any) error {
 	node, err := uc.deps.Nodes.Get(ctx, nodeID)
 	if domain.IsNotFound(err) {

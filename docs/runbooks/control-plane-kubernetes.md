@@ -164,6 +164,7 @@ Measured as events happen, so they count from the control plane's start (a count
 | `axlr_bots_cost_usd_total` | counter | `bot` | cost of the executions that ended |
 | `axlr_bots_tokens_total` | counter | `bot`, `kind` | tokens consumed; `kind` is `prompt`, `cached`, `completion` or `reasoning` |
 | `axlr_bots_executions_cost_unknown_total` | counter | `bot` | executions that ended with an unknown cost (stopped before they said what they consumed) |
+| `axlr_bots_executions_unproven_total` | counter | `bot` | executions that ended without the commit of the build that ran them: the node's (or, in process, the control plane's) build named no revision, or the execution started before versions were recorded |
 | `axlr_bots_tool_calls_total` | counter | `bot`, `status` | tool calls that ended, from the run's progress; `status` is `ok`, `denied`, `failed` or `other` |
 | `axlr_bots_tool_call_duration_seconds` | histogram | `bot` | tool calls that reported a duration |
 
