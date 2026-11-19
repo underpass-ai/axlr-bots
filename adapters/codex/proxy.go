@@ -91,7 +91,16 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer response.Body.Close()
 	copyHeaders(w.Header(), response.Header)
 	w.WriteHeader(response.StatusCode)
-	stream(w, response.Body)
+	watch := &streamWatch{}
+	stream(w, io.TeeReader(response.Body, watch))
+	outcome := ""
+	if response.StatusCode == http.StatusOK {
+		outcome = watch.Outcome(strings.HasPrefix(response.Header.Get("Content-Type"), "text/event-stream"))
+	}
+	if outcome != "" {
+		p.logf("codex-proxy: %s %d in %s; %s", r.URL.Path, response.StatusCode, time.Since(started).Round(time.Millisecond), outcome)
+		return
+	}
 	p.logf("codex-proxy: %s %d in %s", r.URL.Path, response.StatusCode, time.Since(started).Round(time.Millisecond))
 }
 
