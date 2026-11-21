@@ -20,7 +20,7 @@
       "wait": "wait_image",
       "stop": "stop",
       "tell": {"name": "info.images.labelled", "fields": ["category", "probability"]},
-      "model": "jev-1.13.0"
+      "model": "jev-1.14.0"
     }
   },
   "model": {"model": "", "routingPolicy": "cost-optimized", "allowRemoteProviders": false},

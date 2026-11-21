@@ -27,7 +27,7 @@ The bots of a team open one store, `<state>/kmp/<team>`, and the node tells AXLR
 | Whose it is | The run's policy file carries `"memory": {"team": "<team>"}` ([AXLR's contract](https://github.com/underpass-ai/AXLR/blob/main/docs/runtime-contract.md), "Policy per execution") |
 | What a member reads | Every about of the store: nobody else's memory is in it |
 | What a member writes | Its own about, `project:<team>.<bot>`; the team's, `project:<team>`; and its session's `ws:` about. A teammate's about is refused, so a memory is always its author's |
-| Who wrote what | AXLR registers one KMP agent per member in the store |
+| Who wrote what | Until KMP 1.0, AXLR registered one KMP agent per member in the store. KMP 1.0 keeps no agents: a memory under a member's own about or its session's `ws:` about is that member's, and `axlr_remember` and the turn entries carry the session and the workspace (named after the bot) as labels |
 
 The boundary inside the store is AXLR's, under the execution's policy, as it was for a bot alone. The node's part is the directory and the name.
 

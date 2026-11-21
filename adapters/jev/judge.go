@@ -26,7 +26,7 @@ import (
 // Endpoint is TypeSafe's judgement API.
 const Endpoint = "https://api.typesafe.ai/v1/systemone"
 
-// DefaultModel is the Jev version AXLR and KMP pin; never a -latest alias.
+// DefaultModel is the Jev version AXLR pins; never a -latest alias.
 const DefaultModel = "jev-1.13.0"
 
 // InputPricePerToken is TypeSafe's price of an input token for Jev
