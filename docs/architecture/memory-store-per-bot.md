@@ -33,7 +33,7 @@ The store is keyed by the bot id alone, as the workspace is, so a store and a wo
 ## Consequences
 
 - A bot's memory lives in `<state>/kmp/<bot>` on the host it is placed on; it moves with the node's state (a sidecar's volume) and never reaches the operator's store. `kmp-mcp memories --json` with `KMP_MCP_DATA_DIR=<state>/kmp/<bot>` lists it.
-- Each store registers its own KMP agent (AXLR keeps one per store), so bots and the console no longer share an identity.
+- Each bot writes to its own store, so bots and the console no longer share one. (Until KMP 1.0 each store also held its own KMP agent; KMP 1.0 keeps none.)
 - What is already in the operator's store stays there; moving it is a hand's job (`kmp-mcp export … --about project:<bot>` and `import`), not the node's.
 - The policy, the workspace and the store are the three things the node gives a run about *where* it works; the [runtime contract](runtime-contract.md) lists the flag.
 

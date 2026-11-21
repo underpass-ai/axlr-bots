@@ -20,7 +20,7 @@
       "wait": "next_sample",
       "stop": "stop",
       "tell": {"name": "info.emotion.read", "fields": ["emotion", "probability"]},
-      "model": "jev-1.13.0"
+      "model": "jev-1.14.0"
     }
   },
   "model": {"model": "", "routingPolicy": "cost-optimized", "allowRemoteProviders": false},

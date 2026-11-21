@@ -275,7 +275,7 @@ A bot's tasks run as an AXLR session unless its definition says otherwise: a mod
     "wait": "listen",
     "stop": "stop",
     "tell": {"name": "info.worker.processed", "fields": ["batch", "probability"]},
-    "model": "jev-1.13.0"
+    "model": "jev-1.14.0"
   }
 }
 ```
